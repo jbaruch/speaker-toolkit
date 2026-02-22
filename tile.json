@@ -1,6 +1,6 @@
 {
   "name": "jbaruch/speaker-toolkit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "summary": "Two-skill presentation system: analyze your speaking style into a rhetoric knowledge vault, then create new presentations that match your documented patterns.",
   "description": "A speaker-neutral toolkit with two async workflows connected by a shared vault. The rhetoric-knowledge-vault skill analyzes recorded talks to extract rhetoric patterns, humor techniques, slide design rules, and verbal signatures into a structured knowledge base. The presentation-creator skill reads that vault at runtime to help build new presentations that match the speaker's documented style. Any speaker can use both skills — all personalization lives in the vault data, not in the skill definitions.",
   "private": false,

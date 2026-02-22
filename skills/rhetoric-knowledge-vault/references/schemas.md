@@ -20,10 +20,11 @@
   "talks": [{
     "filename": "2024-04-10-talk-slug.md",
     "title": "Talk Title", "conference": "Name", "date": "2024-04-10",
-    "slides_url": "https://drive.google.com/file/d/{ID}/view",
+    "slides_url": "https://drive.google.com/file/d/{ID}/view  (optional — but at least one of slides_url or pptx_path required)",
     "video_url": "https://www.youtube.com/watch?v={ID}",
     "youtube_id": "aBcDeFg", "google_drive_id": "1AbCdEfGhIjK",
-    "pptx_path": "Conference/Year/Talk Name.pptx",
+    "pptx_path": "Conference/Year/Talk Name.pptx  (optional — but at least one of slides_url or pptx_path required)",
+    "slide_source": "pdf|pptx|both  (set in Step 2 based on which slide sources exist)",
     "pptx_visual_status": "pending|extracted|no_pptx",
     "status": "pending|processed|processed_partial|needs-reprocessing|skipped_no_sources|skipped_download_failed",
     "rhetoric_notes": "", "areas_for_improvement": "",

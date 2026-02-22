@@ -2,6 +2,12 @@
 
 A two-skill system for conference speakers: analyze your existing talks to extract your rhetoric patterns, then create new presentations that match your documented style.
 
+## What's New (0.2.0)
+
+**PPTX as primary slide source** — Talks with `.pptx` files no longer need Google Drive
+PDFs. PPTX provides richer data (exact hex colors, font names, layout names) and runs
+inline during rhetoric analysis. See [CHANGELOG.md](CHANGELOG.md) for full history.
+
 ## How It Works
 
 The toolkit has two independent skills connected by a shared **rhetoric vault** — a directory of structured knowledge about how you present.

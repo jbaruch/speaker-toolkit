@@ -32,10 +32,15 @@ running summary. All paths are relative to **vault root** (`config.vault_root`).
 
 For full database, subagent return, and PPTX extraction schemas, see `references/schemas.md`.
 
-The vault has **two independent data sources**: shownotes (`.md` files with video/slide
-links → rhetoric analysis) and PPTX sources (`.pptx` files → visual design extraction).
-Most talks appear in both; disparity is expected. The `pptx_catalog` array tracks all
-`.pptx` files and fuzzy-matches them to shownotes entries.
+The vault has **two data sources** per talk: a **video** (YouTube transcript) and
+**slides** (visual/structural analysis). Slides can come from three paths:
+- `slides_url` only → download PDF from Google Drive, visual analysis from PDF
+- `pptx_path` only → use PPTX directly via python-pptx (richer: exact hex colors, font names, layout names)
+- both → use PPTX for exact structural data, PDF as supplementary visual reference
+
+The `pptx_catalog` array tracks all `.pptx` files and fuzzy-matches them to shownotes
+entries. A talk is processable when it has `video_url` AND at least one of `slides_url`
+or `pptx_path`.
 
 ## Workflow
 
@@ -66,7 +71,8 @@ Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report state:
 ### Step 2: Select Talks to Process
 
 - Select all talks with status `pending` or `needs-reprocessing`.
-- Talks missing `video_url` or `slides_url`: mark `"skipped_no_sources"`, skip.
+- Talks missing `video_url` or missing BOTH `slides_url` and `pptx_path`: mark `"skipped_no_sources"`, skip.
+- Set `slide_source` on each processable talk: `"pptx"` if only `pptx_path`, `"pdf"` if only `slides_url`, `"both"` if both exist.
 - If `$ARGUMENTS` specifies a talk filename or title, process ONLY that one.
 
 ### Step 3: Process Talks — Parallel Subagents, Batches of 5
@@ -76,16 +82,24 @@ Each subagent receives the talk's DB entry and current `rhetoric-style-summary.m
 
 #### Per-Talk Subagent Instructions:
 
-**A. Download transcript and slides:**
+**A. Download transcript and acquire slides:**
 
 ```bash
 yt-dlp --write-auto-sub --sub-lang en --skip-download --sub-format vtt \
   -o "{vault_root}/transcripts/{youtube_id}" "https://www.youtube.com/watch?v={youtube_id}"
 ```
-```bash
-"{python_path}" -m gdown "https://drive.google.com/uc?id={google_drive_id}" \
-  -O "{vault_root}/slides/{google_drive_id}.pdf"
-```
+
+**Slide acquisition** depends on `slide_source`:
+
+- **`pptx`** or **`both`** (`pptx_path` exists): Run the PPTX extraction script from
+  `references/pptx-extraction.md` inline. This provides exact hex colors, font names,
+  layout names, and shape types — richer than PDF visual analysis. Store results in
+  `structured_data.pptx_visual`. Skip PDF download unless `slide_source` is `"both"`.
+- **`pdf`** (`slides_url` only, no `pptx_path`): Download PDF as before:
+  ```bash
+  "{python_path}" -m gdown "https://drive.google.com/uc?id={google_drive_id}" \
+    -O "{vault_root}/slides/{google_drive_id}.pdf"
+  ```
 
 For VTT cleanup and fallback commands, see `references/download-commands.md`.
 
@@ -95,6 +109,11 @@ For VTT cleanup and fallback commands, see `references/download-commands.md`.
 **C. Return JSON** per the subagent return schema in `references/schemas.md`.
 
 ### Step 3B: Extract Visual Design Data from PPTX Files
+
+**Note:** When a talk's `slide_source` is `"pptx"` or `"both"`, the PPTX extraction
+already ran as part of Step 3 (merged into rhetoric analysis). Step 3B only needs to
+process PPTX files that were NOT used as primary slide sources in Step 3 — typically
+unmatched catalog entries or talks that used PDF as their primary source.
 
 Process .pptx files with `pptx_visual_status: "pending"` or `visual_extracted: false`.
 Uses `python-pptx` for exact design values. See `references/pptx-extraction.md` for the
