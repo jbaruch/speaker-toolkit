@@ -23,7 +23,7 @@ The toolkit has two independent skills connected by a shared **rhetoric vault** 
   (analysis)     +-----------+     (generation)
 ```
 
-**Skill 1: Rhetoric Knowledge Vault** parses your recorded talks (YouTube transcripts + Google Drive slide PDFs) and extracts rhetoric patterns across 14 dimensions — opening hooks, humor style, audience interaction, slide design, pacing, transitions, verbal signatures, and more. After analyzing enough talks, it generates a structured speaker profile.
+**Skill 1: Rhetoric Knowledge Vault** parses your recorded talks (YouTube transcripts + slides from PPTX files or Google Drive PDFs) and extracts rhetoric patterns across 14 dimensions — opening hooks, humor style, audience interaction, slide design, pacing, transitions, verbal signatures, and more. After analyzing enough talks, it generates a structured speaker profile.
 
 **Skill 2: Presentation Creator** reads the vault at runtime and uses your documented patterns as a constitutional style guide to build new presentations. It follows a 7-phase process from intent distillation through slide generation and publishing.
 
@@ -41,10 +41,9 @@ tessl install jbaruch/speaker-toolkit
 
 You need recorded talks with:
 - YouTube videos (for transcripts)
-- Google Drive slides (for PDF analysis)
-- Optionally, the original .pptx source files (for exact design data)
+- Slides in at least one of: `.pptx` source files (preferred — exact design data) or Google Drive PDF exports
 
-Organize your talk metadata as `.md` shownotes files in a directory, each containing a video URL and slides URL.
+Organize your talk metadata as `.md` shownotes files in a directory, each containing a video URL and optionally a slides URL or PPTX path (or both).
 
 Then run:
 ```
@@ -161,8 +160,7 @@ Each talk is analyzed across:
 
 - Talks are processed in **parallel batches of 5** subagents
 - Transcripts are downloaded via `yt-dlp` (with `youtube-transcript-api` fallback)
-- Slide PDFs are downloaded via `gdown`
-- .pptx files are programmatically analyzed with `python-pptx` for exact design values
+- Slides are acquired from PPTX files (preferred, richer data) or downloaded as PDFs via `gdown`
 - Each batch updates the summary and triggers profile regeneration
 - An interactive clarification session resolves ambiguities and captures confirmed intent
 
@@ -170,7 +168,7 @@ Each talk is analyzed across:
 
 - Python 3 with `gdown`, `youtube-transcript-api`, and `python-pptx`
 - `yt-dlp` for transcript downloading
-- Talks published with YouTube video + Google Drive slides
+- Talks with YouTube video + slides (PPTX files and/or Google Drive PDF exports)
 
 ## Creator Skill Details
 
@@ -220,7 +218,7 @@ If the speaker profile doesn't exist yet (fewer than 10 talks parsed), the creat
 ### For the Vault Skill
 - Python 3 environment with `gdown`, `youtube-transcript-api`, `python-pptx`
 - `yt-dlp` command-line tool
-- Talks with YouTube recordings and Google Drive slide exports
+- Talks with YouTube recordings and slides (PPTX files and/or Google Drive exports)
 
 ### For the Creator Skill
 - MCP PPT server (for slide generation)

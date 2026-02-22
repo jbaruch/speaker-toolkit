@@ -3,7 +3,7 @@ name: rhetoric-knowledge-vault
 description: >
   This skill parses presentation talks to catalog specific rhetoric patterns: opening hooks,
   humor style, pacing, transitions, audience interaction, slide design, and verbal signatures.
-  It downloads YouTube transcripts and Google Drive slide PDFs, analyzing HOW the speaker
+  It downloads YouTube transcripts and analyzes slides (from PPTX files or Google Drive PDFs), examining HOW the speaker
   presents. After enough talks are analyzed, it generates a structured speaker profile and
   can create a personalized presentation-creator skill tailored to the speaker's style.
   Triggers: "parse my talks", "run the rhetoric analyzer", "analyze my presentation style",
