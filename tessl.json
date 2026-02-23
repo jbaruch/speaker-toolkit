@@ -1,0 +1,8 @@
+{
+  "name": "speaker-toolkit",
+  "dependencies": {
+    "jbaruch/speaker-toolkit": {
+      "version": "0.3.0"
+    }
+  }
+}
