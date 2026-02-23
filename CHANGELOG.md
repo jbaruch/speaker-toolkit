@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+**Speaker badges & profile Step 6 enhancement** — Profile regeneration now generates
+personalized speaker badges as a fun summary of portfolio-wide achievements, mined from
+real vault data (meme counts, employer transitions, recurring patterns, signature quirks).
+
+- Step 6.7 added: generate speaker badges after profile regeneration
+- Badges must be genuinely personalized to the speaker's quirks, not generic
+- Grounded in aggregated data from all processed talks
+
 ## 0.2.0
 
 **PPTX as primary slide source** — The vault skill no longer requires Google Drive slide

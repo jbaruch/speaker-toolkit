@@ -213,6 +213,12 @@ Store in tracking DB `confirmed_intents` array. These feed directly into the pro
 5. **Diff against existing profile** and report changes (new instruments, revised thresholds,
    new guardrails, structural changes). Flag new presentation modes prominently.
 6. Save to `{vault_root}/speaker-profile.json`.
+7. **Generate speaker badges** — mine the aggregated data for ridiculous achievements,
+   milestones, and self-aware honors. Add as `badges` section in the profile. Examples:
+   total slides analyzed, meme count, employer transitions survived, talk lineages active,
+   recurring patterns the speaker keeps meaning to fix, signature jokes, audience interaction
+   stats. Badges should be genuinely personalized to THIS speaker's quirks, not generic.
+   Make them fun, self-deprecating, and grounded in real vault data.
 
 **Auto-trigger:** Step 4 calls this after every vault update (if profile exists).
 

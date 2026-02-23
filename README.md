@@ -2,11 +2,11 @@
 
 A two-skill system for conference speakers: analyze your existing talks to extract your rhetoric patterns, then create new presentations that match your documented style.
 
-## What's New (0.2.0)
+## What's New (0.3.0)
 
-**PPTX as primary slide source** — Talks with `.pptx` files no longer need Google Drive
-PDFs. PPTX provides richer data (exact hex colors, font names, layout names) and runs
-inline during rhetoric analysis. See [CHANGELOG.md](CHANGELOG.md) for full history.
+**Speaker badges** — Profile regeneration now generates personalized speaker badges:
+fun, self-deprecating achievements mined from real vault data. See [CHANGELOG.md](CHANGELOG.md)
+for full history.
 
 ## How It Works
 
