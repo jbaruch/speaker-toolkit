@@ -1,0 +1,66 @@
+{
+  "context": "Tests whether the agent builds a talk tracking database following the skill's specific schema, status logic, file skip patterns, and slide source determination rules.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Top-level DB structure",
+      "description": "tracking-database.json has top-level keys: config, talks (array), pptx_catalog (array), and confirmed_intents (array)",
+      "max_score": 10
+    },
+    {
+      "name": "Config fields present",
+      "description": "The config object includes at least: vault_root, talks_source_dir, pptx_source_dir, and template_skip_patterns",
+      "max_score": 8
+    },
+    {
+      "name": "Talk fields extracted",
+      "description": "Each talk entry includes at least: filename, title, conference, date, and status",
+      "max_score": 8
+    },
+    {
+      "name": "URL fields parsed",
+      "description": "Talk entries correctly parse video_url and slides_url from the markdown front matter, and extract youtube_id and/or google_drive_id",
+      "max_score": 10
+    },
+    {
+      "name": "Pending status default",
+      "description": "New talks discovered from markdown files get status 'pending' (not 'new', 'unprocessed', or another term)",
+      "max_score": 8
+    },
+    {
+      "name": "Skipped no sources",
+      "description": "The 'AI-Assisted Testing' talk (which has no video_url and no slides) is marked with a status indicating it cannot be processed due to missing sources — not left as 'pending'",
+      "max_score": 10
+    },
+    {
+      "name": "Slide source determination",
+      "description": "Talks with both slides_url and pptx_path get slide_source 'both'; talks with only slides_url get 'pdf'; talks with only pptx_path get 'pptx'",
+      "max_score": 10
+    },
+    {
+      "name": "Static files skipped",
+      "description": "The pptx_catalog or processing log shows that 'DevOps Reframed static.pptx' was skipped/excluded",
+      "max_score": 8
+    },
+    {
+      "name": "Conflict copies skipped",
+      "description": "The pptx_catalog or processing log shows that 'DevOps Reframed (1).pptx' was skipped/excluded",
+      "max_score": 8
+    },
+    {
+      "name": "Template files skipped",
+      "description": "The pptx_catalog or processing log shows that the template file was skipped/excluded",
+      "max_score": 8
+    },
+    {
+      "name": "PPTX-to-talk matching",
+      "description": "The pptx_catalog entries include a reference to their matched talk (by filename or title), with at least 2 correctly matched",
+      "max_score": 6
+    },
+    {
+      "name": "State report format",
+      "description": "The scan report includes counts of processed/remaining talks and PPTX cataloging stats (cataloged, matched, extracted counts)",
+      "max_score": 6
+    }
+  ]
+}

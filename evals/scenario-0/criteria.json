@@ -1,0 +1,61 @@
+{
+  "context": "Tests whether the agent builds a PPTX extraction tool that follows the skill's specific python-pptx extraction patterns, file skip rules, and output schema.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Uses python-pptx",
+      "description": "The extraction script imports and uses python-pptx (not another library like openpyxl or a subprocess call to LibreOffice)",
+      "max_score": 8
+    },
+    {
+      "name": "Skips static files",
+      "description": "Files with 'static' in the name are skipped and not present in extraction results",
+      "max_score": 10
+    },
+    {
+      "name": "Skips conflict copies",
+      "description": "Files matching a (N).pptx pattern (e.g., 'Deck (1).pptx') are skipped and not present in extraction results",
+      "max_score": 10
+    },
+    {
+      "name": "Skips template files",
+      "description": "Files with 'template' in the name are skipped and not present in extraction results",
+      "max_score": 10
+    },
+    {
+      "name": "Background color extraction",
+      "description": "Extracts background color as hex string (e.g., '#5B2C6F') from slide.background.fill, with fallback to slide layout background",
+      "max_score": 8
+    },
+    {
+      "name": "Per-slide output schema",
+      "description": "Each slide's output includes at least: slide_number, background_color_hex, background_type, layout_name, shape_count, has_image, has_speaker_notes, and a shapes_summary array",
+      "max_score": 10
+    },
+    {
+      "name": "Global design statistics",
+      "description": "Output includes a global_design section with at least: fonts_used (frequency count), background_colors (frequency count), and color_sequence (ordered list)",
+      "max_score": 10
+    },
+    {
+      "name": "Shape type tracking",
+      "description": "The extraction identifies auto-shape types (e.g., CLOUD_CALLOUT, EXPLOSION) and tracks them in the output, not just generic 'shape' labels",
+      "max_score": 8
+    },
+    {
+      "name": "Font extraction",
+      "description": "Extracts font name, font size, and font color from text runs within shapes",
+      "max_score": 8
+    },
+    {
+      "name": "Footer detection",
+      "description": "Identifies footer text by position — detecting text shapes in the bottom portion of the slide (approximately bottom 15%)",
+      "max_score": 10
+    },
+    {
+      "name": "Recursive directory scan",
+      "description": "Scans the input directory recursively using **/*.pptx glob pattern (not just top-level files)",
+      "max_score": 8
+    }
+  ]
+}

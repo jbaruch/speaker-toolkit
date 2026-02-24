@@ -1,0 +1,35 @@
+{
+  "total_infeasible": 6,
+  "infeasible_scenarios": [
+    {
+      "scenarios": "Full end-to-end talk processing pipeline",
+      "skill": "rhetoric-knowledge-vault",
+      "reasoning": "Requires downloading real YouTube transcripts (yt-dlp/youtube-transcript-api) and Google Drive PDFs (gdown) with real URLs. Network services may be unavailable, rate-limited, or return different content. Cannot guarantee reproducible results within 10-minute timeout."
+    },
+    {
+      "scenarios": "Interactive clarification session (Step 5)",
+      "skill": "rhetoric-knowledge-vault",
+      "reasoning": "Step 5 requires multi-turn interactive conversation via AskUserQuestion to resolve ambiguities, validate findings, and capture speaker intent. The eval is one-shot with no user interaction available."
+    },
+    {
+      "scenarios": "Parallel batch processing with 5 subagents",
+      "skill": "rhetoric-knowledge-vault",
+      "reasoning": "The skill requires launching 5 subagents in parallel per batch. The eval sandbox may not support parallel subagent orchestration, and testing the parallelism itself (vs sequential processing) requires process monitoring not available to the grader."
+    },
+    {
+      "scenarios": "Full interactive presentation creation workflow",
+      "skill": "presentation-creator",
+      "reasoning": "The skill defines a 6-phase workflow with author approval gates at each phase. The agent must use AskUserQuestion for structured choices and conversational clarification. The eval is one-shot with no interactive capability."
+    },
+    {
+      "scenarios": "Live slide generation with MCP PPT server",
+      "skill": "presentation-creator",
+      "reasoning": "Phase 5 requires the MCP PPT server (add_slide, populate_placeholder, manage_image, etc.) to build the .pptx deck interactively. The MCP PPT server is not available in the eval sandbox."
+    },
+    {
+      "scenarios": "PDF export and publishing workflow",
+      "skill": "presentation-creator",
+      "reasoning": "Phase 6 requires PowerPoint application (AppleScript for PDF export), git operations for shownotes publishing, QR code generation, and potentially custom export scripts. None of these are available in the eval sandbox."
+    }
+  ]
+}

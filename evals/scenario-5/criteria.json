@@ -1,0 +1,66 @@
+{
+  "context": "Tests whether the agent produces a presentation outline following the skill's specific markdown format, placeholder conventions, callback markers for recurring elements, meme brief structure, and modular design markers.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Section time annotations",
+      "description": "Outline sections use the format '## Section Name [N min, slides X-Y]' with both time allocation and slide range",
+      "max_score": 10
+    },
+    {
+      "name": "Typed placeholders",
+      "description": "Outline contains at least 2 different placeholder types from the set: [AUTHOR NN], [DEMO NN], [DATA NN], [SCREENSHOT NN], [MEME NN]",
+      "max_score": 8
+    },
+    {
+      "name": "Independent numbering",
+      "description": "Each placeholder type uses its own numbering sequence (e.g., [MEME 01], [MEME 02] separately from [DATA 01], [DATA 02]) — not a single global counter",
+      "max_score": 10
+    },
+    {
+      "name": "Meme brief structure",
+      "description": "At least one meme placeholder includes a structured brief with all four fields: template/image name, search query for sourcing, overlay text to apply, and what argument the meme serves",
+      "max_score": 10
+    },
+    {
+      "name": "Recurring element tracking",
+      "description": "The outline explicitly marks where the recurring 'security theater' metaphor or 'checklist' visual reappears later in the talk, using bracketed annotations that reference the earlier slide number or element",
+      "max_score": 12
+    },
+    {
+      "name": "Cut line present",
+      "description": "Outline contains a [CUT LINE] marker indicating where content can be dropped for a shorter version",
+      "max_score": 8
+    },
+    {
+      "name": "Opening sequence",
+      "description": "The first 5 slides include a title slide, an opening hook, a brief bio, and a shownotes URL slide (in approximately that order)",
+      "max_score": 8
+    },
+    {
+      "name": "Three-part closing",
+      "description": "The closing sequence includes all three elements: a numbered summary (with exactly 3 points), a call-to-action, and social/shownotes handles",
+      "max_score": 8
+    },
+    {
+      "name": "Slide budget compliance",
+      "description": "Total slide count stays at or below 70 (the budget for a 45-minute slot from the profile)",
+      "max_score": 8
+    },
+    {
+      "name": "Speaker notes present",
+      "description": "At least 5 slides include speaker notes written in conversational voice (not just visual descriptions)",
+      "max_score": 6
+    },
+    {
+      "name": "Verbal signatures used",
+      "description": "Speaker notes include at least 2 of the verbal signatures from the vault: 'is not a thing', 'right?', 'raise your hand if', 'full stop', 'okay so'",
+      "max_score": 6
+    },
+    {
+      "name": "Slide budget header",
+      "description": "The outline header includes a slide budget line showing the total allowed slides for the duration",
+      "max_score": 6
+    }
+  ]
+}

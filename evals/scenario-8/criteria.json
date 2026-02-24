@@ -1,0 +1,56 @@
+{
+  "context": "Tests whether the agent correctly adapts a solo outline for co-presentation following the skill's specific dual-speaker conventions: speaker prefixes in notes, footer adaptation, role split clarity, and handoff marking.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Speaker prefixes in notes",
+      "description": "Speaker notes use [SPEAKER A]: and [SPEAKER B]: (or equivalent named prefixes like [MORGAN]: / [RILEY]:) to indicate who is speaking on each slide",
+      "max_score": 15
+    },
+    {
+      "name": "Footer includes co-presenter",
+      "description": "The footer pattern is updated to include both speakers' handles (e.g., '@morgandev & @rileyops' or similar combined format)",
+      "max_score": 12
+    },
+    {
+      "name": "Role split documented",
+      "description": "The outline or adaptation checklist clearly documents which speaker owns which sections (Morgan = philosophy/culture, Riley = tooling/incident response)",
+      "max_score": 10
+    },
+    {
+      "name": "Handoff points marked",
+      "description": "At least 2 explicit handoff points are marked in the outline where speaker transitions occur (between Morgan's and Riley's sections)",
+      "max_score": 12
+    },
+    {
+      "name": "Riley owns tooling section",
+      "description": "The tooling deep dive section (slides 26-35 area) has speaker notes attributed to Riley/Speaker B, not Morgan/Speaker A",
+      "max_score": 10
+    },
+    {
+      "name": "Riley owns incident section",
+      "description": "The incident response section (slides 36-42 area) has speaker notes attributed to Riley/Speaker B",
+      "max_score": 10
+    },
+    {
+      "name": "Morgan keeps opening/closing",
+      "description": "The opening sequence and closing sequence remain attributed to Morgan/Speaker A (the vault speaker owns bookends)",
+      "max_score": 8
+    },
+    {
+      "name": "Adaptation checklist produced",
+      "description": "An adaptation checklist is produced covering at least: footer changes, role split, and slide ownership",
+      "max_score": 8
+    },
+    {
+      "name": "Three-part close preserved",
+      "description": "The closing still includes all three elements: numbered summary, CTA, and social handles (now for both speakers)",
+      "max_score": 8
+    },
+    {
+      "name": "Verbal handoff cues",
+      "description": "Speaker notes include verbal handoff cues at transition points (e.g., 'I'll hand it over to Riley who's going to show you...')",
+      "max_score": 7
+    }
+  ]
+}

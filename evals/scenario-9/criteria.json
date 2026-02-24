@@ -1,0 +1,71 @@
+{
+  "context": "Tests whether the agent follows the CFP abstract writing workflow from the skill: lighter Phase 0-1, skips Phase 2, and produces the required deliverables (title, abstract within word count, takeaways count, and speaker bio).",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Abstract word count",
+      "description": "The abstract is between 200 and 300 words (inclusive)",
+      "max_score": 10
+    },
+    {
+      "name": "Takeaway count",
+      "description": "The submission includes between 3 and 5 key takeaways as bullet points",
+      "max_score": 10
+    },
+    {
+      "name": "Speaker bio included",
+      "description": "A speaker bio is included, drawing from the profile's bio_short and bio_context fields",
+      "max_score": 8
+    },
+    {
+      "name": "Title present",
+      "description": "The submission includes a talk title that relates to the AI code assistants topic",
+      "max_score": 6
+    },
+    {
+      "name": "Presentation spec produced",
+      "description": "A separate presentation spec document is produced with at least: title, thesis, audience, venue, and mode fields",
+      "max_score": 10
+    },
+    {
+      "name": "Spec includes mode",
+      "description": "The presentation spec references a mode from the speaker profile (e.g., 'Myth Buster') rather than inventing a new mode",
+      "max_score": 8
+    },
+    {
+      "name": "No full architecture",
+      "description": "The output does NOT include a full rhetorical architecture (no instrument selection menu, no slide budget, no outline sections) — the CFP workflow skips the architecture phase",
+      "max_score": 10
+    },
+    {
+      "name": "Speaker voice in abstract",
+      "description": "The abstract reflects the speaker's voice — contains at least one of: a provocative framing, a bold claim, or a myth-busting angle (not generic academic prose)",
+      "max_score": 8
+    },
+    {
+      "name": "Spec includes duration",
+      "description": "The presentation spec captures the duration target (30 or 45 minutes based on the conference slot options)",
+      "max_score": 6
+    },
+    {
+      "name": "Spec includes profanity register",
+      "description": "The presentation spec includes a profanity register setting (informed by the per_audience calibration from the profile and the DevRel audience)",
+      "max_score": 6
+    },
+    {
+      "name": "Spec includes commercial intent",
+      "description": "The presentation spec includes a commercial intent field",
+      "max_score": 6
+    },
+    {
+      "name": "Spec includes shownotes slug",
+      "description": "The presentation spec includes a shownotes slug derived from the speaker profile's URL pattern (e.g., sam.codes/ai-code-assistants or similar)",
+      "max_score": 6
+    },
+    {
+      "name": "Anti-sell awareness",
+      "description": "The abstract or spec acknowledges the sensitivity of the topic for a DevRel audience (people who promote AI tools), showing awareness of the anti-sell dynamic",
+      "max_score": 6
+    }
+  ]
+}

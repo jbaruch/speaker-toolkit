@@ -1,0 +1,557 @@
+{
+  "instructions": [
+    {
+      "instruction": "Create tracking-database.json with empty config, talks, pptx_catalog, and confirmed_intents arrays if the file is missing",
+      "original_snippets": "Read `tracking-database.json` (create with empty `config`, `talks`, `pptx_catalog` if missing).",
+      "relevant_when": "Initializing a new vault or starting work on a vault that has no tracking database",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Tracking database config must contain specific fields: vault_root, talks_source_dir, pptx_source_dir, python_path, template_skip_patterns",
+      "original_snippets": "Config field | Question | Auto-detect ... vault_root ... talks_source_dir ... pptx_source_dir ... python_path ... template_skip_patterns",
+      "relevant_when": "Creating or validating the tracking database schema",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Scan for new talks by globbing *.md in talks_source_dir, parse each for title, conference, date, URLs, IDs, and add with status 'pending'",
+      "original_snippets": "Scan for new talks: Glob `*.md` in `talks_source_dir`. For each file not in the `talks` array, parse and add (extract title, conference, date, URLs, IDs, status `\"pending\"`).",
+      "relevant_when": "Discovering talk metadata files and building the talks array",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Scan for .pptx files using recursive glob **/*.pptx in pptx_source_dir",
+      "original_snippets": "Scan for .pptx files: Glob `**/*.pptx` in `pptx_source_dir`.",
+      "relevant_when": "Cataloging presentation files for matching to talks",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Skip .pptx files named *static*, *(N).pptx (conflict copies), or matching template_skip_patterns",
+      "original_snippets": "Skip files named `*static*`, `*(N).pptx` (conflict copies), or matching `template_skip_patterns`. ... PPTX files named `*static*` or `*(N).pptx` are always skipped.",
+      "relevant_when": "Scanning .pptx files for cataloging or extraction",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Fuzzy-match .pptx files to talks by conference name and title, flagging ambiguous matches for user confirmation",
+      "original_snippets": "Fuzzy-match each to a `talks[]` entry by conference + title. ... 1. Normalize conference names (strip year, 'Days', 'Conference', etc.) 2. Match by date proximity 3. Match by title substring 4. Flag ambiguous matches",
+      "relevant_when": "Associating .pptx files with talk entries in the tracking database",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Determine slide_source as 'pptx' if only pptx_path, 'pdf' if only slides_url, 'both' if both exist",
+      "original_snippets": "Set `slide_source` on each processable talk: `\"pptx\"` if only `pptx_path`, `\"pdf\"` if only `slides_url`, `\"both\"` if both exist.",
+      "relevant_when": "Determining how to acquire slide data for a talk",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Mark talks missing video_url or missing BOTH slides_url and pptx_path as 'skipped_no_sources'",
+      "original_snippets": "Talks missing `video_url` or missing BOTH `slides_url` and `pptx_path`: mark `\"skipped_no_sources\"`, skip.",
+      "relevant_when": "Filtering processable vs non-processable talks",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Use yt-dlp with specific flags: --write-auto-sub --sub-lang en --skip-download --sub-format vtt",
+      "original_snippets": "yt-dlp --write-auto-sub --sub-lang en --skip-download --sub-format vtt -o \"{vault_root}/transcripts/{youtube_id}\" \"https://www.youtube.com/watch?v={youtube_id}\"",
+      "relevant_when": "Downloading YouTube transcripts for talk analysis",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Clean VTT files: strip timestamp lines (\\d{2}:\\d{2}.*-->), strip cue position markers (align:start position:%), remove blank lines, deduplicate consecutive identical lines, save as .txt",
+      "original_snippets": "1. Strip all timestamp lines (lines matching `\\d{2}:\\d{2}.*-->`) 2. Strip cue position markers (lines like `align:start position:0%`) 3. Remove blank lines 4. Deduplicate consecutive identical lines 5. Save the cleaned text as `{vault_root}/transcripts/{youtube_id}.txt`",
+      "relevant_when": "Processing VTT subtitle files into clean transcript text",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Use youtube-transcript-api as fallback if yt-dlp fails",
+      "original_snippets": "Use if yt-dlp fails (e.g., no auto-captions available): ... from youtube_transcript_api import YouTubeTranscriptApi",
+      "relevant_when": "When primary transcript download method fails",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Use gdown for Google Drive PDF slide downloads with specific command format",
+      "original_snippets": "\"{python_path}\" -m gdown \"https://drive.google.com/uc?id={google_drive_id}\" -O \"{vault_root}/slides/{google_drive_id}.pdf\"",
+      "relevant_when": "Downloading slide PDFs from Google Drive",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Use the specific python-pptx extraction script from pptx-extraction.md for PPTX visual data extraction",
+      "original_snippets": "Run the PPTX extraction script from `references/pptx-extraction.md` inline. This provides exact hex colors, font names, layout names, and shape types",
+      "relevant_when": "Extracting visual design data from .pptx files",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "PPTX extraction must output JSON with per_slide_visual array and global_design object containing fonts_used, background_colors, shape_types_used, and color_sequence",
+      "original_snippets": "result = { \"pptx_path\": pptx_path, \"slide_count\": len(prs.slides), ... \"per_slide_visual\": [], \"global_design\": { \"fonts_used\": Counter(), \"background_colors\": Counter(), \"shape_types_used\": Counter(), \"color_sequence\": [] } }",
+      "relevant_when": "Producing PPTX extraction output",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Extract background color using slide.background.fill first, falling back to slide_layout.background.fill",
+      "original_snippets": "def get_background_color(slide): ... bg = slide.background ... # Fall back to slide layout background ... layout_bg = slide.slide_layout.background.fill",
+      "relevant_when": "Extracting background colors from PowerPoint slides",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Detect footer text by position: text shapes in the bottom 15% of the slide (shape.top > slide_height * 0.85)",
+      "original_snippets": "# Detect footer by position (bottom 15% of slide) and small font ... if shape.top and shape.top > prs.slide_height * 0.85: slide_data[\"footer_text\"] = shape.text_frame.text",
+      "relevant_when": "Identifying footer elements in PPTX slides",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Analyze all 14 rhetoric dimensions from rhetoric-dimensions.md, including dimension 14 (Areas for Improvement)",
+      "original_snippets": "Apply all 14 dimensions from `references/rhetoric-dimensions.md` (including dimension 14: Areas for Improvement).",
+      "relevant_when": "Analyzing a talk for rhetoric and style patterns",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Per-slide visual classification must include: background color name, content type, image composition, speech bubble present, starburst present, footer visible",
+      "original_snippets": "For EACH slide, determine: Background color name ... Content type ... Image composition ... Speech bubble present? ... Starburst/explosion shape present? ... Footer visible?",
+      "relevant_when": "Classifying slide visual elements during talk analysis",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Record background_color_sequence for every slide in order",
+      "original_snippets": "Record the background color of every slide in order as `background_color_sequence`.",
+      "relevant_when": "Tracking slide color patterns across a talk",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Extract structured_data with specific fields: slide_count, talk_duration_estimate, meme_count, image_only_slide_count, audience_interaction_count, opening_type, closing_type, narrative_arc_type, slide_design_style, opening_sequence, closing_sequence",
+      "original_snippets": "Count and categorize these for the `structured_data` output: slide_count ... talk_duration_estimate ... meme_count ... image_only_slide_count ... audience_interaction_count ... opening_type ... closing_type ... narrative_arc_type ... slide_design_style ... opening_sequence ... closing_sequence",
+      "relevant_when": "Producing structured analysis output for a talk",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Extract verbatim_examples with fields: signature_phrases, jokes, transitions, audience_addresses, opening_lines, closing_lines",
+      "original_snippets": "Extract ACTUAL QUOTES from the transcript for the `verbatim_examples` output: signature_phrases ... jokes ... transitions ... audience_addresses ... opening_lines ... closing_lines",
+      "relevant_when": "Extracting verbatim quotes from talk transcripts",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Subagent return JSON must follow the schema: filename, rhetoric_notes (500-1000 words), areas_for_improvement (100-300 words), structured_data, verbatim_examples, adherence_assessment, new_patterns, summary_updates",
+      "original_snippets": "{ \"filename\": \"the .md filename\", \"rhetoric_notes\": \"500-1000 words\", \"areas_for_improvement\": \"100-300 words\", \"structured_data\": {...}, \"verbatim_examples\": {...}, \"adherence_assessment\": \"...\", \"new_patterns\": \"...\", \"summary_updates\": \"...\" }",
+      "relevant_when": "Producing the output of a talk analysis subagent",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Error handling matrix: transcript OK + slides OK \u2192 'processed'; transcript FAIL + slides OK \u2192 'processed_partial'; transcript OK + slides FAIL \u2192 'processed_partial'; both FAIL \u2192 'skipped_download_failed'",
+      "original_snippets": "Transcript | Slides | Status | Action ... OK | OK | processed | Full analysis ... FAIL | OK | processed_partial | Slides only ... OK | FAIL | processed_partial | Transcript only ... FAIL | FAIL | skipped_download_failed | Skip, move on",
+      "relevant_when": "Setting status after processing a talk with download failures",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Summary updates must be additive \u2014 refine and consolidate but never delete existing content",
+      "original_snippets": "Be additive; refine and consolidate but never delete. ... Preserve all summary content \u2014 add/refine, never delete.",
+      "relevant_when": "Updating the rhetoric-style-summary.md document",
+      "why_given": "particular preference",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Summary sections map to profile fields: Section 1\u2192presentation_modes, Sections 2-13\u2192instrument_catalog, Section 15\u2192recurring_issues, Section 16\u2192confirmed_intents + rhetoric_defaults",
+      "original_snippets": "Section 1: Presentation modes (\u2192 profile `presentation_modes`) ... Sections 2-13: Instrument catalogs (\u2192 profile `instrument_catalog`) ... Section 15: Areas for improvement (\u2192 profile `guardrail_sources.recurring_issues`) ... Section 16: Speaker-confirmed intent (\u2192 profile `confirmed_intents` + `rhetoric_defaults`)",
+      "relevant_when": "Mapping rhetoric summary sections to speaker profile fields",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Confirmed intents stored as JSON objects with fields: pattern, intent (deliberate|accidental|context_dependent), rule, note",
+      "original_snippets": "{\"pattern\": \"delayed_self_introduction\", \"intent\": \"deliberate\", \"rule\": \"Two-phase intro: brief bio slide 3, full re-intro mid-talk\", \"note\": \"Confirmed intentional rhetorical device\"}",
+      "relevant_when": "Recording speaker-confirmed design decisions",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Generate speaker profile only after 10+ talks parsed AND one clarification session completed",
+      "original_snippets": "When: 10+ talks parsed AND one clarification session completed. Also on explicit request.",
+      "relevant_when": "Deciding whether to generate the speaker profile",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Speaker profile must follow the schema from speaker-profile-schema.md with all sections: speaker, infrastructure, presentation_modes, design_rules, rhetoric_defaults, confirmed_intents, pacing, guardrail_sources, instrument_catalog, publishing_process",
+      "original_snippets": "Generate `speaker-profile.json` per `references/speaker-profile-schema.md`: speaker \u2190 config fields ... infrastructure \u2190 config + template layouts ... presentation_modes ... design_rules ... rhetoric_defaults ... confirmed_intents ... pacing ... guardrail_sources ... instrument_catalog ... publishing_process",
+      "relevant_when": "Generating or validating the speaker profile JSON",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Speaker profile must include schema_version: 1",
+      "original_snippets": "\"schema_version\": 1",
+      "relevant_when": "Generating the speaker profile",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Generate speaker badges \u2014 personalized, fun, self-deprecating achievements grounded in real vault data",
+      "original_snippets": "Generate speaker badges \u2014 mine the aggregated data for ridiculous achievements, milestones, and self-aware honors. Add as `badges` section in the profile. ... Badges should be genuinely personalized to THIS speaker's quirks, not generic. Make them fun, self-deprecating, and grounded in real vault data.",
+      "relevant_when": "Generating the speaker profile badges section",
+      "why_given": "particular preference",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Auto-regenerate speaker profile after every vault update if the profile already exists",
+      "original_snippets": "Auto-regenerate speaker profile (Step 6) if it already exists. Report the diff.",
+      "relevant_when": "After processing a batch of talks when profile exists",
+      "why_given": "particular preference",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Create transcripts/ and slides/ directories if missing before downloading",
+      "original_snippets": "Create `transcripts/` and `slides/` dirs if missing before downloading.",
+      "relevant_when": "Preparing to download transcripts or slide PDFs",
+      "why_given": "reminder",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Re-read tracking database before every write \u2014 it is the single source of truth",
+      "original_snippets": "Re-read tracking DB before writing (single source of truth).",
+      "relevant_when": "Any time the tracking database is about to be written",
+      "why_given": "particular preference",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Process talks in parallel batches of 5 subagents",
+      "original_snippets": "Per batch: launch 5 subagents in parallel, wait, run Step 4, then next batch.",
+      "relevant_when": "Processing multiple talks for rhetoric analysis",
+      "why_given": "particular preference",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "After 10+ talks, start providing adherence assessments in analysis output",
+      "original_snippets": "After 10+ talks, start providing adherence assessments.",
+      "relevant_when": "Analyzing a talk when the vault already has 10+ talks processed",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "PPTX extraction output must include per-slide: slide_number, background_color_hex, background_type, layout_name, shape_count, has_text_placeholder, has_image, has_speaker_notes, text_content_preview, footer_text, shapes_summary array",
+      "original_snippets": "slide_data = { \"slide_number\": i + 1, \"background_color_hex\": bg_hex, \"background_type\": bg_type, \"layout_name\": ..., \"shape_count\": ..., \"has_text_placeholder\": False, \"has_image\": False, \"has_speaker_notes\": bool(...), \"text_content_preview\": \"\", \"footer_text\": \"\", \"shapes_summary\": [] }",
+      "relevant_when": "Structuring per-slide visual extraction output",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Identify auto-shape types for speech bubbles and starbursts using MSO_SHAPE_TYPE.AUTO_SHAPE and auto_shape_type",
+      "original_snippets": "if shape.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE: ... info[\"auto_shape_type\"] = str(shape.auto_shape_type)",
+      "relevant_when": "Identifying special shapes in PPTX extraction",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Use specific opening_type categories: provocative_image, failure_framing, audience_poll, story, bold_claim, demo_cold_open",
+      "original_snippets": "opening_type: Categorize as one of: provocative_image|failure_framing|audience_poll|story|bold_claim|demo_cold_open",
+      "relevant_when": "Categorizing the opening type in structured_data",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Use specific closing_type categories: summary_cta, callback, open_question, demo_finale, resource_list",
+      "original_snippets": "closing_type: Categorize as one of: summary_cta|callback|open_question|demo_finale|resource_list",
+      "relevant_when": "Categorizing the closing type in structured_data",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Use specific narrative_arc_type categories: problem_diagnosis_solution, discovery_demo, chronological, listicle",
+      "original_snippets": "narrative_arc_type: problem_diagnosis_solution|discovery_demo|chronological|listicle",
+      "relevant_when": "Categorizing the narrative arc in structured_data",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Use specific slide_design_style categories: comic_book, minimal_dark, demo_scaffolding, mixed",
+      "original_snippets": "slide_design_style: comic_book|minimal_dark|demo_scaffolding|mixed",
+      "relevant_when": "Categorizing the slide design style in structured_data",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Report vault state using format: 'X processed, Y remaining. PPTX: A cataloged, B matched, C extracted.'",
+      "original_snippets": "Report state: \"X processed, Y remaining. PPTX: A cataloged, B matched, C extracted.\"",
+      "relevant_when": "Reporting the current state of the vault after scanning",
+      "why_given": "particular preference",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Load vault documents in order: rhetoric-style-summary.md (constitution), slide-design-spec.md (visual rules), speaker-profile.json (structured data)",
+      "original_snippets": "Load order \u2014 read all three from vault root: ... summary: rhetoric-style-summary.md ... design: slide-design-spec.md ... profile: speaker-profile.json",
+      "relevant_when": "Starting work on any presentation creation task",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Freshness check: if profile generated_date < summary 'Last updated', warn about potential stale data",
+      "original_snippets": "Freshness check: If `profile.generated_date < summary.\"Last updated\"`, warn that new talks may have been parsed \u2014 offer to run 'update speaker profile' first.",
+      "relevant_when": "Loading vault documents at the start of a presentation task",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Expect schema_version: 1 in speaker profile, warn if higher",
+      "original_snippets": "Schema version: This skill expects `schema_version: 1`. Warn if higher.",
+      "relevant_when": "Loading and validating the speaker profile",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "If profile doesn't exist (vault has <10 talks), run in summary-only mode with fallback thresholds: 1.5 slides/min, 45% Act 1 cap, three-part close",
+      "original_snippets": "If profile doesn't exist (vault has <10 talks), run in summary-only mode: ... Phase 4: Guardrails | Default thresholds: 1.5 slides/min, 45% Act 1 cap, three-part close",
+      "relevant_when": "When the vault has fewer than 10 talks processed and no profile exists",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Do not skip phases. Do not write content before Phase 3. Phase 2 is joint, not autonomous.",
+      "original_snippets": "Do not skip phases. Do not write content before Phase 3. Phase 2 is joint, not autonomous.",
+      "relevant_when": "Following the presentation creation workflow",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Presentation Spec must include: Title, Thesis, Audience, Venue, Mode, Commercial intent, Must-include, Must-avoid, Co-presenter, Profanity register, Duration target, Shownotes slug",
+      "original_snippets": "PRESENTATION SPEC ... Title: ... Thesis: ... Audience: ... Venue: ... Mode: ... Commercial intent: ... Must-include: ... Must-avoid: ... Co-presenter: ... Profanity register: ... Duration target: ... Shownotes slug:",
+      "relevant_when": "Producing the intent distillation output in Phase 1",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Mode selection comes from profile presentation_modes[], not a static list",
+      "original_snippets": "The instrument menu comes from the vault, not from a static file. Read the rhetoric summary (sections 2-13) and profile `instrument_catalog` to extract available options.",
+      "relevant_when": "Selecting the presentation mode during Phase 2",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Slide budget from profile guardrail_sources.slide_budgets: 20min\u219230, 30min\u219245, 45min\u219270, 60min\u219290, 75min\u2192110 slides",
+      "original_snippets": "Slide budget (from `profile \u2192 guardrail_sources.slide_budgets`): 20 min | 30 ... 30 min | 45 ... 45 min | 70 ... 60 min | 90 ... 75 min | 110",
+      "relevant_when": "Calculating slide budget for a presentation",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Outline format: ## sections with [N min, slides X-Y] time and slide range annotations",
+      "original_snippets": "## Opening Sequence [3 min, slides 1-5] ... ## Act 1: [Title] [N min, slides X-Y]",
+      "relevant_when": "Writing the presentation outline",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Use typed, independently-numbered placeholders: [AUTHOR 01], [DEMO 01], [DATA 01], [SCREENSHOT 01], [MEME 01]",
+      "original_snippets": "Placeholders use typed, independent numbering: `[AUTHOR 01]`, `[DEMO 01]`, `[DATA 01]`, `[SCREENSHOT 01]`, `[MEME 01]` ... Each type uses independent numbering.",
+      "relevant_when": "Writing placeholder content in the outline",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Meme briefs must include: Template name, Search query, Overlay text, Rhetorical function",
+      "original_snippets": "[MEME 01] Template: [meme template name] Search query: \"[search terms]\" Overlay text: [specific text] Rhetorical function: [what argument this meme serves]",
+      "relevant_when": "Creating meme placeholders in the outline",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Mark callbacks explicitly: [CALLBACK: reference to {element} from slide {N}], [PROGRESSIVE LIST: ...], [RUNNING GAG: Nth appearance of {gag}]",
+      "original_snippets": "[CALLBACK: reference to {element} from slide {N} \u2014 {variation}] [PROGRESSIVE LIST: {list name} gains Nth item from slide {N}] [RUNNING GAG: Nth appearance of {gag}]",
+      "relevant_when": "Identifying and marking callback opportunities in the outline",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Include [CUT LINE] markers for shorter slot adaptation",
+      "original_snippets": "## [CUT LINE: Everything below here can be dropped for short version] ... [CUT LINE] markers for shorter slot adaptation ... [EXPAND ZONE] markers for sections that can grow",
+      "relevant_when": "Building modular outlines that can adapt to different time slots",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Opening sequence should include title slide, opening hook, brief bio, shownotes URL",
+      "original_snippets": "### Slide 1: Title Slide ... ### Slide 2: [Opening hook type] ... ### Slide 3: Brief Bio ... ### Slide 4: Shownotes URL",
+      "relevant_when": "Structuring the opening of a presentation outline",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Three-part close: summary (2-3 bullet points), CTA (specific actionable step), social (handles + shownotes URL)",
+      "original_snippets": "Summary: At least 2-3 bullet points crystallizing the argument ... CTA: At least one specific, actionable next step ... Social: Speaker handles + shownotes URL",
+      "relevant_when": "Structuring the closing sequence of a presentation",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "For co-presented talks, use [SPEAKER A]: / [SPEAKER B]: prefixes in all speaker notes",
+      "original_snippets": "Use `[SPEAKER A]:` / `[SPEAKER B]:` prefixes in notes ... Voice Differentiation (use `[SPEAKER A]:` / `[SPEAKER B]:` prefixes in notes throughout the outline)",
+      "relevant_when": "Creating outlines for co-presented talks",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "For co-presented talks, add footer adaptation per design_rules.footer.co_presented_extra",
+      "original_snippets": "If co-presented, add: ... Footer Adaptation (`design_rules.footer.co_presented_extra`)",
+      "relevant_when": "Handling branding for co-presented talks",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Run all 9 guardrail checks: slide budget, Act 1 ratio, branding, profanity, data attribution, time-sensitive content, closing completeness, cut lines, anti-pattern flags",
+      "original_snippets": "[PASS/FAIL] Slide budget ... [PASS/WARN] Act 1 ratio ... [PASS/FAIL] Branding ... [PASS/FAIL] Profanity ... [PASS/FAIL] Data attribution ... [PASS/FAIL] Time-sensitive ... [PASS/FAIL] Closing ... [PASS/FAIL] Cut lines ... [INFO] Anti-patterns",
+      "relevant_when": "Running quality checks on a presentation outline",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Guardrail report uses format: GUARDRAIL CHECK \u2014 {title} with [PASS/FAIL/WARN] prefix per check",
+      "original_snippets": "GUARDRAIL CHECK \u2014 {talk title} \u2014 {date} ================================================ [PASS] Slide budget: {actual}/{max} ...",
+      "relevant_when": "Formatting the guardrail check output",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Act 1 ratio limits from profile: 20-30min\u219240%, 45min\u219245%, 60+min\u219250%",
+      "original_snippets": "act1_ratio_limits: [{\"duration_range\": \"20-30 min\", \"max_percent\": 40}, {\"duration_range\": \"45 min\", \"max_percent\": 45}, {\"duration_range\": \"60+ min\", \"max_percent\": 50}]",
+      "relevant_when": "Checking the problem-section balance in guardrails",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Progressive-reveal slides count toward the slide budget (3 reveals = 3 slides, not 1)",
+      "original_snippets": "Progressive-reveal slides count toward the budget. If you show the same chart 3 times with different bars highlighted, that's 3 slides, not 1.",
+      "relevant_when": "Counting slides for budget compliance",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "On-slide profanity should be verbal-only by default \u2014 flag any baked-in profanity for approval",
+      "original_snippets": "keep profanity verbal-only by default. On-slide profanity limits deck reuse across venues. ... If on-slide profanity is present without explicit approval, flag it",
+      "relevant_when": "Auditing profanity in presentation content",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Strip demo slides from template using python-pptx drop_rel pattern before building deck",
+      "original_snippets": "tmpl = Presentation('{template_pptx_path}') ... xml_slides = tmpl.slides._sldIdLst ... for sldId in list(xml_slides): rId = sldId.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id') ... tmpl.part.drop_rel(rId) ... xml_slides.remove(sldId)",
+      "relevant_when": "Creating a clean deck from a template for slide generation",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Inject speaker notes via python-pptx batch, not MCP (MCP doesn't support notes)",
+      "original_snippets": "Batch-inject via python-pptx (MCP doesn't support notes). ... The MCP PPT server does not support speaker notes. Use python-pptx directly as a batch operation after all slides are generated via MCP.",
+      "relevant_when": "Adding speaker notes to a generated deck",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Add footer to EVERY slide using manage_text, with position, font, and color from design_rules.footer",
+      "original_snippets": "Add footer to EVERY slide using `manage_text`. The footer pattern template is in `footer.pattern` \u2014 substitute conference-specific values.",
+      "relevant_when": "Adding branding footer to generated slides",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Background color strategy from profile: random_non_repeating means never repeat on adjacent slides",
+      "original_snippets": "design_rules.background_color_strategy ... `random_non_repeating` \u2014 pick a random saturated color, never repeat on adjacent slides",
+      "relevant_when": "Selecting background colors during slide generation",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "White/black backgrounds reserved for full-bleed image/meme slides only",
+      "original_snippets": "Read `design_rules.white_black_reserved_for` to know when white/black backgrounds are appropriate (typically full-bleed image/meme slides only).",
+      "relevant_when": "Choosing background colors for slides",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Slide numbers are typically 'never' per design_rules.slide_numbers",
+      "original_snippets": "design_rules.slide_numbers \u2014 typically \"never\"",
+      "relevant_when": "Deciding whether to add slide numbers",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "CFP abstract writing: complete Phase 0-1 (lighter), skip Phase 2, produce title + abstract (200-300 words) + key takeaways (3-5 bullets) + speaker bio",
+      "original_snippets": "1. Complete Phase 0-1 (lighter touch) 2. Skip Phase 2 (not needed for an abstract) 3. Write: title, abstract (200-300 words), key takeaways (3-5 bullets), speaker bio 4. Phase 4 revision as normal",
+      "relevant_when": "Writing a conference call-for-papers submission",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "When adapting existing talks: copy previous deck as starting point, do NOT start from fresh template",
+      "original_snippets": "Copy the previous deck as starting point \u2014 do NOT start from fresh template.",
+      "relevant_when": "Adapting an existing talk for a new audience or venue",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Adaptation checklist includes: footer, shownotes slug, time-sensitive content, slide budget, profanity register, locale references, commercial intent",
+      "original_snippets": "Auto-generate adaptation checklist: footer, shownotes slug, time-sensitive content, slide budget, profanity register, locale references, commercial intent.",
+      "relevant_when": "Adapting an existing talk for a new venue",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Voice calibration: place verbal signatures from vault organically \u2014 don't force them",
+      "original_snippets": "Read verbal signatures from the vault summary ... Place them where they fit organically \u2014 don't force them.",
+      "relevant_when": "Writing speaker notes in the speaker's voice",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Bullet symbols: read default from design_rules.default_bullet_symbol, but suggest contextual symbols where they fit",
+      "original_snippets": "Bullet symbols \u2014 read default from `design_rules.default_bullet_symbol` in the profile, but proactively suggest contextual symbols where they fit",
+      "relevant_when": "Choosing bullet point symbols in slide content",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Save outline to: {presentations-dir}/{conference}/{year}/{talk-slug}/presentation-outline.md",
+      "original_snippets": "Save to: `{presentations-dir}/{conference}/{year}/{talk-slug}/presentation-outline.md`",
+      "relevant_when": "Saving the finished presentation outline",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Publishing workflow read from profile publishing_process: export, shownotes, QR code, additional steps",
+      "original_snippets": "Execute the steps from the profile: 1. Export \u2014 run `export_method` / `export_script` 2. Shownotes \u2014 if `shownotes_publishing.enabled` 3. QR Code \u2014 if `qr_code.enabled` 4. Additional steps \u2014 execute each `additional_steps[]`",
+      "relevant_when": "Publishing a completed presentation",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Data slides must have visible source attribution \u2014 flag orphaned percentages without context",
+      "original_snippets": "Source name visible ... No orphaned percentages without context (\"84% of developers...\" \u2014 84% of what survey?)",
+      "relevant_when": "Checking data attribution in guardrail audit",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Keep file versions: before major revisions, create a timestamped copy; active outline is always presentation-outline.md",
+      "original_snippets": "Keep file versions: Before major revisions, create a timestamped copy ... The current/active outline is always `presentation-outline.md`",
+      "relevant_when": "Iterating on presentation revisions",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    }
+  ]
+}

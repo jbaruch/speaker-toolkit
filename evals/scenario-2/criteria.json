@@ -1,0 +1,61 @@
+{
+  "context": "Tests whether the agent correctly applies the skill's error handling matrix (transcript/slides success/fail to specific status values), slide source determination logic, skip-for-missing-sources rules, and additive summary update policy.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Full success status",
+      "description": "Talks where both transcript and slides succeeded (Microservices Myths, Platform Engineering) get status 'processed' (not 'complete', 'done', or 'success')",
+      "max_score": 10
+    },
+    {
+      "name": "Partial transcript fail",
+      "description": "Talks where transcript failed but slides succeeded (Security Shift Left) get status 'processed_partial' (not 'partial', 'incomplete', or 'failed')",
+      "max_score": 10
+    },
+    {
+      "name": "Partial slides fail",
+      "description": "Talks where transcript succeeded but slides failed (DevOps Culture Reset) get status 'processed_partial'",
+      "max_score": 10
+    },
+    {
+      "name": "Both fail status",
+      "description": "Talks where both transcript and slides failed (GitOps Journey) get status 'skipped_download_failed' (not 'failed', 'error', or 'skipped')",
+      "max_score": 10
+    },
+    {
+      "name": "Missing sources skip",
+      "description": "Container Security Deep Dive (no video_url, no slides_url, no pptx_path) is marked 'skipped_no_sources' — not 'pending' or 'failed'",
+      "max_score": 10
+    },
+    {
+      "name": "No video skip",
+      "description": "Testing in Production (has slides_url but no video_url) is identified as not processable due to missing video — marked as skipped, not processed",
+      "max_score": 8
+    },
+    {
+      "name": "Slide source pptx",
+      "description": "Platform Engineering (has pptx_path but no slides_url) gets slide_source set to 'pptx'",
+      "max_score": 8
+    },
+    {
+      "name": "Slide source both",
+      "description": "Talks with both slides_url and pptx_path (Microservices Myths, GitOps Journey) get slide_source set to 'both'",
+      "max_score": 8
+    },
+    {
+      "name": "Slide source pdf",
+      "description": "Talks with only slides_url and no pptx_path (DevOps Culture, Security Shift Left) get slide_source set to 'pdf'",
+      "max_score": 8
+    },
+    {
+      "name": "Summary additive only",
+      "description": "The updated rhetoric summary preserves ALL existing content from the original (Section 1, 2, 4, 7, 15 text is still present) — nothing was deleted or replaced",
+      "max_score": 10
+    },
+    {
+      "name": "Summary has new content",
+      "description": "The updated rhetoric summary adds new observations from the successfully processed talks (at least one new pattern or refinement added)",
+      "max_score": 8
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "total_scenarios": 10,
+  "instructions_coverage": {
+    "total_instructions": 78,
+    "instructions_tested": 66,
+    "coverage_percentage": 84.6
+  },
+  "reason_distribution": {
+    "reminder": "1",
+    "new knowledge": "58",
+    "preference": "19"
+  },
+  "scenarios_by_skill": {
+    "rhetoric-knowledge-vault": {
+      "scenarios": ["scenario-0", "scenario-1", "scenario-2", "scenario-3", "scenario-4"],
+      "instructions_tested": 34
+    },
+    "presentation-creator": {
+      "scenarios": ["scenario-5", "scenario-6", "scenario-7", "scenario-8", "scenario-9"],
+      "instructions_tested": 32
+    }
+  }
+}

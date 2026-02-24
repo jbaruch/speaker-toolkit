@@ -1,0 +1,71 @@
+{
+  "context": "Tests whether the agent produces a talk analysis following the skill's specific 14-dimension framework, structured data schema, and verbatim examples extraction requirements.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Opening pattern analyzed",
+      "description": "Analysis identifies and categorizes the opening pattern (e.g., as provocative/bold claim, audience interaction, or similar)",
+      "max_score": 6
+    },
+    {
+      "name": "Narrative structure analyzed",
+      "description": "Analysis describes the narrative arc type (e.g., problem-diagnosis-solution, chronological, or listicle)",
+      "max_score": 6
+    },
+    {
+      "name": "Humor documented",
+      "description": "Analysis identifies specific humor instances, categorizing them by type (self-deprecating, meme-based, etc.)",
+      "max_score": 6
+    },
+    {
+      "name": "Audience interaction noted",
+      "description": "Analysis identifies audience engagement techniques (the 'raise your hand' moments in the transcript)",
+      "max_score": 6
+    },
+    {
+      "name": "Areas for improvement",
+      "description": "Analysis includes an honest critical assessment section identifying weaknesses (e.g., rushed ending indicated by 'five minute warning')",
+      "max_score": 8
+    },
+    {
+      "name": "Structured data fields",
+      "description": "The JSON output includes structured_data with at least: slide_count, opening_type, closing_type, narrative_arc_type, and audience_interaction_count",
+      "max_score": 10
+    },
+    {
+      "name": "Opening type enum",
+      "description": "opening_type uses one of the specific category values: provocative_image, failure_framing, audience_poll, story, bold_claim, or demo_cold_open",
+      "max_score": 8
+    },
+    {
+      "name": "Closing type enum",
+      "description": "closing_type uses one of the specific category values: summary_cta, callback, open_question, demo_finale, or resource_list",
+      "max_score": 8
+    },
+    {
+      "name": "Verbatim signature phrases",
+      "description": "Output includes a verbatim_examples section with signature_phrases containing actual recurring expressions from the transcript (e.g., 'right', 'okay so')",
+      "max_score": 8
+    },
+    {
+      "name": "Verbatim opening lines",
+      "description": "Output includes opening_lines with the actual first few sentences from the transcript, quoted verbatim",
+      "max_score": 8
+    },
+    {
+      "name": "Verbatim closing lines",
+      "description": "Output includes closing_lines with the actual last few sentences from the transcript, quoted verbatim",
+      "max_score": 8
+    },
+    {
+      "name": "Transition phrases extracted",
+      "description": "Output includes actual transition phrases from the transcript in verbatim_examples.transitions (e.g., 'next thing you know', 'jokes aside', 'okay so')",
+      "max_score": 8
+    },
+    {
+      "name": "JSON schema completeness",
+      "description": "The top-level JSON includes all required fields: filename, rhetoric_notes, areas_for_improvement, structured_data, verbatim_examples, new_patterns, summary_updates",
+      "max_score": 10
+    }
+  ]
+}

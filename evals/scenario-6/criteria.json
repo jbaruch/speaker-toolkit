@@ -1,0 +1,61 @@
+{
+  "context": "Tests whether the agent runs all 9 guardrail check types using the correct format, sources thresholds from the profile data, and correctly identifies the intentionally planted violations in the outline.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Slide budget check",
+      "description": "Report includes a slide budget check comparing actual count against the 70-slide limit for a 45-min slot",
+      "max_score": 8
+    },
+    {
+      "name": "Act 1 ratio check",
+      "description": "Report includes an Act 1 ratio check and identifies that slides 6-40 (35 out of 60 slides = 58%) exceeds the 45% limit for a 45-min talk",
+      "max_score": 12
+    },
+    {
+      "name": "Branding check",
+      "description": "Report includes a branding/footer check verifying conference-specific elements are present",
+      "max_score": 8
+    },
+    {
+      "name": "Profanity check",
+      "description": "Report includes a profanity audit and flags the on-slide use of 'damn' on slide 16 as baked-in profanity requiring approval",
+      "max_score": 12
+    },
+    {
+      "name": "Data attribution check",
+      "description": "Report includes a data attribution check and flags at least one data slide missing its source (e.g., the 73% on slide 9 or 68% on slide 23)",
+      "max_score": 10
+    },
+    {
+      "name": "Time-sensitive check",
+      "description": "Report includes a time-sensitive content check (checking for dates, version numbers, or deadlines that may expire)",
+      "max_score": 6
+    },
+    {
+      "name": "Closing completeness check",
+      "description": "Report identifies that the closing is incomplete — the summary has only 2 points instead of 3, and there's no CTA or social handles slide",
+      "max_score": 12
+    },
+    {
+      "name": "Cut line check",
+      "description": "Report checks for and flags the absence of [CUT LINE] markers in the outline",
+      "max_score": 8
+    },
+    {
+      "name": "Anti-pattern flags",
+      "description": "Report flags at least one recurring issue from the profile (e.g., meme accretion in Act 1, or rushed closing with only 2 min allocated)",
+      "max_score": 10
+    },
+    {
+      "name": "PASS/FAIL format",
+      "description": "Each check uses [PASS], [FAIL], or [WARN] prefix labels (not just prose descriptions)",
+      "max_score": 8
+    },
+    {
+      "name": "Guardrail summary block",
+      "description": "Report includes a structured summary block listing all checks together (not scattered across unstructured prose)",
+      "max_score": 6
+    }
+  ]
+}

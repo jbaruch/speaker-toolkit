@@ -1,0 +1,66 @@
+{
+  "context": "Tests whether the agent generates a speaker profile JSON following the skill's comprehensive schema, including all required sections, correct data mapping from vault sources, and personalized badge generation.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Schema version",
+      "description": "The profile includes 'schema_version': 1 at the top level",
+      "max_score": 8
+    },
+    {
+      "name": "Speaker section",
+      "description": "Profile includes a 'speaker' section with at least: name, handle, website, and shownotes_url_pattern populated from the tracking database config",
+      "max_score": 8
+    },
+    {
+      "name": "Infrastructure section",
+      "description": "Profile includes an 'infrastructure' section with at least: template_pptx_path and font_pair information",
+      "max_score": 8
+    },
+    {
+      "name": "Presentation modes array",
+      "description": "Profile includes a 'presentation_modes' array with at least 2 distinct modes, each having an id, name, description, and humor_register",
+      "max_score": 10
+    },
+    {
+      "name": "Design rules section",
+      "description": "Profile includes 'design_rules' with at least: background_color_strategy, footer object, and slide_numbers field",
+      "max_score": 8
+    },
+    {
+      "name": "Rhetoric defaults",
+      "description": "Profile includes 'rhetoric_defaults' with at least: default_opening, three_part_close, and on_slide_profanity preference",
+      "max_score": 8
+    },
+    {
+      "name": "Confirmed intents preserved",
+      "description": "Profile includes 'confirmed_intents' array containing the 4 intents from the tracking database (delayed intro, anti-sell, three-point close, profanity rule)",
+      "max_score": 8
+    },
+    {
+      "name": "Guardrail sources",
+      "description": "Profile includes 'guardrail_sources' with a 'slide_budgets' array containing entries for different duration ranges AND a 'recurring_issues' array",
+      "max_score": 10
+    },
+    {
+      "name": "Instrument catalog",
+      "description": "Profile includes 'instrument_catalog' with at least: opening_patterns, humor_techniques, closing_patterns, and verbal_signatures arrays",
+      "max_score": 10
+    },
+    {
+      "name": "Publishing process",
+      "description": "Profile includes a 'publishing_process' section (may be partially empty if not fully configured, but the section exists)",
+      "max_score": 6
+    },
+    {
+      "name": "Badges section",
+      "description": "Profile includes a 'badges' section with at least 3 personalized entries that reference actual data from the vault (e.g., meme counts, talk counts, specific speaker quirks)",
+      "max_score": 8
+    },
+    {
+      "name": "Talks analyzed count",
+      "description": "Profile includes 'talks_analyzed' with the correct count matching the number of processed talks in the tracking database (12)",
+      "max_score": 8
+    }
+  ]
+}
