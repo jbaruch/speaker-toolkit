@@ -1,4 +1,4 @@
-name: Validate & Publish Tile
+name: Review & Publish Tile
 
 permissions:
   id-token: write
@@ -11,40 +11,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  validate-and-publish:
+  publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Tessl CLI
-        run: npm install -g @tessl/cli
-
-      - name: Lint tile
-        run: tessl tile lint .
-
-      - name: Review rhetoric-knowledge-vault skill
-        run: |
-          result=$(tessl skill review skills/rhetoric-knowledge-vault 2>&1)
-          echo "$result"
-          score=$(echo "$result" | grep -oP 'Average Score: \K[0-9]+')
-          echo "Vault skill score: ${score}%"
-          if [ "$score" -lt 90 ]; then
-            echo "::error::rhetoric-knowledge-vault skill score ${score}% is below 90% threshold"
-            exit 1
-          fi
-
-      - name: Review presentation-creator skill
-        run: |
-          result=$(tessl skill review skills/presentation-creator 2>&1)
-          echo "$result"
-          score=$(echo "$result" | grep -oP 'Average Score: \K[0-9]+')
-          echo "Creator skill score: ${score}%"
-          if [ "$score" -lt 90 ]; then
-            echo "::error::presentation-creator skill score ${score}% is below 90% threshold"
-            exit 1
-          fi
-
-      - name: Publish tile
-        uses: tesslio/publish@main
+      - uses: tesslio/publish@main
         with:
           token: ${{ secrets.TESSL_API_TOKEN }}
+          review: 'true'
+          review-threshold: '80'
