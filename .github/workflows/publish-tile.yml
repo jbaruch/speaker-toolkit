@@ -19,4 +19,3 @@ jobs:
         with:
           token: ${{ secrets.TESSL_API_TOKEN }}
           review: 'true'
-          review-threshold: '80'
