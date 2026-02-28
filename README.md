@@ -2,11 +2,12 @@
 
 A two-skill system for conference speakers: analyze your existing talks to extract your rhetoric patterns, then create new presentations that match your documented style.
 
-## What's New (0.3.0)
+## What's New (0.4.7)
 
-**Speaker badges** — Profile regeneration now generates personalized speaker badges:
-fun, self-deprecating achievements mined from real vault data. See [CHANGELOG.md](CHANGELOG.md)
-for full history.
+**Review & consistency fixes** — Vault now writes per-talk analysis files to `analyses/`
+(unblocking the adaptation workflow), `badges` schema added to the profile spec,
+`publishing_process` capture broken into targeted sub-questions, section numbering
+clarified, and several minor fixes. See [CHANGELOG.md](CHANGELOG.md) for full history.
 
 ## How It Works
 

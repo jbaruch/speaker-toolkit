@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.4.7
+
+**Review & consistency fixes** — Addressed consistency gaps found during tile review.
+
+- Vault Step 4 now writes per-talk analysis files to `analyses/` (fixes broken adaptation workflow in creator)
+- Added `badges` schema to `speaker-profile-schema.md`
+- Broke single `publishing_process` question into targeted sub-questions matching the schema
+- Clarified summary section numbering vs rhetoric dimension numbering in vault SKILL.md
+- Labeled slide budget table in creator as defaults when profile is unavailable
+- Added `cfp`, `abstract`, `pptx` keywords to `tile.json`
+- Fixed `tessl.json` project name from scaffold placeholder
+- Added python-pptx internal API risk note to `slide-generation.md`
+- Backfilled CHANGELOG for versions 0.3.1–0.4.5
+
+## 0.4.1 – 0.4.5
+
+**CI/publish pipeline tuning** — Iterative adjustments to the GitHub Actions publish
+workflow: switched to the publish action's built-in skill review gate, tested optimize
+input, and settled on the default review threshold (50%).
+
+## 0.4.0
+
+**Evaluation scenarios** — Added 10 eval scenarios covering both skills (vault analysis
+and presentation creation), plus Tessl eval infrastructure.
+
+- 10 scenario tasks with criteria covering rhetoric analysis, profile generation,
+  presentation creation, adaptation, CFP writing, and guardrail enforcement
+- Tessl eval tile dependency added
+
 ## 0.3.0
 
 **Speaker badges & profile Step 6 enhancement** — Profile regeneration now generates

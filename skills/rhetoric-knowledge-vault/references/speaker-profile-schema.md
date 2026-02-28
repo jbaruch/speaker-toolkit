@@ -194,6 +194,15 @@ creation at runtime.
     "pop_culture_notes": "general guidance on how this speaker uses pop-culture references"
   },
 
+  "badges": [
+    {
+      "id": "short_identifier",
+      "name": "Badge display name",
+      "description": "What this badge represents — fun, self-deprecating, grounded in vault data",
+      "evidence": "specific data point(s) from the vault that earned this badge"
+    }
+  ],
+
   "publishing_process": {
     "export_format": "pdf|pptx_only|both",
     "export_method": "description of how to export (e.g., PowerPoint AppleScript, LibreOffice CLI, manual)",
@@ -239,6 +248,7 @@ automatically picks up changes when the profile is regenerated.
 | `pacing` | Phase 3-4 (content, guardrails) | Slide budget tables, WPM targets |
 | `guardrail_sources` | Phase 4 (guardrails) | All guardrail checks with thresholds |
 | `instrument_catalog` | Phase 2 (architecture) | Complete instrument menu by dimension |
+| `badges` | Informational | Fun speaker achievements mined from vault data |
 | `infrastructure.template_layouts` | Phase 5 (slide generation) | Layout map and selection logic |
 | `infrastructure.font_pair` | Phase 5 (slide generation) | Font usage rules |
 | `publishing_process` | Phase 6 (publishing) | Export, shownotes, QR code, distribution steps |

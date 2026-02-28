@@ -35,7 +35,13 @@ in the speaker's template.
 ## Creating a Clean Deck from Template
 
 The template may ship with demo slides. Strip them to get a clean deck with layouts
-only. Use python-pptx directly:
+only. Use python-pptx directly.
+
+> **Note:** The template stripping, slide deletion, and slide reordering code below
+> uses undocumented python-pptx internals (`slides._sldIdLst`, `part.drop_rel()`).
+> These work reliably as of python-pptx 0.6.x but could break on a major update.
+> If python-pptx adds public APIs for slide deletion/reordering in the future, prefer
+> those instead.
 
 ```python
 from pptx import Presentation

@@ -27,6 +27,7 @@ running summary. All paths are relative to **vault root** (`config.vault_root`).
 | `rhetoric-style-summary.md` | Running rhetoric & style narrative (the constitution) |
 | `slide-design-spec.md` | Visual design rules from PDF + PPTX analysis |
 | `speaker-profile.json` | Machine-readable bridge to presentation-creator |
+| `analyses/{talk_filename}.md` | Per-talk rhetoric analysis (one file per processed talk) |
 | `transcripts/{youtube_id}.txt` | Downloaded/cleaned transcripts |
 | `slides/{google_drive_id}.pdf` | Downloaded slide PDFs |
 
@@ -132,15 +133,24 @@ After each batch:
 
 1. **Update tracking DB** — set `status`, `processed_date`, all result fields.
    Backfill empty `structured_data` from earlier runs using `rhetoric_notes`.
-2. **Update rhetoric-style-summary.md** — integrate `new_patterns` and `summary_updates`.
-   Be additive; refine and consolidate but never delete. Maintain these sections:
+2. **Write per-talk analysis files** — for each processed talk, write a standalone
+   analysis file to `{vault_root}/analyses/{talk_filename}.md` containing the full
+   rhetoric analysis (all 14 dimensions, structured data, and verbatim examples).
+   These files are read by the presentation-creator when adapting existing talks.
+   Create the `analyses/` directory if it doesn't exist.
+3. **Update rhetoric-style-summary.md** — integrate `new_patterns` and `summary_updates`.
+   Be additive; refine and consolidate but never delete. The summary file uses its own
+   section numbering scheme (below), which differs from the 14 rhetoric dimensions in
+   `references/rhetoric-dimensions.md`. Dimensions 1-14 map to summary sections 1-14;
+   the summary adds two extra sections (15-16) for cross-cutting concerns not tied to
+   a single dimension:
    - Section 1: Presentation modes (→ profile `presentation_modes`)
-   - Sections 2-13: Instrument catalogs (→ profile `instrument_catalog`)
-   - Section 15: Areas for improvement (→ profile `guardrail_sources.recurring_issues`)
-   - Section 16: Speaker-confirmed intent (→ profile `confirmed_intents` + `rhetoric_defaults`)
-3. **Report:** talks processed, new patterns, current state, skipped talks.
-4. **Auto-regenerate speaker profile** (Step 6) if it already exists. Report the diff.
-5. Flag **structural changes** prominently (new presentation mode, new workflow pattern).
+   - Sections 2-14: Instrument catalogs, one per rhetoric dimension (→ profile `instrument_catalog`)
+   - Section 15: Areas for improvement — aggregated from dimension 14 across all talks (→ profile `guardrail_sources.recurring_issues`)
+   - Section 16: Speaker-confirmed intent — from clarification sessions (→ profile `confirmed_intents` + `rhetoric_defaults`)
+4. **Report:** talks processed, new patterns, current state, skipped talks.
+5. **Auto-regenerate speaker profile** (Step 6) if it already exists. Report the diff.
+6. Flag **structural changes** prominently (new presentation mode, new workflow pattern).
 
 ### Error Handling
 
@@ -174,7 +184,11 @@ Update the summary and tracking DB after each answer.
 | `shownotes_url_pattern` | "URL pattern for talk pages? (e.g., `speaking.example.com/{slug}`)" |
 | `template_pptx_path` | "PowerPoint template path?" |
 | `presentation_file_convention` | "File organization? (default: `{conference}/{year}/{talk-slug}/`)" |
-| `publishing_process` | "Export method? Shownotes publishing? QR codes? Other distribution steps?" |
+| `publishing_process.export_format` | "How do you export final decks — PDF, keep .pptx only, or both?" |
+| `publishing_process.export_method` | "How do you produce the PDF? (e.g., PowerPoint AppleScript, LibreOffice CLI, manual)" |
+| `publishing_process.shownotes_publishing` | "Do you publish shownotes for your talks? If yes, how? (e.g., git push to site repo, CMS, manual)" |
+| `publishing_process.qr_code` | "Do you put QR codes in your decks? If yes, what do they link to and where do they go?" |
+| `publishing_process.additional_steps` | "Any other distribution steps after exporting? (e.g., upload to SlideShare, tweet, etc.)" |
 
 **5C. Structured Intent Capture:**
 Compile confirmed intents from 5A into structured entries:
@@ -224,7 +238,7 @@ Store in tracking DB `confirmed_intents` array. These feed directly into the pro
 
 ### Important Notes
 
-- Create `transcripts/` and `slides/` dirs if missing before downloading.
+- Create `transcripts/`, `slides/`, and `analyses/` dirs if missing before downloading/writing.
 - Re-read tracking DB before writing (single source of truth).
 - Preserve all summary content — add/refine, never delete.
 - After 10+ talks, start providing adherence assessments.

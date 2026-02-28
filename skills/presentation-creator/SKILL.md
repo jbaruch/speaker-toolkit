@@ -128,7 +128,8 @@ See `references/process.md` for co-presenter handling.
 
 For each decision: present options, recommend based on spec, let author choose.
 
-**Slide budget** (from `profile → guardrail_sources.slide_budgets`):
+**Slide budget** — read from `profile → guardrail_sources.slide_budgets` at runtime.
+If the profile is unavailable (summary-only mode), use these defaults:
 
 | Duration | Max slides | Slides/min |
 |----------|-----------|------------|

@@ -1,5 +1,5 @@
 {
-  "name": "my-project",
+  "name": "jbaruch/speaker-toolkit",
   "mode": "vendored",
   "dependencies": {
     "tessl-labs/tessl-skill-eval-scenarios": {
