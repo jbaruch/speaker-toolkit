@@ -1,5 +1,97 @@
 # Changelog
 
+## 0.5.1
+
+**Robustness fixes** — Addressed gaps found during tile review.
+
+- Made vault→creator pattern index path explicit with tile-root-relative path
+  instead of vague "the creator's" reference (`SKILL.md` Step 3 B2)
+- Added pattern taxonomy migration: Step 1 now detects talks processed before
+  v0.5.0 that lack `pattern_observations` and marks them `needs-reprocessing`
+  with `reprocess_reason: "pattern_scoring_added"` — new field in tracking DB
+- Added `clarification_sessions_completed` counter to tracking DB config;
+  Step 5D increments it on completion; Step 6 checks `>= 1` instead of
+  the previously untracked "one clarification session completed" condition
+- Added LibreOffice CLI as cross-platform PDF export alternative alongside
+  the macOS-only PowerPoint AppleScript method, with selection logic
+  (`slide-generation.md`)
+- Replaced vague Step 3B note with explicit condition table showing when
+  PPTX extraction fires vs. skips
+
+## 0.5.0
+
+**Presentation Patterns integration** — Integrated the pattern taxonomy from
+*Presentation Patterns* (Ford, McCullough, Schutta 2013) as a structured reference,
+vault scoring system, and brainstorming vocabulary across both skills. Patterns are
+classified as observable (scored by the vault) or unobservable (surfaced as a go-live
+checklist before delivery).
+
+### Pattern taxonomy (88 new files)
+
+- 88 reference files (63 patterns + 25 antipatterns) organized by lifecycle phase
+  (prepare/build/deliver) with YAML frontmatter: `id`, `name`, `type`, `part`,
+  `phase_relevance`, `vault_dimensions`, `detection_signals`, `related_patterns`,
+  `inverse_of`, `difficulty`, and `observable` (true by default, false for 11 entries)
+- Master index (`references/patterns/_index.md`): flat catalog table, phase-grouped
+  lookup, vault dimension reverse mapping, and unobservable patterns go-live checklist
+- Each file includes: summary, detailed description, when to use/avoid, detection
+  heuristics, 3-tier scoring criteria, vault dimension mapping, and combinatorics
+
+### Observable vs unobservable split
+
+- **77 observable** patterns are detectable from transcripts + slides and scored during
+  vault analysis
+- **11 unobservable** patterns (8 patterns + 3 antipatterns) involve pre-event logistics,
+  physical stage behaviors, or external systems that leave no trace in recordings:
+  - Pre-event: Preparation, Carnegie Hall, Stakeout, Posse, Seeding Satisfaction, Shoeless
+  - During delivery: Lightsaber, Red/Yellow/Green
+  - Antipatterns to avoid: Laser Weapons, Bunker, Backchannel
+- Unobservable patterns are marked `observable: false` in their frontmatter, excluded
+  from vault scoring and `pattern_profile`, and surfaced as a go-live preparation
+  checklist in creator Phase 6
+
+### Vault scoring (4 modified files)
+
+- Subagents now tag talks against the observable pattern taxonomy during analysis
+  (Step 3 B2), skipping patterns marked `observable: false`
+- `pattern_observations` field added to both subagent return schema and tracking
+  database talk entries (`schemas.md`)
+- Per-talk analysis files now include a "Presentation Patterns Scoring" section
+- Step 6 generates an aggregate `pattern_profile` in the speaker profile with mastery
+  levels, usage trends, signature combinations, antipattern frequency, and never-used
+  patterns (observable only)
+- Pattern-based badges generated from profile data (e.g., "Narrative Arc Master",
+  "Shortchanged Survivor", "Pattern Polyglot")
+- `pattern_profile` section added to `speaker-profile-schema.md` with documentation
+  that only observable patterns are included
+- All 14 rhetoric dimensions in `rhetoric-dimensions.md` cross-referenced with their
+  related patterns and antipatterns
+
+### Creator integration (3 modified files)
+
+- Phase 0: Loads `references/patterns/_index.md` alongside vault documents
+- Phase 2 (Architecture): Decision #10 "Pattern Strategy" — 4-tier recommendation
+  system using `pattern_profile`:
+  - **Signature** (80%+ usage) — always shown
+  - **Contextual** — matching spec context, occasional speaker usage
+  - **New to You** — from never-used patterns, filtered by relevance
+  - **Shake It Up** — random picks, provocations not prescriptions
+  - Plus antipattern warnings merging speaker history + contextual detection
+- Phase 4 (Guardrails): Section 9B adds taxonomy-based antipattern scanning with
+  `[RECURRING]` flags from `pattern_profile.antipattern_frequency` and `[CONTEXTUAL]`
+  flags from outline analysis
+- Phase 6 (Publishing): Step 6.5 go-live preparation checklist surfaces all 11
+  unobservable patterns as delivery-day reminders
+- Summary-only mode (no profile) still works — patterns from reference files only,
+  flat list, go-live checklist still applies
+
+### Documentation
+
+- `README.md` — rewritten with Presentation Patterns section, observable/unobservable
+  table, updated file tree, updated vault/creator descriptions
+- `tile.json` — bumped to v0.5.0, added "patterns" keyword
+- `CHANGELOG.md` — this entry
+
 ## 0.4.7
 
 **Review & consistency fixes** — Addressed consistency gaps found during tile review.
@@ -12,9 +104,9 @@
 - Added `cfp`, `abstract`, `pptx` keywords to `tile.json`
 - Fixed `tessl.json` project name from scaffold placeholder
 - Added python-pptx internal API risk note to `slide-generation.md`
-- Backfilled CHANGELOG for versions 0.3.1–0.4.5
+- Backfilled CHANGELOG for versions 0.3.1-0.4.5
 
-## 0.4.1 – 0.4.5
+## 0.4.1 - 0.4.5
 
 **CI/publish pipeline tuning** — Iterative adjustments to the GitHub Actions publish
 workflow: switched to the publish action's built-in skill review gate, tested optimize

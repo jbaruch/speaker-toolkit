@@ -15,7 +15,8 @@
     "speaker_website": "",
     "shownotes_url_pattern": "",
     "template_pptx_path": "",
-    "presentation_file_convention": "{pptx_source_dir}/{conference}/{year}/{talk-slug}/"
+    "presentation_file_convention": "{pptx_source_dir}/{conference}/{year}/{talk-slug}/",
+    "clarification_sessions_completed": 0
   },
   "talks": [{
     "filename": "2024-04-10-talk-slug.md",
@@ -27,9 +28,15 @@
     "slide_source": "pdf|pptx|both  (set in Step 2 based on which slide sources exist)",
     "pptx_visual_status": "pending|extracted|no_pptx",
     "status": "pending|processed|processed_partial|needs-reprocessing|skipped_no_sources|skipped_download_failed",
+    "reprocess_reason": "null|pattern_scoring_added  (set when status changed to needs-reprocessing by migration)",
     "rhetoric_notes": "", "areas_for_improvement": "",
     "structured_data": {}, "verbatim_examples": {},
-    "adherence_assessment": "", "processed_date": null
+    "adherence_assessment": "", "processed_date": null,
+    "pattern_observations": {
+      "pattern_ids": [],
+      "antipattern_ids": [],
+      "pattern_score": 0
+    }
   }],
   "pptx_catalog": [{
     "pptx_path": "Conference/Year/Talk Name.pptx",
@@ -113,7 +120,30 @@ Each subagent returns this JSON after processing one talk:
   },
   "adherence_assessment": "1-3 sentences, or '' if <10 talks parsed",
   "new_patterns": "100-300 words on NEW patterns not in summary, or ''",
-  "summary_updates": "50-200 words: additions for rhetoric-style-summary.md by section #, or ''"
+  "summary_updates": "50-200 words: additions for rhetoric-style-summary.md by section #, or ''",
+  "pattern_observations": {
+    "patterns_detected": [
+      {
+        "pattern_id": "narrative-arc",
+        "confidence": "strong|moderate|weak",
+        "evidence": "brief description of what was observed",
+        "dimensions": [2, 5]
+      }
+    ],
+    "antipatterns_detected": [
+      {
+        "pattern_id": "shortchanged",
+        "confidence": "strong|moderate|weak",
+        "evidence": "brief description of what was observed",
+        "dimensions": [12, 14]
+      }
+    ],
+    "pattern_score": {
+      "patterns_used": 8,
+      "antipatterns_detected": 2,
+      "score": 6
+    }
+  }
 }
 ```
 

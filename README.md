@@ -2,12 +2,14 @@
 
 A two-skill system for conference speakers: analyze your existing talks to extract your rhetoric patterns, then create new presentations that match your documented style.
 
-## What's New (0.4.7)
+## What's New (0.5.0)
 
-**Review & consistency fixes** — Vault now writes per-talk analysis files to `analyses/`
-(unblocking the adaptation workflow), `badges` schema added to the profile spec,
-`publishing_process` capture broken into targeted sub-questions, section numbering
-clarified, and several minor fixes. See [CHANGELOG.md](CHANGELOG.md) for full history.
+**Presentation Patterns integration** — 88 patterns and antipatterns from *Presentation
+Patterns* (Ford, McCullough, Schutta 2013) are now a first-class reference taxonomy,
+vault scoring system, and brainstorming vocabulary. 77 observable patterns are scored
+during vault analysis; 11 unobservable patterns (pre-event logistics, physical stage
+behaviors) surface as a go-live checklist before delivery.
+See [CHANGELOG.md](CHANGELOG.md) for full history.
 
 ## How It Works
 
@@ -24,9 +26,9 @@ The toolkit has two independent skills connected by a shared **rhetoric vault** 
   (analysis)     +-----------+     (generation)
 ```
 
-**Skill 1: Rhetoric Knowledge Vault** parses your recorded talks (YouTube transcripts + slides from PPTX files or Google Drive PDFs) and extracts rhetoric patterns across 14 dimensions — opening hooks, humor style, audience interaction, slide design, pacing, transitions, verbal signatures, and more. After analyzing enough talks, it generates a structured speaker profile.
+**Skill 1: Rhetoric Knowledge Vault** parses your recorded talks (YouTube transcripts + slides from PPTX files or Google Drive PDFs) and extracts rhetoric patterns across 14 dimensions — opening hooks, humor style, audience interaction, slide design, pacing, transitions, verbal signatures, and more. It also scores each talk against the Presentation Patterns taxonomy. After analyzing enough talks, it generates a structured speaker profile including a pattern profile with mastery levels and signature combinations.
 
-**Skill 2: Presentation Creator** reads the vault at runtime and uses your documented patterns as a constitutional style guide to build new presentations. It follows a 7-phase process from intent distillation through slide generation and publishing.
+**Skill 2: Presentation Creator** reads the vault at runtime and uses your documented patterns as a constitutional style guide to build new presentations. It follows a 7-phase process from intent distillation through slide generation, with a 4-tier Pattern Strategy for selecting presentation techniques, and a go-live checklist before delivery.
 
 The skills never run simultaneously. You build the vault first (once, then incrementally), then use the creator whenever you need a new talk. The vault grows over time as you parse more talks, and the creator automatically picks up new patterns.
 
@@ -56,9 +58,10 @@ The vault skill will:
 2. Scan for talks and .pptx files
 3. Process talks in parallel batches of 5
 4. Extract rhetoric patterns across 14 dimensions
-5. Build a running narrative summary and slide design spec
-6. Run an interactive clarification session to validate findings and capture your intent
-7. Generate a structured speaker profile (after 10+ talks)
+5. Score each talk against the 77 observable Presentation Patterns
+6. Build a running narrative summary and slide design spec
+7. Run an interactive clarification session to validate findings and capture your intent
+8. Generate a structured speaker profile with pattern mastery data (after 10+ talks)
 
 ### Phase 2: Create Presentations
 
@@ -68,13 +71,13 @@ create a presentation about [topic] for [conference]
 ```
 
 The creator will:
-1. Load your vault (summary, design spec, profile)
+1. Load your vault (summary, design spec, profile) and the pattern taxonomy
 2. Walk you through intent distillation (purpose, audience, constraints)
-3. Jointly select rhetorical instruments (opening pattern, narrative arc, humor register, closing)
+3. Jointly select rhetorical instruments, including a 4-tier Pattern Strategy
 4. Write a section-by-section outline with speaker notes in your voice
-5. Run guardrail checks (slide budget, Act 1 ratio, profanity, branding, data attribution)
+5. Run guardrail checks (slide budget, Act 1 ratio, profanity, branding, pattern-based antipattern scan)
 6. Generate a .pptx deck from your template
-7. Execute your publishing workflow (export, shownotes, QR codes)
+7. Execute your publishing workflow and present a go-live preparation checklist
 
 Every phase requires your approval before proceeding. The skill brings the rhetoric knowledge; you bring the topic expertise.
 
@@ -101,14 +104,14 @@ rhetoric-knowledge-vault/
 +-- rhetoric-style-summary.md   # Narrative analysis across all rhetoric dimensions
 +-- slide-design-spec.md        # Visual design rules (fonts, colors, layout taxonomy)
 +-- speaker-profile.json        # Machine-readable bridge to the creator
++-- analyses/                   # Per-talk rhetoric analysis + pattern scoring
 +-- transcripts/                # Downloaded YouTube transcripts
 +-- slides/                     # Downloaded slide PDFs
-+-- analyses/                   # Per-talk rhetoric analysis files
 ```
 
 **rhetoric-style-summary.md** is the constitution — rich prose covering presentation modes, opening patterns, humor techniques, audience interaction styles, closing patterns, verbal signatures, persuasion techniques, and more. It grows every time you parse new talks.
 
-**speaker-profile.json** is the specification — structured data that the creator reads at runtime: presentation modes with quantitative thresholds, instrument catalogs, guardrail rules, pacing data, design rules, and the publishing workflow.
+**speaker-profile.json** is the specification — structured data that the creator reads at runtime: presentation modes with quantitative thresholds, instrument catalogs, guardrail rules, pacing data, design rules, the publishing workflow, and a `pattern_profile` with per-pattern mastery levels, antipattern frequency, signature combinations, and never-used patterns.
 
 **slide-design-spec.md** captures visual design rules extracted from both PDF inspection and programmatic .pptx analysis: background colors, typography, footer specs, shape vocabulary, and template layout catalog.
 
@@ -119,12 +122,14 @@ The two skills communicate exclusively through the vault files. When the vault u
 ```
 Vault Skill                          Creator Skill
 ===========                          =============
-Parse talks                          Load vault files
+Parse talks                          Load vault files + pattern index
      |                                    |
      v                                    v
 Update summary  ------>  rhetoric-style-summary.md  ------>  Read instruments
 Update spec     ------>  slide-design-spec.md       ------>  Read design rules
 Regen profile   ------>  speaker-profile.json       ------>  Read thresholds
+  (incl. pattern_profile)                              +-->  Pattern Strategy
+                                                       +-->  Go-live checklist
 ```
 
 ## Vault Skill Details
@@ -157,12 +162,16 @@ Each talk is analyzed across:
 13. **Slide design patterns** — per-slide visual classification, typography, shapes
 14. **Reflection** — critical assessment of what could be improved
 
+Each dimension is cross-referenced with the Presentation Patterns taxonomy — the analysis
+notes which named patterns and antipatterns are detected per talk.
+
 ### Processing Pipeline
 
 - Talks are processed in **parallel batches of 5** subagents
 - Transcripts are downloaded via `yt-dlp` (with `youtube-transcript-api` fallback)
 - Slides are acquired from PPTX files (preferred, richer data) or downloaded as PDFs via `gdown`
-- Each batch updates the summary and triggers profile regeneration
+- Each talk is scored against 77 observable patterns from the taxonomy
+- Each batch updates the summary, per-talk analysis files, and triggers profile regeneration
 - An interactive clarification session resolves ambiguities and captures confirmed intent
 
 ### Prerequisites
@@ -184,15 +193,15 @@ Each talk is analyzed across:
 
 | Phase | What happens | Gate |
 |-------|-------------|------|
-| 0: Intake | Load vault, gather context | Topic and context captured |
+| 0: Intake | Load vault + pattern index, gather context | Topic and context captured |
 | 1: Intent Distillation | Clarifying questions, produce Presentation Spec | Author confirms spec |
-| 2: Rhetorical Architecture | Joint instrument selection from vault catalog | Author approves architecture |
+| 2: Rhetorical Architecture | Joint instrument selection + Pattern Strategy | Author approves architecture |
 | 3: Content Development | Section-by-section outline with speaker notes | Draft delivered |
-| 4: Revision & Guardrails | Iterate on feedback, run 9-point guardrail checks | Author declares outline done |
+| 4: Revision & Guardrails | Iterate on feedback, run guardrail checks + antipattern scan | Author declares outline done |
 | 5: Slide Generation | Build .pptx from outline using speaker's template | Author declares slides done |
-| 6: Publishing | Export, shownotes, QR code per speaker's workflow | Published and ready to deliver |
+| 6: Publishing | Export, shownotes, QR code, go-live checklist | Published and ready to deliver |
 
-### Guardrail System (9 checks)
+### Guardrail System (9 checks + pattern taxonomy scan)
 
 1. **Slide budget** — per-duration max from the profile
 2. **Act 1 ratio** — problem section balance limits
@@ -203,6 +212,33 @@ Each talk is analyzed across:
 7. **Closing completeness** — summary + CTA + social
 8. **Modular cut lines** — present for shorter/longer adaptation
 9. **Anti-pattern flags** — speaker-specific recurring issues from the vault
+   - **9A:** Profile-based recurring issues
+   - **9B:** Taxonomy-based antipattern scan — `[RECURRING]` from speaker history, `[CONTEXTUAL]` from outline analysis
+
+### Presentation Patterns Taxonomy
+
+The creator includes a structured reference taxonomy of 88 presentation patterns and
+antipatterns from *Presentation Patterns* (Ford, McCullough, Schutta 2013), organized
+by presentation lifecycle:
+
+- **Prepare** (21): Know Your Audience, Narrative Arc, Triad, Talklet, Brain Breaks, Takahashi, Cave Painting, and more
+- **Build** (37): Foreshadowing, Bookends, Defy Defaults, Vacation Photos, Traveling Highlights, Emergence, and more
+- **Deliver** (30): Carnegie Hall, Breathing Room, Echo Chamber, Seeding the First Question, and more
+
+Of the 88 entries, **77 are observable** (detectable from transcripts and slides) and
+**11 are unobservable** (pre-event logistics, physical stage behaviors, external systems
+that leave no trace in recordings).
+
+**How it integrates:**
+
+| Integration point | Observable patterns (77) | Unobservable patterns (11) |
+|---|---|---|
+| **Vault scoring** (Step 3 B2) | Scored per talk, aggregated into `pattern_profile` | Excluded from scoring |
+| **Creator Phase 2** | 4-tier Pattern Strategy (Signature / Contextual / New to You / Shake It Up) | Included in recommendations |
+| **Creator Phase 4** | `[RECURRING]` + `[CONTEXTUAL]` antipattern flags | Excluded from scan |
+| **Creator Phase 6** | — | Go-live preparation checklist |
+| **Speaker profile** | `pattern_profile` with mastery levels, trends, combos | Not in profile |
+| **Summary-only mode** | Flat relevant-patterns list from reference files | Go-live checklist still applies |
 
 ### Special Workflows
 
@@ -212,7 +248,7 @@ Each talk is analyzed across:
 
 ### Summary-Only Mode
 
-If the speaker profile doesn't exist yet (fewer than 10 talks parsed), the creator runs in **summary-only mode** — drawing instruments from the rhetoric summary prose, using default guardrail thresholds, and asking for template/publishing details interactively.
+If the speaker profile doesn't exist yet (fewer than 10 talks parsed), the creator runs in **summary-only mode** — drawing instruments from the rhetoric summary prose, using default guardrail thresholds, and asking for template/publishing details interactively. The pattern taxonomy still works (all patterns shown as "new"), and the go-live checklist still applies.
 
 ## Prerequisites
 
@@ -233,20 +269,27 @@ If the speaker profile doesn't exist yet (fewer than 10 talks parsed), the creat
 speaker-toolkit-tile/
 +-- tile.json
 +-- README.md
++-- CHANGELOG.md
 +-- skills/
     +-- rhetoric-knowledge-vault/
     |   +-- SKILL.md                          # Main vault workflow (6 steps)
     |   +-- references/
-    |       +-- rhetoric-dimensions.md        # 14 analysis dimensions
-    |       +-- speaker-profile-schema.md     # Profile JSON schema
+    |       +-- rhetoric-dimensions.md        # 14 analysis dimensions + pattern cross-refs
+    |       +-- speaker-profile-schema.md     # Profile JSON schema (incl. pattern_profile)
+    |       +-- schemas.md                    # DB and subagent schemas (incl. pattern_observations)
     |       +-- pptx-extraction.md            # python-pptx visual extraction script
     |       +-- download-commands.md          # yt-dlp and gdown commands
     +-- presentation-creator/
         +-- SKILL.md                          # Main creator workflow (7 phases)
         +-- references/
-            +-- process.md                    # Detailed phase instructions
-            +-- guardrails.md                 # 9-point guardrail check structure
+            +-- process.md                    # Phase instructions + Pattern Strategy + go-live checklist
+            +-- guardrails.md                 # 9-point guardrails + pattern taxonomy scan (9B)
             +-- slide-generation.md           # MCP + python-pptx technical reference
+            +-- patterns/                     # Presentation Patterns taxonomy (88 entries)
+                +-- _index.md                 # Master index, phase mapping, dimension lookup
+                +-- prepare/                  # 18 patterns + 3 antipatterns
+                +-- build/                    # 27 patterns + 10 antipatterns
+                +-- deliver/                  # 18 patterns + 12 antipatterns (11 unobservable)
 ```
 
 ## License

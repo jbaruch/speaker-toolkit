@@ -40,8 +40,9 @@ vault_files = {
     "profile":  f"{vault_root}/speaker-profile.json",         # Structured data
 }
 # Then load local references:
-#   references/process.md      — Phase workflow detail
-#   references/guardrails.md   — Guardrail check structure
+#   references/process.md               — Phase workflow detail
+#   references/guardrails.md            — Guardrail check structure
+#   references/patterns/_index.md       — Presentation Patterns taxonomy index
 ```
 
 **Freshness check:** If `profile.generated_date < summary."Last updated"`, warn that
@@ -121,6 +122,7 @@ summary (sections 2-13) and profile `instrument_catalog` to extract available op
 | 7 | Slide Design Direction | `slide-design-spec.md` + `profile → design_rules` |
 | 8 | Persuasion Toolkit | `instrument_catalog.persuasion_techniques` |
 | 9 | Template Rich Patterns | `slide-design-spec.md` Section 7 template catalog |
+| 10 | Pattern Strategy | `references/patterns/_index.md` + `profile → pattern_profile` |
 
 **If co-presented**, add: Role Split, Footer Adaptation (`design_rules.footer.co_presented_extra`),
 Voice Differentiation (use `[SPEAKER A]:` / `[SPEAKER B]:` prefixes in notes).
@@ -189,6 +191,8 @@ GUARDRAIL CHECK — {talk title}
 [PASS/FAIL] Closing: summary={y/n} CTA={y/n} social={y/n}
 [PASS/FAIL] Cut lines: {present/missing}
 [INFO] Anti-patterns: {flags from profile recurring_issues}
+[INFO] Pattern score projection: {estimated score based on architecture decisions}
+[RECURRING/CONTEXTUAL] Presentation Patterns: {taxonomy-based antipattern flags}
 ================================================
 ```
 
@@ -234,6 +238,8 @@ Execute the steps from the profile:
 2. **Shownotes** — if `shownotes_publishing.enabled`, follow the described method
 3. **QR Code** — if `qr_code.enabled`, generate and insert per profile
 4. **Additional steps** — execute each `additional_steps[]` entry
+5. **Go-live checklist** — surface unobservable patterns from `references/patterns/_index.md`
+   as a delivery preparation reminder (see `references/process.md` Step 6.5)
 
 Gate: Author confirms published and ready to deliver.
 

@@ -246,7 +246,10 @@ After any python-pptx structural operation, re-open the deck with MCP
 
 ## PDF Export (Final Step)
 
-After the author declares done, export the .pptx to PDF using PowerPoint AppleScript:
+After the author declares done, export the .pptx to PDF. The method depends on the
+speaker's `publishing_process.export_method` and platform.
+
+### Option A: PowerPoint AppleScript (macOS + Microsoft PowerPoint)
 
 ```python
 import subprocess
@@ -267,7 +270,27 @@ subprocess.run(['osascript', '-e', script], capture_output=True, text=True, time
 
 Requirements:
 - Microsoft PowerPoint must be installed
+- macOS only
 - Paths must be absolute POSIX paths
+
+### Option B: LibreOffice CLI (cross-platform)
+
+```bash
+libreoffice --headless --convert-to pdf --outdir "{output_dir}" "{pptx_path}"
+```
+
+Requirements:
+- LibreOffice must be installed (`brew install --cask libreoffice` on macOS,
+  `apt install libreoffice-impress` on Linux)
+- Font rendering may differ slightly from PowerPoint — review the output
+
+### Selection logic
+
+Read `publishing_process.export_method` from the speaker profile. If the field
+describes an AppleScript method, use Option A. If it mentions LibreOffice, use
+Option B. If the field is empty or missing, detect the platform and available tools:
+prefer PowerPoint AppleScript on macOS if PowerPoint is installed, fall back to
+LibreOffice CLI otherwise.
 
 ---
 

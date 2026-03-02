@@ -7,40 +7,66 @@ Analyze each talk across these 14 dimensions plus structured data extraction. Fo
 ## 1. Opening Pattern
 How does the talk begin? What hook is used? (e.g., story, provocative question, joke, bold claim, audience interaction, cold open into demo)
 
+**Related Patterns:** Preroll | **Antipatterns:** —
+
 ## 2. Narrative Structure
 What's the arc? How are sections organized? Is there a throughline? Does the talk follow a problem-solution arc, a chronological journey, a listicle, or something else?
+
+**Related Patterns:** Narrative Arc, Triad, Talklet, Expansion Joints, Fourthought, Context Keeper, Bookends, Intermezzi, Foreshadowing, Backtracking, A la Carte Content, Breadcrumbs, Lightning Talk, Concurrent Creation | **Antipatterns:** Abstract Attorney, Celery
 
 ## 3. Humor & Wit
 What jokes/references are made? What type of humor — self-deprecating, absurdist, observational, callback, running gag? How frequent? Where is humor placed relative to serious points?
 
+**Related Patterns:** Brain Breaks, Entertainment | **Antipatterns:** Alienating Artifact
+
 ## 4. Audience Interaction
 Any engagement techniques visible in transcript? Show of hands, rhetorical questions, direct address, polling, "raise your hand if...", pauses for laughter/response?
+
+**Related Patterns:** Know Your Audience, Social Media Advertising, A la Carte Content, Posse, Seeding Satisfaction, Seeding the First Question, Emotional State, Make It Rain, Echo Chamber, Red Yellow Green, Greek Chorus | **Antipatterns:** Bunker, Hecklers, Backchannel, Negative Ignorance, Dual-Headed Monster
 
 ## 5. Transition Techniques
 How does the speaker move between topics? Verbal bridges, visual transitions, story callbacks, "now let's talk about...", seamless vs. explicit breaks?
 
+**Related Patterns:** Narrative Arc, Foreshadowing, Backtracking, Context Keeper, Bookends, Intermezzi, Soft Transitions, Cave Painting | **Antipatterns:** —
+
 ## 6. Closing Pattern
 How does the talk end? Callback to opening, call to action, summary, emotional note, joke, open question, resource list?
+
+**Related Patterns:** Coda, Crawling Credits | **Antipatterns:** —
 
 ## 7. Verbal Signatures
 Recurring phrases, characteristic expressions, filler patterns, catchphrases, favorite sentence structures, how the speaker addresses the audience.
 
+**Related Patterns:** Leet Grammars, Peer Review, Breathing Room, Echo Chamber | **Antipatterns:** Hiccup Words, Borrowed Shoes, Tower of Babble
+
 ## 8. Slide-to-Speech Relationship
 How do slides complement the spoken word? Are slides dense or minimal? Does the speaker read slides or use them as springboards? Image-heavy vs. text-heavy? Speaker notes vs. improvisation clues?
+
+**Related Patterns:** Fourthought, Concurrent Creation, Coda, Vacation Photos, Infodeck, Gradual Consistency, Charred Trail, Takahashi, Live on Tape, Peer Review | **Antipatterns:** Cookie Cutter, Injured Outlines, Bullet-Riddled Corpse, Borrowed Shoes, Slideuments, Lipstick on a Pig
 
 ## 9. Persuasion Techniques
 How are arguments structured? Appeal to authority, personal experience, data/evidence, analogy, social proof, counterargument handling, building credibility?
 
+**Related Patterns:** Know Your Audience, Required, The Big Why, Proposed, Display of High Value, Emotional State, Mentor, Greek Chorus | **Antipatterns:** Disowning Your Topic, Going Meta, Tower of Babble, Lipstick on a Pig
+
 ## 10. Cultural & Pop-Culture References
 What's referenced and how? Movies, TV shows, books, memes, historical events, internet culture. How are these woven in — as analogies, humor, slide imagery?
+
+**Related Patterns:** Leet Grammars, Unifying Visual Theme, Entertainment | **Antipatterns:** Alienating Artifact, Photomaniac
 
 ## 11. Technical Content Delivery
 How is complexity handled? Simplification strategies, analogy patterns, progressive revelation, live demo integration, code examples, before/after comparisons?
 
+**Related Patterns:** Live Demo, Lipsync, Traveling Highlights, Crawling Code, Emergence, Mentor, Lightsaber | **Antipatterns:** Dead Demo
+
 ## 12. Pacing Clues
 Section lengths, density of content per slide, speed of topic transitions, where the speaker lingers vs. rushes, balance of depth vs. breadth.
 
+**Related Patterns:** Crucible, Expansion Joints, Talklet, Brain Breaks, Lightning Talk, Takahashi, Carnegie Hall, Breathing Room, Weatherman | **Antipatterns:** Shortchanged, Disowning Your Topic
+
 ## 13. Slide Design Patterns
+
+**Related Patterns:** Unifying Visual Theme, Takahashi, Cave Painting, Composite Animation, Vacation Photos, Defy Defaults, Analog Noise, Gradual Consistency, Charred Trail, Exuberant Title Top, Invisibility, Context Keeper, Breadcrumbs, Bookends, Soft Transitions, Intermezzi, Preroll, Crawling Credits, Lipsync, Traveling Highlights, Crawling Code, Emergence | **Antipatterns:** Cookie Cutter, Bullet-Riddled Corpse, Ant Fonts, Fontaholic, Floodmarks, Photomaniac, Laser Weapons
 
 Analyze the visual design of EVERY slide in the PDF. This feeds the `slide-design-spec.md`
 in the vault root. Refer to that document for the full taxonomy of categories.
@@ -98,6 +124,9 @@ From visual inspection of the PDF:
   starburst marker?)
 
 ## 14. Reflection: Areas for Improvement
+
+**Related Patterns:** Crucible, Preparation, Carnegie Hall, Shoeless, The Stakeout | **Antipatterns:** Abstract Attorney, Alienating Artifact, Celery, Injured Outlines, Bullet-Riddled Corpse, Ant Fonts, Fontaholic, Floodmarks, Photomaniac, Borrowed Shoes, Slideuments, Dead Demo, Shortchanged, Hiccup Words, Disowning Your Topic, Going Meta, Bunker, Hecklers, Backchannel, Laser Weapons, Negative Ignorance, Dual-Headed Monster, Tower of Babble, Lipstick on a Pig
+
 Critically assess what could be improved in this talk's delivery and rhetoric. Look for: uneven pacing (rushing through the last third because of time pressure), weak transitions, jokes that don't land, audience engagement that falls flat, slides that are too dense or too sparse, arguments that lack support, sections that drag, abrupt endings, time management issues (visible "5 minutes left" panic), filler words overuse, unclear structure, missed callback opportunities, underused audience interaction. Be honest and constructive — the goal is to identify patterns to avoid, not just patterns to replicate.
 
 ## 15. Structured Data Extraction

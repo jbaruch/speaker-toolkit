@@ -175,6 +175,11 @@ explicit cut lines:
 
 ## 9. Anti-Pattern Flags
 
+This check has **two layers**: speaker-specific recurring issues from the vault, and
+taxonomy-based antipattern scanning from the Presentation Patterns reference.
+
+### 9A. Speaker-Specific Recurring Issues
+
 Read `guardrail_sources.recurring_issues[]` from the speaker profile. Each entry
 describes a known weakness and its specific guardrail check.
 
@@ -186,6 +191,39 @@ Common anti-patterns (may or may not apply to a given speaker):
 - **Theoretical framing delay**: If an opening framework section exceeds 10% of time, flag it
 - **Missing anti-sell beat**: If commercial intent + applicable mode but no anti-sell
 - **Edgy humor overshoot**: Flag culturally sensitive humor targets
+
+### 9B. Presentation Patterns Taxonomy Scan
+
+Read `references/patterns/_index.md` (Phase 4 section of the phase-grouped lookup table)
+and `profile → pattern_profile.antipattern_frequency` if available.
+
+**Speaker-specific antipatterns** — scan `pattern_profile.antipattern_frequency` for
+patterns with `severity: "recurring"`. These are flagged as `[RECURRING]` with the
+speaker's historical frequency and trend.
+
+**Contextual antipatterns** — scan the outline against ALL antipatterns from the taxonomy.
+For each match, read the individual pattern file for detection heuristics and scoring
+criteria. These are flagged as `[CONTEXTUAL]` (new detection, not historically tracked).
+
+Contextual detection rules:
+- **Bullet-Riddled Corpse** — flag slides with 5+ bullet points or complete sentences
+- **Ant Fonts** — flag text descriptions suggesting small or cramped content
+- **Cookie Cutter** — flag ideas awkwardly split across slide boundaries
+- **Shortchanged** — flag if duration is shorter than speaker's default with no cut lines
+- **Dual-Headed Monster** — flag if co-presented with no handoff protocol
+- **Slideuments** — flag if outline suggests dual-purpose slides (handout + presentation)
+- **Borrowed Shoes** — flag if adapting another speaker's materials
+- **Dead Demo** — flag demos without clear narrative purpose
+- **Alienating Artifact** — flag humor/references that could exclude audience segments
+- **Tower of Babble** — flag unexplained jargon for the stated audience level
+
+Report format:
+```
+[RECURRING] Shortchanged (8/24, decreasing) — plan cut lines for the 20-min slot
+[RECURRING] Meme accretion (5/24, stable) — Act 1 meme ratio at 55%
+[CONTEXTUAL] Bullet-Riddled Corpse — slides 14, 22 have 6+ bullet points
+[CONTEXTUAL] Dual-Headed Monster — co-presented talk, handoff points not defined
+```
 
 ---
 
@@ -205,5 +243,6 @@ GUARDRAIL CHECK — {talk title} — {date}
 [PASS/FAIL] Closing: summary={y/n} CTA={y/n} social={y/n}
 [PASS/FAIL] Cut lines: {present/missing}
 [INFO] Anti-patterns: {any flags from recurring_issues}
+[RECURRING/CONTEXTUAL] Presentation Patterns: {taxonomy-based antipattern flags}
 ================================================
 ```

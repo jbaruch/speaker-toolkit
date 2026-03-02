@@ -125,6 +125,60 @@ Read `instrument_catalog.narrative_structures[]` from the speaker profile. Each 
 acts and `time_allocation`. Present the options with their time splits and best-for
 context.
 
+### Decision #10: Pattern Strategy
+
+Read `references/patterns/_index.md` for the full taxonomy and
+`profile → pattern_profile` for the speaker's pattern history.
+
+Present patterns in **4 tiers:**
+
+```
+PATTERN STRATEGY for "{talk title}"
+===================================
+YOUR TOOLKIT (signature):
+  ✓ Narrative Arc (22/24 talks) — recommended for this format
+  ✓ Bookends (18/24) — strong with this audience
+  ✓ Expansion Joints (20/24) — essential for 45→20 min adaptation
+
+WORTH CONSIDERING (contextual):
+  ○ Talklet (3/24) — good fit for the 20-min constraint
+  ○ Foreshadowing (7/24) — pairs well with your arc style
+
+NEW TO YOU:
+  ★ [NEW] Preroll — display bio/topic on screen before you start
+  ★ [NEW] Seeding the First Question — plant an easy Q for Q&A
+
+SHAKE IT UP:
+  ⚡ [WILD CARD] Red, Yellow, Green — audience voting with colored cards
+  ⚡ [WILD CARD] Cave Painting — one giant canvas instead of slides
+
+WARNINGS:
+  ⚠ Shortchanged (8/24 detections) — plan cut lines for the 20-min slot
+  ⚠ Dual-Headed Monster — co-presented talk, define handoff points
+===================================
+```
+
+**Tier logic:**
+1. **Signature** — `mastery_level: signature` patterns (80%+ usage), always shown
+2. **Contextual** — patterns matching spec context that speaker uses occasionally (10-80%)
+3. **New to You** — from `never_used_patterns`, filtered by spec relevance, marked `[NEW]`
+4. **Shake It Up** — 1-2 random picks from `never_used_patterns`, NOT filtered by relevance.
+   Provocations, not prescriptions.
+
+**Antipattern warnings** — merge speaker's recurring antipatterns (from
+`pattern_profile.antipattern_frequency`) + contextual warnings derived from the spec
+(co-presented → Dual-Headed Monster, dense content → Bullet-Riddled Corpse,
+new format → Shortchanged, etc.)
+
+**Summary-only mode** (no profile yet): Pattern taxonomy still works — patterns come
+from the reference files alone (no usage stats). All patterns presented as "new" (no
+tier separation, just a flat relevant-patterns list). Contextual antipattern warnings
+still apply.
+
+Enhance decisions 2-9 with pattern cross-references as shared vocabulary: when recommending
+an opening pattern, reference the taxonomy ID; when selecting a narrative structure, note
+which Presentation Patterns it maps to (e.g., "problem-solution" = Narrative Arc + Triad).
+
 ### Slide Budget Calculation
 
 Read `guardrail_sources.slide_budgets[]` from the speaker profile. Match the spec's
@@ -349,7 +403,37 @@ Read `publishing_process.additional_steps[]`. For each entry:
 - If `automated` is false, present the step to the author as a manual TODO
 - Report completion status for each step
 
-### Step 6.5: Publishing Report
+### Step 6.5: Go-Live Preparation Checklist
+
+Before delivery, surface unobservable patterns from `references/patterns/_index.md`
+(the "Unobservable Patterns — Go-Live Checklist" section) as a preparation reminder.
+These are patterns the vault **cannot score retroactively** because they involve
+pre-event logistics, physical stage behaviors, or external systems — but they still
+matter for delivery quality.
+
+```
+GO-LIVE CHECKLIST — {talk title}
+==================================
+PRE-EVENT:
+[ ] Preparation — backups, cables, hydration, room layout check
+[ ] Carnegie Hall — completed 4 rehearsals (pace, delivery, fixes, groove)
+[ ] The Stakeout — staging area identified near venue
+[ ] Posse — supporter(s) confirmed for front row
+[ ] Seeding Satisfaction — plan to arrive early and mingle
+[ ] Shoeless — comfort ritual ready
+
+DURING DELIVERY:
+[ ] Lightsaber — if laser pointer needed, max 2-3 steady moments
+[ ] Red/Yellow/Green — exit feedback cards set up (if venue supports)
+
+AVOID:
+[ ] Laser Weapons — don't wave the pointer; use built-in highlights
+[ ] Bunker — step out from behind the podium
+[ ] Backchannel — don't monitor social media during the talk
+==================================
+```
+
+### Step 6.6: Publishing Report
 
 ```
 PUBLISHING REPORT — {talk title}
@@ -358,5 +442,6 @@ PUBLISHING REPORT — {talk title}
 [DONE/SKIP] Shownotes: {url or "not configured"}
 [DONE/SKIP] QR code: {inserted at slide N or "not configured"}
 [DONE/SKIP/TODO] {additional step name}: {status}
+[INFO] Go-live checklist: {presented above}
 ==================================
 ```

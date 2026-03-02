@@ -194,6 +194,49 @@ creation at runtime.
     "pop_culture_notes": "general guidance on how this speaker uses pop-culture references"
   },
 
+  "pattern_profile": {
+    "talks_scored": 24,
+    "average_pattern_score": 6.8,
+    "score_trend": "improving|stable|declining",
+    "note": "Only observable patterns are included. Patterns marked observable: false in the taxonomy (pre-event logistics, physical stage behaviors, external systems) are excluded from scoring and surfaced as a go-live checklist in creator Phase 6 instead.",
+    "pattern_usage": [
+      {
+        "pattern_id": "narrative-arc",
+        "times_used": 22,
+        "out_of": 24,
+        "usage_rate": 0.92,
+        "average_confidence": "strong|moderate|weak",
+        "trend": "consistent|increasing|decreasing",
+        "mastery_level": "signature|regular|occasional|rare"
+      }
+    ],
+    "antipattern_frequency": [
+      {
+        "pattern_id": "shortchanged",
+        "times_detected": 8,
+        "out_of": 24,
+        "frequency_rate": 0.33,
+        "trend": "increasing|stable|decreasing",
+        "severity": "recurring|occasional|rare"
+      }
+    ],
+    "never_used_patterns": ["takahashi", "cave-painting", "greek-chorus (observable patterns only — unobservable patterns excluded)"],
+    "signature_combinations": [
+      {
+        "patterns": ["narrative-arc", "bookends", "foreshadowing"],
+        "frequency": 15,
+        "label": "Story Sandwich"
+      }
+    ],
+    "mastery_levels": {
+      "signature": [],
+      "regular": [],
+      "occasional": [],
+      "rare": [],
+      "never_tried": []
+    }
+  },
+
   "badges": [
     {
       "id": "short_identifier",
@@ -248,6 +291,7 @@ automatically picks up changes when the profile is regenerated.
 | `pacing` | Phase 3-4 (content, guardrails) | Slide budget tables, WPM targets |
 | `guardrail_sources` | Phase 4 (guardrails) | All guardrail checks with thresholds |
 | `instrument_catalog` | Phase 2 (architecture) | Complete instrument menu by dimension |
+| `pattern_profile` | Phase 2 (architecture), Phase 4 (guardrails) | Pattern Strategy 4-tier recommendations, antipattern warnings |
 | `badges` | Informational | Fun speaker achievements mined from vault data |
 | `infrastructure.template_layouts` | Phase 5 (slide generation) | Layout map and selection logic |
 | `infrastructure.font_pair` | Phase 5 (slide generation) | Font usage rules |

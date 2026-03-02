@@ -66,6 +66,13 @@ Read `tracking-database.json` (create with empty `config`, `talks`, `pptx_catalo
 `*static*`, `*(N).pptx` (conflict copies), or matching `template_skip_patterns`.
 Fuzzy-match each to a `talks[]` entry by conference + title. Report counts.
 
+**Pattern taxonomy migration:** If the pattern taxonomy exists
+(`skills/presentation-creator/references/patterns/_index.md`) but any talks with
+status `"processed"` or `"processed_partial"` have no `pattern_observations` (or
+`pattern_observations.pattern_ids` is empty), mark them `"needs-reprocessing"` with
+`reprocess_reason: "pattern_scoring_added"`. Report: "N talks need reprocessing for
+pattern scoring."
+
 Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report state:
 "X processed, Y remaining. PPTX: A cataloged, B matched, C extracted."
 
@@ -107,16 +114,32 @@ For VTT cleanup and fallback commands, see `references/download-commands.md`.
 **B. Analyze for Rhetoric & Style (NOT content).** Apply all 14 dimensions from
 `references/rhetoric-dimensions.md` (including dimension 14: Areas for Improvement).
 
+**B2. Tag Presentation Patterns.** Scan observations against the pattern taxonomy
+index at `skills/presentation-creator/references/patterns/_index.md` (path relative
+to tile root). Skip patterns marked
+`observable: false` — these are pre-event logistics and physical stage behaviors
+that cannot be detected from transcripts or slides. For each observable
+pattern/antipattern, determine if the talk exhibits it (strong/moderate/weak
+confidence), record evidence, and compute per-talk pattern score:
+count(patterns) - count(antipatterns). Return in the `pattern_observations` field.
+
 **C. Return JSON** per the subagent return schema in `references/schemas.md`.
 
-### Step 3B: Extract Visual Design Data from PPTX Files
+### Step 3B: Extract Visual Design Data from Remaining PPTX Files
 
-**Note:** When a talk's `slide_source` is `"pptx"` or `"both"`, the PPTX extraction
-already ran as part of Step 3 (merged into rhetoric analysis). Step 3B only needs to
-process PPTX files that were NOT used as primary slide sources in Step 3 — typically
-unmatched catalog entries or talks that used PDF as their primary source.
+Step 3B runs PPTX extraction on files that were **not** already extracted during
+Step 3. A PPTX file needs Step 3B processing when ANY of these conditions is true:
 
-Process .pptx files with `pptx_visual_status: "pending"` or `visual_extracted: false`.
+| Condition | Typical scenario |
+|-----------|-----------------|
+| `pptx_catalog` entry with `visual_extracted: false` and no matched talk | Unmatched .pptx file (not linked to any shownotes entry) |
+| Talk with `slide_source: "pdf"` and a `pptx_path` that wasn't the primary source | Talk used PDF for rhetoric analysis but has a PPTX available for design extraction |
+| Talk or catalog entry with `pptx_visual_status: "pending"` | Any PPTX not yet processed for visual design data |
+
+**Skip** if: the talk's `slide_source` is `"pptx"` or `"both"` AND `pptx_visual_status`
+is already `"extracted"` — these were handled inline during Step 3.
+
+Process .pptx files matching the conditions above.
 Uses `python-pptx` for exact design values. See `references/pptx-extraction.md` for the
 extraction script. Output schema in `references/schemas.md`.
 
@@ -133,9 +156,12 @@ After each batch:
 
 1. **Update tracking DB** — set `status`, `processed_date`, all result fields.
    Backfill empty `structured_data` from earlier runs using `rhetoric_notes`.
+   Persist `pattern_observations` IDs + score to each talk entry.
 2. **Write per-talk analysis files** — for each processed talk, write a standalone
    analysis file to `{vault_root}/analyses/{talk_filename}.md` containing the full
-   rhetoric analysis (all 14 dimensions, structured data, and verbatim examples).
+   rhetoric analysis (all 14 dimensions, structured data, verbatim examples, and
+   a "Presentation Patterns Scoring" section listing detected patterns/antipatterns
+   with confidence levels, evidence, and the per-talk pattern score).
    These files are read by the presentation-creator when adapting existing talks.
    Create the `analyses/` directory if it doesn't exist.
 3. **Update rhetoric-style-summary.md** — integrate `new_patterns` and `summary_updates`.
@@ -199,9 +225,12 @@ Compile confirmed intents from 5A into structured entries:
 ```
 Store in tracking DB `confirmed_intents` array. These feed directly into the profile.
 
+**5D. Mark session complete:** Increment `config.clarification_sessions_completed` in
+the tracking DB. This counter gates profile generation (Step 6).
+
 ### Step 6: Generate / Update Speaker Profile
 
-**When:** 10+ talks parsed AND one clarification session completed. Also on explicit request.
+**When:** 10+ talks parsed AND `config.clarification_sessions_completed >= 1`. Also on explicit request.
 
 **Process:**
 1. Read `rhetoric-style-summary.md`, `slide-design-spec.md`, and `confirmed_intents`.
@@ -223,6 +252,9 @@ Store in tracking DB `confirmed_intents` array. These feed directly into the pro
    - `pacing` ← aggregated duration/slide data (or summary prose)
    - `guardrail_sources` ← pacing data + summary Section 15 recurring issues
    - `instrument_catalog` ← summary Sections 2-13 (each pattern → structured entry)
+   - `pattern_profile` ← aggregated pattern observations across all scored talks
+     (usage rates, mastery levels, antipattern frequency, signature combinations,
+     never-used patterns — see `references/speaker-profile-schema.md`)
    - `publishing_process` ← config publishing_process (empty object + flag if not captured)
 5. **Diff against existing profile** and report changes (new instruments, revised thresholds,
    new guardrails, structural changes). Flag new presentation modes prominently.
@@ -233,6 +265,12 @@ Store in tracking DB `confirmed_intents` array. These feed directly into the pro
    recurring patterns the speaker keeps meaning to fix, signature jokes, audience interaction
    stats. Badges should be genuinely personalized to THIS speaker's quirks, not generic.
    Make them fun, self-deprecating, and grounded in real vault data.
+   Also generate pattern-based badges from `pattern_profile` data. Examples:
+   - "Narrative Arc Master" (22/24 talks)
+   - "Shortchanged Survivor" (8 detections but always closed with CTA)
+   - "Pattern Polyglot" (12+ distinct active patterns)
+   - "Brain Break Champion" (brain-breaks in every talk)
+   - "Anti-Pattern Slayer" (declining antipattern frequency over time)
 
 **Auto-trigger:** Step 4 calls this after every vault update (if profile exists).
 
