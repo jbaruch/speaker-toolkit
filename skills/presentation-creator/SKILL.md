@@ -23,41 +23,19 @@ joint effort — the skill brings rhetoric knowledge, the author brings topic ex
 **This skill defines PROCESS. The vault provides CONTENT.** All instruments, thresholds,
 voice patterns, and design rules come from the vault at runtime.
 
-## Before You Start
+## Before You Start: Load the Vault
 
-### Step 0: Locate the Vault
+If the vault root path is unknown, ask via `AskUserQuestion`.
 
-If the vault root path is unknown, ask via `AskUserQuestion`:
-"Where is your rhetoric knowledge vault?"
+Load from vault root: `rhetoric-style-summary.md` (constitution — all patterns),
+`slide-design-spec.md` (visual rules), `speaker-profile.json` (structured data).
+Then load local references: `references/process.md`, `references/guardrails.md`,
+`references/patterns/_index.md`.
 
-### Step 1: Load Vault Documents
-
-```python
-# Load order — read all three from vault root:
-vault_files = {
-    "summary":  f"{vault_root}/rhetoric-style-summary.md",   # Constitution: all patterns
-    "design":   f"{vault_root}/slide-design-spec.md",         # Visual rules
-    "profile":  f"{vault_root}/speaker-profile.json",         # Structured data
-}
-# Then load local references:
-#   references/process.md               — Phase workflow detail
-#   references/guardrails.md            — Guardrail check structure
-#   references/patterns/_index.md       — Presentation Patterns taxonomy index
-```
-
-**Freshness check:** If `profile.generated_date < summary."Last updated"`, warn that
-new talks may have been parsed — offer to run "update speaker profile" first.
-
-**Schema version:** This skill expects `schema_version: 1`. Warn if higher.
-
-**If profile doesn't exist** (vault has <10 talks), run in **summary-only mode**:
-
-| Phase | Fallback |
-|-------|----------|
-| 2: Architecture | Read instruments from summary prose (no structured catalog) |
-| 4: Guardrails | Default thresholds: 1.5 slides/min, 45% Act 1 cap, three-part close |
-| 5: Slides | Ask author for template path, discover layouts via python-pptx |
-| 6: Publishing | Ask author for steps interactively (no stored workflow) |
+**Checks:** Warn if `profile.generated_date < summary."Last updated"` (stale profile).
+Warn if `schema_version > 1`. If profile doesn't exist (<10 talks), run in
+**summary-only mode** — read instruments from summary prose, use default guardrail
+thresholds (1.5 slides/min, 45% Act 1 cap), ask for template/publishing interactively.
 
 ## Workflow Overview
 
@@ -106,29 +84,19 @@ Gate: Author confirms or edits the spec.
 
 ## Phase 2: Rhetorical Architecture
 
-**The instrument menu comes from the vault, not from a static file.** Read the rhetoric
-summary (sections 2-13) and profile `instrument_catalog` to extract available options.
+**The instrument menu comes from the vault, not from a static file.** Read the summary
+(sections 2-13) and profile `instrument_catalog` for options.
 
-### Decisions to make together:
+### 10 Decisions to make together:
 
-| # | Decision | Source |
-|---|----------|--------|
-| 1 | Presentation Mode | `profile → presentation_modes[]` |
-| 2 | Opening Pattern | summary Section 2 + `instrument_catalog.opening_patterns` |
-| 3 | Narrative Structure | `instrument_catalog.narrative_structures` |
-| 4 | Humor Register | `instrument_catalog.humor_techniques` (grouped by register) |
-| 5 | Audience Interaction | `instrument_catalog.audience_interactions` |
-| 6 | Closing Pattern | `instrument_catalog.closing_patterns` |
-| 7 | Slide Design Direction | `slide-design-spec.md` + `profile → design_rules` |
-| 8 | Persuasion Toolkit | `instrument_catalog.persuasion_techniques` |
-| 9 | Template Rich Patterns | `slide-design-spec.md` Section 7 template catalog |
-| 10 | Pattern Strategy | `references/patterns/_index.md` + `profile → pattern_profile` |
+Mode, Opening, Narrative, Humor, Audience Interaction, Closing, Slide Design,
+Persuasion, Template Patterns, Pattern Strategy. Each reads from the matching
+`instrument_catalog` entry + summary section. Decision #10 uses the 4-tier Pattern
+Strategy from `references/patterns/_index.md` + `profile → pattern_profile` (see
+`references/process.md` for the full tier logic).
 
-**If co-presented**, add: Role Split, Footer Adaptation (`design_rules.footer.co_presented_extra`),
-Voice Differentiation (use `[SPEAKER A]:` / `[SPEAKER B]:` prefixes in notes).
-See `references/process.md` for co-presenter handling.
-
-For each decision: present options, recommend based on spec, let author choose.
+For each: present options, recommend based on spec, let author choose.
+If co-presented, add role split and voice differentiation — see `references/process.md`.
 
 **Slide budget** — read from `profile → guardrail_sources.slide_budgets` at runtime.
 If the profile is unavailable (summary-only mode), use these defaults:

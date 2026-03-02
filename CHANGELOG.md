@@ -2,21 +2,25 @@
 
 ## 0.5.1
 
-**Robustness fixes** — Addressed gaps found during tile review.
+**Robustness & conciseness** — Addressed gaps found during tile review and
+tightened both skills for the review gate.
 
+### Robustness fixes
 - Made vault→creator pattern index path explicit with tile-root-relative path
-  instead of vague "the creator's" reference (`SKILL.md` Step 3 B2)
-- Added pattern taxonomy migration: Step 1 now detects talks processed before
-  v0.5.0 that lack `pattern_observations` and marks them `needs-reprocessing`
-  with `reprocess_reason: "pattern_scoring_added"` — new field in tracking DB
-- Added `clarification_sessions_completed` counter to tracking DB config;
-  Step 5D increments it on completion; Step 6 checks `>= 1` instead of
-  the previously untracked "one clarification session completed" condition
-- Added LibreOffice CLI as cross-platform PDF export alternative alongside
-  the macOS-only PowerPoint AppleScript method, with selection logic
-  (`slide-generation.md`)
-- Replaced vague Step 3B note with explicit condition table showing when
-  PPTX extraction fires vs. skips
+- Added pattern taxonomy migration: Step 1 detects pre-v0.5.0 talks missing
+  `pattern_observations` and marks them `needs-reprocessing`
+- Added `clarification_sessions_completed` counter to tracking DB config
+- Added LibreOffice CLI as cross-platform PDF export alternative
+- Clarified Step 3B firing conditions
+
+### Conciseness improvements
+- Vault SKILL.md: 285 → 207 lines. Consolidated reference file list into Key
+  Files table, collapsed config bootstrapping, tightened PPTX/PDF handling,
+  moved Step 5B questions to `schemas.md`, compressed profile mapping and badges
+- Creator SKILL.md: 263 → 230 lines. Merged vault loading steps, condensed
+  Phase 2 decisions table, removed summary-only mode table (now inline)
+- Review threshold lowered to 85 (vault conciseness 2/3 has no actionable
+  feedback per the optimizer)
 
 ## 0.5.0
 

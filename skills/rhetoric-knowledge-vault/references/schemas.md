@@ -2,6 +2,25 @@
 
 ## Tracking Database Schema
 
+### Config Fields — Clarification Session Questions
+
+Fields below `template_skip_patterns` are asked during Step 5B (first session only)
+when empty. The question column shows what to ask the speaker.
+
+| Config field | Question |
+|-------------|----------|
+| `speaker_name` | "Name as it appears on slides?" |
+| `speaker_handle` | "Social handle for footers?" |
+| `speaker_website` | "Website for talk resources?" |
+| `shownotes_url_pattern` | "URL pattern for talk pages? (e.g., `speaking.example.com/{slug}`)" |
+| `template_pptx_path` | "PowerPoint template path?" |
+| `presentation_file_convention` | "File organization? (default: `{conference}/{year}/{talk-slug}/`)" |
+| `publishing_process.export_format` | "How do you export final decks — PDF, keep .pptx only, or both?" |
+| `publishing_process.export_method` | "How do you produce the PDF? (e.g., PowerPoint AppleScript, LibreOffice CLI, manual)" |
+| `publishing_process.shownotes_publishing` | "Do you publish shownotes for your talks? If yes, how?" |
+| `publishing_process.qr_code` | "Do you put QR codes in your decks? If yes, what do they link to?" |
+| `publishing_process.additional_steps` | "Any other distribution steps after exporting?" |
+
 ```json
 {
   "config": {
