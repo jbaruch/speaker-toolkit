@@ -95,6 +95,17 @@ yt-dlp --write-auto-sub --sub-lang en --skip-download --sub-format vtt \
 **B. Analyze for Rhetoric & Style (NOT content).** Apply all 14 dimensions
 (including dimension 14: Areas for Improvement).
 
+**Language policy — the vault is English-only.** All analysis output, rhetoric summary
+updates, tracking DB entries, and profile data MUST be written in English regardless
+of the talk's delivery language. For non-English talks:
+- **Verbatim quotes**: provide English translation first, original in parentheses —
+  e.g., `"That's the whole point" (В этом весь смысл)`
+- **Verbal signatures**: store separately tagged with language code (e.g.,
+  `[ru] "получается что"`) — do NOT merge into the main English signature list
+- **Slide text**: translate in the analysis, note original language
+- **Humor/wordplay**: note when a joke is language-dependent and untranslatable
+- Tag the talk entry with `delivery_language` in the tracking DB
+
 **B2. Tag Presentation Patterns.** Scan observations against the pattern taxonomy
 index at `skills/presentation-creator/references/patterns/_index.md` (path relative
 to tile root). Skip patterns marked `observable: false` — these are pre-event logistics

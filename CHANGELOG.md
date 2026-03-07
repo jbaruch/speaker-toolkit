@@ -2,11 +2,15 @@
 
 ## 0.5.2
 
-**Blind spot clarification** — Added Step 5A-bis to the vault skill: after
-analyzing each talk, the skill now identifies moments it knows it missed
-(audience reactions, costume/prop moments, physical comedy, room energy,
-demo engagement) and asks the speaker about each one during the
-clarification session. Stores responses as `blind_spot_observations`.
+**Blind spot clarification + language policy** — Two additions to the vault skill:
+
+- **Step 5A-bis (Blind Spots):** After analyzing each talk, the skill identifies
+  moments it knows it missed (audience reactions, costume/prop moments, room energy,
+  demo engagement) and asks the speaker. Stores as `blind_spot_observations`.
+- **Language policy:** The vault is English-only. Non-English talks are analyzed and
+  stored in English with translated quotes, language-tagged verbal signatures, and
+  `delivery_language` on the talk entry. Prevents non-English content from polluting
+  the signature list or rhetoric summary.
 
 ## 0.5.1
 
