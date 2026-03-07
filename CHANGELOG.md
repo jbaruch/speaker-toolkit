@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.2
+
+**Blind spot clarification** — Added Step 5A-bis to the vault skill: after
+analyzing each talk, the skill now identifies moments it knows it missed
+(audience reactions, costume/prop moments, physical comedy, room energy,
+demo engagement) and asks the speaker about each one during the
+clarification session. Stores responses as `blind_spot_observations`.
+
 ## 0.5.1
 
 **Robustness & conciseness** — Addressed gaps found during tile review and
