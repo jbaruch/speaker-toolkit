@@ -147,6 +147,10 @@ After each batch:
 3. **Update rhetoric-style-summary.md** — integrate `new_patterns` and `summary_updates`.
    Be additive; never delete. Sections 1-14 map to the 14 rhetoric dimensions; Section 15
    aggregates areas for improvement; Section 16 captures speaker-confirmed intent.
+   **Recount status from DB every time.** The summary's `## Status` block must be
+   rewritten by counting the tracking DB — never increment manually, never trust the
+   existing status line. Count: total talks, processed, skipped (by reason), languages,
+   co-presenters. The DB is the source of truth; the summary is a derived view.
 4. **Report:** talks processed, new patterns, current state, skipped talks.
 5. **Auto-regenerate speaker profile** (Step 6) if it already exists. Report the diff.
 6. Flag **structural changes** prominently (new presentation mode, new workflow pattern).
