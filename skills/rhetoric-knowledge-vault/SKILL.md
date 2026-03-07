@@ -84,13 +84,31 @@ Each subagent receives the talk's DB entry and current `rhetoric-style-summary.m
 
 **A. Download transcript and acquire slides:**
 
+**YouTube talks** (default):
 ```bash
 yt-dlp --write-auto-sub --sub-lang en --skip-download --sub-format vtt \
   -o "{vault_root}/transcripts/{youtube_id}" "https://www.youtube.com/watch?v={youtube_id}"
 ```
 
+**Non-YouTube talks** (InfoQ, conference platforms, etc.): `yt-dlp` supports many
+sites beyond YouTube. When `video_url` is not a YouTube link:
+1. Try `yt-dlp -f http_audio` to download audio (MP3/M4A)
+2. Transcribe locally using MLX Whisper (Apple Silicon) or OpenAI Whisper:
+   ```python
+   import mlx_whisper
+   result = mlx_whisper.transcribe(audio_path,
+       path_or_hf_repo='mlx-community/whisper-large-v3-turbo',
+       language='en')  # or 'ru', etc.
+   ```
+3. Save transcript text to `{vault_root}/transcripts/{talk_id}.txt`
+4. Set `transcript_source: "whisper"` on the talk entry (vs `"youtube_auto"` for YouTube)
+
+This enables ingestion from InfoQ, Vimeo, conference-hosted video, or any source
+yt-dlp supports. Falls back to `processed_partial` (slides only) if audio extraction fails.
+
 **Slide acquisition** per `slide_source`: if PPTX available, run the extraction script
-(store in `structured_data.pptx_visual`); if PDF only, download via gdown.
+(store in `structured_data.pptx_visual`); if PDF only, download via gdown or use
+locally provided PDF.
 
 **B. Analyze for Rhetoric & Style (NOT content).** Apply all 14 dimensions
 (including dimension 14: Areas for Improvement).

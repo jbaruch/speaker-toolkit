@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.4
+
+**Non-YouTube video support** — Step 3A now supports ingesting talks from InfoQ,
+Vimeo, conference platforms, and any source yt-dlp supports. Downloads audio via
+`yt-dlp -f http_audio`, transcribes locally with MLX Whisper (Apple Silicon) or
+OpenAI Whisper. Tags transcript source as `"whisper"` vs `"youtube_auto"`.
+
 ## 0.5.3
 
 **Data integrity fixes:**
