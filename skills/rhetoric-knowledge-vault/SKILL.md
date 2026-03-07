@@ -133,6 +133,10 @@ After each batch:
 1. **Update tracking DB** — set `status`, `processed_date`, all result fields.
    Backfill empty `structured_data` from earlier runs using `rhetoric_notes`.
    Persist `pattern_observations` IDs + score to each talk entry.
+   **Structured field extraction:** When the analysis identifies co-presenters,
+   delivery language, or other structured metadata, populate the corresponding
+   DB fields (`co_presenter`, `delivery_language`, etc.) — do NOT leave
+   structured data buried only in `rhetoric_notes` free text.
 2. **Write per-talk analysis files** — for each processed talk, write a standalone
    analysis file to `{vault_root}/analyses/{talk_filename}.md` containing the full
    rhetoric analysis (all 14 dimensions, structured data, verbatim examples, and
