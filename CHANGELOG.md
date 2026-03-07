@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.3
+
+**Data integrity fixes:**
+
+- **Summary status recount:** Step 4 now rewrites the summary Status block by
+  counting the tracking DB every time. The DB is the source of truth; the summary
+  is a derived view. Fixes stale tallies from manual incrementing.
+- **Structured field extraction:** Step 4 now requires populating `co_presenter`,
+  `delivery_language`, and other structured DB fields directly from analysis results,
+  not burying them in `rhetoric_notes` free text.
+
 ## 0.5.2
 
 **Blind spot clarification + language policy** — Two additions to the vault skill:
