@@ -110,6 +110,20 @@ yt-dlp supports. Falls back to `processed_partial` (slides only) if audio extrac
 (store in `structured_data.pptx_visual`); if PDF only, download via gdown or use
 locally provided PDF.
 
+**Video-extracted slides** (`slide_source: "video_extracted"`): When no slides file
+exists but video is available, extract slides from the video:
+```bash
+# 1. Extract frames every 2 seconds
+ffmpeg -i video.mp4 -vf "fps=0.5" -q:v 2 frames/frame_%05d.jpg
+# 2. Crop to slide area (exclude speaker PiP, conference branding)
+# 3. Deduplicate by perceptual hash on cropped region
+# 4. Combine unique frames into PDF
+```
+Use `imagehash.phash()` on the cropped slide region only (typically left 70-75% of
+frame, excluding PiP sidebar). Threshold ~8-12 depending on progressive reveal density.
+Save full (uncropped) frames as the PDF for visual analysis. Mark `slide_source:
+"video_extracted"` and note frame count in `structured_data`.
+
 **B. Analyze for Rhetoric & Style (NOT content).** Apply all 14 dimensions
 (including dimension 14: Areas for Improvement).
 

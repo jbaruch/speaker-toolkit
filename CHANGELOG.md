@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.5
+
+**Video-extracted slides** — When no slides file exists, extract slides directly
+from video: ffmpeg frame extraction → crop to slide area (exclude PiP) → perceptual
+hash deduplication → combine into PDF. Marks `slide_source: "video_extracted"`.
+
 ## 0.5.4
 
 **Non-YouTube video support** — Step 3A now supports ingesting talks from InfoQ,
