@@ -46,3 +46,41 @@ This produces clean text directly — no VTT cleanup needed.
 Where `{python_path}` is `config.python_path` from the tracking database.
 
 Then read the PDF to understand slide content and visual structure.
+
+## C. Download Video (for slide extraction)
+
+When no PDF or PPTX is available, download the video to extract slides from frames.
+
+```bash
+mkdir -p "{vault_root}/slides-rebuild/{youtube_id}"
+yt-dlp -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]" \
+  --merge-output-format mp4 \
+  -o "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
+  "https://www.youtube.com/watch?v={youtube_id}"
+```
+
+After download, run the extraction script from `references/video-slide-extraction.md`.
+The script extracts frames, detects the slide region, deduplicates, and produces a
+PDF at `slides/{youtube_id}.pdf`. Delete the video after extraction to save space.
+
+## D. Batch Video Download
+
+For processing many playlist talks at once, download videos in parallel:
+
+```bash
+# Download up to 3 videos concurrently
+for yt_id in ID1 ID2 ID3 ...; do
+  (
+    yt-dlp -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]" \
+      --merge-output-format mp4 \
+      -o "{vault_root}/slides-rebuild/${yt_id}/${yt_id}.mp4" \
+      "https://www.youtube.com/watch?v=${yt_id}" 2>/dev/null
+    echo "Downloaded: ${yt_id}"
+  ) &
+  # Limit concurrency
+  [ $(jobs -r -p | wc -l) -ge 3 ] && wait -n
+done
+wait
+```
+
+Then run the extraction script on each downloaded video sequentially.

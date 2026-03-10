@@ -29,16 +29,22 @@ running summary. All paths are relative to **vault root** (`config.vault_root`).
 | `speaker-profile.json` | Machine-readable bridge to presentation-creator |
 | `analyses/{talk_filename}.md` | Per-talk rhetoric analysis (one file per processed talk) |
 | `transcripts/{youtube_id}.txt` | Downloaded/cleaned transcripts |
-| `slides/{google_drive_id}.pdf` | Downloaded slide PDFs |
+| `slides/{id}.pdf` | Slide PDFs (from Google Drive, PPTX export, or video extraction) |
 | `references/schemas.md` | DB + subagent schemas; full config field list |
 | `references/rhetoric-dimensions.md` | 14 analysis dimensions |
 | `references/pptx-extraction.md` | Visual extraction script |
 | `references/speaker-profile-schema.md` | Profile JSON schema |
 | `references/download-commands.md` | yt-dlp + gdown commands |
+| `references/video-slide-extraction.md` | Extract slides from video when no PDF/PPTX exists |
 
-A talk is processable when it has `video_url` AND at least one of `slides_url` or
-`pptx_path`. The `slide_source` field tracks which path applies: `"pptx"` (preferred —
-richer data), `"pdf"`, or `"both"`. The `pptx_catalog` array fuzzy-matches `.pptx`
+A talk is processable when it has `video_url`. Slide sources, in order of preference:
+1. `pptx_path` → richest data (exact colors, fonts, shapes via python-pptx)
+2. `slides_url` → download PDF from Google Drive
+3. `video_url` → extract slides from the video using ffmpeg + perceptual dedup
+4. none → transcript-only analysis (last resort, `processed_partial`)
+
+The `slide_source` field tracks which path: `"pptx"`, `"pdf"`, `"both"`,
+`"video_extracted"`, or `"none"`. The `pptx_catalog` array fuzzy-matches `.pptx`
 files to shownotes entries.
 
 ## Workflow
@@ -71,8 +77,9 @@ Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report state:
 
 ### Step 2: Select Talks to Process
 
-- Select talks with status `pending` or `needs-reprocessing`. Set `slide_source` per above.
-- Mark `"skipped_no_sources"` if missing `video_url` or missing both slide sources.
+- Select talks with status `pending` or `needs-reprocessing`.
+- Set `slide_source` per the hierarchy above. Mark `"skipped_no_sources"` only if
+  missing `video_url` entirely.
 - If `$ARGUMENTS` specifies a talk filename or title, process ONLY that one.
 
 ### Step 3: Process Talks — Parallel Subagents, Batches of 5
@@ -106,23 +113,13 @@ sites beyond YouTube. When `video_url` is not a YouTube link:
 This enables ingestion from InfoQ, Vimeo, conference-hosted video, or any source
 yt-dlp supports. Falls back to `processed_partial` (slides only) if audio extraction fails.
 
-**Slide acquisition** per `slide_source`: if PPTX available, run the extraction script
-(store in `structured_data.pptx_visual`); if PDF only, download via gdown or use
-locally provided PDF.
-
-**Video-extracted slides** (`slide_source: "video_extracted"`): When no slides file
-exists but video is available, extract slides from the video:
-```bash
-# 1. Extract frames every 2 seconds
-ffmpeg -i video.mp4 -vf "fps=0.5" -q:v 2 frames/frame_%05d.jpg
-# 2. Crop to slide area (exclude speaker PiP, conference branding)
-# 3. Deduplicate by perceptual hash on cropped region
-# 4. Combine unique frames into PDF
-```
-Use `imagehash.phash()` on the cropped slide region only (typically left 70-75% of
-frame, excluding PiP sidebar). Threshold ~8-12 depending on progressive reveal density.
-Save full (uncropped) frames as the PDF for visual analysis. Mark `slide_source:
-"video_extracted"` and note frame count in `structured_data`.
+**Slide acquisition** per `slide_source` (see hierarchy above):
+- **`pptx`/`both`**: Run `references/pptx-extraction.md` script. Store in `structured_data.pptx_visual`.
+- **`pdf`**: Download via gdown or use locally provided PDF.
+- **`video_extracted`**: Run `references/video-slide-extraction.md` pipeline (download
+  720p video → ffmpeg frames → auto-detect slide region → perceptual dedup → PDF).
+  Delete video after extraction; keep only the PDF. Analyze like any other slide PDF.
+- **`none`**: Transcript-only analysis, `processed_partial`.
 
 **B. Analyze for Rhetoric & Style (NOT content).** Apply all 14 dimensions
 (including dimension 14: Areas for Improvement).
@@ -189,12 +186,14 @@ After each batch:
 
 ### Error Handling
 
-| Transcript | Slides | Status | Action |
-|-----------|--------|--------|--------|
-| OK | OK | `processed` | Full analysis |
-| FAIL | OK | `processed_partial` | Slides only |
-| OK | FAIL | `processed_partial` | Transcript only |
-| FAIL | FAIL | `skipped_download_failed` | Skip, move on |
+| Transcript | Slides (PPTX/PDF) | Video | Status | Action |
+|-----------|-------------------|-------|--------|--------|
+| OK | OK | — | `processed` | Full analysis (best quality) |
+| OK | FAIL | OK | `processed` | Extract slides from video, then full analysis |
+| OK | FAIL | FAIL | `processed_partial` | Transcript only (no visual analysis) |
+| FAIL | OK | — | `processed_partial` | Slides only |
+| FAIL | FAIL | OK | `processed_partial` | Extract slides from video, visual only |
+| FAIL | FAIL | FAIL | `skipped_download_failed` | Skip, move on |
 
 ### Step 5: Interactive Clarification Session
 
