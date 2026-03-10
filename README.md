@@ -2,14 +2,11 @@
 
 A two-skill system for conference speakers: analyze your existing talks to extract your rhetoric patterns, then create new presentations that match your documented style.
 
-## What's New (0.5.0)
+## What's New (0.6.1)
 
-**Presentation Patterns integration** — 88 patterns and antipatterns from *Presentation
-Patterns* (Ford, McCullough, Schutta 2013) are now a first-class reference taxonomy,
-vault scoring system, and brainstorming vocabulary. 77 observable patterns are scored
-during vault analysis; 11 unobservable patterns (pre-event logistics, physical stage
-behaviors) surface as a go-live checklist before delivery.
-See [CHANGELOG.md](CHANGELOG.md) for full history.
+**Eval scenarios** — 15 evaluation scenarios covering both skills, generated via
+`tessl scenario generate` and refined for quality. Baseline avg 62% → with-skill avg
+98% (+36 point lift). See [CHANGELOG.md](CHANGELOG.md) for full history.
 
 ## How It Works
 

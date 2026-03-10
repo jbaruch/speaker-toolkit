@@ -1,0 +1,56 @@
+{
+  "context": "Tests whether the agent produces a talk outline that follows the presentation-creator skill's structural conventions: the Presentation Spec block, opening sequence format, typed numbered placeholders (including meme briefs), callback flags, cut line markers, and closing sequence — all from a provided vault and conference brief.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Presentation Spec block",
+      "max_score": 10,
+      "description": "Output includes a PRESENTATION SPEC block (using that exact header or equivalent) containing at minimum: Title, Thesis, Audience, Venue, Mode, Duration target, and Shownotes slug fields"
+    },
+    {
+      "name": "Section time + slide range headers",
+      "max_score": 10,
+      "description": "Each major section of the outline includes both a time allocation (e.g., [10 min]) and a slide range (e.g., slides 5-14) in the section header or opening line"
+    },
+    {
+      "name": "Opening sequence structure",
+      "max_score": 10,
+      "description": "The opening sequence contains at minimum three of the following slide types: title slide, bio slide, shownotes URL slide (with QR code mentioned), and opening hook slide"
+    },
+    {
+      "name": "Multiple typed placeholder categories",
+      "max_score": 10,
+      "description": "The outline uses at least two distinct typed placeholder categories with independent numbering — e.g., [AUTHOR 01] and [MEME 01] are both present, with each type starting its own numbering sequence from 01"
+    },
+    {
+      "name": "Meme brief format",
+      "max_score": 10,
+      "description": "At least one [MEME XX] placeholder is expanded into a structured brief containing all four sub-fields: Template, Search query, Overlay text, and Rhetorical function"
+    },
+    {
+      "name": "CUT LINE marker",
+      "max_score": 10,
+      "description": "The outline contains at least one [CUT LINE] marker (or equivalent, e.g., '## [CUT LINE:...]') indicating where content can be dropped for a shorter slot"
+    },
+    {
+      "name": "Callback flags",
+      "max_score": 10,
+      "description": "At least one callback opportunity is explicitly flagged using [CALLBACK: ...], [PROGRESSIVE LIST: ...], or [RUNNING GAG: ...] notation — not just mentioned in prose"
+    },
+    {
+      "name": "Speaker notes in outline",
+      "max_score": 10,
+      "description": "At least half of the slide entries include a 'Speaker:' line with actual sample speaker text of 10+ words (not just '[speaker notes]', '[no notes]', or empty) — showing what the speaker would actually say"
+    },
+    {
+      "name": "Closing sequence completeness",
+      "max_score": 10,
+      "description": "The outline's closing section contains distinct slides (or slide descriptions) for all three components: a summary/recap, a call-to-action (CTA), and a social/contact slide with shownotes URL"
+    },
+    {
+      "name": "Slide count within budget",
+      "max_score": 10,
+      "description": "The total number of slides in the outline does not exceed 1.5 slides per minute of the stated duration (e.g., for a 45-minute talk: max 68 slides)"
+    }
+  ]
+}

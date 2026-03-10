@@ -1,0 +1,56 @@
+{
+  "context": "Tests whether the agent produces a complete rhetorical review: a guardrail check covering all 9 required items with correct PASS/FAIL/WARN labeling (including WARN at the 5%-boundary), plus a 4-tier Pattern Strategy with antipatterns labeled [RECURRING] or [CONTEXTUAL] and a pattern score projection.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "All 9 guardrail items present",
+      "max_score": 15,
+      "description": "The review output contains a guardrail check section with at least 9 distinct labeled check items covering: slide budget, Act 1 ratio, branding/conference elements, profanity, data attribution, time-sensitive content, closing completeness, cut lines, and anti-patterns — each as a separate line or block, not lumped into prose"
+    },
+    {
+      "name": "PASS/FAIL/WARN labels used",
+      "max_score": 8,
+      "description": "Guardrail check items use the literal labels [PASS], [FAIL], or [WARN] (or PASS/FAIL/WARN in equivalent format) — not just descriptive prose without labels"
+    },
+    {
+      "name": "WARN for near-limit Act 1",
+      "max_score": 10,
+      "description": "The Act 1 ratio check produces [WARN] (not [PASS] and not [FAIL]) because the ratio is within 5% of the configured limit — specifically Act 1 is slides 8-33 (26 slides out of 60 total = 43.3%), which is under the 45% limit but within the 5-percentage-point warn threshold"
+    },
+    {
+      "name": "4-tier Pattern Strategy present",
+      "max_score": 15,
+      "description": "The review output includes a Pattern Strategy section organized into exactly four labeled tiers: Signature (YOUR TOOLKIT or equivalent), Contextual (WORTH CONSIDERING or equivalent), New to You (NEW TO YOU or equivalent), and Shake It Up (SHAKE IT UP / WILD CARD or equivalent)"
+    },
+    {
+      "name": "Shake It Up has 1-2 items",
+      "max_score": 8,
+      "description": "The Shake It Up / Wild Card tier contains exactly 1 or 2 pattern suggestions — not 0 and not 3 or more"
+    },
+    {
+      "name": "[RECURRING] tag used",
+      "max_score": 10,
+      "description": "At least one antipattern detection is labeled [RECURRING] (matching a pattern in the speaker profile's antipattern_frequency history), not just listed as a generic warning"
+    },
+    {
+      "name": "[CONTEXTUAL] tag used",
+      "max_score": 10,
+      "description": "At least one antipattern detection is labeled [CONTEXTUAL] (detected in the current outline but not in the speaker's historical profile), not just listed as a generic warning"
+    },
+    {
+      "name": "Pattern score projection",
+      "max_score": 8,
+      "description": "The review includes a pattern score projection or estimated score (e.g., 'Pattern score projection: ~8') — not absent or replaced only by a list"
+    },
+    {
+      "name": "Profile slide budgets used",
+      "max_score": 8,
+      "description": "The slide budget check uses the value from the speaker profile's guardrail_sources.slide_budgets (68 max for a 45-minute talk) — not the generic default of 1.5 × duration or a hardcoded number different from the profile"
+    },
+    {
+      "name": "Recurring issue flagged",
+      "max_score": 8,
+      "description": "The anti-patterns section references at least one of the speaker's known recurring_issues from the profile (specifically 'Act 1 overrun' or 'meme accretion') — not just generic antipatterns"
+    }
+  ]
+}

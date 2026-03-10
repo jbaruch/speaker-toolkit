@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.6.1
+
+**Eval scenarios** — Added 5 new server-generated eval scenarios via `tessl scenario
+generate`, covering both skills end-to-end. Reviewed and fixed all 15 scenarios for
+quality, then ran the full eval suite (baseline avg 62% → with-skill avg 98%).
+
+### New scenarios (5)
+- Multilingual rhetoric analysis with language policy and pattern scoring
+- Presentation outline with typed placeholders and callbacks
+- python-pptx deck generation with template stripping and notes injection
+- Guardrail check format and 4-tier pattern strategy
+- Speaker profile JSON generation from vault data
+
+### Scenario fixes
+- Removed instruction leakage from python-pptx scenario (replaced numbered output
+  spec with high-level ask)
+- Fixed factual error in guardrail scenario (Act 1 ratio math: 51.7% → 43.3% to
+  correctly test the WARN threshold)
+- Fixed infeasible criteria (replaced MCP-only `optimize_slide_text` with python-pptx
+  overflow handling)
+- Fixed transcript pre-translating Russian phrases (defeated the English-only quote
+  format test)
+- Fixed ambiguous download results in status management scenario (added
+  `video_extraction` field, clarified planning-time vs download-outcome for
+  `slide_source`)
+- Added missing `capability.txt` files to all new scenarios
+- Tightened subjective criteria wording across all scenarios
+
 ## 0.5.5
 
 **Video-extracted slides** — When no slides file exists, extract slides directly

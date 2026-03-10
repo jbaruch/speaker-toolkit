@@ -29,7 +29,7 @@
     },
     {
       "name": "No video skip",
-      "description": "Testing in Production (has slides_url but no video_url) is identified as not processable due to missing video — marked as skipped, not processed",
+      "description": "Testing in Production (has slides_url but no video_url) is marked 'skipped_no_sources' because a talk requires video_url to be processable — not 'processed', 'processed_partial', or 'pending'",
       "max_score": 8
     },
     {

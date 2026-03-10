@@ -4,7 +4,7 @@
 
 A speaker's rhetoric knowledge vault has been running automated analysis on their talks. The system downloads YouTube transcripts and slide PDFs for each talk, analyzes them, and updates a tracking database. But downloads are unreliable — sometimes the transcript download fails, sometimes the slides download fails, sometimes both fail. The system needs to correctly categorize each talk's processing outcome and update the vault's running summary document.
 
-You have a tracking database with 8 talks that just went through a processing run. Each talk has a recorded download result from the latest run. Based on the outcomes, update the tracking database with the correct status for each talk, and produce an updated rhetoric summary document that incorporates the new observations from successfully processed talks.
+You have a tracking database with 8 talks that just went through a processing run. Each talk has a recorded download result from the latest run. Based on the outcomes, update the tracking database with the correct status for each talk and determine the slide source type from each talk's configured sources in the database (before considering download outcomes). Also produce an updated rhetoric summary document that incorporates the new observations from successfully processed talks.
 
 The key constraint: the rhetoric summary is a living document that has been built up over months. New observations should be integrated into the existing content — patterns should be refined and new ones added, but nothing should be removed from the summary even if a new talk contradicts an earlier observation. Contradictions should be noted as evolving patterns, not overwrites.
 
@@ -121,11 +121,11 @@ The following files are provided as inputs. Extract them before beginning.
 {
   "results": [
     {"filename": "2024-01-15-microservices-myths.md", "transcript_download": "success", "slides_download": "success", "notes": "Both sources acquired successfully"},
-    {"filename": "2024-03-20-devops-culture.md", "transcript_download": "success", "slides_download": "failed", "notes": "Google Drive returned 403 forbidden"},
+    {"filename": "2024-03-20-devops-culture.md", "transcript_download": "success", "slides_download": "failed", "video_extraction": "failed", "notes": "Google Drive returned 403 forbidden; video slide extraction also failed (low-quality recording, no clear slides)"},
     {"filename": "2024-05-10-ci-pipeline.md", "transcript_download": "failed", "slides_download": "not_applicable", "notes": "No auto-captions available on YouTube; no slides source configured"},
     {"filename": "2024-06-15-platform-eng.md", "transcript_download": "success", "slides_download": "success", "notes": "PPTX extraction completed"},
     {"filename": "2024-07-22-security-shift.md", "transcript_download": "failed", "slides_download": "success", "notes": "yt-dlp timed out, but PDF downloaded successfully"},
-    {"filename": "2024-08-30-testing-prod.md", "transcript_download": "not_applicable", "slides_download": "success", "notes": "No video_url configured"},
+    {"filename": "2024-08-30-testing-prod.md", "transcript_download": "not_applicable", "slides_download": "not_applicable", "notes": "No video_url — talk was not entered into the processing pipeline"},
     {"filename": "2024-09-15-container-security.md", "transcript_download": "not_applicable", "slides_download": "not_applicable", "notes": "No video_url, no slides_url, no pptx_path"},
     {"filename": "2024-10-05-gitops-journey.md", "transcript_download": "failed", "slides_download": "failed", "notes": "Network timeout on both downloads"}
   ]

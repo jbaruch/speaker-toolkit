@@ -1,0 +1,61 @@
+{
+  "context": "Tests whether the agent correctly processes a multilingual tech conference talk into a rhetoric knowledge vault — covering the 14-dimension analysis format, English-only language policy for non-English quotes, observable-only pattern tagging with the correct scoring formula, and the required structured output files.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Analysis file location",
+      "max_score": 5,
+      "description": "The per-talk rhetoric analysis file is written inside an `analyses/` subdirectory of the vault root (e.g., vault/analyses/2024-devoxx-jvm-myths.md), not in the vault root itself"
+    },
+    {
+      "name": "All 14 dimensions present",
+      "max_score": 15,
+      "description": "The analysis file contains coverage of all 14 dimensions: Opening Pattern, Narrative Structure, Humor & Wit, Audience Interaction, Transition Techniques, Closing Pattern, Verbal Signatures, Slide-to-Speech Relationship, Persuasion Techniques, Cultural References, Technical Content Delivery, Pacing Clues, Slide Design Patterns, and Areas for Improvement"
+    },
+    {
+      "name": "English-only quote format",
+      "max_score": 10,
+      "description": "At least one Russian phrase from the transcript appears in the analysis with the English translation FIRST, followed by the Russian original in parentheses — e.g., \"That's how it works\" (Вот как это работает) — NOT Russian first or Russian only"
+    },
+    {
+      "name": "Language-tagged verbal signatures",
+      "max_score": 8,
+      "description": "Russian verbal signatures are stored separately from the English signature list and tagged with language code — e.g., [ru] \"ну и\" — NOT merged into the main English verbal signatures section"
+    },
+    {
+      "name": "Structured data fields",
+      "max_score": 8,
+      "description": "The analysis or tracking DB entry includes all required structured_data fields: slide_count, talk_duration_estimate, meme_count, image_only_slide_count, audience_interaction_count, opening_type, closing_type, narrative_arc_type"
+    },
+    {
+      "name": "Pattern score formula",
+      "max_score": 10,
+      "description": "The per-talk pattern_score is calculated as count(patterns) minus count(antipatterns), not a sum or average of the individual pattern values"
+    },
+    {
+      "name": "Observable patterns only",
+      "max_score": 8,
+      "description": "None of the following unobservable patterns appear in the pattern_observations scored section: preparation, carnegie-hall, stakeout, posse, seeding-satisfaction, shoeless, lightsaber, red-yellow-green, laser-weapons, bunker, backchannel"
+    },
+    {
+      "name": "Verbatim examples",
+      "max_score": 9,
+      "description": "The analysis includes a verbatim_examples section with at least three populated categories from: signature_phrases, jokes, transitions, audience_addresses, opening_lines, closing_lines"
+    },
+    {
+      "name": "Tracking DB updated",
+      "max_score": 10,
+      "description": "tracking-database.json exists and contains the processed talk with status set to either 'processed' or 'processed_partial' (not 'pending'), and includes a processed_date value"
+    },
+    {
+      "name": "Areas for improvement present",
+      "max_score": 9,
+      "description": "The analysis file contains a section for dimension 14 (Areas for Improvement / Reflection) that identifies at least two specific weaknesses or risks in the talk's delivery — not just a placeholder, empty section, or single generic statement"
+    },
+    {
+      "name": "Presentation Patterns Scoring section",
+      "max_score": 8,
+      "description": "The analysis file contains a 'Presentation Patterns Scoring' section listing at least one detected pattern or antipattern with confidence level (strong/moderate/weak) and evidence"
+    }
+  ]
+}

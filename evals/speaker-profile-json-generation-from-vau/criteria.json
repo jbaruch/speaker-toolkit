@@ -1,0 +1,61 @@
+{
+  "context": "Tests whether the agent correctly generates a speaker-profile.json from accumulated vault data: correct top-level structure, speaker badges grounded in specific vault statistics (not generic), signature patterns derived from usage counts, confirmed intents carried over from the tracking DB, and guardrail values in array format derived from talk data.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Required top-level keys",
+      "max_score": 10,
+      "description": "speaker-profile.json contains all of the following top-level keys: speaker, infrastructure, presentation_modes, rhetoric_defaults, instrument_catalog, guardrail_sources, pacing, pattern_profile"
+    },
+    {
+      "name": "Speaker fields from config",
+      "max_score": 8,
+      "description": "The speaker object contains name ('Taylor Okonkwo') and handle ('@t_okonkwo') matching the tracking DB config — not left empty or populated with placeholder values"
+    },
+    {
+      "name": "Speaker badges present",
+      "max_score": 5,
+      "description": "The profile contains a speaker_badges array (at top level or under speaker) with at least 3 entries"
+    },
+    {
+      "name": "Speaker badges grounded in vault stats",
+      "max_score": 12,
+      "description": "At least 2 of the speaker badges reference specific numbers from the vault data (e.g., '10/12 talks', '15+ patterns') — not generic titles like 'Great Speaker' or 'Consistent Narrator'"
+    },
+    {
+      "name": "Signature patterns with usage counts",
+      "max_score": 12,
+      "description": "pattern_profile.signature_patterns contains at least 2 entries with usage_count values matching the analyses (narrative-arc and bookends should appear, both used 10+ times out of 12 talks)"
+    },
+    {
+      "name": "never_used_patterns listed",
+      "max_score": 8,
+      "description": "pattern_profile.never_used_patterns contains at least 2 pattern IDs that do not appear in any of the provided talk analyses"
+    },
+    {
+      "name": "guardrail_sources.slide_budgets is array",
+      "max_score": 10,
+      "description": "guardrail_sources.slide_budgets is a JSON array of objects (not a single flat object or a number), where each entry has at minimum: duration_minutes and max_slides fields"
+    },
+    {
+      "name": "instrument_catalog populated",
+      "max_score": 8,
+      "description": "instrument_catalog contains at minimum two sub-keys: opening_patterns and narrative_structures, each with at least one entry derived from the vault analyses"
+    },
+    {
+      "name": "confirmed_intents carried over",
+      "max_score": 12,
+      "description": "rhetoric_defaults or a confirmed_intents key at the top level contains at least one confirmed intent from the tracking DB (specifically the 'delayed_intro' intent about not using a traditional opening bio)"
+    },
+    {
+      "name": "pacing data populated",
+      "max_score": 8,
+      "description": "The pacing object contains at least one field with a numeric value derived from the vault data — e.g., wpm_range, slides_per_minute, or average_duration_minutes — not empty or null"
+    },
+    {
+      "name": "antipattern_frequency present",
+      "max_score": 7,
+      "description": "pattern_profile.antipattern_frequency is present as an array and contains at least one entry with a severity field (e.g., 'occasional', 'recurring', 'rare')"
+    }
+  ]
+}
