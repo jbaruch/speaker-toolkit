@@ -227,6 +227,31 @@ Report format:
 
 ---
 
+## 10. AI Writing Patterns
+
+Run the **humanizer** skill against all speaker notes and prose sections of the outline.
+This detects LLM-generated writing patterns that undermine authenticity.
+
+See `skills/humanizer/references/ai-writing-patterns.md` for the full pattern catalog.
+
+### Check
+
+Scan speaker notes, abstracts, and any prose sections (not slide visual descriptions).
+If the speaker's vault is loaded, suppress patterns that match the speaker's documented
+voice (e.g., if they naturally use em dashes heavily, raise that threshold).
+
+```
+[PASS/WARN/FAIL] AI writing patterns: {high} high, {medium} medium findings
+```
+
+- **PASS**: 0 high, ≤2 medium
+- **WARN**: 1-3 high or 3+ medium
+- **FAIL**: 4+ high or pattern stacking detected
+
+If WARN or FAIL, list the top findings with line references and rewrite suggestions.
+
+---
+
 ## Guardrail Summary Template
 
 Use this template after each check:
@@ -244,5 +269,6 @@ GUARDRAIL CHECK — {talk title} — {date}
 [PASS/FAIL] Cut lines: {present/missing}
 [INFO] Anti-patterns: {any flags from recurring_issues}
 [RECURRING/CONTEXTUAL] Presentation Patterns: {taxonomy-based antipattern flags}
+[PASS/WARN/FAIL] AI writing patterns: {high} high, {medium} medium findings
 ================================================
 ```

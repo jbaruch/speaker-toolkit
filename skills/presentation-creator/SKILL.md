@@ -161,6 +161,7 @@ GUARDRAIL CHECK — {talk title}
 [INFO] Anti-patterns: {flags from profile recurring_issues}
 [INFO] Pattern score projection: {estimated score based on architecture decisions}
 [RECURRING/CONTEXTUAL] Presentation Patterns: {taxonomy-based antipattern flags}
+[PASS/WARN/FAIL] AI writing patterns: {high} high, {medium} medium findings
 ================================================
 ```
 

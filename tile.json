@@ -11,6 +11,9 @@
     },
     "presentation-creator": {
       "path": "skills/presentation-creator/SKILL.md"
+    },
+    "humanizer": {
+      "path": "skills/humanizer/SKILL.md"
     }
   },
   "keywords": ["presentations", "speaking", "rhetoric", "slides", "conference", "talks", "speaker", "powerpoint", "cfp", "abstract", "pptx", "patterns", "presentation-patterns"]
