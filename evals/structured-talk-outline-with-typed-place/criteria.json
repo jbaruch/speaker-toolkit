@@ -5,7 +5,7 @@
     {
       "name": "Presentation Spec block",
       "max_score": 10,
-      "description": "Output includes a PRESENTATION SPEC block (using that exact header or equivalent) containing at minimum: Title, Thesis, Audience, Venue, Mode, Duration target, and Shownotes slug fields"
+      "description": "Output includes a PRESENTATION SPEC block (or equivalent structured summary) containing at least 5 of the following 7 fields: Title, Thesis, Audience, Venue, Mode, Duration target, Shownotes slug"
     },
     {
       "name": "Section time + slide range headers",

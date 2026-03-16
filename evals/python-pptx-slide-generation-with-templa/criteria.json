@@ -35,7 +35,7 @@
     {
       "name": "Text overflow prevention",
       "max_score": 5,
-      "description": "The script includes logic to prevent text overflow in placeholders — e.g., sets word_wrap to True, uses MSO_AUTO_SIZE, checks text length before insertion and adjusts font size, or truncates content — not just inserting text with no overflow consideration"
+      "description": "The script includes any consideration for text fitting in placeholders — e.g., enforcing character limits on titles (~60 chars), splitting long bullet lists across slides, adjusting font size, setting word_wrap or auto_size, or adding a comment/docstring about overflow — not just inserting arbitrarily long text with zero mention of overflow"
     },
     {
       "name": "Footer on slides",

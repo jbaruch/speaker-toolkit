@@ -25,7 +25,7 @@
     {
       "name": "Signature patterns with usage counts",
       "max_score": 12,
-      "description": "pattern_profile.signature_patterns contains at least 2 entries with usage_count values matching the analyses (narrative-arc and bookends should appear, both used 10+ times out of 12 talks)"
+      "description": "pattern_profile.pattern_usage contains at least 2 entries with times_used values matching the analyses (narrative-arc and bookends should appear, both used 10+ times out of 12 talks)"
     },
     {
       "name": "never_used_patterns listed",
@@ -35,7 +35,7 @@
     {
       "name": "guardrail_sources.slide_budgets is array",
       "max_score": 10,
-      "description": "guardrail_sources.slide_budgets is a JSON array of objects (not a single flat object or a number), where each entry has at minimum: duration_minutes and max_slides fields"
+      "description": "guardrail_sources.slide_budgets is a JSON array of objects (not a single flat object or a number), where each entry has at minimum: duration_min and max_slides fields"
     },
     {
       "name": "instrument_catalog populated",
