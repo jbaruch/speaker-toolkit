@@ -15,7 +15,7 @@
     {
       "name": "English-only quote format",
       "max_score": 10,
-      "description": "At least one Russian phrase from the transcript appears in the analysis with the English translation FIRST, followed by the Russian original in parentheses — e.g., \"That's how it works\" (Вот как это работает) — NOT Russian first or Russian only"
+      "description": "Russian phrases from the transcript (e.g., 'Ну, JVM же медленная' or 'Получается что...') appear in the analysis with BOTH an English translation AND the Russian original — the English translation must come before the Russian text, not after it, and the Russian must not appear without a translation. Check that at least one such pair exists."
     },
     {
       "name": "Language-tagged verbal signatures",
