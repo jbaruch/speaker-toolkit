@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.7.0
+
+**Canonical vault path** — The vault now uses `~/.claude/rhetoric-knowledge-vault/` as
+a fixed, discoverable location. No more asking "where should the vault live?" every
+session. Custom locations (e.g., Google Drive) are symlinked to the canonical path.
+
+- Vault discovery replaces config bootstrapping for `vault_root` — checks canonical
+  path first, creates or symlinks on first run
+- New `vault_storage_path` config field tracks the actual directory when using a custom
+  location
+- Updated presentation-creator to read vault from the canonical path directly
+- Updated eval instructions (+2 new vault discovery instructions) and scenario-1
+  criteria (canonical path check)
+- README updated to reflect new vault location behavior
+
+## 0.6.2
+
+**Maintenance** — Version bump and CLI publish.
+
 ## 0.6.1
 
 **Eval scenarios** — Added 5 new server-generated eval scenarios via `tessl scenario

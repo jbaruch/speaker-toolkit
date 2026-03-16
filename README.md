@@ -2,11 +2,12 @@
 
 A two-skill system for conference speakers: analyze your existing talks to extract your rhetoric patterns, then create new presentations that match your documented style.
 
-## What's New (0.6.1)
+## What's New (0.7.0)
 
-**Eval scenarios** — 15 evaluation scenarios covering both skills, generated via
-`tessl scenario generate` and refined for quality. Baseline avg 62% → with-skill avg
-98% (+36 point lift). See [CHANGELOG.md](CHANGELOG.md) for full history.
+**Canonical vault path** — The vault now lives at `~/.claude/rhetoric-knowledge-vault/`
+by default. No more "where should the vault live?" every session. Custom locations
+(e.g., Google Drive for backup) are symlinked to the canonical path. Updated both
+skills, schemas, and eval scenarios. See [CHANGELOG.md](CHANGELOG.md) for full history.
 
 ## How It Works
 
@@ -51,7 +52,7 @@ parse my talks
 ```
 
 The vault skill will:
-1. Ask where your shownotes and presentations live (once)
+1. Check `~/.claude/rhetoric-knowledge-vault/` (or ask for a custom location on first run)
 2. Scan for talks and .pptx files
 3. Process talks in parallel batches of 5
 4. Extract rhetoric patterns across 14 dimensions
@@ -89,11 +90,11 @@ Both skills are generic — they work for any speaker. All personalization lives
 | **Skills** (this tile) | Process: phases, gates, output formats, guardrail structure |
 | **Vault** (your data) | Content: what instruments exist, what the speaker sounds like, thresholds to enforce |
 
-When you install this tile, the skills ask where your vault is. If you don't have one yet, the vault skill creates it from scratch.
+The vault lives at `~/.claude/rhetoric-knowledge-vault/` by default. If you prefer a different location (e.g., Google Drive for backup), the skill creates a symlink from the canonical path to your chosen directory. If you don't have a vault yet, the skill creates it from scratch on first run.
 
 ### The Vault Directory
 
-The vault is a directory on your filesystem containing:
+The vault lives at `~/.claude/rhetoric-knowledge-vault/` (or a symlink to a custom location). It contains:
 
 ```
 rhetoric-knowledge-vault/
