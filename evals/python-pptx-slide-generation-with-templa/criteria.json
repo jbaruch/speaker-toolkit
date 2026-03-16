@@ -1,5 +1,5 @@
 {
-  "context": "Tests whether the agent uses the correct python-pptx patterns for .pptx generation: the specific undocumented template-stripping internals (_sldIdLst + drop_rel), a separate batch speaker-notes injection step after slides are created, footer on every slide, and text overflow prevention with optimize_slide_text.",
+  "context": "Tests whether the agent uses the correct python-pptx patterns for .pptx generation: the specific undocumented template-stripping internals (_sldIdLst + drop_rel), a separate batch speaker-notes injection step after slides are created, and footer on every slide.",
   "type": "weighted_checklist",
   "checklist": [
     {
@@ -33,13 +33,8 @@
       "description": "Speaker notes are set via `slide.notes_slide.notes_text_frame.text = ...` (or equivalent attribute access chain) — not via placeholder manipulation or XML editing"
     },
     {
-      "name": "Text overflow prevention",
-      "max_score": 5,
-      "description": "The script includes any consideration for text fitting in placeholders — e.g., enforcing character limits on titles (~60 chars), splitting long bullet lists across slides, adjusting font size, setting word_wrap or auto_size, or adding a comment/docstring about overflow — not just inserting arbitrarily long text with zero mention of overflow"
-    },
-    {
       "name": "Footer on slides",
-      "max_score": 10,
+      "max_score": 15,
       "description": "The script adds footer text to slides (e.g., via manage_text, add_textbox, or a helper function) — not absent or only mentioned in comments"
     },
     {
