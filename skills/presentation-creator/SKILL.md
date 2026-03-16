@@ -25,7 +25,8 @@ voice patterns, and design rules come from the vault at runtime.
 
 ## Before You Start: Load the Vault
 
-If the vault root path is unknown, ask via `AskUserQuestion`.
+The vault lives at `~/.claude/rhetoric-knowledge-vault/` (may be a symlink to a custom
+location). Read `tracking-database.json` from there to get `config.vault_root`.
 
 Load from vault root: `rhetoric-style-summary.md` (constitution — all patterns),
 `slide-design-spec.md` (visual rules), `speaker-profile.json` (structured data).

@@ -10,7 +10,12 @@
     {
       "name": "Config fields present",
       "description": "The config object includes at least: vault_root, talks_source_dir, pptx_source_dir, and template_skip_patterns",
-      "max_score": 8
+      "max_score": 5
+    },
+    {
+      "name": "Canonical vault path",
+      "description": "The vault_root config value is set to ~/.claude/rhetoric-knowledge-vault (the canonical path), not an arbitrary or relative path",
+      "max_score": 5
     },
     {
       "name": "Talk fields extracted",
@@ -55,12 +60,12 @@
     {
       "name": "PPTX-to-talk matching",
       "description": "The pptx_catalog entries include a reference to their matched talk (by filename or title), with at least 2 correctly matched",
-      "max_score": 6
+      "max_score": 5
     },
     {
       "name": "State report format",
       "description": "The scan report includes counts of processed/remaining talks and PPTX cataloging stats (cataloged, matched, extracted counts)",
-      "max_score": 6
+      "max_score": 5
     }
   ]
 }

@@ -17,7 +17,8 @@ user_invocable: true
 
 Build a rhetoric and style knowledge base by analyzing presentation talks. Each run
 processes **unprocessed** talks, extracts rhetoric/style observations, and updates the
-running summary. All paths are relative to **vault root** (`config.vault_root`).
+running summary. The vault lives at `~/.claude/rhetoric-knowledge-vault/` (may be a
+symlink to a custom location). All paths are relative to this **vault root**.
 
 ## Key Files & References
 
@@ -51,10 +52,25 @@ files to shownotes entries.
 
 ### Step 1: Load State & Sync Sources
 
-Read `tracking-database.json` (create with empty `config`, `talks`, `pptx_catalog` if missing).
+**Vault discovery** — the canonical vault path is always `~/.claude/rhetoric-knowledge-vault/`.
+On every run, check this path first:
+
+1. **Path exists** (directory or symlink) → use it as `vault_root`, read `tracking-database.json`.
+2. **Path does not exist** → first-time setup:
+   a. Tell the user: "The vault will live at `~/.claude/rhetoric-knowledge-vault/` by default."
+   b. Ask via `AskUserQuestion`: "Want a different location? (e.g., Google Drive for backup)
+      Enter a custom path, or press Enter / say 'default' to use the default."
+   c. **Default chosen:** `mkdir -p ~/.claude/rhetoric-knowledge-vault`
+   d. **Custom path chosen:** `mkdir -p {custom_path}` then
+      `ln -s {custom_path} ~/.claude/rhetoric-knowledge-vault` — the symlink makes the
+      canonical path always work. Store `vault_storage_path` as the custom path in config
+      (for display/debugging).
+   e. Create empty `tracking-database.json` with empty `config`, `talks`, `pptx_catalog`.
+
+Set `vault_root` to `~/.claude/rhetoric-knowledge-vault` in config (always the canonical path).
 
 **Config bootstrapping** — ask once per missing field and persist to the tracking database.
-Core fields: `vault_root`, `talks_source_dir`, `pptx_source_dir`, `python_path`
+Remaining core fields: `talks_source_dir`, `pptx_source_dir`, `python_path`
 (auto-detect: `{vault_root}/.venv/bin/python3`, then `python3` on PATH),
 `template_skip_patterns` (default: `["template"]`).
 See `references/schemas.md` for the full config field list (including speaker infrastructure fields).

@@ -24,7 +24,8 @@ when empty. The question column shows what to ask the speaker.
 ```json
 {
   "config": {
-    "vault_root": "/path/to/rhetoric-knowledge-vault",
+    "vault_root": "~/.claude/rhetoric-knowledge-vault",
+    "vault_storage_path": "/actual/path/if/custom (null when using default location)",
     "talks_source_dir": "/path/to/_talks",
     "pptx_source_dir": "/path/to/Presentations",
     "python_path": "/path/to/python3",
