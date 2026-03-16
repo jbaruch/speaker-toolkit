@@ -143,8 +143,10 @@ yt-dlp supports. Falls back to `processed_partial` (slides only) if audio extrac
 **Language policy — the vault is English-only.** All analysis output, rhetoric summary
 updates, tracking DB entries, and profile data MUST be written in English regardless
 of the talk's delivery language. For non-English talks:
-- **Verbatim quotes**: provide English translation first, original in parentheses —
-  e.g., `"That's the whole point" (В этом весь смысл)`
+- **Verbatim quotes**: ALWAYS write English translation FIRST, then the original in
+  parentheses. Never the reverse. Format: `"English text" (оригинальный текст)`.
+  Example: `"That's the whole point" (В этом весь смысл)` — NOT
+  `"В этом весь смысл" (That's the whole point)`
 - **Verbal signatures**: store separately tagged with language code (e.g.,
   `[ru] "получается что"`) — do NOT merge into the main English signature list
 - **Slide text**: translate in the analysis, note original language

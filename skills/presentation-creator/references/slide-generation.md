@@ -133,10 +133,11 @@ Template placeholders have fixed sizes. To avoid overflow:
 
 ---
 
-## Speaker Notes (python-pptx)
+## Speaker Notes (python-pptx) — SEPARATE STEP, NOT INLINE
 
-The MCP PPT server does not support speaker notes. Use python-pptx directly as a
-batch operation after all slides are generated via MCP.
+**IMPORTANT:** Speaker notes MUST be injected as a separate batch pass AFTER all
+slides exist — never inline during slide creation. The MCP PPT server does not
+support notes, so use python-pptx in a dedicated second pass.
 
 ```python
 from pptx import Presentation
