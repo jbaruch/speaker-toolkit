@@ -4,15 +4,15 @@
 
 A developer-advocate named Alex Petrov gave a talk at Devoxx Berlin titled "The 5 JVM Myths That Are Slowing You Down." The talk has been recorded and the team wants to add it to their rhetoric knowledge vault — a structured database of presentation style and rhetoric patterns that helps the speaker improve and replicate their best techniques in future talks.
 
-The vault should be set up at `./vault/` relative to your working directory. You have been given the talk transcript below (the slides were not preserved, so this will be a transcript-only analysis).
+You have been given the talk transcript below (the slides were not preserved, so this will be a transcript-only analysis).
 
-Your job is to process this talk into the vault: analyze the rhetoric and style across all the relevant analysis dimensions, tag the presentation patterns observed, and save all the required output to the vault. The vault's tracking database should reflect the new processed state.
+Your job is to process this talk into a rhetoric knowledge vault: analyze the rhetoric and style across all the relevant analysis dimensions, tag the presentation patterns observed, and save all the required output. The vault's tracking database should reflect the new processed state.
 
 ## Output Specification
 
-Produce the following files:
-- `vault/analyses/2024-devoxx-jvm-myths.md` — the full per-talk rhetoric analysis
-- `vault/tracking-database.json` — the tracking database with the talk's entry and status
+Produce the following files in the vault directory:
+- An `analyses/` subdirectory containing `2024-devoxx-jvm-myths.md` — the full per-talk rhetoric analysis
+- `tracking-database.json` — the tracking database with the talk's entry and status
 
 The analysis file should cover all relevant rhetoric dimensions, extract structured data about the talk, record verbatim examples from the transcript, and include a Presentation Patterns Scoring section.
 
