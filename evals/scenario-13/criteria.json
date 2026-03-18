@@ -1,0 +1,56 @@
+{
+  "context": "Tests whether the agent implements the skill's Known Pitfalls guidance: detecting wide-angle recording dedup failure, recommending hash threshold adjustments, handling multi-language transcripts, flagging Whisper hallucination, and detecting non-target speakers in playlist recordings.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Wide-angle detection",
+      "description": "The tool detects wide-angle room recordings by comparing the ratio of total extracted frames to unique slides — a ratio above 5:1 or 10:1 (or similar high threshold) triggers a warning about dedup failure due to speaker movement",
+      "max_score": 12
+    },
+    {
+      "name": "Hash threshold recommendation",
+      "description": "For wide-angle recordings with poor dedup, the tool recommends increasing the hash threshold to 14-18 (or a higher value than the default 8-10), not just reporting the problem",
+      "max_score": 10
+    },
+    {
+      "name": "Slide region crop suggestion",
+      "description": "For recordings where speaker movement dominates, the tool suggests manually specifying a slide region crop to isolate the projected screen area from the speaker",
+      "max_score": 8
+    },
+    {
+      "name": "Multi-language transcript handling",
+      "description": "The tool handles transcripts in languages other than the expected language — detects the actual language and does NOT flag a valid non-English transcript as an error when the talk was delivered in that language",
+      "max_score": 10
+    },
+    {
+      "name": "Whisper hallucination detection",
+      "description": "The tool identifies potential Whisper hallucination by checking for repetitive loops, implausible text patterns, or sections where transcript content doesn't match visible slide text",
+      "max_score": 10
+    },
+    {
+      "name": "Transcript source tracking",
+      "description": "The diagnostics output distinguishes between transcript sources — YouTube auto-captions vs Whisper transcription vs manual — using a field like 'transcript_source'",
+      "max_score": 8
+    },
+    {
+      "name": "Speaker identity verification",
+      "description": "The tool checks whether the detected speaker matches the expected speaker and flags mismatches — handling the case where playlist recordings include talks by other presenters",
+      "max_score": 10
+    },
+    {
+      "name": "Recording type classification",
+      "description": "The tool classifies recordings into at least 3 distinct types (e.g., fullscreen slides, picture-in-picture, wide-angle room) based on extraction metrics, not just pass/fail",
+      "max_score": 10
+    },
+    {
+      "name": "Structured diagnostics output",
+      "description": "The output is structured JSON with named fields for each diagnostic dimension (recording_type, dedup_quality, transcript_quality, speaker_match, recommendations) — not just prose",
+      "max_score": 10
+    },
+    {
+      "name": "Clean recording passes cleanly",
+      "description": "For a clean fullscreen recording with good dedup ratio and valid transcript, the tool produces no warnings and classifies it as healthy — it doesn't over-flag",
+      "max_score": 12
+    }
+  ]
+}

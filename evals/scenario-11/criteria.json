@@ -1,0 +1,56 @@
+{
+  "context": "Tests whether the agent implements the skill's slide source hierarchy (pptx > pdf > video_extracted > none), correctly handles video-only talks as processable, sets slide_source and status fields per the skill's rules, and follows the error handling matrix.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "PPTX highest priority",
+      "description": "When both PPTX and PDF are available, slide_source is set to 'both' or 'pptx' — NOT 'pdf'",
+      "max_score": 10
+    },
+    {
+      "name": "Video-only talks are processable",
+      "description": "A talk with video_url but NO slides_url and NO pptx_path is NOT skipped — it receives slide_source 'video_extracted' and can reach 'processed' status",
+      "max_score": 12
+    },
+    {
+      "name": "No-video talks skipped",
+      "description": "A talk with no video_url is marked as skipped (not processable), regardless of whether slides exist",
+      "max_score": 10
+    },
+    {
+      "name": "Four-value slide_source",
+      "description": "The slide_source field uses at least these distinct values across the test cases: 'pptx' (or 'both'), 'pdf', 'video_extracted', and 'none'",
+      "max_score": 10
+    },
+    {
+      "name": "Video extraction produces YouTube-ID-named PDF",
+      "description": "For video-extracted talks, the output PDF path or filename references the YouTube video ID (e.g., 'slides/aBcDeFg.pdf' or '{youtube_id}.pdf'), not a generic name",
+      "max_score": 8
+    },
+    {
+      "name": "Transcript OK + slides fail + video OK = processed",
+      "description": "When slides (PDF/PPTX) fail but video is available, the talk falls back to video extraction and can reach 'processed' status (not 'processed_partial')",
+      "max_score": 10
+    },
+    {
+      "name": "Transcript OK + no slides + no video = processed_partial",
+      "description": "When only the transcript succeeds (no slides, no video), the status is 'processed_partial' (transcript-only analysis)",
+      "max_score": 10
+    },
+    {
+      "name": "All fail = skipped_download_failed",
+      "description": "When both transcript and all slide sources fail, the status is set to 'skipped_download_failed' (or similar skip status), not 'processed'",
+      "max_score": 10
+    },
+    {
+      "name": "Video deleted after extraction",
+      "description": "The processing logic includes cleanup of the downloaded video file after slide extraction is complete — either documented in code comments, log output, or implemented in the processing function",
+      "max_score": 8
+    },
+    {
+      "name": "Slide source hierarchy documented",
+      "description": "The processing log or code comments describe the priority order of slide sources — making clear that PPTX is preferred over PDF, PDF over video extraction",
+      "max_score": 12
+    }
+  ]
+}

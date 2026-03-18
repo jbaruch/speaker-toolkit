@@ -1,0 +1,61 @@
+{
+  "context": "Tests whether the agent builds a video-to-slides extraction tool following the skill's specific pipeline: ffmpeg for frame extraction, perceptual hashing for deduplication, automatic slide region detection via variance analysis, and PIL-based PDF assembly with cleanup.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Uses ffmpeg for frame extraction",
+      "description": "Frame extraction from video uses ffmpeg (via subprocess or os.system), not OpenCV VideoCapture or other libraries",
+      "max_score": 10
+    },
+    {
+      "name": "Frame rate 0.5 fps",
+      "description": "The default frame extraction rate is 0.5 fps (1 frame every 2 seconds), configurable via parameter",
+      "max_score": 8
+    },
+    {
+      "name": "Perceptual hash deduplication",
+      "description": "Uses imagehash.phash() for deduplication (not pixel-level diff, SSIM, or simple hash). The imagehash library is imported and phash specifically is used",
+      "max_score": 10
+    },
+    {
+      "name": "Hash size 16",
+      "description": "The phash call uses hash_size=16 (not the default 8), providing finer-grained perceptual comparison",
+      "max_score": 8
+    },
+    {
+      "name": "Hamming distance threshold 8-12",
+      "description": "The dedup threshold for considering frames as different slides is between 8 and 12 (inclusive) by default — not below 6 or above 14",
+      "max_score": 8
+    },
+    {
+      "name": "Consecutive-only dedup",
+      "description": "Deduplication compares each frame to the PREVIOUS frame only (sequential/consecutive comparison), not all-pairs or clustering",
+      "max_score": 10
+    },
+    {
+      "name": "Slide region auto-detection",
+      "description": "Includes a function that automatically detects the projected slide region by analyzing variance/difference across sample frames — identifies the dynamic area (slides change) vs static area (speaker PiP, branding)",
+      "max_score": 10
+    },
+    {
+      "name": "Region detection uses downsampled frames",
+      "description": "The region detection analyzes downsampled/resized frames (e.g., 320x180) for efficiency, not full-resolution frames",
+      "max_score": 6
+    },
+    {
+      "name": "Cropped region for hash, full frame for PDF",
+      "description": "The perceptual hash is computed on the CROPPED slide region (for accurate dedup), but the FULL uncropped frame is saved to the PDF (preserving context)",
+      "max_score": 10
+    },
+    {
+      "name": "PDF via PIL save",
+      "description": "The PDF is assembled using PIL Image.save() with save_all=True and append_images (not reportlab, fpdf, img2pdf, or other PDF libraries)",
+      "max_score": 10
+    },
+    {
+      "name": "Cleanup intermediate frames",
+      "description": "After PDF generation, the individual frame JPEG files are deleted. The script does not leave hundreds of frame files on disk",
+      "max_score": 10
+    }
+  ]
+}

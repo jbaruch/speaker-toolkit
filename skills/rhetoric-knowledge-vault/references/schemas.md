@@ -41,11 +41,11 @@ when empty. The question column shows what to ask the speaker.
   "talks": [{
     "filename": "2024-04-10-talk-slug.md",
     "title": "Talk Title", "conference": "Name", "date": "2024-04-10",
-    "slides_url": "https://drive.google.com/file/d/{ID}/view  (optional — but at least one of slides_url or pptx_path required)",
-    "video_url": "https://www.youtube.com/watch?v={ID}",
+    "slides_url": "https://drive.google.com/file/d/{ID}/view  (optional — slides extracted from video if absent)",
+    "video_url": "https://www.youtube.com/watch?v={ID}  (required — only source needed for processing)",
     "youtube_id": "aBcDeFg", "google_drive_id": "1AbCdEfGhIjK",
-    "pptx_path": "Conference/Year/Talk Name.pptx  (optional — but at least one of slides_url or pptx_path required)",
-    "slide_source": "pdf|pptx|both  (set in Step 2 based on which slide sources exist)",
+    "pptx_path": "Conference/Year/Talk Name.pptx  (optional — highest quality slide source when available)",
+    "slide_source": "pptx|pdf|both|video_extracted|none  (set in Step 2 per slide source hierarchy)",
     "pptx_visual_status": "pending|extracted|no_pptx",
     "status": "pending|processed|processed_partial|needs-reprocessing|skipped_no_sources|skipped_download_failed",
     "reprocess_reason": "null|pattern_scoring_added  (set when status changed to needs-reprocessing by migration)",
@@ -166,6 +166,27 @@ Each subagent returns this JSON after processing one talk:
   }
 }
 ```
+
+## Video Extraction Output Schema
+
+Produced by the extraction script in `references/video-slide-extraction.md`.
+Stored in `structured_data.video_extraction` on the talk entry:
+
+```json
+{
+  "slide_source": "video_extracted",
+  "total_frames_extracted": 1500,
+  "unique_slides_count": 85,
+  "hash_threshold_used": 8,
+  "slide_region_detected": true,
+  "slide_region": [0.05, 0.02, 0.78, 0.98],
+  "output_pdf": "slides/{youtube_id}.pdf",
+  "fps_used": 0.5
+}
+```
+
+The resulting PDF is named `{youtube_id}.pdf` in the `slides/` directory and analyzed
+the same as a Google Drive PDF for dimension 13 (slide design patterns).
 
 ## PPTX Extraction Output Schema
 

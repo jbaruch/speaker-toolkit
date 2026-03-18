@@ -1,0 +1,56 @@
+{
+  "context": "Tests whether the agent implements the skill's humor post-mortem, blind spot detection, and recency-adapted clarification session — grounding questions in specific talk observations rather than asking generic questions, grading humor effectiveness, capturing spontaneous moments, and compressing questioning for older talks.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Per-joke grading",
+      "description": "Each identified humor beat in the debrief report receives an effectiveness grade from a defined set (e.g., 'hit', 'nod', 'flat', or similar landing-quality labels) — not a numeric score or pass/fail",
+      "max_score": 10
+    },
+    {
+      "name": "Joke questions grounded in observations",
+      "description": "The debrief questions reference SPECIFIC humor beats from the analysis (verbatim quotes, slide numbers, or meme descriptions) — not generic 'did your jokes land?' questions",
+      "max_score": 12
+    },
+    {
+      "name": "Meme slide questions",
+      "description": "For meme-only or meme-with-text slides identified in the analysis, the questionnaire asks specifically whether the audience visibly reacted or whether the meme was talked over",
+      "max_score": 8
+    },
+    {
+      "name": "Spontaneous humor capture",
+      "description": "The questionnaire includes a question asking about jokes or humor moments that were NOT in the slides or transcript — improvised callbacks, heckler interactions, recovery humor from failures",
+      "max_score": 10
+    },
+    {
+      "name": "Promotion prompt",
+      "description": "For humor beats that landed well (based on speaker answers), the report or questionnaire asks whether the spontaneous joke should be promoted to a planned beat in future deliveries",
+      "max_score": 8
+    },
+    {
+      "name": "Blind spot questions",
+      "description": "The questionnaire asks about at least 2 things the analysis CANNOT observe: room energy, audience size, technical failures, physical stage moments, or audience reactions not captured in transcript",
+      "max_score": 10
+    },
+    {
+      "name": "Demo reaction questions",
+      "description": "For demo sections identified in the analysis, the questionnaire asks about audience engagement during the demo — were they watching or checking phones",
+      "max_score": 8
+    },
+    {
+      "name": "Recency adaptation — recent",
+      "description": "For the recent talk (within past week), the debrief contains detailed per-joke and per-interaction questions — at least 5 specific questions about individual humor beats",
+      "max_score": 10
+    },
+    {
+      "name": "Recency adaptation — old",
+      "description": "For the old talk (2+ years ago), the debrief is COMPRESSED — fewer questions, broader scope (e.g., 'any jokes you remember landing well or badly?' rather than per-joke grading). Demonstrably shorter than the recent talk debrief",
+      "max_score": 12
+    },
+    {
+      "name": "Structured output format",
+      "description": "The debrief report stores humor grades and blind spot observations in a structured format (JSON with named fields) — not just free-text prose",
+      "max_score": 12
+    }
+  ]
+}

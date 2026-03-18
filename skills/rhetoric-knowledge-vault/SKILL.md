@@ -107,9 +107,9 @@ Each subagent receives the talk's DB entry and current `rhetoric-style-summary.m
 
 **A. Download transcript and acquire slides:**
 
-**YouTube talks** (default):
+**YouTube talks** (default — try ALL likely languages, not just English):
 ```bash
-yt-dlp --write-auto-sub --sub-lang en --skip-download --sub-format vtt \
+yt-dlp --write-auto-sub --sub-lang "en,ru,he,fr,de,es,ja" --skip-download --sub-format vtt \
   -o "{vault_root}/transcripts/{youtube_id}" "https://www.youtube.com/watch?v={youtube_id}"
 ```
 
@@ -246,6 +246,31 @@ These blind spots are inherent to transcript+slides analysis. Asking about them 
 data that no amount of parsing can recover. Store responses as `blind_spot_observations`
 in the talk's tracking DB entry and integrate into the rhetoric summary.
 
+**5A-ter. Humor Post-Mortem:** The skill can identify jokes from transcripts and
+slides but CANNOT hear laughter. For every talk processed in this run, compile the
+humor beats detected in dimension 3 and walk through them with the speaker:
+
+1. **List every joke/humor beat** identified in the analysis (verbatim quote or slide
+   reference). For each one, ask: "Did this land? Big laugh, knowing nods, or flat?"
+2. **Meme slides**: For meme-only or meme-with-text slides, ask if the audience
+   visibly reacted or if the meme was more of a visual punchline the speaker talked over.
+3. **Spontaneous humor**: Ask if there were jokes NOT on the slides that happened
+   in the moment — audience riffs, improvised callbacks, heckler interactions, recovery
+   humor from demo failures. These are invisible to the skill but often the best material.
+4. **Humor grading**: For each confirmed-landed joke, tag it in the DB with
+   `humor_grade: "hit"|"nod"|"flat"|"spontaneous_hit"`. Over time this builds a
+   corpus-wide humor effectiveness map — which joke TYPES land (self-deprecating,
+   industry snark, meme-as-punchline, callback) and which fall flat.
+5. **Promote to portfolio**: If a spontaneous joke landed well, ask the speaker if
+   it should be promoted to a planned beat in future deliveries (like the therapy
+   analogy from QCon London 2026).
+
+This is particularly important for recent talks where memory is fresh. For older talks
+(2+ years), compress to: "Any jokes you remember landing particularly well or badly?"
+
+Store results in `humor_postmortem` on the talk's DB entry and update the rhetoric
+summary Section 3 (Humor & Wit) with confirmed effectiveness data.
+
 **5B. Speaker Infrastructure** (first session only): Ask for any empty config fields
 (`speaker_name` through `publishing_process.*`). See `references/schemas.md` for the full field list.
 
@@ -292,3 +317,38 @@ the tracking DB. This counter gates profile generation (Step 6).
 - Re-read tracking DB before writing (single source of truth).
 - Preserve all summary content — add/refine, never delete.
 - After 10+ talks, start providing adherence assessments.
+
+### Known Pitfalls
+
+**Wide-angle room recordings defeat perceptual hash dedup.** When the camera captures
+the full stage (speaker moving + slides projected on a screen behind them), every frame
+looks different because speaker position changes. The pipeline produces 800-1500
+"unique" frames instead of 40-80 actual slides. Mitigation options:
+1. Increase `hash_threshold` to 14-16 (loose dedup tolerates speaker movement)
+2. Manually specify `slide_region` crop coordinates to isolate the projected screen
+3. Accept the bloated PDF — the analysis subagent should visually SAMPLE representative
+   frames at intervals rather than reading every page of a 1000+ page PDF
+
+The pipeline works best for recordings that show slides fullscreen (Devoxx, JFokus,
+most modern conference recordings). Wide-angle audience-camera recordings from meetups
+and DevOpsDays are the worst case.
+
+**Whisper hallucination on bad audio.** When conference recordings have poor audio
+(distant mics, room echo, music tags), Whisper large-v3-turbo recovers ~60% of speech
+but hallucinates through silent/noisy sections — generating plausible-sounding but
+fabricated text. Always:
+1. Set `transcript_source: "whisper"` so the analysis knows the source
+2. Cross-reference Whisper output against visible slide text to catch hallucination
+3. Note quality issues in the talk's DB entry (e.g., `transcript_quality: "partial"`)
+
+**Non-speaker talks slip into playlists.** Conference playlists include ALL speakers,
+not just the vault's target speaker. The subagent should verify speaker identity early
+in analysis — check video frames for the expected speaker, check transcript for
+self-identification. Flag `is_baruch_talk: false` and set status to `skipped` if the
+speaker doesn't match.
+
+**Step 5 timing matters.** Run the full clarification session (especially the humor
+post-mortem and blind spot moments) IMMEDIATELY for talks delivered within the past
+week. Memory is freshest right after delivery — room energy, audience reactions, and
+spontaneous moments fade fast. For older talks (2+ years), use the compressed version:
+"Any jokes you remember landing well or badly? Anything about the room context?"

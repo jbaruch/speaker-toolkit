@@ -341,11 +341,20 @@ The `hash_threshold` parameter controls deduplication aggressiveness:
 | Value | Behavior | Best For |
 |-------|----------|----------|
 | 4-6 | Aggressive: merges similar slides | Dense meme-heavy talks where each slide is visually distinct |
-| 8-10 | Moderate: good default | Most conference talks |
+| 8-10 | Moderate: good default | Most conference talks (fullscreen slide recordings) |
 | 12-16 | Loose: keeps more variation | Progressive-reveal-heavy talks (table rows appearing one-by-one) |
+| 14-18 | Very loose | Wide-angle room recordings where speaker movement dominates |
 
 For talks in the speaker's mode (a) polemic style with progressive reveals,
 use threshold 12. For demo-heavy or minimal-slide talks, use 8.
+
+**Wide-angle room recordings** (meetups, DevOpsDays, early-era conference recordings)
+where the camera captures the full stage — speaker walking + slides projected behind —
+defeat the default dedup. Every frame looks different because the speaker moved. Options:
+1. Increase threshold to 14-18
+2. Manually specify `slide_region` to crop out the speaker and isolate the screen
+3. Accept the bloated PDF (800-1500 pages) and have the analysis subagent SAMPLE
+   frames at intervals rather than reading every page
 
 ## Integration with the Skill Workflow
 
