@@ -2,12 +2,12 @@
 
 A two-skill system for conference speakers: analyze your existing talks to extract your rhetoric patterns, then create new presentations that match your documented style.
 
-## What's New (0.7.0)
+## What's New (0.10.0)
 
-**Canonical vault path** — The vault now lives at `~/.claude/rhetoric-knowledge-vault/`
-by default. No more "where should the vault live?" every session. Custom locations
-(e.g., Google Drive for backup) are symlinked to the canonical path. Updated both
-skills, schemas, and eval scenarios. See [CHANGELOG.md](CHANGELOG.md) for full history.
+**Sessions catalog** — New `sessions-catalog.md` in the vault for maintaining
+submission-ready conference materials (title, abstract, outline) per active talk.
+Pull from the catalog when submitting to conferences; update it when talks evolve.
+See [CHANGELOG.md](CHANGELOG.md) for full history.
 
 ## How It Works
 
@@ -102,6 +102,7 @@ rhetoric-knowledge-vault/
 +-- rhetoric-style-summary.md   # Narrative analysis across all rhetoric dimensions
 +-- slide-design-spec.md        # Visual design rules (fonts, colors, layout taxonomy)
 +-- speaker-profile.json        # Machine-readable bridge to the creator
++-- sessions-catalog.md         # Submission-ready titles, abstracts, outlines
 +-- analyses/                   # Per-talk rhetoric analysis + pattern scoring
 +-- transcripts/                # Downloaded YouTube transcripts
 +-- slides/                     # Downloaded slide PDFs

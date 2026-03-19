@@ -28,6 +28,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | `rhetoric-style-summary.md` | Running rhetoric & style narrative (the constitution) |
 | `slide-design-spec.md` | Visual design rules from PDF + PPTX analysis |
 | `speaker-profile.json` | Machine-readable bridge to presentation-creator |
+| `sessions-catalog.md` | Submission-ready titles, abstracts, and outlines for active talks |
 | `analyses/{talk_filename}.md` | Per-talk rhetoric analysis (one file per processed talk) |
 | `transcripts/{youtube_id}.txt` | Downloaded/cleaned transcripts |
 | `slides/{id}.pdf` | Slide PDFs (from Google Drive, PPTX export, or video extraction) |

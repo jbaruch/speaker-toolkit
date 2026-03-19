@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.0
+
+**Sessions catalog** — New `sessions-catalog.md` file in the vault for maintaining
+submission-ready conference materials (title, abstract, outline) per active talk.
+
+- Added Sessions Catalog section to presentation-creator SKILL.md with read/write
+  rules: when to pull from the catalog (before writing a new CFP), when to save
+  (after CFP writing or Phase 4 outline finalization), and maintenance guidelines
+- CFP Abstract Writing flow now includes step 5: save to sessions catalog
+- Added `sessions-catalog.md` to the vault skill's Key Files table
+- Anti-pattern checking recommended on catalog entries before saving (public-facing text)
+
 ## 0.7.0
 
 **Canonical vault path** — The vault now uses `~/.claude/rhetoric-knowledge-vault/` as

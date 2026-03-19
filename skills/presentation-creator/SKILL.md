@@ -229,3 +229,50 @@ Gate: Author confirms published and ready to deliver.
 2. Skip Phase 2 (not needed for an abstract)
 3. Write: title, abstract (200-300 words), key takeaways (3-5 bullets), speaker bio
 4. Phase 4 revision as normal
+5. Save approved materials to the Sessions Catalog (see below)
+
+## Sessions Catalog
+
+The sessions catalog (`{vault_root}/sessions-catalog.md`) is the single source of
+submission-ready materials for active talks. It stores the latest approved title,
+abstract, and outline for each talk the speaker is actively submitting to conferences.
+
+### What goes in the catalog
+
+Each entry contains:
+- **Title** (including subtitle if any)
+- **Abstract** (submission-ready, anti-pattern-checked)
+- **Outline** (with section descriptions and time allocations)
+
+### When to read the catalog
+
+- **Before writing a new CFP:** Check if the talk already has an entry. If so, pull
+  from the catalog and adapt for the specific conference's requirements (word limits,
+  field structure, outline format) rather than writing from scratch.
+- **Before creating a new talk:** Scan existing entries for overlap. If the new talk
+  shares territory with an existing one, reference the overlap in Phase 1 clarification.
+- **Phase 0 of any workflow:** Load the catalog alongside the vault documents to know
+  what's currently in the speaker's active rotation.
+
+### When to write to the catalog
+
+- **After CFP abstract writing** (above, step 5): Save the approved title, abstract,
+  and outline as a new entry or update an existing one.
+- **After Phase 4** (outline finalized): If the talk doesn't have a catalog entry yet,
+  create one. If it does, update the outline to reflect the latest version.
+- **When the speaker updates materials outside the skill:** If the speaker provides
+  revised abstracts or outlines directly (e.g., after conference feedback, after a talk
+  evolves through multiple deliveries), update the catalog entry.
+- **When a talk is retired:** Remove the entry or move it to an archive section at the
+  bottom of the file.
+
+### Catalog maintenance rules
+
+- The catalog is a **living document**, not a historical record. Each entry reflects
+  the LATEST approved version, not every version that ever existed. The vault's
+  tracking database and analysis files hold the full history.
+- Run the anti-pattern check (from the blog-writer skill's `ai-anti-patterns.md` if
+  installed, or general AI writing hygiene) on catalog entries before saving. Conference
+  abstracts are public-facing text — they should read like the speaker wrote them.
+- Keep the "Last updated" date at the top of the file current.
+- Entries are separated by `---` horizontal rules for easy scanning.
