@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.1
+
+**Small print** — Sessions catalog entries now include a "Small Print" field for
+Program Committee notes (talk positioning, what it is/isn't, reviewer context).
+
 ## 0.10.0
 
 **Sessions catalog** — New `sessions-catalog.md` file in the vault for maintaining

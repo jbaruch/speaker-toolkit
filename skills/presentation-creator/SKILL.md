@@ -243,6 +243,10 @@ Each entry contains:
 - **Title** (including subtitle if any)
 - **Abstract** (submission-ready, anti-pattern-checked)
 - **Outline** (with section descriptions and time allocations)
+- **Small Print** (notes for the Program Committee — positioning the talk relative to
+  other sessions, clarifying what the talk IS and ISN'T, or flagging anything the PC
+  should know. Internal, not public-facing — anti-pattern checking is less critical but
+  it should still sound like the speaker, not a marketing team)
 
 ### When to read the catalog
 
