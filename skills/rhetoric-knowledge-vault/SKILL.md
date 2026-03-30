@@ -38,6 +38,9 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | `references/speaker-profile-schema.md` | Profile JSON schema |
 | `references/download-commands.md` | yt-dlp + gdown commands |
 | `references/video-slide-extraction.md` | Extract slides from video when no PDF/PPTX exists |
+| `references/blind-spot-moments.md` | Protocol for capturing audience/room data invisible to transcripts |
+| `references/humor-post-mortem.md` | Protocol for grading humor effectiveness with speaker |
+| `references/known-pitfalls.md` | Common failure modes and mitigations |
 
 A talk is processable when it has `video_url`. Slide sources, in order of preference:
 1. `pptx_path` → richest data (exact colors, fonts, shapes via python-pptx)
@@ -141,18 +144,7 @@ yt-dlp supports. Falls back to `processed_partial` (slides only) if audio extrac
 **B. Analyze for Rhetoric & Style (NOT content).** Apply all 14 dimensions
 (including dimension 14: Areas for Improvement).
 
-**Language policy — the vault is English-only.** All analysis output, rhetoric summary
-updates, tracking DB entries, and profile data MUST be written in English regardless
-of the talk's delivery language. For non-English talks:
-- **Verbatim quotes**: ALWAYS write English translation FIRST, then the original in
-  parentheses. Never the reverse. Format: `"English text" (оригинальный текст)`.
-  Example: `"That's the whole point" (В этом весь смысл)` — NOT
-  `"В этом весь смысл" (That's the whole point)`
-- **Verbal signatures**: store separately tagged with language code (e.g.,
-  `[ru] "получается что"`) — do NOT merge into the main English signature list
-- **Slide text**: translate in the analysis, note original language
-- **Humor/wordplay**: note when a joke is language-dependent and untranslatable
-- Tag the talk entry with `delivery_language` in the tracking DB
+**Language policy — the vault is English-only.** All output MUST be in English regardless of talk language. Verbatim quotes: English translation FIRST, then original in parentheses — `"English" (оригинал)`. Verbal signatures from non-English talks: store separately tagged with language code (e.g., `[ru] "получается что"`). Tag talks with `delivery_language`.
 
 **B2. Tag Presentation Patterns.** Scan observations against the pattern taxonomy
 index at `skills/presentation-creator/references/patterns/_index.md` (path relative
@@ -226,51 +218,9 @@ After all batches complete. Purpose: resolve ambiguities, validate findings, cap
 
 Update the summary and tracking DB after each answer.
 
-**5A-bis. Blind Spot Moments:** The skill can only analyze transcripts (speech) and
-slides (visuals). It CANNOT observe audience reactions, physical performance, stage
-movement, costume/prop moments, room energy, or laughter/applause. During analysis,
-flag moments where the transcript or slides suggest something happened that the skill
-cannot measure — then ask the speaker about each one. Examples:
-- **Costume/prop moments**: Slides show a theatrical transition but transcript has no
-  audience reaction — "The BTTF transition slide suggests a costume change. How did the
-  audience react?"
-- **Physical comedy/stage business**: Transcript shows a pause or laughter cue but no
-  verbal content — "There's a gap here. Were you doing something physical on stage?"
-- **Audience energy shifts**: Show-of-hands results are mentioned but enthusiasm level
-  is invisible — "You asked for a show of hands on TDD. Was it enthusiastic or reluctant?"
-- **Demo reactions**: Live demos create visible reactions not captured in speech —
-  "The demo section has minimal dialogue. Was the audience engaged or checking phones?"
-- **Room context**: Packed/empty, post-lunch slot, competing sessions, technical failures —
-  "Anything about the room or timing that affected delivery?"
+**5A-bis. Blind Spot Moments:** Follow the protocol in references/blind-spot-moments.md — ask about audience reactions, physical performance, and room context that transcripts cannot capture.
 
-These blind spots are inherent to transcript+slides analysis. Asking about them captures
-data that no amount of parsing can recover. Store responses as `blind_spot_observations`
-in the talk's tracking DB entry and integrate into the rhetoric summary.
-
-**5A-ter. Humor Post-Mortem:** The skill can identify jokes from transcripts and
-slides but CANNOT hear laughter. For every talk processed in this run, compile the
-humor beats detected in dimension 3 and walk through them with the speaker:
-
-1. **List every joke/humor beat** identified in the analysis (verbatim quote or slide
-   reference). For each one, ask: "Did this land? Big laugh, knowing nods, or flat?"
-2. **Meme slides**: For meme-only or meme-with-text slides, ask if the audience
-   visibly reacted or if the meme was more of a visual punchline the speaker talked over.
-3. **Spontaneous humor**: Ask if there were jokes NOT on the slides that happened
-   in the moment — audience riffs, improvised callbacks, heckler interactions, recovery
-   humor from demo failures. These are invisible to the skill but often the best material.
-4. **Humor grading**: For each confirmed-landed joke, tag it in the DB with
-   `humor_grade: "hit"|"nod"|"flat"|"spontaneous_hit"`. Over time this builds a
-   corpus-wide humor effectiveness map — which joke TYPES land (self-deprecating,
-   industry snark, meme-as-punchline, callback) and which fall flat.
-5. **Promote to portfolio**: If a spontaneous joke landed well, ask the speaker if
-   it should be promoted to a planned beat in future deliveries (like the therapy
-   analogy from QCon London 2026).
-
-This is particularly important for recent talks where memory is fresh. For older talks
-(2+ years), compress to: "Any jokes you remember landing particularly well or badly?"
-
-Store results in `humor_postmortem` on the talk's DB entry and update the rhetoric
-summary Section 3 (Humor & Wit) with confirmed effectiveness data.
+**5A-ter. Humor Post-Mortem:** Follow the protocol in references/humor-post-mortem.md — walk through detected humor beats, grade effectiveness, and capture spontaneous material.
 
 **5B. Speaker Infrastructure** (first session only): Ask for any empty config fields
 (`speaker_name` through `publishing_process.*`). See `references/schemas.md` for the full field list.
@@ -321,35 +271,4 @@ the tracking DB. This counter gates profile generation (Step 6).
 
 ### Known Pitfalls
 
-**Wide-angle room recordings defeat perceptual hash dedup.** When the camera captures
-the full stage (speaker moving + slides projected on a screen behind them), every frame
-looks different because speaker position changes. The pipeline produces 800-1500
-"unique" frames instead of 40-80 actual slides. Mitigation options:
-1. Increase `hash_threshold` to 14-16 (loose dedup tolerates speaker movement)
-2. Manually specify `slide_region` crop coordinates to isolate the projected screen
-3. Accept the bloated PDF — the analysis subagent should visually SAMPLE representative
-   frames at intervals rather than reading every page of a 1000+ page PDF
-
-The pipeline works best for recordings that show slides fullscreen (Devoxx, JFokus,
-most modern conference recordings). Wide-angle audience-camera recordings from meetups
-and DevOpsDays are the worst case.
-
-**Whisper hallucination on bad audio.** When conference recordings have poor audio
-(distant mics, room echo, music tags), Whisper large-v3-turbo recovers ~60% of speech
-but hallucinates through silent/noisy sections — generating plausible-sounding but
-fabricated text. Always:
-1. Set `transcript_source: "whisper"` so the analysis knows the source
-2. Cross-reference Whisper output against visible slide text to catch hallucination
-3. Note quality issues in the talk's DB entry (e.g., `transcript_quality: "partial"`)
-
-**Non-speaker talks slip into playlists.** Conference playlists include ALL speakers,
-not just the vault's target speaker. The subagent should verify speaker identity early
-in analysis — check video frames for the expected speaker, check transcript for
-self-identification. Flag `is_baruch_talk: false` and set status to `skipped` if the
-speaker doesn't match.
-
-**Step 5 timing matters.** Run the full clarification session (especially the humor
-post-mortem and blind spot moments) IMMEDIATELY for talks delivered within the past
-week. Memory is freshest right after delivery — room energy, audience reactions, and
-spontaneous moments fade fast. For older talks (2+ years), use the compressed version:
-"Any jokes you remember landing well or badly? Anything about the room context?"
+See references/known-pitfalls.md for details on wide-angle recording dedup issues, Whisper hallucination handling, non-speaker talk detection, and Step 5 timing guidance.
