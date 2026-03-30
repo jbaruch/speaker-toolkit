@@ -25,7 +25,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | File / Reference | Purpose |
 |------------------|---------|
 | `tracking-database.json` | Source of truth — talks, status, config, confirmed intents |
-| `rhetoric-style-summary.md` | Running rhetoric & style narrative (the constitution) |
+| `rhetoric-style-summary.md` | Running rhetoric & style narrative |
 | `slide-design-spec.md` | Visual design rules from PDF + PPTX analysis |
 | `speaker-profile.json` | Machine-readable bridge to presentation-creator |
 | `sessions-catalog.md` | Submission-ready titles, abstracts, and outlines for active talks |
@@ -41,12 +41,13 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | `references/blind-spot-moments.md` | Protocol for capturing audience/room data invisible to transcripts |
 | `references/humor-post-mortem.md` | Protocol for grading humor effectiveness with speaker |
 | `references/known-pitfalls.md` | Common failure modes and mitigations |
+| `references/processing-rules.md` | Language policy, pattern migration logic, structured field rules |
 
 A talk is processable when it has `video_url`. Slide sources, in order of preference:
 1. `pptx_path` → richest data (exact colors, fonts, shapes via python-pptx)
 2. `slides_url` → download PDF from Google Drive
 3. `video_url` → extract slides from the video using ffmpeg + perceptual dedup
-4. none → transcript-only analysis (last resort, `processed_partial`)
+4. none → transcript-only analysis (`processed_partial`)
 
 The `slide_source` field tracks which path: `"pptx"`, `"pdf"`, `"both"`,
 `"video_extracted"`, or `"none"`. The `pptx_catalog` array fuzzy-matches `.pptx`
@@ -56,50 +57,35 @@ files to shownotes entries.
 
 ### Step 1: Load State & Sync Sources
 
-**Vault discovery** — the canonical vault path is always `~/.claude/rhetoric-knowledge-vault/`.
-On every run, check this path first:
+**Vault discovery** — canonical path is always `~/.claude/rhetoric-knowledge-vault/`.
 
-1. **Path exists** (directory or symlink) → use it as `vault_root`, read `tracking-database.json`.
-2. **Path does not exist** → first-time setup:
-   a. Tell the user: "The vault will live at `~/.claude/rhetoric-knowledge-vault/` by default."
-   b. Ask via `AskUserQuestion`: "Want a different location? (e.g., Google Drive for backup)
-      Enter a custom path, or press Enter / say 'default' to use the default."
-   c. **Default chosen:** `mkdir -p ~/.claude/rhetoric-knowledge-vault`
-   d. **Custom path chosen:** `mkdir -p {custom_path}` then
-      `ln -s {custom_path} ~/.claude/rhetoric-knowledge-vault` — the symlink makes the
-      canonical path always work. Store `vault_storage_path` as the custom path in config
-      (for display/debugging).
-   e. Create empty `tracking-database.json` with empty `config`, `talks`, `pptx_catalog`.
+1. **Path exists** → use as `vault_root`, read `tracking-database.json`.
+2. **Path missing** → first-time setup: ask preferred location via `AskUserQuestion`,
+   create directory (and symlink if custom path chosen), initialize empty
+   `tracking-database.json` with empty `config`, `talks`, `pptx_catalog`.
 
-Set `vault_root` to `~/.claude/rhetoric-knowledge-vault` in config (always the canonical path).
+**Config bootstrapping** — ask once per missing field and persist to the tracking
+database. Core fields: `talks_source_dir`, `pptx_source_dir`, `python_path`,
+`template_skip_patterns`. See `references/schemas.md` for the full field list.
 
-**Config bootstrapping** — ask once per missing field and persist to the tracking database.
-Remaining core fields: `talks_source_dir`, `pptx_source_dir`, `python_path`
-(auto-detect: `{vault_root}/.venv/bin/python3`, then `python3` on PATH),
-`template_skip_patterns` (default: `["template"]`).
-See `references/schemas.md` for the full config field list (including speaker infrastructure fields).
+**Scan for new talks:** Glob `*.md` in `talks_source_dir`; parse and add any file not
+yet in `talks[]` (title, conference, date, URLs, status `"pending"`).
 
-**Scan for new talks:** Glob `*.md` in `talks_source_dir`. For each file not in the
-`talks` array, parse and add (extract title, conference, date, URLs, IDs, status `"pending"`).
+**Scan for .pptx files:** Glob `**/*.pptx` in `pptx_source_dir`; fuzzy-match to
+`talks[]` entries. Report counts.
 
-**Scan for .pptx files:** Glob `**/*.pptx` in `pptx_source_dir` (skip `*static*`,
-conflict copies, template matches). Fuzzy-match to `talks[]` entries. Report counts.
+**Pattern taxonomy migration:** See `references/processing-rules.md` for migration
+logic. In brief: talks with `status` `"processed"` or `"processed_partial"` that
+lack `pattern_observations` are marked `"needs-reprocessing"`.
 
-**Pattern taxonomy migration:** If the pattern taxonomy exists
-(`skills/presentation-creator/references/patterns/_index.md`) but any talks with
-status `"processed"` or `"processed_partial"` have no `pattern_observations` (or
-`pattern_observations.pattern_ids` is empty), mark them `"needs-reprocessing"` with
-`reprocess_reason: "pattern_scoring_added"`. Report: "N talks need reprocessing for
-pattern scoring."
-
-Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report state:
+Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
 "X processed, Y remaining. PPTX: A cataloged, B matched, C extracted."
 
 ### Step 2: Select Talks to Process
 
 - Select talks with status `pending` or `needs-reprocessing`.
 - Set `slide_source` per the hierarchy above. Mark `"skipped_no_sources"` only if
-  missing `video_url` entirely.
+  `video_url` is entirely absent.
 - If `$ARGUMENTS` specifies a talk filename or title, process ONLY that one.
 
 ### Step 3: Process Talks — Parallel Subagents, Batches of 5
@@ -109,88 +95,78 @@ Each subagent receives the talk's DB entry and current `rhetoric-style-summary.m
 
 #### Per-Talk Subagent Instructions:
 
-**A. Download transcript and acquire slides:**
+**A. Download transcript and acquire slides.**
 
-**YouTube talks** (default — try ALL likely languages, not just English):
-```bash
-yt-dlp --write-auto-sub --sub-lang "en,ru,he,fr,de,es,ja" --skip-download --sub-format vtt \
-  -o "{vault_root}/transcripts/{youtube_id}" "https://www.youtube.com/watch?v={youtube_id}"
-```
+- **YouTube talks:** use yt-dlp with auto-subtitles across likely languages. Example:
+  ```bash
+  yt-dlp --write-auto-sub --skip-download \
+    --sub-langs "en,es,fr,de,pt" \
+    -o "transcripts/%(id)s.%(ext)s" <video_url>
+  ```
+  See `references/download-commands.md` for additional options and post-processing.
+- **Non-YouTube talks** (InfoQ, Vimeo, conference platforms): attempt audio download
+  via yt-dlp, then transcribe locally with MLX Whisper or OpenAI Whisper. Set
+  `transcript_source: "whisper"`. Falls back to `processed_partial` if audio fails.
+  See `references/download-commands.md` for commands.
+- **Slide acquisition** per `slide_source`:
+  - `pptx`/`both`: run script in `references/pptx-extraction.md`.
+  - `pdf`: download via gdown or use locally provided PDF.
+  - `video_extracted`: run pipeline in `references/video-slide-extraction.md`
+    (download 720p → ffmpeg frames → perceptual dedup → PDF). Delete video after.
+  - `none`: transcript-only, `processed_partial`.
 
-**Non-YouTube talks** (InfoQ, conference platforms, etc.): `yt-dlp` supports many
-sites beyond YouTube. When `video_url` is not a YouTube link:
-1. Try `yt-dlp -f http_audio` to download audio (MP3/M4A)
-2. Transcribe locally using MLX Whisper (Apple Silicon) or OpenAI Whisper:
-   ```python
-   import mlx_whisper
-   result = mlx_whisper.transcribe(audio_path,
-       path_or_hf_repo='mlx-community/whisper-large-v3-turbo',
-       language='en')  # or 'ru', etc.
-   ```
-3. Save transcript text to `{vault_root}/transcripts/{talk_id}.txt`
-4. Set `transcript_source: "whisper"` on the talk entry (vs `"youtube_auto"` for YouTube)
-
-This enables ingestion from InfoQ, Vimeo, conference-hosted video, or any source
-yt-dlp supports. Falls back to `processed_partial` (slides only) if audio extraction fails.
-
-**Slide acquisition** per `slide_source` (see hierarchy above):
-- **`pptx`/`both`**: Run `references/pptx-extraction.md` script. Store in `structured_data.pptx_visual`.
-- **`pdf`**: Download via gdown or use locally provided PDF.
-- **`video_extracted`**: Run `references/video-slide-extraction.md` pipeline (download
-  720p video → ffmpeg frames → auto-detect slide region → perceptual dedup → PDF).
-  Delete video after extraction; keep only the PDF. Analyze like any other slide PDF.
-- **`none`**: Transcript-only analysis, `processed_partial`.
-
-**B. Analyze for Rhetoric & Style (NOT content).** Apply all 14 dimensions
-(including dimension 14: Areas for Improvement).
-
-**Language policy — the vault is English-only.** All output MUST be in English regardless of talk language. Verbatim quotes: English translation FIRST, then original in parentheses — `"English" (оригинал)`. Verbal signatures from non-English talks: store separately tagged with language code (e.g., `[ru] "получается что"`). Tag talks with `delivery_language`.
+**B. Analyze for Rhetoric & Style (NOT content).** Apply all 14 dimensions from
+`references/rhetoric-dimensions.md` (including dimension 14: Areas for Improvement).
+Follow language policy and verbatim-quote rules in `references/processing-rules.md`.
 
 **B2. Tag Presentation Patterns.** Scan observations against the pattern taxonomy
-index at `skills/presentation-creator/references/patterns/_index.md` (path relative
-to tile root). Skip patterns marked `observable: false` — these are pre-event logistics
-and physical stage behaviors that cannot be detected from transcripts or slides. For each
-observable pattern/antipattern, determine if the talk exhibits it (strong/moderate/weak
-confidence), record evidence, and compute per-talk pattern score:
-count(patterns) - count(antipatterns). Return in the `pattern_observations` field.
+at `skills/presentation-creator/references/patterns/_index.md`. Skip patterns
+marked `observable: false`. Record confidence (strong/moderate/weak) and evidence per
+pattern. Compute per-talk score: count(patterns) − count(antipatterns). Store in
+`pattern_observations`. See `references/processing-rules.md` for full tagging rules.
 
-**C. Return JSON** per the subagent return schema (see `references/schemas.md`).
+**C. Return JSON** per the subagent return schema in `references/schemas.md`.
+Minimal structure:
+```json
+{
+  "talk_id": "...",
+  "status": "processed",
+  "transcript_source": "youtube",
+  "slide_source": "pdf",
+  "pattern_observations": [
+    {"pattern_id": "...", "confidence": "strong", "evidence": "..."}
+  ],
+  "new_patterns": ["..."],
+  "summary_updates": [{"section": 1, "content": "..."}],
+  "structured_data": {"delivery_language": "en", "co_presenter": false}
+}
+```
 
 ### Step 3B: Extract Remaining PPTX Visual Data
 
-Process PPTX files **not** already extracted during Step 3: unmatched catalog entries,
-talks that used PDF as primary source but have a PPTX available, or any entry with
+Process PPTX files not yet extracted during Step 3: unmatched catalog entries, talks
+that used PDF as primary but have a PPTX available, or entries with
 `pptx_visual_status: "pending"`. Skip if already `"extracted"`.
 
-**After extraction:** Store in `structured_data.pptx_visual`, set status to
-`"extracted"`. After 3+ extractions, fill `slide-design-spec.md`; after 5+, analyze
-cross-talk patterns (colors, fonts, footers).
+After 3+ extractions, populate `slide-design-spec.md`; after 5+, analyze cross-talk
+patterns (colors, fonts, footers).
 
 ### Step 4: Collect Results & Update
 
 After each batch:
 
 1. **Update tracking DB** — set `status`, `processed_date`, all result fields.
-   Backfill empty `structured_data` from earlier runs using `rhetoric_notes`.
-   Persist `pattern_observations` IDs + score to each talk entry.
-   **Structured field extraction:** When the analysis identifies co-presenters,
-   delivery language, or other structured metadata, populate the corresponding
-   DB fields (`co_presenter`, `delivery_language`, etc.) — do NOT leave
-   structured data buried only in `rhetoric_notes` free text.
-2. **Write per-talk analysis files** — for each processed talk, write a standalone
-   analysis file to `{vault_root}/analyses/{talk_filename}.md` containing the full
-   rhetoric analysis (all 14 dimensions, structured data, verbatim examples, and
-   a "Presentation Patterns Scoring" section listing detected patterns/antipatterns
-   with confidence levels, evidence, and the per-talk pattern score).
-   These files are read by the presentation-creator when adapting existing talks.
-   Create the `analyses/` directory if it doesn't exist.
-3. **Update rhetoric-style-summary.md** — integrate `new_patterns` and `summary_updates`.
-   Be additive; never delete. Sections 1-14 map to the 14 rhetoric dimensions; Section 15
-   aggregates areas for improvement; Section 16 captures speaker-confirmed intent.
-   **Recount status from DB every time.** The summary's `## Status` block must be
-   rewritten by counting the tracking DB — never increment manually, never trust the
-   existing status line. Count: total talks, processed, skipped (by reason), languages,
-   co-presenters. The DB is the source of truth; the summary is a derived view.
+   Persist `pattern_observations` IDs + score. Populate structured fields
+   (`co_presenter`, `delivery_language`, etc.) — do not leave structured data buried
+   in free-text prose. See `references/processing-rules.md` for field extraction rules.
+2. **Write per-talk analysis files** — write
+   `{vault_root}/analyses/{talk_filename}.md` for each processed talk: all 14
+   dimensions, structured data, verbatim examples, and a "Presentation Patterns
+   Scoring" section. Create `analyses/` directory if missing.
+3. **Update rhetoric-style-summary.md** — integrate `new_patterns` and
+   `summary_updates`. Sections 1–14 map to the 14 dimensions; Section 15 aggregates
+   improvement areas; Section 16 captures speaker-confirmed intent. **Recount status
+   from the DB every time** — never increment manually.
 4. **Report:** talks processed, new patterns, current state, skipped talks.
 5. **Auto-regenerate speaker profile** (Step 6) if it already exists. Report the diff.
 6. Flag **structural changes** prominently (new presentation mode, new workflow pattern).
@@ -199,7 +175,7 @@ After each batch:
 
 | Transcript | Slides (PPTX/PDF) | Video | Status | Action |
 |-----------|-------------------|-------|--------|--------|
-| OK | OK | — | `processed` | Full analysis (best quality) |
+| OK | OK | — | `processed` | Full analysis |
 | OK | FAIL | OK | `processed` | Extract slides from video, then full analysis |
 | OK | FAIL | FAIL | `processed_partial` | Transcript only (no visual analysis) |
 | FAIL | OK | — | `processed_partial` | Slides only |
@@ -210,55 +186,47 @@ After each batch:
 
 After all batches complete. Purpose: resolve ambiguities, validate findings, capture intent.
 
-**5A. Rhetoric Clarification:** For each surprising, contradictory, or ambiguous observation from this run, ask one topic at a time via `AskUserQuestion`:
-- **Intentional vs accidental**: "Was X pattern deliberate?"
-- **Context you can't see**: "Talk X had different energy — what was happening?"
-- **Conflicting signals**: "Sometimes you do X, sometimes Y — what drives the choice?"
-- **Improvement areas**: "I flagged X — do you agree?"
+**5A. Rhetoric Clarification:** For each surprising, contradictory, or ambiguous
+observation ask one topic at a time via `AskUserQuestion`:
+intentional vs accidental patterns, invisible context, conflicting signals, and
+flagged improvement areas. Update summary and DB after each answer.
 
-Update the summary and tracking DB after each answer.
+**5A-bis. Blind Spot Moments:** Follow `references/blind-spot-moments.md` — ask about
+audience reactions, physical performance, and room context transcripts cannot capture.
 
-**5A-bis. Blind Spot Moments:** Follow the protocol in references/blind-spot-moments.md — ask about audience reactions, physical performance, and room context that transcripts cannot capture.
+**5A-ter. Humor Post-Mortem:** Follow `references/humor-post-mortem.md` — walk through
+detected humor beats, grade effectiveness, capture spontaneous material.
 
-**5A-ter. Humor Post-Mortem:** Follow the protocol in references/humor-post-mortem.md — walk through detected humor beats, grade effectiveness, and capture spontaneous material.
+**5B. Speaker Infrastructure** (first session only): ask for any empty config fields
+(`speaker_name` through `publishing_process.*`). See `references/schemas.md`.
 
-**5B. Speaker Infrastructure** (first session only): Ask for any empty config fields
-(`speaker_name` through `publishing_process.*`). See `references/schemas.md` for the full field list.
-
-**5C. Structured Intent Capture:** Compile confirmed intents from 5A into structured entries and store in `confirmed_intents` array in the tracking DB:
-```json
-{"pattern": "delayed_self_introduction", "intent": "deliberate",
- "rule": "Two-phase intro: brief bio slide 3, full re-intro mid-talk",
- "note": "Confirmed intentional rhetorical device"}
-```
+**5C. Structured Intent Capture:** Store confirmed intents in the `confirmed_intents`
+array of the tracking DB. Schema: `{"pattern", "intent", "rule", "note"}`.
+See `references/schemas.md` for the full schema.
 
 **5D. Mark session complete:** Increment `config.clarification_sessions_completed` in
 the tracking DB. This counter gates profile generation (Step 6).
 
 ### Step 6: Generate / Update Speaker Profile
 
-**When:** 10+ talks parsed AND `config.clarification_sessions_completed >= 1`. Also on explicit request.
+**When:** 10+ talks parsed AND `config.clarification_sessions_completed >= 1`.
+Also on explicit request.
 
 **Process:**
 1. Read `rhetoric-style-summary.md`, `slide-design-spec.md`, and `confirmed_intents`.
-2. Aggregate `structured_data` from processed talks (skip empty entries, fall back to prose).
-3. If `template_pptx_path` is set, extract layouts via python-pptx:
-   ```python
-   from pptx import Presentation
-   prs = Presentation(template_path)
-   for i, layout in enumerate(prs.slide_layouts):
-       print(f"{i}: {layout.name} — {[p.placeholder_format.type for p in layout.placeholders]}")
-   ```
-4. Generate `speaker-profile.json` per `references/speaker-profile-schema.md`. Map config →
-   `speaker`/`infrastructure`, summary sections → `instrument_catalog`/`presentation_modes`,
-   confirmed intents → `rhetoric_defaults`, aggregated data → `pacing`/`guardrail_sources`,
+2. Aggregate `structured_data` from processed talks (skip empty, fall back to prose).
+3. If `template_pptx_path` is set, extract slide layouts via python-pptx.
+   See `references/pptx-extraction.md` for the script.
+4. Generate `speaker-profile.json` per `references/speaker-profile-schema.md`.
+   Map config → `speaker`/`infrastructure`, summary sections →
+   `instrument_catalog`/`presentation_modes`, confirmed intents →
+   `rhetoric_defaults`, aggregated data → `pacing`/`guardrail_sources`,
    pattern observations → `pattern_profile`.
-5. **Diff against existing profile** and report changes (new instruments, revised thresholds,
-   new guardrails, structural changes). Flag new presentation modes prominently.
+5. Diff against existing profile; report changes (new instruments, revised thresholds,
+   new guardrails). Flag new presentation modes prominently.
 6. Save to `{vault_root}/speaker-profile.json`.
 7. **Generate speaker badges** — fun, self-deprecating achievements grounded in real
    vault data (e.g., "Narrative Arc Master 22/24", "Pattern Polyglot 12+ patterns").
-   Mine both general stats and `pattern_profile` data. Personalize to THIS speaker.
 
 **Auto-trigger:** Step 4 calls this after every vault update (if profile exists).
 
@@ -268,7 +236,5 @@ the tracking DB. This counter gates profile generation (Step 6).
 - Re-read tracking DB before writing (single source of truth).
 - Preserve all summary content — add/refine, never delete.
 - After 10+ talks, start providing adherence assessments.
-
-### Known Pitfalls
-
-See references/known-pitfalls.md for details on wide-angle recording dedup issues, Whisper hallucination handling, non-speaker talk detection, and Step 5 timing guidance.
+- See `references/known-pitfalls.md` for wide-angle recording dedup issues, Whisper
+  hallucination handling, non-speaker talk detection, and Step 5 timing guidance.

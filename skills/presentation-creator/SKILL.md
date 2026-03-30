@@ -1,16 +1,18 @@
 ---
 name: presentation-creator
 description: >
-  Create new presentations from scratch using the speaker's documented rhetoric
-  patterns as a constitutional style guide. Follows an interactive, spec-driven
-  process: distill intent from the user's prompt, jointly select rhetorical
-  instruments, architect the talk structure, develop content with speaker notes,
-  and iterate with the author. Use this skill whenever the user wants to create
-  a new presentation, build a talk, write a conference submission, design a slide
-  deck, prepare for a speaking engagement, or mentions "presentation" or "talk"
+  Creates new presentations grounded in the speaker's documented rhetoric patterns,
+  using a personal rhetoric-knowledge-vault as a constitutional style guide. Follows
+  an interactive, spec-driven process: distill intent from the user's prompt, jointly
+  select rhetorical instruments from the vault catalog, architect the talk structure,
+  develop content with speaker notes, run guardrail checks, generate a .pptx deck,
+  and publish per the speaker's workflow. Use this skill whenever the user wants to
+  create a new presentation, build a talk, write a conference submission, design a
+  slide deck, prepare for a speaking engagement, or mentions "presentation" or "talk"
   in the context of content creation. Also trigger when the user describes a topic
   they want to present on, asks to adapt an existing talk for a new audience, or
-  wants to develop a CFP abstract.
+  wants to develop a CFP abstract. Not a generic slide-deck tool — requires a
+  populated rhetoric-knowledge-vault and follows the speaker's established style.
 user_invocable: true
 ---
 
@@ -19,9 +21,6 @@ user_invocable: true
 Build presentations that match the speaker's documented rhetoric and style patterns.
 The rhetoric-knowledge-vault is this skill's constitution. Every presentation is a
 joint effort — the skill brings rhetoric knowledge, the author brings topic expertise.
-
-**This skill defines PROCESS. The vault provides CONTENT.** All instruments, thresholds,
-voice patterns, and design rules come from the vault at runtime.
 
 ## Before You Start: Load the Vault
 
@@ -248,33 +247,18 @@ Each entry contains:
   should know. Internal, not public-facing — anti-pattern checking is less critical but
   it should still sound like the speaker, not a marketing team)
 
-### When to read the catalog
+### When to read / write the catalog
 
-- **Before writing a new CFP:** Check if the talk already has an entry. If so, pull
-  from the catalog and adapt for the specific conference's requirements (word limits,
-  field structure, outline format) rather than writing from scratch.
-- **Before creating a new talk:** Scan existing entries for overlap. If the new talk
-  shares territory with an existing one, reference the overlap in Phase 1 clarification.
-- **Phase 0 of any workflow:** Load the catalog alongside the vault documents to know
-  what's currently in the speaker's active rotation.
-
-### When to write to the catalog
-
-- **After CFP abstract writing** (above, step 5): Save the approved title, abstract,
-  and outline as a new entry or update an existing one.
-- **After Phase 4** (outline finalized): If the talk doesn't have a catalog entry yet,
-  create one. If it does, update the outline to reflect the latest version.
-- **When the speaker updates materials outside the skill:** If the speaker provides
-  revised abstracts or outlines directly (e.g., after conference feedback, after a talk
-  evolves through multiple deliveries), update the catalog entry.
-- **When a talk is retired:** Remove the entry or move it to an archive section at the
-  bottom of the file.
+- **Phase 0 of any workflow:** Load catalog alongside vault documents to know the active rotation and flag overlapping territory.
+- **Before writing a new CFP:** Pull existing entry if present; adapt rather than rewrite.
+- **After CFP abstract writing (step 5):** Save approved title, abstract, and outline as a new entry or update existing.
+- **After Phase 4 (outline finalized):** Create entry if none exists; update outline to latest.
+- **Talk retired:** Remove entry or move to archive section at bottom of file.
 
 ### Catalog maintenance rules
 
-- The catalog is a **living document**, not a historical record. Each entry reflects
-  the LATEST approved version, not every version that ever existed. The vault's
-  tracking database and analysis files hold the full history.
+- The catalog is a **living document** — each entry reflects the LATEST approved version.
+  Full history lives in the vault's tracking database and analysis files.
 - Run the anti-pattern check (from the blog-writer skill's `ai-anti-patterns.md` if
   installed, or general AI writing hygiene) on catalog entries before saving. Conference
   abstracts are public-facing text — they should read like the speaker wrote them.
