@@ -15,9 +15,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: tesslio/setup-tessl@v2
         with:
           token: ${{ secrets.TESSL_TOKEN }}
       - run: tessl skill review --threshold 85 skills/rhetoric-knowledge-vault
       - run: tessl skill review --threshold 85 skills/presentation-creator
-      - run: tessl tile publish
+      - uses: jbaruch/tessl-smart-publish@v1
