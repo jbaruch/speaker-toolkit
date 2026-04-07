@@ -17,7 +17,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: tesslio/setup-tessl@v2
         with:
-          token: ${{ secrets.TESSL_API_TOKEN }}
-      - run: tessl skill review --threshold 85 skills/rhetoric-knowledge-vault
-      - run: tessl skill review --threshold 85 skills/presentation-creator
+          token: ${{ secrets.TESSL_TOKEN }}
+      - run: tessl skill review --threshold 85
       - run: tessl tile publish
