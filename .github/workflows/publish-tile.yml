@@ -20,6 +20,6 @@ jobs:
           token: ${{ secrets.TESSL_TOKEN }}
       - run: tessl skill review --threshold 85 skills/rhetoric-knowledge-vault
       - run: tessl skill review --threshold 85 skills/presentation-creator
-      - uses: jbaruch/tessl-smart-publish@v1
+      - uses: tesslio/patch-version-publish@v1
         with:
           token: ${{ secrets.TESSL_TOKEN }}
