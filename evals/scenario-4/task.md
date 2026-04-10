@@ -4,7 +4,7 @@
 
 A speaking platform has been analyzing a speaker's talks for months and has accumulated a rich set of rhetoric observations stored in narrative documents and a tracking database. Now they need to generate a structured, machine-readable speaker profile document that can drive automated tooling — presentation generators, style checkers, and audience recommendation engines.
 
-The profile must synthesize data from the narrative summary (which describes patterns in prose), the tracking database (which contains per-talk structured data and confirmed speaker intents), and the slide design spec (which describes visual rules). The result should be a comprehensive JSON document that any downstream tool can parse without needing to read prose.
+The profile must synthesize data from the narrative summary (which describes patterns in prose), the tracking database (which contains per-talk structured data and confirmed speaker intents), and the slide design spec (which describes visual rules). The result should be a comprehensive JSON document that any downstream tool can parse without needing to read prose. Include a `badges` section with at least 3 fun, data-grounded speaker achievements mined from the vault data.
 
 ## Output Specification
 

@@ -1,5 +1,58 @@
 # Changelog
 
+## 0.11.0
+
+**Illustration pipeline** — AI-generated illustrations are now a first-class part of
+the presentation creation process, with collaborative style decisions and per-slide
+image prompts generated during outline creation.
+
+### Presentation Creator
+
+- **Phase 2: Illustration Strategy (Decision #11)** — optional collaborative workflow
+  for talks that want AI-generated illustrations. Proposes 3-4 style options informed
+  by the talk's concepts, the vault's visual history, and mode-specific precedent.
+  Includes format vocabulary, model selection (with `--compare` mode), and visual
+  continuity devices
+- **Phase 3: Illustrated outline format** — new Illustration Style Anchor section in
+  the outline header (model, per-format anchors, conventions). Per-slide Format,
+  Illustration, Text overlay, and Image prompt fields. `[STYLE ANCHOR]` token
+  referencing the header. `[IMAGE NN]` placeholder type for EXCEPTION slides
+- **Phase 4: Illustration coverage guardrail (#10)** — checks format tag coverage,
+  EXCEPTION justifications, style anchor references, and prompt quality. Shows
+  `[SKIP]` for non-illustrated outlines
+- **Phase 5: Generate illustrations step** — new Step 5.1b runs
+  `generate-illustrations.py` to batch-generate images before slide population.
+  Image Generation Setup docs with API key, model, and `--compare` instructions
+- **Slide generation** — illustration-format-aware insertion (FULL → full-bleed,
+  IMG+TXT → image + text, EXCEPTION → real asset) added to slide-generation.md
+
+### Rhetoric Knowledge Vault
+
+- **Dimension 13f: Illustration & Image Style** — new analysis sub-dimension for
+  image source types, illustration aesthetic, visual coherence, style anchor evidence,
+  visual continuity devices, and mode correlation
+- **Structured data fields** — `illustration_style`, `illustration_coherence`,
+  `image_source_distribution`, `visual_continuity_devices` added to extraction output
+- **Speaker profile: `visual_style_history`** — new section with default style,
+  style departures, mode-specific visual profiles, and confirmed visual intents
+- **Schema fixes** — `transcript_source` added as required field on talk entries and
+  subagent return schema. `delivery_language` and `co_presenter` added to subagent
+  return schema. English-first quote rule promoted to inline in SKILL.md
+- Video-as-slide-fallback reinforced in Step 3A processing instructions
+
+### New files
+
+- `skills/presentation-creator/references/generate-illustrations.py` — stdlib-only
+  Python script for Gemini API image generation with `--compare` mode, resumable
+  batch runs, rate limiting, and progress reporting
+
+### Evals
+
+- 2 new scenarios: illustrated outline format, illustration guardrail audit
+- Updated guardrail audit scenario to check `[SKIP]` illustrations line
+- 11 new instructions in instructions.json covering illustration features
+- Fixed pre-existing eval gaps: task descriptions, criteria alignment, skill content
+
 ## 0.10.1
 
 **Small print** — Sessions catalog entries now include a "Small Print" field for

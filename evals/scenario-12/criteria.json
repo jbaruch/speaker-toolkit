@@ -19,12 +19,12 @@
     },
     {
       "name": "Spontaneous humor capture",
-      "description": "The questionnaire includes a question asking about jokes or humor moments that were NOT in the slides or transcript — improvised callbacks, heckler interactions, recovery humor from failures",
+      "description": "The questionnaire or tool includes a question or prompt about humor moments NOT captured in slides or transcript — improvised callbacks, audience riffs, heckler interactions, recovery humor from demo failures, or any jokes that happened in the moment. Can be a dedicated question or a section for unscripted moments",
       "max_score": 10
     },
     {
       "name": "Promotion prompt",
-      "description": "For humor beats that landed well (based on speaker answers), the report or questionnaire asks whether the spontaneous joke should be promoted to a planned beat in future deliveries",
+      "description": "The tool or report includes the concept of promoting spontaneous humor to planned content — asking whether a joke that landed well should become a planned beat in future deliveries, or flagging well-received spontaneous material for future reuse. Can appear in the questionnaire, the report, or as a field in the output",
       "max_score": 8
     },
     {
@@ -34,7 +34,7 @@
     },
     {
       "name": "Demo reaction questions",
-      "description": "For demo sections identified in the analysis, the questionnaire asks about audience engagement during the demo — were they watching or checking phones",
+      "description": "For demo sections identified in the analysis, the questionnaire asks about audience engagement or reactions during the demo — whether the audience was engaged, reactions to demo outcomes, any failures or recovery moments. Can be a dedicated demo question or included within blind spot / audience reaction questions",
       "max_score": 8
     },
     {

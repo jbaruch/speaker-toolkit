@@ -179,6 +179,108 @@ Enhance decisions 2-9 with pattern cross-references as shared vocabulary: when r
 an opening pattern, reference the taxonomy ID; when selecting a narrative structure, note
 which Presentation Patterns it maps to (e.g., "problem-solution" = Narrative Arc + Triad).
 
+### Decision #11: Illustration Strategy (when applicable)
+
+Not every talk needs generated illustrations — demo-heavy, data-heavy, or
+screenshot-driven talks may not. When the author wants AI-generated illustrations,
+this sub-decision walks through the visual identity collaboratively.
+
+#### Step 1: Propose style ideas with sample prompts
+
+Present 3-4 style options informed by **three sources**:
+
+1. **The talk's own concepts, metaphors, and narrative** — the style should reinforce
+   the thesis, not be decorative wallpaper
+2. **The vault's visual history** — read `speaker-profile.json` →
+   `visual_style_history` for the structured data: `default_illustration_style`,
+   `style_departures[]` (what styles the speaker has used and what triggered them),
+   `mode_visual_profiles[]` (which modes tend toward which aesthetics), and
+   `confirmed_visual_intents[]` (hard rules about visual design). Also read
+   `rhetoric-style-summary.md` (Section 13 cross-talk visual patterns),
+   `slide-design-spec.md`, and `design_rules`. Know what the speaker's default
+   looks like so you can propose informed departures
+3. **Historical precedent for this mode/context** — read `visual_style_history` →
+   `mode_visual_profiles` for the matching mode ID. If the vault shows the speaker
+   uses a particular aesthetic for this talk type, surface that as a data point
+   (e.g., "your vault shows you use terminal aesthetic for agent talks"). If this
+   talk's mode/context has no visual precedent in `style_departures`, say so
+
+Each option includes: a name, **why it fits this talk's concepts**, **how it relates
+to the speaker's visual history** (continuation vs. departure), and a **sample prompt
+excerpt** showing a specific slide from THIS talk rendered in the style.
+
+```
+ILLUSTRATION STYLE OPTIONS for "{talk title}"
+=========================================================
+
+A. [STYLE NAME]
+   CONCEPT FIT: [Why this style reinforces the talk's thesis,
+   metaphors, and narrative arc — not just what it looks like]
+
+   VAULT CONTEXT: [How this relates to the speaker's visual
+   history — continuation of default, intentional departure,
+   or precedent from similar talk types]
+
+   Sample prompt (Slide N — [slide title]):
+   "[Complete prompt showing this specific slide rendered
+   in the proposed style]"
+
+B. [STYLE NAME]
+   CONCEPT FIT: [...]
+   VAULT CONTEXT: [...]
+   Sample prompt (Slide N — [slide title]):
+   "[...]"
+
+C. [STYLE NAME]
+   ...
+
+RECOMMENDATION: [Which option and why — grounded in concept
+fit and vault context, not just aesthetic preference]
+=========================================================
+```
+
+The key: **each style option explains WHY it fits this specific talk's concepts**,
+not just what it looks like. The author picks one (or mixes elements), then they
+iterate on the anchor paragraph together.
+
+#### Step 2: Define format vocabulary & aspect ratios
+
+Once the style is chosen, define the slide format types for this talk:
+
+```
+SLIDE FORMAT VOCABULARY
+========================
+FULL     — full-bleed illustration, 1-2 sentences overlaid
+           → Landscape 16:9 (1920×1080)
+IMG+TXT  — illustration ~60% of slide, text beside/below
+           → Portrait 2:3 (1024×1536)
+EXCEPTION — real photo, data table, bio, or primary source
+           → No generated illustration; uses [IMAGE NN] placeholder
+========================
+```
+
+Format names and ratios are talk-specific — the author may use different names or
+add formats (e.g., DIAGRAM for technical slides, QUOTE for attributed quotations).
+
+#### Step 3: Choose image generation model
+
+Agree on the target model (affects prompt style and capabilities):
+- Model name and API (e.g., `gemini-3-pro-image-preview`, `dall-e-3`, `flux`)
+- Any model-specific prompt conventions to bake into the style anchor
+- Use `generate-illustrations.py --compare N` to generate the same prompt across
+  multiple models for visual comparison (see Image Generation Setup below)
+
+#### Step 4: Visual continuity devices
+
+Define recurring elements that tie the deck together as a coherent visual artifact:
+- Numbering scheme (e.g., "FIG. N" sequential numbering)
+- Recurring characters or motifs across slides
+- Progressive visual elements (e.g., a form that fills in across the talk)
+- Annotation style (callout labels, footnotes, stamps)
+
+**Gate:** Author approves the style anchor paragraphs, format vocabulary, and model
+choice. These become the Illustration Style Anchor section in the outline header.
+
 ### Slide Budget Calculation
 
 Read `guardrail_sources.slide_budgets[]` from the speaker profile. Match the spec's
@@ -204,7 +306,40 @@ The outline needs to be:
 **Pacing target:** [from profile pacing.wpm_range]
 
 ---
+```
 
+#### Illustration Style Anchor (when illustration strategy is defined)
+
+If Phase 2 produced an illustration strategy, add the style anchor section after
+the spec/budget/pacing header:
+
+```markdown
+## Illustration Style Anchor
+
+All generated illustrations use the **[style name]** style. Prefix every image
+prompt with the appropriate anchor below.
+
+**Model:** `[model-name]`
+
+### STYLE ANCHOR (FULL — Landscape 1920×1080)
+> [style anchor paragraph for full-bleed illustrations]
+
+### STYLE ANCHOR (IMG+TXT — Portrait 1024×1536)
+> [style anchor paragraph for image-with-text illustrations]
+
+### Conventions
+[Visual continuity rules: numbering scheme, recurring motifs,
+progressive elements, annotation style — from Phase 2 Step 4]
+
+---
+```
+
+The format names and dimensions come from the format vocabulary defined in Phase 2.
+Talks without an illustration strategy omit this entire section.
+
+#### Standard outline body
+
+```markdown
 ## Opening Sequence [3 min, slides 1-5]
 
 ### Slide 1: Title Slide
@@ -239,6 +374,31 @@ The outline needs to be:
 ### Slide N+1: CTA
 ### Slide N+2: Thanks / Social
 ```
+
+#### Per-slide illustration fields (when illustration strategy is defined)
+
+When the outline has an Illustration Style Anchor, each slide gains additional fields:
+
+```markdown
+### Slide N: [Title]
+- Format: **FULL** | **IMG+TXT** | **EXCEPTION** — [justification if EXCEPTION]
+- Illustration: [human-readable description of the visual concept]
+- Text overlay: [text that goes on top of the illustration, or "none"]
+- Image prompt: `[STYLE ANCHOR]. [complete prompt for the image generation model]`
+- Visual: [description — for non-illustrated elements like footer, layout notes]
+- Speaker: [notes]
+```
+
+Key rules:
+- **Format** is required for every slide — forces the author to think about visual weight
+- **EXCEPTION** slides must include a justification (why a real asset instead of generated)
+- **Image prompt** uses `[STYLE ANCHOR]` as a token referencing the header — the
+  generation script replaces it with the full anchor text for the matching format
+- **Illustration** is the human-readable intent; **Image prompt** is the machine-readable
+  generation input
+- Slides with no illustration (text-only, EXCEPTION with real asset) omit the Image
+  prompt field
+- Talks without an illustration strategy use the standard `- Visual:` field only
 
 ### Callback Identification
 
@@ -284,7 +444,13 @@ Use numbered, typed placeholders:
 [DEMO 01: description of what to demo]
 [DATA 01: need survey stat — describe what's needed]
 [SCREENSHOT 01: description of what to capture]
+[IMAGE 01: description — what real asset is needed]
 ```
+
+`[IMAGE NN]` is for EXCEPTION slides that need real photos, screenshots, or data
+visualizations instead of generated illustrations. This replaces `[SCREENSHOT NN]`
+in illustration-aware outlines. `[SCREENSHOT NN]` still works for talks without
+an illustration strategy.
 
 **Meme briefs** — structured brief for each meme:
 
@@ -337,10 +503,23 @@ Read the template path from `speaker-profile.json → infrastructure.template_pp
 Strip demo slides from template, keep layouts only (see slide-generation.md for code).
 Save to the presentation file convention from the profile.
 
+### Step 5.1b: Generate Illustrations (when illustration strategy is defined)
+
+If the outline includes an Illustration Style Anchor section:
+
+1. Run `generate-illustrations.py <outline.md> remaining` to batch-generate all
+   missing illustrations
+2. Review generated images with the author — delete and regenerate as needed
+3. Once all images are approved, proceed to slide population
+
+Images are stored in `illustrations/` alongside the outline file. See
+**Image Generation Setup** below for prerequisites.
+
 ### Step 5.2: Walk the Outline
 
 For each slide, select the layout from the profile's `infrastructure.template_layouts[]`,
-add via MCP, populate placeholders. See slide-generation.md for the workflow.
+add via MCP, populate placeholders. See slide-generation.md for the workflow
+(including illustration-format-aware insertion for FULL, IMG+TXT, and EXCEPTION slides).
 
 ### Step 5.3: Inject Speaker Notes
 
@@ -360,6 +539,39 @@ Handle content changes (MCP), structural changes (python-pptx), and note changes
 ### Step 5.6: Final Save
 
 Save the .pptx. Export and publishing happen in Phase 6.
+
+### Image Generation Setup
+
+Before generating illustrations, ensure:
+
+1. **API Key** — set the `GEMINI_API_KEY` environment variable:
+   ```bash
+   export GEMINI_API_KEY="your-key-here"
+   ```
+   Get a key from https://aistudio.google.com/app/apikey
+
+2. **Model availability** — verify the model specified in the outline header
+   is accessible with your key. The script reads the model name from the
+   `**Model:** \`model-name\`` line in the Illustration Style Anchor section.
+
+3. **Python 3** — the script uses only stdlib (`urllib`, `json`, `base64`).
+   No pip install needed.
+
+4. **Run the script:**
+   ```bash
+   python3 generate-illustrations.py presentation-outline.md remaining
+   ```
+   Options: `all`, `remaining`, or specific slide numbers (`2 5 9`, `2-10`)
+
+5. **Model comparison** (during Phase 2 model selection):
+   ```bash
+   python3 generate-illustrations.py presentation-outline.md --compare 2
+   ```
+   Generates the same prompt across multiple Gemini image models for visual
+   comparison. Results go to `illustrations/model-comparison/`.
+
+6. **Review & iterate** — check generated images in the `illustrations/`
+   directory. Delete any that need regeneration and re-run with `remaining`.
 
 ## Phase 6: Publishing — Detail
 

@@ -6,6 +6,8 @@ A prolific conference speaker has years of talk materials scattered across direc
 
 The speaker wants a JSON-based tracking database that maps all their talks and presentation files, identifies which talks have enough source material for analysis, and flags which ones are incomplete. Some PowerPoint files are duplicates or static exports and should be filtered out. The system should also try to match presentation files to their corresponding talk metadata entries.
 
+**Database schema:** The JSON should have top-level keys: `config` (with `vault_root`, `talks_source_dir`, `pptx_source_dir`, `template_skip_patterns`), `talks` (array), `pptx_catalog` (array), and `confirmed_intents` (array, initially empty). Set `vault_root` to `~/.claude/rhetoric-knowledge-vault/`. Extract `youtube_id` from YouTube URLs and `google_drive_id` from Google Drive URLs into separate fields on each talk entry.
+
 ## Output Specification
 
 Produce the following files:

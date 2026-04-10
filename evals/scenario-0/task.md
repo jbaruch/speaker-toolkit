@@ -6,6 +6,10 @@ A design consultancy manages dozens of PowerPoint presentations for their client
 
 The consultancy wants to understand: what background colors are used and how often, which fonts appear across decks, what special shapes (callout bubbles, starbursts) are present, and where footers live on each slide. The output must be structured JSON so it can feed into their analytics pipeline.
 
+**Per-slide output** should include at least: `slide_number`, `background_color_hex`, `background_type`, `layout_name`, `shape_count`, `has_image`, `has_speaker_notes`, and a `shapes_summary` array. Handle background colors inherited from the slide layout (fall back to the layout's background when the slide's own fill is not set).
+
+**Global design statistics** should include: `fonts_used` (name-to-count map), `background_colors` (hex-to-count map), and `color_sequence` (ordered list of all background hex values across slides).
+
 ## Output Specification
 
 Produce the following files:

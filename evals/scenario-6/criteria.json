@@ -56,6 +56,11 @@
       "name": "Guardrail summary block",
       "description": "Report includes a structured summary block listing all checks together (not scattered across unstructured prose)",
       "max_score": 6
+    },
+    {
+      "name": "Illustration guardrail skipped",
+      "description": "The guardrail report includes an Illustrations line showing [SKIP] (or equivalent) because the outline has no Illustration Style Anchor section — the illustration coverage check correctly does not run for non-illustrated outlines",
+      "max_score": 6
     }
   ]
 }

@@ -114,10 +114,17 @@ Each subagent receives the talk's DB entry and current `rhetoric-style-summary.m
   - `video_extracted`: run pipeline in `references/video-slide-extraction.md`
     (download 720p → ffmpeg frames → perceptual dedup → PDF). Delete video after.
   - `none`: transcript-only, `processed_partial`.
+  - **Fallback:** if the primary slide source (PPTX/PDF) fails but `video_url` exists,
+    fall back to video extraction. A talk can still reach `processed` status this way.
+- **Set `transcript_source`** on the talk entry: `youtube_auto` (yt-dlp captions),
+  `whisper` (local transcription), or `manual`. This field is required — downstream
+  tools use it to gauge transcript reliability.
 
 **B. Analyze for Rhetoric & Style (NOT content).** Apply all 14 dimensions from
 `references/rhetoric-dimensions.md` (including dimension 14: Areas for Improvement).
 Follow language policy and verbatim-quote rules in `references/processing-rules.md`.
+**Key rule:** all verbatim quotes must be English-first — `"English translation"
+(original text)`. Never quote non-English text without an English translation preceding it.
 
 **B2. Tag Presentation Patterns.** Scan observations against the pattern taxonomy
 at `skills/presentation-creator/references/patterns/_index.md`. Skip patterns
@@ -221,7 +228,8 @@ Also on explicit request.
    Map config → `speaker`/`infrastructure`, summary sections →
    `instrument_catalog`/`presentation_modes`, confirmed intents →
    `rhetoric_defaults`, aggregated data → `pacing`/`guardrail_sources`,
-   pattern observations → `pattern_profile`.
+   pattern observations → `pattern_profile`, illustration style observations
+   (dimension 13f) → `visual_style_history`.
 5. Diff against existing profile; report changes (new instruments, revised thresholds,
    new guardrails). Flag new presentation modes prominently.
 6. Save to `{vault_root}/speaker-profile.json`.

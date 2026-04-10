@@ -6,7 +6,9 @@ A media production company processes hundreds of conference talk recordings to e
 
 The company needs a diagnostic tool that analyzes the output of a slide extraction run and classifies the recording type, flags quality issues, recommends parameter adjustments, and identifies when a non-target speaker might have been recorded instead of the expected presenter.
 
-The tool should also handle transcript quality assessment — some recordings have no captions, some have captions in unexpected languages, and some produce Whisper transcriptions with hallucination artifacts.
+The tool should also handle transcript quality assessment — some recordings have no captions, some have captions in unexpected languages, and some produce Whisper transcriptions with hallucination artifacts. Track the transcript source type (e.g., `youtube_auto`, `whisper`, `manual`) as a field in the output, since source type significantly affects quality interpretation.
+
+The JSON output should have top-level sections: `recording_type`, `dedup_quality`, `transcript_quality`, `speaker_match`, and `recommendations`.
 
 ## Output Specification
 

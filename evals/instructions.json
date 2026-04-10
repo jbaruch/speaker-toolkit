@@ -566,6 +566,76 @@
       "relevant_when": "Iterating on presentation revisions",
       "why_given": "particular preference",
       "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Illustration Strategy (Decision #11) is optional — only when the author wants AI-generated illustrations. Present 3-4 style options informed by the talk's concepts, the vault's visual_style_history, and mode-specific visual precedent",
+      "original_snippets": "Decision #11: Illustration Strategy (when applicable) ... Present 3-4 style options informed by three sources: 1. The talk's own concepts ... 2. The vault's visual history — read visual_style_history ... 3. Historical precedent for this mode/context",
+      "relevant_when": "Phase 2 architecture when the author wants AI-generated illustrations",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Each illustration style option must explain WHY it fits the talk's concepts (CONCEPT FIT) and how it relates to the speaker's visual history (VAULT CONTEXT), not just what it looks like",
+      "original_snippets": "Each option includes: a name, why it fits this talk's concepts, how it relates to the speaker's visual history (continuation vs. departure), and a sample prompt excerpt ... The key: each style option explains WHY it fits this specific talk's concepts, not just what it looks like",
+      "relevant_when": "Proposing illustration style options during Phase 2",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "When illustration strategy is defined, outline header must include an Illustration Style Anchor section with Model, per-format STYLE ANCHOR sub-headings with blockquoted anchor paragraphs, and Conventions",
+      "original_snippets": "## Illustration Style Anchor ... **Model:** `[model-name]` ... ### STYLE ANCHOR (FULL — Landscape 1920×1080) > [style anchor paragraph] ... ### Conventions",
+      "relevant_when": "Writing the outline header for an illustrated talk",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Every slide in an illustrated outline must have a Format field (FULL, IMG+TXT, EXCEPTION). EXCEPTION slides must include a justification. Image prompts use [STYLE ANCHOR] token referencing the header anchors",
+      "original_snippets": "Format is required for every slide ... EXCEPTION slides must include a justification ... Image prompt uses [STYLE ANCHOR] as a token referencing the header",
+      "relevant_when": "Writing per-slide fields in an illustrated outline",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Image prompt must be richer than the Illustration description — the prompt includes composition details, labeling, specific visual elements that the human-readable description omits",
+      "original_snippets": "Illustration is the human-readable intent; Image prompt is the machine-readable generation input ... no prompts that are just the illustration description copy-pasted (the prompt should be richer/more specific)",
+      "relevant_when": "Writing image prompts for illustrated slides",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Illustration coverage guardrail (#10) only runs when the outline has an Illustration Style Anchor section. Shows [SKIP] for non-illustrated outlines. Checks: coverage ratio, format tags, EXCEPTION justification, style anchor reference, prompt quality",
+      "original_snippets": "Illustration Coverage (only runs when illustration strategy is defined) ... [PASS/FAIL] Illustration coverage ... [PASS/FAIL] Format tags ... [WARN] EXCEPTION slides ... [PASS/FAIL] Style anchor reference ... [PASS/WARN] Prompt quality",
+      "relevant_when": "Running guardrail checks on an illustrated outline",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Use [IMAGE NN] placeholder for EXCEPTION slides needing real assets. Replaces [SCREENSHOT NN] in illustration-aware outlines",
+      "original_snippets": "[IMAGE 01: description — what real asset is needed] ... For EXCEPTION slides that need real photos/screenshots/data. This replaces [SCREENSHOT NN] for illustration-aware outlines",
+      "relevant_when": "Writing placeholders for real assets in illustrated outlines",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Dimension 13f analyzes illustration and image style: image source types, illustration aesthetic, visual coherence, style anchor evidence, visual continuity devices, image-to-slide ratio, and mode correlation",
+      "original_snippets": "### 13f. Illustration & Image Style ... image source types ... illustration aesthetic ... visual coherence ... style anchor evidence ... visual continuity devices ... image-to-slide ratio ... mode correlation",
+      "relevant_when": "Analyzing a talk's slide visual style during vault ingress",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Structured data extraction includes illustration_style, illustration_coherence, image_source_distribution, and visual_continuity_devices fields",
+      "original_snippets": "illustration_style: Name the dominant illustration aesthetic ... illustration_coherence: unified, mixed, none ... image_source_distribution: Object mapping source types to counts ... visual_continuity_devices: List any recurring visual motifs",
+      "relevant_when": "Extracting structured data from a talk's visual analysis",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
+    },
+    {
+      "instruction": "Speaker profile includes visual_style_history with default_illustration_style, style_departures, mode_visual_profiles, and confirmed_visual_intents",
+      "original_snippets": "visual_style_history: { default_illustration_style ... style_departures ... mode_visual_profiles ... confirmed_visual_intents }",
+      "relevant_when": "Generating or reading the speaker profile for visual style data",
+      "why_given": "new knowledge",
+      "skill": "rhetoric-knowledge-vault"
     }
   ]
 }

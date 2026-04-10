@@ -6,6 +6,11 @@ A speaker has a finalized presentation outline and needs to automate the creatio
 
 Write a Python script that takes a presentation outline, a speaker profile (with template and design rules), and builds the deck end-to-end. The script should handle template preparation, slide creation with proper layout selection, footer insertion, background color management, and speaker notes injection. The speaker's profile contains their design rules — background color strategy, footer pattern, layout preferences, and other constraints.
 
+**Important implementation details:**
+- python-pptx has no public API for deleting slides. Use the internal `slides._sldIdLst` / `part.drop_rel()` pattern to strip demo slides from the template before building.
+- Speaker notes should be injected as a **separate batch pass** after all slides are created (e.g., using a `notes_map` dictionary), not interleaved with slide creation.
+- The `random_non_repeating` background color strategy means: choose a random color from the pool for each slide, but **never allow the same color on two adjacent slides**.
+
 ## Output Specification
 
 Produce the following files:

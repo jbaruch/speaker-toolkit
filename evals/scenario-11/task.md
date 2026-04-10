@@ -8,6 +8,12 @@ The team needs a Python processing engine that, given a database of talks with v
 
 The database is a JSON file where each talk entry has optional fields for different sources. The engine should set a `slide_source` field on each entry indicating which acquisition path was chosen, update the `status` field after processing, and produce a processing log.
 
+**Key rules:**
+- A talk **requires a video_url** to be fully processable (video is the transcript source). A talk with slides but no video cannot be fully processed — mark it as skipped.
+- Status values: `processed` (full success), `processed_partial` (transcript-only, no slides), `skipped_no_sources` (no video), `skipped_download_failed` (all sources failed).
+- For video-extracted slides, name the output PDF using the YouTube video ID (e.g., `slides/{youtube_id}.pdf`).
+- After extracting slides from video, clean up the downloaded video file to save disk space.
+
 ## Output Specification
 
 Produce the following files:

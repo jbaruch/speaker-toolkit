@@ -123,6 +123,42 @@ From visual inspection of the PDF:
 - If no: how are section boundaries signaled visually? (color change? text cue?
   starburst marker?)
 
+### 13f. Illustration & Image Style
+
+Analyze the visual aesthetic of images and illustrations across the deck. This feeds
+the `visual_style_history` in the speaker profile, which informs illustration style
+proposals when creating new talks.
+
+For each talk, determine:
+
+- **Image source types**: What kinds of images appear? Categorize each image slide as:
+  `ai_generated`, `stock_photo`, `screenshot`, `meme`, `custom_artwork`, `diagram`,
+  `photo_real` (speaker's own photos), `none` (text-only). Report the distribution.
+- **Illustration aesthetic** (when AI-generated or custom artwork is present):
+  Name the style — e.g., comic-book halftone, retro-futurism, technical manual,
+  patent drawing, propaganda poster, watercolor, pixel art, flat vector, photorealistic
+  render, collage, or a novel style (describe it). Be specific enough that someone
+  could reproduce it in a prompt.
+- **Visual coherence**: Do all illustrations share a unified style (suggesting a
+  deliberate style anchor), or are they mixed/ad-hoc?
+- **Style anchor evidence**: Is there a recurring visual formula — same color palette,
+  same rendering technique, same fictional framing device (e.g., "every slide is a
+  page from a field manual")? Describe it.
+- **Visual continuity devices**: Numbering schemes (e.g., "FIG. N"), recurring
+  characters or mascots, progressive visual elements (e.g., a form that fills in),
+  annotation conventions (callout labels, stamps, footnotes).
+- **Image-to-slide ratio**: What fraction of slides are image-primary (FULL or
+  IMG+TXT equivalent) vs text-primary vs screenshot/demo?
+- **Mode correlation**: Does the visual style appear to be driven by the talk's
+  mode or context? (e.g., terminal aesthetic for agent talks, retro style for
+  co-presented talks). Note the correlation if visible.
+
+**Cross-talk patterns** (updated in the summary after multiple talks):
+- Default illustration aesthetic (the style the speaker gravitates toward)
+- Intentional departures and what triggered them (mode, co-presenter, topic)
+- Evolution over time (has the style changed?)
+- Confirmed intents about visual design (from clarification sessions)
+
 ## 14. Reflection: Areas for Improvement
 
 **Related Patterns:** Crucible, Preparation, Carnegie Hall, Shoeless, The Stakeout | **Antipatterns:** Abstract Attorney, Alienating Artifact, Celery, Injured Outlines, Bullet-Riddled Corpse, Ant Fonts, Fontaholic, Floodmarks, Photomaniac, Borrowed Shoes, Slideuments, Dead Demo, Shortchanged, Hiccup Words, Disowning Your Topic, Going Meta, Bunker, Hecklers, Backchannel, Laser Weapons, Negative Ignorance, Dual-Headed Monster, Tower of Babble, Lipstick on a Pig
@@ -141,6 +177,10 @@ Count and categorize these for the `structured_data` output:
 - **closing_type**: Categorize as one of: summary_cta, callback, open_question, demo_finale, resource_list
 - **narrative_arc_type**: problem_diagnosis_solution, discovery_demo, chronological, listicle
 - **slide_design_style**: comic_book, minimal_dark, demo_scaffolding, mixed
+- **illustration_style**: Name the dominant illustration aesthetic if present (e.g., "retro_tech_manual", "comic_book_halftone", "patent_drawing", "none"). Use "none" if the talk has no deliberate illustration style.
+- **illustration_coherence**: unified, mixed, none — whether illustrations share a single style anchor
+- **image_source_distribution**: Object mapping source types to counts, e.g., {"ai_generated": 20, "meme": 5, "screenshot": 8, "none": 12}
+- **visual_continuity_devices**: List any recurring visual motifs (e.g., ["FIG_numbering", "progressive_form", "recurring_mascot"]) or empty list
 - **opening_sequence**: List the type of each of the first ~5 slides (e.g., ["title", "provocative_hook", "bio", "shownotes_url", "first_argument"])
 - **closing_sequence**: List the type of each of the last ~5 slides
 

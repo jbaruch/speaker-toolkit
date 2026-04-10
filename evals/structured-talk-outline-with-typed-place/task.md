@@ -25,6 +25,8 @@ presentations/platformcon/2025/golden-cage/presentation-outline.md
 
 The outline should be ready to hand to Sam for review — section by section, slide by slide, with visual descriptions and speaker notes. Include all the structural elements needed to give her flexibility for time adjustments. Include any relevant content from her vault that naturally fits the talk.
 
+**Important:** Sam has specific war stories, data points, and meme preferences she wants to insert herself. Where her input is needed, use typed placeholders (e.g., `[AUTHOR 01: ...]` for her stories, `[DATA 01: ...]` for statistics she'll provide, `[MEME 01]` with a brief describing what meme is needed). She also wants callback opportunities flagged explicitly so she can track the throughline during rehearsal.
+
 ## Input Files
 
 The following files are provided as inputs. Extract them before beginning.

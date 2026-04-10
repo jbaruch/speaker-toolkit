@@ -8,6 +8,8 @@ You have been given the talk transcript below (the slides were not preserved, so
 
 Your job is to process this talk into a rhetoric knowledge vault: analyze the rhetoric and style across all the relevant analysis dimensions, tag the presentation patterns observed, and save all the required output. The vault's tracking database should reflect the new processed state.
 
+**Language policy:** This transcript contains Russian-language phrases. All verbatim quotes must have the English translation FIRST, followed by the original text in parentheses. Format: `"English text" (original text)`. Never the reverse. Russian verbal signatures should be tagged with their language code.
+
 ## Output Specification
 
 Produce the following files in the vault directory:

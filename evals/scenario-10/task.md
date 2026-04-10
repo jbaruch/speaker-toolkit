@@ -36,3 +36,8 @@ pip install imagehash Pillow numpy
 ```
 
 Ensure `ffmpeg` is available on PATH for the frame extraction step.
+
+**Implementation guidance:**
+- Default frame rate should be **0.5 fps** (one frame every 2 seconds) — this captures slide transitions without generating excessive frames.
+- Use `imagehash.phash()` with `hash_size=16` for finer-grained perceptual comparison than the default.
+- Region detection should work on **downsampled frames** (e.g., resized to 320x180) for efficiency, not full-resolution frames.

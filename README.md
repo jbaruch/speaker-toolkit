@@ -2,11 +2,17 @@
 
 A two-skill system for conference speakers: analyze your existing talks to extract your rhetoric patterns, then create new presentations that match your documented style.
 
-## What's New (0.10.0)
+## What's New (0.11.0)
 
-**Sessions catalog** — New `sessions-catalog.md` in the vault for maintaining
-submission-ready conference materials (title, abstract, outline) per active talk.
-Pull from the catalog when submitting to conferences; update it when talks evolve.
+**AI-generated illustration support** — The presentation-creator now supports a full
+illustration pipeline: collaboratively choose a visual style grounded in the talk's
+concepts and the speaker's visual history (Phase 2), write outlines with per-slide
+Format/Illustration/Image prompt fields and a Style Anchor header (Phase 3), run
+illustration coverage guardrails (Phase 4), and batch-generate images via Gemini API
+with a new `generate-illustrations.py` script (Phase 5). The vault ingress now
+analyzes illustration style (dimension 13f) and builds a `visual_style_history` in
+the speaker profile to inform future style proposals.
+
 See [CHANGELOG.md](CHANGELOG.md) for full history.
 
 ## How It Works
@@ -158,7 +164,7 @@ Each talk is analyzed across:
 10. **Cultural & pop-culture references** — what's referenced and how
 11. **Technical content delivery** — simplification, progressive revelation
 12. **Pacing clues** — section lengths, density, speed variation
-13. **Slide design patterns** — per-slide visual classification, typography, shapes
+13. **Slide design patterns** — per-slide visual classification, typography, shapes, illustration style
 14. **Reflection** — critical assessment of what could be improved
 
 Each dimension is cross-referenced with the Presentation Patterns taxonomy — the analysis
@@ -200,7 +206,7 @@ notes which named patterns and antipatterns are detected per talk.
 | 5: Slide Generation | Build .pptx from outline using speaker's template | Author declares slides done |
 | 6: Publishing | Export, shownotes, QR code, go-live checklist | Published and ready to deliver |
 
-### Guardrail System (9 checks + pattern taxonomy scan)
+### Guardrail System (10 checks + pattern taxonomy scan)
 
 1. **Slide budget** — per-duration max from the profile
 2. **Act 1 ratio** — problem section balance limits
@@ -213,6 +219,7 @@ notes which named patterns and antipatterns are detected per talk.
 9. **Anti-pattern flags** — speaker-specific recurring issues from the vault
    - **9A:** Profile-based recurring issues
    - **9B:** Taxonomy-based antipattern scan — `[RECURRING]` from speaker history, `[CONTEXTUAL]` from outline analysis
+10. **Illustration coverage** — format tags, EXCEPTION justifications, style anchor references, prompt quality (when illustration strategy is defined; `[SKIP]` otherwise)
 
 ### Presentation Patterns Taxonomy
 
@@ -282,8 +289,9 @@ speaker-toolkit-tile/
         +-- SKILL.md                          # Main creator workflow (7 phases)
         +-- references/
             +-- process.md                    # Phase instructions + Pattern Strategy + go-live checklist
-            +-- guardrails.md                 # 9-point guardrails + pattern taxonomy scan (9B)
+            +-- guardrails.md                 # 10-point guardrails + pattern taxonomy scan (9B)
             +-- slide-generation.md           # MCP + python-pptx technical reference
+            +-- generate-illustrations.py     # Gemini API illustration generator + model comparison
             +-- patterns/                     # Presentation Patterns taxonomy (88 entries)
                 +-- _index.md                 # Master index, phase mapping, dimension lookup
                 +-- prepare/                  # 18 patterns + 3 antipatterns

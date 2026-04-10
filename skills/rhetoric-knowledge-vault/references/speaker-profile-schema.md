@@ -194,6 +194,37 @@ creation at runtime.
     "pop_culture_notes": "general guidance on how this speaker uses pop-culture references"
   },
 
+  "visual_style_history": {
+    "default_illustration_style": "the speaker's most common illustration aesthetic, or null if no pattern",
+    "default_image_source": "most common image source type: ai_generated, meme, screenshot, stock_photo, custom_artwork, mixed",
+    "style_departures": [
+      {
+        "style": "name of the departure style (e.g., retro_tech_manual)",
+        "trigger": "what caused the departure: mode, co-presenter, topic, venue",
+        "talks": ["list of talk filenames that used this style"],
+        "description": "human-readable description of the style, specific enough to inform a prompt"
+      }
+    ],
+    "mode_visual_profiles": [
+      {
+        "mode_id": "a",
+        "typical_style": "illustration aesthetic typically used in this mode",
+        "image_source_mix": "what image sources dominate in this mode",
+        "notes": "any mode-specific visual tendencies"
+      }
+    ],
+    "evolution_notes": "narrative of how the speaker's visual style has changed over time",
+    "visual_continuity_patterns": ["recurring devices across talks: numbering schemes, mascots, progressive elements"],
+    "confirmed_visual_intents": [
+      {
+        "pattern": "name of the visual pattern",
+        "intent": "deliberate|accidental|context_dependent",
+        "rule": "what the presentation-creator should do about it",
+        "note": "additional context from the speaker"
+      }
+    ]
+  },
+
   "pattern_profile": {
     "talks_scored": 24,
     "average_pattern_score": 6.8,
@@ -291,6 +322,7 @@ automatically picks up changes when the profile is regenerated.
 | `pacing` | Phase 3-4 (content, guardrails) | Slide budget tables, WPM targets |
 | `guardrail_sources` | Phase 4 (guardrails) | All guardrail checks with thresholds |
 | `instrument_catalog` | Phase 2 (architecture) | Complete instrument menu by dimension |
+| `visual_style_history` | Phase 2 (architecture — illustration strategy) | Default aesthetic, mode-specific departures, style proposals |
 | `pattern_profile` | Phase 2 (architecture), Phase 4 (guardrails) | Pattern Strategy 4-tier recommendations, antipattern warnings |
 | `badges` | Informational | Fun speaker achievements mined from vault data |
 | `infrastructure.template_layouts` | Phase 5 (slide generation) | Layout map and selection logic |

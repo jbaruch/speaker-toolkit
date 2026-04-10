@@ -87,13 +87,16 @@ Gate: Author confirms or edits the spec.
 **The instrument menu comes from the vault, not from a static file.** Read the summary
 (sections 2-13) and profile `instrument_catalog` for options.
 
-### 10 Decisions to make together:
+### 11 Decisions to make together:
 
 Mode, Opening, Narrative, Humor, Audience Interaction, Closing, Slide Design,
-Persuasion, Template Patterns, Pattern Strategy. Each reads from the matching
-`instrument_catalog` entry + summary section. Decision #10 uses the 4-tier Pattern
-Strategy from `references/patterns/_index.md` + `profile → pattern_profile` (see
-`references/process.md` for the full tier logic).
+Persuasion, Template Patterns, Pattern Strategy, Illustration Strategy. Each reads
+from the matching `instrument_catalog` entry + summary section. Decision #10 uses the
+4-tier Pattern Strategy from `references/patterns/_index.md` + `profile → pattern_profile`.
+Decision #11 (Illustration Strategy) is optional — only when the author wants
+AI-generated illustrations. Walks through style proposals informed by the talk's
+concepts and the vault's visual history, format vocabulary, model choice, and visual
+continuity devices (see `references/process.md` for the full workflow).
 
 For each: present options, recommend based on spec, let author choose.
 If co-presented, add role split and voice differentiation — see `references/process.md`.
@@ -123,13 +126,20 @@ outline format, voice calibration, callback identification, and placeholder type
 **Spec:** [mode] | [duration] | [venue]
 **Slide budget:** [N slides]
 
+## Illustration Style Anchor  ← only when illustration strategy is defined
+**Model:** `model-name`
+### STYLE ANCHOR (FULL — Landscape 1920×1080)
+> [anchor paragraph]
+
 ## Opening Sequence [3 min, slides 1-5]
 ### Slide 1: Title Slide
+- Format: **FULL**            ← only when illustration strategy is defined
+- Illustration: [visual concept]
+- Image prompt: `[STYLE ANCHOR]. [generation prompt]`
 - Visual: [description]
 - Speaker: [no notes — visual only]
 ### Slide 2: [Opening hook]
-- Visual: [description]
-- Speaker: "[opening lines in the speaker's voice]"
+...
 
 ## Act 1: [Title] [N min, slides X-Y]
 ...
@@ -138,8 +148,12 @@ outline format, voice calibration, callback identification, and placeholder type
 ## Closing Sequence [3 min, slides N-end]
 ```
 
+When an illustration strategy is defined, each slide gets Format, Illustration, and
+Image prompt fields. The `[STYLE ANCHOR]` token in prompts references the header
+anchors. Talks without illustration strategy use the standard `- Visual:` field only.
+
 **Placeholders** use typed, independent numbering:
-`[AUTHOR 01]`, `[DEMO 01]`, `[DATA 01]`, `[SCREENSHOT 01]`, `[MEME 01]`
+`[AUTHOR 01]`, `[DEMO 01]`, `[DATA 01]`, `[SCREENSHOT 01]`, `[IMAGE 01]`, `[MEME 01]`
 
 Save to: `{presentations-dir}/{conference}/{year}/{talk-slug}/presentation-outline.md`
 
@@ -161,6 +175,7 @@ GUARDRAIL CHECK — {talk title}
 [INFO] Anti-patterns: {flags from profile recurring_issues}
 [INFO] Pattern score projection: {estimated score based on architecture decisions}
 [RECURRING/CONTEXTUAL] Presentation Patterns: {taxonomy-based antipattern flags}
+[PASS/FAIL/SKIP] Illustrations: {coverage} | {format tags} | {prompt quality}
 ================================================
 ```
 
@@ -187,7 +202,10 @@ tmpl.save(output_path)
 ```
 
 Then open with MCP `open_presentation` and walk the outline: `add_slide` → `populate_placeholder`
-→ `manage_image` for each slide. Inject speaker notes via python-pptx batch after MCP generation.
+→ `manage_image` for each slide. When the outline has an Illustration Style Anchor,
+generate illustrations first (`generate-illustrations.py`) and use illustration-format-aware
+insertion (FULL → full-bleed, IMG+TXT → image + text, EXCEPTION → real asset).
+Inject speaker notes via python-pptx batch after MCP generation.
 
 **Key rules from profile:**
 - `design_rules.background_color_strategy` — how to pick background colors
@@ -244,23 +262,19 @@ Each entry contains:
 - **Outline** (with section descriptions and time allocations)
 - **Small Print** (notes for the Program Committee — positioning the talk relative to
   other sessions, clarifying what the talk IS and ISN'T, or flagging anything the PC
-  should know. Internal, not public-facing — anti-pattern checking is less critical but
-  it should still sound like the speaker, not a marketing team)
+  should know. Internal, not public-facing)
 
 ### When to read / write the catalog
 
-- **Phase 0 of any workflow:** Load catalog alongside vault documents to know the active rotation and flag overlapping territory.
-- **Before writing a new CFP:** Pull existing entry if present; adapt rather than rewrite.
-- **After CFP abstract writing (step 5):** Save approved title, abstract, and outline as a new entry or update existing.
-- **After Phase 4 (outline finalized):** Create entry if none exists; update outline to latest.
+- **Phase 0:** Load alongside vault documents to know the active rotation and flag overlapping territory.
+- **Before a new CFP:** Pull existing entry if present; adapt rather than rewrite.
+- **After CFP abstract writing (step 5):** Save approved title, abstract, and outline as new or updated entry.
+- **After Phase 4:** Create entry if none exists; update outline to latest.
 - **Talk retired:** Remove entry or move to archive section at bottom of file.
 
 ### Catalog maintenance rules
 
-- The catalog is a **living document** — each entry reflects the LATEST approved version.
-  Full history lives in the vault's tracking database and analysis files.
-- Run the anti-pattern check (from the blog-writer skill's `ai-anti-patterns.md` if
-  installed, or general AI writing hygiene) on catalog entries before saving. Conference
-  abstracts are public-facing text — they should read like the speaker wrote them.
+- The catalog is a **living document** — each entry reflects the LATEST approved version. Full history lives in the vault's tracking database and analysis files.
+- Run an anti-pattern check on catalog entries before saving (use the blog-writer skill's `ai-anti-patterns.md` if installed). Conference abstracts are public-facing — they should read like the speaker wrote them.
 - Keep the "Last updated" date at the top of the file current.
 - Entries are separated by `---` horizontal rules for easy scanning.

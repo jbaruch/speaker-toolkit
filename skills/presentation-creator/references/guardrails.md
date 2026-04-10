@@ -227,6 +227,42 @@ Report format:
 
 ---
 
+## 10. Illustration Coverage
+
+**Only runs when the outline includes an Illustration Style Anchor section.**
+Skip entirely for talks without an illustration strategy.
+
+### Checks
+
+**Visual coverage ratio** — what percentage of non-EXCEPTION slides have image prompts.
+Not every slide needs an illustration (text-only slides, transition slides), but the
+ratio should reflect the author's intent for the deck's visual density.
+
+**Format consistency** — every slide has a Format field (`FULL`, `IMG+TXT`, `EXCEPTION`,
+or a custom format from the format vocabulary).
+
+**EXCEPTION justification** — every EXCEPTION slide has a reason explaining why it uses
+a real asset instead of a generated illustration.
+
+**Style anchor reference** — every image prompt starts with `[STYLE ANCHOR]` (the token
+the generation script replaces with the actual anchor text).
+
+**Prompt quality** — no prompts that are just the Illustration description copy-pasted.
+The image prompt should be richer and more specific than the human-readable description
+(it includes composition details, labeling, specific visual elements).
+
+### Check
+
+```
+[PASS/FAIL] Illustration coverage: {N}/{M} illustrated slides have image prompts
+[PASS/FAIL] Format tags: {N}/{total} slides have format specified
+[WARN] EXCEPTION slides: {N} without justification
+[PASS/FAIL] Style anchor reference: {N}/{M} prompts start with [STYLE ANCHOR]
+[PASS/WARN] Prompt quality: {N} prompts appear to be copy-paste of description
+```
+
+---
+
 ## Guardrail Summary Template
 
 Use this template after each check:
@@ -244,5 +280,8 @@ GUARDRAIL CHECK — {talk title} — {date}
 [PASS/FAIL] Cut lines: {present/missing}
 [INFO] Anti-patterns: {any flags from recurring_issues}
 [RECURRING/CONTEXTUAL] Presentation Patterns: {taxonomy-based antipattern flags}
+[PASS/FAIL/SKIP] Illustrations: {coverage ratio} | {format tags} | {prompt quality}
 ================================================
 ```
+
+The Illustrations line shows `[SKIP]` when no illustration strategy is defined.

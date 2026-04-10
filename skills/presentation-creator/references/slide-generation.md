@@ -24,6 +24,15 @@ Each layout entry has: `index`, `name`, `placeholders[]`, and `use_for`.
 | Full-bleed image/meme | BLANK layout (no placeholders) | Position everything manually |
 | Quote / caption | Caption layout if available | Attributed quotes, epigraphs |
 
+**Illustration-aware formats** (when outline has an Illustration Style Anchor):
+
+| Outline Format     | Layout to Use                 | Image Handling                                           |
+|--------------------|------------------------------|----------------------------------------------------------|
+| FULL               | BLANK layout                 | `manage_image` full-bleed from `illustrations/slide-NN.ext` |
+| FULL + text overlay | BLANK layout                | `manage_image` full-bleed + `manage_text` overlay on top  |
+| IMG+TXT            | TITLE only (no body)         | `manage_image` ~60% of slide + `manage_text` beside/below |
+| EXCEPTION          | Per content type (see above) | Real asset from `[IMAGE NN]` placeholder path             |
+
 Match these generic types to the speaker's actual layout names/indices from the profile.
 
 Also review the template catalog in `slide-design-spec.md` Section 7 for rich
@@ -88,6 +97,37 @@ Then open the clean deck with the MCP: `open_presentation(file_path=...)`.
    manage_image(slide_index=N, operation="add", image_source="path/to/image.png",
                 left=1, top=1.5, width=8, height=5)
    ```
+
+4b. **For illustrated slides** (when outline has Format: FULL or IMG+TXT):
+
+   Resolve the image file: `illustrations/slide-{NN}.jpg` (or `.png`), where NN is
+   the zero-padded slide number from the outline.
+
+   **FULL format** (full-bleed):
+   ```
+   # Use BLANK layout
+   manage_image(slide_index=N, operation="add",
+       image_source="illustrations/slide-{NN}.jpg",
+       left=0, top=0, width=10, height=7.5)
+   # If text overlay specified:
+   manage_text(slide_index=N, operation="add", text="...",
+       left=0.5, top=5.5, width=9, height=1.5,
+       font_size=36, color=[255,255,255])
+   ```
+
+   **IMG+TXT format** (illustration + text):
+   ```
+   # Use TITLE-only layout
+   manage_image(slide_index=N, operation="add",
+       image_source="illustrations/slide-{NN}.jpg",
+       left=0.3, top=0.8, width=4, height=6)
+   # Populate title placeholder with slide title
+   # manage_text for additional text beside the image
+   ```
+
+   **EXCEPTION format**:
+   - Use appropriate layout for the content type (bullet list, comparison, etc.)
+   - Image source comes from the `[IMAGE NN]` placeholder, not from `illustrations/`
 
 5. **For non-placeholder text** (captions, annotations):
    ```
@@ -305,7 +345,11 @@ directory structure. Typical convention:
 ├── {talk-slug}.pptx              ← the deck (Phase 5 output)
 ├── {talk-slug}.pdf               ← PDF export (Phase 5 final step)
 ├── presentation-outline.md        ← the outline (Phase 3/4 output)
-└── assets/                        ← images, memes, screenshots (author provides)
+├── assets/                        ← images, memes, screenshots (author provides)
+└── illustrations/                 ← generated illustrations (Phase 5 Step 5.1b)
+    ├── slide-01.jpg               ← one file per illustrated slide
+    ├── slide-02.png
+    └── model-comparison/          ← --compare output (Phase 2 model selection)
 ```
 
 The speaker's template is read-only — never modify it.
