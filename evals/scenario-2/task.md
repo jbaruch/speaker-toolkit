@@ -6,7 +6,7 @@ A speaker's rhetoric knowledge vault has been running automated analysis on thei
 
 You have a tracking database with 8 talks that just went through a processing run. Each talk has a recorded download result from the latest run. Based on the outcomes, update the tracking database with the correct status for each talk and determine the slide source type from each talk's configured sources in the database (before considering download outcomes). Also produce an updated rhetoric summary document that incorporates the new observations from successfully processed talks.
 
-The key constraint: the rhetoric summary is a living document that has been built up over months. New observations should be integrated into the existing content — patterns should be refined and new ones added, but nothing should be removed from the summary even if a new talk contradicts an earlier observation. Contradictions should be noted as evolving patterns, not overwrites.
+The key constraint: the rhetoric summary is a living document that has been built up over months. New observations from successfully processed talks should be integrated into the existing content to maintain a comprehensive running summary.
 
 ## Output Specification
 

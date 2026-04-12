@@ -1,60 +1,55 @@
 {
-  "context": "Tests whether the agent writes a deck-building script that follows the skill's specific python-pptx patterns: template stripping via drop_rel, speaker notes via python-pptx (not MCP), footer on every slide, layout selection from profile, and background color strategy.",
+  "context": "Tests whether the agent produces a correct PowerPoint deck from an outline and profile: template cleaned of demo slides, correct layout per slide type, footer on every slide, speaker notes present, background color rules respected, and no slide numbers.",
   "type": "weighted_checklist",
   "checklist": [
     {
-      "name": "Template stripping code",
-      "description": "Script includes the template slide-stripping pattern: iterating slides._sldIdLst, getting rId, calling part.drop_rel(rId), and removing sldId elements",
+      "name": "Template demo slides removed",
+      "description": "The output deck does not contain the original demo/sample slides from the template — only the new slides from the outline are present",
       "max_score": 12
     },
     {
-      "name": "Speaker notes via python-pptx",
-      "description": "Script injects speaker notes using python-pptx (slide.notes_slide.notes_text_frame.text = ...), NOT via an MCP tool call or placeholder",
-      "max_score": 12
-    },
-    {
-      "name": "Notes batch injection",
-      "description": "Speaker notes are injected as a batch operation AFTER all slides are created (not interleaved with slide creation), using a notes_map or similar pattern",
-      "max_score": 8
+      "name": "Speaker notes present",
+      "description": "Slides that have 'Speaker:' lines in the outline have those notes present in the final .pptx file's speaker notes",
+      "max_score": 20
     },
     {
       "name": "Footer on every slide",
-      "description": "The script adds a footer text element to every slide (not just some), using position/font data from the profile",
+      "description": "Every slide in the output deck has a footer text element with the speaker's handle and conference info",
       "max_score": 10
     },
     {
       "name": "Layout selection from profile",
-      "description": "The script selects slide layouts by index from the profile's template_layouts array (matching slide type to layout use_for), not by hardcoded layout names",
+      "description": "The deck plan maps each slide to a layout from the profile's template_layouts array based on the slide's content type — not hardcoded or random layout choices",
       "max_score": 10
     },
     {
       "name": "No adjacent color repeat",
-      "description": "Background color assignment logic ensures no two adjacent slides share the same color (checking previous slide's color before selecting)",
+      "description": "Background colors on consecutive slides are different — the plan or deck shows no two adjacent slides share the same background color",
       "max_score": 10
     },
     {
-      "name": "White/black reserved",
-      "description": "White or black/transparent backgrounds are only assigned to full-bleed image or meme slides, with colored backgrounds for all other slide types",
+      "name": "White/black reserved for images",
+      "description": "White or black backgrounds are only used on full-bleed image or meme slides — content slides get colored backgrounds from the pool",
       "max_score": 8
     },
     {
       "name": "No slide numbers",
-      "description": "The script does NOT add slide numbers (or explicitly respects the 'never' setting from the profile)",
+      "description": "The output deck does not include slide numbers (respecting the 'never' rule from the profile)",
       "max_score": 6
     },
     {
-      "name": "Uses python-pptx library",
-      "description": "The script imports and uses python-pptx (from pptx import Presentation) as the primary library",
+      "name": "Footer color adapts",
+      "description": "Footer text color is light on dark backgrounds and dark on light backgrounds — not a fixed color regardless of background",
       "max_score": 8
     },
     {
-      "name": "Footer color adaptation",
-      "description": "Footer text color adapts based on background color (e.g., white text on dark backgrounds, dark text on light backgrounds)",
+      "name": "Correct slide count",
+      "description": "The output deck has the same number of slides as the outline (8 slides from the excerpt), not more or fewer",
       "max_score": 8
     },
     {
-      "name": "Deck plan document",
-      "description": "The deck_plan.md maps each outline slide to a specific layout index and describes the build decisions",
+      "name": "Build plan documents decisions",
+      "description": "The deck_plan.md maps each outline slide to a specific layout and documents the design decisions (color, footer, notes)",
       "max_score": 8
     }
   ]

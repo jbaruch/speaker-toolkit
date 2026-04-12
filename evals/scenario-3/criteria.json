@@ -1,5 +1,5 @@
 {
-  "context": "Tests whether the agent produces a talk analysis following the skill's specific 14-dimension framework, structured data schema, and verbatim examples extraction requirements.",
+  "context": "Tests whether the agent produces a talk analysis following the skill's 14-dimension framework, structured data schema, and verbatim examples extraction requirements.",
   "type": "weighted_checklist",
   "checklist": [
     {
@@ -33,13 +33,13 @@
       "max_score": 10
     },
     {
-      "name": "Opening type enum",
-      "description": "opening_type uses one of the specific category values: provocative_image, failure_framing, audience_poll, story, bold_claim, or demo_cold_open",
+      "name": "Opening type categorized correctly",
+      "description": "opening_type correctly captures that this talk opens with a bold/provocative claim combined with audience polling — the value should be semantically accurate, not just any placeholder",
       "max_score": 8
     },
     {
-      "name": "Closing type enum",
-      "description": "closing_type uses one of the specific category values: summary_cta, callback, open_question, demo_finale, or resource_list",
+      "name": "Closing type categorized correctly",
+      "description": "closing_type correctly captures that this talk closes with a numbered summary plus call-to-action and social handles — the value should reflect the actual closing structure",
       "max_score": 8
     },
     {

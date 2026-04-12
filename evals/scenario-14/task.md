@@ -6,7 +6,7 @@ A speaker has been accepted to give a 45-minute keynote about "The Arc of AI" at
 
 The speaker wants AI-generated illustrations for this talk — not stock photos or screenshots, but a cohesive visual identity where every slide feels like a page from the same artifact. They've already chosen a **retro technical manual** style during the architecture phase: every slide looks like a page from a declassified government field manual, with deadpan clinical labeling and vintage technical illustration.
 
-Using the vault data provided below, create a complete illustrated presentation outline. The outline must include the Illustration Style Anchor section in the header, and every slide must have Format, Illustration, and Image prompt fields. The style anchor should be referenced in every prompt using the `[STYLE ANCHOR]` token.
+Using the vault data and illustration decisions provided below, create a complete illustrated presentation outline. The outline should have a cohesive visual style applied across all slides, with AI-generated illustration prompts that maintain visual consistency throughout the deck. Follow the skill's conventions for how illustrated outlines are structured — including how the style is anchored, how per-slide illustration metadata is organized, and how prompts reference the shared style definition.
 
 ## Output Specification
 
@@ -141,11 +141,6 @@ technical manual or declassified government field guide. Detailed technical pen-
 line-art diagrams. Aged parchment background with foxing and tea-staining. Blue-ink
 leader lines and deadpan callout labels. The "personnel evaluation form" thread becomes
 a literal bureaucratic form filling in across the talk.
-
-## Format Vocabulary
-- **FULL** — full-bleed illustration, 1-2 sentences overlaid → Landscape 16:9 (1920x1080)
-- **IMG+TXT** — illustration ~60% of slide, text beside/below → Portrait 2:3 (1024x1536)
-- **EXCEPTION** — real photo, data table, bio, or primary source → no generated illustration
 
 ## Model
 `gemini-2.0-flash-preview-image-generation`

@@ -19,12 +19,12 @@
     },
     {
       "name": "Spontaneous humor capture",
-      "description": "The questionnaire or tool includes a question or prompt about humor moments NOT captured in slides or transcript — improvised callbacks, audience riffs, heckler interactions, recovery humor from demo failures, or any jokes that happened in the moment. Can be a dedicated question or a section for unscripted moments",
+      "description": "The questionnaire includes at least one question specifically asking about humor that happened OUTSIDE the transcript — improvised callbacks, audience riffs, recovery humor from failures, or unrecorded moments. Must be a distinct question, not folded into a generic 'anything else?' prompt",
       "max_score": 10
     },
     {
       "name": "Promotion prompt",
-      "description": "The tool or report includes the concept of promoting spontaneous humor to planned content — asking whether a joke that landed well should become a planned beat in future deliveries, or flagging well-received spontaneous material for future reuse. Can appear in the questionnaire, the report, or as a field in the output",
+      "description": "The report or questionnaire includes a field or question about whether well-received spontaneous humor should be incorporated into future versions of the talk — e.g., a 'promote to planned' flag, a 'reuse recommendation' field, or an explicit question like 'should this become a planned beat?'",
       "max_score": 8
     },
     {

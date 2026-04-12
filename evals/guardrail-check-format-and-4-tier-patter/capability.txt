@@ -1,1 +1,0 @@
-Guardrail checks and pattern strategy

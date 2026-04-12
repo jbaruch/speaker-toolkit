@@ -6,7 +6,7 @@ A prolific conference speaker has years of talk materials scattered across direc
 
 The speaker wants a JSON-based tracking database that maps all their talks and presentation files, identifies which talks have enough source material for analysis, and flags which ones are incomplete. Some PowerPoint files are duplicates or static exports and should be filtered out. The system should also try to match presentation files to their corresponding talk metadata entries.
 
-**Database schema:** The JSON should have top-level keys: `config` (with `vault_root`, `talks_source_dir`, `pptx_source_dir`, `template_skip_patterns`), `talks` (array), `pptx_catalog` (array), and `confirmed_intents` (array, initially empty). Set `vault_root` to `~/.claude/rhetoric-knowledge-vault/`. Extract `youtube_id` from YouTube URLs and `google_drive_id` from Google Drive URLs into separate fields on each talk entry.
+The tracking database should be a single JSON file that inventories all discovered talks, catalogs presentation files, stores configuration, and tracks processing readiness. Talks without any source material (no video URL, no slides) should be flagged as unprocessable. Talks with source material should be marked as ready for processing, with their slide source type recorded based on what's available (PPTX, PDF from Google Drive, both, or none).
 
 ## Output Specification
 
@@ -61,22 +61,16 @@ slides_url: "https://drive.google.com/file/d/9X8Y7Z6W5V/view"
 
 Busting common misconceptions about containers.
 
-=============== FILE: inputs/presentations/DevOps Days Chicago/2024/DevOps Reframed.pptx ===============
-(Create an empty .pptx file at this path using python-pptx)
+Download the presentation files from the project repository before scanning:
+```bash
+BASE="https://github.com/jbaruch/speaker-toolkit/raw/main/eval-resources/scenario-1"
+mkdir -p "inputs/presentations/DevOps Days Chicago/2024" "inputs/presentations/KubeCon/2024" "inputs/presentations/DockerCon/2023" "inputs/presentations/Templates"
+curl -L -o "inputs/presentations/DevOps Days Chicago/2024/DevOps Reframed.pptx" "$BASE/DevOps%20Days%20Chicago/2024/DevOps%20Reframed.pptx"
+curl -L -o "inputs/presentations/DevOps Days Chicago/2024/DevOps Reframed static.pptx" "$BASE/DevOps%20Days%20Chicago/2024/DevOps%20Reframed%20static.pptx"
+curl -L -o "inputs/presentations/DevOps Days Chicago/2024/DevOps Reframed (1).pptx" "$BASE/DevOps%20Days%20Chicago/2024/DevOps%20Reframed%20(1).pptx"
+curl -L -o "inputs/presentations/KubeCon/2024/Software Supply Chain Security.pptx" "$BASE/KubeCon/2024/Software%20Supply%20Chain%20Security.pptx"
+curl -L -o "inputs/presentations/Templates/Presentation Template DOTCs 2023.pptx" "$BASE/Templates/Presentation%20Template%20DOTCs%202023.pptx"
+curl -L -o "inputs/presentations/DockerCon/2023/Container Myths Busted.pptx" "$BASE/DockerCon/2023/Container%20Myths%20Busted.pptx"
+```
 
-=============== FILE: inputs/presentations/DevOps Days Chicago/2024/DevOps Reframed static.pptx ===============
-(Create an empty .pptx file at this path — this is a static export that should be skipped)
-
-=============== FILE: inputs/presentations/DevOps Days Chicago/2024/DevOps Reframed (1).pptx ===============
-(Create an empty .pptx file at this path — this is a Google Drive conflict copy that should be skipped)
-
-=============== FILE: inputs/presentations/KubeCon/2024/Software Supply Chain Security.pptx ===============
-(Create an empty .pptx file at this path)
-
-=============== FILE: inputs/presentations/Templates/Presentation Template DOTCs 2023.pptx ===============
-(Create an empty .pptx file at this path — this is a template that should be skipped)
-
-=============== FILE: inputs/presentations/DockerCon/2023/Container Myths Busted.pptx ===============
-(Create an empty .pptx file at this path)
-
-Create the .pptx files using python-pptx (`pip install python-pptx`) as minimal valid presentations with at least one slide each.
+The presentations directory contains 6 `.pptx` files across conference/year subdirectories. Three are real presentations, three should be skipped (static export, conflict copy, template).

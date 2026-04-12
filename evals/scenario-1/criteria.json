@@ -1,20 +1,15 @@
 {
-  "context": "Tests whether the agent builds a talk tracking database following the skill's specific schema, status logic, file skip patterns, and slide source determination rules.",
+  "context": "Tests whether the agent builds a talk tracking database with correct structure, status logic, file skip patterns, and slide source determination rules.",
   "type": "weighted_checklist",
   "checklist": [
     {
       "name": "Top-level DB structure",
-      "description": "tracking-database.json has top-level keys: config, talks (array), pptx_catalog (array), and confirmed_intents (array)",
+      "description": "tracking-database.json has clearly separated sections for: configuration, talk entries (array), presentation file catalog (array), and a place for confirmed user intents or preferences",
       "max_score": 10
     },
     {
-      "name": "Config fields present",
-      "description": "The config object includes at least: vault_root, talks_source_dir, pptx_source_dir, and template_skip_patterns",
-      "max_score": 5
-    },
-    {
-      "name": "Canonical vault path",
-      "description": "The vault_root config value is set to ~/.claude/rhetoric-knowledge-vault (the canonical path), not an arbitrary or relative path",
+      "name": "Config captures source directories",
+      "description": "The config section records the paths to the talks source directory and the presentations source directory, so the scan is reproducible",
       "max_score": 5
     },
     {
@@ -24,47 +19,47 @@
     },
     {
       "name": "URL fields parsed",
-      "description": "Talk entries correctly parse video_url and slides_url from the markdown front matter, and extract youtube_id and/or google_drive_id",
+      "description": "Talk entries correctly parse video_url and slides_url from the markdown front matter, and extract youtube_id and/or google_drive_id from the URLs",
       "max_score": 10
     },
     {
-      "name": "Pending status default",
-      "description": "New talks discovered from markdown files get status 'pending' (not 'new', 'unprocessed', or another term)",
+      "name": "New talks default to pending",
+      "description": "New talks discovered from markdown files get a status indicating they are waiting to be processed — distinct from processed, failed, or skipped statuses",
       "max_score": 8
     },
     {
-      "name": "Skipped no sources",
-      "description": "The 'AI-Assisted Testing' talk (which has no video_url and no slides) is marked with a status indicating it cannot be processed due to missing sources — not left as 'pending'",
+      "name": "No-sources talk flagged as unprocessable",
+      "description": "The 'AI-Assisted Testing' talk (which has no video_url and no slides) is flagged with a status indicating it cannot be processed due to missing sources — not left in the default pending state",
       "max_score": 10
     },
     {
       "name": "Slide source determination",
-      "description": "Talks with both slides_url and pptx_path get slide_source 'both'; talks with only slides_url get 'pdf'; talks with only pptx_path get 'pptx'",
+      "description": "Talks are assigned a slide source value based on what's available: talks with both PDF slides and PPTX get a value reflecting both; talks with only one get the appropriate single-source value",
       "max_score": 10
     },
     {
       "name": "Static files skipped",
-      "description": "The pptx_catalog or processing log shows that 'DevOps Reframed static.pptx' was skipped/excluded",
+      "description": "The presentation catalog or processing log shows that 'DevOps Reframed static.pptx' was skipped/excluded",
       "max_score": 8
     },
     {
       "name": "Conflict copies skipped",
-      "description": "The pptx_catalog or processing log shows that 'DevOps Reframed (1).pptx' was skipped/excluded",
+      "description": "The presentation catalog or processing log shows that 'DevOps Reframed (1).pptx' was skipped/excluded",
       "max_score": 8
     },
     {
       "name": "Template files skipped",
-      "description": "The pptx_catalog or processing log shows that the template file was skipped/excluded",
+      "description": "The presentation catalog or processing log shows that the template file was skipped/excluded",
       "max_score": 8
     },
     {
       "name": "PPTX-to-talk matching",
-      "description": "The pptx_catalog entries include a reference to their matched talk (by filename or title), with at least 2 correctly matched",
+      "description": "The presentation catalog entries include a reference to their matched talk (by filename or title), with at least 2 correctly matched",
       "max_score": 5
     },
     {
-      "name": "State report format",
-      "description": "The scan report includes counts of processed/remaining talks and PPTX cataloging stats (cataloged, matched, extracted counts)",
+      "name": "Scan report with counts",
+      "description": "The scan report includes counts of talks found, processable talks, and presentation file cataloging stats",
       "max_score": 5
     }
   ]

@@ -1,0 +1,61 @@
+{
+  "context": "Tests whether the agent correctly adds progressive-reveal build specifications to an illustrated outline and produces a build generation plan that follows the backwards-chaining workflow, naming conventions, and slide insertion rules from the skill.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Build specification format",
+      "max_score": 10,
+      "description": "At least one slide in the outline contains a '- Builds: N steps' line followed by indented build-NN entries (build-00 through build-NN), matching the format from the skill's build specification convention"
+    },
+    {
+      "name": "Build-00 is empty frame",
+      "max_score": 10,
+      "description": "The build-00 entry describes an empty frame (title/borders only, no content elements) — not a partial reveal"
+    },
+    {
+      "name": "Final build tagged [FULL]",
+      "max_score": 10,
+      "description": "The last build step is tagged with [FULL] and described as equivalent to the full slide image (e.g., '= slide-NN.jpg')"
+    },
+    {
+      "name": "Backwards-chaining workflow described",
+      "max_score": 10,
+      "description": "The build generation plan mentions starting from the full image and removing elements one at a time working backwards — not building up from empty"
+    },
+    {
+      "name": "Build naming convention",
+      "max_score": 8,
+      "description": "The plan references the correct output path: builds/slide-NN-build-MM.jpg (or .ext) inside the illustrations directory"
+    },
+    {
+      "name": "Build slides count toward budget",
+      "max_score": 8,
+      "description": "The outline or plan explicitly states that build slides count toward the slide budget — each build step is a separate slide, not an animation"
+    },
+    {
+      "name": "Speaker notes on final step only",
+      "max_score": 8,
+      "description": "The plan specifies that speaker notes go only on the final build step (the full image); earlier build steps get empty or no notes"
+    },
+    {
+      "name": "BLANK layout for all builds",
+      "max_score": 8,
+      "description": "The plan specifies that all build slides use the BLANK layout with full-bleed image positioning"
+    },
+    {
+      "name": "Explicit preservation instructions",
+      "max_score": 10,
+      "description": "Build step descriptions include explicit preservation instructions (e.g., 'keep the road', 'keep the border') — not just what to remove but what to keep"
+    },
+    {
+      "name": "Safety suffixes mentioned",
+      "max_score": 8,
+      "description": "The plan mentions that edit prompts should include 'DO NOT add any new elements' and/or 'let background continue naturally' — or notes that the script auto-appends these"
+    },
+    {
+      "name": "Parent slide replaced by build sequence",
+      "max_score": 10,
+      "description": "The plan states that the parent slide is replaced by its build sequence in the deck (the full image appears as the final build step, not duplicated after the builds)"
+    }
+  ]
+}

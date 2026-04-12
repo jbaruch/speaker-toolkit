@@ -1,13 +1,19 @@
 {
   "name": "jbaruch/speaker-toolkit",
-  "version": "0.11.1",
-  "summary": "Two-skill presentation system: analyze your speaking style into a rhetoric knowledge vault, then create new presentations that match your documented patterns. Includes an 88-entry Presentation Patterns taxonomy for scoring, brainstorming, and go-live preparation.",
-  "description": "A speaker-neutral toolkit with two async workflows connected by a shared vault. The rhetoric-knowledge-vault skill analyzes recorded talks to extract rhetoric patterns, humor techniques, slide design rules, and verbal signatures into a structured knowledge base — and scores each talk against a taxonomy of 88 presentation patterns and antipatterns. The presentation-creator skill reads that vault at runtime to help build new presentations that match the speaker's documented style, with a 4-tier Pattern Strategy for technique selection and a go-live checklist for delivery preparation. Any speaker can use both skills — all personalization lives in the vault data, not in the skill definitions.",
+  "version": "0.13.0",
+  "summary": "Four-skill presentation system: ingest talks into a rhetoric vault, run interactive clarification, generate a speaker profile, then create new presentations that match your documented patterns. Includes an 88-entry Presentation Patterns taxonomy for scoring, brainstorming, and go-live preparation.",
+  "description": "A speaker-neutral toolkit with four focused skills connected by a shared vault. Three vault skills handle the analysis pipeline: vault-ingress parses recorded talks to extract rhetoric patterns and score against 88 presentation patterns; vault-clarification runs interactive sessions to validate findings and capture speaker intent; vault-profile generates a structured speaker profile. The presentation-creator skill reads that vault at runtime to help build new presentations that match the speaker's documented style, with a 4-tier Pattern Strategy for technique selection and a go-live checklist for delivery preparation. Any speaker can use all skills — all personalization lives in the vault data, not in the skill definitions.",
   "private": false,
   "entrypoint": "README.md",
   "skills": {
-    "rhetoric-knowledge-vault": {
-      "path": "skills/rhetoric-knowledge-vault/SKILL.md"
+    "vault-ingress": {
+      "path": "skills/vault-ingress/SKILL.md"
+    },
+    "vault-clarification": {
+      "path": "skills/vault-clarification/SKILL.md"
+    },
+    "vault-profile": {
+      "path": "skills/vault-profile/SKILL.md"
     },
     "presentation-creator": {
       "path": "skills/presentation-creator/SKILL.md"
@@ -19,6 +25,12 @@
     },
     "slide-generation-rules": {
       "rules": "rules/slide-generation-rules.md"
+    },
+    "guardrail-rules": {
+      "rules": "rules/guardrail-rules.md"
+    },
+    "illustration-rules": {
+      "rules": "rules/illustration-rules.md"
     }
   },
   "keywords": [

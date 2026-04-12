@@ -1,23 +1,31 @@
 {
-  "total_scenarios": 12,
+  "total_scenarios": 14,
   "instructions_coverage": {
-    "total_instructions": 92,
-    "instructions_tested": 80,
-    "coverage_percentage": 87.0
+    "total_instructions": 102,
+    "instructions_tested": 91,
+    "coverage_percentage": 89.2
   },
   "reason_distribution": {
     "reminder": "1",
-    "new knowledge": "68",
+    "new knowledge": "79",
     "preference": "23"
   },
   "scenarios_by_skill": {
-    "rhetoric-knowledge-vault": {
-      "scenarios": ["scenario-0", "scenario-1", "scenario-2", "scenario-3", "scenario-4"],
-      "instructions_tested": 39
+    "vault-ingress": {
+      "scenarios": ["scenario-0", "scenario-1", "scenario-2", "scenario-3"],
+      "instructions_tested": 34
+    },
+    "vault-clarification": {
+      "scenarios": [],
+      "instructions_tested": 0
+    },
+    "vault-profile": {
+      "scenarios": ["scenario-4"],
+      "instructions_tested": 5
     },
     "presentation-creator": {
-      "scenarios": ["scenario-5", "scenario-6", "scenario-7", "scenario-8", "scenario-9", "scenario-14", "scenario-15"],
-      "instructions_tested": 41
+      "scenarios": ["scenario-5", "scenario-6", "scenario-7", "scenario-8", "scenario-9", "scenario-14", "scenario-15", "scenario-16", "scenario-17"],
+      "instructions_tested": 52
     }
   }
 }

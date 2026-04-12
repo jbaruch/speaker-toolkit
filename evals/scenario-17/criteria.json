@@ -1,0 +1,61 @@
+{
+  "context": "Tests whether the agent correctly triages illustration fix requests (regenerate vs edit), follows prompt engineering rules for image edits, applies the versioning strategy, flags PIL masking as wrong approach, and flags prompt quality anti-patterns in a guardrail audit — all based on the illustration editing and iteration guidelines.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Regenerate for content additions",
+      "max_score": 10,
+      "description": "The triage plan recommends regeneration from the full prompt (not image editing) for slide 19 (adding a third soldier) — because editing strips the style when adding new content to the image"
+    },
+    {
+      "name": "Edit for content removal",
+      "max_score": 10,
+      "description": "The triage plan recommends image editing (not regeneration) for slide 12 and/or slide 40 (removing labels/borders) — because the model preserves style when removing content"
+    },
+    {
+      "name": "Simplified anchor flagged",
+      "max_score": 10,
+      "description": "The prompt audit flags Edit 2 (slide 15) as problematic because the prompt uses a shortened version of the style anchor instead of the full version — the full specificity of the anchor is what makes the style work"
+    },
+    {
+      "name": "Safety suffix: no new elements",
+      "max_score": 8,
+      "description": "Edit commands in the triage plan include 'DO NOT add any new elements' as a safety suffix in edit prompts (for removal/erasure operations)"
+    },
+    {
+      "name": "Safety suffix: background continuation",
+      "max_score": 8,
+      "description": "Edit commands in the triage plan include 'let background continue naturally' (or similar phrasing about no parchment patch) as a safety suffix when erasing content"
+    },
+    {
+      "name": "Explicit preservation instructions",
+      "max_score": 10,
+      "description": "Edit prompts in the triage plan include explicit 'keep [X]' instructions for elements that should be preserved — not just what to change but what to leave alone"
+    },
+    {
+      "name": "Versioned output naming",
+      "max_score": 8,
+      "description": "The triage plan specifies saving edited/fixed images as versioned files (e.g., slide-12-v2.jpg, slide-25-v3.jpg) instead of overwriting the original — preserving previous versions for comparison"
+    },
+    {
+      "name": "Fix mode for near-perfect images",
+      "max_score": 8,
+      "description": "The triage plan recommends a targeted fix approach (not full regeneration) for slide 25 which is described as 90% correct with only road visibility needing adjustment"
+    },
+    {
+      "name": "PIL masking flagged as wrong approach",
+      "max_score": 10,
+      "description": "The triage plan identifies that the PIL/programmatic masking used for slide 47 builds is the wrong approach — recommends using the model's native image editing instead of pasting colored rectangles"
+    },
+    {
+      "name": "Missing preservation flagged",
+      "max_score": 10,
+      "description": "The prompt audit flags Edit 1 (slide 8: 'Remove the tank from the background') as missing explicit preservation instructions — removing content without saying what to keep risks the model removing other elements too"
+    },
+    {
+      "name": "Content modification via edit flagged",
+      "max_score": 8,
+      "description": "The prompt audit flags Edit 4 and/or Edit 5 as potentially problematic — changing content (hat style, text size) via image editing risks stripping the style, and should be noted as risky or recommended for regeneration instead"
+    }
+  ]
+}

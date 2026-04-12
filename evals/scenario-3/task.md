@@ -4,22 +4,16 @@
 
 A speaking coach is building a database of rhetoric patterns from conference talks. For each talk, they need a structured analysis that captures HOW the speaker presents — not the technical content itself, but the rhetoric techniques, style patterns, and delivery choices. This analysis feeds into a larger system that builds speaker profiles over time.
 
-Given a transcript of a conference talk, produce a comprehensive rhetoric and style analysis. The analysis should examine the talk across multiple dimensions of presentation craft: how it opens, how it's structured, where humor appears, how the audience is engaged, how transitions work, how it closes, and what could be improved. The output must be structured JSON suitable for aggregation across many talks.
+Given a transcript of a conference talk, produce a comprehensive rhetoric and style analysis. The analysis should cover the full range of presentation craft dimensions that the rhetoric-knowledge-vault skill defines. Consult the skill's documentation to discover what dimensions to analyze, what output schema to follow, and what evidence-extraction conventions to apply.
 
 ## Output Specification
 
 Produce the following files:
 
-1. **`analysis.json`** — A structured JSON analysis report for the talk
+1. **`analysis.json`** — A structured JSON analysis report for the talk, following the subagent return schema defined in the rhetoric-knowledge-vault skill
 2. **`analysis_notes.md`** — A human-readable narrative of the rhetoric observations
 
-The JSON analysis must include:
-- Qualitative rhetoric notes (prose covering style observations)
-- Areas for improvement (honest critical assessment)
-- Structured data with quantifiable metrics about the talk
-- Verbatim examples extracted directly from the transcript
-- A field for new patterns observed
-- A field for summary updates (how this talk's patterns relate to existing knowledge)
+The JSON must conform to the schema the skill prescribes for per-talk analysis results. Read the skill's references to determine the required fields, data types, and extraction rules.
 
 ## Input Files
 

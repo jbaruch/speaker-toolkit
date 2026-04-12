@@ -1,34 +1,24 @@
-# Slide Deck Visual Audit Tool
+# Slide Deck Visual Audit Report
 
 ## Problem/Feature Description
 
-A design consultancy manages dozens of PowerPoint presentations for their clients. They need a Python tool that can scan a directory of `.pptx` files and extract exact visual design data — hex colors, font names, shape types, layout information — to build a style audit report. The tool should handle messy real-world directories where some files are static PDF-export copies, Google Drive conflict duplicates, or conference-provided templates that shouldn't be analyzed.
+A design consultancy manages dozens of PowerPoint presentations for their clients, organized in subdirectories by client name. The directories contain real presentations mixed with files that shouldn't be analyzed — static exports, accidental duplicates, and conference templates. They need a visual design audit across all the real presentations.
 
-The consultancy wants to understand: what background colors are used and how often, which fonts appear across decks, what special shapes (callout bubbles, starbursts) are present, and where footers live on each slide. The output must be structured JSON so it can feed into their analytics pipeline.
+The presentations are in a directory tree with client subdirectories. Each real presentation has varied content: different background colors, multiple fonts, auto-shapes like callouts and starbursts, footer text at the bottom of slides, and speaker notes. The junk files (static exports, conflict copies, templates) should be filtered out automatically.
 
-**Per-slide output** should include at least: `slide_number`, `background_color_hex`, `background_type`, `layout_name`, `shape_count`, `has_image`, `has_speaker_notes`, and a `shapes_summary` array. Handle background colors inherited from the slide layout (fall back to the layout's background when the slide's own fill is not set).
-
-**Global design statistics** should include: `fonts_used` (name-to-count map), `background_colors` (hex-to-count map), and `color_sequence` (ordered list of all background hex values across slides).
+Produce a structured JSON audit report covering every valid presentation file, with per-slide visual data and global design statistics. Skip files that aren't real presentations.
 
 ## Output Specification
 
 Produce the following files:
 
-1. **`extract_pptx.py`** — A Python script that:
-   - Takes a directory path as input and recursively finds `.pptx` files
-   - Filters out files that shouldn't be processed (static exports, duplicate copies, template files)
-   - Extracts per-slide visual data and global design statistics from each valid file
-   - Outputs a JSON report for each processed file
+1. **`extraction_results.json`** — A structured JSON audit of the test directory containing:
+   - Per-file results for each valid presentation (skipping the junk files)
+   - Per-slide data: background colors, fonts used, shapes present, layout info, speaker notes presence, footer text
+   - Global design statistics: font frequency, background color frequency, color sequence across all slides
+   - Shape type detail — not just "shape" but what kind (callouts, starbursts, etc.)
 
-2. **`test_decks/`** — A directory with at least 5 synthetic `.pptx` test files created using python-pptx, including:
-   - Two normal presentation files with varied slides (different backgrounds, fonts, shapes)
-   - One file named with "static" in the name
-   - One file named with a `(1)` conflict copy pattern
-   - One file with "template" in the name
-
-3. **`extraction_results.json`** — The actual output from running your extraction tool on the test directory
-
-4. **`run_log.txt`** — A log showing which files were processed and which were skipped, with reasons
+2. **`run_log.txt`** — A log showing which files were processed and which were skipped, with reasons
 
 ## Setup
 
@@ -36,3 +26,20 @@ Install python-pptx before starting:
 ```bash
 pip install python-pptx
 ```
+
+Download the test deck directory tree from the project repository. The files must keep their original names (the skip logic depends on filename patterns):
+```bash
+mkdir -p test_decks/acme-corp test_decks/beta-inc
+curl -L -o "test_decks/acme-corp/Q1 Review.pptx" "https://github.com/jbaruch/speaker-toolkit/raw/main/eval-resources/scenario-0/acme-corp/Q1%20Review.pptx"
+curl -L -o "test_decks/acme-corp/Q1 Review static.pptx" "https://github.com/jbaruch/speaker-toolkit/raw/main/eval-resources/scenario-0/acme-corp/Q1%20Review%20static.pptx"
+curl -L -o "test_decks/acme-corp/Q1 Review (1).pptx" "https://github.com/jbaruch/speaker-toolkit/raw/main/eval-resources/scenario-0/acme-corp/Q1%20Review%20(1).pptx"
+curl -L -o "test_decks/beta-inc/Product Launch.pptx" "https://github.com/jbaruch/speaker-toolkit/raw/main/eval-resources/scenario-0/beta-inc/Product%20Launch.pptx"
+curl -L -o "test_decks/beta-inc/Presentation Template 2024.pptx" "https://github.com/jbaruch/speaker-toolkit/raw/main/eval-resources/scenario-0/beta-inc/Presentation%20Template%202024.pptx"
+```
+
+The test directory contains:
+- `test_decks/acme-corp/Q1 Review.pptx` — 4 slides: purple/red/yellow/green backgrounds, Impact + Arial + Bangers fonts, cloud callout and explosion shapes, footer text, speaker notes
+- `test_decks/acme-corp/Q1 Review static.pptx` — static export (should be skipped)
+- `test_decks/acme-corp/Q1 Review (1).pptx` — Google Drive conflict copy (should be skipped)
+- `test_decks/beta-inc/Product Launch.pptx` — 3 slides: blue/orange/salmon backgrounds, Georgia + Verdana fonts, footer text on every slide, speaker notes on 2 slides
+- `test_decks/beta-inc/Presentation Template 2024.pptx` — template file (should be skipped)

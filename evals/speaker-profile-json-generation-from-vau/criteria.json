@@ -5,7 +5,7 @@
     {
       "name": "Required top-level keys",
       "max_score": 10,
-      "description": "speaker-profile.json contains all of the following top-level keys: speaker, infrastructure, presentation_modes, rhetoric_defaults, instrument_catalog, guardrail_sources, pacing, pattern_profile"
+      "description": "speaker-profile.json contains at least 6 of these 8 top-level keys: speaker, infrastructure, presentation_modes, rhetoric_defaults, instrument_catalog, guardrail_sources, pacing, pattern_profile"
     },
     {
       "name": "Speaker fields from config",

@@ -25,4 +25,4 @@ batch operation on the saved .pptx file.
 ## Template Stripping — Before Content
 
 Remove all existing slides from the template BEFORE adding new content slides.
-Use the `_sldIdLst` + `drop_rel()` pattern, not a public API.
+The clean deck should retain only layout definitions, no demo/sample slides.

@@ -277,21 +277,28 @@ speaker-toolkit-tile/
 +-- README.md
 +-- CHANGELOG.md
 +-- skills/
-    +-- rhetoric-knowledge-vault/
+    +-- vault-ingress/
     |   +-- SKILL.md                          # Main vault workflow (6 steps)
+    |   +-- scripts/
+    |   |   +-- pptx-extraction.py            # python-pptx visual extraction
+    |   |   +-- video-slide-extraction.py     # Video-to-slides via ffmpeg + perceptual dedup
+    |   |   +-- batch-download-videos.sh      # Parallel video download for batch processing
     |   +-- references/
     |       +-- rhetoric-dimensions.md        # 14 analysis dimensions + pattern cross-refs
-    |       +-- speaker-profile-schema.md     # Profile JSON schema (incl. pattern_profile)
-    |       +-- schemas.md                    # DB and subagent schemas (incl. pattern_observations)
-    |       +-- pptx-extraction.md            # python-pptx visual extraction script
-    |       +-- download-commands.md          # yt-dlp and gdown commands
+    |       +-- schemas-db.md                 # DB, subagent, and extraction output schemas
+    |       +-- video-slide-extraction.md     # Layout heuristics, tuning tables, limitations
+    |       +-- processing-rules.md           # Language policy, pattern migration logic
     +-- presentation-creator/
         +-- SKILL.md                          # Main creator workflow (7 phases)
+        +-- scripts/
+        |   +-- generate-illustrations.py     # Gemini API illustration generator + model comparison
+        |   +-- strip-template.py             # Strip demo slides from template
+        |   +-- inject-speaker-notes.py       # Batch inject speaker notes from JSON
+        |   +-- export-pdf.py                 # Export deck to PDF (PowerPoint or LibreOffice)
+        |   +-- delete-slides.py              # Delete slides by index
+        |   +-- reorder-slides.py             # Move slide from one position to another
         +-- references/
-            +-- process.md                    # Phase instructions + Pattern Strategy + go-live checklist
-            +-- guardrails.md                 # 10-point guardrails + pattern taxonomy scan (9B)
-            +-- slide-generation.md           # MCP + python-pptx technical reference
-            +-- generate-illustrations.py     # Gemini API illustration generator + model comparison
+            +-- phase0-intake.md through phase6-publishing.md  # Phase detail docs
             +-- patterns/                     # Presentation Patterns taxonomy (88 entries)
                 +-- _index.md                 # Master index, phase mapping, dimension lookup
                 +-- prepare/                  # 18 patterns + 3 antipatterns

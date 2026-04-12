@@ -6,9 +6,9 @@ A media production company processes hundreds of conference talk recordings to e
 
 The company needs a diagnostic tool that analyzes the output of a slide extraction run and classifies the recording type, flags quality issues, recommends parameter adjustments, and identifies when a non-target speaker might have been recorded instead of the expected presenter.
 
-The tool should also handle transcript quality assessment — some recordings have no captions, some have captions in unexpected languages, and some produce Whisper transcriptions with hallucination artifacts. Track the transcript source type (e.g., `youtube_auto`, `whisper`, `manual`) as a field in the output, since source type significantly affects quality interpretation.
+The tool should also handle transcript quality assessment — some recordings have no captions, some have captions in unexpected languages, and some produce transcriptions with hallucination artifacts. The transcript source should be tracked in the output, since source type significantly affects quality interpretation.
 
-The JSON output should have top-level sections: `recording_type`, `dedup_quality`, `transcript_quality`, `speaker_match`, and `recommendations`.
+The output should be structured JSON with clearly separated diagnostic dimensions.
 
 ## Output Specification
 
@@ -16,7 +16,7 @@ Produce the following files:
 
 1. **`extraction_diagnostics.py`** — A Python script that:
    - Takes extraction results (frame count, unique slide count, hash threshold used, slide region detection info, PDF page count) and talk metadata (expected speaker name, expected language)
-   - Classifies the recording type (fullscreen slides, picture-in-picture, wide-angle room, split screen, audio-only)
+   - Classifies the recording type based on the extraction metrics
    - Flags quality issues and recommends parameter adjustments
    - Assesses transcript quality (usable, partial, hallucinated, wrong language, missing)
    - Checks whether the detected speaker matches the expected speaker

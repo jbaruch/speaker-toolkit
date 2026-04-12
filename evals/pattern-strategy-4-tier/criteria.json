@@ -1,0 +1,46 @@
+{
+  "context": "Tests whether the agent produces a 4-tier pattern strategy from the speaker's pattern profile, with antipatterns tagged as [RECURRING] or [CONTEXTUAL] based on the speaker's history.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "4-tier structure present",
+      "max_score": 20,
+      "description": "The report organizes pattern recommendations into exactly four labeled tiers: Signature (or YOUR TOOLKIT), Contextual (or WORTH CONSIDERING), New to You (or NEW TO YOU), and Shake It Up (or WILD CARD) — four distinct sections, not three or five"
+    },
+    {
+      "name": "Signature tier from profile",
+      "max_score": 12,
+      "description": "The Signature tier contains patterns from the speaker's signature_patterns (narrative-arc, foreshadowing, brain-breaks, bookends) — not invented patterns"
+    },
+    {
+      "name": "Contextual tier from profile",
+      "max_score": 10,
+      "description": "The Contextual tier contains at least one pattern from the speaker's contextual_patterns (expansion-joints, a-la-carte-content, talklet)"
+    },
+    {
+      "name": "Shake It Up has 1-2 items",
+      "max_score": 12,
+      "description": "The Shake It Up / Wild Card tier contains exactly 1 or 2 pattern suggestions — not 0 and not 3 or more"
+    },
+    {
+      "name": "[RECURRING] tag used",
+      "max_score": 15,
+      "description": "At least one antipattern detection is labeled [RECURRING] (matching shortchanged or bullet-riddled-corpse from the speaker's antipattern_frequency history)"
+    },
+    {
+      "name": "[CONTEXTUAL] tag used",
+      "max_score": 15,
+      "description": "At least one antipattern detection is labeled [CONTEXTUAL] — a risk detected in the current outline that is NOT in the speaker's historical antipattern_frequency (e.g., meme accretion in the opening sequence)"
+    },
+    {
+      "name": "New to You from never_used",
+      "max_score": 8,
+      "description": "The New to You tier suggests at least one pattern from the speaker's never_used_patterns list — not patterns already in signature or contextual tiers"
+    },
+    {
+      "name": "Actionable recommendations",
+      "max_score": 8,
+      "description": "At least 2 pattern recommendations include specific advice for how to apply them to THIS talk — not generic definitions of what the pattern is"
+    }
+  ]
+}

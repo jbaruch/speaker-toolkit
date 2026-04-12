@@ -1,24 +1,20 @@
-# PowerPoint Deck Builder Script
+# PowerPoint Deck Build Plan
 
 ## Problem/Feature Description
 
-A speaker has a finalized presentation outline and needs to automate the creation of their PowerPoint deck. They use a custom `.pptx` template that contains their branded layouts but also includes demo/sample slides that need to be stripped out before building the actual deck. The speaker also needs their speaker notes injected into the final deck programmatically, since they have detailed notes for key slides.
+A speaker has a finalized presentation outline and needs to build their PowerPoint deck. They use a custom `.pptx` template that contains branded layouts but also includes demo/sample slides that must be removed before building. The speaker also needs speaker notes injected programmatically and footers on every slide.
 
-Write a Python script that takes a presentation outline, a speaker profile (with template and design rules), and builds the deck end-to-end. The script should handle template preparation, slide creation with proper layout selection, footer insertion, background color management, and speaker notes injection. The speaker's profile contains their design rules — background color strategy, footer pattern, layout preferences, and other constraints.
-
-**Important implementation details:**
-- python-pptx has no public API for deleting slides. Use the internal `slides._sldIdLst` / `part.drop_rel()` pattern to strip demo slides from the template before building.
-- Speaker notes should be injected as a **separate batch pass** after all slides are created (e.g., using a `notes_map` dictionary), not interleaved with slide creation.
-- The `random_non_repeating` background color strategy means: choose a random color from the pool for each slide, but **never allow the same color on two adjacent slides**.
+Given the outline and speaker profile below, produce a complete deck build plan and the finished `.pptx` file. The plan should map every outline slide to a specific layout, document the design decisions, and explain the build sequence. The deck should have correct layouts, background colors following the speaker's strategy, footers on every slide, and speaker notes from the outline.
 
 ## Output Specification
 
 Produce the following files:
 
-1. **`build_deck.py`** — A Python script that builds a .pptx deck from an outline and speaker profile
-2. **`deck_plan.md`** — A document describing the slide-by-slide build plan: which layout to use, what content goes where, and any design decisions
+1. **`deck_plan.md`** — A slide-by-slide build plan: which layout for each slide, background color assignments, footer configuration, and speaker notes mapping
+2. **`output_deck.pptx`** — The finished PowerPoint deck built from the template with all slides populated, footers added, and speaker notes injected
+3. **`build_log.txt`** — A log of what was done: template preparation, slides added, notes injected, any issues encountered
 
-The script should be runnable (with python-pptx installed) but does not need to produce an actual deck from a real template — it should demonstrate the correct workflow and API usage patterns.
+## Setup
 
 Install python-pptx before starting: `pip install python-pptx`
 
@@ -29,7 +25,7 @@ The following files are provided as inputs. Extract them before beginning.
 =============== FILE: inputs/speaker-profile-excerpt.json ===============
 {
   "infrastructure": {
-    "template_pptx_path": "/templates/speaker-template.pptx",
+    "template_pptx_path": "./template.pptx",
     "template_layouts": [
       {"index": 0, "name": "TITLE", "placeholders": [{"idx": 0, "type": "CENTER_TITLE"}], "use_for": "opening title slide, section dividers"},
       {"index": 1, "name": "TITLE_SUBTITLE", "placeholders": [{"idx": 0, "type": "TITLE"}, {"idx": 1, "type": "SUBTITLE"}], "use_for": "bio, shownotes"},
@@ -100,4 +96,12 @@ The following files are provided as inputs. Extract them before beginning.
 - Visual: Full-bleed meme
 - Layout: Blank
 - Speaker: (reaction image, no notes)
+=============== END OF FILE ===============
+
+Download the speaker's template before building:
+```bash
+curl -L -o inputs/template.pptx "https://github.com/jbaruch/speaker-toolkit/raw/main/eval-resources/scenario-7/template.pptx"
+```
+
+The template has 2 demo slides that must be stripped, and multiple slide layouts available for use.
 =============== END OF FILE ===============
