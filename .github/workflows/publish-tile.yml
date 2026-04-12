@@ -18,7 +18,9 @@ jobs:
       - uses: tesslio/setup-tessl@v2
         with:
           token: ${{ secrets.TESSL_TOKEN }}
-      - run: tessl skill review --threshold 85 skills/rhetoric-knowledge-vault
+      - run: tessl skill review --threshold 85 skills/vault-ingress
+      - run: tessl skill review --threshold 85 skills/vault-clarification
+      - run: tessl skill review --threshold 85 skills/vault-profile
       - run: tessl skill review --threshold 85 skills/presentation-creator
       - uses: tesslio/patch-version-publish@v1
         with:
