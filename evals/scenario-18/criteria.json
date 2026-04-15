@@ -1,0 +1,56 @@
+{
+  "context": "Tests whether the agent uses the presentation-creator skill's inject-speaker-notes.py to inject notes AND produces a .pptx whose OOXML artifacts satisfy the contract that strict parsers (Keynote) enforce: when a notesMaster relationship is present, ppt/presentation.xml must contain a <p:notesMasterIdLst> element referencing it by relationship ID. The eval validates outcomes against the saved .pptx, not against implementation details of any script.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Output deck exists and opens",
+      "description": "deck-with-notes.pptx is saved in the working directory and can be re-opened successfully with python-pptx (no corruption from the patching step)",
+      "max_score": 8
+    },
+    {
+      "name": "Slide count preserved",
+      "description": "The output deck contains exactly 4 slides, matching the base deck",
+      "max_score": 5
+    },
+    {
+      "name": "Notes present on correct slides",
+      "description": "ppt/notesSlides/ contains exactly 3 notesSlide XML files — one each for slides 1, 2, and 3 (0-indexed). No notes file is produced for slide 0 (which had an empty notes string in the input)",
+      "max_score": 10
+    },
+    {
+      "name": "Notes content matches input",
+      "description": "The text inside each notesSlide XML matches the corresponding notes from notes.json (allowing for whitespace differences and XML escaping)",
+      "max_score": 8
+    },
+    {
+      "name": "notesMaster relationship declared",
+      "description": "ppt/_rels/presentation.xml.rels contains at least one <Relationship> element with Type ending in 'notesMaster' and a non-empty Id attribute (e.g., rId11)",
+      "max_score": 8
+    },
+    {
+      "name": "notesMasterIdLst element present",
+      "description": "ppt/presentation.xml contains a <p:notesMasterIdLst> element. This is the element python-pptx omits and Keynote requires — its presence is the primary outcome being tested",
+      "max_score": 15
+    },
+    {
+      "name": "notesMasterIdLst references a real relationship",
+      "description": "The <p:notesMasterId r:id='...'/> value inside the notesMasterIdLst element matches the Id attribute of an actual notesMaster Relationship in ppt/_rels/presentation.xml.rels. A notesMasterIdLst pointing to a non-existent rId is worse than no element at all",
+      "max_score": 10
+    },
+    {
+      "name": "notesMasterIdLst is not duplicated",
+      "description": "ppt/presentation.xml contains exactly one occurrence of <p:notesMasterIdLst>, not two or more. This confirms the patch step is idempotent and does not double-apply if run twice",
+      "max_score": 8
+    },
+    {
+      "name": "Skill script used, not ad-hoc code",
+      "description": "The verification report indicates that skills/presentation-creator/scripts/inject-speaker-notes.py was used (directly or by invocation path). The agent did not write its own from-scratch python-pptx injection script, which would omit the Keynote-compat patch",
+      "max_score": 8
+    },
+    {
+      "name": "Verification report documents the checks",
+      "description": "verification-report.md explicitly reports the findings of at least these three checks: presence of notesMaster relationship, presence of notesMasterIdLst element, and matching r:id between them. Each check has an observed value, not just 'pass'",
+      "max_score": 8
+    }
+  ]
+}

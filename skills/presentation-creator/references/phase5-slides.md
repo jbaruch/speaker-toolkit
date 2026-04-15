@@ -256,6 +256,13 @@ python3 scripts/inject-speaker-notes.py path/to/deck.pptx notes.json
 
 Run this AFTER MCP slide generation is complete, and BEFORE presenting to the author.
 
+> **Keynote compatibility:** The script automatically post-processes the .pptx
+> to add a `<p:notesMasterIdLst>` element to `ppt/presentation.xml`. python-pptx
+> writes the `notesMaster` relationship but omits this element, which PowerPoint
+> tolerates but Keynote rejects as "invalid format". The patch is idempotent and
+> only runs when a `notesMaster` relationship is present, so speakers who never
+> open Keynote pay zero cost.
+
 ---
 
 ## Step 5.4: Present to Author
