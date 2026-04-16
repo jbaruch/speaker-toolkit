@@ -1,6 +1,6 @@
 {
   "name": "jbaruch/speaker-toolkit",
-  "version": "0.14.7",
+  "version": "0.14.8",
   "summary": "Four-skill presentation system: ingest talks into a rhetoric vault, run interactive clarification, generate a speaker profile, then create new presentations that match your documented patterns. Includes an 88-entry Presentation Patterns taxonomy for scoring, brainstorming, and go-live preparation.",
   "description": "A speaker-neutral toolkit with four focused skills connected by a shared vault. Three vault skills handle the analysis pipeline: vault-ingress parses recorded talks to extract rhetoric patterns and score against 88 presentation patterns; vault-clarification runs interactive sessions to validate findings and capture speaker intent; vault-profile generates a structured speaker profile. The presentation-creator skill reads that vault at runtime to help build new presentations that match the speaker's documented style, with a 4-tier Pattern Strategy for technique selection and a go-live checklist for delivery preparation. Any speaker can use all skills — all personalization lives in the vault data, not in the skill definitions.",
   "private": false,
