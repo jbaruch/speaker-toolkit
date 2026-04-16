@@ -11,6 +11,7 @@ when empty. The question column shows what to ask the speaker.
 | `speaker_handle` | "Social handle for footers?" |
 | `speaker_website` | "Website for talk resources?" |
 | `shownotes_url_pattern` | "URL pattern for talk pages? (e.g., `speaking.example.com/{slug}`)" |
+| `shownotes_slug_convention` | "How do you construct talk slugs for shownotes URLs? Example: `{YYYY-MM-DD}-{conference-slug}-{talk-short-name}` → `2026-04-16-devnexus-robocoders-judgment-day`. What components and format?" |
 | `template_pptx_path` | "PowerPoint template path?" |
 | `presentation_file_convention` | "File organization? (default: `{conference}/{year}/{talk-slug}/`)" |
 | `publishing_process.export_format` | "How do you export final decks — PDF, keep .pptx only, or both?" |
@@ -38,6 +39,7 @@ when empty. The question column shows what to ask the speaker.
     "speaker_handle": "",
     "speaker_website": "",
     "shownotes_url_pattern": "",
+    "shownotes_slug_convention": "",
     "template_pptx_path": "",
     "presentation_file_convention": "{pptx_source_dir}/{conference}/{year}/{talk-slug}/",
     "clarification_sessions_completed": 0

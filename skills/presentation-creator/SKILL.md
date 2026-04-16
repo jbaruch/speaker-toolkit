@@ -84,7 +84,7 @@ Must-avoid:        [list]
 Co-presenter:      [none | name + handle + role split]
 Profanity register:[from profile rhetoric_defaults]
 Duration target:   [from profile rhetoric_defaults.default_duration_minutes]
-Shownotes slug:    [from profile speaker.shownotes_url_pattern]
+Shownotes slug:    [generated per profile shownotes_slug_convention — see phase1-intent.md]
 ```
 
 Gate: Author confirms or edits the spec.

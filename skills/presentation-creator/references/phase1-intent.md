@@ -24,6 +24,30 @@ If the spec has a co-presenter:
 - Determine how handoffs work (verbal cue, slide type change, both)
 - Use `[SPEAKER A]:` / `[SPEAKER B]:` prefixes in all speaker notes throughout the outline
 
+### Shownotes Slug Generation
+
+The slug is NOT free-form — read `shownotes_slug_convention` from the speaker
+profile config. Apply the convention to this talk's details. Example convention:
+
+```
+Convention: {YYYY-MM-DD}-{conference-slug}-{talk-short-name}
+Input:      2026-04-16, DevNexus, "Robocoders: Judgment Day"
+Result:     2026-04-16-devnexus-robocoders-judgment-day
+```
+
+Rules:
+- Derive the slug mechanically from the convention + talk metadata (date,
+  conference, title). NEVER invent or freestyle a slug.
+- Kebab-case, lowercase, no special characters.
+- Present the generated slug to the author for confirmation before finalizing
+  the spec. The author may want to abbreviate or adjust.
+- If `shownotes_slug_convention` is not set in the profile, ask the author
+  for their convention and save it (same as any missing config field).
+
+The confirmed slug goes into the Presentation Spec as `Shownotes slug:` and is
+persisted in `presentation-spec.md`. All downstream uses (Phase 6 shownotes URL,
+QR code `--talk-slug`, directory name) must use this exact slug.
+
 ### Spec Validation
 
 Before presenting the spec, cross-check:
