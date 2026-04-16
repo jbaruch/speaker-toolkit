@@ -1,0 +1,56 @@
+{
+  "context": "Tests whether the agent uses the presentation-creator skill's generate-qr.py to produce a QR code that encodes the shownotes URL, matches the slide's purple background color, uses white foreground for contrast on the dark background, inserts it on the closing slide, and updates the tracking database. The eval validates outcomes against the saved .pptx and .png, not against implementation details.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Deck saved and re-opens",
+      "description": "deck-with-qr.pptx is saved in the working directory and can be re-opened with python-pptx without errors. Slide count remains 4 (unchanged from input)",
+      "max_score": 10
+    },
+    {
+      "name": "New picture shape on closing slide",
+      "description": "The last slide (index 3) contains exactly one new picture shape compared to the input deck. The QR was inserted on the correct slide",
+      "max_score": 10
+    },
+    {
+      "name": "QR decodes to expected URL",
+      "description": "The QR PNG file (arc-of-ai-qr.png) can be decoded (via pyzbar or equivalent) and the decoded text is exactly 'https://jbaru.ch/arc-of-ai'. This is the primary functional outcome",
+      "max_score": 15
+    },
+    {
+      "name": "QR background matches slide purple",
+      "description": "Sampling pixel (5, 5) of the QR PNG — in the quiet zone border area — shows RGB values within ±5 tolerance of (91, 44, 111), the purple #5B2C6F background of the closing slide",
+      "max_score": 10
+    },
+    {
+      "name": "QR foreground is white (auto-contrast)",
+      "description": "QR foreground modules are white (255, 255, 255), not black, because the purple background has WCAG relative luminance ~0.065 which is below 0.5. This confirms the auto-contrast logic works correctly for dark backgrounds",
+      "max_score": 5
+    },
+    {
+      "name": "QR PNG dimensions are consistent",
+      "description": "QR PNG dimensions are approximately (box_size * (module_count + 2*border)) pixels in both width and height, confirming correct QR generation parameters",
+      "max_score": 5
+    },
+    {
+      "name": "Tracking database has qr_codes entry",
+      "description": "tracking-database.json contains a qr_codes array with at least one entry where talk_slug is 'arc-of-ai', shortener is 'none', target_url is 'https://jbaru.ch/arc-of-ai', and short_url equals target_url (since shortener=none)",
+      "max_score": 5
+    },
+    {
+      "name": "QR PNG path is relative",
+      "description": "The qr_png_rel_path field in the tracking database entry is a relative path (not absolute), suitable for portability across machines",
+      "max_score": 5
+    },
+    {
+      "name": "Skill script used, not ad-hoc code",
+      "description": "The verification report indicates that skills/presentation-creator/scripts/generate-qr.py was used. The agent did not write its own from-scratch QR generation script",
+      "max_score": 8
+    },
+    {
+      "name": "Verification report documents observed values",
+      "description": "verification-report.md reports the actual observed values for key checks: decoded QR URL, background RGB detected, foreground/background colors used, slide where QR was inserted, and tracking database state. Each check shows the observed value, not just pass/fail",
+      "max_score": 5
+    }
+  ]
+}

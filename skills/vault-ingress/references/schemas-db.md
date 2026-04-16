@@ -44,6 +44,17 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "slide_count": 60,
     "visual_extracted": false
   }],
+  "qr_codes": [{
+    "talk_slug": "arc-of-ai",
+    "target_url": "https://jbaru.ch/arc-of-ai",
+    "shortener": "bitly|rebrandly|none",
+    "short_path": "arcofai (shortener's back-half/slashtag, null for none)",
+    "short_url": "https://bit.ly/arcofai (equal to target_url when shortener=none)",
+    "shortener_link_id": "API-side ID needed for updates; null for none",
+    "qr_png_rel_path": "illustrations/arcofai-qr.png (relative to vault or deck dir)",
+    "created_at": "2026-04-15",
+    "updated_at": "2026-04-15"
+  }],
   "confirmed_intents": []
 }
 ```

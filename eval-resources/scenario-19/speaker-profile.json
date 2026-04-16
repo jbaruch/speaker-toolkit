@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "generated_date": "2026-04-15",
+  "talks_analyzed": 1,
+  "speaker": {
+    "name": "Baruch Sadogursky",
+    "handle": "@jbaruch",
+    "website": "https://jbaru.ch",
+    "shownotes_url_pattern": "https://jbaru.ch/{slug}"
+  },
+  "publishing_process": {
+    "export_format": "both",
+    "qr_code": {
+      "enabled": true,
+      "target": "shownotes_url",
+      "insert_into_deck": true,
+      "slide_position": "closing",
+      "shortener": "none",
+      "bg_color_match": true
+    }
+  }
+}

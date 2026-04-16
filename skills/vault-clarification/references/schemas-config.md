@@ -17,6 +17,9 @@ when empty. The question column shows what to ask the speaker.
 | `publishing_process.export_method` | "How do you produce the PDF? (e.g., PowerPoint AppleScript, LibreOffice CLI, manual)" |
 | `publishing_process.shownotes_publishing` | "Do you publish shownotes for your talks? If yes, how?" |
 | `publishing_process.qr_code` | "Do you put QR codes in your decks? If yes, what do they link to?" |
+| `publishing_process.qr_code.shortener` | "Do you use a URL shortener for QR links? Options: `bitly`, `rebrandly`, or `none`." |
+| `publishing_process.qr_code.rebrandly_domain` | _(Only if shortener=rebrandly)_ "What custom domain do you use with Rebrandly? (e.g., `jbaru.ch`, or leave blank for default)" |
+| `publishing_process.qr_code.shortener_setup` | _(Only if shortener=bitly or rebrandly)_ "Add your API key to `{vault_root}/secrets.json` (`chmod 600`). Format: `{\"bitly\": {\"api_token\": \"...\"}}` or `{\"rebrandly\": {\"api_key\": \"...\"}}`. Alternatively, install the Bitly or Rebrandly MCP server for agent-driven shortening." |
 | `publishing_process.additional_steps` | "Any other distribution steps after exporting?" |
 
 ## Full Config Schema

@@ -2,16 +2,14 @@
 
 A two-skill system for conference speakers: analyze your existing talks to extract your rhetoric patterns, then create new presentations that match your documented style.
 
-## What's New (0.11.0)
+## What's New (0.14.0)
 
-**AI-generated illustration support** — The presentation-creator now supports a full
-illustration pipeline: collaboratively choose a visual style grounded in the talk's
-concepts and the speaker's visual history (Phase 2), write outlines with per-slide
-Format/Illustration/Image prompt fields and a Style Anchor header (Phase 3), run
-illustration coverage guardrails (Phase 4), and batch-generate images via Gemini API
-with a new `generate-illustrations.py` script (Phase 5). The vault ingress now
-analyzes illustration style (dimension 13f) and builds a `visual_style_history` in
-the speaker profile to inform future style proposals.
+**QR code generation** — Phase 6 publishing now automates QR code generation and
+insertion into decks. The new `generate-qr.py` script matches the QR background
+color to the target slide, auto-selects foreground color for contrast (white on dark
+backgrounds, black on light), and supports URL shortening via bit.ly or rebrand.ly
+(with an indirection layer that keeps already-printed QR codes valid when the target
+URL changes). API keys live in `{vault}/secrets.json`.
 
 See [CHANGELOG.md](CHANGELOG.md) for full history.
 
@@ -292,6 +290,7 @@ speaker-toolkit-tile/
         +-- SKILL.md                          # Main creator workflow (7 phases)
         +-- scripts/
         |   +-- generate-illustrations.py     # Gemini API illustration generator + model comparison
+        |   +-- generate-qr.py                # QR code generation with bg-color matching
         |   +-- strip-template.py             # Strip demo slides from template
         |   +-- inject-speaker-notes.py       # Batch inject speaker notes from JSON
         |   +-- export-pdf.py                 # Export deck to PDF (PowerPoint or LibreOffice)

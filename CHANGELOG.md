@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.14.0
+
+**QR code generation** — Automated QR code generation and insertion into decks during
+Phase 6 publishing, with slide background color matching and auto-contrast foreground.
+
+### Presentation Creator
+
+- **`generate-qr.py` script** — new script generates unbranded QR codes from shownotes
+  URLs (or pre-shortened URLs), matches the QR background to the target slide's color,
+  and auto-selects white or black foreground based on WCAG relative luminance. Inserts
+  the QR as a 2" square in the bottom-right corner of the configured slide(s)
+- **Phase 6 step reordering** — QR generation now runs before PDF export (was after).
+  Steps: Shownotes → QR Code → Export → Additional → Go-live → Report
+- **URL shortening support** — bit.ly and rebrand.ly via direct API or MCP-preresolved
+  mode. Re-running for the same talk slug updates the existing short link (keeps printed
+  QR codes valid). Falls back to raw URL when shortener=none or API fails
+- **Vault-based secrets** — API keys stored in `{vault}/secrets.json` (not env vars),
+  documented with `chmod 600` recommendation
+
+### Schema Changes
+
+- **Speaker profile `qr_code`** — 5 new fields: `custom_url`, `shortener`,
+  `rebrandly_domain`, `bg_color_match`, `preferred_short_path`
+- **Tracking database `qr_codes[]`** — new top-level array tracking per-talk QR
+  metadata: talk slug, target URL, shortener, short path/URL, link ID, PNG path
+- **Vault clarification** — 3 new questions for shortener preference, Rebrandly
+  domain, and API key setup
+
+### Evals
+
+- 1 new scenario (scenario-19): QR generation with purple background matching,
+  auto-contrast white foreground, shortener=none path, tracking DB update
+
 ## 0.11.0
 
 **Illustration pipeline** — AI-generated illustrations are now a first-class part of

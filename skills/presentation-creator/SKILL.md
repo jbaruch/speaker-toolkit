@@ -101,9 +101,8 @@ Persuasion, Template Patterns, Pattern Strategy, Illustration Strategy. Each rea
 from the matching `instrument_catalog` entry + summary section. Decision #10 uses the
 4-tier Pattern Strategy from [references/patterns/_index.md](references/patterns/_index.md) + `profile → pattern_profile`.
 Decision #11 (Illustration Strategy) is optional — only when the author wants
-AI-generated illustrations. Walks through style proposals informed by the talk's
-concepts and the vault's visual history, format vocabulary, model choice, and visual
-continuity devices (see [references/phase2-architecture.md](references/phase2-architecture.md) for the full workflow).
+AI-generated illustrations; covers style proposals, format vocabulary, model choice,
+and visual continuity devices (see [references/phase2-architecture.md](references/phase2-architecture.md) for full workflow).
 
 For each: present options, recommend based on spec, let author choose.
 If co-presented, add role split and voice differentiation — see [references/phase1-intent.md](references/phase1-intent.md).
@@ -126,7 +125,7 @@ Gate: Author approves the architecture.
 Write the talk as a section-by-section outline. See [references/phase3-content.md](references/phase3-content.md) for the full
 outline format, voice calibration, callback identification, and placeholder types.
 
-**Outline structure** (abbreviated — full format in [references/phase3-content.md](references/phase3-content.md)):
+**Outline structure** (abbreviated):
 
 ```markdown
 # [Talk Title]
@@ -162,8 +161,8 @@ anchors. Talks without illustration strategy use the standard `- Visual:` field 
 **Placeholders** — use typed, independent numbering (each type starts at 01):
 `[AUTHOR 01]`, `[DEMO 01]`, `[DATA 01]`, `[SCREENSHOT 01]`, `[IMAGE 01]`, `[MEME 01]`
 
-Every placeholder that requires author input MUST use one of these typed tags — never
-use generic `[TODO]` or `[TBD]`. Meme placeholders MUST include a structured brief:
+Every placeholder requiring author input MUST use one of these typed tags — never use
+generic `[TODO]` or `[TBD]`. Meme placeholders MUST include a structured brief:
 
 ```
 [MEME 01]
@@ -173,7 +172,7 @@ Overlay text: [specific text to apply]
 Rhetorical function: [what argument this meme serves]
 ```
 
-See [references/phase3-content.md](references/phase3-content.md) for the full placeholder type definitions.
+See [references/phase3-content.md](references/phase3-content.md) for full placeholder type definitions.
 
 Save to: `{presentations-dir}/{conference}/{year}/{talk-slug}/presentation-outline.md`
 
@@ -234,7 +233,6 @@ Inject speaker notes via python-pptx batch after MCP generation.
 ## Phase 6: Publishing
 
 Read `publishing_process` from `speaker-profile.json`. Each speaker's workflow differs.
-
 If `publishing_process` is missing or empty, ask the author interactively.
 
 Execute the steps from the profile:

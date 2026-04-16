@@ -290,8 +290,13 @@ creation at runtime.
     "qr_code": {
       "enabled": true,
       "target": "shownotes_url|custom_url",
+      "custom_url": "https://... (only when target=custom_url)",
       "insert_into_deck": true,
-      "slide_position": "early (slide 4-5)|closing|both"
+      "slide_position": "shownotes_slide|closing|both",
+      "shortener": "bitly|rebrandly|none",
+      "rebrandly_domain": "jbaru.ch | null",
+      "bg_color_match": true,
+      "preferred_short_path": "arcofai | null"
     },
     "additional_steps": [
       {
