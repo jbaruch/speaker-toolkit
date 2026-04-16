@@ -20,6 +20,7 @@ when empty. The question column shows what to ask the speaker.
 | `publishing_process.qr_code.shortener` | "Do you use a URL shortener for QR links? Options: `bitly`, `rebrandly`, or `none`." |
 | `publishing_process.qr_code.rebrandly_domain` | _(Only if shortener=rebrandly)_ "What custom domain do you use with Rebrandly? (e.g., `jbaru.ch`, or leave blank for default)" |
 | `publishing_process.qr_code.shortener_setup` | _(Only if shortener=bitly or rebrandly)_ "Add your API key to `{vault_root}/secrets.json` (`chmod 600`). Format: `{\"bitly\": {\"api_token\": \"...\"}}` or `{\"rebrandly\": {\"api_key\": \"...\"}}`. Alternatively, install the Bitly or Rebrandly MCP server for agent-driven shortening." |
+| `gemini_api_key` | "Add your Gemini API key to `{vault_root}/secrets.json` under `gemini.api_key` (`chmod 600`). Format: `{\"gemini\": {\"api_key\": \"...\"}}`. Get a key from https://aistudio.google.com/app/apikey. The `GEMINI_API_KEY` env var also works as a fallback." |
 | `publishing_process.additional_steps` | "Any other distribution steps after exporting?" |
 
 ## Full Config Schema

@@ -41,6 +41,7 @@ Read `publishing_process.qr_code`. If `enabled`:
 - API keys must be stored in `{vault_root}/secrets.json` with `chmod 600`:
   ```json
   {
+    "gemini": {"api_key": "..."},
     "bitly": {"api_token": "..."},
     "rebrandly": {"api_key": "..."}
   }

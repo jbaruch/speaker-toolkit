@@ -18,7 +18,7 @@ Usage:
     python3 generate-illustrations.py <outline.md> -v 2 5 9
 
 Requires:
-    - GEMINI_API_KEY environment variable
+    - Gemini API key in {vault}/secrets.json (preferred) or GEMINI_API_KEY env var (fallback)
     - Python 3.7+ (stdlib only — no pip install needed)
 """
 
@@ -61,6 +61,8 @@ _EXT_MIME_MAP = {v: k for k, v in _MIME_EXT_MAP.items()}
 _EXT_MIME_MAP[".jpeg"] = "image/jpeg"  # common alias
 
 _VERSION_RE = re.compile(r"-v(\d+)")
+
+_cli_vault_path = None  # set by main() from --vault arg
 
 
 # --- Outline Parsing ---
@@ -256,15 +258,40 @@ def ext_to_mime(ext):
 
 # --- Shared Setup ---
 
-def _load_context(outline_path, require_model=True):
+def _load_context(outline_path, require_model=True, vault_path=None):
     """Common preamble: check API key, parse outline, compute paths.
+
+    API key resolution order:
+        1. {vault}/secrets.json → gemini.api_key
+        2. GEMINI_API_KEY environment variable (backward compat)
 
     Returns:
         tuple (api_key, outline, output_dir)
     """
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = None
+
+    # Try secrets.json first
+    if vault_path is None:
+        vault_path = _cli_vault_path
+    if vault_path is None:
+        vault_path = os.path.expanduser("~/.claude/rhetoric-knowledge-vault")
+    secrets_path = os.path.join(vault_path, "secrets.json")
+    if os.path.isfile(secrets_path):
+        try:
+            with open(secrets_path, "r", encoding="utf-8") as f:
+                secrets = json.load(f)
+            api_key = secrets.get("gemini", {}).get("api_key") or None
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Fall back to env var
     if not api_key:
-        print("ERROR: Set the GEMINI_API_KEY environment variable.")
+        api_key = os.environ.get("GEMINI_API_KEY")
+
+    if not api_key:
+        print("ERROR: No Gemini API key found.")
+        print("Set it in {vault}/secrets.json under gemini.api_key,")
+        print("or set the GEMINI_API_KEY environment variable.")
         print("Get a key from https://aistudio.google.com/app/apikey")
         sys.exit(1)
 
@@ -688,6 +715,11 @@ def main():
     )
     parser.add_argument("outline", help="Path to the presentation outline markdown file")
     parser.add_argument(
+        "--vault",
+        default=None,
+        help="Path to the rhetoric knowledge vault (default: ~/.claude/rhetoric-knowledge-vault)",
+    )
+    parser.add_argument(
         "--compare",
         type=int,
         metavar="SLIDE",
@@ -726,6 +758,10 @@ def main():
     if not os.path.isfile(args.outline):
         print(f"ERROR: Outline file not found: {args.outline}")
         sys.exit(1)
+
+    # Store vault path for _load_context
+    global _cli_vault_path
+    _cli_vault_path = args.vault
 
     if args.edit:
         run_edit(args.outline, int(args.edit[0]), args.edit[1])

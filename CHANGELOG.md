@@ -5,6 +5,11 @@
 **QR code generation** — Automated QR code generation and insertion into decks during
 Phase 6 publishing, with slide background color matching and auto-contrast foreground.
 
+**Gemini API key in secrets.json** — `generate-illustrations.py` now reads the Gemini
+API key from `{vault}/secrets.json` (`gemini.api_key`) first, falling back to the
+`GEMINI_API_KEY` environment variable for backward compatibility. This unifies all API
+keys in one file. New `--vault` CLI argument for custom vault paths.
+
 ### Presentation Creator
 
 - **`generate-qr.py` script** — new script generates unbranded QR codes from shownotes

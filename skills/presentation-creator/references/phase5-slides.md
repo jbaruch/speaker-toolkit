@@ -360,7 +360,11 @@ to know which is expected.
 
 Before generating illustrations, ensure:
 
-1. **API Key** — set the `GEMINI_API_KEY` environment variable:
+1. **API Key** — add your Gemini key to `{vault}/secrets.json` (preferred):
+   ```json
+   { "gemini": { "api_key": "your-key-here" } }
+   ```
+   Or set the `GEMINI_API_KEY` environment variable as a fallback:
    ```bash
    export GEMINI_API_KEY="your-key-here"
    ```
