@@ -58,6 +58,21 @@ thresholds (1.5 slides/min, 45% Act 1 cap), ask for template/publishing interact
 
 Do not skip phases. Do not write content before Phase 3. Phase 2 is joint, not autonomous.
 
+### Late Entry (single-task requests)
+
+Even when the user asks for a single task (QR code, export, shownotes), vault loading
+is mandatory. Do not jump straight to the action. Minimum context before ANY Phase 6
+action:
+
+- `speaker-profile.json` — publishing config, shortener, URL patterns
+- `secrets.json` — API keys for shorteners and Gemini
+- `presentation-spec.md` — talk slug, metadata (source of truth)
+- `presentation-outline.md` — the outline (slide references, shownotes URL)
+
+If any file is missing, STOP and ask. Do not guess values that should come from files.
+Never hand-write code when a script exists — if the script isn't working, diagnose
+why (wrong args, missing config, missing secrets) and fix the inputs.
+
 ## Phase 0: Intake & Context Loading
 
 1. Load vault documents (see above).

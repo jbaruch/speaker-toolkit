@@ -1,5 +1,19 @@
 # Phase 6: Publishing — Detail
 
+## Pre-Flight Checklist
+
+Before ANY Phase 6 action, load these 4 files. If any is missing, STOP and ask.
+
+1. **`speaker-profile.json`** — publishing config, shortener, URL patterns, QR settings
+2. **`secrets.json`** — API keys (bitly, rebrandly, gemini). Missing key = stop, not fallback.
+3. **`presentation-spec.md`** — talk slug, duration, mode. Source of truth for the slug.
+4. **`presentation-outline.md`** — the outline (slide references, shownotes URL text)
+
+Do not guess values that should come from these files. Do not proceed with partial
+context — every silent assumption becomes a wrong default downstream.
+
+---
+
 The publishing workflow is speaker-specific. Read `publishing_process` from
 `speaker-profile.json`. Read the talk slug and metadata from `presentation-spec.md`
 in the talk directory (saved in Phase 1). If the section is missing or empty,
@@ -90,6 +104,13 @@ Read `publishing_process.qr_code`. If `enabled`:
 5. Re-running for the same `talk_slug` with a different target URL will PATCH the
    existing short link (keeping QR codes already printed valid) rather than creating
    a new one.
+
+**No raw-dogging:** NEVER bypass `generate-qr.py` with hand-rolled python-pptx or
+direct `qrcode` library calls. If the script targets the wrong slides, uses the wrong
+shortener, or produces the wrong colors — fix the inputs (profile config, secrets,
+arguments), don't patch the outputs with ad-hoc code. The script is the single source
+of truth for QR generation; working around it silently drops shortening, tracking,
+and color matching.
 
 **Dependencies:** `pip install qrcode` (Pillow is already a transitive dep of python-pptx).
 
