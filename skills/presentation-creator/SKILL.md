@@ -89,6 +89,12 @@ Shownotes slug:    [from profile speaker.shownotes_url_pattern]
 
 Gate: Author confirms or edits the spec.
 
+Save to: `{presentations-dir}/{conference}/{year}/{talk-slug}/presentation-spec.md`
+
+This file is the source of truth for the talk slug, duration, mode, and other
+metadata. Later phases (especially Phase 6 publishing) read it — do not rely
+on conversation context for these values.
+
 ## Phase 2: Rhetorical Architecture
 
 **The instrument menu comes from the vault, not from a static file.** Read the summary

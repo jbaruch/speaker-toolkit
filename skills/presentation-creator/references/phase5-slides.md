@@ -508,6 +508,7 @@ directory structure. Typical convention:
 {presentations-dir}/{conference}/{year}/{talk-slug}/
 ├── {talk-slug}.pptx              ← the deck (Phase 5 output)
 ├── {talk-slug}.pdf               ← PDF export (Phase 5 final step)
+├── presentation-spec.md           ← the spec: slug, mode, duration (Phase 1 output)
 ├── presentation-outline.md        ← the outline (Phase 3/4 output)
 ├── assets/                        ← images, memes, screenshots (author provides)
 └── illustrations/                 ← generated illustrations (Phase 5 Step 5.1b)

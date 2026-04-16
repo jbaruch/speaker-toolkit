@@ -1,8 +1,10 @@
 # Phase 6: Publishing — Detail
 
 The publishing workflow is speaker-specific. Read `publishing_process` from
-`speaker-profile.json`. If the section is missing or empty, fall back to asking
-the author interactively and document their answers for next time.
+`speaker-profile.json`. Read the talk slug and metadata from `presentation-spec.md`
+in the talk directory (saved in Phase 1). If the section is missing or empty,
+fall back to asking the author interactively and document their answers for
+next time.
 
 ### Step 6.1: Shownotes
 
