@@ -190,7 +190,21 @@ def update_rebrandly_link(link_id, new_long_url, api_key):
     )
 
 
-def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dry_run=False):
+def _print_missing_key_help(service, key_name, vault_path):
+    """Print actionable help when an API key is missing from secrets.json."""
+    secrets_path = os.path.join(vault_path, "secrets.json") if vault_path else "secrets.json"
+    if vault_path and not os.path.isfile(secrets_path):
+        print(f"  WARNING: No {service}.{key_name} found — secrets.json does not exist. Falling back to raw URL.")
+        print(f"  Create it:")
+        print(f'    echo \'{{\"{service}\": {{\"{key_name}\": \"YOUR_KEY\"}}}}\' > {secrets_path}')
+        print(f"    chmod 600 {secrets_path}")
+    else:
+        print(f"  WARNING: No {service}.{key_name} in secrets.json, falling back to raw URL.")
+        print(f"  Add to {secrets_path}:")
+        print(f'    \"{service}\": {{\"{key_name}\": \"YOUR_KEY\"}}')
+
+
+def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dry_run=False, vault_path=None):
     """Resolve the short URL for a talk, using cache or API as needed.
 
     Args:
@@ -200,6 +214,7 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
         secrets: Parsed secrets.json
         tracking_db: Parsed tracking-database.json
         dry_run: If True, skip API calls
+        vault_path: Path to vault (for actionable error messages)
 
     Returns:
         tuple (short_url, metadata_dict)
@@ -248,7 +263,7 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
         if shortener == "bitly":
             api_token = secrets.get("bitly", {}).get("api_token")
             if not api_token:
-                print("  WARNING: No bitly.api_token in secrets.json, falling back to raw URL")
+                _print_missing_key_help("bitly", "api_token", vault_path)
                 return shownotes_url, _none_meta(talk_slug, shownotes_url)
 
             if existing and existing.get("shortener_link_id"):
@@ -276,7 +291,7 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
         elif shortener == "rebrandly":
             api_key = secrets.get("rebrandly", {}).get("api_key")
             if not api_key:
-                print("  WARNING: No rebrandly.api_key in secrets.json, falling back to raw URL")
+                _print_missing_key_help("rebrandly", "api_key", vault_path)
                 return shownotes_url, _none_meta(talk_slug, shownotes_url)
 
             domain = config.get("rebrandly_domain")
@@ -574,7 +589,8 @@ def main():
         shownotes_url = args.shownotes_url
         print(f"Resolving short URL for: {shownotes_url}")
         qr_url, meta = resolve_short_url(
-            shownotes_url, args.talk_slug, qr_config, secrets, tracking_db, args.dry_run
+            shownotes_url, args.talk_slug, qr_config, secrets, tracking_db, args.dry_run,
+            vault_path=vault_path,
         )
 
     print(f"QR will encode: {qr_url}")
