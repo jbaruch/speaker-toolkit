@@ -116,24 +116,22 @@ def _http_request(url, data=None, headers=None, method="GET"):
         return json.loads(resp.read().decode("utf-8"))
 
 
-def create_bitly_link(long_url, api_token, custom_back_half=None):
+def create_bitly_link(long_url, api_token, custom_back_half=None, domain=None):
     """Create a new bit.ly short link.
 
     Args:
         long_url: The URL to shorten
         api_token: Bitly API token
         custom_back_half: Custom back-half for the short URL (e.g., talk slug).
-            If provided, creates bit.ly/{custom_back_half} instead of a random hash.
+            If provided, creates {domain}/{custom_back_half} instead of a random hash.
+        domain: Custom Bitly domain (e.g., "jbaru.ch"). Defaults to "bit.ly".
 
     Returns:
         dict with keys: short_url, link_id, short_path
     """
-    payload = {"long_url": long_url}
+    bitly_domain = domain or "bit.ly"
+    payload = {"long_url": long_url, "domain": bitly_domain}
     if custom_back_half:
-        # Bitly custom back-half: "domain" + "custom_bitlinks" endpoint approach
-        # doesn't work for free plans. Use the title field + create, then customize.
-        # Actually, Bitly v4 API supports custom back-half directly in create.
-        payload["domain"] = "bit.ly"
         payload["title"] = custom_back_half  # for tracking
     headers = {
         "Authorization": f"Bearer {api_token}",
@@ -158,14 +156,14 @@ def create_bitly_link(long_url, api_token, custom_back_half=None):
                 f"https://api-ssl.bitly.com/v4/custom_bitlinks",
                 data={
                     "bitlink_id": link_id,
-                    "custom_bitlink": f"bit.ly/{custom_back_half}",
+                    "custom_bitlink": f"{bitly_domain}/{custom_back_half}",
                 },
                 headers=headers,
                 method="POST",
             )
-            short_url = f"https://bit.ly/{custom_back_half}"
+            short_url = f"https://{bitly_domain}/{custom_back_half}"
             short_path = custom_back_half
-            print(f"  Custom back-half set: bit.ly/{custom_back_half}")
+            print(f"  Custom back-half set: {bitly_domain}/{custom_back_half}")
         except Exception as e:
             print(f"  WARNING: Custom back-half failed ({e}), using generated: {short_url}")
 
@@ -318,6 +316,8 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
                 _print_missing_key_help("bitly", "api_token", vault_path)
                 return shownotes_url, _none_meta(talk_slug, shownotes_url)
 
+            bitly_domain = config.get("bitly_domain")  # e.g., "jbaru.ch"
+
             if existing and existing.get("shortener_link_id"):
                 # Update existing link target
                 print(f"  Updating bit.ly link {existing['shortener_link_id']} → {shownotes_url}")
@@ -328,8 +328,9 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
                 return existing["short_url"], meta
             else:
                 # Create new link with talk slug as custom back-half
-                print(f"  Creating bit.ly link for {shownotes_url} (back-half: {custom_back_half})")
-                result = create_bitly_link(shownotes_url, api_token, custom_back_half)
+                domain_label = bitly_domain or "bit.ly"
+                print(f"  Creating {domain_label} link for {shownotes_url} (back-half: {custom_back_half})")
+                result = create_bitly_link(shownotes_url, api_token, custom_back_half, domain=bitly_domain)
                 meta = {
                     "talk_slug": talk_slug,
                     "target_url": shownotes_url,

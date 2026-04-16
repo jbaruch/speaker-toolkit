@@ -19,6 +19,7 @@ when empty. The question column shows what to ask the speaker.
 | `publishing_process.shownotes_publishing` | "Do you publish shownotes for your talks? If yes, how?" |
 | `publishing_process.qr_code` | "Do you put QR codes in your decks? If yes, what do they link to?" |
 | `publishing_process.qr_code.shortener` | "Do you use a URL shortener for QR links? Options: `bitly`, `rebrandly`, or `none`." |
+| `publishing_process.qr_code.bitly_domain` | _(Only if shortener=bitly)_ "Do you have a custom Bitly domain? (e.g., `jbaru.ch`, or leave blank for default `bit.ly`)" |
 | `publishing_process.qr_code.rebrandly_domain` | _(Only if shortener=rebrandly)_ "What custom domain do you use with Rebrandly? (e.g., `jbaru.ch`, or leave blank for default)" |
 | `publishing_process.qr_code.shortener_setup` | _(Only if shortener=bitly or rebrandly)_ "Add your API key to `{vault_root}/secrets.json` (`chmod 600`). Format: `{\"bitly\": {\"api_token\": \"...\"}}` or `{\"rebrandly\": {\"api_key\": \"...\"}}`. Alternatively, install the Bitly or Rebrandly MCP server for agent-driven shortening." |
 | `gemini_api_key` | "Add your Gemini API key to `{vault_root}/secrets.json` under `gemini.api_key` (`chmod 600`). Format: `{\"gemini\": {\"api_key\": \"...\"}}`. Get a key from https://aistudio.google.com/app/apikey. The `GEMINI_API_KEY` env var also works as a fallback." |
