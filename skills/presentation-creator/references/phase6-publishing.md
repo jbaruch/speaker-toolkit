@@ -11,7 +11,11 @@ Read `publishing_process.shownotes_publishing`. If `enabled`:
 - Follow the `method` description (git push, CMS, manual)
 - If `shownotes_repo_path` and `shownotes_template` are provided, generate the page
 - Include: title, abstract, slide embed/download link, resource links, speaker bio
-- Use the `shownotes_url_pattern` from `speaker` to construct the final URL
+- Construct the shownotes URL by substituting the **talk slug from the Presentation
+  Spec** (Phase 1) into `shownotes_url_pattern` from the speaker profile. The slug
+  was agreed with the author in Phase 1 — NEVER invent or rephrase it. Example:
+  pattern `speaking.example.com/{slug}` + spec slug `arc-of-ai` →
+  `speaking.example.com/arc-of-ai`
 
 If not enabled, skip.
 

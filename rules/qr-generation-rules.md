@@ -19,6 +19,16 @@ python3 generate-qr.py --png-only --talk-slug SLUG --shownotes-url URL \
 This generates the QR PNG with proper shortening, tracking, and color matching
 — without requiring a deck file.
 
+## Shownotes URL Slug Comes from the Presentation Spec
+
+The shownotes URL is constructed from `shownotes_url_pattern` (speaker profile)
++ the talk slug from the **Presentation Spec** (Phase 1). NEVER invent, rephrase,
+or re-derive the slug. The slug was agreed with the author — use it exactly.
+
+When passing `--talk-slug` and `--shownotes-url` to `generate-qr.py`, both must
+use the slug from the spec. If the spec doesn't have a slug yet, ask the author
+before proceeding.
+
 ## Missing Config ≠ Intentional Opt-Out
 
 When generating a QR code and the speaker profile has no `shortener` configured
