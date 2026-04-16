@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a QR code and insert it into a PowerPoint deck.
+"""Generate a QR code and optionally insert it into a PowerPoint deck.
 
 Generates an unbranded QR code encoding a shownotes URL (optionally shortened
 via bit.ly or rebrand.ly), matches the QR background color to the target slide,
@@ -11,11 +11,18 @@ Two URL-resolution modes:
   --short-url URL       Agent pre-resolved the short URL (via MCP); script just
                         generates the QR and inserts it
 
+PNG-only mode (no deck required):
+  --png-only            Generate the QR PNG without opening or modifying a deck.
+                        Use --bg-color R,G,B and --output PATH to control colors
+                        and output location. URL shortening and tracking DB
+                        updates still run normally.
+
 Usage:
     python3 generate-qr.py <deck.pptx> --talk-slug SLUG --shownotes-url URL
     python3 generate-qr.py <deck.pptx> --talk-slug SLUG --short-url URL
     python3 generate-qr.py <deck.pptx> --talk-slug SLUG --shownotes-url URL --dry-run
     python3 generate-qr.py <deck.pptx> --talk-slug SLUG --shownotes-url URL --profile PATH --vault PATH
+    python3 generate-qr.py --png-only --talk-slug SLUG --shownotes-url URL --output qr.png --bg-color 128,0,128
 
 Requires:
     - python-pptx  (pip install python-pptx)
@@ -541,23 +548,34 @@ def main():
         epilog="Examples:\n"
                "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url https://jbaru.ch/arc-of-ai\n"
                "  %(prog)s deck.pptx --talk-slug arc-of-ai --short-url https://bit.ly/arcofai\n"
-               "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url URL --dry-run\n",
+               "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url URL --dry-run\n"
+               "  %(prog)s --png-only --talk-slug SLUG --shownotes-url URL --output qr.png\n"
+               "  %(prog)s --png-only --talk-slug SLUG --short-url URL --bg-color 128,0,128\n",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("deck", help="Path to the .pptx deck file")
+    parser.add_argument("deck", nargs="?", default=None, help="Path to the .pptx deck file (not required with --png-only)")
     parser.add_argument("--talk-slug", required=True, help="Unique talk identifier (e.g., arc-of-ai)")
 
     url_group = parser.add_mutually_exclusive_group(required=True)
     url_group.add_argument("--shownotes-url", help="Full shownotes URL (script resolves shortening)")
     url_group.add_argument("--short-url", help="Pre-resolved short URL (skip shortening)")
 
+    parser.add_argument("--png-only", action="store_true",
+                        help="Generate QR PNG only, without opening or modifying a deck")
+    parser.add_argument("--output", metavar="PATH",
+                        help="Output path for QR PNG (default: {deck_dir}/{talk-slug}-qr.png, or ./{talk-slug}-qr.png with --png-only)")
+    parser.add_argument("--bg-color", metavar="R,G,B",
+                        help="QR background color as R,G,B (e.g., 128,0,128). Default: detected from deck, or white with --png-only")
     parser.add_argument("--profile", help="Path to speaker-profile.json (default: {vault}/speaker-profile.json)")
     parser.add_argument("--vault", help="Path to vault root directory")
     parser.add_argument("--dry-run", action="store_true", help="Skip API calls and deck modification")
 
     args = parser.parse_args()
 
-    if not os.path.isfile(args.deck):
+    if not args.png_only and not args.deck:
+        parser.error("deck is required unless --png-only is specified")
+
+    if args.deck and not os.path.isfile(args.deck):
         print(f"ERROR: Deck file not found: {args.deck}")
         sys.exit(1)
 
@@ -595,45 +613,78 @@ def main():
 
     print(f"QR will encode: {qr_url}")
 
-    # Open the deck
-    prs = Presentation(args.deck)
+    # Parse --bg-color if provided
+    explicit_bg = None
+    if args.bg_color:
+        try:
+            parts = [int(x.strip()) for x in args.bg_color.split(",")]
+            if len(parts) != 3 or not all(0 <= x <= 255 for x in parts):
+                raise ValueError
+            explicit_bg = tuple(parts)
+        except ValueError:
+            print(f"ERROR: --bg-color must be R,G,B with values 0-255 (got: {args.bg_color})")
+            sys.exit(1)
 
-    # Determine target slides
-    target_url_for_detection = shownotes_url if args.shownotes_url else qr_url
-    slide_indices = resolve_target_slide_indices(prs, qr_config, target_url_for_detection)
-    print(f"Target slides: {[i + 1 for i in slide_indices]}")
+    # --- PNG-only mode: no deck needed ---
+    if args.png_only:
+        qr_bg = explicit_bg or (255, 255, 255)
+        qr_fg = choose_fg_color(qr_bg)
+        print(f"QR colors: fg=RGB{qr_fg}, bg=RGB{qr_bg}")
 
-    # Resolve background color from the first target slide
-    target_slide = prs.slides[slide_indices[0]]
-    bg_rgb = resolve_slide_bg_rgb(target_slide)
-    if bg_rgb:
-        print(f"Slide background: RGB{bg_rgb}")
+        qr_filename = f"{args.talk_slug}-qr.png"
+        qr_path = args.output or os.path.join(".", qr_filename)
+
+        if not args.dry_run:
+            generate_qr_png(qr_url, qr_fg, qr_bg, qr_path)
+            size_kb = os.path.getsize(qr_path) / 1024
+            print(f"QR PNG saved: {qr_path} ({size_kb:.1f} KB)")
+        else:
+            print(f"DRY RUN: would save QR to {qr_path}")
+
+    # --- Deck mode: open deck, detect colors, insert ---
     else:
-        print("  WARNING: Could not detect solid background color, defaulting to white")
-        bg_rgb = (255, 255, 255)
+        prs = Presentation(args.deck)
 
-    bg_match = qr_config.get("bg_color_match", True)
-    qr_bg = bg_rgb if bg_match else (255, 255, 255)
-    qr_fg = choose_fg_color(qr_bg)
-    print(f"QR colors: fg=RGB{qr_fg}, bg=RGB{qr_bg}")
+        # Determine target slides
+        target_url_for_detection = shownotes_url if args.shownotes_url else qr_url
+        slide_indices = resolve_target_slide_indices(prs, qr_config, target_url_for_detection)
+        print(f"Target slides: {[i + 1 for i in slide_indices]}")
 
-    # Generate QR PNG
-    deck_dir = os.path.dirname(os.path.abspath(args.deck))
-    qr_filename = f"{args.talk_slug}-qr.png"
-    qr_path = os.path.join(deck_dir, qr_filename)
+        # Resolve background color
+        if explicit_bg:
+            bg_rgb = explicit_bg
+            print(f"Using explicit background: RGB{bg_rgb}")
+        else:
+            target_slide = prs.slides[slide_indices[0]]
+            bg_rgb = resolve_slide_bg_rgb(target_slide)
+            if bg_rgb:
+                print(f"Slide background: RGB{bg_rgb}")
+            else:
+                print("  WARNING: Could not detect solid background color, defaulting to white")
+                bg_rgb = (255, 255, 255)
 
-    if not args.dry_run:
-        generate_qr_png(qr_url, qr_fg, qr_bg, qr_path)
-        size_kb = os.path.getsize(qr_path) / 1024
-        print(f"QR PNG saved: {qr_path} ({size_kb:.1f} KB)")
+        bg_match = qr_config.get("bg_color_match", True)
+        qr_bg = bg_rgb if bg_match else (255, 255, 255)
+        qr_fg = choose_fg_color(qr_bg)
+        print(f"QR colors: fg=RGB{qr_fg}, bg=RGB{qr_bg}")
 
-        # Insert into deck
-        insert_qr_on_slides(prs, qr_path, slide_indices)
-        prs.save(args.deck)
-        print(f"Deck saved: {args.deck}")
-    else:
-        print(f"DRY RUN: would save QR to {qr_path}")
-        print(f"DRY RUN: would insert on slides {[i + 1 for i in slide_indices]}")
+        # Generate QR PNG
+        deck_dir = os.path.dirname(os.path.abspath(args.deck))
+        qr_filename = f"{args.talk_slug}-qr.png"
+        qr_path = args.output or os.path.join(deck_dir, qr_filename)
+
+        if not args.dry_run:
+            generate_qr_png(qr_url, qr_fg, qr_bg, qr_path)
+            size_kb = os.path.getsize(qr_path) / 1024
+            print(f"QR PNG saved: {qr_path} ({size_kb:.1f} KB)")
+
+            # Insert into deck
+            insert_qr_on_slides(prs, qr_path, slide_indices)
+            prs.save(args.deck)
+            print(f"Deck saved: {args.deck}")
+        else:
+            print(f"DRY RUN: would save QR to {qr_path}")
+            print(f"DRY RUN: would insert on slides {[i + 1 for i in slide_indices]}")
 
     # Update tracking database
     meta["target_url"] = shownotes_url if args.shownotes_url else qr_url

@@ -66,6 +66,11 @@ Read `publishing_process.qr_code`. If `enabled`:
    # No shortening:
    python3 skills/presentation-creator/scripts/generate-qr.py deck.pptx \
      --talk-slug SLUG --shownotes-url https://jbaru.ch/arc-of-ai
+
+   # PNG-only (no deck — for presenterm, PDF, or standalone use):
+   python3 skills/presentation-creator/scripts/generate-qr.py --png-only \
+     --talk-slug SLUG --shownotes-url https://jbaru.ch/arc-of-ai \
+     --output /path/to/qr.png --bg-color 128,0,128
    ```
 
 4. The script will:
