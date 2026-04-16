@@ -227,7 +227,7 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
         tuple (short_url, metadata_dict)
         metadata_dict has keys: shortener, short_path, link_id, short_url, target_url
     """
-    shortener = config.get("shortener", "none")
+    shortener = config.get("shortener")
     qr_codes = tracking_db.get("qr_codes", [])
 
     # Look up existing entry
@@ -242,7 +242,14 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
         print(f"  Reusing cached short URL for '{talk_slug}': {existing['short_url']}")
         return existing["short_url"], existing
 
-    if shortener == "none":
+    # Distinguish "not configured" from "explicitly disabled"
+    if shortener is None:
+        print("  WARNING: No URL shortener configured in speaker profile (publishing_process.qr_code.shortener).")
+        print("  Add 'shortener: bitly' or 'shortener: rebrandly' to your profile,")
+        print("  or set 'shortener: none' to explicitly use raw URLs.")
+        print("  Proceeding with raw URL.")
+
+    if shortener in (None, "none"):
         meta = {
             "talk_slug": talk_slug,
             "target_url": shownotes_url,

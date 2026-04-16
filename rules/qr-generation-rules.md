@@ -18,3 +18,16 @@ python3 generate-qr.py --png-only --talk-slug SLUG --shownotes-url URL \
 
 This generates the QR PNG with proper shortening, tracking, and color matching
 — without requiring a deck file.
+
+## Missing Config ≠ Intentional Opt-Out
+
+When generating a QR code and the speaker profile has no `shortener` configured
+(key missing, not set to `"none"`), STOP and ask the user to choose one. Do not
+silently generate with a raw URL.
+
+- `"shortener": "none"` → explicit opt-out, proceed without shortening
+- `shortener` key missing → NOT CONFIGURED → ask the user before proceeding
+
+The script prints a warning for the missing-config case, but the agent must
+treat it as a blocker: surface the gap, ask, then re-run with the user's choice.
+Silent generation with a raw URL when shortening was never discussed = failure.
