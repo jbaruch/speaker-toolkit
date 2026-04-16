@@ -733,41 +733,61 @@ def main():
         slide_indices = resolve_target_slide_indices(prs, qr_config, target_url_for_detection)
         print(f"Target slides: {[i + 1 for i in slide_indices]}")
 
-        # Resolve background color
-        if explicit_bg:
-            bg_rgb = explicit_bg
-            print(f"Using explicit background: RGB{bg_rgb}")
-        else:
-            target_slide = prs.slides[slide_indices[0]]
-            bg_rgb = resolve_slide_bg_rgb(target_slide)
-            if bg_rgb:
-                print(f"Slide background: RGB{bg_rgb}")
-            else:
-                print("  WARNING: Could not detect solid background color, defaulting to white")
-                bg_rgb = (255, 255, 255)
-
         bg_match = qr_config.get("bg_color_match", True)
-        qr_bg = bg_rgb if bg_match else (255, 255, 255)
-        qr_fg = choose_fg_color(qr_bg)
-        print(f"QR colors: fg=RGB{qr_fg}, bg=RGB{qr_bg}")
-
-        # Generate QR PNG
         deck_dir = os.path.dirname(os.path.abspath(args.deck))
-        qr_filename = f"{args.talk_slug}-qr.png"
-        qr_path = args.output or os.path.join(deck_dir, qr_filename)
+
+        # Resolve background color per slide — different slides may have
+        # different backgrounds (e.g., shownotes vs closing/thank-you).
+        # Group slides by their QR color scheme to avoid redundant PNGs.
+        slide_colors = {}  # idx -> (qr_bg, qr_fg)
+        for idx in slide_indices:
+            if explicit_bg:
+                bg_rgb = explicit_bg
+            else:
+                slide_bg = resolve_slide_bg_rgb(prs.slides[idx])
+                if slide_bg:
+                    bg_rgb = slide_bg
+                else:
+                    print(f"  WARNING: Could not detect background for slide {idx + 1}, defaulting to white")
+                    bg_rgb = (255, 255, 255)
+            qr_bg = bg_rgb if bg_match else (255, 255, 255)
+            qr_fg = choose_fg_color(qr_bg)
+            slide_colors[idx] = (qr_bg, qr_fg)
+            print(f"  Slide {idx + 1}: bg=RGB{qr_bg}, fg=RGB{qr_fg}")
+
+        # Group slides by color scheme to generate minimal QR PNGs
+        color_groups = {}  # (qr_bg, qr_fg) -> [slide_indices]
+        for idx, colors in slide_colors.items():
+            color_groups.setdefault(colors, []).append(idx)
 
         if not args.dry_run:
-            generate_qr_png(qr_url, qr_fg, qr_bg, qr_path)
-            size_kb = os.path.getsize(qr_path) / 1024
-            print(f"QR PNG saved: {qr_path} ({size_kb:.1f} KB)")
+            qr_paths_generated = []
+            for (qr_bg, qr_fg), indices in color_groups.items():
+                if len(color_groups) == 1:
+                    qr_filename = f"{args.talk_slug}-qr.png"
+                else:
+                    # Multiple color variants — suffix with bg hex
+                    bg_hex = "{:02x}{:02x}{:02x}".format(*qr_bg)
+                    qr_filename = f"{args.talk_slug}-qr-{bg_hex}.png"
 
-            # Insert into deck
-            insert_qr_on_slides(prs, qr_path, slide_indices)
+                qr_path = args.output if (args.output and len(color_groups) == 1) else os.path.join(deck_dir, qr_filename)
+                generate_qr_png(qr_url, qr_fg, qr_bg, qr_path)
+                size_kb = os.path.getsize(qr_path) / 1024
+                print(f"  QR PNG saved: {qr_filename} ({size_kb:.1f} KB) — for slide(s) {[i + 1 for i in indices]}")
+                qr_paths_generated.append(qr_path)
+
+                # Insert this variant on its matching slides
+                insert_qr_on_slides(prs, qr_path, indices)
+
             prs.save(args.deck)
             print(f"Deck saved: {args.deck}")
+            # Use first generated path for tracking DB
+            qr_filename = os.path.basename(qr_paths_generated[0])
         else:
-            print(f"DRY RUN: would save QR to {qr_path}")
-            print(f"DRY RUN: would insert on slides {[i + 1 for i in slide_indices]}")
+            # Dry run — just report what would happen
+            for (qr_bg, qr_fg), indices in color_groups.items():
+                print(f"  DRY RUN: would generate QR bg=RGB{qr_bg} fg=RGB{qr_fg} for slides {[i + 1 for i in indices]}")
+            qr_filename = f"{args.talk_slug}-qr.png"
 
     # Update tracking database
     meta["target_url"] = shownotes_url if args.shownotes_url else qr_url
