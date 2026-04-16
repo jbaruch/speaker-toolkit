@@ -1,0 +1,7 @@
+{
+  "config": {
+    "vault_root": "~/.claude/rhetoric-knowledge-vault"
+  },
+  "talks": [],
+  "qr_codes": []
+}

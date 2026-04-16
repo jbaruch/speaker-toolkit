@@ -1,0 +1,41 @@
+{
+  "context": "Tests whether the agent surfaces a missing shortener configuration instead of silently degrading to a raw URL. Missing config is not the same as intentional opt-out. Also tests that the shownotes URL slug comes from the Presentation Spec, not agent-invented.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Agent surfaces missing shortener config",
+      "description": "The agent explicitly identifies that the shortener key is missing from the speaker profile's qr_code config and communicates this to the user. Must not silently proceed with a raw URL",
+      "max_score": 20
+    },
+    {
+      "name": "Agent asks user to choose a shortener",
+      "description": "The agent asks the user to choose between bitly, rebrandly, or explicitly 'none' — presenting it as a decision, not a silent default. The agent does not assume 'none' on behalf of the user",
+      "max_score": 15
+    },
+    {
+      "name": "Agent does NOT generate QR with raw URL without asking",
+      "description": "The agent does not produce a QR code encoding the raw shownotes URL without first getting explicit user confirmation that no shortener is desired. Silent raw-URL generation = zero points",
+      "max_score": 15
+    },
+    {
+      "name": "Shownotes URL uses slug from Presentation Spec",
+      "description": "The shownotes URL is constructed as https://jbaru.ch/2026-04-16-devnexus-robocoders-judgment-day, using the exact slug from presentation-spec.md. The agent does not invent, abbreviate, or rephrase the slug",
+      "max_score": 15
+    },
+    {
+      "name": "Talk slug matches spec exactly",
+      "description": "Any reference to the talk slug uses exactly '2026-04-16-devnexus-robocoders-judgment-day' as written in the Presentation Spec, not a shortened or modified version",
+      "max_score": 10
+    },
+    {
+      "name": "Agent references generate-qr.py as the tool",
+      "description": "The agent's plan references using generate-qr.py (the skill script), not direct use of the qrcode library or any ad-hoc QR generation approach",
+      "max_score": 10
+    },
+    {
+      "name": "Agent distinguishes missing config from opt-out",
+      "description": "The agent's response shows it understands the distinction: 'shortener key missing' means NOT CONFIGURED (needs a decision), not the same as 'shortener: none' (explicit opt-out)",
+      "max_score": 10
+    }
+  ]
+}

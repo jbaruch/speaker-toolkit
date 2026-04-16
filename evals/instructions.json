@@ -713,6 +713,62 @@
       "relevant_when": "Planning visual continuity devices for illustrated talks with recurring visual elements",
       "why_given": "new knowledge",
       "skill": "presentation-creator"
+    },
+    {
+      "instruction": "ALWAYS use generate-qr.py for QR generation. NEVER call the qrcode library directly. The script handles URL shortening, custom back-half, tracking DB updates, color matching, and secrets. Use --png-only mode when no deck is needed.",
+      "original_snippets": "ALWAYS use `generate-qr.py` for QR code generation. NEVER call the `qrcode` library directly or generate QR images through any other means.",
+      "relevant_when": "Generating a QR code for any purpose — deck insertion, standalone PNG, or any other format",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "The bitly/rebrandly custom back-half MUST be the talk slug. Never use a random shortener hash. The script uses talk_slug as the back-half by default.",
+      "original_snippets": "The custom back-half MUST be the talk slug. Random hashes are untraceable and unprofessional. The back-half IS the slug.",
+      "relevant_when": "Creating shortened URLs for QR codes or shownotes",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "QR always encodes the shortener URL (bit.ly/rebrandly), not the raw shownotes URL. The shortener is the decoupling layer — if shownotes URL changes, update the shortener target, printed QR stays valid. Only exception: shortener explicitly set to 'none'.",
+      "original_snippets": "The QR code MUST encode the bit.ly/rebrandly URL, never the raw shownotes URL. The shortener is the decoupling layer.",
+      "relevant_when": "Deciding which URL to encode in a QR code",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "When shortener key is missing from speaker profile (not set to 'none'), STOP and ask the user to choose one. Missing config is NOT intentional opt-out. Do not silently fall back to raw URL.",
+      "original_snippets": "Missing Config \u2260 Intentional Opt-Out. 'shortener': 'none' \u2192 explicit opt-out. shortener key missing \u2192 NOT CONFIGURED \u2192 ask.",
+      "relevant_when": "Starting QR generation workflow when shortener config may be incomplete",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "If secrets.json is missing the required API token, STOP and guide the user to create it. Do not silently degrade to raw URL. The script prints actionable creation commands.",
+      "original_snippets": "If secrets.json is missing or lacks the required API token, STOP and guide the user to create it. Do not silently degrade to a raw URL.",
+      "relevant_when": "Generating QR codes or illustrations when API keys may be missing",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Shownotes slug convention from profile config: {YYYY-MM-DD}-{conference-slug}-{talk-short-name}. Derive mechanically from delivery date + conference + title. Confirm with author in Phase 1. Save in presentation-spec.md.",
+      "original_snippets": "Slug format: {YYYY-MM-DD}-{conference-slug}-{talk-short-name}. Derive mechanically from delivery date + conference name + talk title. Kebab-case, lowercase, no special characters.",
+      "relevant_when": "Generating a talk slug during Phase 1 or constructing shownotes URLs in Phase 6",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Save the Presentation Spec to presentation-spec.md alongside the outline after Phase 1. This file is the source of truth for slug, duration, mode. Later phases read it from disk.",
+      "original_snippets": "Save to: {presentations-dir}/{conference}/{year}/{talk-slug}/presentation-spec.md. This file is the source of truth for the talk slug, duration, mode, and other metadata.",
+      "relevant_when": "Completing Phase 1 spec, or reading talk metadata in any later phase",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Gemini API key is read from {vault}/secrets.json (gemini.api_key) first, falling back to GEMINI_API_KEY env var. Use --vault to specify a custom vault path.",
+      "original_snippets": "API key resolution order: 1. {vault}/secrets.json \u2192 gemini.api_key. 2. GEMINI_API_KEY environment variable (backward compat).",
+      "relevant_when": "Running generate-illustrations.py or any Gemini API operation",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
     }
   ]
 }

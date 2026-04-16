@@ -1,0 +1,1 @@
+QR generation with bitly custom back-half, slug from spec, decoupling layer
