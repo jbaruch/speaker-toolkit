@@ -116,27 +116,63 @@ def _http_request(url, data=None, headers=None, method="GET"):
         return json.loads(resp.read().decode("utf-8"))
 
 
-def create_bitly_link(long_url, api_token, preferred_short_path=None):
+def create_bitly_link(long_url, api_token, custom_back_half=None):
     """Create a new bit.ly short link.
+
+    Args:
+        long_url: The URL to shorten
+        api_token: Bitly API token
+        custom_back_half: Custom back-half for the short URL (e.g., talk slug).
+            If provided, creates bit.ly/{custom_back_half} instead of a random hash.
 
     Returns:
         dict with keys: short_url, link_id, short_path
     """
     payload = {"long_url": long_url}
+    if custom_back_half:
+        # Bitly custom back-half: "domain" + "custom_bitlinks" endpoint approach
+        # doesn't work for free plans. Use the title field + create, then customize.
+        # Actually, Bitly v4 API supports custom back-half directly in create.
+        payload["domain"] = "bit.ly"
+        payload["title"] = custom_back_half  # for tracking
     headers = {
         "Authorization": f"Bearer {api_token}",
         "Content-Type": "application/json",
     }
+
+    # Create the link first
     result = _http_request(
         "https://api-ssl.bitly.com/v4/bitlinks",
         data=payload,
         headers=headers,
         method="POST",
     )
+    link_id = result["id"]
+    short_url = result["link"]
+    short_path = link_id.split("/", 1)[-1] if "/" in link_id else link_id
+
+    # Set custom back-half if requested
+    if custom_back_half:
+        try:
+            _http_request(
+                f"https://api-ssl.bitly.com/v4/custom_bitlinks",
+                data={
+                    "bitlink_id": link_id,
+                    "custom_bitlink": f"bit.ly/{custom_back_half}",
+                },
+                headers=headers,
+                method="POST",
+            )
+            short_url = f"https://bit.ly/{custom_back_half}"
+            short_path = custom_back_half
+            print(f"  Custom back-half set: bit.ly/{custom_back_half}")
+        except Exception as e:
+            print(f"  WARNING: Custom back-half failed ({e}), using generated: {short_url}")
+
     return {
-        "short_url": result["link"],
-        "link_id": result["id"],
-        "short_path": result["id"].split("/", 1)[-1] if "/" in result["id"] else result["id"],
+        "short_url": short_url,
+        "link_id": link_id,
+        "short_path": short_path,
     }
 
 
@@ -271,7 +307,9 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
             "shortener_link_id": None,
         }
 
-    preferred_short_path = config.get("preferred_short_path")
+    # Use talk slug as custom back-half by default (the decoupling layer).
+    # Profile's preferred_short_path overrides if explicitly set.
+    custom_back_half = config.get("preferred_short_path") or talk_slug
 
     try:
         if shortener == "bitly":
@@ -289,9 +327,9 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
                 meta["updated_at"] = datetime.date.today().isoformat()
                 return existing["short_url"], meta
             else:
-                # Create new link
-                print(f"  Creating bit.ly link for {shownotes_url}")
-                result = create_bitly_link(shownotes_url, api_token, preferred_short_path)
+                # Create new link with talk slug as custom back-half
+                print(f"  Creating bit.ly link for {shownotes_url} (back-half: {custom_back_half})")
+                result = create_bitly_link(shownotes_url, api_token, custom_back_half)
                 meta = {
                     "talk_slug": talk_slug,
                     "target_url": shownotes_url,
@@ -318,8 +356,8 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
                 meta["updated_at"] = datetime.date.today().isoformat()
                 return existing["short_url"], meta
             else:
-                print(f"  Creating rebrand.ly link for {shownotes_url}")
-                result = create_rebrandly_link(shownotes_url, api_key, domain, preferred_short_path)
+                print(f"  Creating rebrand.ly link for {shownotes_url} (slashtag: {custom_back_half})")
+                result = create_rebrandly_link(shownotes_url, api_key, domain, custom_back_half)
                 meta = {
                     "talk_slug": talk_slug,
                     "target_url": shownotes_url,
