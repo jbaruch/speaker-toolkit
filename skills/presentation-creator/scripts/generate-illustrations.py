@@ -290,9 +290,17 @@ def _load_context(outline_path, require_model=True, vault_path=None):
 
     if not api_key:
         print("ERROR: No Gemini API key found.")
-        print("Set it in {vault}/secrets.json under gemini.api_key,")
-        print("or set the GEMINI_API_KEY environment variable.")
         print("Get a key from https://aistudio.google.com/app/apikey")
+        print()
+        if not os.path.isfile(secrets_path):
+            print(f"Create {secrets_path}:")
+            print(f'  echo \'{{"gemini": {{"api_key": "YOUR_KEY"}}}}\' > {secrets_path}')
+            print(f"  chmod 600 {secrets_path}")
+        else:
+            print(f"Add to {secrets_path}:")
+            print('  "gemini": {"api_key": "YOUR_KEY"}')
+        print()
+        print("Or set the GEMINI_API_KEY environment variable as a fallback.")
         sys.exit(1)
 
     outline = parse_outline(outline_path)
