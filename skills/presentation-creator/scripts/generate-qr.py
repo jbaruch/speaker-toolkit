@@ -519,8 +519,42 @@ def resolve_target_slide_indices(prs, config, shownotes_url):
 
 # --- QR Insertion ---
 
+def _remove_existing_qr(slide, expected_left, expected_top, expected_width, tolerance_emu=91440):
+    """Remove existing QR-sized picture shapes in the expected position.
+
+    Detects pictures that overlap the QR target area (bottom-right corner)
+    within a tolerance. This handles re-runs on reused decks.
+
+    Args:
+        slide: Slide object
+        expected_left, expected_top, expected_width: Target position/size in EMUs
+        tolerance_emu: Position tolerance (default ~1 inch = 914400/10)
+
+    Returns:
+        Number of shapes removed.
+    """
+    to_remove = []
+    for shape in slide.shapes:
+        if not shape.shape_type == 13:  # MSO_SHAPE_TYPE.PICTURE
+            continue
+        # Check if this picture is roughly QR-sized and in the expected position
+        if (abs(shape.left - expected_left) < tolerance_emu
+                and abs(shape.top - expected_top) < tolerance_emu
+                and abs(shape.width - expected_width) < tolerance_emu):
+            to_remove.append(shape)
+
+    for shape in to_remove:
+        sp = shape._element
+        sp.getparent().remove(sp)
+
+    return len(to_remove)
+
+
 def insert_qr_on_slides(prs, png_path, slide_indices):
     """Insert the QR PNG on the specified slides, bottom-right corner.
+
+    If an existing QR-sized picture is found in the same position, it is
+    replaced (removed then re-added). This supports re-runs on reused decks.
 
     Args:
         prs: Presentation object (mutated in place)
@@ -540,8 +574,12 @@ def insert_qr_on_slides(prs, png_path, slide_indices):
 
     for idx in slide_indices:
         slide = prs.slides[idx]
+        removed = _remove_existing_qr(slide, left, top, qr_width)
+        if removed:
+            print(f"  Replaced {removed} existing QR image(s) on slide {idx + 1}")
         slide.shapes.add_picture(png_path, left, top, qr_width, qr_height)
-        print(f"  Inserted QR on slide {idx + 1}")
+        if not removed:
+            print(f"  Inserted QR on slide {idx + 1}")
 
 
 # --- Tracking Database ---
