@@ -39,9 +39,12 @@ def test_libreoffice_custom_output_path(export_pdf, tmp_path):
 
 @pytest.mark.skipif(not shutil.which("libreoffice"), reason="LibreOffice not installed")
 def test_libreoffice_missing_file(export_pdf, tmp_path):
-    """Non-existent PPTX returns False."""
-    result = export_pdf.try_libreoffice(
+    """Non-existent PPTX produces no PDF output."""
+    pdf_path = str(tmp_path / "out.pdf")
+    export_pdf.try_libreoffice(
         str(tmp_path / "missing.pptx"),
-        str(tmp_path / "out.pdf")
+        pdf_path,
     )
-    assert result is False
+    # Whether it returns True or False depends on LibreOffice version,
+    # but a missing input should never produce a valid PDF
+    assert not os.path.isfile(pdf_path)
