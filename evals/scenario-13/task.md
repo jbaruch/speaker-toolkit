@@ -1,39 +1,46 @@
-# Conference Recording Slide Extraction Quality Analyzer
+# Video Slide Extraction Quality Diagnostics
 
 ## Problem/Feature Description
 
-A media production company processes hundreds of conference talk recordings to extract slide content for archival and analysis. They've discovered that their slide extraction pipeline (frame extraction + perceptual hash deduplication) produces wildly different quality results depending on the recording style. Fullscreen slide captures work perfectly, but wide-angle room recordings where a speaker walks around in front of projected slides produce thousands of "unique" frames that are actually the same slide with different speaker positions.
+Six conference talk recordings have been processed through the video-slide-extraction pipeline. The extraction results vary widely — some are clean, others show signs of wide-angle recording dedup failure, missing transcripts, wrong languages, wrong speakers, or Whisper hallucination.
 
-The company needs a diagnostic tool that analyzes the output of a slide extraction run and classifies the recording type, flags quality issues, recommends parameter adjustments, and identifies when a non-target speaker might have been recorded instead of the expected presenter.
-
-The tool should also handle transcript quality assessment — some recordings have no captions, some have captions in unexpected languages, and some produce transcriptions with hallucination artifacts. The transcript source should be tracked in the output, since source type significantly affects quality interpretation.
-
-The output should be structured JSON with clearly separated diagnostic dimensions.
-
-## Output Specification
-
-Produce the following files:
-
-1. **`extraction_diagnostics.py`** — A Python script that:
-   - Takes extraction results (frame count, unique slide count, hash threshold used, slide region detection info, PDF page count) and talk metadata (expected speaker name, expected language)
-   - Classifies the recording type based on the extraction metrics
-   - Flags quality issues and recommends parameter adjustments
-   - Assesses transcript quality (usable, partial, hallucinated, wrong language, missing)
-   - Checks whether the detected speaker matches the expected speaker
-   - Outputs a structured diagnostics report
-
-2. **`test_cases.json`** — At least 6 test cases covering:
-   - A clean fullscreen recording (50 frames → 45 unique slides, good ratio)
-   - A wide-angle room recording (1200 frames → 900 "unique" — dedup failed)
-   - A recording with no transcript available
-   - A recording with a transcript in an unexpected language (e.g., expected English, got Russian)
-   - A recording where the speaker doesn't match (wrong person in the video)
-   - A recording with Whisper transcription showing hallucination patterns
-
-3. **`diagnostics_output.json`** — Results from running all test cases
-
-4. **`recommendations_log.txt`** — Human-readable log of recommendations for each case
+Analyze the extraction results and produce a structured diagnostics report for each case.
 
 ## Setup
 
-No special dependencies required beyond Python standard library.
+Download the fixed extraction results:
+
+```bash
+curl -sLO https://github.com/jbaruch/speaker-toolkit/raw/main/eval-resources/scenario-13/extraction_results.json
+```
+
+## Task
+
+Analyze `extraction_results.json` (6 recordings) and produce `diagnostics_report.json` containing a per-recording diagnostic entry. Each entry must include:
+
+1. **Recording type classification** — classify each recording into one of at least 3 categories (e.g., fullscreen slides, picture-in-picture, wide-angle room) based on extraction metrics (frame-to-unique ratio, slide region detection)
+
+2. **Dedup quality assessment** — for `case_wide_angle` (1200 frames → 900 "unique"), detect that the 1.33:1 ratio indicates dedup failure from speaker movement, and recommend:
+   - Increasing hash threshold to 14–18 (above the default 8)
+   - Using manual slide region cropping to isolate the projected screen
+
+3. **Transcript quality assessment** for each case:
+   - `case_no_transcript`: flag as missing, recommend Whisper fallback
+   - `case_wrong_language`: detect Russian transcript when English was expected — but do NOT flag as an error if the talk was actually delivered in Russian (the speaker is bilingual)
+   - `case_whisper_hallucination`: detect the 0.45 repetition ratio and the repeated "Thank you for watching" loop as hallucination artifacts
+   - Track transcript source (youtube_auto_captions vs whisper_transcription) as a field
+
+4. **Speaker identity verification** — for `case_wrong_speaker`, flag that detected speaker "James Gosling" doesn't match expected "Baruch Sadogursky" (possible wrong recording from a playlist)
+
+5. **Clean pass-through** — for `case_clean` (50 frames → 45 unique, valid transcript, correct speaker), produce NO warnings. Classify as healthy.
+
+## Output Specification
+
+Produce `diagnostics_report.json` with this structure per case:
+- `recording_type`: classification string
+- `dedup_quality`: assessment with optional `recommended_threshold`
+- `transcript_quality`: assessment with `source`, `status`, and optional warnings
+- `speaker_match`: boolean + details
+- `recommendations`: list of actionable strings (empty for clean recordings)
+
+Also produce `recommendations_log.txt` — a human-readable summary of all flagged issues and recommendations, suitable for a production operator to review.

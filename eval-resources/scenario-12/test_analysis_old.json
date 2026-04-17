@@ -1,0 +1,74 @@
+{
+  "talk_slug": "groovy-puzzlers-2023",
+  "conference": "GR8Conf EU",
+  "talk_date": "2023-06-15",
+  "speaker_name": "Baruch Sadogursky",
+  "title": "Groovy Puzzlers",
+  "duration_minutes": 50,
+  "humor_beats": [
+    {
+      "id": "h1",
+      "type": "planned_joke",
+      "slide_num": 3,
+      "quote": "This is a talk where the audience is always wrong. You'll love it.",
+      "context": "Opening hook — puzzler format explanation"
+    },
+    {
+      "id": "h2",
+      "type": "meme_slide",
+      "slide_num": 8,
+      "description": "Surprised Pikachu face after revealing the puzzler answer",
+      "context": "After first puzzler reveal"
+    },
+    {
+      "id": "h3",
+      "type": "planned_joke",
+      "slide_num": 22,
+      "quote": "The Groovy spec says this is correct. The Groovy spec is wrong.",
+      "context": "Edge case puzzler with spec-contradicting behavior"
+    },
+    {
+      "id": "h4",
+      "type": "spontaneous_candidate",
+      "slide_num": null,
+      "quote": "[audience shout captured in transcript, followed by speaker laughter]",
+      "context": "After puzzler 4 reveal — audience vocally disagreed with the answer"
+    },
+    {
+      "id": "h5",
+      "type": "meme_slide",
+      "slide_num": 35,
+      "description": "This is fine dog meme with Groovy logo",
+      "context": "Closing slide"
+    }
+  ],
+  "audience_interactions": [
+    {
+      "id": "ai1",
+      "slide_num": 5,
+      "type": "audience_vote",
+      "description": "Show of hands for each puzzler answer option (A, B, C, or 'none of the above')"
+    },
+    {
+      "id": "ai2",
+      "slide_num": 15,
+      "type": "audience_vote",
+      "description": "Repeat voting pattern for puzzler 3"
+    },
+    {
+      "id": "ai3",
+      "slide_num": 28,
+      "type": "audience_shout",
+      "description": "Audience spontaneously shouts answer before options are shown"
+    }
+  ],
+  "demo_sections": [],
+  "blind_spot_flags": [
+    {
+      "id": "bs1",
+      "type": "audience_energy",
+      "slides": [5, 15, 28],
+      "note": "Puzzler format relies heavily on audience participation — cannot measure engagement level from transcript"
+    }
+  ]
+}

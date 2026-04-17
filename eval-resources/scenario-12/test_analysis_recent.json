@@ -1,0 +1,99 @@
+{
+  "talk_slug": "robocoders-judgment-day",
+  "conference": "DevNexus",
+  "talk_date": "2026-04-10",
+  "speaker_name": "Baruch Sadogursky",
+  "title": "Robocoders: Judgment Day",
+  "duration_minutes": 45,
+  "humor_beats": [
+    {
+      "id": "h1",
+      "type": "planned_joke",
+      "slide_num": 4,
+      "quote": "I asked ChatGPT to write this talk. It said no.",
+      "context": "Opening self-deprecating joke about AI writing talks"
+    },
+    {
+      "id": "h2",
+      "type": "meme_slide",
+      "slide_num": 12,
+      "description": "Drake meme: 'Writing tests' (rejected) vs 'Asking AI to write tests' (approved)",
+      "context": "Transition to AI-assisted testing section"
+    },
+    {
+      "id": "h3",
+      "type": "planned_joke",
+      "slide_num": 18,
+      "quote": "The AI suggested we delete the database. The intern agreed. Guess which one got fired.",
+      "context": "Production incident anecdote"
+    },
+    {
+      "id": "h4",
+      "type": "meme_slide",
+      "slide_num": 25,
+      "description": "Terminator 'I'll be back' meme with 'AI code review' caption",
+      "context": "Closing section callback to title"
+    },
+    {
+      "id": "h5",
+      "type": "spontaneous_candidate",
+      "slide_num": null,
+      "quote": "[gap in transcript — 8 seconds of silence followed by laughter]",
+      "context": "After slide 15 demo section, possible off-script moment"
+    }
+  ],
+  "audience_interactions": [
+    {
+      "id": "ai1",
+      "slide_num": 7,
+      "type": "show_of_hands",
+      "description": "Asked audience: 'Who has deployed AI-generated code to production?'"
+    },
+    {
+      "id": "ai2",
+      "slide_num": 20,
+      "type": "live_poll",
+      "description": "Real-time poll: 'Which AI tool do you use most?'"
+    },
+    {
+      "id": "ai3",
+      "slide_num": 30,
+      "type": "q_and_a",
+      "description": "Mid-talk Q&A pause after the case study section"
+    }
+  ],
+  "demo_sections": [
+    {
+      "id": "d1",
+      "slides": [14, 15, 16],
+      "description": "Live coding with AI pair programmer — building a REST endpoint",
+      "transcript_note": "Minimal dialogue during demo, mostly typing sounds"
+    },
+    {
+      "id": "d2",
+      "slides": [22, 23],
+      "description": "AI code review demo — showing automated PR feedback",
+      "transcript_note": "Speaker narrates but audio quality drops (possible mic distance)"
+    }
+  ],
+  "blind_spot_flags": [
+    {
+      "id": "bs1",
+      "type": "transcript_gap",
+      "slides": [14, 15, 16],
+      "note": "Demo section has minimal transcript — cannot assess audience engagement"
+    },
+    {
+      "id": "bs2",
+      "type": "possible_stage_movement",
+      "slides": [30, 31],
+      "note": "Audio level changes suggest speaker moved away from mic during Q&A"
+    },
+    {
+      "id": "bs3",
+      "type": "costume_prop_candidate",
+      "slides": [1, 2],
+      "note": "Title slide references 'Judgment Day' — possible theatrical opening element not visible in transcript"
+    }
+  ]
+}

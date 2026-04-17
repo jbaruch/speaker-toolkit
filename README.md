@@ -2,14 +2,17 @@
 
 A two-skill system for conference speakers: analyze your existing talks to extract your rhetoric patterns, then create new presentations that match your documented style.
 
-## What's New (0.14.0)
+## What's New (0.16.0)
 
-**QR code generation** — Phase 6 publishing now automates QR code generation and
-insertion into decks. The new `generate-qr.py` script matches the QR background
-color to the target slide, auto-selects foreground color for contrast (white on dark
-backgrounds, black on light), and supports URL shortening via bit.ly or rebrand.ly
-(with an indirection layer that keeps already-printed QR codes valid when the target
-URL changes). API keys live in `{vault}/secrets.json`.
+**Vault-clarification eval** — New `clarification-interactive-session` eval covers
+the full 5-step clarification workflow: rhetoric clarification, humor post-mortem
+with per-beat grading, blind spot probing, infrastructure config capture, and intent
+confirmation storage. Fixed eval scenarios 12 (humor debrief) and 13 (extraction
+diagnostics) — rewritten with deterministic test data instead of agent-generated inputs.
+
+**Test suite and CI** — 119 pytest tests across 15 files cover every script, running
+on every push and PR via GitHub Actions with ffmpeg and LibreOffice. Bug fix in
+`pptx-extraction.py` for a `_NoneColor` crash on slides with unset font colors.
 
 See [CHANGELOG.md](CHANGELOG.md) for full history.
 
@@ -274,12 +277,20 @@ speaker-toolkit-tile/
 +-- tile.json
 +-- README.md
 +-- CHANGELOG.md
++-- pyproject.toml                            # Dependencies + pytest config
++-- tests/                                    # 119 tests across 15 files
+|   +-- conftest.py                           # Script import helpers + PPTX fixtures
+|   +-- test_*.py                             # One test file per script
++-- .github/workflows/
+|   +-- tests.yml                             # pytest on push/PR (ffmpeg + LibreOffice)
+|   +-- publish-tile.yml                      # Tessl skill review + publish
 +-- skills/
     +-- vault-ingress/
     |   +-- SKILL.md                          # Main vault workflow (6 steps)
     |   +-- scripts/
     |   |   +-- pptx-extraction.py            # python-pptx visual extraction
     |   |   +-- video-slide-extraction.py     # Video-to-slides via ffmpeg + perceptual dedup
+    |   |   +-- vtt-cleanup.py                # WebVTT to plain text
     |   |   +-- batch-download-videos.sh      # Parallel video download for batch processing
     |   +-- references/
     |       +-- rhetoric-dimensions.md        # 14 analysis dimensions + pattern cross-refs
@@ -289,15 +300,20 @@ speaker-toolkit-tile/
     +-- presentation-creator/
         +-- SKILL.md                          # Main creator workflow (7 phases)
         +-- scripts/
+        |   +-- _pptx_repair.py               # Shared viewProps cleanup for PPTX integrity
         |   +-- generate-illustrations.py     # Gemini API illustration generator + model comparison
+        |   +-- generate-thumbnail.py         # YouTube thumbnail via Gemini composition
         |   +-- generate-qr.py                # QR code generation with bg-color matching
+        |   +-- extract-resources.py          # Resource link extraction from outlines
+        |   +-- guardrail-check.py            # Outline guardrail validation
         |   +-- strip-template.py             # Strip demo slides from template
         |   +-- inject-speaker-notes.py       # Batch inject speaker notes from JSON
+        |   +-- insert-placeholder-slides.py  # Yellow placeholder slide insertion
         |   +-- export-pdf.py                 # Export deck to PDF (PowerPoint or LibreOffice)
         |   +-- delete-slides.py              # Delete slides by index
         |   +-- reorder-slides.py             # Move slide from one position to another
         +-- references/
-            +-- phase0-intake.md through phase6-publishing.md  # Phase detail docs
+            +-- phase0-intake.md through phase7-post-event.md  # Phase detail docs
             +-- patterns/                     # Presentation Patterns taxonomy (88 entries)
                 +-- _index.md                 # Master index, phase mapping, dimension lookup
                 +-- prepare/                  # 18 patterns + 3 antipatterns

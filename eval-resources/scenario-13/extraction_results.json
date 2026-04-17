@@ -1,0 +1,120 @@
+[
+  {
+    "id": "case_clean",
+    "youtube_id": "abc123clean",
+    "expected_speaker": "Baruch Sadogursky",
+    "expected_language": "en",
+    "extraction": {
+      "total_frames_extracted": 50,
+      "unique_slides_count": 45,
+      "hash_threshold_used": 8,
+      "slide_region_detected": false,
+      "fps_used": 0.5
+    },
+    "transcript": {
+      "source": "youtube_auto_captions",
+      "language_detected": "en",
+      "word_count": 5200,
+      "duration_covered_pct": 95
+    },
+    "detected_speaker_name": "Baruch Sadogursky"
+  },
+  {
+    "id": "case_wide_angle",
+    "youtube_id": "def456wide",
+    "expected_speaker": "Baruch Sadogursky",
+    "expected_language": "en",
+    "extraction": {
+      "total_frames_extracted": 1200,
+      "unique_slides_count": 900,
+      "hash_threshold_used": 8,
+      "slide_region_detected": true,
+      "slide_region": [0.15, 0.05, 0.85, 0.65],
+      "fps_used": 0.5
+    },
+    "transcript": {
+      "source": "youtube_auto_captions",
+      "language_detected": "en",
+      "word_count": 4800,
+      "duration_covered_pct": 88
+    },
+    "detected_speaker_name": "Baruch Sadogursky"
+  },
+  {
+    "id": "case_no_transcript",
+    "youtube_id": "ghi789notx",
+    "expected_speaker": "Baruch Sadogursky",
+    "expected_language": "en",
+    "extraction": {
+      "total_frames_extracted": 60,
+      "unique_slides_count": 52,
+      "hash_threshold_used": 8,
+      "slide_region_detected": false,
+      "fps_used": 0.5
+    },
+    "transcript": null,
+    "detected_speaker_name": "Baruch Sadogursky"
+  },
+  {
+    "id": "case_wrong_language",
+    "youtube_id": "jkl012lang",
+    "expected_speaker": "Baruch Sadogursky",
+    "expected_language": "en",
+    "extraction": {
+      "total_frames_extracted": 55,
+      "unique_slides_count": 48,
+      "hash_threshold_used": 8,
+      "slide_region_detected": false,
+      "fps_used": 0.5
+    },
+    "transcript": {
+      "source": "youtube_auto_captions",
+      "language_detected": "ru",
+      "word_count": 4100,
+      "duration_covered_pct": 92
+    },
+    "detected_speaker_name": "Барух Садогурский"
+  },
+  {
+    "id": "case_wrong_speaker",
+    "youtube_id": "mno345spkr",
+    "expected_speaker": "Baruch Sadogursky",
+    "expected_language": "en",
+    "extraction": {
+      "total_frames_extracted": 45,
+      "unique_slides_count": 40,
+      "hash_threshold_used": 8,
+      "slide_region_detected": false,
+      "fps_used": 0.5
+    },
+    "transcript": {
+      "source": "youtube_auto_captions",
+      "language_detected": "en",
+      "word_count": 3800,
+      "duration_covered_pct": 90
+    },
+    "detected_speaker_name": "James Gosling"
+  },
+  {
+    "id": "case_whisper_hallucination",
+    "youtube_id": "pqr678hall",
+    "expected_speaker": "Baruch Sadogursky",
+    "expected_language": "en",
+    "extraction": {
+      "total_frames_extracted": 58,
+      "unique_slides_count": 50,
+      "hash_threshold_used": 8,
+      "slide_region_detected": false,
+      "fps_used": 0.5
+    },
+    "transcript": {
+      "source": "whisper_transcription",
+      "language_detected": "en",
+      "word_count": 12500,
+      "duration_covered_pct": 100,
+      "repetition_ratio": 0.45,
+      "longest_repeat_sequence": "Thank you for watching. Thank you for watching. Thank you for watching. Thank you for watching."
+    },
+    "detected_speaker_name": "Baruch Sadogursky"
+  }
+]

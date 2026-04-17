@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.16.0
+
+**Vault-clarification eval + test suite** — First dedicated eval for the interactive
+clarification session, fixed volatile eval scenarios, and full pytest coverage for
+every script with CI.
+
+### New Eval
+
+- **`clarification-interactive-session`** — first eval testing the vault-clarification
+  skill's interactive session: rhetoric clarification (one question at a time), humor
+  post-mortem (per-beat grading), blind spot probing, infrastructure config capture,
+  intent confirmation storage, and session completion marking. Fixed test data with 1
+  analyzed talk, empty config, 10-criterion weighted checklist
+
+### Eval Fixes
+
+- **Scenario 12** (humor post-mortem) — rewritten from "write a Python debrief tool" to
+  "process these two fixed analysis files and produce structured debrief outputs." Fixed
+  test data in `eval-resources/scenario-12/` (recent + old talk analyses)
+- **Scenario 13** (extraction diagnostics) — rewritten from "write a diagnostics tool" to
+  "analyze these 6 fixed extraction results and produce a report." Fixed test data in
+  `eval-resources/scenario-13/` (6 concrete recording cases)
+
+### Bug Fix
+
+- **`pptx-extraction.py`** — fixed `AttributeError` crash on `_NoneColor` when extracting
+  font colors from slides with unset color properties
+
+### Tests & CI
+
+- **119 tests across 15 test files** covering all Python scripts and the bash downloader
+- **GitHub Actions workflow** (`tests.yml`) — runs on push to main + PRs, Python 3.12,
+  installs ffmpeg and LibreOffice for full integration coverage
+- **`pyproject.toml`** — declares all dependencies (python-pptx, lxml, qrcode, Pillow,
+  imagehash, numpy) with `[test]` optional group for pytest
+
+### Script Refactors
+
+- **`strip-template.py`** — wrapped in `strip_slides()` + `main()` guard for importability
+- **`delete-slides.py`** — wrapped in `delete_slides()` + `main()` guard
+- **`reorder-slides.py`** — wrapped in `reorder_slide()` + `main()` guard (now raises
+  `IndexError` on out-of-range instead of `sys.exit`)
+- **`export-pdf.py`** — wrapped in `main()` guard, functions now take parameters
+- **`_pptx_repair.py`** — extracted shared `clean_viewprops()` from strip-template and
+  delete-slides into a single module, eliminating code duplication
+
 ## 0.14.0
 
 **QR code generation** — Automated QR code generation and insertion into decks during

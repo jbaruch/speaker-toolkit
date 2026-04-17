@@ -82,7 +82,10 @@ def extract_shape_info(shape):
                 if run.font:
                     info["font_name"] = run.font.name
                     info["font_size"] = run.font.size.pt if run.font.size else None
-                    info["font_color"] = rgb_to_hex(run.font.color.rgb) if run.font.color and run.font.color.rgb else None
+                    try:
+                        info["font_color"] = rgb_to_hex(run.font.color.rgb) if run.font.color else None
+                    except AttributeError:
+                        info["font_color"] = None
                     info["bold"] = run.font.bold
                     info["italic"] = run.font.italic
                     break

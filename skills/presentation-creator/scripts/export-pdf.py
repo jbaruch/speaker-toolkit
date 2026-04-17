@@ -18,18 +18,8 @@ import shutil
 import subprocess
 import sys
 
-if len(sys.argv) < 2:
-    print(f"Usage: {sys.argv[0]} <deck.pptx> [<output.pdf>]", file=sys.stderr)
-    sys.exit(1)
 
-pptx_path = os.path.abspath(sys.argv[1])
-if len(sys.argv) >= 3:
-    pdf_path = os.path.abspath(sys.argv[2])
-else:
-    pdf_path = os.path.splitext(pptx_path)[0] + ".pdf"
-
-
-def try_powerpoint_applescript():
+def try_powerpoint_applescript(pptx_path, pdf_path):
     """Export via Microsoft PowerPoint AppleScript (macOS only)."""
     script = f'''
 tell application "Microsoft PowerPoint"
@@ -46,7 +36,7 @@ end tell
     return result.returncode == 0
 
 
-def try_libreoffice():
+def try_libreoffice(pptx_path, pdf_path):
     """Export via LibreOffice CLI."""
     output_dir = os.path.dirname(pdf_path) or "."
     result = subprocess.run(
@@ -62,17 +52,32 @@ def try_libreoffice():
     return result.returncode == 0
 
 
-# Try PowerPoint first (macOS), then LibreOffice
-if sys.platform == "darwin" and shutil.which("osascript"):
-    if try_powerpoint_applescript():
-        print(f"Exported via PowerPoint: {pdf_path}")
-        sys.exit(0)
-    print("PowerPoint export failed, trying LibreOffice...", file=sys.stderr)
+def main():
+    if len(sys.argv) < 2:
+        print(f"Usage: {sys.argv[0]} <deck.pptx> [<output.pdf>]", file=sys.stderr)
+        sys.exit(1)
 
-if shutil.which("libreoffice"):
-    if try_libreoffice():
-        print(f"Exported via LibreOffice: {pdf_path}")
-        sys.exit(0)
+    pptx_path = os.path.abspath(sys.argv[1])
+    if len(sys.argv) >= 3:
+        pdf_path = os.path.abspath(sys.argv[2])
+    else:
+        pdf_path = os.path.splitext(pptx_path)[0] + ".pdf"
 
-print("ERROR: Neither PowerPoint nor LibreOffice available for PDF export", file=sys.stderr)
-sys.exit(1)
+    # Try PowerPoint first (macOS), then LibreOffice
+    if sys.platform == "darwin" and shutil.which("osascript"):
+        if try_powerpoint_applescript(pptx_path, pdf_path):
+            print(f"Exported via PowerPoint: {pdf_path}")
+            sys.exit(0)
+        print("PowerPoint export failed, trying LibreOffice...", file=sys.stderr)
+
+    if shutil.which("libreoffice"):
+        if try_libreoffice(pptx_path, pdf_path):
+            print(f"Exported via LibreOffice: {pdf_path}")
+            sys.exit(0)
+
+    print("ERROR: Neither PowerPoint nor LibreOffice available for PDF export", file=sys.stderr)
+    sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
