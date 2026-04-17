@@ -909,6 +909,20 @@
       "relevant_when": "Phase 7 Step 7.2 adding video to shownotes",
       "why_given": "new knowledge",
       "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Use insert-placeholder-slides.py to insert visually loud yellow placeholder slides at specified positions when adapting existing decks for new venues.",
+      "original_snippets": "Insert bright-yellow placeholder slides into a PowerPoint deck at specified positions. Placeholders are visually loud (yellow background, bold [PLACEHOLDER] title) so they stand out in thumbnail view when editing large decks.",
+      "relevant_when": "Adapting an existing talk by adding new slide positions to an existing deck",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "insert-placeholder-slides.py uses 1-indexed positions (final slide number after all insertions) and supports JSON batch mode or --at inline mode.",
+      "original_snippets": "Positions are 1-indexed (final slide number after all insertions). ... insert-placeholder-slides.py <deck.pptx> <positions.json> ... insert-placeholder-slides.py <deck.pptx> --at 5 --title \"New Slide\"",
+      "relevant_when": "Specifying positions for placeholder slide insertion",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
     }
   ]
 }

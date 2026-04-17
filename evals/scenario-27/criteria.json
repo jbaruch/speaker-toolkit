@@ -1,0 +1,56 @@
+{
+  "context": "Tests whether the agent uses insert-placeholder-slides.py to insert visually loud placeholder slides at specified positions in an existing deck, preserving original slide order and producing the correct final slide count.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Output deck exists and opens",
+      "description": "adapted-deck.pptx exists in the working directory and can be opened with python-pptx without errors",
+      "max_score": 5
+    },
+    {
+      "name": "Correct total slide count",
+      "description": "The output deck has exactly 9 slides (6 original + 3 placeholders)",
+      "max_score": 10
+    },
+    {
+      "name": "Placeholder at position 3",
+      "description": "Slide 3 (0-indexed: 2) contains text with '[PLACEHOLDER]' and 'Cloud Cost Analysis'. It is between the original Introduction and Problem Statement slides",
+      "max_score": 10
+    },
+    {
+      "name": "Placeholder at position 5",
+      "description": "Slide 5 (0-indexed: 4) contains text with '[PLACEHOLDER]' and 'Migration Strategy'. It is between the original Current Architecture and Performance Results slides (accounting for earlier insertions)",
+      "max_score": 10
+    },
+    {
+      "name": "Placeholder at position 8",
+      "description": "Slide 8 (0-indexed: 7) contains text with '[PLACEHOLDER]' and 'Q&A Prep'. It is near the end of the deck, after the original Performance Results slide",
+      "max_score": 10
+    },
+    {
+      "name": "Yellow background on placeholders",
+      "description": "The placeholder slides have a visually distinct background — a yellow or bright-colored rectangle shape that makes them stand out in thumbnail view. Not the same as the original slides' appearance",
+      "max_score": 10
+    },
+    {
+      "name": "Original slides preserved in order",
+      "description": "The 6 original slides (Title, Introduction, Problem Statement, Current Architecture, Performance Results, Conclusion) are all present and in their original relative order, interleaved with the new placeholders",
+      "max_score": 15
+    },
+    {
+      "name": "Skill script used",
+      "description": "The adaptation-log.md references insert-placeholder-slides.py as the tool used. The agent did not write its own slide insertion code from scratch using raw python-pptx calls",
+      "max_score": 15
+    },
+    {
+      "name": "Subtitles present on placeholders",
+      "description": "The placeholder slides include subtitle text describing what the slide needs to become (e.g., 'AWS vs GCP pricing comparison', 'Step-by-step migration path', 'Anticipated questions')",
+      "max_score": 10
+    },
+    {
+      "name": "Non-destructive output",
+      "description": "The output deck is saved as adapted-deck.pptx (not overwriting the original input base-deck.pptx). The --output flag or a copy was used to preserve the original",
+      "max_score": 5
+    }
+  ]
+}
