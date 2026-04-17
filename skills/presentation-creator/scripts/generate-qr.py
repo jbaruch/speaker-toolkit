@@ -546,6 +546,16 @@ def _remove_existing_qr(slide, expected_left, expected_top, expected_width, tole
 
     for shape in to_remove:
         sp = shape._element
+        # Clean up image relationship to avoid orphaned refs
+        blip = sp.find('.//{http://schemas.openxmlformats.org/drawingml/2006/main}blip')
+        if blip is not None:
+            embed_rId = blip.get(
+                '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed')
+            if embed_rId:
+                try:
+                    slide.part.drop_rel(embed_rId)
+                except KeyError:
+                    pass
         sp.getparent().remove(sp)
 
     return len(to_remove)
