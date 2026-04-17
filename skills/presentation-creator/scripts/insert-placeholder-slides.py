@@ -8,6 +8,7 @@ subtitle with context about what the slide needs to become.
 Usage:
     insert-placeholder-slides.py <deck.pptx> <positions.json>
     insert-placeholder-slides.py <deck.pptx> --at 5 --title "New Slide" --subtitle "Description"
+    insert-placeholder-slides.py <deck.pptx> <positions.json> --output adapted-deck.pptx
 
 The JSON file format (multiple slides):
     [
@@ -16,12 +17,10 @@ The JSON file format (multiple slides):
     ]
 
 Positions are 1-indexed (final slide number after all insertions). Slides are inserted
-in ascending position order so earlier inserts don't shift later targets.
+from highest position to lowest so earlier inserts don't shift later targets.
 
-Examples:
-    insert-placeholder-slides.py deck.pptx placeholders.json
-    insert-placeholder-slides.py deck.pptx --at 5 --title "New Opening" --subtitle "Hook for AI audience"
-    insert-placeholder-slides.py deck.pptx --at 5 --at 16 --title "Slide A" "Slide B"
+Requires:
+    - python-pptx  (pip install python-pptx)
 """
 
 import argparse
@@ -46,7 +45,8 @@ def add_placeholder_slide(prs, title, subtitle=""):
             blank_layout = layout
             break
     if blank_layout is None:
-        blank_layout = prs.slide_layouts[len(prs.slide_layouts) - 1]
+        print("  WARNING: No 'Blank' layout found, using last layout", file=sys.stderr)
+        blank_layout = prs.slide_layouts[-1]
 
     slide = prs.slides.add_slide(blank_layout)
     sw, sh = prs.slide_width, prs.slide_height
@@ -94,15 +94,6 @@ def move_slide(prs, old_index, new_index):
     xml_slides.insert(new_index, slides[old_index])
 
 
-def find_slide_by_title(prs, title_fragment):
-    """Find slide index by searching for title text."""
-    for idx, slide in enumerate(prs.slides):
-        for shape in slide.shapes:
-            if shape.has_text_frame and title_fragment in shape.text_frame.text:
-                return idx
-    return None
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="Insert yellow placeholder slides into a PowerPoint deck."
@@ -112,6 +103,7 @@ def main():
     parser.add_argument("--at", type=int, action="append", help="Position (1-indexed, repeatable)")
     parser.add_argument("--title", nargs="*", help="Title(s) for --at mode")
     parser.add_argument("--subtitle", nargs="*", help="Subtitle(s) for --at mode")
+    parser.add_argument("--output", "-o", help="Output path (default: overwrite input)")
     args = parser.parse_args()
 
     if args.json_file:
@@ -120,10 +112,14 @@ def main():
     elif args.at:
         titles = args.title or ["New Slide"] * len(args.at)
         subtitles = args.subtitle or [""] * len(args.at)
-        while len(titles) < len(args.at):
-            titles.append(titles[-1])
-        while len(subtitles) < len(args.at):
-            subtitles.append("")
+        if args.title and len(args.title) != len(args.at):
+            print(f"ERROR: {len(args.at)} positions but {len(args.title)} titles",
+                  file=sys.stderr)
+            sys.exit(1)
+        if args.subtitle and len(args.subtitle) != len(args.at):
+            print(f"ERROR: {len(args.at)} positions but {len(args.subtitle)} subtitles",
+                  file=sys.stderr)
+            sys.exit(1)
         placeholders = [
             {"position": pos, "title": t, "subtitle": s}
             for pos, t, s in zip(args.at, titles, subtitles)
@@ -134,28 +130,31 @@ def main():
 
     prs = Presentation(args.deck)
     original_count = len(prs.slides)
+    total_after = original_count + len(placeholders)
     print(f"Opened {args.deck}: {original_count} slides")
 
-    appended = []
-    for i, ph in enumerate(placeholders):
+    # Validate positions
+    for ph in placeholders:
+        pos = ph["position"]
+        if pos < 1 or pos > total_after:
+            print(f"ERROR: position {pos} out of range (1..{total_after})", file=sys.stderr)
+            sys.exit(1)
+
+    # Insert from highest position to lowest so earlier inserts don't shift later targets.
+    # Each placeholder is appended to the end, then immediately moved to its target position.
+    for ph in sorted(placeholders, key=lambda x: x["position"], reverse=True):
         title = ph["title"]
         subtitle = ph.get("subtitle", "")
         position = ph["position"]
+
         add_placeholder_slide(prs, title, subtitle)
-        appended.append((position, title, original_count + i))
-        print(f"  Added [PLACEHOLDER] {title}")
+        last_idx = len(prs.slides) - 1
+        move_slide(prs, last_idx, position - 1)
+        print(f"  Inserted [PLACEHOLDER] {title} at position {position}")
 
-    for target_pos, title, _ in sorted(appended, key=lambda x: x[0]):
-        current = find_slide_by_title(prs, f"[PLACEHOLDER] {title}")
-        if current is None:
-            print(f"  ! Could not locate [PLACEHOLDER] {title}", file=sys.stderr)
-            continue
-        new_idx = target_pos - 1
-        move_slide(prs, current, new_idx)
-        print(f"  Moved [PLACEHOLDER] {title} -> position {target_pos}")
-
-    prs.save(args.deck)
-    print(f"Saved {args.deck}: {len(prs.slides)} slides")
+    output_path = args.output or args.deck
+    prs.save(output_path)
+    print(f"Saved {output_path}: {len(prs.slides)} slides")
 
 
 if __name__ == "__main__":
