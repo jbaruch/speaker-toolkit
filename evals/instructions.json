@@ -769,6 +769,146 @@
       "relevant_when": "Running generate-illustrations.py or any Gemini API operation",
       "why_given": "new knowledge",
       "skill": "presentation-creator"
+    },
+    {
+      "instruction": "ALWAYS use extract-resources.py for initial resource extraction from the outline. Do not manually scan the outline first.",
+      "original_snippets": "ALWAYS use `extract-resources.py` for initial resource extraction. Do not manually scan the outline first — the script handles URL detection, repo matching, book patterns, RFC citations, and tool mentions consistently.",
+      "relevant_when": "Phase 6 Step 6.0 resource gathering, preparing resources for shownotes",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "The speaker MUST review extracted resources before publishing. The extracted list is candidates, not final. Never auto-publish without explicit speaker approval.",
+      "original_snippets": "The extracted list is **candidates**, not the final resource list. The speaker MUST review, approve, edit, or remove items before any publishing step uses them. Never auto-publish extracted resources without explicit speaker approval.",
+      "relevant_when": "After running extract-resources.py, before shownotes publishing",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Coda section resources get priority — sort them higher in the review list and flag as 'from Coda section'.",
+      "original_snippets": "Resources from Coda slides (closing/further-reading sections) are the most intentional — the speaker deliberately chose to surface them. Sort these higher in the review list and flag them as 'from Coda section.'",
+      "relevant_when": "Presenting extracted resources for speaker review",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "resources.json lives in the talk working directory alongside presentation-outline.md, not vault-level.",
+      "original_snippets": "`resources.json` lives in the talk working directory alongside `presentation-outline.md` and `presentation-spec.md`. It is talk-specific, not vault-level.",
+      "relevant_when": "Saving or reading resources.json",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "When shownotes are enabled, Step 6.1 reads resources.json for the resource links section. Only approved:true items are included. Do not re-scan the outline.",
+      "original_snippets": "If `resources.json` exists and has `approved: true` items, include a 'Resources' section with those links. Read from `resources.json` in the talk working directory (produced by Step 6.0) — do not re-scan the outline.",
+      "relevant_when": "Phase 6 Step 6.1 shownotes generation",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Phase 6 Step 6.0 (Resources) must happen before Step 6.1 (Shownotes). Resources extraction is step 0 in the publishing workflow.",
+      "original_snippets": "0. **Resources** — extract and curate resource list from outline (`extract-resources.py`)\n1. **Export** — ...\n2. **Shownotes** — if `shownotes_publishing.enabled`, use curated resources from Step 6.0",
+      "relevant_when": "Phase 6 publishing workflow execution",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "ALWAYS use generate-thumbnail.py for thumbnail generation. No hand-rolled Gemini calls or PIL composition.",
+      "original_snippets": "ALWAYS use `generate-thumbnail.py` — no hand-rolled Gemini calls or PIL composition. The script encapsulates the researched prompt strategy, face preservation, and YouTube spec compliance.",
+      "relevant_when": "Phase 7 Step 7.1 thumbnail generation",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "YouTube thumbnail specs are non-negotiable: 1280x720 pixels, 16:9, <2MB, PNG/JPG. Text must be readable at 160x90 pixels.",
+      "original_snippets": "1280x720 pixels, 16:9, <2MB, PNG or JPG. Text must be readable at 160x90 pixels (YouTube search result size). The script validates dimensions and file size automatically.",
+      "relevant_when": "Generating or validating YouTube thumbnails",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Slide selection for thumbnails is collaborative: agent suggests 3-5 candidates ranked by visual impact, speaker picks. Never auto-select.",
+      "original_snippets": "The agent suggests 3-5 candidate slides ranked by visual impact ... **Never auto-select** — the speaker picks",
+      "relevant_when": "Phase 7 Step 7.1 slide selection for thumbnail",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Thumbnail slide ranking: Illustrations > bold claims > diagrams > text slides. Avoid: bio slides, shownotes URL slides, bullet-heavy slides.",
+      "original_snippets": "**Illustrations** — highest impact ... **Bold claims** ... **Key diagrams** ... Avoid: bio slides, shownotes URL slides, bullet-heavy slides, generic titles.",
+      "relevant_when": "Ranking slide candidates for thumbnail generation",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Speaker photo for thumbnails is required and must be real (never AI-generated). Resolution: profile speaker_photo_path first, then ask user.",
+      "original_snippets": "Real photo only — never AI-generated. Thumbnails with faces get 35-50% higher click-through rates. ... Resolution order: 1. `publishing_process.thumbnail.speaker_photo_path` from profile 2. Ask the user",
+      "relevant_when": "Phase 7 Step 7.1 gathering thumbnail inputs",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Thumbnail title text must be 5 words maximum — a hook, not the full talk title. Speaker confirms before generation.",
+      "original_snippets": "This is a HOOK, not the full talk title. Bold sans-serif, thick outline/shadow. ... The speaker confirms the text before generation.",
+      "relevant_when": "Proposing thumbnail title text",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "The Gemini prompt for thumbnails MUST include face preservation language: 'Maintain exact facial features from reference' and 'Do not stylize, beautify, or idealize.'",
+      "original_snippets": "The Gemini prompt MUST include: 'Maintain exact facial features, bone structure, skin texture, and natural appearance from the reference' and 'Do not stylize, beautify, alter, or idealize the face'",
+      "relevant_when": "Constructing the thumbnail generation prompt",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "When the speaker requests thumbnail changes, iterate on specific prompt components (expression, position, colors, text) rather than regenerating from scratch.",
+      "original_snippets": "When the speaker requests changes, modify specific prompt components (expression, position, colors, text) rather than regenerating from scratch. Gemini's conversational refinement produces better results than cold restarts.",
+      "relevant_when": "Revising a thumbnail after speaker feedback",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Phase 7 is triggered separately — days or weeks after delivery. Not part of linear Phase 0-6 flow.",
+      "original_snippets": "Triggered separately — days or weeks after delivery. Not part of the linear Phase 0-6 flow.",
+      "relevant_when": "When the user asks for post-event tasks (thumbnail, video to shownotes)",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Phase 7 late entry requires the same 4 files as Phase 6 plus a YouTube video URL from the speaker.",
+      "original_snippets": "**Phase 7 late entry** requires the same 4 files plus a YouTube video URL from the speaker.",
+      "relevant_when": "Starting Phase 7 post-event workflow",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "If shownotes don't exist and Step 7.2 (Video to Shownotes) is requested, STOP and ask. Either run Phase 6 Step 6.1 first or get the URL manually.",
+      "original_snippets": "If shownotes don't exist and Step 7.2 is requested, STOP and ask — either run Phase 6 Step 6.1 first or get the shownotes URL manually.",
+      "relevant_when": "Phase 7 Step 7.2 when shownotes are missing",
+      "why_given": "particular preference",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Slide image resolution chain for thumbnails: existing illustration from illustrations/ dir (preferred) then PPTX extraction via generate-thumbnail.py --extract-slide then ask user for screenshot.",
+      "original_snippets": "**Existing illustration** (preferred) — check `illustrations/` directory ... **PPTX extraction** — use the helper mode: python3 generate-thumbnail.py --extract-slide deck.pptx 15 ... **Ask user** — if extraction fails",
+      "relevant_when": "Obtaining the slide image for thumbnail generation",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Apply speaker thumbnail preferences from publishing_process.thumbnail: style_preference to --style, title_position to --title-position, brand_colors to --brand-colors.",
+      "original_snippets": "Apply speaker preferences from `publishing_process.thumbnail`: `style_preference` \u2192 `--style`, `title_position` \u2192 `--title-position`, `brand_colors` \u2192 `--brand-colors`",
+      "relevant_when": "Constructing the generate-thumbnail.py command",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
+    },
+    {
+      "instruction": "Step 7.2 reads publishing_process.video_publishing from profile for embed_method (youtube_embed, link_only, both) and shownotes_video_section.",
+      "original_snippets": "Read `publishing_process.video_publishing` from speaker profile: `enabled`, `embed_method` — `youtube_embed`, `link_only`, or `both`, `shownotes_video_section`",
+      "relevant_when": "Phase 7 Step 7.2 adding video to shownotes",
+      "why_given": "new knowledge",
+      "skill": "presentation-creator"
     }
   ]
 }

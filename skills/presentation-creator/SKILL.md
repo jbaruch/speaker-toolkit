@@ -37,6 +37,7 @@ Then load local references per phase:
 [references/phase4-guardrails.md](references/phase4-guardrails.md),
 [references/phase5-slides.md](references/phase5-slides.md),
 [references/phase6-publishing.md](references/phase6-publishing.md),
+[references/phase7-post-event.md](references/phase7-post-event.md),
 [references/patterns/_index.md](references/patterns/_index.md).
 
 **Checks:** Warn if `profile.generated_date < summary."Last updated"` (stale profile).
@@ -55,6 +56,7 @@ thresholds (1.5 slides/min, 45% Act 1 cap), ask for template/publishing interact
 | 4: Revision & Guardrails | Iterate on feedback, run guardrail checks | Author declares outline done |
 | 5: Slide Generation | Build .pptx from template, iterate with author | Author declares slides done |
 | 6: Publishing | Export, shownotes, QR per speaker's workflow | Published and ready |
+| 7: Post-Event | YouTube thumbnail, video to shownotes | Thumbnail approved, video linked |
 
 Do not skip phases. Do not write content before Phase 3. Phase 2 is joint, not autonomous.
 
@@ -72,6 +74,10 @@ action:
 If any file is missing, STOP and ask. Do not guess values that should come from files.
 Never hand-write code when a script exists — if the script isn't working, diagnose
 why (wrong args, missing config, missing secrets) and fix the inputs.
+
+**Phase 7 late entry** requires the same 4 files plus a YouTube video URL from the
+speaker. If shownotes don't exist and Step 7.2 is requested, STOP and ask — either
+run Phase 6 Step 6.1 first or get the shownotes URL manually.
 
 ## Phase 0: Intake & Context Loading
 
@@ -257,14 +263,28 @@ Read `publishing_process` from `speaker-profile.json`. Each speaker's workflow d
 If `publishing_process` is missing or empty, ask the author interactively.
 
 Execute the steps from the profile:
+0. **Resources** — extract and curate resource list from outline (`extract-resources.py`)
 1. **Export** — run `export_method` / `export_script` (see [references/phase5-slides.md](references/phase5-slides.md))
-2. **Shownotes** — if `shownotes_publishing.enabled`, follow the described method
+2. **Shownotes** — if `shownotes_publishing.enabled`, use curated resources from Step 6.0
 3. **QR Code** — if `qr_code.enabled`, generate and insert per profile
 4. **Additional steps** — execute each `additional_steps[]` entry
 5. **Go-live checklist** — surface unobservable patterns from [references/patterns/_index.md](references/patterns/_index.md)
    as a delivery preparation reminder (see [references/phase6-publishing.md](references/phase6-publishing.md) Step 6.5)
 
 Gate: Author confirms published and ready to deliver.
+
+## Phase 7: Post-Event
+
+Triggered separately — days or weeks after delivery. Not part of the linear
+Phase 0-6 flow. The talk has been given and recorded.
+
+1. **YouTube Thumbnail** — select a high-impact slide, compose with speaker photo
+   and hook title via Gemini (`generate-thumbnail.py`), iterate with speaker
+2. **Video to Shownotes** — add video embed/link to existing shownotes page
+
+Read [references/phase7-post-event.md](references/phase7-post-event.md) for
+the full workflow including pre-flight checklist, slide selection criteria,
+prompt strategy, and tracking database updates.
 
 ---
 

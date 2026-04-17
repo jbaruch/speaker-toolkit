@@ -298,6 +298,20 @@ creation at runtime.
       "bg_color_match": true,
       "preferred_short_path": "arcofai | null"
     },
+    "thumbnail": {
+      "enabled": true,
+      "speaker_photo_path": "/path/to/headshot.jpg",
+      "style_preference": "slide_dominant|split_panel|overlay",
+      "title_position": "top|bottom|overlay",
+      "brand_colors": ["#hex1", "#hex2"],
+      "notes": "speaker-specific thumbnail preferences"
+    },
+    "video_publishing": {
+      "enabled": true,
+      "embed_method": "youtube_embed|link_only|both",
+      "shownotes_video_section": "where/how video goes in shownotes",
+      "video_description_template": "template with {conference} {year} {shownotes_url} placeholders"
+    },
     "additional_steps": [
       {
         "name": "step name",
@@ -332,4 +346,4 @@ automatically picks up changes when the profile is regenerated.
 | `badges` | Informational | Fun speaker achievements mined from vault data |
 | `infrastructure.template_layouts` | Phase 5 (slide generation) | Layout map and selection logic |
 | `infrastructure.font_pair` | Phase 5 (slide generation) | Font usage rules |
-| `publishing_process` | Phase 6 (publishing) | Export, shownotes, QR code, distribution steps |
+| `publishing_process` | Phase 6 (publishing), Phase 7 (post-event) | Export, shownotes, QR code, distribution steps, thumbnail prefs, video publishing |

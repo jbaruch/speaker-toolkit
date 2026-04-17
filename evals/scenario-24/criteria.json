@@ -1,0 +1,61 @@
+{
+  "context": "Tests the Phase 7 thumbnail workflow: candidate slide selection ranked by visual impact (illustrations first), exclusion of bio/shownotes/bullet slides, title hook of 5 words or fewer, generate-thumbnail.py usage with profile-derived arguments, speaker photo from profile path, and face preservation mention.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "3-5 slide candidates suggested",
+      "description": "The plan suggests between 3 and 5 candidate slides for the thumbnail, not more and not fewer. The agent does not auto-select a single slide",
+      "max_score": 10
+    },
+    {
+      "name": "Illustration slides ranked highest",
+      "description": "Slides with illustrations (slides 1, 10, 25) are ranked higher than text-only or diagram slides. At least 2 of the top 3 candidates are illustration slides",
+      "max_score": 10
+    },
+    {
+      "name": "Bio slide excluded",
+      "description": "Slide 4 (About Me / bio slide) is NOT among the recommended candidates. If mentioned, it is explicitly excluded with reasoning",
+      "max_score": 10
+    },
+    {
+      "name": "Shownotes slide excluded",
+      "description": "Slide 3 (Shownotes / QR code slide) is NOT among the recommended candidates. If mentioned, it is explicitly excluded with reasoning",
+      "max_score": 10
+    },
+    {
+      "name": "Title hook is 5 words or fewer",
+      "description": "At least one proposed title option is 5 words or fewer. The proposals are short hooks (e.g., 'JUDGMENT DAY'), not the full talk title 'Robocoders: Judgment Day'",
+      "max_score": 10
+    },
+    {
+      "name": "generate-thumbnail.py referenced",
+      "description": "The plan uses generate-thumbnail.py as the generation tool. The agent does not propose hand-rolling Gemini calls or PIL composition directly",
+      "max_score": 10
+    },
+    {
+      "name": "Profile style preference applied",
+      "description": "The generate-thumbnail.py command includes --style overlay (from profile thumbnail.style_preference), not the default slide_dominant",
+      "max_score": 8
+    },
+    {
+      "name": "Profile title position applied",
+      "description": "The generate-thumbnail.py command includes --title-position bottom (from profile thumbnail.title_position), not the default top",
+      "max_score": 7
+    },
+    {
+      "name": "Profile brand colors applied",
+      "description": "The generate-thumbnail.py command includes --brand-colors with the profile's colors (#5B2C6F and/or #C0392B)",
+      "max_score": 5
+    },
+    {
+      "name": "Speaker photo from profile path",
+      "description": "The --speaker-photo argument uses the path from profile thumbnail.speaker_photo_path (/Users/jbaruch/photos/devnexus-headshot.jpg), not a generic placeholder",
+      "max_score": 10
+    },
+    {
+      "name": "Face preservation mentioned",
+      "description": "The plan mentions face preservation — that the generation process maintains the speaker's actual facial features and does not stylize or alter the face",
+      "max_score": 10
+    }
+  ]
+}

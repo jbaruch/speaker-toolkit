@@ -1,0 +1,1 @@
+Thumbnail slide image resolution chain and iteration-not-restart rule

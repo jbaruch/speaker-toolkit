@@ -1,0 +1,1 @@
+Phase 7 late-entry guard: missing shownotes detected and handled before video step

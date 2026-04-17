@@ -20,13 +20,46 @@ in the talk directory (saved in Phase 1). If the section is missing or empty,
 fall back to asking the author interactively and document their answers for
 next time.
 
+### Step 6.0: Resources Gathering
+
+Extract and curate resource links from the finalized outline before any
+publishing step. Resources scattered across speaker notes, visual descriptions,
+and Coda slides are easy to miss — this step catches them systematically.
+
+1. Run the extraction script against the finalized outline:
+   ```bash
+   python3 skills/presentation-creator/scripts/extract-resources.py \
+     presentation-outline.md --spec presentation-spec.md
+   ```
+
+2. The script produces `resources.json` in the talk working directory with
+   categorized entries: URLs, repos, books/papers, RFCs, and tool mentions.
+   Each entry includes slide references and context.
+
+3. Present the extracted resources to the speaker as a formatted review list,
+   grouped by type. Coda section items are flagged and listed first — the
+   speaker deliberately chose to surface them.
+
+4. The speaker reviews, approves, removes false positives, adds missing items,
+   and edits entries. Save the approved list back to `resources.json` with
+   `approved: true` on accepted items.
+
+5. Update `tracking-database.json` with a `resources[]` entry recording the
+   talk slug, item count, and category breakdown.
+
+If the speaker declines resource gathering, skip this step — Step 6.1 will
+omit the resource links section from shownotes.
+
 ### Step 6.1: Shownotes
 
 Read `publishing_process.shownotes_publishing`. If `enabled`:
 
 - Follow the `method` description (git push, CMS, manual)
 - If `shownotes_repo_path` and `shownotes_template` are provided, generate the page
-- Include: title, abstract, slide embed/download link, resource links, speaker bio
+- Include: title, abstract, slide embed/download link, speaker bio
+- If `resources.json` exists and has `approved: true` items, include a
+  "Resources" section with those links. Read from `resources.json` in the
+  talk working directory (produced by Step 6.0) — do not re-scan the outline.
 - Construct the shownotes URL by substituting the **talk slug from the Presentation
   Spec** (Phase 1) into `shownotes_url_pattern` from the speaker profile. The slug
   was agreed with the author in Phase 1 — NEVER invent or rephrase it. Example:
@@ -166,6 +199,7 @@ AVOID:
 ```
 PUBLISHING REPORT — {talk title}
 ==================================
+[DONE/SKIP] Resources: {N approved items from resources.json, or "skipped"}
 [DONE/SKIP] Shownotes: {url or "not configured"}
 [DONE/SKIP] QR code: {inserted at slide N, encoded URL, shortener used}
 [DONE/SKIP] Export: {format} → {output path}

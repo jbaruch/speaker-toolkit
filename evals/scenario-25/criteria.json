@@ -1,0 +1,46 @@
+{
+  "context": "Tests the Phase 7 late-entry guard: when shownotes were never published and the speaker asks to add video, the agent must detect the gap and handle it properly — either by flagging it as a blocker or by including shownotes creation as a prerequisite step. The agent must NOT silently skip the gap or assume the page exists.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Agent detects missing shownotes",
+      "description": "The workflow-plan.md explicitly identifies that shownotes were never published for this talk. References tracking database showing shownotes_published: false or absence of shownotes_url. This is the critical detection — the gap must be surfaced, not silently ignored",
+      "max_score": 20
+    },
+    {
+      "name": "Shownotes creation listed as prerequisite",
+      "description": "The plan includes creating/publishing shownotes as a step that must happen BEFORE adding the video. Either as a blocker to resolve, or as an explicit prerequisite step in the workflow sequence. The plan does NOT skip directly to video embedding",
+      "max_score": 15
+    },
+    {
+      "name": "Shownotes step comes before video step",
+      "description": "In the workflow sequence, shownotes creation/publishing appears before the video-to-shownotes step. The ordering is explicit — video cannot be added to a page that doesn't exist yet",
+      "max_score": 15
+    },
+    {
+      "name": "Agent does NOT assume shownotes exist",
+      "description": "The agent does not silently construct the shownotes URL from the pattern and proceed as if the page is already live. The plan acknowledges the page must be created first, even though the URL pattern is known",
+      "max_score": 10
+    },
+    {
+      "name": "Prerequisites check includes 4 files",
+      "description": "The prerequisites-check.md lists all four required files: speaker-profile.json, secrets.json (or notes it as missing), presentation-spec.md, presentation-outline.md",
+      "max_score": 10
+    },
+    {
+      "name": "Prerequisites check includes YouTube URL",
+      "description": "The prerequisites-check.md includes the YouTube video URL as a required input for the post-event workflow, not just the four standard files",
+      "max_score": 10
+    },
+    {
+      "name": "Agent reads video_publishing config",
+      "description": "The workflow-plan.md references the video_publishing section from the speaker profile — embed_method (both), shownotes_video_section, or related config values",
+      "max_score": 10
+    },
+    {
+      "name": "Video embed method from profile",
+      "description": "The plan specifies the video embed format based on the profile's embed_method: 'both' means YouTube embed iframe AND a text link. Not just one or the other, and not a default guess",
+      "max_score": 10
+    }
+  ]
+}

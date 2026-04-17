@@ -1,0 +1,14 @@
+{
+  "config": {
+    "vault_root": "~/.claude/rhetoric-knowledge-vault"
+  },
+  "talks": [
+    {
+      "talk_slug": "2026-04-16-devnexus-robocoders-judgment-day",
+      "title": "Robocoders: Judgment Day",
+      "shownotes_url": "https://jbaru.ch/2026-04-16-devnexus-robocoders-judgment-day",
+      "shownotes_published": true
+    }
+  ],
+  "qr_codes": []
+}

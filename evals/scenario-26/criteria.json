@@ -1,0 +1,56 @@
+{
+  "context": "Tests the thumbnail iteration rules: when speaker gives revision feedback, the agent modifies specific prompt components rather than regenerating from scratch. Also tests slide image resolution chain (existing illustration preferred), face preservation strengthening, and generate-thumbnail.py argument changes.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Iterate not restart strategy",
+      "description": "The revision-plan.md explicitly describes iterating on specific components (style, position, face preservation) rather than starting from scratch. The plan mentions that iterative refinement produces better results than cold restarts",
+      "max_score": 15
+    },
+    {
+      "name": "Style changed to split_panel",
+      "description": "The revised generate-thumbnail.py command uses --style split_panel, overriding both the profile preference (overlay) and the first run value, matching the speaker's explicit request",
+      "max_score": 10
+    },
+    {
+      "name": "Title position changed to top",
+      "description": "The revised command uses --title-position top, matching the speaker's request to move text to the top. This overrides the profile's bottom preference",
+      "max_score": 10
+    },
+    {
+      "name": "Title text unchanged",
+      "description": "The --title argument remains 'JUDGMENT DAY' (or equivalent), not changed. The speaker said 'keep the same title text'",
+      "max_score": 5
+    },
+    {
+      "name": "Slide image unchanged",
+      "description": "The --slide-image still references slide 10's illustration. The speaker said 'keep the same slide'",
+      "max_score": 5
+    },
+    {
+      "name": "Face preservation strengthened",
+      "description": "The plan addresses the face idealization feedback by mentioning stronger face preservation — either referencing the 'Maintain exact facial features' requirement or proposing to add emphasis to the preservation language in the prompt",
+      "max_score": 15
+    },
+    {
+      "name": "generate-thumbnail.py used",
+      "description": "The revised command uses generate-thumbnail.py, not hand-rolled Gemini calls or PIL composition",
+      "max_score": 10
+    },
+    {
+      "name": "Slide image from illustrations directory",
+      "description": "The plan uses the existing illustration file (illustrations/slide-10.png) as the slide image source, following the resolution chain that prefers existing illustrations over PPTX extraction",
+      "max_score": 10
+    },
+    {
+      "name": "Original vs revised comparison",
+      "description": "The original-vs-revised.md clearly shows which arguments changed (style, title-position) and which stayed the same (slide-image, speaker-photo, title, brand-colors), making the iterative approach visible",
+      "max_score": 10
+    },
+    {
+      "name": "Speaker photo path unchanged",
+      "description": "The --speaker-photo argument still uses the profile path (/Users/jbaruch/photos/devnexus-headshot.jpg), not changed for the revision",
+      "max_score": 10
+    }
+  ]
+}
