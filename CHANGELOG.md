@@ -46,6 +46,49 @@ every script with CI.
 - **`_pptx_repair.py`** — extracted shared `clean_viewprops()` from strip-template and
   delete-slides into a single module, eliminating code duplication
 
+## 0.15.0
+
+**Placeholder slides, resources gathering, and post-event workflow** — New deck
+adaptation tooling, Phase 6.0 resources extraction, Phase 7 post-event workflow,
+and hardened QR generation.
+
+### Presentation Creator
+
+- **`insert-placeholder-slides.py`** — new script inserts bright-yellow placeholder
+  slides at specified positions (1-indexed). Supports JSON file or `--at`/`--title`
+  CLI input, `--output` flag for non-destructive saves. Processes positions in
+  descending order to avoid index shifting
+- **Phase 6.0: Resources gathering** — new `extract-resources.py` script parses
+  presentation outlines for URLs, GitHub repos, book references, RFCs, and
+  tool/library mentions. Deduplicates, tracks slide context, outputs JSON or markdown
+- **Phase 7: Post-event workflow** — new phase covering post-delivery tasks
+- **`generate-thumbnail.py`** — YouTube thumbnail generation via Gemini, composing
+  slide images + speaker photos with style variants and YouTube spec validation
+- **Shownotes slug convention** — slug generation process added to Phase 1 intent
+  distillation, enforced from Presentation Spec (never agent-invented)
+- **Presentation Spec persistence** — specs saved to disk as `presentation-spec.md`
+
+### QR Generation Hardening
+
+- **Custom Bitly domains** — `generate-qr.py` supports custom domains (e.g., `jbaru.ch`)
+- **Per-slide QR colors** — different slides can have different background colors;
+  script generates minimal PNG variants grouped by color scheme
+- **Idempotent re-runs** — existing QR images replaced instead of stacked
+- **`--png-only` mode** — generate QR PNG without opening a deck
+- **Loud missing config** — missing shortener config surfaces as a warning, not silent
+  degradation. Actionable `secrets.json` creation commands in error messages
+- **Late-entry guard** — Phase 6 pre-flight checklist, no-raw-dogging rule
+
+### Bug Fixes
+
+- Fixed Bitly custom back-half silently ignored
+- Fixed PPTX corruption from stale viewProps.xml after slide deletion
+- Fixed multi-placeholder insertion index bugs
+
+### Evals
+
+- 2 new scenarios: insert-placeholder-slides, QR generation failure modes
+
 ## 0.14.0
 
 **QR code generation** — Automated QR code generation and insertion into decks during

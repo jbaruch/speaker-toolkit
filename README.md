@@ -6,15 +6,22 @@ A four-skill presentation system for conference speakers: analyze your existing 
 
 ## What's New (0.16.0)
 
-**Vault-clarification eval** — New `clarification-interactive-session` eval covers
-the full 5-step clarification workflow: rhetoric clarification, humor post-mortem
-with per-beat grading, blind spot probing, infrastructure config capture, and intent
-confirmation storage. Fixed eval scenarios 12 (humor debrief) and 13 (extraction
-diagnostics) — rewritten with deterministic test data instead of agent-generated inputs.
+**Placeholder slides and deck adaptation** — New `insert-placeholder-slides.py`
+inserts bright-yellow placeholder slides at specified positions for deck adaptation
+workflows. New `extract-resources.py` parses outlines for URLs, repos, books, RFCs,
+and tool mentions. New `generate-thumbnail.py` composes YouTube thumbnails via Gemini.
+Phase 7 post-event workflow added.
+
+**QR generation hardening** — Custom Bitly domains, per-slide QR colors for decks
+with different slide backgrounds, idempotent re-runs, `--png-only` mode, loud
+missing-config warnings with actionable fix commands.
+
+**Vault-clarification eval** — First eval testing the interactive clarification
+session (rhetoric, humor post-mortem, blind spots, config capture, intent storage).
+Fixed eval scenarios 12 and 13 with deterministic test data.
 
 **Test suite and CI** — 119 pytest tests across 15 files cover every script, running
-on every push and PR via GitHub Actions with ffmpeg and LibreOffice. Bug fix in
-`pptx-extraction.py` for a `_NoneColor` crash on slides with unset font colors.
+on every push and PR via GitHub Actions with ffmpeg and LibreOffice.
 
 See [CHANGELOG.md](CHANGELOG.md) for full history.
 
