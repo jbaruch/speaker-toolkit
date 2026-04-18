@@ -32,6 +32,9 @@
     "illustration-rules": {
       "rules": "rules/illustration-rules.md"
     },
+    "title-overlay-rules": {
+      "rules": "rules/title-overlay-rules.md"
+    },
     "thumbnail-generation-rules": {
       "rules": "rules/thumbnail-generation-rules.md"
     },
