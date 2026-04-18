@@ -82,9 +82,18 @@ def parse_zones(outline_path: Path) -> dict:
 
 
 def replace_picture_blob(picture_shape, new_image_path: Path) -> None:
-    rel_id = picture_shape._element.blip_rId
-    image_part = picture_shape.part.rels[rel_id].target_part
-    image_part._blob = new_image_path.read_bytes()
+    """Swap the picture's embedded image to the one at new_image_path.
+
+    Uses rel re-pointing rather than mutating ``image_part._blob`` in
+    place. A template may seed every slide's picture from a single
+    placeholder file; python-pptx dedupes identical source paths into
+    one image part shared across slides. Mutating that shared blob
+    would clobber every other slide referencing it — last swap wins
+    and every slide ends up with the same final image.
+    """
+    slide_part = picture_shape.part
+    _, new_rId = slide_part.get_or_add_image_part(str(new_image_path))
+    picture_shape._element.blipFill.blip.set(qn("r:embed"), new_rId)
 
 
 def ensure_scrim(slide, zone: str, scrim_hex: str, scrim_alpha: int) -> int:
