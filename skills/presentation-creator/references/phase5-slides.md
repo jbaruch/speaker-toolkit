@@ -497,6 +497,53 @@ always add #3 (preservation list) manually — the script cannot know what to pr
 - When auditing fix logs, flag any use of PIL/Pillow, ImageMagick, or programmatic
   image manipulation for illustration work as a technique anti-pattern.
 
+**Title-overlay compatibility — engineer the safe zone at generation time:**
+
+When a slide will have an overlaid title, the illustration must leave a
+clean negative-space region for it. Relying on a post-hoc placement
+heuristic to find one fails: the subject occupies the "best" area by
+default, and a brightness-based picker conflates darkness with
+cleanness (a bright uniform backdrop is a valid title region).
+
+Instead, assign a `SAFE ZONE` per slide in the design brief and inject
+a directive into every Image prompt:
+
+```
+TITLE SAFE ZONE -- CRITICAL COMPOSITION RULE: Reserve the {zone} of
+the 16:9 frame as clean uninterrupted negative space filled only with
+{surface}. No subjects, objects, text, props, or focal points may
+appear in this region. The scene's subjects must be composed entirely
+in the remaining portion of the frame. This negative space will carry
+an overlaid title.
+```
+
+Five zones are supported:
+
+- `upper_third` — uniform backdrop above the subject (open scenes,
+  portraits, hero shots)
+- `middle_third` — reserved center band, subject framing around it
+  (TV / monitor / window / portrait-frame / vignette compositions)
+- `lower_third` — uniform region below the subject (full-frame
+  posters, signs, or top-heavy compositions)
+- `left_half` — clean left half of the frame, subject composed on the
+  right (split-panel or "subject pushed to one side" compositions)
+- `right_half` — mirror of `left_half`, subject on the left
+
+The `{surface}` is chosen from the deck's style anchor — describe
+what should fill the reserved region in the style's own vocabulary
+(sky, fabric, paper, parchment, gradient, painted backdrop, etc.).
+Left/right thirds are intentionally excluded — too narrow for
+horizontal title text. `left_half` / `right_half` give the title
+enough column width to wrap across a few lines.
+
+Apply a zone-sized 45% black scrim between the picture and the title
+text. Scope matters: a full-slide scrim flattens the whole
+illustration, while a zone-sized scrim lifts the title locally. For
+styled decks (warm sepia, cool night, etc.) sample the scrim color
+from the deck's natural shadow tone instead of pure black.
+
+See `rules/title-overlay-rules.md` for the full policy.
+
 ---
 
 ## File Locations
