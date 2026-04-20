@@ -39,7 +39,7 @@ OUTLINE_WITH_PACING = """\
 """
 
 
-OUTLINE_SUBMUNITE = """\
+OUTLINE_SUBMINUTE = """\
 ## Pacing Summary
 
 | Section | Duration |
@@ -135,7 +135,7 @@ def test_no_pacing_table(generate_talk_timings):
 
 def test_subminute_resolution(generate_talk_timings):
     """Sub-minute durations like 1:30 and :30 are parsed correctly."""
-    sections = generate_talk_timings.parse_pacing_table(OUTLINE_SUBMUNITE)
+    sections = generate_talk_timings.parse_pacing_table(OUTLINE_SUBMINUTE)
     dur_map = {name: dur for name, dur in sections}
     assert dur_map["Intro"] == 90    # 1:30
     assert dur_map["Main"] == 180    # 3 min
@@ -144,7 +144,7 @@ def test_subminute_resolution(generate_talk_timings):
 
 def test_subminute_cumulative_times(generate_talk_timings):
     """Cumulative times handle sub-minute sections correctly."""
-    sections = generate_talk_timings.parse_pacing_table(OUTLINE_SUBMUNITE)
+    sections = generate_talk_timings.parse_pacing_table(OUTLINE_SUBMINUTE)
     lines = generate_talk_timings.generate_timings(sections)
     assert lines[0] == "0:00 Intro"
     assert lines[1] == "1:30 Main"
@@ -178,3 +178,28 @@ def test_generate_timings_returns_list(generate_talk_timings):
     assert isinstance(lines, list)
     assert all(isinstance(l, str) for l in lines)
     assert len(lines) == 3  # 2 sections + FINISH
+
+
+def test_subdivide_preserves_total(generate_talk_timings):
+    """Subdivided durations sum exactly to the original pacing duration."""
+    pacing = [("Long Act", 600)]  # 10 min, above 5-min threshold
+    headers = [("Long Act Part A", 180), ("Long Act Part B", 420)]
+    result = generate_talk_timings.subdivide_long_acts(pacing, headers)
+    assert len(result) == 2
+    assert sum(d for _, d in result) == 600
+
+
+def test_subdivide_short_act_unchanged(generate_talk_timings):
+    """Acts under the threshold are not subdivided."""
+    pacing = [("Short Act", 240)]  # 4 min, under threshold
+    headers = [("Short Act Part A", 120), ("Short Act Part B", 120)]
+    result = generate_talk_timings.subdivide_long_acts(pacing, headers)
+    assert len(result) == 1
+    assert result[0] == ("Short Act", 240)
+
+
+def test_subdivide_no_headers(generate_talk_timings):
+    """Without section headers, pacing is returned unchanged."""
+    pacing = [("Act", 600)]
+    result = generate_talk_timings.subdivide_long_acts(pacing, [])
+    assert result == [("Act", 600)]

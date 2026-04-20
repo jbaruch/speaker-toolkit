@@ -158,8 +158,9 @@ Read `publishing_process.export_format` and `publishing_process.export_method`.
 
 ### Step 6.4: Talk Timer Artifact
 
-**Profile-gated:** only generate when `publishing_process.talk_timer` is present
-in `speaker-profile.json`. If absent, skip this step entirely.
+**Optional step:** generate this artifact when `presentation-outline.md`
+includes a `## Pacing Summary` table. If that section is absent, skip this step
+unless the author explicitly asks for a talk timer file.
 
 Source: the `## Pacing Summary` table in `presentation-outline.md`.
 
@@ -182,8 +183,8 @@ talk duration (including Q&A if applicable).
 **Granularity guidelines:**
 - 25-min talks: 8-13 chapters
 - 45-60 min talks: 10-15 chapters
-- Subdivide acts exceeding ~5 min into multiple chapters (the script uses
-  `## Section` headers for finer granularity automatically)
+- Subdivide acts exceeding ~5 min into multiple chapters (the script
+  attempts to match `## Section` headers to pacing entries by name overlap)
 
 **Q&A:** if the talk slot includes Q&A time, pass `--qa MINUTES` to append a
 Q&A chapter before FINISH.

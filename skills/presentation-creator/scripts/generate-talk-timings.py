@@ -158,8 +158,12 @@ def subdivide_long_acts(pacing_sections, section_headers, threshold_seconds=300)
     """Subdivide pacing sections that exceed the threshold using section headers.
 
     When a pacing section exceeds threshold_seconds (~5 min), look for
-    section headers whose names partially match or fall within that act,
-    and split accordingly.
+    section headers whose names match and split accordingly. Matching uses
+    substring containment (pacing name in header or vice versa) plus
+    meaningful word overlap.
+
+    Durations are scaled proportionally with remainder assigned to the last
+    segment to prevent rounding drift.
 
     Returns a new list of (name, duration_seconds) tuples.
     """
@@ -167,11 +171,6 @@ def subdivide_long_acts(pacing_sections, section_headers, threshold_seconds=300)
         return list(pacing_sections)
 
     result = []
-    # Build a lookup: try to match section headers to pacing sections
-    header_map = {}
-    for hdr_name, hdr_dur in section_headers:
-        # Normalize for matching
-        header_map[hdr_name.lower()] = (hdr_name, hdr_dur)
 
     for pace_name, pace_dur in pacing_sections:
         if pace_dur <= threshold_seconds:
@@ -179,23 +178,25 @@ def subdivide_long_acts(pacing_sections, section_headers, threshold_seconds=300)
             continue
 
         # Find section headers that match this pacing entry
-        # Match by checking if the pacing name appears in the header name or vice versa
         matching_headers = []
         pace_lower = pace_name.lower()
         for hdr_name, hdr_dur in section_headers:
             hdr_lower = hdr_name.lower()
-            # Match if the header name contains keywords from the pacing entry
-            # or they share substantial overlap
             if (pace_lower in hdr_lower or hdr_lower in pace_lower
                     or _name_overlap(pace_lower, hdr_lower)):
                 matching_headers.append((hdr_name, hdr_dur))
 
         if len(matching_headers) >= 2:
-            # Use the sub-headers, but normalize their durations to sum to pace_dur
+            # Scale durations proportionally, assign remainder to last segment
             header_total = sum(d for _, d in matching_headers)
             if header_total > 0:
-                for hdr_name, hdr_dur in matching_headers:
-                    scaled = round(pace_dur * hdr_dur / header_total)
+                allocated = 0
+                for i, (hdr_name, hdr_dur) in enumerate(matching_headers):
+                    if i == len(matching_headers) - 1:
+                        scaled = pace_dur - allocated
+                    else:
+                        scaled = pace_dur * hdr_dur // header_total
+                        allocated += scaled
                     result.append((hdr_name, scaled))
             else:
                 result.append((pace_name, pace_dur))
@@ -258,7 +259,7 @@ def main():
         epilog="Produces MM:SS chapter lines for timemytalk.app timer.",
     )
     parser.add_argument("outline", help="Path to presentation-outline.md")
-    parser.add_argument("--qa", type=float, default=0,
+    parser.add_argument("--qa", type=int, default=0,
                         help="Q&A duration in minutes to add before FINISH")
     parser.add_argument("--output", "-o",
                         help="Output path (default: stdout)")
