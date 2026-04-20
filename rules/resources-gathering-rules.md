@@ -72,3 +72,21 @@ After resources are approved, update `tracking-database.json` with a
   "created_at": "..."
 }
 ```
+
+## 8. Shownotes Publishing Destination
+
+The publishing destination for shownotes MUST be discoverable from the speaker
+profile — agents should never guess, search the web, or grep local files to
+find where shownotes are published.
+
+Read from `speaker-profile.json`:
+- **Base URL:** `publishing_process.shownotes_site` (e.g., `https://speaking.jbaru.ch`)
+- **Per-talk URL:** `speaker.shownotes_url_pattern` (e.g., `{website}/{slug}`)
+
+When checking talk metadata (video status, slide links, resource lists):
+1. Construct the talk URL from `speaker.shownotes_url_pattern` + the talk slug
+2. Fetch the page to read current state
+3. Do NOT search Google, conference sites, or local directories
+
+If `shownotes_site` is absent from the profile, ask the speaker during
+vault-clarification (Step 5B infrastructure capture).
