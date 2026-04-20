@@ -12,7 +12,7 @@ Usage:
     python3 generate-talk-timings.py <outline.md> --output timings.txt
 
 Requires:
-    - Python 3.7+ (stdlib only -- no pip install needed)
+    - Python 3.10+ (stdlib only -- no pip install needed)
 """
 
 import argparse
@@ -273,7 +273,7 @@ def main():
     pacing = parse_pacing_table(text)
 
     if not pacing:
-        print("WARNING: No pacing summary table found in outline.", file=sys.stderr)
+        print("WARNING: No usable pacing rows found in outline (table missing or all rows empty).", file=sys.stderr)
         # Emit a minimal FINISH-only output
         output = "0:00 FINISH\n"
     else:

@@ -238,7 +238,7 @@ PUBLISHING REPORT — {talk title}
 [DONE/SKIP] Shownotes: {url or "not configured"}
 [DONE/SKIP] QR code: {inserted at slide N, encoded URL, shortener used}
 [DONE/SKIP] Export: {format} → {output path}
-[DONE/SKIP] Talk timer: {output path, or "talk_timer not configured"}
+[DONE/SKIP] Talk timer: {output path, or "no pacing summary in outline"}
 [DONE/SKIP/TODO] {additional step name}: {status}
 [INFO] Go-live checklist: {presented above}
 ==================================
