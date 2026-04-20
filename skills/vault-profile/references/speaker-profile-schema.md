@@ -278,6 +278,7 @@ creation at runtime.
   ],
 
   "publishing_process": {
+    "shownotes_site": "https://speaking.example.com",
     "export_format": "pdf|pptx_only|both",
     "export_method": "description of how to export (e.g., PowerPoint AppleScript, LibreOffice CLI, manual)",
     "export_script": "optional: literal script/command to run for export, or null",

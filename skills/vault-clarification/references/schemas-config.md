@@ -16,6 +16,7 @@ when empty. The question column shows what to ask the speaker.
 | `presentation_file_convention` | "File organization? (default: `{conference}/{year}/{talk-slug}/`)" |
 | `publishing_process.export_format` | "How do you export final decks — PDF, keep .pptx only, or both?" |
 | `publishing_process.export_method` | "How do you produce the PDF? (e.g., PowerPoint AppleScript, LibreOffice CLI, manual)" |
+| `publishing_process.shownotes_site` | "What's the base URL where your shownotes are published? (e.g., `https://speaking.example.com`)" |
 | `publishing_process.shownotes_publishing` | "Do you publish shownotes for your talks? If yes, how?" |
 | `publishing_process.qr_code` | "Do you put QR codes in your decks? If yes, what do they link to?" |
 | `publishing_process.qr_code.shortener` | "Do you use a URL shortener for QR links? Options: `bitly`, `rebrandly`, or `none`." |
