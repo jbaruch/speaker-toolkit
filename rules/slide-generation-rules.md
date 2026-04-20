@@ -35,9 +35,9 @@ prevent generated `.pptx` files from being rejected on import.
 ### notesMasterIdLst patch
 
 The `inject-speaker-notes.py` script automatically adds the
-`<p:notesMasterIdLst>` element to `presentation.xml` when it is missing.
-No manual step is needed — just run the script as part of the normal
-speaker-notes injection pass.
+`<p:notesMasterIdLst>` element to `ppt/presentation.xml` inside the
+`.pptx` when it is missing. No manual step is needed — just run the
+script as part of the normal speaker-notes injection pass.
 
 ### Use rectangles for decorative lines — never connectors
 
@@ -62,12 +62,19 @@ from pptx.enum.shapes import MSO_CONNECTOR
 shapes.add_connector(MSO_CONNECTOR.STRAIGHT, left, top, end_x, end_y)
 ```
 
-### Never create shapes then remove them via raw XML
+### Never create slide shapes with python-pptx then remove them via raw XML in the same flow
 
-Calling `element.getparent().remove(element)` after creating a shape
-through python-pptx causes the library's internal state to diverge from
-the serialized XML. Strict parsers (including Keynote) choke on the
-inconsistency. If a shape is not needed, simply do not create it.
+Do not create a slide shape through python-pptx and then delete that
+same shape with `element.getparent().remove(element)` during generation.
+That pattern causes python-pptx's internal state to diverge from the
+serialized XML, and strict parsers (including Keynote) reject the result.
+If a shape is not needed, do not create it in the first place.
+
+This rule applies to slide-shape authoring flows. It does not prohibit
+narrowly scoped XML cleanup utilities that remove pre-existing elements
+(e.g., `_pptx_repair.py` cleaning viewProps, or `generate-qr.py`
+replacing an existing QR image) — those operate on elements not managed
+by python-pptx's in-memory state.
 
 ### Keep shape IDs contiguous per slide
 
