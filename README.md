@@ -4,20 +4,21 @@
 
 A four-skill presentation system for conference speakers: analyze your existing talks to extract your rhetoric patterns, then create new presentations that match your documented style.
 
-## What's New (0.16.0)
+## What's New (0.17.0)
 
-**Placeholder slides and deck adaptation** — New `insert-placeholder-slides.py`
-inserts bright-yellow placeholder slides at specified positions for deck adaptation
-workflows. New `extract-resources.py` parses outlines for URLs, repos, books, RFCs,
-and tool mentions. New `generate-thumbnail.py` composes YouTube thumbnails via Gemini.
-Phase 7 post-event workflow added.
+**Talk timer for timemytalk.app** — New `generate-talk-timings.py` parses the
+outline's pacing summary into `MM:SS Chapter` format for the timemytalk.app
+delivery timer. Supports `--qa` flag, sub-minute resolution, and automatic
+subdivision of long acts. Phase 6 publishing docs updated.
 
-**QR generation hardening** — Custom Bitly domains, per-slide QR colors for decks
-with different slide backgrounds, idempotent re-runs, `--png-only` mode, loud
-missing-config warnings with actionable fix commands.
+**Keynote compatibility rules** — Slide generation rules now document three
+python-pptx gotchas that cause Keynote to reject generated `.pptx` files: use
+rectangles not connectors for decorative lines, avoid create-then-remove shape
+patterns, keep shape IDs contiguous.
 
-**Vault-clarification eval** — First eval testing the interactive clarification
-session (rhetoric, humor post-mortem, blind spots, config capture, intent storage).
+**Shownotes publishing destination** — Agents can now resolve published shownotes
+from `publishing_process.shownotes_site` in the speaker profile instead of
+searching the web. Resources-gathering rules document the read path.
 Fixed eval scenarios 12 and 13 with deterministic test data.
 
 **Test suite and CI** — 119 pytest tests across 15 files cover every script, running

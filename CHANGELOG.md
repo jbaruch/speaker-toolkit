@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.17.0
+
+**Talk timer, Keynote compatibility, shownotes destination** — New delivery timer
+artifact, documented Keynote gotchas for slide generation, and machine-readable
+shownotes publishing destination.
+
+### Presentation Creator
+
+- **`generate-talk-timings.py`** — new script parses `## Pacing Summary` table
+  from the outline into `MM:SS Chapter` plain-text format for timemytalk.app.
+  Supports `--qa` flag for Q&A chapters, sub-minute resolution, and automatic
+  subdivision of acts exceeding 5 min using `## Section` headers
+- **Phase 6 Step 6.4: Talk Timer Artifact** — new optional publishing step,
+  gated on pacing summary presence in the outline
+- **Keynote compatibility rules** — three python-pptx slide generation gotchas
+  added to `slide-generation-rules.md`: use rectangles not connectors for
+  decorative lines, never create-then-remove shapes in the same authoring flow,
+  keep shape IDs contiguous per slide
+
+### Resources & Publishing
+
+- **Shownotes publishing destination** — `publishing_process.shownotes_site` added
+  to speaker profile schema. Resources-gathering rules section 8 documents the
+  read path: construct talk URLs from `shownotes_site` + `shownotes_url_pattern`,
+  never guess or search the web
+- **Vault-clarification config question** — new Step 5B question for
+  `publishing_process.shownotes_site`
+
+### Tests
+
+- 15 new tests for `generate-talk-timings.py` (pacing parsing, cumulative times,
+  Q&A insertion, sub-minute resolution, subdivision)
+
 ## 0.16.0
 
 **Vault-clarification eval + test suite** — First dedicated eval for the interactive
