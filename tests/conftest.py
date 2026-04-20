@@ -125,6 +125,13 @@ def export_pdf():
     return _import_script(os.path.join(SCRIPTS_PC, "export-pdf.py"), "export_pdf")
 
 
+@pytest.fixture(scope="session")
+def generate_talk_timings():
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "generate-talk-timings.py"), "generate_talk_timings"
+    )
+
+
 # ── PPTX fixture builders ────────────────────────────────────────────
 
 NS_P = "http://schemas.openxmlformats.org/presentationml/2006/main"
