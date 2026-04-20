@@ -156,7 +156,42 @@ Read `publishing_process.export_format` and `publishing_process.export_method`.
 - Common pattern: PowerPoint AppleScript for PDF (see [phase5-slides.md](phase5-slides.md))
 - If no export info, ask: "How do you want to export? PDF, keep .pptx only, or both?"
 
-### Step 6.4: Additional Steps
+### Step 6.4: Talk Timer Artifact
+
+**Optional step:** generate this artifact when `presentation-outline.md`
+includes a `## Pacing Summary` table. If that section is absent, skip this step
+unless the author explicitly asks for a talk timer file.
+
+Source: the `## Pacing Summary` table in `presentation-outline.md`.
+
+Generate a plain-text timing file for [timemytalk.app](https://timemytalk.app)
+by running:
+
+```bash
+python3 skills/presentation-creator/scripts/generate-talk-timings.py \
+  presentation-outline.md --output talk-timings.txt
+
+# If the talk slot includes Q&A time:
+python3 skills/presentation-creator/scripts/generate-talk-timings.py \
+  presentation-outline.md --qa 5 --output talk-timings.txt
+```
+
+**Format:** one line per chapter, `MM:SS Label`, using cumulative start times.
+The final line is always `MM:SS FINISH` where the timestamp equals the total
+talk duration (including Q&A if applicable).
+
+**Granularity guidelines:**
+- 25-min talks: 8-13 chapters
+- 45-60 min talks: 10-15 chapters
+- Subdivide acts exceeding ~5 min into multiple chapters (the script
+  attempts to match `## Section` headers to pacing entries by name overlap)
+
+**Q&A:** if the talk slot includes Q&A time, pass `--qa MINUTES` to append a
+Q&A chapter before FINISH.
+
+The speaker uploads the resulting `.txt` file to timemytalk.app before delivery.
+
+### Step 6.5: Additional Steps
 
 Read `publishing_process.additional_steps[]`. For each entry:
 
@@ -164,7 +199,7 @@ Read `publishing_process.additional_steps[]`. For each entry:
 - If `automated` is false, present the step to the author as a manual TODO
 - Report completion status for each step
 
-### Step 6.5: Go-Live Preparation Checklist
+### Step 6.6: Go-Live Preparation Checklist
 
 Before delivery, surface unobservable patterns from [patterns/_index.md](patterns/_index.md)
 (the "Unobservable Patterns — Go-Live Checklist" section) as a preparation reminder.
@@ -194,7 +229,7 @@ AVOID:
 ==================================
 ```
 
-### Step 6.6: Publishing Report
+### Step 6.7: Publishing Report
 
 ```
 PUBLISHING REPORT — {talk title}
@@ -203,6 +238,7 @@ PUBLISHING REPORT — {talk title}
 [DONE/SKIP] Shownotes: {url or "not configured"}
 [DONE/SKIP] QR code: {inserted at slide N, encoded URL, shortener used}
 [DONE/SKIP] Export: {format} → {output path}
+[DONE/SKIP] Talk timer: {output path, or "no pacing summary in outline"}
 [DONE/SKIP/TODO] {additional step name}: {status}
 [INFO] Go-live checklist: {presented above}
 ==================================
