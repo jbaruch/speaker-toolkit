@@ -3,8 +3,8 @@
 
 For each slide whose outline block has a `Safe zone:` field:
   1. Replace the background picture with the matching illustration.
-  2. Add a full-slide 45% black scrim between the picture and the text
-     (if not already present).
+  2. Add a zone-sized semi-transparent scrim between the picture and
+     the text (if not already present).
   3. Reposition title text boxes into the designed safe zone:
      upper_third/middle_third/lower_third -> full-width band at the
      matching Y; left_half/right_half -> narrower column on that side.
@@ -24,6 +24,7 @@ from pathlib import Path
 
 from lxml import etree
 from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.oxml.ns import qn
 from pptx.util import Inches
 
@@ -58,10 +59,7 @@ SUBTITLE_OFFSET_IN = 1.2
 DEFAULT_SCRIM_HEX = "000000"
 DEFAULT_SCRIM_ALPHA = 45000
 
-# python-pptx shape_type integers
-SHAPE_TYPE_AUTO = 1
-SHAPE_TYPE_PICTURE = 13
-SHAPE_TYPE_TEXT_BOX = 17
+SCRIM_SHAPE_NAME = "_title_scrim"
 
 
 def parse_zones(outline_path: Path) -> dict:
@@ -103,14 +101,16 @@ def ensure_scrim(slide, zone: str, scrim_hex: str, scrim_alpha: int) -> int:
     illustration; scoping to the title box keeps the rest at full brightness.
     OOXML spPr child order must be xfrm -> prstGeom -> solidFill -> ln.
     """
-    if any(s.shape_type == SHAPE_TYPE_AUTO for s in slide.shapes):
+    # Skip if a scrim was already added (identified by name)
+    if any(s.name == SCRIM_SHAPE_NAME for s in slide.shapes):
         return 0
     layout = ZONE_LAYOUT[zone]
     shape = slide.shapes.add_shape(
-        SHAPE_TYPE_AUTO,
+        MSO_SHAPE_TYPE.AUTO_SHAPE,
         left=Inches(layout["left_in"]), top=Inches(layout["top_in"]),
         width=Inches(layout["width_in"]), height=Inches(layout["height_in"]),
     )
+    shape.name = SCRIM_SHAPE_NAME
     sp = shape._element
     style = sp.find(qn("p:style"))
     if style is not None:
@@ -129,16 +129,30 @@ def ensure_scrim(slide, zone: str, scrim_hex: str, scrim_alpha: int) -> int:
     ln = etree.SubElement(spPr, qn("a:ln"))
     etree.SubElement(ln, qn("a:noFill"))
 
-    # Put the scrim just below the topmost text so it sits between picture and text.
-    slide.shapes._spTree.remove(sp)
-    slide.shapes._spTree.insert(3, sp)
+    # Insert scrim just before the first text shape in the spTree
+    spTree = slide.shapes._spTree
+    spTree.remove(sp)
+    first_text_idx = None
+    for i, child in enumerate(spTree):
+        nvSpPr = child.find(qn("p:nvSpPr"))
+        if nvSpPr is not None:
+            nvPr = nvSpPr.find(qn("p:nvPr"))
+            # Text boxes have sp elements without placeholder type
+            cNvSpPr = nvSpPr.find(qn("p:cNvSpPr"))
+            if cNvSpPr is not None and cNvSpPr.get("txBox") == "1":
+                first_text_idx = i
+                break
+    if first_text_idx is not None:
+        spTree.insert(first_text_idx, sp)
+    else:
+        spTree.append(sp)
     return 1
 
 
 def reposition_title(slide, zone: str) -> int:
     text_shapes = [
         s for s in slide.shapes
-        if s.has_text_frame and s.shape_type == SHAPE_TYPE_TEXT_BOX
+        if s.has_text_frame and s.shape_type == MSO_SHAPE_TYPE.TEXT_BOX
     ]
     text_shapes.sort(key=lambda s: s.top)
     if not text_shapes:
@@ -177,7 +191,7 @@ def apply(
             continue
 
         slide = prs.slides[n - 1]
-        pictures = [s for s in slide.shapes if s.shape_type == SHAPE_TYPE_PICTURE]
+        pictures = [s for s in slide.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
         if not pictures:
             print(f"  [{n:02d}] SKIP: no picture shape")
             continue

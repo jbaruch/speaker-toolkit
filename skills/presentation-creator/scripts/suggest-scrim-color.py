@@ -16,10 +16,20 @@ Algorithm:
 Output: suggested hex color + a recommended alpha (OOXML thousandths).
 """
 import argparse
+import sys
 from pathlib import Path
 
-from PIL import Image
-import numpy as np
+try:
+    from PIL import Image
+except ImportError:
+    print("ERROR: 'Pillow' package not installed. Run: pip install Pillow")
+    sys.exit(1)
+
+try:
+    import numpy as np
+except ImportError:
+    print("ERROR: 'numpy' package not installed. Run: pip install numpy")
+    sys.exit(1)
 
 REC709 = np.array([0.2126, 0.7152, 0.0722])
 

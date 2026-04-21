@@ -149,3 +149,83 @@ def test_mime_ext_roundtrip(generate_illustrations):
     assert generate_illustrations.mime_to_ext("image/jpeg") == ".jpg"
     assert generate_illustrations.ext_to_mime(".png") == "image/png"
     assert generate_illustrations.ext_to_mime(".jpg") == "image/jpeg"
+
+
+# --- Safe zone directive tests ---
+
+OUTLINE_WITH_SAFE_ZONE = """\
+# Illustration Plan
+
+**Model:** `gemini-3-pro-image-preview`
+
+### STYLE ANCHOR (WIDE — 16:9, 1920x1080)
+> A warm watercolor illustration.
+
+---
+
+### Slide 3: The Question
+- Format: **WIDE**
+- Image prompt: `[STYLE ANCHOR] A confused developer`
+- Safe zone: upper_third (painted sky)
+- Text: **The Question**
+
+### Slide 7: No Zone
+- Format: **WIDE**
+- Image prompt: `A terminal output`
+"""
+
+
+def test_parse_safe_zone(generate_illustrations):
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        f.write(OUTLINE_WITH_SAFE_ZONE)
+        f.flush()
+        result = generate_illustrations.parse_outline(f.name)
+    os.unlink(f.name)
+
+    slide3 = next(s for s in result["slides"] if s["slide_num"] == 3)
+    assert "safe_zone" in slide3
+    assert slide3["safe_zone"]["zone"] == "upper_third"
+    assert slide3["safe_zone"]["surface"] == "painted sky"
+
+
+def test_parse_no_safe_zone(generate_illustrations):
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        f.write(OUTLINE_WITH_SAFE_ZONE)
+        f.flush()
+        result = generate_illustrations.parse_outline(f.name)
+    os.unlink(f.name)
+
+    slide7 = next(s for s in result["slides"] if s["slide_num"] == 7)
+    assert "safe_zone" not in slide7
+
+
+def test_apply_safe_zone_directive(generate_illustrations):
+    prompt = "A confused developer"
+    safe_zone = {"zone": "upper_third", "surface": "painted sky"}
+    result = generate_illustrations.apply_safe_zone_directive(prompt, safe_zone)
+    assert "TITLE SAFE ZONE" in result
+    assert "upper third" in result
+    assert "painted sky" in result
+
+
+def test_apply_safe_zone_directive_none(generate_illustrations):
+    prompt = "A confused developer"
+    result = generate_illustrations.apply_safe_zone_directive(prompt, None)
+    assert result == prompt
+
+
+def test_apply_safe_zone_directive_idempotent(generate_illustrations):
+    prompt = "A dev TITLE SAFE ZONE -- old directive here"
+    safe_zone = {"zone": "lower_third", "surface": "gradient"}
+    result = generate_illustrations.apply_safe_zone_directive(prompt, safe_zone)
+    assert result.count("TITLE SAFE ZONE") == 1
+    assert "lower third" in result
+
+
+def test_apply_safe_zone_default_surface(generate_illustrations):
+    safe_zone = {"zone": "left_half", "surface": None}
+    result = generate_illustrations.apply_safe_zone_directive("A scene", safe_zone)
+    assert "TITLE SAFE ZONE" in result
+    assert "left half" in result
