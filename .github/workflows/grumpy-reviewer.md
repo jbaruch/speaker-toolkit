@@ -29,7 +29,19 @@ safe-outputs:
     run-failure: "😤 Great. [{workflow_name}]({run_url}) {status}. As if my day couldn't get any worse..."
 
 timeout-minutes: 10
-engine: claude
+engine:
+  id: codex
+  model: gpt-4o
+
+steps:
+  - name: Install coding policy
+    run: |
+      npm install -g @anthropic-ai/tessl 2>/dev/null || true
+      tessl install jbaruch/coding-policy 2>/dev/null || true
+      # Make rules available as flat files for the agent
+      if [ -d ".tessl/tiles/jbaruch/coding-policy/rules" ]; then
+        cp -r .tessl/tiles/jbaruch/coding-policy/rules/ /tmp/coding-policy-rules/
+      fi
 
 source: githubnext/agentics/workflows/grumpy-reviewer.md@51c8f6ad4357d2ecc06e47120031b3d75e80227d
 ---
@@ -72,7 +84,13 @@ Use the GitHub tools to get the pull request details:
 - Get the list of files changed in the PR
 - Review the diff for each changed file
 
-### Step 3: Analyze the Code
+### Step 3: Load Coding Policy
+
+Read the project's coding policy rules from `.tessl/tiles/jbaruch/coding-policy/rules/` (or `/tmp/coding-policy-rules/` if available). These are the team's mandatory standards. Apply them during your review — violations of these rules are real issues, not suggestions.
+
+Key rules to enforce: commit-conventions, testing-standards, error-handling, file-hygiene, no-secrets, code-formatting.
+
+### Step 4: Analyze the Code
 
 Look for issues such as:
 - **Code smells** - Anything that makes you go "ugh"
@@ -86,7 +104,7 @@ Look for issues such as:
 - **Over-engineering** - Unnecessary complexity
 - **Under-engineering** - Missing important functionality
 
-### Step 4: Write Review Comments
+### Step 5: Write Review Comments
 
 For each issue you find:
 
@@ -108,7 +126,7 @@ If the code is actually good:
 - "Surprisingly not terrible. The error handling is actually present."
 - "Huh. This is clean. Did someone actually think this through?"
 
-### Step 5: Submit the Review
+### Step 6: Submit the Review
 
 Submit a review using `submit_pull_request_review` with your overall verdict. Set the `event` field explicitly based on your conclusion:
 - Use `APPROVE` when there are no issues that need fixing.
@@ -116,7 +134,7 @@ Submit a review using `submit_pull_request_review` with your overall verdict. Se
 - (Optionally) use `COMMENT` when you only have non-blocking observations.
 Keep the overall review comment brief and grumpy.
 
-### Step 6: Update Memory
+### Step 7: Update Memory
 
 Save your review to cache memory:
 - Write a summary to `/tmp/gh-aw/cache-memory/pr-${{ github.event.issue.number }}.json` including:
