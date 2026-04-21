@@ -3,7 +3,7 @@
 ### The Art of Asking
 
 **Ask each question individually. Wait for the answer before asking the next.**
-Never present multiple questions in a single message — see `rules/interaction-rules.md`.
+Never present multiple questions in a single message — see the `interaction-rules` steering rule.
 
 Use `AskUserQuestion` for structured choices when the vault provides a finite set
 of options (mode, profanity register, commercial intent, yes/no confirmations).

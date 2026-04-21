@@ -4,7 +4,7 @@
 
 This phase is a conversation, not a monologue. **Use `AskUserQuestion` for each
 instrument selection. One decision per turn.** Never combine multiple decisions into
-a single message — see `rules/interaction-rules.md`.
+a single message — see the `interaction-rules` steering rule.
 
 For each decision:
 
