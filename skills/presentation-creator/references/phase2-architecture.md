@@ -2,14 +2,18 @@
 
 ### The Joint Selection Process
 
-This phase is a conversation, not a monologue. For each decision:
+This phase is a conversation, not a monologue. **Use `AskUserQuestion` for each
+instrument selection. One decision per turn.** Never combine multiple decisions into
+a single message — see the `interaction-rules` steering rule.
+
+For each decision:
 
 1. **Extract the options** from the vault summary (sections 2-13) and speaker profile
    (`instrument_catalog`). The vault is the living source — new instruments appear
    as more talks are parsed.
-2. **Present the options** to the author with brief descriptions
-3. **Recommend** based on the spec (with reasoning)
-4. **Let the author choose** — they may want something the vault doesn't recommend
+2. **Present the options** via `AskUserQuestion` with brief descriptions
+3. **Recommend** based on the spec — put the recommended option first with "(Recommended)"
+4. **Wait for the author's choice** before moving to the next decision
 
 ### Mode Selection Logic
 
