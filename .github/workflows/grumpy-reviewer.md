@@ -31,7 +31,7 @@ safe-outputs:
 timeout-minutes: 10
 engine:
   id: codex
-  model: gpt-4o
+  model: gpt-5.1
 
 steps:
   - name: Install coding policy
