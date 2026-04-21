@@ -2,14 +2,59 @@
 
 ### The Art of Asking
 
-Don't dump all questions at once. Use `AskUserQuestion` for structured choices when
-the vault provides a finite set of options, and conversational questions when the
-answer is open-ended.
+**Ask each question individually. Wait for the answer before asking the next.**
+Never present multiple questions in a single message — see `rules/interaction-rules.md`.
 
-**Batch questions logically:**
-1. First batch: Purpose & thesis (the "what" and "why")
-2. Second batch: Audience & venue specifics (the "who" and "where")
-3. Third batch: Constraints & preferences (the "how" and "how not")
+Use `AskUserQuestion` for structured choices when the vault provides a finite set
+of options (mode, profanity register, commercial intent, yes/no confirmations).
+Use conversational text for open-ended questions ("Tell me about the audience") —
+but still one at a time.
+
+**Question order** (ask about what's missing, skip what's already known):
+1. Purpose & thesis (the "what" and "why")
+2. Audience & venue specifics (the "who" and "where")
+3. Constraints & preferences (the "how" and "how not")
+
+**Concrete examples:**
+
+```
+AskUserQuestion(
+  question: "Which presentation mode fits this talk?",
+  options: [
+    {label: "Slide-driven polemic (Recommended)", description: "Your default — opinionated thesis with visual evidence"},
+    {label: "Live-coding with slides", description: "Demo-heavy with supporting slides"},
+    {label: "Panel / fireside chat", description: "Conversational, minimal slides"}
+  ])
+→ wait for answer →
+
+AskUserQuestion(
+  question: "What profanity register for JCON Europe?",
+  options: [
+    {label: "Moderate — damn/hell (Recommended)", description: "Your vault default"},
+    {label: "Clean — no profanity", description: "Corporate or family audience"},
+    {label: "Unrestricted", description: "Anything goes"}
+  ])
+→ wait for answer →
+
+"Any venue-specific context I should know about JCON Europe?"
+→ wait for answer →
+
+AskUserQuestion(
+  question: "Any commercial intent for this talk?",
+  options: [
+    {label: "None (Recommended)", description: "Pure thought leadership"},
+    {label: "Subtle", description: "Product woven into narrative"},
+    {label: "Direct", description: "Explicit product pitch"}
+  ])
+→ wait for answer →
+
+AskUserQuestion(
+  question: "Generated slug: 2026-06-23-jcon-robocoders — confirm?",
+  options: [
+    {label: "Looks good (Recommended)", description: "Use this slug for shownotes and QR"},
+    {label: "I want to adjust", description: "Let me edit the slug"}
+  ])
+```
 
 **Use the vault to inform questions.** If the topic overlaps with existing talks in
 the vault, reference them: "This overlaps with your [talk name] territory. Should

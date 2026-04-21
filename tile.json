@@ -37,6 +37,9 @@
     },
     "resources-gathering-rules": {
       "rules": "rules/resources-gathering-rules.md"
+    },
+    "interaction-rules": {
+      "rules": "rules/interaction-rules.md"
     }
   },
   "keywords": [

@@ -29,6 +29,8 @@ location). Read `tracking-database.json` from there to get `config.vault_root`.
 
 Load from vault root: `rhetoric-style-summary.md` (constitution — all patterns),
 `slide-design-spec.md` (visual rules), `speaker-profile.json` (structured data).
+Also load `rules/interaction-rules.md` — the cross-cutting rule for one-question-at-a-time
+interaction (applies to all phases, especially Phase 1 and Phase 2).
 Then load local references per phase:
 [references/phase0-intake.md](references/phase0-intake.md),
 [references/phase1-intent.md](references/phase1-intent.md),
