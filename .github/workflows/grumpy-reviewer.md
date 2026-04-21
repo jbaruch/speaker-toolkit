@@ -5,6 +5,11 @@ on:
   slash_command:
     name: grumpy
     events: [pull_request_comment, pull_request_review_comment]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to review"
+        required: true
 
 permissions:
   contents: read
