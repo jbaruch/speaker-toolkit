@@ -37,7 +37,8 @@ REC709 = np.array([0.2126, 0.7152, 0.0722])
 def sample_dark_pixels(img_paths, percentile=5.0, resize_to=200):
     buckets = []
     for p in img_paths:
-        img = Image.open(p).convert("RGB")
+        with Image.open(p) as raw:
+            img = raw.convert("RGB")
         img.thumbnail((resize_to, resize_to), Image.LANCZOS)
         arr = np.asarray(img, dtype=np.float32) / 255.0  # (H, W, 3)
         lum = arr @ REC709                                # (H, W)

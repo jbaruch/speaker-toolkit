@@ -24,7 +24,7 @@ from pathlib import Path
 
 from lxml import etree
 from pptx import Presentation
-from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.enum.shapes import MSO_SHAPE, MSO_SHAPE_TYPE
 from pptx.oxml.ns import qn
 from pptx.util import Inches
 
@@ -65,17 +65,26 @@ SCRIM_SHAPE_NAME = "_title_scrim"
 def parse_zones(outline_path: Path) -> dict:
     """Read `Safe zone:` lines from the outline.
 
+    Parses per-slide blocks (### Slide N: ... up to the next ### or ##)
+    so a Safe zone line is never matched against the wrong slide.
+
     Returns {slide_num: zone_name} where zone_name is a key of ZONE_LAYOUT.
     """
     text = outline_path.read_text()
     zones = {}
-    pattern = re.compile(
-        r"###\s+Slide\s+(\d+):.*?-\s*Safe zone:\s*"
-        r"(upper_third|middle_third|lower_third|left_half|right_half)",
-        re.DOTALL,
+    # Split into per-slide blocks bounded by ### headers
+    slide_block_re = re.compile(
+        r"###\s+Slide\s+(\d+):(.*?)(?=\n###\s|\n##\s|\Z)", re.DOTALL
     )
-    for m in pattern.finditer(text):
-        zones[int(m.group(1))] = m.group(2)
+    zone_re = re.compile(
+        r"-\s*Safe zone:\s*(upper_third|middle_third|lower_third|left_half|right_half)"
+    )
+    for block_match in slide_block_re.finditer(text):
+        slide_num = int(block_match.group(1))
+        block_text = block_match.group(2)
+        zone_match = zone_re.search(block_text)
+        if zone_match:
+            zones[slide_num] = zone_match.group(1)
     return zones
 
 
@@ -106,7 +115,7 @@ def ensure_scrim(slide, zone: str, scrim_hex: str, scrim_alpha: int) -> int:
         return 0
     layout = ZONE_LAYOUT[zone]
     shape = slide.shapes.add_shape(
-        MSO_SHAPE_TYPE.AUTO_SHAPE,
+        MSO_SHAPE.RECTANGLE,
         left=Inches(layout["left_in"]), top=Inches(layout["top_in"]),
         width=Inches(layout["width_in"]), height=Inches(layout["height_in"]),
     )
@@ -129,21 +138,30 @@ def ensure_scrim(slide, zone: str, scrim_hex: str, scrim_alpha: int) -> int:
     ln = etree.SubElement(spPr, qn("a:ln"))
     etree.SubElement(ln, qn("a:noFill"))
 
-    # Insert scrim just before the first text shape in the spTree
+    # Insert scrim just before the first shape with a text frame
     spTree = slide.shapes._spTree
     spTree.remove(sp)
     first_text_idx = None
+    last_pic_idx = None
     for i, child in enumerate(spTree):
+        # Track last picture for fallback insertion point
+        if child.tag == qn("p:pic"):
+            last_pic_idx = i
+        # Detect any shape with text: textboxes (txBox="1") and placeholders with txBody
         nvSpPr = child.find(qn("p:nvSpPr"))
         if nvSpPr is not None:
-            nvPr = nvSpPr.find(qn("p:nvPr"))
-            # Text boxes have sp elements without placeholder type
             cNvSpPr = nvSpPr.find(qn("p:cNvSpPr"))
-            if cNvSpPr is not None and cNvSpPr.get("txBox") == "1":
+            has_txbox = cNvSpPr is not None and cNvSpPr.get("txBox") == "1"
+            has_placeholder = nvSpPr.find(qn("p:nvPr")) is not None and \
+                nvSpPr.find(qn("p:nvPr")).find(qn("p:ph")) is not None
+            has_txbody = child.find(qn("p:txBody")) is not None
+            if has_txbox or (has_placeholder and has_txbody):
                 first_text_idx = i
                 break
     if first_text_idx is not None:
         spTree.insert(first_text_idx, sp)
+    elif last_pic_idx is not None:
+        spTree.insert(last_pic_idx + 1, sp)
     else:
         spTree.append(sp)
     return 1
@@ -152,7 +170,9 @@ def ensure_scrim(slide, zone: str, scrim_hex: str, scrim_alpha: int) -> int:
 def reposition_title(slide, zone: str) -> int:
     text_shapes = [
         s for s in slide.shapes
-        if s.has_text_frame and s.shape_type == MSO_SHAPE_TYPE.TEXT_BOX
+        if s.has_text_frame and s.name != SCRIM_SHAPE_NAME
+        and s.shape_type in (MSO_SHAPE_TYPE.TEXT_BOX, MSO_SHAPE_TYPE.PLACEHOLDER,
+                             MSO_SHAPE_TYPE.AUTO_SHAPE)
     ]
     text_shapes.sort(key=lambda s: s.top)
     if not text_shapes:

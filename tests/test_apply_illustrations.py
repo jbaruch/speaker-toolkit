@@ -131,3 +131,35 @@ def test_reposition_title(apply_illustrations, tmp_path):
 
     moved = apply_illustrations.reposition_title(slide, "upper_third")
     assert moved == 1
+
+
+def test_reposition_title_placeholder(apply_illustrations, tmp_path):
+    """Placeholder title shapes (from Title layouts) are also repositioned."""
+    prs = Presentation()
+    title_layout = prs.slide_layouts[0]  # Title Slide layout
+    slide = prs.slides.add_slide(title_layout)
+    if slide.shapes.title:
+        slide.shapes.title.text = "Placeholder Title"
+
+    moved = apply_illustrations.reposition_title(slide, "lower_third")
+    # Title Slide has title + subtitle placeholders
+    assert moved >= 1
+
+
+def test_parse_zones_no_cross_slide_match(apply_illustrations, tmp_path):
+    """Safe zone from slide 5 doesn't leak into slide 4."""
+    text = """\
+### Slide 4: No Zone Here
+- Format: **FULL**
+- Image prompt: `A scene`
+
+### Slide 5: Has Zone
+- Format: **FULL**
+- Image prompt: `Another scene`
+- Safe zone: lower_third (gradient)
+"""
+    outline = tmp_path / "outline.md"
+    outline.write_text(text)
+    zones = apply_illustrations.parse_zones(outline)
+    assert 4 not in zones
+    assert zones.get(5) == "lower_third"
