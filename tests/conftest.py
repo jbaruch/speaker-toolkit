@@ -126,6 +126,20 @@ def export_pdf():
 
 
 @pytest.fixture(scope="session")
+def apply_illustrations():
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "apply-illustrations-to-deck.py"), "apply_illustrations"
+    )
+
+
+@pytest.fixture(scope="session")
+def suggest_scrim_color():
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "suggest-scrim-color.py"), "suggest_scrim_color"
+    )
+
+
+@pytest.fixture(scope="session")
 def generate_talk_timings():
     return _import_script(
         os.path.join(SCRIPTS_PC, "generate-talk-timings.py"), "generate_talk_timings"

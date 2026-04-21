@@ -50,6 +50,30 @@ RATE_LIMIT_DELAY = 5  # seconds between API requests
 
 IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"]
 
+# --- Title safe-zone policy (see rules/title-overlay-rules.md) ---
+
+VALID_SAFE_ZONES = {
+    "upper_third", "middle_third", "lower_third",
+    "left_half", "right_half",
+}
+
+DEFAULT_SAFE_ZONE_SURFACE = {
+    "upper_third": "a clean uniform region at the top of the frame, drawn from the style's established backdrop",
+    "middle_third": "a clean uninterrupted region at the center of the frame, framed by the subject on top and bottom",
+    "lower_third": "a clean uniform region at the bottom of the frame, drawn from the style's established backdrop",
+    "left_half": "a clean uniform region covering the left half of the frame, drawn from the style's established backdrop",
+    "right_half": "a clean uniform region covering the right half of the frame, drawn from the style's established backdrop",
+}
+
+SAFE_ZONE_DIRECTIVE_TEMPLATE = (
+    " TITLE SAFE ZONE -- CRITICAL COMPOSITION RULE: Reserve the "
+    "{zone_words} of the 16:9 frame as clean uninterrupted negative "
+    "space filled only with {surface}. No subjects, objects, text, "
+    "props, or focal points may appear in this region. The scene's "
+    "subjects must be composed entirely in the remaining portion of "
+    "the frame. This negative space will carry an overlaid title."
+)
+
 # Canonical MIME <-> extension mapping
 _MIME_EXT_MAP = {
     "image/jpeg": ".jpg",
@@ -119,6 +143,24 @@ def parse_outline(path):
         prompt_match = re.search(r"-\s*Image prompt:\s*`(.+?)`", block, re.DOTALL)
         prompt = prompt_match.group(1).strip() if prompt_match else None
 
+        # Extract optional Safe zone: <zone> (<surface>)
+        safe_zone = None
+        _zone_alt = "|".join(VALID_SAFE_ZONES)
+        zone_match = re.search(
+            rf"-\s*Safe zone:\s*({_zone_alt})"
+            r"(?:\s*\(([^)]+)\))?",
+            block,
+        )
+        if zone_match:
+            zone = zone_match.group(1)
+            surface = (zone_match.group(2) or "").strip() or None
+            safe_zone = {"zone": zone, "surface": surface}
+        elif re.search(r"-\s*Safe zone:", block):
+            print(
+                f"  WARNING: Slide {slide_num}: Safe zone field present but invalid; "
+                f"expected one of {', '.join(sorted(VALID_SAFE_ZONES))}"
+            )
+
         # Extract build specifications
         builds = None
         builds_match = re.search(r"-\s*Builds:\s*(\d+)\s+steps?", block)
@@ -150,6 +192,8 @@ def parse_outline(path):
                 "format": slide_format,
                 "prompt": prompt,
             }
+            if safe_zone:
+                slide_data["safe_zone"] = safe_zone
             if builds:
                 slide_data["builds"] = builds
             result["slides"].append(slide_data)
@@ -171,6 +215,27 @@ def resolve_prompt(prompt, slide_format, anchors):
         return prompt.replace("[STYLE ANCHOR].", "").replace("[STYLE ANCHOR]", "")
 
     return prompt.replace("[STYLE ANCHOR]", anchor)
+
+
+def apply_safe_zone_directive(prompt, safe_zone):
+    """Append the SAFE ZONE directive to a prompt when safe_zone is set.
+
+    See rules/title-overlay-rules.md for the policy. Idempotent: if the
+    prompt already contains a TITLE SAFE ZONE block, it is replaced.
+    """
+    if not safe_zone:
+        return prompt
+    zone = safe_zone["zone"]
+    if zone not in VALID_SAFE_ZONES:
+        return prompt
+    surface = safe_zone.get("surface") or DEFAULT_SAFE_ZONE_SURFACE[zone]
+    if "TITLE SAFE ZONE" in prompt:
+        prompt = prompt.split("TITLE SAFE ZONE", 1)[0].rstrip()
+    directive = SAFE_ZONE_DIRECTIVE_TEMPLATE.format(
+        zone_words=zone.replace("_", " "),
+        surface=surface,
+    )
+    return prompt + directive
 
 
 # --- Slide Number Selection ---
@@ -447,6 +512,7 @@ def run_generate(outline_path, slide_args, versioned=False):
     for i, num in enumerate(to_generate):
         slide = slides_by_num[num]
         prompt = resolve_prompt(slide["prompt"], slide["format"], outline["anchors"])
+        prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"))
 
         print(f"[{i+1}/{len(to_generate)}] Slide {num}: {slide['title']}")
 
@@ -490,6 +556,7 @@ def run_compare(outline_path, slide_num):
 
     slide = slides_by_num[slide_num]
     prompt = resolve_prompt(slide["prompt"], slide["format"], outline["anchors"])
+    prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"))
 
     output_dir = os.path.join(
         os.path.dirname(os.path.abspath(outline_path)),
