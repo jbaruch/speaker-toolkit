@@ -15,7 +15,8 @@ See `rules/title-overlay-rules.md` for the policy behind this.
 
 Usage:
     apply-illustrations-to-deck.py DECK ILLUSTRATIONS_DIR OUTLINE_MD \\
-        [--out OUT_DECK] [--image-ext jpg|png]
+        [--out OUT_DECK] [--image-ext jpg|jpeg|png] \\
+        [--scrim-color RRGGBB] [--scrim-alpha 0-100000]
 """
 import argparse
 import re
@@ -55,7 +56,7 @@ SUBTITLE_OFFSET_IN = 1.2
 
 # Default scrim: 45% black. Decks with a strong tonal style (warm sepia,
 # cool night, etc.) should pass a sampled color via --scrim-color.
-# See scripts/suggest-scrim-color.py and rules/title-overlay-rules.md §5.
+# See suggest-scrim-color.py (same directory) and rules/title-overlay-rules.md §5.
 DEFAULT_SCRIM_HEX = "000000"
 DEFAULT_SCRIM_ALPHA = 45000
 
@@ -168,14 +169,27 @@ def ensure_scrim(slide, zone: str, scrim_hex: str, scrim_alpha: int) -> int:
 
 
 def reposition_title(slide, zone: str) -> int:
-    text_shapes = [
-        s for s in slide.shapes
-        if s.has_text_frame and s.name != SCRIM_SHAPE_NAME
-        and s.shape_type in (MSO_SHAPE_TYPE.TEXT_BOX, MSO_SHAPE_TYPE.PLACEHOLDER,
-                             MSO_SHAPE_TYPE.AUTO_SHAPE)
-    ]
-    text_shapes.sort(key=lambda s: s.top)
-    if not text_shapes:
+    """Reposition title and subtitle shapes into the designed zone.
+
+    Only moves title/subtitle placeholders and text boxes — leaves body
+    text, callouts, and other content shapes in their original positions.
+    """
+    # Prefer the slide's explicit title/subtitle placeholders
+    title_shapes = []
+    if slide.shapes.title is not None:
+        title_shapes.append(slide.shapes.title)
+    for s in slide.placeholders:
+        if s.placeholder_format.idx == 1 and s not in title_shapes:  # subtitle
+            title_shapes.append(s)
+    # Fall back to text boxes if no placeholders found
+    if not title_shapes:
+        title_shapes = [
+            s for s in slide.shapes
+            if s.has_text_frame and s.name != SCRIM_SHAPE_NAME
+            and s.shape_type == MSO_SHAPE_TYPE.TEXT_BOX
+        ]
+    title_shapes.sort(key=lambda s: s.top)
+    if not title_shapes:
         return 0
 
     layout = ZONE_LAYOUT[zone]
@@ -183,11 +197,11 @@ def reposition_title(slide, zone: str) -> int:
     text_left = Inches(layout["left_in"])
     text_width = Inches(layout["width_in"])
 
-    for j, shape in enumerate(text_shapes):
+    for j, shape in enumerate(title_shapes):
         shape.left = int(text_left)
         shape.width = int(text_width)
         shape.top = int(title_top + Inches(SUBTITLE_OFFSET_IN * j))
-    return len(text_shapes)
+    return len(title_shapes)
 
 
 def apply(

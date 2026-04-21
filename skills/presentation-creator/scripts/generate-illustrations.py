@@ -145,8 +145,9 @@ def parse_outline(path):
 
         # Extract optional Safe zone: <zone> (<surface>)
         safe_zone = None
+        _zone_alt = "|".join(VALID_SAFE_ZONES)
         zone_match = re.search(
-            r"-\s*Safe zone:\s*(upper_third|middle_third|lower_third|left_half|right_half)"
+            rf"-\s*Safe zone:\s*({_zone_alt})"
             r"(?:\s*\(([^)]+)\))?",
             block,
         )
@@ -157,7 +158,7 @@ def parse_outline(path):
         elif re.search(r"-\s*Safe zone:", block):
             print(
                 f"  WARNING: Slide {slide_num}: Safe zone field present but invalid; "
-                "expected one of upper_third, middle_third, lower_third, left_half, right_half"
+                f"expected one of {', '.join(sorted(VALID_SAFE_ZONES))}"
             )
 
         # Extract build specifications

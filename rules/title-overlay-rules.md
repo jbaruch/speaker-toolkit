@@ -23,7 +23,8 @@ in the remaining portion of the frame. This negative space will carry
 an overlaid title.
 ```
 
-Where `{zone}` is `upper third`, `middle third`, or `lower third`, and
+Where `{zone}` is `upper third`, `middle third`, `lower third`, `left half`,
+or `right half` (see §2 for the full list), and
 `{surface}` is a short style-specific description of what should fill
 the zone (a uniform area drawn from the style anchor — for example,
 "an unbroken area of the painted sky", "a clean stretch of the studio
@@ -126,7 +127,7 @@ deck's own natural shadows — the title still sits on a darker field,
 but the darkening looks like "deeper shadow of the same style" rather
 than a black film dropped on top.
 
-Suggested sampler (`scripts/suggest-scrim-color.py`):
+Suggested sampler (`skills/presentation-creator/scripts/suggest-scrim-color.py`):
 
 1. Resize each illustration to ~200px longest edge.
 2. Take the darkest 5% of pixels across the whole deck by Rec. 709
