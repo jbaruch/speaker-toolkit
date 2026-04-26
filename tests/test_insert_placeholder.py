@@ -10,7 +10,7 @@ from pptx.dml.color import RGBColor
 
 from conftest import make_deck, SCRIPTS_PC
 
-SCRIPT = os.path.join(SCRIPTS_PC, "insert-placeholder-slides.py")
+SCRIPT = os.path.abspath(os.path.join(SCRIPTS_PC, "insert-placeholder-slides.py"))
 
 
 def _slide_texts(slide):
@@ -121,6 +121,17 @@ def test_format_title_helper(insert_placeholder):
     assert f("[PLACEHOLDER] Foo") == "[PLACEHOLDER] Foo"
     # Case-insensitive: already-prefixed in lowercase should not double-prefix.
     assert f("[placeholder] foo") == "[placeholder] foo"
+
+
+def test_format_title_preserves_leading_whitespace(insert_placeholder):
+    """Leading whitespace must be preserved consistently regardless of whether
+    the prefix is already present — earlier behavior stripped only on the
+    already-prefixed branch."""
+    f = insert_placeholder._format_title
+    # Already prefixed with leading whitespace — return as-is, don't strip.
+    assert f("  [PLACEHOLDER] Foo") == "  [PLACEHOLDER] Foo"
+    # Not prefixed with leading whitespace — prepend, don't strip the input.
+    assert f("  Foo") == "[PLACEHOLDER]   Foo"
 
 
 def _run_cli(deck_path, json_path):

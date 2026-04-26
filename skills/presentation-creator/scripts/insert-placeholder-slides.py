@@ -48,10 +48,15 @@ PLACEHOLDER_PREFIX = "[PLACEHOLDER] "
 
 
 def _format_title(title):
-    """Prepend '[PLACEHOLDER] ' unless the caller already included it."""
-    stripped = title.lstrip()
-    if stripped.lower().startswith(PLACEHOLDER_PREFIX.lower()):
-        return stripped
+    """Prepend '[PLACEHOLDER] ' unless the title already starts with it
+    (case-insensitive, tolerating leading whitespace).
+
+    Always returns the original `title` when the prefix is already present —
+    leading whitespace is preserved either way, so behavior is independent of
+    whether the caller pre-prefixed or not.
+    """
+    if title.lstrip().lower().startswith(PLACEHOLDER_PREFIX.lower()):
+        return title
     return PLACEHOLDER_PREFIX + title
 
 
@@ -63,16 +68,24 @@ def _find_blank_layout(prs, preferred_name="Blank"):
     return prs.slide_layouts[-1], True
 
 
-def add_placeholder_slide(prs, title, subtitle="", blank_layout_name="Blank"):
-    """Append a yellow placeholder slide with title and optional subtitle."""
-    blank_layout, used_fallback = _find_blank_layout(prs, blank_layout_name)
-    if used_fallback:
-        print(
-            f"  WARNING: No '{blank_layout_name}' layout found — using last layout "
-            f"'{blank_layout.name}'. Any decorative shapes on that layout will appear "
-            f"behind the placeholder. Pass --blank-layout-name to choose a different layout.",
-            file=sys.stderr,
-        )
+def add_placeholder_slide(prs, title, subtitle="", blank_layout_name="Blank",
+                          blank_layout=None):
+    """Append a yellow placeholder slide with title and optional subtitle.
+
+    `blank_layout` (optional) — pre-resolved slide layout. When provided,
+    skips the in-function lookup and the fallback warning. The CLI resolves
+    once before the insertion loop and threads the result through to avoid
+    spamming stderr on batch inserts.
+    """
+    if blank_layout is None:
+        blank_layout, used_fallback = _find_blank_layout(prs, blank_layout_name)
+        if used_fallback:
+            print(
+                f"  WARNING: No '{blank_layout_name}' layout found — using last layout "
+                f"'{blank_layout.name}'. Any decorative shapes on that layout will appear "
+                f"behind the placeholder. Pass --blank-layout-name to choose a different layout.",
+                file=sys.stderr,
+            )
 
     slide = prs.slides.add_slide(blank_layout)
     sw, sh = prs.slide_width, prs.slide_height
@@ -181,6 +194,17 @@ def main():
             sys.exit(1)
         seen.add(pos)
 
+    # Resolve the layout once and warn at most once if we fall back, instead
+    # of warning per-insertion (which spams stderr on batch inserts).
+    blank_layout, used_fallback = _find_blank_layout(prs, args.blank_layout_name)
+    if used_fallback:
+        print(
+            f"  WARNING: No '{args.blank_layout_name}' layout found — using last layout "
+            f"'{blank_layout.name}'. Any decorative shapes on that layout will appear "
+            f"behind the placeholder. Pass --blank-layout-name to choose a different layout.",
+            file=sys.stderr,
+        )
+
     # Insert from lowest position to highest. Each iteration appends one placeholder,
     # growing the deck by one, then moves it to position-1. With distinct positions
     # sorted ascending, position[i] <= original_count + i + 1 is guaranteed, so the
@@ -190,7 +214,7 @@ def main():
         subtitle = ph.get("subtitle", "")
         position = ph["position"]
 
-        add_placeholder_slide(prs, title, subtitle, blank_layout_name=args.blank_layout_name)
+        add_placeholder_slide(prs, title, subtitle, blank_layout=blank_layout)
         last_idx = len(prs.slides) - 1
         move_slide(prs, last_idx, position - 1)
         print(f"  Inserted {_format_title(title)} at position {position}")
