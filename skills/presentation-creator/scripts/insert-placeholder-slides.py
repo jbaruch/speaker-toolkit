@@ -16,8 +16,16 @@ The JSON file format (multiple slides):
         {"position": 16, "title": "Cost Curves",       "subtitle": "MIT SSRN paper visualization"}
     ]
 
-Positions are 1-indexed (final slide number after all insertions). Slides are inserted
-from highest position to lowest so earlier inserts don't shift later targets.
+Positions are 1-indexed (final slide number after all insertions) and must be distinct.
+Slides are inserted from lowest position to highest so every move target stays within
+the current deck bounds (Python's list.insert silently clamps out-of-range indices).
+
+The title is auto-prefixed with "[PLACEHOLDER] "; if the JSON title already starts
+with that prefix (any case), the script does not double-prefix.
+
+If the target template has no layout named "Blank", the script falls back to the last
+layout and warns. Use --blank-layout-name to override when the last layout carries
+decorative shapes that would appear behind the yellow placeholder.
 
 Requires:
     - python-pptx  (pip install python-pptx)
@@ -36,17 +44,48 @@ YELLOW = RGBColor(0xFF, 0xF2, 0x9E)
 TITLE_COLOR = RGBColor(0x20, 0x20, 0x20)
 SUBTITLE_COLOR = RGBColor(0x40, 0x40, 0x40)
 
+PLACEHOLDER_PREFIX = "[PLACEHOLDER] "
 
-def add_placeholder_slide(prs, title, subtitle=""):
-    """Append a yellow placeholder slide with title and optional subtitle."""
-    blank_layout = None
+
+def _format_title(title):
+    """Prepend '[PLACEHOLDER] ' unless the title already starts with it
+    (case-insensitive, tolerating leading whitespace).
+
+    Always returns the original `title` when the prefix is already present —
+    leading whitespace is preserved either way, so behavior is independent of
+    whether the caller pre-prefixed or not.
+    """
+    if title.lstrip().lower().startswith(PLACEHOLDER_PREFIX.lower()):
+        return title
+    return PLACEHOLDER_PREFIX + title
+
+
+def _find_blank_layout(prs, preferred_name="Blank"):
+    """Return (layout, used_fallback) — warns once in the caller if fallback was used."""
     for layout in prs.slide_layouts:
-        if layout.name == "Blank":
-            blank_layout = layout
-            break
+        if layout.name == preferred_name:
+            return layout, False
+    return prs.slide_layouts[-1], True
+
+
+def add_placeholder_slide(prs, title, subtitle="", blank_layout_name="Blank",
+                          blank_layout=None):
+    """Append a yellow placeholder slide with title and optional subtitle.
+
+    `blank_layout` (optional) — pre-resolved slide layout. When provided,
+    skips the in-function lookup and the fallback warning. The CLI resolves
+    once before the insertion loop and threads the result through to avoid
+    spamming stderr on batch inserts.
+    """
     if blank_layout is None:
-        print("  WARNING: No 'Blank' layout found, using last layout", file=sys.stderr)
-        blank_layout = prs.slide_layouts[-1]
+        blank_layout, used_fallback = _find_blank_layout(prs, blank_layout_name)
+        if used_fallback:
+            print(
+                f"  WARNING: No '{blank_layout_name}' layout found — using last layout "
+                f"'{blank_layout.name}'. Any decorative shapes on that layout will appear "
+                f"behind the placeholder. Pass --blank-layout-name to choose a different layout.",
+                file=sys.stderr,
+            )
 
     slide = prs.slides.add_slide(blank_layout)
     sw, sh = prs.slide_width, prs.slide_height
@@ -64,7 +103,7 @@ def add_placeholder_slide(prs, title, subtitle=""):
     p = tf.paragraphs[0]
     p.alignment = PP_ALIGN.CENTER
     run = p.add_run()
-    run.text = f"[PLACEHOLDER] {title}"
+    run.text = _format_title(title)
     run.font.size = Pt(44)
     run.font.bold = True
     run.font.color.rgb = TITLE_COLOR
@@ -104,6 +143,12 @@ def main():
     parser.add_argument("--title", nargs="*", help="Title(s) for --at mode")
     parser.add_argument("--subtitle", nargs="*", help="Subtitle(s) for --at mode")
     parser.add_argument("--output", "-o", help="Output path (default: overwrite input)")
+    parser.add_argument(
+        "--blank-layout-name",
+        default="Blank",
+        help="Slide layout name to use for placeholders (default: 'Blank'). "
+             "Override when the template's last layout carries decorative shapes.",
+    )
     args = parser.parse_args()
 
     if args.json_file:
@@ -133,24 +178,46 @@ def main():
     total_after = original_count + len(placeholders)
     print(f"Opened {args.deck}: {original_count} slides")
 
-    # Validate positions
+    # Validate positions: in range and distinct
+    seen = set()
     for ph in placeholders:
         pos = ph["position"]
         if pos < 1 or pos > total_after:
             print(f"ERROR: position {pos} out of range (1..{total_after})", file=sys.stderr)
             sys.exit(1)
+        if pos in seen:
+            print(
+                f"ERROR: duplicate position {pos} — 'final position after all insertions' "
+                f"must be unique per placeholder",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        seen.add(pos)
 
-    # Insert from highest position to lowest so earlier inserts don't shift later targets.
-    # Each placeholder is appended to the end, then immediately moved to its target position.
-    for ph in sorted(placeholders, key=lambda x: x["position"], reverse=True):
+    # Resolve the layout once and warn at most once if we fall back, instead
+    # of warning per-insertion (which spams stderr on batch inserts).
+    blank_layout, used_fallback = _find_blank_layout(prs, args.blank_layout_name)
+    if used_fallback:
+        print(
+            f"  WARNING: No '{args.blank_layout_name}' layout found — using last layout "
+            f"'{blank_layout.name}'. Any decorative shapes on that layout will appear "
+            f"behind the placeholder. Pass --blank-layout-name to choose a different layout.",
+            file=sys.stderr,
+        )
+
+    # Insert from lowest position to highest. Each iteration appends one placeholder,
+    # growing the deck by one, then moves it to position-1. With distinct positions
+    # sorted ascending, position[i] <= original_count + i + 1 is guaranteed, so the
+    # move target is always within bounds (avoiding Python's list.insert clamp).
+    for ph in sorted(placeholders, key=lambda x: x["position"]):
         title = ph["title"]
         subtitle = ph.get("subtitle", "")
         position = ph["position"]
 
-        add_placeholder_slide(prs, title, subtitle)
+        add_placeholder_slide(prs, title, subtitle, blank_layout=blank_layout)
         last_idx = len(prs.slides) - 1
         move_slide(prs, last_idx, position - 1)
-        print(f"  Inserted [PLACEHOLDER] {title} at position {position}")
+        print(f"  Inserted {_format_title(title)} at position {position}")
 
     output_path = args.output or args.deck
     prs.save(output_path)
