@@ -1,9 +1,20 @@
 """Tests for insert-placeholder-slides.py — placeholder slide insertion."""
 
+import json
+import os
+import subprocess
+import sys
+
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 
-from conftest import make_deck
+from conftest import make_deck, SCRIPTS_PC
+
+SCRIPT = os.path.join(SCRIPTS_PC, "insert-placeholder-slides.py")
+
+
+def _slide_texts(slide):
+    return [s.text_frame.text for s in slide.shapes if s.has_text_frame]
 
 
 def test_yellow_background(insert_placeholder, tmp_path):
@@ -92,3 +103,97 @@ def test_output_flag(insert_placeholder, tmp_path):
     assert len(Presentation(original).slides) == 3
     # Output has the new slide
     assert len(Presentation(output).slides) == 4
+
+
+def test_title_not_double_prefixed(insert_placeholder):
+    """A title that already starts with '[PLACEHOLDER] ' must not be re-prefixed."""
+    prs = make_deck(1)
+    slide = insert_placeholder.add_placeholder_slide(prs, "[PLACEHOLDER] Foo")
+    texts = _slide_texts(slide)
+    assert any(t == "[PLACEHOLDER] Foo" for t in texts)
+    assert not any("[PLACEHOLDER] [PLACEHOLDER]" in t for t in texts)
+
+
+def test_format_title_helper(insert_placeholder):
+    """The title formatter prepends the prefix only when missing."""
+    f = insert_placeholder._format_title
+    assert f("Foo") == "[PLACEHOLDER] Foo"
+    assert f("[PLACEHOLDER] Foo") == "[PLACEHOLDER] Foo"
+    # Case-insensitive: already-prefixed in lowercase should not double-prefix.
+    assert f("[placeholder] foo") == "[placeholder] foo"
+
+
+def _run_cli(deck_path, json_path):
+    """Invoke the script as a subprocess so argparse and stderr behave realistically."""
+    return subprocess.run(
+        [sys.executable, SCRIPT, deck_path, json_path],
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_cli_positions_land_at_declared_finals(tmp_path):
+    """Regression for #18: high positions must land at their declared final positions,
+    not silently append because list.insert clamped an out-of-range index."""
+    prs = make_deck(8)
+    deck = str(tmp_path / "deck.pptx")
+    prs.save(deck)
+
+    # Original length 8, 4 placeholders at final positions 2, 6, 11, 12 (total_after=12).
+    # Pre-fix with high-to-low iteration, positions 11 and 12 landed at wrong indexes.
+    spec = [
+        {"position": 2,  "title": "A", "subtitle": ""},
+        {"position": 6,  "title": "B", "subtitle": ""},
+        {"position": 11, "title": "C", "subtitle": ""},
+        {"position": 12, "title": "D", "subtitle": ""},
+    ]
+    spec_path = str(tmp_path / "spec.json")
+    with open(spec_path, "w") as f:
+        json.dump(spec, f)
+
+    result = _run_cli(deck, spec_path)
+    assert result.returncode == 0, result.stderr
+
+    final = Presentation(deck)
+    assert len(final.slides) == 12
+
+    # Each placeholder's title should appear at its declared 1-indexed position.
+    for entry in spec:
+        idx = entry["position"] - 1
+        texts = _slide_texts(final.slides[idx])
+        assert any(f"[PLACEHOLDER] {entry['title']}" in t for t in texts), (
+            f"expected '{entry['title']}' at position {entry['position']}, "
+            f"got texts {texts}"
+        )
+
+
+def test_cli_rejects_duplicate_positions(tmp_path):
+    prs = make_deck(3)
+    deck = str(tmp_path / "deck.pptx")
+    prs.save(deck)
+
+    spec_path = str(tmp_path / "spec.json")
+    with open(spec_path, "w") as f:
+        json.dump([
+            {"position": 2, "title": "A", "subtitle": ""},
+            {"position": 2, "title": "B", "subtitle": ""},
+        ], f)
+
+    result = _run_cli(deck, spec_path)
+    assert result.returncode != 0
+    assert "duplicate position" in result.stderr
+
+
+def test_cli_rejects_out_of_range(tmp_path):
+    prs = make_deck(3)
+    deck = str(tmp_path / "deck.pptx")
+    prs.save(deck)
+
+    spec_path = str(tmp_path / "spec.json")
+    with open(spec_path, "w") as f:
+        # Original 3 + 1 placeholder = total_after 4; position 99 is out of range.
+        json.dump([{"position": 99, "title": "A", "subtitle": ""}], f)
+
+    result = _run_cli(deck, spec_path)
+    assert result.returncode != 0
+    assert "out of range" in result.stderr
