@@ -306,7 +306,11 @@ def stylize_portrait(speaker_b64, speaker_mime, anchor, model, api_key):
         # absolutes). If Gemini rejects this, the deck's anchor is likely
         # the trigger and softening won't help.
         raise RuntimeError(
-            f"Portrait pre-stylization failed: {result}"
+            f"Portrait pre-stylization failed: {result}\n"
+            f"Try a shorter / simpler --portrait-style anchor (Gemini rejects "
+            f"prompts with too much period-specific or restrictive language), "
+            f"or omit --portrait-style and pre-stylize the photo manually via "
+            f"Google AI Studio before passing it as --speaker-photo."
         )
     stylized_b64 = base64.b64encode(image_bytes).decode("utf-8")
     return stylized_b64, result  # `result` is the mime_type on success
@@ -592,11 +596,18 @@ def compose_thumbnail(args):
     # to the anchor, fixing the "skin tones beside sepia" mismatch that both
     # standard aesthetics produce on illustrated decks. See Issue #31.
     if args.portrait_style:
-        print(f"Pre-stylizing portrait to anchor: {args.portrait_style[:80]}"
-              f"{'...' if len(args.portrait_style) > 80 else ''}")
-        speaker_b64, speaker_mime = stylize_portrait(
-            speaker_b64, speaker_mime, args.portrait_style, model, api_key,
-        )
+        # Normalize whitespace for the preview log — anchors copied from
+        # markdown blocks can carry newlines that break log readability.
+        anchor_preview = " ".join(args.portrait_style.split())
+        print(f"Pre-stylizing portrait to anchor: {anchor_preview[:80]}"
+              f"{'...' if len(anchor_preview) > 80 else ''}")
+        try:
+            speaker_b64, speaker_mime = stylize_portrait(
+                speaker_b64, speaker_mime, args.portrait_style, model, api_key,
+            )
+        except RuntimeError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            sys.exit(1)
 
     print("Generating thumbnail...")
 
