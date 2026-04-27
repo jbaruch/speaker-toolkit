@@ -4,6 +4,9 @@
   "dependencies": {
     "tessl-labs/tessl-skill-eval-scenarios": {
       "version": "0.1.0"
+    },
+    "jbaruch/coding-policy": {
+      "version": "0.2.5"
     }
   }
 }
