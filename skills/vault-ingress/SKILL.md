@@ -61,11 +61,19 @@ files to shownotes entries.
    `tracking-database.json` with empty `config`, `talks`, `pptx_catalog`.
 
 **Config bootstrapping** — ask once per missing field and persist to the tracking
-database. Core fields: `talks_source_dir`, `pptx_source_dir`, `python_path`,
-`template_skip_patterns`. See [references/schemas-db.md](references/schemas-db.md) for the full schema.
+database. Core fields: `shownotes` (enabled, source.type, source.path_or_url,
+source.talks_subdir, url.base, url.template, thumbnail_path_template,
+slug_convention), `pptx_source_dir`, `python_path`, `template_skip_patterns`.
+See [references/schemas-db.md](references/schemas-db.md) for the full schema
+and [../vault-profile/references/schemas-config.md](../vault-profile/references/schemas-config.md)
+for field-by-field semantics and migration notes.
 
-**Scan for new talks:** Glob `*.md` in `talks_source_dir`; parse and add any file not
-yet in `talks[]` (title, conference, date, URLs, status `"pending"`). Extract
+**Scan for new talks:** Build the talks directory path as
+`{shownotes.source.path_or_url}/{shownotes.source.talks_subdir}`; glob `*.md`
+there; parse and add any file not yet in `talks[]` (title, conference, date,
+URLs, status `"pending"`). For `remote_url` or `none` source types, skip the
+scan — the vault ingests only the talks the speaker has already registered
+elsewhere. Extract
 `video_url`, `slides_url` from frontmatter/links. Parse IDs from URLs:
 - `youtube_id`: extract the `v=` parameter from YouTube URLs
   (e.g., `https://www.youtube.com/watch?v=aBcDeFg` → `youtube_id: "aBcDeFg"`)

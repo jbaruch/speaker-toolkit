@@ -107,7 +107,7 @@ Must-avoid:        [list]
 Co-presenter:      [none | name + handle + role split]
 Profanity register:[from profile rhetoric_defaults]
 Duration target:   [from profile rhetoric_defaults.default_duration_minutes]
-Shownotes slug:    [generated per profile shownotes_slug_convention — see phase1-intent.md]
+Shownotes slug:    [generated per profile publishing_process.shownotes.slug_convention — see phase1-intent.md]
 ```
 
 Gate: Author confirms or edits the spec.
@@ -267,7 +267,7 @@ If `publishing_process` is missing or empty, ask the author interactively.
 Execute the steps from the profile:
 0. **Resources** — extract and curate resource list from outline (`extract-resources.py`)
 1. **Export** — run `export_method` / `export_script` (see [references/phase5-slides.md](references/phase5-slides.md))
-2. **Shownotes** — if `shownotes_publishing.enabled`, use curated resources from Step 6.0
+2. **Shownotes** — if `publishing_process.shownotes.enabled`, use curated resources from Step 6.0
 3. **QR Code** — if `qr_code.enabled`, generate and insert per profile
 4. **Additional steps** — execute each `additional_steps[]` entry
 5. **Go-live checklist** — surface unobservable patterns from [references/patterns/_index.md](references/patterns/_index.md)

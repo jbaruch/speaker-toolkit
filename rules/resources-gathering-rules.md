@@ -79,20 +79,27 @@ The publishing destination for shownotes MUST be discoverable from the speaker
 profile — agents should never guess, search the web, or grep local files to
 find where shownotes are published.
 
-Read from `speaker-profile.json`:
-- **Base URL:** `publishing_process.shownotes_site` — the shownotes host
-  (e.g., `https://speaking.jbaru.ch`)
-- **Per-talk URL pattern:** `speaker.shownotes_url_pattern` — uses
-  `{shownotes_site}` and `{slug}` placeholders
-  (e.g., `{shownotes_site}/{slug}`)
+Read from `speaker-profile.json` → `publishing_process.shownotes`:
+- **Base URL:** `url.base` (e.g., `https://speaking.jbaru.ch`)
+- **Permalink template:** `url.template` (e.g., `/talks/{slug}/`,
+  `/{yyyy}-{mm}-{dd}-{slug}/`) — reflects the SSG's actual deployed URL
+  structure, not a flat `{slug}` substitution
 
 When checking talk metadata (video status, slide links, resource lists):
-1. Substitute `{shownotes_site}` and `{slug}` into
-   `speaker.shownotes_url_pattern` to construct the talk URL
-2. If `shownotes_url_pattern` is absent but `shownotes_site` is present,
-   use `{shownotes_site}/{slug}` as the default
-3. Fetch the page to read current state
-4. Do NOT search Google, conference sites, or local directories
+1. Compose the full URL: `url.base` + the result of substituting `{slug}`
+   and date variables (`{yyyy}`, `{mm}`, `{dd}`) into `url.template`
+2. Fetch the page to read current state
+3. Do NOT search Google, conference sites, or local directories
 
-If `shownotes_site` is absent from the profile, ask the speaker during
-vault-clarification (Step 5B infrastructure capture).
+Supported template variables:
+
+| Variable | Meaning |
+|---|---|
+| `{slug}` | Talk slug from Presentation Spec |
+| `{yyyy}` / `{yy}` | Year from talk `date` |
+| `{mm}` / `{dd}` | Month / day |
+| `{venue}` | Slugified venue name |
+
+If `publishing_process.shownotes` is absent or incomplete, ask the speaker
+during vault-clarification (Step 4 infrastructure capture) — the config
+object, not the individual legacy fields.

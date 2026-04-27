@@ -43,8 +43,12 @@ Slug format: `{YYYY-MM-DD}-{conference-slug}-{talk-short-name}`
 
 Example: `2026-04-16-devnexus-robocoders-judgment-day`
 
-Read the speaker's convention from `shownotes_slug_convention` in the profile.
-If not set, ask the speaker.
+Read the speaker's convention from
+`publishing_process.shownotes.slug_convention.template` in the profile. If
+not set (or if it disagrees with recent shownotes entries under
+`publishing_process.shownotes.source.path_or_url` /
+`shownotes.source.talks_subdir`), treat the observed live convention as
+authoritative and offer to update the profile via vault-clarification.
 
 ## 5. Missing Shortener Config = STOP
 

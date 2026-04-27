@@ -10,10 +10,21 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
   "config": {
     "vault_root": "~/.claude/rhetoric-knowledge-vault",
     "vault_storage_path": "/actual/path/if/custom (null when using default location)",
-    "talks_source_dir": "/path/to/_talks",
     "pptx_source_dir": "/path/to/Presentations",
     "python_path": "/path/to/python3",
     "template_skip_patterns": ["template"],
+    "shownotes": {
+      "enabled": true,
+      "source": {
+        "type": "local_jekyll|local_hugo|local_eleventy|local_astro|remote_url|none",
+        "path_or_url": "/path/to/shownotes-site-root (or https://... for remote_url)",
+        "talks_subdir": "_talks"
+      },
+      "url": {"base": "https://speaking.example.com", "template": "/{slug}/"},
+      "thumbnail_path_template": "assets/images/thumbnails/{slug}-thumbnail.png",
+      "slug_convention": {"template": "{venue-compact}{yy}-{short-id}", "examples": []},
+      "ssg_template_pointer": "{source.path_or_url}/_layouts/default.html"
+    },
     "clarification_sessions_completed": 0
   },
   "talks": [{

@@ -91,8 +91,16 @@ Read `tracking-database.json` from there to get `vault_root`.
        "mode_visual_profiles": [], "confirmed_visual_intents": []
      },
      "publishing_process": {
+       "shownotes": {
+         "enabled": true,
+         "source": {"type": "...", "path_or_url": "...", "talks_subdir": "..."},
+         "url": {"base": "...", "template": "..."},
+         "thumbnail_path_template": "...",
+         "slug_convention": {"template": "...", "examples": []},
+         "ssg_template_pointer": "..."
+       },
        "export_format": "pdf", "export_method": "...",
-       "shownotes_publishing": {}, "qr_code": {}, "additional_steps": []
+       "qr_code": {}, "additional_steps": []
      },
      "design_rules": {
        "background_color_strategy": "...", "footer": { "pattern": "...", "elements": [] },
