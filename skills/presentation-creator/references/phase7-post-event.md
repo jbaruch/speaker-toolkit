@@ -140,8 +140,9 @@ Apply other speaker preferences from `publishing_process.thumbnail`:
 (`aesthetic_preference` is consumed at the top of this step as the first
 entry in the precedence chain — don't re-apply it here.)
 
-The script:
-- Sends both images + prompt to Gemini as multimodal input
+The script (per invocation — runs once per `--aesthetic`):
+- Sends the slide image + speaker photo + prompt to Gemini as
+  multimodal input (two input images, one Gemini call)
 - Uses researched prompt strategy per the chosen aesthetic
 - Validates output: exactly 1280x720, <2MB, PNG preferred
 - Saves to the specified output path (default: `thumbnail.png` in illustrations dir)
