@@ -100,6 +100,18 @@ default. The comic-book treatment is high-variance: when it works it
 produces significantly higher CTR than photo composites, when it misses
 it looks off-brand.
 
+**Pass through the deck's Illustration Style Anchor.** If
+`presentation-outline.md` contains a `## STYLE ANCHOR` block (Phase 2's
+illustration strategy output), pass its content through to
+`generate-thumbnail.py` via `--portrait-style "<anchor>"`. The script
+will pre-stylize the speaker photo into the anchor's medium (sepia
+tech-manual, watercolor, pen-and-ink, etc.) before composition, so the
+output palette matches the deck instead of clashing with it. Without
+this pass-through, photographic skin tones beside an illustrated
+background produce a jarring two-medium composite even when the
+selected aesthetic is otherwise correct. If Phase 2 didn't produce a
+style anchor (e.g., stock-image-only deck), omit `--portrait-style`.
+
 ```bash
 # Option A: photographic composite (conservative)
 python3 skills/presentation-creator/scripts/generate-thumbnail.py \
@@ -126,6 +138,19 @@ python3 skills/presentation-creator/scripts/generate-thumbnail.py \
   --title-position top \
   --brand-colors "#5B2C6F,#C0392B" \
   --output thumbnail-comic.png
+
+# Option C: anchor-matched (when Phase 2 produced a STYLE ANCHOR)
+python3 skills/presentation-creator/scripts/generate-thumbnail.py \
+  --slide-image illustrations/slide-15.png \
+  --speaker-photo ~/photos/headshot.jpg \
+  --title "JUDGMENT DAY" \
+  --subtitle "DevNexus 2026" \
+  --vault ~/.claude/rhetoric-knowledge-vault \
+  --aesthetic photo \
+  --portrait-style "Retro U.S. Military WWII technical manual, sepia, pen-and-ink crosshatching, WWII uniform with garrison cap" \
+  --style slide_dominant \
+  --title-position top \
+  --output thumbnail-anchored.png
 ```
 
 For most runs only ONE candidate is needed — the one chosen by the

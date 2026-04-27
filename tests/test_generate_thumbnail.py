@@ -256,6 +256,66 @@ def test_call_gemini_http_error_prefix(generate_thumbnail, monkeypatch):
     assert not err.startswith(generate_thumbnail._ERR_FILTER)
 
 
+# --- Issue #31: portrait pre-stylization (two-pass for deck anchors) ---
+
+
+def test_stylize_portrait_returns_stylized_bytes(generate_thumbnail, monkeypatch):
+    """stylize_portrait sends the photo + prompt to Gemini and returns the
+    base64-encoded stylized bytes + the response mime type."""
+    captured = {}
+
+    def fake_call_gemini(parts, model, api_key):
+        captured["parts"] = parts
+        return b"STYLIZED_BYTES", "image/png"
+
+    monkeypatch.setattr(generate_thumbnail, "call_gemini", fake_call_gemini)
+    b64, mime = generate_thumbnail.stylize_portrait(
+        "ORIGINAL_B64", "image/jpeg",
+        "retro tech-manual, sepia, pen-and-ink crosshatching",
+        "gemini-3-pro-image-preview", "key",
+    )
+    assert mime == "image/png"
+    # Stylized bytes are returned base64-encoded
+    import base64
+    assert base64.b64decode(b64) == b"STYLIZED_BYTES"
+    # The single Gemini call had exactly the photo + a prompt mentioning the anchor
+    assert len(captured["parts"]) == 2
+    assert captured["parts"][0]["inlineData"]["data"] == "ORIGINAL_B64"
+    assert "retro tech-manual" in captured["parts"][1]["text"]
+    assert "Preserve identifying features" in captured["parts"][1]["text"]
+
+
+def test_stylize_portrait_raises_on_filter_rejection(generate_thumbnail, monkeypatch):
+    """A filter rejection on the pre-stylize call is unrecoverable here —
+    the prompt is already minimal. Surface as a RuntimeError; don't soften."""
+    import pytest
+
+    def fake_call_gemini(parts, model, api_key):
+        return None, generate_thumbnail._ERR_FILTER + "blocked"
+
+    monkeypatch.setattr(generate_thumbnail, "call_gemini", fake_call_gemini)
+    with pytest.raises(RuntimeError) as excinfo:
+        generate_thumbnail.stylize_portrait(
+            "B64", "image/jpeg", "any anchor", "model", "key",
+        )
+    assert "Portrait pre-stylization failed" in str(excinfo.value)
+
+
+def test_stylize_portrait_raises_on_http_error(generate_thumbnail, monkeypatch):
+    """HTTP errors are also surfaced as RuntimeError — softening a stylize
+    call doesn't help (the prompt has no viral-styling demands to drop)."""
+    import pytest
+
+    def fake_call_gemini(parts, model, api_key):
+        return None, generate_thumbnail._ERR_HTTP + "429: rate limited"
+
+    monkeypatch.setattr(generate_thumbnail, "call_gemini", fake_call_gemini)
+    with pytest.raises(RuntimeError):
+        generate_thumbnail.stylize_portrait(
+            "B64", "image/jpeg", "any anchor", "model", "key",
+        )
+
+
 def _make_large_image_bytes():
     """Create a large random-ish image that exceeds 2MB as PNG."""
     import random
