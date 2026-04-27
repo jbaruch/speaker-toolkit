@@ -17,6 +17,7 @@ Usage:
       [--vault ~/.claude/rhetoric-knowledge-vault] \
       [--style slide_dominant|split_panel|overlay] \
       [--aesthetic photo|comic_book] \
+      [--portrait-style "<anchor>"] \
       [--title-position top|bottom|overlay] \
       [--brand-colors "#5B2C6F,#C0392B"] \
       [--model gemini-3-pro-image-preview]
@@ -264,6 +265,55 @@ def call_gemini(parts, model, api_key):
         pass
 
     return None, f"{_ERR_FILTER}No image in response: {json.dumps(body)[:500]}"
+
+
+# --- Portrait Pre-Stylization (Issue #31) ---
+#
+# When a deck has an Illustration Style Anchor (e.g., retro tech-manual sepia,
+# watercolor, ink-on-parchment), neither --aesthetic photo (palette mismatch)
+# nor --aesthetic comic_book (fixed warm-Marvel palette) produces a portrait
+# that fits the deck. The two-pass solution: first stylize the speaker photo
+# into the deck's anchor (one Gemini image-edit call), then run the normal
+# composition step using the stylized portrait as input. Output palette
+# matches the anchor automatically.
+
+_PORTRAIT_STYLIZE_PROMPT_TEMPLATE = (
+    "Render this portrait in the following illustration style: {anchor}. "
+    "Preserve identifying features (hair, beard, glasses, hat, accessories) "
+    "so the person remains recognizable. Output only the stylized portrait, "
+    "framed as a headshot from the shoulders up, on a neutral background "
+    "consistent with the requested style."
+)
+
+
+def stylize_portrait(speaker_b64, speaker_mime, anchor, model, api_key):
+    """Pre-stylize the speaker photo to match a deck illustration style anchor.
+
+    Returns (stylized_b64, stylized_mime) on success, or raises RuntimeError on
+    failure. The composition pipeline downstream treats the stylized portrait
+    as if it were the original speaker photo.
+    """
+    prompt = _PORTRAIT_STYLIZE_PROMPT_TEMPLATE.format(anchor=anchor)
+    parts = [
+        {"inlineData": {"mimeType": speaker_mime, "data": speaker_b64}},
+        {"text": prompt},
+    ]
+    image_bytes, result = call_gemini(parts, model, api_key)
+    if image_bytes is None:
+        # Either FILTER, HTTP, or OTHER. Caller decides how to surface; we
+        # don't soften the prompt for stylization because the prompt is
+        # already minimal (no viral-styling demands or face-preservation
+        # absolutes). If Gemini rejects this, the deck's anchor is likely
+        # the trigger and softening won't help.
+        raise RuntimeError(
+            f"Portrait pre-stylization failed: {result}\n"
+            f"Try a shorter / simpler --portrait-style anchor (Gemini rejects "
+            f"prompts with too much period-specific or restrictive language), "
+            f"or omit --portrait-style and pre-stylize the photo manually via "
+            f"Google AI Studio before passing it as --speaker-photo."
+        )
+    stylized_b64 = base64.b64encode(image_bytes).decode("utf-8")
+    return stylized_b64, result  # `result` is the mime_type on success
 
 
 # --- Prompt Construction ---
@@ -540,6 +590,25 @@ def compose_thumbnail(args):
     print(f"Title: \"{args.title}\"")
     if args.subtitle:
         print(f"Subtitle: \"{args.subtitle}\"")
+
+    # Pre-stylize portrait to match the deck's illustration anchor when set.
+    # This makes the composition step's input photo already palette-matched
+    # to the anchor, fixing the "skin tones beside sepia" mismatch that both
+    # standard aesthetics produce on illustrated decks. See Issue #31.
+    if args.portrait_style:
+        # Normalize whitespace for the preview log — anchors copied from
+        # markdown blocks can carry newlines that break log readability.
+        anchor_preview = " ".join(args.portrait_style.split())
+        print(f"Pre-stylizing portrait to anchor: {anchor_preview[:80]}"
+              f"{'...' if len(anchor_preview) > 80 else ''}")
+        try:
+            speaker_b64, speaker_mime = stylize_portrait(
+                speaker_b64, speaker_mime, args.portrait_style, model, api_key,
+            )
+        except RuntimeError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            sys.exit(1)
+
     print("Generating thumbnail...")
 
     # Build the image parts once; the prompt text is rebuilt per softness level.
@@ -640,6 +709,13 @@ def main():
                         help="Rendering aesthetic (default: photo). 'comic_book' "
                              "produces a caricatured, halftone-shaded illustration "
                              "in the speaker's on-brand comic-book style.")
+    parser.add_argument("--portrait-style", default=None,
+                        help="Deck Illustration Style Anchor. When set, the "
+                             "speaker photo is first pre-stylized to match the "
+                             "anchor (e.g., retro tech-manual sepia, watercolor) "
+                             "before composition — fixes palette mismatch on "
+                             "decks with a strong visual style. Pass through from "
+                             "Phase 2's STYLE ANCHOR block when present.")
     parser.add_argument("--title-position", choices=["top", "bottom", "overlay"],
                         default="top",
                         help="Title text position (default: top)")

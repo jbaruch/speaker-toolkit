@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Presentation Creator
+
+- **`generate-thumbnail.py --portrait-style "<anchor>"`** — new flag
+  enables a two-pass pipeline for decks with an Illustration Style
+  Anchor (Phase 2 output). The script first pre-stylizes the speaker
+  photo into the anchor's medium (sepia tech-manual, watercolor, ink,
+  etc.) via a Gemini image-edit call, then runs the normal composition
+  step using the stylized portrait as input. Fixes the palette-mismatch
+  problem on illustrated decks that neither `--aesthetic photo` nor
+  `--aesthetic comic_book` could solve. Independent of `--aesthetic`;
+  they compose. Phase 7 Step 7.1 now passes the anchor through
+  automatically when `presentation-outline.md` has a `## STYLE ANCHOR`
+  block. Fixes #31.
+
+### Tests
+
+- 6 new tests for the two-pass thumbnail pipeline
+  (`test_stylize_portrait_*` × 4, `test_compose_thumbnail_*` × 2).
+
 ## 0.17.0
 
 **Talk timer, Keynote compatibility, shownotes destination** — New delivery timer

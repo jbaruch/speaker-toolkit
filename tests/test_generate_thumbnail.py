@@ -256,6 +256,220 @@ def test_call_gemini_http_error_prefix(generate_thumbnail, monkeypatch):
     assert not err.startswith(generate_thumbnail._ERR_FILTER)
 
 
+# --- Issue #31: portrait pre-stylization (two-pass for deck anchors) ---
+
+
+def test_stylize_portrait_returns_stylized_bytes(generate_thumbnail, monkeypatch):
+    """stylize_portrait sends the photo + prompt to Gemini and returns the
+    base64-encoded stylized bytes + the response mime type."""
+    captured = {}
+
+    def fake_call_gemini(parts, model, api_key):
+        captured["parts"] = parts
+        return b"STYLIZED_BYTES", "image/png"
+
+    monkeypatch.setattr(generate_thumbnail, "call_gemini", fake_call_gemini)
+    b64, mime = generate_thumbnail.stylize_portrait(
+        "ORIGINAL_B64", "image/jpeg",
+        "retro tech-manual, sepia, pen-and-ink crosshatching",
+        "gemini-3-pro-image-preview", "key",
+    )
+    assert mime == "image/png"
+    # Stylized bytes are returned base64-encoded
+    import base64
+    assert base64.b64decode(b64) == b"STYLIZED_BYTES"
+    # The single Gemini call had exactly the photo + a prompt mentioning the anchor
+    assert len(captured["parts"]) == 2
+    assert captured["parts"][0]["inlineData"]["data"] == "ORIGINAL_B64"
+    assert "retro tech-manual" in captured["parts"][1]["text"]
+    assert "Preserve identifying features" in captured["parts"][1]["text"]
+
+
+def test_stylize_portrait_raises_on_filter_rejection(generate_thumbnail, monkeypatch):
+    """A filter rejection on the pre-stylize call is unrecoverable here —
+    the prompt is already minimal. Surface as a RuntimeError; don't soften."""
+    import pytest
+
+    def fake_call_gemini(parts, model, api_key):
+        return None, generate_thumbnail._ERR_FILTER + "blocked"
+
+    monkeypatch.setattr(generate_thumbnail, "call_gemini", fake_call_gemini)
+    with pytest.raises(RuntimeError) as excinfo:
+        generate_thumbnail.stylize_portrait(
+            "B64", "image/jpeg", "any anchor", "model", "key",
+        )
+    assert "Portrait pre-stylization failed" in str(excinfo.value)
+
+
+def test_stylize_portrait_raises_on_http_error(generate_thumbnail, monkeypatch):
+    """HTTP errors are also surfaced as RuntimeError — softening a stylize
+    call doesn't help (the prompt has no viral-styling demands to drop)."""
+    import pytest
+
+    def fake_call_gemini(parts, model, api_key):
+        return None, generate_thumbnail._ERR_HTTP + "429: rate limited"
+
+    monkeypatch.setattr(generate_thumbnail, "call_gemini", fake_call_gemini)
+    with pytest.raises(RuntimeError):
+        generate_thumbnail.stylize_portrait(
+            "B64", "image/jpeg", "any anchor", "model", "key",
+        )
+
+
+def test_stylize_portrait_error_message_is_actionable(generate_thumbnail, monkeypatch):
+    """Per error-handling rule, the error must tell the user what to DO,
+    not just what went wrong. The wrapper message includes recovery
+    guidance (shorter anchor / pre-stylize manually)."""
+    import pytest
+
+    def fake_call_gemini(parts, model, api_key):
+        return None, generate_thumbnail._ERR_FILTER + "blocked"
+
+    monkeypatch.setattr(generate_thumbnail, "call_gemini", fake_call_gemini)
+    with pytest.raises(RuntimeError) as excinfo:
+        generate_thumbnail.stylize_portrait("B64", "image/jpeg", "x", "m", "k")
+    msg = str(excinfo.value)
+    assert "Portrait pre-stylization failed" in msg
+    # Recovery guidance is what makes the error actionable.
+    assert "shorter" in msg.lower() or "simpler" in msg.lower()
+    assert "Google AI Studio" in msg or "manually" in msg.lower()
+
+
+def test_compose_thumbnail_two_pass_threads_stylized_portrait(
+    generate_thumbnail, monkeypatch, tmp_path,
+):
+    """When --portrait-style is set, compose_thumbnail must:
+    (a) call stylize_portrait with the original photo bytes, and
+    (b) feed the STYLIZED bytes into the subsequent composition call_gemini,
+        not the original photo bytes.
+    """
+    import argparse
+
+    # Build a minimal .png and .jpg on disk so load_image_as_base64 can read them.
+    slide_path = tmp_path / "slide.png"
+    speaker_path = tmp_path / "headshot.jpg"
+    slide_path.write_bytes(b"SLIDE_RAW")
+    speaker_path.write_bytes(b"PHOTO_RAW")
+
+    # Patch out the API key load so we don't need secrets.json.
+    monkeypatch.setattr(generate_thumbnail, "load_api_key", lambda v: "fake-key")
+
+    # Track every call_gemini invocation: order and the photo bytes inside.
+    calls = []
+
+    def fake_call_gemini(parts, model, api_key):
+        # Record the second inlineData part's `data` value (the speaker photo
+        # in the composition call) so the assertion can confirm it's the
+        # stylized output, not the original.
+        photo_part = next(
+            (p for p in parts if "inlineData" in p and p["inlineData"]["data"] != "PHOTO_RAW_B64"),
+            None,
+        )
+        # The composition call will have BOTH images; record the photo data.
+        composition_photo_data = None
+        if len(parts) >= 2 and "inlineData" in parts[1]:
+            composition_photo_data = parts[1]["inlineData"]["data"]
+        calls.append({"parts_count": len(parts), "composition_photo": composition_photo_data})
+        # Return a 1280x720 PNG to satisfy validate_and_resize.
+        from io import BytesIO
+        img = Image.new("RGB", (1280, 720), (10, 20, 30))
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue(), "image/png"
+
+    # Patch stylize_portrait to return identifiable bytes so the composition
+    # call's inlineData.data is verifiable.
+    def fake_stylize(speaker_b64, speaker_mime, anchor, model, api_key):
+        # Confirm the original photo bytes reach the stylize step
+        import base64
+        assert base64.b64decode(speaker_b64) == b"PHOTO_RAW"
+        assert anchor == "sepia tech-manual, pen-and-ink"
+        return "STYLIZED_B64", "image/png"
+
+    monkeypatch.setattr(generate_thumbnail, "call_gemini", fake_call_gemini)
+    monkeypatch.setattr(generate_thumbnail, "stylize_portrait", fake_stylize)
+
+    args = argparse.Namespace(
+        slide_image=str(slide_path),
+        speaker_photo=str(speaker_path),
+        title="JUDGMENT DAY",
+        subtitle=None,
+        output=str(tmp_path / "out.png"),
+        vault=str(tmp_path),
+        style="slide_dominant",
+        aesthetic="photo",
+        portrait_style="sepia tech-manual, pen-and-ink",
+        title_position="top",
+        brand_colors=None,
+        model=None,
+    )
+
+    generate_thumbnail.compose_thumbnail(args)
+
+    # Composition was called once (default softness path produced an image
+    # immediately, so the retry ladder didn't need to fire).
+    assert len(calls) == 1
+    # The composition call's photo data is the STYLIZED output, not the
+    # original PHOTO_RAW.
+    assert calls[0]["composition_photo"] == "STYLIZED_B64"
+
+
+def test_compose_thumbnail_skips_pre_stylize_when_no_anchor(
+    generate_thumbnail, monkeypatch, tmp_path,
+):
+    """Without --portrait-style, stylize_portrait must NOT be invoked; the
+    original photo bytes go directly to composition."""
+    import argparse, base64
+
+    slide_path = tmp_path / "slide.png"
+    speaker_path = tmp_path / "headshot.jpg"
+    slide_path.write_bytes(b"SLIDE_RAW")
+    speaker_path.write_bytes(b"PHOTO_RAW")
+
+    monkeypatch.setattr(generate_thumbnail, "load_api_key", lambda v: "fake-key")
+
+    stylize_called = []
+
+    def fake_stylize(*a, **kw):
+        stylize_called.append(True)
+        return "WRONG", "image/png"
+
+    captured_photo = []
+
+    def fake_call_gemini(parts, model, api_key):
+        if len(parts) >= 2 and "inlineData" in parts[1]:
+            captured_photo.append(parts[1]["inlineData"]["data"])
+        from io import BytesIO
+        img = Image.new("RGB", (1280, 720), (10, 20, 30))
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue(), "image/png"
+
+    monkeypatch.setattr(generate_thumbnail, "stylize_portrait", fake_stylize)
+    monkeypatch.setattr(generate_thumbnail, "call_gemini", fake_call_gemini)
+
+    args = argparse.Namespace(
+        slide_image=str(slide_path),
+        speaker_photo=str(speaker_path),
+        title="T", subtitle=None,
+        output=str(tmp_path / "out.png"),
+        vault=str(tmp_path),
+        style="slide_dominant",
+        aesthetic="photo",
+        portrait_style=None,
+        title_position="top",
+        brand_colors=None,
+        model=None,
+    )
+
+    generate_thumbnail.compose_thumbnail(args)
+
+    assert stylize_called == [], "stylize_portrait must not run without --portrait-style"
+    # The composition call received the ORIGINAL photo (base64-encoded raw).
+    expected_b64 = base64.b64encode(b"PHOTO_RAW").decode("utf-8")
+    assert captured_photo[0] == expected_b64
+
+
 def _make_large_image_bytes():
     """Create a large random-ish image that exceeds 2MB as PNG."""
     import random

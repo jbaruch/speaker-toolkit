@@ -165,6 +165,23 @@ default flag. The agent's recommendation, however, follows the profile's
 override the CLI default whenever the profile signals a clear illustrated
 brand.
 
+**Deck illustration anchor — `--portrait-style`.** When the deck has its
+own Illustration Style Anchor (Phase 2's `STYLE ANCHOR` block in
+`presentation-outline.md`), pass it to the script via `--portrait-style
+"<anchor>"`. The script pre-stylizes the speaker photo into the
+anchor's medium (sepia tech-manual, watercolor, pen-and-ink, retro
+poster, etc.) before composition. This fixes the palette mismatch that
+either standard aesthetic produces on illustrated decks: photographic
+skin tones beside a sepia background look jarring; the comic-book
+template's warm Marvel palette clashes with cool / muted anchor styles.
+
+`--portrait-style` is independent of `--aesthetic` — they compose. For
+most illustrated decks, `--aesthetic photo` + `--portrait-style "<anchor>"`
+yields the cleanest result (the portrait is already stylized, so the
+photo aesthetic's "natural" framing applies to a portrait that is no
+longer photographic). Use `--aesthetic comic_book` + `--portrait-style`
+only when the anchor itself describes comic-book treatment.
+
 ## 8. Model Selection and Retry Ladder
 
 Face-composition with real-person photos only works on Nano Banana Pro
