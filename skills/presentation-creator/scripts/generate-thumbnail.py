@@ -240,10 +240,16 @@ def call_gemini(parts, model, api_key):
         with urllib.request.urlopen(req, timeout=180) as resp:
             body = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
+        # HTTPError is a subclass of URLError; must catch first.
         error_body = e.read().decode("utf-8", errors="replace")
         return None, f"{_ERR_HTTP}{e.code}: {error_body[:500]}"
-    except Exception as e:
-        return None, f"{_ERR_OTHER}{e}"
+    except urllib.error.URLError as e:
+        # DNS resolution failure, connection refused, TLS error, etc.
+        return None, f"{_ERR_OTHER}URLError: {e.reason}"
+    except TimeoutError as e:
+        return None, f"{_ERR_OTHER}timeout: {e}"
+    except json.JSONDecodeError as e:
+        return None, f"{_ERR_OTHER}invalid JSON in response: {e}"
 
     # Extract image from response
     try:
