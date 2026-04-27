@@ -49,9 +49,10 @@ The `slide_source` field tracks which path: `"pptx"`, `"pdf"`, `"both"`,
 `"video_extracted"`, or `"none"`. The `pptx_catalog` array fuzzy-matches `.pptx`
 files to shownotes entries.
 
-## Workflow
+Process the steps below in order. Do not skip ahead — each step's output
+(tracking DB state, batch results, per-talk artifacts) feeds the next.
 
-### Step 1: Load State & Sync Sources
+## Step 1 — Load State & Sync Sources
 
 **Vault discovery** — canonical path is always `~/.claude/rhetoric-knowledge-vault/`.
 
@@ -86,7 +87,7 @@ lack `pattern_observations` are marked `"needs-reprocessing"`.
 Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
 "X processed, Y remaining. PPTX: A cataloged, B matched, C extracted."
 
-### Step 2: Select Talks to Process
+## Step 2 — Select Talks to Process
 
 - Select talks with status `pending` or `needs-reprocessing`.
 - Set `slide_source` per the hierarchy above. Mark `"skipped_no_sources"` only if
@@ -94,9 +95,9 @@ Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
   regardless of whether slides exist.
 - If `$ARGUMENTS` specifies a talk filename or title, process ONLY that one.
 
-### Step 3: Process Talks — Parallel Subagents, Batches of 5
+## Step 3 — Process Talks via Parallel Subagents (Batches of 5)
 
-Per batch: launch 5 subagents in parallel, wait, run Step 4, then next batch.
+Per batch: launch 5 subagents in parallel, wait, run Step 4 (Collect Results), then next batch. When all batches have finished, proceed to Step 5.
 Each subagent receives the talk's DB entry and current `rhetoric-style-summary.md`.
 
 #### Per-Talk Subagent Instructions:
@@ -191,7 +192,37 @@ Minimal structure:
 }
 ```
 
-### Step 3B: Extract Remaining PPTX Visual Data
+## Step 4 — Collect Results & Update
+
+Runs after each batch inside Step 3's loop (not as a separate post-loop
+phase).
+
+1. **Update tracking DB** — set `status`, `processed_date`, all result fields.
+   Persist `pattern_observations` IDs + score. Populate structured fields
+   (`co_presenter`, `delivery_language`, etc.) — do not leave structured data buried
+   in free-text prose. See [references/processing-rules.md](references/processing-rules.md) for field extraction rules.
+2. **Write per-talk analysis files** — write
+   `{vault_root}/analyses/{talk_filename}.md` for each processed talk: all 14
+   dimensions, structured data, verbatim examples, and a "Presentation Patterns
+   Scoring" section. Create `analyses/` directory if missing.
+3. **Update rhetoric-style-summary.md** — integrate `new_patterns` and
+   `summary_updates`. Sections 1–14 map to the 14 dimensions; Section 15 aggregates
+   improvement areas; Section 16 captures speaker-confirmed intent. **Recount status
+   from the DB every time** — never increment manually.
+   **Speaker-review gate:** before applying any `summary_updates` or `new_patterns`
+   from a subagent, present the proposed changes (section-by-section diff) and wait
+   for explicit speaker confirmation. Silent application erodes the speaker's sense
+   of ownership of their own style summary; pattern taxonomy additions in particular
+   can drift if applied unreviewed. Only bypass the gate if the speaker has pre-
+   authorized this batch ("just apply everything, don't ask").
+4. **Report:** talks processed, new patterns, current state, skipped talks.
+5. Flag **structural changes** prominently (new presentation mode, new workflow pattern).
+
+When Step 3's batch loop finishes, proceed to Step 5.
+
+## Step 5 — Extract Remaining PPTX Visual Data
+
+Runs once after all Step 3 batches have completed.
 
 Process PPTX files not yet extracted during Step 3: unmatched catalog entries, talks
 that used PDF as primary but have a PPTX available, or entries with
@@ -208,28 +239,42 @@ files matching `config.template_skip_patterns`. Some talks have multiple .pptx f
 After 3+ extractions, populate `slide-design-spec.md`; after 5+, analyze cross-talk
 patterns (colors, fonts, footers).
 
-### Step 4: Collect Results & Update
+Proceed immediately to Step 6.
 
-After each batch:
+## Step 6 — Regenerate Speaker Profile
 
-1. **Update tracking DB** — set `status`, `processed_date`, all result fields.
-   Persist `pattern_observations` IDs + score. Populate structured fields
-   (`co_presenter`, `delivery_language`, etc.) — do not leave structured data buried
-   in free-text prose. See [references/processing-rules.md](references/processing-rules.md) for field extraction rules.
-2. **Write per-talk analysis files** — write
-   `{vault_root}/analyses/{talk_filename}.md` for each processed talk: all 14
-   dimensions, structured data, verbatim examples, and a "Presentation Patterns
-   Scoring" section. Create `analyses/` directory if missing.
-3. **Update rhetoric-style-summary.md** — integrate `new_patterns` and
-   `summary_updates`. Sections 1–14 map to the 14 dimensions; Section 15 aggregates
-   improvement areas; Section 16 captures speaker-confirmed intent. **Recount status
-   from the DB every time** — never increment manually.
-4. **Report:** talks processed, new patterns, current state, skipped talks.
-5. **Auto-regenerate speaker profile** (vault-profile skill) if it already exists.
-   Report the diff.
-6. Flag **structural changes** prominently (new presentation mode, new workflow pattern).
+If `{vault_root}/speaker-profile.json` exists, invoke the **vault-profile** skill
+with the updated tracking database. Report the diff of changes (added fields,
+changed values) so the speaker can verify.
 
-### Error Handling
+If the profile doesn't exist, skip this step silently.
+
+Proceed immediately to Step 7.
+
+## Step 7 — Same-Week Clarification Trigger
+
+Scan newly-processed talks for delivery date. For any talk whose `date` is within
+the past 7 days, explicitly recommend running **vault-clarification** NOW —
+memory of the delivery is freshest right after the talk, and verbal beats that
+didn't appear in auto-captions (bilingual jokes rendered in a non-primary
+language, improvised asides, fly-bys that weren't in the deck) need speaker
+confirmation while they're still recoverable.
+
+Surface these as candidate clarification topics in the recommendation:
+- Each per-talk `areas_for_improvement` entry.
+- Any `pattern_observations` the subagent flagged as **unverifiable from
+  transcript alone** (low confidence, heavy reliance on visual cues, non-English
+  dialogue without captions).
+
+For older talks (30+ days), recommend the compressed clarification session
+instead of the full one — memory has decayed and detailed recall is unreliable.
+For talks in the 7–30 day window, recommend the full session but note that some
+verbatim details may be lost.
+
+If no newly-processed talks fall inside any window, finish here without further
+action.
+
+## Error Handling
 
 | Transcript | Slides (PPTX/PDF) | Video | Status | Action |
 |-----------|-------------------|-------|--------|--------|
@@ -240,14 +285,12 @@ After each batch:
 | FAIL | FAIL | OK | `processed_partial` | Extract slides from video, visual only |
 | FAIL | FAIL | FAIL | `skipped_download_failed` | Skip, move on |
 
-### Important Notes
+## Important Notes
 
 - Create `transcripts/`, `slides/`, `analyses/` dirs if missing.
 - Re-read tracking DB before writing (single source of truth).
 - Preserve all summary content — add/refine, never delete.
 - After 10+ talks, start providing adherence assessments.
-- After processing, if `speaker-profile.json` exists, suggest running the
-  **vault-profile** skill to regenerate it with updated data.
 - **Wide-angle room recordings** defeat perceptual hash dedup — when the camera
   captures the full stage (speaker moving + slides on screen behind), every frame
   looks different. Mitigate by: increasing `--threshold` to 14-16, manually specifying
@@ -261,6 +304,3 @@ After each batch:
 - **Non-speaker talks slip into playlists.** Verify speaker identity early — check
   video frames and transcript for self-identification. Flag `is_baruch_talk: false`
   and set status to `skipped` if the speaker doesn't match.
-- **Step 5 timing matters.** Run the full clarification session IMMEDIATELY for talks
-  delivered within the past week — memory is freshest right after delivery. For older
-  talks (2+ years), use the compressed version.

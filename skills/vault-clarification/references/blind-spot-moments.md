@@ -1,4 +1,4 @@
-## 5A-bis. Blind Spot Moments
+# Blind Spot Moments
 
 The skill can only analyze transcripts (speech) and
 slides (visuals). It CANNOT observe audience reactions, physical performance, stage

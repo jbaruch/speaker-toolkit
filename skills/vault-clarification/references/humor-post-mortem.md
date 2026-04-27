@@ -1,4 +1,4 @@
-## 5A-ter. Humor Post-Mortem
+# Humor Post-Mortem
 
 The skill can identify jokes from transcripts and
 slides but CANNOT hear laughter. For every talk processed in this run, compile the

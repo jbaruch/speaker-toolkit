@@ -29,9 +29,11 @@ Read `tracking-database.json` from there to get `vault_root`.
 | [references/humor-post-mortem.md](references/humor-post-mortem.md) | Protocol for grading humor effectiveness |
 | [references/blind-spot-moments.md](references/blind-spot-moments.md) | Protocol for capturing audience/room data |
 
-## Workflow
+Process the steps below in order. Do not skip ahead — each step's output informs
+the next, and the first-session infrastructure capture in Step 4 gates profile
+generation downstream.
 
-### Step 5A: Rhetoric Clarification
+## Step 1 — Rhetoric Clarification
 
 For each surprising, contradictory, or ambiguous observation, ask one topic at a time
 via `AskUserQuestion`: intentional vs accidental patterns, invisible context,
@@ -50,22 +52,32 @@ AskUserQuestion(
 )
 ```
 
-### Step 5A-bis: Blind Spot Moments
+Proceed immediately to Step 2.
+
+## Step 2 — Blind Spot Moments
 
 Follow [references/blind-spot-moments.md](references/blind-spot-moments.md) — ask about audience reactions,
 physical performance, and room context that transcripts cannot capture.
 
-### Step 5A-ter: Humor Post-Mortem
+Proceed immediately to Step 3.
+
+## Step 3 — Humor Post-Mortem
 
 Follow [references/humor-post-mortem.md](references/humor-post-mortem.md) — walk through detected humor beats,
 grade effectiveness, capture spontaneous material.
 
-### Step 5B: Speaker Infrastructure (first session only)
+Proceed immediately to Step 4.
+
+## Step 4 — Speaker Infrastructure (first session only)
 
 Ask for any empty config fields (`speaker_name` through `publishing_process.*`).
 See [references/schemas-config.md](references/schemas-config.md) for the full field list and questions to ask.
 
-### Step 5C: Structured Intent Capture
+If `config.clarification_sessions_completed` is already ≥ 1, skip this step — infrastructure was captured in the first session.
+
+Proceed immediately to Step 5.
+
+## Step 5 — Structured Intent Capture
 
 Store confirmed intents in the `confirmed_intents` array of the tracking DB.
 Example:
@@ -79,12 +91,16 @@ Example:
 ```
 See [references/schemas-config.md](references/schemas-config.md) for the full schema.
 
-### Step 5D: Mark Session Complete
+Proceed immediately to Step 6.
+
+## Step 6 — Mark Session Complete
 
 Increment `config.clarification_sessions_completed` in the tracking DB. This counter
 gates profile generation (vault-profile skill requires >= 1).
 
-### Important Notes
+Finish here.
+
+## Important Notes
 
 - One topic at a time — don't dump all questions at once.
 - Update the summary and DB after each answer, not in a batch at the end.

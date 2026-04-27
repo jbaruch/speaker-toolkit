@@ -33,7 +33,7 @@ Read `tracking-database.json` from there to get `vault_root`.
 
 - **10+ talks parsed** AND `config.clarification_sessions_completed >= 1`.
 - Also runs on explicit request (overrides prerequisites).
-- Auto-triggered by vault-ingress Step 4 if profile already exists.
+- Auto-triggered by vault-ingress Step 6 (Regenerate Speaker Profile) if profile already exists.
 
 ## Process
 

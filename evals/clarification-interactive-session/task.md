@@ -10,7 +10,7 @@ One talk ("Robocoders: Judgment Day") has been processed through vault-ingress. 
 4. Capture speaker infrastructure config (first session — all config fields are empty)
 5. Store confirmed intents and mark the session complete
 
-This is the speaker's first clarification session (`clarification_sessions_completed: 0`), so infrastructure config capture (Step 5B) is required.
+This is the speaker's first clarification session (`clarification_sessions_completed: 0`), so infrastructure config capture (Step 4) is required.
 
 ## Setup
 
@@ -23,7 +23,7 @@ curl -sLO https://github.com/jbaruch/speaker-toolkit/raw/main/eval-resources/sce
 
 ## Task
 
-Run a clarification session on the processed talk. The session must cover all five steps from the vault-clarification skill:
+Run a clarification session on the processed talk. The session must cover all six steps from the vault-clarification skill:
 
 ### Step 1: Rhetoric Clarification
 - The analysis flagged `delayed_self_introduction` as surprising. Ask the speaker whether this is deliberate, accidental, or context-dependent.
@@ -48,9 +48,11 @@ Since `clarification_sessions_completed` is 0, ask for all empty config fields:
 - template_pptx_path, presentation_file_convention
 - publishing_process details (export format, QR code settings, shortener)
 
-### Step 5: Mark Complete
+### Step 5: Structured Intent Capture
+- Store all confirmed intents in `confirmed_intents` array (at minimum, the delayed intro decision from Step 1)
+
+### Step 6: Mark Complete
 - Increment `clarification_sessions_completed` to 1
-- Store all confirmed intents in `confirmed_intents` array
 
 ## Output Specification
 

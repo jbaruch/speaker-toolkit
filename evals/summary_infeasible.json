@@ -7,9 +7,9 @@
       "reasoning": "Requires downloading real YouTube transcripts (yt-dlp/youtube-transcript-api) and Google Drive PDFs (gdown) with real URLs. Network services may be unavailable, rate-limited, or return different content. Cannot guarantee reproducible results within 10-minute timeout."
     },
     {
-      "scenarios": "Interactive clarification session (Step 5)",
-      "skill": "rhetoric-knowledge-vault",
-      "reasoning": "Step 5 requires multi-turn interactive conversation via AskUserQuestion to resolve ambiguities, validate findings, and capture speaker intent. The eval is one-shot with no user interaction available."
+      "scenarios": "Interactive clarification session",
+      "skill": "vault-clarification",
+      "reasoning": "The clarification skill requires multi-turn interactive conversation via AskUserQuestion to resolve ambiguities, validate findings, and capture speaker intent. The eval is one-shot with no user interaction available."
     },
     {
       "scenarios": "Parallel batch processing with 5 subagents",
