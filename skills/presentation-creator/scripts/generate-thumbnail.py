@@ -16,6 +16,7 @@ Usage:
       [--output thumbnail.png] \
       [--vault ~/.claude/rhetoric-knowledge-vault] \
       [--style slide_dominant|split_panel|overlay] \
+      [--aesthetic photo|comic_book] \
       [--title-position top|bottom|overlay] \
       [--brand-colors "#5B2C6F,#C0392B"] \
       [--model gemini-3-pro-image-preview]
@@ -245,14 +246,50 @@ def call_gemini(parts, model, api_key):
 
 
 # --- Prompt Construction ---
+#
+# Prompt softening note (Issue #19):
+# Gemini's safety filter rejects prompts that combine assertive face-preservation
+# language ("maintain exact facial features, bone structure...") with viral-
+# styling demands ("high visual energy, competes against hundreds of others")
+# when applied to a real-person photograph. Softer framing — "combine these two
+# images into a 16:9 graphic, image 2 goes in a circular badge" — passes through
+# on gemini-3-pro-image-preview. We apply viral styling to TYPOGRAPHY and
+# COMPOSITION rather than to the face, and avoid realism claims.
+#
+# Aesthetic note (Issue #23):
+# `aesthetic="photo"` (default) is the conservative path: photographic
+# composite, face left natural. `aesthetic="comic_book"` is the viral path:
+# the entire frame is rendered as a comic-book illustration — speaker
+# caricatured in line-art with halftone shading, scene rendered in matching
+# style. The comic-book treatment side-steps the safety filter (the face is
+# being interpreted, not modified) and matches the speaker's documented
+# on-brand "comic-book aesthetic". Reverse-engineered from the JCON 2026
+# "Never Trust a Monkey" winner; will become default once it generalizes.
+
+AESTHETIC_PHOTO = "photo"
+AESTHETIC_COMIC_BOOK = "comic_book"
+VALID_AESTHETICS = (AESTHETIC_PHOTO, AESTHETIC_COMIC_BOOK)
+
 
 def build_thumbnail_prompt(title, style="slide_dominant", title_position="top",
-                           subtitle=None, brand_colors=None):
+                           subtitle=None, brand_colors=None, softness="default",
+                           aesthetic=AESTHETIC_PHOTO):
     """Build the Gemini prompt for thumbnail generation.
 
-    The prompt follows the DeepMind 5-component model (Style, Subject,
-    Setting, Action, Composition) with YouTube-specific optimizations.
+    aesthetic:
+        "photo"      — photographic composite; face natural and unmodified.
+        "comic_book" — full comic-book illustration; speaker caricatured.
+
+    softness:
+        "default"  — full styling
+        "softer"   — drops typography/energy modifiers (retry on IMAGE_OTHER)
+        "softest"  — minimal framing only (last-resort retry)
     """
+    if aesthetic not in VALID_AESTHETICS:
+        raise ValueError(
+            f"Unknown aesthetic {aesthetic!r}; expected one of {VALID_AESTHETICS}"
+        )
+
     style_desc = STYLE_VARIANTS.get(style, STYLE_VARIANTS["slide_dominant"])
     position_desc = TITLE_POSITION_GUIDANCE.get(title_position,
                                                  TITLE_POSITION_GUIDANCE["top"])
@@ -260,8 +297,8 @@ def build_thumbnail_prompt(title, style="slide_dominant", title_position="top",
     subtitle_line = ""
     if subtitle:
         subtitle_line = (
-            f'\nAlso include the subtitle "{subtitle}" in a smaller font '
-            f"near the title text, clearly subordinate to the main title."
+            f'\nInclude the subtitle "{subtitle}" in a smaller font near the '
+            f"main title text, clearly subordinate to the main title."
         )
 
     brand_guidance = ""
@@ -272,36 +309,97 @@ def build_thumbnail_prompt(title, style="slide_dominant", title_position="top",
             f"Do not let them dominate — they are accents, not backgrounds."
         )
 
-    prompt = f"""STYLE: Professional YouTube video thumbnail photograph. High contrast, \
-vibrant, attention-grabbing. {style_desc}
+    if aesthetic == AESTHETIC_COMIC_BOOK:
+        return _build_comic_book_prompt(
+            title, style_desc, position_desc, subtitle_line, brand_guidance, softness
+        )
+    return _build_photo_prompt(
+        title, style_desc, position_desc, subtitle_line, brand_guidance, softness
+    )
 
-SUBJECT: Two visual elements to compose together:
-1. "The slide" — the provided slide image. Use as the dominant background \
-visual element. Maintain the key visual content but you may crop, zoom, \
-or adjust to fill the frame dynamically.
-2. "The speaker" — the provided speaker photo. Maintain exact facial \
-features, bone structure, skin texture, and natural appearance from the \
-reference. Do not stylize, beautify, alter, or idealize the face. \
-{EXPRESSION_DEFAULT}
 
-TEXT: Add the text "{title}" in bold, heavy-weight sans-serif font with \
-thick outline or drop shadow for maximum contrast. Text must be readable \
-when the thumbnail is displayed at 160x90 pixels (YouTube search result \
-size). {position_desc}{subtitle_line}
+def _build_photo_prompt(title, style_desc, position_desc, subtitle_line,
+                        brand_guidance, softness):
+    """Photographic composite: face natural, slide as background, viral typography."""
+    base = f"""Combine the two provided images into a single 16:9 graphic, \
+1280x720 pixels.
 
-COMPOSITION: 16:9 aspect ratio, 1280x720 pixels. Single clear focal \
-point. The speaker's face should be prominently visible — thumbnails with \
-expressive faces get 35-50% higher click-through rates. {style_desc}
-{brand_guidance}
+IMAGE 1 is a presentation slide. Use it as the background visual element; \
+you may crop or zoom to fill the frame. Preserve its legibility.
 
-CRITICAL REQUIREMENTS:
-- The speaker's face must be clearly visible and recognizable
-- Text must be readable at small sizes (bold, high contrast, outlined)
-- High visual energy — this thumbnail competes against hundreds of others
-- Clean composition — one idea, not cluttered
-- Warm accent colors (reds, yellows, oranges) for emotional engagement"""
+IMAGE 2 is a portrait photo. Composite it into the foreground following \
+this layout: {style_desc} Keep the person's appearance natural and \
+unmodified — this is a compositing task, not a retouching task.
 
-    return prompt
+Add the title text "{title}" in a bold, heavy-weight sans-serif font with a \
+thick outline or drop shadow so it reads clearly at small sizes. \
+{position_desc}{subtitle_line}"""
+
+    if softness == "softest":
+        return base + brand_guidance
+
+    typography_styling = """
+
+TYPOGRAPHY: High contrast between text and background. Warm accent colors \
+(reds, yellows, oranges) are preferred for the title treatment. The title \
+should be the primary visual hook."""
+
+    if softness == "softer":
+        return base + typography_styling + brand_guidance
+
+    composition_energy = """
+
+COMPOSITION: Single clear focal point. Clean layout — one idea, not \
+cluttered. Strong visual hierarchy: slide imagery supports the title, \
+the portrait adds human presence, the title carries the message."""
+
+    return base + typography_styling + composition_energy + brand_guidance
+
+
+def _build_comic_book_prompt(title, style_desc, position_desc, subtitle_line,
+                             brand_guidance, softness):
+    """Comic-book illustration: caricatured speaker, halftone-shaded scene."""
+    base = f"""Render a single 16:9 comic-book illustration, 1280x720 pixels, \
+combining the two provided images.
+
+IMAGE 1 is a presentation slide. Reinterpret its scene and key visual \
+elements in comic-book style: bold ink outlines, halftone dot shading, \
+exaggerated dynamic angles, action lines and impact effects where motion is \
+implied. Use it as the full background of the frame. Preserve recognizable \
+imagery so the slide's idea still reads.
+
+IMAGE 2 is a portrait photo of the speaker. Render the speaker as a \
+comic-book caricature in matching style: thick ink outlines, halftone \
+shading, slight stylized exaggeration. Preserve identifying features — \
+hair, beard, glasses, hat, and any other distinguishing accessories visible \
+in the reference — so the speaker is immediately recognizable. Place the \
+caricature in the foreground following this layout: {style_desc}
+
+Add the title text "{title}" in a bold, heavy-weight sans-serif font with a \
+thick black outline and a thin contrasting inner outline (classic \
+blockbuster comic-book treatment). The title must read clearly at 160x90 \
+pixels (YouTube search-result size). {position_desc}{subtitle_line}"""
+
+    if softness == "softest":
+        return base + brand_guidance
+
+    typography_styling = """
+
+TYPOGRAPHY: Yellow or warm-accent title color preferred, with thick black \
+outline plus a thin white inner outline. High contrast against the scene \
+behind it. The title is the primary visual hook."""
+
+    if softness == "softer":
+        return base + typography_styling + brand_guidance
+
+    composition_energy = """
+
+COMPOSITION: Single clear focal point — the caricatured speaker plus a \
+recognizable scene behind them. Warm palette (reds, oranges, yellows) with \
+halftone backgrounds and sunburst or radiating action lines. Keep the layout \
+readable at thumbnail size: one idea, not cluttered."""
+
+    return base + typography_styling + composition_energy + brand_guidance
 
 
 # --- Slide Extraction ---
@@ -409,33 +507,55 @@ def compose_thumbnail(args):
     if args.brand_colors:
         brand_colors = [c.strip() for c in args.brand_colors.split(",")]
 
-    # Build prompt
-    prompt = build_thumbnail_prompt(
-        title=args.title,
-        style=args.style,
-        title_position=args.title_position,
-        subtitle=args.subtitle,
-        brand_colors=brand_colors,
-    )
-
     print(f"Model: {model}")
+    print(f"Aesthetic: {args.aesthetic}")
     print(f"Style: {args.style}")
     print(f"Title: \"{args.title}\"")
     if args.subtitle:
         print(f"Subtitle: \"{args.subtitle}\"")
     print("Generating thumbnail...")
 
-    # Build multimodal request parts
-    parts = [
+    # Build the image parts once; the prompt text is rebuilt per softness level.
+    image_parts = [
         {"inlineData": {"mimeType": slide_mime, "data": slide_b64}},
         {"inlineData": {"mimeType": speaker_mime, "data": speaker_b64}},
-        {"text": prompt},
     ]
 
-    image_bytes, result_mime = call_gemini(parts, model, api_key)
+    # Retry ladder: Gemini's safety filter can return IMAGE_OTHER even on softened
+    # prompts depending on the day's model state. Fall back to progressively
+    # more minimal framing rather than failing the skill's "Script First" rule.
+    image_bytes, result_mime = None, None
+    last_error = None
+    for softness in ("default", "softer", "softest"):
+        prompt = build_thumbnail_prompt(
+            title=args.title,
+            style=args.style,
+            title_position=args.title_position,
+            subtitle=args.subtitle,
+            brand_colors=brand_colors,
+            softness=softness,
+            aesthetic=args.aesthetic,
+        )
+        parts = image_parts + [{"text": prompt}]
+        image_bytes, result_mime = call_gemini(parts, model, api_key)
+        if image_bytes is not None:
+            if softness != "default":
+                print(f"  (succeeded on '{softness}' retry after filter rejection)")
+            break
+        last_error = result_mime
+        print(f"  '{softness}' attempt rejected: {last_error[:200]}", file=sys.stderr)
 
     if image_bytes is None:
-        print(f"ERROR: Gemini API failed: {result_mime}")
+        print(
+            f"ERROR: Gemini API rejected all three softness levels. "
+            f"Last error: {last_error}",
+            file=sys.stderr,
+        )
+        print(
+            "Face-composition prompts are model-dependent. See "
+            "rules/thumbnail-generation-rules.md for known limitations.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     # Validate and resize to YouTube specs
@@ -478,7 +598,12 @@ def main():
     parser.add_argument("--vault", help="Path to rhetoric-knowledge-vault (for secrets.json)")
     parser.add_argument("--style", choices=["slide_dominant", "split_panel", "overlay"],
                         default="slide_dominant",
-                        help="Thumbnail composition style (default: slide_dominant)")
+                        help="Thumbnail composition layout (default: slide_dominant)")
+    parser.add_argument("--aesthetic", choices=list(VALID_AESTHETICS),
+                        default=AESTHETIC_PHOTO,
+                        help="Rendering aesthetic (default: photo). 'comic_book' "
+                             "produces a caricatured, halftone-shaded illustration "
+                             "in the speaker's on-brand comic-book style.")
     parser.add_argument("--title-position", choices=["top", "bottom", "overlay"],
                         default="top",
                         help="Title text position (default: top)")
