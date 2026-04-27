@@ -76,27 +76,29 @@ thumbnail readability at small sizes.
 
 #### 5. Generate
 
-Read `visual_style_history.default_illustration_style` (and
-`confirmed_visual_intents`) from the speaker profile to decide the
-recommended aesthetic per `rules/thumbnail-generation-rules.md` Rule 7:
+Decide the recommended `--aesthetic` per the precedence chain in
+`rules/thumbnail-generation-rules.md` Rule 7. Walk these in order; the
+first match wins:
 
-- Profile signals comic-book / halftone / illustrated brand → **lead
-  with `--aesthetic comic_book`**. Generate it as the primary candidate;
-  optionally also generate `--aesthetic photo` as a comparison if the
-  speaker explicitly asks to see one.
-- Profile signals a different documented style → flag as out-of-scope
-  for the current two aesthetics; ask the speaker before generating.
-- Profile has no documented illustration style → **lead with
-  `--aesthetic photo`**.
+1. `publishing_process.thumbnail.aesthetic_preference` — explicit
+   speaker preference (`"photo"` or `"comic_book"`). Honor it and stop.
+2. `visual_style_history.default_illustration_style` — observed pattern
+   from past talks. Fuzzy-match: matches the comic-book family
+   (`comic_book` / `comic-book` / `halftone` / `illustrated` /
+   `cartoon` / `caricature`) → recommend `comic_book`. Matches a
+   different documented style (`retro_tech_manual`, `watercolor`, etc.)
+   → out-of-scope for current aesthetics; ask the speaker before
+   generating. Otherwise fall through.
+3. `visual_style_history.confirmed_visual_intents` — same fuzzy-match
+   against each entry's `pattern` and `rule` fields.
+4. Default → `photo`.
 
-Generate **two candidates** for side-by-side comparison whenever the
-speaker is undecided or wants to validate before committing to a
-direction. The comic-book treatment is high-variance: when it works it
+Lead with the recommended aesthetic as the primary candidate. Offer a
+two-candidate side-by-side comparison only when the speaker is
+genuinely undecided or wants to validate before committing — not as a
+default. The comic-book treatment is high-variance: when it works it
 produces significantly higher CTR than photo composites, when it misses
-it looks off-brand. The two-candidate approach lets the speaker resolve
-that variance with their own taste — but lead with the recommendation
-from the profile, don't present the two as equal options when the
-profile clearly favors one.
+it looks off-brand.
 
 ```bash
 # Option A: photographic composite (conservative)
@@ -126,14 +128,17 @@ python3 skills/presentation-creator/scripts/generate-thumbnail.py \
   --output thumbnail-comic.png
 ```
 
-For speakers without a documented comic-book aesthetic, generate `photo`
-only and skip the second candidate.
+For most runs only ONE candidate is needed — the one chosen by the
+precedence chain above. The two-candidate command set is only for
+genuine uncertainty.
 
-Apply speaker preferences from `publishing_process.thumbnail`:
-- `aesthetic_preference` → `--aesthetic` (default: `photo`)
+Apply other speaker preferences from `publishing_process.thumbnail`:
 - `style_preference` → `--style`
 - `title_position` → `--title-position`
 - `brand_colors` → `--brand-colors`
+
+(`aesthetic_preference` is consumed at the top of this step as the first
+entry in the precedence chain — don't re-apply it here.)
 
 The script:
 - Sends both images + prompt to Gemini as multimodal input

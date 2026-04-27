@@ -47,9 +47,9 @@ it as a reference.
 This rule scopes the **input only**. The output rendering depends on
 `--aesthetic` (Rule 7):
 
-- `aesthetic photo` — output preserves photographic realism. The face
+- `--aesthetic photo` — output preserves photographic realism. The face
   in the thumbnail looks like the speaker's face in the input.
-- `aesthetic comic_book` — output renders the speaker as a comic-book
+- `--aesthetic comic_book` — output renders the speaker as a comic-book
   caricature derived from the input photo. The output is illustrated,
   not photographic; identifying features (hair, beard, glasses, hat)
   are preserved so the speaker remains recognizable.
@@ -112,33 +112,41 @@ Two aesthetics are supported via `--aesthetic`:
 | Value | Description | When to use |
 |---|---|---|
 | `photo` | Photographic composite; speaker face left natural; slide as background | Speakers without an established illustrated brand; talks where corporate / documentary tone is required |
-| `comic_book` | Full comic-book illustration; speaker rendered as caricature with halftone shading; scene re-illustrated to match | **Recommended** for speakers with a documented comic-book aesthetic in their vault notes (`visual_style_history.default_illustration_style` or `confirmed_visual_intents`); talks where viral reach matters more than realism |
+| `comic_book` | Full comic-book illustration; speaker rendered as caricature with halftone shading; scene re-illustrated to match | **Recommended** for speakers with a documented comic-book aesthetic in their vault notes; talks where viral reach matters more than realism |
 
-**Choosing per speaker.** Read `visual_style_history` from the speaker
-profile:
+**Choosing per speaker — precedence (highest first):**
 
-- If `default_illustration_style` includes "comic-book", "halftone",
-  "illustrated", or similar — **comic_book** is the right default for
-  this speaker. The JCON Europe 2026 "Never Trust a Monkey" win
-  validates the approach for at least one such speaker; expand the
-  evidence base by trying it on other talks where the speaker's
-  brand fits.
-- If the speaker has a different documented style (retro tech manual,
-  watercolor, etc.) — neither default is right; the script's two
-  aesthetics don't yet cover those, file an issue requesting the new
-  variant rather than forcing photo.
-- If the speaker has no documented illustration style — default to
-  **photo**.
+1. **`publishing_process.thumbnail.aesthetic_preference`** — explicit
+   speaker-set preference. If `"photo"` or `"comic_book"`, that's the
+   answer; honor it and stop.
+2. **`visual_style_history.default_illustration_style`** — observed
+   pattern across past talks (free-form string set by vault-profile).
+   Fuzzy-match the value against keyword sets:
+   - Matches comic-book family (`comic_book`, `comic-book`, `halftone`,
+     `illustrated`, `cartoon`, `caricature`) → recommend `comic_book`.
+   - Matches a different documented style (`retro_tech_manual`,
+     `watercolor`, etc.) → out-of-scope for current aesthetics; ask
+     before generating, and consider filing an issue requesting the new
+     variant instead of forcing photo.
+   - No match / null → fall through to step 3.
+3. **`visual_style_history.confirmed_visual_intents`** — speaker-
+   confirmed deliberate visual patterns. Same fuzzy-match logic as
+   step 2 against each entry's `pattern` and `rule` fields.
+4. **Default** — `photo`.
 
-**Phase 7 Step 7.1 protocol:** when in doubt, offer the speaker BOTH
-aesthetics for the same title/slide combination. Generate two
-candidates, present side-by-side, let the speaker pick. The comic-book
-treatment is high-variance: when it works it produces significantly
-higher CTR than photo composites, when it misses it looks off-brand.
-The two-candidate approach lets the speaker resolve that variance with
-their own taste — but lead with the recommendation from
-`visual_style_history`, don't present them as equal options when the
-profile clearly favors one.
+The JCON Europe 2026 "Never Trust a Monkey" win validates the comic-book
+approach for at least one speaker whose `default_illustration_style`
+matches the comic-book family; expand the evidence base by trying it
+on other talks where the speaker's brand fits.
+
+**Phase 7 Step 7.1 protocol:** lead with the recommendation from the
+precedence chain above. Offer a two-candidate side-by-side comparison
+when the speaker is genuinely undecided or wants to validate before
+committing — not as a default. The comic-book treatment is high-variance:
+when it works it produces significantly higher CTR than photo composites,
+when it misses it looks off-brand. Two-candidate is for resolving that
+variance with the speaker's own taste, not for ignoring a clear profile
+signal.
 
 **Comic-book prompt anchors** (used internally by the script — don't reproduce
 them in agent-rolled prompts):
