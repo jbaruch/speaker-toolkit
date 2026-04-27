@@ -96,7 +96,7 @@ Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
 
 ## Step 3 — Process Talks via Parallel Subagents (Batches of 5)
 
-Per batch: launch 5 subagents in parallel, wait, run Step 4 (Apply Subagent Results), then next batch. When all batches have finished, proceed to Step 5.
+Per batch: launch 5 subagents in parallel, wait, run Step 4 (Persist Subagent Results), then run Step 5 (Update Rhetoric Summary), then move to the next batch. When all batches have finished, proceed to Step 6.
 Each subagent receives the talk's DB entry and current `rhetoric-style-summary.md`.
 
 #### Per-Talk Subagent Instructions:
@@ -191,37 +191,49 @@ Minimal structure:
 }
 ```
 
-## Step 4 — Apply Subagent Results
+## Step 4 — Persist Subagent Results
 
 Runs after each batch inside Step 3's loop (not as a separate post-loop
-phase). One action: take the subagent JSON returns from the batch and
-fold them into the tracking DB, per-talk analysis files, and the running
-rhetoric summary in a single atomic update.
+phase). Mechanical persistence of the batch's subagent JSON returns:
 
-1. **Update tracking DB** — set `status`, `processed_date`, all result fields.
-   Persist `pattern_observations` IDs + score. Populate structured fields
-   (`co_presenter`, `delivery_language`, etc.) — do not leave structured data buried
-   in free-text prose. See [references/processing-rules.md](references/processing-rules.md) for field extraction rules.
-2. **Write per-talk analysis files** — write
-   `{vault_root}/analyses/{talk_filename}.md` for each processed talk: all 14
-   dimensions, structured data, verbatim examples, and a "Presentation Patterns
-   Scoring" section. Create `analyses/` directory if missing.
-3. **Update rhetoric-style-summary.md** — integrate `new_patterns` and
-   `summary_updates`. Sections 1–14 map to the 14 dimensions; Section 15 aggregates
-   improvement areas; Section 16 captures speaker-confirmed intent. **Recount status
-   from the DB every time** — never increment manually.
-   **Speaker-review gate:** before applying any `summary_updates` or `new_patterns`
-   from a subagent, present the proposed changes (section-by-section diff) and wait
-   for explicit speaker confirmation. Silent application erodes the speaker's sense
-   of ownership of their own style summary; pattern taxonomy additions in particular
-   can drift if applied unreviewed. Only bypass the gate if the speaker has pre-
-   authorized this batch ("just apply everything, don't ask").
-4. **Report:** talks processed, new patterns, current state, skipped talks.
-5. Flag **structural changes** prominently (new presentation mode, new workflow pattern).
+- **Update tracking DB** — set `status`, `processed_date`, all result fields.
+  Persist `pattern_observations` IDs + score. Populate structured fields
+  (`co_presenter`, `delivery_language`, etc.) — do not leave structured data
+  buried in free-text prose. See
+  [references/processing-rules.md](references/processing-rules.md) for field
+  extraction rules.
+- **Write per-talk analysis files** — write
+  `{vault_root}/analyses/{talk_filename}.md` for each processed talk: all 14
+  dimensions, structured data, verbatim examples, and a "Presentation Patterns
+  Scoring" section. Create `analyses/` directory if missing.
 
-When Step 3's batch loop finishes, proceed to Step 5.
+Proceed immediately to Step 5.
 
-## Step 5 — Extract Remaining PPTX Visual Data
+## Step 5 — Update Rhetoric Summary
+
+Still per-batch (continues Step 3's loop). The summary update is a separate
+step from Step 4's persistence because it requires a speaker-review gate —
+unlike DB writes, edits to `rhetoric-style-summary.md` change the speaker's
+ground-truth narrative and must not be applied silently.
+
+1. **Speaker-review gate.** Present the subagent's proposed `summary_updates`
+   and `new_patterns` as a section-by-section diff and wait for explicit
+   speaker confirmation. Silent application erodes the speaker's sense of
+   ownership of their own style summary; pattern-taxonomy additions in
+   particular drift if applied unreviewed. Only bypass the gate if the
+   speaker pre-authorized this batch ("just apply everything, don't ask").
+2. **Apply approved changes.** Integrate confirmed `new_patterns` and
+   `summary_updates` into `rhetoric-style-summary.md`. Sections 1–14 map to
+   the 14 dimensions; Section 15 aggregates improvement areas; Section 16
+   captures speaker-confirmed intent. **Recount status from the DB every
+   time** — never increment manually.
+3. **Report.** Output: talks processed, new patterns, current state, skipped
+   talks. Flag structural changes prominently (new presentation mode, new
+   workflow pattern).
+
+When Step 3's batch loop finishes, proceed to Step 6.
+
+## Step 6 — Extract Remaining PPTX Visual Data
 
 Runs once after all Step 3 batches have completed.
 
@@ -240,9 +252,9 @@ files matching `config.template_skip_patterns`. Some talks have multiple .pptx f
 After 3+ extractions, populate `slide-design-spec.md`; after 5+, analyze cross-talk
 patterns (colors, fonts, footers).
 
-Proceed immediately to Step 6.
+Proceed immediately to Step 7.
 
-## Step 6 — Regenerate Speaker Profile
+## Step 7 — Regenerate Speaker Profile
 
 If `{vault_root}/speaker-profile.json` exists, invoke `Skill(skill: "vault-profile")`
 with the updated tracking database. Report the diff of changes (added fields,
@@ -250,9 +262,9 @@ changed values) so the speaker can verify.
 
 If the profile doesn't exist, skip this step silently.
 
-Proceed immediately to Step 7.
+Proceed immediately to Step 8.
 
-## Step 7 — Same-Week Clarification Trigger
+## Step 8 — Same-Week Clarification Trigger
 
 If no talks were newly processed in this run, finish here without further action.
 
