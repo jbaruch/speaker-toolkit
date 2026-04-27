@@ -204,6 +204,58 @@ def test_unknown_aesthetic_raises(generate_thumbnail):
         generate_thumbnail.build_thumbnail_prompt("T", aesthetic="watercolor")
 
 
+def test_unknown_softness_raises(generate_thumbnail):
+    """Unknown softness value should fail loud — a typo like 'softrer' must
+    not silently produce default-strength output and break the retry ladder
+    semantics."""
+    import pytest
+    with pytest.raises(ValueError):
+        generate_thumbnail.build_thumbnail_prompt("T", softness="softrer")
+
+
+def test_call_gemini_filter_rejection_prefix(generate_thumbnail, monkeypatch):
+    """call_gemini must prefix safety-filter rejections with _ERR_FILTER so the
+    retry ladder can distinguish them from transport-level failures."""
+    class _FakeResp:
+        def __init__(self, body):
+            self._body = body
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def read(self):
+            return self._body.encode("utf-8")
+
+    # Empty candidates → no image → safety-filter prefix
+    monkeypatch.setattr(
+        generate_thumbnail.urllib.request,
+        "urlopen",
+        lambda req, timeout=None: _FakeResp('{"candidates":[]}'),
+    )
+    image, err = generate_thumbnail.call_gemini([], "model", "key")
+    assert image is None
+    assert err.startswith(generate_thumbnail._ERR_FILTER), (
+        f"expected filter prefix, got: {err}"
+    )
+
+
+def test_call_gemini_http_error_prefix(generate_thumbnail, monkeypatch):
+    """HTTP errors must NOT carry the filter prefix — softening won't fix them."""
+    import urllib.error
+    from io import BytesIO
+
+    def _raise_http(req, timeout=None):
+        raise urllib.error.HTTPError(
+            req.full_url, 429, "Too Many Requests", {}, BytesIO(b"rate limited"),
+        )
+
+    monkeypatch.setattr(generate_thumbnail.urllib.request, "urlopen", _raise_http)
+    image, err = generate_thumbnail.call_gemini([], "model", "key")
+    assert image is None
+    assert err.startswith(generate_thumbnail._ERR_HTTP)
+    assert not err.startswith(generate_thumbnail._ERR_FILTER)
+
+
 def _make_large_image_bytes():
     """Create a large random-ish image that exceeds 2MB as PNG."""
     import random

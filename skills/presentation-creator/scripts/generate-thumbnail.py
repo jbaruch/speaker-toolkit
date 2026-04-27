@@ -199,10 +199,25 @@ def validate_and_resize(image_bytes, mime_type):
 
 # --- Gemini API ---
 
+# Sentinel prefixes for error messages returned by call_gemini.
+# Callers use these to distinguish safety-filter rejections (where softening
+# the prompt may help) from transport-level failures (where it can't).
+_ERR_FILTER = "FILTER: "
+_ERR_HTTP = "HTTP: "
+_ERR_OTHER = "OTHER: "
+
+
 def call_gemini(parts, model, api_key):
     """Send parts to Gemini generateContent API and extract the image.
 
-    Returns (image_bytes, mime_type) on success, (None, error_message) on failure.
+    Returns (image_bytes, mime_type) on success.
+    Returns (None, error_message) on failure, where error_message starts with
+    one of the _ERR_* prefixes:
+        _ERR_FILTER — request returned no image (safety filter / IMAGE_OTHER /
+                      empty candidates). Softening the prompt may help.
+        _ERR_HTTP   — HTTP-level failure (auth, rate limit, server error).
+                      Softening won't help; surface to caller.
+        _ERR_OTHER  — anything else (network, JSON parse, unexpected exception).
     """
     url = f"{GEMINI_API_BASE}/{model}:generateContent?key={api_key}"
 
@@ -226,9 +241,9 @@ def call_gemini(parts, model, api_key):
             body = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         error_body = e.read().decode("utf-8", errors="replace")
-        return None, f"HTTP {e.code}: {error_body[:500]}"
+        return None, f"{_ERR_HTTP}{e.code}: {error_body[:500]}"
     except Exception as e:
-        return None, str(e)
+        return None, f"{_ERR_OTHER}{e}"
 
     # Extract image from response
     try:
@@ -242,7 +257,7 @@ def call_gemini(parts, model, api_key):
     except (KeyError, IndexError):
         pass
 
-    return None, f"No image in response: {json.dumps(body)[:500]}"
+    return None, f"{_ERR_FILTER}No image in response: {json.dumps(body)[:500]}"
 
 
 # --- Prompt Construction ---
@@ -270,6 +285,8 @@ AESTHETIC_PHOTO = "photo"
 AESTHETIC_COMIC_BOOK = "comic_book"
 VALID_AESTHETICS = (AESTHETIC_PHOTO, AESTHETIC_COMIC_BOOK)
 
+VALID_SOFTNESS = ("default", "softer", "softest")
+
 
 def build_thumbnail_prompt(title, style="slide_dominant", title_position="top",
                            subtitle=None, brand_colors=None, softness="default",
@@ -280,14 +297,18 @@ def build_thumbnail_prompt(title, style="slide_dominant", title_position="top",
         "photo"      — photographic composite; face natural and unmodified.
         "comic_book" — full comic-book illustration; speaker caricatured.
 
-    softness:
-        "default"  — full styling
-        "softer"   — drops typography/energy modifiers (retry on IMAGE_OTHER)
-        "softest"  — minimal framing only (last-resort retry)
+    softness (progressively shorter prompts to evade the safety filter):
+        "default"  — full prompt: base + typography styling + composition energy
+        "softer"   — drops the composition-energy modifier; typography stays
+        "softest"  — drops typography too; minimal composition framing only
     """
     if aesthetic not in VALID_AESTHETICS:
         raise ValueError(
             f"Unknown aesthetic {aesthetic!r}; expected one of {VALID_AESTHETICS}"
+        )
+    if softness not in VALID_SOFTNESS:
+        raise ValueError(
+            f"Unknown softness {softness!r}; expected one of {VALID_SOFTNESS}"
         )
 
     style_desc = STYLE_VARIANTS.get(style, STYLE_VARIANTS["slide_dominant"])
@@ -521,12 +542,13 @@ def compose_thumbnail(args):
         {"inlineData": {"mimeType": speaker_mime, "data": speaker_b64}},
     ]
 
-    # Retry ladder: Gemini's safety filter can return IMAGE_OTHER even on softened
-    # prompts depending on the day's model state. Fall back to progressively
-    # more minimal framing rather than failing the skill's "Script First" rule.
+    # Retry ladder fires ONLY on safety-filter rejections (call_gemini returns
+    # an error prefixed with _ERR_FILTER). Softening the prompt cannot fix
+    # transport-level failures (HTTP errors, network exceptions), so those
+    # surface immediately instead of burning the full ladder.
     image_bytes, result_mime = None, None
     last_error = None
-    for softness in ("default", "softer", "softest"):
+    for softness in VALID_SOFTNESS:
         prompt = build_thumbnail_prompt(
             title=args.title,
             style=args.style,
@@ -543,7 +565,15 @@ def compose_thumbnail(args):
                 print(f"  (succeeded on '{softness}' retry after filter rejection)")
             break
         last_error = result_mime
-        print(f"  '{softness}' attempt rejected: {last_error[:200]}", file=sys.stderr)
+        if not last_error.startswith(_ERR_FILTER):
+            # Transport-level failure — softening won't help. Fail loud.
+            print(
+                f"ERROR: Gemini API request failed (non-filter error): {last_error}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        print(f"  '{softness}' attempt rejected by safety filter: {last_error[:200]}",
+              file=sys.stderr)
 
     if image_bytes is None:
         print(

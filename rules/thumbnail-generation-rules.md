@@ -123,14 +123,19 @@ Face-composition with real-person photos only works on Nano Banana Pro
 face-composition prompt. Use `--model` only when you know the newer model
 accepts the composition you need.
 
-The script retries with progressively softer prompts on IMAGE_OTHER rejections:
-`default → softer → softest`. "Softest" drops typography styling entirely and
-produces a plainer composition — if you see a "softest"-retry success message,
-the output will be less viral-looking than a fresh "default" success, but
-that's better than failing the skill entirely.
+The script retries with progressively softer prompts ONLY on safety-filter
+rejections (the API returns no image — IMAGE_OTHER, blocked candidate, empty
+response). Transport-level failures (HTTP errors, rate limits, network
+exceptions) surface immediately instead of burning all three retries on a
+problem softening cannot fix.
 
-If all three softness levels fail, the model has tightened its filter again:
-try a different slide image (less text-heavy backgrounds trip the filter
+Softness gradient:
+- `default` — full prompt: base + typography styling + composition energy
+- `softer` — drops the composition-energy modifier; typography styling stays
+- `softest` — drops typography too; minimal composition framing only
+
+If all three softness levels are rejected by the filter, the model has tightened
+again: try a different slide image (less text-heavy backgrounds trip the filter
 less often), or regenerate after a short delay.
 
 ## 9. Iterate, Don't Restart
