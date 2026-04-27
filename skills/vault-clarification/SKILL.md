@@ -12,6 +12,8 @@ user_invocable: true
 
 # Vault Clarification — Interactive Session
 
+Process the steps below in order; each step's output informs the next, and the first-session infrastructure capture in Step 4 gates profile generation downstream. Do not skip ahead.
+
 Run after vault-ingress has processed talks. Purpose: resolve ambiguities, validate
 findings, capture intent, and fill in speaker infrastructure config.
 
@@ -28,10 +30,6 @@ Read `tracking-database.json` from there to get `vault_root`.
 | [references/schemas-config.md](references/schemas-config.md) | Config fields + confirmed intents schema |
 | [references/humor-post-mortem.md](references/humor-post-mortem.md) | Protocol for grading humor effectiveness |
 | [references/blind-spot-moments.md](references/blind-spot-moments.md) | Protocol for capturing audience/room data |
-
-Process the steps below in order. Do not skip ahead — each step's output informs
-the next, and the first-session infrastructure capture in Step 4 gates profile
-generation downstream.
 
 ## Step 1 — Rhetoric Clarification
 

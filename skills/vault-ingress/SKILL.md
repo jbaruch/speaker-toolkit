@@ -14,6 +14,8 @@ user_invocable: true
 
 # Vault Ingress — Incremental Talk Parser
 
+Process the steps below in order; each step's output (tracking DB state, batch results, per-talk artifacts) feeds the next. Do not skip ahead.
+
 Build a rhetoric and style knowledge base by analyzing presentation talks. Each run
 processes **unprocessed** talks, extracts rhetoric/style observations, and updates the
 running summary. The vault lives at `~/.claude/rhetoric-knowledge-vault/` (may be a
@@ -49,10 +51,7 @@ The `slide_source` field tracks which path: `"pptx"`, `"pdf"`, `"both"`,
 `"video_extracted"`, or `"none"`. The `pptx_catalog` array fuzzy-matches `.pptx`
 files to shownotes entries.
 
-Process the steps below in order. Do not skip ahead — each step's output
-(tracking DB state, batch results, per-talk artifacts) feeds the next.
-
-## Step 1 — Load State & Sync Sources
+## Step 1 — Bootstrap Vault State
 
 **Vault discovery** — canonical path is always `~/.claude/rhetoric-knowledge-vault/`.
 
