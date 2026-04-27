@@ -70,10 +70,10 @@ Proceed immediately to Step 4.
 
 ## Step 4 — Speaker Infrastructure (first session only)
 
-Ask for any empty config fields (`speaker_name` through `publishing_process.*`).
-See [references/schemas-config.md](references/schemas-config.md) for the full field list and questions to ask.
+If `config.clarification_sessions_completed` is already ≥ 1, skip this step — infrastructure was captured in the first session. Proceed immediately to Step 5.
 
-If `config.clarification_sessions_completed` is already ≥ 1, skip this step — infrastructure was captured in the first session.
+Otherwise, ask for any empty config fields (`speaker_name` through `publishing_process.*`).
+See [references/schemas-config.md](references/schemas-config.md) for the full field list and questions to ask.
 
 Proceed immediately to Step 5.
 

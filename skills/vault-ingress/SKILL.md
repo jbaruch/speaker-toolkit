@@ -97,7 +97,7 @@ Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
 
 ## Step 3 — Process Talks via Parallel Subagents (Batches of 5)
 
-Per batch: launch 5 subagents in parallel, wait, run Step 4 (Collect Results), then next batch. When all batches have finished, proceed to Step 5.
+Per batch: launch 5 subagents in parallel, wait, run Step 4 (Apply Subagent Results), then next batch. When all batches have finished, proceed to Step 5.
 Each subagent receives the talk's DB entry and current `rhetoric-style-summary.md`.
 
 #### Per-Talk Subagent Instructions:
@@ -192,10 +192,12 @@ Minimal structure:
 }
 ```
 
-## Step 4 — Collect Results & Update
+## Step 4 — Apply Subagent Results
 
 Runs after each batch inside Step 3's loop (not as a separate post-loop
-phase).
+phase). One action: take the subagent JSON returns from the batch and
+fold them into the tracking DB, per-talk analysis files, and the running
+rhetoric summary in a single atomic update.
 
 1. **Update tracking DB** — set `status`, `processed_date`, all result fields.
    Persist `pattern_observations` IDs + score. Populate structured fields
@@ -243,7 +245,7 @@ Proceed immediately to Step 6.
 
 ## Step 6 — Regenerate Speaker Profile
 
-If `{vault_root}/speaker-profile.json` exists, invoke the **vault-profile** skill
+If `{vault_root}/speaker-profile.json` exists, invoke `Skill(skill: "vault-profile")`
 with the updated tracking database. Report the diff of changes (added fields,
 changed values) so the speaker can verify.
 
@@ -253,12 +255,15 @@ Proceed immediately to Step 7.
 
 ## Step 7 — Same-Week Clarification Trigger
 
-Scan newly-processed talks for delivery date. For any talk whose `date` is within
-the past 7 days, explicitly recommend running **vault-clarification** NOW —
-memory of the delivery is freshest right after the talk, and verbal beats that
-didn't appear in auto-captions (bilingual jokes rendered in a non-primary
-language, improvised asides, fly-bys that weren't in the deck) need speaker
-confirmation while they're still recoverable.
+If no talks were newly processed in this run, finish here without further action.
+
+Otherwise, scan the newly-processed talks for delivery date. For any talk whose
+`date` is within the past 7 days, explicitly recommend running
+`Skill(skill: "vault-clarification")` NOW — memory of the delivery is freshest
+right after the talk, and verbal beats that didn't appear in auto-captions
+(bilingual jokes rendered in a non-primary language, improvised asides, fly-bys
+that weren't in the deck) need speaker confirmation while they're still
+recoverable.
 
 Surface these as candidate clarification topics in the recommendation:
 - Each per-talk `areas_for_improvement` entry.
@@ -270,9 +275,6 @@ For older talks (30+ days), recommend the compressed clarification session
 instead of the full one — memory has decayed and detailed recall is unreliable.
 For talks in the 7–30 day window, recommend the full session but note that some
 verbatim details may be lost.
-
-If no newly-processed talks fall inside any window, finish here without further
-action.
 
 ## Error Handling
 
