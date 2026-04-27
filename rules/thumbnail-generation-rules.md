@@ -35,11 +35,33 @@ Avoid these slide types:
 - Bullet-heavy slides
 - Generic title slides
 
-## 4. Speaker Photo Required
+## 4. Speaker Photo Required (Input)
 
-Real photo only — never AI-generated. Thumbnails with faces get 35-50%
-higher click-through rates. The expression should convey engagement, not
-a neutral corporate headshot.
+The speaker photo file passed to the script — `--speaker-photo` /
+`publishing_process.thumbnail.speaker_photo_path` — must be a real
+photograph of the speaker. Never an AI-generated headshot, stock-photo
+substitute, or stylized portrait. The script uses it as the identity
+anchor; an AI-generated input compounds artifacts when the model uses
+it as a reference.
+
+This rule scopes the **input only**. The output rendering depends on
+`--aesthetic` (Rule 7):
+
+- `--aesthetic photo` — output preserves photographic realism. The face
+  in the thumbnail looks like the speaker's face in the input.
+- `--aesthetic comic_book` — output renders the speaker as a comic-book
+  caricature derived from the input photo. The output is illustrated,
+  not photographic; identifying features (hair, beard, glasses, hat)
+  are preserved so the speaker remains recognizable.
+
+Both aesthetics still require a real photo as input; the comic-book
+aesthetic transforms it into illustration, but the source must be a
+photograph. Real-photo inputs produce thumbnails with faces, and faces
+boost CTR 35-50% regardless of which aesthetic the output uses.
+
+Expression: convey engagement, not a neutral corporate headshot. The
+expression carries through whether the output is photographic or
+caricatured.
 
 Resolution order:
 1. `publishing_process.thumbnail.speaker_photo_path` from profile
@@ -89,14 +111,42 @@ Two aesthetics are supported via `--aesthetic`:
 
 | Value | Description | When to use |
 |---|---|---|
-| `photo` (default) | Photographic composite; speaker face left natural; slide as background | Conservative default; safe for any speaker |
-| `comic_book` | Full comic-book illustration; speaker rendered as caricature with halftone shading; scene re-illustrated to match | Speakers with documented "comic-book aesthetic" branding; talks where viral reach matters more than realism |
+| `photo` | Photographic composite; speaker face left natural; slide as background | Speakers without an established illustrated brand; talks where corporate / documentary tone is required |
+| `comic_book` | Full comic-book illustration; speaker rendered as caricature with halftone shading; scene re-illustrated to match | **Recommended** for speakers with a documented comic-book aesthetic in their vault notes; talks where viral reach matters more than realism |
 
-**Phase 7 Step 7.1 protocol:** offer the speaker BOTH aesthetics for the same
-title/slide combination if you're unsure which lands better. Generate two
-candidates, present side-by-side, let the speaker pick. Don't auto-decide —
-the comic-book treatment is high-variance: when it works it produces
-significantly higher CTR, when it misses it looks off-brand.
+**Choosing per speaker — precedence (highest first):**
+
+1. **`publishing_process.thumbnail.aesthetic_preference`** — explicit
+   speaker-set preference. If `"photo"` or `"comic_book"`, that's the
+   answer; honor it and stop.
+2. **`visual_style_history.default_illustration_style`** — observed
+   pattern across past talks (free-form string set by vault-profile).
+   Fuzzy-match the value against keyword sets:
+   - Matches comic-book family (`comic_book`, `comic-book`, `halftone`,
+     `illustrated`, `cartoon`, `caricature`) → recommend `comic_book`.
+   - Matches a different documented style (`retro_tech_manual`,
+     `watercolor`, etc.) → out-of-scope for current aesthetics; ask
+     before generating, and consider filing an issue requesting the new
+     variant instead of forcing photo.
+   - No match / null → fall through to step 3.
+3. **`visual_style_history.confirmed_visual_intents`** — speaker-
+   confirmed deliberate visual patterns. Same fuzzy-match logic as
+   step 2 against each entry's `pattern` and `rule` fields.
+4. **Default** — `photo`.
+
+The JCON Europe 2026 "Never Trust a Monkey" win validates the comic-book
+approach for at least one speaker whose `default_illustration_style`
+matches the comic-book family; expand the evidence base by trying it
+on other talks where the speaker's brand fits.
+
+**Phase 7 Step 7.1 protocol:** lead with the recommendation from the
+precedence chain above. Offer a two-candidate side-by-side comparison
+when the speaker is genuinely undecided or wants to validate before
+committing — not as a default. The comic-book treatment is high-variance:
+when it works it produces significantly higher CTR than photo composites,
+when it misses it looks off-brand. Two-candidate is for resolving that
+variance with the speaker's own taste, not for ignoring a clear profile
+signal.
 
 **Comic-book prompt anchors** (used internally by the script — don't reproduce
 them in agent-rolled prompts):
@@ -108,12 +158,12 @@ them in agent-rolled prompts):
 - Title with "thick black outline and a thin contrasting inner outline
   (classic blockbuster comic-book treatment)"
 
-**Why this is opt-in, not default:** the comic-book template is currently
-reverse-engineered from a single high-performing thumbnail (JCON Europe 2026
-"Never Trust a Monkey"). It needs to prove it generalizes across multiple
-talks before becoming the default. Track outcomes — if the comic-book
-aesthetic consistently outperforms photo across 3+ talks, file an issue to
-flip the default.
+**Why `--aesthetic` defaults to `photo` in the CLI:** speakers without
+a documented illustrated brand are the safer fallback for the script's
+default flag. The agent's recommendation, however, follows the profile's
+`visual_style_history` — see "Choosing per speaker" above — and should
+override the CLI default whenever the profile signals a clear illustrated
+brand.
 
 ## 8. Model Selection and Retry Ladder
 
