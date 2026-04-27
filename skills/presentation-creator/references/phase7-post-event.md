@@ -76,13 +76,27 @@ thumbnail readability at small sizes.
 
 #### 5. Generate
 
-Generate **two candidates** when the speaker has a documented comic-book
-aesthetic in their vault notes — one `--aesthetic photo` (conservative
-photographic composite), one `--aesthetic comic_book` (caricatured
-illustration). Present side-by-side; let the speaker pick. The comic-book
-treatment is high-variance: when it works it produces significantly higher
-CTR than photo composites, when it misses it looks off-brand. See
-`rules/thumbnail-generation-rules.md` Rule 7 for context.
+Read `visual_style_history.default_illustration_style` (and
+`confirmed_visual_intents`) from the speaker profile to decide the
+recommended aesthetic per `rules/thumbnail-generation-rules.md` Rule 7:
+
+- Profile signals comic-book / halftone / illustrated brand → **lead
+  with `--aesthetic comic_book`**. Generate it as the primary candidate;
+  optionally also generate `--aesthetic photo` as a comparison if the
+  speaker explicitly asks to see one.
+- Profile signals a different documented style → flag as out-of-scope
+  for the current two aesthetics; ask the speaker before generating.
+- Profile has no documented illustration style → **lead with
+  `--aesthetic photo`**.
+
+Generate **two candidates** for side-by-side comparison whenever the
+speaker is undecided or wants to validate before committing to a
+direction. The comic-book treatment is high-variance: when it works it
+produces significantly higher CTR than photo composites, when it misses
+it looks off-brand. The two-candidate approach lets the speaker resolve
+that variance with their own taste — but lead with the recommendation
+from the profile, don't present the two as equal options when the
+profile clearly favors one.
 
 ```bash
 # Option A: photographic composite (conservative)
