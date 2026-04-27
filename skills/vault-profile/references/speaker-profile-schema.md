@@ -302,6 +302,7 @@ creation at runtime.
     "thumbnail": {
       "enabled": true,
       "speaker_photo_path": "/path/to/headshot.jpg",
+      "aesthetic_preference": "photo|comic_book",
       "style_preference": "slide_dominant|split_panel|overlay",
       "title_position": "top|bottom|overlay",
       "brand_colors": ["#hex1", "#hex2"],

@@ -76,28 +76,54 @@ thumbnail readability at small sizes.
 
 #### 5. Generate
 
-Use the thumbnail generation script:
+Generate **two candidates** when the speaker has a documented comic-book
+aesthetic in their vault notes — one `--aesthetic photo` (conservative
+photographic composite), one `--aesthetic comic_book` (caricatured
+illustration). Present side-by-side; let the speaker pick. The comic-book
+treatment is high-variance: when it works it produces significantly higher
+CTR than photo composites, when it misses it looks off-brand. See
+`rules/thumbnail-generation-rules.md` Rule 7 for context.
 
 ```bash
+# Option A: photographic composite (conservative)
 python3 skills/presentation-creator/scripts/generate-thumbnail.py \
   --slide-image illustrations/slide-15.png \
   --speaker-photo ~/photos/headshot.jpg \
   --title "JUDGMENT DAY" \
   --subtitle "DevNexus 2026" \
   --vault ~/.claude/rhetoric-knowledge-vault \
+  --aesthetic photo \
   --style slide_dominant \
   --title-position top \
-  --brand-colors "#5B2C6F,#C0392B"
+  --brand-colors "#5B2C6F,#C0392B" \
+  --output thumbnail-photo.png
+
+# Option B: comic-book caricature (viral)
+python3 skills/presentation-creator/scripts/generate-thumbnail.py \
+  --slide-image illustrations/slide-15.png \
+  --speaker-photo ~/photos/headshot.jpg \
+  --title "JUDGMENT DAY" \
+  --subtitle "DevNexus 2026" \
+  --vault ~/.claude/rhetoric-knowledge-vault \
+  --aesthetic comic_book \
+  --style slide_dominant \
+  --title-position top \
+  --brand-colors "#5B2C6F,#C0392B" \
+  --output thumbnail-comic.png
 ```
 
+For speakers without a documented comic-book aesthetic, generate `photo`
+only and skip the second candidate.
+
 Apply speaker preferences from `publishing_process.thumbnail`:
+- `aesthetic_preference` → `--aesthetic` (default: `photo`)
 - `style_preference` → `--style`
 - `title_position` → `--title-position`
 - `brand_colors` → `--brand-colors`
 
 The script:
 - Sends both images + prompt to Gemini as multimodal input
-- Uses researched prompt strategy for face preservation and YouTube optimization
+- Uses researched prompt strategy per the chosen aesthetic
 - Validates output: exactly 1280x720, <2MB, PNG preferred
 - Saves to the specified output path (default: `thumbnail.png` in illustrations dir)
 

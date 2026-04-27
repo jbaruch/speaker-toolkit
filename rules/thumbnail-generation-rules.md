@@ -56,17 +56,89 @@ Examples:
 - "The Arc of AI" -> "AI CHANGES EVERYTHING"
 - "Building Resilient Systems" -> "WHEN SYSTEMS BREAK"
 
-## 6. Face Preservation
+## 6. Face Preservation — Framing, Not Demands
 
-The Gemini prompt MUST include:
-- "Maintain exact facial features, bone structure, skin texture, and
-  natural appearance from the reference"
-- "Do not stylize, beautify, alter, or idealize the face"
+Frame the request as GRAPHIC COMPOSITION ("combine these two images into a
+1280x720 graphic, portrait goes into the foreground"), not as face-preservation
+("maintain exact facial features, bone structure, skin texture"). Assertive
+face-preservation language combined with viral-styling demands reliably trips
+Gemini's safety filter on real-person photos — the script saw 100%
+`finishReason: IMAGE_OTHER` rejections with the original prompt.
 
-After generation, verify the output face matches the input photo. If
-the face looks altered, regenerate with stronger preservation language.
+This rule applies to the **photo aesthetic** (the script's default). The
+**comic-book aesthetic** (Rule 7) handles speaker rendering differently —
+through caricature, not photo realism — and isn't subject to the same filter.
 
-## 7. Iterate, Don't Restart
+Do (photo aesthetic):
+- Treat the speaker photo as a compositing asset.
+- Apply viral styling to TYPOGRAPHY and LAYOUT, not to the face.
+- Keep realism understated: "natural and unmodified" is enough.
+
+Don't (photo aesthetic):
+- Demand specific facial features be preserved by name (bone structure, skin
+  texture, expression). Those phrases push the filter.
+- Combine face-preservation claims with high-energy/viral/aggressive language.
+
+After generation, verify the output face matches the input photo. If the face
+looks altered, change the **style variant** or **title position** — not the
+face-preservation wording.
+
+## 7. Aesthetic Choice — Photo vs Comic Book
+
+Two aesthetics are supported via `--aesthetic`:
+
+| Value | Description | When to use |
+|---|---|---|
+| `photo` (default) | Photographic composite; speaker face left natural; slide as background | Conservative default; safe for any speaker |
+| `comic_book` | Full comic-book illustration; speaker rendered as caricature with halftone shading; scene re-illustrated to match | Speakers with documented "comic-book aesthetic" branding; talks where viral reach matters more than realism |
+
+**Phase 7 Step 7.1 protocol:** offer the speaker BOTH aesthetics for the same
+title/slide combination if you're unsure which lands better. Generate two
+candidates, present side-by-side, let the speaker pick. Don't auto-decide —
+the comic-book treatment is high-variance: when it works it produces
+significantly higher CTR, when it misses it looks off-brand.
+
+**Comic-book prompt anchors** (used internally by the script — don't reproduce
+them in agent-rolled prompts):
+- "Render a single 16:9 comic-book illustration"
+- "Bold ink outlines, halftone dot shading, exaggerated dynamic angles"
+- "Render the speaker as a comic-book caricature in matching style"
+- "Preserve identifying features — hair, beard, glasses, hat, and any other
+  distinguishing accessories"
+- Title with "thick black outline and a thin contrasting inner outline
+  (classic blockbuster comic-book treatment)"
+
+**Why this is opt-in, not default:** the comic-book template is currently
+reverse-engineered from a single high-performing thumbnail (JCON Europe 2026
+"Never Trust a Monkey"). It needs to prove it generalizes across multiple
+talks before becoming the default. Track outcomes — if the comic-book
+aesthetic consistently outperforms photo across 3+ talks, file an issue to
+flip the default.
+
+## 8. Model Selection and Retry Ladder
+
+Face-composition with real-person photos only works on Nano Banana Pro
+(`gemini-3-pro-image-preview`, the script's default). Earlier variants
+(`gemini-2.5-flash-image`, `gemini-3.1-flash-image-preview`) reject any
+face-composition prompt. Use `--model` only when you know the newer model
+accepts the composition you need.
+
+The script retries with progressively softer prompts ONLY on safety-filter
+rejections (the API returns no image — IMAGE_OTHER, blocked candidate, empty
+response). Transport-level failures (HTTP errors, rate limits, network
+exceptions) surface immediately instead of burning all three retries on a
+problem softening cannot fix.
+
+Softness gradient:
+- `default` — full prompt: base + typography styling + composition energy
+- `softer` — drops the composition-energy modifier; typography styling stays
+- `softest` — drops typography too; minimal composition framing only
+
+If all three softness levels are rejected by the filter, the model has tightened
+again: try a different slide image (less text-heavy backgrounds trip the filter
+less often), or regenerate after a short delay.
+
+## 9. Iterate, Don't Restart
 
 When the speaker requests changes, modify specific prompt components
 (expression, position, colors, text) rather than regenerating from
@@ -80,7 +152,7 @@ Adjustment targets:
 - **Text** — update `--title` or `--title-position`
 - **Background** — try a different slide image
 
-## 8. Single Focal Point
+## 10. Single Focal Point
 
 One idea per thumbnail. Don't overload with multiple text blocks,
 competing visuals, or busy backgrounds. You have 1.8 seconds to
