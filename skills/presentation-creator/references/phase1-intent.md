@@ -71,27 +71,58 @@ If the spec has a co-presenter:
 
 ### Shownotes Slug Generation
 
-The slug is NOT free-form — read `shownotes_slug_convention` from the speaker
-profile config. Apply the convention to this talk's details. Example convention:
+The slug is NOT free-form. Conventions drift over time (older analyses often
+encode retired naming patterns), so derive from CURRENT shownotes entries, not
+whatever examples happen to be loaded in context.
+
+**Step 1 — Observe the current convention.** List the most recent entries in
+the speaker's live shownotes directory (source location comes from the vault's
+shownotes config — see `vault_root/speaker-profile.json`). Examples:
 
 ```
-Convention: {YYYY-MM-DD}-{conference-slug}-{talk-short-name}
-Input:      2026-04-16, DevNexus, "Robocoders: Judgment Day"
-Result:     2026-04-16-devnexus-robocoders-judgment-day
+ls {shownotes_talks_dir} | sort -r | head -20
 ```
+
+Extract the actual pattern from the latest 5–10 entries. Note that the current
+convention may differ from older convention examples that appear in archived
+analyses. Trust the live directory, not the analyses.
+
+**Step 2 — Read the declared convention.** Check
+`publishing_process.shownotes.slug_convention.template` in the speaker
+profile. If it matches what you observed in Step 1, use it. If it disagrees
+with recent entries, the profile is stale — treat the observed convention as
+authoritative and offer to update the profile (via vault-clarification) at
+the end of the phase.
+
+**Step 3 — Derive the slug mechanically.** Apply the convention to this talk's
+metadata (date, venue, title). Example convention:
+
+```
+Convention: {venue-compact}{yy}-{short-talk-id}
+Input:      DevNexus 2026-04-16, "Robocoders: Judgment Day"
+Result:     devnexus26-robocoders
+```
+
+**Step 4 — Confirm once, not as a menu.** Present a SINGLE generated slug for
+confirmation, not 2–3 options. If the convention is genuinely ambiguous (e.g.,
+the last 10 entries show two different patterns), show 2–3 examples from the
+live directory and ask the speaker which pattern applies — don't freestyle.
+
+**Step 5 — Backfill if needed.** If
+`publishing_process.shownotes.slug_convention.template` was `null` or missing,
+hand off to vault-clarification at end-of-phase to persist the observed
+convention in the profile (and populate
+`slug_convention.examples` with the recent live slugs). Next run shouldn't
+need Step 1 again.
 
 Rules:
-- Derive the slug mechanically from the convention + talk metadata (date,
-  conference, title). NEVER invent or freestyle a slug.
 - Kebab-case, lowercase, no special characters.
-- Present the generated slug to the author for confirmation before finalizing
-  the spec. The author may want to abbreviate or adjust.
-- If `shownotes_slug_convention` is not set in the profile, ask the author
-  for their convention and save it (same as any missing config field).
-
-The confirmed slug goes into the Presentation Spec as `Shownotes slug:` and is
-persisted in `presentation-spec.md`. All downstream uses (Phase 6 shownotes URL,
-QR code `--talk-slug`, directory name) must use this exact slug.
+- NEVER invent a slug from convention-like patterns you saw in analyses —
+  those are snapshots of whatever was current when the analysis was written.
+- The confirmed slug goes into the Presentation Spec as `Shownotes slug:` and
+  is persisted in `presentation-spec.md`. All downstream uses (Phase 6
+  shownotes URL, QR code `--talk-slug`, directory name) must use this exact
+  slug.
 
 ### Spec Validation
 

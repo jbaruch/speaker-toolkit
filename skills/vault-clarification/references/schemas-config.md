@@ -2,22 +2,26 @@
 
 ## Config Fields — Clarification Session Questions
 
-Fields below `template_skip_patterns` are asked during Step 5B (first session only)
-when empty. The question column shows what to ask the speaker.
+Fields below `template_skip_patterns` are asked during Step 4 (first session
+only) when empty. The question column shows what to ask the speaker.
 
 | Config field | Question |
 |-------------|----------|
 | `speaker_name` | "Name as it appears on slides?" |
 | `speaker_handle` | "Social handle for footers?" |
 | `speaker_website` | "Website for talk resources?" |
-| `shownotes_url_pattern` | "URL pattern for talk pages? (e.g., `speaking.example.com/{slug}`)" |
-| `shownotes_slug_convention` | "How do you construct talk slugs for shownotes URLs? Example: `{YYYY-MM-DD}-{conference-slug}-{talk-short-name}` → `2026-04-16-devnexus-robocoders-judgment-day`. What components and format?" |
+| `shownotes.source.type` | "Where do your shownotes live? Local Jekyll, Hugo, Eleventy, Astro, a remote URL, or no shownotes site?" |
+| `shownotes.source.path_or_url` | "Path (or base URL) to the shownotes site root?" |
+| `shownotes.source.talks_subdir` | "Subdirectory under the site root where talk entries live? (e.g., `_talks`, `content/talks`)" |
+| `shownotes.url.base` | "Base URL where the shownotes site is deployed?" |
+| `shownotes.url.template` | "Permalink template for a single talk? (e.g., `/talks/{slug}/`, `/{yyyy}-{mm}-{dd}-{slug}/`). Verify against your deployed URLs before confirming." |
+| `shownotes.thumbnail_path_template` | "Where in the site repo does the SSG template expect the talk thumbnail? (e.g., `assets/images/thumbnails/{slug}-thumbnail.png`)" |
+| `shownotes.slug_convention.template` | "Convention for talk slugs? (e.g., `{venue-compact}{yy}-{short-id}` → `devnexus26-robocoders`). What components and format?" |
+| `shownotes.ssg_template_pointer` | "Which SSG template file encodes the URL/thumbnail conventions (so they can be re-derived after a redesign)? e.g., `_layouts/default.html` for Jekyll." |
 | `template_pptx_path` | "PowerPoint template path?" |
 | `presentation_file_convention` | "File organization? (default: `{conference}/{year}/{talk-slug}/`)" |
 | `publishing_process.export_format` | "How do you export final decks — PDF, keep .pptx only, or both?" |
 | `publishing_process.export_method` | "How do you produce the PDF? (e.g., PowerPoint AppleScript, LibreOffice CLI, manual)" |
-| `publishing_process.shownotes_site` | "What's the base URL where your shownotes are published? (e.g., `https://speaking.example.com`)" |
-| `publishing_process.shownotes_publishing` | "Do you publish shownotes for your talks? If yes, how?" |
 | `publishing_process.qr_code` | "Do you put QR codes in your decks? If yes, what do they link to?" |
 | `publishing_process.qr_code.shortener` | "Do you use a URL shortener for QR links? Options: `bitly`, `rebrandly`, or `none`." |
 | `publishing_process.qr_code.bitly_domain` | _(Only if shortener=bitly)_ "Do you have a custom Bitly domain? (e.g., `jbaru.ch`, or leave blank for default `bit.ly`)" |
@@ -28,26 +32,10 @@ when empty. The question column shows what to ask the speaker.
 
 ## Full Config Schema
 
-```json
-{
-  "config": {
-    "vault_root": "~/.claude/rhetoric-knowledge-vault",
-    "vault_storage_path": "/actual/path/if/custom (null when using default location)",
-    "talks_source_dir": "/path/to/_talks",
-    "pptx_source_dir": "/path/to/Presentations",
-    "python_path": "/path/to/python3",
-    "template_skip_patterns": ["template"],
-    "speaker_name": "",
-    "speaker_handle": "",
-    "speaker_website": "",
-    "shownotes_url_pattern": "",
-    "shownotes_slug_convention": "",
-    "template_pptx_path": "",
-    "presentation_file_convention": "{pptx_source_dir}/{conference}/{year}/{talk-slug}/",
-    "clarification_sessions_completed": 0
-  }
-}
-```
+See the canonical schema and field reference in
+[../../vault-profile/references/schemas-config.md](../../vault-profile/references/schemas-config.md).
+That file also documents the migration path for vaults created before the
+unified `shownotes` block.
 
 ## Confirmed Intents Schema
 

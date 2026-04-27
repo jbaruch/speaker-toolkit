@@ -52,19 +52,51 @@ omit the resource links section from shownotes.
 
 ### Step 6.1: Shownotes
 
-Read `publishing_process.shownotes_publishing`. If `enabled`:
+Read `publishing_process.shownotes`. If `enabled`:
 
-- Follow the `method` description (git push, CMS, manual)
-- If `shownotes_repo_path` and `shownotes_template` are provided, generate the page
-- Include: title, abstract, slide embed/download link, speaker bio
+- Generate the talk page at
+  `{shownotes.source.path_or_url}/{shownotes.source.talks_subdir}/{slug}.md`
+  (adapt the extension for Hugo/Astro content collections if the SSG uses a
+  different convention — check `shownotes.source.type` and existing entries).
+- Follow the `publishing_method` description (git push, CMS, manual) to make
+  it live.
+- If `shownotes.shownotes_template` is provided, use it as the frontmatter /
+  layout skeleton for the new page. Otherwise follow the convention observed
+  in existing entries under the talks subdir.
+- Include: title, abstract, slide embed/download link, speaker bio.
 - If `resources.json` exists and has `approved: true` items, include a
   "Resources" section with those links. Read from `resources.json` in the
   talk working directory (produced by Step 6.0) — do not re-scan the outline.
-- Construct the shownotes URL by substituting the **talk slug from the Presentation
-  Spec** (Phase 1) into `shownotes_url_pattern` from the speaker profile. The slug
-  was agreed with the author in Phase 1 — NEVER invent or rephrase it. Example:
-  pattern `speaking.example.com/{slug}` + spec slug `arc-of-ai` →
-  `speaking.example.com/arc-of-ai`
+
+**Construct the live shownotes URL** by composing `shownotes.url.base` + the
+result of substituting the Presentation Spec's slug (and other variables, if
+the template uses them) into `shownotes.url.template`. The slug was agreed
+with the author in Phase 1 — NEVER invent or rephrase it.
+
+Template variables supported:
+- `{slug}` — talk slug from Presentation Spec
+- `{yyyy}`, `{mm}`, `{dd}` — 4- and 2-digit date components from the talk
+  frontmatter `date` field
+- `{yy}` — 2-digit year
+- `{venue}` — slugified venue name
+
+Examples:
+
+| `shownotes.url.base` | `shownotes.url.template` | slug | Resulting URL |
+|---|---|---|---|
+| `https://speaking.example.com` | `/{slug}/` | `arc-of-ai` | `https://speaking.example.com/arc-of-ai/` |
+| `https://speaker.dev` | `/talks/{slug}/` | `arc-of-ai` | `https://speaker.dev/talks/arc-of-ai/` |
+| `https://example.com` | `/{yyyy}-{mm}-{dd}-{slug}/` | `jfokus-robocoders` | `https://example.com/2026-04-16-jfokus-robocoders/` |
+| `https://jbaru.ch` | `/talks/{slug}/` | `devnexus26-robocoders` | `https://jbaru.ch/talks/devnexus26-robocoders/` |
+
+If the SSG uses per-file `permalink:` frontmatter (common in Eleventy), read
+the permalink from the newly-generated page's frontmatter rather than
+synthesizing from `url.template`. In that case `shownotes.url.template` may
+be null.
+
+Before passing the URL downstream (QR code, bit.ly target, post-event video
+description), verify the URL is reachable — a 404 on the deployed site
+breaks printed QR codes with no recovery path.
 
 If not enabled, skip.
 

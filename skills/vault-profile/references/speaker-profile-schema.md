@@ -31,7 +31,6 @@ creation at runtime.
     "name": "",
     "handle": "",
     "website": "",
-    "shownotes_url_pattern": "{website}/{slug}",
     "bio_short": "one-sentence bio used on slides",
     "bio_context": "career trajectory or credentials chain shown on bio slides"
   },
@@ -278,16 +277,29 @@ creation at runtime.
   ],
 
   "publishing_process": {
-    "shownotes_site": "https://speaking.example.com",
+    "shownotes": {
+      "enabled": true,
+      "source": {
+        "type": "local_jekyll|local_hugo|local_eleventy|local_astro|remote_url|none",
+        "path_or_url": "/path/to/shownotes-site-root (or https://... for remote_url)",
+        "talks_subdir": "_talks"
+      },
+      "url": {
+        "base": "https://speaking.example.com",
+        "template": "/{slug}/"
+      },
+      "thumbnail_path_template": "assets/images/thumbnails/{slug}-thumbnail.png",
+      "slug_convention": {
+        "template": "{venue-compact}{yy}-{short-id}",
+        "examples": ["jfokus26-monkey", "devnexus26-robocoders"]
+      },
+      "ssg_template_pointer": "{source.path_or_url}/_layouts/default.html",
+      "publishing_method": "description of how shownotes are published (git push, CMS, manual)",
+      "shownotes_template": "path to the SSG template file for new talk pages, or null"
+    },
     "export_format": "pdf|pptx_only|both",
     "export_method": "description of how to export (e.g., PowerPoint AppleScript, LibreOffice CLI, manual)",
     "export_script": "optional: literal script/command to run for export, or null",
-    "shownotes_publishing": {
-      "enabled": true,
-      "method": "description of how shownotes are published (e.g., git push to site repo, CMS, manual)",
-      "shownotes_repo_path": "path to shownotes repo, or null",
-      "shownotes_template": "path to shownotes template file, or null"
-    },
     "qr_code": {
       "enabled": true,
       "target": "shownotes_url|custom_url",

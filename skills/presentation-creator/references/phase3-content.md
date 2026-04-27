@@ -68,7 +68,7 @@ Talks without an illustration strategy omit this entire section.
 - Speaker: "[brief intro]"
 
 ### Slide 4: Shownotes URL
-- Visual: [from profile speaker.shownotes_url_pattern] with QR code
+- Visual: [shownotes URL composed from profile `publishing_process.shownotes.url.base` + `url.template` with the Presentation Spec slug] with QR code
 - Speaker: "Everything — slides, links, resources — [shownotes URL]"
 
 ### Slide 5: [First content beat]

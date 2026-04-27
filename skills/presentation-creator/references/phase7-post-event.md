@@ -140,7 +140,33 @@ Common revision requests:
 - "Too busy" → switch to simpler style variant
 - "Wrong mood" → adjust expression guidance
 
-#### 7. Tracking Database Update
+#### 7. Copy Thumbnail to Shownotes Site
+
+If `publishing_process.shownotes.enabled` is true, the SSG template expects
+the thumbnail at a specific path relative to the shownotes site root —
+otherwise the live page falls back to a placeholder image with no warning.
+
+Resolve the destination using `publishing_process.shownotes`:
+
+```
+{shownotes.source.path_or_url}/{shownotes.thumbnail_path_template}
+```
+
+with `{slug}` substituted from the Presentation Spec. For Jekyll-based
+shownotes in this toolkit the default template is
+`assets/images/thumbnails/{slug}-thumbnail.png` — both the nested
+`thumbnails/` subdirectory AND the `-thumbnail` suffix are mandatory. Do not
+strip either when landing the file.
+
+Create the `thumbnails/` directory if it doesn't exist, then copy (don't move)
+the generated thumbnail — the local copy in `illustrations/thumbnail.png`
+stays with the talk's working directory for tracking.
+
+If the SSG template pointer (`shownotes.ssg_template_pointer`) is set, read
+that file after a site redesign to re-derive the path convention. Don't
+re-invent it from folklore.
+
+#### 8. Tracking Database Update
 
 Add to `thumbnails[]` in `tracking-database.json`:
 
@@ -151,6 +177,7 @@ Add to `thumbnails[]` in `tracking-database.json`:
   "source_slide_num": 15,
   "speaker_photo_used": "/path/to/headshot.jpg",
   "thumbnail_path": "illustrations/thumbnail.png",
+  "shownotes_thumbnail_path": "assets/images/thumbnails/judgment-day-thumbnail.png",
   "dimensions": "1280x720",
   "file_size_kb": 185,
   "created_at": "2026-04-20",
@@ -170,7 +197,9 @@ Update the existing shownotes page with the video recording link.
 
 Check that shownotes were published in Phase 6 Step 6.1. Look for:
 - The shownotes URL in `tracking-database.json` for this talk
-- Or construct from `speaker.shownotes_url_pattern` + talk slug
+- Or construct from `publishing_process.shownotes.url.base` +
+  `publishing_process.shownotes.url.template` (substitute `{slug}` and any
+  date variables) — see phase6-publishing.md for the full template semantics
 
 If shownotes don't exist, STOP and ask the speaker. Options:
 - Run Phase 6 Step 6.1 to create them now
