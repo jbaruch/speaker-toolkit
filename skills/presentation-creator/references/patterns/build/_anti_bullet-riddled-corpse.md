@@ -51,3 +51,6 @@ Dimension 8 (Slide Design): Bullet-Riddled Corpse is a fundamental failure of sl
 
 ## Combinatorics
 Bullet-Riddled Corpse is the inverse of both Vacation Photos (image-centric slides with minimal text) and Takahashi (slides with single large words or phrases). It often co-occurs with Cookie Cutter (cramming ideas into slide-sized containers) and Ant Fonts (shrinking text to fit more bullets). The Charred Trail pattern (leaving breadcrumbs of previous content) and the Infodeck pattern (document-style decks) both represent contexts where text density is more appropriate. Breaking free from Bullet-Riddled Corpse often requires fundamental rethinking of how slides function in a live presentation.
+
+## Related Reading
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 6 — "How Many Bullet Points Per Slide?" and the "1-7-7 Rule" critique. New Riders.

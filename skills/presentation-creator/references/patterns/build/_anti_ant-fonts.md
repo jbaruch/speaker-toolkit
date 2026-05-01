@@ -51,3 +51,6 @@ Dimension 13 (Slide Aesthetics): Ant Fonts directly degrade the visual quality o
 
 ## Combinatorics
 Ant Fonts frequently co-occurs with Bullet-Riddled Corpse, as the desire to include many bullet points on a single slide drives the font size down. It also co-occurs with Cookie Cutter, where the constraint of one-idea-per-slide forces text reduction to fit the container. The Infodeck pattern (slides designed for reading, not presenting) is the one context where smaller text might be acceptable, since the reader controls their viewing distance. In live presentation contexts, Ant Fonts has no acceptable application.
+
+## Related Reading
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 9 — quotes Guy Kawasaki: "If you need to put eight-point or ten-point fonts up there, it's because you do not know your material." New Riders.

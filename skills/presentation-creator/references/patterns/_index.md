@@ -27,11 +27,12 @@ combinatorics are needed.
 
 ## Pattern Catalog
 
-### Prepare Phase (18 patterns + 3 antipatterns)
+### Prepare Phase (19 patterns + 3 antipatterns)
 
 | ID | Name | Type | Vault Dims | Creator Phases | Related |
 |----|------|------|------------|----------------|---------|
 | know-your-audience | Know Your Audience | pattern | 4, 9 | intake | emotional-state, seeding-satisfaction |
+| opening-punch | Opening PUNCH | pattern | 1, 4 | intent, content | bookends, narrative-arc, foreshadowing, preroll, know-your-audience |
 | social-media-advertising | Social Media Advertising | pattern | 4 | publishing | seeding-satisfaction |
 | required | Required | pattern | 9 | intake, intent | proposed, posse, concurrent-creation, crucible |
 | the-big-why | The Big Why | pattern | 9 | intake | carnegie-hall, crucible |
@@ -95,11 +96,12 @@ combinatorics are needed.
 | slideuments | Slideuments | antipattern | 8, 14 | guardrails | infodeck, charred-trail, gradual-consistency |
 | dead-demo | Dead Demo | antipattern | 11, 14 | guardrails | live-demo, a-la-carte-content |
 
-### Deliver Phase (18 patterns + 12 antipatterns)
+### Deliver Phase (19 patterns + 12 antipatterns)
 
 | ID | Name | Type | Vault Dims | Creator Phases | Related |
 |----|------|------|------------|----------------|---------|
 | preparation | Preparation | pattern | 14 | publishing | know-your-audience, carnegie-hall |
+| screen-blackout | Screen Blackout | pattern | 12, 13 | content, slides | breathing-room, intermezzi, brain-breaks, mentor |
 | carnegie-hall | Carnegie Hall | pattern | 12, 14 | publishing | crucible |
 | posse | Posse | pattern | 4 | publishing | greek-chorus, seeding-satisfaction |
 | seeding-satisfaction | Seeding Satisfaction | pattern | 4 | publishing | know-your-audience, social-media-advertising |
@@ -154,6 +156,7 @@ Planning patterns — inform spec construction.
 - required
 - proposed
 - mentor
+- opening-punch
 - abstract-attorney *(antipattern — warn about abstract drift)*
 
 ### Phase 2: Architecture
@@ -181,6 +184,7 @@ Build patterns — applied during outline writing.
 - leet-grammars, entertainment, breathing-room
 - display-of-high-value, mentor, seeding-the-first-question
 - make-it-rain, lightsaber, echo-chamber
+- opening-punch, screen-blackout
 
 ### Phase 4: Guardrails
 Antipatterns as warnings — scanned against the outline.
@@ -197,6 +201,7 @@ Visual/construction patterns — applied during slide generation.
 - exuberant-title-top, invisibility, soft-transitions
 - traveling-highlights, crawling-code, emergence
 - preroll, crawling-credits, bookends, intermezzi, breadcrumbs
+- screen-blackout
 - cookie-cutter, ant-fonts, fontaholic, floodmarks, photomaniac, laser-weapons *(antipatterns)*
 
 ### Phase 6: Publishing
@@ -215,10 +220,10 @@ Reverse lookup: which patterns relate to each of the 14 rhetoric analysis dimens
 
 | Dim | Name | Patterns | Antipatterns |
 |-----|------|----------|--------------|
-| 1 | Opening Pattern | preroll | — |
+| 1 | Opening Pattern | preroll, opening-punch | — |
 | 2 | Narrative Structure | narrative-arc, fourthought, triad, expansion-joints, talklet, context-keeper, breadcrumbs, bookends, intermezzi, foreshadowing, backtracking, a-la-carte-content, concurrent-creation, lightning-talk | abstract-attorney, celery |
 | 3 | Humor & Wit | brain-breaks, entertainment | alienating-artifact |
-| 4 | Audience Interaction | know-your-audience, social-media-advertising, a-la-carte-content, posse, seeding-satisfaction, seeding-the-first-question, emotional-state, make-it-rain, echo-chamber, red-yellow-green, greek-chorus | bunker, hecklers, backchannel, negative-ignorance, dual-headed-monster |
+| 4 | Audience Interaction | know-your-audience, social-media-advertising, a-la-carte-content, posse, seeding-satisfaction, seeding-the-first-question, emotional-state, make-it-rain, echo-chamber, red-yellow-green, greek-chorus, opening-punch | bunker, hecklers, backchannel, negative-ignorance, dual-headed-monster |
 | 5 | Transition Techniques | narrative-arc, foreshadowing, backtracking, context-keeper, bookends, intermezzi, soft-transitions, cave-painting | — |
 | 6 | Closing Pattern | coda, crawling-credits | — |
 | 7 | Verbal Signatures | leet-grammars, peer-review, breathing-room, echo-chamber | hiccup-words, borrowed-shoes, tower-of-babble |
@@ -226,8 +231,8 @@ Reverse lookup: which patterns relate to each of the 14 rhetoric analysis dimens
 | 9 | Persuasion Techniques | know-your-audience, required, the-big-why, proposed, display-of-high-value, emotional-state, mentor, greek-chorus | disowning-your-topic, going-meta, tower-of-babble, lipstick-on-a-pig |
 | 10 | Cultural & Pop-Culture References | leet-grammars, unifying-visual-theme, entertainment | alienating-artifact, photomaniac |
 | 11 | Technical Content Delivery | live-demo, lipsync, traveling-highlights, crawling-code, emergence, mentor, lightsaber | dead-demo |
-| 12 | Pacing Clues | crucible, expansion-joints, talklet, brain-breaks, lightning-talk, takahashi, carnegie-hall, breathing-room, weatherman | shortchanged, disowning-your-topic |
-| 13 | Slide Design Patterns | unifying-visual-theme, takahashi, cave-painting, composite-animation, vacation-photos, defy-defaults, analog-noise, gradual-consistency, charred-trail, exuberant-title-top, invisibility, context-keeper, breadcrumbs, bookends, soft-transitions, intermezzi, preroll, crawling-credits, lipsync, traveling-highlights, crawling-code, emergence | cookie-cutter, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, laser-weapons |
+| 12 | Pacing Clues | crucible, expansion-joints, talklet, brain-breaks, lightning-talk, takahashi, carnegie-hall, breathing-room, weatherman, screen-blackout | shortchanged, disowning-your-topic |
+| 13 | Slide Design Patterns | unifying-visual-theme, takahashi, cave-painting, composite-animation, vacation-photos, defy-defaults, analog-noise, gradual-consistency, charred-trail, exuberant-title-top, invisibility, context-keeper, breadcrumbs, bookends, soft-transitions, intermezzi, preroll, crawling-credits, lipsync, traveling-highlights, crawling-code, emergence, screen-blackout | cookie-cutter, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, laser-weapons |
 | 14 | Areas for Improvement | crucible, preparation, carnegie-hall, shoeless, stakeout | abstract-attorney, alienating-artifact, celery, injured-outlines, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, borrowed-shoes, slideuments, dead-demo, shortchanged, hiccup-words, disowning-your-topic, going-meta, bunker, hecklers, backchannel, laser-weapons, negative-ignorance, dual-headed-monster, tower-of-babble, lipstick-on-a-pig |
 
 ---
@@ -269,14 +274,14 @@ they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation 
 
 ## Summary Statistics
 
-- **Total entries:** 88 (63 patterns + 25 antipatterns)
-- **Observable (vault-scorable):** 77 (55 patterns + 22 antipatterns)
+- **Total entries:** 90 (65 patterns + 25 antipatterns)
+- **Observable (vault-scorable):** 79 (57 patterns + 22 antipatterns)
 - **Unobservable (go-live checklist):** 11 (8 patterns + 3 antipatterns)
-- **Prepare phase:** 21 (18 patterns + 3 antipatterns)
+- **Prepare phase:** 22 (19 patterns + 3 antipatterns)
 - **Build phase:** 37 (27 patterns + 10 antipatterns)
-- **Deliver phase:** 30 (18 patterns + 12 antipatterns)
+- **Deliver phase:** 31 (19 patterns + 12 antipatterns)
 
-## Source
+## Sources
 
-Ford, N., McCullough, M., & Schutta, N. (2013). *Presentation Patterns: Techniques
-for Crafting Better Presentations.* Addison-Wesley.
+- Ford, N., McCullough, M., & Schutta, N. (2013). *Presentation Patterns: Techniques for Crafting Better Presentations.* Addison-Wesley. — primary taxonomy source.
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). New Riders. — supplementary source; reinforces ~17 existing patterns and contributes the `opening-punch` and `screen-blackout` patterns plus the `hara-hachi-bu`, `analog-planning`, and `elevator-test` refinements folded into `breathing-room`, `concurrent-creation`, and `the-big-why` respectively.

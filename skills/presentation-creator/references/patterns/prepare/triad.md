@@ -48,3 +48,6 @@ Relates to Dimension 2 (Structure/Organization) as one of the most effective org
 
 ## Combinatorics
 Pairs naturally with Narrative Arc (the three-act structure IS the Triad applied to storytelling), Fourthought (the organize phase is where the Triad emerges from raw ideas), and Talklet (three talklets = three acts). The Triad also provides a natural framework for Expansion Joints — each theme boundary is a natural expansion/contraction point.
+
+## Related Reading
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 4 — "three is a good number to aim for because it is a manageable constraint and generally provides a memorable structure." New Riders.

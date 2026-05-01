@@ -50,3 +50,6 @@ Dimension 8 (Slide Design): Cookie Cutter fundamentally compromises slide design
 
 ## Combinatorics
 Cookie Cutter is the inverse of Soft Transitions, which explicitly encourages multi-slide sequences that blur the boundaries between ideas. It often co-occurs with Bullet-Riddled Corpse (bullets used to fit more content per slide) and Ant Fonts (small text used to fit more content per slide). The Fourthought pattern, when applied properly during the ideation phase, helps prevent Cookie Cutter by encouraging ideas to find their natural size before slides are designed.
+
+## Related Reading
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 1, 6 — "cookie-cutter method of design and delivery" critique; templates as the "car for your mind" rather than the "bicycle." New Riders.

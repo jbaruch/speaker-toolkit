@@ -51,3 +51,6 @@ Dimension 8 (Slide Design): Vacation Photos represents a deliberate architectura
 
 ## Combinatorics
 Vacation Photos pairs powerfully with Unifying Visual Theme, where a consistent photographic style or subject matter creates visual coherence across the deck. It works well with Narrative Arc because image-driven slides naturally support storytelling flow. The Coda pattern is an essential companion, providing a place for the detailed references and text that Vacation Photos deliberately excludes from the spoken portion.
+
+## Related Reading
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 6, 7 — full-bleed images as the dynamic, asymmetric foundation of slide design; "Going Visual" applies the picture superiority effect. New Riders.

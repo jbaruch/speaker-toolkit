@@ -50,3 +50,6 @@ Relates to Dimension 2 (Structure/Organization) as the primary structural patter
 
 ## Combinatorics
 Pairs powerfully with Triad (three-act structure maps to three main themes), Bookends (opening and closing that frame the arc), Intermezzi (transitions between arc sections), Unifying Visual Theme (visual coherence reinforces narrative coherence), and Context Keeper (maintaining audience orientation within the arc). The Narrative Arc is arguably the most foundational pattern — nearly every other pattern either supports it or depends on it.
+
+## Related Reading
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 4 — "Crafting the Story" applies Robert McKee's conflict-driven story structure to presentations, and cites the Heath brothers' SUCCESs framework. New Riders.

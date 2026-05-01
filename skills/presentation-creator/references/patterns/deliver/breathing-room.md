@@ -31,6 +31,13 @@ Beyond comprehension, strategic silence creates dramatic effect. The rhetorical 
 
 The Breathing Room pattern also applies at a structural level. Leave time between major sections for the audience to mentally file what they have learned and prepare for what comes next. Do not pack your talk so tightly that every minute is accounted for — leave margins. These margins serve double duty: they provide cognitive breathing room for the audience and practical breathing room for you if a section runs long or a question takes extra time.
 
+### Hara Hachi Bu — The 90–95% Finish Line
+The structural application of breathing room extends to the talk's overall length. Garr Reynolds borrows the Japanese eating principle *hara hachi bu* — "eat until 80% full" — and applies it to presentation timing: finish at roughly 90–95% of your allotted time, never run over. The two phrasings differ slightly because the eating ratio (80%) leaves more headroom than the speaking ratio (90–95%), but the spirit is identical: stop deliberately *before* the audience wants you to stop, leaving them satisfied but slightly hungry rather than stuffed and fatigued.
+
+Two reasons make this discipline non-negotiable. First, audience concentration drops sharply after 15–20 minutes regardless of speaker quality, so the marginal value of the last 5% of an allotted slot is usually negative — you trade fresh attention for diminishing returns. Second, running over signals that the speaker did not respect the audience's time, the next speaker's slot, or the constraints of the room. No audience member ever complained that a talk ended a few minutes early; many have complained about a talk that ran long.
+
+Practically, this means timing rehearsals (`carnegie-hall`) should target 90–95% of the slot, not 100%. If a talk consistently runs to 100% in rehearsal, it will run over in delivery — adrenaline and audience interaction lengthen everything. Cut content during the prepare phase until the rehearsal lands at the target, rather than relying on speed-up improvisation on stage.
+
 ## When to Use / When to Avoid
 Use this pattern in every presentation, with the frequency and duration of pauses calibrated to the content density and audience. Dense technical content requires more breathing room; light, entertaining content can sustain a faster pace. Avoid pauses that are so long they become awkward silences — the goal is strategic, not uncomfortable. Also avoid mechanical pausing (exactly every 30 seconds) that feels robotic rather than natural. With Carnegie Hall rehearsal, you learn where the natural pause points live.
 
@@ -50,3 +57,6 @@ This pattern maps to Vault Dimension 7 (Clarity / Communication) because pauses 
 
 ## Combinatorics
 Breathing Room is the direct inverse of the Hiccup Words antipattern — confident silence replaces nervous filler. It pairs with Narrative Arc (pauses at narrative transition points), Brain Breaks (pauses as micro-breaks), and Carnegie Hall (rehearsal is where you discover and practice pause points). It also supports Entertainment — the comedic pause is a specific application of this pattern — and Emotional State — adjusting pause frequency based on audience energy level.
+
+## Related Reading
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 9 — *hara hachi bu* ("eat until 80% full") applied to time discipline: finish at 90–95% and leave the audience slightly hungry, not stuffed. New Riders.

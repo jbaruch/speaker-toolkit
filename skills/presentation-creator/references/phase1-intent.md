@@ -128,6 +128,9 @@ Rules:
 
 Before presenting the spec, cross-check:
 - Does the thesis pass the "one sentence" test?
+- **The Two Questions** (Reynolds): Can the speaker answer both *"What is my point?"* AND *"Why does it matter?"* in plain language? If "why does it matter" is hand-wavy or assumed-obvious, the spec is not ready — that question is where most talks fail in preparation.
+- **The Elevator Test** (Reynolds): Could the speaker pitch the core message in 30–45 seconds to an executive walking to her car? If compression to 45 seconds is impossible, the speaker has not yet found the core — surface this and iterate before declaring the spec done. See `patterns/prepare/the-big-why.md` for the full exercise.
+- **SUCCESs check** (Heath brothers, via Reynolds): Does the planned core message have at least 3 of the 6 sticky-message properties? **S**imple, **U**nexpected, **C**oncrete, **C**redible, **E**motional, **S**tories. If the core is "abstract claim with no concrete example, no surprise, no story," it will not stick — flag it before slide-building begins.
 - Does the time slot match the content ambition?
 - Is the mode selection consistent with the audience?
 - Are there contradictions? (e.g., "zero profanity" + "heavy meme density" — flag it)

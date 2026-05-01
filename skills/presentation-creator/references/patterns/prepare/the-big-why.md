@@ -31,6 +31,13 @@ Once you have identified your Big Why, use it as a commitment device. Market you
 
 The Big Why also serves as a compass during preparation. When you face difficult decisions — what to include, what to cut, how much to rehearse — your core motivation provides the answer. If your Big Why is audience care, you cut the clever-but-confusing section. If your Big Why is professional growth, you keep the section that stretches your delivery skills even though it is harder to present.
 
+### The Elevator Test
+The Big Why is the speaker-side motivation; the audience-side counterpart is "what is my point and why does it matter to *them*?" Garr Reynolds proposes a concrete check called the elevator test: imagine the executive you are about to pitch comes out of her office with her coat already on and says, "Sorry, something came up — give me your pitch as we walk to my car." Could you sell the core message in 30–45 seconds, in the elevator and the walk to the parking lot?
+
+The exercise is not about preparing for an actual elevator encounter — that scenario is rare. It is a forcing function. Compressing a 45-minute talk into 45 seconds is impossible without first knowing exactly what the core message *is*, and that compression makes it brutally obvious when the speaker has not yet found their point. Most failed elevator-test attempts go the same way: the speaker realizes a third of the way through the 45 seconds that they cannot actually name the one thing the audience should walk away with. That realization is the value of the exercise.
+
+Use the elevator test as a readiness gate: before moving from the prepare phase into slide-building, force yourself to deliver the core message out loud in 30–45 seconds, ideally to a real listener who can ask follow-up questions. If you cannot pass the test, you are not ready to build slides — you are still figuring out what the talk is about. Going to slideware before the elevator test passes guarantees a deck that wanders, because the deck is faithfully reflecting the unwandered structure of the speaker's own thinking.
+
 ## When to Use / When to Avoid
 Use this pattern at the very beginning of any presentation commitment. It is especially critical for voluntary presentations where motivation must sustain months of preparation. For required presentations, The Big Why helps you find genuine motivation within an obligation. There is no scenario where clarifying your motivation is harmful.
 
@@ -47,3 +54,6 @@ Relates to Dimension 9 (Speaker Credibility/Ethos) because a speaker with a clea
 
 ## Combinatorics
 Pairs with Carnegie Hall (strong motivation drives extensive practice) and Crucible (motivation sustains you through the iterative refinement process). The Big Why is foundational — it does not conflict with any other pattern and enhances nearly all of them.
+
+## Related Reading
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 3 — "Two Questions: What Is Your Point? Why Does It Matter?" plus "Can You Pass the Elevator Test?" New Riders.

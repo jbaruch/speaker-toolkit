@@ -16,6 +16,49 @@
   automatically when `presentation-outline.md` has a `## STYLE ANCHOR`
   block. Fixes #31.
 
+### Pattern Taxonomy — Presentation Zen ingest
+
+Second source ingested alongside Ford/McCullough/Schutta (2013):
+Garr Reynolds, *Presentation Zen* (2nd ed., 2012, New Riders).
+
+- **2 new patterns:**
+  - `patterns/prepare/opening-punch.md` — Reynolds's PUNCH framework
+    (Personal / Unexpected / Novel / Challenging / Humorous) for
+    opening hooks; vault dimensions 1, 4
+  - `patterns/deliver/screen-blackout.md` — deliberate B-key blackout
+    or planned black slides as attention-redirection device; vault
+    dimensions 12, 13
+- **3 refinement subsections** folded into existing patterns:
+  - `breathing-room.md` ← *Hara Hachi Bu* (90–95% finish-line discipline)
+  - `concurrent-creation.md` ← *Plan Analog Before Going Digital*
+  - `the-big-why.md` ← *The Elevator Test* (30–45 sec core-message check)
+- **17 patterns** gain `## Related Reading` Reynolds citations
+  (slideuments, bullet-riddled-corpse, floodmarks, borrowed-shoes,
+  cookie-cutter, ant-fonts, narrative-arc, triad, crucible,
+  concurrent-creation, vacation-photos, cave-painting, takahashi,
+  bunker, bookends, coda, breathing-room).
+- **`patterns/_index.md`** — catalog tables, phase lookup, vault-dim
+  mapping, summary stats updated; sources section now lists Reynolds
+  alongside Ford et al.
+
+### Phase Documentation
+
+- **Phase 1 (Intent):** Spec Validation gains the Two Questions check,
+  the Elevator Test check, and the SUCCESs sticky-message check.
+- **Phase 2 (Architecture):** new "Plan Analog Before Going Digital"
+  section advocates whiteboard/Post-it work before slideware.
+- **Phase 3 (Content):** new "Opening PUNCH" section requires explicit
+  PUNCH-flavor tagging on the opening; new "Use Contrast as a
+  Structural Device" section.
+- **Phase 5 (Slides):** new "General Design Principles" section
+  references slide-design-spec §11 (SNR, Big Four, picture superiority,
+  empty space, rule of thirds, eye-gaze, full-bleed, 2D-for-2D, logo
+  discipline, minimum font size).
+- **Phase 6 (Publishing):** Go-Live Checklist gains venue-setup items
+  (lights on, lectern aside, mic discipline) and during-delivery items
+  (honeymoon-window discipline, never-apologize, *hara hachi bu*
+  finish-line, screen-blackout).
+
 ### Tests
 
 - 6 new tests for the two-pass thumbnail pipeline

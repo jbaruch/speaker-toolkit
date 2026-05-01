@@ -2,6 +2,23 @@
 
 Build the .pptx deck from the finalized outline.
 
+## General Design Principles
+
+This phase generates concrete slides from the outline. **Every slide should respect the design principles in `slide-design-spec.md` Section 11**, including:
+
+- **Signal-to-Noise Ratio** — remove anything that does not encode information
+- **The Big Four** — Contrast, Repetition, Alignment, Proximity
+- **Picture Superiority Effect** — pictures beat words for retention; replace decorative text with concrete imagery when possible
+- **Empty space is active** — default to asymmetric layouts; don't fill margins with logos or templated decoration
+- **Rule of thirds** — anchor primary subjects on the 3×3 grid intersections, not dead-center
+- **Faces and eye-gaze** — orient face-direction toward the focal text/chart, never away from it
+- **Full-bleed images** — default to images that bleed off all four edges
+- **2D for 2D data** — never apply 3D effects to flat data
+- **Logo discipline** — first and last slide only (this aligns with the speaker's existing footer convention; the footer is not a logo)
+- **Minimum font size** — body text ~24pt or larger at 16:9 conference resolution
+
+Speaker-style data in `slide-design-spec.md` Sections 1–10 (extracted from the speaker's actual deck corpus) takes precedence where it exists. The principles in Section 11 are the default for layout decisions where the corpus is silent.
+
 ## Step 5.1: Create the Deck
 
 Read the template path from `speaker-profile.json → infrastructure.template_pptx_path`.

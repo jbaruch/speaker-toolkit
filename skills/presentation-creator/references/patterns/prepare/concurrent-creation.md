@@ -31,6 +31,13 @@ Practical guidelines for group Concurrent Creation include: everyone uses the sa
 
 The challenge of Concurrent Creation is maintaining coherence. When different people create different sections, voice and style can diverge. The Slide Wrangler must harmonize these differences during assembly. When an individual creates sections out of order, they must allocate time for a coherence pass — reading through the entire presentation sequentially to smooth transitions and ensure consistent terminology. The payoff is worth the extra assembly effort: concurrent creation produces richer material because each section was created at the peak of the author's inspiration for that topic.
 
+### Plan Analog Before Going Digital
+Concurrent Creation has a strong default-medium implication: most of it should happen *off the computer*. Garr Reynolds calls this "going analog" and treats it as one of the central rules of the prepare phase: paper, whiteboard, Post-its, Sharpies — never start in slideware. The argument is partly cognitive (handling a pen activates right-brain associative thinking; sitting at a keyboard activates left-brain editing instincts) and partly tooling (slideware presents a template, a layout, and a default font the moment you open it, all of which prematurely commit you to decisions that should still be fluid).
+
+In Reynolds's five-step workflow, the digital tool only enters the picture in the final step: brainstorm → group and identify the core → storyboard on paper or sticky notes → sketch visuals by hand → only then transfer into slideware. The first four steps are entirely analog. For Concurrent Creation specifically, this means the brainstorm + grouping + storyboard phases are easier to do as a group in front of a whiteboard or wall of Post-its than in any collaborative slideware tool — physical space lets the whole structure stay visible at once, which is precisely what slideware's slide-at-a-time view destroys.
+
+The practical translation: if Concurrent Creation is the *workflow*, analog planning is the *medium* for everything before assembly. The Slide Wrangler's first artifact should be a photograph of a whiteboard or a stack of Post-its, not a template-filled deck. Going digital too early is the most common failure mode of Concurrent Creation — collaborators end up arguing about font choices and slide layouts before they have agreed on the throughline.
+
 ## When to Use / When to Avoid
 Use this pattern for any presentation where you have the flexibility to work non-linearly, and especially for group presentations. Avoid for very short presentations (five minutes or less) where sequential creation is natural and the overhead of assembly exceeds the benefit. Also avoid when all collaborators are not aligned on the template and visual standards — Concurrent Creation without visual consistency produces a Frankenstein deck.
 
@@ -47,3 +54,6 @@ Relates to Dimension 2 (Structure/Organization) because Concurrent Creation's as
 
 ## Combinatorics
 Pairs with Talklet (modular units can be created concurrently by different authors) and Unifying Visual Theme (visual consistency is the glue that holds concurrent contributions together). Also benefits from Narrative Arc awareness — all contributors must understand the overall story to create pieces that fit.
+
+## Related Reading
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 3, 4 — the five-step preparation workflow (brainstorm → group → analog storyboard → sketch visuals → digital storyboard) describes a concurrent-creation cadence between content and visuals. New Riders.

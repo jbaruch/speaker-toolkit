@@ -138,6 +138,42 @@ Key conventions:
   show at that step, working backwards from the full image)
 - Build slides count toward the slide budget (they are separate slides, not animations)
 
+### Opening PUNCH
+
+The first 1–2 minutes of the talk are the highest-stakes real estate. Audiences grant a roughly two-minute "honeymoon period" before forming a verdict on whether the talk is worth their attention. The outline's opening section must contain at least one of five hook flavors, per Reynolds's PUNCH framework:
+
+- **P**ersonal — a relevant story (not a credentials parade)
+- **U**nexpected — a counterintuitive fact, surprising statistic, or claim that violates received wisdom
+- **N**ovel — fresh data, never-published image, or working demo of something new
+- **C**hallenging — a provocative question or assumption-reframing
+- **H**umorous — observational humor, a wry aside, or anecdote with a relevant payoff (not a joke)
+
+Strong openings stack 2–3 PUNCH elements. When writing the outline, **explicitly tag the opening's PUNCH flavor(s)** in the slide notes, e.g.:
+
+```markdown
+### Slide 2: Opening Hook
+- PUNCH: Personal + Unexpected
+- Visual: [description]
+- Speaker: "[the actual opening lines]"
+```
+
+This tag makes the choice visible, lets Phase 4 verify the opening lands, and gives the vault a concrete signal to score later. If the outline's opening contains none of the PUNCH flavors — agenda slide, "let me introduce myself," "thanks for having me" filler — flag it as a content gap. See `patterns/prepare/opening-punch.md` for the full pattern.
+
+### Use Contrast as a Structural Device
+
+Reynolds: "Contrast is about differences, and we are hardwired to notice differences." Contrasts are one of the most reliable engagement tools available to the outline writer. When choosing how to frame a section or transition, look for the inherent contrast pair:
+
+- before / after
+- past / future
+- problem / solution
+- received wisdom / actual finding
+- naive expectation / messy reality
+- competitor approach / your approach
+- pessimism / optimism
+- decline / growth
+
+Contrast structures naturally produce dramatic tension and make the resolution feel earned. They also map cleanly onto narrative beats — a problem/solution contrast IS a two-act narrative arc; a past/future contrast IS a thesis. When a section feels flat in the outline, ask: *what is the contrast pair here?* If you can't name one, the section is not yet sharpened.
+
 ### Callback Identification
 
 Proactively identify and suggest callback opportunities. Check the vault summary for
