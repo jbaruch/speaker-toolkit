@@ -28,6 +28,8 @@ Read `tracking-database.json` from there to get `vault_root`.
 | `speaker-profile.json` | Output — machine-readable profile |
 | [references/speaker-profile-schema.md](references/speaker-profile-schema.md) | Profile JSON schema |
 | [references/schemas-config.md](references/schemas-config.md) | Config fields + confirmed intents schema |
+| `scripts/load-vault.py` | Read vault sources, emit JSON payload to stdout |
+| `scripts/validate-profile.py` | Validate profile required keys + `schema_version` |
 
 ## Prerequisites
 
@@ -35,76 +37,108 @@ Read `tracking-database.json` from there to get `vault_root`.
 - Also runs on explicit request (overrides prerequisites).
 - Auto-triggered by vault-ingress Step 7 (Regenerate Speaker Profile) if profile already exists.
 
-## Process
+Process the steps below in order; each step's output (vault payload, aggregated data, validated profile) feeds the next. Do not skip ahead.
 
-1. **Read source files.** Load `rhetoric-style-summary.md`, `slide-design-spec.md`, and `confirmed_intents` from `tracking-database.json`.
+## Step 1 — Load Vault Sources
 
-   ```python
-   import json, pathlib
+Run `scripts/load-vault.py` to read `tracking-database.json`, `rhetoric-style-summary.md`, and `slide-design-spec.md` from the vault root. The script emits a single JSON payload on stdout.
 
-   vault_root = pathlib.Path("~/.claude/rhetoric-knowledge-vault").expanduser().resolve()
-   db = json.loads((vault_root / "tracking-database.json").read_text())
-   config = db.get("config", {})
-   confirmed_intents = db.get("confirmed_intents", [])
-   talks = db.get("talks", [])
-   processed = [t for t in talks if t.get("status") in ("processed", "processed_partial")]
+```bash
+python3 scripts/load-vault.py > /tmp/vault-payload.json
+```
 
-   summary_path = vault_root / "rhetoric-style-summary.md"
-   if not summary_path.exists():
-       raise SystemExit("No rhetoric summary found. Run vault-ingress first to process talks.")
-   summary = summary_path.read_text()
+**I/O contract:**
+- Args: optional vault-root path; defaults to `~/.claude/rhetoric-knowledge-vault`.
+- Stdout (JSON): `{vault_root, config, confirmed_intents, talks, processed_talks, summary, design_spec}`.
+- Exit non-zero with stderr message if `tracking-database.json` or `rhetoric-style-summary.md` are missing or malformed.
 
-   design_spec_path = vault_root / "slide-design-spec.md"
-   design_spec = design_spec_path.read_text() if design_spec_path.exists() else ""
-   ```
+If the script aborts on missing `rhetoric-style-summary.md`, run vault-ingress first. If `slide-design-spec.md` is missing, `design_spec` is `""` and the design-spec section of the profile remains empty — continue without aborting.
 
-   - If `rhetoric-style-summary.md` is missing, abort with the message above.
-   - If `slide-design-spec.md` is missing, the design-spec section of the profile remains empty (continue without aborting).
-   - If all processed talks have empty `structured_data`, warn and fall back to prose extraction from the summary.
+Proceed immediately to Step 2.
 
-2. **Aggregate `structured_data`** from the processed talks. Skip talks with empty `structured_data`; for those, fall back to prose extraction from `rhetoric-style-summary.md` for the matching dimensions.
+## Step 2 — Aggregate Structured Data
 
-3. **Extract slide-template layouts** if `config.template_pptx_path` is set. Call the vault-ingress PPTX extraction script (`skills/vault-ingress/scripts/pptx-extraction.py <path.pptx>`); store the layouts list under `infrastructure.template_layouts`.
+Aggregate `structured_data` from `processed_talks` in the Step 1 payload. Skip talks with empty `structured_data`; for those, fall back to prose extraction from `summary` (the `rhetoric-style-summary.md` contents) for the matching dimensions.
 
-4. **Generate `speaker-profile.json`** per [references/speaker-profile-schema.md](references/speaker-profile-schema.md). The mapping from vault sources to profile sections:
+If **all** processed talks have empty `structured_data`, warn the speaker and fall back entirely to prose extraction. Continue.
 
-   | Profile section | Source |
-   |---|---|
-   | `speaker` / `infrastructure` | `tracking-database.json` `config` block |
-   | `presentation_modes` / `instrument_catalog` | `rhetoric-style-summary.md` sections |
-   | `rhetoric_defaults` | `confirmed_intents` |
-   | `pacing` / `guardrail_sources` | aggregated `structured_data` from step 2 |
-   | `pattern_profile` | `pattern_observations` across processed talks |
-   | `visual_style_history` | dimension 13f observations |
+Proceed immediately to Step 3.
 
-   Top-level keys (full nested schema in [references/speaker-profile-schema.md](references/speaker-profile-schema.md)):
+## Step 3 — Extract Template Layouts
 
-   ```
-   schema_version, generated_date, talks_analyzed, speaker, infrastructure,
-   presentation_modes, instrument_catalog, rhetoric_defaults, confirmed_intents,
-   guardrail_sources, pacing, pattern_profile, visual_style_history,
-   publishing_process, design_rules, badges
-   ```
+If `config.template_pptx_path` is set, call the vault-ingress PPTX extraction script:
 
-5. **Validate.** Verify all required top-level keys exist and `schema_version` is 1. If validation fails, list every missing or invalid key and abort without writing. Pass the profile dict produced in step 4 to `validate_profile()`:
+```bash
+python3 ../vault-ingress/scripts/pptx-extraction.py "$TEMPLATE_PPTX_PATH"
+```
 
-   ```python
-   def validate_profile(profile):
-       REQUIRED_KEYS = [
-           "schema_version", "generated_date", "talks_analyzed", "speaker",
-           "infrastructure", "presentation_modes", "instrument_catalog",
-           "rhetoric_defaults", "confirmed_intents", "guardrail_sources",
-           "pacing", "pattern_profile", "visual_style_history",
-           "publishing_process", "design_rules", "badges",
-       ]
-       missing = [k for k in REQUIRED_KEYS if k not in profile]
-       if missing or profile.get("schema_version") != 1:
-           raise ValueError(f"Profile invalid — missing: {missing}, "
-                            f"schema_version: {profile.get('schema_version')}")
-   ```
+Store the layouts list under `infrastructure.template_layouts` in the profile being constructed. If `template_pptx_path` is not set, leave `template_layouts` as an empty list and continue.
 
-6. **Diff against the existing profile** at `{vault_root}/speaker-profile.json` (if present). Report changes — new instruments, revised thresholds, new guardrails — to the speaker. **Flag new presentation modes prominently** since they affect creator-skill behavior more than other field changes.
+Proceed immediately to Step 4.
 
-7. **Save** to `{vault_root}/speaker-profile.json` with 2-space indentation. Confirm: `"speaker-profile.json written — {N} talks, {M} confirmed intents."`
+## Step 4 — Construct the Profile
 
-8. **Generate speaker badges** — fun, self-deprecating achievements grounded in real vault data (e.g., `"Narrative Arc Master 22/24"`, `"Pattern Polyglot 12+ patterns"`). The badge tone matters: badges should sound like the speaker's own voice, not corporate gamification. Append the resulting array to the profile's `badges` field and re-save.
+Construct the `speaker-profile.json` dict per [references/speaker-profile-schema.md](references/speaker-profile-schema.md). Map vault sources to profile sections:
+
+| Profile section | Source |
+|---|---|
+| `speaker` / `infrastructure` | `config` (from Step 1 payload) |
+| `presentation_modes` / `instrument_catalog` | `summary` sections (from Step 1 payload) |
+| `rhetoric_defaults` | `confirmed_intents` (from Step 1 payload) |
+| `pacing` / `guardrail_sources` | aggregated `structured_data` (from Step 2) |
+| `pattern_profile` | `pattern_observations` across `processed_talks` |
+| `visual_style_history` | dimension 13f observations from `summary` |
+
+Top-level keys (full nested schema in [references/speaker-profile-schema.md](references/speaker-profile-schema.md)):
+
+```
+schema_version, generated_date, talks_analyzed, speaker, infrastructure,
+presentation_modes, instrument_catalog, rhetoric_defaults, confirmed_intents,
+guardrail_sources, pacing, pattern_profile, visual_style_history,
+publishing_process, design_rules, badges
+```
+
+Set `schema_version` to `1` and `generated_date` to today's date in `YYYY-MM-DD` form.
+
+Proceed immediately to Step 5.
+
+## Step 5 — Validate the Profile
+
+Pipe the constructed profile dict through `scripts/validate-profile.py` to verify all required top-level keys exist and `schema_version` is `1`.
+
+```bash
+echo "$PROFILE_JSON" | python3 scripts/validate-profile.py
+```
+
+**I/O contract:**
+- Stdin (JSON): the profile dict.
+- Stdout (JSON): `{valid, schema_version, missing_keys}`.
+- Exit code: `0` on valid, `1` on invalid.
+
+If exit code is `1`, list every missing key from the script output and abort without writing. Fix the offending fields in Step 4 and rerun this step.
+
+Proceed immediately to Step 6.
+
+## Step 6 — Diff Against Existing Profile
+
+If `{vault_root}/speaker-profile.json` already exists, diff the new profile against it. Report to the speaker:
+- New instruments added to `instrument_catalog`
+- Revised thresholds in `guardrail_sources`
+- New guardrails added to `recurring_issues`
+- **New presentation modes** — flag prominently since they affect creator-skill behavior more than other field changes.
+
+If no prior profile exists, skip this step and proceed.
+
+Proceed immediately to Step 7.
+
+## Step 7 — Save the Profile
+
+Write the validated profile to `{vault_root}/speaker-profile.json` with 2-space indentation. Confirm: `"speaker-profile.json written — {N} talks, {M} confirmed intents."`
+
+Proceed immediately to Step 8.
+
+## Step 8 — Generate Achievement Badges
+
+Generate fun, self-deprecating achievements grounded in real vault data (e.g., `"Narrative Arc Master 22/24"`, `"Pattern Polyglot 12+ patterns"`). The badge tone matters: badges should sound like the speaker's own voice, not corporate gamification. Append the resulting array to the profile's `badges` field and re-save.
+
+Finish here.
