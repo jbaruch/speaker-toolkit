@@ -53,3 +53,4 @@ Bookends pair naturally with Context Keeper and Breadcrumbs — Bookends mark th
 
 ## Related Reading
 - Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 9, 10 — primacy + recency effects: "people best remember the first part and the last part of your presentation"; rehearse opening and closing more than the middle. New Riders.
+- Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 2, 8 — the sparkline's "what is" beginning and "new bliss" end form a persuasion-specific bookend pair where the closing must sit on a higher plane than the opening; first-impression theory extends bookends backward into pre-event communications. Wiley.

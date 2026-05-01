@@ -52,3 +52,4 @@ Borrowed Shoes is mitigated by the Crucible pattern (intensive rehearsal transfo
 
 ## Related Reading
 - Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 6 — argues against using corporate or stock templates that don't fit your message. New Riders.
+- Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 8 — first-impression chaos when a presenter is unprepared with someone else's material: "Garr Reynolds…entered the room upbeat and engaged, shook hands, asked attendees questions" while the unprepared presenter "kept trying to squeeze an entire workday in before the workshop." Wiley.

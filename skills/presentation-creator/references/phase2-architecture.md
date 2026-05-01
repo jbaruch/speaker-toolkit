@@ -38,6 +38,27 @@ Read `instrument_catalog.narrative_structures[]` from the speaker profile. Each 
 acts and `time_allocation`. Present the options with their time splits and best-for
 context.
 
+### Persuasive vs. Informative Architecture — Sparkline or Narrative Arc?
+
+Before presenting narrative-arc templates, ask one upstream question: **is this talk primarily persuasive or primarily informative?**
+
+- **Persuasive** = the audience is being asked to do or believe something different after the talk (sales pitches, strategic-direction announcements, fundraising, organizational change, advocacy keynotes, investor pitches).
+- **Informative** = the audience needs to *understand* something but is not being asked to act on it differently (tutorials, technical deep-dives, scientific explanations, status updates, postmortems).
+
+For **persuasive talks**, present `sparkline` (per `patterns/build/sparkline.md`) as the default top-level structural option. The sparkline's two named turning points (Call to Adventure, Call to Action) and "new bliss" close are purpose-built for moving audiences to action. Stack with one of the contrast-driven sub-structures inside the middle (problem-solution, compare-contrast, cause-effect, advantage-disadvantage).
+
+For **informative talks**, present the existing narrative-arc templates (three-act and variants) as the default. The three-act structure suits content that needs to be understood; the sparkline is overkill and can feel manipulative when there's no genuine action to take.
+
+The two patterns can coexist: an informative talk can have a small sparkline-shaped closing argument, and a persuasive talk can have informative sections inside its middle. But the choice of *top-level* structure matters because it shapes time allocation across the three sections — sparkline allocates ≤10% to "what is" baseline and most of the time to the persuasive middle; narrative-arc typically allocates ~25-50% to the middle, with longer setup and resolution.
+
+When the speaker profile shows historical preference (most past talks tagged narrative-arc or sparkline), surface that history but do not let it override the persuasive-vs-informative diagnostic. A speaker accustomed to narrative-arc tutorials switching to a sales pitch should switch to sparkline for that talk; the architecture should match the talk's purpose, not the speaker's habit.
+
+### Action Typology — Pre-Plan the Call to Action
+
+When sparkline is selected (or whenever the talk includes a call-to-action moment), pre-plan the audience's action diversity at the architecture level. Per `patterns/build/call-to-action.md`, every audience contains four action-temperament types — **Doer** (instigates activities), **Supplier** (provides resources), **Influencer** (changes perceptions), **Innovator** (generates ideas) — and the call-to-action must address at least one ask per type.
+
+This is an architecture-phase concern (not a content-phase one) because the asks shape the entire backward-design of the talk: if you can't name a credible Doer ask, the talk lacks an actionable thesis; if you can't name an Influencer ask, you haven't accounted for audience members who can't directly execute but can spread the idea. Write the four asks before writing any other content; the rest of the talk is in service of making them feel earned.
+
 ### Decision #10: Pattern Strategy
 
 Read [patterns/_index.md](patterns/_index.md) for the full taxonomy and

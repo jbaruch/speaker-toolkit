@@ -32,6 +32,19 @@ The Mentor framing also means you celebrate the audience's potential rather than
 
 The mentor role does not mean diminishing your own expertise. Gandalf is wise and powerful; he just directs that power toward empowering others. The Display of High Value pattern still applies — you maintain authority and confidence. But the purpose of that authority is service, not self-aggrandizement.
 
+### Adopting the Stance — Planning Implications
+The Mentor pattern is most often applied at delivery time, but its real leverage is during planning. Adopting the audience-as-hero stance early reshapes every subsequent decision — what to research, how to frame the thesis, what content to cut, how to design the close. The stance generates four concrete planning artifacts that should feed into the spec and outline:
+
+- **Six-dimensional audience research.** Beyond demographics, profile the audience along *Lifestyle, Knowledge, Motivation/Desire, Values, Influence,* and *Respect.* Demographics tell you what title someone has; these six dimensions tell you what gets them out of bed in the morning, what they fear, what they already know, and what unites or incites them. Without this depth, "the audience" is a homogeneous blob; with it, the talk can be tuned to the specific people in the room.
+
+- **Move-From / Move-To matrix.** For each section of the talk, articulate the transformation in two columns × two rows: *inward* (belief, posture, fear) and *outward* (behavior, action). "Move from being defeated by a downturn to believing innovation in a downturn is possible" + "Move from chaotic ideation to organized 'freedom within a framework'." Without this matrix, content can sound persuasive but leave the audience unsure of what specifically should change in them.
+
+- **Resistance map.** Audiences resist along six predictable vectors: *Comfort Zone* (tolerance for change), *Fear* (what keeps them up at night), *Vulnerabilities* (recent setbacks they're sensitive to), *Misunderstanding* (what they're likely to get wrong about the message), *Obstacles* (mental or practical barriers), and *Politics* (power dynamics shifted by the proposed idea). Mapping resistance before the talk lets the speaker preemptively address each vector — what Duarte calls *inoculation*: stating opposing arguments before opponents can use them.
+
+- **Reward proportionality.** Whatever sacrifice the audience is being asked to make (time, money, status, comfort, current beliefs), the reward must be proportional. Reward categories: basic needs, security, savings, prize, recognition, relationship, destiny. Naming the reward category early prevents the trap of an exciting call-to-action with no clearly-articulated payoff.
+
+These four artifacts are the planning-stance implementation of "audience as hero." They are equally relevant to `know-your-audience` (which gathers the data) and to this pattern (which determines the speaker's posture toward that data). The presence of these artifacts in the spec or outline is itself a strong signal that the Mentor pattern is being applied with intent rather than just at the surface level.
+
 ## When to Use / When to Avoid
 Use this pattern in every presentation, though the degree of mentor orientation varies by context. Teaching and tutorial talks benefit most from explicit mentor framing. Keynotes and thought-leadership talks may blend mentor and protagonist roles. Avoid the Mentor pattern when the audience genuinely needs to understand your specific journey — some talks are legitimately autobiographical, and forcing a mentor frame onto a personal story feels artificial.
 
@@ -51,3 +64,6 @@ This pattern maps to Vault Dimension 9 (Speaker Authority / Credibility) because
 
 ## Combinatorics
 Mentor works hand-in-hand with Narrative Arc (the hero's journey structure supports mentor framing), Display of High Value (confident authority in service of the audience), and Know Your Audience (understanding the hero means understanding who they are). It can tension productively with Entertainment — humor works differently from the mentor position than from the hero position — and with Greek Chorus, where supporting characters reinforce the mentor's guidance.
+
+## Related Reading
+- Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 1, 3 — the *audience-as-hero, presenter-as-mentor* reframe (Yoda not Luke; Mr. Miyagi not Daniel) is the central frame of the book; the mentor's three contributions are guidance, confidence, and tools. Wiley.

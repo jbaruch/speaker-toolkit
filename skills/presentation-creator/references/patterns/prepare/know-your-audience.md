@@ -47,3 +47,6 @@ Relates to Dimension 4 (Audience Engagement) because knowing your audience is th
 
 ## Combinatorics
 Pairs naturally with Emotional State (understanding audience mood requires knowing who they are) and Seeding Satisfaction (you cannot seed satisfaction without knowing what satisfies this particular audience). Also foundational to Brain Breaks (humor must be audience-appropriate) and Leet Grammars (jargon must match community expectations).
+
+## Related Reading
+- Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 3 — "Get to Know the Hero" provides a six-dimensional audience analysis framework (Lifestyle / Knowledge / Motivation / Values / Influence / Respect), an audience segmentation method beyond demographics (people / places / things), and the resistance map (Comfort Zone / Fear / Vulnerabilities / Misunderstanding / Obstacles / Politics). Wiley.

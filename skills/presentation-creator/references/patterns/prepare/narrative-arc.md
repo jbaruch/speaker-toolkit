@@ -53,3 +53,4 @@ Pairs powerfully with Triad (three-act structure maps to three main themes), Boo
 
 ## Related Reading
 - Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 4 — "Crafting the Story" applies Robert McKee's conflict-driven story structure to presentations, and cites the Heath brothers' SUCCESs framework. New Riders.
+- Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 2, 4, 6 — derives presentations' two-turning-point shape from Aristotle's three-act, Syd Field's Paradigm, and Vogler's Hero's Journey; the *sparkline* form is a persuasion-specific narrative arc with named turning points (Call to Adventure, Call to Action) and a "new bliss" close. Wiley.

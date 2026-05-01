@@ -52,3 +52,4 @@ Slideuments is the inverse of the Infodeck pattern — where an Infodeck is deli
 
 ## Related Reading
 - Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 3 — Reynolds coined the term "slideument" and dedicates the "Create a Document, Not a Slideument" section to this antipattern. New Riders.
+- Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 2 — uses the term "slideument" explicitly: "Documents masquerade as presentations, and these *slideuments* have become the lingua franca of many organizations." Reports should be distributed; presentations should be presented. Wiley.

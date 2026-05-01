@@ -50,3 +50,6 @@ This pattern maps to Vault Dimension 4 (Audience Engagement). Physical interacti
 
 ## Combinatorics
 Make It Rain combines naturally with Entertainment (physical props are inherently entertaining), Weatherman (interacting with the physical space while facing the audience), and Posse (supporters can help distribute props and manage logistics). It supports Seeding the First Question when the reward system incentivizes early participation. The pattern requires strong Preparation (logistics) and benefits from Carnegie Hall rehearsal (practicing with physical props).
+
+## Related Reading
+- Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 5, 7 — Hans Rosling-style curiosity language ("Do you see that?", "What do you think happens next?") plus dramatized props (Pollan's 26 oz of crude oil per cheeseburger; Bill Gates's mosquito jar) as high-engagement physical-energy moves. Wiley.

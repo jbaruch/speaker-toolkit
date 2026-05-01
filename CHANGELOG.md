@@ -2,6 +2,95 @@
 
 ## Unreleased
 
+### Pattern Taxonomy — Resonate ingest
+
+Third source ingested alongside Ford/McCullough/Schutta (2013) and
+Reynolds (2012): Nancy Duarte, *Resonate: Present Visual Stories that
+Transform Audiences* (Wiley, 2010).
+
+- **7 new build-phase patterns:**
+  - `patterns/build/sparkline.md` — persuasion-specific narrative arc
+    with two named turning points (Call to Adventure, Call to Action)
+    and a "new bliss" close; vault dimensions 2, 5, 9
+  - `patterns/build/call-to-adventure.md` — first sparkline turning
+    point: dramatize the "what is" / "what could be" gap and reveal
+    the Big Idea; vault dimensions 1, 2, 9
+  - `patterns/build/call-to-action.md` — second sparkline turning
+    point: specific, immediately-executable asks differentiated by
+    audience action-temperament type (Doer / Supplier / Influencer /
+    Innovator); vault dimensions 4, 6, 9
+  - `patterns/build/new-bliss.md` — vivid future-state vision after
+    the Call to Action; ensures the talk ends on a higher emotional
+    plane than it started; vault dimensions 5, 6, 9
+  - `patterns/build/star-moment.md` — "Something They'll Always
+    Remember": planted dramatic peak in five sub-types (memorable
+    dramatization / repeatable sound bite / evocative visual /
+    emotive storytelling / shocking statistic); vault dimensions 3,
+    5, 13
+  - `patterns/build/inoculation.md` — preemptively voice the
+    audience's strongest objection (steel-manned) and address it
+    inside the talk; vault dimensions 4, 9
+  - `patterns/build/master-story.md` — single anecdote woven
+    recursively through the talk, each return deepening rather than
+    repeating; vault dimensions 2, 5, 7
+- **6 refinement subsections** folded into existing patterns:
+  - `mentor.md` ← *Adopting the Stance — Planning Implications*
+    (six-dimensional audience research, move-from/move-to matrix,
+    resistance map, reward proportionality)
+  - `the-big-why.md` ← *The Big Idea — Statement Format* (three
+    required components: unique POV + explicit stakes + complete
+    sentence)
+  - `vacation-photos.md` ← *Numerical Narrative — Making Numbers
+    Land* (Scale / Compare / Context techniques)
+  - `peer-review.md` ← *Screening with Critics — Beyond Copyediting*
+    (3× duration external critic session; six dysfunctional review
+    patterns to avoid)
+  - `crucible.md` ← *Murder Your Darlings — The Pre-Delivery Cut
+    Pass* (convergent-thinking filter pass after divergent
+    generation)
+  - `sparkline.md` ← *The Three Contrast Types — Engine of the
+    Middle* (content / emotional / delivery contrast as the
+    persuasive-middle oscillation engine)
+- **20 patterns** gain `## Related Reading` Duarte citations.
+- **`patterns/_index.md`** — catalog tables, phase lookup, vault-dim
+  mapping, summary stats, and sources updated. Total taxonomy entries
+  now 97 (72 patterns + 25 antipatterns); 86 observable.
+
+### Slide Design Spec
+
+- New `slide-design-spec.md` §11.13 *Visual Relationships* — five
+  diagram-type taxonomy (flow / structure / cluster / radiate /
+  influence) for converting bulleted slides into diagrams.
+- New `slide-design-spec.md` §11.14 *Image Juxtaposition* — paired
+  contrasting visuals technique for comparison-shaped content.
+
+### Phase Documentation
+
+- **Phase 0 (Intake):** new Step 0.3 sets the audience-as-hero
+  planning stance; existing Step 0.3 renumbered to Step 0.4.
+- **Phase 1 (Intent):** Spec Validation gains the Big Idea
+  statement-format check and the Move-From / Move-To matrix.
+- **Phase 2 (Architecture):** new "Persuasive vs. Informative
+  Architecture" decision section presents Sparkline as a structural
+  option alongside Narrative Arc; new "Action Typology" pre-planning
+  section for Call to Action.
+- **Phase 3 (Content):** new "Sparkline Structural Elements" section
+  with placement guidance and outline-tagging conventions for Call
+  to Adventure / Call to Action / New Bliss / S.T.A.R. moments; new
+  Inoculation Beats and Master Story sections.
+- **Phase 4 (Guardrails):** three new guardrail checks — Murder-
+  Your-Darlings filter pass (Big Idea alignment of every section),
+  Emotion-Balance check (analytical/emotional ratio against audience
+  type), and Screening with Critics pre-lock gate for high-stakes
+  talks.
+- **Phase 5 (Slides):** General Design Principles section gains
+  visual-relationships, image-juxtaposition, and numerical-narrative
+  rules referencing the new slide-design-spec sections.
+- **Phase 6 (Publishing):** Go-Live checklist gains the "first-
+  impression-begins-before-entry" discipline (Duarte) reminding
+  speakers to engage warmly with early-arrivers rather than
+  heads-down at the laptop.
+
 ### Presentation Creator
 
 - **`generate-thumbnail.py --portrait-style "<anchor>"`** — new flag

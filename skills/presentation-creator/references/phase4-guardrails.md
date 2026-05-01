@@ -302,6 +302,65 @@ Detection rules (check all edit/fix/generation prompts):
 
 ---
 
+## 11. Murder-Your-Darlings Filter Pass
+
+**Always runs.** This is the convergent-thinking cut pass that asks of every section in the outline: *does this directly support the Big Idea?* Per the "Murder Your Darlings — The Pre-Delivery Cut Pass" subsection in `patterns/prepare/crucible.md`.
+
+### Check
+
+For each top-level section in the outline:
+- Identify which Big Idea component the section serves (POV reinforcement / stakes elaboration / proof / call-to-action setup / new-bliss preparation / inoculation).
+- If you cannot name the component a section serves, the section is a candidate for the cut — flag it.
+- Especially scrutinize sections marked `[CALLBACK: master-story reference]`, sections labeled with a personal anecdote that doesn't tie back to the thesis, and sections containing data-rich material that took significant effort to gather. These are the most-loved-by-author and most-likely-to-be-darlings.
+- The cut is rarely "remove the section entirely" — usually it's "compress to one beat" or "move into the speaker notes for reference."
+
+```
+[PASS/WARN/FAIL] Big Idea alignment: {N}/{total} sections traceable to Big Idea components
+[WARN] Candidate darlings: {section names} — flagged for review
+```
+
+The pass produces *flags*, not automatic deletions. The author makes the actual cut decisions; the guardrail surfaces the candidates.
+
+## 12. Emotion-Balance Check
+
+**Always runs.** Per `patterns/build/sparkline.md` (the "Three Contrast Types" subsection) and Duarte's *karios* principle, the analytical/emotional ratio of the outline must match the audience type.
+
+### Check
+
+Categorize each content section as **analytical** (data, logic, argument, technical detail) or **emotional** (story, image, anecdote, evocative language). Compare the ratio against the audience profile from the spec:
+
+- **Analytical audience** (scientists, engineers, accountants, board members): aim for 70–80% analytical content, 20–30% emotional content. Less emotion than this strips persuasive power; more reads as manipulation.
+- **Broad audience** (general professional, mixed-discipline conference): aim for 50–60% analytical, 40–50% emotional.
+- **Emotionally-charged context** (advocacy, fundraising, cause-driven keynote): can run 30–40% analytical, 60–70% emotional. Not less analytical than 30% even here — emotion without proof loses credibility.
+
+```
+[PASS/WARN] Emotion balance: {N}% analytical / {M}% emotional vs. {target}% target for {audience type}
+```
+
+WARN if the ratio is more than 15 percentage points off the target in either direction. The check is descriptive, not prescriptive — the author decides whether the imbalance is intentional (some talks deliberately skew). Surface the imbalance so it's a conscious choice.
+
+## 13. Screening with Critics — Pre-Lock Gate
+
+**Runs before final spec lock for high-stakes talks** (keynotes, sales pitches, fundraising presentations, executive briefings). Per the "Screening with Critics — Beyond Copyediting" subsection in `patterns/build/peer-review.md`.
+
+### Check
+
+Has the author scheduled (or executed) a formal screening session with the following properties?
+
+- 3× the duration of the presentation (60-min talk → 3-hour screening)
+- Screeners selected from outside the speaker's organization (or, if internal, explicitly free of the six dysfunctional review patterns: Conceited Captain / Political Paranoia / Message Magic / Vacuum Visionary / Lackey Leader / Customer Cold-Shoulder)
+- Screeners match the target audience profile (industry, role, knowledge level)
+- Each screener has access to slides + speaker notes for line-level critique
+- Output: structural critiques + language critiques + resistance discoveries (which feed back into Phase 3 inoculation moves)
+
+```
+[PASS/WARN/SKIP] Screening: {scheduled / completed / not applicable for this stakes level}
+```
+
+SKIP for low-stakes talks (internal demos, small-group presentations, tutorial sessions). For everything else, WARN if no screening is scheduled or completed.
+
+---
+
 ## Guardrail Summary Template
 
 Use this template after each check:
@@ -322,6 +381,9 @@ GUARDRAIL CHECK — {talk title} — {date}
 [PASS/FAIL/SKIP] Illustrations: {coverage ratio} | {format tags} | {prompt quality}
 [PASS/SKIP] Builds: {N} defined, {M} images generated
 [WARN] Prompt anti-patterns: {N} issues found
+[PASS/WARN/FAIL] Big Idea alignment: {N}/{total} sections traceable to Big Idea
+[PASS/WARN] Emotion balance: {N}% analytical / {M}% emotional vs. {target}%
+[PASS/WARN/SKIP] Screening with critics: {scheduled / completed / not applicable}
 ================================================
 ```
 

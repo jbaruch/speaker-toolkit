@@ -51,3 +51,4 @@ Pairs naturally with Narrative Arc (the three-act structure IS the Triad applied
 
 ## Related Reading
 - Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 4 — "three is a good number to aim for because it is a manageable constraint and generally provides a memorable structure." New Riders.
+- Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 6 — three-act structure (via Aristotle and Syd Field's Paradigm) underlies the default presentation form; supporting messages are organized in clusters of three to five around the Big Idea. Wiley.
