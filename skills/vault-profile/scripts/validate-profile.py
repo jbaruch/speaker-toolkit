@@ -62,6 +62,9 @@ def main(argv: list[str]) -> int:
         profile = _load_input(argv)
     except (json.JSONDecodeError, FileNotFoundError, OSError) as exc:
         print(
+            f"ERROR: could not load profile input: {exc}", file=sys.stderr
+        )
+        print(
             json.dumps(
                 {
                     "valid": False,
@@ -76,6 +79,16 @@ def main(argv: list[str]) -> int:
     missing = [k for k in REQUIRED_KEYS if k not in profile]
     schema_version = profile.get("schema_version")
     valid = not missing and schema_version == 1
+
+    if not valid:
+        reasons = []
+        if missing:
+            reasons.append(f"missing keys: {', '.join(missing)}")
+        if schema_version != 1:
+            reasons.append(f"schema_version is {schema_version!r} (expected 1)")
+        print(
+            f"ERROR: profile invalid — {'; '.join(reasons)}", file=sys.stderr
+        )
 
     print(
         json.dumps(

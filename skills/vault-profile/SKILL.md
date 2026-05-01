@@ -69,10 +69,15 @@ Proceed immediately to Step 3.
 If `config.template_pptx_path` is set, call the vault-ingress PPTX extraction script:
 
 ```bash
-python3 ../vault-ingress/scripts/pptx-extraction.py "$TEMPLATE_PPTX_PATH"
+python3 ../vault-ingress/scripts/pptx-extraction.py "$TEMPLATE_PPTX_PATH" > /tmp/template-layouts.json
 ```
 
-Store the layouts list under `infrastructure.template_layouts` in the profile being constructed. If `template_pptx_path` is not set, leave `template_layouts` as an empty list and continue.
+**I/O contract** (defined in vault-ingress; see `skills/vault-ingress/scripts/pptx-extraction.py`):
+- Args: path to a `.pptx` file.
+- Stdout (JSON): per-slide visual data, shape types, and global design stats; the layouts list is under the top-level `template_layouts` key.
+- Exit non-zero with stderr message if the file is missing, unreadable, or not a valid `.pptx`.
+
+Store the resulting layouts list under `infrastructure.template_layouts` in the profile being constructed. If `template_pptx_path` is not set, leave `template_layouts` as an empty list and continue.
 
 Proceed immediately to Step 4.
 
