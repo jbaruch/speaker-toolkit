@@ -233,11 +233,19 @@ Read `publishing_process.additional_steps[]`. For each entry:
 
 ### Step 6.6: Go-Live Preparation Checklist
 
-Before delivery, surface unobservable patterns from [patterns/_index.md](patterns/_index.md)
-(the "Unobservable Patterns — Go-Live Checklist" section) as a preparation reminder.
-These are patterns the vault **cannot score retroactively** because they involve
-pre-event logistics, physical stage behaviors, or external systems — but they still
-matter for delivery quality.
+Before delivery, surface a delivery-readiness checklist composed of two strands:
+
+1. **Unobservable patterns** from [patterns/_index.md](patterns/_index.md) (the
+   "Unobservable Patterns — Go-Live Checklist" section). These are patterns the vault
+   **cannot score retroactively** because they involve pre-event logistics, physical
+   stage behaviors, or external systems.
+2. **Observable delivery reminders** that the speaker can decide to apply on the day —
+   venue setup choices (lights, lectern, mic), opening discipline, time discipline,
+   and screen-blackout tactics. These *are* observable post-talk, but the speaker
+   benefits from a pre-talk reminder regardless of the vault's ability to score them
+   later.
+
+Both strands matter for delivery quality and belong in the same checklist.
 
 ```
 GO-LIVE CHECKLIST — {talk title}
@@ -268,7 +276,7 @@ DURING DELIVERY:
     with the audience
 [ ] Hara hachi bu — finish at 90–95% of the allotted time, never run over;
     "leave them slightly hungry, not stuffed"
-[ ] Screen-blackout — use the B key (or planned black slides) at section boundaries,
+[ ] Screen Blackout — use the B key (or planned black slides) at section boundaries,
     personal stories, and audience-question moments to redirect attention
 [ ] Lightsaber — if laser pointer needed, max 2-3 steady moments
 [ ] Red/Yellow/Green — exit feedback cards set up (if venue supports)

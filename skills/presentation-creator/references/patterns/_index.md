@@ -1,8 +1,10 @@
 # Presentation Patterns — Master Index
 
-Structured reference taxonomy based on *Presentation Patterns: Techniques for Crafting
-Better Presentations* (Neal Ford, Matthew McCullough, Nathaniel Schutta, 2013). Contains
-63 named patterns and 25 antipatterns organized by presentation lifecycle phase.
+Structured reference taxonomy primarily based on *Presentation Patterns: Techniques for
+Crafting Better Presentations* (Neal Ford, Matthew McCullough, Nathaniel Schutta, 2013),
+with supplementary patterns and reinforcements from *Presentation Zen* (Garr Reynolds,
+2nd ed., 2012). Contains 65 named patterns and 25 antipatterns organized by presentation
+lifecycle phase. See the Sources section at the end of this file for full citations.
 
 **This is the primary entry point.** The agent reads this file first, then drills into
 individual pattern files only when detailed descriptions, scoring criteria, or
@@ -284,4 +286,4 @@ they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation 
 ## Sources
 
 - Ford, N., McCullough, M., & Schutta, N. (2013). *Presentation Patterns: Techniques for Crafting Better Presentations.* Addison-Wesley. — primary taxonomy source.
-- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). New Riders. — supplementary source; reinforces ~17 existing patterns and contributes the `opening-punch` and `screen-blackout` patterns plus the `hara-hachi-bu`, `analog-planning`, and `elevator-test` refinements folded into `breathing-room`, `concurrent-creation`, and `the-big-why` respectively.
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). New Riders. — supplementary source; reinforces ~17 existing patterns and contributes the `opening-punch` and `screen-blackout` patterns plus three refinement subsections folded into existing patterns: "Hara Hachi Bu — The 90–95% Finish Line" (in `breathing-room.md`), "Plan Analog Before Going Digital" (in `concurrent-creation.md`), and "The Elevator Test" (in `the-big-why.md`).
