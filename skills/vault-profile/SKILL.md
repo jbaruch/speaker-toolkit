@@ -44,19 +44,27 @@ Read `tracking-database.json` from there to get `vault_root`.
 
    vault_root = pathlib.Path("~/.claude/rhetoric-knowledge-vault").expanduser().resolve()
    db = json.loads((vault_root / "tracking-database.json").read_text())
-   summary = (vault_root / "rhetoric-style-summary.md").read_text()
-   design_spec = (vault_root / "slide-design-spec.md").read_text()  # may not exist
+   config = db.get("config", {})
    confirmed_intents = db.get("confirmed_intents", [])
    talks = db.get("talks", [])
    processed = [t for t in talks if t.get("status") in ("processed", "processed_partial")]
+
+   summary_path = vault_root / "rhetoric-style-summary.md"
+   if not summary_path.exists():
+       raise SystemExit("No rhetoric summary found. Run vault-ingress first to process talks.")
+   summary = summary_path.read_text()
+
+   design_spec_path = vault_root / "slide-design-spec.md"
+   design_spec = design_spec_path.read_text() if design_spec_path.exists() else ""
    ```
 
-   - If `rhetoric-style-summary.md` is missing, abort: `"No rhetoric summary found. Run vault-ingress first to process talks."`
+   - If `rhetoric-style-summary.md` is missing, abort with the message above.
+   - If `slide-design-spec.md` is missing, the design-spec section of the profile remains empty (continue without aborting).
    - If all processed talks have empty `structured_data`, warn and fall back to prose extraction from the summary.
 
 2. **Aggregate `structured_data`** from the processed talks. Skip talks with empty `structured_data`; for those, fall back to prose extraction from `rhetoric-style-summary.md` for the matching dimensions.
 
-3. **Extract slide-template layouts** if `config.template_pptx_path` is set. Call the pptx-extraction script from the vault-ingress skill's references (`skills/vault-ingress/scripts/pptx-extraction.py <path.pptx>`); store the layouts list under `infrastructure.template_layouts`.
+3. **Extract slide-template layouts** if `config.template_pptx_path` is set. Call the vault-ingress PPTX extraction script (`skills/vault-ingress/scripts/pptx-extraction.py <path.pptx>`); store the layouts list under `infrastructure.template_layouts`.
 
 4. **Generate `speaker-profile.json`** per [references/speaker-profile-schema.md](references/speaker-profile-schema.md). The mapping from vault sources to profile sections:
 
@@ -72,25 +80,27 @@ Read `tracking-database.json` from there to get `vault_root`.
    Top-level keys (full nested schema in [references/speaker-profile-schema.md](references/speaker-profile-schema.md)):
 
    ```
-   schema_version, generated_date, speaker, infrastructure, presentation_modes,
-   instrument_catalog, rhetoric_defaults, confirmed_intents, guardrail_sources,
-   pacing, pattern_profile, visual_style_history, publishing_process,
-   design_rules, badges
+   schema_version, generated_date, talks_analyzed, speaker, infrastructure,
+   presentation_modes, instrument_catalog, rhetoric_defaults, confirmed_intents,
+   guardrail_sources, pacing, pattern_profile, visual_style_history,
+   publishing_process, design_rules, badges
    ```
 
-5. **Validate.** Verify all required top-level keys exist and `schema_version` is 1. If validation fails, list every missing or invalid key and abort without writing.
+5. **Validate.** Verify all required top-level keys exist and `schema_version` is 1. If validation fails, list every missing or invalid key and abort without writing. Pass the profile dict produced in step 4 to `validate_profile()`:
 
    ```python
-   REQUIRED_KEYS = [
-       "schema_version", "generated_date", "speaker", "infrastructure",
-       "presentation_modes", "instrument_catalog", "rhetoric_defaults",
-       "confirmed_intents", "guardrail_sources", "pacing", "pattern_profile",
-       "visual_style_history", "publishing_process", "design_rules", "badges",
-   ]
-   missing = [k for k in REQUIRED_KEYS if k not in profile]
-   if missing or profile.get("schema_version") != 1:
-       raise ValueError(f"Profile invalid — missing: {missing}, "
-                        f"schema_version: {profile.get('schema_version')}")
+   def validate_profile(profile):
+       REQUIRED_KEYS = [
+           "schema_version", "generated_date", "talks_analyzed", "speaker",
+           "infrastructure", "presentation_modes", "instrument_catalog",
+           "rhetoric_defaults", "confirmed_intents", "guardrail_sources",
+           "pacing", "pattern_profile", "visual_style_history",
+           "publishing_process", "design_rules", "badges",
+       ]
+       missing = [k for k in REQUIRED_KEYS if k not in profile]
+       if missing or profile.get("schema_version") != 1:
+           raise ValueError(f"Profile invalid — missing: {missing}, "
+                            f"schema_version: {profile.get('schema_version')}")
    ```
 
 6. **Diff against the existing profile** at `{vault_root}/speaker-profile.json` (if present). Report changes — new instruments, revised thresholds, new guardrails — to the speaker. **Flag new presentation modes prominently** since they affect creator-skill behavior more than other field changes.
