@@ -52,3 +52,6 @@ This antipattern maps to Vault Dimension 8 (Content Depth / Value) because the c
 
 ## Combinatorics
 Lipstick on a Pig is the inverse of Narrative Arc, which ensures content integrity before visual design. The Mentor pattern helps prevent it by orienting the talk around audience learning outcomes rather than speaker performance. Carnegie Hall rehearsal can reveal content gaps if rehearsal audiences are asked "What did you learn?" rather than "How did it look?" Know Your Audience provides the research foundation that generates substantive, audience-relevant content.
+
+## Related Reading
+- Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Introduction — explicitly identifies this antipattern as the motivation for *Resonate*: "Gussying up slides that have meaningless content is like putting lipstick on a pig." *Slide:ology* taught visual design; *Resonate* steps back and asks whether the content is worth designing in the first place. Wiley.

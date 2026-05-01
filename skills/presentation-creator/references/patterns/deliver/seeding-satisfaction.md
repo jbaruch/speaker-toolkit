@@ -51,3 +51,6 @@ This pattern maps to Vault Dimension 4 (Audience Engagement). Seeding Satisfacti
 
 ## Combinatorics
 Seeding Satisfaction pairs naturally with Know Your Audience (pre-talk conversations validate research), Posse (supporters can help seed conversations), and Emotional State (mingling reveals audience mood). It also supports Seeding the First Question by identifying individuals who might be willing to ask the opening question during Q&A.
+
+## Related Reading
+- Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 8 — "Give a Positive First Impression" extends backward into pre-event communications (invitation tone, agenda framing, bio wording) and forward into early-arriver engagement: "[Garr Reynolds] entered the room upbeat and engaged, shook hands, asked attendees questions, and set a completely different tone." Wiley.

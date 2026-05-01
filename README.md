@@ -73,7 +73,7 @@ The vault skill will:
 2. Scan for talks and .pptx files
 3. Process talks in parallel batches of 5
 4. Extract rhetoric patterns across 14 dimensions
-5. Score each talk against the 79 observable Presentation Patterns
+5. Score each talk against the 86 observable Presentation Patterns
 6. Build a running narrative summary and slide design spec
 7. Run an interactive clarification session to validate findings and capture your intent
 8. Generate a structured speaker profile with pattern mastery data (after 10+ talks)
@@ -186,7 +186,7 @@ notes which named patterns and antipatterns are detected per talk.
 - Talks are processed in **parallel batches of 5** subagents
 - Transcripts are downloaded via `yt-dlp` (with `youtube-transcript-api` fallback)
 - Slides are acquired from PPTX files (preferred, richer data) or downloaded as PDFs via `gdown`
-- Each talk is scored against 79 observable patterns from the taxonomy
+- Each talk is scored against 86 observable patterns from the taxonomy
 - Each batch updates the summary, per-talk analysis files, and triggers profile regeneration
 - An interactive clarification session resolves ambiguities and captures confirmed intent
 
@@ -234,21 +234,22 @@ notes which named patterns and antipatterns are detected per talk.
 
 ### Presentation Patterns Taxonomy
 
-The creator includes a structured reference taxonomy of 90 presentation patterns and
+The creator includes a structured reference taxonomy of 97 presentation patterns and
 antipatterns from *Presentation Patterns* (Ford, McCullough, Schutta 2013) supplemented
-by *Presentation Zen* (Reynolds, 2nd ed. 2012), organized by presentation lifecycle:
+by *Presentation Zen* (Reynolds, 2nd ed. 2012) and *Resonate* (Duarte 2010), organized
+by presentation lifecycle:
 
 - **Prepare** (22): Know Your Audience, Narrative Arc, Triad, Talklet, Brain Breaks, Takahashi, Cave Painting, Opening PUNCH, and more
-- **Build** (37): Foreshadowing, Bookends, Defy Defaults, Vacation Photos, Traveling Highlights, Emergence, and more
+- **Build** (44): Foreshadowing, Bookends, Defy Defaults, Vacation Photos, Traveling Highlights, Emergence, Sparkline, Call to Adventure, Call to Action, New Bliss, S.T.A.R. Moment, and more
 - **Deliver** (31): Carnegie Hall, Breathing Room, Echo Chamber, Seeding the First Question, Screen Blackout, and more
 
-Of the 90 entries, **79 are observable** (detectable from transcripts and slides) and
+Of the 97 entries, **86 are observable** (detectable from transcripts and slides) and
 **11 are unobservable** (pre-event logistics, physical stage behaviors, external systems
 that leave no trace in recordings).
 
 **How it integrates:**
 
-| Integration point | Observable patterns (79) | Unobservable patterns (11) |
+| Integration point | Observable patterns (86) | Unobservable patterns (11) |
 |---|---|---|
 | **Vault scoring** (Step 3 B2) | Scored per talk, aggregated into `pattern_profile` | Excluded from scoring |
 | **Creator Phase 2** | 4-tier Pattern Strategy (Signature / Contextual / New to You / Shake It Up) | Included in recommendations |
@@ -324,7 +325,7 @@ speaker-toolkit-tile/
         |   +-- reorder-slides.py             # Move slide from one position to another
         +-- references/
             +-- phase0-intake.md through phase7-post-event.md  # Phase detail docs
-            +-- patterns/                     # Presentation Patterns taxonomy (90 entries)
+            +-- patterns/                     # Presentation Patterns taxonomy (97 entries)
                 +-- _index.md                 # Master index, phase mapping, dimension lookup
                 +-- prepare/                  # 18 patterns + 3 antipatterns
                 +-- build/                    # 27 patterns + 10 antipatterns

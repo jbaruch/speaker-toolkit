@@ -50,3 +50,6 @@ This pattern maps to Vault Dimension 3 (Engagement / Entertainment Value) direct
 
 ## Combinatorics
 Entertainment works with Know Your Audience (understanding what this audience finds funny and relatable), Brain Breaks (entertainment naturally creates cognitive rest), and Make It Rain (physical props add entertainment value). It is the inverse of the Alienating Artifact antipattern, where entertainment choices exclude or offend. The Mentor pattern provides a useful frame for entertainment — humor and stories that serve the audience's learning journey rather than the speaker's ego.
+
+## Related Reading
+- Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 5, 6 — emotional contrast (Aristotelian *pathos*) as one of three required contrast types in the presentation form; Hollywood "beats" alternate emotional polarity within scenes to keep audiences engaged. "Use plenty of facts, but accompany them with emotional appeal." Wiley.

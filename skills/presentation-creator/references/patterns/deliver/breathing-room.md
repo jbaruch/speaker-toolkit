@@ -60,3 +60,4 @@ Breathing Room is the direct inverse of the Hiccup Words antipattern — confide
 
 ## Related Reading
 - Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 9 — *hara hachi bu* ("eat until 80% full") applied to time discipline: finish at 90–95% and leave the audience slightly hungry, not stuffed. New Riders.
+- Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 8 — "Value Brevity": Lincoln's Gettysburg Address (278 words, 2 minutes) vs. Edward Everett's 2-hour eulogy nobody remembers; "if they give you an hour, target a talk at forty minutes." Wiley.

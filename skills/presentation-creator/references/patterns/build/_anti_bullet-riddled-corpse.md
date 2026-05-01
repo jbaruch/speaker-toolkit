@@ -54,3 +54,4 @@ Bullet-Riddled Corpse is the inverse of both Vacation Photos (image-centric slid
 
 ## Related Reading
 - Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 6 — "How Many Bullet Points Per Slide?" and the "1-7-7 Rule" critique. New Riders.
+- Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 8 — "Wean Yourself from the Slides": audiences can read OR listen, not both, so a default-template bulleted slide costs ~25 seconds of read-time per slide that the audience is NOT spending listening to the speaker. Wiley.

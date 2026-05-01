@@ -31,6 +31,21 @@ Once you have identified your Big Why, use it as a commitment device. Market you
 
 The Big Why also serves as a compass during preparation. When you face difficult decisions — what to include, what to cut, how much to rehearse — your core motivation provides the answer. If your Big Why is audience care, you cut the clever-but-confusing section. If your Big Why is professional growth, you keep the section that stretches your delivery skills even though it is harder to present.
 
+### The Big Idea — Statement Format
+The Big Why is *why the speaker is presenting*. The Big Idea — Nancy Duarte's term in *Resonate* — is the **single sentence the audience walks away with**. They are paired but distinct: the speaker's motivation sustains the work; the audience's takeaway is the work's output. A talk can have a clear Big Why and still produce a muddled Big Idea (the speaker knows why they're presenting but hasn't crystallized what to say); the inverse is rarer but possible.
+
+The Big Idea has three required components:
+
+1. **Articulates a unique point of view.** A topic is not a Big Idea — "the fate of the oceans" is a topic; "Worldwide pollution is killing the ocean and us" is a Big Idea. The point of view does not have to be unprecedented; it does have to be *yours* on the subject rather than a neutral summary.
+
+2. **Conveys what's at stake.** Why should the audience care enough to adopt the perspective? Compare "Replenish the wetlands through new legislation" (no stakes) to "Without better legislation, the destruction of the wetlands will cost the Florida economy $70 billion by 2025" (stakes named). Stakes can be loss-framed (what's lost if rejected) or gain-framed (what's gained if accepted) — both work; vagueness doesn't.
+
+3. **Complete sentence.** Subject + verb. "Q3 update" is a topic. "Q3 numbers are down; to stay in the game, every department must commit to the sales initiative" is a Big Idea. Bonus: include "you" — forces audience-direction.
+
+**Construction rule:** state the Big Idea in writing before any slide is built. If the speaker cannot produce a single-sentence Big Idea that satisfies all three components, the talk is not ready to enter Phase 2 architecture work. The Big Idea is the well from which all supporting content springs and the filter by which all supporting content is judged. Content that doesn't directly support the Big Idea gets cut, regardless of how interesting it is in isolation.
+
+The Big Idea pairs with `the-big-why` to form the speaker's full intent statement: *"I am presenting because [Big Why]; the audience will walk away with [Big Idea]."* Both statements together should be checked at the end of Phase 1 before the spec is locked.
+
 ### The Elevator Test
 The Big Why is the speaker-side motivation; the audience-side counterpart is "what is my point and why does it matter to *them*?" Garr Reynolds proposes a concrete check called the elevator test: imagine the executive you are about to pitch comes out of her office with her coat already on and says, "Sorry, something came up — give me your pitch as we walk to my car." Could you sell the core message in 30–45 seconds, in the elevator and the walk to the parking lot?
 
@@ -57,3 +72,4 @@ Pairs with Carnegie Hall (strong motivation drives extensive practice) and Cruci
 
 ## Related Reading
 - Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 3 — "Two Questions: What Is Your Point? Why Does It Matter?" plus "Can You Pass the Elevator Test?" New Riders.
+- Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 4 — the *Big Idea* statement format formalizes the speaker-side why with three required components (unique POV + explicit stakes + complete sentence). Wiley.

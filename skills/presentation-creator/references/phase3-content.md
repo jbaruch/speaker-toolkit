@@ -174,6 +174,83 @@ Reynolds: "Contrast is about differences, and we are hardwired to notice differe
 
 Contrast structures naturally produce dramatic tension and make the resolution feel earned. They also map cleanly onto narrative beats — a problem/solution contrast IS a two-act narrative arc; a past/future contrast IS a thesis. When a section feels flat in the outline, ask: *what is the contrast pair here?* If you can't name one, the section is not yet sharpened.
 
+### Sparkline Structural Elements (when sparkline is the chosen architecture)
+
+If Phase 2 selected `sparkline` as the top-level structure, four named structural elements must appear at specific places in the outline:
+
+**Call to Adventure** — the first turning point, dramatizing the gap between "what is" and "what could be." Place it 10–25% into the talk, immediately after the "what is" baseline section. Tag it explicitly in the outline:
+
+```markdown
+### Slide N: Call to Adventure
+- STRUCTURE: Call to Adventure (sparkline turning point 1)
+- Visual: [paired contrasting image, or full-bleed gap-revelation visual]
+- Speaker: "[explicit gap-reveal language]. The Big Idea: [single-sentence thesis with stakes]"
+```
+
+The Big Idea must be stated as a complete sentence at this turning point. See `patterns/build/call-to-adventure.md`.
+
+**Call to Action** — the second turning point, in the closing 15–25% of the talk. Must contain at least one specific, immediately-executable ask per audience action-temperament type (Doer / Supplier / Influencer / Innovator — pre-planned in Phase 2). Tag it in the outline:
+
+```markdown
+### Slide N: Call to Action
+- STRUCTURE: Call to Action (sparkline turning point 2)
+- Asks (one per type):
+  - Doer: [specific ask]
+  - Supplier: [specific ask]
+  - Influencer: [specific ask]
+  - Innovator: [specific ask]
+- Speaker: "[explicit transition language]. Here's what to do…"
+```
+
+See `patterns/build/call-to-action.md`.
+
+**New Bliss** — the closing future-state vision, immediately after the Call to Action. Required for sparkline; the talk must end on a higher emotional plane than it started. Tag it:
+
+```markdown
+### Slide N+1: New Bliss
+- STRUCTURE: New Bliss (sparkline closing)
+- Visual: [vivid future-state image — concrete scene, not abstract state]
+- Speaker: "[30-second to 2-minute vision of the world after adoption]"
+```
+
+See `patterns/build/new-bliss.md`.
+
+**S.T.A.R. moments** at one or more peaks in the persuasive middle. Every sparkline gets at least one; ambitious talks stack 2–3. Identify the sub-type explicitly:
+
+```markdown
+### Slide N: [section title]
+- STAR: [Memorable Dramatization | Repeatable Sound Bite | Evocative Visual | Emotive Storytelling | Shocking Statistic]
+- Visual: [...]
+- Speaker: "[the constructed beat in the speaker's actual voice]"
+```
+
+See `patterns/build/star-moment.md`.
+
+### Inoculation Beats
+
+For persuasive talks (especially with sparkline structure), include 1–3 inoculation moves in the persuasive middle — moments where the speaker preemptively voices the audience's strongest objection (steel-manned, not strawmanned) and addresses it within the same content section. Source the objections from the resistance map (six vectors: Comfort Zone / Fear / Vulnerabilities / Misunderstanding / Obstacles / Politics — see `patterns/prepare/know-your-audience.md`).
+
+Tag inoculation moves in the outline:
+
+```markdown
+### Slide N: [section title]
+- INOCULATION: addresses the [Politics | Comfort Zone | …] resistance vector
+- Speaker: "Now, you might be thinking [steel-manned objection]. Here's why that's a real concern but not the whole story…"
+```
+
+See `patterns/build/inoculation.md`. Reserve inoculation for objections that would otherwise derail the room — overusing the move makes the talk feel defensive.
+
+### Master Story (for talks 30+ minutes)
+
+For longer persuasive talks, consider weaving a single anecdote — usually personal, metaphorically aligned with the Big Idea — through the entire talk. Introduce it fully in the opening or first half of the middle, then reference it 2–4 more times across distinct sections, each return adding a new layer of meaning rather than repeating. The first telling must work as a story on its own; subsequent references compress to a phrase or image that the audience now recognizes as compressed shorthand for the Big Idea. See `patterns/build/master-story.md`.
+
+When a master story is in use, tag the recurrence points in the outline:
+
+```markdown
+### Slide N: [section title]
+- CALLBACK: master-story reference #2 — maps Pandy's "love makes the unloved precious" onto [section topic]
+```
+
 ### Callback Identification
 
 Proactively identify and suggest callback opportunities. Check the vault summary for

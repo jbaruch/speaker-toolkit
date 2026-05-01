@@ -57,3 +57,4 @@ Pairs with Talklet (modular units can be created concurrently by different autho
 
 ## Related Reading
 - Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 3, 4 — the five-step preparation workflow (brainstorm → group → analog storyboard → sketch visuals → digital storyboard) describes a concurrent-creation cadence between content and visuals. New Riders.
+- Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 5, 6 — sticky-notes-on-wall storyboarding as the medium for the divergent and convergent thinking phases; "move out of the linear format of the presentation application and create an environment where you can look at the content spatially." Wiley.

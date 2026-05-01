@@ -3,7 +3,8 @@
 Structured reference taxonomy primarily based on *Presentation Patterns: Techniques for
 Crafting Better Presentations* (Neal Ford, Matthew McCullough, Nathaniel Schutta, 2013),
 with supplementary patterns and reinforcements from *Presentation Zen* (Garr Reynolds,
-2nd ed., 2012). Contains 65 named patterns and 25 antipatterns organized by presentation
+2nd ed., 2012) and *Resonate: Present Visual Stories that Transform Audiences* (Nancy
+Duarte, 2010). Contains 72 named patterns and 25 antipatterns organized by presentation
 lifecycle phase. See the Sources section at the end of this file for full citations.
 
 **This is the primary entry point.** The agent reads this file first, then drills into
@@ -56,10 +57,17 @@ combinatorics are needed.
 | alienating-artifact | Alienating Artifact | antipattern | 3, 10, 14 | guardrails | know-your-audience, brain-breaks |
 | celery | Celery | antipattern | 2, 14 | guardrails | required, know-your-audience, narrative-arc, brain-breaks |
 
-### Build Phase (27 patterns + 10 antipatterns)
+### Build Phase (34 patterns + 10 antipatterns)
 
 | ID | Name | Type | Vault Dims | Creator Phases | Related |
 |----|------|------|------------|----------------|---------|
+| sparkline | Sparkline | pattern | 2, 5, 9 | architecture, content | narrative-arc, bookends, the-big-why, call-to-adventure, call-to-action, new-bliss |
+| call-to-adventure | Call to Adventure | pattern | 1, 2, 9 | architecture, content | sparkline, the-big-why, opening-punch, narrative-arc |
+| call-to-action | Call to Action | pattern | 4, 6, 9 | content, publishing | sparkline, coda, mentor, the-big-why |
+| new-bliss | New Bliss | pattern | 5, 6, 9 | content | sparkline, call-to-action, coda, bookends |
+| star-moment | S.T.A.R. Moment | pattern | 3, 5, 13 | content, slides | the-big-why, sparkline, narrative-arc, vacation-photos, foreshadowing |
+| inoculation | Inoculation | pattern | 4, 9 | content, guardrails | know-your-audience, mentor, peer-review, sparkline, the-big-why |
+| master-story | Master Story | pattern | 2, 5, 7 | content | narrative-arc, foreshadowing, sparkline, the-big-why, star-moment |
 | coda | Coda | pattern | 6, 8 | content, slides | infodeck, vacation-photos |
 | peer-review | Peer Review | pattern | 7, 8 | content, guardrails | leet-grammars |
 | foreshadowing | Foreshadowing | pattern | 2, 5 | content | narrative-arc, talklet, backtracking, intermezzi |
@@ -176,6 +184,8 @@ Structural patterns relevant here:
 - unifying-visual-theme, vacation-photos, infodeck
 - brain-breaks, greek-chorus
 - live-demo *(if demo-driven mode)*
+- sparkline *(if persuasive mode — alternative to narrative-arc)*
+- call-to-adventure *(architectural placement of sparkline turning point 1)*
 
 ### Phase 3: Content
 Build patterns — applied during outline writing.
@@ -187,6 +197,7 @@ Build patterns — applied during outline writing.
 - display-of-high-value, mentor, seeding-the-first-question
 - make-it-rain, lightsaber, echo-chamber
 - opening-punch, screen-blackout
+- call-to-adventure, call-to-action, new-bliss, star-moment, inoculation, master-story
 
 ### Phase 4: Guardrails
 Antipatterns as warnings — scanned against the outline.
@@ -213,6 +224,7 @@ Delivery prep patterns — final checklist before the talk.
 - posse, shoeless, emotional-state, weatherman, stakeout
 - echo-chamber, red-yellow-green
 - social-media-advertising, preroll, live-on-tape
+- call-to-action *(go-live preparation — confirm asks are concrete and immediately executable)*
 
 ---
 
@@ -222,19 +234,19 @@ Reverse lookup: which patterns relate to each of the 14 rhetoric analysis dimens
 
 | Dim | Name | Patterns | Antipatterns |
 |-----|------|----------|--------------|
-| 1 | Opening Pattern | preroll, opening-punch | — |
-| 2 | Narrative Structure | narrative-arc, fourthought, triad, expansion-joints, talklet, context-keeper, breadcrumbs, bookends, intermezzi, foreshadowing, backtracking, a-la-carte-content, concurrent-creation, lightning-talk | abstract-attorney, celery |
-| 3 | Humor & Wit | brain-breaks, entertainment | alienating-artifact |
-| 4 | Audience Interaction | know-your-audience, social-media-advertising, a-la-carte-content, posse, seeding-satisfaction, seeding-the-first-question, emotional-state, make-it-rain, echo-chamber, red-yellow-green, greek-chorus, opening-punch | bunker, hecklers, backchannel, negative-ignorance, dual-headed-monster |
-| 5 | Transition Techniques | narrative-arc, foreshadowing, backtracking, context-keeper, bookends, intermezzi, soft-transitions, cave-painting | — |
-| 6 | Closing Pattern | coda, crawling-credits | — |
-| 7 | Verbal Signatures | leet-grammars, peer-review, breathing-room, echo-chamber | hiccup-words, borrowed-shoes, tower-of-babble |
+| 1 | Opening Pattern | preroll, opening-punch, call-to-adventure | — |
+| 2 | Narrative Structure | narrative-arc, fourthought, triad, expansion-joints, talklet, context-keeper, breadcrumbs, bookends, intermezzi, foreshadowing, backtracking, a-la-carte-content, concurrent-creation, lightning-talk, sparkline, call-to-adventure, master-story | abstract-attorney, celery |
+| 3 | Humor & Wit | brain-breaks, entertainment, star-moment | alienating-artifact |
+| 4 | Audience Interaction | know-your-audience, social-media-advertising, a-la-carte-content, posse, seeding-satisfaction, seeding-the-first-question, emotional-state, make-it-rain, echo-chamber, red-yellow-green, greek-chorus, opening-punch, call-to-action, inoculation | bunker, hecklers, backchannel, negative-ignorance, dual-headed-monster |
+| 5 | Transition Techniques | narrative-arc, foreshadowing, backtracking, context-keeper, bookends, intermezzi, soft-transitions, cave-painting, sparkline, new-bliss, star-moment, master-story | — |
+| 6 | Closing Pattern | coda, crawling-credits, call-to-action, new-bliss | — |
+| 7 | Verbal Signatures | leet-grammars, peer-review, breathing-room, echo-chamber, master-story | hiccup-words, borrowed-shoes, tower-of-babble |
 | 8 | Slide-to-Speech Relationship | fourthought, concurrent-creation, coda, vacation-photos, infodeck, gradual-consistency, charred-trail, takahashi, live-on-tape, peer-review | cookie-cutter, injured-outlines, bullet-riddled-corpse, borrowed-shoes, slideuments, lipstick-on-a-pig |
-| 9 | Persuasion Techniques | know-your-audience, required, the-big-why, proposed, display-of-high-value, emotional-state, mentor, greek-chorus | disowning-your-topic, going-meta, tower-of-babble, lipstick-on-a-pig |
+| 9 | Persuasion Techniques | know-your-audience, required, the-big-why, proposed, display-of-high-value, emotional-state, mentor, greek-chorus, sparkline, call-to-adventure, call-to-action, new-bliss, inoculation | disowning-your-topic, going-meta, tower-of-babble, lipstick-on-a-pig |
 | 10 | Cultural & Pop-Culture References | leet-grammars, unifying-visual-theme, entertainment | alienating-artifact, photomaniac |
 | 11 | Technical Content Delivery | live-demo, lipsync, traveling-highlights, crawling-code, emergence, mentor, lightsaber | dead-demo |
 | 12 | Pacing Clues | crucible, expansion-joints, talklet, brain-breaks, lightning-talk, takahashi, carnegie-hall, breathing-room, weatherman, screen-blackout | shortchanged, disowning-your-topic |
-| 13 | Slide Design Patterns | unifying-visual-theme, takahashi, cave-painting, composite-animation, vacation-photos, defy-defaults, analog-noise, gradual-consistency, charred-trail, exuberant-title-top, invisibility, context-keeper, breadcrumbs, bookends, soft-transitions, intermezzi, preroll, crawling-credits, lipsync, traveling-highlights, crawling-code, emergence, screen-blackout | cookie-cutter, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, laser-weapons |
+| 13 | Slide Design Patterns | unifying-visual-theme, takahashi, cave-painting, composite-animation, vacation-photos, defy-defaults, analog-noise, gradual-consistency, charred-trail, exuberant-title-top, invisibility, context-keeper, breadcrumbs, bookends, soft-transitions, intermezzi, preroll, crawling-credits, lipsync, traveling-highlights, crawling-code, emergence, screen-blackout, star-moment | cookie-cutter, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, laser-weapons |
 | 14 | Areas for Improvement | crucible, preparation, carnegie-hall, shoeless, stakeout | abstract-attorney, alienating-artifact, celery, injured-outlines, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, borrowed-shoes, slideuments, dead-demo, shortchanged, hiccup-words, disowning-your-topic, going-meta, bunker, hecklers, backchannel, laser-weapons, negative-ignorance, dual-headed-monster, tower-of-babble, lipstick-on-a-pig |
 
 ---
@@ -276,14 +288,15 @@ they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation 
 
 ## Summary Statistics
 
-- **Total entries:** 90 (65 patterns + 25 antipatterns)
-- **Observable (vault-scorable):** 79 (57 patterns + 22 antipatterns)
+- **Total entries:** 97 (72 patterns + 25 antipatterns)
+- **Observable (vault-scorable):** 86 (64 patterns + 22 antipatterns)
 - **Unobservable (go-live checklist):** 11 (8 patterns + 3 antipatterns)
 - **Prepare phase:** 22 (19 patterns + 3 antipatterns)
-- **Build phase:** 37 (27 patterns + 10 antipatterns)
+- **Build phase:** 44 (34 patterns + 10 antipatterns)
 - **Deliver phase:** 31 (19 patterns + 12 antipatterns)
 
 ## Sources
 
 - Ford, N., McCullough, M., & Schutta, N. (2013). *Presentation Patterns: Techniques for Crafting Better Presentations.* Addison-Wesley. — primary taxonomy source.
 - Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). New Riders. — supplementary source; reinforces ~17 existing patterns and contributes the `opening-punch` and `screen-blackout` patterns plus three refinement subsections folded into existing patterns: "Hara Hachi Bu — The 90–95% Finish Line" (in `breathing-room.md`), "Plan Analog Before Going Digital" (in `concurrent-creation.md`), and "The Elevator Test" (in `the-big-why.md`).
+- Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Wiley. — supplementary source; reinforces ~20 existing patterns and contributes seven new build-phase patterns (`sparkline`, `call-to-adventure`, `call-to-action`, `new-bliss`, `star-moment`, `inoculation`, `master-story`) plus six refinement subsections folded into existing patterns: "Adopting the Stance — Planning Implications" (in `mentor.md`), "The Big Idea — Statement Format" (in `the-big-why.md`), "Numerical Narrative — Making Numbers Land" (in `vacation-photos.md`), "Screening with Critics — Beyond Copyediting" (in `peer-review.md`), "Murder Your Darlings — The Pre-Delivery Cut Pass" (in `crucible.md`), and "The Three Contrast Types — Engine of the Middle" (in `sparkline.md`).

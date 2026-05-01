@@ -50,3 +50,6 @@ This pattern maps to Vault Dimension 12 (Delivery Mechanics). Facing the audienc
 
 ## Combinatorics
 Weatherman pairs naturally with Make It Rain (physical interaction with the projected screen), Lipsync (coordinating live demonstrations with slide content), and the Lightsaber pattern (reducing dependence on laser pointers). It also supports Display of High Value — a speaker who faces the audience with confidence projects more authority than one who repeatedly turns to check the screen. Carnegie Hall rehearsals should incorporate the presenter display setup to build comfort with the technique.
+
+## Related Reading
+- Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 6 — "Contrast the Delivery" lists alternation between traditional and nontraditional methods (stage stance, style, visuals, interaction, content, involvement) as the third required contrast type alongside content and emotional contrast. Wiley.
