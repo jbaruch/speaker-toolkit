@@ -49,3 +49,6 @@ Dimension 8 (Slide Design): Slideuments represent a fundamental design failure b
 
 ## Combinatorics
 Slideuments is the inverse of the Infodeck pattern — where an Infodeck is deliberately designed for reading (embracing document characteristics), a Slideument accidentally tries to be both and fails at both. It relates to the Charred Trail pattern (leaving a trail of content for after-the-fact consumption) and Gradual Consistency (building coherent artifacts over time). The Bullet-Riddled Corpse antipattern often appears within Slideuments, as the dual-purpose compromise tends to produce bullet-heavy slides.
+
+## Related Reading
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 3 — Reynolds coined the term "slideument" and dedicates the "Create a Document, Not a Slideument" section to this antipattern. New Riders.

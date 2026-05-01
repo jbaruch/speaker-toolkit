@@ -1,5 +1,11 @@
 # Phase 2: Rhetorical Architecture — Detail
 
+### Plan Analog Before Going Digital
+
+Architecture decisions in this phase happen at the conceptual level — mode, opening pattern, narrative arc, sectioning, pattern strategy. These are best worked out **away from slideware**. Reynolds is emphatic: opening a presentation tool during planning prematurely commits the author to a template, a layout, and a default font when those decisions should still be fluid.
+
+When the author is making architecture decisions in this phase, encourage analog tools — paper sketches, whiteboard diagrams, Post-it notes — for working through the structure before any slide is created. The five-step Reynolds workflow keeps slideware out of the picture for the first four steps: brainstorm → group/identify the core → analog storyboard → sketch visuals → only then transfer into slideware. Architecture decisions in this phase belong to steps 1–3; slideware belongs to Phase 5. See `patterns/prepare/concurrent-creation.md` for the full workflow.
+
 ### The Joint Selection Process
 
 This phase is a conversation, not a monologue. **Use `AskUserQuestion` for each

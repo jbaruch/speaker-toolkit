@@ -50,3 +50,6 @@ Dimension 2 (Structure and Flow): Bookends are the most visible expression of st
 
 ## Combinatorics
 Bookends pair naturally with Context Keeper and Breadcrumbs — Bookends mark the boundaries while Breadcrumbs track progress across those boundaries. They complement Narrative Arc by providing visual markers for narrative phase transitions. Intermezzi is a related pattern that serves a similar structural role but with more thematic emphasis. Bookends work well with Defy Defaults as an opportunity to express custom visual identity, and they serve as a natural inverse of Floodmarks by containing required branding in structural slides rather than spreading it across every content slide.
+
+## Related Reading
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 9, 10 — primacy + recency effects: "people best remember the first part and the last part of your presentation"; rehearse opening and closing more than the middle. New Riders.

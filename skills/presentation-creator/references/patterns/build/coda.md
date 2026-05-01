@@ -50,3 +50,6 @@ Dimension 6 (Information Density): The Coda allows the speaker to maintain appro
 
 ## Combinatorics
 The Coda pairs naturally with the Infodeck pattern, as both deal with content designed for solo consumption. It works well alongside Vacation Photos because image-heavy spoken slides benefit from having a text-rich reference section at the end. The Coda also supports Narrative Arc by keeping disruptive reference material out of the story flow.
+
+## Related Reading
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 10 — "Save the best for last," exemplified by Steve Jobs's "one more thing" closing slide. New Riders.

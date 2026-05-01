@@ -49,3 +49,6 @@ Relates to Dimension 8 (Slide Design/Visual Quality) because Takahashi is a deli
 
 ## Combinatorics
 Pairs with Brain Breaks (the rapid visual changes function as continuous micro-breaks for attention). The inverse is Bullet-Riddled Corpse — where Takahashi puts one element per slide, the antipattern crams as many bullet points as possible onto each slide.
+
+## Related Reading
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 7 — documents the Takahashi Method directly with sample slides and the origin story (Masayoshi Takahashi, Tokyo developer). New Riders.

@@ -47,3 +47,6 @@ Relates to Dimension 12 (Time/Pacing) because the Crucible is the primary mechan
 
 ## Combinatorics
 Pairs with Carnegie Hall (practice between deliveries accelerates refinement), Brain Breaks (the Crucible reveals which breaks work and which fall flat), Fourthought (pre-delivery thinking provides a strong starting point for the Crucible to refine), and Traveling Highlights (discovering which highlights resonate is a Crucible outcome).
+
+## Related Reading
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 4 — "Editing and Restraint" uses George Lucas's Star Wars editing as an analogy: scrutinize every scene for its contribution; "when in doubt, cut it out." New Riders.

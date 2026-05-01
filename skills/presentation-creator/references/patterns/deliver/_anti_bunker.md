@@ -53,3 +53,6 @@ This antipattern maps to Vault Dimension 4 (Audience Engagement) because physica
 
 ## Combinatorics
 The Bunker antipattern is prevented by Carnegie Hall rehearsal (practice moving while presenting), Preparation (arrange wireless microphone in advance), and Know Your Audience (understanding the room layout). The Weatherman pattern frees you from the podium by providing presenter view on your laptop rather than requiring notes at the podium. Make It Rain is almost impossible from behind a bunker — physical interaction demands physical proximity.
+
+## Related Reading
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 9, 10 — "Remove Barriers to Communication": the lectern is "so last millennium"; together with the computer screen and stack of notes, lecterns form the three walls between speaker and audience. New Riders.

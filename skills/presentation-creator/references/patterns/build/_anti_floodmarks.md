@@ -50,3 +50,6 @@ Dimension 13 (Slide Aesthetics): Floodmarks directly degrade slide aesthetics by
 
 ## Combinatorics
 Floodmarks is the inverse of the Defy Defaults pattern, which encourages presenters to break free from default templates and create custom designs. It often co-occurs with Fontaholic, as corporate templates frequently introduce additional font families for branding elements. The Bookends pattern provides the architectural solution: branding on the first and last slides, clean canvas everywhere else. The Unifying Visual Theme pattern offers a positive alternative to Floodmarks — instead of branding noise, use a coherent visual metaphor that serves both the content and the aesthetic.
+
+## Related Reading
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 6 — "Who Says Your Logo Should Be on Every Slide?" advocates logo on first and last slide only. New Riders.

@@ -49,3 +49,6 @@ Relates to Dimension 5 (Storytelling/Narrative) because the spatial canvas creat
 
 ## Combinatorics
 Pairs with Context Keeper (Cave Painting is inherently a context-keeping device), Soft Transitions (zooming between sections creates smooth visual transitions), Brain Breaks (the zoom-out moments serve as visual palate cleansers), Takahashi (individual zoomed-in sections can use Takahashi-style single elements), and Lipsync (spatial layout helps synchronize verbal and visual content).
+
+## Related Reading
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 5 — "Amplification Through Simplification" via Scott McCloud, plus the Kamishibai visual-storytelling tradition: visuals big and bold, bleed off the edge, focus attention on what matters now. New Riders.

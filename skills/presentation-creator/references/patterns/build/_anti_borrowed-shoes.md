@@ -49,3 +49,6 @@ Dimension 7 (Language and Communication): Borrowed Shoes creates a mismatch betw
 
 ## Combinatorics
 Borrowed Shoes is mitigated by the Crucible pattern (intensive rehearsal transforms unfamiliar material into internalized content), the Narrative Arc pattern (understanding the story structure helps the presenter navigate borrowed material), and the Carnegie Hall pattern (deliberate practice reduces the friction of presenting someone else's slides). When these patterns are applied rigorously, the worst effects of Borrowed Shoes can be reduced — though the ideal solution remains reworking the material to fit the presenter's own style.
+
+## Related Reading
+- Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 6 — argues against using corporate or stock templates that don't fit your message. New Riders.

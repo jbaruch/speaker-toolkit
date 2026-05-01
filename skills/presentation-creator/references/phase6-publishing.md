@@ -233,15 +233,32 @@ Read `publishing_process.additional_steps[]`. For each entry:
 
 ### Step 6.6: Go-Live Preparation Checklist
 
-Before delivery, surface unobservable patterns from [patterns/_index.md](patterns/_index.md)
-(the "Unobservable Patterns — Go-Live Checklist" section) as a preparation reminder.
-These are patterns the vault **cannot score retroactively** because they involve
-pre-event logistics, physical stage behaviors, or external systems — but they still
-matter for delivery quality.
+Before delivery, surface a delivery-readiness checklist composed of two strands:
+
+1. **Unobservable patterns** from [patterns/_index.md](patterns/_index.md) (the
+   "Unobservable Patterns — Go-Live Checklist" section). These are patterns the vault
+   **cannot score retroactively** because they involve pre-event logistics, physical
+   stage behaviors, or external systems.
+2. **Observable delivery reminders** that the speaker can decide to apply on the day —
+   venue setup choices (lights, lectern, mic), opening discipline, time discipline,
+   and screen-blackout tactics. These *are* observable post-talk, but the speaker
+   benefits from a pre-talk reminder regardless of the vault's ability to score them
+   later.
+
+Both strands matter for delivery quality and belong in the same checklist.
 
 ```
 GO-LIVE CHECKLIST — {talk title}
 ==================================
+VENUE SETUP:
+[ ] Lights ON — keep light on the speaker (Reynolds: audience must see your face;
+    they cannot read facial expressions in the dark; dim only the screen-area lights
+    if the projector requires it)
+[ ] Lectern moved aside — step out from behind any podium or table; place computer
+    on the floor in front of the stage so you don't have to turn back to advance slides
+[ ] Mic test — wireless lavalier or headset preferred over handheld; do not rely on
+    shouting
+
 PRE-EVENT:
 [ ] Preparation — backups, cables, hydration, room layout check
 [ ] Carnegie Hall — completed 4 rehearsals (pace, delivery, fixes, groove)
@@ -251,6 +268,16 @@ PRE-EVENT:
 [ ] Shoeless — comfort ritual ready
 
 DURING DELIVERY:
+[ ] Honeymoon-window discipline — first 1–2 minutes earn the talk; do NOT spend
+    them on agenda slides, "let me introduce myself," or "thanks for the invitation"
+    filler. Open with the planned PUNCH hook (see outline)
+[ ] Never apologize, never confess nerves — both are self-focused at a moment that
+    should be audience-focused. Acknowledge nerves to yourself; do not share them
+    with the audience
+[ ] Hara hachi bu — finish at 90–95% of the allotted time, never run over;
+    "leave them slightly hungry, not stuffed"
+[ ] Screen Blackout — use the B key (or planned black slides) at section boundaries,
+    personal stories, and audience-question moments to redirect attention
 [ ] Lightsaber — if laser pointer needed, max 2-3 steady moments
 [ ] Red/Yellow/Green — exit feedback cards set up (if venue supports)
 
