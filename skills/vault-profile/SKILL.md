@@ -44,7 +44,7 @@ Process the steps below in order; each step's output (vault payload, aggregated 
 Run `scripts/load-vault.py` to read `tracking-database.json`, `rhetoric-style-summary.md`, and `slide-design-spec.md` from the vault root. The script emits a single JSON payload on stdout.
 
 ```bash
-python3 scripts/load-vault.py > /tmp/vault-payload.json
+python3 skills/vault-profile/scripts/load-vault.py > /tmp/vault-payload.json
 ```
 
 **I/O contract:**
@@ -69,7 +69,7 @@ Proceed immediately to Step 3.
 If `config.template_pptx_path` is set, call the vault-ingress PPTX extraction script:
 
 ```bash
-python3 ../vault-ingress/scripts/pptx-extraction.py "$TEMPLATE_PPTX_PATH" > /tmp/template-layouts.json
+python3 skills/vault-ingress/scripts/pptx-extraction.py "$TEMPLATE_PPTX_PATH" > /tmp/template-layouts.json
 ```
 
 **I/O contract** (defined in vault-ingress; see `skills/vault-ingress/scripts/pptx-extraction.py`):
@@ -112,7 +112,7 @@ Proceed immediately to Step 5.
 Pipe the constructed profile dict through `scripts/validate-profile.py` to verify all required top-level keys exist and `schema_version` is `1`.
 
 ```bash
-echo "$PROFILE_JSON" | python3 scripts/validate-profile.py
+echo "$PROFILE_JSON" | python3 skills/vault-profile/scripts/validate-profile.py
 ```
 
 **I/O contract:**

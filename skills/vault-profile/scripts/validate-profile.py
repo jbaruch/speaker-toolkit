@@ -76,6 +76,26 @@ def main(argv: list[str]) -> int:
         )
         return 1
 
+    if not isinstance(profile, dict):
+        print(
+            f"ERROR: profile must be a JSON object, got {type(profile).__name__}",
+            file=sys.stderr,
+        )
+        print(
+            json.dumps(
+                {
+                    "valid": False,
+                    "schema_version": None,
+                    "missing_keys": [],
+                    "error": (
+                        f"Profile must be a JSON object, got "
+                        f"{type(profile).__name__}"
+                    ),
+                }
+            )
+        )
+        return 1
+
     missing = [k for k in REQUIRED_KEYS if k not in profile]
     schema_version = profile.get("schema_version")
     valid = not missing and schema_version == 1
