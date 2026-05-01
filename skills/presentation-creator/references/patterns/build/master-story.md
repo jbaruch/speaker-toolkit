@@ -11,7 +11,7 @@ detection_signals:
   - "each return to the story deepens or reframes its meaning"
   - "the story functions as a metaphor or anchor for the Big Idea"
   - "verbal callbacks tie disparate sections back to the same narrative"
-related_patterns: [narrative-arc, foreshadowing, sparkline, big-idea, star-moment]
+related_patterns: [narrative-arc, foreshadowing, sparkline, the-big-why, star-moment]
 inverse_of: []
 difficulty: advanced
 ---
@@ -69,7 +69,7 @@ The pattern is often reinforced visually — the master story may have a single 
 Relates to Dimension 5 (Storytelling/Narrative) directly — Master Story is a specific narrative structure where one anecdote does load-bearing work for the whole talk. Relates to Dimension 2 (Narrative Structure) because the recursion is itself a structural choice, distinct from linear narrative-arc progression. Relates to Dimension 7 (Verbal Signatures) because the recurring reference often becomes a verbal signature within the talk — a phrase the audience starts anticipating before the speaker delivers it.
 
 ## Combinatorics
-Master Story pairs with `narrative-arc` (the master story can serve as the arc's emotional through-line even when the talk's surface structure is topical), with `foreshadowing` (the first telling can plant elements paid off in later returns — plant the rag doll's name in the original, pay off "Pandy" as compressed shorthand later), and with `star-moment` (the first telling of the master story is often itself a S.T.A.R. emotive-storytelling moment). It composes with `big-idea` (the Big Idea is what the master story's metaphorical content is mapped to) and is reinforced by `bookends` (the first and last bookend slides often carry an image from the master story).
+Master Story pairs with `narrative-arc` (the master story can serve as the arc's emotional through-line even when the talk's surface structure is topical), with `foreshadowing` (the first telling can plant elements paid off in later returns — plant the rag doll's name in the original, pay off "Pandy" as compressed shorthand later), and with `star-moment` (the first telling of the master story is often itself a S.T.A.R. emotive-storytelling moment). It composes with `the-big-why` (the Big Idea is what the master story's metaphorical content is mapped to; the Big Idea construction rules live in the "Big Idea — Statement Format" subsection of `the-big-why.md`) and is reinforced by `bookends` (the first and last bookend slides often carry an image from the master story).
 
 ## Related Reading
 - Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 7 — "Emotive Storytelling" sub-type of S.T.A.R. moments includes Pastor John Ortberg's Pandy sermon as the canonical case study; the master-story technique is described as the woof and warp of a loom — "the master theme and Scripture hold the latitudinal messages together, and the stories are like the yarn that shuttles back and forth, creating patterns in the fabric." Wiley.

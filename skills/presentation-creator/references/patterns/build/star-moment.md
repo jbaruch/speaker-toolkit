@@ -12,7 +12,7 @@ detection_signals:
   - "single beat carries disproportionate weight in audience recall"
   - "matches one of five sub-types (dramatization / sound bite / evocative visual / emotive story / shocking statistic)"
   - "amplifies the Big Idea rather than distracting from it"
-related_patterns: [big-idea, sparkline, narrative-arc, vacation-photos, foreshadowing, call-to-adventure]
+related_patterns: [the-big-why, sparkline, narrative-arc, vacation-photos, foreshadowing, call-to-adventure]
 inverse_of: []
 difficulty: intermediate
 ---
@@ -67,7 +67,7 @@ The sub-types are individually detectable: dramatizations leave verbal cues in t
 Multi-dimensional pattern. Relates to Dimension 3 (Humor & Wit) for sound-bite and dramatization sub-types, since memorable beats often carry humor. Relates to Dimension 5 (Storytelling/Narrative) directly via the emotive-storytelling sub-type and the master-story technique. Relates to Dimension 13 (Slide Design) via the evocative-visual sub-type, where a single slide is constructed to be the moment. The pattern is one of the few that spans three vault dimensions, reflecting that a S.T.A.R. moment can manifest verbally, narratively, or visually.
 
 ## Combinatorics
-S.T.A.R. Moment pairs with `big-idea` (the moment must serve the Big Idea — every S.T.A.R. moment is a Big Idea amplifier), with `sparkline` (S.T.A.R. moments typically land at the structural peaks of the persuasive oscillation), and with `narrative-arc` (the master-story sub-type is a structural element of the arc itself). It composes with `foreshadowing` (a S.T.A.R. moment can be planted early as a teaser and paid off later as the full beat) and with `call-to-adventure` (the gap-reveal is often executed as a S.T.A.R. moment — Jobs's "today, Apple is going to reinvent the phone" with the iPod-rotary-dial fake is simultaneously a call-to-adventure and a memorable-dramatization S.T.A.R.).
+S.T.A.R. Moment pairs with `the-big-why` (the moment must serve the Big Idea — every S.T.A.R. moment is a Big Idea amplifier; the Big Idea construction rules live in the "Big Idea — Statement Format" subsection of `the-big-why.md`), with `sparkline` (S.T.A.R. moments typically land at the structural peaks of the persuasive oscillation), and with `narrative-arc` (the master-story sub-type is a structural element of the arc itself). It composes with `foreshadowing` (a S.T.A.R. moment can be planted early as a teaser and paid off later as the full beat) and with `call-to-adventure` (the gap-reveal is often executed as a S.T.A.R. moment — Jobs's "today, Apple is going to reinvent the phone" with the iPod-rotary-dial fake is simultaneously a call-to-adventure and a memorable-dramatization S.T.A.R.).
 
 It overlaps with `vacation-photos` (full-bleed image slides) for the evocative-visual sub-type — vacation-photos is the design pattern; star-moment is the construction-purpose pattern. The two compose: a vacation-photos-style slide *intentionally elevated* to carry a S.T.A.R. moment is stronger than either pattern alone.
 

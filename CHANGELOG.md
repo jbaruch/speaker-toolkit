@@ -58,11 +58,19 @@ Transform Audiences* (Wiley, 2010).
 
 ### Slide Design Spec
 
-- New `slide-design-spec.md` §11.13 *Visual Relationships* — five
-  diagram-type taxonomy (flow / structure / cluster / radiate /
-  influence) for converting bulleted slides into diagrams.
-- New `slide-design-spec.md` §11.14 *Image Juxtaposition* — paired
-  contrasting visuals technique for comparison-shaped content.
+The speaker's `slide-design-spec.md` lives in their vault at
+`~/.claude/rhetoric-knowledge-vault/slide-design-spec.md` (not in
+this repo — it's per-speaker generated data). Two new reference
+sections added to the vault file:
+
+- §11.13 *Visual Relationships* — five-diagram-type taxonomy
+  (flow / structure / cluster / radiate / influence) for converting
+  bulleted slides into diagrams.
+- §11.14 *Image Juxtaposition* — paired contrasting visuals
+  technique for comparison-shaped content.
+
+The presentation-creator skill in this repo references those
+sections via `phase5-slides.md` (General Design Principles).
 
 ### Phase Documentation
 

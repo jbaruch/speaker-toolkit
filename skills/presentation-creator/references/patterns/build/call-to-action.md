@@ -12,7 +12,7 @@ detection_signals:
   - "asks are specific and immediately executable, not generic"
   - "asks are differentiated by audience action type (doer/supplier/influencer/innovator)"
   - "the ask is named, not implied"
-related_patterns: [sparkline, coda, mentor, big-idea, foreshadowing]
+related_patterns: [sparkline, coda, mentor, the-big-why, foreshadowing]
 inverse_of: []
 difficulty: foundational
 ---
@@ -68,7 +68,7 @@ The clearest absence-signal is a closing zone consisting only of "thanks", "ques
 Relates to Dimension 4 (Audience Interaction) because the Call to Action is the most explicit moment of speaker-to-audience direction in the entire talk. Relates to Dimension 6 (Closing Pattern) as one of two named structural elements in the closing zone (alongside `coda` and `new-bliss`). Relates to Dimension 9 (Persuasion Techniques) because the Call to Action is the moment persuasion converts to behavior — without it, persuasion remains abstract.
 
 ## Combinatorics
-Call to Action pairs with `sparkline` (where it is the second of two turning points), with `big-idea` (the asks must serve the Big Idea — every ask should make the Big Idea more real), and with `mentor` (the audience-as-hero stance dictates that the asks empower the audience's own journey rather than serve the speaker's agenda). It composes immediately with `new-bliss` (which must follow it for the closing to land) and with `coda` (which provides the reference materials supporting the asks — links, resources, contact information).
+Call to Action pairs with `sparkline` (where it is the second of two turning points), with `the-big-why` (the asks must serve the Big Idea — every ask should make the Big Idea more real; the Big Idea construction rules live in the "Big Idea — Statement Format" subsection of `the-big-why.md`), and with `mentor` (the audience-as-hero stance dictates that the asks empower the audience's own journey rather than serve the speaker's agenda). It composes immediately with `new-bliss` (which must follow it for the closing to land) and with `coda` (which provides the reference materials supporting the asks — links, resources, contact information).
 
 It is the inverse of the unnamed antipattern of the "thanks-and-questions" close — a closing zone that delivers no ask, leaves the audience without a path forward, and hopes that motivation alone will produce action.
 

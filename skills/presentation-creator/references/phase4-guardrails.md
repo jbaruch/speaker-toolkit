@@ -323,7 +323,7 @@ The pass produces *flags*, not automatic deletions. The author makes the actual 
 
 ## 12. Emotion-Balance Check
 
-**Always runs.** Per `patterns/build/sparkline.md` (the "Three Contrast Types" subsection) and Duarte's *karios* principle, the analytical/emotional ratio of the outline must match the audience type.
+**Always runs.** Per `patterns/build/sparkline.md` (the "Three Contrast Types" subsection) and Duarte's *kairos* principle, the analytical/emotional ratio of the outline must match the audience type.
 
 ### Check
 

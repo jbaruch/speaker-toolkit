@@ -12,7 +12,7 @@ detection_signals:
   - "transition language signaling self-counterargument ('You might be thinking…', 'I know what you're going to say…', 'The natural objection is…')"
   - "objections are addressed in the same section as the related claim, not deferred to Q&A"
   - "the strongest counter-position is steel-manned, not strawmanned"
-related_patterns: [know-your-audience, mentor, peer-review, sparkline, big-idea]
+related_patterns: [know-your-audience, mentor, peer-review, sparkline, the-big-why]
 inverse_of: []
 difficulty: intermediate
 ---
@@ -68,7 +68,7 @@ Detection is harder for skilled speakers who use inoculation seamlessly without 
 Relates to Dimension 4 (Audience Interaction) because inoculation is fundamentally a move in anticipation of audience response — the speaker engages with the audience's likely internal monologue rather than ignoring it. Relates to Dimension 9 (Persuasion Techniques) as one of the most powerful tools for moving an audience that starts with active resistance, because the move converts adversarial dynamic into collaborative dynamic by demonstrating that the speaker has already considered what the audience would object to.
 
 ## Combinatorics
-Inoculation depends on `know-your-audience` (specifically the resistance-map exercise — without a map, inoculation has nothing to target) and on `mentor` (the audience-as-hero stance dictates that objections are addressed *in service of the audience*, not to score points against them). It pairs with `big-idea` (every inoculation orbits the Big Idea — what objections would land *against this specific thesis?*) and with `sparkline` (inoculation moves typically appear in the persuasive middle, between the Call to Adventure and the Call to Action, where the back-and-forth oscillation between "what is" and "what could be" naturally creates the moments where objections need to be voiced and addressed).
+Inoculation depends on `know-your-audience` (specifically the resistance-map exercise — without a map, inoculation has nothing to target) and on `mentor` (the audience-as-hero stance dictates that objections are addressed *in service of the audience*, not to score points against them). It pairs with `the-big-why` (every inoculation orbits the Big Idea — what objections would land *against this specific thesis?*; the Big Idea construction rules live in the "Big Idea — Statement Format" subsection of `the-big-why.md`) and with `sparkline` (inoculation moves typically appear in the persuasive middle, between the Call to Adventure and the Call to Action, where the back-and-forth oscillation between "what is" and "what could be" naturally creates the moments where objections need to be voiced and addressed).
 
 It is the deliberate inverse of two failure modes: the *defensive Q&A* (where the speaker waits for objections rather than preempting them) and the *strawman counter* (where the speaker raises a weak version of the objection to dispatch easily, signaling dishonesty).
 

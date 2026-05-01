@@ -61,13 +61,13 @@ combinatorics are needed.
 
 | ID | Name | Type | Vault Dims | Creator Phases | Related |
 |----|------|------|------------|----------------|---------|
-| sparkline | Sparkline | pattern | 2, 5, 9 | architecture, content | narrative-arc, bookends, big-idea, call-to-adventure, call-to-action, new-bliss |
-| call-to-adventure | Call to Adventure | pattern | 1, 2, 9 | architecture, content | sparkline, big-idea, opening-punch, narrative-arc |
-| call-to-action | Call to Action | pattern | 4, 6, 9 | content, publishing | sparkline, coda, mentor, big-idea |
+| sparkline | Sparkline | pattern | 2, 5, 9 | architecture, content | narrative-arc, bookends, the-big-why, call-to-adventure, call-to-action, new-bliss |
+| call-to-adventure | Call to Adventure | pattern | 1, 2, 9 | architecture, content | sparkline, the-big-why, opening-punch, narrative-arc |
+| call-to-action | Call to Action | pattern | 4, 6, 9 | content, publishing | sparkline, coda, mentor, the-big-why |
 | new-bliss | New Bliss | pattern | 5, 6, 9 | content | sparkline, call-to-action, coda, bookends |
-| star-moment | S.T.A.R. Moment | pattern | 3, 5, 13 | content, slides | big-idea, sparkline, narrative-arc, vacation-photos, foreshadowing |
-| inoculation | Inoculation | pattern | 4, 9 | content, guardrails | know-your-audience, mentor, peer-review, sparkline |
-| master-story | Master Story | pattern | 2, 5, 7 | content | narrative-arc, foreshadowing, sparkline, big-idea, star-moment |
+| star-moment | S.T.A.R. Moment | pattern | 3, 5, 13 | content, slides | the-big-why, sparkline, narrative-arc, vacation-photos, foreshadowing |
+| inoculation | Inoculation | pattern | 4, 9 | content, guardrails | know-your-audience, mentor, peer-review, sparkline, the-big-why |
+| master-story | Master Story | pattern | 2, 5, 7 | content | narrative-arc, foreshadowing, sparkline, the-big-why, star-moment |
 | coda | Coda | pattern | 6, 8 | content, slides | infodeck, vacation-photos |
 | peer-review | Peer Review | pattern | 7, 8 | content, guardrails | leet-grammars |
 | foreshadowing | Foreshadowing | pattern | 2, 5 | content | narrative-arc, talklet, backtracking, intermezzi |

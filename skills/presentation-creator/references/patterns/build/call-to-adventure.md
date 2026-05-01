@@ -12,7 +12,7 @@ detection_signals:
   - "Big Idea stated at the structural transition from setup to body"
   - "audience cannot remain neutral after this moment — they engage or resist"
   - "transition language signaling structural shift (e.g., 'But what if…', 'Imagine instead…', 'This is what we're missing.')"
-related_patterns: [sparkline, big-idea, opening-punch, narrative-arc, foreshadowing]
+related_patterns: [sparkline, the-big-why, opening-punch, narrative-arc, foreshadowing]
 inverse_of: []
 difficulty: intermediate
 ---
@@ -64,7 +64,7 @@ The clearest absence-signal is a talk that progresses smoothly from setup to con
 Relates to Dimension 1 (Opening Pattern) because the Call to Adventure is the structural close of the opening sequence — it marks the boundary the opening builds toward. Relates to Dimension 2 (Narrative Structure) because it is one of two named turning points in the sparkline form. Relates to Dimension 9 (Persuasion Techniques) because the gap-reveal is the moment the talk converts from informational mode to persuasive mode.
 
 ## Combinatorics
-Call to Adventure pairs with `sparkline` (where it is the first of two turning points), with `big-idea` (which is the content delivered at the pivot), with `opening-punch` (which sets up the room before the Call to Adventure lands), and with `foreshadowing` (early plants from the opening section often pay off at the Call to Adventure). It is reinforced by `know-your-audience` and the audience-as-hero stance from `mentor` — the speaker who has truly researched their audience produces a Call to Adventure that lands precisely on the audience's actual gap rather than a generic gap.
+Call to Adventure pairs with `sparkline` (where it is the first of two turning points), with `the-big-why` (which is the content delivered at the pivot — the Big Idea construction rules live in the "Big Idea — Statement Format" subsection of `the-big-why.md`), with `opening-punch` (which sets up the room before the Call to Adventure lands), and with `foreshadowing` (early plants from the opening section often pay off at the Call to Adventure). It is reinforced by `know-your-audience` and the audience-as-hero stance from `mentor` — the speaker who has truly researched their audience produces a Call to Adventure that lands precisely on the audience's actual gap rather than a generic gap.
 
 ## Related Reading
 - Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 2, 4 — Call to Adventure as the first sparkline turning point; explicit treatment of the "create dramatic tension by contrasting the commonplace with the lofty" rule, with case-study examples (Steve Jobs's iPhone launch, Beth Comstock's "Growth in a Downturn") that demonstrate the move. Wiley.

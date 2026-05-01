@@ -11,7 +11,7 @@ detection_signals:
   - "talk ends on a higher emotional plane than it started"
   - "concrete imagery of the world after audience adopts the proposed change"
   - "follows a Call to Action — does not replace it"
-related_patterns: [sparkline, call-to-action, coda, bookends, big-idea]
+related_patterns: [sparkline, call-to-action, coda, bookends, the-big-why]
 inverse_of: []
 difficulty: foundational
 ---
@@ -68,7 +68,7 @@ The clearest absence-signal is a talk that ends on the Call to Action itself, on
 Relates to Dimension 5 (Storytelling/Narrative) because the New Bliss is the resolution element of the presentation's story arc — the payoff that makes the journey worth taking. Relates to Dimension 6 (Closing Pattern) as one of three named closing-zone elements (alongside `call-to-action` and `coda`). Relates to Dimension 9 (Persuasion Techniques) because the New Bliss converts logical agreement into emotional commitment — the difference between an audience that agrees and an audience that acts.
 
 ## Combinatorics
-New Bliss must follow `call-to-action` — they are paired structural elements. It pairs with `sparkline` (where it is the talk's final element) and with `bookends` (the closing-bookend slide often visualizes the New Bliss). It composes with `coda` (which can sit *after* the New Bliss as supplementary reference material — links, contact, further reading — kept structurally separate from the persuasive close so the New Bliss retains its emotional weight). It pairs with `big-idea` because the New Bliss is the visualization of *what the Big Idea looks like once realized*; the two should feel like the same idea expressed twice — once in thesis form, once in vision form.
+New Bliss must follow `call-to-action` — they are paired structural elements. It pairs with `sparkline` (where it is the talk's final element) and with `bookends` (the closing-bookend slide often visualizes the New Bliss). It composes with `coda` (which can sit *after* the New Bliss as supplementary reference material — links, contact, further reading — kept structurally separate from the persuasive close so the New Bliss retains its emotional weight). It pairs with `the-big-why` because the New Bliss is the visualization of *what the Big Idea looks like once realized*; the two should feel like the same idea expressed twice — once in thesis form, once in vision form. The Big Idea construction rules live in the "Big Idea — Statement Format" subsection of `the-big-why.md`.
 
 It is the inverse of the unnamed antipattern of "ending on the asks" — a closing zone that delivers a Call to Action and then stops, leaving the audience burdened rather than motivated.
 

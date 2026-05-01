@@ -265,12 +265,12 @@ PRE-EVENT:
 [ ] The Stakeout — staging area identified near venue
 [ ] Posse — supporter(s) confirmed for front row
 [ ] Seeding Satisfaction — plan to arrive early and mingle
-[ ] First-impression-begins-before-entry (Duarte): pre-event communications
-    (invitation tone, agenda framing, bio wording) have shaped the audience's
-    first impression of you before you walk in. When you arrive, do NOT
-    head-down at the laptop fixing slides — engage warmly with early-arrivers,
-    shake hands, ask attendees questions. The mood you project before the
-    talk starts is part of the talk.
+[ ] First Impression — pre-event communications (invitation tone, agenda
+    framing, bio wording) have already shaped the audience's view of you
+    before you walk in; the room you walk into builds on that. Do NOT
+    arrive heads-down at the laptop fixing slides. Engage warmly with
+    early-arrivers, shake hands, ask questions. The mood you project
+    before the talk starts is part of the talk.
 [ ] Shoeless — comfort ritual ready
 
 DURING DELIVERY:
