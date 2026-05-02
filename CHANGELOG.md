@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### vault-ingress — pptx-extraction emits `template_layouts`
+
+`scripts/pptx-extraction.py` now extracts the master slide-layout
+catalog (`{index, name, placeholders}` per layout) and emits it under a
+top-level `template_layouts` key. Previously the script emitted only
+`per_slide_visual` and `global_design`, so each `vault-profile` regen
+silently carried forward the prior profile's hand-curated layouts
+without ever refreshing them from the source `.pptx`.
+
+`skills/vault-profile/SKILL.md` Step 3 now documents the merge
+behavior: the script is the source of truth for layout existence
+(`index`, `name`, `placeholders`), while the speaker-curated `use_for`
+field is preserved across regenerations by matching layout `name`.
+`skills/vault-profile/references/speaker-profile-schema.md` adds an
+inline note to the `template_layouts` example explaining the curation
+contract.
+
 ### Pattern Taxonomy — Vault-derived patterns (5)
 
 Five patterns observed across the vault corpus but not present in the

@@ -121,6 +121,39 @@ def extract_shape_info(shape):
     return info
 
 
+def extract_template_layouts(prs):
+    """Enumerate slide layouts defined by the presentation's masters.
+
+    Returns a list of {index, name, placeholders: [{idx, type}]} entries.
+    The `use_for` field documented in the speaker-profile schema is
+    intentionally curated by the speaker and is not emitted here — the
+    vault-profile aggregator preserves any prior `use_for` values across
+    regenerations rather than overwriting them with empty strings.
+    """
+    layouts = []
+    index = 0
+    for master in prs.slide_masters:
+        for layout in master.slide_layouts:
+            placeholders = []
+            for ph in layout.placeholders:
+                try:
+                    pt = ph.placeholder_format.type
+                    type_name = getattr(pt, "name", None) or str(pt).split(" ", 1)[0]
+                    placeholders.append({
+                        "idx": ph.placeholder_format.idx,
+                        "type": type_name,
+                    })
+                except Exception:
+                    pass
+            layouts.append({
+                "index": index,
+                "name": layout.name,
+                "placeholders": placeholders,
+            })
+            index += 1
+    return layouts
+
+
 def extract_pptx(pptx_path):
     """Main extraction function."""
     prs = Presentation(pptx_path)
@@ -129,6 +162,7 @@ def extract_pptx(pptx_path):
         "slide_count": len(prs.slides),
         "slide_width_inches": round(prs.slide_width / 914400, 2),
         "slide_height_inches": round(prs.slide_height / 914400, 2),
+        "template_layouts": extract_template_layouts(prs),
         "per_slide_visual": [],
         "global_design": {
             "fonts_used": Counter(),

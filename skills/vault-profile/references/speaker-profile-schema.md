@@ -46,6 +46,11 @@ creation at runtime.
         "use_for": "opening title slide, section dividers"
       }
     ],
+    // template_layouts: structural fields (index, name, placeholders) come
+    // from skills/vault-ingress/scripts/pptx-extraction.py. The use_for
+    // field is speaker-curated and persists across regenerations; the
+    // vault-profile aggregator merges fresh structural data with prior
+    // use_for values by matching layout name.
     "presentation_file_convention": "{presentations_dir}/{conference}/{year}/{talk-slug}/",
     "font_pair": {
       "title": {"name": "", "source": "google_fonts|system|custom"},
