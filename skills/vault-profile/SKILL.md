@@ -74,10 +74,10 @@ python3 skills/vault-ingress/scripts/pptx-extraction.py "$TEMPLATE_PPTX_PATH" > 
 
 **I/O contract** (defined in vault-ingress; see `skills/vault-ingress/scripts/pptx-extraction.py`):
 - Args: path to a `.pptx` file.
-- Stdout (JSON): per-slide visual data, shape types, global design stats, and the master layouts list under the top-level `template_layouts` key. Each layout entry has `{index, name, placeholders: [{idx, type}]}`.
+- Stdout (JSON): per-slide visual data, shape types, global design stats, and the master layouts list under the top-level `template_layouts` key. Each layout entry has `{index, master_index, name, placeholders: [{idx, type}]}`.
 - Exit non-zero with stderr message if the file is missing, unreadable, or not a valid `.pptx`.
 
-Merge the resulting layouts list into `infrastructure.template_layouts` in the profile being constructed. The script emits structural fields (`index`, `name`, `placeholders`); the `use_for` field is speaker-curated and is **not** emitted. When merging, key by `name`: for each fresh layout, copy any existing `use_for` value from the prior profile's matching-name entry. Layouts present in the prior profile but absent from the fresh extraction are dropped — the script is the source of truth for layout existence. If `template_pptx_path` is not set, leave `template_layouts` as an empty list and continue.
+Merge the resulting layouts list into `infrastructure.template_layouts` in the profile being constructed. The script emits structural fields (`index`, `master_index`, `name`, `placeholders`); the `use_for` field is speaker-curated and is **not** emitted. When merging, key by the `(master_index, name)` pair — PowerPoint allows the same layout name to appear under different slide masters, so name alone is insufficient. For each fresh layout, copy any existing `use_for` value from the prior profile's matching `(master_index, name)` entry. Layouts present in the prior profile but absent from the fresh extraction are dropped — the script is the source of truth for layout existence. If `template_pptx_path` is not set, leave `template_layouts` as an empty list and continue.
 
 Proceed immediately to Step 4.
 

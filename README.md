@@ -329,9 +329,9 @@ speaker-toolkit-tile/
             +-- phase0-intake.md through phase7-post-event.md  # Phase detail docs
             +-- patterns/                     # Presentation Patterns taxonomy (102 entries)
                 +-- _index.md                 # Master index, phase mapping, dimension lookup
-                +-- prepare/                  # 18 patterns + 3 antipatterns
-                +-- build/                    # 30 patterns + 10 antipatterns
-                +-- deliver/                  # 20 patterns + 12 antipatterns (11 unobservable)
+                +-- prepare/                  # 19 patterns + 3 antipatterns
+                +-- build/                    # 37 patterns + 10 antipatterns
+                +-- deliver/                  # 21 patterns + 12 antipatterns (11 unobservable)
 ```
 
 ## License

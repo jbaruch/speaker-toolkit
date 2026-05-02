@@ -5,19 +5,34 @@
 ### vault-ingress — pptx-extraction emits `template_layouts`
 
 `scripts/pptx-extraction.py` now extracts the master slide-layout
-catalog (`{index, name, placeholders}` per layout) and emits it under a
-top-level `template_layouts` key. Previously the script emitted only
-`per_slide_visual` and `global_design`, so each `vault-profile` regen
-silently carried forward the prior profile's hand-curated layouts
-without ever refreshing them from the source `.pptx`.
+catalog (`{index, master_index, name, placeholders}` per layout) and
+emits it under a top-level `template_layouts` key. Previously the
+script emitted only `per_slide_visual` and `global_design`, so each
+`vault-profile` regen silently carried forward the prior profile's
+hand-curated layouts without ever refreshing them from the source
+`.pptx`.
 
-`skills/vault-profile/SKILL.md` Step 3 now documents the merge
-behavior: the script is the source of truth for layout existence
-(`index`, `name`, `placeholders`), while the speaker-curated `use_for`
-field is preserved across regenerations by matching layout `name`.
+The `master_index` field disambiguates layouts that share a name
+across different slide masters — PowerPoint allows reuse of layout
+names like "Title and Content" across masters, so name alone is
+unsafe as a merge key. Placeholder extraction catches `AttributeError`
+specifically (rather than a bare `Exception` catch-all) and writes a
+diagnostic to stderr with master index + layout name + placeholder
+context when a malformed placeholder is skipped.
+
+`skills/vault-profile/SKILL.md` Step 3 documents the merge contract:
+the script is the source of truth for layout existence (`index`,
+`master_index`, `name`, `placeholders`), while the speaker-curated
+`use_for` field is preserved across regenerations by matching the
+`(master_index, name)` pair.
 `skills/vault-profile/references/speaker-profile-schema.md` adds an
 inline note to the `template_layouts` example explaining the curation
 contract.
+
+`tests/test_pptx_extraction.py` adds 6 regression tests covering the
+new `extract_template_layouts` function: emitted-key assertion,
+default-count baseline, per-entry schema, sequential global indices,
+placeholder schema (idx/type), and known layout-name presence.
 
 ### Pattern Taxonomy — Vault-derived patterns (5)
 

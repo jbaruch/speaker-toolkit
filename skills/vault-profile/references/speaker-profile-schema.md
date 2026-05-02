@@ -41,16 +41,19 @@ creation at runtime.
     "template_layouts": [
       {
         "index": 0,
+        "master_index": 0,
         "name": "TITLE",
         "placeholders": [{"idx": 0, "type": "CENTER_TITLE"}],
         "use_for": "opening title slide, section dividers"
       }
     ],
-    // template_layouts: structural fields (index, name, placeholders) come
-    // from skills/vault-ingress/scripts/pptx-extraction.py. The use_for
-    // field is speaker-curated and persists across regenerations; the
-    // vault-profile aggregator merges fresh structural data with prior
-    // use_for values by matching layout name.
+    // template_layouts: structural fields (index, master_index, name,
+    // placeholders) come from skills/vault-ingress/scripts/pptx-extraction.py.
+    // The use_for field is speaker-curated and persists across
+    // regenerations; the vault-profile aggregator merges fresh structural
+    // data with prior use_for values by keying on the (master_index, name)
+    // pair — name alone is unsafe because PowerPoint permits identical
+    // layout names under different masters.
     "presentation_file_convention": "{presentations_dir}/{conference}/{year}/{talk-slug}/",
     "font_pair": {
       "title": {"name": "", "source": "google_fonts|system|custom"},

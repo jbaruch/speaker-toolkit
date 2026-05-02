@@ -124,29 +124,39 @@ def extract_shape_info(shape):
 def extract_template_layouts(prs):
     """Enumerate slide layouts defined by the presentation's masters.
 
-    Returns a list of {index, name, placeholders: [{idx, type}]} entries.
+    Returns a list of {index, master_index, name, placeholders: [{idx, type}]}
+    entries. `master_index` distinguishes layouts that share a name across
+    different slide masters (PowerPoint allows reuse of layout names like
+    "Title and Content" across masters) — the vault-profile aggregator keys
+    on the (master_index, name) pair when preserving curated `use_for`
+    values across regenerations.
+
     The `use_for` field documented in the speaker-profile schema is
-    intentionally curated by the speaker and is not emitted here — the
-    vault-profile aggregator preserves any prior `use_for` values across
-    regenerations rather than overwriting them with empty strings.
+    intentionally curated by the speaker and is not emitted here.
     """
     layouts = []
     index = 0
-    for master in prs.slide_masters:
+    for master_index, master in enumerate(prs.slide_masters):
         for layout in master.slide_layouts:
             placeholders = []
             for ph in layout.placeholders:
                 try:
-                    pt = ph.placeholder_format.type
+                    pf = ph.placeholder_format
+                    pt = pf.type
                     type_name = getattr(pt, "name", None) or str(pt).split(" ", 1)[0]
                     placeholders.append({
-                        "idx": ph.placeholder_format.idx,
+                        "idx": pf.idx,
                         "type": type_name,
                     })
-                except Exception:
-                    pass
+                except AttributeError as e:
+                    # Malformed placeholder — record skip with context, continue.
+                    sys.stderr.write(
+                        f"WARN: skipping placeholder in layout "
+                        f"master={master_index} '{layout.name}': {e}\n"
+                    )
             layouts.append({
                 "index": index,
+                "master_index": master_index,
                 "name": layout.name,
                 "placeholders": placeholders,
             })
