@@ -121,6 +121,49 @@ def extract_shape_info(shape):
     return info
 
 
+def extract_template_layouts(prs):
+    """Enumerate slide layouts defined by the presentation's masters.
+
+    Returns a list of {index, master_index, name, placeholders: [{idx, type}]}
+    entries. `master_index` distinguishes layouts that share a name across
+    different slide masters (PowerPoint allows reuse of layout names like
+    "Title and Content" across masters) — the vault-profile aggregator keys
+    on the (master_index, name) pair when preserving curated `use_for`
+    values across regenerations.
+
+    The `use_for` field documented in the speaker-profile schema is
+    intentionally curated by the speaker and is not emitted here.
+    """
+    layouts = []
+    index = 0
+    for master_index, master in enumerate(prs.slide_masters):
+        for layout in master.slide_layouts:
+            placeholders = []
+            for ph in layout.placeholders:
+                try:
+                    pf = ph.placeholder_format
+                    pt = pf.type
+                    type_name = getattr(pt, "name", None) or str(pt).split(" ", 1)[0]
+                    placeholders.append({
+                        "idx": pf.idx,
+                        "type": type_name,
+                    })
+                except AttributeError as e:
+                    # Malformed placeholder — record skip with context, continue.
+                    sys.stderr.write(
+                        f"WARN: skipping placeholder in layout "
+                        f"master={master_index} '{layout.name}': {e}\n"
+                    )
+            layouts.append({
+                "index": index,
+                "master_index": master_index,
+                "name": layout.name,
+                "placeholders": placeholders,
+            })
+            index += 1
+    return layouts
+
+
 def extract_pptx(pptx_path):
     """Main extraction function."""
     prs = Presentation(pptx_path)
@@ -129,6 +172,7 @@ def extract_pptx(pptx_path):
         "slide_count": len(prs.slides),
         "slide_width_inches": round(prs.slide_width / 914400, 2),
         "slide_height_inches": round(prs.slide_height / 914400, 2),
+        "template_layouts": extract_template_layouts(prs),
         "per_slide_visual": [],
         "global_design": {
             "fonts_used": Counter(),

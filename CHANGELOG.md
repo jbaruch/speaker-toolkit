@@ -2,6 +2,67 @@
 
 ## Unreleased
 
+### vault-ingress — pptx-extraction emits `template_layouts`
+
+`scripts/pptx-extraction.py` now extracts the master slide-layout
+catalog (`{index, master_index, name, placeholders}` per layout) and
+emits it under a top-level `template_layouts` key. Previously the
+script emitted only `per_slide_visual` and `global_design`, so each
+`vault-profile` regen silently carried forward the prior profile's
+hand-curated layouts without ever refreshing them from the source
+`.pptx`.
+
+The `master_index` field disambiguates layouts that share a name
+across different slide masters — PowerPoint allows reuse of layout
+names like "Title and Content" across masters, so name alone is
+unsafe as a merge key. Placeholder extraction catches `AttributeError`
+specifically (rather than a bare `Exception` catch-all) and writes a
+diagnostic to stderr with master index + layout name + placeholder
+context when a malformed placeholder is skipped.
+
+`skills/vault-profile/SKILL.md` Step 3 documents the merge contract:
+the script is the source of truth for layout existence (`index`,
+`master_index`, `name`, `placeholders`), while the speaker-curated
+`use_for` field is preserved across regenerations by matching the
+`(master_index, name)` pair.
+`skills/vault-profile/references/speaker-profile-schema.md` adds an
+inline note to the `template_layouts` example explaining the curation
+contract.
+
+`tests/test_pptx_extraction.py` adds 6 regression tests covering the
+new `extract_template_layouts` function: emitted-key assertion,
+default-count baseline, per-entry schema, sequential global indices,
+placeholder schema (idx/type), and known layout-name presence.
+
+### Pattern Taxonomy — Vault-derived patterns (5)
+
+Five patterns observed across the vault corpus but not present in the
+canonical Ford/McCullough/Schutta or Reynolds/Duarte sources have been
+formalized into the taxonomy:
+
+- `patterns/deliver/delayed-self-introduction.md` — open with a hook
+  before introducing the speaker; the bio answers a question the
+  audience has already implicitly asked. Vault dimensions 2, 11.
+- `patterns/build/three-part-close.md` — closing structure of three
+  separate slides (recap, CTA, thanks) rather than a single combined
+  closing slide. Vault dimensions 2, 10.
+- `patterns/build/progressive-reveal.md` — single complex base image
+  annotated cumulatively across multiple slides, with a payoff slide
+  that resolves the buildup. Vault dimensions 4, 7.
+- `patterns/deliver/anti-sell.md` — speaker downplays own product or
+  employer at moments where the audience expects a pitch, buying
+  credibility for substantive claims later. Vault dimensions 11, 6.
+- `patterns/build/meme-as-argument.md` — internet memes used as
+  argumentative devices rather than decoration; relies on shared
+  cultural reference to compress claims. Vault dimensions 4, 7, 12.
+
+Taxonomy size: **97 → 102** entries (72 → 77 patterns; antipatterns
+unchanged at 25). Observable count: **86 → 91**. Build phase: 34 → 37
+patterns; Deliver phase: 19 → 21 patterns.
+
+Index, summary stats, README structure tree, and `tile.json` summary +
+description updated to reflect new counts.
+
 ### Pattern Taxonomy — Resonate ingest
 
 Third source ingested alongside Ford/McCullough/Schutta (2013) and
