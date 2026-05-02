@@ -4,7 +4,7 @@ Structured reference taxonomy primarily based on *Presentation Patterns: Techniq
 Crafting Better Presentations* (Neal Ford, Matthew McCullough, Nathaniel Schutta, 2013),
 with supplementary patterns and reinforcements from *Presentation Zen* (Garr Reynolds,
 2nd ed., 2012) and *Resonate: Present Visual Stories that Transform Audiences* (Nancy
-Duarte, 2010). Contains 72 named patterns and 25 antipatterns organized by presentation
+Duarte, 2010). Contains 77 named patterns and 25 antipatterns organized by presentation
 lifecycle phase. See the Sources section at the end of this file for full citations.
 
 **This is the primary entry point.** The agent reads this file first, then drills into
@@ -57,11 +57,14 @@ combinatorics are needed.
 | alienating-artifact | Alienating Artifact | antipattern | 3, 10, 14 | guardrails | know-your-audience, brain-breaks |
 | celery | Celery | antipattern | 2, 14 | guardrails | required, know-your-audience, narrative-arc, brain-breaks |
 
-### Build Phase (34 patterns + 10 antipatterns)
+### Build Phase (37 patterns + 10 antipatterns)
 
 | ID | Name | Type | Vault Dims | Creator Phases | Related |
 |----|------|------|------------|----------------|---------|
 | sparkline | Sparkline | pattern | 2, 5, 9 | architecture, content | narrative-arc, bookends, the-big-why, call-to-adventure, call-to-action, new-bliss |
+| three-part-close | Three-Part Close | pattern | 2, 10 | content, slides | bookends, call-to-action, coda, new-bliss |
+| progressive-reveal | Progressive Reveal | pattern | 4, 7 | content, slides | composite-animation, foreshadowing, traveling-highlights, sparkline |
+| meme-as-argument | Meme as Argument | pattern | 4, 7, 12 | content, slides | entertainment, brain-breaks, foreshadowing, unifying-visual-theme |
 | call-to-adventure | Call to Adventure | pattern | 1, 2, 9 | architecture, content | sparkline, the-big-why, opening-punch, narrative-arc |
 | call-to-action | Call to Action | pattern | 4, 6, 9 | content, publishing | sparkline, coda, mentor, the-big-why |
 | new-bliss | New Bliss | pattern | 5, 6, 9 | content | sparkline, call-to-action, coda, bookends |
@@ -106,11 +109,13 @@ combinatorics are needed.
 | slideuments | Slideuments | antipattern | 8, 14 | guardrails | infodeck, charred-trail, gradual-consistency |
 | dead-demo | Dead Demo | antipattern | 11, 14 | guardrails | live-demo, a-la-carte-content |
 
-### Deliver Phase (19 patterns + 12 antipatterns)
+### Deliver Phase (21 patterns + 12 antipatterns)
 
 | ID | Name | Type | Vault Dims | Creator Phases | Related |
 |----|------|------|------------|----------------|---------|
 | preparation | Preparation | pattern | 14 | publishing | know-your-audience, carnegie-hall |
+| delayed-self-introduction | Delayed Self-Introduction | pattern | 2, 11 | content | opening-punch, the-big-why, anti-sell |
+| anti-sell | Anti-Sell | pattern | 11, 6 | content | delayed-self-introduction, the-big-why, mentor |
 | screen-blackout | Screen Blackout | pattern | 12, 13 | content, slides | breathing-room, intermezzi, brain-breaks, mentor |
 | carnegie-hall | Carnegie Hall | pattern | 12, 14 | publishing | crucible |
 | posse | Posse | pattern | 4 | publishing | greek-chorus, seeding-satisfaction |
@@ -288,12 +293,12 @@ they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation 
 
 ## Summary Statistics
 
-- **Total entries:** 97 (72 patterns + 25 antipatterns)
-- **Observable (vault-scorable):** 86 (64 patterns + 22 antipatterns)
+- **Total entries:** 102 (77 patterns + 25 antipatterns)
+- **Observable (vault-scorable):** 91 (69 patterns + 22 antipatterns)
 - **Unobservable (go-live checklist):** 11 (8 patterns + 3 antipatterns)
 - **Prepare phase:** 22 (19 patterns + 3 antipatterns)
-- **Build phase:** 44 (34 patterns + 10 antipatterns)
-- **Deliver phase:** 31 (19 patterns + 12 antipatterns)
+- **Build phase:** 47 (37 patterns + 10 antipatterns)
+- **Deliver phase:** 33 (21 patterns + 12 antipatterns)
 
 ## Sources
 

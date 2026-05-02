@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### Pattern Taxonomy — Vault-derived patterns (5)
+
+Five patterns observed across the vault corpus but not present in the
+canonical Ford/McCullough/Schutta or Reynolds/Duarte sources have been
+formalized into the taxonomy:
+
+- `patterns/deliver/delayed-self-introduction.md` — open with a hook
+  before introducing the speaker; the bio answers a question the
+  audience has already implicitly asked. Vault dimensions 2, 11.
+- `patterns/build/three-part-close.md` — closing structure of three
+  separate slides (recap, CTA, thanks) rather than a single combined
+  closing slide. Vault dimensions 2, 10.
+- `patterns/build/progressive-reveal.md` — single complex base image
+  annotated cumulatively across multiple slides, with a payoff slide
+  that resolves the buildup. Vault dimensions 4, 7.
+- `patterns/deliver/anti-sell.md` — speaker downplays own product or
+  employer at moments where the audience expects a pitch, buying
+  credibility for substantive claims later. Vault dimensions 11, 6.
+- `patterns/build/meme-as-argument.md` — internet memes used as
+  argumentative devices rather than decoration; relies on shared
+  cultural reference to compress claims. Vault dimensions 4, 7, 12.
+
+Taxonomy size: **97 → 102** entries (72 → 77 patterns; antipatterns
+unchanged at 25). Observable count: **86 → 91**. Build phase: 34 → 37
+patterns; Deliver phase: 19 → 21 patterns.
+
+Index, summary stats, README structure tree, and `tile.json` summary +
+description updated to reflect new counts.
+
 ### Pattern Taxonomy — Resonate ingest
 
 Third source ingested alongside Ford/McCullough/Schutta (2013) and
