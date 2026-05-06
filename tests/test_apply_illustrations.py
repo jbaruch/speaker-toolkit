@@ -163,3 +163,174 @@ def test_parse_zones_no_cross_slide_match(apply_illustrations, tmp_path):
     zones = apply_illustrations.parse_zones(outline)
     assert 4 not in zones
     assert zones.get(5) == "lower_third"
+
+
+# ── IMG+TXT layout tests ─────────────────────────────────────────────
+
+
+OUTLINE_MIXED_FORMATS = """\
+### Slide 1: Hook
+- Format: **FULL**
+- Image prompt: `Opening scene`
+- Safe zone: upper_third (sky)
+
+### Slide 2: Detail
+- Format: **IMG+TXT**
+- Image prompt: `A diagram with explanation`
+
+### Slide 3: Exception
+- Format: **EXCEPTION** — real screenshot
+- Visual: screenshot of the dashboard
+
+### Slide 4: Both fields
+- Format: **IMG+TXT**
+- Safe zone: lower_third (gradient)
+- Image prompt: `Mixed signals`
+"""
+
+
+def test_parse_img_txt_slides(apply_illustrations, tmp_path):
+    outline = tmp_path / "outline.md"
+    outline.write_text(OUTLINE_MIXED_FORMATS)
+    img_txt = apply_illustrations.parse_img_txt_slides(outline)
+    # Slide 2 is IMG+TXT only — included
+    assert 2 in img_txt
+    # Slide 1 is FULL — excluded
+    assert 1 not in img_txt
+    # Slide 3 is EXCEPTION — excluded
+    assert 3 not in img_txt
+    # Slide 4 has both Format: IMG+TXT and Safe zone — Safe zone wins, excluded
+    assert 4 not in img_txt
+
+
+def test_parse_img_txt_slides_empty(apply_illustrations, tmp_path):
+    outline = tmp_path / "outline.md"
+    outline.write_text(OUTLINE_NO_ZONES)
+    img_txt = apply_illustrations.parse_img_txt_slides(outline)
+    assert img_txt == set()
+
+
+def test_parse_zones_and_img_txt_disjoint(apply_illustrations, tmp_path):
+    """A slide with both Safe zone and Format: IMG+TXT goes to zones, not img_txt."""
+    outline = tmp_path / "outline.md"
+    outline.write_text(OUTLINE_MIXED_FORMATS)
+    zones = apply_illustrations.parse_zones(outline)
+    img_txt = apply_illustrations.parse_img_txt_slides(outline)
+    # Slide 4 has Safe zone — it's a FULL slide via the zone path
+    assert zones.get(4) == "lower_third"
+    assert 4 not in img_txt
+
+
+def test_apply_img_txt_layout_repositions_picture(apply_illustrations, tmp_path):
+    """Picture in an IMG+TXT slide is moved to the left column at ~60% width."""
+    prs = Presentation()
+    blank = prs.slide_layouts[6]
+    slide = prs.slides.add_slide(blank)
+    # Add a picture at an arbitrary position
+    img = tmp_path / "test.png"
+    # Minimal 1x1 PNG
+    img.write_bytes(
+        bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108020000"
+            "00907753de0000000c4944415478da6300010000000500010d0a2db40000"
+            "000049454e44ae426082"
+        )
+    )
+    slide.shapes.add_picture(str(img), Inches(2), Inches(2), Inches(4), Inches(3))
+
+    pic_moved, _ = apply_illustrations.apply_img_txt_layout(slide)
+    assert pic_moved == 1
+
+    pictures = [s for s in slide.shapes if s.shape_type == 13]  # PICTURE
+    bg = pictures[0]
+    assert bg.left == Inches(apply_illustrations.IMGTXT_IMG_LEFT_IN)
+    assert bg.top == Inches(apply_illustrations.IMGTXT_IMG_TOP_IN)
+    assert bg.width == Inches(apply_illustrations.IMGTXT_IMG_WIDTH_IN)
+    assert bg.height == Inches(apply_illustrations.IMGTXT_IMG_HEIGHT_IN)
+
+
+def test_apply_img_txt_layout_repositions_title(apply_illustrations):
+    """Title placeholder is repositioned to the right column."""
+    prs = Presentation()
+    title_layout = prs.slide_layouts[0]
+    slide = prs.slides.add_slide(title_layout)
+    if slide.shapes.title:
+        slide.shapes.title.text = "Right Column Title"
+
+    _, text_moved = apply_illustrations.apply_img_txt_layout(slide)
+    assert text_moved >= 1
+    assert slide.shapes.title.left == Inches(apply_illustrations.IMGTXT_TEXT_LEFT_IN)
+    assert slide.shapes.title.top == Inches(apply_illustrations.IMGTXT_TITLE_TOP_IN)
+
+
+def test_swap_or_insert_picture_inserts_when_missing(apply_illustrations, tmp_path):
+    """When a slide has no picture shape, swap_or_insert_picture adds one."""
+    prs = Presentation()
+    blank = prs.slide_layouts[6]
+    slide = prs.slides.add_slide(blank)
+    # No picture on the slide
+
+    img = tmp_path / "test.png"
+    img.write_bytes(
+        bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108020000"
+            "00907753de0000000c4944415478da6300010000000500010d0a2db40000"
+            "000049454e44ae426082"
+        )
+    )
+
+    pic = apply_illustrations.swap_or_insert_picture(slide, img)
+    assert pic is not None
+    pictures = [s for s in slide.shapes if s.shape_type == 13]
+    assert len(pictures) == 1
+    # Inserted full-bleed at slide dimensions
+    assert pictures[0].left == Inches(0)
+    assert pictures[0].top == Inches(0)
+
+
+def test_swap_or_insert_picture_swaps_when_present(apply_illustrations, tmp_path):
+    """When a slide already has a picture shape, swap_or_insert_picture swaps it."""
+    prs = Presentation()
+    blank = prs.slide_layouts[6]
+    slide = prs.slides.add_slide(blank)
+    img1 = tmp_path / "before.png"
+    img2 = tmp_path / "after.png"
+    png_bytes = bytes.fromhex(
+        "89504e470d0a1a0a0000000d49484452000000010000000108020000"
+        "00907753de0000000c4944415478da6300010000000500010d0a2db40000"
+        "000049454e44ae426082"
+    )
+    img1.write_bytes(png_bytes)
+    img2.write_bytes(png_bytes)
+    slide.shapes.add_picture(str(img1), Inches(2), Inches(2), Inches(4), Inches(3))
+    pictures_before = [s for s in slide.shapes if s.shape_type == 13]
+    assert len(pictures_before) == 1
+
+    pic = apply_illustrations.swap_or_insert_picture(slide, img2)
+    pictures_after = [s for s in slide.shapes if s.shape_type == 13]
+    # Still exactly one picture — swapped, not added
+    assert len(pictures_after) == 1
+    # python-pptx returns fresh wrapper objects each iteration, so identity-check
+    # via the underlying XML element rather than the Python object.
+    assert pic._element is pictures_after[0]._element
+    # Position untouched by swap (the FULL/IMG+TXT layout repositioning happens after)
+    assert pic.left == Inches(2)
+    assert pic.top == Inches(2)
+
+
+def test_imgtxt_geometry_constants_consistent(apply_illustrations):
+    """IMG+TXT image + text columns + margins fit the 13.333" slide."""
+    img_right = (
+        apply_illustrations.IMGTXT_IMG_LEFT_IN
+        + apply_illustrations.IMGTXT_IMG_WIDTH_IN
+    )
+    text_right = (
+        apply_illustrations.IMGTXT_TEXT_LEFT_IN
+        + apply_illustrations.IMGTXT_TEXT_WIDTH_IN
+    )
+    assert img_right < apply_illustrations.IMGTXT_TEXT_LEFT_IN, (
+        "Image must finish before the text column starts"
+    )
+    assert text_right <= apply_illustrations.SLIDE_W_IN, (
+        "Text column must fit within the slide width"
+    )

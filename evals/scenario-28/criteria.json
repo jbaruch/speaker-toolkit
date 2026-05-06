@@ -1,0 +1,46 @@
+{
+  "context": "Tests the illustrations skill's Step 1 mode routing — given a request and state, the agent picks Strategy, Generation, or Thumbnail mode (or a combination) and executes only the matching steps. Mode routing is the skill's first decisional gate; misrouting wastes the speaker's time.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Request A routes to Strategy mode",
+      "description": "Request A is identified as Strategy mode. The plan executes Step 2 (Define Style Strategy) and stops — does not run Steps 3–6. The 'why' notes that no STYLE ANCHOR exists yet, so generation cannot run.",
+      "max_score": 15
+    },
+    {
+      "name": "Request B routes to Generation mode",
+      "description": "Request B is identified as Generation mode. The plan executes Step 3 (deck illustrations), Step 4 (builds — present because the outline has 3 build blocks), and Step 5 (apply to deck — present because a .pptx exists). It does NOT run Step 2 (STYLE ANCHOR already exists) and does NOT run Step 6 (no thumbnail requested).",
+      "max_score": 20
+    },
+    {
+      "name": "Request C routes to Thumbnail mode",
+      "description": "Request C is identified as Thumbnail mode. The plan skips directly to Step 6 (Generate Thumbnail) and skips Steps 2–5. The 'why' notes that the talk has been delivered and the work is post-event.",
+      "max_score": 15
+    },
+    {
+      "name": "Step references resolve against the skill's canonical sequence",
+      "description": "Step references in the plan correspond to the actual routing-step (mode router) and the five action-step entries the skill exposes (Strategy, Generation: deck illustrations, Generation: builds, Generation: apply-to-deck, Thumbnail). No invented or paraphrased step labels.",
+      "max_score": 15
+    },
+    {
+      "name": "Request B includes builds because outline has Builds blocks",
+      "description": "The plan for Request B explicitly notes that Step 4 runs because the outline has slides with - Builds: blocks. If no builds existed, Step 4 would proceed silently per the skill's silence rule.",
+      "max_score": 10
+    },
+    {
+      "name": "Request B includes apply-to-deck because .pptx exists",
+      "description": "The plan for Request B explicitly notes that Step 5 runs because a clean deck .pptx exists. If no .pptx existed, Step 5 would finish without applying and presentation-creator's Phase 5 would call back later.",
+      "max_score": 10
+    },
+    {
+      "name": "Request A finishes after Step 2",
+      "description": "The plan for Request A states explicitly that the skill finishes after Step 2 because generation was not requested in the same invocation. Does NOT continue to Steps 3–6.",
+      "max_score": 10
+    },
+    {
+      "name": "No mode confusion across requests",
+      "description": "Each request's mode list contains only the modes that apply to that request — no leakage (e.g., Request A doesn't list Generation mode just because the directory will eventually need it; Request C doesn't list Strategy mode because the deck has a STYLE ANCHOR).",
+      "max_score": 5
+    }
+  ]
+}

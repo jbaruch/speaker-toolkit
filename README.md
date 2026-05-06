@@ -2,7 +2,7 @@
 
 [![tessl](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.tessl.io%2Fv1%2Fbadges%2Fjbaruch%2Fspeaker-toolkit)](https://tessl.io/registry/jbaruch/speaker-toolkit)
 
-A four-skill presentation system for conference speakers: analyze your existing talks to extract your rhetoric patterns, then create new presentations that match your documented style.
+A five-skill presentation system for conference speakers: analyze your existing talks to extract your rhetoric patterns, create new presentations that match your documented style, and produce the deck illustrations + thumbnail visual layer.
 
 ## What's New (0.17.0)
 
@@ -28,24 +28,29 @@ See [CHANGELOG.md](CHANGELOG.md) for full history.
 
 ## How It Works
 
-The toolkit has two independent skills connected by a shared **rhetoric vault** — a directory of structured knowledge about how you present.
+The toolkit is built on five skills connected by a shared **rhetoric vault** — a directory of structured knowledge about how you present.
 
 ```
                    VAULT
                  (shared data)
                  +-----------+
-  Skill 1        | summary   |        Skill 2
-  Rhetoric   --> | design    | <--  Presentation
-  Knowledge      | spec      |       Creator
-  Vault          | profile   |
-  (analysis)     +-----------+     (generation)
+  Vault skills   | summary   |        Creator skills
+  (analysis) --> | design    | <--  (generation)
+                 | spec      |
+                 | profile   |
+                 +-----------+
 ```
 
-**Skill 1: Rhetoric Knowledge Vault** parses your recorded talks (YouTube transcripts + slides from PPTX files or Google Drive PDFs) and extracts rhetoric patterns across 14 dimensions — opening hooks, humor style, audience interaction, slide design, pacing, transitions, verbal signatures, and more. It also scores each talk against the Presentation Patterns taxonomy. After analyzing enough talks, it generates a structured speaker profile including a pattern profile with mastery levels and signature combinations.
+**Vault skills (analysis):**
+- **vault-ingress** parses your recorded talks (YouTube transcripts + slides from PPTX files or Google Drive PDFs) and extracts rhetoric patterns across 14 dimensions — opening hooks, humor style, audience interaction, slide design, pacing, transitions, verbal signatures, and more. It also scores each talk against the Presentation Patterns taxonomy.
+- **vault-clarification** runs interactive sessions to validate findings and capture deliberate intent.
+- **vault-profile** generates a structured speaker profile, including a pattern profile with mastery levels and signature combinations, after enough talks are analyzed.
 
-**Skill 2: Presentation Creator** reads the vault at runtime and uses your documented patterns as a constitutional style guide to build new presentations. It follows a 7-phase process from intent distillation through slide generation, with a 4-tier Pattern Strategy for selecting presentation techniques, and a go-live checklist before delivery.
+**Creator skills (generation):**
+- **presentation-creator** reads the vault at runtime and uses your documented patterns as a constitutional style guide to build new presentations. It follows a 7-phase process from intent distillation through slide generation, with a 4-tier Pattern Strategy for selecting presentation techniques, and a go-live checklist before delivery. Delegates the visual layer to the illustrations skill.
+- **illustrations** owns the deck illustration strategy, generation, build chains, and YouTube thumbnails. Invoked by presentation-creator at the relevant phases (Phase 2 strategy, Phase 5 application, Phase 7 thumbnail).
 
-The skills never run simultaneously. You build the vault first (once, then incrementally), then use the creator whenever you need a new talk. The vault grows over time as you parse more talks, and the creator automatically picks up new patterns.
+The vault skills never run simultaneously with the creator skills. You build the vault first (once, then incrementally), then use the creator whenever you need a new talk. The vault grows over time as you parse more talks, and the creator automatically picks up new patterns.
 
 ## Installation
 
@@ -100,7 +105,7 @@ Every phase requires your approval before proceeding. The skill brings the rheto
 
 ### Speaker Neutrality
 
-Both skills are generic — they work for any speaker. All personalization lives in the vault:
+All skills are generic — they work for any speaker. All personalization lives in the vault:
 
 | Component | What it defines |
 |-----------|----------------|
@@ -311,27 +316,38 @@ speaker-toolkit-tile/
     |       +-- video-slide-extraction.md     # Layout heuristics, tuning tables, limitations
     |       +-- processing-rules.md           # Language policy, pattern migration logic
     +-- presentation-creator/
-        +-- SKILL.md                          # Main creator workflow (7 phases)
+    |   +-- SKILL.md                          # Main creator workflow (7 phases)
+    |   +-- scripts/
+    |   |   +-- _pptx_repair.py               # Shared viewProps cleanup for PPTX integrity
+    |   |   +-- generate-qr.py                # QR code generation with bg-color matching
+    |   |   +-- extract-resources.py          # Resource link extraction from outlines
+    |   |   +-- guardrail-check.py            # Outline guardrail validation
+    |   |   +-- strip-template.py             # Strip demo slides from template
+    |   |   +-- inject-speaker-notes.py       # Batch inject speaker notes from JSON
+    |   |   +-- insert-placeholder-slides.py  # Yellow placeholder slide insertion
+    |   |   +-- export-pdf.py                 # Export deck to PDF (PowerPoint or LibreOffice)
+    |   |   +-- delete-slides.py              # Delete slides by index
+    |   |   +-- reorder-slides.py             # Move slide from one position to another
+    |   +-- references/
+    |       +-- phase0-intake.md through phase7-post-event.md  # Phase detail docs
+    |       +-- patterns/                     # Presentation Patterns taxonomy (102 entries)
+    |           +-- _index.md                 # Master index, phase mapping, dimension lookup
+    |           +-- prepare/                  # 19 patterns + 3 antipatterns
+    |           +-- build/                    # 37 patterns + 10 antipatterns
+    |           +-- deliver/                  # 21 patterns + 12 antipatterns (11 unobservable)
+    +-- illustrations/
+        +-- SKILL.md                          # Visual layer workflow (6 mode-routed steps)
         +-- scripts/
-        |   +-- _pptx_repair.py               # Shared viewProps cleanup for PPTX integrity
-        |   +-- generate-illustrations.py     # Gemini API illustration generator + model comparison
+        |   +-- generate-illustrations.py     # Gemini API illustration generator + model comparison + builds
+        |   +-- apply-illustrations-to-deck.py # Swap into deck, reposition title, position IMG+TXT
+        |   +-- suggest-scrim-color.py        # Sample deck-tuned scrim color from illustrations
         |   +-- generate-thumbnail.py         # YouTube thumbnail via Gemini composition
-        |   +-- generate-qr.py                # QR code generation with bg-color matching
-        |   +-- extract-resources.py          # Resource link extraction from outlines
-        |   +-- guardrail-check.py            # Outline guardrail validation
-        |   +-- strip-template.py             # Strip demo slides from template
-        |   +-- inject-speaker-notes.py       # Batch inject speaker notes from JSON
-        |   +-- insert-placeholder-slides.py  # Yellow placeholder slide insertion
-        |   +-- export-pdf.py                 # Export deck to PDF (PowerPoint or LibreOffice)
-        |   +-- delete-slides.py              # Delete slides by index
-        |   +-- reorder-slides.py             # Move slide from one position to another
         +-- references/
-            +-- phase0-intake.md through phase7-post-event.md  # Phase detail docs
-            +-- patterns/                     # Presentation Patterns taxonomy (102 entries)
-                +-- _index.md                 # Master index, phase mapping, dimension lookup
-                +-- prepare/                  # 19 patterns + 3 antipatterns
-                +-- build/                    # 37 patterns + 10 antipatterns
-                +-- deliver/                  # 21 patterns + 12 antipatterns (11 unobservable)
+            +-- strategy.md                   # Phase 2 D#11 — style proposal, format vocabulary, model choice
+            +-- generation.md                 # Setup, edit/fix workflow, format vocabulary, apply-to-deck
+            +-- builds.md                     # Backwards-chained build generation + deck insertion
+            +-- thumbnails.md                 # Phase 7 thumbnail composition + slide selection
+            +-- title-placement.md            # Outline schema + scripts for Safe-zone title placement
 ```
 
 ## License

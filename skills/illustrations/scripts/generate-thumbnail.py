@@ -533,7 +533,7 @@ def extract_slide_from_pptx(pptx_path, slide_num, output_path=None):
         pass  # LibreOffice not installed
     except subprocess.TimeoutExpired:
         print("WARNING: LibreOffice timed out")
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError) as e:
         print(f"WARNING: LibreOffice extraction failed: {e}")
 
     # Try PowerPoint AppleScript on macOS
@@ -557,7 +557,7 @@ def extract_slide_from_pptx(pptx_path, slide_num, output_path=None):
                 return output_path
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             print(f"WARNING: PowerPoint AppleScript failed: {e}")
 
     print(f"ERROR: Could not extract slide {slide_num} from {pptx_path}")

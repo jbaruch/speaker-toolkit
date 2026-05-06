@@ -1,10 +1,10 @@
 {
-  "context": "Tests the thumbnail iteration rules: when speaker gives revision feedback, the agent modifies specific prompt components rather than regenerating from scratch. Also tests slide image resolution chain (existing illustration preferred), face preservation strengthening, and generate-thumbnail.py argument changes.",
+  "context": "Tests the thumbnail iteration rules: when speaker gives revision feedback, the agent modifies specific prompt components rather than regenerating from scratch. Also tests slide image resolution chain (existing illustration preferred), the framing-not-demands face rule (change style variant or title position to address face issues — never add face-preservation language), and generate-thumbnail.py argument changes.",
   "type": "weighted_checklist",
   "checklist": [
     {
       "name": "Iterate not restart strategy",
-      "description": "The revision-plan.md explicitly describes iterating on specific components (style, position, face preservation) rather than starting from scratch. The plan mentions that iterative refinement produces better results than cold restarts",
+      "description": "The revision-plan.md explicitly describes iterating on specific components (style variant, title position, slide choice) rather than starting from scratch. The plan mentions that iterative refinement produces better results than cold restarts",
       "max_score": 15
     },
     {
@@ -28,8 +28,8 @@
       "max_score": 5
     },
     {
-      "name": "Face preservation strengthened",
-      "description": "The plan addresses the face idealization feedback by mentioning stronger face preservation — either referencing the 'Maintain exact facial features' requirement or proposing to add emphasis to the preservation language in the prompt",
+      "name": "Face issue addressed via style variant, not preservation language",
+      "description": "The plan addresses the face idealization feedback by changing the style variant (the speaker's split_panel request fits this) or proposing to try a different slide image — NOT by adding 'maintain exact facial features' or other face-preservation demands. The thumbnail-generation-rules §6 framing-not-demands rule requires this: assertive face-preservation language combined with viral-styling demands trips Gemini's safety filter on real-person photos",
       "max_score": 15
     },
     {

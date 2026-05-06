@@ -130,8 +130,10 @@ Persuasion, Template Patterns, Pattern Strategy, Illustration Strategy. Each rea
 from the matching `instrument_catalog` entry + summary section. Decision #10 uses the
 4-tier Pattern Strategy from [references/patterns/_index.md](references/patterns/_index.md) + `profile → pattern_profile`.
 Decision #11 (Illustration Strategy) is optional — only when the author wants
-AI-generated illustrations; covers style proposals, format vocabulary, model choice,
-and visual continuity devices (see [references/phase2-architecture.md](references/phase2-architecture.md) for full workflow).
+AI-generated illustrations. Delegate to `Skill(skill: "illustrations")` for the full
+collaboration (style proposals grounded in vault `visual_style_history`, format
+vocabulary, model choice, visual continuity devices). The skill writes the approved
+STYLE ANCHOR block back into the outline header.
 
 For each: present options, recommend based on spec, let author choose.
 If co-presented, add role split and voice differentiation — see [references/phase1-intent.md](references/phase1-intent.md).
@@ -245,13 +247,23 @@ for the full technical reference.
 python3 scripts/strip-template.py "{template_pptx_path}" "{output_path}"
 ```
 
-Then open with MCP `open_presentation` and walk the outline: `add_slide` → `populate_placeholder`
-→ `manage_image` for each slide. When the outline has an Illustration Style Anchor,
-generate illustrations first (`generate-illustrations.py`), then generate builds for
-progressive-reveal slides (`generate-illustrations.py --build`), and use
-illustration-format-aware insertion (FULL → full-bleed, IMG+TXT → image + text,
-EXCEPTION → real asset). Build slides are inserted as sequential full-bleed images.
-Inject speaker notes via python-pptx batch after MCP generation.
+Then open with MCP `open_presentation` and walk the outline: `add_slide` →
+`populate_placeholder` → `manage_image` for each slide. For non-illustrated
+slides and EXCEPTION-format slides, handle inline as normal (the `[IMAGE NN]`
+placeholder resolves to a real asset). For FULL and IMG+TXT slides, build the
+slide structure (layout, title, footer) and **omit `manage_image`** — the
+slide is left without a picture shape. The illustrations skill handles
+insertion in the post-walk apply pass: `apply-illustrations-to-deck.py`'s
+`swap_or_insert_picture` adds a full-bleed picture when the slide has none,
+or swaps the existing one when the template seeded a picture placeholder.
+
+After the structural walk completes, if the outline has an Illustration Style
+Anchor, delegate to `Skill(skill: "illustrations")` to generate illustrations,
+generate any progressive-reveal builds, and apply them to the deck (the
+illustrations skill inserts/swaps images, repositions titles into Safe zones,
+inserts build sequences, and handles IMG+TXT positioning).
+
+Inject speaker notes via python-pptx batch after the illustrations skill returns.
 
 **Key rules from profile:**
 - `design_rules.background_color_strategy` — how to pick background colors
@@ -280,13 +292,14 @@ Gate: Author confirms published and ready to deliver.
 Triggered separately — days or weeks after delivery. Not part of the linear
 Phase 0-6 flow. The talk has been given and recorded.
 
-1. **YouTube Thumbnail** — select a high-impact slide, compose with speaker photo
-   and hook title via Gemini (`generate-thumbnail.py`), iterate with speaker
-2. **Video to Shownotes** — add video embed/link to existing shownotes page
+1. **YouTube Thumbnail** — delegate to `Skill(skill: "illustrations")` (the
+   skill handles slide selection, speaker-photo resolution, aesthetic precedence,
+   composition via Gemini, and speaker iteration).
+2. **Video to Shownotes** — add video embed/link to existing shownotes page.
 
 Read [references/phase7-post-event.md](references/phase7-post-event.md) for
-the full workflow including pre-flight checklist, slide selection criteria,
-prompt strategy, and tracking database updates.
+the pre-flight checklist and Step 7.2 (Video to Shownotes). Step 7.1 detail
+lives in `skills/illustrations/references/thumbnails.md`.
 
 ---
 

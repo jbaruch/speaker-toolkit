@@ -8,7 +8,7 @@ A speaker already generated a first thumbnail for their talk "Robocoders: Judgme
 
 The agent must plan the revision. The speaker chose slide 10, which has an existing illustration in the `illustrations/` directory. The profile has thumbnail preferences configured but the speaker is overriding some of them for this iteration.
 
-Using the presentation-creator skill, plan the thumbnail revision. Document the exact command and explain the revision strategy.
+Using the illustrations skill, plan the thumbnail revision. Document the exact command and explain the revision strategy.
 
 ## Output Specification
 
@@ -18,7 +18,7 @@ Produce the following files:
    - The revised `generate-thumbnail.py` command with updated arguments
    - Which arguments changed vs the original run
    - Where the slide image comes from (resolution chain)
-   - How face preservation is strengthened based on the feedback
+   - How the "face looks too idealized" feedback is addressed (per the thumbnail rules — via style variant or slide change, not by adding face-preservation language to the prompt)
    - Strategy explanation: iterate on specific components, not restart from scratch
 2. **`original-vs-revised.md`** — Side-by-side comparison of original and revised command arguments showing what changed
 

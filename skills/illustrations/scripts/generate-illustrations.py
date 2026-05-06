@@ -417,7 +417,7 @@ def _call_gemini(parts, model, api_key):
     except urllib.error.HTTPError as e:
         error_body = e.read().decode("utf-8", errors="replace")
         return None, f"HTTP {e.code}: {error_body[:500]}"
-    except Exception as e:
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
         return None, str(e)
 
     # Extract image from response

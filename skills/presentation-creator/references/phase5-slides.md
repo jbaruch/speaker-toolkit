@@ -41,57 +41,26 @@ Then open the clean deck with the MCP: `open_presentation(file_path=...)`.
 
 ---
 
-## Step 5.1b: Generate Illustrations (when illustration strategy is defined)
+## Step 5.1b: Illustrations (when illustration strategy is defined)
 
-If the outline includes an Illustration Style Anchor section:
+If the outline includes an Illustration Style Anchor section, illustration
+generation, build generation, and deck application are owned by the
+illustrations skill. Build the deck structure first (Steps 5.2–5.4), then
+delegate:
 
-1. Run `generate-illustrations.py <outline.md> remaining` to batch-generate all
-   missing illustrations
-2. Review generated images with the author — delete and regenerate as needed
-3. Once all images are approved, proceed to slide population
-
-Images are stored in `illustrations/` alongside the outline file. See
-**Image Generation Setup** below for prerequisites.
-
-## Step 5.1c: Generate Builds (when outline has build specifications)
-
-After illustrations are approved, generate progressive-reveal build images for slides
-that define a `- Builds:` section in the outline.
-
-**When to use builds:**
-- Complex diagrams revealed one element at a time
-- Checklists that accumulate items across the talk
-- Step-by-step processes shown progressively
-- Any visual that benefits from gradual reveal (NOT PowerPoint animations — these are
-  separate slides with separate images)
-
-**Backwards-chaining workflow:**
-1. Start from the full slide image (`illustrations/slide-NN.ext`)
-2. Use image editing to remove the last element → that's build step N-1
-3. Use the N-1 output as input, remove the next element → that's N-2
-4. Continue until build-00 (empty frame with title/borders only)
-5. The final build step is a copy of the full slide image
-
-This backwards approach produces better results than building up from empty, because
-the model preserves the existing composition and style at each step.
-
-**Run:**
-```bash
-python3 generate-illustrations.py presentation-outline.md --build 5    # one slide
-python3 generate-illustrations.py presentation-outline.md --build all  # all builds
+```
+Skill(skill: "illustrations")
 ```
 
-**Output:** `illustrations/builds/slide-NN-build-MM.jpg`
+The skill generates missing illustrations, generates build sequences for any
+slide with a `- Builds:` block, and runs `apply-illustrations-to-deck.py` to
+swap images into the deck, reposition titles into Safe zones, position
+IMG+TXT image+text columns, and insert build sequences. Returns control here
+once images are approved and applied.
 
-**Key instructions for build edit prompts:**
-- Each step description should explicitly say what to KEEP: "keep the road",
-  "keep the soldiers", etc.
-- Always include: "no parchment patch", "no new frames", "solid lines not dashed"
-- The edit safety suffixes ("DO NOT add any new elements", "let background continue
-  naturally") are auto-appended by the script
-
-**Review:** Check each build step image. For near-perfect results, use `--fix` for
-targeted corrections rather than regenerating the entire chain.
+For non-illustrated slides and EXCEPTION-format slides, handle inline as
+normal — the `[IMAGE NN]` placeholder resolves to a real asset that
+presentation-creator inserts during the slide walk.
 
 ---
 
@@ -113,47 +82,15 @@ Each layout entry has: `index`, `name`, `placeholders[]`, and `use_for`.
 | Full-bleed image/meme | BLANK layout (no placeholders) | Position everything manually |
 | Quote / caption | Caption layout if available | Attributed quotes, epigraphs |
 
-**Illustration-aware formats** (when outline has an Illustration Style Anchor):
+**Illustrated slides (FULL / IMG+TXT):** the illustrations skill owns layout
+choice and positioning — this skill leaves the slide structure with a title +
+empty body and the illustrations skill applies the image post-walk. See the
+illustrations skill's `skills/illustrations/references/generation.md` and `skills/illustrations/references/builds.md`
+for the format vocabulary, geometry, and build-insertion rules.
 
-| Outline Format     | Layout to Use                 | Image Handling                                           |
-|--------------------|------------------------------|----------------------------------------------------------|
-| FULL               | BLANK layout                 | `manage_image` full-bleed from `illustrations/slide-NN.ext` |
-| FULL + text overlay | BLANK layout                | `manage_image` full-bleed + `manage_text` overlay on top  |
-| IMG+TXT            | TITLE only (no body)         | `manage_image` ~60% of slide + `manage_text` beside/below |
-| EXCEPTION          | Per content type (see above) | Real asset from `[IMAGE NN]` placeholder path             |
-
-Match these generic types to the speaker's actual layout names/indices from the profile.
-
-**Build (progressive reveal) slide insertion:**
-
-Build slides are inserted as separate slides in the deck (not PowerPoint animations).
-Each build step is a full-bleed image from `illustrations/builds/slide-NN-build-MM.jpg`.
-
-| Step | Source | Layout | Notes |
-|------|--------|--------|-------|
-| build-00 | `builds/slide-NN-build-00.jpg` | BLANK | Empty frame — first slide shown |
-| build-01 | `builds/slide-NN-build-01.jpg` | BLANK | First element revealed |
-| ... | ... | BLANK | Progressive reveals |
-| build-N | Copy of `slide-NN.ext` | BLANK | Full image — final reveal |
-
-Insertion rules:
-- Insert build slides in order: build-00 (empty), build-01, ..., build-N (full)
-- All build slides use the BLANK layout with `manage_image` full-bleed positioning
-  (`left=0, top=0, width=10, height=7.5`)
-- Speaker notes go ONLY on the final build step (the full image). Earlier build steps
-  get empty notes — the speaker advances through them silently or with ad-lib narration
-- Build slides count toward the slide budget — factor them in during Phase 4 guardrails
-- The final build step (build-N) is visually identical to the parent slide. In the deck,
-  the parent slide is replaced by its build sequence (not duplicated after it)
-
-```python
-# Example: inserting build slides for slide 5 with 3 build steps
-builds_dir = "illustrations/builds"
-for step in range(0, 4):  # build-00 through build-03
-    img_path = f"{builds_dir}/slide-05-build-{step:02d}.jpg"
-    # add_slide with BLANK layout
-    # manage_image full-bleed
-```
+**EXCEPTION format:** real assets only — pick the layout per content type
+(bullet list, comparison, etc.) and resolve the image source from the
+`[IMAGE NN]` placeholder, not from `illustrations/`.
 
 Also review the template catalog in `slide-design-spec.md` Section 7 for rich
 patterns (SWOT, timelines, funnels, competitor matrices, etc.) that may be available
@@ -187,34 +124,13 @@ For each slide in the outline:
                 left=1, top=1.5, width=8, height=5)
    ```
 
-4b. **For illustrated slides** (when outline has Format: FULL or IMG+TXT):
+4b. **For illustrated slides (Format: FULL or IMG+TXT):**
 
-   Resolve the image file: `illustrations/slide-{NN}.jpg` (or `.png`), where NN is
-   the zero-padded slide number from the outline.
+   Build the slide structure (layout + title + footer) and skip image
+   insertion. The illustrations skill applies the image after this walk
+   completes — see Step 5.1b.
 
-   **FULL format** (full-bleed):
-   ```
-   # Use BLANK layout
-   manage_image(slide_index=N, operation="add",
-       image_source="illustrations/slide-{NN}.jpg",
-       left=0, top=0, width=10, height=7.5)
-   # If text overlay specified:
-   manage_text(slide_index=N, operation="add", text="...",
-       left=0.5, top=5.5, width=9, height=1.5,
-       font_size=36, color=[255,255,255])
-   ```
-
-   **IMG+TXT format** (illustration + text):
-   ```
-   # Use TITLE-only layout
-   manage_image(slide_index=N, operation="add",
-       image_source="illustrations/slide-{NN}.jpg",
-       left=0.3, top=0.8, width=4, height=6)
-   # Populate title placeholder with slide title
-   # manage_text for additional text beside the image
-   ```
-
-   **EXCEPTION format**:
+   **For EXCEPTION format:**
    - Use appropriate layout for the content type (bullet list, comparison, etc.)
    - Image source comes from the `[IMAGE NN]` placeholder, not from `illustrations/`
 
@@ -376,193 +292,15 @@ to know which is expected.
 
 ---
 
-## Image Generation Setup
+## Illustration Workflow
 
-Before generating illustrations, ensure:
-
-1. **API Key** — add your Gemini key to `{vault}/secrets.json` (preferred):
-   ```json
-   { "gemini": { "api_key": "your-key-here" } }
-   ```
-   Or set the `GEMINI_API_KEY` environment variable as a fallback:
-   ```bash
-   export GEMINI_API_KEY="your-key-here"
-   ```
-   Get a key from https://aistudio.google.com/app/apikey
-
-2. **Model availability** — verify the model specified in the outline header
-   is accessible with your key. The script reads the model name from the
-   `**Model:** \`model-name\`` line in the Illustration Style Anchor section.
-
-3. **Python 3** — the script uses only stdlib (`urllib`, `json`, `base64`).
-   No pip install needed.
-
-4. **Run the script:**
-   ```bash
-   python3 generate-illustrations.py presentation-outline.md remaining
-   ```
-   Options: `all`, `remaining`, or specific slide numbers (`2 5 9`, `2-10`)
-
-5. **Model comparison** (during Phase 2 model selection):
-   ```bash
-   python3 generate-illustrations.py presentation-outline.md --compare 2
-   ```
-   Generates the same prompt across multiple Gemini image models for visual
-   comparison. Results go to `illustrations/model-comparison/`.
-
-6. **Review & iterate** — check generated images in the `illustrations/`
-   directory. Delete any that need regeneration and re-run with `remaining`.
-
-7. **Image editing** (for targeted changes to existing images):
-   ```bash
-   python3 generate-illustrations.py presentation-outline.md --edit 5 "Erase the bottom-right label"
-   ```
-   Sends the existing `slide-05` image + edit prompt to the model. Output saves as
-   a new version (`slide-05-v2.jpg`). Safety suffixes are auto-appended.
-
-8. **Targeted fix pass** (iterate on near-perfect images):
-   ```bash
-   python3 generate-illustrations.py presentation-outline.md --fix 5 "Make the road more prominent. Keep the soldiers."
-   ```
-   Finds the latest version of the slide image and applies the fix, saving as
-   the next version number. Use `--fix` instead of regeneration when 90%+ of the
-   image is correct.
-
-9. **Build generation** (progressive reveals):
-   ```bash
-   python3 generate-illustrations.py presentation-outline.md --build 5
-   python3 generate-illustrations.py presentation-outline.md --build all
-   ```
-   Generates backwards-chained build steps from the full slide image.
-   Output: `illustrations/builds/slide-NN-build-MM.jpg`
-
-10. **Versioned generation** (generate without overwriting):
-    ```bash
-    python3 generate-illustrations.py presentation-outline.md -v 2 5 9
-    ```
-    Saves as `slide-NN-vM.ext` instead of overwriting the base image.
-
----
-
-## Illustration Editing & Iteration Guidelines
-
-Hard-won lessons from generating large illustration sets (50+ images). These are
-Gemini-specific behaviors discovered through production use — a general-purpose agent
-will not know them without this context.
-
-**When to regenerate vs. edit — the asymmetry rule:**
-- **Content additions** (adding a person, changing composition, adding a new element) →
-  **always regenerate from the full prompt**. Gemini's image editing strips the style
-  anchor when adding content — the new element renders in a flat generic style while the
-  rest of the image keeps the original style. This looks terrible and is not fixable
-  with iteration. Example: asking to "add a third soldier" to a military manual style
-  image will produce a flat cartoon soldier next to detailed pen-and-ink ones.
-- **Content modifications** (changing a hat style, making text bigger, recoloring) →
-  **regenerate, not edit**. Same problem: modifications that change the visual content
-  trigger the same style-stripping behavior as additions.
-- **Content removal** (erase a label, remove an element, remove an unwanted border) →
-  **image editing works well**. The model preserves the existing style when only
-  removing content because it doesn't need to generate new visual elements.
-- **Rule of thumb**: if the edit requires the model to *draw something new*, regenerate.
-  If it only requires *erasing or hiding* existing content, use image editing.
-
-**Never simplify original prompts — the specificity rule:**
-The full style anchor with ALL its specific details ("decorative military document
-border ornaments, classification stamps, and technical manual header formatting") is
-what produces the distinctive style. When someone shortens the anchor to save time
-(e.g., "Military manual style. Pen and ink."), the result looks generic — the model
-falls back to its default interpretation of "military" rather than the specific
-aesthetic the anchor describes. **Only append** to the anchor (e.g., add "large bold
-font", "WWII uniforms"), **never trim or paraphrase it**. When auditing prompts,
-flag any prompt that is significantly shorter than the full style anchor as a
-simplified-anchor anti-pattern.
-
-**Prompt engineering for edits — three mandatory components:**
-1. **Safety suffix: "DO NOT add any new elements."** — Gemini's editing mode
-   aggressively adds decorative elements (frames, borders, ornamental corners) that
-   were not in the original image. This suffix suppresses that behavior. Required on
-   every edit prompt.
-2. **Background suffix: "Let background continue naturally -- no parchment patch."** —
-   when erasing content, Gemini sometimes fills the gap with a flat-colored rectangle
-   ("parchment patch") instead of continuing the background texture. This suffix
-   prevents that artifact. Required when erasing content.
-3. **Explicit preservation list: "Keep the [X]. Keep the [Y]."** — Gemini removes
-   elements it was not asked to remove. If you say "erase the label", it may also
-   remove nearby soldiers, roads, or border ornaments. You must explicitly list
-   everything that should remain. When auditing edit prompts, flag any removal prompt
-   that lacks explicit preservation instructions.
-
-The `--edit` and `--fix` commands auto-append suffixes #1 and #2, but you must
-always add #3 (preservation list) manually — the script cannot know what to preserve.
-
-**Versioning strategy — never overwrite during iteration:**
-- Save every iteration as a new version: `slide-12-v2.jpg`, `slide-12-v3.jpg`, etc.
-- Never overwrite `slide-12.jpg` during iteration — keep the original as fallback
-- The `--fix` command auto-versions; `--edit` also auto-versions
-- Use `-v` flag with normal generation to version instead of overwrite
-- Compare versions side-by-side before promoting one to the base name
-- When writing triage plans or fix commands, always specify the versioned output path
-
-**Targeted fix passes — the 90% rule:**
-- For near-perfect images (90%+ correct), use `--fix` rather than full regeneration
-- Fix passes preserve most of the image while correcting specific issues
-- Chain multiple fixes if needed: v2 → v3 → v4, each improving on the previous
-- `--fix` automatically finds the latest version and saves the next one
-
-**PIL/programmatic masking — never use for builds or edits:**
-- Never use PIL, ImageMagick, or any programmatic image manipulation to create builds
-  or fix illustrations. Pasting colored rectangles or applying masks produces visible
-  texture mismatches (e.g., a flat parchment-colored rectangle on a textured
-  background). Always use the model's native image editing API instead.
-- When auditing fix logs, flag any use of PIL/Pillow, ImageMagick, or programmatic
-  image manipulation for illustration work as a technique anti-pattern.
-
-**Title-overlay compatibility — engineer the safe zone at generation time:**
-
-When a slide will have an overlaid title, the illustration must leave a
-clean negative-space region for it. Relying on a post-hoc placement
-heuristic to find one fails: the subject occupies the "best" area by
-default, and a brightness-based picker conflates darkness with
-cleanness (a bright uniform backdrop is a valid title region).
-
-Instead, assign a `SAFE ZONE` per slide in the design brief and inject
-a directive into every Image prompt:
-
-```
-TITLE SAFE ZONE -- CRITICAL COMPOSITION RULE: Reserve the {zone} of
-the 16:9 frame as clean uninterrupted negative space filled only with
-{surface}. No subjects, objects, text, props, or focal points may
-appear in this region. The scene's subjects must be composed entirely
-in the remaining portion of the frame. This negative space will carry
-an overlaid title.
-```
-
-Five zones are supported:
-
-- `upper_third` — uniform backdrop above the subject (open scenes,
-  portraits, hero shots)
-- `middle_third` — reserved center band, subject framing around it
-  (TV / monitor / window / portrait-frame / vignette compositions)
-- `lower_third` — uniform region below the subject (full-frame
-  posters, signs, or top-heavy compositions)
-- `left_half` — clean left half of the frame, subject composed on the
-  right (split-panel or "subject pushed to one side" compositions)
-- `right_half` — mirror of `left_half`, subject on the left
-
-The `{surface}` is chosen from the deck's style anchor — describe
-what should fill the reserved region in the style's own vocabulary
-(sky, fabric, paper, parchment, gradient, painted backdrop, etc.).
-Left/right thirds are intentionally excluded — too narrow for
-horizontal title text. `left_half` / `right_half` give the title
-enough column width to wrap across a few lines.
-
-Apply a zone-sized 45% black scrim between the picture and the title
-text. Scope matters: a full-slide scrim flattens the whole
-illustration, while a zone-sized scrim lifts the title locally. For
-styled decks (warm sepia, cool night, etc.) sample the scrim color
-from the deck's natural shadow tone instead of pure black.
-
-See `rules/title-overlay-rules.md` for the full policy.
+When the outline has an Illustration Style Anchor, illustration generation,
+build generation, and deck application are owned by the illustrations skill.
+See `skills/illustrations/references/generation.md`,
+`skills/illustrations/references/builds.md`, and
+`skills/illustrations/references/title-placement.md` for setup, edit/fix
+workflow, build chaining,
+and Safe-zone composition.
 
 ---
 

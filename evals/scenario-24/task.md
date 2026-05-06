@@ -6,7 +6,7 @@ A speaker delivered "Robocoders: Judgment Day" at DevNexus 2026 two weeks ago. T
 
 The outline has an illustration strategy (retro sci-fi propaganda poster aesthetic) with several full-bleed illustration slides, plus text slides, a bio slide, a shownotes slide, and bullet-heavy slides. The speaker's profile has thumbnail preferences configured.
 
-Using the presentation-creator skill, plan the complete thumbnail generation workflow: select candidate slides, propose a title, and document the exact command to generate the thumbnail.
+Using the illustrations skill, plan the complete thumbnail generation workflow: select candidate slides, propose a title, and document the exact command to generate the thumbnail.
 
 ## Output Specification
 
