@@ -26,8 +26,8 @@ because the model preserves the existing composition and style at each step.
 ## Run
 
 ```bash
-python3 generate-illustrations.py presentation-outline.md --build 5     # one slide
-python3 generate-illustrations.py presentation-outline.md --build all   # all builds
+python3 skills/illustrations/scripts/generate-illustrations.py presentation-outline.md --build 5     # one slide
+python3 skills/illustrations/scripts/generate-illustrations.py presentation-outline.md --build all   # all builds
 ```
 
 Output: `illustrations/builds/slide-NN-build-MM.jpg`.

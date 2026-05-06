@@ -24,7 +24,7 @@ Before generating, ensure:
 ## Slide Selection Modes
 
 ```bash
-python3 generate-illustrations.py presentation-outline.md remaining
+python3 skills/illustrations/scripts/generate-illustrations.py presentation-outline.md remaining
 ```
 
 `remaining` skips slides whose images already exist; `all` regenerates every
@@ -33,7 +33,7 @@ slide; specific slides can be passed as `2 5 9` or a range `2-10`.
 ## Model Comparison (Phase 2 model selection)
 
 ```bash
-python3 generate-illustrations.py presentation-outline.md --compare 2
+python3 skills/illustrations/scripts/generate-illustrations.py presentation-outline.md --compare 2
 ```
 
 Generates the same prompt across multiple Gemini image models for visual
@@ -91,7 +91,7 @@ for the full policy (auto-loaded).
 ## Apply to Deck
 
 ```bash
-python3 apply-illustrations-to-deck.py \
+python3 skills/illustrations/scripts/apply-illustrations-to-deck.py \
   deck.pptx illustrations/ presentation-outline.md \
   --out deck-with-titles.pptx \
   --scrim-color 100903 --scrim-alpha 47553   # omit for plain 45% black
