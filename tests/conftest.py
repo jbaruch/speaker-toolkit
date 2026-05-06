@@ -20,6 +20,10 @@ SCRIPTS_VI = os.path.join(
     os.path.dirname(__file__), os.pardir,
     "skills", "vault-ingress", "scripts",
 )
+SCRIPTS_ILL = os.path.join(
+    os.path.dirname(__file__), os.pardir,
+    "skills", "illustrations", "scripts",
+)
 
 
 def _import_script(path, name):
@@ -97,14 +101,14 @@ def guardrail_check():
 @pytest.fixture(scope="session")
 def generate_illustrations():
     return _import_script(
-        os.path.join(SCRIPTS_PC, "generate-illustrations.py"), "generate_illustrations"
+        os.path.join(SCRIPTS_ILL, "generate-illustrations.py"), "generate_illustrations"
     )
 
 
 @pytest.fixture(scope="session")
 def generate_thumbnail():
     return _import_script(
-        os.path.join(SCRIPTS_PC, "generate-thumbnail.py"), "generate_thumbnail"
+        os.path.join(SCRIPTS_ILL, "generate-thumbnail.py"), "generate_thumbnail"
     )
 
 
@@ -128,14 +132,14 @@ def export_pdf():
 @pytest.fixture(scope="session")
 def apply_illustrations():
     return _import_script(
-        os.path.join(SCRIPTS_PC, "apply-illustrations-to-deck.py"), "apply_illustrations"
+        os.path.join(SCRIPTS_ILL, "apply-illustrations-to-deck.py"), "apply_illustrations"
     )
 
 
 @pytest.fixture(scope="session")
 def suggest_scrim_color():
     return _import_script(
-        os.path.join(SCRIPTS_PC, "suggest-scrim-color.py"), "suggest_scrim_color"
+        os.path.join(SCRIPTS_ILL, "suggest-scrim-color.py"), "suggest_scrim_color"
     )
 
 

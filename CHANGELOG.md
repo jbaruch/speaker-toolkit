@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Extract `illustrations` skill from presentation-creator
+
+The visual layer (deck illustration strategy, generation, build chains, and
+YouTube thumbnails) moves from presentation-creator into a new `illustrations`
+skill. presentation-creator now delegates at three points: Phase 2 Decision
+#11 (style strategy), Phase 5 Step 5.1b (illustration generation + build
+generation + apply-to-deck), and Phase 7 Step 7.1 (thumbnail).
+
+- New skill at `skills/illustrations/` with mode-routed SKILL.md (strategy /
+  generation / thumbnail) and four references: `strategy.md`, `generation.md`,
+  `builds.md`, `thumbnails.md`. Existing `title-placement.md` moved here too.
+- Scripts moved: `generate-illustrations.py`, `apply-illustrations-to-deck.py`,
+  `generate-thumbnail.py`, `suggest-scrim-color.py`. Tests updated to point
+  at the new location; all 188 existing tests still pass.
+- `apply-illustrations-to-deck.py` now handles `Format: IMG+TXT` slides as a
+  first-class layout (image left ~60%, title + body right column), in addition
+  to the existing FULL + Safe-zone path. New `IMGTXT_*` geometry constants;
+  six new tests cover format parsing, picture repositioning, title repositioning,
+  and column-width consistency.
+- presentation-creator's Phase 2 / Phase 5 / Phase 7 references now stub to
+  `Skill(skill: "illustrations")` rather than carrying inline workflow.
+- `tile.json` adds the new skill entry. README updates skill count from four
+  to five and rewrites the architecture diagram.
+
 ### vault-ingress — pptx-extraction emits `template_layouts`
 
 `scripts/pptx-extraction.py` now extracts the master slide-layout

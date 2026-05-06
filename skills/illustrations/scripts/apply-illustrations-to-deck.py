@@ -1,17 +1,26 @@
 #!/usr/bin/env python3
-"""Apply generated illustrations to a deck with designed title placement.
+"""Apply generated illustrations to a deck.
 
-For each slide whose outline block has a `Safe zone:` field:
+Two slide formats are supported, distinguished by the per-slide outline block:
+
+FULL — slide block has a `Safe zone:` field (any of upper_third / middle_third /
+  lower_third / left_half / right_half):
   1. Replace the background picture with the matching illustration.
-  2. Add a zone-sized semi-transparent scrim between the picture and
-     the text (if not already present).
+  2. Add a zone-sized semi-transparent scrim between the picture and the text
+     (if not already present).
   3. Reposition title text boxes into the designed safe zone:
-     upper_third/middle_third/lower_third -> full-width band at the
-     matching Y; left_half/right_half -> narrower column on that side.
+     upper_third/middle_third/lower_third -> full-width band at the matching Y;
+     left_half/right_half -> narrower column on that side.
 
-The outline is the single source of truth for zone assignments — the
-same `Safe zone:` lines that `generate-illustrations.py` reads.
-See `rules/title-overlay-rules.md` for the policy behind this.
+IMG+TXT — slide block has a `Format: IMG+TXT` line and no `Safe zone:`:
+  1. Replace the background picture with the matching illustration.
+  2. Resize and position the picture as a left-column image (~60% of slide).
+  3. Reposition title and body placeholders into the right column.
+
+The outline is the single source of truth for slide format and zone
+assignments — the same lines that `generate-illustrations.py` reads.
+See `rules/title-overlay-rules.md` for the title-overlay policy and
+`skills/illustrations/references/generation.md` for the format vocabulary.
 
 Usage:
     apply-illustrations-to-deck.py DECK ILLUSTRATIONS_DIR OUTLINE_MD \\
@@ -54,6 +63,21 @@ ZONE_LAYOUT = {
 
 SUBTITLE_OFFSET_IN = 1.2
 
+# IMG+TXT layout — image ~60% of slide on the left, text column on the right.
+# Numbers chosen to leave a 0.3" outer margin, 0.2" gutter, and 0.6" footer band.
+IMGTXT_IMG_LEFT_IN = 0.3
+IMGTXT_IMG_TOP_IN = 0.8
+IMGTXT_IMG_WIDTH_IN = 8.0       # ~60% of 13.333" slide width
+IMGTXT_IMG_HEIGHT_IN = 5.9      # leaves a 0.8" footer band below
+IMGTXT_TEXT_LEFT_IN = IMGTXT_IMG_LEFT_IN + IMGTXT_IMG_WIDTH_IN + 0.2   # 8.5
+IMGTXT_TEXT_WIDTH_IN = SLIDE_W_IN - IMGTXT_TEXT_LEFT_IN - 0.3          # 4.533
+IMGTXT_TITLE_TOP_IN = IMGTXT_IMG_TOP_IN
+IMGTXT_TITLE_HEIGHT_IN = 1.9
+IMGTXT_BODY_TOP_IN = IMGTXT_TITLE_TOP_IN + IMGTXT_TITLE_HEIGHT_IN + 0.1   # 2.8
+IMGTXT_BODY_HEIGHT_IN = (
+    IMGTXT_IMG_TOP_IN + IMGTXT_IMG_HEIGHT_IN - IMGTXT_BODY_TOP_IN
+)   # aligns body bottom with image bottom — 3.9
+
 # Default scrim: 45% black. Decks with a strong tonal style (warm sepia,
 # cool night, etc.) should pass a sampled color via --scrim-color.
 # See suggest-scrim-color.py (same directory) and rules/title-overlay-rules.md §5.
@@ -63,30 +87,57 @@ DEFAULT_SCRIM_ALPHA = 45000
 SCRIM_SHAPE_NAME = "_title_scrim"
 
 
-def parse_zones(outline_path: Path) -> dict:
-    """Read `Safe zone:` lines from the outline.
+def parse_slide_blocks(outline_path: Path) -> dict:
+    """Parse per-slide blocks from the outline.
 
-    Parses per-slide blocks (### Slide N: ... up to the next ### or ##)
-    so a Safe zone line is never matched against the wrong slide.
-
-    Returns {slide_num: zone_name} where zone_name is a key of ZONE_LAYOUT.
+    Returns {slide_num: block_text}. Block scope is from the slide's `### Slide N:`
+    header up to the next `###` or `##` (so fields are never matched against the
+    wrong slide).
     """
     text = outline_path.read_text()
-    zones = {}
-    # Split into per-slide blocks bounded by ### headers
+    blocks = {}
     slide_block_re = re.compile(
         r"###\s+Slide\s+(\d+):(.*?)(?=\n###\s|\n##\s|\Z)", re.DOTALL
     )
-    zone_re = re.compile(
-        r"-\s*Safe zone:\s*(upper_third|middle_third|lower_third|left_half|right_half)"
-    )
     for block_match in slide_block_re.finditer(text):
         slide_num = int(block_match.group(1))
-        block_text = block_match.group(2)
-        zone_match = zone_re.search(block_text)
+        blocks[slide_num] = block_match.group(2)
+    return blocks
+
+
+_ZONE_RE = re.compile(
+    r"-\s*Safe zone:\s*(upper_third|middle_third|lower_third|left_half|right_half)"
+)
+_FORMAT_RE = re.compile(r"-\s*Format:\s*\**\s*(FULL|IMG\+TXT|EXCEPTION)\s*\**")
+
+
+def parse_zones(outline_path: Path) -> dict:
+    """Read `Safe zone:` lines from the outline.
+
+    Returns {slide_num: zone_name} where zone_name is a key of ZONE_LAYOUT.
+    Slides without a Safe zone field are absent from the dict.
+    """
+    zones = {}
+    for slide_num, block_text in parse_slide_blocks(outline_path).items():
+        zone_match = _ZONE_RE.search(block_text)
         if zone_match:
             zones[slide_num] = zone_match.group(1)
     return zones
+
+
+def parse_img_txt_slides(outline_path: Path) -> set:
+    """Read `Format: IMG+TXT` lines from the outline.
+
+    Returns a set of slide numbers whose Format is IMG+TXT and which do NOT have
+    a Safe zone field (Safe zone takes precedence, since it implies FULL).
+    """
+    img_txt = set()
+    for slide_num, block_text in parse_slide_blocks(outline_path).items():
+        format_match = _FORMAT_RE.search(block_text)
+        if format_match and format_match.group(1) == "IMG+TXT":
+            if not _ZONE_RE.search(block_text):
+                img_txt.add(slide_num)
+    return img_txt
 
 
 def replace_picture_blob(picture_shape, new_image_path: Path) -> None:
@@ -204,9 +255,55 @@ def reposition_title(slide, zone: str) -> int:
     return len(title_shapes)
 
 
+def apply_img_txt_layout(slide) -> tuple[int, int]:
+    """Position picture, title, and body for an IMG+TXT slide.
+
+    Image goes in the left column (~60% of slide); title and body placeholders
+    move to the right column. Returns (picture_repositioned, text_repositioned).
+    """
+    pic_moved = 0
+    pictures = [s for s in slide.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    if pictures:
+        bg = max(pictures, key=lambda s: (s.width or 0) * (s.height or 0))
+        bg.left = Inches(IMGTXT_IMG_LEFT_IN)
+        bg.top = Inches(IMGTXT_IMG_TOP_IN)
+        bg.width = Inches(IMGTXT_IMG_WIDTH_IN)
+        bg.height = Inches(IMGTXT_IMG_HEIGHT_IN)
+        pic_moved = 1
+
+    text_moved = 0
+    title = slide.shapes.title
+    if title is not None:
+        title.left = Inches(IMGTXT_TEXT_LEFT_IN)
+        title.top = Inches(IMGTXT_TITLE_TOP_IN)
+        title.width = Inches(IMGTXT_TEXT_WIDTH_IN)
+        title.height = Inches(IMGTXT_TITLE_HEIGHT_IN)
+        text_moved += 1
+
+    # Reposition any non-title placeholder (body/content) into the right column.
+    # Subtitle (idx 1) shares the body's column-and-stack treatment.
+    body_shapes = [
+        s for s in slide.placeholders
+        if s.has_text_frame
+        and s is not title
+        and s.placeholder_format.idx != 0  # idx 0 is the title; already handled
+    ]
+    body_shapes.sort(key=lambda s: s.top or 0)
+    for j, shape in enumerate(body_shapes):
+        shape.left = Inches(IMGTXT_TEXT_LEFT_IN)
+        shape.top = Inches(IMGTXT_BODY_TOP_IN + j * 0.1)  # tiny stagger if multiple
+        shape.width = Inches(IMGTXT_TEXT_WIDTH_IN)
+        # Single body fills the column; multiple bodies share the height.
+        per_shape_height = IMGTXT_BODY_HEIGHT_IN / max(len(body_shapes), 1)
+        shape.height = Inches(per_shape_height)
+        text_moved += 1
+
+    return pic_moved, text_moved
+
+
 def apply(
-    deck: Path, illust_dir: Path, zones: dict, out_deck: Path, ext: str,
-    scrim_hex: str, scrim_alpha: int,
+    deck: Path, illust_dir: Path, zones: dict, img_txt_slides: set,
+    out_deck: Path, ext: str, scrim_hex: str, scrim_alpha: int,
 ) -> list[dict]:
     if out_deck.exists():
         out_deck.unlink()
@@ -215,6 +312,7 @@ def apply(
     prs = Presentation(str(out_deck))
     results = []
 
+    # FULL slides with Safe zone — existing path
     for n, zone in sorted(zones.items()):
         illust = illust_dir / f"slide-{n:02d}.{ext}"
         if not illust.exists():
@@ -241,8 +339,38 @@ def apply(
         moved = reposition_title(slide, zone)
         print(f"  [{n:02d}] zone={zone}  moved={moved} text  scrim+{scrim_added}")
         results.append({
-            "slide": n, "zone": zone,
+            "slide": n, "format": "FULL", "zone": zone,
             "text_moved": moved, "scrim_added": scrim_added,
+        })
+
+    # IMG+TXT slides — image-left + text-right layout
+    for n in sorted(img_txt_slides):
+        illust = illust_dir / f"slide-{n:02d}.{ext}"
+        if not illust.exists():
+            print(f"  [{n:02d}] SKIP: missing {illust.name}")
+            continue
+        if n > len(prs.slides):
+            print(f"  [{n:02d}] SKIP: out of deck range")
+            continue
+
+        slide = prs.slides[n - 1]
+        pictures = [s for s in slide.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+        if not pictures:
+            print(f"  [{n:02d}] SKIP: no picture shape")
+            continue
+        bg = max(pictures, key=lambda s: (s.width or 0) * (s.height or 0))
+
+        try:
+            replace_picture_blob(bg, illust)
+        except Exception as e:
+            print(f"  [{n:02d}] FAILED image swap: {e}")
+            continue
+
+        pic_moved, text_moved = apply_img_txt_layout(slide)
+        print(f"  [{n:02d}] format=IMG+TXT  pic+{pic_moved}  text+{text_moved}")
+        results.append({
+            "slide": n, "format": "IMG+TXT",
+            "picture_repositioned": pic_moved, "text_moved": text_moved,
         })
 
     prs.save(str(out_deck))
@@ -265,8 +393,13 @@ def main():
 
     out_deck = args.out or args.deck.with_name(args.deck.stem + "-with-titles.pptx")
     zones = parse_zones(args.outline)
-    if not zones:
-        print(f"No `Safe zone:` lines found in {args.outline.name}. Nothing to do.")
+    img_txt_slides = parse_img_txt_slides(args.outline)
+    total_slides = len(zones) + len(img_txt_slides)
+    if total_slides == 0:
+        print(
+            f"No `Safe zone:` or `Format: IMG+TXT` lines found in "
+            f"{args.outline.name}. Nothing to do."
+        )
         return
 
     scrim_hex = args.scrim_color.lstrip("#").upper()
@@ -276,11 +409,11 @@ def main():
         raise SystemExit(f"--scrim-alpha must be 0..100000, got {args.scrim_alpha}")
 
     results = apply(
-        args.deck, args.illustrations, zones, out_deck, args.image_ext,
-        scrim_hex, args.scrim_alpha,
+        args.deck, args.illustrations, zones, img_txt_slides, out_deck,
+        args.image_ext, scrim_hex, args.scrim_alpha,
     )
     print(f"\nSaved {out_deck}")
-    print(f"Updated {len(results)}/{len(zones)} slides")
+    print(f"Updated {len(results)}/{total_slides} slides")
 
 
 if __name__ == "__main__":

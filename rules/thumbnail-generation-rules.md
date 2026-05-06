@@ -9,7 +9,7 @@ composition. The script encapsulates the researched prompt strategy, face
 preservation, and YouTube spec compliance.
 
 ```bash
-python3 skills/presentation-creator/scripts/generate-thumbnail.py \
+python3 skills/illustrations/scripts/generate-thumbnail.py \
   --slide-image illustrations/slide-15.png \
   --speaker-photo ~/photos/headshot.jpg \
   --title "JUDGMENT DAY" \

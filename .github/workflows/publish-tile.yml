@@ -26,6 +26,7 @@ jobs:
       - run: tessl skill review --threshold 85 skills/vault-clarification
       - run: tessl skill review --threshold 85 skills/vault-profile
       - run: tessl skill review --threshold 85 skills/presentation-creator
+      - run: tessl skill review --threshold 85 skills/illustrations
       - uses: tesslio/patch-version-publish@v1
         with:
           token: ${{ secrets.TESSL_TOKEN }}

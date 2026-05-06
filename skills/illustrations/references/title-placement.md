@@ -37,9 +37,11 @@ Slides without a `Safe zone:` line generate and apply exactly as today.
 
 | Script | Role |
 |--------|------|
-| `generate-illustrations.py` (modified) | Parses `Safe zone:` and appends the SAFE ZONE directive to each prompt before calling Gemini. No new CLI flags. |
-| `apply-illustrations-to-deck.py` (new) | Swaps generated images into a .pptx, adds a zone-sized scrim rectangle behind the title, and positions title text. Reads the same outline for zone data. Accepts `--scrim-color` / `--scrim-alpha`. |
-| `suggest-scrim-color.py` (new) | Samples the darkest 5% of pixels across a deck's illustrations and prints a scrim color + alpha tuned to the deck's natural shadow tone. |
+| `generate-illustrations.py` | Parses `Safe zone:` and appends the SAFE ZONE directive to each prompt before calling Gemini. |
+| `apply-illustrations-to-deck.py` | Swaps generated images into a .pptx, adds a zone-sized scrim rectangle behind the title, and positions title text. Reads the same outline for zone data. Accepts `--scrim-color` / `--scrim-alpha`. |
+| `suggest-scrim-color.py` | Samples the darkest 5% of pixels across a deck's illustrations and prints a scrim color + alpha tuned to the deck's natural shadow tone. |
+
+All three live in `skills/illustrations/scripts/`.
 
 ## End-to-end workflow
 

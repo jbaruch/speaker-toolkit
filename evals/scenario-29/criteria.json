@@ -1,0 +1,51 @@
+{
+  "context": "Tests the thumbnail aesthetic precedence chain (thumbnail-generation-rules §7). Baseline agents typically default to --aesthetic photo (the CLI default). Tile-specific behavior is to walk the precedence chain BEFORE invoking the script: profile aesthetic_preference → default_illustration_style fuzzy-match → confirmed_visual_intents fuzzy-match → photo. The fixture has no explicit aesthetic_preference but a comic-book-family default_illustration_style, so step 2 of the chain wins. Picking 'photo' is a chain-skip failure; picking 'comic_book' demonstrates the rule.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Recommended aesthetic is comic_book",
+      "description": "The aesthetic-decision.md and generate-command.sh both use --aesthetic comic_book, derived from the profile's default_illustration_style ('comic-book halftone with bold ink outlines') matching the comic-book keyword family.",
+      "max_score": 25
+    },
+    {
+      "name": "Decision cites the precedence step that produced the answer",
+      "description": "The decision write-up names step 2 of the precedence chain (default_illustration_style) as the deciding step, and explicitly notes that step 1 (aesthetic_preference) was checked first and was absent.",
+      "max_score": 15
+    },
+    {
+      "name": "Decision quotes the matched field value",
+      "description": "The write-up quotes the actual default_illustration_style string from the profile ('comic-book halftone with bold ink outlines' or close paraphrase) as the source of the match — not just 'the profile says comic-book'.",
+      "max_score": 10
+    },
+    {
+      "name": "No side-by-side comparison forced",
+      "description": "The plan does NOT offer a two-candidate photo+comic_book comparison. The thumbnail rule §7 says: lead with the recommendation; offer comparison only when the speaker is undecided. The speaker here delegated the choice — that is not undecided, that is delegated. A comparison would burn API calls and time unnecessarily.",
+      "max_score": 10
+    },
+    {
+      "name": "Speaker photo path from profile",
+      "description": "The generate-thumbnail.py invocation uses --speaker-photo /Users/maya/photos/headshot-2026.jpg, the value from publishing_process.thumbnail.speaker_photo_path. Not asked for separately, not invented.",
+      "max_score": 10
+    },
+    {
+      "name": "style_preference and title_position applied",
+      "description": "The invocation passes --style slide_dominant and --title-position top, sourced from publishing_process.thumbnail. These are independent of the aesthetic decision and should apply regardless.",
+      "max_score": 10
+    },
+    {
+      "name": "Brand colors applied",
+      "description": "The invocation passes --brand-colors '#1F3A5F,#E8B04B' (or the same colors in another accepted form), sourced from publishing_process.thumbnail.brand_colors.",
+      "max_score": 5
+    },
+    {
+      "name": "Step 1 not silently skipped",
+      "description": "The decision write-up explicitly states that aesthetic_preference was checked first and not found in the profile. A plan that starts at step 2 without acknowledging step 1 leaves the precedence chain audit-incomplete.",
+      "max_score": 10
+    },
+    {
+      "name": "Title argument matches the speaker's confirmed hook",
+      "description": "The invocation passes --title 'NEVER TRUST A MONKEY' (ALL CAPS, the speaker's confirmed hook). Not the full talk title, not a paraphrase.",
+      "max_score": 5
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+Thumbnail aesthetic precedence — recommend per the chain, not the CLI default
