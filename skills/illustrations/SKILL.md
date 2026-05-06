@@ -19,7 +19,9 @@ user-invocable: true
 
 # Illustrations
 
-Process steps in order. Step 1 routes to the applicable mode and tells you which later steps to skip; do not skip ahead before Step 1 has run.
+This skill is an action router — pick the step that matches the user's intent and execute only that step. Do not run other steps; do not parallelize.
+
+Step 1 inspects the request and the talk-directory state to decide the mode (Strategy / Generation / Thumbnail) and which subsequent step is the entry point. The "Multi-mode chaining" section at the end of Step 1 is the one explicit exception, and only triggers when a single invocation requests multiple modes.
 
 Owns every AI-generated image the toolkit produces: deck illustrations, build
 chains, and thumbnails. Reads the vault for visual history, the
@@ -43,9 +45,9 @@ Do not restate them here — apply them.
 | [skills/illustrations/references/generation.md](skills/illustrations/references/generation.md) | Deck generation, edit/fix workflow, model comparison |
 | [skills/illustrations/references/builds.md](skills/illustrations/references/builds.md) | Backwards-chained build generation |
 | [skills/illustrations/references/thumbnails.md](skills/illustrations/references/thumbnails.md) | Phase 7 thumbnail composition + slide selection |
-| `scripts/generate-illustrations.py` | Deck illustrations, edits, fixes, builds, model comparison |
-| `scripts/apply-illustrations-to-deck.py` | Insert illustrations + builds into a .pptx |
-| `scripts/generate-thumbnail.py` | YouTube thumbnail composition |
+| `skills/illustrations/scripts/generate-illustrations.py` | Deck illustrations, edits, fixes, builds, model comparison |
+| `skills/illustrations/scripts/apply-illustrations-to-deck.py` | Insert illustrations + builds into a .pptx |
+| `skills/illustrations/scripts/generate-thumbnail.py` | YouTube thumbnail composition |
 
 ## Step 1 — Route by Mode
 
@@ -59,9 +61,13 @@ Determine which of three modes applies and execute only the matching steps:
 - **Thumbnail** — talk has been delivered and a video URL is available.
   Skip to Step 6.
 
-If multiple modes were requested in one invocation, run them in order
-(Strategy → Generation → Thumbnail). Proceed immediately to the first
-applicable step; do not pause for confirmation between modes.
+### Multi-mode chaining
+
+If — and only if — a single invocation requests multiple modes (e.g., "design
+the visual style, then generate everything"), run them in order
+Strategy → Generation → Thumbnail. Proceed immediately to the first applicable
+step; do not pause for confirmation between modes. A single-mode invocation
+runs exactly the one matching step's chain and stops.
 
 ## Step 2 — Define Style Strategy
 
