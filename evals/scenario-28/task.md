@@ -56,8 +56,8 @@ Produce one file: **`mode-routing-plan.md`**, structured as:
 - Why this routing: <one sentence>
 ```
 
-For each request, the steps you list MUST be the actual numbered steps from the illustrations skill (Step 1 routes; Steps 2–6 execute). Do not invent step numbers or descriptions.
+List actual steps from the illustrations skill — don't invent step numbers or descriptions.
 
 ## Inputs Provided
 
-No fixture files — the state descriptions above are the inputs. The agent applies the illustrations skill's Step 1 routing logic to each request.
+No fixture files — the state descriptions above are the inputs.
