@@ -122,9 +122,14 @@ Insert generated illustrations and build sequences into the .pptx. Build
 slides replace their parent slide rather than duplicating after it; speaker
 notes go on the final build step only.
 
+The script contract is `DECK ILLUSTRATIONS_DIR OUTLINE_MD` (positional, in
+that order), with optional `--out`, `--image-ext`, `--scrim-color`,
+`--scrim-alpha`. It writes a new `<stem>-with-titles.pptx` next to the
+input deck unless `--out` is given.
+
 ```bash
 python3 skills/illustrations/scripts/apply-illustrations-to-deck.py \
-  presentation-outline.md deck.pptx
+  deck.pptx illustrations/ presentation-outline.md
 ```
 
 If no .pptx exists yet (Phase 5 hasn't run), finish here — presentation-creator
