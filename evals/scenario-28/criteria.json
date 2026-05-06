@@ -18,8 +18,8 @@
       "max_score": 15
     },
     {
-      "name": "Step numbers match the skill",
-      "description": "Step references use the actual step numbers/titles from skills/illustrations/SKILL.md (Step 1 — Route by Mode; Step 2 — Define Style Strategy; Step 3 — Generate Deck Illustrations; Step 4 — Generate Builds; Step 5 — Apply Illustrations to Deck; Step 6 — Generate Thumbnail). No invented step numbers or descriptions.",
+      "name": "Step references resolve against the skill's canonical sequence",
+      "description": "Step references in the plan correspond to the actual routing-step (mode router) and the five action-step entries the skill exposes (Strategy, Generation: deck illustrations, Generation: builds, Generation: apply-to-deck, Thumbnail). No invented or paraphrased step labels.",
       "max_score": 15
     },
     {

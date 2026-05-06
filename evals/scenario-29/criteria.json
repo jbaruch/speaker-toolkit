@@ -43,8 +43,8 @@
       "max_score": 10
     },
     {
-      "name": "Title argument matches the speaker's confirmed hook",
-      "description": "The invocation passes --title 'NEVER TRUST A MONKEY' (ALL CAPS, the speaker's confirmed hook). Not the full talk title, not a paraphrase.",
+      "name": "Title argument is the speaker-confirmed hook verbatim",
+      "description": "The invocation's --title argument is the exact hook string the speaker confirmed at the input boundary, in ALL CAPS as confirmed. Not the full talk title, not a paraphrase, not re-cased.",
       "max_score": 5
     }
   ]

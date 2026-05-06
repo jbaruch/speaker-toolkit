@@ -56,8 +56,6 @@ Produce one file: **`mode-routing-plan.md`**, structured as:
 - Why this routing: <one sentence>
 ```
 
-List actual steps from the illustrations skill — don't invent step numbers or descriptions.
-
 ## Inputs Provided
 
 No fixture files — the state descriptions above are the inputs.
