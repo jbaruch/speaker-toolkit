@@ -34,8 +34,10 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | `slides/{id}.pdf` | Slide PDFs (from Google Drive, PPTX export, or video extraction) |
 | [references/schemas-db.md](references/schemas-db.md) | DB + subagent schemas; extraction output schemas |
 | [references/rhetoric-dimensions.md](references/rhetoric-dimensions.md) | 14 analysis dimensions |
+| [references/subagent-instructions.md](references/subagent-instructions.md) | Step 3 per-talk procedure — transcript download, slide acquisition, fallback chains, return-JSON shape |
 | [references/video-slide-extraction.md](references/video-slide-extraction.md) | Video-to-slides pipeline — layout heuristics, tuning, limitations |
 | [references/processing-rules.md](references/processing-rules.md) | Language policy, pattern migration logic, structured field rules |
+| [references/known-issues.md](references/known-issues.md) | Edge cases — wide-angle recordings, Whisper hallucination, non-speaker talks |
 | `scripts/pptx-extraction.py` | Extract visual design data from .pptx files |
 | `scripts/video-slide-extraction.py` | Extract slides from video via ffmpeg + perceptual dedup |
 | `scripts/batch-download-videos.sh` | Parallel video download for batch processing |
@@ -104,100 +106,16 @@ Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
 
 ## Step 3 — Process Talks via Parallel Subagents (Batches of 5)
 
-Per batch: launch 5 subagents in parallel, wait, run Step 4 (Persist Subagent Results), then run Step 5 (Update Rhetoric Summary), then move to the next batch. When all batches have finished, proceed to Step 6.
-Each subagent receives the talk's DB entry and current `rhetoric-style-summary.md`.
+Per batch: launch 5 subagents in parallel, wait, run Step 4 (Persist Subagent
+Results), then run Step 5 (Update Rhetoric Summary), then move to the next
+batch. When all batches have finished, proceed to Step 6.
 
-#### Per-Talk Subagent Instructions:
-
-**A. Download transcript and acquire slides.**
-
-**Transcript download:**
-- **YouTube talks:** use yt-dlp with auto-subtitles across likely languages:
-  ```bash
-  yt-dlp --write-auto-sub --sub-lang "en,ru,he,fr,de,es,ja" --skip-download --sub-format vtt \
-    -o "{vault_root}/transcripts/{youtube_id}" "https://www.youtube.com/watch?v={youtube_id}"
-  ```
-  The VTT filename includes the language code (e.g., `{youtube_id}.ru.vtt`). Record
-  the detected language as `delivery_language`. After download, clean the VTT:
-  ```bash
-  python3 scripts/vtt-cleanup.py "{vault_root}/transcripts/{youtube_id}.{lang}.vtt"
-  ```
-  This strips timestamps, cue markers, and deduplicates lines. Output: `transcripts/{youtube_id}.txt`.
-- **Fallback 1 — youtube-transcript-api** (if yt-dlp has no auto-captions):
-  ```bash
-  "{python_path}" -c "
-  from youtube_transcript_api import YouTubeTranscriptApi
-  transcript = YouTubeTranscriptApi.get_transcript('{youtube_id}', languages=['en','ru','he','fr','de'])
-  for entry in transcript:
-      print(entry['text'])
-  " > "{vault_root}/transcripts/{youtube_id}.txt"
-  ```
-- **Fallback 2 — Whisper** (no captions at all, requires downloaded video/audio):
-  ```bash
-  ffmpeg -i "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
-    -vn -acodec libmp3lame "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp3"
-  ```
-  Then transcribe with MLX Whisper (`mlx_whisper.transcribe()`) or OpenAI Whisper.
-  Set `transcript_source: "whisper"`.
-- **Non-YouTube talks** (InfoQ, Vimeo, conference platforms): attempt audio download
-  via yt-dlp, then transcribe locally with Whisper. Falls back to `processed_partial`
-  if audio fails.
-
-**Slide acquisition** per `slide_source`:
-- `pptx`/`both`: run `scripts/pptx-extraction.py <path.pptx>`.
-- `pdf`: download via gdown:
-  ```bash
-  "{python_path}" -m gdown "https://drive.google.com/uc?id={google_drive_id}" \
-    -O "{vault_root}/slides/{google_drive_id}.pdf"
-  ```
-- `video_extracted`: download video at 720p then run `scripts/video-slide-extraction.py`:
-  ```bash
-  yt-dlp -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]" \
-    --merge-output-format mp4 \
-    -o "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
-    "https://www.youtube.com/watch?v={youtube_id}"
-  python3 scripts/video-slide-extraction.py \
-    "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
-    "{vault_root}/slides-rebuild/{youtube_id}" "{youtube_id}"
-  ```
-  Copy PDF to `slides/{youtube_id}.pdf`. Delete video after extraction.
-  For batch downloads, use `scripts/batch-download-videos.sh <vault_root> ID1 ID2 ...`.
-- `none`: transcript-only, `processed_partial`.
-- **Fallback:** if primary slides fail but `video_url` exists, fall back to video
-  extraction. A talk can still reach `"processed"` status this way.
-
-**Set `transcript_source`** on the talk entry: `youtube_auto` (yt-dlp captions),
-`whisper` (local transcription), or `manual`. This field is required — downstream
-tools use it to gauge transcript reliability.
-
-**B. Analyze for Rhetoric & Style (NOT content).** Apply all 14 dimensions from
-[references/rhetoric-dimensions.md](references/rhetoric-dimensions.md) (including dimension 14: Areas for Improvement).
-Follow language policy and verbatim-quote rules in [references/processing-rules.md](references/processing-rules.md).
-**Key rule:** all verbatim quotes must be English-first — `"English translation"
-(original text)`. Never quote non-English text without an English translation preceding it.
-
-**B2. Tag Presentation Patterns.** Scan observations against the pattern taxonomy
-at `skills/presentation-creator/references/patterns/_index.md`. Skip patterns
-marked `observable: false`. Record confidence (strong/moderate/weak) and evidence per
-pattern. Compute per-talk score: count(patterns) − count(antipatterns). Store in
-`pattern_observations`. See [references/processing-rules.md](references/processing-rules.md) for full tagging rules.
-
-**C. Return JSON** per the subagent return schema in [references/schemas-db.md](references/schemas-db.md).
-Minimal structure:
-```json
-{
-  "talk_id": "...",
-  "status": "processed",
-  "transcript_source": "youtube",
-  "slide_source": "pdf",
-  "pattern_observations": [
-    {"pattern_id": "...", "confidence": "strong", "evidence": "..."}
-  ],
-  "new_patterns": ["..."],
-  "summary_updates": [{"section": 1, "content": "..."}],
-  "structured_data": {"delivery_language": "en", "co_presenter": false}
-}
-```
+Each subagent receives the talk's DB entry and current
+`rhetoric-style-summary.md`, runs A → B → B2 → C, and returns a JSON payload.
+Full procedure — transcript download (YouTube auto-subs → youtube-transcript-api
+→ Whisper fallback chain), slide acquisition per `slide_source`, rhetoric/style
+analysis, pattern-taxonomy tagging, and the return-JSON shape — lives in
+[references/subagent-instructions.md](references/subagent-instructions.md).
 
 ## Step 4 — Persist Subagent Results
 
@@ -312,16 +230,8 @@ verbatim details may be lost.
 - Re-read tracking DB before writing (single source of truth).
 - Preserve all summary content — add/refine, never delete.
 - After 10+ talks, start providing adherence assessments.
-- **Wide-angle room recordings** defeat perceptual hash dedup — when the camera
-  captures the full stage (speaker moving + slides on screen behind), every frame
-  looks different. Mitigate by: increasing `--threshold` to 14-16, manually specifying
-  `slide_region` crop coordinates, or accepting the bloated PDF and having the analysis
-  subagent sample frames at intervals. Best results with fullscreen slide recordings
-  (Devoxx, JFokus); worst with meetup/DevOpsDays audience-camera recordings.
-- **Whisper hallucination on bad audio:** Whisper large-v3-turbo recovers ~60% of
-  speech on poor recordings but hallucinates through silent/noisy sections. Always set
-  `transcript_source: "whisper"`, cross-reference against visible slide text, and note
-  quality issues (e.g., `transcript_quality: "partial"`).
-- **Non-speaker talks slip into playlists.** Verify speaker identity early — check
-  video frames and transcript for self-identification. Flag `is_baruch_talk: false`
-  and set status to `skipped` if the speaker doesn't match.
+
+For input-quality edge cases that require non-default handling — wide-angle
+room recordings, Whisper hallucination on bad audio, non-speaker talks
+slipping into playlists — see
+[references/known-issues.md](references/known-issues.md).
