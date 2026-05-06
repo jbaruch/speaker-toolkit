@@ -1,7 +1,7 @@
 # Title Placement — Outline Schema + Scripts
 
 Implements the policy in
-[`rules/title-overlay-rules.md`](../../../rules/title-overlay-rules.md).
+[`rules/title-overlay-rules.md`](rules/title-overlay-rules.md).
 
 ## Outline schema addition
 

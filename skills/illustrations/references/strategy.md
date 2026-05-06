@@ -95,7 +95,7 @@ Agree on the target model (affects prompt style and capabilities):
 - Model name and API (e.g., `gemini-3-pro-image-preview`, `dall-e-3`, `flux`).
 - Any model-specific prompt conventions to bake into the style anchor.
 - Use `generate-illustrations.py --compare N` to generate the same prompt
-  across multiple models for visual comparison — see [generation.md](generation.md).
+  across multiple models for visual comparison — see [skills/illustrations/references/generation.md](skills/illustrations/references/generation.md).
 
 ## Sub-step 4: Visual Continuity Devices
 

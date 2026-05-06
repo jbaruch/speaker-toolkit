@@ -85,7 +85,7 @@ Each layout entry has: `index`, `name`, `placeholders[]`, and `use_for`.
 **Illustrated slides (FULL / IMG+TXT):** the illustrations skill owns layout
 choice and positioning — this skill leaves the slide structure with a title +
 empty body and the illustrations skill applies the image post-walk. See the
-illustrations skill's `references/generation.md` and `references/builds.md`
+illustrations skill's `skills/illustrations/references/generation.md` and `skills/illustrations/references/builds.md`
 for the format vocabulary, geometry, and build-insertion rules.
 
 **EXCEPTION format:** real assets only — pick the layout per content type
@@ -296,8 +296,10 @@ to know which is expected.
 
 When the outline has an Illustration Style Anchor, illustration generation,
 build generation, and deck application are owned by the illustrations skill.
-See its `references/generation.md`, `references/builds.md`, and
-`references/title-placement.md` for setup, edit/fix workflow, build chaining,
+See `skills/illustrations/references/generation.md`,
+`skills/illustrations/references/builds.md`, and
+`skills/illustrations/references/title-placement.md` for setup, edit/fix
+workflow, build chaining,
 and Safe-zone composition.
 
 ---

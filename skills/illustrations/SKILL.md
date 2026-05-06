@@ -39,10 +39,10 @@ Do not restate them here — apply them.
 | `speaker-profile.json` → `visual_style_history` | Default style, departures, mode profiles, confirmed visual intents |
 | `speaker-profile.json` → `publishing_process.thumbnail` | Speaker photo path + aesthetic preference |
 | `illustrations/` (alongside outline) | Generated images, builds, model-comparison output |
-| [references/strategy.md](references/strategy.md) | Phase 2 D#11 detail — style proposal, format vocabulary, model choice, continuity devices |
-| [references/generation.md](references/generation.md) | Deck generation, edit/fix workflow, model comparison |
-| [references/builds.md](references/builds.md) | Backwards-chained build generation |
-| [references/thumbnails.md](references/thumbnails.md) | Phase 7 thumbnail composition + slide selection |
+| [skills/illustrations/references/strategy.md](skills/illustrations/references/strategy.md) | Phase 2 D#11 detail — style proposal, format vocabulary, model choice, continuity devices |
+| [skills/illustrations/references/generation.md](skills/illustrations/references/generation.md) | Deck generation, edit/fix workflow, model comparison |
+| [skills/illustrations/references/builds.md](skills/illustrations/references/builds.md) | Backwards-chained build generation |
+| [skills/illustrations/references/thumbnails.md](skills/illustrations/references/thumbnails.md) | Phase 7 thumbnail composition + slide selection |
 | `scripts/generate-illustrations.py` | Deck illustrations, edits, fixes, builds, model comparison |
 | `scripts/apply-illustrations-to-deck.py` | Insert illustrations + builds into a .pptx |
 | `scripts/generate-thumbnail.py` | YouTube thumbnail composition |
@@ -74,7 +74,7 @@ paragraph, then define format vocabulary (FULL / IMG+TXT / EXCEPTION + any
 talk-specific additions), model choice, and visual continuity devices.
 
 Full protocol with the option-presentation template, format vocabulary
-defaults, and continuity-device options: [references/strategy.md](references/strategy.md).
+defaults, and continuity-device options: [skills/illustrations/references/strategy.md](skills/illustrations/references/strategy.md).
 
 Write the approved STYLE ANCHOR block into the outline header. Proceed
 immediately to Step 3 if generation was also requested; otherwise finish here.
@@ -95,7 +95,7 @@ governs which to pick. Save iteration versions (`v2`, `v3`) instead of
 overwriting — see `illustration-rules` Iteration Hygiene.
 
 Operational detail (compare modes, prompt patterns, retry ladder):
-[references/generation.md](references/generation.md).
+[skills/illustrations/references/generation.md](skills/illustrations/references/generation.md).
 
 Proceed immediately to Step 4.
 
@@ -112,7 +112,7 @@ python3 skills/illustrations/scripts/generate-illustrations.py \
 
 Output: `illustrations/builds/slide-NN-build-MM.jpg`. Build-00 is the empty
 frame; build-N is the full image. Detail and the per-step contract:
-[references/builds.md](references/builds.md).
+[skills/illustrations/references/builds.md](skills/illustrations/references/builds.md).
 
 If no slides specify builds, proceed silently to Step 5.
 
@@ -155,6 +155,6 @@ portrait is pre-stylized to match the deck.
 
 Iteration is conversational — change one thing at a time (style variant,
 expression, colors, title text, slide). Detail:
-[references/thumbnails.md](references/thumbnails.md).
+[skills/illustrations/references/thumbnails.md](skills/illustrations/references/thumbnails.md).
 
 Finish here.

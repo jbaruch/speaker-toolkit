@@ -29,7 +29,7 @@ shownotes copy, and tracking-database updates:
 Skill(skill: "illustrations")
 ```
 
-See the illustrations skill's `references/thumbnails.md` for the full
+See `skills/illustrations/references/thumbnails.md` for the full
 workflow. Returns control here once the thumbnail is approved and the
 tracking database is updated.
 

@@ -84,8 +84,8 @@ positioning:
 The `Safe zone:` line in each FULL slide block tells the script to append a
 `TITLE SAFE ZONE` directive to the prompt before generation. Five zones are
 supported: `upper_third`, `middle_third`, `lower_third`, `left_half`,
-`right_half`. See [title-placement.md](title-placement.md) for the outline
-schema and [`rules/title-overlay-rules.md`](../../../rules/title-overlay-rules.md)
+`right_half`. See [skills/illustrations/references/title-placement.md](skills/illustrations/references/title-placement.md)
+for the outline schema and [`rules/title-overlay-rules.md`](rules/title-overlay-rules.md)
 for the full policy (auto-loaded).
 
 ## Apply to Deck
@@ -105,7 +105,7 @@ The script:
 3. Repositions title text boxes into the declared safe zone.
 4. For each slide with `Format: IMG+TXT`, applies the IMG+TXT layout
    (image ~60% on the left, title placeholder + body on the right).
-5. Inserts build sequences (see [builds.md](builds.md)) for any slide with a
+5. Inserts build sequences (see [skills/illustrations/references/builds.md](skills/illustrations/references/builds.md)) for any slide with a
    `- Builds:` block.
 
 If no scrim color is supplied, run `suggest-scrim-color.py illustrations/`
