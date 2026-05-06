@@ -14,10 +14,12 @@ description: >
   "build a YouTube thumbnail", "add visuals to my talk", "regenerate slide
   image", "fix the thumbnail", "generate progressive reveals", "build
   sequence for a slide".
-user_invocable: true
+user-invocable: true
 ---
 
 # Illustrations
+
+Process steps in order. Step 1 routes to the applicable mode and tells you which later steps to skip; do not skip ahead before Step 1 has run.
 
 Owns every AI-generated image the toolkit produces: deck illustrations, build
 chains, and thumbnails. Reads the vault for visual history, the
@@ -28,9 +30,6 @@ The auto-loaded steering rules are the constitution: `illustration-rules`
 (edit vs regenerate, build chains, iteration hygiene), `title-overlay-rules`
 (safe-zone composition), and `thumbnail-generation-rules` (Phase 7 specifics).
 Do not restate them here — apply them.
-
-Process steps in order. Step 1 routes to the applicable mode and tells you
-which later steps to skip; do not skip ahead before Step 1 has run.
 
 ## Key Files & References
 

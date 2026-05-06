@@ -155,6 +155,26 @@ def replace_picture_blob(picture_shape, new_image_path: Path) -> None:
     picture_shape._element.blipFill.blip.set(qn("r:embed"), new_rId)
 
 
+def swap_or_insert_picture(slide, illust_path: Path):
+    """Return the slide's largest picture shape, swapping its image to illust_path.
+
+    If the slide has no picture shape (presentation-creator's slide walk leaves
+    illustrated slides without an image — the illustrations skill applies them
+    post-walk), insert a full-bleed picture and return it. The caller may then
+    reposition/resize as needed for the format.
+    """
+    pictures = [s for s in slide.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    if pictures:
+        bg = max(pictures, key=lambda s: (s.width or 0) * (s.height or 0))
+        replace_picture_blob(bg, illust_path)
+        return bg
+    return slide.shapes.add_picture(
+        str(illust_path),
+        left=Inches(0), top=Inches(0),
+        width=Inches(SLIDE_W_IN), height=Inches(SLIDE_H_IN),
+    )
+
+
 def ensure_scrim(slide, zone: str, scrim_hex: str, scrim_alpha: int) -> int:
     """Add a zone-sized semi-transparent rectangle between picture and text.
 
@@ -323,17 +343,7 @@ def apply(
             continue
 
         slide = prs.slides[n - 1]
-        pictures = [s for s in slide.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
-        if not pictures:
-            print(f"  [{n:02d}] SKIP: no picture shape")
-            continue
-        bg = max(pictures, key=lambda s: (s.width or 0) * (s.height or 0))
-
-        try:
-            replace_picture_blob(bg, illust)
-        except Exception as e:
-            print(f"  [{n:02d}] FAILED image swap: {e}")
-            continue
+        swap_or_insert_picture(slide, illust)
 
         scrim_added = ensure_scrim(slide, zone, scrim_hex, scrim_alpha)
         moved = reposition_title(slide, zone)
@@ -354,17 +364,7 @@ def apply(
             continue
 
         slide = prs.slides[n - 1]
-        pictures = [s for s in slide.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
-        if not pictures:
-            print(f"  [{n:02d}] SKIP: no picture shape")
-            continue
-        bg = max(pictures, key=lambda s: (s.width or 0) * (s.height or 0))
-
-        try:
-            replace_picture_blob(bg, illust)
-        except Exception as e:
-            print(f"  [{n:02d}] FAILED image swap: {e}")
-            continue
+        swap_or_insert_picture(slide, illust)
 
         pic_moved, text_moved = apply_img_txt_layout(slide)
         print(f"  [{n:02d}] format=IMG+TXT  pic+{pic_moved}  text+{text_moved}")

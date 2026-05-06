@@ -251,13 +251,16 @@ Then open with MCP `open_presentation` and walk the outline: `add_slide` →
 `populate_placeholder` → `manage_image` for each slide. For non-illustrated
 slides and EXCEPTION-format slides, handle inline as normal (the `[IMAGE NN]`
 placeholder resolves to a real asset). For FULL and IMG+TXT slides, build the
-slide structure (layout, title, footer) but skip image insertion — leave a
-placeholder.
+slide structure (layout, title, footer) and **omit `manage_image`** — the
+slide is left without a picture shape. The illustrations skill handles
+insertion in the post-walk apply pass: `apply-illustrations-to-deck.py`'s
+`swap_or_insert_picture` adds a full-bleed picture when the slide has none,
+or swaps the existing one when the template seeded a picture placeholder.
 
 After the structural walk completes, if the outline has an Illustration Style
 Anchor, delegate to `Skill(skill: "illustrations")` to generate illustrations,
 generate any progressive-reveal builds, and apply them to the deck (the
-illustrations skill swaps in images, repositions titles into Safe zones,
+illustrations skill inserts/swaps images, repositions titles into Safe zones,
 inserts build sequences, and handles IMG+TXT positioning).
 
 Inject speaker notes via python-pptx batch after the illustrations skill returns.

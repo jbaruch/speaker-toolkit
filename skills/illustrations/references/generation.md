@@ -60,9 +60,9 @@ positioning:
 
 | Outline Format | Layout | Image Handling |
 |----------------|--------|----------------|
-| `FULL` | BLANK | Full-bleed image (`left=0, top=0, width=10, height=7.5`); title repositioned into the declared Safe zone |
+| `FULL` | BLANK | Full-bleed image at 16:9 slide dimensions (`left=0, top=0, width=13.333", height=7.5"`); title repositioned into the declared Safe zone |
 | `FULL` + text overlay | BLANK | Full-bleed image + `manage_text` overlay |
-| `IMG+TXT` | TITLE only (no body) | Image ~60% of slide on the left (`left=0.3, top=0.8, width=4, height=6`); title placeholder + text on the right |
+| `IMG+TXT` | TITLE only (no body) | Image ~60% of slide on the left, title + body on the right. Exact geometry is owned by the `IMGTXT_*` constants in `scripts/apply-illustrations-to-deck.py` (image `left=0.3", top=0.8", width=8.0", height=5.9"`; text column `left=8.5", width≈4.5"`) — read the constants when debugging layout, not the table |
 | `EXCEPTION` | Per content type | No generated image — real asset from `[IMAGE NN]` placeholder; handled by presentation-creator's slide walk, not by this skill |
 
 ## File Layout

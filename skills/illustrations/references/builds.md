@@ -60,7 +60,8 @@ Insertion rules:
 
 - Insert in order: `build-00`, `build-01`, ..., `build-N`.
 - All build slides use the BLANK layout with `manage_image` full-bleed
-  positioning (`left=0, top=0, width=10, height=7.5`).
+  positioning at 16:9 slide dimensions (`left=0, top=0, width=13.333",
+  height=7.5"`).
 - Speaker notes go ONLY on the final build step. Earlier steps get empty
   notes — the speaker advances through them silently or with ad-lib
   narration.

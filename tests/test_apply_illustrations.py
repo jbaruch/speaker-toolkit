@@ -263,6 +263,61 @@ def test_apply_img_txt_layout_repositions_title(apply_illustrations):
     assert slide.shapes.title.top == Inches(apply_illustrations.IMGTXT_TITLE_TOP_IN)
 
 
+def test_swap_or_insert_picture_inserts_when_missing(apply_illustrations, tmp_path):
+    """When a slide has no picture shape, swap_or_insert_picture adds one."""
+    prs = Presentation()
+    blank = prs.slide_layouts[6]
+    slide = prs.slides.add_slide(blank)
+    # No picture on the slide
+
+    img = tmp_path / "test.png"
+    img.write_bytes(
+        bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108020000"
+            "00907753de0000000c4944415478da6300010000000500010d0a2db40000"
+            "000049454e44ae426082"
+        )
+    )
+
+    pic = apply_illustrations.swap_or_insert_picture(slide, img)
+    assert pic is not None
+    pictures = [s for s in slide.shapes if s.shape_type == 13]
+    assert len(pictures) == 1
+    # Inserted full-bleed at slide dimensions
+    assert pictures[0].left == Inches(0)
+    assert pictures[0].top == Inches(0)
+
+
+def test_swap_or_insert_picture_swaps_when_present(apply_illustrations, tmp_path):
+    """When a slide already has a picture shape, swap_or_insert_picture swaps it."""
+    prs = Presentation()
+    blank = prs.slide_layouts[6]
+    slide = prs.slides.add_slide(blank)
+    img1 = tmp_path / "before.png"
+    img2 = tmp_path / "after.png"
+    png_bytes = bytes.fromhex(
+        "89504e470d0a1a0a0000000d49484452000000010000000108020000"
+        "00907753de0000000c4944415478da6300010000000500010d0a2db40000"
+        "000049454e44ae426082"
+    )
+    img1.write_bytes(png_bytes)
+    img2.write_bytes(png_bytes)
+    slide.shapes.add_picture(str(img1), Inches(2), Inches(2), Inches(4), Inches(3))
+    pictures_before = [s for s in slide.shapes if s.shape_type == 13]
+    assert len(pictures_before) == 1
+
+    pic = apply_illustrations.swap_or_insert_picture(slide, img2)
+    pictures_after = [s for s in slide.shapes if s.shape_type == 13]
+    # Still exactly one picture — swapped, not added
+    assert len(pictures_after) == 1
+    # python-pptx returns fresh wrapper objects each iteration, so identity-check
+    # via the underlying XML element rather than the Python object.
+    assert pic._element is pictures_after[0]._element
+    # Position untouched by swap (the FULL/IMG+TXT layout repositioning happens after)
+    assert pic.left == Inches(2)
+    assert pic.top == Inches(2)
+
+
 def test_imgtxt_geometry_constants_consistent(apply_illustrations):
     """IMG+TXT image + text columns + margins fit the 13.333" slide."""
     img_right = (
