@@ -90,12 +90,44 @@ quotations).
 
 ## Sub-step 3: Choose Image Generation Model
 
-Agree on the target model (affects prompt style and capabilities):
+Different image-generation models produce meaningfully different aesthetics
+even from the same prompt — Gemini 3 Pro tends toward photorealism, Imagen
+toward painterly, the Gemini 2.x flash variants toward illustrated. The
+choice matters and is best made visually, not from prose descriptions.
 
-- Model name and API (e.g., `gemini-3-pro-image-preview`, `dall-e-3`, `flux`).
-- Any model-specific prompt conventions to bake into the style anchor.
-- Use `generate-illustrations.py --compare N` to generate the same prompt
-  across multiple models for visual comparison — see [skills/illustrations/references/generation.md](generation.md).
+The decision protocol is **side-by-side generation, then speaker picks**:
+
+1. **Pick the comparison slide.** Choose a representative FULL-format slide
+   from the outline — central to the deck's concept, not the title slide,
+   not an edge case. The slide must already have a complete `[STYLE ANCHOR].
+   <scene description>` Image prompt drafted (using the anchor paragraph from
+   Sub-step 1). Skip slides without prompts; the comparison needs concrete
+   input to be meaningful.
+2. **Run the comparison.** From the talk's working directory:
+   ```bash
+   python3 skills/illustrations/scripts/generate-illustrations.py \
+     presentation-outline.md --compare <slide-num>
+   ```
+   The script renders the same prompt across the curated `COMPARE_MODELS`
+   list (currently three Gemini-family models — see the script's constant
+   block; updated as new image-capable models become available). Output
+   lands in `illustrations/model-comparison/slide-<NN>-<model>.<ext>`.
+3. **Present the candidates.** Show the speaker the side-by-side outputs.
+   Lead with a brief read of each — what each model emphasized about the
+   prompt — but the visual decision is the speaker's, not the agent's.
+4. **Bake the choice.** The selected model goes into the outline header's
+   `**Model:** \`<model-name>\`` line. Every subsequent generation in
+   Step 3 (deck illustrations) and Step 4 (builds) uses this model.
+
+If the speaker dislikes all three candidates, iterate by either changing
+the comparison slide (a different slide may render better across the same
+model set) or revising the anchor paragraph (Sub-step 1) and re-running
+the comparison. Don't widen the model list ad-hoc — the curated set is
+what the script supports; new entries belong in the script's constant.
+
+Model-specific prompt conventions (e.g., negative prompts, aspect-ratio
+tokens, reserved keywords) should be baked into the anchor paragraph
+immediately after the model is chosen, before Step 3 generation runs.
 
 ## Sub-step 4: Visual Continuity Devices
 
