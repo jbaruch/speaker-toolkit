@@ -299,7 +299,7 @@ Phase 0-6 flow. The talk has been given and recorded.
 
 Read [references/phase7-post-event.md](references/phase7-post-event.md) for
 the pre-flight checklist and Step 7.2 (Video to Shownotes). Step 7.1 detail
-lives in the illustrations skill's `references/thumbnails.md`.
+lives in `skills/illustrations/references/thumbnails.md`.
 
 ---
 
