@@ -4,7 +4,7 @@
 
 A five-skill presentation system for conference speakers: analyze your existing talks to extract your rhetoric patterns, create new presentations that match your documented style, and produce the deck illustrations + thumbnail visual layer.
 
-## What's New (0.17.0)
+## What's New (0.18.0)
 
 **Cross-vendor image generation + model-freshness check** — `generate-illustrations.py`
 now dispatches by model-name prefix to three vendor families: Google's
