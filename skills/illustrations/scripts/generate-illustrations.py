@@ -18,7 +18,12 @@ Usage:
     python3 generate-illustrations.py <outline.md> -v 2 5 9
 
 Requires:
-    - Gemini API key in {vault}/secrets.json (preferred) or GEMINI_API_KEY env var (fallback)
+    - For Google models (gemini-*, nano-banana-*, imagen-*):
+        Gemini API key in {vault}/secrets.json (preferred) or
+        GEMINI_API_KEY env var (fallback).
+    - For OpenAI models (gpt-image-*):
+        OpenAI API key in {vault}/secrets.json under "openai".api_key
+        or OPENAI_API_KEY env var (fallback).
     - Python 3.7+ (stdlib only — no pip install needed)
 """
 
@@ -33,18 +38,29 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 # --- Constants ---
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+OPENAI_API_BASE = "https://api.openai.com/v1"
 
-# Curated list of Gemini models known to support image generation.
-# Used by --compare mode. Update as new models become available.
+# Curated list of current flagship image-generation models from major vendors.
+# Used by --compare mode. The illustrations skill's Step 2 (model-freshness
+# check) tracks this list — bump it when newer flagships ship rather than
+# leaving stale entries in place.
 COMPARE_MODELS = [
     "gemini-3-pro-image-preview",
-    "gemini-2.0-flash-preview-image-generation",
-    "imagen-3.0-generate-002",
+    "gemini-3.1-flash-image-preview",
+    "nano-banana-pro-preview",
+    "imagen-4.0-ultra-generate-001",
+    "gpt-image-2",
 ]
+
+# Default output sizes per vendor family. Gemini infers aspect from prompt
+# hints; OpenAI takes an explicit size param. 2048x1152 is the validated
+# true-16:9 size for gpt-image-2.
+OPENAI_DEFAULT_SIZE = "2048x1152"
 
 RATE_LIMIT_DELAY = 5  # seconds between API requests
 
@@ -87,6 +103,35 @@ _EXT_MIME_MAP[".jpeg"] = "image/jpeg"  # common alias
 _VERSION_RE = re.compile(r"-v(\d+)")
 
 _cli_vault_path = None  # set by main() from --vault arg
+
+
+# --- Model Family Dispatch ---
+
+def model_family(model_name):
+    """Classify a model into a vendor family for endpoint dispatch.
+
+    Families:
+        - "openai" — gpt-image-* (OpenAI /images/generations + /images/edits)
+        - "imagen" — imagen-* (Google /v1beta/models/<m>:predict)
+        - "gemini" — everything else, currently gemini-* and nano-banana-*
+          (Google /v1beta/models/<m>:generateContent)
+    """
+    name = model_name.lower()
+    if name.startswith("gpt-image"):
+        return "openai"
+    if name.startswith("imagen"):
+        return "imagen"
+    return "gemini"
+
+
+def family_key_name(family):
+    """Map a model family to the secrets.json key name it requires.
+
+    Imagen and Gemini both authenticate with the Google AI Studio key.
+    """
+    if family == "openai":
+        return "openai"
+    return "gemini"
 
 
 # --- Outline Parsing ---
@@ -323,51 +368,96 @@ def ext_to_mime(ext):
 
 # --- Shared Setup ---
 
-def _load_context(outline_path, require_model=True, vault_path=None):
-    """Common preamble: check API key, parse outline, compute paths.
+def load_secrets(vault_path=None):
+    """Load API keys from vault secrets.json with env-var fallbacks.
 
-    API key resolution order:
-        1. {vault}/secrets.json → gemini.api_key
-        2. GEMINI_API_KEY environment variable (backward compat)
+    Resolution order per vendor:
+        1. {vault}/secrets.json → gemini.api_key / openai.api_key
+        2. GEMINI_API_KEY / OPENAI_API_KEY env vars
 
     Returns:
-        tuple (api_key, outline, output_dir)
+        tuple (keys_dict, secrets_path) where keys_dict maps
+        "gemini" / "openai" → key string or None.
     """
-    api_key = None
+    keys = {"gemini": None, "openai": None}
 
-    # Try secrets.json first
     if vault_path is None:
         vault_path = _cli_vault_path
     if vault_path is None:
         vault_path = os.path.expanduser("~/.claude/rhetoric-knowledge-vault")
     secrets_path = os.path.join(vault_path, "secrets.json")
+
     if os.path.isfile(secrets_path):
         try:
             with open(secrets_path, "r", encoding="utf-8") as f:
                 secrets = json.load(f)
-            api_key = secrets.get("gemini", {}).get("api_key") or None
+            keys["gemini"] = secrets.get("gemini", {}).get("api_key") or None
+            keys["openai"] = secrets.get("openai", {}).get("api_key") or None
         except (json.JSONDecodeError, OSError):
             pass
 
-    # Fall back to env var
-    if not api_key:
-        api_key = os.environ.get("GEMINI_API_KEY")
+    if not keys["gemini"]:
+        keys["gemini"] = os.environ.get("GEMINI_API_KEY") or None
+    if not keys["openai"]:
+        keys["openai"] = os.environ.get("OPENAI_API_KEY") or None
 
-    if not api_key:
-        print("ERROR: No Gemini API key found.")
-        print("Get a key from https://aistudio.google.com/app/apikey")
-        print()
-        if not os.path.isfile(secrets_path):
-            print(f"Create {secrets_path}:")
-            print(f'  echo \'{{"gemini": {{"api_key": "YOUR_KEY"}}}}\' > {secrets_path}')
-            print(f"  chmod 600 {secrets_path}")
-        else:
-            print(f"Add to {secrets_path}:")
-            print('  "gemini": {"api_key": "YOUR_KEY"}')
-        print()
-        print("Or set the GEMINI_API_KEY environment variable as a fallback.")
-        sys.exit(1)
+    return keys, secrets_path
 
+
+def _require_keys_for_families(keys, families, secrets_path):
+    """Verify keys needed for the given model families are present.
+
+    Exits with an actionable per-vendor message if any required key
+    is missing.
+    """
+    needed = {family_key_name(f) for f in families}
+    missing = sorted(k for k in needed if not keys.get(k))
+    if not missing:
+        return
+
+    print("ERROR: Missing API key(s) for the model(s) you're using.")
+    secrets_exists = os.path.isfile(secrets_path)
+    for k in missing:
+        if k == "gemini":
+            print()
+            print("  Gemini and Imagen models need a Google AI Studio key.")
+            print("  Get one at: https://aistudio.google.com/app/apikey")
+            if secrets_exists:
+                print(f"  Add to {secrets_path}:")
+                print('    "gemini": {"api_key": "YOUR_KEY"}')
+            else:
+                print(f"  Create {secrets_path}:")
+                print(f'    echo \'{{"gemini": {{"api_key": "YOUR_KEY"}}}}\' > {secrets_path}')
+                print(f"    chmod 600 {secrets_path}")
+            print("  Or set the GEMINI_API_KEY environment variable.")
+        elif k == "openai":
+            print()
+            print("  OpenAI gpt-image-* models need an OpenAI API key.")
+            print("  Get one at: https://platform.openai.com/api-keys")
+            if secrets_exists:
+                print(f"  Add to {secrets_path}:")
+                print('    "openai": {"api_key": "YOUR_KEY"}')
+            else:
+                print(f"  Create {secrets_path}:")
+                print(f'    echo \'{{"openai": {{"api_key": "YOUR_KEY"}}}}\' > {secrets_path}')
+                print(f"    chmod 600 {secrets_path}")
+            print("  Or set the OPENAI_API_KEY environment variable.")
+    sys.exit(1)
+
+
+def _load_context(outline_path, require_model=True, vault_path=None, compare_mode=False):
+    """Common preamble: load API keys, parse outline, compute paths.
+
+    Determines which vendor families need keys based on:
+        - compare_mode=True → every family in COMPARE_MODELS + outline's
+          baked Model (if any)
+        - compare_mode=False → just the outline's Model family
+
+    Returns:
+        tuple (keys, outline, output_dir) where keys is a dict
+        {"gemini": str|None, "openai": str|None}.
+    """
+    keys, secrets_path = load_secrets(vault_path)
     outline = parse_outline(outline_path)
 
     if require_model and not outline["model"]:
@@ -375,10 +465,23 @@ def _load_context(outline_path, require_model=True, vault_path=None):
         print("to the Illustration Style Anchor section.")
         sys.exit(1)
 
+    families = set()
+    if compare_mode:
+        for m in COMPARE_MODELS:
+            families.add(model_family(m))
+        if outline["model"]:
+            families.add(model_family(outline["model"]))
+    elif outline["model"]:
+        families.add(model_family(outline["model"]))
+    else:
+        families.add("gemini")
+
+    _require_keys_for_families(keys, families, secrets_path)
+
     output_dir = os.path.join(
         os.path.dirname(os.path.abspath(outline_path)), "illustrations"
     )
-    return api_key, outline, output_dir
+    return keys, outline, output_dir
 
 
 # --- Gemini API ---
@@ -435,33 +538,182 @@ def _call_gemini(parts, model, api_key):
     return None, f"No image in response: {json.dumps(body)[:500]}"
 
 
-def generate_image(prompt, model, api_key):
-    """Call the Gemini generateContent API to produce an image.
+def _call_imagen(prompt, model, api_key):
+    """Send a prompt to Google's Imagen :predict endpoint.
+
+    Imagen uses a different endpoint shape from Gemini's generateContent.
+    Aspect ratio is set via the parameters block, not inferred from prompt.
 
     Returns:
         tuple (image_bytes, mime_type) on success, or (None, error_message) on failure.
     """
-    return _call_gemini([{"text": prompt}], model, api_key)
+    url = f"{GEMINI_API_BASE}/{model}:predict?key={api_key}"
+    payload = {
+        "instances": [{"prompt": prompt}],
+        "parameters": {"sampleCount": 1, "aspectRatio": "16:9"},
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8", errors="replace")
+        return None, f"HTTP {e.code}: {error_body[:500]}"
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+        return None, str(e)
+
+    preds = body.get("predictions", [])
+    if preds and preds[0].get("bytesBase64Encoded"):
+        image_bytes = base64.b64decode(preds[0]["bytesBase64Encoded"])
+        mime = preds[0].get("mimeType", "image/png")
+        return image_bytes, mime
+    return None, f"No image in Imagen response: {json.dumps(body)[:500]}"
 
 
-def edit_image(input_path, edit_prompt, model, api_key):
-    """Call the Gemini API to edit an existing image.
+# --- OpenAI API ---
 
-    Sends the image as base64 inline data along with a text edit prompt.
-    Auto-appends safety suffixes to prevent unwanted additions.
+def _multipart_body(fields, files):
+    """Build a multipart/form-data body. Returns (bytes, boundary)."""
+    boundary = "----GenIllustBnd" + uuid.uuid4().hex
+    body = bytearray()
+    for k, v in fields.items():
+        body += f"--{boundary}\r\n".encode()
+        body += f'Content-Disposition: form-data; name="{k}"\r\n\r\n'.encode()
+        body += str(v).encode("utf-8")
+        body += b"\r\n"
+    for name, filename, mime, content in files:
+        body += f"--{boundary}\r\n".encode()
+        body += (
+            f'Content-Disposition: form-data; name="{name}"; '
+            f'filename="{filename}"\r\n'
+        ).encode()
+        body += f"Content-Type: {mime}\r\n\r\n".encode()
+        body += content
+        body += b"\r\n"
+    body += f"--{boundary}--\r\n".encode()
+    return bytes(body), boundary
 
-    Returns:
-        tuple (image_bytes, mime_type) on success, or (None, error_message) on failure.
-    """
-    # Read and encode the input image
+
+def _extract_openai_image(body):
+    """Pull image bytes + mime from an OpenAI Images API response body."""
+    data_arr = body.get("data", [])
+    if not data_arr:
+        return None, f"No data in OpenAI response: {json.dumps(body)[:500]}"
+    first = data_arr[0]
+    if first.get("b64_json"):
+        return base64.b64decode(first["b64_json"]), "image/png"
+    if first.get("url"):
+        try:
+            with urllib.request.urlopen(first["url"], timeout=120) as r:
+                return r.read(), "image/png"
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            return None, f"Failed to fetch image URL: {e}"
+    return None, f"OpenAI response has neither b64_json nor url: {json.dumps(first)[:500]}"
+
+
+def _call_openai_generate(prompt, model, api_key, size=OPENAI_DEFAULT_SIZE):
+    """Call OpenAI /images/generations to produce a fresh image."""
+    url = f"{OPENAI_API_BASE}/images/generations"
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "size": size,
+        "quality": "high",
+        "n": 1,
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8", errors="replace")
+        return None, f"HTTP {e.code}: {error_body[:500]}"
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+        return None, str(e)
+
+    return _extract_openai_image(body)
+
+
+def _call_openai_edit(input_path, prompt, model, api_key, size=OPENAI_DEFAULT_SIZE):
+    """Call OpenAI /images/edits to edit an existing image."""
     with open(input_path, "rb") as f:
-        image_data = base64.b64encode(f.read()).decode("utf-8")
-
-    # Detect MIME type from extension
+        image_bytes = f.read()
     ext = os.path.splitext(input_path)[1].lower()
-    input_mime = ext_to_mime(ext)
+    mime = ext_to_mime(ext)
+    filename = os.path.basename(input_path)
 
-    # Auto-append safety suffixes if not already present
+    body, boundary = _multipart_body(
+        fields={"model": model, "prompt": prompt, "size": size,
+                "quality": "high", "n": "1"},
+        files=[("image", filename, mime, image_bytes)],
+    )
+    url = f"{OPENAI_API_BASE}/images/edits"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "Content-Length": str(len(body)),
+    }
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+
+    try:
+        with urllib.request.urlopen(req, timeout=500) as resp:
+            resp_body = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8", errors="replace")
+        return None, f"HTTP {e.code}: {error_body[:500]}"
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+        return None, str(e)
+
+    return _extract_openai_image(resp_body)
+
+
+# --- Vendor-Agnostic Dispatchers ---
+
+def generate_image(prompt, model, keys):
+    """Generate a fresh image via the appropriate vendor endpoint.
+
+    Args:
+        prompt: text prompt
+        model: model name (dispatch is by name prefix — see model_family)
+        keys: dict from load_secrets() — {"gemini": ..., "openai": ...}
+
+    Returns:
+        tuple (image_bytes, mime_type) on success, or (None, error_message) on failure.
+    """
+    family = model_family(model)
+    if family == "openai":
+        return _call_openai_generate(prompt, model, keys["openai"])
+    if family == "imagen":
+        return _call_imagen(prompt, model, keys["gemini"])
+    return _call_gemini([{"text": prompt}], model, keys["gemini"])
+
+
+def edit_image(input_path, edit_prompt, model, keys):
+    """Edit an existing image via the appropriate vendor endpoint.
+
+    Auto-appends vendor-agnostic safety suffixes to the prompt to prevent
+    unwanted additions and patch artifacts.
+
+    Returns:
+        tuple (image_bytes, mime_type) on success, or (None, error_message) on failure.
+    """
     suffixes = []
     lower_prompt = edit_prompt.lower()
     if "do not add any new elements" not in lower_prompt:
@@ -471,18 +723,33 @@ def edit_image(input_path, edit_prompt, model, api_key):
     if suffixes:
         edit_prompt = edit_prompt.rstrip(". ") + ". " + " ".join(suffixes)
 
+    family = model_family(model)
+    if family == "openai":
+        return _call_openai_edit(input_path, edit_prompt, model, keys["openai"])
+    if family == "imagen":
+        return None, (
+            f"Image editing is not supported for Imagen models ({model}). "
+            "Imagen has no public edit endpoint — use a Gemini or OpenAI "
+            "model for --edit / --build / --fix workflows."
+        )
+
+    # Gemini path: send image as base64 inline data on generateContent
+    with open(input_path, "rb") as f:
+        image_data = base64.b64encode(f.read()).decode("utf-8")
+    ext = os.path.splitext(input_path)[1].lower()
+    input_mime = ext_to_mime(ext)
     parts = [
         {"inlineData": {"mimeType": input_mime, "data": image_data}},
         {"text": edit_prompt},
     ]
-    return _call_gemini(parts, model, api_key)
+    return _call_gemini(parts, model, keys["gemini"])
 
 
 # --- Main Commands ---
 
 def run_generate(outline_path, slide_args, versioned=False):
     """Generate illustrations for selected slides."""
-    api_key, outline, output_dir = _load_context(outline_path)
+    keys, outline, output_dir = _load_context(outline_path)
     model = outline["model"]
     os.makedirs(output_dir, exist_ok=True)
 
@@ -516,7 +783,7 @@ def run_generate(outline_path, slide_args, versioned=False):
 
         print(f"[{i+1}/{len(to_generate)}] Slide {num}: {slide['title']}")
 
-        image_bytes, result = generate_image(prompt, model, api_key)
+        image_bytes, result = generate_image(prompt, model, keys)
 
         if image_bytes is None:
             print(f"  FAILED: {result}")
@@ -545,7 +812,7 @@ def run_generate(outline_path, slide_args, versioned=False):
 
 def run_compare(outline_path, slide_num):
     """Generate the same prompt across multiple models for comparison."""
-    api_key, outline, _ = _load_context(outline_path, require_model=False)
+    keys, outline, _ = _load_context(outline_path, require_model=False, compare_mode=True)
 
     slides_by_num = {s["slide_num"]: s for s in outline["slides"]}
     if slide_num not in slides_by_num:
@@ -581,7 +848,7 @@ def run_compare(outline_path, slide_num):
     for i, model in enumerate(models):
         print(f"[{i+1}/{len(models)}] {model}...", end=" ", flush=True)
 
-        image_bytes, result = generate_image(prompt, model, api_key)
+        image_bytes, result = generate_image(prompt, model, keys)
 
         if image_bytes is None:
             print(f"FAILED: {result[:100]}")
@@ -615,8 +882,8 @@ def run_compare(outline_path, slide_num):
 
 
 def run_edit(outline_path, slide_num, edit_prompt):
-    """Edit an existing slide illustration using Gemini's image editing API."""
-    api_key, outline, output_dir = _load_context(outline_path)
+    """Edit an existing slide illustration via the model's edit endpoint."""
+    keys, outline, output_dir = _load_context(outline_path)
     model = outline["model"]
 
     input_path = find_base_image(output_dir, slide_num)
@@ -632,7 +899,7 @@ def run_edit(outline_path, slide_num, edit_prompt):
     # Save as versioned output (never overwrite)
     ver = next_version(output_dir, slide_num)
 
-    image_bytes, result = edit_image(input_path, edit_prompt, model, api_key)
+    image_bytes, result = edit_image(input_path, edit_prompt, model, keys)
 
     if image_bytes is None:
         print(f"FAILED: {result}")
@@ -650,7 +917,7 @@ def run_edit(outline_path, slide_num, edit_prompt):
 
 def run_build(outline_path, slide_arg):
     """Generate progressive-reveal build images using backwards-chaining."""
-    api_key, outline, output_dir = _load_context(outline_path)
+    keys, outline, output_dir = _load_context(outline_path)
     model = outline["model"]
     builds_dir = os.path.join(output_dir, "builds")
     os.makedirs(builds_dir, exist_ok=True)
@@ -714,7 +981,7 @@ def run_build(outline_path, slide_arg):
 
             print(f"  build-{step_num:02d}: {desc[:60]}...", end=" ", flush=True)
 
-            image_bytes, result = edit_image(prev_image, desc, model, api_key)
+            image_bytes, result = edit_image(prev_image, desc, model, keys)
 
             if image_bytes is None:
                 print(f"FAILED: {result[:100]}")
@@ -741,7 +1008,7 @@ def run_build(outline_path, slide_arg):
 
 def run_fix(outline_path, slide_num, fix_prompt):
     """Apply a targeted fix to an existing slide image, saving as a new version."""
-    api_key, outline, output_dir = _load_context(outline_path)
+    keys, outline, output_dir = _load_context(outline_path)
     model = outline["model"]
 
     input_path = find_latest_image(output_dir, slide_num)
@@ -755,7 +1022,7 @@ def run_fix(outline_path, slide_num, fix_prompt):
     print(f"Fix: {fix_prompt}")
     print(f"Output: slide-{slide_num:02d}-v{ver}")
 
-    image_bytes, result = edit_image(input_path, fix_prompt, model, api_key)
+    image_bytes, result = edit_image(input_path, fix_prompt, model, keys)
 
     if image_bytes is None:
         print(f"FAILED: {result}")

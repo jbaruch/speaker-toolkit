@@ -1,5 +1,6 @@
 """Tests for generate-illustrations.py — outline parsing and slide selection (no API calls)."""
 
+import json
 import os
 
 SAMPLE_OUTLINE = """\
@@ -229,3 +230,95 @@ def test_apply_safe_zone_default_surface(generate_illustrations):
     result = generate_illustrations.apply_safe_zone_directive("A scene", safe_zone)
     assert "TITLE SAFE ZONE" in result
     assert "left half" in result
+
+
+# --- Model family dispatch ---
+
+def test_model_family_openai(generate_illustrations):
+    assert generate_illustrations.model_family("gpt-image-2") == "openai"
+    assert generate_illustrations.model_family("gpt-image-1") == "openai"
+
+
+def test_model_family_imagen(generate_illustrations):
+    assert generate_illustrations.model_family("imagen-4.0-ultra-generate-001") == "imagen"
+    assert generate_illustrations.model_family("imagen-3.0-generate-002") == "imagen"
+
+
+def test_model_family_gemini_default(generate_illustrations):
+    assert generate_illustrations.model_family("gemini-3-pro-image-preview") == "gemini"
+    assert generate_illustrations.model_family("gemini-3.1-flash-image-preview") == "gemini"
+    assert generate_illustrations.model_family("nano-banana-pro-preview") == "gemini"
+    assert generate_illustrations.model_family("some-unknown-model") == "gemini"
+
+
+def test_family_key_name(generate_illustrations):
+    # Gemini and Imagen both authenticate with the Google AI Studio key
+    assert generate_illustrations.family_key_name("gemini") == "gemini"
+    assert generate_illustrations.family_key_name("imagen") == "gemini"
+    assert generate_illustrations.family_key_name("openai") == "openai"
+
+
+def test_compare_models_curated_list(generate_illustrations):
+    # The freshness check in SKILL.md Step 2 tracks this list — it must
+    # contain at least one current-flagship entry per major vendor
+    families = {generate_illustrations.model_family(m)
+                for m in generate_illustrations.COMPARE_MODELS}
+    assert "openai" in families, "COMPARE_MODELS missing OpenAI entry"
+    assert "gemini" in families, "COMPARE_MODELS missing Gemini entry"
+    assert "imagen" in families, "COMPARE_MODELS missing Imagen entry"
+
+
+# --- Secrets loading ---
+
+def test_load_secrets_from_file(generate_illustrations, tmp_path, monkeypatch):
+    secrets = {"gemini": {"api_key": "g-key"}, "openai": {"api_key": "o-key"}}
+    (tmp_path / "secrets.json").write_text(json.dumps(secrets))
+    # Block env-var fallback so we're testing file resolution
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    keys, path = generate_illustrations.load_secrets(str(tmp_path))
+    assert keys["gemini"] == "g-key"
+    assert keys["openai"] == "o-key"
+    assert path == str(tmp_path / "secrets.json")
+
+
+def test_load_secrets_env_fallback(generate_illustrations, tmp_path, monkeypatch):
+    # No secrets.json file in this vault
+    monkeypatch.setenv("GEMINI_API_KEY", "env-g")
+    monkeypatch.setenv("OPENAI_API_KEY", "env-o")
+    keys, _ = generate_illustrations.load_secrets(str(tmp_path))
+    assert keys["gemini"] == "env-g"
+    assert keys["openai"] == "env-o"
+
+
+def test_load_secrets_partial_file(generate_illustrations, tmp_path, monkeypatch):
+    # File has only gemini; openai should fall through to env
+    (tmp_path / "secrets.json").write_text(json.dumps({"gemini": {"api_key": "g"}}))
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "env-o")
+    keys, _ = generate_illustrations.load_secrets(str(tmp_path))
+    assert keys["gemini"] == "g"
+    assert keys["openai"] == "env-o"
+
+
+# --- Multipart body for OpenAI edits ---
+
+def test_multipart_body_structure(generate_illustrations):
+    body, boundary = generate_illustrations._multipart_body(
+        fields={"model": "gpt-image-2", "prompt": "edit this", "n": "1"},
+        files=[("image", "input.png", "image/png", b"\x89PNG\r\n")],
+    )
+    assert boundary.startswith("----GenIllustBnd")
+    text = body.decode("utf-8", errors="replace")
+    # Every field present with form-data disposition
+    assert 'name="model"' in text
+    assert "gpt-image-2" in text
+    assert 'name="prompt"' in text
+    assert "edit this" in text
+    # File field carries filename + content-type
+    assert 'name="image"' in text
+    assert 'filename="input.png"' in text
+    assert "Content-Type: image/png" in text
+    # Body terminates with the closing boundary
+    assert body.endswith(f"--{boundary}--\r\n".encode())

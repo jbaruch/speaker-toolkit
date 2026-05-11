@@ -1,6 +1,6 @@
 # Build Generation — Detail
 
-Reference for Step 4 (builds) and the build-insertion portion of Step 5
+Reference for Step 5 (builds) and the build-insertion portion of Step 6
 (apply to deck). The `illustration-rules` Build Process section is auto-loaded
 — this file covers the script contract and deck insertion.
 

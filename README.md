@@ -6,6 +6,18 @@ A five-skill presentation system for conference speakers: analyze your existing 
 
 ## What's New (0.17.0)
 
+**Cross-vendor image generation + model-freshness check** — `generate-illustrations.py`
+now dispatches by model-name prefix to three vendor families: Google's
+`gemini-*` / `nano-banana-*` (`generateContent`), Google's `imagen-*` (`:predict`),
+and OpenAI's `gpt-image-*` (`/images/generations` and multipart `/images/edits`).
+`COMPARE_MODELS` refreshed to current flagships including `gpt-image-2`,
+`imagen-4.0-ultra-generate-001`, `gemini-3.1-flash-image-preview`, and
+`nano-banana-pro-preview`. New SKILL.md Step 2 web-searches the model
+landscape before any image generation runs and proposes re-running
+`--compare` if a newer flagship has shipped since the outline's `**Model:**`
+was last set — closes the months-long gap between picking a model in
+Phase 2 and actually generating images in Phase 5.
+
 **Talk timer for timemytalk.app** — New `generate-talk-timings.py` parses the
 outline's pacing summary into `MM:SS Chapter` format for the timemytalk.app
 delivery timer. Supports `--qa` flag, sub-minute resolution, and automatic
