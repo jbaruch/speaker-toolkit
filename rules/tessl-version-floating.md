@@ -1,3 +1,7 @@
+---
+alwaysApply: true
+---
+
 # Tessl Version Floating
 
 ## Why
