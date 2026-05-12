@@ -51,7 +51,8 @@ slide; specific slides can be passed as `2 5 9` or a range `2-10`.
 python3 skills/illustrations/scripts/generate-illustrations.py presentation-outline.md --compare 2
 ```
 
-Generates the same prompt across multiple Gemini image models for visual
+Generates the same prompt across the curated `COMPARE_MODELS` list — a
+cross-vendor mix of Gemini, Imagen, and OpenAI flagships — for visual
 comparison. Output lands in `illustrations/model-comparison/`.
 
 ## Edit / Fix / Versioned Generation

@@ -118,7 +118,7 @@ The decision protocol is **side-by-side generation, then speaker picks**:
    prompt — but the visual decision is the speaker's, not the agent's.
 4. **Bake the choice.** The selected model goes into the outline header's
    `**Model:** \`<model-name>\`` line. Every subsequent generation in
-   Step 4 (deck illustrations) and Step 5 (builds) uses this model.
+   Step 4 (deck illustrations) and Step 5 (builds) use this model.
 
 If the speaker dislikes every candidate, iterate by either changing the
 comparison slide (a different slide may render better across the same

@@ -406,8 +406,20 @@ def load_secrets(vault_path=None):
                 secrets = json.load(f)
             keys["gemini"] = secrets.get("gemini", {}).get("api_key") or None
             keys["openai"] = secrets.get("openai", {}).get("api_key") or None
-        except (json.JSONDecodeError, OSError):
-            pass
+        except json.JSONDecodeError as e:
+            print(
+                f"WARNING: {secrets_path} is not valid JSON ({e}); "
+                "falling back to environment variables. Fix the file or "
+                "delete it to silence this warning.",
+                file=sys.stderr,
+            )
+        except OSError as e:
+            print(
+                f"WARNING: {secrets_path} could not be read ({e}); "
+                "falling back to environment variables. Check file "
+                "permissions.",
+                file=sys.stderr,
+            )
 
     if not keys["gemini"]:
         keys["gemini"] = os.environ.get("GEMINI_API_KEY") or None

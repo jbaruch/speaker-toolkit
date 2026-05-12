@@ -292,6 +292,23 @@ def test_load_secrets_env_fallback(generate_illustrations, tmp_path, monkeypatch
     assert keys["openai"] == "env-o"
 
 
+def test_load_secrets_malformed_json_warns(generate_illustrations, tmp_path, monkeypatch, capsys):
+    # Malformed secrets.json must not crash — load_secrets warns to stderr
+    # and falls through to env-var resolution
+    (tmp_path / "secrets.json").write_text("{not valid json")
+    monkeypatch.setenv("GEMINI_API_KEY", "env-fallback")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    keys, _ = generate_illustrations.load_secrets(str(tmp_path))
+    captured = capsys.readouterr()
+
+    assert keys["gemini"] == "env-fallback"
+    assert keys["openai"] is None
+    # Warning must mention the file path so the user knows what to fix
+    assert "secrets.json" in captured.err
+    assert "not valid JSON" in captured.err
+
+
 def test_load_secrets_partial_file(generate_illustrations, tmp_path, monkeypatch):
     # File has only gemini; openai should fall through to env
     (tmp_path / "secrets.json").write_text(json.dumps({"gemini": {"api_key": "g"}}))
