@@ -169,8 +169,10 @@ python3 skills/illustrations/scripts/generate-illustrations.py \
   presentation-outline.md --build all
 ```
 
-Output: `illustrations/builds/slide-NN-build-MM.jpg`. Build-00 is the empty
-frame; build-N is the full image. Detail and the per-step contract:
+Output: `illustrations/builds/slide-NN-build-MM.<ext>` where `<ext>` is
+the MIME-derived extension for each step (`.jpg` / `.png` / `.webp`
+depending on the model and source image). Build-00 is the empty frame;
+build-N is the full image. Detail and the per-step contract:
 [skills/illustrations/references/builds.md](references/builds.md).
 
 If no slides specify builds, proceed silently to Step 6.
