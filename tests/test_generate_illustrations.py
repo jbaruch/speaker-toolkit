@@ -232,77 +232,21 @@ def test_apply_safe_zone_default_surface(generate_illustrations):
     assert "left half" in result
 
 
-def test_apply_safe_zone_skipped_for_non_full_format(generate_illustrations, capsys):
-    # Safe zone composition only makes sense for FULL-format slides
-    # (apply-illustrations-to-deck.py uses a fixed right-column layout
-    # for IMG+TXT and ignores Safe zone: lines on those slides). The
-    # generator must skip the directive on non-FULL formats and warn.
-    safe_zone = {"zone": "upper_third", "surface": "painted sky"}
-    result = generate_illustrations.apply_safe_zone_directive(
-        "A scene", safe_zone, slide_format="IMG+TXT",
-        slide_label="7 (Portrait slide)",
-    )
-    captured = capsys.readouterr()
-    assert "TITLE SAFE ZONE" not in result
-    assert result == "A scene"
-    assert "IMG+TXT" in captured.out
-    assert "Safe zone directive skipped" in captured.out
-    # Warning must identify the slide so the operator knows what to fix
-    assert "Slide 7" in captured.out
-    assert "Portrait slide" in captured.out
-
-
-def test_apply_safe_zone_unchanged_for_full_format(generate_illustrations):
-    # FULL slides still get the directive — the format-aware behavior is
-    # additive, not a regression on the default path
-    safe_zone = {"zone": "upper_third", "surface": "painted sky"}
-    result = generate_illustrations.apply_safe_zone_directive(
-        "A scene", safe_zone, slide_format="FULL"
-    )
-    assert "TITLE SAFE ZONE" in result
-
-
-def test_apply_safe_zone_applied_for_unknown_format(generate_illustrations):
-    # Talk-specific formats (DIAGRAM, QUOTE, WIDE, etc.) fall through
-    # the FORMAT_SIZING FULL fallback (16:9) — the safe-zone directive
-    # should still apply. Matches apply-illustrations-to-deck.py treating
-    # Safe zone: presence as the title-overlay signal.
-    safe_zone = {"zone": "upper_third", "surface": "painted sky"}
-    for fmt in ("WIDE", "DIAGRAM", "QUOTE"):
-        result = generate_illustrations.apply_safe_zone_directive(
-            "A scene", safe_zone, slide_format=fmt
-        )
-        assert "TITLE SAFE ZONE" in result, f"directive missing for {fmt}"
-
-
-def test_apply_safe_zone_strips_stale_directive_on_non_full(generate_illustrations, capsys):
-    # Regression: if a prompt already carries a TITLE SAFE ZONE block
-    # (e.g. from a prior FULL run, or a slide that was changed FULL →
-    # IMG+TXT mid-iteration), the non-FULL early-return path must still
-    # strip the stale directive — otherwise the prompt biases generation
-    # toward a 16:9 safe zone even though we're trying to skip it.
-    prompt_with_stale = (
-        "A scene "
-        "TITLE SAFE ZONE -- CRITICAL COMPOSITION RULE: Reserve the upper "
-        "third of the 16:9 frame as clean uninterrupted negative space..."
-    )
-    safe_zone = {"zone": "upper_third", "surface": "painted sky"}
-    result = generate_illustrations.apply_safe_zone_directive(
-        prompt_with_stale, safe_zone, slide_format="IMG+TXT"
-    )
-    assert "TITLE SAFE ZONE" not in result
-    # The cleaned prompt should be only the leading content, no directive
-    assert result.startswith("A scene")
-    captured = capsys.readouterr()
-    assert "Safe zone directive skipped" in captured.out
-
-
-def test_apply_safe_zone_unchanged_when_format_omitted(generate_illustrations):
-    # Backward compatibility: callers that don't pass slide_format get
-    # the historical behavior (always apply when safe_zone present)
-    safe_zone = {"zone": "upper_third", "surface": "painted sky"}
-    result = generate_illustrations.apply_safe_zone_directive("A scene", safe_zone)
-    assert "TITLE SAFE ZONE" in result
+def test_effective_slide_format_safe_zone_wins(generate_illustrations):
+    # apply-illustrations-to-deck.py gives Safe zone precedence over the
+    # Format token — slides with any Safe zone field are treated as
+    # FULL/title-overlay regardless of `Format: IMG+TXT` (see
+    # apply-illustrations-to-deck.py's `_imgtxt_slide_numbers` filter).
+    # The generator's effective_slide_format mirrors that precedence so
+    # sizing matches the downstream apply step.
+    sz = {"zone": "upper_third", "surface": "painted sky"}
+    assert generate_illustrations.effective_slide_format("IMG+TXT", sz) == "FULL"
+    assert generate_illustrations.effective_slide_format("FULL", sz) == "FULL"
+    assert generate_illustrations.effective_slide_format("DIAGRAM", sz) == "FULL"
+    # No safe zone → declared format flows through unchanged
+    assert generate_illustrations.effective_slide_format("IMG+TXT", None) == "IMG+TXT"
+    assert generate_illustrations.effective_slide_format("FULL", None) == "FULL"
+    assert generate_illustrations.effective_slide_format(None, None) is None
 
 
 # --- Model family dispatch ---

@@ -288,62 +288,48 @@ def resolve_prompt(prompt, slide_format, anchors):
     return prompt.replace("[STYLE ANCHOR]", anchor)
 
 
-def apply_safe_zone_directive(prompt, safe_zone, slide_format=None, slide_label=None):
+def apply_safe_zone_directive(prompt, safe_zone):
     """Append the SAFE ZONE directive to a prompt when safe_zone is set.
 
     See rules/title-overlay-rules.md for the policy. Idempotent: if the
-    prompt already contains a TITLE SAFE ZONE block, it is stripped
-    before the new directive is appended (or before the non-16:9 early
-    return, so a stale 16:9 directive doesn't survive a FULL→IMG+TXT
-    format change on the same slide).
+    prompt already contains a TITLE SAFE ZONE block, it is replaced.
 
-    Safe-zone composition is meaningful only for 16:9 frames. The skip
-    decision is sourced from FORMAT_SIZING via `sizing_for()` — formats
-    that map to a non-16:9 imagen aspect (IMG+TXT → 3:4) are skipped
-    with a warning. Unknown / talk-specific format tokens (DIAGRAM,
-    QUOTE, WIDE, etc.) fall through `sizing_for`'s FULL fallback and
-    receive the directive — matching apply-illustrations-to-deck.py's
-    behavior of treating Safe zone: presence as the title-overlay
-    signal regardless of format token.
-
-    `slide_label` (e.g. "5 (The Question)") is prepended to the warning
-    so the operator can identify which outline entry needs fixing even
-    when the warning fires before the per-slide header prints.
+    Safe zone presence is the signal — apply-illustrations-to-deck.py
+    treats any slide with a `Safe zone:` line as FULL/title-overlay
+    regardless of the `Format:` token (Safe zone takes precedence, see
+    apply-illustrations-to-deck.py's `_imgtxt_slide_numbers` filter).
+    The generator mirrors that: when Safe zone is present, the slide is
+    rendered as FULL and the directive is unconditionally applied.
+    Callers also override per-format sizing to FULL whenever Safe zone
+    is set — see the `effective_format` computation in each run_* call.
     """
     if not safe_zone:
-        return prompt
-
-    # Strip any stale directive first so a prior FULL run doesn't leak
-    # into a non-16:9 early return or a fresh FULL append.
-    if "TITLE SAFE ZONE" in prompt:
-        prompt = prompt.split("TITLE SAFE ZONE", 1)[0].rstrip()
-
-    # Skip when the format has known non-16:9 sizing (currently only
-    # IMG+TXT → 3:4). Unknown formats fall back to FULL/16:9 and get
-    # the directive.
-    if (
-        slide_format is not None
-        and sizing_for(slide_format)["imagen_aspect"] != "16:9"
-    ):
-        label_prefix = f"Slide {slide_label}: " if slide_label else ""
-        print(
-            f"  WARNING: {label_prefix}Safe zone directive skipped — "
-            f"Format: {slide_format} is a non-16:9 format (per "
-            "FORMAT_SIZING). Safe zones only make sense for 16:9 slides; "
-            "remove the `Safe zone:` line from this outline block to "
-            "silence this warning, or change the slide's Format to a "
-            "16:9 token."
-        )
         return prompt
     zone = safe_zone["zone"]
     if zone not in VALID_SAFE_ZONES:
         return prompt
     surface = safe_zone.get("surface") or DEFAULT_SAFE_ZONE_SURFACE[zone]
+    if "TITLE SAFE ZONE" in prompt:
+        prompt = prompt.split("TITLE SAFE ZONE", 1)[0].rstrip()
     directive = SAFE_ZONE_DIRECTIVE_TEMPLATE.format(
         zone_words=zone.replace("_", " "),
         surface=surface,
     )
     return prompt + directive
+
+
+def effective_slide_format(slide_format, safe_zone):
+    """Resolve the format that should drive vendor sizing.
+
+    apply-illustrations-to-deck.py treats `Safe zone:` presence as the
+    FULL/title-overlay signal regardless of the Format token, so the
+    generator must size accordingly — a 2:3 portrait can't host a 16:9
+    safe zone meaningfully. Returns "FULL" whenever safe_zone is set;
+    otherwise returns the declared slide_format unchanged.
+    """
+    if safe_zone:
+        return "FULL"
+    return slide_format
 
 
 # --- Slide Number Selection ---
@@ -880,16 +866,13 @@ def run_generate(outline_path, slide_args, versioned=False):
     for i, num in enumerate(to_generate):
         slide = slides_by_num[num]
         prompt = resolve_prompt(slide["prompt"], slide["format"], outline["anchors"])
-        prompt = apply_safe_zone_directive(
-            prompt,
-            slide.get("safe_zone"),
-            slide["format"],
-            slide_label=f"{num} ({slide['title']})",
-        )
+        prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"))
 
         print(f"[{i+1}/{len(to_generate)}] Slide {num}: {slide['title']}")
 
-        image_bytes, result = generate_image(prompt, model, keys, slide["format"])
+        # Safe zone presence forces FULL sizing — see effective_slide_format
+        eff_format = effective_slide_format(slide["format"], slide.get("safe_zone"))
+        image_bytes, result = generate_image(prompt, model, keys, eff_format)
 
         if image_bytes is None:
             print(f"  FAILED: {result}")
@@ -929,12 +912,8 @@ def run_compare(outline_path, slide_num):
 
     slide = slides_by_num[slide_num]
     prompt = resolve_prompt(slide["prompt"], slide["format"], outline["anchors"])
-    prompt = apply_safe_zone_directive(
-        prompt,
-        slide.get("safe_zone"),
-        slide["format"],
-        slide_label=f"{slide_num} ({slide['title']})",
-    )
+    prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"))
+    eff_format = effective_slide_format(slide["format"], slide.get("safe_zone"))
 
     output_dir = os.path.join(
         os.path.dirname(os.path.abspath(outline_path)),
@@ -959,7 +938,7 @@ def run_compare(outline_path, slide_num):
     for i, model in enumerate(models):
         print(f"[{i+1}/{len(models)}] {model}...", end=" ", flush=True)
 
-        image_bytes, result = generate_image(prompt, model, keys, slide["format"])
+        image_bytes, result = generate_image(prompt, model, keys, eff_format)
 
         if image_bytes is None:
             print(f"FAILED: {result[:100]}")
@@ -1004,7 +983,10 @@ def run_edit(outline_path, slide_num, edit_prompt):
         sys.exit(1)
 
     slide = next((s for s in outline["slides"] if s["slide_num"] == slide_num), None)
-    slide_format = slide["format"] if slide else None
+    eff_format = (
+        effective_slide_format(slide["format"], slide.get("safe_zone"))
+        if slide else None
+    )
 
     print(f"Model: {model}")
     print(f"Input: {input_path}")
@@ -1013,7 +995,7 @@ def run_edit(outline_path, slide_num, edit_prompt):
     # Save as versioned output (never overwrite)
     ver = next_version(output_dir, slide_num)
 
-    image_bytes, result = edit_image(input_path, edit_prompt, model, keys, slide_format)
+    image_bytes, result = edit_image(input_path, edit_prompt, model, keys, eff_format)
 
     if image_bytes is None:
         print(f"FAILED: {result}")
@@ -1105,7 +1087,8 @@ def run_build(outline_path, slide_arg):
             print(f"  build-{step_num:02d}: {desc[:60]}...", end=" ", flush=True)
 
             image_bytes, result = edit_image(
-                prev_image, desc, model, keys, slide["format"]
+                prev_image, desc, model, keys,
+                effective_slide_format(slide["format"], slide.get("safe_zone")),
             )
 
             if image_bytes is None:
@@ -1142,7 +1125,10 @@ def run_fix(outline_path, slide_num, fix_prompt):
         sys.exit(1)
 
     slide = next((s for s in outline["slides"] if s["slide_num"] == slide_num), None)
-    slide_format = slide["format"] if slide else None
+    eff_format = (
+        effective_slide_format(slide["format"], slide.get("safe_zone"))
+        if slide else None
+    )
 
     ver = next_version(output_dir, slide_num)
     print(f"Model: {model}")
@@ -1150,7 +1136,7 @@ def run_fix(outline_path, slide_num, fix_prompt):
     print(f"Fix: {fix_prompt}")
     print(f"Output: slide-{slide_num:02d}-v{ver}")
 
-    image_bytes, result = edit_image(input_path, fix_prompt, model, keys, slide_format)
+    image_bytes, result = edit_image(input_path, fix_prompt, model, keys, eff_format)
 
     if image_bytes is None:
         print(f"FAILED: {result}")
