@@ -17,8 +17,12 @@ jobs:
   evals:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: tesslio/setup-tessl@v2
+      # Actions pinned to commit SHAs per
+      # `jbaruch/coding-policy: dependency-management` (pin versions
+      # or use a lock file). The trailing `# v…` comment is the
+      # documented version the SHA resolves to.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: tesslio/setup-tessl@25ec223fc0da33b41b8044ff5ab2b85235f4f91e # v2
         with:
           token: ${{ secrets.TESSL_TOKEN }}
       - run: tessl eval run .
