@@ -293,29 +293,40 @@ def apply_safe_zone_directive(prompt, safe_zone, slide_format=None):
 
     See rules/title-overlay-rules.md for the policy. Idempotent: if the
     prompt already contains a TITLE SAFE ZONE block, it is stripped
-    before the new directive is appended (or before the non-FULL early
+    before the new directive is appended (or before the non-16:9 early
     return, so a stale 16:9 directive doesn't survive a FULL→IMG+TXT
     format change on the same slide).
 
-    The directive is FULL-format-specific (apply-illustrations-to-deck.py
-    only consumes Safe zone: lines on FULL slides; IMG+TXT slides get a
-    fixed layout with title in the right column). When `slide_format` is
-    provided and is not "FULL", the directive is skipped with a warning.
+    Safe-zone composition is meaningful only for 16:9 frames. The skip
+    decision is sourced from FORMAT_SIZING via `sizing_for()` — formats
+    that map to a non-16:9 imagen aspect (IMG+TXT → 3:4) are skipped
+    with a warning. Unknown / talk-specific format tokens (DIAGRAM,
+    QUOTE, WIDE, etc.) fall through `sizing_for`'s FULL fallback and
+    receive the directive — matching apply-illustrations-to-deck.py's
+    behavior of treating Safe zone: presence as the title-overlay
+    signal regardless of format token.
     """
     if not safe_zone:
         return prompt
 
     # Strip any stale directive first so a prior FULL run doesn't leak
-    # into a non-FULL early return or a fresh FULL append.
+    # into a non-16:9 early return or a fresh FULL append.
     if "TITLE SAFE ZONE" in prompt:
         prompt = prompt.split("TITLE SAFE ZONE", 1)[0].rstrip()
 
-    if slide_format is not None and slide_format != "FULL":
+    # Skip when the format has known non-16:9 sizing (currently only
+    # IMG+TXT → 3:4). Unknown formats fall back to FULL/16:9 and get
+    # the directive.
+    if (
+        slide_format is not None
+        and sizing_for(slide_format)["imagen_aspect"] != "16:9"
+    ):
         print(
             f"  WARNING: Safe zone directive skipped — Format: {slide_format} "
-            "is not a FULL-format slide. Safe zones only make sense for "
-            "FULL (16:9) slides; remove the `Safe zone:` line from the outline "
-            "block to silence this warning."
+            "is a non-16:9 format (per FORMAT_SIZING). Safe zones only make "
+            "sense for 16:9 slides; remove the `Safe zone:` line from this "
+            "outline block to silence this warning, or change the slide's "
+            "Format to a 16:9 token."
         )
         return prompt
     zone = safe_zone["zone"]

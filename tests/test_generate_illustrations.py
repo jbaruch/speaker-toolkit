@@ -258,6 +258,19 @@ def test_apply_safe_zone_unchanged_for_full_format(generate_illustrations):
     assert "TITLE SAFE ZONE" in result
 
 
+def test_apply_safe_zone_applied_for_unknown_format(generate_illustrations):
+    # Talk-specific formats (DIAGRAM, QUOTE, WIDE, etc.) fall through
+    # the FORMAT_SIZING FULL fallback (16:9) — the safe-zone directive
+    # should still apply. Matches apply-illustrations-to-deck.py treating
+    # Safe zone: presence as the title-overlay signal.
+    safe_zone = {"zone": "upper_third", "surface": "painted sky"}
+    for fmt in ("WIDE", "DIAGRAM", "QUOTE"):
+        result = generate_illustrations.apply_safe_zone_directive(
+            "A scene", safe_zone, slide_format=fmt
+        )
+        assert "TITLE SAFE ZONE" in result, f"directive missing for {fmt}"
+
+
 def test_apply_safe_zone_strips_stale_directive_on_non_full(generate_illustrations, capsys):
     # Regression: if a prompt already carries a TITLE SAFE ZONE block
     # (e.g. from a prior FULL run, or a slide that was changed FULL →
