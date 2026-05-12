@@ -288,7 +288,7 @@ def resolve_prompt(prompt, slide_format, anchors):
     return prompt.replace("[STYLE ANCHOR]", anchor)
 
 
-def apply_safe_zone_directive(prompt, safe_zone, slide_format=None):
+def apply_safe_zone_directive(prompt, safe_zone, slide_format=None, slide_label=None):
     """Append the SAFE ZONE directive to a prompt when safe_zone is set.
 
     See rules/title-overlay-rules.md for the policy. Idempotent: if the
@@ -305,6 +305,10 @@ def apply_safe_zone_directive(prompt, safe_zone, slide_format=None):
     receive the directive — matching apply-illustrations-to-deck.py's
     behavior of treating Safe zone: presence as the title-overlay
     signal regardless of format token.
+
+    `slide_label` (e.g. "5 (The Question)") is prepended to the warning
+    so the operator can identify which outline entry needs fixing even
+    when the warning fires before the per-slide header prints.
     """
     if not safe_zone:
         return prompt
@@ -321,12 +325,14 @@ def apply_safe_zone_directive(prompt, safe_zone, slide_format=None):
         slide_format is not None
         and sizing_for(slide_format)["imagen_aspect"] != "16:9"
     ):
+        label_prefix = f"Slide {slide_label}: " if slide_label else ""
         print(
-            f"  WARNING: Safe zone directive skipped — Format: {slide_format} "
-            "is a non-16:9 format (per FORMAT_SIZING). Safe zones only make "
-            "sense for 16:9 slides; remove the `Safe zone:` line from this "
-            "outline block to silence this warning, or change the slide's "
-            "Format to a 16:9 token."
+            f"  WARNING: {label_prefix}Safe zone directive skipped — "
+            f"Format: {slide_format} is a non-16:9 format (per "
+            "FORMAT_SIZING). Safe zones only make sense for 16:9 slides; "
+            "remove the `Safe zone:` line from this outline block to "
+            "silence this warning, or change the slide's Format to a "
+            "16:9 token."
         )
         return prompt
     zone = safe_zone["zone"]
@@ -874,7 +880,12 @@ def run_generate(outline_path, slide_args, versioned=False):
     for i, num in enumerate(to_generate):
         slide = slides_by_num[num]
         prompt = resolve_prompt(slide["prompt"], slide["format"], outline["anchors"])
-        prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"), slide["format"])
+        prompt = apply_safe_zone_directive(
+            prompt,
+            slide.get("safe_zone"),
+            slide["format"],
+            slide_label=f"{num} ({slide['title']})",
+        )
 
         print(f"[{i+1}/{len(to_generate)}] Slide {num}: {slide['title']}")
 
@@ -918,7 +929,12 @@ def run_compare(outline_path, slide_num):
 
     slide = slides_by_num[slide_num]
     prompt = resolve_prompt(slide["prompt"], slide["format"], outline["anchors"])
-    prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"), slide["format"])
+    prompt = apply_safe_zone_directive(
+        prompt,
+        slide.get("safe_zone"),
+        slide["format"],
+        slide_label=f"{slide_num} ({slide['title']})",
+    )
 
     output_dir = os.path.join(
         os.path.dirname(os.path.abspath(outline_path)),

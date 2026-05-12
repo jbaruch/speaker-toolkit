@@ -239,13 +239,17 @@ def test_apply_safe_zone_skipped_for_non_full_format(generate_illustrations, cap
     # generator must skip the directive on non-FULL formats and warn.
     safe_zone = {"zone": "upper_third", "surface": "painted sky"}
     result = generate_illustrations.apply_safe_zone_directive(
-        "A scene", safe_zone, slide_format="IMG+TXT"
+        "A scene", safe_zone, slide_format="IMG+TXT",
+        slide_label="7 (Portrait slide)",
     )
     captured = capsys.readouterr()
     assert "TITLE SAFE ZONE" not in result
     assert result == "A scene"
     assert "IMG+TXT" in captured.out
     assert "Safe zone directive skipped" in captured.out
+    # Warning must identify the slide so the operator knows what to fix
+    assert "Slide 7" in captured.out
+    assert "Portrait slide" in captured.out
 
 
 def test_apply_safe_zone_unchanged_for_full_format(generate_illustrations):
