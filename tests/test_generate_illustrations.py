@@ -236,7 +236,8 @@ def test_effective_slide_format_safe_zone_wins(generate_illustrations):
     # apply-illustrations-to-deck.py gives Safe zone precedence over the
     # Format token — slides with any Safe zone field are treated as
     # FULL/title-overlay regardless of `Format: IMG+TXT` (see
-    # apply-illustrations-to-deck.py's `_imgtxt_slide_numbers` filter).
+    # apply-illustrations-to-deck.py's `parse_img_txt_slides()`, which
+    # only returns IMG+TXT slides that do NOT carry a Safe zone line).
     # The generator's effective_slide_format mirrors that precedence so
     # sizing matches the downstream apply step.
     sz = {"zone": "upper_third", "surface": "painted sky"}

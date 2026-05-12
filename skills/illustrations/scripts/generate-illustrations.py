@@ -297,11 +297,13 @@ def apply_safe_zone_directive(prompt, safe_zone):
     Safe zone presence is the signal — apply-illustrations-to-deck.py
     treats any slide with a `Safe zone:` line as FULL/title-overlay
     regardless of the `Format:` token (Safe zone takes precedence, see
-    apply-illustrations-to-deck.py's `_imgtxt_slide_numbers` filter).
-    The generator mirrors that: when Safe zone is present, the slide is
+    apply-illustrations-to-deck.py's `parse_img_txt_slides()` which
+    excludes slides whose block also contains a Safe zone line). The
+    generator mirrors that: when Safe zone is present, the slide is
     rendered as FULL and the directive is unconditionally applied.
     Callers also override per-format sizing to FULL whenever Safe zone
-    is set — see the `effective_format` computation in each run_* call.
+    is set — see `effective_slide_format()` and the `eff_format` use
+    in each run_* call.
     """
     if not safe_zone:
         return prompt

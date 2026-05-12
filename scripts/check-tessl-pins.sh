@@ -30,12 +30,22 @@ for manifest in "${COVERED_MANIFESTS[@]}"; do
   fi
 
   # Walk every dependency entry; collect anything that's not exactly "latest".
-  bad=$(python3 - "$manifest" "$EXPECTED_SPECIFIER" <<'PY'
+  # Capture combined stdout+stderr into `bad` and the exit code into `rc`.
+  # The `|| rc=$?` consumes the failure exit code so `set -e` doesn't abort.
+  rc=0
+  bad=$(python3 - "$manifest" "$EXPECTED_SPECIFIER" 2>&1 <<'PY'
 import json, sys
 
 manifest_path, expected = sys.argv[1], sys.argv[2]
-with open(manifest_path) as f:
-    data = json.load(f)
+try:
+    with open(manifest_path) as f:
+        data = json.load(f)
+except json.JSONDecodeError as e:
+    # Distinct exit code so the wrapper can give a malformed-JSON error
+    # instead of the "non-floating specifiers" message — they're
+    # different failure modes and need different fixes.
+    print(f"MALFORMED_JSON: {e.msg} at line {e.lineno} col {e.colno}", file=sys.stderr)
+    sys.exit(2)
 
 violations = []
 for name, spec in (data.get("dependencies") or {}).items():
@@ -51,20 +61,34 @@ for name, found in violations:
 
 sys.exit(1 if violations else 0)
 PY
-  ) || {
-    echo "ERROR: $manifest contains dependencies with non-floating specifiers:" >&2
-    echo "$bad" | sed 's/^/  /' >&2
-    echo "" >&2
-    echo "  Per rules/tessl-version-floating.md, every dependency in this manifest must use" >&2
-    echo "  \"version\": \"latest\". Pinning here produces silent drift because \`tessl update\`" >&2
-    echo "  rewrites the manifest in-place at runtime and .tessl/tiles/ is gitignored." >&2
-    echo "" >&2
-    echo "  Fix: change the flagged specifier(s) to \"latest\", or — if you intentionally" >&2
-    echo "  want this manifest to pin — remove it from the carve-out by editing both" >&2
-    echo "  rules/tessl-version-floating.md → Covered Manifests AND scripts/check-tessl-pins.sh" >&2
-    echo "  → COVERED_MANIFESTS." >&2
-    status=1
-  }
+  ) || rc=$?
+
+  case "$rc" in
+    0)
+      ;;
+    2)
+      echo "ERROR: $manifest is not valid JSON." >&2
+      echo "$bad" | sed 's/^/  /' >&2
+      echo "" >&2
+      echo "  Fix the JSON syntax error and re-run. The tessl-version-floating" >&2
+      echo "  check can't verify pin status until the manifest parses." >&2
+      status=1
+      ;;
+    *)
+      echo "ERROR: $manifest contains dependencies with non-floating specifiers:" >&2
+      echo "$bad" | sed 's/^/  /' >&2
+      echo "" >&2
+      echo "  Per rules/tessl-version-floating.md, every dependency in this manifest must use" >&2
+      echo "  \"version\": \"latest\". Pinning here produces silent drift because \`tessl update\`" >&2
+      echo "  rewrites the manifest in-place at runtime and .tessl/tiles/ is gitignored." >&2
+      echo "" >&2
+      echo "  Fix: change the flagged specifier(s) to \"latest\", or — if you intentionally" >&2
+      echo "  want this manifest to pin — remove it from the carve-out by editing both" >&2
+      echo "  rules/tessl-version-floating.md → Covered Manifests AND scripts/check-tessl-pins.sh" >&2
+      echo "  → COVERED_MANIFESTS." >&2
+      status=1
+      ;;
+  esac
 done
 
 if [ "$status" -ne 0 ]; then
