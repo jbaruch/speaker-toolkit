@@ -1,0 +1,28 @@
+name: Evals (scheduled)
+
+# `jbaruch/coding-policy: plugin-evals` requires evals to run on a
+# recurring cadence in addition to every publish. Weekly is sufficient
+# for a tile whose evals exercise live web search — daily would add
+# cost without proportionate signal. The same suite gates publish in
+# publish-tile.yml.
+
+on:
+  schedule:
+    # Sunday 06:00 UTC — quiet window, gives a fresh signal at the start
+    # of the work week without colliding with the publish workflow.
+    - cron: "0 6 * * 0"
+  workflow_dispatch:
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    steps:
+      # Actions pinned to commit SHAs per
+      # `jbaruch/coding-policy: dependency-management` (pin versions
+      # or use a lock file). The trailing `# v…` comment is the
+      # documented version the SHA resolves to.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: tesslio/setup-tessl@25ec223fc0da33b41b8044ff5ab2b85235f4f91e # v2
+        with:
+          token: ${{ secrets.TESSL_TOKEN }}
+      - run: tessl eval run .

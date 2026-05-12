@@ -1,6 +1,6 @@
 # Illustration Strategy — Detail
 
-The Step 2 collaboration in `SKILL.md`. Produces the Illustration Style Anchor
+The Step 3 collaboration in `SKILL.md`. Produces the Illustration Style Anchor
 block that gets written into the outline header.
 
 Not every talk needs generated illustrations — demo-heavy, data-heavy, or
@@ -109,25 +109,27 @@ The decision protocol is **side-by-side generation, then speaker picks**:
      presentation-outline.md --compare <slide-num>
    ```
    The script renders the same prompt across the curated `COMPARE_MODELS`
-   list (currently three Gemini-family models — see the script's constant
-   block; updated as new image-capable models become available). Output
-   lands in `illustrations/model-comparison/slide-<NN>-<model>.<ext>`.
+   list — currently a cross-vendor mix of Gemini, Imagen, and OpenAI
+   flagships (see the script's constant block; updated via the freshness
+   check in `SKILL.md` Step 2 as new flagships ship). Output lands in
+   `illustrations/model-comparison/slide-<NN>-<model>.<ext>`.
 3. **Present the candidates.** Show the speaker the side-by-side outputs.
    Lead with a brief read of each — what each model emphasized about the
    prompt — but the visual decision is the speaker's, not the agent's.
 4. **Bake the choice.** The selected model goes into the outline header's
    `**Model:** \`<model-name>\`` line. Every subsequent generation in
-   Step 3 (deck illustrations) and Step 4 (builds) uses this model.
+   Step 4 (deck illustrations) and Step 5 (builds) use this model.
 
-If the speaker dislikes all three candidates, iterate by either changing
-the comparison slide (a different slide may render better across the same
+If the speaker dislikes every candidate, iterate by either changing the
+comparison slide (a different slide may render better across the same
 model set) or revising the anchor paragraph (Sub-step 1) and re-running
 the comparison. Don't widen the model list ad-hoc — the curated set is
-what the script supports; new entries belong in the script's constant.
+what the script supports; new entries belong in the script's constant
+(see the freshness check in `SKILL.md` Step 2 for when and how to bump it).
 
 Model-specific prompt conventions (e.g., negative prompts, aspect-ratio
 tokens, reserved keywords) should be baked into the anchor paragraph
-immediately after the model is chosen, before Step 3 generation runs.
+immediately after the model is chosen, before Step 4 generation runs.
 
 ## Sub-step 4: Visual Continuity Devices
 
@@ -153,4 +155,4 @@ artifact:
 
 Author approves the style anchor paragraphs, format vocabulary, and model
 choice. These become the Illustration Style Anchor section in the outline
-header. Once written, Step 3 (generation) can run.
+header. Once written, Step 4 (generation) can run.

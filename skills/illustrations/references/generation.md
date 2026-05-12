@@ -1,6 +1,6 @@
 # Deck Illustration Generation — Detail
 
-Reference for Step 3 (deck illustrations) and Step 5 (apply to deck) in
+Reference for Step 4 (deck illustrations) and Step 6 (apply to deck) in
 `SKILL.md`. The `illustration-rules` and `title-overlay-rules` steering rules
 are auto-loaded — apply them, don't restate them.
 
@@ -8,18 +8,33 @@ are auto-loaded — apply them, don't restate them.
 
 Before generating, ensure:
 
-1. **API key** — add your Gemini key to `{vault}/secrets.json` (preferred):
+1. **API key(s)** — the script dispatches by model-name prefix:
+   `gpt-image-*` → OpenAI; `imagen-*` and `gemini-*` / `nano-banana-*` →
+   Google. Add whichever keys the run will actually use to
+   `{vault}/secrets.json` (preferred):
    ```json
-   { "gemini": { "api_key": "your-key-here" } }
+   {
+     "gemini": { "api_key": "your-google-key" },
+     "openai": { "api_key": "your-openai-key" }
+   }
    ```
-   Or set `GEMINI_API_KEY` as a fallback. Get a key from
-   https://aistudio.google.com/app/apikey.
+   For single-model generation (`generate`, `--edit`, `--build`, `--fix`),
+   only the key for the outline's baked `**Model:**` vendor is required —
+   the other can be omitted. For `--compare`, every vendor represented in
+   `COMPARE_MODELS` is hit, so all corresponding keys must be present (the
+   current curated list spans both Google and OpenAI, so both are needed).
+   Env-var fallbacks: `GEMINI_API_KEY`, `OPENAI_API_KEY`. Get keys from
+   https://aistudio.google.com/app/apikey (Google) and
+   https://platform.openai.com/api-keys (OpenAI).
 
 2. **Model availability** — verify the model in the outline header is
    accessible with your key. The script reads it from the
    `**Model:** \`model-name\`` line in the Illustration Style Anchor section.
+   Imagen models have no edit endpoint — `--edit`, `--build`, and `--fix`
+   require a Gemini or OpenAI model.
 
-3. **Python 3** — stdlib only (`urllib`, `json`, `base64`). No pip install needed.
+3. **Python 3** — stdlib only (`urllib`, `json`, `base64`, `uuid`). No pip
+   install needed.
 
 ## Slide Selection Modes
 
@@ -36,7 +51,8 @@ slide; specific slides can be passed as `2 5 9` or a range `2-10`.
 python3 skills/illustrations/scripts/generate-illustrations.py presentation-outline.md --compare 2
 ```
 
-Generates the same prompt across multiple Gemini image models for visual
+Generates the same prompt across the curated `COMPARE_MODELS` list — a
+cross-vendor mix of Gemini, Imagen, and OpenAI flagships — for visual
 comparison. Output lands in `illustrations/model-comparison/`.
 
 ## Edit / Fix / Versioned Generation

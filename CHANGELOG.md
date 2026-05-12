@@ -1,6 +1,105 @@
 # Changelog
 
-## Unreleased
+## 0.18.0
+
+### deps — formalize tessl-version-floating carve-out
+
+`tessl.json` floats its dependencies to `"latest"` because `tessl update`
+rewrites the manifest in-place at runtime and `.tessl/tiles/` is
+gitignored — pinning produces silent drift between commit history and
+the running install. `jbaruch/coding-policy: dependency-management`
+permits this only when three preconditions are met. This release adds
+all three:
+
+- **Authority-of-record rule** at `rules/tessl-version-floating.md`
+  documenting the carve-out, naming `tessl.json` as the single covered
+  manifest, and explaining why pin/lock semantics break in this shape.
+  Registered under `tile.json` → `steering`.
+- **Deploy-time check** at `scripts/check-tessl-pins.sh` that walks
+  every covered manifest and fails if any dependency uses a specifier
+  other than `"latest"` — rejecting literal pins, version ranges, tags,
+  and anything else per the carve-out's "rejecting only literal pins
+  lets a non-literal pinned/ranged value slip through" warning.
+- **CI wiring** in `.github/workflows/tests.yml` runs the check ahead
+  of the test suite on every push and PR. CI failure blocks merge.
+
+The second `tessl.json` dependency (`tessl-labs/tessl-skill-eval-scenarios`)
+also moves to `"latest"` — the carve-out applies to the manifest as a
+whole, mixed pin/float within a covered manifest is not allowed.
+
+### illustrations — pre-generation model-freshness check
+
+New Step 2 in the illustrations skill runs before Strategy comparison or
+deck Generation touches images. It uses `WebSearch` to identify current
+flagship image-generation models from the major vendors (Google's Gemini
+image + Imagen, OpenAI's `gpt-image-*`, and any other vendor with a
+publicly accessible image API) and surfaces gaps against the script's
+`COMPARE_MODELS` constant and — for Generation mode — the outline's baked
+`**Model:**` choice plus its selection date.
+
+If newer flagships exist, the step proposes updating `COMPARE_MODELS`
+(Strategy) or re-running `--compare` against an updated list (Generation)
+before continuing. The motivation is the months-long gap between when a
+model was picked for a talk and when illustrations are actually generated
+— a window in which a vendor often ships a meaningfully better flagship
+(the recent `gpt-image-2` release being the precipitating example).
+
+Step numbers in `SKILL.md` and the four reference files shift accordingly:
+Strategy → Step 3, Generation → Step 4, Builds → Step 5, Apply → Step 6,
+Thumbnail → Step 7.
+
+### illustrations — cross-vendor image generation (OpenAI + Imagen)
+
+`generate-illustrations.py` is no longer Gemini-only. The script now
+dispatches by model-name prefix to three vendor families:
+
+- `gemini-*` and `nano-banana-*` → Google `generateContent` (existing path)
+- `imagen-*` → Google `:predict` endpoint with format-derived aspect
+  ratio (new — FULL → `16:9`, IMG+TXT → `3:4`, the closest of Imagen's
+  supported 1:1 / 9:16 / 16:9 / 3:4 / 4:3 set to the IMG+TXT 2:3 anchor)
+- `gpt-image-*` → OpenAI `/images/generations` for fresh images and
+  `/images/edits` (multipart) for the `--edit`, `--build`, and `--fix`
+  workflows; size is format-derived (FULL → `2048x1152` true 16:9,
+  IMG+TXT → `1024x1536` true 2:3) (new)
+
+API-key resolution gains an `openai` slot. `secrets.json` now reads both
+`gemini.api_key` and `openai.api_key`; either may also come from the
+`GEMINI_API_KEY` / `OPENAI_API_KEY` environment variables. The script
+only demands the key(s) needed by the models a given run will actually
+hit — Gemini-only outlines don't require an OpenAI key, and vice versa.
+Missing-key errors are per-vendor and include the right signup link
+(`aistudio.google.com/app/apikey` for Google, `platform.openai.com/api-keys`
+for OpenAI).
+
+`COMPARE_MODELS` is refreshed to current flagships across vendors:
+`gemini-3-pro-image-preview`, `gemini-3.1-flash-image-preview`,
+`nano-banana-pro-preview`, `imagen-4.0-ultra-generate-001`, and
+`gpt-image-2`. The older `gemini-2.0-flash-preview-image-generation` and
+`imagen-3.0-generate-002` entries are dropped — they were superseded by
+the flagships above (and the Imagen-3 entry was effectively broken
+anyway, since `generateContent` doesn't accept Imagen models).
+
+Imagen models have no public edit endpoint, so `--edit`, `--build`, and
+`--fix` against an Imagen-family outline return an actionable error
+directing the speaker to a Gemini or OpenAI model for editing workflows.
+
+The outline parser also gained `+` and `-` tolerance in the Format and
+STYLE ANCHOR regex (`[\w+-]+` replaces `\w+`) so the documented `IMG+TXT`
+token is parsed correctly — previously it produced no match and the slide
+silently fell back to the first available anchor and the FULL sizing
+default. Safe-zone precedence is now applied uniformly:
+`apply-illustrations-to-deck.py` treats `Safe zone:` presence as the
+FULL/title-overlay signal regardless of the `Format:` token, so the
+generator mirrors that — when Safe zone is present, the slide is
+treated as FULL for anchor selection, vendor sizing, AND the directive
+itself (via a new `effective_slide_format()` helper threaded through
+every run_* caller).
+
+New tests cover model-family classification across vendors, multi-vendor
+key resolution (secrets.json, env-var fallbacks, partial config, malformed
+JSON warning), the OpenAI multipart body structure, `final_build_dest`
+extension preservation, the empty-build-steps parse path, the format
+sizing table, and the `IMG+TXT` outline regex fix.
 
 ### Extract `illustrations` skill from presentation-creator
 

@@ -4,7 +4,19 @@
 
 A five-skill presentation system for conference speakers: analyze your existing talks to extract your rhetoric patterns, create new presentations that match your documented style, and produce the deck illustrations + thumbnail visual layer.
 
-## What's New (0.17.0)
+## What's New (0.18.0)
+
+**Cross-vendor image generation + model-freshness check** — `generate-illustrations.py`
+now dispatches by model-name prefix to three vendor families: Google's
+`gemini-*` / `nano-banana-*` (`generateContent`), Google's `imagen-*` (`:predict`),
+and OpenAI's `gpt-image-*` (`/images/generations` and multipart `/images/edits`).
+`COMPARE_MODELS` refreshed to current flagships including `gpt-image-2`,
+`imagen-4.0-ultra-generate-001`, `gemini-3.1-flash-image-preview`, and
+`nano-banana-pro-preview`. New SKILL.md Step 2 web-searches the model
+landscape before any image generation runs and proposes re-running
+`--compare` if a newer flagship has shipped since the outline's `**Model:**`
+was last set — closes the months-long gap between picking a model in
+Phase 2 and actually generating images in Phase 5.
 
 **Talk timer for timemytalk.app** — New `generate-talk-timings.py` parses the
 outline's pacing summary into `MM:SS Chapter` format for the timemytalk.app
@@ -152,6 +164,22 @@ Regen profile   ------>  speaker-profile.json       ------>  Read thresholds
   (incl. pattern_profile)                              +-->  Pattern Strategy
                                                        +-->  Go-live checklist
 ```
+
+### Steering Rules
+
+The tile ships persistent steering rules (auto-loaded by the agent at runtime via `tile.json` → `steering`). Keep this table in sync with the manifest:
+
+| Rule | Scope |
+|------|-------|
+| [`vault-language-policy`](rules/vault-language-policy.md) | Vault analysis prose conventions and forbidden phrasings. |
+| [`slide-generation-rules`](rules/slide-generation-rules.md) | `.pptx` generation gotchas and Keynote compatibility constraints. |
+| [`guardrail-rules`](rules/guardrail-rules.md) | Creator guardrail checks (slide budget, Act 1 ratio, profanity, branding, antipattern scan). |
+| [`illustration-rules`](rules/illustration-rules.md) | Edit vs regenerate asymmetry, build chains, iteration hygiene. |
+| [`title-overlay-rules`](rules/title-overlay-rules.md) | Title-safe-zone composition policy for FULL illustrations. |
+| [`thumbnail-generation-rules`](rules/thumbnail-generation-rules.md) | Phase 7 thumbnail composition specifics. |
+| [`resources-gathering-rules`](rules/resources-gathering-rules.md) | Phase 6 shownotes / resources read paths. |
+| [`interaction-rules`](rules/interaction-rules.md) | Conversational stance and gate behavior across phases. |
+| [`tessl-version-floating`](rules/tessl-version-floating.md) | Authority-of-record for the `tessl.json` floating-spec carve-out (paired with `scripts/check-tessl-pins.sh`). |
 
 ## Vault Skill Details
 

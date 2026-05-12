@@ -1,6 +1,6 @@
 # Thumbnail Generation — Detail
 
-Reference for Step 6 (thumbnail) in `SKILL.md`. The
+Reference for Step 7 (thumbnail) in `SKILL.md`. The
 `thumbnail-generation-rules` steering rule is auto-loaded — apply it, don't
 restate it.
 

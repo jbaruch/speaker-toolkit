@@ -1,5 +1,6 @@
 """Tests for generate-illustrations.py — outline parsing and slide selection (no API calls)."""
 
+import json
 import os
 
 SAMPLE_OUTLINE = """\
@@ -229,3 +230,234 @@ def test_apply_safe_zone_default_surface(generate_illustrations):
     result = generate_illustrations.apply_safe_zone_directive("A scene", safe_zone)
     assert "TITLE SAFE ZONE" in result
     assert "left half" in result
+
+
+def test_effective_slide_format_safe_zone_wins(generate_illustrations):
+    # apply-illustrations-to-deck.py gives Safe zone precedence over the
+    # Format token — slides with any Safe zone field are treated as
+    # FULL/title-overlay regardless of `Format: IMG+TXT` (see
+    # apply-illustrations-to-deck.py's `parse_img_txt_slides()`, which
+    # only returns IMG+TXT slides that do NOT carry a Safe zone line).
+    # The generator's effective_slide_format mirrors that precedence so
+    # sizing matches the downstream apply step.
+    sz = {"zone": "upper_third", "surface": "painted sky"}
+    assert generate_illustrations.effective_slide_format("IMG+TXT", sz) == "FULL"
+    assert generate_illustrations.effective_slide_format("FULL", sz) == "FULL"
+    assert generate_illustrations.effective_slide_format("DIAGRAM", sz) == "FULL"
+    # No safe zone → declared format flows through unchanged
+    assert generate_illustrations.effective_slide_format("IMG+TXT", None) == "IMG+TXT"
+    assert generate_illustrations.effective_slide_format("FULL", None) == "FULL"
+    assert generate_illustrations.effective_slide_format(None, None) is None
+
+
+# --- Model family dispatch ---
+
+def test_model_family_openai(generate_illustrations):
+    assert generate_illustrations.model_family("gpt-image-2") == "openai"
+    assert generate_illustrations.model_family("gpt-image-1") == "openai"
+
+
+def test_model_family_imagen(generate_illustrations):
+    assert generate_illustrations.model_family("imagen-4.0-ultra-generate-001") == "imagen"
+    assert generate_illustrations.model_family("imagen-3.0-generate-002") == "imagen"
+
+
+def test_model_family_gemini_default(generate_illustrations):
+    assert generate_illustrations.model_family("gemini-3-pro-image-preview") == "gemini"
+    assert generate_illustrations.model_family("gemini-3.1-flash-image-preview") == "gemini"
+    assert generate_illustrations.model_family("nano-banana-pro-preview") == "gemini"
+    assert generate_illustrations.model_family("some-unknown-model") == "gemini"
+
+
+def test_family_key_name(generate_illustrations):
+    # Gemini and Imagen both authenticate with the Google AI Studio key
+    assert generate_illustrations.family_key_name("gemini") == "gemini"
+    assert generate_illustrations.family_key_name("imagen") == "gemini"
+    assert generate_illustrations.family_key_name("openai") == "openai"
+
+
+def test_compare_models_curated_list(generate_illustrations):
+    # The freshness check in SKILL.md Step 2 tracks this list — it must
+    # contain at least one current-flagship entry per major vendor
+    families = {generate_illustrations.model_family(m)
+                for m in generate_illustrations.COMPARE_MODELS}
+    assert "openai" in families, "COMPARE_MODELS missing OpenAI entry"
+    assert "gemini" in families, "COMPARE_MODELS missing Gemini entry"
+    assert "imagen" in families, "COMPARE_MODELS missing Imagen entry"
+
+
+# --- Secrets loading ---
+
+def test_load_secrets_from_file(generate_illustrations, tmp_path, monkeypatch):
+    secrets = {"gemini": {"api_key": "g-key"}, "openai": {"api_key": "o-key"}}
+    (tmp_path / "secrets.json").write_text(json.dumps(secrets))
+    # Block env-var fallback so we're testing file resolution
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    keys, path = generate_illustrations.load_secrets(str(tmp_path))
+    assert keys["gemini"] == "g-key"
+    assert keys["openai"] == "o-key"
+    assert path == str(tmp_path / "secrets.json")
+
+
+def test_load_secrets_env_fallback(generate_illustrations, tmp_path, monkeypatch):
+    # No secrets.json file in this vault
+    monkeypatch.setenv("GEMINI_API_KEY", "env-g")
+    monkeypatch.setenv("OPENAI_API_KEY", "env-o")
+    keys, _ = generate_illustrations.load_secrets(str(tmp_path))
+    assert keys["gemini"] == "env-g"
+    assert keys["openai"] == "env-o"
+
+
+def test_load_secrets_malformed_json_warns(generate_illustrations, tmp_path, monkeypatch, capsys):
+    # Malformed secrets.json must not crash — load_secrets warns to stderr
+    # and falls through to env-var resolution
+    (tmp_path / "secrets.json").write_text("{not valid json")
+    monkeypatch.setenv("GEMINI_API_KEY", "env-fallback")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    keys, _ = generate_illustrations.load_secrets(str(tmp_path))
+    captured = capsys.readouterr()
+
+    assert keys["gemini"] == "env-fallback"
+    assert keys["openai"] is None
+    # Warning must mention the file path so the user knows what to fix
+    assert "secrets.json" in captured.err
+    assert "not valid JSON" in captured.err
+
+
+def test_load_secrets_partial_file(generate_illustrations, tmp_path, monkeypatch):
+    # File has only gemini; openai should fall through to env
+    (tmp_path / "secrets.json").write_text(json.dumps({"gemini": {"api_key": "g"}}))
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "env-o")
+    keys, _ = generate_illustrations.load_secrets(str(tmp_path))
+    assert keys["gemini"] == "g"
+    assert keys["openai"] == "env-o"
+
+
+# --- Multipart body for OpenAI edits ---
+
+def test_parse_outline_handles_img_plus_txt_format(generate_illustrations):
+    # Outline using the documented `IMG+TXT` portrait format must parse
+    # the `+` character — the original `\w+` regex silently dropped it.
+    # Mismatched parsing would route non-16:9 slides through the FULL
+    # sizing default in the cross-vendor dispatchers.
+    import tempfile
+    outline = """\
+# Plan
+**Model:** `gpt-image-2`
+
+### STYLE ANCHOR (FULL — 16:9, 1920x1080)
+> A FULL anchor.
+
+### STYLE ANCHOR (IMG+TXT — Portrait 2:3, 1024x1536)
+> An IMG+TXT anchor.
+
+### Slide 3: A wide slide
+- Format: **FULL**
+- Image prompt: `[STYLE ANCHOR] something wide`
+
+### Slide 7: A portrait slide
+- Format: **IMG+TXT**
+- Image prompt: `[STYLE ANCHOR] something tall`
+"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        f.write(outline)
+        f.flush()
+        result = generate_illustrations.parse_outline(f.name)
+    os.unlink(f.name)
+
+    assert "FULL" in result["anchors"]
+    assert "IMG+TXT" in result["anchors"]
+
+    slide3 = next(s for s in result["slides"] if s["slide_num"] == 3)
+    slide7 = next(s for s in result["slides"] if s["slide_num"] == 7)
+    assert slide3["format"] == "FULL"
+    assert slide7["format"] == "IMG+TXT"
+
+
+def test_sizing_for_format(generate_illustrations):
+    # FULL maps to 16:9 landscape on both vendors
+    full = generate_illustrations.sizing_for("FULL")
+    assert full["openai_size"] == "2048x1152"
+    assert full["imagen_aspect"] == "16:9"
+
+    # IMG+TXT maps to 2:3 portrait (Imagen has no native 2:3, 3:4 is
+    # closest of the supported aspect ratios)
+    portrait = generate_illustrations.sizing_for("IMG+TXT")
+    assert portrait["openai_size"] == "1024x1536"
+    assert portrait["imagen_aspect"] == "3:4"
+
+    # Unknown / missing falls back to FULL — historical default
+    assert generate_illustrations.sizing_for(None) == full
+    assert generate_illustrations.sizing_for("DIAGRAM") == full
+    assert generate_illustrations.sizing_for("") == full
+
+
+def test_final_build_dest_preserves_extension(generate_illustrations, tmp_path):
+    builds_dir = str(tmp_path / "builds")
+    # Each base extension should propagate to the build dest path
+    assert generate_illustrations.final_build_dest(
+        builds_dir, 5, 3, "/tmp/slide-05.jpg"
+    ).endswith("slide-05-build-03.jpg")
+    assert generate_illustrations.final_build_dest(
+        builds_dir, 5, 3, "/tmp/slide-05.png"
+    ).endswith("slide-05-build-03.png")
+    assert generate_illustrations.final_build_dest(
+        builds_dir, 5, 3, "/tmp/slide-05.webp"
+    ).endswith("slide-05-build-03.webp")
+    # No extension on the source falls back to .jpg (matches the historic
+    # hard-coded default rather than producing a path without a suffix)
+    assert generate_illustrations.final_build_dest(
+        builds_dir, 5, 3, "/tmp/slide-05"
+    ).endswith("slide-05-build-03.jpg")
+
+
+def test_parse_builds_empty_step_list(generate_illustrations):
+    # An outline that declares `- Builds: N steps` without any parsable
+    # `build-XX:` entries must not crash the parser, and the resulting
+    # `steps` list must be empty so run_build's empty-guard fires.
+    import tempfile
+    outline = """\
+# Plan
+**Model:** `gemini-3-pro-image-preview`
+
+### STYLE ANCHOR (WIDE — 16:9, 1920x1080)
+> A style.
+
+### Slide 4: Empty builds
+- Format: **WIDE**
+- Image prompt: `[STYLE ANCHOR] something`
+- Builds: 5 steps
+"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        f.write(outline)
+        f.flush()
+        result = generate_illustrations.parse_outline(f.name)
+    os.unlink(f.name)
+
+    slide4 = next(s for s in result["slides"] if s["slide_num"] == 4)
+    assert slide4["builds"]["count"] == 5
+    assert slide4["builds"]["steps"] == []
+
+
+def test_multipart_body_structure(generate_illustrations):
+    body, boundary = generate_illustrations._multipart_body(
+        fields={"model": "gpt-image-2", "prompt": "edit this", "n": "1"},
+        files=[("image", "input.png", "image/png", b"\x89PNG\r\n")],
+    )
+    assert boundary.startswith("----GenIllustBnd")
+    text = body.decode("utf-8", errors="replace")
+    # Every field present with form-data disposition
+    assert 'name="model"' in text
+    assert "gpt-image-2" in text
+    assert 'name="prompt"' in text
+    assert "edit this" in text
+    # File field carries filename + content-type
+    assert 'name="image"' in text
+    assert 'filename="input.png"' in text
+    assert "Content-Type: image/png" in text
+    # Body terminates with the closing boundary
+    assert body.endswith(f"--{boundary}--\r\n".encode())

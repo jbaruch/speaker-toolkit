@@ -54,12 +54,13 @@ Do not restate them here — apply them.
 Determine which of three modes applies and execute only the matching steps:
 
 - **Strategy** — outline has no STYLE ANCHOR yet, or the author wants to revise
-  it. Run Step 2, then stop unless generation was also requested.
+  it. Run Step 2 (freshness), then Step 3 (style), then stop unless generation
+  was also requested.
 - **Generation** — outline has a STYLE ANCHOR and per-slide prompts. Run
-  Step 3 (illustrations), Step 4 (builds, if any slides have a `- Builds:`
-  block), and Step 5 (apply to deck, if a .pptx exists).
+  Step 2 (freshness), Step 4 (illustrations), Step 5 (builds, if any slides
+  have a `- Builds:` block), and Step 6 (apply to deck, if a .pptx exists).
 - **Thumbnail** — talk has been delivered and a video URL is available.
-  Skip to Step 6.
+  Skip to Step 7.
 
 ### Multi-mode chaining
 
@@ -69,7 +70,59 @@ Strategy → Generation → Thumbnail. Proceed immediately to the first applicab
 step; do not pause for confirmation between modes. A single-mode invocation
 runs exactly the one matching step's chain and stops.
 
-## Step 2 — Define Style Strategy
+## Step 2 — Check Image-Model Freshness
+
+Image-generation models ship faster than this skill updates. Before Strategy
+comparison (Step 3) or Generation (Step 4) touches images, verify the model
+landscape hasn't shifted since the script's `COMPARE_MODELS` list — or, for
+an existing outline, the baked `**Model:**` choice — was last set. A model
+picked "a few months back" may already be eclipsed by a newer flagship from
+the same or another vendor.
+
+Use `WebSearch` to identify the current flagship image-generation models
+from the major vendors — at minimum Google (Gemini image, Imagen) and OpenAI
+(`gpt-image-*`); include any other vendor with a publicly accessible
+image-generation API. Web search is required because the knowledge cutoff
+trails the release cadence by months. "Flagship" means the vendor's
+currently-recommended top-tier image model, not every preview or experimental
+variant.
+
+For Generation mode entering an existing outline, also surface the outline's
+Model and selection date — run `git log -1 --format=%cI <outline-path>`
+against the actual outline file (`presentation-outline.md` in the standard
+talk-dir layout, but the filename can vary per talk), or fall back to
+filesystem mtime if the talk is outside git.
+
+If every flagship is already represented in `COMPARE_MODELS` (and, for
+Generation mode, the outline's Model is one of them), proceed silently to
+the next step.
+
+Otherwise, surface the gap and propose action:
+
+- **Strategy mode**: list the new flagships, propose updating
+  `COMPARE_MODELS` in `skills/illustrations/scripts/generate-illustrations.py`,
+  then proceed to Step 3 — the comparison will render the new entries side
+  by side.
+- **Generation mode**: propose re-running `--compare` against the updated
+  list before the rest of the deck generates. The speaker may stay with the
+  baked Model (skip the comparison) or pick a new one (update the outline
+  header's `**Model:**` line, then proceed to Step 4).
+
+The speaker decides — never silently swap the model.
+
+`generate-illustrations.py` dispatches by model-name prefix and currently
+supports three vendor families: `gemini-*` / `nano-banana-*` (Google
+`generateContent`), `imagen-*` (Google `:predict`), and `gpt-image-*`
+(OpenAI `/images/generations` and `/images/edits`). Adding a model in any
+of those families is a `COMPARE_MODELS` constant edit. Adding a model
+from a vendor not in that list (e.g., a future Anthropic image API,
+Midjourney, etc.) requires extending `model_family()` and adding a new
+`_call_<vendor>` adapter — surface that as a follow-up script change
+before re-running `--compare`.
+
+Proceed immediately to Step 3 or Step 4 per Step 1's routing.
+
+## Step 3 — Define Style Strategy
 
 Collaborate with the author to produce the Illustration Style Anchor for the
 outline. Read the talk's concepts from `presentation-spec.md`, the speaker's
@@ -83,9 +136,9 @@ Full protocol with the option-presentation template, format vocabulary
 defaults, and continuity-device options: [skills/illustrations/references/strategy.md](references/strategy.md).
 
 Write the approved STYLE ANCHOR block into the outline header. Proceed
-immediately to Step 3 if generation was also requested; otherwise finish here.
+immediately to Step 4 if generation was also requested; otherwise finish here.
 
-## Step 3 — Generate Deck Illustrations
+## Step 4 — Generate Deck Illustrations
 
 Batch-generate every missing slide illustration from the outline:
 
@@ -103,9 +156,9 @@ overwriting — see `illustration-rules` Iteration Hygiene.
 Operational detail (compare modes, prompt patterns, retry ladder):
 [skills/illustrations/references/generation.md](references/generation.md).
 
-Proceed immediately to Step 4.
+Proceed immediately to Step 5.
 
-## Step 4 — Generate Builds
+## Step 5 — Generate Builds
 
 If any slides in the outline have a `- Builds:` block, generate the
 backwards-chained build images. Each step's input is the previous step's
@@ -116,13 +169,15 @@ python3 skills/illustrations/scripts/generate-illustrations.py \
   presentation-outline.md --build all
 ```
 
-Output: `illustrations/builds/slide-NN-build-MM.jpg`. Build-00 is the empty
-frame; build-N is the full image. Detail and the per-step contract:
+Output: `illustrations/builds/slide-NN-build-MM.<ext>` where `<ext>` is
+the MIME-derived extension for each step (`.jpg` / `.png` / `.webp`
+depending on the model and source image). Build-00 is the empty frame;
+build-N is the full image. Detail and the per-step contract:
 [skills/illustrations/references/builds.md](references/builds.md).
 
-If no slides specify builds, proceed silently to Step 5.
+If no slides specify builds, proceed silently to Step 6.
 
-## Step 5 — Apply Illustrations to Deck
+## Step 6 — Apply Illustrations to Deck
 
 Insert generated illustrations and build sequences into the .pptx. Build
 slides replace their parent slide rather than duplicating after it; speaker
@@ -139,9 +194,9 @@ python3 skills/illustrations/scripts/apply-illustrations-to-deck.py \
 ```
 
 If no .pptx exists yet (Phase 5 hasn't run), finish here — presentation-creator
-Phase 5 will call back into this skill at Step 5 once the deck is built.
+Phase 5 will call back into this skill at Step 6 once the deck is built.
 
-## Step 6 — Generate Thumbnail
+## Step 7 — Generate Thumbnail
 
 Run the thumbnail composition for a delivered talk. Surface 3–5 candidate
 slides ranked by visual impact, let the speaker pick, then compose:
