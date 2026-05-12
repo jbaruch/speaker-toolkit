@@ -18,7 +18,11 @@ Before generating, ensure:
      "openai": { "api_key": "your-openai-key" }
    }
    ```
-   Either `gemini` or `openai` may be omitted if you won't hit that vendor.
+   For single-model generation (`generate`, `--edit`, `--build`, `--fix`),
+   only the key for the outline's baked `**Model:**` vendor is required —
+   the other can be omitted. For `--compare`, every vendor represented in
+   `COMPARE_MODELS` is hit, so all corresponding keys must be present (the
+   current curated list spans both Google and OpenAI, so both are needed).
    Env-var fallbacks: `GEMINI_API_KEY`, `OPENAI_API_KEY`. Get keys from
    https://aistudio.google.com/app/apikey (Google) and
    https://platform.openai.com/api-keys (OpenAI).

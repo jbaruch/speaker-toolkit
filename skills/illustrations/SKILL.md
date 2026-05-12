@@ -88,8 +88,10 @@ currently-recommended top-tier image model, not every preview or experimental
 variant.
 
 For Generation mode entering an existing outline, also surface the outline's
-Model and selection date (`git log -1 --format=%cI presentation-outline.md`,
-or filesystem mtime if the talk is outside git).
+Model and selection date — run `git log -1 --format=%cI <outline-path>`
+against the actual outline file (`presentation-outline.md` in the standard
+talk-dir layout, but the filename can vary per talk), or fall back to
+filesystem mtime if the talk is outside git.
 
 If every flagship is already represented in `COMPARE_MODELS` (and, for
 Generation mode, the outline's Model is one of them), proceed silently to

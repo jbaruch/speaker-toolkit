@@ -3,7 +3,9 @@
 Generate illustrations for a presentation outline.
 
 Parses the outline markdown for style anchors and per-slide image prompts,
-generates images via the Gemini API, and saves them to an illustrations/ directory.
+generates images via the appropriate vendor API (Google Gemini, Google
+Imagen, or OpenAI — dispatched by model-name prefix), and saves them
+to an illustrations/ directory.
 
 Usage:
     python3 generate-illustrations.py <outline.md> all
