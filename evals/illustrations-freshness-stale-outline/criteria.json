@@ -8,8 +8,8 @@
       "max_score": 32
     },
     {
-      "name": "Concrete newer flagships named",
-      "description": "The agent names at least one specific image-generation model that exists now but is not represented in the outline's `**Model:**` line or in the script's `COMPARE_MODELS` constant. Hand-waving about \"newer models\" without a vendor + model name fails this criterion.",
+      "name": "Outline model recognized as out-of-current-list",
+      "description": "The agent recognizes that the outline's declared `**Model:**` value is not present in the current `skills/illustrations/scripts/generate-illustrations.py` `COMPARE_MODELS` constant, and names at least one specific model that IS in the current `COMPARE_MODELS` list as an alternative the speaker could move to. Deterministic against file state: both halves are checkable from the outline and the script as committed at eval time.",
       "max_score": 22
     },
     {

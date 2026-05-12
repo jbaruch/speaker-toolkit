@@ -17,7 +17,7 @@ cat > talk-dir/presentation-outline.md <<'EOF'
 
 ## Illustration Style Anchor
 
-**Model:** `gemini-3-pro-image-preview`
+**Model:** `gemini-2.0-flash-preview-image-generation`
 
 ### STYLE ANCHOR (FULL — 16:9, 1920x1080)
 > A muted watercolor scene with soft edges, earthen palette, and visible
