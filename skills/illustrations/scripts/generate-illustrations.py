@@ -702,11 +702,10 @@ def _call_openai_generate(prompt, model, api_key, size=OPENAI_DEFAULT_SIZE):
         "size": size,
         "quality": "high",
         "n": 1,
-        # Inline the bytes so we don't do a second unauthenticated fetch
-        # from a hosted URL — that extra hop fails on restrictive
-        # networks / firewalls. The url-branch in _extract_openai_image
-        # stays as a defensive fallback for older API behavior.
-        "response_format": "b64_json",
+        # gpt-image-* models return base64 by default and reject the
+        # legacy `response_format` parameter (that's a DALL-E knob).
+        # The url-branch in _extract_openai_image stays as a defensive
+        # fallback in case future model versions change the default.
     }
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
@@ -740,11 +739,10 @@ def _call_openai_edit(input_path, prompt, model, api_key, size=OPENAI_DEFAULT_SI
     filename = os.path.basename(input_path)
 
     body, boundary = _multipart_body(
+        # gpt-image-* returns base64 by default; do not send
+        # `response_format` (legacy DALL-E knob; gpt-image-* 400s on it).
         fields={"model": model, "prompt": prompt, "size": size,
-                "quality": "high", "n": "1",
-                # Inline bytes — see _call_openai_generate for the
-                # restrictive-network reasoning.
-                "response_format": "b64_json"},
+                "quality": "high", "n": "1"},
         files=[("image", filename, mime, image_bytes)],
     )
     url = f"{OPENAI_API_BASE}/images/edits"

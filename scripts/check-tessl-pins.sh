@@ -41,11 +41,27 @@ try:
     with open(manifest_path) as f:
         data = json.load(f)
 except json.JSONDecodeError as e:
-    # Distinct exit code so the wrapper can give a malformed-JSON error
-    # instead of the "non-floating specifiers" message — they're
-    # different failure modes and need different fixes.
+    # Exit 2 — malformed JSON branch. The wrapper switches on this to
+    # emit a "fix the JSON syntax" message instead of the unrelated
+    # "non-floating specifiers" message.
     print(f"MALFORMED_JSON: {e.msg} at line {e.lineno} col {e.colno}", file=sys.stderr)
     sys.exit(2)
+except OSError as e:
+    # Exit 3 — file present (the bash precheck for existence passed)
+    # but unreadable. Distinct from "syntax error in content" because
+    # the fix is permissions / disk, not the manifest text.
+    print(f"UNREADABLE_MANIFEST: {e}", file=sys.stderr)
+    sys.exit(3)
+
+# Exit 4 — top-level shape is wrong. `tessl.json` is expected to be an
+# object (`{"dependencies": {...}}`); arrays or scalars at the top level
+# would crash `.get("dependencies")` with a clear traceback otherwise.
+if not isinstance(data, dict):
+    print(
+        f"BAD_SHAPE: expected top-level JSON object, got {type(data).__name__}",
+        file=sys.stderr,
+    )
+    sys.exit(4)
 
 violations = []
 for name, spec in (data.get("dependencies") or {}).items():
@@ -72,6 +88,22 @@ PY
       echo "" >&2
       echo "  Fix the JSON syntax error and re-run. The tessl-version-floating" >&2
       echo "  check can't verify pin status until the manifest parses." >&2
+      status=1
+      ;;
+    3)
+      echo "ERROR: $manifest could not be read." >&2
+      echo "$bad" | sed 's/^/  /' >&2
+      echo "" >&2
+      echo "  Check file permissions / disk state. The check can't verify pin" >&2
+      echo "  status until the manifest is readable." >&2
+      status=1
+      ;;
+    4)
+      echo "ERROR: $manifest has the wrong top-level shape." >&2
+      echo "$bad" | sed 's/^/  /' >&2
+      echo "" >&2
+      echo "  tessl.json must be a JSON object (\"{...}\"). Restore the" >&2
+      echo "  manifest shape before re-running the check." >&2
       status=1
       ;;
     *)
