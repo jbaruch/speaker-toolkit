@@ -26,7 +26,8 @@ Requires:
     - For OpenAI models (gpt-image-*):
         OpenAI API key in {vault}/secrets.json under "openai".api_key
         or OPENAI_API_KEY env var (fallback).
-    - Python 3.7+ (stdlib only — no pip install needed)
+    - Python 3.8+ (stdlib only — no pip install needed; uses the walrus
+      operator and other 3.8+ syntax)
 """
 
 import argparse
