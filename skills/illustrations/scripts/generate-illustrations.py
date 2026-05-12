@@ -867,13 +867,16 @@ def run_generate(outline_path, slide_args, versioned=False):
 
     for i, num in enumerate(to_generate):
         slide = slides_by_num[num]
-        prompt = resolve_prompt(slide["prompt"], slide["format"], outline["anchors"])
+        # Safe zone presence forces FULL throughout — anchor selection,
+        # sizing, and the directive itself all use the effective format
+        # so the prompt, the image geometry, and the apply-step layout
+        # stay internally consistent.
+        eff_format = effective_slide_format(slide["format"], slide.get("safe_zone"))
+        prompt = resolve_prompt(slide["prompt"], eff_format, outline["anchors"])
         prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"))
 
         print(f"[{i+1}/{len(to_generate)}] Slide {num}: {slide['title']}")
 
-        # Safe zone presence forces FULL sizing — see effective_slide_format
-        eff_format = effective_slide_format(slide["format"], slide.get("safe_zone"))
         image_bytes, result = generate_image(prompt, model, keys, eff_format)
 
         if image_bytes is None:
@@ -913,9 +916,10 @@ def run_compare(outline_path, slide_num):
         sys.exit(1)
 
     slide = slides_by_num[slide_num]
-    prompt = resolve_prompt(slide["prompt"], slide["format"], outline["anchors"])
-    prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"))
+    # Safe zone presence forces FULL throughout (see effective_slide_format).
     eff_format = effective_slide_format(slide["format"], slide.get("safe_zone"))
+    prompt = resolve_prompt(slide["prompt"], eff_format, outline["anchors"])
+    prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"))
 
     output_dir = os.path.join(
         os.path.dirname(os.path.abspath(outline_path)),
