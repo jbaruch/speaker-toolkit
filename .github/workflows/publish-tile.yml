@@ -19,6 +19,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Enforce tessl-version-floating carve-out
+        # See rules/tessl-version-floating.md. The
+        # `jbaruch/coding-policy: dependency-management`
+        # runtime-managed-manifest carve-out preconditions a
+        # deploy-time check that fails the deployment if any
+        # specifier other than the permitted floating value
+        # appears. Run before any publish step.
+        run: ./scripts/check-tessl-pins.sh
       - uses: tesslio/setup-tessl@v2
         with:
           token: ${{ secrets.TESSL_TOKEN }}

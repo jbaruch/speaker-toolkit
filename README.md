@@ -165,6 +165,22 @@ Regen profile   ------>  speaker-profile.json       ------>  Read thresholds
                                                        +-->  Go-live checklist
 ```
 
+### Steering Rules
+
+The tile ships persistent steering rules (auto-loaded by the agent at runtime via `tile.json` → `steering`). Keep this table in sync with the manifest:
+
+| Rule | Scope |
+|------|-------|
+| [`vault-language-policy`](rules/vault-language-policy.md) | Vault analysis prose conventions and forbidden phrasings. |
+| [`slide-generation-rules`](rules/slide-generation-rules.md) | `.pptx` generation gotchas and Keynote compatibility constraints. |
+| [`guardrail-rules`](rules/guardrail-rules.md) | Creator guardrail checks (slide budget, Act 1 ratio, profanity, branding, antipattern scan). |
+| [`illustration-rules`](rules/illustration-rules.md) | Edit vs regenerate asymmetry, build chains, iteration hygiene. |
+| [`title-overlay-rules`](rules/title-overlay-rules.md) | Title-safe-zone composition policy for FULL illustrations. |
+| [`thumbnail-generation-rules`](rules/thumbnail-generation-rules.md) | Phase 7 thumbnail composition specifics. |
+| [`resources-gathering-rules`](rules/resources-gathering-rules.md) | Phase 6 shownotes / resources read paths. |
+| [`interaction-rules`](rules/interaction-rules.md) | Conversational stance and gate behavior across phases. |
+| [`tessl-version-floating`](rules/tessl-version-floating.md) | Authority-of-record for the `tessl.json` floating-spec carve-out (paired with `scripts/check-tessl-pins.sh`). |
+
 ## Vault Skill Details
 
 ### Triggers
