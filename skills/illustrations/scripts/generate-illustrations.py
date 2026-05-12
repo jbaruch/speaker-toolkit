@@ -701,6 +701,11 @@ def _call_openai_generate(prompt, model, api_key, size=OPENAI_DEFAULT_SIZE):
         "size": size,
         "quality": "high",
         "n": 1,
+        # Inline the bytes so we don't do a second unauthenticated fetch
+        # from a hosted URL — that extra hop fails on restrictive
+        # networks / firewalls. The url-branch in _extract_openai_image
+        # stays as a defensive fallback for older API behavior.
+        "response_format": "b64_json",
     }
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
@@ -735,7 +740,10 @@ def _call_openai_edit(input_path, prompt, model, api_key, size=OPENAI_DEFAULT_SI
 
     body, boundary = _multipart_body(
         fields={"model": model, "prompt": prompt, "size": size,
-                "quality": "high", "n": "1"},
+                "quality": "high", "n": "1",
+                # Inline bytes — see _call_openai_generate for the
+                # restrictive-network reasoning.
+                "response_format": "b64_json"},
         files=[("image", filename, mime, image_bytes)],
     )
     url = f"{OPENAI_API_BASE}/images/edits"
