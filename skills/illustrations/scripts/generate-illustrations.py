@@ -292,7 +292,10 @@ def apply_safe_zone_directive(prompt, safe_zone, slide_format=None):
     """Append the SAFE ZONE directive to a prompt when safe_zone is set.
 
     See rules/title-overlay-rules.md for the policy. Idempotent: if the
-    prompt already contains a TITLE SAFE ZONE block, it is replaced.
+    prompt already contains a TITLE SAFE ZONE block, it is stripped
+    before the new directive is appended (or before the non-FULL early
+    return, so a stale 16:9 directive doesn't survive a FULL→IMG+TXT
+    format change on the same slide).
 
     The directive is FULL-format-specific (apply-illustrations-to-deck.py
     only consumes Safe zone: lines on FULL slides; IMG+TXT slides get a
@@ -301,6 +304,12 @@ def apply_safe_zone_directive(prompt, safe_zone, slide_format=None):
     """
     if not safe_zone:
         return prompt
+
+    # Strip any stale directive first so a prior FULL run doesn't leak
+    # into a non-FULL early return or a fresh FULL append.
+    if "TITLE SAFE ZONE" in prompt:
+        prompt = prompt.split("TITLE SAFE ZONE", 1)[0].rstrip()
+
     if slide_format is not None and slide_format != "FULL":
         print(
             f"  WARNING: Safe zone directive skipped — Format: {slide_format} "
@@ -313,8 +322,6 @@ def apply_safe_zone_directive(prompt, safe_zone, slide_format=None):
     if zone not in VALID_SAFE_ZONES:
         return prompt
     surface = safe_zone.get("surface") or DEFAULT_SAFE_ZONE_SURFACE[zone]
-    if "TITLE SAFE ZONE" in prompt:
-        prompt = prompt.split("TITLE SAFE ZONE", 1)[0].rstrip()
     directive = SAFE_ZONE_DIRECTIVE_TEMPLATE.format(
         zone_words=zone.replace("_", " "),
         surface=surface,

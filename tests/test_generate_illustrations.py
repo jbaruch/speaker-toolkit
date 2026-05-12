@@ -258,6 +258,28 @@ def test_apply_safe_zone_unchanged_for_full_format(generate_illustrations):
     assert "TITLE SAFE ZONE" in result
 
 
+def test_apply_safe_zone_strips_stale_directive_on_non_full(generate_illustrations, capsys):
+    # Regression: if a prompt already carries a TITLE SAFE ZONE block
+    # (e.g. from a prior FULL run, or a slide that was changed FULL →
+    # IMG+TXT mid-iteration), the non-FULL early-return path must still
+    # strip the stale directive — otherwise the prompt biases generation
+    # toward a 16:9 safe zone even though we're trying to skip it.
+    prompt_with_stale = (
+        "A scene "
+        "TITLE SAFE ZONE -- CRITICAL COMPOSITION RULE: Reserve the upper "
+        "third of the 16:9 frame as clean uninterrupted negative space..."
+    )
+    safe_zone = {"zone": "upper_third", "surface": "painted sky"}
+    result = generate_illustrations.apply_safe_zone_directive(
+        prompt_with_stale, safe_zone, slide_format="IMG+TXT"
+    )
+    assert "TITLE SAFE ZONE" not in result
+    # The cleaned prompt should be only the leading content, no directive
+    assert result.startswith("A scene")
+    captured = capsys.readouterr()
+    assert "Safe zone directive skipped" in captured.out
+
+
 def test_apply_safe_zone_unchanged_when_format_omitted(generate_illustrations):
     # Backward compatibility: callers that don't pass slide_format get
     # the historical behavior (always apply when safe_zone present)
