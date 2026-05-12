@@ -59,10 +59,29 @@ COMPARE_MODELS = [
     "gpt-image-2",
 ]
 
-# Default output sizes per vendor family. Gemini infers aspect from prompt
-# hints; OpenAI takes an explicit size param. 2048x1152 is the validated
-# true-16:9 size for gpt-image-2.
-OPENAI_DEFAULT_SIZE = "2048x1152"
+# Per-format sizing for vendors that take explicit size / aspect-ratio
+# params. Gemini infers aspect from prompt hints, so it doesn't appear
+# here. The "FULL" entry is also the unknown-format fallback.
+#   openai_size:  gpt-image-* accepts 2048x1152 (true 16:9) and
+#                 1024x1536 (true 2:3 portrait).
+#   imagen_aspect: Imagen :predict accepts 1:1, 9:16, 16:9, 3:4, 4:3.
+#                  3:4 is closest to the IMG+TXT 2:3 anchor (Imagen
+#                  has no native 2:3).
+FORMAT_SIZING = {
+    "FULL": {"openai_size": "2048x1152", "imagen_aspect": "16:9"},
+    "IMG+TXT": {"openai_size": "1024x1536", "imagen_aspect": "3:4"},
+}
+OPENAI_DEFAULT_SIZE = FORMAT_SIZING["FULL"]["openai_size"]
+IMAGEN_DEFAULT_ASPECT = FORMAT_SIZING["FULL"]["imagen_aspect"]
+
+
+def sizing_for(slide_format):
+    """Look up vendor-specific sizing for a slide format.
+
+    Unknown / missing formats fall back to FULL (16:9 landscape) — that's
+    the historical default and matches the typical deck slide.
+    """
+    return FORMAT_SIZING.get(slide_format, FORMAT_SIZING["FULL"])
 
 RATE_LIMIT_DELAY = 5  # seconds between API requests
 
@@ -162,8 +181,10 @@ def parse_outline(path):
         result["model"] = model_match.group(1)
 
     # Extract style anchors: ### STYLE ANCHOR (FORMAT — dimensions)\n> paragraph
+    # Format tokens may include `+` and `-` (e.g. IMG+TXT) — match the
+    # parser used by the per-slide Format: line below.
     anchor_pattern = re.compile(
-        r"###\s+STYLE ANCHOR\s+\((\w+)\s*—[^)]*\)\s*\n>\s*(.+?)(?=\n###|\n---|\n##|\Z)",
+        r"###\s+STYLE ANCHOR\s+\(([\w+-]+)\s*—[^)]*\)\s*\n>\s*(.+?)(?=\n###|\n---|\n##|\Z)",
         re.DOTALL,
     )
     for match in anchor_pattern.finditer(text):
@@ -183,7 +204,10 @@ def parse_outline(path):
         block = match.group(0)
 
         # Extract format
-        fmt_match = re.search(r"-\s*Format:\s*\*\*(\w+)\*\*", block)
+        # Allow `+` and `-` inside format tokens (e.g. IMG+TXT, IMG-TXT) on
+        # top of \w's alphanumerics+underscore. The downstream apply script's
+        # regex already permits IMG+TXT explicitly — keep these in sync.
+        fmt_match = re.search(r"-\s*Format:\s*\*\*([\w+-]+)\*\*", block)
         slide_format = fmt_match.group(1) if fmt_match else None
 
         # Extract image prompt
@@ -563,7 +587,7 @@ def _call_gemini(parts, model, api_key):
     return None, f"No image in response: {json.dumps(body)[:500]}"
 
 
-def _call_imagen(prompt, model, api_key):
+def _call_imagen(prompt, model, api_key, aspect_ratio=IMAGEN_DEFAULT_ASPECT):
     """Send a prompt to Google's Imagen :predict endpoint.
 
     Imagen uses a different endpoint shape from Gemini's generateContent.
@@ -575,7 +599,7 @@ def _call_imagen(prompt, model, api_key):
     url = f"{GEMINI_API_BASE}/{model}:predict?key={api_key}"
     payload = {
         "instances": [{"prompt": prompt}],
-        "parameters": {"sampleCount": 1, "aspectRatio": "16:9"},
+        "parameters": {"sampleCount": 1, "aspectRatio": aspect_ratio},
     }
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
@@ -711,30 +735,42 @@ def _call_openai_edit(input_path, prompt, model, api_key, size=OPENAI_DEFAULT_SI
 
 # --- Vendor-Agnostic Dispatchers ---
 
-def generate_image(prompt, model, keys):
+def generate_image(prompt, model, keys, slide_format=None):
     """Generate a fresh image via the appropriate vendor endpoint.
 
     Args:
         prompt: text prompt
         model: model name (dispatch is by name prefix — see model_family)
         keys: dict from load_secrets() — {"gemini": ..., "openai": ...}
+        slide_format: outline format name (e.g. "FULL", "IMG+TXT") used to
+            pick the per-vendor size / aspect-ratio param. Falls back to
+            FULL (16:9 landscape) when None or unknown.
 
     Returns:
         tuple (image_bytes, mime_type) on success, or (None, error_message) on failure.
     """
     family = model_family(model)
+    sizing = sizing_for(slide_format)
     if family == "openai":
-        return _call_openai_generate(prompt, model, keys["openai"])
+        return _call_openai_generate(
+            prompt, model, keys["openai"], size=sizing["openai_size"]
+        )
     if family == "imagen":
-        return _call_imagen(prompt, model, keys["gemini"])
+        return _call_imagen(
+            prompt, model, keys["gemini"], aspect_ratio=sizing["imagen_aspect"]
+        )
     return _call_gemini([{"text": prompt}], model, keys["gemini"])
 
 
-def edit_image(input_path, edit_prompt, model, keys):
+def edit_image(input_path, edit_prompt, model, keys, slide_format=None):
     """Edit an existing image via the appropriate vendor endpoint.
 
     Auto-appends vendor-agnostic safety suffixes to the prompt to prevent
     unwanted additions and patch artifacts.
+
+    Args:
+        slide_format: see generate_image — controls OpenAI edit size so
+            the output matches the source slide's geometry.
 
     Returns:
         tuple (image_bytes, mime_type) on success, or (None, error_message) on failure.
@@ -749,8 +785,11 @@ def edit_image(input_path, edit_prompt, model, keys):
         edit_prompt = edit_prompt.rstrip(". ") + ". " + " ".join(suffixes)
 
     family = model_family(model)
+    sizing = sizing_for(slide_format)
     if family == "openai":
-        return _call_openai_edit(input_path, edit_prompt, model, keys["openai"])
+        return _call_openai_edit(
+            input_path, edit_prompt, model, keys["openai"], size=sizing["openai_size"]
+        )
     if family == "imagen":
         return None, (
             f"Image editing is not supported for Imagen models ({model}). "
@@ -808,7 +847,7 @@ def run_generate(outline_path, slide_args, versioned=False):
 
         print(f"[{i+1}/{len(to_generate)}] Slide {num}: {slide['title']}")
 
-        image_bytes, result = generate_image(prompt, model, keys)
+        image_bytes, result = generate_image(prompt, model, keys, slide["format"])
 
         if image_bytes is None:
             print(f"  FAILED: {result}")
@@ -873,7 +912,7 @@ def run_compare(outline_path, slide_num):
     for i, model in enumerate(models):
         print(f"[{i+1}/{len(models)}] {model}...", end=" ", flush=True)
 
-        image_bytes, result = generate_image(prompt, model, keys)
+        image_bytes, result = generate_image(prompt, model, keys, slide["format"])
 
         if image_bytes is None:
             print(f"FAILED: {result[:100]}")
@@ -917,6 +956,9 @@ def run_edit(outline_path, slide_num, edit_prompt):
         print("Generate the base image first, then edit it.")
         sys.exit(1)
 
+    slide = next((s for s in outline["slides"] if s["slide_num"] == slide_num), None)
+    slide_format = slide["format"] if slide else None
+
     print(f"Model: {model}")
     print(f"Input: {input_path}")
     print(f"Edit prompt: {edit_prompt}")
@@ -924,7 +966,7 @@ def run_edit(outline_path, slide_num, edit_prompt):
     # Save as versioned output (never overwrite)
     ver = next_version(output_dir, slide_num)
 
-    image_bytes, result = edit_image(input_path, edit_prompt, model, keys)
+    image_bytes, result = edit_image(input_path, edit_prompt, model, keys, slide_format)
 
     if image_bytes is None:
         print(f"FAILED: {result}")
@@ -1015,7 +1057,9 @@ def run_build(outline_path, slide_arg):
 
             print(f"  build-{step_num:02d}: {desc[:60]}...", end=" ", flush=True)
 
-            image_bytes, result = edit_image(prev_image, desc, model, keys)
+            image_bytes, result = edit_image(
+                prev_image, desc, model, keys, slide["format"]
+            )
 
             if image_bytes is None:
                 print(f"FAILED: {result[:100]}")
@@ -1050,13 +1094,16 @@ def run_fix(outline_path, slide_num, fix_prompt):
         print(f"ERROR: No existing image found for slide {slide_num}")
         sys.exit(1)
 
+    slide = next((s for s in outline["slides"] if s["slide_num"] == slide_num), None)
+    slide_format = slide["format"] if slide else None
+
     ver = next_version(output_dir, slide_num)
     print(f"Model: {model}")
     print(f"Input: {os.path.basename(input_path)}")
     print(f"Fix: {fix_prompt}")
     print(f"Output: slide-{slide_num:02d}-v{ver}")
 
-    image_bytes, result = edit_image(input_path, fix_prompt, model, keys)
+    image_bytes, result = edit_image(input_path, fix_prompt, model, keys, slide_format)
 
     if image_bytes is None:
         print(f"FAILED: {result}")

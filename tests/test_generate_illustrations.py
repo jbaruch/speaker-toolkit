@@ -321,6 +321,63 @@ def test_load_secrets_partial_file(generate_illustrations, tmp_path, monkeypatch
 
 # --- Multipart body for OpenAI edits ---
 
+def test_parse_outline_handles_img_plus_txt_format(generate_illustrations):
+    # Outline using the documented `IMG+TXT` portrait format must parse
+    # the `+` character — the original `\w+` regex silently dropped it.
+    # Mismatched parsing would route non-16:9 slides through the FULL
+    # sizing default in the cross-vendor dispatchers.
+    import tempfile
+    outline = """\
+# Plan
+**Model:** `gpt-image-2`
+
+### STYLE ANCHOR (FULL — 16:9, 1920x1080)
+> A FULL anchor.
+
+### STYLE ANCHOR (IMG+TXT — Portrait 2:3, 1024x1536)
+> An IMG+TXT anchor.
+
+### Slide 3: A wide slide
+- Format: **FULL**
+- Image prompt: `[STYLE ANCHOR] something wide`
+
+### Slide 7: A portrait slide
+- Format: **IMG+TXT**
+- Image prompt: `[STYLE ANCHOR] something tall`
+"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        f.write(outline)
+        f.flush()
+        result = generate_illustrations.parse_outline(f.name)
+    os.unlink(f.name)
+
+    assert "FULL" in result["anchors"]
+    assert "IMG+TXT" in result["anchors"]
+
+    slide3 = next(s for s in result["slides"] if s["slide_num"] == 3)
+    slide7 = next(s for s in result["slides"] if s["slide_num"] == 7)
+    assert slide3["format"] == "FULL"
+    assert slide7["format"] == "IMG+TXT"
+
+
+def test_sizing_for_format(generate_illustrations):
+    # FULL maps to 16:9 landscape on both vendors
+    full = generate_illustrations.sizing_for("FULL")
+    assert full["openai_size"] == "2048x1152"
+    assert full["imagen_aspect"] == "16:9"
+
+    # IMG+TXT maps to 2:3 portrait (Imagen has no native 2:3, 3:4 is
+    # closest of the supported aspect ratios)
+    portrait = generate_illustrations.sizing_for("IMG+TXT")
+    assert portrait["openai_size"] == "1024x1536"
+    assert portrait["imagen_aspect"] == "3:4"
+
+    # Unknown / missing falls back to FULL — historical default
+    assert generate_illustrations.sizing_for(None) == full
+    assert generate_illustrations.sizing_for("DIAGRAM") == full
+    assert generate_illustrations.sizing_for("") == full
+
+
 def test_final_build_dest_preserves_extension(generate_illustrations, tmp_path):
     builds_dir = str(tmp_path / "builds")
     # Each base extension should propagate to the build dest path
