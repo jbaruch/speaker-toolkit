@@ -87,8 +87,13 @@ The outline parser also gained `+` and `-` tolerance in the Format and
 STYLE ANCHOR regex (`[\w+-]+` replaces `\w+`) so the documented `IMG+TXT`
 token is parsed correctly — previously it produced no match and the slide
 silently fell back to the first available anchor and the FULL sizing
-default. The Safe-zone directive now skips non-FULL formats with a warning;
-TITLE SAFE ZONE composition is a FULL-slide concept.
+default. Safe-zone precedence is now applied uniformly:
+`apply-illustrations-to-deck.py` treats `Safe zone:` presence as the
+FULL/title-overlay signal regardless of the `Format:` token, so the
+generator mirrors that — when Safe zone is present, the slide is
+treated as FULL for anchor selection, vendor sizing, AND the directive
+itself (via a new `effective_slide_format()` helper threaded through
+every run_* caller).
 
 New tests cover model-family classification across vendors, multi-vendor
 key resolution (secrets.json, env-var fallbacks, partial config, malformed
