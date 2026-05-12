@@ -349,6 +349,17 @@ def find_latest_image(output_dir, slide_num):
     return find_base_image(output_dir, slide_num)
 
 
+def final_build_dest(builds_dir, slide_num, final_step, source_path):
+    """Compose the final-build destination path, preserving the source extension.
+
+    The final build step is a verbatim copy of the slide's base image —
+    keeping its extension matters because base images may be .jpg / .png /
+    .webp depending on the generating vendor.
+    """
+    src_ext = os.path.splitext(source_path)[1].lower() or ".jpg"
+    return os.path.join(builds_dir, f"slide-{slide_num:02d}-build-{final_step:02d}{src_ext}")
+
+
 def next_version(output_dir, slide_num):
     """Find the next available version number for a slide."""
     existing = glob.glob(os.path.join(output_dir, f"slide-{slide_num:02d}-v*.*"))
@@ -964,11 +975,20 @@ def run_build(outline_path, slide_arg):
 
         print(f"Slide {num}: {slide['title']} — {len(steps)} build steps")
 
-        # Copy full image as the final build step
+        # An outline can declare `- Builds: N steps` without any parsable
+        # `build-XX:` entries beneath it — skip cleanly rather than crashing
+        # on max() of an empty sequence.
+        if not steps:
+            print(f"  SKIP — Builds declared but no build-NN entries parsed")
+            continue
+
+        # Copy full image as the final build step. The dest path preserves
+        # the source extension — base images may be .jpg / .png / .webp
+        # depending on the generating vendor.
         final_step = max(s["step"] for s in steps)
-        final_build = steps[-1] if steps else None
-        if final_build and final_build["is_full"]:
-            dest = os.path.join(builds_dir, f"slide-{num:02d}-build-{final_step:02d}.jpg")
+        final_build = steps[-1]
+        if final_build["is_full"]:
+            dest = final_build_dest(builds_dir, num, final_step, full_image)
             shutil.copy2(full_image, dest)
             print(f"  build-{final_step:02d}: copied from slide-{num:02d} (full)")
 

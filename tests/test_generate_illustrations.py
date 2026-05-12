@@ -304,6 +304,53 @@ def test_load_secrets_partial_file(generate_illustrations, tmp_path, monkeypatch
 
 # --- Multipart body for OpenAI edits ---
 
+def test_final_build_dest_preserves_extension(generate_illustrations, tmp_path):
+    builds_dir = str(tmp_path / "builds")
+    # Each base extension should propagate to the build dest path
+    assert generate_illustrations.final_build_dest(
+        builds_dir, 5, 3, "/tmp/slide-05.jpg"
+    ).endswith("slide-05-build-03.jpg")
+    assert generate_illustrations.final_build_dest(
+        builds_dir, 5, 3, "/tmp/slide-05.png"
+    ).endswith("slide-05-build-03.png")
+    assert generate_illustrations.final_build_dest(
+        builds_dir, 5, 3, "/tmp/slide-05.webp"
+    ).endswith("slide-05-build-03.webp")
+    # No extension on the source falls back to .jpg (matches the historic
+    # hard-coded default rather than producing a path without a suffix)
+    assert generate_illustrations.final_build_dest(
+        builds_dir, 5, 3, "/tmp/slide-05"
+    ).endswith("slide-05-build-03.jpg")
+
+
+def test_parse_builds_empty_step_list(generate_illustrations):
+    # An outline that declares `- Builds: N steps` without any parsable
+    # `build-XX:` entries must not crash the parser, and the resulting
+    # `steps` list must be empty so run_build's empty-guard fires.
+    import tempfile
+    outline = """\
+# Plan
+**Model:** `gemini-3-pro-image-preview`
+
+### STYLE ANCHOR (WIDE — 16:9, 1920x1080)
+> A style.
+
+### Slide 4: Empty builds
+- Format: **WIDE**
+- Image prompt: `[STYLE ANCHOR] something`
+- Builds: 5 steps
+"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        f.write(outline)
+        f.flush()
+        result = generate_illustrations.parse_outline(f.name)
+    os.unlink(f.name)
+
+    slide4 = next(s for s in result["slides"] if s["slide_num"] == 4)
+    assert slide4["builds"]["count"] == 5
+    assert slide4["builds"]["steps"] == []
+
+
 def test_multipart_body_structure(generate_illustrations):
     body, boundary = generate_illustrations._multipart_body(
         fields={"model": "gpt-image-2", "prompt": "edit this", "n": "1"},
