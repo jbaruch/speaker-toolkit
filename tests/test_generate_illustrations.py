@@ -232,6 +232,40 @@ def test_apply_safe_zone_default_surface(generate_illustrations):
     assert "left half" in result
 
 
+def test_apply_safe_zone_skipped_for_non_full_format(generate_illustrations, capsys):
+    # Safe zone composition only makes sense for FULL-format slides
+    # (apply-illustrations-to-deck.py uses a fixed right-column layout
+    # for IMG+TXT and ignores Safe zone: lines on those slides). The
+    # generator must skip the directive on non-FULL formats and warn.
+    safe_zone = {"zone": "upper_third", "surface": "painted sky"}
+    result = generate_illustrations.apply_safe_zone_directive(
+        "A scene", safe_zone, slide_format="IMG+TXT"
+    )
+    captured = capsys.readouterr()
+    assert "TITLE SAFE ZONE" not in result
+    assert result == "A scene"
+    assert "IMG+TXT" in captured.out
+    assert "Safe zone directive skipped" in captured.out
+
+
+def test_apply_safe_zone_unchanged_for_full_format(generate_illustrations):
+    # FULL slides still get the directive — the format-aware behavior is
+    # additive, not a regression on the default path
+    safe_zone = {"zone": "upper_third", "surface": "painted sky"}
+    result = generate_illustrations.apply_safe_zone_directive(
+        "A scene", safe_zone, slide_format="FULL"
+    )
+    assert "TITLE SAFE ZONE" in result
+
+
+def test_apply_safe_zone_unchanged_when_format_omitted(generate_illustrations):
+    # Backward compatibility: callers that don't pass slide_format get
+    # the historical behavior (always apply when safe_zone present)
+    safe_zone = {"zone": "upper_third", "surface": "painted sky"}
+    result = generate_illustrations.apply_safe_zone_directive("A scene", safe_zone)
+    assert "TITLE SAFE ZONE" in result
+
+
 # --- Model family dispatch ---
 
 def test_model_family_openai(generate_illustrations):

@@ -29,10 +29,13 @@ Thumbnail → Step 7.
 dispatches by model-name prefix to three vendor families:
 
 - `gemini-*` and `nano-banana-*` → Google `generateContent` (existing path)
-- `imagen-*` → Google `:predict` endpoint with `aspectRatio: "16:9"` (new)
+- `imagen-*` → Google `:predict` endpoint with format-derived aspect
+  ratio (new — FULL → `16:9`, IMG+TXT → `3:4`, the closest of Imagen's
+  supported 1:1 / 9:16 / 16:9 / 3:4 / 4:3 set to the IMG+TXT 2:3 anchor)
 - `gpt-image-*` → OpenAI `/images/generations` for fresh images and
   `/images/edits` (multipart) for the `--edit`, `--build`, and `--fix`
-  workflows (new)
+  workflows; size is format-derived (FULL → `2048x1152` true 16:9,
+  IMG+TXT → `1024x1536` true 2:3) (new)
 
 API-key resolution gains an `openai` slot. `secrets.json` now reads both
 `gemini.api_key` and `openai.api_key`; either may also come from the
@@ -55,9 +58,18 @@ Imagen models have no public edit endpoint, so `--edit`, `--build`, and
 `--fix` against an Imagen-family outline return an actionable error
 directing the speaker to a Gemini or OpenAI model for editing workflows.
 
-Nine new tests cover model-family classification, multi-vendor key
-resolution from `secrets.json` and env vars, the partial-config fallback
-path, and the OpenAI multipart body structure.
+The outline parser also gained `+` and `-` tolerance in the Format and
+STYLE ANCHOR regex (`[\w+-]+` replaces `\w+`) so the documented `IMG+TXT`
+token is parsed correctly — previously it produced no match and the slide
+silently fell back to the first available anchor and the FULL sizing
+default. The Safe-zone directive now skips non-FULL formats with a warning;
+TITLE SAFE ZONE composition is a FULL-slide concept.
+
+New tests cover model-family classification across vendors, multi-vendor
+key resolution (secrets.json, env-var fallbacks, partial config, malformed
+JSON warning), the OpenAI multipart body structure, `final_build_dest`
+extension preservation, the empty-build-steps parse path, the format
+sizing table, and the `IMG+TXT` outline regex fix.
 
 ### Extract `illustrations` skill from presentation-creator
 

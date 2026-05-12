@@ -288,13 +288,26 @@ def resolve_prompt(prompt, slide_format, anchors):
     return prompt.replace("[STYLE ANCHOR]", anchor)
 
 
-def apply_safe_zone_directive(prompt, safe_zone):
+def apply_safe_zone_directive(prompt, safe_zone, slide_format=None):
     """Append the SAFE ZONE directive to a prompt when safe_zone is set.
 
     See rules/title-overlay-rules.md for the policy. Idempotent: if the
     prompt already contains a TITLE SAFE ZONE block, it is replaced.
+
+    The directive is FULL-format-specific (apply-illustrations-to-deck.py
+    only consumes Safe zone: lines on FULL slides; IMG+TXT slides get a
+    fixed layout with title in the right column). When `slide_format` is
+    provided and is not "FULL", the directive is skipped with a warning.
     """
     if not safe_zone:
+        return prompt
+    if slide_format is not None and slide_format != "FULL":
+        print(
+            f"  WARNING: Safe zone directive skipped — Format: {slide_format} "
+            "is not a FULL-format slide. Safe zones only make sense for "
+            "FULL (16:9) slides; remove the `Safe zone:` line from the outline "
+            "block to silence this warning."
+        )
         return prompt
     zone = safe_zone["zone"]
     if zone not in VALID_SAFE_ZONES:
@@ -843,7 +856,7 @@ def run_generate(outline_path, slide_args, versioned=False):
     for i, num in enumerate(to_generate):
         slide = slides_by_num[num]
         prompt = resolve_prompt(slide["prompt"], slide["format"], outline["anchors"])
-        prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"))
+        prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"), slide["format"])
 
         print(f"[{i+1}/{len(to_generate)}] Slide {num}: {slide['title']}")
 
@@ -887,7 +900,7 @@ def run_compare(outline_path, slide_num):
 
     slide = slides_by_num[slide_num]
     prompt = resolve_prompt(slide["prompt"], slide["format"], outline["anchors"])
-    prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"))
+    prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"), slide["format"])
 
     output_dir = os.path.join(
         os.path.dirname(os.path.abspath(outline_path)),
