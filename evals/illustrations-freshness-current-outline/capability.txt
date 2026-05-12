@@ -1,0 +1,1 @@
+Pre-generation model-freshness check produces silence when no gap exists (Step 2)

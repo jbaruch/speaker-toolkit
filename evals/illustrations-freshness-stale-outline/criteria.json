@@ -1,0 +1,26 @@
+{
+  "context": "Tests whether the agent runs the SKILL.md Step 2 freshness check before generating any deck illustrations when the outline's Model line was set in the past. A baseline agent without the illustrations skill loaded would jump straight to invoking generate-illustrations.py; the tile's contribution is to insert a model-landscape comparison and a speaker decision point before generation begins.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Web-search precedes generation",
+      "description": "The agent calls WebSearch (or an equivalent live-web lookup) to identify current flagship image-generation models from major vendors BEFORE invoking generate-illustrations.py to produce any slide image. A run that goes straight to image generation without consulting the live model landscape fails this criterion.",
+      "max_score": 14
+    },
+    {
+      "name": "Concrete newer flagships named",
+      "description": "The agent names at least one specific image-generation model that exists now but is not represented in the outline's `**Model:**` line or in the script's `COMPARE_MODELS` constant. Hand-waving about \"newer models\" without a vendor + model name fails this criterion.",
+      "max_score": 10
+    },
+    {
+      "name": "Explicit decision point before generation",
+      "description": "The agent presents a clear choose-one decision to the speaker — keep the baked model, update `COMPARE_MODELS` and re-run the comparison, or pick a different already-supported model — and waits for a response. Silently swapping the model, or proceeding to image generation without acknowledgement of the choice, fails this criterion.",
+      "max_score": 12
+    },
+    {
+      "name": "No silent generation with stale model",
+      "description": "If image bytes are produced during this run, they use the model the speaker explicitly confirmed in response to the decision point above. A run that calls generate-illustrations.py with the outline's original `**Model:**` value before the speaker responds fails this criterion.",
+      "max_score": 8
+    }
+  ]
+}

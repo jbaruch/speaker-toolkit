@@ -1,0 +1,26 @@
+{
+  "context": "Tests the negative-case behavior of the SKILL.md Step 2 freshness check: when the outline's `**Model:**` line was set against a current flagship, the check should be entered AND should pass without inserting friction. Baseline agents (no tile) skip the freshness check entirely, so 'web-search precedes generation' is the tile-specific lift here; the remaining criteria are defensive — they catch regressions where the tile starts inserting friction where none was warranted.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Web-search precedes generation",
+      "description": "The agent calls WebSearch (or an equivalent live-web lookup) to identify current flagship image-generation models before invoking generate-illustrations.py. This is the tile-specific behavior — without the skill loaded, an agent would jump straight to generation. A run that skips the live-web lookup fails this criterion.",
+      "max_score": 14
+    },
+    {
+      "name": "No spurious model-change proposal",
+      "description": "The agent does NOT propose editing `skills/illustrations/scripts/generate-illustrations.py` to change `COMPARE_MODELS`, and does NOT propose changing the outline's `**Model:**` line, when the web-search outcome shows the outline's model is among current flagships. Surfacing such a proposal anyway fails this criterion.",
+      "max_score": 12
+    },
+    {
+      "name": "Proceeds to generation without re-litigating",
+      "description": "After the freshness check completes, the agent moves on to invoke `generate-illustrations.py` (or otherwise produce slide images) as the next concrete action. Halting at the freshness check to ask the speaker to reconfirm a model choice that has no surfaced gap fails this criterion.",
+      "max_score": 10
+    },
+    {
+      "name": "Generation uses the outline's declared model",
+      "description": "If image generation is invoked, the command uses the model declared in the outline header — not a different model picked or substituted by the agent.",
+      "max_score": 8
+    }
+  ]
+}
