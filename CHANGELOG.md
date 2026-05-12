@@ -2,6 +2,31 @@
 
 ## 0.18.0
 
+### deps — formalize tessl-version-floating carve-out
+
+`tessl.json` floats its dependencies to `"latest"` because `tessl update`
+rewrites the manifest in-place at runtime and `.tessl/tiles/` is
+gitignored — pinning produces silent drift between commit history and
+the running install. `jbaruch/coding-policy: dependency-management`
+permits this only when three preconditions are met. This release adds
+all three:
+
+- **Authority-of-record rule** at `rules/tessl-version-floating.md`
+  documenting the carve-out, naming `tessl.json` as the single covered
+  manifest, and explaining why pin/lock semantics break in this shape.
+  Registered under `tile.json` → `steering`.
+- **Deploy-time check** at `scripts/check-tessl-pins.sh` that walks
+  every covered manifest and fails if any dependency uses a specifier
+  other than `"latest"` — rejecting literal pins, version ranges, tags,
+  and anything else per the carve-out's "rejecting only literal pins
+  lets a non-literal pinned/ranged value slip through" warning.
+- **CI wiring** in `.github/workflows/tests.yml` runs the check ahead
+  of the test suite on every push and PR. CI failure blocks merge.
+
+The second `tessl.json` dependency (`tessl-labs/tessl-skill-eval-scenarios`)
+also moves to `"latest"` — the carve-out applies to the manifest as a
+whole, mixed pin/float within a covered manifest is not allowed.
+
 ### illustrations — pre-generation model-freshness check
 
 New Step 2 in the illustrations skill runs before Strategy comparison or

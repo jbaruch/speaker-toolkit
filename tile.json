@@ -46,6 +46,9 @@
     },
     "interaction-rules": {
       "rules": "rules/interaction-rules.md"
+    },
+    "tessl-version-floating": {
+      "rules": "rules/tessl-version-floating.md"
     }
   },
   "keywords": [
