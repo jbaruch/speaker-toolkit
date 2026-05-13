@@ -29,20 +29,7 @@ curl -L -o inputs/presentation-spec.md "$BASE/presentation-spec.md"
 
 ## Key Parameters
 
-- **Talk slug:** `2026-04-16-devnexus-robocoders-judgment-day`
-- The outline contains URLs in speaker notes, GitHub repo references, two book citations, three RFC mentions, and several tool names in backticks
-- Some URLs appear inside code blocks (should NOT be extracted)
-- One URL appears inside an Image prompt field (should NOT be extracted)
-- The URL `https://dora.dev` appears twice — should be deduplicated
-- The Coda slide (slide 58) has resources that should be prioritized
-
-## Notes on Verification
-
-The critical tests:
-1. A script was used for extraction, not manual scanning
-2. The output is valid JSON with the expected structure (talk_slug, extracted_at, resources array)
-3. URLs from code blocks are NOT in the output
-4. URLs from Image prompt lines are NOT in the output
-5. Duplicate URLs are deduplicated
-6. Resources are categorized by type (url, repo, book, rfc, tool)
-7. The talk slug comes from the spec, not invented
+- Use the talk slug from the spec.
+- The outline contains URLs in code blocks and image prompts as well as in body text. It mentions GitHub repo references, two book citations, three RFC mentions, and several tool names in backticks.
+- The URL `https://dora.dev` appears twice.
+- The Coda slide (slide 58) has resources that should be prioritized.

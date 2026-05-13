@@ -13,12 +13,11 @@ Using the illustrations skill, plan the complete thumbnail generation workflow: 
 Produce the following files:
 
 1. **`thumbnail-plan.md`** — Complete thumbnail workflow plan including:
-   - List of 3-5 candidate slides ranked by visual impact, with reasoning for each
+   - A list of candidate slides ranked by visual impact, with reasoning for each
    - Which slides were excluded and why
-   - 2-3 proposed title text options (short hooks, not the full talk title)
-   - The exact `generate-thumbnail.py` command that would be run (with all arguments)
+   - Proposed title text options
+   - The exact command that would be run (with all arguments)
    - Where the speaker photo comes from
-   - How face preservation is handled in the generation process
 2. **`slide-candidates.md`** — Formatted list of candidate slides with:
    - Slide number and description
    - Why this slide is a good/bad candidate
@@ -44,8 +43,8 @@ curl -L -o inputs/talk/presentation-outline.md "$BASE/presentation-outline.md"
 - **Talk title:** "Robocoders: Judgment Day"
 - **Illustration style:** Retro sci-fi propaganda poster
 - **Illustration slides:** 1, 10, 25 (full-bleed illustrations)
-- **Bio slide:** 4 (should be avoided)
-- **Shownotes slide:** 3 (should be avoided)
-- **Bullet-heavy slide:** 18 (should be avoided)
+- **Slide 4:** bio
+- **Slide 3:** shownotes
+- **Slide 18:** bullet-heavy text
 - **Profile thumbnail preferences:** style=overlay, title_position=bottom, brand_colors=#5B2C6F,#C0392B
 - **Speaker photo path:** configured in profile

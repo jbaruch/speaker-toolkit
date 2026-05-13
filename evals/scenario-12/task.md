@@ -22,22 +22,16 @@ curl -sLO https://github.com/jbaruch/speaker-toolkit/raw/main/eval-resources/sce
 Process both talk analyses and produce structured debrief outputs:
 
 1. **For the recent talk** (`test_analysis_recent.json` — "Robocoders: Judgment Day", 7 days ago):
-   - Generate a debrief questionnaire with per-joke questions grounded in the specific humor beats from the analysis (reference actual quotes, slide numbers, meme descriptions)
+   - Generate a debrief questionnaire that walks the speaker through the recent talk's humor performance
    - Include questions about each meme slide's audience reaction
-   - Include a dedicated question about spontaneous humor not captured in the transcript (h5 has a suspicious gap)
-   - Include blind spot questions for the demo sections (d1, d2) and the theatrical opening (bs3)
-   - For any spontaneous humor that landed well, include a "promote to planned beat?" recommendation
+   - Cover the demo sections (d1, d2) and the theatrical opening (bs3)
 
 2. **For the old talk** (`test_analysis_old.json` — "Groovy Puzzlers", 3 years ago):
-   - Generate a COMPRESSED debrief — broad questions only, not per-joke grading
-   - Ask "any jokes you remember landing particularly well or badly?" rather than walking through each beat
-   - Still capture notable audience moments but in summary form
+   - Generate a debrief appropriate to a talk delivered 3 years ago
+   - Still capture notable audience moments
 
 3. **Produce structured output** as JSON files:
-   - `debrief_questionnaire_recent.json` — the per-beat questionnaire for the recent talk
-   - `debrief_questionnaire_old.json` — the compressed questionnaire for the old talk
+   - `debrief_questionnaire_recent.json` — the questionnaire for the recent talk
+   - `debrief_questionnaire_old.json` — the questionnaire for the old talk
    - Each question should reference specific analysis observations (humor beat IDs, slide numbers, quotes)
-   - Each humor beat should have a `humor_grade` field from: `hit`, `nod`, `flat`, `spontaneous_hit`
    - Blind spot observations stored as structured fields, not free text
-
-The old talk debrief must be demonstrably shorter than the recent talk debrief.

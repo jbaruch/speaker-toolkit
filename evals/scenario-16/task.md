@@ -14,7 +14,7 @@ The speaker has already drafted the base outline with style anchors and image pr
 
 Produce the following files:
 
-1. **`updated-outline-excerpt.md`** — The outline entries for the two slides that need builds, including the full `- Builds: N steps` specification with every build step listed. Also include the updated slide budget accounting for the extra build slides.
+1. **`updated-outline-excerpt.md`** — The outline entries updated to reflect the progressive-reveal sequence per the skill's build-specification convention.
 
 2. **`build-generation-plan.md`** — A step-by-step plan for generating the build images and inserting them into the PowerPoint deck. Cover: the image generation workflow (how to produce each build step), the file naming and directory structure, and the slide insertion approach (layout, positioning, speaker notes placement).
 

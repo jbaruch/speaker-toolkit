@@ -18,29 +18,21 @@ curl -sLO https://github.com/jbaruch/speaker-toolkit/raw/main/eval-resources/sce
 
 Analyze `extraction_results.json` (6 recordings) and produce `diagnostics_report.json` containing a per-recording diagnostic entry. Each entry must include:
 
-1. **Recording type classification** — classify each recording into one of at least 3 categories (e.g., fullscreen slides, picture-in-picture, wide-angle room) based on extraction metrics (frame-to-unique ratio, slide region detection)
+1. **Recording type classification** — classify each recording by recording type, using the extraction metrics provided
 
-2. **Dedup quality assessment** — for `case_wide_angle` (1200 frames → 900 "unique"), detect that the 1.33:1 ratio indicates dedup failure from speaker movement, and recommend:
-   - Increasing hash threshold to 14–18 (above the default 8)
-   - Using manual slide region cropping to isolate the projected screen
+2. **Dedup quality assessment** — for `case_wide_angle` (1200 frames → 900 unique), assess what the ratio implies and recommend appropriate remediations.
 
 3. **Transcript quality assessment** for each case:
    - `case_no_transcript`: flag as missing, recommend Whisper fallback
-   - `case_wrong_language`: detect Russian transcript when English was expected — but do NOT flag as an error if the talk was actually delivered in Russian (the speaker is bilingual)
-   - `case_whisper_hallucination`: detect the 0.45 repetition ratio and the repeated "Thank you for watching" loop as hallucination artifacts
-   - Track transcript source (youtube_auto_captions vs whisper_transcription) as a field
+   - `case_wrong_language`: detect Russian transcript when English was expected. The speaker is bilingual and may have delivered the talk in Russian.
+   - `case_whisper_hallucination`: review `case_whisper_hallucination` for signs the transcript is unreliable.
 
-4. **Speaker identity verification** — for `case_wrong_speaker`, flag that detected speaker "James Gosling" doesn't match expected "Baruch Sadogursky" (possible wrong recording from a playlist)
+4. **Speaker identity verification** — review `case_wrong_speaker`; the extraction recorded a different speaker than expected. The expected speaker for the playlist is Baruch Sadogursky.
 
-5. **Clean pass-through** — for `case_clean` (50 frames → 45 unique, valid transcript, correct speaker), produce NO warnings. Classify as healthy.
+5. **Clean pass-through** — review `case_clean` (50 frames → 45 unique, valid transcript, correct speaker).
 
 ## Output Specification
 
-Produce `diagnostics_report.json` with this structure per case:
-- `recording_type`: classification string
-- `dedup_quality`: assessment with optional `recommended_threshold`
-- `transcript_quality`: assessment with `source`, `status`, and optional warnings
-- `speaker_match`: boolean + details
-- `recommendations`: list of actionable strings (empty for clean recordings)
+Produce `diagnostics_report.json` containing a structured per-recording diagnostic record (one entry per case).
 
 Also produce `recommendations_log.txt` — a human-readable summary of all flagged issues and recommendations, suitable for a production operator to review.
