@@ -4,17 +4,16 @@
 
 A prolific conference speaker has years of talk materials scattered across directories — markdown files with talk metadata (conference, date, video link, slides link), and PowerPoint files organized by conference and year. They need a system to inventory everything: which talks exist, which have video recordings, which have slide decks, and which are ready for analysis.
 
-The speaker wants a JSON-based tracking database that maps all their talks and presentation files, identifies which talks have enough source material for analysis, and flags which ones are incomplete. Some PowerPoint files are duplicates or static exports and should be filtered out. The system should also try to match presentation files to their corresponding talk metadata entries.
+The speaker wants a JSON-based tracking database that maps all their talks and presentation files, identifies which talks have enough source material for analysis, and flags which ones are incomplete. The directory also contains some PowerPoint files that aren't real presentations. The system should match presentation files to their corresponding talk metadata entries where possible.
 
-The tracking database should be a single JSON file that inventories all discovered talks, catalogs presentation files, stores configuration, and tracks processing readiness. Talks without any source material (no video URL, no slides) should be flagged as unprocessable. Talks with source material should be marked as ready for processing, with their slide source type recorded based on what's available (PPTX, PDF from Google Drive, both, or none).
+The tracking database should be a single JSON file that inventories all discovered talks, catalogs presentation files, stores configuration, and tracks processing readiness.
 
 ## Output Specification
 
 Produce the following files:
 
 1. **`tracking-database.json`** — A JSON database that tracks all discovered talks and presentation files
-2. **`build_tracker.py`** — The Python script that scans the input directories and builds the database
-3. **`scan_report.txt`** — A human-readable report summarizing what was found
+2. **`scan_report.txt`** — A human-readable report summarizing what was found
 
 ## Input Files
 
@@ -73,4 +72,4 @@ curl -L -o "inputs/presentations/Templates/Presentation Template DOTCs 2023.pptx
 curl -L -o "inputs/presentations/DockerCon/2023/Container Myths Busted.pptx" "$BASE/DockerCon/2023/Container%20Myths%20Busted.pptx"
 ```
 
-The presentations directory contains 6 `.pptx` files across conference/year subdirectories. Three are real presentations, three should be skipped (static export, conflict copy, template).
+The presentations directory contains 6 `.pptx` files across conference/year subdirectories.
