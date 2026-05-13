@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased
+
+### ci — migrate `tessl skill review` to changed-skills loop
+
+`publish-tile.yml` previously ran one static `tessl skill review` step per
+skill on every push to `main` (5 invocations per merge). After
+`jbaruch/coding-policy` 0.3.20 codified the changed-skills-loop pattern
+in `rules/context-artifacts.md`, those static steps became a policy
+violation — and a real cost: `tessl skill review` is LLM-backed, so
+re-reviewing unchanged content burns Tessl credits while reproducing the
+prior rubric output.
+
+This release replaces the 5 static steps with one `uses:` of the
+reference composite action shipped at
+`jbaruch/coding-policy/.github/actions/skill-review`, pinned to SHA
+`2a9df6575e153ce0d98900fdae26384c06df478f`. The action:
+
+- diffs `github.event.before..HEAD -- skills/` to identify changed skills
+- reviews only those skills at the configured threshold (85, unchanged)
+- falls back to reviewing every skill on `workflow_dispatch` or initial
+  push (no usable base)
+- hard-fails when the base SHA is set but unreachable in the clone, so
+  a missing review can never silently degrade to "review skipped"
+
+`actions/checkout@v4` gains `fetch-depth: 0` per the composite action's
+documented requirement (it needs the prior-push commit reachable).
+
+Steady-state effect: PRs that don't touch `skills/` cost zero skill-review
+invocations at merge; PRs that touch one skill cost one. Multi-skill PRs
+scale linearly with what they actually changed.
+
 ## 0.18.0
 
 ### deps — formalize tessl-version-floating carve-out
