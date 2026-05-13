@@ -113,11 +113,29 @@ reimplementations of skill-provided scripts).
   - `scenario-25` (Post-Event Video Publishing, 3 lift) — baseline 97.
 
 Suite goes from 34 to 21 scenarios. Average lift across the
-remaining suite is substantially higher; the 21 scenarios cover all
-five skills (with vault-clarification now eval-covered only by the
-non-interactive `scenario-12` humor post-mortem at 7 lift — a known
-under-coverage gap to address with a different test mechanism, since
-the interactive paths cannot be eval'd one-shot).
+remaining suite is substantially higher.
+
+**Skill coverage after pruning.** `jbaruch/coding-policy: plugin-evals`
+requires every skill with decisional logic to ship eval cases. After
+this PR, all five skills retain at least one eval case in the suite:
+
+- vault-ingress: 6 scenarios
+- vault-clarification: 1 scenario — `scenario-12` (Humor Post-Mortem
+  and Blind Spot Debrief), which tests vault-clarification's
+  one-shot-evaluable decisional surface: recency-adapted questioning,
+  per-beat humor grading, blind-spot probing grounded in analysis
+  observations, structured-output capture. The interactive
+  multi-turn `AskUserQuestion` flow that
+  `clarification-interactive-session` previously attempted to cover
+  is architecturally outside the eval framework's reach (the
+  with-context agent correctly refuses to operate one-shot, producing
+  the −71-lift signal that drove the retirement); this is the
+  framework limitation documented in `evals/summary_infeasible.json`,
+  not a coverage gap the eval suite is meant to close. The skill's
+  decisional surface that *can* be one-shot-evaluated is covered.
+- vault-profile: 1 scenario
+- presentation-creator: 7 scenarios
+- illustrations: 6 scenarios
 
 ## 0.18.0
 
