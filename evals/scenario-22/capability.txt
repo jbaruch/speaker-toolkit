@@ -1,1 +1,0 @@
-Resource extraction from presentation outline using extract-resources.py

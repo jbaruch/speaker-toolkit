@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ### ci — remove `tessl eval run` from CI per updated plugin-evals policy
 
 `jbaruch/coding-policy` 0.3.20's `rules/plugin-evals.md` (Persistence
@@ -82,11 +84,40 @@ reimplementations of skill-provided scripts).
   the `build_tracker.py` script-from-scratch requirement from
   `scenario-1` (vault-ingress ships Step 1 logic, not a separate
   script).
-- `scenario-14` and `scenario-7` reviewed and reclassified to KEEP —
-  audit had false positives; their criteria check tile-prescribed
-  structural tokens / output shapes that the tasks do not pre-state.
+- `scenario-14` reviewed and reclassified to KEEP — audit had a
+  false positive; its criteria check tile-prescribed structural
+  tokens that the task does not pre-state.
+- **Retired 3 structural-redundancy scenarios** — `scenario-18`
+  (OOXML element presence, python-pptx output mechanics), `scenario-19`
+  (QR image properties, qrcode-library output; subsumed by `scenario-21`
+  full orchestration + `scenario-20` negative case), `scenario-24`
+  (thumbnail planning; subsumed by `scenario-26` thumbnail revision
+  which carries richer decisional content via speaker feedback).
+- **Retired 6 data-driven low-lift scenarios** after running
+  `tessl eval run .` on the de-bled set and inspecting per-scenario
+  lift (with-context − baseline). Cut anything ≤3 lift or with a
+  structural mismatch:
+  - `clarification-interactive-session` (−71 lift) — vault-clarification
+    is interactive (uses `AskUserQuestion` for multi-turn flow); the
+    with-context agent correctly refuses to operate one-shot and
+    scores 0, while the baseline fabricates answers and scores 71.
+    Negative lift signals an eval-framework mismatch, not a fixable
+    scenario problem. Matches the `summary_infeasible.json` flag.
+  - `scenario-8` (Co-Presented Talk Adaptation, 0 lift) — both
+    variants score 100/100; criteria measure universal competence.
+  - `guardrail-check-format` (Guardrail Audit, 0 lift) — both
+    variants 100/100; same problem.
+  - `scenario-22` (Extract Resources, 2 lift) — baseline 98, ceiling
+    effect; tile contribution drowned in universal-competence scoring.
+  - `scenario-7` (PowerPoint Deck Build Plan, 2 lift) — baseline 98.
+  - `scenario-25` (Post-Event Video Publishing, 3 lift) — baseline 97.
 
-Suite goes from 34 to 30 scenarios with substantially cleaner lift signal.
+Suite goes from 34 to 21 scenarios. Average lift across the
+remaining suite is substantially higher; the 21 scenarios cover all
+five skills (with vault-clarification now eval-covered only by the
+non-interactive `scenario-12` humor post-mortem at 7 lift — a known
+under-coverage gap to address with a different test mechanism, since
+the interactive paths cannot be eval'd one-shot).
 
 ## 0.18.0
 
