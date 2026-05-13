@@ -102,7 +102,7 @@ reimplementations of skill-provided scripts).
     with-context agent correctly refuses to operate one-shot and
     scores 0, while the baseline fabricates answers and scores 71.
     Negative lift signals an eval-framework mismatch, not a fixable
-    scenario problem. Matches the `summary_infeasible.json` flag.
+    scenario problem.
   - `scenario-8` (Co-Presented Talk Adaptation, 0 lift) — both
     variants score 100/100; criteria measure universal competence.
   - `guardrail-check-format` (Guardrail Audit, 0 lift) — both
@@ -129,9 +129,9 @@ this PR, all five skills retain at least one eval case in the suite:
   `clarification-interactive-session` previously attempted to cover
   is architecturally outside the eval framework's reach (the
   with-context agent correctly refuses to operate one-shot, producing
-  the −71-lift signal that drove the retirement); this is the
-  framework limitation documented in `evals/summary_infeasible.json`,
-  not a coverage gap the eval suite is meant to close. The skill's
+  the −71-lift signal that drove the retirement); this is an
+  eval-framework limitation, not a coverage gap the eval suite is
+  meant to close. The skill's
   decisional surface that *can* be one-shot-evaluated is covered.
 - vault-profile: 1 scenario
 - presentation-creator: 7 scenarios
