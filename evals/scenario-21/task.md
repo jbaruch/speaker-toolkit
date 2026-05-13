@@ -2,9 +2,7 @@
 
 ## Problem/Feature Description
 
-A speaker wants a QR code for their talk "Robocoders: Judgment Day" at DevNexus 2026. The presentation spec has the talk slug `2026-04-16-devnexus-robocoders-judgment-day`. The speaker profile has QR enabled with `shortener: "bitly"`.
-
-The talk has been published, shownotes exist, and the speaker wants a QR code for the closing slide. The fixture provides the spec (with the talk slug) and the profile (with `shortener: bitly`, shownotes URL pattern, and brand colors).
+A speaker wants a QR code for the closing slide of their talk. The talk has been published and shownotes exist. The fixture provides the presentation spec and the speaker profile.
 
 Using the presentation-creator skill, plan the QR generation workflow and document the commands that would be run.
 

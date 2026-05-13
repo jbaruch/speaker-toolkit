@@ -1,6 +1,6 @@
 [
   {
-    "id": "case_clean",
+    "id": "r1",
     "youtube_id": "abc123clean",
     "expected_speaker": "Baruch Sadogursky",
     "expected_language": "en",
@@ -20,7 +20,7 @@
     "detected_speaker_name": "Baruch Sadogursky"
   },
   {
-    "id": "case_wide_angle",
+    "id": "r2",
     "youtube_id": "def456wide",
     "expected_speaker": "Baruch Sadogursky",
     "expected_language": "en",
@@ -29,7 +29,12 @@
       "unique_slides_count": 900,
       "hash_threshold_used": 8,
       "slide_region_detected": true,
-      "slide_region": [0.15, 0.05, 0.85, 0.65],
+      "slide_region": [
+        0.15,
+        0.05,
+        0.85,
+        0.65
+      ],
       "fps_used": 0.5
     },
     "transcript": {
@@ -41,7 +46,7 @@
     "detected_speaker_name": "Baruch Sadogursky"
   },
   {
-    "id": "case_no_transcript",
+    "id": "r3",
     "youtube_id": "ghi789notx",
     "expected_speaker": "Baruch Sadogursky",
     "expected_language": "en",
@@ -56,7 +61,7 @@
     "detected_speaker_name": "Baruch Sadogursky"
   },
   {
-    "id": "case_wrong_language",
+    "id": "r4",
     "youtube_id": "jkl012lang",
     "expected_speaker": "Baruch Sadogursky",
     "expected_language": "en",
@@ -76,7 +81,7 @@
     "detected_speaker_name": "Барух Садогурский"
   },
   {
-    "id": "case_wrong_speaker",
+    "id": "r5",
     "youtube_id": "mno345spkr",
     "expected_speaker": "Baruch Sadogursky",
     "expected_language": "en",
@@ -96,7 +101,7 @@
     "detected_speaker_name": "James Gosling"
   },
   {
-    "id": "case_whisper_hallucination",
+    "id": "r6",
     "youtube_id": "pqr678hall",
     "expected_speaker": "Baruch Sadogursky",
     "expected_language": "en",

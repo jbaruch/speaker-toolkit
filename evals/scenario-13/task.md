@@ -16,23 +16,20 @@ curl -sLO https://github.com/jbaruch/speaker-toolkit/raw/main/eval-resources/sce
 
 ## Task
 
-Analyze `extraction_results.json` (6 recordings) and produce `diagnostics_report.json` containing a per-recording diagnostic entry. Each entry must include:
+Analyze `extraction_results.json` (6 recordings, identified `r1` through `r6` in the fixture) and produce `diagnostics_report.json` containing a per-recording diagnostic entry.
 
-1. **Recording type classification** — classify each recording by recording type, using the extraction metrics provided
+For each recording, examine the available extraction metadata (frame counts, unique-frame counts, hash threshold, slide-region detection, transcript source, transcript language, detected vs expected speaker, word counts) and produce:
 
-2. **Dedup quality assessment** — for `case_wide_angle` (1200 frames → 900 unique), assess what the ratio implies and recommend appropriate remediations.
+- a recording-type classification
+- a dedup quality assessment, with remediations if dedup appears to have failed
+- a transcript quality assessment, including handling of missing transcripts, language-vs-expectation mismatches, and any quality issues you detect in the transcript content
+- a speaker identity check, since the playlist's expected speaker is known
+- a clean pass-through verdict for recordings that show no anomalies
 
-3. **Transcript quality assessment** for each case:
-   - `case_no_transcript`: assess the case where extraction returned no transcript.
-   - `case_wrong_language`: the transcript came back in Russian; the recording's expected language was English. The speaker is bilingual. Decide how to handle this.
-   - `case_whisper_hallucination`: inspect the transcript content and assess its quality.
-
-4. **Speaker identity verification** — for `case_wrong_speaker`, the expected speaker for the playlist is Baruch Sadogursky. Compare against the extraction's detected speaker.
-
-5. **Clean pass-through** — assess `case_clean` (50 frames → 45 unique, valid transcript, detected speaker matches expected).
+The expected speaker for this playlist is Baruch Sadogursky. The fixture's recordings include a mix of healthy and unhealthy cases; do not assume which is which from the IDs — derive each verdict from the metadata.
 
 ## Output Specification
 
-Produce `diagnostics_report.json` containing a structured per-recording diagnostic record (one entry per case).
+Produce `diagnostics_report.json` containing a structured per-recording diagnostic record (one entry per recording).
 
 Also produce `recommendations_log.txt` — a human-readable summary of all flagged issues and recommendations, suitable for a production operator to review.
