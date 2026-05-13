@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### ci — remove `tessl eval run` from CI per updated plugin-evals policy
+
+`jbaruch/coding-policy` 0.3.20's `rules/plugin-evals.md` (Persistence
+section) is explicit: do not add a `tessl eval run` step to tile-repo
+CI, and do not add a scheduled/recurring workflow that re-runs the
+suite as a persistence mechanism. The Tessl-publish layer
+(`tesslio/patch-version-publish@v1`) owns persistence execution and
+runs the eval suite automatically — any explicit step on top is
+duplicate cost producing the same numbers a maintainer would already
+see at publish time, and a parallel cadence can mask a publish-layer
+eval failure with a parallel pass.
+
+Two deletions:
+
+- `publish-tile.yml` — removed the explicit `Run eval suite before
+  publish` step (`tessl eval run .`). The eval suite still runs (via
+  the publish action's internal execution); only the duplicate CI
+  step is gone.
+- `evals-scheduled.yml` — deleted entirely. The weekly cron was a
+  recurring-persistence workflow of exactly the kind the rule
+  prohibits.
+
+Steady-state effect: every publish run drops `tessl eval run .` from
+the CI step list; the publish action still gates on eval regressions
+because it runs the suite itself. The scheduled weekly run is gone.
+Local `tessl eval run .` for scenario authoring/debugging remains
+permitted under the rule's authoring carve-out.
+
 ### ci — migrate `tessl skill review` to changed-skills loop
 
 `publish-tile.yml` previously ran one static `tessl skill review` step per
