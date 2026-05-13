@@ -7,16 +7,16 @@ A speaker is building a 60-minute keynote about "Zero Trust Architecture" that u
 Similarly, there's a "Security Maturity Checklist" that appears four times across the talk, each time with more items checked off as the audience has learned new concepts.
 
 The speaker has already drafted the base outline with style anchors and image prompts. They now need:
-1. Updated outline entries for the two slides that need progressive reveals (the pillars diagram and the checklist), including the build step specifications
-2. A build generation plan explaining exactly how to produce the build-step images and insert them into the deck
+1. Updated outline entries for the two slides that need progressive reveals (the pillars diagram and the checklist)
+2. A plan explaining exactly how to produce the progressive-reveal images and insert them into the deck
 
 ## Output Specification
 
 Produce the following files:
 
-1. **`updated-outline-excerpt.md`** — The outline entries updated to reflect the progressive-reveal sequence per the skill's build-specification convention.
+1. **`updated-outline-excerpt.md`** — The outline entries updated for the two slides that need progressive reveals.
 
-2. **`build-generation-plan.md`** — A step-by-step plan for generating the build images and inserting them into the PowerPoint deck. Cover: the image generation workflow (how to produce each build step), the file naming and directory structure, and the slide insertion approach (layout, positioning, speaker notes placement).
+2. **`build-generation-plan.md`** — A step-by-step plan for generating the progressive-reveal images and inserting them into the PowerPoint deck. Cover: the image generation workflow (how to produce each reveal step), the file naming and directory structure, and the slide insertion approach (layout, positioning, speaker notes placement).
 
 ## Input Files
 
