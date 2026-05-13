@@ -4,7 +4,7 @@
   "checklist": [
     {
       "name": "Wide-angle detection",
-      "description": "The tool detects wide-angle room recordings by comparing the ratio of total extracted frames to unique slides — a ratio above 5:1 or 10:1 (or similar high threshold) triggers a warning about dedup failure due to speaker movement",
+      "description": "The tool flags the dedup-failed recording as a wide-angle / dedup-failure case based on the extraction metrics and metadata supplied (frame counts, unique-frame counts, slide-region detection, recording-type fields if present) — without false-flagging healthy recordings as wide-angle. The grading is on the outcome (correct classification), not on a specific numeric threshold",
       "max_score": 12
     },
     {
@@ -49,7 +49,7 @@
     },
     {
       "name": "Clean recording passes cleanly",
-      "description": "For a clean fullscreen recording with good dedup ratio and valid transcript, the tool produces no warnings and classifies it as healthy — it doesn't over-flag",
+      "description": "For a fullscreen recording with good dedup and a valid transcript, the tool produces no warnings and classifies it as healthy — it does not over-flag",
       "max_score": 12
     }
   ]

@@ -10,8 +10,8 @@ Given Morgan's pattern profile and the draft outline below, produce a pattern st
 
 Produce a pattern strategy report saved to `pattern-strategy.md` containing:
 
-1. A tiered pattern recommendation organized into exactly four tiers based on the speaker's usage history
-2. Antipattern flags for any risks detected in the draft, each tagged with whether it's a known recurring issue or a new contextual concern
+1. A tiered pattern recommendation organized into tiers based on the speaker's usage history
+2. Antipattern flags for any risks detected in the draft, each tagged so the speaker can tell at a glance which risks come from their habitual patterns versus risks specific to this outline
 3. Any specific recommendations for this talk
 
 Use the speaker profile and draft outline provided below.

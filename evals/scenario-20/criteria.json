@@ -35,7 +35,7 @@
     {
       "name": "Agent distinguishes missing config from opt-out",
       "description": "The agent's response shows it understands the distinction: 'shortener key missing' means NOT CONFIGURED (needs a decision), not the same as 'shortener: none' (explicit opt-out)",
-      "max_score": 10
+      "max_score": 15
     }
   ]
 }

@@ -16,10 +16,9 @@ Produce the following files:
 
 1. **`revision-plan.md`** — The complete revision plan including:
    - The revised `generate-thumbnail.py` command with updated arguments
-   - Which arguments changed vs the original run
    - Where the slide image comes from (resolution chain)
-   - How the "face looks too idealized" feedback is addressed (per the thumbnail rules — via style variant or slide change, not by adding face-preservation language to the prompt)
-   - Strategy explanation: iterate on specific components, not restart from scratch
+   - How the "face looks too idealized" feedback is addressed
+   - Strategy explanation
 2. **`original-vs-revised.md`** — Side-by-side comparison of original and revised command arguments showing what changed
 
 ## Input Files
@@ -79,10 +78,6 @@ python3 generate-thumbnail.py \
 
 ## Key Parameters
 
-- **Speaker feedback:** face too idealized, change to split_panel style, text at top
-- **Selected slide:** 10 (courtroom illustration — unchanged)
-- **Title text:** "JUDGMENT DAY" (unchanged)
-- **Original style:** overlay → **Revised:** split_panel
-- **Original title-position:** bottom → **Revised:** top
-- **Face issue:** needs stronger preservation language
+- **Selected slide:** 10 (courtroom illustration)
+- **Title text:** "JUDGMENT DAY"
 - **Illustration exists:** illustrations/slide-10.png (from Phase 5)

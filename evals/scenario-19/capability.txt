@@ -1,1 +1,0 @@
-QR code generation with background color matching and vault-based config

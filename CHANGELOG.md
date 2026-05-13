@@ -59,6 +59,113 @@ Steady-state effect: PRs that don't touch `skills/` cost zero skill-review
 invocations at merge; PRs that touch one skill cost one. Multi-skill PRs
 scale linearly with what they actually changed.
 
+### evals — prune low-value scenarios and strip task-criterion bleeding
+
+Audited the 34-scenario eval suite against `jbaruch/coding-policy: plugin-evals`
+(No Bleeding, Lift Not Attainment) and the user-stated rules in working
+memory (test outcomes not implementation details; no agent-written
+reimplementations of skill-provided scripts).
+
+- **Retired 4 scenarios** with zero lift: `scenario-2` (duplicates
+  `scenario-11` slide-source coverage), `scenario-23` (overlaps
+  `scenario-22`+`scenario-19`), `scenario-27` (generic python-pptx
+  placeholder work), `structured-talk-outline-with-typed-place`
+  (overlaps `scenario-14`).
+- **Stripped task-criterion bleeding from 9 scenarios** —
+  `clarification-interactive-session`, `pattern-strategy-4-tier`,
+  `scenario-12`, `scenario-13`, `scenario-16`, `scenario-21`,
+  `scenario-22`, `scenario-24`, `scenario-26`. Removed criterion-mirror
+  text from task bodies (Notes-on-Verification answer-key blocks,
+  enum literals, threshold values, verb-action directives like "do
+  NOT flag X"). The bleeding-strip pass left `criteria.json` files
+  untouched in every case — fixes are at the task per the rule.
+  Subsequent reviewer-driven commits in this PR did edit four
+  `criteria.json` files (rebalancing three sums to 100 and
+  reframing scenario-13's wide-angle criterion as outcome-based);
+  those are documented in their own entries below.
+- **Realigned 2 scenarios with skill orchestration** — `scenario-0`
+  bleeding cleanup ("(should be skipped)" annotations) plus removed
+  the `build_tracker.py` script-from-scratch requirement from
+  `scenario-1` (vault-ingress ships Step 1 logic, not a separate
+  script).
+- `scenario-14` reviewed and reclassified to KEEP — audit had a
+  false positive; its criteria check tile-prescribed structural
+  tokens that the task does not pre-state.
+- **Retired 3 structural-redundancy scenarios** — `scenario-18`
+  (OOXML element presence, python-pptx output mechanics), `scenario-19`
+  (QR image properties, qrcode-library output; subsumed by `scenario-21`
+  full orchestration + `scenario-20` negative case), `scenario-24`
+  (thumbnail planning; subsumed by `scenario-26` thumbnail revision
+  which carries richer decisional content via speaker feedback).
+- **Retired 6 data-driven low-lift scenarios** after running
+  `tessl eval run .` on the de-bled set and inspecting per-scenario
+  lift (with-context − baseline). Cut anything ≤3 lift or with a
+  structural mismatch:
+  - `clarification-interactive-session` (−71 lift) — vault-clarification
+    is interactive (uses `AskUserQuestion` for multi-turn flow); the
+    with-context agent correctly refuses to operate one-shot and
+    scores 0, while the baseline fabricates answers and scores 71.
+    Negative lift signals an eval-framework mismatch, not a fixable
+    scenario problem.
+  - `scenario-8` (Co-Presented Talk Adaptation, 0 lift) — both
+    variants score 100/100; criteria measure universal competence.
+  - `guardrail-check-format` (Guardrail Audit, 0 lift) — both
+    variants 100/100; same problem.
+  - `scenario-22` (Extract Resources, 2 lift) — baseline 98, ceiling
+    effect; tile contribution drowned in universal-competence scoring.
+  - `scenario-7` (PowerPoint Deck Build Plan, 2 lift) — baseline 98.
+  - `scenario-25` (Post-Event Video Publishing, 3 lift) — baseline 97.
+
+Suite goes from 34 to 21 scenarios. Average lift across the
+remaining suite is substantially higher.
+
+**Skill coverage after pruning.** `jbaruch/coding-policy: plugin-evals`
+requires every skill with decisional logic to ship eval cases. After
+this PR, all five skills retain at least one eval case in the suite:
+
+- vault-ingress: 6 scenarios
+- vault-clarification: 1 scenario — `scenario-12` (Humor Post-Mortem
+  and Blind Spot Debrief), which tests vault-clarification's
+  one-shot-evaluable decisional surface: recency-adapted questioning,
+  per-beat humor grading, blind-spot probing grounded in analysis
+  observations, structured-output capture. The interactive
+  multi-turn `AskUserQuestion` flow that
+  `clarification-interactive-session` previously attempted to cover
+  is architecturally outside the eval framework's reach (the
+  with-context agent correctly refuses to operate one-shot, producing
+  the −71-lift signal that drove the retirement); this is an
+  eval-framework limitation, not a coverage gap the eval suite is
+  meant to close. The skill's
+  decisional surface that *can* be one-shot-evaluated is covered.
+- vault-profile: 1 scenario
+- presentation-creator: 7 scenarios
+- illustrations: 6 scenarios
+
+**Reviewer-driven criteria edits.** Cross-family policy review on this
+PR surfaced two `criteria.json`-side issues that were not in the
+original bleeding-strip scope:
+
+- Three scenarios had `weighted_checklist` max_score sums of 95 instead
+  of 100, violating the eval-authoring weighting contract:
+  `scenario-1` bumped "No-sources talk flagged as unprocessable"
+  10 → 15 (the high-decisional behavior the tile teaches);
+  `scenario-20` bumped "Agent distinguishes missing config from
+  opt-out" 10 → 15 (the unique tile insight); `scenario-21` bumped
+  "Command uses --shownotes-url (not --short-url)" 10 → 15 (the
+  tile-prescribed arg choice). All 21 surviving scenarios now sum to
+  exactly 100.
+- `scenario-13`'s "Wide-angle detection" criterion previously prescribed
+  a numeric ratio threshold ("ratio above 5:1 or 10:1 triggers a
+  warning"). After de-bleeding stripped the task's hand-fed ratio
+  interpretation, the criterion's threshold-direction was exposed as
+  ambiguous (case_clean at 50/45 = 1.11:1 is even lower than
+  case_wide_angle's 1.33:1, so any pure ratio threshold either
+  false-flags clean or misses wide-angle). The criterion is now
+  outcome-based: it grades that the agent flags `case_wide_angle`
+  as wide-angle without false-flagging `case_clean`, using whatever
+  signal the agent derives from extraction metadata. No specific
+  numeric threshold is prescribed.
+
 ## 0.18.0
 
 ### deps — formalize tessl-version-floating carve-out

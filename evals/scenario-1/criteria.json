@@ -30,7 +30,7 @@
     {
       "name": "No-sources talk flagged as unprocessable",
       "description": "The 'AI-Assisted Testing' talk (which has no video_url and no slides) is flagged with a status indicating it cannot be processed due to missing sources — not left in the default pending state",
-      "max_score": 10
+      "max_score": 15
     },
     {
       "name": "Slide source determination",
