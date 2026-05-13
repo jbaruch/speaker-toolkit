@@ -45,11 +45,14 @@ jobs:
         # push it falls back to reviewing every skill; on an
         # unreachable base it hard-fails (no silent skip).
         uses: jbaruch/coding-policy/.github/actions/skill-review@2a9df6575e153ce0d98900fdae26384c06df478f # main @ 2026-05-13
-      - name: Run eval suite before publish
-        # `jbaruch/coding-policy: plugin-evals` requires evals to run
-        # on every publish (and on a recurring cadence — see
-        # evals-scheduled.yml). Regressions block the release.
-        run: tessl eval run .
+      # No explicit `tessl eval run .` step here: per
+      # `jbaruch/coding-policy: plugin-evals` (Persistence), the
+      # Tessl-publish layer owns persistence execution — the eval
+      # suite runs automatically inside `tesslio/patch-version-publish`
+      # below. Adding a parallel `tessl eval run` step would be
+      # duplicate cost producing the same numbers a maintainer would
+      # already see at publish time, and could mask a publish-layer
+      # eval failure with a parallel pass.
       - uses: tesslio/patch-version-publish@v1
         with:
           token: ${{ secrets.TESSL_TOKEN }}
