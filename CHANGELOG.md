@@ -77,8 +77,12 @@ reimplementations of skill-provided scripts).
   `scenario-22`, `scenario-24`, `scenario-26`. Removed criterion-mirror
   text from task bodies (Notes-on-Verification answer-key blocks,
   enum literals, threshold values, verb-action directives like "do
-  NOT flag X"). `criteria.json` unchanged in every case — fixes are
-  at the task per the rule.
+  NOT flag X"). The bleeding-strip pass left `criteria.json` files
+  untouched in every case — fixes are at the task per the rule.
+  Subsequent reviewer-driven commits in this PR did edit four
+  `criteria.json` files (rebalancing three sums to 100 and
+  reframing scenario-13's wide-angle criterion as outcome-based);
+  those are documented in their own entries below.
 - **Realigned 2 scenarios with skill orchestration** — `scenario-0`
   bleeding cleanup ("(should be skipped)" annotations) plus removed
   the `build_tracker.py` script-from-scratch requirement from
@@ -136,6 +140,31 @@ this PR, all five skills retain at least one eval case in the suite:
 - vault-profile: 1 scenario
 - presentation-creator: 7 scenarios
 - illustrations: 6 scenarios
+
+**Reviewer-driven criteria edits.** Cross-family policy review on this
+PR surfaced two `criteria.json`-side issues that were not in the
+original bleeding-strip scope:
+
+- Three scenarios had `weighted_checklist` max_score sums of 95 instead
+  of 100, violating the eval-authoring weighting contract:
+  `scenario-1` bumped "No-sources talk flagged as unprocessable"
+  10 → 15 (the high-decisional behavior the tile teaches);
+  `scenario-20` bumped "Agent distinguishes missing config from
+  opt-out" 10 → 15 (the unique tile insight); `scenario-21` bumped
+  "Command uses --shownotes-url (not --short-url)" 10 → 15 (the
+  tile-prescribed arg choice). All 21 surviving scenarios now sum to
+  exactly 100.
+- `scenario-13`'s "Wide-angle detection" criterion previously prescribed
+  a numeric ratio threshold ("ratio above 5:1 or 10:1 triggers a
+  warning"). After de-bleeding stripped the task's hand-fed ratio
+  interpretation, the criterion's threshold-direction was exposed as
+  ambiguous (case_clean at 50/45 = 1.11:1 is even lower than
+  case_wide_angle's 1.33:1, so any pure ratio threshold either
+  false-flags clean or misses wide-angle). The criterion is now
+  outcome-based: it grades that the agent flags `case_wide_angle`
+  as wide-angle without false-flagging `case_clean`, using whatever
+  signal the agent derives from extraction metadata. No specific
+  numeric threshold is prescribed.
 
 ## 0.18.0
 
