@@ -1,1 +1,0 @@
-Talk processing status management
