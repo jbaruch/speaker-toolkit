@@ -4,7 +4,7 @@
   "checklist": [
     {
       "name": "Wide-angle detection",
-      "description": "The tool detects wide-angle room recordings by comparing the ratio of total extracted frames to unique slides — a ratio above 5:1 or 10:1 (or similar high threshold) triggers a warning about dedup failure due to speaker movement",
+      "description": "The tool detects wide-angle room recordings by comparing the ratio of total extracted frames to unique slides — an unusually low ratio (near 1:1, where almost every frame is treated as 'unique') is the dedup-failure signal: a typical talk shows many frames per slide change so a healthy ratio is well above 1:1, and a ratio close to 1:1 implies perceptual hashing failed to collapse frames of the same slide (typically due to speaker movement in front of the projection)",
       "max_score": 12
     },
     {

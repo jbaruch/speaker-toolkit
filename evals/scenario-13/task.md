@@ -2,7 +2,7 @@
 
 ## Problem/Feature Description
 
-Six conference talk recordings have been processed through the video-slide-extraction pipeline. The extraction results vary widely — some are clean, others show signs of wide-angle recording dedup failure, missing transcripts, wrong languages, wrong speakers, or Whisper hallucination.
+Six conference talk recordings have been processed through the video-slide-extraction pipeline. The extraction results vary widely.
 
 Analyze the extraction results and produce a structured diagnostics report for each case.
 
@@ -23,13 +23,13 @@ Analyze `extraction_results.json` (6 recordings) and produce `diagnostics_report
 2. **Dedup quality assessment** — for `case_wide_angle` (1200 frames → 900 unique), assess what the ratio implies and recommend appropriate remediations.
 
 3. **Transcript quality assessment** for each case:
-   - `case_no_transcript`: flag as missing, recommend Whisper fallback
-   - `case_wrong_language`: detect Russian transcript when English was expected. The speaker is bilingual and may have delivered the talk in Russian.
-   - `case_whisper_hallucination`: review `case_whisper_hallucination` for signs the transcript is unreliable.
+   - `case_no_transcript`: assess the case where extraction returned no transcript.
+   - `case_wrong_language`: the transcript came back in Russian; the recording's expected language was English. The speaker is bilingual. Decide how to handle this.
+   - `case_whisper_hallucination`: inspect the transcript content and assess its quality.
 
-4. **Speaker identity verification** — review `case_wrong_speaker`; the extraction recorded a different speaker than expected. The expected speaker for the playlist is Baruch Sadogursky.
+4. **Speaker identity verification** — for `case_wrong_speaker`, the expected speaker for the playlist is Baruch Sadogursky. Compare against the extraction's detected speaker.
 
-5. **Clean pass-through** — review `case_clean` (50 frames → 45 unique, valid transcript, correct speaker).
+5. **Clean pass-through** — assess `case_clean` (50 frames → 45 unique, valid transcript, detected speaker matches expected).
 
 ## Output Specification
 

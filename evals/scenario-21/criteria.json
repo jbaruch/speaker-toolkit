@@ -30,7 +30,7 @@
     {
       "name": "Command uses --shownotes-url (not --short-url)",
       "description": "The generate-qr.py command uses --shownotes-url (letting the script handle bitly shortening), not --short-url. The script manages the shortener API call, custom back-half, and tracking DB update",
-      "max_score": 10
+      "max_score": 15
     },
     {
       "name": "Tracking DB update mentioned",
