@@ -1,7 +1,5 @@
 # Changelog
 
-## Unreleased
-
 ### ci — remove `tessl eval run` from CI per updated plugin-evals policy
 
 `jbaruch/coding-policy` 0.3.20's `rules/plugin-evals.md` (Persistence
@@ -58,6 +56,37 @@ documented requirement (it needs the prior-push commit reachable).
 Steady-state effect: PRs that don't touch `skills/` cost zero skill-review
 invocations at merge; PRs that touch one skill cost one. Multi-skill PRs
 scale linearly with what they actually changed.
+
+### evals — prune low-value scenarios and strip task-criterion bleeding
+
+Audited the 34-scenario eval suite against `jbaruch/coding-policy: plugin-evals`
+(No Bleeding, Lift Not Attainment) and the user-stated rules in working
+memory (test outcomes not implementation details; no agent-written
+reimplementations of skill-provided scripts).
+
+- **Retired 4 scenarios** with zero lift: `scenario-2` (duplicates
+  `scenario-11` slide-source coverage), `scenario-23` (overlaps
+  `scenario-22`+`scenario-19`), `scenario-27` (generic python-pptx
+  placeholder work), `structured-talk-outline-with-typed-place`
+  (overlaps `scenario-14`).
+- **Stripped task-criterion bleeding from 9 scenarios** —
+  `clarification-interactive-session`, `pattern-strategy-4-tier`,
+  `scenario-12`, `scenario-13`, `scenario-16`, `scenario-21`,
+  `scenario-22`, `scenario-24`, `scenario-26`. Removed criterion-mirror
+  text from task bodies (Notes-on-Verification answer-key blocks,
+  enum literals, threshold values, verb-action directives like "do
+  NOT flag X"). `criteria.json` unchanged in every case — fixes are
+  at the task per the rule.
+- **Realigned 2 scenarios with skill orchestration** — `scenario-0`
+  bleeding cleanup ("(should be skipped)" annotations) plus removed
+  the `build_tracker.py` script-from-scratch requirement from
+  `scenario-1` (vault-ingress ships Step 1 logic, not a separate
+  script).
+- `scenario-14` and `scenario-7` reviewed and reclassified to KEEP —
+  audit had false positives; their criteria check tile-prescribed
+  structural tokens / output shapes that the tasks do not pre-state.
+
+Suite goes from 34 to 30 scenarios with substantially cleaner lift signal.
 
 ## 0.18.0
 
