@@ -1,5 +1,9 @@
 # Phase 1: Intent Distillation — Detail
 
+Throughout this doc, "the spec" refers to the `talk:` block of `outline.yaml`
+— the metadata fields authored in this phase. See `outline_schema.py:TalkMetadata`
+for the schema and SKILL.md Phase 1 for the YAML template.
+
 ### The Art of Asking
 
 **Ask each question individually. Wait for the answer before asking the next.**
@@ -119,10 +123,10 @@ Rules:
 - Kebab-case, lowercase, no special characters.
 - NEVER invent a slug from convention-like patterns you saw in analyses —
   those are snapshots of whatever was current when the analysis was written.
-- The confirmed slug goes into the Presentation Spec as `Shownotes slug:` and
-  is persisted in `presentation-spec.md`. All downstream uses (Phase 6
-  shownotes URL, QR code `--talk-slug`, directory name) must use this exact
-  slug.
+- The confirmed slug goes into `outline.yaml` as `talk.slug` (kebab-case
+  validated by `outline_schema.py`). All downstream uses (Phase 6 shownotes
+  URL, QR code `--talk-slug`, the renderable deck filename `{slug}.md` for
+  presenterm talks, directory name) must use this exact slug.
 
 ### Spec Validation
 

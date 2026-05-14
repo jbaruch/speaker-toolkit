@@ -27,12 +27,22 @@ SCRIPTS_ILL = os.path.join(
 
 
 def _import_script(path, name):
-    """Import a standalone .py script as a module (no package required)."""
+    """Import a standalone .py script as a module (no package required).
+
+    If the module name is already in `sys.modules` (typically because a
+    sibling script imported it under the same name via Python's normal
+    import machinery — e.g., `extract-script.py` doing
+    `import outline_schema`), reuse that cached instance instead of
+    overwriting it. Replacing the cached module creates two distinct
+    module objects with non-identical enums/classes, which silently
+    breaks `isinstance` and identity checks across tests.
+    """
     path = os.path.abspath(path)
-    # Add the script's directory to sys.path so relative imports work
     script_dir = os.path.dirname(path)
     if script_dir not in sys.path:
         sys.path.insert(0, script_dir)
+    if name in sys.modules:
+        return sys.modules[name]
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
@@ -96,6 +106,31 @@ def extract_resources():
 @pytest.fixture(scope="session")
 def guardrail_check():
     return _import_script(os.path.join(SCRIPTS_PC, "guardrail-check.py"), "guardrail_check")
+
+
+@pytest.fixture(scope="session")
+def outline_schema():
+    return _import_script(os.path.join(SCRIPTS_PC, "outline_schema.py"), "outline_schema")
+
+
+@pytest.fixture(scope="session")
+def extract_script():
+    return _import_script(os.path.join(SCRIPTS_PC, "extract-script.py"), "extract_script")
+
+
+@pytest.fixture(scope="session")
+def extract_slides():
+    return _import_script(os.path.join(SCRIPTS_PC, "extract-slides.py"), "extract_slides")
+
+
+@pytest.fixture(scope="session")
+def extract_narrative():
+    return _import_script(os.path.join(SCRIPTS_PC, "extract-narrative.py"), "extract_narrative")
+
+
+@pytest.fixture(scope="session")
+def check_rhetorical():
+    return _import_script(os.path.join(SCRIPTS_PC, "check-rhetorical.py"), "check_rhetorical")
 
 
 @pytest.fixture(scope="session")

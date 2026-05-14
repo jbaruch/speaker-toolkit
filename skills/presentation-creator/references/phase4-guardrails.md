@@ -1,7 +1,23 @@
 # Presentation Creator — Guardrails
 
-This file defines the guardrail **check structure** — what to check, how to check it,
-and how to report results.
+Phase 4 runs two complementary checkers against `outline.yaml`:
+
+| Script | Surface | Output |
+|--------|---------|--------|
+| `scripts/check-rhetorical.py outline.yaml` | Closed pattern taxonomy — opening PUNCH, big-idea singleton, thesis preview/payoff, sparkline elements, master-story threading, callback ledger, inoculation count, progressive-list contiguity, running gags, duration accounting | `rhetorical-review.md` |
+| `scripts/guardrail-check.py outline.yaml <speaker-profile.json>` | Profile-aware rules — slide budget, Act 1 ratio, branding, profanity, data attribution, closing completeness, cut-line availability (conditional on `modular_design`) | stdout report |
+
+Anti-pattern frequency from `profile.pattern_profile.antipattern_frequency` and
+illustration coverage (checks 9 and 10 below) are not currently wired into
+`guardrail-check.py` — the agent should surface them as additional manual
+checks alongside the script output during the Phase 4 audit.
+
+The two scripts are independent — run both. `check-rhetorical.py` needs no
+profile and emits a deterministic report regardless of the speaker. `guardrail-check.py`
+fuses outline data with profile thresholds and venue context.
+
+This file defines the guardrail **check structure** — what each check covers,
+how it's wired to schema fields, and how results are reported.
 
 **Thresholds and speaker-specific rules come from the vault at runtime:**
 - Slide budget tables → `speaker-profile.json` → `guardrail_sources.slide_budgets[]`
@@ -160,18 +176,22 @@ Minimum viable close:
 **Always check this.** Read `rhetoric_defaults.default_duration_minutes` and
 `rhetoric_defaults.modular_design` from the speaker profile.
 
-Scan the outline for literal `[CUT LINE` strings marking where to truncate for shorter
-slots, and `[EXPAND ZONE` strings marking sections that can grow.
+In `outline.yaml`, cuttable chapters and slides carry `cuttable: true`. The
+guardrail counts cuttable minutes and verifies the talk can compress to
+shorter slots.
 
 ### Check
 
 ```
-[PASS/FAIL] Cut lines: {present/missing} — scan for [CUT LINE] markers in the outline
-[PASS/FAIL] Expand zones: {present/missing} for longer adaptation
+[PASS/FAIL] Cut lines: {cuttable_min} min of cuttable content
+            (cuttable chapters: {ids}; cuttable slides: {ns})
 ```
 
-FAIL if no `[CUT LINE]` marker exists and the talk duration is shorter than the
-speaker's default.
+FAIL when the profile's `rhetoric_defaults.modular_design` is true and no
+chapter or slide carries `cuttable: true`. PASS-and-skipped when
+`modular_design` is false (speakers who opt out don't get penalized for
+inflexible decks). The talk-duration-shorter-than-default heuristic is no
+longer used — the `modular_design` flag is the single gate.
 
 ---
 

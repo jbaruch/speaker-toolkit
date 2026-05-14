@@ -1,0 +1,41 @@
+---
+# Minimal outline.yaml — only the fields the QR-generation flow needs to
+# read (talk.slug, talk.title, talk.shownotes_url_base). The rest exists
+# to satisfy schema validation.
+
+talk:
+  title: "Robocoders: Judgment Day"
+  slug: "2026-04-16-devnexus-robocoders-judgment-day"
+  speakers: ["Baruch Sadogursky"]
+  duration_min: 45
+  audience: "Senior developers and tech leads"
+  mode: "keynote"
+  venue: "DevNexus 2026"
+  slide_budget: 60
+  pacing_wpm: [135, 145]
+  architecture: "narrative-arc"
+  thesis: |
+    AI coding assistants are only as good as the judgment of the human
+    wielding them.
+  shownotes_url_base: "https://jbaru.ch/"
+  commercial_intent: "none"
+  profanity_register: "mild"
+  must_include: ["live demo of AI pair programming"]
+  must_avoid: ["vendor-specific tooling comparisons"]
+
+chapters:
+  - id: ch-close
+    title: "Closing"
+    target_min: 3
+    argument_beats:
+      - text: "Three takeaways and a call to action."
+        slide_refs: [60]
+
+slides:
+  - n: 60
+    chapter: ch-close
+    title: "Thanks + Shownotes QR"
+    format: FULL
+    visual: "Shownotes URL + QR code on the closing slide."
+    text_overlay: "speaking.jbaru.ch — see you out there"
+    big_idea: true

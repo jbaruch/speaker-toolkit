@@ -1,0 +1,228 @@
+---
+# Minimal realistic outline fixture.
+# Exercises: single speaker (no `speaker:` on lines), three chapters,
+# builds expansion, EXCEPTION format with justification, opening-punch
+# with flavors, sparkline architecture with all four required patterns,
+# foreshadowing plant + payoff via callbacks, big-idea singleton,
+# master-story across two chapters, inoculation with resistance vector.
+
+talk:
+  title: "Demo Talk"
+  slug: "demo-conf-2026-demo-talk"
+  speakers: ["Speaker One"]
+  duration_min: 30
+  audience: "Senior engineers"
+  mode: "keynote"
+  venue: "DemoConf 2026"
+  slide_budget: 20
+  pacing_wpm: [140, 160]
+  architecture: "sparkline"
+  applied_patterns:
+    - { id: "unifying-visual-theme" }
+    - { id: "mentor" }
+    - { id: "bookends" }
+
+style_anchor:
+  model: "imagen-4"
+  full: |
+    Photorealistic editorial illustration, landscape 1920x1080.
+  imgtxt: |
+    Portrait 1024x1536 with bottom 30% reserved for caption.
+  conventions: |
+    Numbering in upper-right; recurring motif of a brass compass.
+
+chapters:
+  - id: ch1
+    title: "The Setup"
+    target_min: 6
+    argument_beats:
+      - text: "Open cold with the receipt: the bug everyone has seen."
+        slide_refs: [1, 2]
+        tags: [hook]
+      - text: "Diagnose: two missing pieces."
+        slide_refs: [3]
+
+  - id: ch2
+    title: "The Turn"
+    target_min: 12
+    argument_beats:
+      - text: "Name the gap between what is and what could be."
+        slide_refs: [5]
+      - text: "Stack the persuasive middle on a single thread."
+        slide_refs: [7, 8]
+
+  - id: ch3
+    title: "The Close"
+    target_min: 12
+    argument_beats:
+      - text: "Pay off the master story and ask for action."
+        slide_refs: [10, 11]
+
+slides:
+  - n: 1
+    chapter: ch1
+    title: "Cold Open"
+    format: FULL
+    visual: "Receipt screenshot with one line circled in red."
+    text_overlay: "none"
+    image_prompt: |
+      [STYLE ANCHOR]. A crumpled paper receipt with one line circled in red ink.
+    script:
+      - cue: "SLIDE 1 UP — no title, no bio, no branding"
+      - parenthetical: "(let the image breathe — 5 seconds, no words)"
+      - line: "This is a receipt."
+      - parenthetical: "(beat)"
+      - line: "Not for a coffee. Not for a flight."
+      - line: "For a four-hour outage."
+      - parenthetical: "(point to the circled line)"
+      - line: "One line. One change. Eleven million requests dropped."
+      - parenthetical: "(slow, deliberate)"
+      - line: "And the agent that made the change told its operator — and I quote — \"this should improve performance.\""
+    applied_patterns:
+      - id: opening-punch
+        flavors: [personal, unexpected]
+      - id: foreshadowing
+        plant_id: receipt-motif
+    callbacks:
+      - { kind: plant, id: receipt-motif }
+
+  - n: 2
+    chapter: ch1
+    title: "The Three Failures"
+    format: FULL
+    visual: "Triptych of three terminal sessions."
+    text_overlay: "VALIDATION REMOVED · TESTS DELETED · TAX MISCOMPUTED"
+    image_prompt: |
+      [STYLE ANCHOR]. Three terminal windows arranged as a triptych, each
+      showing a different command output.
+    builds:
+      - { step: 0, desc: "Empty triptych frame — three labeled but empty terminals" }
+      - { step: 1, desc: "Left terminal populated with validation-removal diff" }
+      - { step: 2, desc: "Middle terminal populated with deleted-test output" }
+      - { step: 3, desc: "Right terminal populated with VAT-calculation diff" }
+    script:
+      - cue: "SLIDE 2 UP — BUILD 00"
+      - line: "Three receipts like the one you just saw. Three different teams, three different agents, same shape."
+      - cue: "BUILD 01"
+      - line: "First — the agent removed input validation across the API layer."
+      - parenthetical: "(beat)"
+      - line: "Because the operator asked, and I'm quoting again, \"would deleting validation improve performance?\""
+      - line: "The agent's answer was yes. The agent's action was to delete it."
+      - cue: "BUILD 02"
+      - line: "Second — the agent deleted three integration tests when the operator said \"clean this up.\""
+      - line: "It explained the deletion as — \"cleaner separation of concerns.\""
+      - parenthetical: "(dry)"
+      - line: "It was not."
+      - cue: "BUILD 03"
+      - line: "Third — the agent rewrote a VAT calculation from floor to round."
+      - line: "It called the change \"more accurate.\" It did not notice that several EU member states require floor — and that rounding up over-collects tax."
+      - parenthetical: "(land it)"
+      - line: "Three different requests. One pattern. The agent executed a request that violated a constraint it had no way to know about — and it never paused to question."
+
+  - n: 3
+    chapter: ch1
+    title: "The Diagnosis"
+    format: IMG+TXT
+    visual: "Brass compass with two needles, one labeled CONSTRAINT, one PUSHBACK."
+    text_overlay: "Two missing pieces."
+    image_prompt: |
+      [STYLE ANCHOR]. A brass compass viewed from above, two needles instead
+      of one, labels rendered in serif type.
+    script:
+      - line: "Two missing pieces. Access to the constraint, and authority to question."
+    applied_patterns:
+      - id: master-story
+        story_id: pandy
+        beat: introduce
+
+  - n: 5
+    chapter: ch2
+    title: "Call to Adventure"
+    format: FULL
+    visual: "Split frame: muted past vs vivid future."
+    text_overlay: "Treat context as an engineering artifact."
+    image_prompt: |
+      [STYLE ANCHOR]. A diptych — left half desaturated and overcast, right
+      half saturated and morning-lit, both showing the same desk.
+    script:
+      - cue: "SLIDE 5 UP"
+      - parenthetical: "(beat — let the contrast land)"
+      - line: "Here is the gap. And here is the world on the other side of it."
+    applied_patterns:
+      - id: call-to-adventure
+        big_idea_text: "Treat context as an engineering artifact."
+    big_idea: true
+    thesis: preview
+
+  - n: 7
+    chapter: ch2
+    title: "The Receipt, Revisited"
+    format: EXCEPTION
+    format_justification: "Real screenshot of the original incident — generated image cannot reproduce the line numbers and timestamps."
+    visual: "Real screenshot from the rate-limiter incident."
+    text_overlay: "4 hours · 11M requests dropped (source: incident postmortem)"
+    script:
+      - line: "Same receipt. Different lens."
+    callbacks:
+      - { kind: pay, id: receipt-motif, variation: "Revealed in full" }
+    applied_patterns:
+      - id: star-moment
+        subtype: shocking-statistic
+      - id: inoculation
+        resistance_vector: politics
+
+  - n: 8
+    chapter: ch2
+    title: "Master Story Recall"
+    format: IMG+TXT
+    visual: "Pandy in low light."
+    text_overlay: "Remember Pandy."
+    image_prompt: |
+      [STYLE ANCHOR]. A worn stuffed bear sitting on a windowsill at dusk.
+    script:
+      - line: "Remember Pandy."
+    applied_patterns:
+      - id: master-story
+        story_id: pandy
+        beat: recall-1
+
+  - n: 10
+    chapter: ch3
+    title: "Call to Action"
+    format: FULL
+    visual: "Four overlapping arrows, one per audience temperament."
+    text_overlay: "Doer · Supplier · Influencer · Innovator"
+    image_prompt: |
+      [STYLE ANCHOR]. Four arrows in different colors converging on a single point.
+    script:
+      - line: "Doers, write the rule. Suppliers, ship the registry. Influencers, write the post. Innovators, find the next gap."
+    applied_patterns:
+      - id: call-to-action
+        asks:
+          doer: "Write one rule this week."
+          supplier: "Publish your team's rules file."
+          influencer: "Share the deck."
+          innovator: "Find the next missing primitive."
+
+  - n: 11
+    chapter: ch3
+    title: "New Bliss + Thanks"
+    format: FULL
+    visual: "Morning-lit office, brass compass on the desk."
+    text_overlay: |
+      Summary: context as a versioned artifact.
+      @speaker · shownotes: example.com/talk · Thanks!
+    image_prompt: |
+      [STYLE ANCHOR]. A serene morning office scene, a brass compass resting
+      on a clean wooden desk, soft window light.
+    script:
+      - cue: "SLIDE 11 UP — final image"
+      - parenthetical: "(hold the silence)"
+      - line: "This is what shipped code looks like when nobody has to be watching."
+      - line: "Thanks — shownotes are at example.com/talk."
+    applied_patterns:
+      - id: new-bliss
+      - id: master-story
+        story_id: pandy
+        beat: recall-2
+    thesis: payoff

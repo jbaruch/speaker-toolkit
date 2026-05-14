@@ -2,6 +2,81 @@
 
 ## Unreleased
 
+### feat(presentation-creator) — outline.yaml is now the source of truth
+
+The presentation-creator skill moves from two hand-authored markdown
+files (`presentation-spec.md` for talk metadata, `presentation-outline.md`
+for the outline) to a single schema-validated `outline.yaml`. The four
+derived artifacts (`narrative.md`, `script.md`, `slides.md`,
+`rhetorical-review.md`) generate deterministically from it.
+
+**What changed:**
+
+- New `scripts/outline_schema.py` — pydantic v2 source of truth.
+  `talk:` block (title, slug kebab-case-validated, speakers, duration,
+  audience, mode, venue, slide_budget, pacing_wpm, architecture from
+  closed enum, thesis, shownotes_url_base, commercial_intent,
+  profanity_register, must_include, must_avoid, catalog_reference,
+  delivery_count, delivery_date). `chapters[]` with target_min,
+  cuttable, accent, argument_beats for `narrative.md`. `slides[]`
+  with format (FULL/IMG+TXT/EXCEPTION/TITLE/DEMO), visual,
+  text_overlay, image_prompt, builds, screenplay-form script with
+  speaker attribution, applied_patterns against the 77-pattern closed
+  enum discovered from `references/patterns/`, callbacks ledger,
+  big_idea singleton, thesis preview/payoff. `interludes[]` for live
+  demos between slides (anchored by `after_slide`). `style_anchor:`
+  block for illustration-strategy talks.
+
+- Four new extractor scripts:
+  - `extract-narrative.py` → chapter walker, prose
+  - `extract-script.py` → screenplay form, slides + interludes
+    interleaved by anchor
+  - `extract-slides.py` → per-slide build sheet
+  - `check-rhetorical.py` → structural gap-check over the closed
+    pattern taxonomy (PUNCH coverage, big-idea singleton, thesis
+    ordering, sparkline elements when applicable, master-story
+    threading, callback ledger, inoculation count, progressive-list
+    contiguity, duration accounting)
+
+- Existing scripts rewritten to consume `outline.yaml`:
+  - `guardrail-check.py` — profile-aware checks (slide budget, Act 1,
+    branding, profanity, data attribution, closing, cut lines); the
+    structural taxonomy now belongs to `check-rhetorical.py`
+  - `extract-resources.py` — walks `slides[]`/`interludes[]` via
+    `outline_schema`; image prompts deliberately excluded
+  - `generate-talk-timings.py` — walks `chapters[]`; no markdown
+    parsing
+
+- Skill prose rewritten end-to-end: `SKILL.md` (workflow table, all
+  phase steps, late-entry checklist, artifact table),
+  `phase1-intent.md` (talk metadata → `talk:` block),
+  `phase3-content.md` (full rewrite teaching the YAML schema),
+  `phase4-guardrails.md` (two-script split documented),
+  `phase5-slides.md` (slides.md is the build sheet; `{slug}.md` for
+  presenterm decks), `phase6-publishing.md` and
+  `phase7-post-event.md` (file refs updated).
+
+**Why it matters:** the markdown outline format required regex
+parsing for every downstream consumer (guardrail-check, extract-
+resources, generate-talk-timings, the agent itself), and every
+change to the format risked breaking parsers in unrelated scripts.
+Schema validation + four single-responsibility extractors collapses
+that parsing surface into one pydantic model and four deterministic
+walkers — per `rules/script-delegation.md`'s deterministic-vs-
+reasoning split.
+
+### evals — rename to descriptive names, port fixtures to YAML
+
+All numeric `scenario-N` evals renamed to descriptive kebab-case
+(e.g., `scenario-20` → `qr-missing-shortener-detection`).
+`eval-resources/` subdirectories renamed to match. Fixtures that
+referenced `presentation-outline.md` or `presentation-spec.md`
+converted to `outline.yaml` (QR scenarios, thumbnail evals, CFP,
+illustrations-mode-routing, freshness evals, pattern-strategy-4-tier,
+illustrated-outline evals, progressive-reveal-builds). Criteria
+ported from markdown-bullet assertions to YAML field assertions.
+Test suite: 289 / 5 skipped (+60 net).
+
 ### ci — remove `tessl eval run` from CI per updated plugin-evals policy
 
 `jbaruch/coding-policy` 0.3.20's `rules/plugin-evals.md` (Persistence

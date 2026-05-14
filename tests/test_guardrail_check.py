@@ -1,149 +1,232 @@
-"""Tests for guardrail-check.py — outline guardrail validation."""
+"""Tests for guardrail-check.py — profile-aware checks against outline.yaml."""
+
+import copy
+from pathlib import Path
+
+import pytest
+import yaml
 
 
-OUTLINE_PASSING = """\
-## Opening [2 min, slides 1-3]
+FIXTURE = Path(__file__).parent / "fixtures" / "outline-example.yaml"
 
-### Slide 1: Title Slide
-
-### Slide 2: Agenda
-
-### Slide 3: Hook
-
-## Act 1: The Challenge [5 min, slides 4-8]
-
-### Slide 4: Problem Statement
-
-### Slide 5: Context
-
-### Slide 6: Data
-### Slide 7: More Data
-### Slide 8: Summary
-
-## Act 2: The Solution [8 min, slides 9-18]
-
-### Slide 9: Approach
-
-### Slide 10: Implementation
-
-### Slide 18: Demo
-
-## Closing [3 min, slides 19-20]
-### Slide 19: Summary
-- Speaker: Here are the key takeaways and summary of what we covered.
-
-### Slide 20: Call to Action
-- Speaker: Your call to action: try this technique this week.
-- Visual: shownotes QR code and social handles
-
-Total slides: 20
-
-[CUT LINE after slide 12]
-"""
 
 PROFILE = {
     "rhetoric_defaults": {
-        "default_duration_minutes": 45,
-        "profanity_calibration": "none",
+        "default_duration_minutes": 30,
+        "profanity_calibration": "verbal-only — never on slides",
     },
     "guardrail_sources": {
         "slide_budgets": [
-            {"duration_minutes": 45, "max_slides": 60}
+            {"duration_minutes": 30, "max_slides": 30},
         ],
         "act1_ratio_limits": [
-            {"max_percentage": 45}
+            {"max_percentage": 45},
         ],
+    },
+    "design_rules": {
+        "footer": {
+            "elements": ["@speaker", "#conference"],
+        },
     },
 }
 
 
-def test_count_single_slides(guardrail_check):
-    text = "### Slide 1: A\n### Slide 2: B\n### Slide 3: C\n"
-    assert guardrail_check.count_slides(text) == 3
+@pytest.fixture(scope="session")
+def outline(outline_schema):
+    return outline_schema.load_outline(FIXTURE)
 
 
-def test_count_range_slides(guardrail_check):
-    text = "### Slide 30-33: Group\n"
-    assert guardrail_check.count_slides(text) == 4
+@pytest.fixture(scope="session")
+def base_data():
+    return yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
 
 
-def test_count_total_slides_line(guardrail_check):
-    text = "### Slide 1: A\n### Slide 2: B\nTotal slides: 20\n"
-    # "Total slides:" overrides header count
-    assert guardrail_check.count_slides(text) == 20
+# ── Slide budget ─────────────────────────────────────────────────────
 
 
-def test_budget_pass(guardrail_check):
-    label, _ = guardrail_check.check_slide_budget(20, PROFILE)
+def test_budget_pass(guardrail_check, outline):
+    label, _ = guardrail_check.check_slide_budget(outline, PROFILE)
     assert label == "PASS"
 
 
-def test_budget_fail(guardrail_check):
-    label, _ = guardrail_check.check_slide_budget(65, PROFILE)
+def test_budget_fail(guardrail_check, outline_schema, base_data):
+    """If the profile budget is well below the expanded slide count, FAIL."""
+    data = copy.deepcopy(base_data)
+    o = outline_schema.Outline.model_validate(data)
+    profile = copy.deepcopy(PROFILE)
+    profile["guardrail_sources"]["slide_budgets"] = [
+        {"duration_minutes": 30, "max_slides": 5},
+    ]
+    label, _ = guardrail_check.check_slide_budget(o, profile)
     assert label == "FAIL"
 
 
-def test_budget_warn_near_limit(guardrail_check):
-    label, _ = guardrail_check.check_slide_budget(58, PROFILE)
+def test_budget_warn_near_limit(guardrail_check, outline_schema, base_data):
+    """At-or-near the budget cap → WARN."""
+    data = copy.deepcopy(base_data)
+    o = outline_schema.Outline.model_validate(data)
+    # expanded count is 11; set budget = 11 → slack=0, within 5% → WARN
+    profile = copy.deepcopy(PROFILE)
+    profile["guardrail_sources"]["slide_budgets"] = [
+        {"duration_minutes": 30, "max_slides": 11},
+    ]
+    label, _ = guardrail_check.check_slide_budget(o, profile)
     assert label == "WARN"
 
 
-def test_act1_ratio_pass(guardrail_check):
-    sections = guardrail_check.find_sections(OUTLINE_PASSING)
-    total = guardrail_check.count_slides(OUTLINE_PASSING)
-    label, _ = guardrail_check.check_act1_ratio(sections, total, PROFILE)
+# ── Act 1 ratio ──────────────────────────────────────────────────────
+
+
+def test_act1_ratio_pass(guardrail_check, outline):
+    """Fixture's Act 1 = ch1 = 6/30 = 20%, well under the 45% cap → PASS exactly."""
+    label, _ = guardrail_check.check_act1_ratio(outline, PROFILE)
     assert label == "PASS"
 
 
-def test_act1_ratio_fail(guardrail_check):
-    # Act 1 taking 60% of slides
-    outline = """\
-## Opening [2 min, slides 1-2]
-## Act 1: The Problem [10 min, slides 3-14]
-## Act 2: Solution [5 min, slides 15-20]
-Total slides: 20
-"""
-    sections = guardrail_check.find_sections(outline)
-    label, _ = guardrail_check.check_act1_ratio(sections, 20, PROFILE)
+def test_act1_ratio_fail(guardrail_check, outline_schema, base_data):
+    """Inflate the first chapter past the Act 1 limit."""
+    data = copy.deepcopy(base_data)
+    data["chapters"][0]["target_min"] = 20  # 20/30 = 66% > 45%
+    o = outline_schema.Outline.model_validate(data)
+    label, _ = guardrail_check.check_act1_ratio(o, PROFILE)
     assert label == "FAIL"
 
 
-def test_closing_pass(guardrail_check):
-    label, _ = guardrail_check.check_closing(OUTLINE_PASSING)
-    assert label == "PASS"
+# ── Closing ──────────────────────────────────────────────────────────
 
 
-def test_closing_fail_missing_cta(guardrail_check):
-    outline = "## Closing\n### Slide 20: Thank You\n- Visual: QR code\n"
+def test_closing_pass(guardrail_check, outline):
+    """Fixture's last chapter includes Call to Action ('Doers, write the rule...')
+    and the New Bliss slide. The closing detection should find CTA + social signals."""
     label, detail = guardrail_check.check_closing(outline)
+    assert label == "PASS"
+    # Confirm the structured summary string is present regardless of pass/fail
+    assert "summary=" in detail and "CTA=" in detail and "social=" in detail
+
+
+def test_closing_fail_when_signals_missing(guardrail_check, outline_schema, base_data):
+    """Strip the last chapter's slides of any closing signals."""
+    data = copy.deepcopy(base_data)
+    last_chapter_id = data["chapters"][-1]["id"]
+    for slide in data["slides"]:
+        if slide["chapter"] == last_chapter_id:
+            slide["text_overlay"] = "none"
+            slide["visual"] = "blank"
+            slide["script"] = [{"line": "an unrelated sentence"}]
+    o = outline_schema.Outline.model_validate(data)
+    label, detail = guardrail_check.check_closing(o)
     assert label == "FAIL"
-    assert "CTA" in detail
+    assert "missing" in detail
 
 
-def test_cut_lines_pass(guardrail_check):
-    label, _ = guardrail_check.check_cut_lines(OUTLINE_PASSING)
+# ── Cut lines ────────────────────────────────────────────────────────
+
+
+def test_cut_lines_pass_when_chapter_cuttable(guardrail_check, outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["chapters"][1]["cuttable"] = True
+    o = outline_schema.Outline.model_validate(data)
+    profile = copy.deepcopy(PROFILE)
+    profile.setdefault("rhetoric_defaults", {})["modular_design"] = True
+    label, _ = guardrail_check.check_cut_lines(o, profile)
     assert label == "PASS"
 
 
-def test_cut_lines_fail(guardrail_check):
-    label, _ = guardrail_check.check_cut_lines("No cut lines here")
-    assert label == "FAIL"
-
-
-def test_profanity_pass(guardrail_check):
-    label, _ = guardrail_check.check_profanity(OUTLINE_PASSING, PROFILE)
+def test_cut_lines_pass_when_slide_cuttable(guardrail_check, outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["slides"][-1]["cuttable"] = True
+    o = outline_schema.Outline.model_validate(data)
+    profile = copy.deepcopy(PROFILE)
+    profile.setdefault("rhetoric_defaults", {})["modular_design"] = True
+    label, _ = guardrail_check.check_cut_lines(o, profile)
     assert label == "PASS"
 
 
-def test_profanity_fail(guardrail_check):
-    outline = "- Speaker: This is some damn fine code\n"
+def test_cut_lines_fail_when_none_cuttable_and_modular_enabled(guardrail_check, outline):
+    """Base fixture has no cuttable markers — FAIL when profile expects modularity."""
+    profile = copy.deepcopy(PROFILE)
+    profile.setdefault("rhetoric_defaults", {})["modular_design"] = True
+    label, _ = guardrail_check.check_cut_lines(outline, profile)
+    assert label == "FAIL"
+
+
+def test_cut_lines_pass_when_modular_disabled(guardrail_check, outline):
+    """Speakers without modular_design opt out of the cut-lines requirement."""
+    profile = copy.deepcopy(PROFILE)
+    profile.setdefault("rhetoric_defaults", {})["modular_design"] = False
+    label, detail = guardrail_check.check_cut_lines(outline, profile)
+    assert label == "PASS"
+    assert "modular_design disabled" in detail
+
+
+# ── Profanity ────────────────────────────────────────────────────────
+
+
+def test_profanity_pass_clean(guardrail_check, outline):
     label, _ = guardrail_check.check_profanity(outline, PROFILE)
+    assert label == "PASS"
+
+
+def test_profanity_warn_on_slide(guardrail_check, outline_schema, base_data):
+    """Verbal-allowed register + on-slide token → WARN (limits deck reuse)."""
+    data = copy.deepcopy(base_data)
+    data["talk"]["profanity_register"] = "moderate"
+    data["slides"][0]["text_overlay"] = "Some damn good code."
+    o = outline_schema.Outline.model_validate(data)
+    label, detail = guardrail_check.check_profanity(o, PROFILE)
+    assert label == "WARN"
+
+
+def test_profanity_fail_on_slide_when_forbidden(
+    guardrail_check, outline_schema, base_data,
+):
+    data = copy.deepcopy(base_data)
+    data["talk"]["profanity_register"] = "verbal-only — never on slide"
+    data["slides"][0]["text_overlay"] = "Some damn good code."
+    o = outline_schema.Outline.model_validate(data)
+    label, _ = guardrail_check.check_profanity(o, PROFILE)
     assert label == "FAIL"
 
 
-def test_profanity_warn_when_allowed(guardrail_check):
-    profile = dict(PROFILE)
-    profile["rhetoric_defaults"] = {"profanity_calibration": "mild"}
-    outline = "- Speaker: What the hell happened here\n"
-    label, _ = guardrail_check.check_profanity(outline, profile)
+def test_profanity_fail_when_none_register(guardrail_check, outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["talk"]["profanity_register"] = "none"
+    # Put a spoken hit so register='none' fires
+    data["slides"][0]["script"].append({"line": "what the hell"})
+    o = outline_schema.Outline.model_validate(data)
+    label, _ = guardrail_check.check_profanity(o, PROFILE)
+    assert label == "FAIL"
+
+
+# ── Data attribution ─────────────────────────────────────────────────
+
+
+def test_data_attribution_pass_clean(guardrail_check, outline):
+    # The fixture's slide 2 text_overlay contains no percentages
+    label, _ = guardrail_check.check_data_attribution(outline)
+    assert label == "PASS"
+
+
+def test_data_attribution_fail_when_orphan_pct(guardrail_check, outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["slides"][0]["text_overlay"] = "84% of developers are tired."
+    o = outline_schema.Outline.model_validate(data)
+    label, _ = guardrail_check.check_data_attribution(o)
+    assert label == "FAIL"
+
+
+def test_data_attribution_pass_when_source_present(guardrail_check, outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["slides"][0]["text_overlay"] = "84% of developers (source: Stack Overflow 2024)"
+    o = outline_schema.Outline.model_validate(data)
+    label, _ = guardrail_check.check_data_attribution(o)
+    assert label == "PASS"
+
+
+# ── Branding ─────────────────────────────────────────────────────────
+
+
+def test_branding_warns_when_no_footer_elements(guardrail_check, outline):
+    profile = {"design_rules": {"footer": {"elements": []}}}
+    label, _ = guardrail_check.check_branding(outline, profile)
     assert label == "WARN"

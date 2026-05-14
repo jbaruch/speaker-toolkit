@@ -2,12 +2,13 @@
 
 ## Pre-Flight Checklist
 
-Before ANY Phase 6 action, load these 4 files. If any is missing, STOP and ask.
+Before ANY Phase 6 action, load these files. If any is missing, STOP and ask.
 
 1. **`speaker-profile.json`** — publishing config, shortener, URL patterns, QR settings
 2. **`secrets.json`** — API keys (bitly, rebrandly, gemini). Missing key = stop, not fallback.
-3. **`presentation-spec.md`** — talk slug, duration, mode. Source of truth for the slug.
-4. **`presentation-outline.md`** — the outline (slide references, shownotes URL text)
+3. **`outline.yaml`** — source of truth for talk slug, metadata, slides, and shownotes URL.
+   Load via `scripts/outline_schema.py` (pydantic model exposes `talk.slug`, `talk.title`,
+   `talk.shownotes_url_base`, `slides`, etc.) — never re-parse the YAML by hand.
 
 Do not guess values that should come from these files. Do not proceed with partial
 context — every silent assumption becomes a wrong default downstream.
@@ -15,8 +16,8 @@ context — every silent assumption becomes a wrong default downstream.
 ---
 
 The publishing workflow is speaker-specific. Read `publishing_process` from
-`speaker-profile.json`. Read the talk slug and metadata from `presentation-spec.md`
-in the talk directory (saved in Phase 1). If the section is missing or empty,
+`speaker-profile.json`. Read the talk slug and metadata from `outline.yaml`
+(`talk:` block, authored in Phase 1). If the section is missing or empty,
 fall back to asking the author interactively and document their answers for
 next time.
 
@@ -26,10 +27,9 @@ Extract and curate resource links from the finalized outline before any
 publishing step. Resources scattered across speaker notes, visual descriptions,
 and Coda slides are easy to miss — this step catches them systematically.
 
-1. Run the extraction script against the finalized outline:
+1. Run the extraction script against `outline.yaml`:
    ```bash
-   python3 skills/presentation-creator/scripts/extract-resources.py \
-     presentation-outline.md --spec presentation-spec.md
+   python3 skills/presentation-creator/scripts/extract-resources.py outline.yaml
    ```
 
 2. The script produces `resources.json` in the talk working directory with
@@ -190,22 +190,21 @@ Read `publishing_process.export_format` and `publishing_process.export_method`.
 
 ### Step 6.4: Talk Timer Artifact
 
-**Optional step:** generate this artifact when `presentation-outline.md`
-includes a `## Pacing Summary` table. If that section is absent, skip this step
-unless the author explicitly asks for a talk timer file.
+**Optional step:** generate a plain-text timing file from `outline.yaml`'s
+`chapters[]` (each chapter has `target_min`). Run unless the author opts out.
 
-Source: the `## Pacing Summary` table in `presentation-outline.md`.
+Source: `chapters[].title` and `chapters[].target_min` in `outline.yaml`.
 
 Generate a plain-text timing file for [timemytalk.app](https://timemytalk.app)
 by running:
 
 ```bash
 python3 skills/presentation-creator/scripts/generate-talk-timings.py \
-  presentation-outline.md --output talk-timings.txt
+  outline.yaml --output talk-timings.txt
 
 # If the talk slot includes Q&A time:
 python3 skills/presentation-creator/scripts/generate-talk-timings.py \
-  presentation-outline.md --qa 5 --output talk-timings.txt
+  outline.yaml --qa 5 --output talk-timings.txt
 ```
 
 **Format:** one line per chapter, `MM:SS Label`, using cumulative start times.
@@ -215,8 +214,7 @@ talk duration (including Q&A if applicable).
 **Granularity guidelines:**
 - 25-min talks: 8-13 chapters
 - 45-60 min talks: 10-15 chapters
-- Subdivide acts exceeding ~5 min into multiple chapters (the script
-  attempts to match `## Section` headers to pacing entries by name overlap)
+- Subdivide chapters exceeding ~5 min into multiple chapters in `outline.yaml`
 
 **Q&A:** if the talk slot includes Q&A time, pass `--qa MINUTES` to append a
 Q&A chapter before FINISH.
