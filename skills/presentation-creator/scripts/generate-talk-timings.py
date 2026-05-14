@@ -21,6 +21,9 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
+import yaml  # noqa: E402
+from pydantic import ValidationError  # noqa: E402
+
 import outline_schema as _os  # noqa: E402
 
 
@@ -65,7 +68,7 @@ def main():
 
     try:
         outline = _os.load_outline(args.outline)
-    except Exception as exc:
+    except (OSError, yaml.YAMLError, ValidationError) as exc:
         print(f"failed to load {args.outline}: {exc}", file=sys.stderr)
         sys.exit(1)
 

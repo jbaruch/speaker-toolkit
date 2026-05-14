@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -515,7 +515,7 @@ def main(argv: list[str]) -> int:
         return 2
     try:
         outline = load_outline(argv[1])
-    except Exception as exc:
+    except (OSError, yaml.YAMLError, ValidationError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1
     print(
