@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Outline schema — the source-of-truth document for a talk.
 
 `outline.yaml` is the single hand-edited (well, agent-edited) artifact per talk.

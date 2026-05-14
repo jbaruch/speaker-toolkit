@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """extract-narrative.py — render outline.yaml as narrative.md.
 
 A prose distillation of the talk's argument, organized by chapter. Drops

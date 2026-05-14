@@ -6,15 +6,15 @@ A speaker is building a 60-minute keynote about "Zero Trust Architecture" that u
 
 Similarly, there's a "Security Maturity Checklist" that appears four times across the talk, each time with more items checked off as the audience has learned new concepts.
 
-The speaker has already drafted the base outline with style anchors and image prompts. They now need the two affected slides to be elaborated into `builds:` sequences in `outline.yaml` (each intermediate state shown as its own slide image), plus a plan for generating those build images and inserting them into the deck.
+The speaker has already drafted the base outline with style anchors and image prompts. They now need the two affected slides to be elaborated so the audience sees each element appear one at a time, plus a plan for producing those intermediate images and getting them into the deck.
 
 ## Output Specification
 
 Produce the following files:
 
-1. **`updated-outline-excerpt.yaml`** — the outline entries for the two slides, elaborated into build sequences so the audience sees each element appear one at a time.
+1. **`updated-outline-excerpt.yaml`** — the updated outline entries for the two slides.
 
-2. **`build-generation-plan.md`** — a step-by-step plan for producing the build images and getting them into the PowerPoint deck. Cover image generation, file organization, and how the build sequence interacts with the slide budget and deck layout.
+2. **`build-generation-plan.md`** — a step-by-step plan for producing the intermediate images and getting them into the PowerPoint deck. Cover image generation, file organization, and how the intermediate sequence interacts with the slide budget and deck layout.
 
 ## Input Files
 
@@ -125,6 +125,6 @@ slides:
 
 ## Key Notes
 
-- The fixture excerpt is intentionally small — it omits other chapters/slides that would be present in a full outline. Treat the slides shown as the only ones requiring builds.
-- The Five Pillars slide (n=30) walks one pillar at a time — choose an appropriate build structure.
-- The Maturity Checklist slides (n=38, 45, 52, 58) are already a sequence across slides — decide whether each *individual* slide also needs intermediate build steps and discuss the tradeoff in the plan.
+- The fixture excerpt is intentionally small — it omits other chapters/slides that would be present in a full outline. Treat the slides shown as the only ones requiring elaboration.
+- The Five Pillars slide (n=30) walks one pillar at a time.
+- The Maturity Checklist slides (n=38, 45, 52, 58) are already a sequence across slides — decide whether each *individual* slide also needs intermediate states and discuss the tradeoff in the plan.

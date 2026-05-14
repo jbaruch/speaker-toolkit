@@ -18,6 +18,13 @@ user_invocable: true
 
 # Presentation Creator
 
+Process steps in order. Do not skip ahead. The phases below are a numbered
+sequential workflow — Phase 0 must run before Phase 1, Phase 1 before
+Phase 2, and so on. Late-entry single-task requests (Phase 6 / Phase 7
+re-runs) still require the documented pre-flight checklist before any
+action; do not parallelize and do not bypass the vault-loading or
+artifact-loading gates.
+
 Build presentations that match the speaker's documented rhetoric and style patterns.
 The rhetoric-knowledge-vault is this skill's constitution. Every presentation is a
 joint effort — the skill brings rhetoric knowledge, the author brings topic expertise.

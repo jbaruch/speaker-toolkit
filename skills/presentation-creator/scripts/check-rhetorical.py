@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """check-rhetorical.py — structural gap-check over the closed pattern taxonomy.
 
 Walks the validated Outline and reports whether the talk has the

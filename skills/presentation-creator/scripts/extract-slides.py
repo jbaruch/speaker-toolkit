@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """extract-slides.py — render outline.yaml as a build-ready slides.md.
 
 Walks slides[] only — interludes are not part of the deck build (the

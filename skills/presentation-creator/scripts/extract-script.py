@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """extract-script.py — render outline.yaml as a screenplay-form script.md.
 
 Walks slides[] and interleaves interludes by their `after_slide` anchor.
