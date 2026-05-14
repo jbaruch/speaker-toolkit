@@ -79,13 +79,13 @@ By end of Phase 3, the talk directory contains:
 Regenerate the four derived artifacts after every edit to `outline.yaml`:
 
 ```bash
-python3 scripts/extract-narrative.py outline.yaml > narrative.md
-python3 scripts/extract-script.py    outline.yaml > script.md
-python3 scripts/extract-slides.py    outline.yaml > slides.md
-python3 scripts/check-rhetorical.py  outline.yaml > rhetorical-review.md
+python3 skills/presentation-creator/scripts/extract-narrative.py outline.yaml > narrative.md
+python3 skills/presentation-creator/scripts/extract-script.py    outline.yaml > script.md
+python3 skills/presentation-creator/scripts/extract-slides.py    outline.yaml > slides.md
+python3 skills/presentation-creator/scripts/check-rhetorical.py  outline.yaml > rhetorical-review.md
 ```
 
-Validate the YAML with `python3 scripts/outline_schema.py outline.yaml` — exits non-zero with a typed error if any validator fails.
+Validate the YAML with `python3 skills/presentation-creator/scripts/outline_schema.py outline.yaml` — exits non-zero with a typed error if any validator fails.
 
 ### Late Entry (single-task requests)
 
@@ -96,7 +96,7 @@ action:
 - `speaker-profile.json` — publishing config, shortener, URL patterns
 - `secrets.json` — API keys for shorteners and Gemini
 - `outline.yaml` — source of truth for talk slug, metadata, slides, and shownotes URL.
-  Read it via `scripts/outline_schema.py` (the pydantic model exposes `talk.slug`,
+  Read it via `skills/presentation-creator/scripts/outline_schema.py` (the pydantic model exposes `talk.slug`,
   `talk.title`, `talk.shownotes_url_base`, etc.) — never re-parse the YAML by hand.
 
 If the file is missing or fails to validate, STOP and ask. Do not guess values that
@@ -269,11 +269,11 @@ placeholder definitions and meme-brief format.
 After saving `outline.yaml`, validate and regenerate the derived artifacts:
 
 ```bash
-python3 scripts/outline_schema.py outline.yaml      # validates; non-zero on error
-python3 scripts/extract-narrative.py outline.yaml > narrative.md
-python3 scripts/extract-script.py    outline.yaml > script.md
-python3 scripts/extract-slides.py    outline.yaml > slides.md
-python3 scripts/check-rhetorical.py  outline.yaml > rhetorical-review.md
+python3 skills/presentation-creator/scripts/outline_schema.py outline.yaml      # validates; non-zero on error
+python3 skills/presentation-creator/scripts/extract-narrative.py outline.yaml > narrative.md
+python3 skills/presentation-creator/scripts/extract-script.py    outline.yaml > script.md
+python3 skills/presentation-creator/scripts/extract-slides.py    outline.yaml > slides.md
+python3 skills/presentation-creator/scripts/check-rhetorical.py  outline.yaml > rhetorical-review.md
 ```
 
 The four `.md` files are read-only — never edit them directly; they regenerate
@@ -284,8 +284,8 @@ deterministically from `outline.yaml`.
 Run two checkers — they cover different surfaces:
 
 ```bash
-python3 scripts/check-rhetorical.py outline.yaml > rhetorical-review.md
-python3 scripts/guardrail-check.py   outline.yaml path/to/speaker-profile.json
+python3 skills/presentation-creator/scripts/check-rhetorical.py outline.yaml > rhetorical-review.md
+python3 skills/presentation-creator/scripts/guardrail-check.py   outline.yaml path/to/speaker-profile.json
 ```
 
 `check-rhetorical.py` enforces the **closed pattern taxonomy** (opening PUNCH,

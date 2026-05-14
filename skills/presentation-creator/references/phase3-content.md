@@ -2,7 +2,7 @@
 
 `outline.yaml` is the source of truth for the talk's content. The schema is
 defined in `scripts/outline_schema.py` (pydantic v2 model); validate any draft
-with `python3 scripts/outline_schema.py outline.yaml`. The four derived
+with `python3 skills/presentation-creator/scripts/outline_schema.py outline.yaml`. The four derived
 artifacts (`narrative.md`, `script.md`, `slides.md`, `rhetorical-review.md`)
 regenerate deterministically — never hand-edit them.
 

@@ -2,24 +2,13 @@
 
 ## Problem/Feature Description
 
-A speaker has drafted an illustrated talk and wants a Phase 4 quality audit before finalizing. The agent should run the two checkers and surface their output, plus add judgment-based commentary the deterministic checkers can't make.
-
-The fixture's `outline.yaml` is **valid** (loads cleanly against `outline_schema.py`) but carries several issues that the scripts and a judgment pass should surface:
-
-- A data-claim slide with no source attribution
-- A short closing section (2 min) where the speaker also says "to wrap up fast" — a recurring-issue signal
-- No `cuttable:` markers anywhere — the 45-min talk has no flex for shorter slots
-- The closing is missing an explicit Call-to-Action signal
-- A prompt that's a vague one-liner rather than a richly-specified generation instruction
+A speaker drafted an illustrated talk and wants a Phase 4 quality audit before they finalize the deck. They hand the agent the talk's `outline.yaml` and the speaker profile and ask for a thorough review.
 
 ## Output Specification
 
 Produce the following file:
 
-1. **`guardrail-report.md`** — The audit report containing:
-   - Output of `python3 skills/presentation-creator/scripts/check-rhetorical.py outline.yaml`
-   - Output of `python3 skills/presentation-creator/scripts/guardrail-check.py outline.yaml speaker-profile.json`
-   - Agent-added judgment commentary (vague prompts, "wrap up fast" recurring issue, illustration coverage)
+1. **`guardrail-report.md`** — a Phase 4 audit report covering the outline and the speaker profile together. The report should be structured so the speaker can act on its findings.
 
 ## Input Files
 
