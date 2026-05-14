@@ -52,14 +52,16 @@ Authored in Phase 2; section-level scaffolding for `narrative.md`. Each chapter:
   cuttable: false           # set true on sections that drop for short slots
   argument_beats:
     - text: "Beat as a paragraph. Slide refs natural in the prose."
-      slide_refs: [1, 2]    # structured cross-ref for rhetorical-review
+      slide_refs: [1, 2]    # validated against slides[].n at load time
       tags: [hook]          # free-form authoring tags
 ```
 
 `argument_beats[].text` is the *prose argument* — what `narrative.md` will
 render. Keep it dense and one-paragraph per beat. The `slide_refs` field is a
-structured cross-reference (the gap-checker uses it); slide numbers also tend
-to appear inline in the prose naturally.
+structured cross-reference: the schema validator rejects any ref that doesn't
+match a real slide number in `slides[]`, and `narrative.md` renders each beat
+with a `*[slide N, slide M]*` marker so readers can trace beats back to the
+deck. Slide numbers also tend to appear inline in the prose naturally.
 
 ## The `slides:` and `interludes:` blocks
 

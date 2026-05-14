@@ -42,7 +42,9 @@ def generate_timings(
     cumulative = 0
     for c in chapters:
         lines.append(f"{format_seconds(cumulative)} {c.title}")
-        cumulative += int(c.target_min * 60)
+        # Round to the nearest second — `int()` truncates and accumulates
+        # drift on fractional-minute chapters (1.333 min → 79.98s, not 79s).
+        cumulative += round(c.target_min * 60)
     if qa_minutes > 0:
         lines.append(f"{format_seconds(cumulative)} Q&A")
         cumulative += qa_minutes * 60

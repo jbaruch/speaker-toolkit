@@ -69,7 +69,11 @@ def test_rejects_unknown_chapter_ref(outline_schema, base_data):
 
 def test_rejects_duplicate_slide_numbers(outline_schema, base_data):
     data = copy.deepcopy(base_data)
-    data["slides"][1]["n"] = data["slides"][0]["n"]
+    # Add a duplicate slide entry without breaking slide_refs (which now validate too)
+    last = copy.deepcopy(data["slides"][-1])
+    last["n"] = data["slides"][0]["n"]
+    data["slides"].append(last)
+    data["talk"]["slide_budget"] = 99
     with pytest.raises(ValidationError, match="duplicate slide numbers"):
         outline_schema.Outline.model_validate(data)
 
@@ -263,10 +267,14 @@ def test_rejects_script_item_with_no_content(outline_schema, base_data):
 def test_accepts_slide_n_zero(outline_schema, base_data):
     """Title-card / pre-talk slides start at n=0 in some talk shapes."""
     data = copy.deepcopy(base_data)
-    # Shift all slide numbers down by 1 so the first slide is n=0
+    # Shift all slide numbers down by 1 so the first slide is n=0;
+    # rewrite argument_beats slide_refs to match the new numbering.
     for s in data["slides"]:
         s["n"] -= 1
-    data["talk"]["slide_budget"] = 30  # rebudget; numbering change doesn't alter count
+    for c in data["chapters"]:
+        for beat in c.get("argument_beats", []):
+            beat["slide_refs"] = [r - 1 for r in beat.get("slide_refs", [])]
+    data["talk"]["slide_budget"] = 30
     outline = outline_schema.Outline.model_validate(data)
     assert outline.slides[0].n == 0
 
@@ -536,4 +544,55 @@ def test_rejects_zero_delivery_count(outline_schema, base_data):
     data = copy.deepcopy(base_data)
     data["talk"]["delivery_count"] = 0
     with pytest.raises(ValidationError):
+        outline_schema.Outline.model_validate(data)
+
+
+# ── Strict-schema + structural-integrity validators (PR-#45 review) ──
+
+
+def test_rejects_unknown_top_level_field(outline_schema, base_data):
+    """extra='forbid' on every model — misspelled YAML keys fail loud."""
+    data = copy.deepcopy(base_data)
+    data["talk"]["audiance"] = "typo!"  # 'audience' misspelled
+    with pytest.raises(ValidationError, match="audiance"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_rejects_unknown_slide_field(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["slides"][0]["formaat"] = "FULL"
+    with pytest.raises(ValidationError, match="formaat"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_rejects_duplicate_chapter_ids(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["chapters"][1]["id"] = data["chapters"][0]["id"]
+    with pytest.raises(ValidationError, match="duplicate chapter ids"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_rejects_duplicate_build_steps(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    slide_with_builds = next(s for s in data["slides"] if s.get("builds"))
+    slide_with_builds["builds"][1]["step"] = slide_with_builds["builds"][0]["step"]
+    with pytest.raises(ValidationError, match="duplicate build steps"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_rejects_out_of_order_build_steps(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    slide_with_builds = next(s for s in data["slides"] if s.get("builds"))
+    slide_with_builds["builds"][0]["step"], slide_with_builds["builds"][-1]["step"] = (
+        slide_with_builds["builds"][-1]["step"],
+        slide_with_builds["builds"][0]["step"],
+    )
+    with pytest.raises(ValidationError, match="not ascending"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_rejects_argument_beat_slide_ref_to_missing_slide(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["chapters"][0]["argument_beats"][0]["slide_refs"] = [999]
+    with pytest.raises(ValidationError, match="slide_ref 999"):
         outline_schema.Outline.model_validate(data)

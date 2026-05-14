@@ -70,17 +70,26 @@ def _slide_text_blob(slide: _os.Slide) -> str:
 
 
 def check_slide_budget(outline: _os.Outline, profile: dict) -> tuple[str, str]:
-    """Slide count vs profile threshold for the talk duration."""
+    """Slide count vs profile threshold for the talk duration.
+
+    Matches the budget entry whose `duration_minutes` (or `duration_min`)
+    is closest to the talk's duration, per phase4-guardrails.md's
+    "Match the talk's duration to the closest budget entry" rule.
+    """
     expanded = _slide_count_expanded(outline)
     duration = outline.talk.duration_min
     budgets = profile.get("guardrail_sources", {}).get("slide_budgets", [])
 
     max_slides: int | None = None
+    best_diff: float | None = None
     for b in budgets:
         dur_key = b.get("duration_minutes") or b.get("duration_min")
-        if dur_key and abs(dur_key - duration) < 0.5:
+        if dur_key is None:
+            continue
+        diff = abs(dur_key - duration)
+        if best_diff is None or diff < best_diff:
+            best_diff = diff
             max_slides = b.get("max_slides")
-            break
     if max_slides is None:
         max_slides = int(duration * 1.5)  # fallback default
 
@@ -119,9 +128,21 @@ def check_act1_ratio(outline: _os.Outline, profile: dict) -> tuple[str, str]:
     ratio = (act1_min / duration) * 100
 
     limits = profile.get("guardrail_sources", {}).get("act1_ratio_limits", [])
-    max_pct = 45
+    max_pct: float = 45
+    # Pick the entry whose declared duration range matches the talk's
+    # duration; if none match, fall back to the first declared entry.
+    matched = False
     for lim in limits:
-        max_pct = lim.get("max_percentage") or lim.get("max_percent", 45)
+        rng = lim.get("duration_range") or ""
+        # Cheap "<N min" or "N min" range match — exact-substring of the
+        # int duration is the documented convention in existing profiles.
+        if rng and f"{int(duration)} min" in rng:
+            max_pct = lim.get("max_percentage") or lim.get("max_percent", 45)
+            matched = True
+            break
+    if not matched and limits:
+        first = limits[0]
+        max_pct = first.get("max_percentage") or first.get("max_percent", 45)
 
     names = ", ".join(c.title for c in act1_chapters)
     detail = (
@@ -171,16 +192,26 @@ def check_closing(outline: _os.Outline) -> tuple[str, str]:
     return "PASS", summary_str
 
 
-def check_cut_lines(outline: _os.Outline) -> tuple[str, str]:
-    """Talks shorter than the speaker default need cuttable content to flex."""
+def check_cut_lines(outline: _os.Outline, profile: dict) -> tuple[str, str]:
+    """Talks shorter than the speaker's default need cuttable content to flex.
+
+    Per phase4-guardrails.md §8: the check is conditional on the speaker
+    profile's `rhetoric_defaults.modular_design` flag. Speakers who opt
+    out of modular_design don't get penalized for inflexible decks.
+    """
+    modular = (
+        profile.get("rhetoric_defaults", {}).get("modular_design") is True
+    )
     cuttable_chapters = [c for c in outline.chapters if c.cuttable]
     cuttable_slides = [s for s in outline.slides if s.cuttable]
     cuttable_min = sum(c.target_min for c in cuttable_chapters)
 
     if not cuttable_chapters and not cuttable_slides:
+        if not modular:
+            return "PASS", "modular_design disabled in profile — cut lines not required"
         return "FAIL", (
             "no `cuttable: true` markers on any chapter or slide — talk "
-            "cannot compress for shorter slots"
+            "cannot compress for shorter slots (profile has modular_design enabled)"
         )
     return "PASS", (
         f"{cuttable_min:g} min of cuttable chapters "
@@ -190,10 +221,29 @@ def check_cut_lines(outline: _os.Outline) -> tuple[str, str]:
 
 
 def check_data_attribution(outline: _os.Outline) -> tuple[str, str]:
-    """Heuristic: slides with percentages / large numbers should mention a source."""
-    pct_re = re.compile(r"\d{1,3}%|\$\d|\d{4,}\b")
+    """Heuristic: slides with percentages / large numbers should mention a source.
+
+    Numeric-claim patterns include percentages, currency, large bare
+    numbers (4+ digits), shorthand magnitudes (11M, 2.5K, 3 million),
+    and spelled-out magnitudes (million/billion/thousand). The source
+    heuristic deliberately excludes bare `report` — phrases like "report
+    alert fatigue" make unsourced claims pass attribution. A claim with
+    a sourced report needs an attribution token like `source`, `via`,
+    a year citation `(2024)`, etc.
+    """
+    pct_re = re.compile(
+        r"""
+        \d{1,3}\s*%                # percentage
+        | \$\s*\d                  # currency
+        | \d{4,}\b                 # bare 4+ digit number
+        | \b\d+(?:\.\d+)?\s*(?:k|m|b)\b   # 2.5K, 11M, 1.2B
+        | \b\d+(?:\.\d+)?\s+(?:million|billion|thousand|trillion)\b
+        """,
+        re.IGNORECASE | re.VERBOSE,
+    )
     source_re = re.compile(
-        r"\bsource\b|\bcitation\b|\bref\b|\bvia\b|\(20\d{2}\)|\bsurvey\b|\breport\b",
+        r"\bsource\b|\bcitation\b|\bref\b|\bvia\b|\(20\d{2}\)|\bsurvey\b|"
+        r"\bstudy\b|\baccording to\b|https?://",
         re.IGNORECASE,
     )
     missing: list[int] = []
@@ -306,7 +356,7 @@ def main(argv: list[str]) -> int:
         ("Profanity", check_profanity(outline, profile)),
         ("Data attribution", check_data_attribution(outline)),
         ("Closing", check_closing(outline)),
-        ("Cut lines", check_cut_lines(outline)),
+        ("Cut lines", check_cut_lines(outline, profile)),
     ]
 
     for name, (label, detail) in checks:

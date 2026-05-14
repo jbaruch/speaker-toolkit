@@ -145,12 +145,28 @@ def test_slides_omits_speaker_dialogue(extract_slides, outline):
     assert "Doers, write the rule." not in out
 
 
-def test_slides_omits_interludes(extract_slides, outline):
-    """Interludes are production interludes, not deck content. Even in a
-    fixture without interludes, the slides extractor must walk slides[] only."""
-    # The example fixture has no interludes, so just confirm it renders
-    out = extract_slides.render(outline)
-    assert "interlude" not in out.lower() or "interludes are not" not in out.lower()
+def test_slides_omits_interludes(extract_slides, outline_schema):
+    """The slides extractor walks slides[] only — interludes never appear in
+    slides.md, even if the outline declares them."""
+    import copy
+    import yaml as _yaml
+
+    data = _yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
+    data["interludes"] = [{
+        "id": "demo-test-only",
+        "after_slide": 1,
+        "chapter": "ch1",
+        "title": "DEMO TEST — Should Not Appear In slides.md",
+        "script": [
+            {"cue": "TERMINAL UP"},
+            {"line": "This line should only appear in script.md."},
+        ],
+    }]
+    outline_with_interlude = outline_schema.Outline.model_validate(data)
+    out = extract_slides.render(outline_with_interlude)
+    assert "demo-test-only" not in out
+    assert "DEMO TEST" not in out
+    assert "Should Not Appear" not in out
 
 
 # ── Interlude rendering in script (separate small outline) ───────────

@@ -160,7 +160,7 @@ slides:
     format: EXCEPTION
     format_justification: "Real screenshot of the original incident — generated image cannot reproduce the line numbers and timestamps."
     visual: "Real screenshot from the rate-limiter incident."
-    text_overlay: "4 hours · 11M requests dropped"
+    text_overlay: "4 hours · 11M requests dropped (source: incident postmortem)"
     script:
       - line: "Same receipt. Different lens."
     callbacks:
@@ -206,10 +206,12 @@ slides:
 
   - n: 11
     chapter: ch3
-    title: "New Bliss"
+    title: "New Bliss + Thanks"
     format: FULL
     visual: "Morning-lit office, brass compass on the desk."
-    text_overlay: "none"
+    text_overlay: |
+      Summary: context as a versioned artifact.
+      @speaker · shownotes: example.com/talk · Thanks!
     image_prompt: |
       [STYLE ANCHOR]. A serene morning office scene, a brass compass resting
       on a clean wooden desk, soft window light.
@@ -217,6 +219,7 @@ slides:
       - cue: "SLIDE 11 UP — final image"
       - parenthetical: "(hold the silence)"
       - line: "This is what shipped code looks like when nobody has to be watching."
+      - line: "Thanks — shownotes are at example.com/talk."
     applied_patterns:
       - id: new-bliss
       - id: master-story

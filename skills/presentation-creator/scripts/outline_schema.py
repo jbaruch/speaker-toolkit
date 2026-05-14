@@ -21,7 +21,25 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
+
+
+class _StrictModel(BaseModel):
+    """Base for every outline model — rejects unknown fields.
+
+    `extra='forbid'` catches misspelled or unsupported YAML keys at load
+    time instead of silently dropping them, which is the right call for
+    a source-of-truth schema downstream extractors depend on.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
 _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -132,7 +150,7 @@ _ALL_INSTANCE_FIELDS: frozenset[str] = frozenset({
 })
 
 
-class AppliedPattern(BaseModel):
+class AppliedPattern(_StrictModel):
     """One pattern application — either at talk level or slide level."""
 
     id: str
@@ -174,23 +192,23 @@ class AppliedPattern(BaseModel):
 # ── Slide-level structural ledger entries ────────────────────────────
 
 
-class Callback(BaseModel):
+class Callback(_StrictModel):
     kind: Literal["plant", "pay"]
     id: str
     variation: str | None = None
 
 
-class ProgressiveListEntry(BaseModel):
+class ProgressiveListEntry(_StrictModel):
     id: str
     item_index: int = Field(ge=1)
 
 
-class RunningGagEntry(BaseModel):
+class RunningGagEntry(_StrictModel):
     id: str
     appearance_index: int = Field(ge=1)
 
 
-class Build(BaseModel):
+class Build(_StrictModel):
     step: int = Field(ge=0)
     desc: str
 
@@ -198,7 +216,7 @@ class Build(BaseModel):
 # ── Screenplay-form script ───────────────────────────────────────────
 
 
-class ScriptItem(BaseModel):
+class ScriptItem(_StrictModel):
     """One unit in a slide's screenplay block.
 
     Exactly one of {cue, parenthetical, line} is set. `speaker` is required
@@ -230,13 +248,13 @@ class ScriptItem(BaseModel):
 # ── Narrative-side: chapters + argument beats ────────────────────────
 
 
-class ArgumentBeat(BaseModel):
+class ArgumentBeat(_StrictModel):
     text: str
     slide_refs: list[int] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
 
 
-class Chapter(BaseModel):
+class Chapter(_StrictModel):
     id: str
     title: str
     target_min: float = Field(gt=0)
@@ -248,7 +266,7 @@ class Chapter(BaseModel):
 # ── Illustration style anchor (optional, per talk) ───────────────────
 
 
-class StyleAnchor(BaseModel):
+class StyleAnchor(_StrictModel):
     model: str
     full: str
     imgtxt: str
@@ -258,7 +276,7 @@ class StyleAnchor(BaseModel):
 # ── Talk metadata ────────────────────────────────────────────────────
 
 
-class TalkMetadata(BaseModel):
+class TalkMetadata(_StrictModel):
     title: str
     slug: str
     speakers: list[str] = Field(min_length=1)
@@ -317,7 +335,7 @@ class TalkMetadata(BaseModel):
 # ── Slide ────────────────────────────────────────────────────────────
 
 
-class Interlude(BaseModel):
+class Interlude(_StrictModel):
     """A production interlude between slides — typically a live demo.
 
     The speaker switches off the deck for the duration. The interlude is
@@ -336,7 +354,7 @@ class Interlude(BaseModel):
     applied_patterns: list[AppliedPattern] = Field(default_factory=list)
 
 
-class Slide(BaseModel):
+class Slide(_StrictModel):
     n: int = Field(ge=0)
     cuttable: bool = False
     chapter: str
@@ -364,16 +382,36 @@ class Slide(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _build_steps_unique_and_ascending(self) -> "Slide":
+        steps = [b.step for b in self.builds]
+        if len(set(steps)) != len(steps):
+            raise ValueError(
+                f"slide {self.n}: duplicate build steps {steps}",
+            )
+        if steps != sorted(steps):
+            raise ValueError(
+                f"slide {self.n}: build steps not ascending {steps}",
+            )
+        return self
+
 
 # ── Top-level outline ────────────────────────────────────────────────
 
 
-class Outline(BaseModel):
+class Outline(_StrictModel):
     talk: TalkMetadata
     style_anchor: StyleAnchor | None = None
     chapters: list[Chapter] = Field(min_length=1)
     slides: list[Slide] = Field(min_length=1)
     interludes: list[Interlude] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _chapter_ids_unique(self) -> "Outline":
+        ids = [c.id for c in self.chapters]
+        if len(set(ids)) != len(ids):
+            raise ValueError(f"duplicate chapter ids: {ids}")
+        return self
 
     @model_validator(mode="after")
     def _chapter_refs_valid(self) -> "Outline":
@@ -390,6 +428,19 @@ class Outline(BaseModel):
                     f"interlude '{il.id}' references unknown chapter "
                     f"'{il.chapter}' (known: {sorted(chapter_ids)})",
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _argument_beat_slide_refs_valid(self) -> "Outline":
+        slide_ns = {s.n for s in self.slides}
+        for c in self.chapters:
+            for beat in c.argument_beats:
+                for ref in beat.slide_refs:
+                    if ref not in slide_ns:
+                        raise ValueError(
+                            f"chapter '{c.id}' argument_beat slide_ref {ref} "
+                            f"does not match any slide in slides[]",
+                        )
         return self
 
     @model_validator(mode="after")

@@ -71,10 +71,10 @@ def test_narrative_renders_slide_refs(extract_narrative, outline):
     assert "slide 11" in out
 
 
-def test_narrative_marks_cuttable_chapters(extract_narrative, outline):
+def test_narrative_omits_cuttable_marker_when_none(extract_narrative, outline):
+    """Base fixture has no cuttable chapters — the marker must NOT appear."""
     out = extract_narrative.render(outline)
-    # No cuttable chapter in the base fixture — verify mutation surfaces it
-    pass  # see test_narrative_marks_cuttable below
+    assert "*cuttable*" not in out
 
 
 def test_narrative_marks_cuttable_chapter(extract_narrative, outline_schema, base_data):

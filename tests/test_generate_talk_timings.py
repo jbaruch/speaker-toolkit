@@ -71,7 +71,7 @@ def test_subminute_chapter(generate_talk_timings, outline_schema, base_data):
 
 def test_finish_equals_chapter_sum(generate_talk_timings, outline):
     """The FINISH timestamp equals the sum of chapter durations."""
-    total_s = sum(int(c.target_min * 60) for c in outline.chapters)
+    total_s = sum(round(c.target_min * 60) for c in outline.chapters)
     lines = generate_talk_timings.generate_timings(outline.chapters)
     expected = generate_talk_timings.format_seconds(total_s)
     assert lines[-1].startswith(f"{expected} FINISH")

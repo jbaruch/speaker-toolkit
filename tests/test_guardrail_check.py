@@ -78,8 +78,9 @@ def test_budget_warn_near_limit(guardrail_check, outline_schema, base_data):
 
 
 def test_act1_ratio_pass(guardrail_check, outline):
+    """Fixture's Act 1 = ch1 = 6/30 = 20%, well under the 45% cap → PASS exactly."""
     label, _ = guardrail_check.check_act1_ratio(outline, PROFILE)
-    assert label in ("PASS", "WARN")  # fixture's Act 1 is ch1 = 6/30 = 20%
+    assert label == "PASS"
 
 
 def test_act1_ratio_fail(guardrail_check, outline_schema, base_data):
@@ -95,11 +96,11 @@ def test_act1_ratio_fail(guardrail_check, outline_schema, base_data):
 
 
 def test_closing_pass(guardrail_check, outline):
-    """Fixture's last chapter (`ch3 — The Close`) includes Call to Action slide,
-    New Bliss, and shownotes-style closing — summary + CTA + social all present."""
+    """Fixture's last chapter includes Call to Action ('Doers, write the rule...')
+    and the New Bliss slide. The closing detection should find CTA + social signals."""
     label, detail = guardrail_check.check_closing(outline)
-    # Closing text in the fixture includes 'doer'/'supplier'/'shownotes'-adjacent terms
-    assert label in ("PASS", "FAIL")  # detail-dependent; assert structure
+    assert label == "PASS"
+    # Confirm the structured summary string is present regardless of pass/fail
     assert "summary=" in detail and "CTA=" in detail and "social=" in detail
 
 
@@ -125,7 +126,9 @@ def test_cut_lines_pass_when_chapter_cuttable(guardrail_check, outline_schema, b
     data = copy.deepcopy(base_data)
     data["chapters"][1]["cuttable"] = True
     o = outline_schema.Outline.model_validate(data)
-    label, _ = guardrail_check.check_cut_lines(o)
+    profile = copy.deepcopy(PROFILE)
+    profile.setdefault("rhetoric_defaults", {})["modular_design"] = True
+    label, _ = guardrail_check.check_cut_lines(o, profile)
     assert label == "PASS"
 
 
@@ -133,14 +136,27 @@ def test_cut_lines_pass_when_slide_cuttable(guardrail_check, outline_schema, bas
     data = copy.deepcopy(base_data)
     data["slides"][-1]["cuttable"] = True
     o = outline_schema.Outline.model_validate(data)
-    label, _ = guardrail_check.check_cut_lines(o)
+    profile = copy.deepcopy(PROFILE)
+    profile.setdefault("rhetoric_defaults", {})["modular_design"] = True
+    label, _ = guardrail_check.check_cut_lines(o, profile)
     assert label == "PASS"
 
 
-def test_cut_lines_fail_when_none_cuttable(guardrail_check, outline):
-    """Base fixture has no cuttable markers."""
-    label, _ = guardrail_check.check_cut_lines(outline)
+def test_cut_lines_fail_when_none_cuttable_and_modular_enabled(guardrail_check, outline):
+    """Base fixture has no cuttable markers — FAIL when profile expects modularity."""
+    profile = copy.deepcopy(PROFILE)
+    profile.setdefault("rhetoric_defaults", {})["modular_design"] = True
+    label, _ = guardrail_check.check_cut_lines(outline, profile)
     assert label == "FAIL"
+
+
+def test_cut_lines_pass_when_modular_disabled(guardrail_check, outline):
+    """Speakers without modular_design opt out of the cut-lines requirement."""
+    profile = copy.deepcopy(PROFILE)
+    profile.setdefault("rhetoric_defaults", {})["modular_design"] = False
+    label, detail = guardrail_check.check_cut_lines(outline, profile)
+    assert label == "PASS"
+    assert "modular_design disabled" in detail
 
 
 # ── Profanity ────────────────────────────────────────────────────────

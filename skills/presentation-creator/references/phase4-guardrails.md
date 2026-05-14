@@ -5,7 +5,12 @@ Phase 4 runs two complementary checkers against `outline.yaml`:
 | Script | Surface | Output |
 |--------|---------|--------|
 | `scripts/check-rhetorical.py outline.yaml` | Closed pattern taxonomy — opening PUNCH, big-idea singleton, thesis preview/payoff, sparkline elements, master-story threading, callback ledger, inoculation count, progressive-list contiguity, running gags, duration accounting | `rhetorical-review.md` |
-| `scripts/guardrail-check.py outline.yaml <speaker-profile.json>` | Profile-aware rules — slide budget per profile, Act 1 ratio limits, branding, profanity, anti-pattern frequency, illustration coverage | stdout report |
+| `scripts/guardrail-check.py outline.yaml <speaker-profile.json>` | Profile-aware rules — slide budget, Act 1 ratio, branding, profanity, data attribution, closing completeness, cut-line availability (conditional on `modular_design`) | stdout report |
+
+Anti-pattern frequency from `profile.pattern_profile.antipattern_frequency` and
+illustration coverage (checks 9 and 10 below) are not currently wired into
+`guardrail-check.py` — the agent should surface them as additional manual
+checks alongside the script output during the Phase 4 audit.
 
 The two scripts are independent — run both. `check-rhetorical.py` needs no
 profile and emits a deterministic report regardless of the speaker. `guardrail-check.py`

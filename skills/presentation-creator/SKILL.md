@@ -142,7 +142,7 @@ talk:
   must_avoid: []
   catalog_reference: "sessions-catalog.md#entry-id"  # if applicable
   delivery_count: 1                 # 1 for first delivery, 2+ for repeats
-  delivery_date: "2026-05-14"       # ISO YYYY-MM-DD
+  delivery_date: "YYYY-MM-DD"       # ISO date the talk is/was delivered
 ```
 
 Generate the slug per `publishing_process.shownotes.slug_convention` in the profile.
@@ -285,7 +285,7 @@ Run two checkers — they cover different surfaces:
 
 ```bash
 python3 scripts/check-rhetorical.py outline.yaml > rhetorical-review.md
-python3 scripts/guardrail-check.py   outline.yaml <speaker-profile.json>
+python3 scripts/guardrail-check.py   outline.yaml path/to/speaker-profile.json
 ```
 
 `check-rhetorical.py` enforces the **closed pattern taxonomy** (opening PUNCH,
@@ -295,31 +295,37 @@ count, progressive-list contiguity, duration accounting). Output is the
 `rhetorical-review.md` artifact — PASS / FLAG / N/A per check.
 
 `guardrail-check.py` enforces **speaker-profile-aware rules** that depend on
-runtime profile data (slide budget tables, Act 1 ratio limits, branding,
-profanity register, anti-pattern frequency, illustration coverage). See
+runtime profile data — currently: slide budget, Act 1 ratio limits, branding,
+profanity register, data attribution, closing completeness, cut-line
+availability (conditional on `modular_design`). Anti-pattern frequency and
+illustration coverage are *not yet wired into the script* — those still live
+in `phase4-guardrails.md` as additional manual checks the agent should
+surface alongside the script's output. See
 [references/phase4-guardrails.md](references/phase4-guardrails.md) for the
 full check list and report format.
 
-All 10 checks are mandatory — run every one, never skip a category:
+The script currently reports the 7 automated checks; the agent adds the
+remaining categories manually:
 
 ```
 GUARDRAIL CHECK — {talk title}
 ================================================
 [PASS/FAIL] Slide budget: {actual}/{max} for {duration}-min slot
-[PASS/WARN] Act 1 ratio: {%} (limit: {max}% — WARN within 5%)
-[PASS/FAIL] Branding: footer elements for {conference}
-[PASS/FAIL] Profanity: {register} applied, {N} on-slide
-[PASS/FAIL] Data attribution: {N} slides checked, {M} missing sources
-[PASS/FAIL] Time-sensitive: {count} items (expired dates, stale versions, dead memes)
+[PASS/WARN/FAIL] Act 1 ratio: {%} (limit: {max}% — WARN within 5%)
+[PASS/WARN] Branding: footer elements for {conference}
+[PASS/WARN/FAIL] Profanity: {register} applied, {N} on-slide
+[PASS/FAIL] Data attribution: {N} slides with numeric claims and source check
 [PASS/FAIL] Closing: summary={y/n} CTA={y/n} social={y/n}
-[PASS/FAIL] Cut lines: {present/missing}
-[INFO] Anti-patterns: {flags from profile recurring_issues}
-[RECURRING/CONTEXTUAL] Presentation Patterns: {taxonomy-based antipattern flags}
-[PASS/FAIL/SKIP] Illustrations: {coverage} | {format tags} | {prompt quality}
+[PASS/FAIL] Cut lines: {cuttable_min} min of cuttable content (or PASS-skipped when modular_design is disabled)
 ================================================
 ```
 
-Illustrations line shows `[SKIP]` when the outline has no Illustration Style Anchor.
+Agent-added (not in script yet):
+- Anti-pattern frequency from profile.recurring_issues
+- Illustration coverage when `style_anchor` is present
+- Time-sensitive content scan
+- Murder-Your-Darlings filter pass
+- Emotion-balance and screening-with-critics where applicable
 
 Iterate on author feedback. Apply changes first, guardrail second. Flag but don't block
 intentionally overridden guardrails. See [references/phase4-guardrails.md](references/phase4-guardrails.md) for iteration protocol.
@@ -349,7 +355,11 @@ or swaps the existing one when the template seeded a picture placeholder.
 
 After the structural walk completes, if `outline.yaml` declares `style_anchor`,
 delegate to `Skill(skill: "illustrations")` to generate illustrations, generate
-any progressive-reveal builds, and apply them to the deck.
+any progressive-reveal builds, and apply them to the deck. The illustrations
+skill still expects markdown-style inputs (style anchor block + per-slide
+image prompts) — when invoked, surface the relevant fields from `outline.yaml`
+in the format the illustrations skill consumes. Updating the illustrations
+skill to consume `outline.yaml` natively is tracked separately.
 
 Inject speaker notes from `script.md` via python-pptx batch after the
 illustrations skill returns.
