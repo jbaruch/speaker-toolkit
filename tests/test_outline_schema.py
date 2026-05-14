@@ -576,7 +576,7 @@ def test_rejects_duplicate_build_steps(outline_schema, base_data):
     data = copy.deepcopy(base_data)
     slide_with_builds = next(s for s in data["slides"] if s.get("builds"))
     slide_with_builds["builds"][1]["step"] = slide_with_builds["builds"][0]["step"]
-    with pytest.raises(ValidationError, match="duplicate build steps"):
+    with pytest.raises(ValidationError, match="contiguous starting"):
         outline_schema.Outline.model_validate(data)
 
 
@@ -587,7 +587,33 @@ def test_rejects_out_of_order_build_steps(outline_schema, base_data):
         slide_with_builds["builds"][-1]["step"],
         slide_with_builds["builds"][0]["step"],
     )
-    with pytest.raises(ValidationError, match="not ascending"):
+    with pytest.raises(ValidationError, match="ascending"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_rejects_builds_not_starting_at_zero(outline_schema, base_data):
+    """Build sequences must start at step 0 — the empty frame."""
+    data = copy.deepcopy(base_data)
+    slide_with_builds = next(s for s in data["slides"] if s.get("builds"))
+    for i, b in enumerate(slide_with_builds["builds"]):
+        b["step"] = i + 1   # shift to start at 1
+    with pytest.raises(ValidationError, match="contiguous starting at 0"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_rejects_builds_with_holes(outline_schema, base_data):
+    """Build sequences must be contiguous — no gaps."""
+    data = copy.deepcopy(base_data)
+    slide_with_builds = next(s for s in data["slides"] if s.get("builds"))
+    slide_with_builds["builds"][-1]["step"] = 99   # gap
+    with pytest.raises(ValidationError, match="contiguous"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_requires_format_on_every_slide(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    del data["slides"][0]["format"]
+    with pytest.raises(ValidationError, match="format"):
         outline_schema.Outline.model_validate(data)
 
 

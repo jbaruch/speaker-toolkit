@@ -321,7 +321,7 @@ GUARDRAIL CHECK — {talk title}
 ```
 
 Agent-added (not in script yet):
-- Anti-pattern frequency from profile.recurring_issues
+- Anti-pattern frequency from `profile.pattern_profile.antipattern_frequency` (recurring issues from `profile.guardrail_sources.recurring_issues` are already surfaced by the script)
 - Illustration coverage when `style_anchor` is present
 - Time-sensitive content scan
 - Murder-Your-Darlings filter pass

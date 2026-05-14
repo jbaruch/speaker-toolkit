@@ -83,8 +83,8 @@ chapters:
     title: "Act 1: The Problem"
     target_min: 18
     argument_beats:
-      - text: "Monitoring trap, tool sprawl, alert fatigue."
-        slide_refs: [3, 4, 5]
+      - text: "Tool sprawl and alert fatigue."
+        slide_refs: [4, 5]
       - text: "87% of SREs report alert fatigue — needs source."
         slide_refs: [4]
         tags: [data-claim]
@@ -93,8 +93,8 @@ chapters:
     title: "Act 2: The Solution"
     target_min: 20
     argument_beats:
-      - text: "Observability-first architecture, the framework, migration stories."
-        slide_refs: [6, 7, 8]
+      - text: "Observability-first architecture, the framework."
+        slide_refs: [7]
 
   - id: ch-close
     title: "Closing"

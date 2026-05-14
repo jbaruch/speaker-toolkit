@@ -59,13 +59,25 @@ def _check_opening_punch(outline: _os.Outline) -> CheckResult:
     with at least one flavor."""
     cutoff = max(1, int(0.1 * len(outline.slides)) + 1)
     opening_slides = outline.slides[:cutoff]
-    punches: list[tuple[int, list[str]]] = []
+    flavored: list[tuple[int, list[str]]] = []
+    flavorless: list[int] = []
     for s in opening_slides:
         for p in s.applied_patterns:
             if p.id == "opening-punch":
                 flavors = [f.value for f in (p.flavors or [])]
-                punches.append((s.n, flavors))
-    if not punches:
+                if flavors:
+                    flavored.append((s.n, flavors))
+                else:
+                    flavorless.append(s.n)
+    if not flavored:
+        if flavorless:
+            return CheckResult(
+                "Opening PUNCH",
+                "FLAG",
+                f"`opening-punch` declared on slide(s) {flavorless} but with "
+                "no `flavors:` set — pick at least one of "
+                "{personal, unexpected, novel, challenging, humorous}.",
+            )
         return CheckResult(
             "Opening PUNCH",
             "FLAG",
@@ -74,7 +86,7 @@ def _check_opening_punch(outline: _os.Outline) -> CheckResult:
             "needs at least one PUNCH flavor.",
         )
     where = "; ".join(
-        f"slide {n}: flavors={flavors or '[]'}" for n, flavors in punches
+        f"slide {n}: flavors={flavors}" for n, flavors in flavored
     )
     return CheckResult("Opening PUNCH", "PASS", where)
 

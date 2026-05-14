@@ -27,12 +27,22 @@ SCRIPTS_ILL = os.path.join(
 
 
 def _import_script(path, name):
-    """Import a standalone .py script as a module (no package required)."""
+    """Import a standalone .py script as a module (no package required).
+
+    If the module name is already in `sys.modules` (typically because a
+    sibling script imported it under the same name via Python's normal
+    import machinery — e.g., `extract-script.py` doing
+    `import outline_schema`), reuse that cached instance instead of
+    overwriting it. Replacing the cached module creates two distinct
+    module objects with non-identical enums/classes, which silently
+    breaks `isinstance` and identity checks across tests.
+    """
     path = os.path.abspath(path)
-    # Add the script's directory to sys.path so relative imports work
     script_dir = os.path.dirname(path)
     if script_dir not in sys.path:
         sys.path.insert(0, script_dir)
+    if name in sys.modules:
+        return sys.modules[name]
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod

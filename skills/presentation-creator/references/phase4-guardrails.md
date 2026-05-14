@@ -187,8 +187,11 @@ shorter slots.
             (cuttable chapters: {ids}; cuttable slides: {ns})
 ```
 
-FAIL if no chapter or slide carries `cuttable: true` and the talk duration
-is shorter than the speaker's default (the talk can't compress).
+FAIL when the profile's `rhetoric_defaults.modular_design` is true and no
+chapter or slide carries `cuttable: true`. PASS-and-skipped when
+`modular_design` is false (speakers who opt out don't get penalized for
+inflexible decks). The talk-duration-shorter-than-default heuristic is no
+longer used — the `modular_design` flag is the single gate.
 
 ---
 

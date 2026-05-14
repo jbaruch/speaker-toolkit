@@ -12,9 +12,9 @@ The speaker has already drafted the base outline with style anchors and image pr
 
 Produce the following files:
 
-1. **`updated-outline-excerpt.yaml`** — The outline entries for the two slides, with `builds:` sequences added. Must validate against the schema (each build is `{ step: int, desc: string }`; `step: 0` is the empty frame; the final step matches the full image).
+1. **`updated-outline-excerpt.yaml`** — the outline entries for the two slides, elaborated into build sequences so the audience sees each element appear one at a time.
 
-2. **`build-generation-plan.md`** — A step-by-step plan for generating the build images and inserting them into the PowerPoint deck. Cover: the image generation workflow (how to produce each build step), the file naming and directory structure (e.g., `illustrations/builds/slide-NN-build-NN.jpg`), and the slide insertion approach (each build counts toward the slide budget; layout, positioning, speaker notes placement).
+2. **`build-generation-plan.md`** — a step-by-step plan for producing the build images and getting them into the PowerPoint deck. Cover image generation, file organization, and how the build sequence interacts with the slide budget and deck layout.
 
 ## Input Files
 
@@ -126,6 +126,5 @@ slides:
 ## Key Notes
 
 - The fixture excerpt is intentionally small — it omits other chapters/slides that would be present in a full outline. Treat the slides shown as the only ones requiring builds.
-- The Five Pillars slide (n=30) should get a 6-step build (`step: 0` empty frame + one step per pillar).
-- The Maturity Checklist slides (n=38, 45, 52, 58) are already a build sequence across slides — the question is whether each *individual* slide needs intermediate build steps (e.g., should the audience see one box check at a time within slide 38?). Discuss the tradeoff in the plan.
-- Each build counts toward the slide budget per the schema's `slide_budget` validator.
+- The Five Pillars slide (n=30) walks one pillar at a time — choose an appropriate build structure.
+- The Maturity Checklist slides (n=38, 45, 52, 58) are already a sequence across slides — decide whether each *individual* slide also needs intermediate build steps and discuss the tradeoff in the plan.

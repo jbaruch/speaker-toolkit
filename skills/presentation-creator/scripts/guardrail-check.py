@@ -56,6 +56,36 @@ def _all_script_lines(outline: _os.Outline) -> list[tuple[str, str]]:
     return out
 
 
+def _duration_in_range(duration: float, range_str: str) -> bool:
+    """Test whether `duration` falls within a profile `duration_range` string.
+
+    Supports `"N min"` (exact), `"A-B min"` (inclusive range), and
+    `"N+ min"` (open-ended upper bound).
+    """
+    if not range_str:
+        return False
+    s = range_str.strip().lower().replace("min", "").strip()
+    # "N+" form
+    if s.endswith("+"):
+        try:
+            lo = float(s[:-1].strip())
+            return duration >= lo
+        except ValueError:
+            return False
+    # "A-B" form
+    if "-" in s:
+        try:
+            lo, hi = (float(x.strip()) for x in s.split("-", 1))
+            return lo <= duration <= hi
+        except ValueError:
+            return False
+    # "N" form
+    try:
+        return abs(float(s) - duration) < 0.5
+    except ValueError:
+        return False
+
+
 def _slide_text_blob(slide: _os.Slide) -> str:
     """All on-slide text concatenated — visual + text_overlay (NOT script)."""
     parts: list[str] = []
@@ -129,14 +159,15 @@ def check_act1_ratio(outline: _os.Outline, profile: dict) -> tuple[str, str]:
 
     limits = profile.get("guardrail_sources", {}).get("act1_ratio_limits", [])
     max_pct: float = 45
-    # Pick the entry whose declared duration range matches the talk's
-    # duration; if none match, fall back to the first declared entry.
+    # Pick the entry whose declared duration range covers the talk's
+    # duration. Supports the schema's documented range forms (see
+    # vault-profile/references/speaker-profile-schema.md):
+    #   "30 min"        → exact
+    #   "20-30 min"     → inclusive range
+    #   "60+ min"       → open-ended upper
     matched = False
     for lim in limits:
-        rng = lim.get("duration_range") or ""
-        # Cheap "<N min" or "N min" range match — exact-substring of the
-        # int duration is the documented convention in existing profiles.
-        if rng and f"{int(duration)} min" in rng:
+        if _duration_in_range(duration, lim.get("duration_range") or ""):
             max_pct = lim.get("max_percentage") or lim.get("max_percent", 45)
             matched = True
             break
@@ -176,9 +207,12 @@ def check_closing(outline: _os.Outline) -> tuple[str, str]:
         "call to action", "cta", "action item", "this week",
         "doer", "monday", "next step",
     ))
+    # "thank" alone is insufficient — the documented minimum close requires
+    # a real social/link signal (handle, shownotes URL, QR). Tokens chosen
+    # so a bare "Thanks!" doesn't pass the social check.
     has_social = any(t in blob for t in (
-        "shownotes", "social", "thank", "qr", "@",
-    ))
+        "shownotes", "social", "qr", "@",
+    )) or ("thank" in blob and any(t in blob for t in ("@", "http", ".com", ".dev", ".io", "/")))
 
     parts = [
         ("summary", has_summary),
@@ -301,24 +335,42 @@ def check_profanity(outline: _os.Outline, profile: dict) -> tuple[str, str]:
 
 
 def check_branding(outline: _os.Outline, profile: dict) -> tuple[str, str]:
-    """Footer must reference the talk's venue, not stale conferences."""
+    """Footer must include every required element from the speaker profile.
+
+    Profile's `design_rules.footer.elements` is the speaker's footer
+    checklist (handle, conference hashtag, shownotes URL, etc.). Each
+    element token should appear in at least one slide's text overlay or
+    visual — usually the footer rendered into every slide's overlay.
+    """
     footer = profile.get("design_rules", {}).get("footer") or {}
     elements = footer.get("elements") or []
-    venue = outline.talk.venue.lower()
     if not elements:
         return "WARN", "speaker profile has no design_rules.footer.elements — skipping"
-    # Heuristic: look for venue tokens across slide text_overlays
-    venue_tokens = [t for t in re.split(r"[\s,/]+", venue) if len(t) > 2]
-    found = any(
-        any(t in (s.text_overlay or "").lower() for t in venue_tokens)
+
+    # Build one big text-blob from all slide overlays/visuals and search
+    # for each footer element as a literal substring (case-insensitive).
+    blob = " ".join(
+        ((s.text_overlay or "") + " " + (s.visual or ""))
         for s in outline.slides
-    )
-    if not found:
-        return "WARN", (
-            f"venue '{outline.talk.venue}' tokens not detected in any slide's "
-            f"text_overlay — verify footer references this venue"
+    ).lower()
+
+    missing: list[str] = []
+    for elem in elements:
+        elem_l = (elem or "").lower().strip()
+        if not elem_l:
+            continue
+        # Strip template placeholders like {conference}/{topic} before matching
+        elem_l = re.sub(r"\{[^}]+\}", "", elem_l).strip()
+        if not elem_l:
+            continue
+        if elem_l not in blob:
+            missing.append(elem)
+    if missing:
+        return "FAIL", (
+            f"required footer elements not detected in any slide overlay: "
+            f"{missing}"
         )
-    return "PASS", f"venue tokens present in slide text"
+    return "PASS", f"all required footer elements present ({len(elements)})"
 
 
 # ── Main ─────────────────────────────────────────────────────────────

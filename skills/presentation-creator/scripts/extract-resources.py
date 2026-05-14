@@ -109,7 +109,7 @@ def extract_urls(parsed_lines):
             if url in seen:
                 for r in resources:
                     if (r["value"] == url and slide_num
-                            and slide_num not in r["slide_nums"]):
+                            and slide_num is not None and slide_num not in r["slide_nums"]):
                         r["slide_nums"].append(slide_num)
                         r["context"] = _merge_context(r["context"], section, slide_num)
                 continue
@@ -118,7 +118,7 @@ def extract_urls(parsed_lines):
                 "type": "url",
                 "value": url,
                 "context": _slide_context(section, slide_num),
-                "slide_nums": [slide_num] if slide_num else [],
+                "slide_nums": [slide_num] if slide_num is not None else [],
                 "approved": False,
             })
     return resources
@@ -139,7 +139,7 @@ def extract_repos(parsed_lines):
             if key in seen:
                 for r in resources:
                     if (r["value"].lower().endswith("/" + key.split("/")[-1])
-                            and slide_num and slide_num not in r["slide_nums"]):
+                            and slide_num is not None and slide_num not in r["slide_nums"]):
                         r["slide_nums"].append(slide_num)
                 continue
             seen.add(key)
@@ -148,7 +148,7 @@ def extract_repos(parsed_lines):
                 "type": "repo",
                 "value": f"{host}/{repo}",
                 "context": _slide_context(section, slide_num),
-                "slide_nums": [slide_num] if slide_num else [],
+                "slide_nums": [slide_num] if slide_num is not None else [],
                 "url": f"https://{host}/{repo}",
                 "approved": False,
             })
@@ -175,7 +175,7 @@ def extract_books(parsed_lines):
                     "type": "book",
                     "value": title,
                     "context": _slide_context(section, slide_num),
-                    "slide_nums": [slide_num] if slide_num else [],
+                    "slide_nums": [slide_num] if slide_num is not None else [],
                     "approved": False,
                 })
     return resources
@@ -191,7 +191,7 @@ def extract_rfcs(parsed_lines):
             if rfc_num in seen:
                 for r in resources:
                     if (r["value"] == f"RFC {rfc_num}" and slide_num
-                            and slide_num not in r["slide_nums"]):
+                            and slide_num is not None and slide_num not in r["slide_nums"]):
                         r["slide_nums"].append(slide_num)
                 continue
             seen.add(rfc_num)
@@ -199,7 +199,7 @@ def extract_rfcs(parsed_lines):
                 "type": "rfc",
                 "value": f"RFC {rfc_num}",
                 "context": _slide_context(section, slide_num),
-                "slide_nums": [slide_num] if slide_num else [],
+                "slide_nums": [slide_num] if slide_num is not None else [],
                 "url": f"https://www.rfc-editor.org/rfc/rfc{rfc_num}",
                 "approved": False,
             })
@@ -226,7 +226,7 @@ def extract_tools(parsed_lines):
             if key in seen:
                 for r in resources:
                     if (r["value"].lower() == key and slide_num
-                            and slide_num not in r["slide_nums"]):
+                            and slide_num is not None and slide_num not in r["slide_nums"]):
                         r["slide_nums"].append(slide_num)
                         r["context"] = _merge_context(r["context"], section, slide_num)
                 continue
@@ -235,7 +235,7 @@ def extract_tools(parsed_lines):
                 "type": "tool",
                 "value": name,
                 "context": _slide_context(section, slide_num),
-                "slide_nums": [slide_num] if slide_num else [],
+                "slide_nums": [slide_num] if slide_num is not None else [],
                 "url": None,
                 "approved": False,
             })

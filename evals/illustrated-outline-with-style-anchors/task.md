@@ -6,13 +6,13 @@ A speaker has been accepted to give a 45-minute keynote about "The Arc of AI" at
 
 The speaker wants AI-generated illustrations for this talk — not stock photos or screenshots, but a cohesive visual identity where every slide feels like a page from the same artifact. They've already chosen a **retro technical manual** style during the architecture phase: every slide looks like a page from a declassified government field manual, with deadpan clinical labeling and vintage technical illustration.
 
-Using the vault data and illustration decisions provided below, create a complete illustrated presentation outline as `outline.yaml`. The outline should have a cohesive visual style applied across all slides via the top-level `style_anchor:` block, with AI-generated illustration prompts (per-slide `image_prompt:` fields) that maintain visual consistency throughout the deck. Follow the schema defined in `skills/presentation-creator/scripts/outline_schema.py` — `style_anchor.full`, `style_anchor.imgtxt`, `style_anchor.conventions`; per-slide `format:` (FULL | IMG+TXT | EXCEPTION | TITLE), `visual:`, `text_overlay:`, `image_prompt:` (must reference the `[STYLE ANCHOR]` token).
+Using the vault data and illustration decisions provided below, produce a complete illustrated presentation outline that maintains a cohesive visual style across every slide and gives the deck-build pipeline everything it needs to generate the illustrations.
 
 ## Output Specification
 
 Produce the following file:
 
-1. **`outline.yaml`** — A complete illustrated presentation outline validating against `outline_schema.py`. Run `python3 skills/presentation-creator/scripts/outline_schema.py outline.yaml` to confirm.
+1. **`outline.yaml`** — the talk's outline, ready to feed the deck-build pipeline.
 
 ## Input Files
 

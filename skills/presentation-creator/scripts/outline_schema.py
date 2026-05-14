@@ -359,7 +359,7 @@ class Slide(_StrictModel):
     cuttable: bool = False
     chapter: str
     title: str
-    format: SlideFormat | None = None
+    format: SlideFormat
     format_justification: str | None = None
     visual: str | None = None
     text_overlay: str | None = None
@@ -383,15 +383,26 @@ class Slide(_StrictModel):
         return self
 
     @model_validator(mode="after")
-    def _build_steps_unique_and_ascending(self) -> "Slide":
+    def _build_steps_contiguous_from_zero(self) -> "Slide":
+        """Builds start at 0 and are contiguous (0, 1, 2, …, N-1).
+
+        Per phase3-content.md: `step: 0` is the empty frame and each
+        subsequent step adds one element. Holes or wrong starting steps
+        produce mislabeled build-NN images and break slide-budget
+        arithmetic.
+        """
+        if not self.builds:
+            return self
         steps = [b.step for b in self.builds]
-        if len(set(steps)) != len(steps):
+        expected = list(range(len(steps)))
+        if sorted(steps) != expected:
             raise ValueError(
-                f"slide {self.n}: duplicate build steps {steps}",
+                f"slide {self.n}: build steps must be contiguous starting "
+                f"at 0; got {steps}, expected {expected}",
             )
-        if steps != sorted(steps):
+        if steps != expected:
             raise ValueError(
-                f"slide {self.n}: build steps not ascending {steps}",
+                f"slide {self.n}: build steps not in ascending order: {steps}",
             )
         return self
 
