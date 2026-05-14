@@ -69,7 +69,7 @@ thresholds (1.5 slides/min, 45% Act 1 cap), ask for template/publishing interact
 
 Do not skip phases. Do not write content before Phase 3. Phase 2 is joint, not autonomous.
 
-### Talk-directory artifacts
+**Talk-directory artifacts.**
 
 By end of Phase 3, the talk directory contains:
 
@@ -94,7 +94,7 @@ python3 skills/presentation-creator/scripts/check-rhetorical.py  outline.yaml > 
 
 Validate the YAML with `python3 skills/presentation-creator/scripts/outline_schema.py outline.yaml` — exits non-zero with a typed error if any validator fails.
 
-### Late Entry (single-task requests)
+**Late entry (single-task requests).**
 
 Even when the user asks for a single task (QR code, export, shownotes), vault loading
 is mandatory. Do not jump straight to the action. Minimum context before ANY Phase 6
@@ -169,7 +169,7 @@ create a separate spec or outline file.
 **The instrument menu comes from the vault, not from a static file.** Read the summary
 (sections 2-13) and profile `instrument_catalog` for options.
 
-### 11 Decisions to make together:
+**11 decisions to make together:**
 
 Mode, Opening, Narrative, Humor, Audience Interaction, Closing, Slide Design,
 Persuasion, Template Patterns, Pattern Strategy, Illustration Strategy. Each reads
@@ -441,7 +441,7 @@ submission-ready materials for active talks. Load it during Phase 0 to know the 
 rotation and flag overlapping territory. Pull an existing entry before starting a new
 CFP; adapt rather than rewrite.
 
-### What goes in the catalog
+**What goes in the catalog.**
 
 Each entry contains:
 - **Title** (including subtitle if any)
@@ -450,7 +450,7 @@ Each entry contains:
 - **Small Print** (notes for the Program Committee — positioning, scope clarifications,
   or anything the PC should know; internal, not public-facing)
 
-### Catalog maintenance
+**Catalog maintenance.**
 
 - Save approved title, abstract, and outline after CFP abstract writing (step 5) and
   after Phase 4 if no entry exists yet. Remove or archive entries when a talk is retired.
