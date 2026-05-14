@@ -115,14 +115,14 @@ the inputs.
 speaker. If shownotes don't exist and Step 7.2 is requested, STOP and ask — either
 run Phase 6 Step 6.1 first or get the shownotes URL manually.
 
-## Phase 0: Intake & Context Loading
+## Step 0 — Intake & Context Loading
 
 1. Load vault documents (see above).
 2. Capture what the user has shared — topic, conference, audience, time slot.
 3. Read any provided CFP description, conference website, or existing talk to adapt.
 4. Report what you know and what you still need.
 
-## Phase 1: Intent Distillation
+## Step 1 — Intent Distillation
 
 Ask about what's missing; skip what's known. See [references/phase1-intent.md](references/phase1-intent.md) for the full
 question set. Author the **talk metadata block** of `outline.yaml`:
@@ -164,7 +164,7 @@ metadata. Later phases (Phase 2 architecture, Phase 3 slides, Phase 6 publishing
 extend the SAME file with `chapters[]`, `slides[]`, `interludes[]`, etc. — do not
 create a separate spec or outline file.
 
-## Phase 2: Rhetorical Architecture
+## Step 2 — Rhetorical Architecture
 
 **The instrument menu comes from the vault, not from a static file.** Read the summary
 (sections 2-13) and profile `instrument_catalog` for options.
@@ -197,7 +197,7 @@ If the profile is unavailable (summary-only mode), use these defaults:
 
 Gate: Author approves the architecture.
 
-## Phase 3: Content Development
+## Step 3 — Content Development
 
 Fill `slides[]` and `interludes[]` in `outline.yaml`. See
 [references/phase3-content.md](references/phase3-content.md) for the full schema,
@@ -286,7 +286,7 @@ python3 skills/presentation-creator/scripts/check-rhetorical.py  outline.yaml > 
 The four `.md` files are read-only — never edit them directly; they regenerate
 deterministically from `outline.yaml`.
 
-## Phase 4: Revision & Guardrails
+## Step 4 — Revision & Guardrails
 
 Run two checkers — they cover different surfaces:
 
@@ -337,7 +337,7 @@ Agent-added (not in script yet):
 Iterate on author feedback. Apply changes first, guardrail second. Flag but don't block
 intentionally overridden guardrails. See [references/phase4-guardrails.md](references/phase4-guardrails.md) for iteration protocol.
 
-## Phase 5: Slide Generation & Interactive Iteration
+## Step 5 — Slide Generation & Interactive Iteration
 
 Build the deck from the finalized `outline.yaml`, using `slides.md` (the build-sheet
 extracted by `extract-slides.py`) as the per-slide instruction list. See
@@ -385,7 +385,7 @@ toolkit-canonical build-sheet.
 - `design_rules.slide_numbers` — typically "never"
 - `infrastructure.template_layouts[]` — layout index + placeholder mapping
 
-## Phase 6: Publishing
+## Step 6 — Publishing
 
 Read `publishing_process` from `speaker-profile.json`. Each speaker's workflow differs.
 If `publishing_process` is missing or empty, ask the author interactively.
@@ -401,7 +401,7 @@ Execute the steps from the profile:
 
 Gate: Author confirms published and ready to deliver.
 
-## Phase 7: Post-Event
+## Step 7 — Post-Event
 
 Triggered separately — days or weeks after delivery. Not part of the linear
 Phase 0-6 flow. The talk has been given and recorded.
