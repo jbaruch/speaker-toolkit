@@ -1,0 +1,66 @@
+{
+  "context": "Tests whether the agent produces an outline.yaml with the correct structural elements for an illustrated talk: a top-level style_anchor block with model and per-format anchors, per-slide format/visual/image_prompt fields, [STYLE ANCHOR] token usage in prompts, EXCEPTION justifications via format_justification, and visual continuity conventions — all while satisfying the schema (chapters, slides, exactly one big_idea, etc.).",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "outline.yaml validates against schema",
+      "max_score": 14,
+      "description": "Running `python3 skills/presentation-creator/scripts/outline_schema.py outline.yaml` exits 0 — every required field present, slide numbers unique and ascending, chapter refs valid, exactly one big_idea slide, callback ledger paired, etc."
+    },
+    {
+      "name": "style_anchor block present",
+      "max_score": 10,
+      "description": "The outline has a top-level `style_anchor:` mapping with `model:`, `full:`, `imgtxt:`, and `conventions:` keys, each a non-empty string"
+    },
+    {
+      "name": "Format-specific anchors",
+      "max_score": 8,
+      "description": "Both `style_anchor.full` and `style_anchor.imgtxt` carry distinct multi-line anchor paragraphs — full describes the FULL (1920x1080) format; imgtxt describes the portrait (1024x1536) format"
+    },
+    {
+      "name": "Visual continuity conventions documented",
+      "max_score": 8,
+      "description": "`style_anchor.conventions` documents visual continuity rules — at least two of: FIG sequential numbering scheme, the recurring personnel evaluation form, the deadpan military callout label style"
+    },
+    {
+      "name": "format field on every slide",
+      "max_score": 10,
+      "description": "Every entry in `slides[]` includes a `format:` value — one of FULL, IMG+TXT, EXCEPTION, TITLE. No slide is missing the format field"
+    },
+    {
+      "name": "EXCEPTION slides carry format_justification",
+      "max_score": 8,
+      "description": "Every slide with `format: EXCEPTION` includes a non-empty `format_justification:` explaining why a real asset is used instead of a generated illustration (bio slide, real screenshot, data table, etc.). Schema validation already enforces this — passing the schema gate covers it"
+    },
+    {
+      "name": "image_prompt uses [STYLE ANCHOR] token",
+      "max_score": 12,
+      "description": "At least 80% of non-EXCEPTION slides include an `image_prompt:` block whose value starts with `[STYLE ANCHOR]` followed by the specific prompt text — the token references the header anchors"
+    },
+    {
+      "name": "visual field present alongside image_prompt",
+      "max_score": 6,
+      "description": "Non-EXCEPTION slides include a `visual:` field with a human-readable description of the visual concept, distinct from (and shorter than) the image_prompt"
+    },
+    {
+      "name": "Prompt richer than visual description",
+      "max_score": 6,
+      "description": "The image_prompt text is visibly more detailed than the visual description for at least 3 slides — including composition details, labeling specifics, or visual elements not in the visual description"
+    },
+    {
+      "name": "Visual continuity: FIG numbering",
+      "max_score": 6,
+      "description": "image_prompt values reference sequential figure numbering (FIG. 1, FIG. 2, etc.) in at least 5 slides, maintaining the numbering convention from the illustration decisions"
+    },
+    {
+      "name": "Visual continuity: progressive form",
+      "max_score": 6,
+      "description": "The personnel evaluation form appears as a visual element in at least 2 slides (once partially filled, once more complete) — referenced in `visual:` or `image_prompt:` fields"
+    },
+    {
+      "name": "Standard outline structure preserved",
+      "max_score": 6,
+      "description": "The outline includes: `talk:` metadata block with all required fields (title, slug, speakers, duration_min, audience, mode, venue, slide_budget, pacing_wpm, architecture); a `chapters[]` list with target_min; opening slides (title card, hook, bio, shownotes); at least one chapter marked `cuttable: true` for short-slot adaptation; a closing section with summary/CTA/social slides"
+    }
+  ]
+}

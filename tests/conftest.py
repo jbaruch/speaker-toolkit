@@ -99,6 +99,31 @@ def guardrail_check():
 
 
 @pytest.fixture(scope="session")
+def outline_schema():
+    return _import_script(os.path.join(SCRIPTS_PC, "outline_schema.py"), "outline_schema")
+
+
+@pytest.fixture(scope="session")
+def extract_script():
+    return _import_script(os.path.join(SCRIPTS_PC, "extract-script.py"), "extract_script")
+
+
+@pytest.fixture(scope="session")
+def extract_slides():
+    return _import_script(os.path.join(SCRIPTS_PC, "extract-slides.py"), "extract_slides")
+
+
+@pytest.fixture(scope="session")
+def extract_narrative():
+    return _import_script(os.path.join(SCRIPTS_PC, "extract-narrative.py"), "extract_narrative")
+
+
+@pytest.fixture(scope="session")
+def check_rhetorical():
+    return _import_script(os.path.join(SCRIPTS_PC, "check-rhetorical.py"), "check_rhetorical")
+
+
+@pytest.fixture(scope="session")
 def generate_illustrations():
     return _import_script(
         os.path.join(SCRIPTS_ILL, "generate-illustrations.py"), "generate_illustrations"

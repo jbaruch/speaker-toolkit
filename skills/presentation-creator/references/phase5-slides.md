@@ -311,10 +311,14 @@ directory structure. Typical convention:
 
 ```
 {presentations-dir}/{conference}/{year}/{talk-slug}/
-├── {talk-slug}.pptx              ← the deck (Phase 5 output)
+├── outline.yaml                  ← source of truth (Phase 1/2/3 build it up)
+├── narrative.md                  ← generated from outline.yaml (extract-narrative.py)
+├── script.md                     ← generated from outline.yaml (extract-script.py)
+├── slides.md                     ← generated from outline.yaml (extract-slides.py) — consumed by Phase 5
+├── rhetorical-review.md          ← generated from outline.yaml (check-rhetorical.py)
+├── {talk-slug}.pptx              ← the deck (Phase 5 output — pptx talks)
 ├── {talk-slug}.pdf               ← PDF export (Phase 5 final step)
-├── presentation-spec.md           ← the spec: slug, mode, duration (Phase 1 output)
-├── presentation-outline.md        ← the outline (Phase 3/4 output)
+├── {talk-slug}.md                ← renderable deck (Phase 5 output — presenterm talks)
 ├── assets/                        ← images, memes, screenshots (author provides)
 └── illustrations/                 ← generated illustrations (Phase 5 Step 5.1b)
     ├── slide-01.jpg               ← one file per illustrated slide

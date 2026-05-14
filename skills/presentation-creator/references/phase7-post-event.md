@@ -10,9 +10,9 @@ Before ANY Phase 7 action, load these files. If any is missing, STOP and ask.
 
 1. **`speaker-profile.json`** — thumbnail preferences, video publishing config
 2. **`secrets.json`** — API keys (Gemini for thumbnail generation)
-3. **`presentation-spec.md`** — talk slug, metadata (source of truth)
-4. **`presentation-outline.md`** — the outline (slide references, illustration references)
-5. **YouTube video URL** — provided by the speaker at trigger time
+3. **`outline.yaml`** — source of truth for talk slug, metadata, slides, and illustration refs.
+   Load via `scripts/outline_schema.py`.
+4. **YouTube video URL** — provided by the speaker at trigger time
 
 If shownotes don't exist and the speaker wants Step 7.2, STOP and ask — either
 run Phase 6 Step 6.1 first, or get the shownotes URL manually.

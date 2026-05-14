@@ -13,6 +13,8 @@ dependencies = [
     "Pillow",
     "imagehash",
     "numpy",
+    "pydantic>=2",
+    "PyYAML",
 ]
 
 [project.optional-dependencies]

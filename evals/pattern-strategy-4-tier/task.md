@@ -49,35 +49,63 @@ The following files are provided as inputs. Extract them before beginning.
 }
 =============== END OF FILE ===============
 
-=============== FILE: inputs/draft-outline.md ===============
-# Developer Relations in the Age of AI Assistants
+=============== FILE: inputs/outline-draft.yaml ===============
+# Phase 2 output — talk metadata + chapter skeleton.
+# Slides will be filled in during Phase 3, after pattern-strategy selection.
+talk:
+  title: "Developer Relations in the Age of AI Assistants"
+  slug: "devrelcon-2025-devrel-age-of-ai"
+  speakers: ["Morgan Lee"]
+  duration_min: 45
+  audience: "DevRel professionals and community managers"
+  mode: "practitioner"
+  venue: "DevRelCon 2025"
+  slide_budget: 68
+  pacing_wpm: [135, 145]
+  architecture: "narrative-arc"      # to be confirmed by the pattern-strategy recommendation
+  applied_patterns: []               # Phase 2 fills this in; the eval expects the agent to populate it
 
-**Spec:** practitioner | 45 min | DevRelCon 2025 | DevRel professionals and community managers
-**Slide budget:** 68 slides
+chapters:
+  - id: ch-opening
+    title: "Opening Sequence"
+    target_min: 5
+    argument_beats:
+      - text: "Slides 1-7: title, bio, four opening memes, shownotes."
+        slide_refs: [1, 2, 3, 4, 5, 6, 7]
+        tags: [meme-heavy-act1]
 
-## Opening Sequence [5 min, slides 1-7]
-### Slide 1: Title Slide
-### Slide 2: Bio
-### Slide 3-6: Opening Memes (4 consecutive)
-### Slide 7: Shownotes URL
+  - id: ch-challenge
+    title: "Act 1: The Challenge"
+    target_min: 18
+    argument_beats:
+      - text: "Slides 8-12: history of DevRel (5 slides of background before any concrete example)."
+        slide_refs: [8, 9, 10, 11, 12]
+        tags: [background-heavy]
+      - text: "Slides 13-15: tooling landscape."
+        slide_refs: [13, 14, 15]
+      - text: "Slides 16-17: survey stats (no sources cited yet)."
+        slide_refs: [16, 17]
+        tags: [missing-attribution]
+      - text: "Slides 18-20: AI adoption data."
+        slide_refs: [18, 19, 20]
+      - text: "Slides 22-28: 'The DevRel Fear Response' — 6 fears enumerated one per slide."
+        slide_refs: [22, 23, 24, 25, 26, 27, 28]
+      - text: "Slides 29-33: supporting data."
+        slide_refs: [29, 30, 31, 32, 33]
 
-## Act 1: The Challenge [18 min, slides 8-33]
-### Slide 8-12: History of DevRel (5 slides of background before any concrete example)
-### Slide 13-15: Tooling landscape
-### Slide 16-17: Survey stats (no sources cited)
-### Slide 18-20: AI adoption data
-### Slide 22-28: "The DevRel Fear Response" (6 fears enumerated one per slide)
-### Slide 29-33: Supporting data
+  - id: ch-opportunity
+    title: "Act 2: The Opportunity"
+    target_min: 17
+    argument_beats:
+      - text: "Slide 34: reframe."
+        slide_refs: [34]
+      - text: "Slides 35-56: solutions and case studies."
+        slide_refs: [35, 56]
 
-## Act 2: The Opportunity [17 min, slides 34-56]
-### Slide 34: Reframe
-### Slide 35-56: Solutions and case studies
-
-## Closing Sequence [3 min, slides 57-60]
-### Slide 57: Summary — 3 key takeaways
-### Slide 58: Call to Action
-### Slide 59: Shownotes + QR
-### Slide 60: Thanks
-
-Total slides: 60
+  - id: ch-closing
+    title: "Closing Sequence"
+    target_min: 3
+    argument_beats:
+      - text: "Slide 57: summary — 3 key takeaways. Slide 58: CTA. Slide 59: shownotes + QR. Slide 60: thanks."
+        slide_refs: [57, 58, 59, 60]
 =============== END OF FILE ===============

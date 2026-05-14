@@ -1,0 +1,61 @@
+{
+  "context": "Tests whether the agent runs the two Phase 4 checkers (check-rhetorical.py + guardrail-check.py) against outline.yaml, surfaces their structured output, and adds judgment-based commentary the deterministic scripts can't make (e.g., vague image prompts, illustration coverage). The fixture is a valid outline carrying deliberate quality issues the audit should catch.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Both checker scripts referenced",
+      "max_score": 15,
+      "description": "The report explicitly invokes (or shows output from) both `check-rhetorical.py outline.yaml` and `guardrail-check.py outline.yaml speaker-profile.json`. Agent does not write its own audit logic from scratch when scripts exist"
+    },
+    {
+      "name": "Data attribution FAIL surfaced",
+      "max_score": 12,
+      "description": "The guardrail-check.py data-attribution check flags slide 4 (87% statistic with no source). The agent's report includes this finding"
+    },
+    {
+      "name": "Closing FAIL surfaced",
+      "max_score": 12,
+      "description": "The guardrail-check.py closing check flags missing CTA in the closing chapter — slides 9 and 10 don't contain explicit action-item language. The agent's report surfaces this"
+    },
+    {
+      "name": "Cut-lines FAIL surfaced",
+      "max_score": 10,
+      "description": "The guardrail-check.py cut-lines check flags zero cuttable chapters or slides — the talk can't compress for shorter slots. The agent's report surfaces this finding"
+    },
+    {
+      "name": "Rushed-closing recurring issue noted",
+      "max_score": 8,
+      "description": "The agent's judgment commentary flags the 2-minute closing chapter as below the speaker profile's `rushed_closing` recurring-issue threshold (≥3 min), and notes the 'wrap up fast' tag in argument_beats as a corroborating signal"
+    },
+    {
+      "name": "Vague image prompt flagged (slide 5)",
+      "max_score": 10,
+      "description": "The agent's judgment commentary flags slide 5's image_prompt ('Components flying apart.') as a one-liner that doesn't reference the style anchor and lacks the specificity of the other prompts. This is judgment territory — not script-detected"
+    },
+    {
+      "name": "Schema validation confirmed up front",
+      "max_score": 8,
+      "description": "Before running the audit checks, the agent confirms `outline_schema.py outline.yaml` exits 0 — the YAML loads cleanly. This is the gate before any further analysis"
+    },
+    {
+      "name": "Big-idea singleton confirmed",
+      "max_score": 5,
+      "description": "The check-rhetorical.py output (and/or the agent's summary) confirms exactly one slide carries big_idea: true (slide 2)"
+    },
+    {
+      "name": "Thesis preview/payoff ordering confirmed",
+      "max_score": 5,
+      "description": "The check-rhetorical.py output confirms slide 2 (preview) precedes slide 9 (payoff). The agent surfaces this PASS"
+    },
+    {
+      "name": "Illustration coverage commentary",
+      "max_score": 7,
+      "description": "The agent notes that this is an illustration-strategy talk (style_anchor present) and surveys image_prompt coverage on non-EXCEPTION slides — flagging any FULL/IMG+TXT slide missing the [STYLE ANCHOR] token or missing an image_prompt entirely"
+    },
+    {
+      "name": "Report distinguishes FAIL vs FLAG vs INFO",
+      "max_score": 8,
+      "description": "The report preserves the status labels from the scripts — FAIL/PASS/WARN from guardrail-check.py, PASS/FLAG/N/A/INFO from check-rhetorical.py. Labels are not paraphrased or homogenized"
+    }
+  ]
+}
