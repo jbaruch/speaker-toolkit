@@ -64,7 +64,7 @@ rule. Three states:
 |---|---|---|---|
 | Absent | `nil` (falsy) | "Video Coming Soon" | No |
 | Present with valid URL | URL string (truthy) | "Video Available" | Yes |
-| Present with bare-text placeholder (`TBD`, `Coming soon`) | the text string (still truthy) | "Video Available" | Yes — but the embed will be broken because no valid URL was extracted |
+| Present with bare-text placeholder (`TBD`, `Coming soon`) | the text string (still truthy) | "Video Available" | Yes — embed broken (no valid URL extracted) |
 
 The "Video Available" badge fires on ANY truthy `extracted_video` —
 the layout doesn't validate that the value is a real URL. A
@@ -187,10 +187,10 @@ Exactly one thing: `index.md:104` checks
 `{% if talk.extracted_slides or talk.extracted_video or talk.thumbnail_url %}`
 to decide whether to include the talk in the homepage's
 "Highlighted Presentations" featured set. The check is for
-truthiness only — the value is never read for a URL. And the check is
-redundant in practice because `extracted_slides` is almost always
-populated for any talk that has a slides URL in the body, so the
-frontmatter field rarely affects the outcome.
+truthiness only — the value is never read for a URL. In practice the
+check is redundant: `extracted_slides` is almost always populated
+from the body field block, so the frontmatter field rarely affects
+the outcome.
 
 Setting `thumbnail_url:` to a non-existent path doesn't make it
 exist; setting it to a different path doesn't override the

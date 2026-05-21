@@ -14,11 +14,10 @@ right way.
 **Video:** Recording coming soon
 ```
 
-**What happens:** The layout's video-status conditional fires
-"Video Available" because `extracted_video` is truthy (any non-empty
-string). The "Video Coming Soon" badge that the speaker actually
-wants never renders. And the video-embed section tries to embed
-"TBD" as a URL, producing a broken iframe.
+**What happens:** Any non-empty `extracted_video` value fires the
+"Video Available" badge. The "Video Coming Soon" badge that the
+speaker actually wants never renders. The video-embed section then
+tries to embed "TBD" as a URL, producing a broken iframe.
 
 **Do:** Omit the `**Video:**` line entirely. When the video lands,
 add the line. The badge automatically flips on rebuild.
@@ -40,19 +39,6 @@ iframe inside the "Slides" panel.
 **Do:** Omit the `**Slides:**` line entirely until you have a real
 URL. The talk page is fully valid without a slides section. When
 the URL lands, add the line — no other change needed.
-
-**Real example of this mistake** (KotlinConf 2026 talk file as
-originally committed to `jbaruch/shownotes`):
-
-```markdown
-**Slides:** [View Slides](#) <!-- TODO -->
-**Video:** [Watch Video](#) <!-- TODO -->
-```
-
-Both fields fire wrong badges, render broken embeds, and the inline
-HTML comments are pulled into the captured field value by the
-parser's `^\*\*Slides:\*\*\s*(.+)$` value-capture group (the parser
-matches up to end-of-line, comment included).
 
 ## 1c. `thumbnail_url:` in Frontmatter
 
@@ -131,10 +117,10 @@ abstract is the elevator pitch.
 `[text](url)` form. The full plain-text value ends up in
 `extracted_slides` / `extracted_video`. The status badge fires
 (string is truthy), but the embed include then tries to detect URL
-patterns inside the plain string. It often "works" for YouTube
-because the `youtu.be/` or `youtube.com/watch?v=` substrings still
-trigger the embed branch — but for Google Drive PDFs the pattern
-match is less forgiving.
+patterns inside the plain string. It often "works" for YouTube — the
+`youtu.be/` or `youtube.com/watch?v=` substrings still trigger the
+embed branch. For Google Drive PDFs the pattern match is less
+forgiving.
 
 **Do:** Always wrap in markdown link syntax:
 ```markdown
@@ -307,8 +293,8 @@ existing file will be overwritten and confirm before proceeding.
 
 **Don't:**
 ```markdown
-<!-- TODO: confirm exact KotlinConf 2026 talk date + slide/video URLs + generate thumbnail PNG before publish -->
-# RoboCoders: Judgment Day — AI Coding Agents Face Off (Kotlin Edition)
+<!-- TODO: confirm slide/video URLs + generate thumbnail before publish -->
+# Talk Title
 
 **Slides:** [View Slides](#) <!-- TODO -->
 **Video:** [Watch Video](#) <!-- TODO -->
@@ -322,13 +308,12 @@ existing file will be overwritten and confirm before proceeding.
    fix later" pattern that often fails to get fixed
 2. The inline `<!-- TODO -->` after the markdown link is captured
    by the parser's value group (`^\*\*Slides:\*\*\s*(.+)$` matches
-   to end-of-line) — so `extracted_slides` ends up containing the
+   to end-of-line) — `extracted_slides` ends up containing the
    comment text in addition to the link. The URL extraction regex
    still finds `#` in the bracket-paren form, but the wider value
    pollutes debug output
-3. Reviewers see the file looks "ready" because it has Slides/Video
-   lines, then it ships with `#` placeholders intact (real
-   regression — happened on `jbaruch/shownotes` commit `83ac8d9`)
+3. Reviewers see the file looks "ready" — it has Slides/Video
+   lines — then it ships with `#` placeholders intact
 
 **Do:** If the work is incomplete, omit the incomplete fields. The
 talk page renders fine without Slides or Video sections. When the

@@ -1,0 +1,56 @@
+{
+  "context": "Tests that shownotes-publisher refuses placeholder values for unavailable fields. The user volunteers a UX intent that a baseline agent typically satisfies by writing `**Video:** Coming soon` or `**Video:** [Watch Video](#)`. The site's layout already produces the right badge through omission — placeholder values flip the badge the wrong way AND render broken embeds. The skill must omit, not placeholder.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "No **Video:** line of any kind",
+      "description": "There is no `**Video:**` line anywhere in the file — no `**Video:** TBD`, no `**Video:** Coming soon`, no `**Video:** Recording coming soon`, no `**Video:** [Watch Video](#)`, no `**Video:** [Coming soon](#)`, no `**Video:** [TODO]`. The whole line is absent.",
+      "max_score": 20
+    },
+    {
+      "name": "No frontmatter compensation for the missing video",
+      "description": "Frontmatter does not contain `video:`, `video_status:`, `video_pending:`, `video_coming_soon:`, or any similar key the agent might invent to express 'video coming'. Frontmatter remains minimal — `layout: talk` only.",
+      "max_score": 12
+    },
+    {
+      "name": "No body-text 'Coming soon' compensation",
+      "description": "The body does not contain a free-text paragraph or callout like 'Video coming soon', 'Recording forthcoming', or 'The video will be added when published' inserted to compensate for the omitted field. The site's layout handles the badge automatically — the skill leaves it to the layout.",
+      "max_score": 10
+    },
+    {
+      "name": "Slides line is present with a real URL",
+      "description": "The field block contains `**Slides:** [View Slides](https://drive.google.com/file/d/Vid-pending-12345/preview)` — using markdown-link syntax and the real provided URL. The slides URL is NOT also omitted (the speaker provided one).",
+      "max_score": 12
+    },
+    {
+      "name": "Filename uses the dated convention with the spec slug",
+      "description": "The produced file is named `2026-05-04-kafka-eu-2026-quiet-cache-failures.md` (date prefix + the slug from outline.yaml, verbatim) and lives under `_talks/`.",
+      "max_score": 10
+    },
+    {
+      "name": "Conference and Date field lines are present",
+      "description": "The field block contains `**Conference:** KafkaEU 2026` and `**Date:** 2026-05-04`, each on its own line, both with the bold-label format.",
+      "max_score": 8
+    },
+    {
+      "name": "Abstract is one flowing paragraph from talk.thesis",
+      "description": "The `## Abstract` section is exactly one paragraph derived from talk.thesis. No sub-headings, no lists, no code blocks inside the section.",
+      "max_score": 10
+    },
+    {
+      "name": "Body H1 matches talk.title",
+      "description": "The first body line is `# The Quiet Failures of Distributed Caches` — verbatim from outline.yaml's talk.title.",
+      "max_score": 8
+    },
+    {
+      "name": "Resources lists both approved entries",
+      "description": "The `## Resources` section contains exactly two bullets — the two approved entries from resources.json — each in markdown-link form.",
+      "max_score": 6
+    },
+    {
+      "name": "No HTML comments or TODO markers",
+      "description": "The output contains no `<!-- TODO -->`, no `<!--` HTML comments of any kind. No `TBD` or `Coming soon` literal text appearing as standalone tokens anywhere in the file.",
+      "max_score": 4
+    }
+  ]
+}

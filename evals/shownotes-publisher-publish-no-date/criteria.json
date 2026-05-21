@@ -1,0 +1,51 @@
+{
+  "context": "Tests the pre-talk publish path of shownotes-publisher: when outline.yaml has no delivery_date, the filename uses the date-less convention AND the Date field line is omitted entirely from the body. A baseline agent commonly emits a `**Date:** TBD` or guesses a date — both fail.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Filename uses the date-less convention",
+      "description": "The produced file is named `geecon-2026-absolutely-right.md` and lives under `_talks/`. There is NO `YYYY-MM-DD-` prefix on the filename — the slug from outline.yaml stands alone. The slug matches outline.yaml's talk.slug verbatim.",
+      "max_score": 15
+    },
+    {
+      "name": "Date field is omitted from the body",
+      "description": "There is no `**Date:**` line anywhere in the file. Any of `**Date:** TBD`, `**Date:** unknown`, `**Date:** Coming soon`, `**Date:** September 2026`, or `**Date:**` (empty value) fails this criterion. The line must be absent.",
+      "max_score": 15
+    },
+    {
+      "name": "Body H1 and field block remain intact",
+      "description": "The first body line is `# Absolutely Right: When LLMs Agree With You` (verbatim from talk.title). The field block contains `**Conference:** GeeCON 2026` and `**Slides:** [View Slides](https://drive.google.com/file/d/9XyZ-mlops-pretalk-aBcDeF/preview)` as bold-label lines, each on its own line.",
+      "max_score": 10
+    },
+    {
+      "name": "Video field is also omitted",
+      "description": "There is no `**Video:**` line — no recording exists yet. Same omission rule as Date: any placeholder value (`TBD`, `Coming soon`, `[Watch Video](#)`) fails.",
+      "max_score": 10
+    },
+    {
+      "name": "Presentation-context paragraph omits the date sub-phrase",
+      "description": "The presentation-context paragraph starts with `A presentation at GeeCON 2026` and reads cleanly without referencing a Month/Year that doesn't exist. Strings like `A presentation at GeeCON 2026 in {Month YYYY}`, `A presentation at GeeCON 2026 in TBD`, or anything that exposes a missing date value fails.",
+      "max_score": 12
+    },
+    {
+      "name": "Frontmatter is minimal — no title, no date, no thumbnail_url",
+      "description": "Frontmatter contains `layout: talk` and nothing else of substance. The agent did not compensate for the missing delivery_date by hoisting it (or a placeholder) into frontmatter. No `title:`, no `date:`, no `thumbnail_url:`.",
+      "max_score": 10
+    },
+    {
+      "name": "Abstract is a single paragraph from talk.thesis",
+      "description": "The `## Abstract` section is exactly one paragraph derived from talk.thesis. No sub-headings, no bullet lists, no fenced code blocks inside the abstract.",
+      "max_score": 10
+    },
+    {
+      "name": "Resources lists only the approved entry",
+      "description": "The `## Resources` section contains exactly one bullet — the approved 'Paper: Sycophancy in LLMs' entry, in markdown-link form. The 'Talk follow-up post (auto-generated)' entry (approved: false) is omitted.",
+      "max_score": 8
+    },
+    {
+      "name": "No TODO markers and no placeholder URL syntax",
+      "description": "No `<!-- TODO -->` HTML comments, no `[View Slides](#)` / `[Watch Video](#)` / `[Coming Soon](#)` placeholder links anywhere in the file. The slides line uses the real Drive URL provided.",
+      "max_score": 10
+    }
+  ]
+}

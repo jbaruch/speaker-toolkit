@@ -1,0 +1,56 @@
+{
+  "context": "Tests the first-time-publish path of shownotes-publisher: filename convention with a delivery date, field-block grammar, single-paragraph abstract, presentation-context paragraph anchor, resources from the JSON, and the omit-don't-placeholder rule when no video is available yet.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Filename uses the dated convention",
+      "description": "The produced file is named `2026-04-15-mlopscon-2026-decoding-ml-pipelines.md` and lives under `_talks/`. The delivery_date prefix is in ISO `YYYY-MM-DD` form and the slug after it matches outline.yaml's talk.slug verbatim (no rephrasing, no venue-derived alternative).",
+      "max_score": 12
+    },
+    {
+      "name": "Body H1 matches talk.title",
+      "description": "The first line of the body is `# Decoding ML Pipelines: From CI to GPU` — taken verbatim from outline.yaml's talk.title. The title is NOT also set in frontmatter (no `title:` key under `---`).",
+      "max_score": 8
+    },
+    {
+      "name": "Frontmatter is minimal",
+      "description": "The frontmatter contains `layout: talk` and nothing else of substance. There is no `title:`, no `thumbnail_url:`, no `video:`, no `slides:`, no `conference:`, no `date:`, no `description:`, no `abstract:` key. Extra fields like these are flagged as a fail.",
+      "max_score": 10
+    },
+    {
+      "name": "Field block uses bold-label lines in markdown-link form",
+      "description": "The field block contains `**Conference:** MLOpsCon 2026`, `**Date:** 2026-04-15`, and `**Slides:** [View Slides](https://drive.google.com/file/d/1aBcDe-fGhIjKlMnOpQrStUvWx/preview)` — each on its own line, label wrapped in `**` bolding, URL value wrapped in `[text](url)` markdown-link syntax. Bare URLs without the bracket-paren wrapping = fail.",
+      "max_score": 12
+    },
+    {
+      "name": "Video field is omitted entirely",
+      "description": "There is NO `**Video:**` line anywhere in the file. The speaker said no video yet, and any `**Video:** TBD`, `**Video:** Coming Soon`, `**Video:** [Watch Video](#)`, or similar placeholder form fails this criterion. The line must be absent.",
+      "max_score": 12
+    },
+    {
+      "name": "Presentation-context paragraph anchors with 'A presentation at'",
+      "description": "After the field block, there is a paragraph that starts with the exact phrase `A presentation at` and continues with the venue name (`MLOpsCon 2026`). The speaker name uses a Liquid template form like `{{ site.speaker.display_name | default: site.speaker.name }}` (not a hardcoded string).",
+      "max_score": 10
+    },
+    {
+      "name": "Abstract is a single flowing paragraph",
+      "description": "The `## Abstract` section contains exactly one paragraph of prose derived from talk.thesis. No `###` sub-headings, no `-` or `*` bullet lists, no fenced code blocks, no tables inside the section. The section ends before the next `##` heading.",
+      "max_score": 12
+    },
+    {
+      "name": "Resources lists only approved entries",
+      "description": "The `## Resources` section contains exactly three bullet items, one per resources.json entry whose `approved` is true. The 'Draft post — not ready' item (approved: false) is omitted. Each bullet uses markdown-link syntax `[title](url)`.",
+      "max_score": 10
+    },
+    {
+      "name": "Section order is Abstract then Resources",
+      "description": "`## Abstract` appears before `## Resources` in the body. Reversing the order folds the abstract into the resources extraction.",
+      "max_score": 8
+    },
+    {
+      "name": "No TODO markers or HTML comments left in the file",
+      "description": "The output contains no `<!-- TODO -->`, no `<!-- ... -->` HTML comments, and no `TBD` / `Coming soon` / `Placeholder` literal text values anywhere — neither in the field block nor in the body.",
+      "max_score": 6
+    }
+  ]
+}

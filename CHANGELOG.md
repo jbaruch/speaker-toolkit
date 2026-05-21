@@ -28,10 +28,25 @@ The skill encodes the contract end-to-end:
   with each extracted field, including the truthiness trap on
   `extracted_video` (any non-empty string triggers "Video Available"
   — `**Video:** TBD` fires the wrong badge)
-- **`references/common-mistakes.md`** — 10 documented failure modes
-  with what visually happens and the right way (e.g., abstract
-  sub-headings flatten; bare-URL Slides/Video doesn't extract; resource
-  before abstract folds abstract into resources)
+- **`references/common-mistakes.md`** — 13 documented failure modes
+  (entries 1, 1b, 1c, 2–11) with what visually happens and the right
+  way (e.g., abstract sub-headings flatten; bare-URL Slides/Video
+  doesn't extract; resource before abstract folds abstract into
+  resources)
+
+**Motivating incident.** This skill was authored after the
+KotlinConf 2026 talk file shipped on `jbaruch/shownotes` commit
+`83ac8d9` with placeholder-URL Slides/Video lines:
+
+```markdown
+**Slides:** [View Slides](#) <!-- TODO -->
+**Video:** [Watch Video](#) <!-- TODO -->
+```
+
+Both fields fired the wrong badges and rendered broken embeds; the
+inline HTML comments were pulled into the captured field values by
+the parser's `^\*\*Slides:\*\*\s*(.+)$` value-capture group. The
+incident motivates entries 1b and 11 in `references/common-mistakes.md`.
 
 The key behaviors the skill enforces:
 
@@ -51,6 +66,18 @@ The key behaviors the skill enforces:
 - **Update existing files in place.** Speakers hand-edit shownotes
   post-publish (typo fixes, resource additions). A re-author wipes
   those edits silently. The skill reads-then-edits, never overwrites
+
+Four eval scenarios ship with the skill, all under `evals/`:
+
+- `shownotes-publisher-publish-with-date` — first-time publish, the
+  delivery date is set, filename uses the dated convention
+- `shownotes-publisher-publish-no-date` — pre-talk publish where the
+  delivery date is absent, filename and Date field both adapt
+- `shownotes-publisher-update-add-video` — adds a video URL to an
+  existing file, exercises the read-then-edit preservation rule
+- `shownotes-publisher-omit-placeholder` — negative case; the user
+  asks for a "video coming soon" UX cue, the skill must omit the
+  `**Video:**` line entirely rather than emit a placeholder URL
 
 The skill is invocable directly (`Skill(skill: "shownotes-publisher")`)
 or after the presentation-creator skill finishes Phase 6 publishing

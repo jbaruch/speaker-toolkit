@@ -1,0 +1,51 @@
+{
+  "context": "Tests the update path of shownotes-publisher: reading the existing _talks/*.md, adding the new field-block line, and preserving every speaker hand-edit. A baseline agent commonly regenerates the file from outline.yaml + resources.json and silently wipes the speaker's later edits.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Video line added in markdown-link form",
+      "description": "The updated file contains a new line `**Video:** [View Video](https://youtu.be/Mlops26-VideoIdABC)` (the link text may read 'Watch Video' or similar, but the URL is wrapped in `[text](url)` markdown-link syntax — never a bare URL).",
+      "max_score": 15
+    },
+    {
+      "name": "Video line placed in the field block, not below the abstract",
+      "description": "The `**Video:**` line sits within the bold-label field block — adjacent to `**Conference:**`, `**Date:**`, `**Slides:**`, before the blank line that separates the field block from the `A presentation at` paragraph. Placing the line below the abstract, below resources, or in frontmatter fails.",
+      "max_score": 12
+    },
+    {
+      "name": "Filename is unchanged",
+      "description": "The output filename is exactly `2026-04-15-mlopscon-2026-decoding-ml-pipelines.md`. Renaming the file (even to a 'better' slug) breaks live URLs and any QR codes printed against the page.",
+      "max_score": 10
+    },
+    {
+      "name": "All five Resources entries preserved verbatim",
+      "description": "The `## Resources` section retains exactly the five bullets from the input file, in the same order. The two `Audience-suggested:` entries (the speaker's post-publish additions) MUST be present unchanged. The agent did not regenerate Resources from a resources.json or any other source.",
+      "max_score": 15
+    },
+    {
+      "name": "Abstract preserved verbatim, not regenerated",
+      "description": "The `## Abstract` paragraph is the EXACT text from the input file, not a regeneration from outline.yaml's talk.thesis (which has a shorter version). Regeneration would wipe any post-publish edits the speaker made — the file's text must come through unchanged.",
+      "max_score": 15
+    },
+    {
+      "name": "Presentation-context paragraph preserved",
+      "description": "The `A presentation at MLOpsCon 2026 in April 2026 in Berlin, Germany by {{ ... }}` paragraph is preserved as-is. The agent did not strip `in Berlin, Germany` (which is in the existing file but not in outline.yaml).",
+      "max_score": 10
+    },
+    {
+      "name": "Frontmatter is unchanged and stays minimal",
+      "description": "The frontmatter still contains only `layout: talk`. The agent did not add `video:`, `youtube:`, `title:`, `date:`, or any other key while adding the video URL.",
+      "max_score": 8
+    },
+    {
+      "name": "No TODO markers or `(#)` placeholder links anywhere",
+      "description": "The output has no `<!-- TODO -->` comments, no `[Watch Video](#)`, and no `[View Slides](#)`. All link URLs in field-block lines point to real values.",
+      "max_score": 8
+    },
+    {
+      "name": "No spurious deletions",
+      "description": "Field-block lines for Conference, Date, Slides, and the H1 title line are all present and unchanged. The agent did not remove anything from the existing file while adding the Video line.",
+      "max_score": 7
+    }
+  ]
+}

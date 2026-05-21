@@ -56,7 +56,7 @@ re-parse YAML by hand. Map fields directly:
 | Filename slug | `talk.slug` — the only source. Never invent, derive from venue, or rephrase |
 | Conference | `talk.venue` |
 | Date | `talk.delivery_date` (ISO `YYYY-MM-DD`) |
-| Speakers | `talk.speakers[]` — single → standard "by {{ site.speaker.name }}" phrasing; multi → append "and {co-speaker names}" |
+| Speakers | `talk.speakers[]` — single → `"by {{ site.speaker.display_name | default: site.speaker.name }}"`; multi → append `"and {co-speaker names}"` |
 | Abstract seed | `talk.thesis` |
 
 **From the talk directory:**
@@ -64,8 +64,9 @@ re-parse YAML by hand. Map fields directly:
 - `resources.json` (produced by `extract-resources.py` in Phase 6
   Step 6.0) — becomes the `## Resources` section. If the file is
   missing OR has no `approved: true` items, omit the section
-- Any existing `_talks/{filename}.md` — if this is an update (not a
-  first publish), read it first so Step 7 preserves hand-edits
+- Any existing `_talks/{filename_stem}.md` — if this is an update
+  (not a first publish), read it first so Step 7 preserves hand-edits.
+  `{filename_stem}` is defined in Step 2
 
 **Ask the user EXACTLY one question:**
 
@@ -92,7 +93,7 @@ video URL in the same turn, capture it; otherwise omit the
 - `talk.delivery_date` is missing → ask if the talk has been
   delivered yet; if not, the page can still publish (pre-talk
   announcement with slides only)
-- Existing `_talks/{filename}.md` exists AND the speaker didn't
+- Existing `_talks/{filename_stem}.md` exists AND the speaker didn't
   flag this as an update → ask before overwriting (Step 7)
 
 Read first. Only ask on ambiguity.
@@ -101,27 +102,37 @@ Proceed immediately to Step 2.
 
 ## Step 2 — Compose Filename
 
-The talk slug is `outline.yaml::talk.slug` — the spec is the only
-source. Already kebab-case validated by `outline_schema.py`. Never
-invent it, never derive it from the venue or title, never rephrase.
+The talk slug `{talk_slug}` is `outline.yaml::talk.slug` — the spec
+is the only source. Already kebab-case validated by `outline_schema.py`.
+Never invent it, never derive it from the venue or title, never
+rephrase.
 
 Filename convention in `_talks/`, picked by rule:
 
-- If `talk.delivery_date` is set → `{YYYY-MM-DD}-{slug}.md`
+- If `talk.delivery_date` is set → `{YYYY-MM-DD}-{talk_slug}.md`
   (e.g., `2026-05-07-devoxx-uk-2026-300-tokens.md`)
 - If `talk.delivery_date` is not set (pre-talk publish) →
-  `{slug}.md` (e.g., `geecon-2026-absolutely-right.md`)
+  `{talk_slug}.md` (e.g., `geecon-2026-absolutely-right.md`)
 
 Don't ask the user which convention to use. The presence of
 `delivery_date` is the signal.
 
+The chosen filename's stem (everything before `.md`) is the
+`{filename_stem}` used by Steps 6, 8, and 9 for the thumbnail path
+and the live URL. Examples:
+
+| `talk_slug` | `delivery_date` | filename | `filename_stem` |
+|---|---|---|---|
+| `devoxx-uk-2026-300-tokens` | `2026-05-07` | `2026-05-07-devoxx-uk-2026-300-tokens.md` | `2026-05-07-devoxx-uk-2026-300-tokens` |
+| `geecon-2026-absolutely-right` | (absent) | `geecon-2026-absolutely-right.md` | `geecon-2026-absolutely-right` |
+
 If an existing file at the conventional path was created in the
-OTHER convention (e.g., the file is `{slug}.md` but
+OTHER convention (e.g., the file is `{talk_slug}.md` but
 `talk.delivery_date` is now set), keep the existing filename
 unchanged. Renaming a published talk breaks the live URL and any
 QR codes printed against it.
 
-Full path: `~/Projects/shownotes/_talks/{filename}`.
+Full path: `~/Projects/shownotes/_talks/{filename_stem}.md`.
 
 Proceed immediately to Step 3.
 
@@ -184,10 +195,9 @@ A presentation at {talk.venue} in
 ## Abstract
 
 {talk.thesis, lightly adapted into one flowing paragraph. No
-sub-headings, no lists, no code blocks — the parser joins every
-line with a single space and collapses whitespace runs to one space
-before passing the result to markdownify. Sub-headings (`## `)
-terminate the abstract; lines between them are dropped.}
+sub-headings, no lists, no code blocks. See
+[references/parser-contract.md](references/parser-contract.md) for
+the exact capture-and-flatten mechanic.}
 
 ## Resources
 
@@ -205,12 +215,17 @@ captures everything after `## Resources` until end-of-file.
 - `{talk.title}` → first H1. Body content, not frontmatter
 - `{talk.venue}` → `**Conference:**` value AND first phrase of the
   "A presentation at" paragraph
-- `{talk.delivery_date}` → `**Date:**` value (ISO `YYYY-MM-DD`)
-- `{Month YYYY}` and `{City, Country}` → derived from
-  `talk.delivery_date` (month name + year) and `talk.venue`
-  (typically the venue string already includes the city); if the
-  venue is just `"Devoxx UK 2026"` ask the speaker for the city in
-  the same turn as a clarification rather than separate question
+- `{talk.delivery_date}` → `**Date:**` value (ISO `YYYY-MM-DD`).
+  Omit the `**Date:**` line entirely when `talk.delivery_date` is
+  not set (pre-talk publish) — an empty value won't match the
+  parser's `(.+)` capture and renders as stray body text
+- `{Month YYYY}` → derived from `talk.delivery_date` when set;
+  omit the date-related sub-phrase from the presentation context
+  paragraph when not set (`"A presentation at {talk.venue} by …"`)
+- `{City, Country}` → use `talk.venue` text as-is; do not ask a
+  second question for the city if the venue string doesn't carry
+  one. The presentation context paragraph reads fine with the
+  venue alone (`"A presentation at Devoxx UK 2026 by …"`)
 - `{slides_url_from_step_1}` → the answer to Step 1's single question
 - `{video_url}` → omit the line unless the user provided a real
   YouTube URL with the slides URL (see Step 5)
@@ -242,26 +257,21 @@ captures everything after `## Resources` until end-of-file.
 
 **Abstract section rules — the big gotcha:**
 
-- The parser captures lines under `## Abstract` until the next `## `
-  heading
-- All non-empty captured lines are joined with `' '` (single space)
-  then `gsub(/\s+/, ' ').strip` — whitespace including newlines is
-  flattened to one space
-- The result is passed through `markdownify` in the template — but at
-  that point it's already one long string with no line breaks, so:
-  - **Sub-headings** (`### Subhead`) inside the abstract are not
-    captured — they terminate collection at the next `## ` boundary
-    but lines BETWEEN abstract heading and sub-heading get folded in
-  - **Lists** (`- bullet`) render as `- bullet - bullet - bullet` —
-    one big sentence with literal hyphens, not a list
-  - **Code blocks** (fenced or indented) get folded into prose
-  - **Tables** get folded — pipes and dashes become text
-  - **Bold/italic inline marks** survive (markdownify still processes
-    them after the join)
-  - **Links** survive — `[text](url)` is still valid markdown after
-    joining
+The abstract is one paragraph of flowing prose. Full extraction
+mechanics (capture boundary, join + whitespace collapse, what
+survives markdownify, what doesn't) live in
+[references/parser-contract.md](references/parser-contract.md).
+The short-form authoring guidance:
 
-  TL;DR: abstract is ONE PARAGRAPH of flowing prose. Period.
+- One paragraph, no sub-headings, no lists, no code blocks, no
+  tables — these structures captured by the parser but flattened
+  to literal text in the joined output (e.g., `### Subhead`
+  becomes `### Subhead` text in the final paragraph; `- item`
+  becomes `- item - item` inline)
+- `## ` is the section boundary — anything after `## ` belongs to
+  the next section, never to the abstract
+- Inline marks survive: `**bold**`, `_italic_`, `[link](url)`,
+  `` `code` `` all render correctly after the join
 
 **Resources section rules — the contrast:**
 
@@ -322,7 +332,7 @@ the line is added.
 
 When the actual URL is ready:
 
-1. Open the existing `_talks/{filename}.md`
+1. Open the existing `_talks/{filename_stem}.md`
 2. Add (or update) the `**Slides:**` / `**Video:**` line with the
    real markdown-link form: `**Video:** [View Video]({youtube_url})`
 3. Place the line in the field block, between
@@ -345,16 +355,18 @@ Proceed immediately to Step 6.
 
 ## Step 6 — Thumbnail
 
-Thumbnails are resolved by **filename-slug naming convention**, NOT
-by frontmatter metadata. The site computes the expected path from
-the `.md` filename:
+Thumbnails are resolved by the **filename-stem naming convention**,
+NOT by frontmatter metadata. The site computes the expected path
+from the `.md` filename:
 
 ```
-/assets/images/thumbnails/{slug}-thumbnail.png
+/assets/images/thumbnails/{filename_stem}-thumbnail.png
 ```
 
-where `{slug}` is the talk's `.md` filename minus extension. Examples
-(matching the filenames from Step 2):
+where `{filename_stem}` is the talk's `.md` filename minus the
+extension — as defined in Step 2 (may include the date prefix
+when `talk.delivery_date` is set). Examples (matching the filenames
+from Step 2):
 
 | Talk file | Expected thumbnail file |
 |-----------|-------------------------|
@@ -391,7 +403,7 @@ Proceed immediately to Step 7.
 ## Step 7 — Write the File
 
 Compose the full file content per Steps 3 + 4 + 5 + 6 and write it
-to `~/Projects/shownotes/_talks/{filename}`.
+to `~/Projects/shownotes/_talks/{filename_stem}.md`.
 
 If a file at that path already exists, this is an UPDATE — typically
 the video-add case from Step 5, or a resource refresh. In the update
@@ -424,7 +436,7 @@ the parser didn't error. Open the built page locally to eyeball:
 
 ```bash
 bundle exec jekyll serve --port 4000 2>&1 &
-open "http://localhost:4000/talks/{slug}/"
+open "http://localhost:4000/talks/{filename_stem}/"
 ```
 
 Confirm visually:
@@ -446,7 +458,7 @@ Proceed immediately to Step 9.
 
 ```bash
 cd ~/Projects/shownotes
-git add _talks/{filename} [assets/images/thumbnails/{slug}-thumbnail.png]
+git add _talks/{filename_stem}.md [assets/images/thumbnails/{filename_stem}-thumbnail.png]
 git commit -m "Add shownotes: {Talk Title} at {Conference}"
 git push
 ```
@@ -455,7 +467,7 @@ After the push, GitHub Pages builds and deploys (~1-2 min). The talk
 goes live at:
 
 ```
-{site.url}/talks/{slug}/
+{site.url}/talks/{filename_stem}/
 ```
 
 where `site.url` is `https://speaking.jbaru.ch` per `_config.yml`,
