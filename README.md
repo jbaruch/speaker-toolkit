@@ -2,7 +2,7 @@
 
 [![tessl](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.tessl.io%2Fv1%2Fbadges%2Fjbaruch%2Fspeaker-toolkit)](https://tessl.io/registry/jbaruch/speaker-toolkit)
 
-A five-skill presentation system for conference speakers: analyze your existing talks to extract your rhetoric patterns, create new presentations that match your documented style, and produce the deck illustrations + thumbnail visual layer.
+A six-skill presentation system for conference speakers: analyze your existing talks to extract your rhetoric patterns, create new presentations that match your documented style, produce the deck illustrations + thumbnail visual layer, and publish talk pages to a Jekyll shownotes site.
 
 ## What's New (0.18.0)
 
@@ -40,7 +40,7 @@ See [CHANGELOG.md](CHANGELOG.md) for full history.
 
 ## How It Works
 
-The toolkit is built on five skills connected by a shared **rhetoric vault** — a directory of structured knowledge about how you present.
+The toolkit is built on six skills connected by a shared **rhetoric vault** — a directory of structured knowledge about how you present.
 
 ```
                    VAULT
@@ -61,6 +61,7 @@ The toolkit is built on five skills connected by a shared **rhetoric vault** —
 **Creator skills (generation):**
 - **presentation-creator** reads the vault at runtime and uses your documented patterns as a constitutional style guide to build new presentations. It follows a 7-phase process from intent distillation through slide generation, with a 4-tier Pattern Strategy for selecting presentation techniques, and a go-live checklist before delivery. Delegates the visual layer to the illustrations skill.
 - **illustrations** owns the deck illustration strategy, generation, build chains, and YouTube thumbnails. Invoked by presentation-creator at the relevant phases (Phase 2 strategy, Phase 5 application, Phase 7 thumbnail).
+- **shownotes-publisher** writes talk pages into a Jekyll-based shownotes site (e.g., `speaking.jbaru.ch`). Encodes the custom parser's format contract so authored content actually renders: abstract is one paragraph, video field absent = "coming soon" badge, slides/video URLs must be markdown links, no frontmatter title, etc. Invoked after the talk is delivered (or pre-talk for slides-only publish).
 
 The vault skills never run simultaneously with the creator skills. You build the vault first (once, then incrementally), then use the creator whenever you need a new talk. The vault grows over time as you parse more talks, and the creator automatically picks up new patterns.
 
