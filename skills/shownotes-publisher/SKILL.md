@@ -29,11 +29,11 @@ body. The format is strict — small mistakes silently flatten
 content or break conditional rendering.
 
 Reference files in this skill:
-[references/parser-contract.md](skills/shownotes-publisher/references/parser-contract.md) —
+[references/parser-contract.md](references/parser-contract.md) —
 extraction grammar per `extracted_*` field;
-[references/template-conditionals.md](skills/shownotes-publisher/references/template-conditionals.md) —
+[references/template-conditionals.md](references/template-conditionals.md) —
 how `talk.html` renders each field;
-[references/common-mistakes.md](skills/shownotes-publisher/references/common-mistakes.md) —
+[references/common-mistakes.md](references/common-mistakes.md) —
 13 failure modes with the right way.
 
 Default target: `~/Projects/shownotes` (deployed at
@@ -152,7 +152,7 @@ for portability. Do NOT add `title:`, `video:`, `slides:`,
 `conference:`, `date:`, `description:`, `abstract:`, or
 `thumbnail_url:` — every one of these is either extracted from the
 body, ignored by the templates, or duplicates content (see
-[references/common-mistakes.md](skills/shownotes-publisher/references/common-mistakes.md)
+[references/common-mistakes.md](references/common-mistakes.md)
 entries 1c and 5 for the failure modes).
 
 Proceed immediately to Step 4.
@@ -181,7 +181,7 @@ A presentation at {talk.venue} in
 
 {talk.thesis, lightly adapted into one flowing paragraph. No
 sub-headings, no lists, no code blocks. See
-[references/parser-contract.md](skills/shownotes-publisher/references/parser-contract.md) for
+[references/parser-contract.md](references/parser-contract.md) for
 the exact capture-and-flatten mechanic.}
 
 ## Resources
@@ -196,7 +196,7 @@ captures everything after `## Resources` until end-of-file.
 ```
 
 **Authoring rules (full grammar in
-[references/parser-contract.md](skills/shownotes-publisher/references/parser-contract.md)):**
+[references/parser-contract.md](references/parser-contract.md)):**
 
 - Field-block lines: `**FieldName:** value`, one per line. URLs
   wrapped as `[text](url)` — bare URLs don't populate the
@@ -225,7 +225,7 @@ badge plus a broken iframe. The only correct way to express "not
 yet available" is to **omit the field line entirely**.
 
 Common placeholder shapes and what they break are enumerated in
-[references/common-mistakes.md](skills/shownotes-publisher/references/common-mistakes.md)
+[references/common-mistakes.md](references/common-mistakes.md)
 entries 1 (Video) and 1b (Slides). The fix in every case: omit the
 line; add it when the real URL lands.
 
@@ -267,9 +267,9 @@ Drop the thumbnail file (4:3 PNG; the site resizes to 400×300) at
 that path. Do NOT set `thumbnail_url:` in frontmatter — it's
 checked only for truthiness as a featured-talks signal and never
 read as a URL; see
-[references/common-mistakes.md](skills/shownotes-publisher/references/common-mistakes.md)
+[references/common-mistakes.md](references/common-mistakes.md)
 entry 1c and
-[references/template-conditionals.md](skills/shownotes-publisher/references/template-conditionals.md)
+[references/template-conditionals.md](references/template-conditionals.md)
 for the three template locations that hard-code the slug-derived
 path. Missing thumbnails fall back via `onerror` to the placeholder
 SVG — page renders fine without one.
