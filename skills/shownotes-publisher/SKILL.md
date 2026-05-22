@@ -2,17 +2,18 @@
 name: shownotes-publisher
 description: >
   Publish a talk page to the Jekyll-based shownotes site (e.g.,
-  speaking.jbaru.ch). Composes the `_talks/<file>.md` markdown so the
-  custom Jekyll parser plugin extracts the right fields, the talk.html
-  layout renders correctly, and the "Video Coming Soon" badge fires
-  when the recording isn't ready yet. Use when the user says "publish
-  shownotes", "create shownotes page", "add talk to shownotes",
-  "shownotes for <talk>", "shownotes site", "speaking.jbaru.ch", or
-  asks to update a talk page (e.g., "add the video to the shownotes",
-  "the video is out", "update shownotes with the recording"). Also
-  trigger for first-time publishing before a talk is delivered, when
-  only the slides URL exists. The Jekyll site at `~/Projects/shownotes`
-  uses a custom markdown parser (`_plugins/markdown_parser.rb`) that
+  speaking.jbaru.ch). Composes a markdown file in the site's
+  `_talks/` collection so the custom Jekyll parser plugin extracts
+  the right fields, the talk.html layout renders correctly, and the
+  "Video Coming Soon" badge fires when the recording isn't ready
+  yet. Use when the user says "publish shownotes", "create shownotes
+  page", "add talk to shownotes", "shownotes for [some talk]",
+  "shownotes site", "speaking.jbaru.ch", or asks to update a talk
+  page (e.g., "add the video to the shownotes", "the video is out",
+  "update shownotes with the recording"). Also trigger for
+  first-time publishing before a talk is delivered, when only the
+  slides URL exists. The Jekyll site at `~/Projects/shownotes` uses
+  a custom markdown parser (`_plugins/markdown_parser.rb`) that
   imposes specific format rules — this skill encodes those rules so
   the agent doesn't author content that silently fails to render.
 user-invocable: true
