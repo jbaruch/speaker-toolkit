@@ -338,7 +338,9 @@ When the actual URL is ready:
 3. Place the line in the field block, between
    `**Date:**` and the blank line that separates the field block from
    the "A presentation at..." paragraph
-4. Commit + push
+4. Commit + publish via Step 9's flow (branch + PR by default;
+   direct push only when the target repo's `ci-safety` carve-out is
+   wired)
 
 The badge and embed section automatically fill in on the next build.
 
@@ -424,15 +426,20 @@ Proceed immediately to Step 8.
 
 ## Step 8 — Validate Locally
 
-Before pushing, validate that the file parses correctly:
+Before pushing, validate that the file parses correctly. The
+subshell + `pipefail` is required — without it, a failing
+`jekyll build` is masked by `tail`'s successful exit, the pipeline
+returns 0, and the agent can't tell whether the build broke:
 
 ```bash
 cd ~/Projects/shownotes
-bundle exec jekyll build 2>&1 | tail -20
+( set -o pipefail && bundle exec jekyll build 2>&1 | tail -20 )
 ```
 
-A successful build means the file is at least syntactically valid and
-the parser didn't error. Open the built page locally to eyeball:
+A successful build (exit 0) means the file is at least syntactically
+valid and the parser didn't error. A non-zero exit means the build
+failed — read the tailed output, fix the source per Step 4 field-block
+rules, and re-run. Open the built page locally to eyeball:
 
 ```bash
 bundle exec jekyll serve --port 4000 2>&1 &
@@ -456,6 +463,38 @@ Proceed immediately to Step 9.
 
 ## Step 9 — Publish
 
+**Default flow — branch + PR.** This is the safe path under
+`jbaruch/coding-policy: ci-safety`. The carve-out below permits
+direct push only when the target repo has it documented and
+server-side enforced; if you can't verify those preconditions, use
+this flow:
+
+```bash
+cd ~/Projects/shownotes
+git checkout -b shownotes/{filename_stem}
+git add _talks/{filename_stem}.md [assets/images/thumbnails/{filename_stem}-thumbnail.png]
+git commit -m "Add shownotes: {Talk Title} at {Conference}"
+git push -u origin shownotes/{filename_stem}
+gh pr create --fill
+```
+
+After the PR merges, GitHub Pages builds and deploys (~1–2 min).
+
+**Direct-push carve-out.** Many shownotes repos use the
+Content-Only Direct-Push Carve-Out from `ci-safety` so each talk
+page doesn't need a PR cycle. The carve-out fires ONLY when the
+target shownotes repo:
+
+- Documents an authority-of-record rule naming the carve-out and
+  the path globs (e.g., `_talks/**`, `assets/images/thumbnails/**`)
+- Enforces the allowed paths server-side — GitHub push ruleset,
+  pre-receive hook, or equivalent. Post-push CI checks do NOT
+  qualify per the carve-out preconditions
+
+If the target repo has the carve-out wired AND the changes touch
+only the carve-out paths (no `_layouts/`, `_plugins/`,
+`_config.yml`, workflow files, etc.), direct push is acceptable:
+
 ```bash
 cd ~/Projects/shownotes
 git add _talks/{filename_stem}.md [assets/images/thumbnails/{filename_stem}-thumbnail.png]
@@ -463,15 +502,19 @@ git commit -m "Add shownotes: {Talk Title} at {Conference}"
 git push
 ```
 
-After the push, GitHub Pages builds and deploys (~1-2 min). The talk
-goes live at:
+If the carve-out status is unknown, default to the branch + PR flow
+above. The cost of a one-PR cycle for an edit is small; the cost of
+an unannounced `main` push to a repo without the carve-out is a
+ruleset rejection at best, a policy violation at worst.
+
+The talk goes live at:
 
 ```
 {site.url}/talks/{filename_stem}/
 ```
 
-where `site.url` is `https://speaking.jbaru.ch` per `_config.yml`,
-unless overridden by the speaker's profile.
+where `site.url` is the speaker's shownotes site URL per the target
+repo's `_config.yml` (e.g., `https://speaking.jbaru.ch`).
 
 If a QR code is needed for the live URL, hand off to the
 presentation-creator skill's Phase 6 Step 6.2 — that's where the QR
