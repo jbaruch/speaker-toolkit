@@ -292,9 +292,8 @@ The layout's conditional rendering for both Slides and Video sections
 is driven by truthiness of the extracted field. The ONLY correct way
 to express "not yet available" is to **omit the field line entirely**.
 
-### Video — "Video Coming Soon" badge
-
-The template (`talk.html` lines 55-63) checks `page.extracted_video`:
+**Video — "Video Coming Soon" badge.** The template
+(`talk.html` lines 55-63) checks `page.extracted_video`:
 
 - non-empty → renders the "Video Available" badge + the side-by-side
   `<video-embed>` section
@@ -311,12 +310,11 @@ placeholder string as a URL):
 - `**Video:** [TODO]`
 - `**Video:** Coming soon`
 
-### Slides — same pattern, same trap
-
-The slides embed conditional (`talk.html` lines 70-90) renders the
-slides section whenever `extracted_slides` is truthy. A placeholder
-URL like `[View Slides](#)` makes `extracted_slides` = `#` (truthy)
-→ the slides embed section renders, with a broken `#` iframe.
+**Slides — same pattern, same trap.** The slides embed conditional
+(`talk.html` lines 70-90) renders the slides section whenever
+`extracted_slides` is truthy. A placeholder URL like
+`[View Slides](#)` makes `extracted_slides` = `#` (truthy) → the
+slides embed section renders, with a broken `#` iframe.
 
 Wrong (commonly attempted, always broken):
 
@@ -329,9 +327,8 @@ Right when slides aren't ready: **omit the `**Slides:**` line
 entirely**. The talk page renders without a slides section until
 the line is added.
 
-### Updating a published file when the URL lands
-
-When the actual URL is ready:
+**Updating a published file when the URL lands.** When the actual
+URL is ready:
 
 1. Open the existing `_talks/{filename_stem}.md`
 2. Add (or update) the `**Slides:**` / `**Video:**` line with the
@@ -345,9 +342,8 @@ When the actual URL is ready:
 
 The badge and embed section automatically fill in on the next build.
 
-### Don't leave TODO markers in committed files
-
-Inline HTML comments like `<!-- TODO: confirm URL -->` survive in the
+**Don't leave TODO markers in committed files.** Inline HTML comments
+like `<!-- TODO: confirm URL -->` survive in the
 file but don't render visibly in the page. They DO pollute the
 source, get picked up by greps, and on inline-after-link forms
 (`[text](url) <!-- TODO -->`) the parser's value-capture pulls the
