@@ -622,3 +622,54 @@ def test_rejects_argument_beat_slide_ref_to_missing_slide(outline_schema, base_d
     data["chapters"][0]["argument_beats"][0]["slide_refs"] = [999]
     with pytest.raises(ValidationError, match="slide_ref 999"):
         outline_schema.Outline.model_validate(data)
+
+
+# ── CLI: --emit-json contract ─────────────────────────────────────────
+
+
+def test_cli_emit_json_dumps_validated_outline(outline_schema, capsys):
+    """`--emit-json <path>` writes the validated outline to stdout as JSON.
+
+    Shownotes-publisher and other downstream skills rely on this contract
+    to pull structured fields (talk.title, talk.slug, etc.) without
+    re-parsing YAML by hand."""
+    import json as _json
+
+    rc = outline_schema.main([
+        "outline_schema.py",
+        "--emit-json",
+        str(FIXTURE),
+    ])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    payload = _json.loads(captured.out)
+    assert payload["talk"]["title"] == "Demo Talk"
+    assert payload["talk"]["slug"] == "demo-conf-2026-demo-talk"
+    assert isinstance(payload["chapters"], list)
+    assert isinstance(payload["slides"], list)
+
+
+def test_cli_default_mode_prints_ok_summary(outline_schema, capsys):
+    """Default mode (no flag) still prints the human-readable OK line."""
+    rc = outline_schema.main(["outline_schema.py", str(FIXTURE)])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert captured.out.startswith("OK: ")
+    assert "slides across" in captured.out
+
+
+def test_cli_emit_json_validation_failure_to_stderr(outline_schema, capsys, tmp_path):
+    """Validation failures still go to stderr with exit 1 — JSON mode does
+    not silently emit a partial payload on failure."""
+    bad = tmp_path / "bad-outline.yaml"
+    bad.write_text("talk: {}\n", encoding="utf-8")
+    rc = outline_schema.main([
+        "outline_schema.py",
+        "--emit-json",
+        str(bad),
+    ])
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "FAIL:" in captured.err

@@ -47,8 +47,26 @@ artifacts by the time this skill runs. Do not ask the user to
 re-supply anything that is derivable. Read automatically:
 
 **From `outline.yaml` — the talk's presentation spec.** Load via
-`skills/presentation-creator/scripts/outline_schema.py`. Never
-re-parse YAML by hand. Map fields directly:
+the schema script's JSON emit mode:
+
+```bash
+python3 skills/presentation-creator/scripts/outline_schema.py \
+    --emit-json <path-to-outline.yaml>
+```
+
+Contract (see
+`skills/presentation-creator/scripts/outline_schema.py` —
+`main()` and the `Outline` pydantic model at the top of the file):
+
+- Input: a single positional argument, the path to `outline.yaml`
+- Stdout: pretty-printed JSON of the validated `Outline` model
+  (every field in `talk.*`, `chapters[]`, `slides[]`, etc., in the
+  exact shape the pydantic model defines)
+- Stderr / exit 1: pydantic / YAML validation failure — abort and
+  surface the failure to the speaker
+- Exit 0 on success
+
+Parse the JSON, never re-parse YAML by hand. Map fields directly:
 
 | Shownotes field | Source in outline.yaml |
 |---|---|
@@ -475,7 +493,22 @@ git push -u origin shownotes/{filename_stem}
 gh pr create --fill
 ```
 
-After the PR merges, GitHub Pages builds and deploys (~1–2 min).
+Watch PR checks to green before declaring done — `ci-safety` makes
+this mandatory (`"A task is not done until CI is green"`):
+
+```bash
+gh pr checks --watch --fail-fast
+```
+
+After the PR merges, watch the GitHub Pages deployment resolve to a
+successful run on `main`:
+
+```bash
+gh run watch --exit-status $(gh run list --workflow=pages-build-deployment --branch=main --limit=1 --json databaseId --jq '.[0].databaseId')
+curl -fsI "{site.url}/talks/{filename_stem}/" | head -1   # expect: HTTP/2 200
+```
+
+Only after the 200 confirms the page is live is the publish complete.
 
 **Direct-push carve-out.** Many shownotes repos use the
 Content-Only Direct-Push Carve-Out from `ci-safety` so each talk
@@ -498,6 +531,17 @@ git add _talks/{filename_stem}.md [assets/images/thumbnails/{filename_stem}-thum
 git commit -m "Add shownotes: {Talk Title} at {Conference}"
 git push
 ```
+
+The carve-out bypasses the PR cycle but NOT the CI/deploy
+watch — `ci-safety` requires watching the resulting GitHub Pages
+build to terminal-success AND verifying the page is reachable:
+
+```bash
+gh run watch --exit-status $(gh run list --workflow=pages-build-deployment --branch=main --limit=1 --json databaseId --jq '.[0].databaseId')
+curl -fsI "{site.url}/talks/{filename_stem}/" | head -1   # expect: HTTP/2 200
+```
+
+Only after the 200 confirms the page is live is the publish complete.
 
 If the carve-out status is unknown, default to the branch + PR flow
 above. The cost of a one-PR cycle for an edit is small; the cost of
