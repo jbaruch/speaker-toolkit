@@ -304,15 +304,21 @@ a failing `jekyll build`:
 ```bash
 cd ~/Projects/shownotes
 ( set -o pipefail && bundle exec jekyll build 2>&1 | tail -20 )
+```
+
+A non-zero exit means the source needs fixing per Step 4 — do NOT
+proceed to the visual check or to Step 9 until the build is green.
+Once the build passes, open the rendered page locally:
+
+```bash
 bundle exec jekyll serve --port 4000 2>&1 &
 open "http://localhost:4000/talks/{filename_stem}/"
 ```
 
-A non-zero exit on the build means the source needs fixing per
-Step 4. Visually confirm the rendered page: title, conference +
-date + correct video badge (Available vs Coming Soon), slides
-embed, single-paragraph abstract, resources list. If a field
-doesn't render, the parser didn't match — re-check Step 4 rules.
+Visually confirm: title, conference + date + correct video badge
+(Available vs Coming Soon), slides embed, single-paragraph
+abstract, resources list. If a field doesn't render, the parser
+didn't match — re-check Step 4 rules.
 
 Proceed immediately to Step 9.
 
