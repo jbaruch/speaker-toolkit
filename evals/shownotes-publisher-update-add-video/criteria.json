@@ -14,7 +14,7 @@
     },
     {
       "name": "Filename is unchanged",
-      "description": "The output filename is exactly `2026-04-15-mlopscon-2026-decoding-ml-pipelines.md`. Renaming the file (even to a 'better' slug) breaks live URLs and any QR codes printed against the page.",
+      "description": "The output filename matches the input file's basename exactly — the agent did not rename the file (even to a 'better' slug, even to drop the date prefix, even to match the outline.yaml's talk.slug exactly). Renaming a published talk breaks live URLs and any QR codes printed against the page.",
       "max_score": 10
     },
     {

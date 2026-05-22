@@ -12,19 +12,17 @@ The speaker says: "Talk got accepted, here's the deck and the spec.
 Get the page up before the conference — I want the QR code to point
 somewhere real on the printed badge."
 
-The slides PDF is at
-`https://drive.google.com/file/d/9XyZ-mlops-pretalk-aBcDeF/preview`.
+The slides PDF URL is in `inputs/talk/slides-url-2026-05-22.txt`
+(one line).
 
-Compose the talk-page file for the `_talks/` collection. Save it at
-the path the site's conventions require, relative to the working
-directory. Do not run a Jekyll build.
+Compose the talk-page file at the path the site's conventions
+require, relative to the working directory. Do not run a Jekyll
+build.
 
 ## Output Specification
 
-Produce the file:
-
-1. **`_talks/<filename>.md`** — the talk page. Pick the filename per
-   the site's rules.
+Produce the talk page. Pick the filename and directory per the
+site's rules.
 
 ## Input Files
 
@@ -33,9 +31,10 @@ Download the synthetic fixtures from the project repository:
 ```bash
 BASE="https://github.com/jbaruch/speaker-toolkit/raw/main/eval-resources/shownotes-publisher-publish-no-date"
 mkdir -p inputs/talk inputs/vault
-curl -sL -o inputs/talk/outline.yaml          "$BASE/outline.yaml"
-curl -sL -o inputs/talk/resources.json        "$BASE/resources.json"
-curl -sL -o inputs/vault/speaker-profile.json "$BASE/speaker-profile.json"
+curl -sL -o inputs/talk/outline.yaml              "$BASE/outline-2026-05-22.yaml"
+curl -sL -o inputs/talk/resources.json            "$BASE/resources-2026-05-22.json"
+curl -sL -o inputs/talk/slides-url-2026-05-22.txt "$BASE/slides-url-2026-05-22.txt"
+curl -sL -o inputs/vault/speaker-profile.json     "$BASE/speaker-profile-2026-05-22.json"
 ```
 
 The outline.yaml deliberately omits `talk.delivery_date` (the talk
