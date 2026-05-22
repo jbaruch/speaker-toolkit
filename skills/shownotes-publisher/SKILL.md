@@ -23,23 +23,21 @@ user-invocable: true
 
 Process steps in order. Do not skip ahead. This skill writes a
 markdown file into the Jekyll shownotes site's `_talks/` collection
-where a custom parser plugin extracts structured fields by pattern
-matching on the body. The format is strict — small mistakes silently
-flatten content or break conditional rendering.
+where a custom parser plugin (`_plugins/markdown_parser.rb` in the
+target site) extracts structured fields by pattern matching on the
+body. The format is strict — small mistakes silently flatten
+content or break conditional rendering.
 
-The shownotes site lives at `~/Projects/shownotes` and is published to
-`https://speaking.jbaru.ch` via GitHub Pages. Authoritative references:
+Reference files in this skill:
+[references/parser-contract.md](skills/shownotes-publisher/references/parser-contract.md) —
+extraction grammar per `extracted_*` field;
+[references/template-conditionals.md](skills/shownotes-publisher/references/template-conditionals.md) —
+how `talk.html` renders each field;
+[references/common-mistakes.md](skills/shownotes-publisher/references/common-mistakes.md) —
+13 failure modes with the right way.
 
-- Parser: `~/Projects/shownotes/_plugins/markdown_parser.rb`
-- Layout: `~/Projects/shownotes/_layouts/talk.html`
-- Config: `~/Projects/shownotes/_config.yml`
-- Examples: `~/Projects/shownotes/_talks/*.md`
-
-Deeper reference material (parser contract, template conditionals,
-common mistakes) lives at
-[references/parser-contract.md](references/parser-contract.md),
-[references/template-conditionals.md](references/template-conditionals.md),
-and [references/common-mistakes.md](references/common-mistakes.md).
+Default target: `~/Projects/shownotes` (deployed at
+`https://speaking.jbaru.ch`).
 
 ## Step 1 — Gather Context Automatically; Ask Only for the Slides URL
 
@@ -55,17 +53,11 @@ python3 skills/presentation-creator/scripts/outline_schema.py \
     --emit-json <path-to-outline.yaml>
 ```
 
-Contract (see
-`skills/presentation-creator/scripts/outline_schema.py` —
-`main()` and the `Outline` pydantic model at the top of the file):
+Script contract:
 
-- Input: a single positional argument, the path to `outline.yaml`
-- Stdout: pretty-printed JSON of the validated `Outline` model
-  (every field in `talk.*`, `chapters[]`, `slides[]`, etc., in the
-  exact shape the pydantic model defines)
-- Stderr / exit 1: pydantic / YAML validation failure — abort and
-  surface the failure to the speaker
-- Exit 0 on success
+- Input: path to `outline.yaml` as a single positional argument
+- Stdout (exit 0): JSON of the validated `Outline` model
+- Stderr (exit 1): `FAIL: ...` — abort and surface the failure
 
 Parse the JSON, never re-parse YAML by hand. Map fields directly:
 
@@ -87,36 +79,25 @@ Parse the JSON, never re-parse YAML by hand. Map fields directly:
   (not a first publish), read it first so Step 7 preserves hand-edits.
   `{filename_stem}` is defined in Step 2
 
-**Ask the user EXACTLY one question:**
+**Ask the user EXACTLY one question — the slides PDF embed URL**
+(Google Drive `https://drive.google.com/file/d/.../preview` form).
+That's the only value not in any file — the speaker just uploaded
+the deck. Don't ask about Video; URLs arrive post-recording, and
+omitting the line is what fires the "Video Coming Soon" badge
+(Step 5). If the user volunteers a video URL in the same turn,
+capture it.
 
-> "What's the slides PDF embed URL? (Google Drive
-> `https://drive.google.com/file/d/.../preview` form)"
+Ask follow-ups ONLY on ambiguity:
 
-That is the only input that's external to the talk's existing
-artifacts. The speaker just uploaded the deck PDF to Drive
-post-rehearsal; the URL is in their clipboard, not in any file.
-
-**Don't ask about Video at this step.** Video URLs almost always
-arrive later (post-recording publish). If the user volunteers a
-video URL in the same turn, capture it; otherwise omit the
-`**Video:**` line per Step 5 to fire the "Video Coming Soon" badge.
-
-**Ask later only if a needed value is missing or ambiguous:**
-
-- `outline.yaml` doesn't exist or doesn't validate → STOP, invoke
-  `Skill(skill: "presentation-creator")` to author/repair the spec,
-  then resume this skill
-- `talk.slug` is missing → STOP and ask (this should never happen —
-  slug is schema-required)
-- `talk.thesis` is empty → ask the speaker for a one-paragraph
+- outline.yaml absent or invalid → STOP, invoke
+  `Skill(skill: "presentation-creator")` to repair, then resume
+- `talk.thesis` empty → ask the speaker for a one-paragraph
   abstract (Step 4 rules apply)
-- `talk.delivery_date` is missing → ask if the talk has been
-  delivered yet; if not, the page can still publish (pre-talk
-  announcement with slides only)
-- Existing `_talks/{filename_stem}.md` exists AND the speaker didn't
+- `talk.delivery_date` missing → confirm whether the talk has
+  happened (pre-talk publish is fine; Step 2 picks the filename
+  convention by the field's presence)
+- Existing `_talks/{filename_stem}.md` exists AND speaker didn't
   flag this as an update → ask before overwriting (Step 7)
-
-Read first. Only ask on ambiguity.
 
 Proceed immediately to Step 2.
 
@@ -158,7 +139,7 @@ Proceed immediately to Step 3.
 
 ## Step 3 — Compose Frontmatter
 
-Minimum frontmatter:
+Minimum (and maximum) frontmatter:
 
 ```yaml
 ---
@@ -166,29 +147,13 @@ layout: talk
 ---
 ```
 
-The Jekyll plugin auto-inserts this if absent, but write it explicitly
-to make the file portable across plugin versions.
-
-**Do NOT put in frontmatter:**
-
-- `title:` — the title comes from the H1 in the body
-  (`extract_title_from_content`). A frontmatter title overrides the H1
-  for the page title but the H1 still renders as the visible title,
-  causing duplication
-- `video:`, `slides:`, `conference:`, `date:` — these are extracted
-  from the body via the `**Field:** value` pattern. Putting them in
-  frontmatter doesn't help and may confuse a future reader
-- `description:`, `abstract:` — extracted from body sections; same
-  reasoning
-- `thumbnail_url:` — does nothing useful. The thumbnail path is
-  resolved entirely by the **filename slug naming convention** (see
-  Step 6 and references/template-conditionals.md). The frontmatter
-  field is checked only as a truthiness signal for whether to
-  include the talk in the homepage "Highlighted Presentations" set,
-  and even that's redundant with `extracted_slides`/`extracted_video`.
-  Setting the field misleads a reader into thinking it overrides the
-  thumbnail path — it doesn't. Drop the file at the conventional
-  location instead
+The Jekyll plugin auto-inserts this if absent; write it explicitly
+for portability. Do NOT add `title:`, `video:`, `slides:`,
+`conference:`, `date:`, `description:`, `abstract:`, or
+`thumbnail_url:` — every one of these is either extracted from the
+body, ignored by the templates, or duplicates content (see
+[references/common-mistakes.md](skills/shownotes-publisher/references/common-mistakes.md)
+entries 1c and 5 for the failure modes).
 
 Proceed immediately to Step 4.
 
@@ -216,7 +181,7 @@ A presentation at {talk.venue} in
 
 {talk.thesis, lightly adapted into one flowing paragraph. No
 sub-headings, no lists, no code blocks. See
-[references/parser-contract.md](references/parser-contract.md) for
+[references/parser-contract.md](skills/shownotes-publisher/references/parser-contract.md) for
 the exact capture-and-flatten mechanic.}
 
 ## Resources
@@ -230,191 +195,88 @@ Sub-sections under Resources DO render correctly — Resources
 captures everything after `## Resources` until end-of-file.
 ```
 
-**Where each value comes from:**
+**Authoring rules (full grammar in
+[references/parser-contract.md](skills/shownotes-publisher/references/parser-contract.md)):**
 
-- `{talk.title}` → first H1. Body content, not frontmatter
-- `{talk.venue}` → `**Conference:**` value AND first phrase of the
-  "A presentation at" paragraph
-- `{talk.delivery_date}` → `**Date:**` value (ISO `YYYY-MM-DD`).
-  Omit the `**Date:**` line entirely when `talk.delivery_date` is
-  not set (pre-talk publish) — an empty value won't match the
-  parser's `(.+)` capture and renders as stray body text
-- `{Month YYYY}` → derived from `talk.delivery_date` when set;
-  omit the date-related sub-phrase from the presentation context
-  paragraph when not set (`"A presentation at {talk.venue} by …"`)
-- `{City, Country}` → use `talk.venue` text as-is; do not ask a
-  second question for the city if the venue string doesn't carry
-  one. The presentation context paragraph reads fine with the
-  venue alone (`"A presentation at Devoxx UK 2026 by …"`)
-- `{slides_url_from_step_1}` → the answer to Step 1's single question
-- `{video_url}` → omit the line unless the user provided a real
-  YouTube URL with the slides URL (see Step 5)
-- Co-speaker case (`len(talk.speakers) > 1`): append `and {name}`
-  for each additional speaker after the liquid template variable
-
-**Field block rules (lines 2–5 of the example):**
-
-- Each field is `**FieldName:** value` on its own line
-- Field names: `Conference`, `Date`, `Slides`, `Video` — case-insensitive
-  match in the parser, but write them in title case for readability
-- Slides and Video URLs MUST be wrapped in markdown link syntax
-  `[Link Text](url)` — the parser extracts the URL from `$2` of
-  `\[([^\]]+)\]\(([^)]+)\)`. A bare URL or plain text won't populate
-  `extracted_slides`/`extracted_video` and the media embed section
-  won't render
-- Date format: `YYYY-MM-DD` (ISO 8601) so `date_to_xmlschema` and
-  `date: "%B %d, %Y"` filters in the layout produce the right output
-
-**Presentation context paragraph rules:**
-
-- Must start with `A presentation at` — the parser uses this as the
-  anchor to start collecting
-- Runs until the next `##` or `#` heading
-- Multi-line is fine; lines join with spaces
-- Liquid template variables are processed:
-  `{{ site.speaker.display_name | default: site.speaker.name }}` is
-  the speaker-name pattern used across existing entries
-
-**Abstract section rules — the big gotcha:**
-
-The abstract is one paragraph of flowing prose. Full extraction
-mechanics (capture boundary, join + whitespace collapse, what
-survives markdownify, what doesn't) live in
-[references/parser-contract.md](references/parser-contract.md).
-The short-form authoring guidance:
-
-- One paragraph, no sub-headings, no lists, no code blocks, no
-  tables — these structures captured by the parser but flattened
-  to literal text in the joined output (e.g., `### Subhead`
-  becomes `### Subhead` text in the final paragraph; `- item`
-  becomes `- item - item` inline)
-- `## ` is the section boundary — anything after `## ` belongs to
-  the next section, never to the abstract
-- Inline marks survive: `**bold**`, `_italic_`, `[link](url)`,
-  `` `code` `` all render correctly after the join
-
-**Resources section rules — the contrast:**
-
-- Everything after `## Resources` is passed verbatim to `markdownify`
-- Sub-headings (`### Section`) render as sub-headings
-- Lists render as lists
-- Markdown link formatting renders normally
-- Bold/italic in list items renders
-
-Use Resources for structured content; Abstract for the narrative.
+- Field-block lines: `**FieldName:** value`, one per line. URLs
+  wrapped as `[text](url)` — bare URLs don't populate the
+  `extracted_*` fields. Date in ISO `YYYY-MM-DD`
+- Omit a field line entirely when its value is missing — empty
+  values fail to parse and `**Field:** TBD` fires the wrong state
+  (covered in Step 5)
+- Presentation-context paragraph starts with `A presentation at`
+  (the parser anchor) and runs to the next `##` heading
+- Abstract is exactly one paragraph — the parser joins all lines
+  with spaces and collapses whitespace before `markdownify`, so
+  any sub-headings / lists / code blocks inside flatten to literal
+  text
+- Resources is passed verbatim to `markdownify` — sub-headings,
+  lists, and formatting all render
 
 Proceed immediately to Step 5.
 
 ## Step 5 — "Coming Soon" Patterns: Omit, Don't Placeholder
 
-The layout's conditional rendering for both Slides and Video sections
-is driven by truthiness of the extracted field. The ONLY correct way
-to express "not yet available" is to **omit the field line entirely**.
+`talk.html`'s conditional rendering keys off truthiness of
+`extracted_slides` and `extracted_video`. Any non-empty value flips
+the badge to "Available" and the embed include tries to load the
+value as a URL — so placeholder strings always produce the wrong
+badge plus a broken iframe. The only correct way to express "not
+yet available" is to **omit the field line entirely**.
 
-**Video — "Video Coming Soon" badge.** The template
-(`talk.html` lines 55-63) checks `page.extracted_video`:
+Common placeholder shapes and what they break are enumerated in
+[references/common-mistakes.md](skills/shownotes-publisher/references/common-mistakes.md)
+entries 1 (Video) and 1b (Slides). The fix in every case: omit the
+line; add it when the real URL lands.
 
-- non-empty → renders the "Video Available" badge + the side-by-side
-  `<video-embed>` section
-- empty/missing → renders the "Video Coming Soon" badge + no video
-  embed
+**Updating a published file when the URL lands:**
 
-Adding any of the following BREAKS the conditional and shows a wrong
-badge plus a broken embed (the embed include tries to use the
-placeholder string as a URL):
+1. Open the existing `_talks/{filename_stem}.md` (read-then-edit
+   per Step 7's preservation rule)
+2. Add the `**Slides:**` or `**Video:**` line in real markdown-link
+   form, placed inside the field block (between `**Date:**` and the
+   blank line before the `A presentation at...` paragraph)
+3. Commit + publish via Step 9's flow
 
-- `**Video:** TBD`
-- `**Video:** [Coming soon](#)`
-- `**Video:** [Watch Video](#)`
-- `**Video:** [TODO]`
-- `**Video:** Coming soon`
+The badge and embed automatically fill in on the next build.
 
-**Slides — same pattern, same trap.** The slides embed conditional
-(`talk.html` lines 70-90) renders the slides section whenever
-`extracted_slides` is truthy. A placeholder URL like
-`[View Slides](#)` makes `extracted_slides` = `#` (truthy) → the
-slides embed section renders, with a broken `#` iframe.
-
-Wrong (commonly attempted, always broken):
-
-- `**Slides:** [View Slides](#)`
-- `**Slides:** [View Slides](#) <!-- TODO -->`
-- `**Slides:** TBD`
-- `**Slides:** Coming soon`
-
-Right when slides aren't ready: **omit the `**Slides:**` line
-entirely**. The talk page renders without a slides section until
-the line is added.
-
-**Updating a published file when the URL lands.** When the actual
-URL is ready:
-
-1. Open the existing `_talks/{filename_stem}.md`
-2. Add (or update) the `**Slides:**` / `**Video:**` line with the
-   real markdown-link form: `**Video:** [View Video]({youtube_url})`
-3. Place the line in the field block, between
-   `**Date:**` and the blank line that separates the field block from
-   the "A presentation at..." paragraph
-4. Commit + publish via Step 9's flow (branch + PR by default;
-   direct push only when the target repo's `ci-safety` carve-out is
-   wired)
-
-The badge and embed section automatically fill in on the next build.
-
-**Don't leave TODO markers in committed files.** Inline HTML comments
-like `<!-- TODO: confirm URL -->` survive in the
-file but don't render visibly in the page. They DO pollute the
-source, get picked up by greps, and on inline-after-link forms
-(`[text](url) <!-- TODO -->`) the parser's value-capture pulls the
-comment into `extracted_*` field values. If the work is incomplete,
-omit the field; don't commit a TODO placeholder.
+Never commit `<!-- TODO -->` HTML comments — inline comments after
+a link line are captured by the parser's value group and pollute
+`extracted_*` values. Tracking for incomplete work belongs in a PR
+description or an issue, not the committed file.
 
 Proceed immediately to Step 6.
 
 ## Step 6 — Thumbnail
 
-Thumbnails are resolved by the **filename-stem naming convention**,
-NOT by frontmatter metadata. The site computes the expected path
-from the `.md` filename:
+Thumbnails are resolved by **filename-stem naming convention** —
+the site's templates compute the path from the `.md` filename:
 
 ```
 /assets/images/thumbnails/{filename_stem}-thumbnail.png
 ```
 
-where `{filename_stem}` is the talk's `.md` filename minus the
-extension — as defined in Step 2 (may include the date prefix
-when `talk.delivery_date` is set). Examples (matching the filenames
-from Step 2):
+(`{filename_stem}` as defined in Step 2.) Examples:
 
 | Talk file | Expected thumbnail file |
 |-----------|-------------------------|
 | `2026-05-07-devoxx-uk-2026-300-tokens.md` | `assets/images/thumbnails/2026-05-07-devoxx-uk-2026-300-tokens-thumbnail.png` |
 | `geecon-2026-absolutely-right.md` | `assets/images/thumbnails/geecon-2026-absolutely-right-thumbnail.png` |
 
-This path is hard-coded into three places in the site:
+Drop the thumbnail file (4:3 PNG; the site resizes to 400×300) at
+that path. Do NOT set `thumbnail_url:` in frontmatter — it's
+checked only for truthiness as a featured-talks signal and never
+read as a URL; see
+[references/common-mistakes.md](skills/shownotes-publisher/references/common-mistakes.md)
+entry 1c and
+[references/template-conditionals.md](skills/shownotes-publisher/references/template-conditionals.md)
+for the three template locations that hard-code the slug-derived
+path. Missing thumbnails fall back via `onerror` to the placeholder
+SVG — page renders fine without one.
 
-- `index.md` — the homepage "Highlighted Presentations" grid
-- `_layouts/default.html` — OpenGraph + Twitter card meta tags
-- `_includes/embedded_resource.html` — slides/video thumbnail
-  fallbacks inside the talk page
-
-There is NO frontmatter override. Even if you set `thumbnail_url:`
-in frontmatter, the templates compute the path from the filename and
-ignore your value. The frontmatter field is checked only for
-truthiness as a featured-talks inclusion signal, and that's
-redundant with `extracted_slides`/`extracted_video`. So:
-
-- Drop the thumbnail file at the conventional path (4:3 aspect ratio,
-  PNG; any resolution — the site resizes to 400×300)
-- Do NOT set `thumbnail_url:` in frontmatter
-- If no thumbnail is provided, the `onerror` fallback in the
-  templates swaps in `/assets/images/placeholder-thumbnail.svg` —
-  the page still renders correctly, just with a generic placeholder
-
-The thumbnail-generation flow itself lives in the `illustrations`
-skill — invoke `Skill(skill: "illustrations")` if a thumbnail needs
-to be produced. This skill does not generate images; it just places
-them at the right path.
+If a thumbnail needs to be produced, hand off to
+`Skill(skill: "illustrations")` — this skill places files, doesn't
+generate images.
 
 Proceed immediately to Step 7.
 
@@ -442,48 +304,40 @@ Proceed immediately to Step 8.
 
 ## Step 8 — Validate Locally
 
-Before pushing, validate that the file parses correctly. The
-subshell + `pipefail` is required — without it, a failing
-`jekyll build` is masked by `tail`'s successful exit, the pipeline
-returns 0, and the agent can't tell whether the build broke:
+Before pushing, validate the file parses cleanly. The subshell +
+`pipefail` is required — without it, `tail`'s successful exit masks
+a failing `jekyll build`:
 
 ```bash
 cd ~/Projects/shownotes
-( set -o pipefail && bundle exec jekyll build 2>&1 | tail -20 )
+( set -o pipefail && bundle exec jekyll build 2>&1 | tail -20 ) \
+  || { echo "Build failed — fix per Step 4 and re-run"; exit 1; }
 ```
 
-A successful build (exit 0) means the file is at least syntactically
-valid and the parser didn't error. A non-zero exit means the build
-failed — read the tailed output, fix the source per Step 4 field-block
-rules, and re-run. Open the built page locally to eyeball:
+The `|| { ...; exit 1; }` guard makes the build a hard gate: a
+non-zero exit aborts before any of the visual-check commands run.
+Only after the build is green, open the rendered page locally:
 
 ```bash
 bundle exec jekyll serve --port 4000 2>&1 &
 open "http://localhost:4000/talks/{filename_stem}/"
 ```
 
-Confirm visually:
-
-- Title renders as the H1 from the body
-- Conference + Date + Video badge are correct (Video Available vs
-  Video Coming Soon)
-- Slides embed shows
-- Abstract renders as a single flowing paragraph
-- Resources renders as a list (or sub-sectioned if you used
-  `### Sub-headings` there)
-
-If a field doesn't render as expected, the parser likely didn't match
-the pattern. Re-check Step 4 field-block rules.
+Visually confirm: title, conference + date + correct video badge
+(Available vs Coming Soon), slides embed, single-paragraph
+abstract, resources list. If a field doesn't render, the parser
+didn't match — re-check Step 4 rules.
 
 Proceed immediately to Step 9.
 
 ## Step 9 — Publish
 
-**Default flow — branch + PR.** This is the safe path under
-`jbaruch/coding-policy: ci-safety`. The carve-out below permits
-direct push only when the target repo has it documented and
-server-side enforced; if you can't verify those preconditions, use
-this flow:
+**Default flow — branch + PR.** Required under
+`jbaruch/coding-policy: ci-safety` unless the target repo has the
+Content-Only Direct-Push Carve-Out wired (authority-of-record rule
++ server-side path enforcement on `_talks/**` /
+`assets/images/thumbnails/**` — see that rule for full
+preconditions).
 
 ```bash
 cd ~/Projects/shownotes
@@ -492,71 +346,28 @@ git add _talks/{filename_stem}.md [assets/images/thumbnails/{filename_stem}-thum
 git commit -m "Add shownotes: {Talk Title} at {Conference}"
 git push -u origin shownotes/{filename_stem}
 gh pr create --fill
-```
-
-Watch PR checks to green before declaring done — `ci-safety` makes
-this mandatory (`"A task is not done until CI is green"`):
-
-```bash
 gh pr checks --watch --fail-fast
-```
-
-After the PR merges, watch the GitHub Pages deployment resolve to a
-successful run on `main`:
-
-```bash
+# After merge, watch the Pages deployment and confirm 200:
 gh run watch --exit-status $(gh run list --workflow=pages-build-deployment --branch=main --limit=1 --json databaseId --jq '.[0].databaseId')
 curl -fsI "{site.url}/talks/{filename_stem}/" | head -1   # expect: HTTP/2 200
 ```
 
-Only after the 200 confirms the page is live is the publish complete.
-
-**Direct-push carve-out.** Many shownotes repos use the
-Content-Only Direct-Push Carve-Out from `ci-safety` so each talk
-page doesn't need a PR cycle. The carve-out fires ONLY when the
-target shownotes repo:
-
-- Documents an authority-of-record rule naming the carve-out and
-  the path globs (e.g., `_talks/**`, `assets/images/thumbnails/**`)
-- Enforces the allowed paths server-side — GitHub push ruleset,
-  pre-receive hook, or equivalent. Post-push CI checks do NOT
-  qualify per the carve-out preconditions
-
-If the target repo has the carve-out wired AND the changes touch
-only the carve-out paths (no `_layouts/`, `_plugins/`,
-`_config.yml`, workflow files, etc.), direct push is acceptable:
+**Direct-push (carve-out wired AND changes touch only carve-out
+paths):**
 
 ```bash
 cd ~/Projects/shownotes
 git add _talks/{filename_stem}.md [assets/images/thumbnails/{filename_stem}-thumbnail.png]
 git commit -m "Add shownotes: {Talk Title} at {Conference}"
 git push
-```
-
-The carve-out bypasses the PR cycle but NOT the CI/deploy
-watch — `ci-safety` requires watching the resulting GitHub Pages
-build to terminal-success AND verifying the page is reachable:
-
-```bash
 gh run watch --exit-status $(gh run list --workflow=pages-build-deployment --branch=main --limit=1 --json databaseId --jq '.[0].databaseId')
 curl -fsI "{site.url}/talks/{filename_stem}/" | head -1   # expect: HTTP/2 200
 ```
 
-Only after the 200 confirms the page is live is the publish complete.
-
-If the carve-out status is unknown, default to the branch + PR flow
-above. The cost of a one-PR cycle for an edit is small; the cost of
-an unannounced `main` push to a repo without the carve-out is a
-ruleset rejection at best, a policy violation at worst.
-
-The talk goes live at:
-
-```
-{site.url}/talks/{filename_stem}/
-```
-
-where `site.url` is the speaker's shownotes site URL per the target
-repo's `_config.yml` (e.g., `https://speaking.jbaru.ch`).
+The carve-out bypasses the PR cycle but NOT the CI/deploy watch —
+`ci-safety` requires both the run conclusion and the 200 to confirm
+the publish landed. If the carve-out status is unknown, default to
+the branch + PR flow.
 
 If a QR code is needed for the live URL, hand off via
 `Skill(skill: "presentation-creator")` — the QR generation flow
