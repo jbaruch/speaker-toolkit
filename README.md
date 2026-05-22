@@ -365,18 +365,24 @@ speaker-toolkit-tile/
     |           +-- build/                    # 37 patterns + 10 antipatterns
     |           +-- deliver/                  # 21 patterns + 12 antipatterns (11 unobservable)
     +-- illustrations/
-        +-- SKILL.md                          # Visual layer workflow (6 mode-routed steps)
-        +-- scripts/
-        |   +-- generate-illustrations.py     # Gemini API illustration generator + model comparison + builds
-        |   +-- apply-illustrations-to-deck.py # Swap into deck, reposition title, position IMG+TXT
-        |   +-- suggest-scrim-color.py        # Sample deck-tuned scrim color from illustrations
-        |   +-- generate-thumbnail.py         # YouTube thumbnail via Gemini composition
+    |   +-- SKILL.md                          # Visual layer workflow (6 mode-routed steps)
+    |   +-- scripts/
+    |   |   +-- generate-illustrations.py     # Gemini API illustration generator + model comparison + builds
+    |   |   +-- apply-illustrations-to-deck.py # Swap into deck, reposition title, position IMG+TXT
+    |   |   +-- suggest-scrim-color.py        # Sample deck-tuned scrim color from illustrations
+    |   |   +-- generate-thumbnail.py         # YouTube thumbnail via Gemini composition
+    |   +-- references/
+    |       +-- strategy.md                   # Phase 2 D#11 — style proposal, format vocabulary, model choice
+    |       +-- generation.md                 # Setup, edit/fix workflow, format vocabulary, apply-to-deck
+    |       +-- builds.md                     # Backwards-chained build generation + deck insertion
+    |       +-- thumbnails.md                 # Phase 7 thumbnail composition + slide selection
+    |       +-- title-placement.md            # Outline schema + scripts for Safe-zone title placement
+    +-- shownotes-publisher/
+        +-- SKILL.md                          # Jekyll shownotes publish workflow (9 steps)
         +-- references/
-            +-- strategy.md                   # Phase 2 D#11 — style proposal, format vocabulary, model choice
-            +-- generation.md                 # Setup, edit/fix workflow, format vocabulary, apply-to-deck
-            +-- builds.md                     # Backwards-chained build generation + deck insertion
-            +-- thumbnails.md                 # Phase 7 thumbnail composition + slide selection
-            +-- title-placement.md            # Outline schema + scripts for Safe-zone title placement
+            +-- parser-contract.md            # `_plugins/markdown_parser.rb` capture rules per extracted_* field
+            +-- template-conditionals.md      # `talk.html` conditional rendering per extracted field
+            +-- common-mistakes.md            # 13 failure modes (1, 1b, 1c, 2-11) with right-way fixes
 ```
 
 ## License
