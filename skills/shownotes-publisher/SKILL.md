@@ -46,15 +46,18 @@ artifacts by the time this skill runs. Do not ask the user to
 re-supply anything that is derivable. Read automatically:
 
 **From `outline.yaml` — the talk's presentation spec.** Load via
-the schema script's JSON emit mode (contract: input = path to
-`outline.yaml`; stdout = validated `Outline` model as JSON;
-non-zero exit + stderr `FAIL:` on validation failure — abort and
-surface the failure):
+the schema script's JSON emit mode:
 
 ```bash
 python3 skills/presentation-creator/scripts/outline_schema.py \
     --emit-json <path-to-outline.yaml>
 ```
+
+Script contract:
+
+- Input: path to `outline.yaml` as a single positional argument
+- Stdout (exit 0): JSON of the validated `Outline` model
+- Stderr (exit 1): `FAIL: ...` — abort and surface the failure
 
 Parse the JSON, never re-parse YAML by hand. Map fields directly:
 
@@ -84,13 +87,17 @@ omitting the line is what fires the "Video Coming Soon" badge
 (Step 5). If the user volunteers a video URL in the same turn,
 capture it.
 
-Ask follow-ups ONLY on ambiguity: outline.yaml absent or invalid
-→ STOP, `Skill(skill: "presentation-creator")` to repair, then
-resume; `talk.thesis` empty → ask for a one-paragraph abstract;
-`delivery_date` missing → confirm whether the talk has happened
-(pre-talk publish is fine, see Step 2); existing
-`_talks/{filename_stem}.md` AND no update flag → ask before
-overwriting.
+Ask follow-ups ONLY on ambiguity:
+
+- outline.yaml absent or invalid → STOP, invoke
+  `Skill(skill: "presentation-creator")` to repair, then resume
+- `talk.thesis` empty → ask the speaker for a one-paragraph
+  abstract (Step 4 rules apply)
+- `talk.delivery_date` missing → confirm whether the talk has
+  happened (pre-talk publish is fine; Step 2 picks the filename
+  convention by the field's presence)
+- Existing `_talks/{filename_stem}.md` exists AND speaker didn't
+  flag this as an update → ask before overwriting (Step 7)
 
 Proceed immediately to Step 2.
 
@@ -303,12 +310,13 @@ a failing `jekyll build`:
 
 ```bash
 cd ~/Projects/shownotes
-( set -o pipefail && bundle exec jekyll build 2>&1 | tail -20 )
+( set -o pipefail && bundle exec jekyll build 2>&1 | tail -20 ) \
+  || { echo "Build failed — fix per Step 4 and re-run"; exit 1; }
 ```
 
-A non-zero exit means the source needs fixing per Step 4 — do NOT
-proceed to the visual check or to Step 9 until the build is green.
-Once the build passes, open the rendered page locally:
+The `|| { ...; exit 1; }` guard makes the build a hard gate: a
+non-zero exit aborts before any of the visual-check commands run.
+Only after the build is green, open the rendered page locally:
 
 ```bash
 bundle exec jekyll serve --port 4000 2>&1 &
