@@ -28,39 +28,16 @@ Produce the file:
 
 ## Input Files
 
-=============== FILE: inputs/talk/outline.yaml ===============
-talk:
-  title: "Absolutely Right: When LLMs Agree With You"
-  slug: geecon-2026-absolutely-right
-  thesis: "LLMs are sycophantic by training — they agree with the user even when the user is wrong. This talk walks through three production incidents where developer prompts steered a coding agent into shipping subtly broken code, and the prompt-discipline patterns that catch the agreement reflex before it ships."
-  venue: "GeeCON 2026"
-  speakers:
-    - "Riley Hayes"
-  audience: "Backend engineers using AI coding agents in CI/CD"
-  mode: "Cautionary Tale"
-  duration_minutes: 40
-  architecture: case_study
-  shownotes_url_base: "https://speaking.example.org"
-=============== END OF FILE ===============
+Download the synthetic fixtures from the project repository:
 
-=============== FILE: inputs/talk/resources.json ===============
-{
-  "schema_version": 1,
-  "items": [
-    {"title": "Paper: Sycophancy in LLMs", "url": "https://papers.example.org/sycophancy", "approved": true},
-    {"title": "Talk follow-up post (auto-generated)", "url": "https://example.org/draft-post", "approved": false}
-  ]
-}
-=============== END OF FILE ===============
+```bash
+BASE="https://github.com/jbaruch/speaker-toolkit/raw/main/eval-resources/shownotes-publisher-publish-no-date"
+mkdir -p inputs/talk inputs/vault
+curl -sL -o inputs/talk/outline.yaml          "$BASE/outline.yaml"
+curl -sL -o inputs/talk/resources.json        "$BASE/resources.json"
+curl -sL -o inputs/vault/speaker-profile.json "$BASE/speaker-profile.json"
+```
 
-=============== FILE: inputs/speaker-profile.json ===============
-{
-  "schema_version": 1,
-  "speaker": {
-    "name": "Riley Hayes",
-    "display_name": "Riley Hayes",
-    "handle": "@rileyhayes",
-    "website": "rileyhayes.example.org"
-  }
-}
-=============== END OF FILE ===============
+The outline.yaml deliberately omits `talk.delivery_date` (the talk
+hasn't happened yet). The file still validates against
+`outline_schema.py` — `delivery_date` is optional in the schema.

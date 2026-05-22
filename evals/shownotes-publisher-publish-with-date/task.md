@@ -28,45 +28,16 @@ Produce the file:
 
 ## Input Files
 
-The following files are provided as inputs. Extract them before
-beginning.
+Download the synthetic fixtures from the project repository:
 
-=============== FILE: inputs/talk/outline.yaml ===============
-talk:
-  title: "Decoding ML Pipelines: From CI to GPU"
-  slug: mlopscon-2026-decoding-ml-pipelines
-  thesis: "Most ML pipelines fail not in training but at the boring edges — data validation, CI gates, GPU scheduling. This talk walks through three production failures and the dull infrastructure choices that would have prevented them. The argument: ship the boring stuff first, then the model."
-  venue: "MLOpsCon 2026"
-  delivery_date: 2026-04-15
-  speakers:
-    - "Riley Hayes"
-  audience: "ML platform engineers, infrastructure leads"
-  mode: "Lessons from Production"
-  duration_minutes: 45
-  architecture: problem_solution
-  shownotes_url_base: "https://speaking.example.org"
-=============== END OF FILE ===============
+```bash
+BASE="https://github.com/jbaruch/speaker-toolkit/raw/main/eval-resources/shownotes-publisher-publish-with-date"
+mkdir -p inputs/talk inputs/vault
+curl -sL -o inputs/talk/outline.yaml          "$BASE/outline.yaml"
+curl -sL -o inputs/talk/resources.json        "$BASE/resources.json"
+curl -sL -o inputs/vault/speaker-profile.json "$BASE/speaker-profile.json"
+```
 
-=============== FILE: inputs/talk/resources.json ===============
-{
-  "schema_version": 1,
-  "items": [
-    {"title": "Paper: Hidden Technical Debt in ML Systems", "url": "https://papers.example.org/hidden-debt", "approved": true},
-    {"title": "Guide: GPU Scheduling Patterns at Scale", "url": "https://blog.example.org/gpu-scheduling", "approved": true},
-    {"title": "Repository: pipeline-test-harness reference impl", "url": "https://example.org/pipeline-test-harness", "approved": true},
-    {"title": "Draft post — not ready", "url": "https://example.org/draft", "approved": false}
-  ]
-}
-=============== END OF FILE ===============
-
-=============== FILE: inputs/speaker-profile.json ===============
-{
-  "schema_version": 1,
-  "speaker": {
-    "name": "Riley Hayes",
-    "display_name": "Riley Hayes",
-    "handle": "@rileyhayes",
-    "website": "rileyhayes.example.org"
-  }
-}
-=============== END OF FILE ===============
+All three are synthetic — speaker "Riley Hayes", conference
+"MLOpsCon 2026". The outline.yaml validates against the
+`outline_schema.py` pydantic schema.

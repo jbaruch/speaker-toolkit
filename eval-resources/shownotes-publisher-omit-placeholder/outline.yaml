@@ -1,0 +1,36 @@
+---
+# Synthetic outline.yaml for shownotes-publisher-omit-placeholder.
+
+talk:
+  title: "The Quiet Failures of Distributed Caches"
+  slug: "kafka-eu-2026-quiet-cache-failures"
+  speakers: ["Riley Hayes"]
+  duration_min: 35
+  audience: "Infrastructure and platform engineers"
+  mode: "war-stories"
+  venue: "KafkaEU 2026"
+  slide_budget: 8
+  pacing_wpm: [140, 160]
+  architecture: "narrative-arc"
+  thesis: "Distributed cache layers fail quietly — a 0.3% miss-rate climb that nobody sees until the upstream database starts paging at 03:00. This talk walks through three real cache failures, the metrics that would have caught them, and the dashboards every cache deployment should ship with on day one."
+  shownotes_url_base: "https://speaking.example.org"
+  delivery_date: "2026-05-04"
+
+chapters:
+  - id: ch1
+    title: "Quiet Failures"
+    target_min: 15
+  - id: ch2
+    title: "Loud Dashboards"
+    target_min: 20
+
+slides:
+  - n: 1
+    chapter: ch1
+    title: "0.3% Climb"
+    format: FULL
+  - n: 4
+    chapter: ch2
+    title: "The Day-One Dashboard"
+    format: FULL
+    big_idea: true

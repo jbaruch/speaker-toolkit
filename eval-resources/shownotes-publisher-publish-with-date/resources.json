@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "items": [
+    {"title": "Paper: Hidden Technical Debt in ML Systems", "url": "https://papers.example.org/hidden-debt", "approved": true},
+    {"title": "Guide: GPU Scheduling Patterns at Scale", "url": "https://blog.example.org/gpu-scheduling", "approved": true},
+    {"title": "Repository: pipeline-test-harness reference impl", "url": "https://example.org/pipeline-test-harness", "approved": true},
+    {"title": "Draft post — not ready", "url": "https://example.org/draft", "approved": false}
+  ]
+}

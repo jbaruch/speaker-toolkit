@@ -24,44 +24,17 @@ Produce the file:
 
 ## Input Files
 
-The existing talk page on the site, before this update, is provided
-below. The outline.yaml is included for reference but the live file
-is the source of truth — speakers edit `_talks/*.md` directly post-
-publish.
+Download the synthetic fixtures from the project repository. The
+existing `_talks/*.md` (with the speaker's hand-edits) is the live
+source of truth for the update — the outline.yaml is provided for
+reference only.
 
-=============== FILE: inputs/_talks/2026-04-15-mlopscon-2026-decoding-ml-pipelines.md ===============
----
-layout: talk
----
+```bash
+BASE="https://github.com/jbaruch/speaker-toolkit/raw/main/eval-resources/shownotes-publisher-update-add-video"
+mkdir -p inputs/talk inputs/_talks
+curl -sL -o inputs/talk/outline.yaml "$BASE/outline.yaml"
+curl -sL -o inputs/_talks/2026-04-15-mlopscon-2026-decoding-ml-pipelines.md \
+    "$BASE/_talks-2026-04-15-mlopscon-2026-decoding-ml-pipelines.md"
+```
 
-# Decoding ML Pipelines: From CI to GPU
-
-**Conference:** MLOpsCon 2026
-**Date:** 2026-04-15
-**Slides:** [View Slides](https://drive.google.com/file/d/1aBcDe-fGhIjKlMnOpQrStUvWx/preview)
-
-A presentation at MLOpsCon 2026 in April 2026 in Berlin, Germany by {{ site.speaker.display_name | default: site.speaker.name }}
-
-## Abstract
-
-Most ML pipelines fail not in training but at the boring edges — data validation, CI gates, GPU scheduling. This talk walks through three production failures and the dull infrastructure choices that would have prevented them. The argument: ship the boring stuff first, then the model.
-
-## Resources
-
-- [Paper: Hidden Technical Debt in ML Systems](https://papers.example.org/hidden-debt)
-- [Guide: GPU Scheduling Patterns at Scale](https://blog.example.org/gpu-scheduling)
-- [Repository: pipeline-test-harness reference impl](https://example.org/pipeline-test-harness)
-- [Audience-suggested: Tecton feature-store cookbook](https://example.org/tecton-cookbook)
-- [Audience-suggested: KServe inference autoscaler write-up](https://example.org/kserve-autoscaler)
-=============== END OF FILE ===============
-
-=============== FILE: inputs/talk/outline.yaml ===============
-talk:
-  title: "Decoding ML Pipelines: From CI to GPU"
-  slug: mlopscon-2026-decoding-ml-pipelines
-  thesis: "Most ML pipelines fail not in training but at the boring edges — data validation, CI gates, GPU scheduling. This talk walks through three production failures."
-  venue: "MLOpsCon 2026"
-  delivery_date: 2026-04-15
-  speakers:
-    - "Riley Hayes"
-=============== END OF FILE ===============
+The outline.yaml validates against `outline_schema.py`.
