@@ -84,8 +84,9 @@ video URL in the same turn, capture it; otherwise omit the
 
 **Ask later only if a needed value is missing or ambiguous:**
 
-- `outline.yaml` doesn't exist or doesn't validate → STOP and ask
-  the speaker to run the presentation-creator skill first
+- `outline.yaml` doesn't exist or doesn't validate → STOP, invoke
+  `Skill(skill: "presentation-creator")` to author/repair the spec,
+  then resume this skill
 - `talk.slug` is missing → STOP and ask (this should never happen —
   slug is schema-required)
 - `talk.thesis` is empty → ask the speaker for a one-paragraph
@@ -516,8 +517,8 @@ The talk goes live at:
 where `site.url` is the speaker's shownotes site URL per the target
 repo's `_config.yml` (e.g., `https://speaking.jbaru.ch`).
 
-If a QR code is needed for the live URL, hand off to the
-presentation-creator skill's Phase 6 Step 6.2 — that's where the QR
-generation lives.
+If a QR code is needed for the live URL, hand off via
+`Skill(skill: "presentation-creator")` — the QR generation flow
+lives in that skill's Phase 6 Step 6.2.
 
 Finish here — the skill is complete.
