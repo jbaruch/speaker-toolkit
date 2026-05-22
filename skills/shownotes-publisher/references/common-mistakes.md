@@ -193,7 +193,7 @@ the frontmatter title field.
 ```markdown
 ## Resources
 
-- [link](url)
+- [link](https://example.org)
 
 ## Abstract
 
@@ -208,7 +208,7 @@ Resources scanner finds `## Resources` and captures everything
 after it — including the `## Abstract` line and its body. So:
 
 - `extracted_abstract` = "Prose." ✓ (this works)
-- `extracted_resources` = "- [link](url) ## Abstract Prose." ✗
+- `extracted_resources` = "- [link](https://example.org) ## Abstract Prose." ✗
   (Abstract content is folded into Resources)
 
 **Do:** Order sections Abstract first, Resources last. Parser
