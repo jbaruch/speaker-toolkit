@@ -2,6 +2,88 @@
 
 ## Unreleased
 
+### feat(shownotes-publisher) — new skill for the Jekyll shownotes site
+
+A sixth skill, `shownotes-publisher`, writes talk pages into a
+Jekyll-based shownotes site (`~/Projects/shownotes`, published at
+`https://speaking.jbaru.ch`). The site uses a custom markdown parser
+(`_plugins/markdown_parser.rb`) that extracts structured fields by
+pattern-matching on the body — abstract under `## Abstract`,
+field-block lines like `**Conference:** value` + `**Video:** [text](url)`,
+presentation-context paragraph starting with "A presentation at",
+resources under `## Resources`. The format is strict; small mistakes
+silently flatten content (e.g., multi-paragraph abstracts become one
+paragraph because the parser joins all lines with spaces before
+`markdownify`).
+
+The skill encodes the contract end-to-end:
+
+- **`SKILL.md`** — 9-step workflow from outline.yaml gather through
+  publish, with the field-block grammar, the "Video Coming Soon"
+  pattern, thumbnail conventions, and the update-don't-rewrite rule
+- **`references/parser-contract.md`** — line-by-line spec of what
+  each `extracted_*` field captures (title, conference, date,
+  slides, video, abstract, resources, presentation_context) and how
+- **`references/template-conditionals.md`** — what `talk.html` does
+  with each extracted field, including the truthiness trap on
+  `extracted_video` (any non-empty string triggers "Video Available"
+  — `**Video:** TBD` fires the wrong badge)
+- **`references/common-mistakes.md`** — 13 documented failure modes
+  (entries 1, 1b, 1c, 2–11) with what visually happens and the right
+  way (e.g., abstract sub-headings flatten; bare-URL Slides/Video
+  doesn't extract; resource before abstract folds abstract into
+  resources)
+
+**Motivating incident.** This skill was authored after the
+KotlinConf 2026 talk file shipped on `jbaruch/shownotes` commit
+`83ac8d9` with placeholder-URL Slides/Video lines:
+
+```markdown
+**Slides:** [View Slides](#) <!-- TODO -->
+**Video:** [Watch Video](#) <!-- TODO -->
+```
+
+Both fields fired the wrong badges and rendered broken embeds; the
+inline HTML comments were pulled into the captured field values by
+the parser's `^\*\*Slides:\*\*\s*(.+)$` value-capture group. The
+incident motivates entries 1b and 11 in `references/common-mistakes.md`.
+
+The key behaviors the skill enforces:
+
+- **No video frontmatter until video is published.** The layout's
+  `{% if page.extracted_video %}` is what flips the "Video Coming
+  Soon" badge to "Video Available". Adding `**Video:** TBD` (or any
+  placeholder) makes `extracted_video` truthy and fires the wrong
+  badge plus a broken embed
+- **Abstract is exactly one paragraph.** The parser joins all
+  non-empty lines under `## Abstract` with a single space, collapses
+  whitespace, then passes the result to `markdownify`. Sub-headings,
+  lists, code blocks, and tables inside the abstract render as
+  flattened prose
+- **Slides/Video URLs must be markdown links.** The URL extraction
+  regex is `\[([^\]]+)\]\(([^)]+)\)`. Bare URLs survive in the
+  field value but break the embed include's URL-pattern matching
+- **Update existing files in place.** Speakers hand-edit shownotes
+  post-publish (typo fixes, resource additions). A re-author wipes
+  those edits silently. The skill reads-then-edits, never overwrites
+
+Four eval scenarios ship with the skill, all under `evals/`:
+
+- `shownotes-publisher-publish-with-date` — first-time publish, the
+  delivery date is set, filename uses the dated convention
+- `shownotes-publisher-publish-no-date` — pre-talk publish where the
+  delivery date is absent, filename and Date field both adapt
+- `shownotes-publisher-update-add-video` — adds a video URL to an
+  existing file, exercises the read-then-edit preservation rule
+- `shownotes-publisher-omit-placeholder` — negative case; the user
+  asks for a "video coming soon" UX cue, the skill must omit the
+  `**Video:**` line entirely rather than emit a placeholder URL
+
+The skill is invocable directly (`Skill(skill: "shownotes-publisher")`)
+or after the presentation-creator skill finishes Phase 6 publishing
+when the speaker says "now publish to shownotes". Tile size: six
+skills, `tile.json` and README updated accordingly.
+
 ### feat(presentation-creator) — outline.yaml is now the source of truth
 
 The presentation-creator skill moves from two hand-authored markdown

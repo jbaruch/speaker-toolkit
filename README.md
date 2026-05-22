@@ -2,7 +2,7 @@
 
 [![tessl](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.tessl.io%2Fv1%2Fbadges%2Fjbaruch%2Fspeaker-toolkit)](https://tessl.io/registry/jbaruch/speaker-toolkit)
 
-A five-skill presentation system for conference speakers: analyze your existing talks to extract your rhetoric patterns, create new presentations that match your documented style, and produce the deck illustrations + thumbnail visual layer.
+A six-skill presentation system for conference speakers: analyze your existing talks to extract your rhetoric patterns, create new presentations that match your documented style, produce the deck illustrations + thumbnail visual layer, and publish talk pages to a Jekyll shownotes site.
 
 ## What's New (0.18.0)
 
@@ -40,7 +40,7 @@ See [CHANGELOG.md](CHANGELOG.md) for full history.
 
 ## How It Works
 
-The toolkit is built on five skills connected by a shared **rhetoric vault** — a directory of structured knowledge about how you present.
+The toolkit is built on six skills connected by a shared **rhetoric vault** — a directory of structured knowledge about how you present.
 
 ```
                    VAULT
@@ -61,6 +61,7 @@ The toolkit is built on five skills connected by a shared **rhetoric vault** —
 **Creator skills (generation):**
 - **presentation-creator** reads the vault at runtime and uses your documented patterns as a constitutional style guide to build new presentations. It follows a 7-phase process from intent distillation through slide generation, with a 4-tier Pattern Strategy for selecting presentation techniques, and a go-live checklist before delivery. Delegates the visual layer to the illustrations skill.
 - **illustrations** owns the deck illustration strategy, generation, build chains, and YouTube thumbnails. Invoked by presentation-creator at the relevant phases (Phase 2 strategy, Phase 5 application, Phase 7 thumbnail).
+- **shownotes-publisher** writes talk pages into a Jekyll-based shownotes site (e.g., `speaking.jbaru.ch`). Encodes the custom parser's format contract so authored content actually renders: abstract is one paragraph, video field absent = "coming soon" badge, slides/video URLs must be markdown links, no frontmatter title, etc. Invoked after the talk is delivered (or pre-talk for slides-only publish).
 
 The vault skills never run simultaneously with the creator skills. You build the vault first (once, then incrementally), then use the creator whenever you need a new talk. The vault grows over time as you parse more talks, and the creator automatically picks up new patterns.
 
@@ -150,19 +151,29 @@ rhetoric-knowledge-vault/
 
 ### Handoff Mechanism
 
-The two skills communicate exclusively through the vault files. When the vault updates (new talks parsed), it automatically regenerates the speaker profile. When the creator runs, it reads the latest vault state. A freshness check warns if the profile is stale.
+The skills communicate exclusively through the vault files plus
+per-talk artifacts (`outline.yaml`, `_talks/*.md`). When the vault
+updates (new talks parsed), it regenerates the speaker profile. When
+a downstream skill runs, it reads the latest vault state and the
+talk's spec. A freshness check warns if the profile is stale.
 
 ```
-Vault Skill                          Creator Skill
-===========                          =============
-Parse talks                          Load vault files + pattern index
-     |                                    |
-     v                                    v
-Update summary  ------>  rhetoric-style-summary.md  ------>  Read instruments
-Update spec     ------>  slide-design-spec.md       ------>  Read design rules
-Regen profile   ------>  speaker-profile.json       ------>  Read thresholds
-  (incl. pattern_profile)                              +-->  Pattern Strategy
-                                                       +-->  Go-live checklist
+Vault skills (analysis)            Downstream skills (generation + publish)
+=======================            =======================================
+vault-ingress      ----+
+vault-clarification    +-->  rhetoric-style-summary.md  -->  presentation-creator
+vault-profile      ----+      slide-design-spec.md           illustrations
+                              speaker-profile.json            (via outline.yaml)
+                              (incl. pattern_profile)
+
+                                                              presentation-creator
+                                                              produces outline.yaml
+                                                                      |
+                                                                      v
+                                                              shownotes-publisher
+                                                              reads outline.yaml +
+                                                              resources.json, writes
+                                                              _talks/<file>.md
 ```
 
 ### Steering Rules
@@ -181,7 +192,11 @@ The tile ships persistent steering rules (auto-loaded by the agent at runtime vi
 | [`interaction-rules`](rules/interaction-rules.md) | Conversational stance and gate behavior across phases. |
 | [`tessl-version-floating`](rules/tessl-version-floating.md) | Authority-of-record for the `tessl.json` floating-spec carve-out (paired with `scripts/check-tessl-pins.sh`). |
 
-## Vault Skill Details
+## Vault Skills Details
+
+The vault skills (`vault-ingress`, `vault-clarification`,
+`vault-profile`) share the analysis triggers and processing pipeline
+below.
 
 ### Triggers
 
@@ -229,14 +244,27 @@ notes which named patterns and antipatterns are detected per talk.
 - `yt-dlp` for transcript downloading
 - Talks with YouTube video + slides (PPTX files and/or Google Drive PDF exports)
 
-## Creator Skill Details
+## Generation & Publishing Skills Details
 
-### Triggers
+The downstream skills (`presentation-creator`, `illustrations`,
+`shownotes-publisher`) build new talks from vault data + per-talk
+intent, generate the visual layer, and publish the talk page to the
+shownotes site. `presentation-creator` is the entry point; the other
+two are invoked via typed `Skill(...)` handoffs.
+
+### Triggers (presentation-creator)
 
 - `create a presentation about [topic]`
 - `build a talk for [conference]`
 - `write a CFP for [conference]`
 - `adapt my [talk name] for [new venue]`
+
+### Triggers (shownotes-publisher)
+
+- `publish shownotes` / `add talk to shownotes` / `shownotes for [talk]`
+- `update shownotes with the recording` (once the video URL lands)
+- Fires automatically after `presentation-creator` Phase 6 when the
+  speaker says "now publish to shownotes"
 
 ### 7-Phase Workflow
 
@@ -305,16 +333,26 @@ If the speaker profile doesn't exist yet (fewer than 10 talks parsed), the creat
 
 ## Prerequisites
 
-### For the Vault Skill
+### For the Vault Skills (vault-ingress, vault-clarification, vault-profile)
 - Python 3 environment with `gdown`, `youtube-transcript-api`, `python-pptx`
 - `yt-dlp` command-line tool
 - Talks with YouTube recordings and slides (PPTX files and/or Google Drive exports)
 
-### For the Creator Skill
+### For the Presentation Creator & Illustrations Skills
 - MCP PPT server (for slide generation)
 - `python-pptx` (for speaker notes, structural edits)
 - Microsoft PowerPoint (for PDF export via AppleScript, macOS only)
 - A PowerPoint template (the vault captures the path; a generic template works too)
+
+### For the Shownotes Publisher Skill
+- A Jekyll-based shownotes site cloned locally (`~/Projects/shownotes`
+  by default). The site must use the custom markdown parser plugin
+  this skill targets; see
+  [`skills/shownotes-publisher/references/parser-contract.md`](skills/shownotes-publisher/references/parser-contract.md)
+- `bundle exec jekyll build` available locally for the Step 8 validation
+- `gh` CLI for the branch + PR publish flow (and for direct push under
+  the `ci-safety` Content-Only Direct-Push Carve-Out when the target
+  repo has it wired)
 
 ## File Reference
 
@@ -364,18 +402,24 @@ speaker-toolkit-tile/
     |           +-- build/                    # 37 patterns + 10 antipatterns
     |           +-- deliver/                  # 21 patterns + 12 antipatterns (11 unobservable)
     +-- illustrations/
-        +-- SKILL.md                          # Visual layer workflow (6 mode-routed steps)
-        +-- scripts/
-        |   +-- generate-illustrations.py     # Gemini API illustration generator + model comparison + builds
-        |   +-- apply-illustrations-to-deck.py # Swap into deck, reposition title, position IMG+TXT
-        |   +-- suggest-scrim-color.py        # Sample deck-tuned scrim color from illustrations
-        |   +-- generate-thumbnail.py         # YouTube thumbnail via Gemini composition
+    |   +-- SKILL.md                          # Visual layer workflow (6 mode-routed steps)
+    |   +-- scripts/
+    |   |   +-- generate-illustrations.py     # Gemini API illustration generator + model comparison + builds
+    |   |   +-- apply-illustrations-to-deck.py # Swap into deck, reposition title, position IMG+TXT
+    |   |   +-- suggest-scrim-color.py        # Sample deck-tuned scrim color from illustrations
+    |   |   +-- generate-thumbnail.py         # YouTube thumbnail via Gemini composition
+    |   +-- references/
+    |       +-- strategy.md                   # Phase 2 D#11 — style proposal, format vocabulary, model choice
+    |       +-- generation.md                 # Setup, edit/fix workflow, format vocabulary, apply-to-deck
+    |       +-- builds.md                     # Backwards-chained build generation + deck insertion
+    |       +-- thumbnails.md                 # Phase 7 thumbnail composition + slide selection
+    |       +-- title-placement.md            # Outline schema + scripts for Safe-zone title placement
+    +-- shownotes-publisher/
+        +-- SKILL.md                          # Jekyll shownotes publish workflow (9 steps)
         +-- references/
-            +-- strategy.md                   # Phase 2 D#11 — style proposal, format vocabulary, model choice
-            +-- generation.md                 # Setup, edit/fix workflow, format vocabulary, apply-to-deck
-            +-- builds.md                     # Backwards-chained build generation + deck insertion
-            +-- thumbnails.md                 # Phase 7 thumbnail composition + slide selection
-            +-- title-placement.md            # Outline schema + scripts for Safe-zone title placement
+            +-- parser-contract.md            # `_plugins/markdown_parser.rb` capture rules per extracted_* field
+            +-- template-conditionals.md      # `talk.html` conditional rendering per extracted field
+            +-- common-mistakes.md            # 13 failure modes (1, 1b, 1c, 2-11) with right-way fixes
 ```
 
 ## License

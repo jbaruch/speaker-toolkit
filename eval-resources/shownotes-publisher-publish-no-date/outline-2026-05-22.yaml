@@ -1,0 +1,36 @@
+---
+# Synthetic outline.yaml for shownotes-publisher-publish-no-date.
+# delivery_date deliberately absent — pre-talk publish path.
+
+talk:
+  title: "Absolutely Right: When LLMs Agree With You"
+  slug: "geecon-2026-absolutely-right"
+  speakers: ["Riley Hayes"]
+  duration_min: 40
+  audience: "Backend engineers using AI coding agents in CI/CD"
+  mode: "cautionary-tale"
+  venue: "GeeCON 2026"
+  slide_budget: 8
+  pacing_wpm: [140, 160]
+  architecture: "narrative-arc"
+  thesis: "LLMs are sycophantic by training — they agree with the user even when the user is wrong. This talk walks through three production incidents where developer prompts steered a coding agent into shipping subtly broken code, and the prompt-discipline patterns that catch the agreement reflex before it ships."
+  shownotes_url_base: "https://speaking.example.org"
+
+chapters:
+  - id: ch1
+    title: "The Reflex"
+    target_min: 15
+  - id: ch2
+    title: "The Discipline"
+    target_min: 25
+
+slides:
+  - n: 1
+    chapter: ch1
+    title: "The Sycophancy Trap"
+    format: FULL
+  - n: 4
+    chapter: ch2
+    title: "Prompt Discipline"
+    format: FULL
+    big_idea: true

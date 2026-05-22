@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "items": [
+    {"title": "Postmortem: cache-tier paging incident", "url": "https://example.org/postmortem-2025-12", "approved": true},
+    {"title": "Dashboard pack: redis-observability", "url": "https://example.org/dashboards/redis-obs", "approved": true}
+  ]
+}

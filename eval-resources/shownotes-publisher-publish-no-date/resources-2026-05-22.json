@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "items": [
+    {"title": "Paper: Sycophancy in LLMs", "url": "https://papers.example.org/sycophancy", "approved": true},
+    {"title": "Talk follow-up post (auto-generated)", "url": "https://example.org/draft-post", "approved": false}
+  ]
+}

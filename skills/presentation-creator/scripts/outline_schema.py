@@ -15,6 +15,7 @@ checklist concern, not a schema concern; the schema accepts any non-antipattern.
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from enum import Enum
@@ -573,18 +574,28 @@ def load_outline(path: Path | str) -> Outline:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("usage: outline_schema.py <outline.yaml>", file=sys.stderr)
+    args = argv[1:]
+    emit_json = "--emit-json" in args
+    args = [a for a in args if a != "--emit-json"]
+    if len(args) != 1:
+        print(
+            "usage: outline_schema.py [--emit-json] <outline.yaml>",
+            file=sys.stderr,
+        )
         return 2
     try:
-        outline = load_outline(argv[1])
+        outline = load_outline(args[0])
     except (OSError, yaml.YAMLError, ValidationError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1
-    print(
-        f"OK: {len(outline.slides)} slides across "
-        f"{len(outline.chapters)} chapters",
-    )
+    if emit_json:
+        json.dump(outline.model_dump(mode="json"), sys.stdout, indent=2)
+        sys.stdout.write("\n")
+    else:
+        print(
+            f"OK: {len(outline.slides)} slides across "
+            f"{len(outline.chapters)} chapters",
+        )
     return 0
 
 

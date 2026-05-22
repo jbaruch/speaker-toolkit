@@ -1,0 +1,46 @@
+---
+# Synthetic outline.yaml for the shownotes-publisher-publish-with-date
+# eval scenario. Schema-valid against outline_schema.py — minimal
+# chapters[] + slides[] just satisfy structural validation; the
+# shownotes-publisher skill only reads talk.* fields.
+
+talk:
+  title: "Decoding ML Pipelines: From CI to GPU"
+  slug: "mlopscon-2026-decoding-ml-pipelines"
+  speakers: ["Riley Hayes"]
+  duration_min: 45
+  audience: "ML platform engineers, infrastructure leads"
+  mode: "lessons-from-production"
+  venue: "MLOpsCon 2026"
+  slide_budget: 10
+  pacing_wpm: [140, 160]
+  architecture: "sparkline"
+  thesis: "Most ML pipelines fail not in training but at the boring edges — data validation, CI gates, GPU scheduling. This talk walks through three production failures and the dull infrastructure choices that would have prevented them. The argument: ship the boring stuff first, then the model."
+  shownotes_url_base: "https://speaking.example.org"
+  delivery_date: "2026-04-15"
+
+chapters:
+  - id: ch1
+    title: "Setup — Three Receipts"
+    target_min: 10
+  - id: ch2
+    title: "The Quiet Edges"
+    target_min: 20
+  - id: ch3
+    title: "Ship the Boring Stuff First"
+    target_min: 15
+
+slides:
+  - n: 1
+    chapter: ch1
+    title: "Cold Open"
+    format: FULL
+  - n: 5
+    chapter: ch2
+    title: "The Argument"
+    format: FULL
+    big_idea: true
+  - n: 9
+    chapter: ch3
+    title: "Call to Action"
+    format: FULL
