@@ -151,19 +151,29 @@ rhetoric-knowledge-vault/
 
 ### Handoff Mechanism
 
-The two skills communicate exclusively through the vault files. When the vault updates (new talks parsed), it automatically regenerates the speaker profile. When the creator runs, it reads the latest vault state. A freshness check warns if the profile is stale.
+The skills communicate exclusively through the vault files plus
+per-talk artifacts (`outline.yaml`, `_talks/*.md`). When the vault
+updates (new talks parsed), it regenerates the speaker profile. When
+a downstream skill runs, it reads the latest vault state and the
+talk's spec. A freshness check warns if the profile is stale.
 
 ```
-Vault Skill                          Creator Skill
-===========                          =============
-Parse talks                          Load vault files + pattern index
-     |                                    |
-     v                                    v
-Update summary  ------>  rhetoric-style-summary.md  ------>  Read instruments
-Update spec     ------>  slide-design-spec.md       ------>  Read design rules
-Regen profile   ------>  speaker-profile.json       ------>  Read thresholds
-  (incl. pattern_profile)                              +-->  Pattern Strategy
-                                                       +-->  Go-live checklist
+Vault skills (analysis)            Downstream skills (generation + publish)
+=======================            =======================================
+vault-ingress      ----+
+vault-clarification    +-->  rhetoric-style-summary.md  -->  presentation-creator
+vault-profile      ----+      slide-design-spec.md           illustrations
+                              speaker-profile.json            (via outline.yaml)
+                              (incl. pattern_profile)
+
+                                                              presentation-creator
+                                                              produces outline.yaml
+                                                                      |
+                                                                      v
+                                                              shownotes-publisher
+                                                              reads outline.yaml +
+                                                              resources.json, writes
+                                                              _talks/<file>.md
 ```
 
 ### Steering Rules
@@ -182,7 +192,11 @@ The tile ships persistent steering rules (auto-loaded by the agent at runtime vi
 | [`interaction-rules`](rules/interaction-rules.md) | Conversational stance and gate behavior across phases. |
 | [`tessl-version-floating`](rules/tessl-version-floating.md) | Authority-of-record for the `tessl.json` floating-spec carve-out (paired with `scripts/check-tessl-pins.sh`). |
 
-## Vault Skill Details
+## Vault Skills Details
+
+The vault skills (`vault-ingress`, `vault-clarification`,
+`vault-profile`) share the analysis triggers and processing pipeline
+below.
 
 ### Triggers
 
@@ -230,14 +244,27 @@ notes which named patterns and antipatterns are detected per talk.
 - `yt-dlp` for transcript downloading
 - Talks with YouTube video + slides (PPTX files and/or Google Drive PDF exports)
 
-## Creator Skill Details
+## Generation & Publishing Skills Details
 
-### Triggers
+The downstream skills (`presentation-creator`, `illustrations`,
+`shownotes-publisher`) build new talks from vault data + per-talk
+intent, generate the visual layer, and publish the talk page to the
+shownotes site. `presentation-creator` is the entry point; the other
+two are invoked via typed `Skill(...)` handoffs.
+
+### Triggers (presentation-creator)
 
 - `create a presentation about [topic]`
 - `build a talk for [conference]`
 - `write a CFP for [conference]`
 - `adapt my [talk name] for [new venue]`
+
+### Triggers (shownotes-publisher)
+
+- `publish shownotes` / `add talk to shownotes` / `shownotes for [talk]`
+- `update shownotes with the recording` (once the video URL lands)
+- Fires automatically after `presentation-creator` Phase 6 when the
+  speaker says "now publish to shownotes"
 
 ### 7-Phase Workflow
 
@@ -306,16 +333,26 @@ If the speaker profile doesn't exist yet (fewer than 10 talks parsed), the creat
 
 ## Prerequisites
 
-### For the Vault Skill
+### For the Vault Skills (vault-ingress, vault-clarification, vault-profile)
 - Python 3 environment with `gdown`, `youtube-transcript-api`, `python-pptx`
 - `yt-dlp` command-line tool
 - Talks with YouTube recordings and slides (PPTX files and/or Google Drive exports)
 
-### For the Creator Skill
+### For the Presentation Creator & Illustrations Skills
 - MCP PPT server (for slide generation)
 - `python-pptx` (for speaker notes, structural edits)
 - Microsoft PowerPoint (for PDF export via AppleScript, macOS only)
 - A PowerPoint template (the vault captures the path; a generic template works too)
+
+### For the Shownotes Publisher Skill
+- A Jekyll-based shownotes site cloned locally (`~/Projects/shownotes`
+  by default). The site must use the custom markdown parser plugin
+  this skill targets; see
+  [`skills/shownotes-publisher/references/parser-contract.md`](skills/shownotes-publisher/references/parser-contract.md)
+- `bundle exec jekyll build` available locally for the Step 8 validation
+- `gh` CLI for the branch + PR publish flow (and for direct push under
+  the `ci-safety` Content-Only Direct-Push Carve-Out when the target
+  repo has it wired)
 
 ## File Reference
 
