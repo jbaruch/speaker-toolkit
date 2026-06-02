@@ -21,15 +21,13 @@ drive which models reach the shortlist (Sub-step 3):
   progressive-reveal builds and edit/fix iteration
 
 Present this with `AskUserQuestion` as a **multi-select** (checkboxes, not a
-single-choice radio) — the speaker can pick several and they combine (e.g.
-"quality and editability"). `build-editability` is a hard filter that drops
-models which can't edit; cost/speed/quality are soft rankings applied together.
-Pass every chosen priority to `--shortlist` (Sub-step 3); their order doesn't
-matter.
+single-choice radio) — the speaker can pick several (e.g. "quality and
+editability"). Pass every chosen priority to `--shortlist` (Sub-step 3), which
+ranks and filters the roster accordingly.
 
 Auto-flag `build-editability` when any slide carries a `Builds:` block — build
-chains run on edit endpoints, and Imagen has none. A deck with no builds can
-drop the constraint and open the shortlist to every family.
+frames are produced by editing the previous frame, so the model must support
+editing. A deck with no builds can drop the constraint.
 
 Per-model attributes and how priorities rank them live in
 `skills/illustrations/scripts/model_registry.py` (the `MODEL_REGISTRY` entries
@@ -64,8 +62,7 @@ python3 skills/illustrations/scripts/model_registry.py --shortlist <priorities>
 ```
 
 Pass the priorities comma-separated (e.g. `quality,build-editability`). The
-script returns the ranked candidate models as JSON, best first, with
-edit-incapable models dropped when `build-editability` is set. Carry the top
+script returns the ranked candidate models as JSON, best first. Carry the top
 1–3 into the exploration render. The ranking and filter logic are in
 `model_registry.py` — read the JSON, don't reimplement them.
 

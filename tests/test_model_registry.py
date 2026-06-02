@@ -77,8 +77,9 @@ def test_shortlist_build_editability_excludes_imagen(model_registry):
     ranked = model_registry.shortlist_models(["build-editability"])
     families = {m["family"] for m in ranked}
     assert "imagen" not in families
-    # the three edit-capable models survive
-    assert len(ranked) == 3
+    # every survivor is edit-capable (assert the property, not a fixed count)
+    assert all(m["edit"] not in (None, "", "none") for m in ranked)
+    assert ranked, "shortlist should retain the edit-capable models"
 
 
 def test_shortlist_cost_ranks_cheapest_first(model_registry):
@@ -163,6 +164,12 @@ def test_shortlist_injected_model_without_id_raises(model_registry):
 
 def test_shortlist_extra_none_is_noop(model_registry):
     assert model_registry.shortlist_models(["cost"], extra_models=None) == \
+        model_registry.shortlist_models(["cost"])
+
+
+def test_shortlist_deduplicates_priorities(model_registry):
+    # A repeated priority must not double its weight — repetition is meaningless.
+    assert model_registry.shortlist_models(["cost", "cost"]) == \
         model_registry.shortlist_models(["cost"])
 
 

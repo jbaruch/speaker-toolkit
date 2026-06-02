@@ -1031,18 +1031,29 @@ def parse_candidates(path):
     models = data.get("models")
     if not isinstance(models, list) or not models:
         raise ValueError(f"{path}: 'models' must be a non-empty list of model ids.")
+    for i, m in enumerate(models):
+        if not isinstance(m, str) or not m.strip():
+            raise ValueError(f"{path}: models[{i}] must be a non-empty string model id.")
+    data["models"] = [m.strip() for m in models]
     styles = data.get("styles")
     if not isinstance(styles, list) or not styles:
         raise ValueError(f"{path}: 'styles' must be a non-empty list of style entries.")
     for i, style in enumerate(styles):
-        if not isinstance(style, dict) or not style.get("name"):
-            raise ValueError(f"{path}: styles[{i}] needs a non-empty 'name'.")
+        if not isinstance(style, dict) or not isinstance(style.get("name"), str) \
+                or not style["name"].strip():
+            raise ValueError(f"{path}: styles[{i}] needs a non-empty string 'name'.")
         anchors = style.get("anchors")
         if not isinstance(anchors, dict) or not anchors:
             raise ValueError(
                 f"{path}: styles[{i}] ('{style.get('name', '?')}') needs an "
                 "'anchors' map of format -> anchor text."
             )
+        for fmt, text in anchors.items():
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError(
+                    f"{path}: styles[{i}] ('{style['name']}') anchor for '{fmt}' "
+                    "must be a non-empty string."
+                )
     return data
 
 
@@ -1131,12 +1142,13 @@ def run_style_explore(outline_path, candidates_path):
     plan = []
     for style in candidates["styles"]:
         for fmt, scene_prompt, safe_zone in targets:
-            anchor = style["anchors"].get(fmt)
+            eff_format = effective_slide_format(fmt, safe_zone)
+            # When a safe zone forces FULL, prefer the style's eff_format anchor
+            # so anchor text, substitution, and sizing all agree; fall back to
+            # the declared format's anchor.
+            anchor = style["anchors"].get(eff_format) or style["anchors"].get(fmt)
             if not anchor:
                 continue
-            eff_format = effective_slide_format(fmt, safe_zone)
-            # Key the anchor by eff_format so substitution and sizing agree when
-            # a safe zone forces FULL (effective_slide_format) on the slide.
             prompt = apply_safe_zone_directive(
                 resolve_prompt(scene_prompt, eff_format, {eff_format: anchor}), safe_zone
             )

@@ -166,6 +166,9 @@ def shortlist_models(priorities, registry=None, extra_models=None):
             if not isinstance(m, dict) or not m.get("id"):
                 raise ValueError(f"extra_models[{i}] needs at least an 'id' field.")
         reg = reg + list(extra_models)
+    # De-duplicate (preserving first occurrence) so an accidental repeat can't
+    # double a soft signal's weight — order and repetition are not meant to matter.
+    priorities = list(dict.fromkeys(priorities))
     for p in priorities:
         if p not in VALID_PRIORITIES:
             raise ValueError(

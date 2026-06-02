@@ -118,8 +118,8 @@ protocol runs in this order:
 1. Elicit optimization priorities with an `AskUserQuestion` multi-select
    (checkboxes, not radio) — the speaker checks any of cost, speed, quality,
    build-editability (e.g. `quality,build-editability`). Auto-add
-   build-editability when any slide has a `Builds:` block (Imagen has no edit
-   endpoint, so build chains can't run on it).
+   build-editability when any slide has a `Builds:` block (build frames are
+   produced by editing the previous frame, so the model must support editing).
 2. Define format vocabulary (FULL / IMG+TXT / EXCEPTION + any talk-specific
    additions).
 3. Narrow the roster to a shortlist by priority — no render yet:

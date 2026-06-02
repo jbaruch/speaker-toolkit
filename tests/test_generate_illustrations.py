@@ -548,6 +548,38 @@ def test_parse_candidates_style_without_anchors(generate_illustrations, tmp_path
     assert "anchors" in str(exc.value)
 
 
+def test_parse_candidates_non_string_model_rejected(generate_illustrations, tmp_path):
+    import pytest
+    path = _write_candidates(tmp_path, _candidates(models=["gpt-image-2", 7]))
+    with pytest.raises(ValueError) as exc:
+        generate_illustrations.parse_candidates(path)
+    assert "models[1]" in str(exc.value)
+
+
+def test_parse_candidates_strips_model_whitespace(generate_illustrations, tmp_path):
+    path = _write_candidates(tmp_path, _candidates(models=["  gpt-image-2  "]))
+    data = generate_illustrations.parse_candidates(path)
+    assert data["models"] == ["gpt-image-2"]
+
+
+def test_parse_candidates_blank_anchor_rejected(generate_illustrations, tmp_path):
+    import pytest
+    bad = _candidates(styles=[{"name": "S", "anchors": {"FULL": "   "}}])
+    path = _write_candidates(tmp_path, bad)
+    with pytest.raises(ValueError) as exc:
+        generate_illustrations.parse_candidates(path)
+    assert "anchor for 'FULL'" in str(exc.value)
+
+
+def test_parse_candidates_non_string_name_rejected(generate_illustrations, tmp_path):
+    import pytest
+    bad = _candidates(styles=[{"name": 42, "anchors": {"FULL": "x"}}])
+    path = _write_candidates(tmp_path, bad)
+    with pytest.raises(ValueError) as exc:
+        generate_illustrations.parse_candidates(path)
+    assert "non-empty string 'name'" in str(exc.value)
+
+
 def test_parse_candidates_string_slide_number_rejected(generate_illustrations, tmp_path):
     import pytest
     # A string slide number would key slides_by_num by the wrong type and
