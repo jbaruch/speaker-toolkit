@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### feat(presentation-creator) — PowerPoint-native deck editing (preserves illustrated backgrounds)
+
+Adds a non-corrupting way to make structural edits (delete / reorder /
+cross-deck import) to an existing `.pptx`, driven by the real PowerPoint app
+instead of python-pptx. Prompted by a concrete failure: trimming a 128-slide,
+51 MB illustrated deck with python-pptx / clipboard paste flattened every
+slide whose full-bleed art is a per-slide background fill — the output dropped
+to 6.2 MB with all backgrounds gone (picture *shapes* survived, per-slide
+`<p:bg>` fills did not). The InsertFromFile path recovered the same cut to
+24 MB with backgrounds intact.
+
+- **New steering rule (`rules/deck-editing-rules.md`)** — when to use real
+  PowerPoint vs the cross-platform `delete-slides.py` / `reorder-slides.py`
+  (the latter are fine only for plain decks), plus the Mac PowerPoint VBA
+  landmines and how each is handled.
+- **`RunDeckOps.bas`** — reusable VBA macro that rebuilds a deck via
+  `Slides.InsertFromFile` (keep-source-formatting Reuse Slides) in a target
+  order, with cross-deck import, global text replace, and a COPY-only save.
+  Guards against the filename-collision trap and self-cleans on failure.
+- **`run-deck-ops.applescript` + `run-deck-ops.sh`** — driver and wrapper; the
+  wrapper stages locally then moves into place (sandboxed PowerPoint can't
+  create files in a Google Drive File-Provider folder).
+- macOS + Microsoft PowerPoint only — drives the app via Automation, so it is
+  untestable in Linux CI by design; validate output by re-opening in PowerPoint
+  and Keynote. README steering-rules table and `tile.json` steering updated.
+
 ### feat(shownotes-publisher) — new skill for the Jekyll shownotes site
 
 A sixth skill, `shownotes-publisher`, writes talk pages into a

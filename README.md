@@ -184,6 +184,7 @@ The tile ships persistent steering rules (auto-loaded by the agent at runtime vi
 |------|-------|
 | [`vault-language-policy`](rules/vault-language-policy.md) | Vault analysis prose conventions and forbidden phrasings. |
 | [`slide-generation-rules`](rules/slide-generation-rules.md) | `.pptx` generation gotchas and Keynote compatibility constraints. |
+| [`deck-editing-rules`](rules/deck-editing-rules.md) | Structural edits (delete/reorder/import) to illustrated decks via real PowerPoint (macOS), not python-pptx. |
 | [`guardrail-rules`](rules/guardrail-rules.md) | Creator guardrail checks (slide budget, Act 1 ratio, profanity, branding, antipattern scan). |
 | [`illustration-rules`](rules/illustration-rules.md) | Edit vs regenerate asymmetry, build chains, iteration hygiene. |
 | [`title-overlay-rules`](rules/title-overlay-rules.md) | Title-safe-zone composition policy for FULL illustrations. |
