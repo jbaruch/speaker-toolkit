@@ -1143,11 +1143,27 @@ def run_style_explore(outline_path, candidates_path):
                 file=sys.stderr,
             )
             continue
-        targets.append((fmt, slide["prompt"], slide.get("safe_zone")))
+        safe_zone = slide.get("safe_zone")
+        # A safe zone forces FULL sizing/anchor downstream; if that disagrees
+        # with the format being explored, the cell would render at the wrong
+        # geometry. Skip it so every rendered cell keys consistently on `fmt`.
+        if effective_slide_format(fmt, safe_zone) != fmt:
+            print(
+                f"WARNING: slide {slide_num} for format {fmt} carries a Safe zone "
+                f"that forces FULL; choose a representative {fmt} slide without a "
+                "safe zone. Skipping that format.",
+                file=sys.stderr,
+            )
+            continue
+        targets.append((fmt, slide["prompt"], safe_zone))
 
     if not targets:
-        print("ERROR: none of the candidate slides have image prompts in the outline.")
-        print(f"Slides referenced: {candidates['slides']}")
+        print(
+            "ERROR: none of the candidate slides have a usable image prompt for "
+            "their format in the outline.",
+            file=sys.stderr,
+        )
+        print(f"Slides referenced: {candidates['slides']}", file=sys.stderr)
         sys.exit(1)
 
     # Build the full render plan up front so the progress count is exact.

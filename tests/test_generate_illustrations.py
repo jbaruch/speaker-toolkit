@@ -648,6 +648,32 @@ def test_run_style_explore_empty_plan_exits_cleanly(generate_illustrations, tmp_
     assert "nothing to render" in capsys.readouterr().err
 
 
+def test_run_style_explore_safezone_format_mismatch_skipped(generate_illustrations, tmp_path, monkeypatch, capsys):
+    import pytest
+    # A non-FULL format mapped to a slide whose Safe zone forces FULL is skipped
+    # (its geometry would disagree); with no usable targets left, the run exits
+    # non-zero and both diagnostics go to stderr.
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    outline = tmp_path / "outline.md"
+    outline.write_text(
+        "# Plan\n\n**Model:** `gemini-3-pro-image-preview`\n\n"
+        "### STYLE ANCHOR (IMG+TXT — Portrait 2:3, 1024x1536)\n> A base.\n\n"
+        "### Slide 4: Portrait with zone\n- Format: **IMG+TXT**\n"
+        "- Image prompt: `[STYLE ANCHOR] tall`\n- Safe zone: upper_third (sky)\n"
+    )
+    cand = _candidates(
+        slides={"IMG+TXT": 4},
+        models=["gemini-3-pro-image-preview"],
+        styles=[{"name": "S", "anchors": {"IMG+TXT": "portrait"}}],
+    )
+    cpath = _write_candidates(tmp_path, cand)
+    with pytest.raises(SystemExit) as exc:
+        generate_illustrations.run_style_explore(str(outline), cpath)
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "Safe zone" in err and "usable image prompt" in err
+
+
 def test_render_explore_index_groups_by_style(generate_illustrations):
     candidates = _candidates()
     results = [

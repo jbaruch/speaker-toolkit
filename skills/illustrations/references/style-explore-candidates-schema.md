@@ -46,5 +46,9 @@ exploration grid.
 
 The render writes `style-explore/<style-slug>/<format-slug>/<model>.<ext>` per
 cell plus `style-explore/index.md`, a contact sheet grouped by style linking
-each rendered image. Migrations bump `schema_version`; the owner skill performs
-the upgrade on read.
+each rendered image.
+
+Only `schema_version` 1 is accepted today — the reader rejects any other value.
+`candidates.json` is a transient per-talk input, not a persisted record, so
+there is no on-read migration. A future schema change bumps the version and
+teaches the reader to handle the new shape.
