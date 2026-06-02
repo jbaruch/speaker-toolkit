@@ -318,6 +318,72 @@ def test_swap_or_insert_picture_swaps_when_present(apply_illustrations, tmp_path
     assert pic.top == Inches(2)
 
 
+_MIN_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108020000"
+    "00907753de0000000c4944415478da6300010000000500010d0a2db40000"
+    "000049454e44ae426082"
+)
+
+
+def test_apply_full_records_background_not_picture(apply_illustrations, tmp_path):
+    """FULL slides are recorded for the VBA background pass, not given a picture shape."""
+    from pptx import Presentation
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    (illust_dir / "slide-02.png").write_bytes(_MIN_PNG)
+
+    outline = tmp_path / "outline.md"
+    outline.write_text(
+        "### Slide 2: The Problem\n- Format: **FULL**\n- Safe zone: upper_third (sky)\n"
+    )
+    out_deck = tmp_path / "out.pptx"
+
+    zones = apply_illustrations.parse_zones(outline)
+    _, backgrounds = apply_illustrations.apply(
+        deck, illust_dir, zones, set(), out_deck, "png", "000000", 45000,
+    )
+
+    # FULL slide 2 is recorded for the background pass with an absolute path…
+    assert backgrounds == {2: str((illust_dir / "slide-02.png").resolve())}
+    # …and NOT inserted as a picture shape (background fill is applied later via VBA)
+    slide2 = Presentation(str(out_deck)).slides[1]
+    pictures = [s for s in slide2.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    assert pictures == []
+
+
+def test_apply_imgtxt_keeps_picture_shape(apply_illustrations, tmp_path):
+    """IMG+TXT slides still get a real picture shape (not a background fill)."""
+    from pptx import Presentation
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    (illust_dir / "slide-02.png").write_bytes(_MIN_PNG)
+
+    outline = tmp_path / "outline.md"
+    outline.write_text("### Slide 2: Detail\n- Format: **IMG+TXT**\n")
+    out_deck = tmp_path / "out.pptx"
+
+    img_txt = apply_illustrations.parse_img_txt_slides(outline)
+    _, backgrounds = apply_illustrations.apply(
+        deck, illust_dir, {}, img_txt, out_deck, "png", "000000", 45000,
+    )
+
+    # IMG+TXT is not a background; it stays a picture shape
+    assert backgrounds == {}
+    slide2 = Presentation(str(out_deck)).slides[1]
+    pictures = [s for s in slide2.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    assert len(pictures) == 1
+
+
 def test_imgtxt_geometry_constants_consistent(apply_illustrations):
     """IMG+TXT image + text columns + margins fit the 13.333" slide."""
     img_right = (

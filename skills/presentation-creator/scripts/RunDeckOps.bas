@@ -223,6 +223,71 @@ Fail2:
     MakeBgImageSlide = -1
 End Function
 
+' Set per-slide BACKGROUND FILLS in bulk — the creation-time counterpart of
+' MakeBgImageSlide. Each illustration becomes the slide's background (not a
+' top-pasted picture shape), so the layout's halftone-dot overlay covers it
+' and a python-pptx round-trip can't drop it. Run this as the FINAL write of
+' the build pipeline (after structure / scrim / title / notes), since any
+' later python-pptx save would re-drop the <p:bg> fills.
+' Invoked via:
+'   run VB macro macro name "ApplyBackgrounds" list of parameters _
+'       {basePath, outPath, specStr}
+' specStr = "<1-based slide #>=/posix/path[;<#>=/posix/path2 ...]"
+Public Function ApplyBackgrounds(ByVal basePath As String, _
+                                 ByVal outPath As String, _
+                                 ByVal specStr As String) As Long
+    Dim curTok As String
+    Dim base As Presentation
+    On Error GoTo Fail3
+
+    curTok = "guard:base"
+    AssertNotOpen BaseName(basePath)
+    curTok = "open:base"
+    Set base = Presentations.Open(FileName:=basePath, WithWindow:=msoTrue)
+
+    Dim pairs() As String, k As Long, eq As Long
+    Dim num As Long, imgPath As String, applied As Long
+    Dim s As Slide
+    pairs = Split(Trim(specStr), ";")
+    applied = 0
+    For k = LBound(pairs) To UBound(pairs)
+        If Len(Trim(pairs(k))) > 0 Then
+            eq = InStr(pairs(k), "=")
+            If eq = 0 Then Err.Raise vbObjectError + 516, , _
+                "Bad spec token (need '#=path'): " & pairs(k)
+            num = CLng(Trim(Left(pairs(k), eq - 1)))
+            imgPath = Trim(Mid(pairs(k), eq + 1))
+            curTok = "bg:" & num
+            If num < 1 Or num > base.Slides.Count Then Err.Raise vbObjectError + 517, , _
+                "Slide " & num & " out of range (deck has " & base.Slides.Count & ")"
+            Set s = base.Slides(num)
+            s.FollowMasterBackground = msoFalse
+            s.Background.Fill.UserPicture imgPath
+            applied = applied + 1
+        End If
+    Next k
+
+    curTok = "save"
+    base.SaveCopyAs FileName:=outPath
+    curTok = "close"
+    base.Close
+    ApplyBackgrounds = applied
+    Exit Function
+
+Fail3:
+    Dim em As String
+    em = "ApplyBackgrounds failed at [" & curTok & "]:" & vbCr & _
+         Err.Number & " - " & Err.Description
+    On Error Resume Next
+    If Not base Is Nothing Then
+        base.Saved = msoTrue
+        base.Close
+    End If
+    On Error GoTo 0
+    MsgBox em, vbCritical, "ApplyBackgrounds"
+    ApplyBackgrounds = -1
+End Function
+
 ' Filename portion of a POSIX path.
 Private Function BaseName(ByVal p As String) As String
     Dim k As Long

@@ -398,6 +398,8 @@ speaker-toolkit-tile/
     |   |   +-- run-deck-ops.applescript       # AppleScript driver for RunDeckOps
     |   |   +-- make-bg-slide.sh               # Wrapper for MakeBgImageSlide (illustration -> bg slide)
     |   |   +-- make-bg-slide.applescript      # AppleScript driver for MakeBgImageSlide
+    |   |   +-- apply-backgrounds.sh           # Wrapper for ApplyBackgrounds (bulk FULL-slide bg fills)
+    |   |   +-- apply-backgrounds.applescript  # AppleScript driver for ApplyBackgrounds
     |   +-- references/
     |       +-- phase0-intake.md through phase7-post-event.md  # Phase detail docs
     |       +-- patterns/                     # Presentation Patterns taxonomy (102 entries)

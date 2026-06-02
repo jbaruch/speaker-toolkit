@@ -115,14 +115,29 @@ python3 skills/illustrations/scripts/apply-illustrations-to-deck.py \
 
 The script:
 
-1. For each slide whose outline block has a `Safe zone:` field, swaps the
-   background picture with the matching illustration from `illustrations/`.
-2. Adds a zone-sized scrim rectangle between the picture and the title text.
+1. For each FULL slide (a `Safe zone:` field), records the illustration in a
+   backgrounds manifest (`--backgrounds-out`, default `<out_stem>.backgrounds.json`)
+   for the PowerPoint background pass below — it does NOT insert a picture shape.
+2. Adds a zone-sized scrim rectangle above the (later) background and below the title.
 3. Repositions title text boxes into the declared safe zone.
 4. For each slide with `Format: IMG+TXT`, applies the IMG+TXT layout
-   (image ~60% on the left, title placeholder + body on the right).
+   (image ~60% on the left as a picture shape, title placeholder + body on the right).
 5. Inserts build sequences (see [skills/illustrations/references/builds.md](builds.md)) for any slide with a
    `- Builds:` block.
+
+Then set the FULL-slide backgrounds via the real PowerPoint app, so each
+illustration becomes the slide BACKGROUND FILL (covered by the layout's
+halftone-dot overlay) and survives — a python-pptx round-trip would drop it.
+Run this as the FINAL write of the build, AFTER speaker notes are injected:
+
+```bash
+# operate on a uniquely-named copy — PowerPoint keys open decks by filename
+cp deck-with-titles.pptx deck-bg-src.pptx
+skills/presentation-creator/scripts/apply-backgrounds.sh \
+  deck-bg-src.pptx deck-final.pptx deck-with-titles.backgrounds.json
+```
+
+macOS + Microsoft PowerPoint only; see [`rules/deck-editing-rules.md`](../../../rules/deck-editing-rules.md).
 
 If no scrim color is supplied, run `python3 skills/illustrations/scripts/suggest-scrim-color.py illustrations/`
 first to sample a deck-tuned color. For warm or cool styled decks, the

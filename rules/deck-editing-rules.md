@@ -55,6 +55,21 @@ decks; this rule says what to use instead.
 - Generate the illustration first with the `illustrations` skill (style anchor +
   title-safe-zone), then make it a background slide here.
 
+## Set Illustration Backgrounds in Bulk at Creation Time
+
+- When building a NEW deck, FULL-slide illustrations must also be slide
+  BACKGROUND FILLS, not picture shapes — same overlay reason as above. python-pptx
+  must not insert them as shapes, and must not be the last writer (it re-drops
+  `<p:bg>` fills on save).
+- `apply-illustrations-to-deck.py` records each FULL slide in a backgrounds
+  manifest (`--backgrounds-out`) and applies only scrim + title; it does NOT
+  insert FULL-slide pictures. IMG+TXT slides keep a left-column picture shape.
+- `RunDeckOps.bas`'s `ApplyBackgrounds` then sets all FULL backgrounds via
+  `Slide.Background.Fill.UserPicture` in one pass. Invoke via
+  `skills/presentation-creator/scripts/apply-backgrounds.sh <baseCopy> <out> <manifest.json>`.
+- Run this as the FINAL write of the build — after the structural walk, scrim/
+  title, and speaker-note injection — so no later python-pptx save drops the fills.
+
 ## macOS-Only — Untestable in CI
 
 - This method requires the Microsoft PowerPoint app and macOS Automation, so it

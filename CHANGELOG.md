@@ -35,9 +35,19 @@ InsertFromFile path recovered the same cut to 24 MB with backgrounds intact.
   slides) by cloning a template slide, swapping its background, and retitling —
   a top-pasted picture would sit above the overlay. Produces a 1-slide deck to
   import via `run-deck-ops.sh`.
+- **`ApplyBackgrounds` (+ `apply-backgrounds.applescript` / `apply-backgrounds.sh`)** —
+  the creation-time counterpart: set FULL-slide illustration backgrounds in bulk
+  via `Slide.Background.Fill.UserPicture`, run as the final write of the build.
+  `apply-illustrations-to-deck.py` no longer inserts FULL-slide picture shapes —
+  it records each FULL slide in a backgrounds manifest (`--backgrounds-out`) and
+  applies only scrim + title; IMG+TXT keeps its left-column picture shape. Begins
+  retiring python-pptx as a deck writer for creation (Phase B of #57). Phase 5
+  reorders so the VBA background pass runs after speaker-note injection.
 - macOS + Microsoft PowerPoint only — drives the app via Automation, so it is
   untestable in Linux CI by design; validate output by re-opening in PowerPoint
   and Keynote. README steering-rules table and `tile.json` steering updated.
+- Full retirement of MCP + python-pptx as deck writers (real PowerPoint becomes
+  the sole `.pptx` engine) is tracked in #57 with a phased plan.
 
 ### feat(shownotes-publisher) — new skill for the Jekyll shownotes site
 

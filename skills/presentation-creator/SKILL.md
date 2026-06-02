@@ -357,9 +357,10 @@ slides and EXCEPTION-format slides, handle inline as normal (the `IMAGE-NN`
 placeholder resolves to a real asset). For FULL and IMG+TXT slides, build the
 slide structure (layout, title, footer) and **omit `manage_image`** — the
 slide is left without a picture shape. The illustrations skill handles
-insertion in the post-walk apply pass: `apply-illustrations-to-deck.py`'s
-`swap_or_insert_picture` adds a full-bleed picture when the slide has none,
-or swaps the existing one when the template seeded a picture placeholder.
+illustrations in the post-walk apply pass: FULL slides get a slide BACKGROUND
+FILL (set by the PowerPoint `apply-backgrounds.sh` pass, so the layout's
+halftone-dot overlay covers them); IMG+TXT slides get a left-column picture
+shape via `apply-illustrations-to-deck.py`.
 
 After the structural walk completes, if `outline.yaml` declares `style_anchor`,
 delegate to `Skill(skill: "illustrations")` to generate illustrations, generate
@@ -370,7 +371,12 @@ in the format the illustrations skill consumes. Updating the illustrations
 skill to consume `outline.yaml` natively is tracked separately.
 
 Inject speaker notes from `script.md` via python-pptx batch after the
-illustrations skill returns.
+illustrations skill returns. THEN, as the final write, set the FULL-slide
+backgrounds via `skills/presentation-creator/scripts/apply-backgrounds.sh`
+using the manifest from the apply pass — it must run last, since any later
+python-pptx save would re-drop the per-slide background fills. See
+`rules/deck-editing-rules.md`. Full migration of creation/notes off
+python-pptx + MCP onto real PowerPoint is tracked in #57.
 
 **For presenterm talks (terminal markdown):**
 
