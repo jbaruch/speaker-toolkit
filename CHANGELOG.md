@@ -24,6 +24,12 @@ to 6.2 MB with all backgrounds gone (picture *shapes* survived, per-slide
 - **`run-deck-ops.applescript` + `run-deck-ops.sh`** — driver and wrapper; the
   wrapper stages locally then moves into place (sandboxed PowerPoint can't
   create files in a Google Drive File-Provider folder).
+- **`MakeBgImageSlide` (+ `make-bg-slide.applescript` / `make-bg-slide.sh`)** —
+  turn a generated illustration into a slide whose image is the BACKGROUND FILL
+  (so the layout's halftone-dot overlay covers it, matching the other comic
+  slides) by cloning a template slide, swapping its background, and retitling —
+  a top-pasted picture would sit above the overlay. Produces a 1-slide deck to
+  import via `run-deck-ops.sh`.
 - macOS + Microsoft PowerPoint only — drives the app via Automation, so it is
   untestable in Linux CI by design; validate output by re-opening in PowerPoint
   and Keynote. README steering-rules table and `tile.json` steering updated.

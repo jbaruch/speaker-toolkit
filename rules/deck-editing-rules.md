@@ -37,6 +37,25 @@ illustrated decks; this rule says what to use instead.
   Walk the user through it interactively the first time — see
   `skills/presentation-creator/references/deck-editing-setup.md`.
 
+## Add a Generated Illustration as a Slide Background
+
+- A generated illustration must become the slide's BACKGROUND FILL, not a
+  top-pasted picture. In these comic decks the halftone-dot pattern is an
+  overlay picture on the slide LAYOUT, painted above the slide background and
+  below the slide's text. A picture pasted as a shape lands ABOVE that overlay
+  (so the dots don't cover it) and won't match the other slides.
+- Don't hand-build the slide in python-pptx either: a fresh deck can't borrow
+  the source deck's layout (and thus its dot overlay).
+- `RunDeckOps.bas`'s `MakeBgImageSlide` does it right: CLONE a comic template
+  slide (inheriting the layout's dot overlay, the styled title box, and the
+  footer), set `Slide.Background.Fill.UserPicture` to the image, retitle, and
+  save a 1-slide deck. Pick a template whose title sits in the same region the
+  image left clear (the title's safe zone). Invoke via
+  `skills/presentation-creator/scripts/make-bg-slide.sh`, then import the
+  resulting slide into the deck with `run-deck-ops.sh` (order token `<alias>:1`).
+- Generate the illustration first with the `illustrations` skill (style anchor +
+  title-safe-zone), then make it a background slide here.
+
 ## macOS-Only — Untestable in CI
 
 - This method requires the Microsoft PowerPoint app and macOS Automation, so it
