@@ -13,6 +13,7 @@ Usage:
     python3 generate-illustrations.py <outline.md> 2 5 9
     python3 generate-illustrations.py <outline.md> 2-10
     python3 generate-illustrations.py <outline.md> --compare 2
+    python3 generate-illustrations.py <outline.md> --style-explore candidates.json
     python3 generate-illustrations.py <outline.md> --edit 5 "Erase the label"
     python3 generate-illustrations.py <outline.md> --build 5
     python3 generate-illustrations.py <outline.md> --build all
@@ -43,22 +44,17 @@ import urllib.error
 import urllib.request
 import uuid
 
+from model_registry import COMPARE_MODELS, resolve_model_id
+
 # --- Constants ---
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 OPENAI_API_BASE = "https://api.openai.com/v1"
 
-# Curated list of current flagship image-generation models from major vendors.
-# Used by --compare mode. The illustrations skill's Step 2 (model-freshness
-# check) tracks this list — bump it when newer flagships ship rather than
-# leaving stale entries in place.
-COMPARE_MODELS = [
-    "gemini-3-pro-image-preview",
-    "gemini-3.1-flash-image-preview",
-    "nano-banana-pro-preview",
-    "imagen-4.0-ultra-generate-001",
-    "gpt-image-2",
-]
+# The model roster, vendor aliases, and per-model attributes live in
+# model_registry.py (the single source of truth). --compare uses COMPARE_MODELS
+# from there; resolve_model_id() maps baked codenames (e.g. nano-banana-pro) to
+# the canonical API id before dispatch.
 
 # Per-format sizing for vendors that take explicit size / aspect-ratio
 # params. Gemini infers aspect from prompt hints, so it doesn't appear
@@ -781,6 +777,7 @@ def generate_image(prompt, model, keys, slide_format=None):
     Returns:
         tuple (image_bytes, mime_type) on success, or (None, error_message) on failure.
     """
+    model = resolve_model_id(model)
     family = model_family(model)
     sizing = sizing_for(slide_format)
     if family == "openai":
@@ -816,6 +813,7 @@ def edit_image(input_path, edit_prompt, model, keys, slide_format=None):
     if suffixes:
         edit_prompt = edit_prompt.rstrip(". ") + ". " + " ".join(suffixes)
 
+    model = resolve_model_id(model)
     family = model_family(model)
     sizing = sizing_for(slide_format)
     if family == "openai":
@@ -982,6 +980,200 @@ def run_compare(outline_path, slide_num):
     print()
     print(f"Review images in: {output_dir}/")
     print("Set your chosen model in the outline: **Model:** `model-name`")
+
+
+# --- Style Exploration (Phase 2 strategy: style x model x format grid) ---
+
+def style_slug(name):
+    """Filesystem-safe kebab-case slug for a style name."""
+    slug = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
+    return slug or "style"
+
+
+def _format_slug(fmt):
+    """Filesystem-safe token for a slide format (e.g. IMG+TXT -> img-txt)."""
+    return re.sub(r"[^a-z0-9]+", "-", fmt.strip().lower()).strip("-") or "format"
+
+
+def parse_candidates(path):
+    """Parse + validate a style-explore candidates.json file.
+
+    Schema (schema_version 1) is documented in
+    skills/illustrations/references/style-explore-candidates-schema.md.
+
+    Returns the parsed dict. Raises ValueError with an actionable message on a
+    malformed file.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"{path} is not valid JSON ({e}).")
+
+    if data.get("schema_version") != 1:
+        raise ValueError(
+            f"{path}: unsupported schema_version {data.get('schema_version')!r}; "
+            "expected 1."
+        )
+    slides = data.get("slides")
+    if not isinstance(slides, dict) or not slides:
+        raise ValueError(
+            f"{path}: 'slides' must map at least one format to a slide number "
+            '(e.g. {"FULL": 7, "IMG+TXT": 12}).'
+        )
+    models = data.get("models")
+    if not isinstance(models, list) or not models:
+        raise ValueError(f"{path}: 'models' must be a non-empty list of model ids.")
+    styles = data.get("styles")
+    if not isinstance(styles, list) or not styles:
+        raise ValueError(f"{path}: 'styles' must be a non-empty list of style entries.")
+    for i, style in enumerate(styles):
+        if not isinstance(style, dict) or not style.get("name"):
+            raise ValueError(f"{path}: styles[{i}] needs a non-empty 'name'.")
+        anchors = style.get("anchors")
+        if not isinstance(anchors, dict) or not anchors:
+            raise ValueError(
+                f"{path}: styles[{i}] ('{style.get('name', '?')}') needs an "
+                "'anchors' map of format -> anchor text."
+            )
+    return data
+
+
+def explore_dest(base_dir, style_name, fmt, model, ext):
+    """Destination path for one style-explore render."""
+    safe_model = model.replace("/", "_")
+    return os.path.join(
+        base_dir, style_slug(style_name), _format_slug(fmt), f"{safe_model}{ext}"
+    )
+
+
+def render_explore_index(candidates, results):
+    """Render the style-explore/index.md contact sheet.
+
+    results: list of dicts with keys style, format, model, status ("OK"/"FAIL"),
+    plus rel_path (OK) or error (FAIL). Paths are relative to the style-explore
+    directory so the links resolve in place.
+    """
+    slides = candidates.get("slides", {})
+    slide_desc = ", ".join(f"{fmt} = slide {n}" for fmt, n in slides.items())
+    lines = [
+        "# Style Exploration",
+        "",
+        f"Representative slides: {slide_desc}",
+        f"Models: {', '.join(candidates.get('models', []))}",
+        "",
+    ]
+    by_style = {}
+    for r in results:
+        by_style.setdefault(r["style"], []).append(r)
+    for style in candidates.get("styles", []):
+        name = style["name"]
+        lines.append(f"## {name}")
+        lines.append("")
+        for r in by_style.get(name, []):
+            label = f"**{r['format']}** · `{r['model']}`"
+            if r["status"] == "OK":
+                lines.append(f"- {label} — [{r['rel_path']}]({r['rel_path']})")
+            else:
+                lines.append(f"- {label} — FAILED: {r['error']}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def run_style_explore(outline_path, candidates_path):
+    """Render a style x model x format exploration grid for Phase 2 strategy.
+
+    Reads candidate styles + a model shortlist from candidates.json, pulls each
+    format's representative scene prompt from the outline, substitutes each
+    candidate style's anchor, and renders across the shortlisted models into a
+    structured style-explore/ directory with an index.md contact sheet.
+    """
+    candidates = parse_candidates(candidates_path)
+
+    keys, secrets_path = load_secrets()
+    outline = parse_outline(outline_path)
+    slides_by_num = {s["slide_num"]: s for s in outline["slides"]}
+
+    families = {model_family(resolve_model_id(m)) for m in candidates["models"]}
+    _require_keys_for_families(keys, families, secrets_path)
+
+    base_dir = os.path.join(
+        os.path.dirname(os.path.abspath(outline_path)), "style-explore"
+    )
+    os.makedirs(base_dir, exist_ok=True)
+
+    # Resolve each format's representative scene prompt from the outline.
+    targets = []
+    for fmt, slide_num in candidates["slides"].items():
+        slide = slides_by_num.get(slide_num)
+        if not slide:
+            print(
+                f"WARNING: slide {slide_num} (for {fmt}) has no image prompt in "
+                "the outline; skipping that format.",
+                file=sys.stderr,
+            )
+            continue
+        targets.append((fmt, slide["prompt"], slide.get("safe_zone")))
+
+    if not targets:
+        print("ERROR: none of the candidate slides have image prompts in the outline.")
+        print(f"Slides referenced: {candidates['slides']}")
+        sys.exit(1)
+
+    # Build the full render plan up front so the progress count is exact.
+    plan = []
+    for style in candidates["styles"]:
+        for fmt, scene_prompt, safe_zone in targets:
+            anchor = style["anchors"].get(fmt)
+            if not anchor:
+                continue
+            eff_format = effective_slide_format(fmt, safe_zone)
+            prompt = apply_safe_zone_directive(
+                resolve_prompt(scene_prompt, fmt, {fmt: anchor}), safe_zone
+            )
+            for model in candidates["models"]:
+                plan.append((style["name"], fmt, model, prompt, eff_format))
+
+    total = len(plan)
+    print(
+        f"Style exploration -> {total} renders "
+        f"({len(candidates['styles'])} styles x {len(targets)} formats x "
+        f"{len(candidates['models'])} models)"
+    )
+    print(f"Output: {base_dir}/")
+    print()
+
+    results = []
+    for i, (style_name, fmt, model, prompt, eff_format) in enumerate(plan, 1):
+        print(f"[{i}/{total}] {style_name} · {fmt} · {model}...", end=" ", flush=True)
+        image_bytes, result = generate_image(prompt, model, keys, eff_format)
+        if image_bytes is None:
+            print(f"FAILED: {result[:80]}")
+            results.append({
+                "style": style_name, "format": fmt, "model": model,
+                "status": "FAIL", "error": result[:200],
+            })
+        else:
+            ext = mime_to_ext(result)
+            dest = explore_dest(base_dir, style_name, fmt, model, ext)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with open(dest, "wb") as fh:
+                fh.write(image_bytes)
+            print(f"OK ({len(image_bytes) / 1024:.0f} KB)")
+            results.append({
+                "style": style_name, "format": fmt, "model": model,
+                "status": "OK", "rel_path": os.path.relpath(dest, base_dir),
+            })
+        if i < total:
+            time.sleep(RATE_LIMIT_DELAY)
+
+    index_path = os.path.join(base_dir, "index.md")
+    with open(index_path, "w", encoding="utf-8") as f:
+        f.write(render_explore_index(candidates, results))
+
+    print()
+    print(f"Wrote {index_path}")
+    print("Review the grid, pick a style + model, then bake them into the outline header.")
 
 
 def run_edit(outline_path, slide_num, edit_prompt):
@@ -1175,6 +1367,7 @@ def main():
                "  %(prog)s outline.md 2 5 9\n"
                "  %(prog)s outline.md 2-10\n"
                "  %(prog)s outline.md --compare 2\n"
+               "  %(prog)s outline.md --style-explore style-explore/candidates.json\n"
                "  %(prog)s outline.md --edit 5 \"Erase the label\"\n"
                "  %(prog)s outline.md --build 5\n"
                "  %(prog)s outline.md --build all\n"
@@ -1193,6 +1386,12 @@ def main():
         type=int,
         metavar="SLIDE",
         help="Compare models using the given slide number as test prompt",
+    )
+    parser.add_argument(
+        "--style-explore",
+        metavar="CANDIDATES_JSON",
+        help="Render a style x model x format grid from a candidates.json "
+             "(Phase 2 strategy); writes style-explore/ + index.md",
     )
     parser.add_argument(
         "--edit",
@@ -1240,6 +1439,8 @@ def main():
         run_fix(args.outline, int(args.fix[0]), args.fix[1])
     elif args.compare:
         run_compare(args.outline, args.compare)
+    elif args.style_explore:
+        run_style_explore(args.outline, args.style_explore)
     else:
         run_generate(args.outline, args.slides, versioned=args.version)
 

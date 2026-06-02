@@ -1,20 +1,20 @@
 {
-  "context": "Tests the negative-case behavior of the SKILL.md Step 2 freshness check: when the outline's `**Model:**` line was set against a current flagship, the check should be entered AND should pass without inserting friction. Baseline agents (no tile) skip the freshness check entirely, so 'web-search precedes generation' is the tile-specific lift here; the remaining criteria are defensive — they catch regressions where the tile starts inserting friction where none was warranted.",
+  "context": "Tests the negative-case behavior of the SKILL.md Step 2 freshness gate: when the outline's model is a current roster flagship, the gate should run AND pass without inserting friction. The gate is the deterministic precheck `model_registry.py --check-freshness` plus a check that the baked model is in the current MODEL_REGISTRY roster. Baseline agents (no tile) skip the gate entirely, so running the freshness precheck is the tile-specific lift here; the remaining criteria are defensive — they catch regressions where the tile inserts friction where none was warranted.",
   "type": "weighted_checklist",
   "checklist": [
     {
-      "name": "Web-search precedes generation",
-      "description": "The agent calls WebSearch (or an equivalent live-web lookup) to identify current flagship image-generation models before invoking generate-illustrations.py. This is the tile-specific behavior — without the skill loaded, an agent would jump straight to generation. A run that skips the live-web lookup fails this criterion.",
+      "name": "Freshness gate precedes generation",
+      "description": "Before invoking generate-illustrations.py, the agent gates on model freshness — runs `model_registry.py --check-freshness` and/or consults the MODEL_REGISTRY roster in skills/illustrations/scripts/model_registry.py. This is the tile-specific behavior — without the skill loaded, an agent jumps straight to generation. A run that skips the freshness gate fails this criterion.",
       "max_score": 32
     },
     {
       "name": "No spurious model-change proposal",
-      "description": "The agent does NOT propose editing `skills/illustrations/scripts/generate-illustrations.py` to change `COMPARE_MODELS`, and does NOT propose changing the outline's `**Model:**` line, when the web-search outcome shows the outline's model is among current flagships. Surfacing such a proposal anyway fails this criterion.",
+      "description": "The agent does NOT propose editing the registry roster and does NOT propose changing the outline's model, when the baked model (`gpt-image-2`) is among the current MODEL_REGISTRY roster. Surfacing such a proposal anyway fails this criterion.",
       "max_score": 27
     },
     {
       "name": "Proceeds to generation without re-litigating",
-      "description": "After the freshness check completes, the agent moves on to invoke `generate-illustrations.py` (or otherwise produce slide images) as the next concrete action. Halting at the freshness check to ask the speaker to reconfirm a model choice that has no surfaced gap fails this criterion.",
+      "description": "After the freshness gate passes, the agent moves on to invoke generate-illustrations.py (or otherwise produce slide images) as the next concrete action. Halting at the freshness gate to ask the speaker to reconfirm a model choice that has no surfaced gap fails this criterion.",
       "max_score": 23
     },
     {

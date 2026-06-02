@@ -277,13 +277,19 @@ def test_family_key_name(generate_illustrations):
 
 
 def test_compare_models_curated_list(generate_illustrations):
-    # The freshness check in SKILL.md Step 2 tracks this list — it must
-    # contain at least one current-flagship entry per major vendor
+    # COMPARE_MODELS is re-exported from model_registry.py — it must still
+    # carry at least one current-flagship entry per major vendor.
     families = {generate_illustrations.model_family(m)
                 for m in generate_illustrations.COMPARE_MODELS}
     assert "openai" in families, "COMPARE_MODELS missing OpenAI entry"
     assert "gemini" in families, "COMPARE_MODELS missing Gemini entry"
     assert "imagen" in families, "COMPARE_MODELS missing Imagen entry"
+
+
+def test_resolve_model_id_reexported(generate_illustrations):
+    # generate-illustrations.py dispatches through resolve_model_id so a baked
+    # codename (nano-banana-pro) reaches the canonical API endpoint id.
+    assert generate_illustrations.resolve_model_id("nano-banana-pro") == "gemini-3-pro-image-preview"
 
 
 # --- Secrets loading ---
@@ -461,3 +467,113 @@ def test_multipart_body_structure(generate_illustrations):
     assert "Content-Type: image/png" in text
     # Body terminates with the closing boundary
     assert body.endswith(f"--{boundary}--\r\n".encode())
+
+
+# --- Style exploration (Phase 2 strategy grid) ---
+
+def _candidates(**overrides):
+    base = {
+        "schema_version": 1,
+        "slides": {"FULL": 3, "IMG+TXT": 7},
+        "models": ["gemini-3-pro-image-preview", "gpt-image-2"],
+        "styles": [
+            {"name": "Blueprint Schematic",
+             "anchors": {"FULL": "A blueprint anchor.", "IMG+TXT": "A portrait blueprint anchor."}},
+            {"name": "Watercolor",
+             "anchors": {"FULL": "A watercolor anchor.", "IMG+TXT": "A portrait watercolor anchor."}},
+        ],
+    }
+    base.update(overrides)
+    return base
+
+
+def _write_candidates(tmp_path, data):
+    p = tmp_path / "candidates.json"
+    p.write_text(json.dumps(data))
+    return str(p)
+
+
+def test_style_slug(generate_illustrations):
+    assert generate_illustrations.style_slug("Blueprint Schematic!") == "blueprint-schematic"
+    assert generate_illustrations.style_slug("  Mixed_Case 2 ") == "mixed-case-2"
+    assert generate_illustrations.style_slug("///") == "style"
+
+
+def test_format_slug(generate_illustrations):
+    assert generate_illustrations._format_slug("IMG+TXT") == "img-txt"
+    assert generate_illustrations._format_slug("FULL") == "full"
+
+
+def test_explore_dest_path(generate_illustrations):
+    dest = generate_illustrations.explore_dest(
+        "/base", "Blueprint Schematic", "IMG+TXT", "gemini-3-pro-image-preview", ".png"
+    )
+    assert dest == "/base/blueprint-schematic/img-txt/gemini-3-pro-image-preview.png"
+
+
+def test_explore_dest_sanitizes_model_slash(generate_illustrations):
+    dest = generate_illustrations.explore_dest("/base", "S", "FULL", "vendor/model", ".jpg")
+    assert dest.endswith("vendor_model.jpg")
+
+
+def test_parse_candidates_valid(generate_illustrations, tmp_path):
+    path = _write_candidates(tmp_path, _candidates())
+    data = generate_illustrations.parse_candidates(path)
+    assert data["schema_version"] == 1
+    assert len(data["styles"]) == 2
+
+
+def test_parse_candidates_bad_version(generate_illustrations, tmp_path):
+    import pytest
+    path = _write_candidates(tmp_path, _candidates(schema_version=2))
+    with pytest.raises(ValueError) as exc:
+        generate_illustrations.parse_candidates(path)
+    assert "schema_version" in str(exc.value)
+
+
+def test_parse_candidates_missing_models(generate_illustrations, tmp_path):
+    import pytest
+    path = _write_candidates(tmp_path, _candidates(models=[]))
+    with pytest.raises(ValueError) as exc:
+        generate_illustrations.parse_candidates(path)
+    assert "models" in str(exc.value)
+
+
+def test_parse_candidates_style_without_anchors(generate_illustrations, tmp_path):
+    import pytest
+    bad = _candidates(styles=[{"name": "No Anchors"}])
+    path = _write_candidates(tmp_path, bad)
+    with pytest.raises(ValueError) as exc:
+        generate_illustrations.parse_candidates(path)
+    assert "anchors" in str(exc.value)
+
+
+def test_parse_candidates_malformed_json(generate_illustrations, tmp_path):
+    import pytest
+    p = tmp_path / "candidates.json"
+    p.write_text("{not json")
+    with pytest.raises(ValueError) as exc:
+        generate_illustrations.parse_candidates(str(p))
+    assert "valid JSON" in str(exc.value)
+
+
+def test_render_explore_index_groups_by_style(generate_illustrations):
+    candidates = _candidates()
+    results = [
+        {"style": "Blueprint Schematic", "format": "FULL",
+         "model": "gpt-image-2", "status": "OK",
+         "rel_path": "blueprint-schematic/full/gpt-image-2.png"},
+        {"style": "Watercolor", "format": "IMG+TXT",
+         "model": "gemini-3-pro-image-preview", "status": "FAIL",
+         "error": "rate limited"},
+    ]
+    md = generate_illustrations.render_explore_index(candidates, results)
+    assert "# Style Exploration" in md
+    assert "## Blueprint Schematic" in md
+    assert "## Watercolor" in md
+    # OK render links to the relative image path
+    assert "(blueprint-schematic/full/gpt-image-2.png)" in md
+    # FAIL render surfaces the error, not a broken link
+    assert "FAILED: rate limited" in md
+    # representative slide mapping is documented in the header
+    assert "FULL = slide 3" in md

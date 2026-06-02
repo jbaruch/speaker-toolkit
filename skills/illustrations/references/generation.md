@@ -20,9 +20,10 @@ Before generating, ensure:
    ```
    For single-model generation (`generate`, `--edit`, `--build`, `--fix`),
    only the key for the outline's baked `**Model:**` vendor is required —
-   the other can be omitted. For `--compare`, every vendor represented in
-   `COMPARE_MODELS` is hit, so all corresponding keys must be present (the
-   current curated list spans both Google and OpenAI, so both are needed).
+   the other can be omitted. For `--compare`, every vendor in `COMPARE_MODELS`
+   is hit; for `--style-explore`, every vendor among the `candidates.json`
+   models is hit — provide all corresponding keys (the current roster spans
+   both Google and OpenAI, so both are usually needed).
    Env-var fallbacks: `GEMINI_API_KEY`, `OPENAI_API_KEY`. Get keys from
    https://aistudio.google.com/app/apikey (Google) and
    https://platform.openai.com/api-keys (OpenAI).
@@ -45,15 +46,21 @@ python3 skills/illustrations/scripts/generate-illustrations.py presentation-outl
 `remaining` skips slides whose images already exist; `all` regenerates every
 slide; specific slides can be passed as `2 5 9` or a range `2-10`.
 
-## Model Comparison (Phase 2 model selection)
+## Model & Style Selection
+
+Phase 2 strategy uses `--style-explore` (renders candidate styles × the
+priority-driven model shortlist × formats into a structured `style-explore/`
+grid) — see [strategy.md](strategy.md) Sub-steps 3 and 5.
+
+`--compare` remains a quick single-slide model spot-check: it renders one
+slide's prompt across the cached `COMPARE_MODELS` roster.
 
 ```bash
 python3 skills/illustrations/scripts/generate-illustrations.py presentation-outline.md --compare 2
 ```
 
-Generates the same prompt across the curated `COMPARE_MODELS` list — a
-cross-vendor mix of Gemini, Imagen, and OpenAI flagships — for visual
-comparison. Output lands in `illustrations/model-comparison/`.
+Output lands in `illustrations/model-comparison/`. The roster, vendor aliases,
+and per-model attributes live in `skills/illustrations/scripts/model_registry.py`.
 
 ## Edit / Fix / Versioned Generation
 
@@ -93,6 +100,11 @@ positioning:
 │   ├── slide-05-build-01.jpg
 │   └── slide-05-build-02.jpg
 └── model-comparison/          ← --compare output
+
+{talk-dir}/style-explore/      ← --style-explore output (Phase 2 strategy)
+├── candidates.json            ← agent-written input (styles × shortlist × formats)
+├── index.md                   ← contact sheet grouping every render by style
+└── <style-slug>/<format>/<model>.<ext>
 ```
 
 ## Title Safe Zone
