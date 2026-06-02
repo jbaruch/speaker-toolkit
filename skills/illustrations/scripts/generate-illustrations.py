@@ -44,7 +44,7 @@ import urllib.error
 import urllib.request
 import uuid
 
-from model_registry import COMPARE_MODELS, resolve_model_id
+from model_registry import COMPARE_MODELS, is_supported_model, resolve_model_id
 
 # --- Constants ---
 
@@ -1123,6 +1123,21 @@ def run_style_explore(outline_path, candidates_path):
     keys, secrets_path = load_secrets()
     outline = parse_outline(outline_path)
     slides_by_num = {s["slide_num"]: s for s in outline["slides"]}
+
+    # Fail fast on a candidate id we have no adapter for — model_family() would
+    # otherwise misroute it to the Gemini endpoint and fail mid-network.
+    unsupported = [m for m in candidates["models"] if not is_supported_model(m)]
+    if unsupported:
+        print(
+            f"ERROR: unsupported model id(s): {', '.join(unsupported)}.",
+            file=sys.stderr,
+        )
+        print(
+            "Supported families: gemini-* / nano-banana-*, imagen-*, gpt-image-*. "
+            "A new vendor needs a _call_<vendor> adapter in this script.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     families = {model_family(resolve_model_id(m)) for m in candidates["models"]}
     _require_keys_for_families(keys, families, secrets_path)

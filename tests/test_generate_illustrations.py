@@ -648,6 +648,30 @@ def test_run_style_explore_empty_plan_exits_cleanly(generate_illustrations, tmp_
     assert "nothing to render" in capsys.readouterr().err
 
 
+def test_run_style_explore_unsupported_model_exits(generate_illustrations, tmp_path, monkeypatch, capsys):
+    import pytest
+    # A candidate model with no vendor adapter must fail fast with an actionable
+    # stderr message, not get misrouted to the Gemini endpoint.
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    outline = tmp_path / "outline.md"
+    outline.write_text(
+        "# Plan\n\n**Model:** `gemini-3-pro-image-preview`\n\n"
+        "### STYLE ANCHOR (FULL — 16:9, 1920x1080)\n> A base.\n\n"
+        "### Slide 3: Wide\n- Format: **FULL**\n- Image prompt: `[STYLE ANCHOR] wide`\n"
+    )
+    cand = _candidates(
+        slides={"FULL": 3},
+        models=["midjourney-v7"],
+        styles=[{"name": "S", "anchors": {"FULL": "a full anchor"}}],
+    )
+    cpath = _write_candidates(tmp_path, cand)
+    with pytest.raises(SystemExit) as exc:
+        generate_illustrations.run_style_explore(str(outline), cpath)
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "unsupported model" in err and "midjourney-v7" in err
+
+
 def test_run_style_explore_safezone_format_mismatch_skipped(generate_illustrations, tmp_path, monkeypatch, capsys):
     import pytest
     # A non-FULL format mapped to a slide whose Safe zone forces FULL is skipped

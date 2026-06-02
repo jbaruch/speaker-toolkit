@@ -64,6 +64,17 @@ def test_resolve_empty(model_registry):
     assert model_registry.resolve_model_id(None) is None
 
 
+def test_is_supported_model(model_registry):
+    assert model_registry.is_supported_model("gpt-image-2")
+    assert model_registry.is_supported_model("imagen-4.0-ultra-generate-001")
+    assert model_registry.is_supported_model("gemini-9-future-image")
+    assert model_registry.is_supported_model("nano-banana-pro")  # alias resolves
+    # An unknown vendor with no adapter is NOT supported (model_family would
+    # otherwise misroute it to Gemini).
+    assert not model_registry.is_supported_model("midjourney-v7")
+    assert not model_registry.is_supported_model("")
+
+
 def test_model_attributes_via_alias(model_registry):
     attrs = model_registry.model_attributes("nano-banana-pro")
     assert attrs is not None

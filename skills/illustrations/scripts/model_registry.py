@@ -132,6 +132,25 @@ def resolve_model_id(name):
     return stripped
 
 
+# Model-id prefixes we ship a vendor adapter for (Google generateContent /
+# Imagen :predict, OpenAI images). model_family() falls back to "gemini" for any
+# unknown prefix, so it can't tell a real Gemini id from an unsupported vendor.
+SUPPORTED_MODEL_PREFIXES = ("gpt-image", "imagen", "gemini", "nano-banana")
+
+
+def is_supported_model(name):
+    """True if the model's resolved id maps to a vendor adapter we ship.
+
+    Gates callers that accept arbitrary ids (e.g. style-explore candidates) so
+    an unsupported vendor like `midjourney-*` fails fast with an actionable
+    message instead of being misrouted to the Gemini endpoint.
+    """
+    resolved = resolve_model_id(name)
+    if not resolved:
+        return False
+    return resolved.lower().startswith(SUPPORTED_MODEL_PREFIXES)
+
+
 def model_attributes(name):
     """Return the registry entry for a model name/alias, or None if unknown."""
     canonical = resolve_model_id(name)
