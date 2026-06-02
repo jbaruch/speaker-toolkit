@@ -112,34 +112,34 @@ Proceed immediately to Step 3 or Step 4 per Step 1's routing.
 
 ## Step 3 — Define Style Strategy
 
-Collaborate with the author to produce the Illustration Style Anchor. The
-protocol runs in this order:
+Collaborate with the author to produce the Illustration Style Anchor. This
+single step covers the full strategy collaboration, in order:
 
-1. Elicit optimization priorities with an `AskUserQuestion` multi-select
-   (checkboxes, not radio) — the speaker checks any of cost, speed, quality,
-   build-editability (e.g. `quality,build-editability`). Auto-add
-   build-editability when any slide has a `Builds:` block (build frames are
-   produced by editing the previous frame, so the model must support editing).
-2. Define format vocabulary (FULL / IMG+TXT / EXCEPTION + any talk-specific
-   additions).
-3. Narrow the roster to a shortlist by priority — no render yet:
-   ```bash
-   python3 skills/illustrations/scripts/model_registry.py --shortlist <priorities>
-   ```
-   The roster is a seed cache, not an allowlist. To rank a model not in it (a
-   new flagship from Step 2, or one the speaker names), WebSearch its
-   attributes and pass `--add '<json>'`, or list its id directly in
-   `candidates.json` — see strategy.md Sub-step 3.
-4. Propose 3–4 style options grounded in concept fit + vault context (the
-   speaker's `visual_style_history`, `rhetoric-style-summary.md` Section 13).
-5. Render the exploration grid — write `style-explore/candidates.json` (styles
-   × shortlist × formats per the schema), then:
-   ```bash
-   python3 skills/illustrations/scripts/generate-illustrations.py \
-     <outline> --style-explore style-explore/candidates.json
-   ```
-   The speaker picks a style + model from `style-explore/index.md`.
-6. Define visual continuity devices.
+- Elicit optimization priorities with an `AskUserQuestion` multi-select
+  (checkboxes, not radio) — the speaker checks any of cost, speed, quality,
+  build-editability (e.g. `quality,build-editability`). Auto-add
+  build-editability when any slide has a `Builds:` block (build frames are
+  produced by editing the previous frame, so the model must support editing).
+- Define format vocabulary (FULL / IMG+TXT / EXCEPTION + any talk-specific
+  additions).
+- Narrow the roster to a shortlist by priority — no render yet:
+  ```bash
+  python3 skills/illustrations/scripts/model_registry.py --shortlist <priorities>
+  ```
+  The roster is a seed cache, not an allowlist. To rank a model not in it (a
+  new flagship from Step 2, or one the speaker names), WebSearch its
+  attributes and pass `--add '<json>'`, or list its id directly in
+  `candidates.json` — see strategy.md.
+- Propose 3–4 style options grounded in concept fit + vault context (the
+  speaker's `visual_style_history`, `rhetoric-style-summary.md` Section 13).
+- Render the exploration grid — write `style-explore/candidates.json` (styles
+  × shortlist × formats per the schema), then:
+  ```bash
+  python3 skills/illustrations/scripts/generate-illustrations.py \
+    <outline> --style-explore style-explore/candidates.json
+  ```
+  The speaker picks a style + model from `style-explore/index.md`.
+- Define visual continuity devices.
 
 Full protocol — priority elicitation, the option template, the `candidates.json`
 contract, continuity options: [skills/illustrations/references/strategy.md](references/strategy.md).
