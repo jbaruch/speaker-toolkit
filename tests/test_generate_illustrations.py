@@ -624,6 +624,30 @@ def test_run_style_explore_bad_candidates_exits_cleanly(generate_illustrations, 
     assert "ERROR" in err and "schema_version" in err
 
 
+def test_run_style_explore_empty_plan_exits_cleanly(generate_illustrations, tmp_path, monkeypatch, capsys):
+    import pytest
+    # A schema-valid candidate set whose styles cover none of the selected
+    # formats yields zero renders — exit non-zero before writing an empty
+    # index.md, rather than succeeding with an empty contact sheet.
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    outline = tmp_path / "outline.md"
+    outline.write_text(
+        "# Plan\n\n**Model:** `gemini-3-pro-image-preview`\n\n"
+        "### STYLE ANCHOR (FULL — 16:9, 1920x1080)\n> A base.\n\n"
+        "### Slide 3: Wide\n- Format: **FULL**\n- Image prompt: `[STYLE ANCHOR] wide`\n"
+    )
+    cand = _candidates(
+        slides={"FULL": 3},
+        models=["gemini-3-pro-image-preview"],
+        styles=[{"name": "PortraitOnly", "anchors": {"IMG+TXT": "portrait only"}}],
+    )
+    cpath = _write_candidates(tmp_path, cand)
+    with pytest.raises(SystemExit) as exc:
+        generate_illustrations.run_style_explore(str(outline), cpath)
+    assert exc.value.code == 1
+    assert "nothing to render" in capsys.readouterr().err
+
+
 def test_render_explore_index_groups_by_style(generate_illustrations):
     candidates = _candidates()
     results = [

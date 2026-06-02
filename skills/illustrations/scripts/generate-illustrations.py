@@ -1168,6 +1168,19 @@ def run_style_explore(outline_path, candidates_path):
                 plan.append((style["name"], fmt, model, prompt, eff_format))
 
     total = len(plan)
+    if total == 0:
+        print(
+            "ERROR: nothing to render — no candidate style defines an anchor for "
+            "any of the selected formats.",
+            file=sys.stderr,
+        )
+        print(
+            "Add per-format anchors to the styles in the candidates file (see "
+            "skills/illustrations/references/style-explore-candidates-schema.md), "
+            "or point 'slides' at formats your styles cover.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     print(
         f"Style exploration -> {total} renders "
         f"({len(candidates['styles'])} styles x {len(targets)} formats x "
