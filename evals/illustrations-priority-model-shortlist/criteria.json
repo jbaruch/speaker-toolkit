@@ -1,0 +1,31 @@
+{
+  "context": "Tests the illustrations skill's Step 3 model-selection logic: priorities drive a data-narrowed model shortlist before any rendering. The deck has progressive-reveal builds (slides 4 and 9), and the speaker optimizes for cost. The tile's contribution is the staged process — surface priorities, recognize builds require an edit-capable model, narrow the roster by attributes, then confirm visually — rather than naming a model from general knowledge. A baseline agent without the skill tends to recommend a single model on quality/reputation grounds.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Model choice is priority-driven",
+      "description": "The agent treats the model choice as driven by what the speaker optimizes for — explicitly identifies cost as the stated priority and weighs the cost/speed/quality/edit-support trade space, rather than recommending a model on quality or reputation alone.",
+      "max_score": 20
+    },
+    {
+      "name": "Builds recognized as an edit-support requirement",
+      "description": "The agent recognizes that the deck's progressive-reveal sequences (slides 4 and 9) require a model that supports image editing — build frames are produced by editing the previous frame, not regenerating from scratch — and treats edit support as a hard requirement for this deck.",
+      "max_score": 25
+    },
+    {
+      "name": "Shortlist narrowed by data before rendering",
+      "description": "The agent narrows the model roster to a shortlist using model attributes BEFORE rendering or committing — it does not render every candidate model blindly. Using `model_registry.py --shortlist` (or equivalently reasoning over the registry attributes) to produce the shortlist satisfies this.",
+      "max_score": 20
+    },
+    {
+      "name": "Shortlist excludes the non-editing model and favors low cost",
+      "description": "The recommended shortlist excludes Imagen (it has no image-edit endpoint, so build chains cannot run on it) and favors the lower-cost edit-capable option for this cost-sensitive deck. Checkable against the model_registry.py attributes as committed at eval time.",
+      "max_score": 20
+    },
+    {
+      "name": "Confirms the choice visually, not from prose",
+      "description": "The agent proposes confirming the model by rendering the shortlisted candidate(s) — a style/model exploration — rather than committing to a final model from text description alone.",
+      "max_score": 15
+    }
+  ]
+}

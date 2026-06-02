@@ -41,11 +41,14 @@ Do not restate them here — apply them.
 | `speaker-profile.json` → `visual_style_history` | Default style, departures, mode profiles, confirmed visual intents |
 | `speaker-profile.json` → `publishing_process.thumbnail` | Speaker photo path + aesthetic preference |
 | `illustrations/` (alongside outline) | Generated images, builds, model-comparison output |
-| [skills/illustrations/references/strategy.md](references/strategy.md) | Phase 2 D#11 detail — style proposal, format vocabulary, model choice, continuity devices |
+| `style-explore/` (alongside outline) | Phase 2 exploration grid (style × model × format) + `index.md` |
+| [skills/illustrations/references/strategy.md](references/strategy.md) | Phase 2 D#11 detail — optimization priorities, model shortlist, style proposals, exploration render, continuity devices |
 | [skills/illustrations/references/generation.md](references/generation.md) | Deck generation, edit/fix workflow, model comparison |
 | [skills/illustrations/references/builds.md](references/builds.md) | Backwards-chained build generation |
 | [skills/illustrations/references/thumbnails.md](references/thumbnails.md) | Phase 7 thumbnail composition + slide selection |
-| `skills/illustrations/scripts/generate-illustrations.py` | Deck illustrations, edits, fixes, builds, model comparison |
+| [skills/illustrations/references/style-explore-candidates-schema.md](references/style-explore-candidates-schema.md) | `candidates.json` contract for `--style-explore` |
+| `skills/illustrations/scripts/model_registry.py` | Model roster, aliases, attributes; `--check-freshness` + `--shortlist` |
+| `skills/illustrations/scripts/generate-illustrations.py` | Deck illustrations, edits, fixes, builds, model comparison, style exploration |
 | `skills/illustrations/scripts/apply-illustrations-to-deck.py` | Insert illustrations + builds into a .pptx |
 | `skills/illustrations/scripts/generate-thumbnail.py` | YouTube thumbnail composition |
 
@@ -72,71 +75,78 @@ runs exactly the one matching step's chain and stops.
 
 ## Step 2 — Check Image-Model Freshness
 
-Image-generation models ship faster than this skill updates. Before Strategy
-comparison (Step 3) or Generation (Step 4) touches images, verify the model
-landscape hasn't shifted since the script's `COMPARE_MODELS` list — or, for
-an existing outline, the baked `**Model:**` choice — was last set. A model
-picked "a few months back" may already be eclipsed by a newer flagship from
-the same or another vendor.
+Run the deterministic precheck first, then report its verdict in one line —
+never skip this step silently:
 
-Use `WebSearch` to identify the current flagship image-generation models
-from the major vendors — at minimum Google (Gemini image, Imagen) and OpenAI
-(`gpt-image-*`); include any other vendor with a publicly accessible
-image-generation API. Web search is required because the knowledge cutoff
-trails the release cadence by months. "Flagship" means the vendor's
-currently-recommended top-tier image model, not every preview or experimental
-variant.
+```bash
+python3 skills/illustrations/scripts/model_registry.py --check-freshness
+```
 
-For Generation mode entering an existing outline, also surface the outline's
-Model and selection date — run `git log -1 --format=%cI <outline-path>`
-against the actual outline file (`presentation-outline.md` in the standard
-talk-dir layout, but the filename can vary per talk), or fall back to
-filesystem mtime if the talk is outside git.
+The script emits JSON: `last_reviewed`, `age_days`, `stale`, and the full
+`models` roster (ids, aliases, attributes). State the verdict before
+proceeding (e.g. "Registry reviewed 2026-06-02, 0 days old — fresh").
 
-If every flagship is already represented in `COMPARE_MODELS` (and, for
-Generation mode, the outline's Model is one of them), proceed silently to
-the next step.
+- **`stale: true`** — use `WebSearch` to identify the current flagship image
+  models from Google (Gemini image, Imagen) and OpenAI (`gpt-image-*`), plus
+  any other vendor with a public image API. Reconcile the registry in
+  `skills/illustrations/scripts/model_registry.py`: add new flagships, drop
+  discontinued ones, refresh the attribute tiers, bump `REGISTRY_LAST_REVIEWED`.
+  "Nano Banana" is Google's codename for the Gemini image line (Nano Banana
+  Pro = Gemini 3 Pro Image) — fold a codename into the matching entry's
+  `aliases`, never add it as a separate model. The speaker approves the edits.
+- **`stale: false`** — the roster is current; do not web-search.
 
-Otherwise, surface the gap and propose action:
+For Generation mode entering an existing outline, also confirm the outline's
+baked model is still in the roster. Check it against the JSON `models` list
+(the alias map resolves codenames). If absent or clearly superseded, surface
+that to the speaker — they keep the baked model or re-run the exploration
+(Step 3). Never silently swap the model.
 
-- **Strategy mode**: list the new flagships, propose updating
-  `COMPARE_MODELS` in `skills/illustrations/scripts/generate-illustrations.py`,
-  then proceed to Step 3 — the comparison will render the new entries side
-  by side.
-- **Generation mode**: propose re-running `--compare` against the updated
-  list before the rest of the deck generates. The speaker may stay with the
-  baked Model (skip the comparison) or pick a new one (update the outline
-  header's `**Model:**` line, then proceed to Step 4).
-
-The speaker decides — never silently swap the model.
-
-`generate-illustrations.py` dispatches by model-name prefix and currently
-supports three vendor families: `gemini-*` / `nano-banana-*` (Google
-`generateContent`), `imagen-*` (Google `:predict`), and `gpt-image-*`
-(OpenAI `/images/generations` and `/images/edits`). Adding a model in any
-of those families is a `COMPARE_MODELS` constant edit. Adding a model
-from a vendor not in that list (e.g., a future Anthropic image API,
-Midjourney, etc.) requires extending `model_family()` and adding a new
-`_call_<vendor>` adapter — surface that as a follow-up script change
-before re-running `--compare`.
+`generate-illustrations.py` dispatches by family: `gemini-*` / `nano-banana-*`
+(Google `generateContent`), `imagen-*` (Google `:predict`), `gpt-image-*`
+(OpenAI). A model from a new vendor family needs a `model_family()` +
+`_call_<vendor>` adapter before it can render — surface that as a follow-up
+script change.
 
 Proceed immediately to Step 3 or Step 4 per Step 1's routing.
 
 ## Step 3 — Define Style Strategy
 
-Collaborate with the author to produce the Illustration Style Anchor for the
-outline. Read the talk's concepts from `presentation-spec.md`, the speaker's
-`visual_style_history` from the profile, and `rhetoric-style-summary.md`
-Section 13 for cross-talk visual patterns. Propose 3–4 style options grounded
-in **concept fit** + **vault context**, recommend one, iterate on the anchor
-paragraph, then define format vocabulary (FULL / IMG+TXT / EXCEPTION + any
-talk-specific additions), model choice, and visual continuity devices.
+Collaborate with the author to produce the Illustration Style Anchor. This
+single step covers the full strategy collaboration, in order:
 
-Full protocol with the option-presentation template, format vocabulary
-defaults, and continuity-device options: [skills/illustrations/references/strategy.md](references/strategy.md).
+- Elicit optimization priorities with an `AskUserQuestion` multi-select
+  (checkboxes, not radio) — the speaker checks any of cost, speed, quality,
+  build-editability (e.g. `quality,build-editability`). Auto-add
+  build-editability when any slide has a `Builds:` block (build frames are
+  produced by editing the previous frame, so the model must support editing).
+- Define format vocabulary (FULL / IMG+TXT / EXCEPTION + any talk-specific
+  additions).
+- Narrow the roster to a shortlist by priority — no render yet:
+  ```bash
+  python3 skills/illustrations/scripts/model_registry.py --shortlist <priorities>
+  ```
+  The roster is a seed cache, not an allowlist. To rank a model not in it (a
+  new flagship from Step 2, or one the speaker names), WebSearch its
+  attributes and pass `--add '<json>'`, or list its id directly in
+  `candidates.json` — see strategy.md.
+- Propose 3–4 style options grounded in concept fit + vault context (the
+  speaker's `visual_style_history`, `rhetoric-style-summary.md` Section 13).
+- Render the exploration grid — write `style-explore/candidates.json` (styles
+  × shortlist × formats per the schema), then:
+  ```bash
+  python3 skills/illustrations/scripts/generate-illustrations.py \
+    <outline> --style-explore style-explore/candidates.json
+  ```
+  The speaker picks a style + model from `style-explore/index.md`.
+- Define visual continuity devices.
 
-Write the approved STYLE ANCHOR block into the outline header. Proceed
-immediately to Step 4 if generation was also requested; otherwise finish here.
+Full protocol — priority elicitation, the option template, the `candidates.json`
+contract, continuity options: [skills/illustrations/references/strategy.md](references/strategy.md).
+
+Write the approved STYLE ANCHOR block (chosen model + per-format anchors +
+conventions) into the outline header. Proceed immediately to Step 4 if
+generation was also requested; otherwise finish here.
 
 ## Step 4 — Generate Deck Illustrations
 
