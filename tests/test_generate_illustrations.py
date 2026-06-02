@@ -599,6 +599,31 @@ def test_parse_candidates_malformed_json(generate_illustrations, tmp_path):
     assert "valid JSON" in str(exc.value)
 
 
+def test_run_style_explore_missing_candidates_exits_cleanly(generate_illustrations, tmp_path, capsys):
+    import pytest
+    # A missing candidates file must produce an actionable stderr error + a
+    # non-zero exit, not a FileNotFoundError traceback.
+    with pytest.raises(SystemExit) as exc:
+        generate_illustrations.run_style_explore(
+            str(tmp_path / "outline.md"), str(tmp_path / "nope.json")
+        )
+    assert exc.value.code == 1
+    assert "candidates file not found" in capsys.readouterr().err
+
+
+def test_run_style_explore_bad_candidates_exits_cleanly(generate_illustrations, tmp_path, capsys):
+    import pytest
+    # A malformed candidates file surfaces the ValueError as a clean stderr
+    # message + non-zero exit, not a traceback.
+    p = tmp_path / "candidates.json"
+    p.write_text(json.dumps({"schema_version": 2}))
+    with pytest.raises(SystemExit) as exc:
+        generate_illustrations.run_style_explore(str(tmp_path / "outline.md"), str(p))
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "ERROR" in err and "schema_version" in err
+
+
 def test_render_explore_index_groups_by_style(generate_illustrations):
     candidates = _candidates()
     results = [

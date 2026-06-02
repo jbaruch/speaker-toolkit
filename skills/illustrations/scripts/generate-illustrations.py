@@ -1106,7 +1106,19 @@ def run_style_explore(outline_path, candidates_path):
     candidate style's anchor, and renders across the shortlisted models into a
     structured style-explore/ directory with an index.md contact sheet.
     """
-    candidates = parse_candidates(candidates_path)
+    try:
+        candidates = parse_candidates(candidates_path)
+    except FileNotFoundError:
+        print(f"ERROR: candidates file not found: {candidates_path}", file=sys.stderr)
+        print(
+            "Write style-explore/candidates.json first — see "
+            "skills/illustrations/references/style-explore-candidates-schema.md.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except (OSError, ValueError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
 
     keys, secrets_path = load_secrets()
     outline = parse_outline(outline_path)
