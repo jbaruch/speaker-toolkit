@@ -53,6 +53,12 @@ def test_resolve_unknown_passthrough(model_registry):
     assert model_registry.resolve_model_id("imagen-9.9-future") == "imagen-9.9-future"
 
 
+def test_resolve_unknown_strips_whitespace(model_registry):
+    # Stray whitespace on an unknown id must not survive — it would misclassify
+    # the vendor family in model_family()'s prefix check.
+    assert model_registry.resolve_model_id("  imagen-9.9-future  ") == "imagen-9.9-future"
+
+
 def test_resolve_empty(model_registry):
     assert model_registry.resolve_model_id("") == ""
     assert model_registry.resolve_model_id(None) is None
@@ -136,6 +142,16 @@ def test_shortlist_injected_model_respects_editability_filter(model_registry):
         ["build-editability"], extra_models=[no_edit]
     )
     assert "fancy-but-no-edit" not in [m["id"] for m in ranked]
+
+
+def test_shortlist_build_editability_excludes_missing_edit(model_registry):
+    # An injected model that forgets its edit field must not slip into a
+    # build-required shortlist — unknown edit support counts as not-capable.
+    no_edit_field = {"id": "mystery-model", "family": "gemini", "quality": "high"}
+    ranked = model_registry.shortlist_models(
+        ["build-editability"], extra_models=[no_edit_field]
+    )
+    assert "mystery-model" not in [m["id"] for m in ranked]
 
 
 def test_shortlist_injected_model_without_id_raises(model_registry):

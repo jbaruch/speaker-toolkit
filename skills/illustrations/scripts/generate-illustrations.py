@@ -1021,6 +1021,13 @@ def parse_candidates(path):
             f"{path}: 'slides' must map at least one format to a slide number "
             '(e.g. {"FULL": 7, "IMG+TXT": 12}).'
         )
+    for fmt, n in slides.items():
+        # bool is an int subclass — reject it too. A string ("7") would key
+        # slides_by_num by the wrong type and silently skip the format.
+        if not isinstance(n, int) or isinstance(n, bool):
+            raise ValueError(
+                f"{path}: slides['{fmt}'] must be an integer slide number, got {n!r}."
+            )
     models = data.get("models")
     if not isinstance(models, list) or not models:
         raise ValueError(f"{path}: 'models' must be a non-empty list of model ids.")
@@ -1128,8 +1135,10 @@ def run_style_explore(outline_path, candidates_path):
             if not anchor:
                 continue
             eff_format = effective_slide_format(fmt, safe_zone)
+            # Key the anchor by eff_format so substitution and sizing agree when
+            # a safe zone forces FULL (effective_slide_format) on the slide.
             prompt = apply_safe_zone_directive(
-                resolve_prompt(scene_prompt, fmt, {fmt: anchor}), safe_zone
+                resolve_prompt(scene_prompt, eff_format, {eff_format: anchor}), safe_zone
             )
             for model in candidates["models"]:
                 plan.append((style["name"], fmt, model, prompt, eff_format))

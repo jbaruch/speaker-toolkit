@@ -548,6 +548,16 @@ def test_parse_candidates_style_without_anchors(generate_illustrations, tmp_path
     assert "anchors" in str(exc.value)
 
 
+def test_parse_candidates_string_slide_number_rejected(generate_illustrations, tmp_path):
+    import pytest
+    # A string slide number would key slides_by_num by the wrong type and
+    # silently skip the format — reject it up front with an actionable message.
+    path = _write_candidates(tmp_path, _candidates(slides={"FULL": "7"}))
+    with pytest.raises(ValueError) as exc:
+        generate_illustrations.parse_candidates(path)
+    assert "integer slide number" in str(exc.value)
+
+
 def test_parse_candidates_malformed_json(generate_illustrations, tmp_path):
     import pytest
     p = tmp_path / "candidates.json"

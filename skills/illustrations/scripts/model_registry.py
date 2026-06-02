@@ -120,13 +120,16 @@ def resolve_model_id(name):
     """
     if not name:
         return name
-    key = name.strip().lower()
+    stripped = name.strip()
+    key = stripped.lower()
     for m in MODEL_REGISTRY:
         if key == m["id"].lower():
             return m["id"]
         if any(key == alias.lower() for alias in m.get("aliases", [])):
             return m["id"]
-    return name
+    # Unknown id: return it stripped so stray whitespace can't misclassify the
+    # vendor family in model_family()'s prefix check.
+    return stripped
 
 
 def model_attributes(name):
@@ -170,7 +173,10 @@ def shortlist_models(priorities, registry=None, extra_models=None):
                 f"{', '.join(sorted(VALID_PRIORITIES))}."
             )
     if "build-editability" in priorities:
-        reg = [m for m in reg if m.get("edit") != "none"]
+        # Keep only models EXPLICITLY marked edit-capable. A missing/blank edit
+        # field (e.g. an injected model that forgot it) must not slip into a
+        # build-required shortlist, so treat unknown edit support as not-capable.
+        reg = [m for m in reg if m.get("edit") and m.get("edit") != "none"]
     soft = [p for p in priorities if p in PRIORITY_RANKINGS]
 
     def score(model):
