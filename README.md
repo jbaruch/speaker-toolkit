@@ -393,8 +393,11 @@ speaker-toolkit-tile/
     |   |   +-- inject-speaker-notes.py       # Batch inject speaker notes from JSON
     |   |   +-- insert-placeholder-slides.py  # Yellow placeholder slide insertion
     |   |   +-- export-pdf.py                 # Export deck to PDF (PowerPoint or LibreOffice)
-    |   |   +-- delete-slides.py              # Delete slides by index
-    |   |   +-- reorder-slides.py             # Move slide from one position to another
+    |   |   +-- RunDeckOps.bas                 # VBA: trim/reorder/import/text-replace via real PowerPoint
+    |   |   +-- run-deck-ops.sh                # Wrapper for RunDeckOps (staging + move into place)
+    |   |   +-- run-deck-ops.applescript       # AppleScript driver for RunDeckOps
+    |   |   +-- make-bg-slide.sh               # Wrapper for MakeBgImageSlide (illustration -> bg slide)
+    |   |   +-- make-bg-slide.applescript      # AppleScript driver for MakeBgImageSlide
     |   +-- references/
     |       +-- phase0-intake.md through phase7-post-event.md  # Phase detail docs
     |       +-- patterns/                     # Presentation Patterns taxonomy (102 entries)

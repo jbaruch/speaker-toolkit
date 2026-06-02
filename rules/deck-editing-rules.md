@@ -2,21 +2,20 @@
 
 How to make STRUCTURAL edits (delete / reorder / cross-deck import) to an
 existing `.pptx` — distinct from generating a deck from scratch (see
-`rules/slide-generation-rules.md`). The default tools silently destroy
-illustrated decks; this rule says what to use instead.
+`rules/slide-generation-rules.md`). python-pptx silently destroys illustrated
+decks; this rule says what to use instead.
 
-## Don't Edit Illustrated Decks With python-pptx
+## Don't Edit Decks With python-pptx
 
-- python-pptx (and `delete-slides.py` / `reorder-slides.py`) and any clipboard
-  `Slides.Paste` apply DESTINATION formatting and drop each slide's own
-  `<p:bg>` picture fill. On comic-book / illustrated decks the full-bleed art
-  is usually a per-slide background fill, so a python-pptx trim flattens those
-  slides to bare color (observed: a 51 MB deck cut to 6.2 MB with every
-  background gone, while picture *shapes* survived).
+- python-pptx and any clipboard `Slides.Paste` apply DESTINATION formatting and
+  drop each slide's own `<p:bg>` picture fill. On comic-book / illustrated decks
+  the full-bleed art is usually a per-slide background fill, so a python-pptx
+  trim flattens those slides to bare color (picture *shapes* survive, per-slide
+  `<p:bg>` fills do not).
 - python-pptx editing the OOXML from outside the app also breaks relationships
   and strict OOXML, which Keynote then refuses to open.
-- The cross-platform `delete-slides.py` / `reorder-slides.py` remain fine ONLY
-  for plain, non-illustrated decks where no slide carries a background fill.
+- All structural edits go through RunDeckOps — there is no python-pptx
+  slide-delete / slide-reorder path.
 
 ## Use Real PowerPoint via RunDeckOps (macOS)
 

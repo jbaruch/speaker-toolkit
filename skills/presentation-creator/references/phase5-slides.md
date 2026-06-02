@@ -219,8 +219,9 @@ Author says: "Slide 5 — change to two columns"
 → Cannot change layout of existing slide via MCP. Instead:
   1. Note content of slide 5
   2. Generate a replacement slide with the new layout (appended at end)
-  3. Use python-pptx to delete the old slide 5 and reorder the new one into position
-  4. Re-open the deck with MCP `open_presentation`
+  3. Use `run-deck-ops.sh` to drop the old slide 5 and place the new one in its
+     position — express the FINAL slide order (see Structural changes below)
+  4. Re-open the output deck with MCP `open_presentation`
 
 ### Batch changes
 
@@ -232,21 +233,32 @@ requests to add slide numbers and explain it's a design rule.
 Author provides an image for a placeholder slide:
 → `manage_image(slide_index=N, operation="add", image_source="/path/to/image.png", ...)`
 
-### Structural changes (python-pptx)
+### Structural changes (real PowerPoint via RunDeckOps)
 
-The MCP PPT server cannot delete or reorder slides. Use python-pptx:
+The MCP PPT server cannot delete or reorder slides, and python-pptx editing
+strips each slide's per-slide background fill — on illustrated decks that
+silently flattens full-bleed art to bare color. Make ALL structural edits
+(delete / reorder / cross-deck import / global text replace) by driving the
+real PowerPoint app, which serializes the file and preserves backgrounds,
+fonts, masters, and Keynote-openability. See `rules/deck-editing-rules.md`.
 
-**Delete slides:**
 ```bash
-python3 scripts/delete-slides.py path/to/deck.pptx 5 12 15   # 0-based indices
+scripts/run-deck-ops.sh <basePath> <outPath> <importSpec> <orderStr> <replaceStr>
 ```
 
-**Reorder slides:**
-```bash
-python3 scripts/reorder-slides.py path/to/deck.pptx --from 5 --to 2
+`orderStr` is the FINAL slide sequence as space-separated `<alias>:<1-based #>`
+tokens; alias `BASE` is `basePath`. Delete by OMITTING a slide; reorder by
+listing tokens in the target order; import by adding an alias to `importSpec`.
+
+```
+# drop slide 3, and move slide 6 ahead of slide 4:
+"BASE:1 BASE:2 BASE:6 BASE:4 BASE:5"
 ```
 
-After any python-pptx structural operation, re-open the deck with MCP
+macOS + Microsoft PowerPoint only. On first use, walk the user through
+`references/deck-editing-setup.md` (enable VBA macros, import `RunDeckOps.bas`
+into a `DeckOps.pptm` container, grant Automation consent). The macro writes a
+COPY — the original is untouched, so re-open the OUTPUT deck with MCP
 (`open_presentation`) to continue editing.
 
 ## Step 5.6: Final Save

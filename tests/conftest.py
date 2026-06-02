@@ -58,16 +58,6 @@ def strip_template():
 
 
 @pytest.fixture(scope="session")
-def delete_slides():
-    return _import_script(os.path.join(SCRIPTS_PC, "delete-slides.py"), "delete_slides")
-
-
-@pytest.fixture(scope="session")
-def reorder_slides():
-    return _import_script(os.path.join(SCRIPTS_PC, "reorder-slides.py"), "reorder_slides")
-
-
-@pytest.fixture(scope="session")
 def insert_placeholder():
     return _import_script(
         os.path.join(SCRIPTS_PC, "insert-placeholder-slides.py"), "insert_placeholder"

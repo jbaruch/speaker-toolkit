@@ -426,10 +426,10 @@ lives in `skills/illustrations/references/thumbnails.md`.
 4. Start at Phase 1 with the original spec pre-filled, modify as needed.
 5. Auto-generate adaptation checklist: footer, shownotes slug, time-sensitive content,
    slide budget, profanity register, locale references, commercial intent.
-6. For structural trims of an ILLUSTRATED deck (delete/reorder slides, import slides
-   from another deck), edit through real PowerPoint via
-   `skills/presentation-creator/scripts/run-deck-ops.sh` — NOT python-pptx
-   `delete-slides.py` / `reorder-slides.py`, which strip per-slide background fills.
+6. For structural edits (delete/reorder slides, import slides from another deck,
+   global text replace), edit through real PowerPoint via
+   `skills/presentation-creator/scripts/run-deck-ops.sh`. python-pptx editing is
+   not used — it strips per-slide background fills, flattening illustrated decks.
    See `rules/deck-editing-rules.md` (macOS + Microsoft PowerPoint only). On first
    use, walk the user through `references/deck-editing-setup.md` (enable macros,
    import the macro, grant Automation consent) before invoking the script.

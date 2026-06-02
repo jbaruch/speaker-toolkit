@@ -6,17 +6,22 @@
 
 Adds a non-corrupting way to make structural edits (delete / reorder /
 cross-deck import) to an existing `.pptx`, driven by the real PowerPoint app
-instead of python-pptx. Prompted by a concrete failure: trimming a 128-slide,
-51 MB illustrated deck with python-pptx / clipboard paste flattened every
-slide whose full-bleed art is a per-slide background fill — the output dropped
-to 6.2 MB with all backgrounds gone (picture *shapes* survived, per-slide
-`<p:bg>` fills did not). The InsertFromFile path recovered the same cut to
-24 MB with backgrounds intact.
+instead of python-pptx, and makes it the SOLE structural-edit path. Prompted by
+a concrete failure: trimming a 128-slide, 51 MB illustrated deck with
+python-pptx / clipboard paste flattened every slide whose full-bleed art is a
+per-slide background fill — the output dropped to 6.2 MB with all backgrounds
+gone (picture *shapes* survived, per-slide `<p:bg>` fills did not). The
+InsertFromFile path recovered the same cut to 24 MB with backgrounds intact.
 
-- **New steering rule (`rules/deck-editing-rules.md`)** — when to use real
-  PowerPoint vs the cross-platform `delete-slides.py` / `reorder-slides.py`
-  (the latter are fine only for plain decks), plus the Mac PowerPoint VBA
-  landmines and how each is handled.
+- **Removed `delete-slides.py` / `reorder-slides.py`** (and their tests +
+  conftest fixtures) — python-pptx slide-delete / reorder strips per-slide
+  background fills, so it is no longer offered for any deck. All structural
+  edits route through RunDeckOps. `_pptx_repair.py` stays (used by
+  `strip-template.py`). `phase5-slides.md`, `SKILL.md`, and the README script
+  tree updated to match. Tracked in #57.
+- **New steering rule (`rules/deck-editing-rules.md`)** — drive real PowerPoint
+  for all structural edits; documents the Mac PowerPoint VBA landmines and how
+  each is handled.
 - **`RunDeckOps.bas`** — reusable VBA macro that rebuilds a deck via
   `Slides.InsertFromFile` (keep-source-formatting Reuse Slides) in a target
   order, with cross-deck import, global text replace, and a COPY-only save.
