@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.18.10 — 2026-06-03
+
+### fix(shownotes-publisher) — stop agents skipping thumbnail generation
+
+Step 6 (Thumbnail) was opt-out: it stated the page "renders fine without one"
+(the `onerror` placeholder fallback), framed production as a vague conditional
+hand-off to the illustrations skill, and ended "Proceed immediately to Step 7"
+with no gate — so agents always skipped it and the talk card fell back to the
+placeholder SVG. Step 6 is now an explicit decision: check the convention-path
+file (`assets/images/thumbnails/{filename_stem}-thumbnail.png`); if absent,
+either produce it via `Skill(illustrations)` when a source image is available,
+or explicitly record it as deferred to Phase 7 (pre-talk publish with no
+slides/video). Never a silent fall-through. Fixes #58.
+
 ## 0.18.9 — 2026-06-03
 
 ### feat(presentation-creator) — PowerPoint-native deck editing (preserves illustrated backgrounds)
