@@ -1,5 +1,15 @@
 Attribute VB_Name = "DeckOps"
 ' =====================================================================
+' DeckOps  -  the deck-operations VBA module: RunDeckOps (trim/reorder/
+' import/replace), MakeBgImageSlide, and ApplyBackgrounds.
+'
+' One module, not three, on purpose: VBA has no package manager, the
+' public macros share private helpers (BaseName / AliasPath / AssertNotOpen),
+' and the module is imported as a single unit into the DeckOps.pptm macro
+' container. Splitting into per-macro files would force multiple imports plus
+' duplicated or cross-referenced helpers for no benefit. The "single-purpose
+' script" rule targets composable CLI scripts; this is a cohesive macro library.
+'
 ' RunDeckOps  -  reusable, non-corrupting, FORMATTING-PRESERVING deck
 ' trim / reorder / cross-deck import.
 '
