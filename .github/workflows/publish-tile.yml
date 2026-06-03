@@ -45,6 +45,20 @@ jobs:
         # push it falls back to reviewing every skill; on an
         # unreachable base it hard-fails (no silent skip).
         uses: jbaruch/coding-policy/.github/actions/skill-review@2a9df6575e153ce0d98900fdae26384c06df478f # main @ 2026-05-13
+      - name: Stamp CHANGELOG with the version being published
+        # Publish-on-merge has no "Unreleased" bucket: PR authors add un-headed
+        # `### ` entries at the top of CHANGELOG.md. This stamps them with the
+        # version patch-version-publish is about to assign (same registry-latest
+        # +1 computation), so the published artifact and registry "what's new"
+        # show them under their real version. Commit only, no push — the publish
+        # step's own commit/push carries this commit along. [skip ci] guards the
+        # bump commits from re-triggering this workflow.
+        run: |
+          python3 scripts/stamp-changelog.py
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git diff --cached --quiet || git commit -m "Stamp CHANGELOG for the published version [skip ci]"
       # No explicit `tessl eval run .` step here: per
       # `jbaruch/coding-policy: plugin-evals` (Persistence), the
       # Tessl-publish layer owns persistence execution — the eval

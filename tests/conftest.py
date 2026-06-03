@@ -24,6 +24,7 @@ SCRIPTS_ILL = os.path.join(
     os.path.dirname(__file__), os.pardir,
     "skills", "illustrations", "scripts",
 )
+SCRIPTS_ROOT = os.path.join(os.path.dirname(__file__), os.pardir, "scripts")
 
 
 def _import_script(path, name):
@@ -55,6 +56,11 @@ def _import_script(path, name):
 @pytest.fixture(scope="session")
 def strip_template():
     return _import_script(os.path.join(SCRIPTS_PC, "strip-template.py"), "strip_template")
+
+
+@pytest.fixture(scope="session")
+def stamp_changelog():
+    return _import_script(os.path.join(SCRIPTS_ROOT, "stamp-changelog.py"), "stamp_changelog")
 
 
 @pytest.fixture(scope="session")
