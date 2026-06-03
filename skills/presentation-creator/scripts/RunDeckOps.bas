@@ -298,6 +298,93 @@ Fail3:
     ApplyBackgrounds = -1
 End Function
 
+' Set per-slide speaker notes via real PowerPoint, which serializes valid notes
+' OOXML — so the <p:notesMasterIdLst> Keynote-compat hack python-pptx needed is
+' unnecessary. AppleScript reads the notes file as UTF-8 and passes the packed
+' text here as ONE Unicode argument (so VBA never has to decode UTF-8 from disk).
+' Packed format: records separated by Chr(30) (RS); within a record, the 1-based
+' slide number and the note text separated by Chr(31) (US). Both are non-printing
+' control chars that do not occur in prose notes.
+' Invoked via:
+'   run VB macro macro name "SetSpeakerNotes" list of parameters _
+'       {basePath, outPath, packedNotes}
+Public Function SetSpeakerNotes(ByVal basePath As String, _
+                                ByVal outPath As String, _
+                                ByVal packedNotes As String) As Long
+    Dim curTok As String
+    Dim base As Presentation
+    On Error GoTo Fail4
+
+    curTok = "guard:base"
+    AssertNotOpen BaseName(basePath)
+    curTok = "open:base"
+    Set base = Presentations.Open(FileName:=basePath, WithWindow:=msoTrue)
+
+    Dim records() As String, i As Long, us As Long, applied As Long
+    Dim num As Long, noteText As String
+    applied = 0
+    If Len(packedNotes) > 0 Then
+        records = Split(packedNotes, Chr(30))
+        For i = LBound(records) To UBound(records)
+            If Len(records(i)) > 0 Then
+                us = InStr(records(i), Chr(31))
+                If us = 0 Then Err.Raise vbObjectError + 518, , _
+                    "Bad notes record (no unit separator): " & records(i)
+                num = CLng(Left(records(i), us - 1))
+                noteText = Mid(records(i), us + 1)
+                curTok = "set-notes:" & num
+                If num < 1 Or num > base.Slides.Count Then Err.Raise vbObjectError + 519, , _
+                    "Notes slide " & num & " out of range (deck has " & base.Slides.Count & ")"
+                SetNotesBody base.Slides(num), noteText
+                applied = applied + 1
+            End If
+        Next i
+    End If
+
+    curTok = "save"
+    base.SaveCopyAs FileName:=outPath
+    curTok = "close"
+    base.Close
+    SetSpeakerNotes = applied
+    Exit Function
+
+Fail4:
+    Dim em As String
+    em = "SetSpeakerNotes failed at [" & curTok & "]:" & vbCr & _
+         Err.Number & " - " & Err.Description
+    On Error Resume Next
+    If Not base Is Nothing Then
+        base.Saved = msoTrue
+        base.Close
+    End If
+    On Error GoTo 0
+    MsgBox em, vbCritical, "SetSpeakerNotes"
+    SetSpeakerNotes = -1
+End Function
+
+' Write noteText into a slide's notes body placeholder (creating the notes page
+' on access). Prefers the body placeholder; falls back to the first text frame
+' on the notes page that is not the slide-image placeholder.
+Private Sub SetNotesBody(ByVal s As Slide, ByVal noteText As String)
+    Dim shp As Shape
+    For Each shp In s.NotesPage.Shapes
+        If shp.Type = msoPlaceholder Then
+            If shp.PlaceholderFormat.Type = ppPlaceholderBody Then
+                shp.TextFrame.TextRange.Text = noteText
+                Exit Sub
+            End If
+        End If
+    Next shp
+    For Each shp In s.NotesPage.Shapes
+        If shp.HasTextFrame Then
+            If shp.PlaceholderFormat.Type <> ppPlaceholderTitle Then
+                shp.TextFrame.TextRange.Text = noteText
+                Exit Sub
+            End If
+        End If
+    Next shp
+End Sub
+
 ' Filename portion of a POSIX path.
 Private Function BaseName(ByVal p As String) As String
     Dim k As Long

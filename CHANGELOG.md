@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.18.11 — 2026-06-04
+
+### feat(presentation-creator) — speaker notes via real PowerPoint (#57 Phase C)
+
+Retires `inject-speaker-notes.py` (python-pptx) in favor of a `SetSpeakerNotes`
+VBA macro driven through the real PowerPoint app. PowerPoint serializes valid
+notes OOXML — including the `<p:notesMasterIdLst>` element python-pptx omitted —
+so the Keynote-compatibility patch the python path carried is no longer needed
+(retiring the *cause* of the breakage, not a safety net).
+
+- **`SetSpeakerNotes`** (in `RunDeckOps.bas`) + `inject-notes.applescript` /
+  `inject-notes.sh` — sets per-slide notes via PowerPoint, writes a COPY.
+- AppleScript reads the notes file as UTF-8 and passes it to the macro as one
+  Unicode argument (control-char-delimited records), so VBA never decodes UTF-8
+  from disk. Slide numbers convert 0-based (the JSON) → 1-based (PowerPoint).
+- **`notes-to-packed.py`** — deterministic JSON→wire-format packer, unit-tested
+  (`tests/test_notes_to_packed.py`); the VBA layer stays manually validated.
+- Phase 5 / `phase5-slides.md` rewired: notes inject via `inject-notes.sh` after
+  the illustrations apply pass and before the final `apply-backgrounds.sh` write.
+- Advances #57 (real PowerPoint as the sole `.pptx` writer). macOS + PowerPoint
+  only; untestable in Linux CI by design — validate by re-opening in PowerPoint
+  and Keynote.
+
 ## 0.18.10 — 2026-06-03
 
 ### fix(shownotes-publisher) — stop agents skipping thumbnail generation
