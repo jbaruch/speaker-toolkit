@@ -132,6 +132,11 @@ def check_rhetorical():
 
 
 @pytest.fixture(scope="session")
+def model_registry():
+    return _import_script(os.path.join(SCRIPTS_ILL, "model_registry.py"), "model_registry")
+
+
+@pytest.fixture(scope="session")
 def generate_illustrations():
     return _import_script(
         os.path.join(SCRIPTS_ILL, "generate-illustrations.py"), "generate_illustrations"

@@ -117,8 +117,9 @@ which Presentation Patterns it maps to (e.g., "problem-solution" = Narrative Arc
 
 Not every talk needs generated illustrations — demo-heavy, data-heavy, or
 screenshot-driven talks may not. When the author wants AI-generated illustrations,
-delegate to the illustrations skill for the full collaboration (style proposals
-grounded in vault `visual_style_history`, format vocabulary, model choice,
+delegate to the illustrations skill for the full collaboration (optimization
+priorities, format vocabulary, a priority-driven model shortlist, style proposals
+grounded in vault `visual_style_history`, a style × model exploration render,
 visual continuity devices):
 
 ```

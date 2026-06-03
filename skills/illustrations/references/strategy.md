@@ -1,13 +1,89 @@
 # Illustration Strategy — Detail
 
 The Step 3 collaboration in `SKILL.md`. Produces the Illustration Style Anchor
-block that gets written into the outline header.
+block written into the outline header.
 
 Not every talk needs generated illustrations — demo-heavy, data-heavy, or
 screenshot-driven talks may not. When the author wants AI-generated
-illustrations, this protocol walks through the visual identity collaboratively.
+illustrations, this protocol walks through the visual identity collaboratively,
+in the order below: decide what to optimize for, narrow the models by data,
+then render styles and models together and pick visually.
 
-## Sub-step 1: Propose Style Ideas with Sample Prompts
+## Sub-step 1: Establish Optimization Priorities
+
+Ask what the speaker optimizes for before proposing anything. The priorities
+drive which models reach the shortlist (Sub-step 3):
+
+- **cost** — cheaper per-image generation
+- **speed** — faster turnaround per image
+- **quality** — top-tier fidelity
+- **build-editability** — the model must support image editing; required for
+  progressive-reveal builds and edit/fix iteration
+
+Present this with `AskUserQuestion` as a **multi-select** (checkboxes, not a
+single-choice radio) — the speaker can pick several (e.g. "quality and
+editability"). Pass every chosen priority to `--shortlist` (Sub-step 3), which
+ranks and filters the roster accordingly.
+
+Auto-flag `build-editability` when any slide carries a `Builds:` block — build
+frames are produced by editing the previous frame, so the model must support
+editing. A deck with no builds can drop the constraint.
+
+Per-model attributes and how priorities rank them live in
+`skills/illustrations/scripts/model_registry.py` (the `MODEL_REGISTRY` entries
+and `shortlist_models`). Don't restate the tiers here.
+
+## Sub-step 2: Define Format Vocabulary & Aspect Ratios
+
+Define the slide format types for this talk:
+
+```
+SLIDE FORMAT VOCABULARY
+========================
+FULL     — full-bleed illustration, 1-2 sentences overlaid
+           → Landscape 16:9 (1920×1080)
+IMG+TXT  — illustration ~60% of slide, text beside/below
+           → Portrait 2:3 (1024×1536)
+EXCEPTION — real photo, data table, bio, or primary source
+           → No generated illustration; uses [IMAGE NN] placeholder
+========================
+```
+
+Format names and ratios are talk-specific — the author may rename them or add
+formats (e.g., DIAGRAM for technical slides, QUOTE for attributed quotations).
+
+## Sub-step 3: Narrow the Model Shortlist
+
+Filter the roster by the Sub-step 1 priorities before rendering anything. This
+stages the cost — data-driven narrowing first, pixels later:
+
+```bash
+python3 skills/illustrations/scripts/model_registry.py --shortlist <priorities>
+```
+
+Pass the priorities comma-separated (e.g. `quality,build-editability`). The
+script returns the ranked candidate models as JSON, best first. Carry the top
+1–3 into the exploration render. The ranking and filter logic are in
+`model_registry.py` — read the JSON, don't reimplement them.
+
+The roster is a seed cache, not an allowlist. When the speaker wants a model
+not in it — or Step 2 surfaced a new flagship — WebSearch its cost, speed,
+quality, and edit support, then rank it alongside the cached set without
+editing the table:
+
+```bash
+python3 skills/illustrations/scripts/model_registry.py \
+  --shortlist <priorities> --add '[{"id":"...","family":"...","cost":"...","speed":"...","quality":"...","edit":"..."}]'
+```
+
+You can also drop the new id straight into `candidates.json` to render it — the
+exploration picks visually, so a ranking isn't required. Any id from a
+supported vendor family (`gemini-*`, `imagen-*`, `gpt-image-*`) renders with no
+code change; only a new vendor family needs a `_call_<vendor>` adapter.
+Persistent additions belong in the registry via the Step 2 refresh; per-talk
+injections don't touch the table.
+
+## Sub-step 4: Propose Style Ideas with Sample Prompts
 
 Present 3–4 style options informed by **three sources**:
 
@@ -65,73 +141,43 @@ fit and vault context, not just aesthetic preference]
 ```
 
 The key: **each style option explains WHY it fits this specific talk's
-concepts**, not just what it looks like. The author picks one (or mixes
-elements), then iterates on the anchor paragraph together.
+concepts**, not just what it looks like. These options become the candidate
+styles for the exploration render — the speaker doesn't commit from prose.
 
-## Sub-step 2: Define Format Vocabulary & Aspect Ratios
+## Sub-step 5: Render the Exploration Grid
 
-Once the style is chosen, define the slide format types for this talk:
+Models produce meaningfully different aesthetics from the same prompt, and so
+do styles. The decision is visual — made from rendered output, not prose
+descriptions — and style and model are picked together.
 
-```
-SLIDE FORMAT VOCABULARY
-========================
-FULL     — full-bleed illustration, 1-2 sentences overlaid
-           → Landscape 16:9 (1920×1080)
-IMG+TXT  — illustration ~60% of slide, text beside/below
-           → Portrait 2:3 (1024×1536)
-EXCEPTION — real photo, data table, bio, or primary source
-           → No generated illustration; uses [IMAGE NN] placeholder
-========================
-```
-
-Format names and ratios are talk-specific — the author may use different names
-or add formats (e.g., DIAGRAM for technical slides, QUOTE for attributed
-quotations).
-
-## Sub-step 3: Choose Image Generation Model
-
-Different image-generation models produce meaningfully different aesthetics
-even from the same prompt — Gemini 3 Pro tends toward photorealism, Imagen
-toward painterly, the Gemini 2.x flash variants toward illustrated. The
-choice matters and is best made visually, not from prose descriptions.
-
-The decision protocol is **side-by-side generation, then speaker picks**:
-
-1. **Pick the comparison slide.** Choose a representative FULL-format slide
-   from the outline — central to the deck's concept, not the title slide,
-   not an edge case. The slide must already have a complete `[STYLE ANCHOR].
-   <scene description>` Image prompt drafted (using the anchor paragraph from
-   Sub-step 1). Skip slides without prompts; the comparison needs concrete
-   input to be meaningful.
-2. **Run the comparison.** From the talk's working directory:
+1. **Write `style-explore/candidates.json`** — the shortlisted models, the
+   candidate styles with their per-format anchor paragraphs, and one
+   representative slide per format (central to the deck's concept, not the
+   title slide, not an edge case; each slide must already have a complete
+   `[STYLE ANCHOR]. <scene description>` Image prompt). Schema:
+   [skills/illustrations/references/style-explore-candidates-schema.md](style-explore-candidates-schema.md).
+2. **Render the grid:**
    ```bash
    python3 skills/illustrations/scripts/generate-illustrations.py \
-     presentation-outline.md --compare <slide-num>
+     <outline> --style-explore style-explore/candidates.json
    ```
-   The script renders the same prompt across the curated `COMPARE_MODELS`
-   list — currently a cross-vendor mix of Gemini, Imagen, and OpenAI
-   flagships (see the script's constant block; updated via the freshness
-   check in `SKILL.md` Step 2 as new flagships ship). Output lands in
-   `illustrations/model-comparison/slide-<NN>-<model>.<ext>`.
-3. **Present the candidates.** Show the speaker the side-by-side outputs.
-   Lead with a brief read of each — what each model emphasized about the
-   prompt — but the visual decision is the speaker's, not the agent's.
-4. **Bake the choice.** The selected model goes into the outline header's
-   `**Model:** \`<model-name>\`` line. Every subsequent generation in
-   Step 4 (deck illustrations) and Step 5 (builds) use this model.
+   Output lands in `style-explore/<style-slug>/<format>/<model>.<ext>` with a
+   `style-explore/index.md` contact sheet grouping every render by style.
+3. **Present the grid.** Walk the speaker through `index.md`. Lead with a brief
+   read of each cell — what each style+model emphasized about the prompt — but
+   the visual decision is the speaker's, not the agent's.
+4. **Bake the choice.** The chosen model goes into the outline header's
+   `**Model:** \`<model-name>\`` line; the chosen style's anchor paragraphs
+   become the per-format STYLE ANCHOR blocks. Every subsequent generation in
+   Step 4 (deck illustrations) and Step 5 (builds) uses this model.
 
-If the speaker dislikes every candidate, iterate by either changing the
-comparison slide (a different slide may render better across the same
-model set) or revising the anchor paragraph (Sub-step 1) and re-running
-the comparison. Don't widen the model list ad-hoc — the curated set is
-what the script supports; new entries belong in the script's constant
-(see the freshness check in `SKILL.md` Step 2 for when and how to bump it).
+If the speaker dislikes every cell, iterate — swap a representative slide,
+revise an anchor paragraph, or re-run `--shortlist` with different priorities
+to widen the model set — then re-render. Bake model-specific prompt
+conventions (negative prompts, aspect-ratio tokens, reserved keywords) into the
+anchor immediately after the model is chosen, before Step 4 generation runs.
 
-Model-specific prompt conventions (e.g., negative prompts, aspect-ratio
-tokens, reserved keywords) should be baked into the anchor paragraph
-immediately after the model is chosen, before Step 4 generation runs.
-
-## Sub-step 4: Visual Continuity Devices
+## Sub-step 6: Visual Continuity Devices
 
 Define recurring elements that tie the deck together as a coherent visual
 artifact:
@@ -153,6 +199,6 @@ artifact:
 
 ## Gate
 
-Author approves the style anchor paragraphs, format vocabulary, and model
-choice. These become the Illustration Style Anchor section in the outline
-header. Once written, Step 4 (generation) can run.
+Author approves the optimization priorities, format vocabulary, style anchor
+paragraphs, and model choice. These become the Illustration Style Anchor
+section in the outline header. Once written, Step 4 (generation) can run.

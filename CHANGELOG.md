@@ -1,6 +1,58 @@
 # Changelog
 
-## Unreleased
+## 0.18.7 — 2026-06-03
+
+### feat(illustrations) — structured style selection + model registry
+
+Reworked the Phase 2 illustration-strategy flow and the model roster behind it,
+prompted by two reported failures: the SKILL.md Step 2 model-freshness check
+effectively never ran (prose-only with a "proceed silently if everything is
+represented" escape hatch, so an agent left no trace and skipped it), and a
+refresh asked to update the model list dropped the `nano-banana-*` entries —
+because "nano-banana" is Google's codename for the Gemini image line (Nano
+Banana Pro = Gemini 3 Pro Image), and a bare string list carries nothing tying
+the codename to the canonical id.
+
+- **Model registry (`skills/illustrations/scripts/model_registry.py`)** — the
+  bare `COMPARE_MODELS` list became a structured registry: canonical id, vendor
+  family, aliases, and per-model cost/speed/quality tiers + edit support. The
+  redundant `nano-banana-pro-preview` entry folded into
+  `gemini-3-pro-image-preview` as an alias. `resolve_model_id()` maps any baked
+  codename to the canonical API id before dispatch. `COMPARE_MODELS` is now
+  derived from the registry for backward compatibility.
+- **Freshness precheck** — `model_registry.py --check-freshness` emits
+  `last_reviewed` / `age_days` / `stale` / roster JSON from a date heuristic
+  (`REGISTRY_LAST_REVIEWED` + 90-day max age). SKILL.md Step 2 runs it first and
+  reports the verdict in one line — no silent skip. WebSearch + registry
+  reconciliation fires only when stale; for an existing outline the agent also
+  checks the baked model against the roster.
+- **Optimization priorities → shortlist** — Step 3 elicits what the speaker
+  optimizes for (cost / speed / quality / build-editability) and narrows the
+  roster with `model_registry.py --shortlist <priorities>` before any render.
+  `build-editability` hard-excludes Imagen (no edit endpoint); cost/speed/quality
+  are soft rankings.
+- **Style exploration** — `generate-illustrations.py --style-explore` reads a
+  `candidates.json` (styles × shortlist × formats; schema in
+  `references/style-explore-candidates-schema.md`) and renders into a structured
+  `style-explore/<style>/<format>/<model>.<ext>` tree with an `index.md` contact
+  sheet, so the speaker picks style and model together from rendered output.
+- **Hybrid roster (cache + live inject)** — the registry is a seed cache, not an
+  allowlist. Rendering accepts any id from a supported vendor family with no code
+  change; a web-discovered model can be ranked for one talk via
+  `shortlist_models(extra_models=...)` / `--shortlist --add '<json>'` without a
+  table edit. Persistent additions land in the registry through the Step 2
+  refresh.
+- **Docs + evals** — rewrote `references/strategy.md` (priorities → format →
+  shortlist → style proposals → exploration render → continuity), updated
+  `generation.md`, the SKILL.md Key Files table, and presentation-creator's
+  Decision #11. Updated the two `illustrations-freshness-*` eval criteria to the
+  precheck contract and added `illustrations-priority-model-shortlist`. New tests
+  cover alias resolution, shortlist ranking + injection, the freshness date math,
+  and the style-explore helpers.
+- **Follow-up (pre-existing):** the `illustrations-mode-routing` eval criteria
+  count steps without the freshness step (off by one vs the committed 7-step
+  SKILL.md). The README "6 mode-routed steps" comment is corrected here; the
+  mode-routing criteria renumber is left for a dedicated pass.
 
 ### feat(presentation-creator) — PowerPoint-native deck editing (preserves illustrated backgrounds)
 

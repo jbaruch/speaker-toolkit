@@ -4,6 +4,23 @@
 
 A six-skill presentation system for conference speakers: analyze your existing talks to extract your rhetoric patterns, create new presentations that match your documented style, produce the deck illustrations + thumbnail visual layer, and publish talk pages to a Jekyll shownotes site.
 
+## What's New (Unreleased)
+
+**Structured style selection + model registry** — Phase 2 style strategy now
+runs as an ordered process: elicit what the speaker optimizes for (cost, speed,
+quality, build-editability), narrow the model roster to a priority-driven
+shortlist with `model_registry.py --shortlist`, propose styles, then render a
+`style × model × format` grid into a structured `style-explore/` directory with
+an `index.md` contact sheet (`generate-illustrations.py --style-explore`) for a
+visual pick. The model roster moved into a single source of truth,
+`model_registry.py` — a structured registry with vendor aliases (so "nano-banana"
+resolves to the canonical Gemini id instead of being dropped on refresh),
+per-model attributes, and a deterministic `--check-freshness` precheck that
+SKILL.md Step 2 now runs first and reports, closing the "freshness check never
+ran" gap. The roster is a seed cache, not an allowlist: rendering accepts any id
+from a supported vendor family, and a web-discovered model can be injected into
+the shortlist for one talk via `--add` without a code edit.
+
 ## What's New (0.18.0)
 
 **Cross-vendor image generation + model-freshness check** — `generate-illustrations.py`
@@ -409,17 +426,19 @@ speaker-toolkit-tile/
     |           +-- build/                    # 37 patterns + 10 antipatterns
     |           +-- deliver/                  # 21 patterns + 12 antipatterns (11 unobservable)
     +-- illustrations/
-    |   +-- SKILL.md                          # Visual layer workflow (6 mode-routed steps)
+    |   +-- SKILL.md                          # Visual layer workflow (7 mode-routed steps)
     |   +-- scripts/
-    |   |   +-- generate-illustrations.py     # Gemini API illustration generator + model comparison + builds
+    |   |   +-- model_registry.py             # Model roster, aliases, attributes; --check-freshness + --shortlist
+    |   |   +-- generate-illustrations.py     # Illustration generator + model comparison + style exploration + builds
     |   |   +-- apply-illustrations-to-deck.py # Swap into deck, reposition title, position IMG+TXT
     |   |   +-- suggest-scrim-color.py        # Sample deck-tuned scrim color from illustrations
     |   |   +-- generate-thumbnail.py         # YouTube thumbnail via Gemini composition
     |   +-- references/
-    |       +-- strategy.md                   # Phase 2 D#11 — style proposal, format vocabulary, model choice
+    |       +-- strategy.md                   # Phase 2 D#11 — priorities, model shortlist, style proposals, exploration render
     |       +-- generation.md                 # Setup, edit/fix workflow, format vocabulary, apply-to-deck
     |       +-- builds.md                     # Backwards-chained build generation + deck insertion
     |       +-- thumbnails.md                 # Phase 7 thumbnail composition + slide selection
+    |       +-- style-explore-candidates-schema.md # candidates.json contract for --style-explore
     |       +-- title-placement.md            # Outline schema + scripts for Safe-zone title placement
     +-- shownotes-publisher/
         +-- SKILL.md                          # Jekyll shownotes publish workflow (9 steps)
