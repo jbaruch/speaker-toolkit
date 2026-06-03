@@ -43,6 +43,12 @@ def test_non_string_text_raises(notes_to_packed):
         notes_to_packed.pack_notes({"0": 123})
 
 
+def test_negative_index_rejected_upfront(notes_to_packed):
+    # 0-based indices must be >= 0 — reject here, not later inside PowerPoint.
+    with pytest.raises(ValueError):
+        notes_to_packed.pack_notes({"-1": "text"})
+
+
 def test_reserved_control_char_in_text_raises(notes_to_packed):
     with pytest.raises(ValueError):
         notes_to_packed.pack_notes({"0": f"bad{RS}text"})

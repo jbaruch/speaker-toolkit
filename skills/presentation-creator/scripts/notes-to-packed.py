@@ -39,6 +39,9 @@ def pack_notes(notes_map: object) -> str:
 
     records = []
     for key in sorted(notes_map, key=slide_num):
+        num = slide_num(key)
+        if num < 0:
+            raise ValueError(f"notes key {key!r} is negative; slide indices are 0-based (>= 0)")
         text = notes_map[key]
         if text is None or text == "":
             continue
@@ -46,7 +49,7 @@ def pack_notes(notes_map: object) -> str:
             raise ValueError(f"notes for slide {key} must be a string, got {type(text).__name__}")
         if RS in text or US in text:
             raise ValueError(f"notes for slide {key} contain a reserved control char (RS/US)")
-        records.append(f"{slide_num(key) + 1}{US}{text}")
+        records.append(f"{num + 1}{US}{text}")
     return RS.join(records)
 
 
