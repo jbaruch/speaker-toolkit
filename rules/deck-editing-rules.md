@@ -1,19 +1,20 @@
+---
+alwaysApply: true
+---
+
 # Deck Editing Rules
 
 How to make STRUCTURAL edits (delete / reorder / cross-deck import) to an
-existing `.pptx` — distinct from generating a deck from scratch (see
-`rules/slide-generation-rules.md`). python-pptx silently destroys illustrated
-decks; this rule says what to use instead.
+existing `.pptx` and how to apply illustration backgrounds — distinct from
+generating slide structure (see `rules/slide-generation-rules.md`).
 
 ## Don't Edit Decks With python-pptx
 
-- python-pptx and any clipboard `Slides.Paste` apply DESTINATION formatting and
-  drop each slide's own `<p:bg>` picture fill. On comic-book / illustrated decks
-  the full-bleed art is usually a per-slide background fill, so a python-pptx
-  trim flattens those slides to bare color (picture *shapes* survive, per-slide
-  `<p:bg>` fills do not).
-- python-pptx editing the OOXML from outside the app also breaks relationships
-  and strict OOXML, which Keynote then refuses to open.
+- python-pptx and clipboard `Slides.Paste` drop each slide's `<p:bg>` picture
+  fill. On illustrated decks the full-bleed art is a per-slide background fill,
+  so a python-pptx trim flattens those slides to bare color.
+- python-pptx editing OOXML from outside the app breaks relationships and strict
+  OOXML; Keynote then refuses to open the file.
 - All structural edits go through RunDeckOps — there is no python-pptx
   slide-delete / slide-reorder path.
 

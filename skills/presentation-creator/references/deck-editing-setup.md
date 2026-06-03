@@ -4,15 +4,16 @@ First-time setup for the PowerPoint-native deck-editing tooling
 (`RunDeckOps.bas` + `run-deck-ops.sh`; see `rules/deck-editing-rules.md`).
 **macOS + Microsoft PowerPoint only.**
 
-The agent runs this interactively: do ONE step at a time, wait for the user to
-confirm, then continue (per `rules/interaction-rules.md`). Most of these are
-manual GUI actions only the user can do. Run it once per machine; afterwards
-the agent can invoke `run-deck-ops.sh` directly with no further prompts.
+Steps 1–4 are manual GUI actions only the user can perform; the agent presents
+each and the user acts, then the agent proceeds. The Step 5 smoke test verifies
+the whole setup end-to-end before any real edit — so the agent does not pause to
+confirm each manual step, it confirms once via the smoke test. Run this once per
+machine; afterwards the agent invokes `run-deck-ops.sh` directly.
 
 ## Step 1 — Enable VBA macros
 
 Ask the user to open **PowerPoint → Settings → Security & Privacy** and enable
-macros ("Enable all macros", or enable + trust). Wait for confirmation.
+macros ("Enable all macros", or enable + trust). Proceed to Step 2.
 
 ## Step 2 — Create the macro container `DeckOps.pptm`
 

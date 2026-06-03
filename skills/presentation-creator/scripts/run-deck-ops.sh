@@ -27,8 +27,8 @@ BASE="$1"; OUT="$2"; IMPORT="$3"; ORDER="$4"; REPLACE="$5"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRIVER="$HERE/run-deck-ops.applescript"
 
-[[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE" >&2; exit 1; }
-[[ -f "$DRIVER" ]] || { echo "ERROR: driver not found: $DRIVER" >&2; exit 1; }
+[[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the source .pptx as <basePath>." >&2; exit 1; }
+[[ -f "$DRIVER" ]] || { echo "ERROR: driver not found: $DRIVER — reinstall the tile; run-deck-ops.applescript must sit next to this script." >&2; exit 1; }
 
 # Sandboxed PowerPoint can READ from a Google Drive File-Provider folder but
 # fails to CREATE a new file there via VBA (E_FAIL -2147467259). So save to a
@@ -47,6 +47,6 @@ if [[ -f "$STAGE" ]]; then
   mv -f "$STAGE" "$OUT"
   echo "done -> $OUT"
 else
-  echo "ERROR: macro did not produce the staged file (see the PowerPoint error dialog)." >&2
+  echo "ERROR: macro did not produce the staged file. Check the PowerPoint error dialog, and confirm DeckOps.pptm is open with macros enabled and Automation consent granted — see skills/presentation-creator/references/deck-editing-setup.md." >&2
   exit 1
 fi

@@ -43,6 +43,12 @@ InsertFromFile path recovered the same cut to 24 MB with backgrounds intact.
   applies only scrim + title; IMG+TXT keeps its left-column picture shape. Begins
   retiring python-pptx as a deck writer for creation (Phase B of #57). Phase 5
   reorders so the VBA background pass runs after speaker-note injection.
+- **Policy-review hardening** — `rules/deck-editing-rules.md` gains `alwaysApply`
+  frontmatter and sheds rationale prose; `references/deck-editing-setup.md` drops
+  the pause-and-wait flow for continue-immediately; the wrappers emit actionable
+  validation errors; and the deterministic manifest→spec step is extracted to a
+  unit-tested `backgrounds-manifest-to-spec.py` (the VBA core stays CI-untestable
+  by design).
 - macOS + Microsoft PowerPoint only — drives the app via Automation, so it is
   untestable in Linux CI by design; validate output by re-opening in PowerPoint
   and Keynote. README steering-rules table and `tile.json` steering updated.

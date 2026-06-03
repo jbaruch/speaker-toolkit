@@ -28,27 +28,14 @@ BASE="$1"; OUT="$2"; MANIFEST="$3"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRIVER="$HERE/apply-backgrounds.applescript"
 
-[[ -f "$BASE" ]]     || { echo "ERROR: base deck not found: $BASE" >&2; exit 1; }
-[[ -f "$MANIFEST" ]] || { echo "ERROR: backgrounds manifest not found: $MANIFEST" >&2; exit 1; }
-[[ -f "$DRIVER" ]]   || { echo "ERROR: driver not found: $DRIVER" >&2; exit 1; }
+[[ -f "$BASE" ]]     || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the built .pptx as <basePath>." >&2; exit 1; }
+[[ -f "$MANIFEST" ]] || { echo "ERROR: backgrounds manifest not found: $MANIFEST — generate it with apply-illustrations-to-deck.py --backgrounds-out." >&2; exit 1; }
+[[ -f "$DRIVER" ]]   || { echo "ERROR: driver not found: $DRIVER — reinstall the tile; apply-backgrounds.applescript must sit next to this script." >&2; exit 1; }
 
-# Build the "#=path;#=path" spec from the manifest. Deterministic JSON->spec
-# normalization (sorted by slide number); fails loudly on a malformed image path.
-SPEC="$(python3 - "$MANIFEST" <<'PY'
-import json, sys
-m = json.load(open(sys.argv[1]))
-bg = m.get("backgrounds", {})
-if not bg:
-    sys.stderr.write("ERROR: manifest has no 'backgrounds' entries\n"); sys.exit(1)
-toks = []
-for k in sorted(bg, key=lambda x: int(x)):
-    p = bg[k]
-    if ";" in p or "=" in p:
-        sys.stderr.write(f"ERROR: image path contains a reserved char (;/=): {p}\n"); sys.exit(1)
-    toks.append(f"{int(k)}={p}")
-print(";".join(toks))
-PY
-)"
+# Build the "#=path;#=path" spec from the manifest (deterministic; unit-tested
+# in tests/test_backgrounds_manifest_to_spec.py). Exits non-zero with an
+# actionable message on an empty or malformed manifest.
+SPEC="$(python3 "$HERE/backgrounds-manifest-to-spec.py" "$MANIFEST")"
 
 # Sandboxed PowerPoint can't create a file in a Google Drive folder (E_FAIL) —
 # stage locally, then move into place with the shell.
@@ -65,6 +52,6 @@ if [[ -f "$STAGE" ]]; then
   mv -f "$STAGE" "$OUT"
   echo "done -> $OUT"
 else
-  echo "ERROR: macro did not produce the staged file (see the PowerPoint error dialog)." >&2
+  echo "ERROR: macro did not produce the staged file. Check the PowerPoint error dialog, and confirm DeckOps.pptm is open with macros enabled and Automation consent granted — see skills/presentation-creator/references/deck-editing-setup.md." >&2
   exit 1
 fi

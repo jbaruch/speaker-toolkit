@@ -58,6 +58,14 @@ def strip_template():
 
 
 @pytest.fixture(scope="session")
+def backgrounds_manifest_to_spec():
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "backgrounds-manifest-to-spec.py"),
+        "backgrounds_manifest_to_spec",
+    )
+
+
+@pytest.fixture(scope="session")
 def insert_placeholder():
     return _import_script(
         os.path.join(SCRIPTS_PC, "insert-placeholder-slides.py"), "insert_placeholder"

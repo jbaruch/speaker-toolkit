@@ -31,9 +31,9 @@ BASE="$1"; TEMPLATE="$2"; IMAGE="$3"; TITLE="$4"; OUT="$5"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRIVER="$HERE/make-bg-slide.applescript"
 
-[[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE" >&2; exit 1; }
-[[ -f "$IMAGE" ]]  || { echo "ERROR: image not found: $IMAGE" >&2; exit 1; }
-[[ -f "$DRIVER" ]] || { echo "ERROR: driver not found: $DRIVER" >&2; exit 1; }
+[[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the comic-template deck as <basePath>." >&2; exit 1; }
+[[ -f "$IMAGE" ]]  || { echo "ERROR: image not found: $IMAGE — pass the generated illustration to set as the slide background." >&2; exit 1; }
+[[ -f "$DRIVER" ]] || { echo "ERROR: driver not found: $DRIVER — reinstall the tile; make-bg-slide.applescript must sit next to this script." >&2; exit 1; }
 
 # Sandboxed PowerPoint can't create a file in a Google Drive folder (E_FAIL) —
 # stage locally, then move into place with the shell.
@@ -49,6 +49,6 @@ if [[ -f "$STAGE" ]]; then
   mv -f "$STAGE" "$OUT"
   echo "done -> $OUT"
 else
-  echo "ERROR: macro did not produce the staged slide (see the PowerPoint error dialog)." >&2
+  echo "ERROR: macro did not produce the staged slide. Check the PowerPoint error dialog, and confirm DeckOps.pptm is open with macros enabled and Automation consent granted — see skills/presentation-creator/references/deck-editing-setup.md." >&2
   exit 1
 fi

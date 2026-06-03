@@ -400,6 +400,7 @@ speaker-toolkit-tile/
     |   |   +-- make-bg-slide.applescript      # AppleScript driver for MakeBgImageSlide
     |   |   +-- apply-backgrounds.sh           # Wrapper for ApplyBackgrounds (bulk FULL-slide bg fills)
     |   |   +-- apply-backgrounds.applescript  # AppleScript driver for ApplyBackgrounds
+    |   |   +-- backgrounds-manifest-to-spec.py # Manifest JSON -> ApplyBackgrounds spec (tested)
     |   +-- references/
     |       +-- phase0-intake.md through phase7-post-event.md  # Phase detail docs
     |       +-- patterns/                     # Presentation Patterns taxonomy (102 entries)
