@@ -271,14 +271,27 @@ read as a URL; see
 entry 1c and
 [references/template-conditionals.md](references/template-conditionals.md)
 for the three template locations that hard-code the slug-derived
-path. Missing thumbnails fall back via `onerror` to the placeholder
-SVG — page renders fine without one.
+path.
 
-If a thumbnail needs to be produced, hand off to
-`Skill(skill: "illustrations")` — this skill places files, doesn't
-generate images.
+**Decide explicitly — do not skip this step.** Check whether the
+convention-path file already exists in the shownotes repo
+(`assets/images/thumbnails/{filename_stem}-thumbnail.png`):
 
-Proceed immediately to Step 7.
+- **Exists** → done; the page uses it.
+- **Absent, and a source image is available** (the talk's slides
+  exist, or a YouTube thumbnail / video frame was already produced) →
+  produce it now: hand off to `Skill(skill: "illustrations")` to
+  generate the thumbnail (this skill places files, it does not generate
+  images), then drop the 4:3 PNG at the convention path.
+- **Absent, and no source image yet** (pre-talk publish, no slides or
+  video) → record that the thumbnail is deferred to Phase 7
+  (post-event). The placeholder SVG (`onerror` fallback) is the
+  intentional interim, not a silent skip; when the video lands and
+  Phase 7 runs, generate the thumbnail and drop it at the convention
+  path.
+
+Never fall through this step without either producing the thumbnail or
+explicitly recording the deferral. Then proceed to Step 7.
 
 ## Step 7 — Write the File
 
