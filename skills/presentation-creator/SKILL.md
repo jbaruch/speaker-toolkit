@@ -370,13 +370,16 @@ image prompts) — when invoked, surface the relevant fields from `outline.yaml`
 in the format the illustrations skill consumes. Updating the illustrations
 skill to consume `outline.yaml` natively is tracked separately.
 
-Inject speaker notes from `script.md` via python-pptx batch after the
-illustrations skill returns. THEN, as the final write, set the FULL-slide
+Inject speaker notes from `script.md` after the illustrations skill returns,
+via real PowerPoint — `skills/presentation-creator/scripts/inject-notes.sh`
+(notes JSON is the historical `{"<0-based slide #>": "text"}` map). PowerPoint
+writes valid notes OOXML, so the `<p:notesMasterIdLst>` Keynote patch the old
+python path needed is gone. THEN, as the final write, set the FULL-slide
 backgrounds via `skills/presentation-creator/scripts/apply-backgrounds.sh`
 using the manifest from the apply pass — it must run last, since any later
 python-pptx save would re-drop the per-slide background fills. See
-`rules/deck-editing-rules.md`. Full migration of creation/notes off
-python-pptx + MCP onto real PowerPoint is tracked in #57.
+`rules/deck-editing-rules.md`. Full migration of creation off python-pptx + MCP
+onto real PowerPoint is tracked in #57.
 
 **For presenterm talks (terminal markdown):**
 

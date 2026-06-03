@@ -73,9 +73,9 @@ def insert_placeholder():
 
 
 @pytest.fixture(scope="session")
-def inject_speaker_notes():
+def notes_to_packed():
     return _import_script(
-        os.path.join(SCRIPTS_PC, "inject-speaker-notes.py"), "inject_speaker_notes"
+        os.path.join(SCRIPTS_PC, "notes-to-packed.py"), "notes_to_packed"
     )
 
 

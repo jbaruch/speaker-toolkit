@@ -32,12 +32,12 @@ The clean deck should retain only layout definitions, no demo/sample slides.
 Keynote uses a stricter OOXML parser than PowerPoint. The rules below
 prevent generated `.pptx` files from being rejected on import.
 
-### notesMasterIdLst patch
+### Speaker notes — written by real PowerPoint
 
-The `inject-speaker-notes.py` script automatically adds the
-`<p:notesMasterIdLst>` element to `ppt/presentation.xml` inside the
-`.pptx` when it is missing. No manual step is needed — just run the
-script as part of the normal speaker-notes injection pass.
+Inject notes via the real PowerPoint app (`scripts/inject-notes.sh` →
+`SetSpeakerNotes`); it writes the required `<p:notesMasterIdLst>` element
+natively. No manual patch — the python-pptx pass that omitted-then-patched it
+is retired. See `rules/deck-editing-rules.md`.
 
 ### Use rectangles for decorative lines — never connectors
 

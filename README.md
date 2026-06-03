@@ -407,7 +407,6 @@ speaker-toolkit-tile/
     |   |   +-- extract-resources.py          # Resource link extraction from outlines
     |   |   +-- guardrail-check.py            # Outline guardrail validation
     |   |   +-- strip-template.py             # Strip demo slides from template
-    |   |   +-- inject-speaker-notes.py       # Batch inject speaker notes from JSON
     |   |   +-- insert-placeholder-slides.py  # Yellow placeholder slide insertion
     |   |   +-- export-pdf.py                 # Export deck to PDF (PowerPoint or LibreOffice)
     |   |   +-- RunDeckOps.bas                 # VBA: trim/reorder/import/text-replace via real PowerPoint
@@ -418,6 +417,9 @@ speaker-toolkit-tile/
     |   |   +-- apply-backgrounds.sh           # Wrapper for ApplyBackgrounds (bulk FULL-slide bg fills)
     |   |   +-- apply-backgrounds.applescript  # AppleScript driver for ApplyBackgrounds
     |   |   +-- backgrounds-manifest-to-spec.py # Manifest JSON -> ApplyBackgrounds spec (tested)
+    |   |   +-- inject-notes.sh                # Wrapper for SetSpeakerNotes (notes via real PowerPoint)
+    |   |   +-- inject-notes.applescript       # AppleScript driver for SetSpeakerNotes (reads notes as UTF-8)
+    |   |   +-- notes-to-packed.py             # Notes JSON -> SetSpeakerNotes wire format (tested)
     |   +-- references/
     |       +-- phase0-intake.md through phase7-post-event.md  # Phase detail docs
     |       +-- patterns/                     # Presentation Patterns taxonomy (102 entries)

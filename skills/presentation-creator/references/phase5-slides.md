@@ -178,26 +178,27 @@ Template placeholders have fixed sizes. To avoid overflow:
 
 ---
 
-## Step 5.3: Inject Speaker Notes (python-pptx) — SEPARATE STEP
+## Step 5.3: Inject Speaker Notes (real PowerPoint) — SEPARATE STEP
 
 **IMPORTANT:** Speaker notes MUST be injected as a separate batch pass AFTER all
-slides exist — never inline during slide creation. The MCP PPT server does not
-support notes, so use python-pptx in a dedicated second pass.
+slides exist — never inline during slide creation.
 
-Save the notes map as JSON (`{"0": "", "1": "Brief intro.", ...}`), then run:
+Save the notes map as JSON (`{"0": "", "1": "Brief intro.", ...}`, 0-based slide
+indices), then inject via the real PowerPoint app — it writes valid notes OOXML,
+so the `<p:notesMasterIdLst>` Keynote patch the old python-pptx pass needed is no
+longer required (see `rules/deck-editing-rules.md`):
 
 ```bash
-python3 scripts/inject-speaker-notes.py path/to/deck.pptx notes.json
+scripts/inject-notes.sh <uniquely-named deck copy> <out.pptx> notes.json
 ```
 
-Run this AFTER MCP slide generation is complete, and BEFORE presenting to the author.
+Run this AFTER slide generation, and BEFORE the final `apply-backgrounds.sh`
+pass (the VBA background pass must be the last write). macOS + PowerPoint only.
 
-> **Keynote compatibility:** The script automatically post-processes the .pptx
-> to add a `<p:notesMasterIdLst>` element to `ppt/presentation.xml`. python-pptx
-> writes the `notesMaster` relationship but omits this element, which PowerPoint
-> tolerates but Keynote rejects as "invalid format". The patch is idempotent and
-> only runs when a `notesMaster` relationship is present, so speakers who never
-> open Keynote pay zero cost.
+> **Keynote compatibility:** Real PowerPoint writes the `<p:notesMasterIdLst>`
+> element natively, so notes-bearing decks open in Keynote with no patch. The
+> old python-pptx pass had to post-process the `.pptx` to add it — that hack is
+> retired with the python path.
 
 ---
 
