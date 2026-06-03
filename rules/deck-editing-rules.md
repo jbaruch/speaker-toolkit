@@ -11,10 +11,9 @@ generating slide structure (see `rules/slide-generation-rules.md`).
 ## Don't Edit Decks With python-pptx
 
 - python-pptx and clipboard `Slides.Paste` drop each slide's `<p:bg>` picture
-  fill. On illustrated decks the full-bleed art is a per-slide background fill,
-  so a python-pptx trim flattens those slides to bare color.
-- python-pptx editing OOXML from outside the app breaks relationships and strict
-  OOXML; Keynote then refuses to open the file.
+  fill, flattening illustrated decks whose full-bleed art is a background fill.
+- python-pptx editing OOXML from outside the app breaks strict OOXML that
+  Keynote refuses to open.
 - All structural edits go through RunDeckOps — there is no python-pptx
   slide-delete / slide-reorder path.
 
