@@ -60,9 +60,10 @@ def main() -> None:
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
-    Path(sys.argv[2]).write_text(packed, encoding="utf-8")
+    out_path = sys.argv[2]
+    Path(out_path).write_text(packed, encoding="utf-8")
     count = 0 if packed == "" else packed.count(RS) + 1
-    print(f"packed {count} note record(s) -> {sys.argv[2]}")
+    print(json.dumps({"records": count, "output": out_path}))
 
 
 if __name__ == "__main__":
