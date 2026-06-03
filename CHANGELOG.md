@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.18.9 — 2026-06-03
+
+### feat(presentation-creator) — PowerPoint-native deck editing (preserves illustrated backgrounds)
+
+Adds a non-corrupting way to make structural edits (delete / reorder /
+cross-deck import) to an existing `.pptx`, driven by the real PowerPoint app
+instead of python-pptx, and makes it the SOLE structural-edit path. Prompted by
+a concrete failure: trimming a 128-slide, 51 MB illustrated deck with
+python-pptx / clipboard paste flattened every slide whose full-bleed art is a
+per-slide background fill — the output dropped to 6.2 MB with all backgrounds
+gone (picture *shapes* survived, per-slide `<p:bg>` fills did not). The
+InsertFromFile path recovered the same cut to 24 MB with backgrounds intact.
+
+- **Removed `delete-slides.py` / `reorder-slides.py`** (and their tests +
+  conftest fixtures) — python-pptx slide-delete / reorder strips per-slide
+  background fills, so it is no longer offered for any deck. All structural
+  edits route through RunDeckOps. `_pptx_repair.py` stays (used by
+  `strip-template.py`). `phase5-slides.md`, `SKILL.md`, and the README script
+  tree updated to match. Tracked in #57.
+- **New steering rule (`rules/deck-editing-rules.md`)** — drive real PowerPoint
+  for all structural edits; documents the Mac PowerPoint VBA landmines and how
+  each is handled.
+- **`RunDeckOps.bas`** — reusable VBA macro that rebuilds a deck via
+  `Slides.InsertFromFile` (keep-source-formatting Reuse Slides) in a target
+  order, with cross-deck import, global text replace, and a COPY-only save.
+  Guards against the filename-collision trap and self-cleans on failure.
+- **`run-deck-ops.applescript` + `run-deck-ops.sh`** — driver and wrapper; the
+  wrapper stages locally then moves into place (sandboxed PowerPoint can't
+  create files in a Google Drive File-Provider folder).
+- **`MakeBgImageSlide` (+ `make-bg-slide.applescript` / `make-bg-slide.sh`)** —
+  turn a generated illustration into a slide whose image is the BACKGROUND FILL
+  (so the layout's halftone-dot overlay covers it, matching the other comic
+  slides) by cloning a template slide, swapping its background, and retitling —
+  a top-pasted picture would sit above the overlay. Produces a 1-slide deck to
+  import via `run-deck-ops.sh`.
+- **`ApplyBackgrounds` (+ `apply-backgrounds.applescript` / `apply-backgrounds.sh`)** —
+  the creation-time counterpart: set FULL-slide illustration backgrounds in bulk
+  via `Slide.Background.Fill.UserPicture`, run as the final write of the build.
+  `apply-illustrations-to-deck.py` no longer inserts FULL-slide picture shapes —
+  it records each FULL slide in a backgrounds manifest (`--backgrounds-out`) and
+  applies only scrim + title; IMG+TXT keeps its left-column picture shape. Begins
+  retiring python-pptx as a deck writer for creation (Phase B of #57). Phase 5
+  reorders so the VBA background pass runs after speaker-note injection.
+- **Policy-review hardening** — `rules/deck-editing-rules.md` gains `alwaysApply`
+  frontmatter and sheds rationale prose; `references/deck-editing-setup.md` drops
+  the pause-and-wait flow for continue-immediately; the wrappers emit actionable
+  validation errors; and the deterministic manifest→spec step is extracted to a
+  unit-tested `backgrounds-manifest-to-spec.py` (the VBA core stays CI-untestable
+  by design).
+- macOS + Microsoft PowerPoint only — drives the app via Automation, so it is
+  untestable in Linux CI by design; validate output by re-opening in PowerPoint
+  and Keynote. README steering-rules table and `tile.json` steering updated.
+- Full retirement of MCP + python-pptx as deck writers (real PowerPoint becomes
+  the sole `.pptx` engine) is tracked in #57 with a phased plan.
+
 ## 0.18.7 — 2026-06-03
 
 ### feat(illustrations) — structured style selection + model registry

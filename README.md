@@ -201,6 +201,7 @@ The tile ships persistent steering rules (auto-loaded by the agent at runtime vi
 |------|-------|
 | [`vault-language-policy`](rules/vault-language-policy.md) | Vault analysis prose conventions and forbidden phrasings. |
 | [`slide-generation-rules`](rules/slide-generation-rules.md) | `.pptx` generation gotchas and Keynote compatibility constraints. |
+| [`deck-editing-rules`](rules/deck-editing-rules.md) | Structural edits (delete/reorder/import) to illustrated decks via real PowerPoint (macOS), not python-pptx. |
 | [`guardrail-rules`](rules/guardrail-rules.md) | Creator guardrail checks (slide budget, Act 1 ratio, profanity, branding, antipattern scan). |
 | [`illustration-rules`](rules/illustration-rules.md) | Edit vs regenerate asymmetry, build chains, iteration hygiene. |
 | [`title-overlay-rules`](rules/title-overlay-rules.md) | Title-safe-zone composition policy for FULL illustrations. |
@@ -409,8 +410,14 @@ speaker-toolkit-tile/
     |   |   +-- inject-speaker-notes.py       # Batch inject speaker notes from JSON
     |   |   +-- insert-placeholder-slides.py  # Yellow placeholder slide insertion
     |   |   +-- export-pdf.py                 # Export deck to PDF (PowerPoint or LibreOffice)
-    |   |   +-- delete-slides.py              # Delete slides by index
-    |   |   +-- reorder-slides.py             # Move slide from one position to another
+    |   |   +-- RunDeckOps.bas                 # VBA: trim/reorder/import/text-replace via real PowerPoint
+    |   |   +-- run-deck-ops.sh                # Wrapper for RunDeckOps (staging + move into place)
+    |   |   +-- run-deck-ops.applescript       # AppleScript driver for RunDeckOps
+    |   |   +-- make-bg-slide.sh               # Wrapper for MakeBgImageSlide (illustration -> bg slide)
+    |   |   +-- make-bg-slide.applescript      # AppleScript driver for MakeBgImageSlide
+    |   |   +-- apply-backgrounds.sh           # Wrapper for ApplyBackgrounds (bulk FULL-slide bg fills)
+    |   |   +-- apply-backgrounds.applescript  # AppleScript driver for ApplyBackgrounds
+    |   |   +-- backgrounds-manifest-to-spec.py # Manifest JSON -> ApplyBackgrounds spec (tested)
     |   +-- references/
     |       +-- phase0-intake.md through phase7-post-event.md  # Phase detail docs
     |       +-- patterns/                     # Presentation Patterns taxonomy (102 entries)

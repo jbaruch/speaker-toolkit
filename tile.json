@@ -32,6 +32,9 @@
     "slide-generation-rules": {
       "rules": "rules/slide-generation-rules.md"
     },
+    "deck-editing-rules": {
+      "rules": "rules/deck-editing-rules.md"
+    },
     "guardrail-rules": {
       "rules": "rules/guardrail-rules.md"
     },

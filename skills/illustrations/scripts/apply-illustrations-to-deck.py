@@ -5,9 +5,13 @@ Two slide formats are supported, distinguished by the per-slide outline block:
 
 FULL — slide block has a `Safe zone:` field (any of upper_third / middle_third /
   lower_third / left_half / right_half):
-  1. Replace the background picture with the matching illustration.
-  2. Add a zone-sized semi-transparent scrim between the picture and the text
-     (if not already present).
+  1. Record the slide + illustration in the backgrounds manifest (--backgrounds-out).
+     The illustration becomes the slide BACKGROUND FILL via a later ApplyBackgrounds
+     VBA pass (apply-backgrounds.sh) — NOT a python-pptx picture shape, which would
+     sit above the layout's halftone-dot overlay and which a python-pptx round-trip
+     would drop. See rules/deck-editing-rules.md.
+  2. Add a zone-sized semi-transparent scrim above the (later) background and below
+     the text (if not already present).
   3. Reposition title text boxes into the designed safe zone:
      upper_third/middle_third/lower_third -> full-width band at the matching Y;
      left_half/right_half -> narrower column on that side.
@@ -28,6 +32,7 @@ Usage:
         [--scrim-color RRGGBB] [--scrim-alpha 0-100000]
 """
 import argparse
+import json
 import re
 import shutil
 from pathlib import Path
@@ -324,15 +329,23 @@ def apply_img_txt_layout(slide) -> tuple[int, int]:
 def apply(
     deck: Path, illust_dir: Path, zones: dict, img_txt_slides: set,
     out_deck: Path, ext: str, scrim_hex: str, scrim_alpha: int,
-) -> list[dict]:
+) -> tuple[list[dict], dict]:
+    """Apply scrim + title for FULL slides and the IMG+TXT layout.
+
+    FULL-slide illustrations are NOT inserted as picture shapes here; they are
+    recorded in the returned ``backgrounds`` map ({slide_num: abs_image_path})
+    for the ApplyBackgrounds VBA pass, which sets them as slide background fills
+    as the final write. Returns ``(results, backgrounds)``.
+    """
     if out_deck.exists():
         out_deck.unlink()
     shutil.copy2(deck, out_deck)
 
     prs = Presentation(str(out_deck))
     results = []
+    backgrounds: dict[int, str] = {}
 
-    # FULL slides with Safe zone — existing path
+    # FULL slides with Safe zone — scrim + title here; background via VBA pass
     for n, zone in sorted(zones.items()):
         illust = illust_dir / f"slide-{n:02d}.{ext}"
         if not illust.exists():
@@ -343,11 +356,11 @@ def apply(
             continue
 
         slide = prs.slides[n - 1]
-        swap_or_insert_picture(slide, illust)
+        backgrounds[n] = str(illust.resolve())
 
         scrim_added = ensure_scrim(slide, zone, scrim_hex, scrim_alpha)
         moved = reposition_title(slide, zone)
-        print(f"  [{n:02d}] zone={zone}  moved={moved} text  scrim+{scrim_added}")
+        print(f"  [{n:02d}] zone={zone}  moved={moved} text  scrim+{scrim_added}  bg->VBA")
         results.append({
             "slide": n, "format": "FULL", "zone": zone,
             "text_moved": moved, "scrim_added": scrim_added,
@@ -374,7 +387,7 @@ def apply(
         })
 
     prs.save(str(out_deck))
-    return results
+    return results, backgrounds
 
 
 def main():
@@ -389,9 +402,14 @@ def main():
                          "Run suggest-scrim-color.py to sample one from the deck's illustrations.")
     ap.add_argument("--scrim-alpha", type=int, default=DEFAULT_SCRIM_ALPHA,
                     help="Scrim opacity in OOXML thousandths (0-100000, default: %(default)s = 45%%).")
+    ap.add_argument("--backgrounds-out", type=Path, default=None,
+                    help="Where to write the FULL-slide backgrounds manifest JSON "
+                         "(default: <out_stem>.backgrounds.json). Feed it to "
+                         "apply-backgrounds.sh to set the backgrounds via PowerPoint.")
     args = ap.parse_args()
 
     out_deck = args.out or args.deck.with_name(args.deck.stem + "-with-titles.pptx")
+    backgrounds_out = args.backgrounds_out or out_deck.with_name(out_deck.stem + ".backgrounds.json")
     zones = parse_zones(args.outline)
     img_txt_slides = parse_img_txt_slides(args.outline)
     total_slides = len(zones) + len(img_txt_slides)
@@ -408,12 +426,21 @@ def main():
     if not (0 <= args.scrim_alpha <= 100000):
         raise SystemExit(f"--scrim-alpha must be 0..100000, got {args.scrim_alpha}")
 
-    results = apply(
+    results, backgrounds = apply(
         args.deck, args.illustrations, zones, img_txt_slides, out_deck,
         args.image_ext, scrim_hex, args.scrim_alpha,
     )
     print(f"\nSaved {out_deck}")
     print(f"Updated {len(results)}/{total_slides} slides")
+
+    if backgrounds:
+        manifest = {"backgrounds": {str(n): path for n, path in sorted(backgrounds.items())}}
+        backgrounds_out.write_text(json.dumps(manifest, indent=2) + "\n")
+        print(f"Wrote {len(backgrounds)} FULL-slide background(s) -> {backgrounds_out}")
+        print(f"Apply them via: apply-backgrounds.sh <uniquely-named copy of {out_deck.name}> "
+              f"<final.pptx> {backgrounds_out.name}")
+    else:
+        print("No FULL (Safe zone) slides — no background manifest written.")
 
 
 if __name__ == "__main__":

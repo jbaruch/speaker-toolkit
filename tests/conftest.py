@@ -58,13 +58,11 @@ def strip_template():
 
 
 @pytest.fixture(scope="session")
-def delete_slides():
-    return _import_script(os.path.join(SCRIPTS_PC, "delete-slides.py"), "delete_slides")
-
-
-@pytest.fixture(scope="session")
-def reorder_slides():
-    return _import_script(os.path.join(SCRIPTS_PC, "reorder-slides.py"), "reorder_slides")
+def backgrounds_manifest_to_spec():
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "backgrounds-manifest-to-spec.py"),
+        "backgrounds_manifest_to_spec",
+    )
 
 
 @pytest.fixture(scope="session")
