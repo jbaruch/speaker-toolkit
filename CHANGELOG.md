@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.18.7 — 2026-06-03
 
 ### feat(illustrations) — structured style selection + model registry
 
