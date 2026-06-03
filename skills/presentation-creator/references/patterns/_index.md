@@ -4,7 +4,7 @@ Structured reference taxonomy primarily based on *Presentation Patterns: Techniq
 Crafting Better Presentations* (Neal Ford, Matthew McCullough, Nathaniel Schutta, 2013),
 with supplementary patterns and reinforcements from *Presentation Zen* (Garr Reynolds,
 2nd ed., 2012) and *Resonate: Present Visual Stories that Transform Audiences* (Nancy
-Duarte, 2010). Contains 77 named patterns and 25 antipatterns organized by presentation
+Duarte, 2010). Contains 78 named patterns and 25 antipatterns organized by presentation
 lifecycle phase. See the Sources section at the end of this file for full citations.
 
 **This is the primary entry point.** The agent reads this file first, then drills into
