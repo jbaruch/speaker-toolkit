@@ -41,7 +41,8 @@ if [[ -f "$STAGE" ]]; then
   mkdir -p "$(dirname "$OUT")"
   mv -f "$STAGE" "$OUT"
   # Structured stdout (per jbaruch/coding-policy: script-delegation); diagnostics go to stderr.
-  printf '{"output": "%s"}\n' "$OUT"
+  # Emit via python3 so any path (quotes/backslashes/unicode) is correctly JSON-escaped.
+  python3 -c 'import json,sys; print(json.dumps({"output": sys.argv[1]}))' "$OUT"
 else
   echo "ERROR: macro did not produce the staged file. Check the PowerPoint error dialog, and confirm DeckOps.pptm is open with macros enabled and Automation consent granted — see skills/presentation-creator/references/deck-editing-setup.md." >&2
   exit 1
