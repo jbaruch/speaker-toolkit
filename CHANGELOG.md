@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.18.12 — 2026-06-04
+
+### feat(presentation-creator) — placeholder slides via real PowerPoint (#57 Phase E)
+
+Retires `insert-placeholder-slides.py` (python-pptx) for a `MakePlaceholderSlide`
+VBA macro driven through the real PowerPoint app.
+
+- **`MakePlaceholderSlide`** (in `RunDeckOps.bas`) + `make-placeholder-slide.applescript`
+  / `make-placeholder-slide.sh` — builds a loud yellow `[PLACEHOLDER]` slide (title
+  auto-prefixed, optional subtitle) as a 1-slide deck sized to the base deck.
+- Positioning uses the existing `run-deck-ops.sh` order string: Mac VBA's
+  `Slide.MoveTo` raises E_INVALIDARG, so placeholders are built then assembled at
+  their target slots via `InsertFromFile`, rather than inserted-and-moved.
+- Advances #57 (real PowerPoint as the sole `.pptx` writer). macOS + PowerPoint
+  only; untestable in Linux CI by design — validate by re-opening in PowerPoint
+  and Keynote.
+
 ## 0.18.11 — 2026-06-04
 
 ### feat(presentation-creator) — speaker notes via real PowerPoint (#57 Phase C)
