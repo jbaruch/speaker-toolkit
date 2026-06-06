@@ -135,3 +135,18 @@ def test_insert_qr_via_powerpoint_missing_wrapper(generate_qr, monkeypatch):
     monkeypatch.setattr(generate_qr.os.path, "isfile", lambda p: False)
     with pytest.raises(SystemExit):
         generate_qr.insert_qr_via_powerpoint("/decks/talk.pptx", [("/q/a.png", [1])], "/scripts")
+
+
+def test_insert_qr_via_powerpoint_wrapper_failure_is_actionable(generate_qr, monkeypatch):
+    """A wrapper (insert-qr.sh) failure surfaces as an actionable SystemExit
+    pointing at the DeckOps setup, not a raw CalledProcessError traceback."""
+    import pytest
+
+    def boom(cmd, **kw):
+        raise generate_qr.subprocess.CalledProcessError(1, cmd)
+
+    monkeypatch.setattr(generate_qr.subprocess, "run", boom)
+    monkeypatch.setattr(generate_qr.os.path, "isfile", lambda p: True)
+    with pytest.raises(SystemExit) as exc:
+        generate_qr.insert_qr_via_powerpoint("/decks/talk.pptx", [("/q/a.png", [1])], "/scripts")
+    assert "deck-editing-setup.md" in str(exc.value)

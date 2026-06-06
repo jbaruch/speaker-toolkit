@@ -540,7 +540,14 @@ def insert_qr_via_powerpoint(deck_path, jobs, scripts_dir):
     for n, (png_path, slide_nums) in enumerate(jobs):
         out = f"{deck_path}.qrtmp{n}.pptx"  # distinct basename — no open-deck collision
         csv = ",".join(str(x) for x in slide_nums)
-        subprocess.run([wrapper, current, out, png_path, csv], check=True)
+        try:
+            subprocess.run([wrapper, current, out, png_path, csv], check=True)
+        except subprocess.CalledProcessError:
+            raise SystemExit(
+                f"ERROR: QR insertion failed in PowerPoint (insert-qr.sh on slide(s) {csv}). "
+                "Confirm DeckOps.pptm is open with macros enabled and Automation consent "
+                "granted — see skills/presentation-creator/references/deck-editing-setup.md"
+            )
         if current != deck_path:
             os.remove(current)  # drop the prior intermediate
         current = out
