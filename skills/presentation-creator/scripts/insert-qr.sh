@@ -35,7 +35,9 @@ mkdir -p "$STAGE_DIR"
 STAGE="$STAGE_DIR/$(basename "$OUT")"
 rm -f "$STAGE"
 
-osascript "$DRIVER" "$BASE" "$STAGE" "$PNG" "$SLIDES"
+# osascript prints the macro's "InsertQR returned: N" line — keep it off stdout
+# (stderr) so successful stdout is the documented JSON only.
+osascript "$DRIVER" "$BASE" "$STAGE" "$PNG" "$SLIDES" >&2
 
 if [[ -f "$STAGE" ]]; then
   mkdir -p "$(dirname "$OUT")"
