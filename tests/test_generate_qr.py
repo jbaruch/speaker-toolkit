@@ -90,25 +90,6 @@ def test_tracking_db_crud_update(generate_qr):
     assert db["qr_codes"][0]["created_at"] == "2024-01-01"
 
 
-def test_insert_qr_on_slides(generate_qr, tmp_path):
-    prs = make_deck(3)
-    path = str(tmp_path / "deck.pptx")
-    prs.save(path)
-
-    qr_path = str(tmp_path / "qr.png")
-    generate_qr.generate_qr_png("https://example.com", (0, 0, 0), (255, 255, 255), qr_path)
-
-    prs2 = Presentation(path)
-    generate_qr.insert_qr_on_slides(prs2, qr_path, [2])  # last slide
-    out = str(tmp_path / "with_qr.pptx")
-    prs2.save(out)
-
-    prs3 = Presentation(out)
-    # Verify the last slide has more shapes than before
-    last_slide = prs3.slides[2]
-    assert len(last_slide.shapes) >= 1
-
-
 def test_resolve_slide_bg_rgb_none_for_plain_deck(generate_qr, tmp_path):
     """A plain deck without explicit background returns None."""
     prs = make_deck(1)

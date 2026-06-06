@@ -34,6 +34,8 @@ import argparse
 import datetime
 import json
 import os
+import shutil
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -51,9 +53,7 @@ except ImportError:
     print("ERROR: 'Pillow' package not installed. Run: pip install Pillow")
     sys.exit(1)
 
-from pptx import Presentation
-from pptx.util import Inches, Emu
-from pptx.dml.color import RGBColor
+from pptx import Presentation  # read-only: background-color match + slide-finding
 
 # --- Constants ---
 
@@ -520,77 +520,31 @@ def resolve_target_slide_indices(prs, config, shownotes_url):
 
 # --- QR Insertion ---
 
-def _remove_existing_qr(slide, expected_left, expected_top, expected_width, tolerance_emu=91440):
-    """Remove existing QR-sized picture shapes in the expected position.
+def insert_qr_via_powerpoint(deck_path, jobs, scripts_dir):
+    """Insert the QR PNG(s) into the deck via the real PowerPoint app.
 
-    Detects pictures that overlap the QR target area (bottom-right corner)
-    within a tolerance. This handles re-runs on reused decks.
+    Replaces the old python-pptx write (`insert-qr.sh` → InsertQR VBA macro), so
+    PowerPoint serializes a valid .pptx (see rules/deck-editing-rules.md). The
+    macro removes any existing corner QR before inserting (idempotent re-runs).
+    macOS + Microsoft PowerPoint only.
 
-    Args:
-        slide: Slide object
-        expected_left, expected_top, expected_width: Target position/size in EMUs
-        tolerance_emu: Position tolerance (default ~1 inch = 914400/10)
-
-    Returns:
-        Number of shapes removed.
+    jobs: list of (png_path, [1-based slide numbers]) — one per QR color variant.
+    Each variant is a separate InsertQR pass; the deck is threaded through
+    uniquely-named intermediates (PowerPoint keys open decks by filename) and the
+    final result is moved back to deck_path.
     """
-    to_remove = []
-    for shape in slide.shapes:
-        if not shape.shape_type == 13:  # MSO_SHAPE_TYPE.PICTURE
-            continue
-        # Check if this picture is roughly QR-sized and in the expected position
-        if (abs(shape.left - expected_left) < tolerance_emu
-                and abs(shape.top - expected_top) < tolerance_emu
-                and abs(shape.width - expected_width) < tolerance_emu):
-            to_remove.append(shape)
-
-    for shape in to_remove:
-        sp = shape._element
-        # Clean up image relationship to avoid orphaned refs
-        blip = sp.find('.//{http://schemas.openxmlformats.org/drawingml/2006/main}blip')
-        if blip is not None:
-            embed_rId = blip.get(
-                '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed')
-            if embed_rId:
-                try:
-                    slide.part.drop_rel(embed_rId)
-                except KeyError:
-                    pass
-        sp.getparent().remove(sp)
-
-    return len(to_remove)
-
-
-def insert_qr_on_slides(prs, png_path, slide_indices):
-    """Insert the QR PNG on the specified slides, bottom-right corner.
-
-    If an existing QR-sized picture is found in the same position, it is
-    replaced (removed then re-added). This supports re-runs on reused decks.
-
-    Args:
-        prs: Presentation object (mutated in place)
-        png_path: Path to the QR PNG file
-        slide_indices: List of 0-based slide indices
-    """
-    slide_width = prs.slide_width
-    slide_height = prs.slide_height
-
-    qr_width = Inches(QR_WIDTH_INCHES)
-    # Maintain square aspect ratio
-    qr_height = qr_width
-
-    margin = Inches(QR_MARGIN_INCHES)
-    left = slide_width - qr_width - margin
-    top = slide_height - qr_height - margin
-
-    for idx in slide_indices:
-        slide = prs.slides[idx]
-        removed = _remove_existing_qr(slide, left, top, qr_width)
-        if removed:
-            print(f"  Replaced {removed} existing QR image(s) on slide {idx + 1}")
-        slide.shapes.add_picture(png_path, left, top, qr_width, qr_height)
-        if not removed:
-            print(f"  Inserted QR on slide {idx + 1}")
+    wrapper = os.path.join(scripts_dir, "insert-qr.sh")
+    if not os.path.isfile(wrapper):
+        raise SystemExit(f"insert-qr.sh not found at {wrapper} — reinstall the tile")
+    current = deck_path
+    for n, (png_path, slide_nums) in enumerate(jobs):
+        out = f"{deck_path}.qrtmp{n}.pptx"  # distinct basename — no open-deck collision
+        csv = ",".join(str(x) for x in slide_nums)
+        subprocess.run([wrapper, current, out, png_path, csv], check=True)
+        if current != deck_path:
+            os.remove(current)  # drop the prior intermediate
+        current = out
+    shutil.move(current, deck_path)
 
 
 # --- Tracking Database ---
@@ -773,6 +727,7 @@ def main():
 
         if not args.dry_run:
             qr_paths_generated = []
+            insert_jobs = []  # (png_path, [1-based slide numbers]) — one per color variant
             for (qr_bg, qr_fg), indices in color_groups.items():
                 if len(color_groups) == 1:
                     qr_filename = f"{args.talk_slug}-qr.png"
@@ -786,12 +741,14 @@ def main():
                 size_kb = os.path.getsize(qr_path) / 1024
                 print(f"  QR PNG saved: {qr_filename} ({size_kb:.1f} KB) — for slide(s) {[i + 1 for i in indices]}")
                 qr_paths_generated.append(qr_path)
+                insert_jobs.append((qr_path, [i + 1 for i in indices]))  # VBA is 1-based
 
-                # Insert this variant on its matching slides
-                insert_qr_on_slides(prs, qr_path, indices)
-
-            prs.save(args.deck)
-            print(f"Deck saved: {args.deck}")
+            # Release the read-only deck handle, then write via the real
+            # PowerPoint app (valid OOXML; see rules/deck-editing-rules.md).
+            prs = None
+            here = os.path.dirname(os.path.abspath(__file__))
+            insert_qr_via_powerpoint(args.deck, insert_jobs, here)
+            print(f"Deck updated via PowerPoint: {args.deck}")
             # Use first generated path for tracking DB
             qr_filename = os.path.basename(qr_paths_generated[0])
         else:

@@ -506,6 +506,89 @@ Fail6:
     MakePlaceholderSlide = -1
 End Function
 
+' Insert a QR PNG bottom-right on the given 1-based slides, replacing any
+' existing QR-sized picture already in that corner (idempotent re-runs).
+' Replaces the python-pptx write in generate-qr.py — that script keeps the URL
+' resolve + per-slide background-color match + PNG generation (reads only).
+' Invoked via:
+'   run VB macro macro name "InsertQR" list of parameters _
+'       {basePath, outPath, pngPath, slideNumsCSV}
+' slideNumsCSV = comma-separated 1-based slide numbers, e.g. "5,12".
+Public Function InsertQR(ByVal basePath As String, _
+                         ByVal outPath As String, _
+                         ByVal pngPath As String, _
+                         ByVal slideNumsCSV As String) As Long
+    Dim curTok As String
+    Dim base As Presentation
+    ' outer-boundary-process-contract — see the module-header error-handling contract.
+    On Error GoTo Fail7
+
+    curTok = "guard:base"
+    AssertNotOpen BaseName(basePath)
+    curTok = "open:base"
+    Set base = Presentations.Open(FileName:=basePath, WithWindow:=msoTrue)
+
+    ' QR geometry mirrors generate-qr.py: 2.0in square, 0.3in margin, ~0.1in
+    ' position/size tolerance for detecting an existing QR to replace (points).
+    Const QR_SIDE As Single = 144
+    Const QR_MARGIN As Single = 21.6
+    Const TOL As Single = 7.2
+    Dim sw As Single, sh As Single
+    sw = base.PageSetup.SlideWidth
+    sh = base.PageSetup.SlideHeight
+    Dim qrLeft As Single, qrTop As Single
+    qrLeft = sw - QR_SIDE - QR_MARGIN
+    qrTop = sh - QR_SIDE - QR_MARGIN
+
+    Dim nums() As String, k As Long, num As Long, placed As Long
+    nums = Split(slideNumsCSV, ",")
+    placed = 0
+    For k = LBound(nums) To UBound(nums)
+        If Len(Trim(nums(k))) > 0 Then
+            num = CLng(Trim(nums(k)))
+            curTok = "slide:" & num
+            If num < 1 Or num > base.Slides.Count Then Err.Raise vbObjectError + 520, , _
+                "QR slide " & num & " out of range (deck has " & base.Slides.Count & ")"
+            Dim s As Slide
+            Set s = base.Slides(num)
+            ' remove an existing QR-sized picture in the bottom-right corner
+            Dim i As Long, shp As Shape
+            For i = s.Shapes.Count To 1 Step -1
+                Set shp = s.Shapes(i)
+                If shp.Type = msoPicture Then
+                    If Abs(shp.Left - qrLeft) < TOL And Abs(shp.Top - qrTop) < TOL _
+                       And Abs(shp.Width - QR_SIDE) < TOL Then
+                        shp.Delete
+                    End If
+                End If
+            Next i
+            s.Shapes.AddPicture FileName:=pngPath, LinkToFile:=msoFalse, _
+                SaveWithDocument:=msoTrue, Left:=qrLeft, Top:=qrTop, Width:=QR_SIDE, Height:=QR_SIDE
+            placed = placed + 1
+        End If
+    Next k
+
+    curTok = "save"
+    base.SaveCopyAs FileName:=outPath
+    curTok = "close"
+    base.Close
+    InsertQR = placed
+    Exit Function
+
+Fail7:
+    Dim em As String
+    em = "InsertQR failed at [" & curTok & "]:" & vbCr & _
+         Err.Number & " - " & Err.Description
+    On Error Resume Next
+    If Not base Is Nothing Then
+        base.Saved = msoTrue
+        base.Close
+    End If
+    On Error GoTo 0
+    MsgBox em, vbCritical, "InsertQR"
+    InsertQR = -1
+End Function
+
 ' Filename portion of a POSIX path.
 Private Function BaseName(ByVal p As String) As String
     Dim k As Long
