@@ -12,7 +12,7 @@ detection_signals:
   - "the abstract label arrives as a summary of concrete material already shown, not as a preamble"
   - "inductive sequencing across a section: instances -> pattern -> name, rather than definition -> examples"
 related_patterns: [live-demo, master-story, vacation-photos, mentor, the-big-why, sparkline]
-inverse_of: [abstract-attorney]
+inverse_of: []
 difficulty: intermediate
 ---
 
@@ -42,7 +42,7 @@ The vault should look for inductive ordering at the section level, not the talk 
 - A tangible anchor (object, anecdote, demo, datum) is introduced and developed, and the governing term or framework is named *after* it, often with an explicit hinge — "so it turns out…", "what's going on here is…", "there's actually a name for this…", "people have studied this…".
 - The abstraction, when it arrives, summarizes material the audience has already heard rather than previewing material to come.
 - The move repeats across multiple sections (each concept gets its own concrete-first treatment), which distinguishes a deliberate signature from a one-off illustration.
-- Counter-signal: sections that open with a definition or a named framework and *then* descend into examples are the deductive (definition-first) order — the absence of the pattern, and at the extreme the `abstract-attorney` antipattern.
+- Counter-signal: sections that open with a definition or a named framework and *then* descend into examples are the deductive (definition-first) order — the absence of the pattern.
 
 In transcript-only analysis the hinge phrases are the most reliable marker, since the concrete-then-named ordering survives auto-captioning even when slide order does not.
 
@@ -55,7 +55,7 @@ In transcript-only analysis the hinge phrases are the most reliable marker, sinc
 Relates most directly to Dimension 11 (Technical Content Delivery) — concrete-before-abstract is a core complexity-handling and simplification strategy, the sequencing discipline behind "make abstract claims concrete." Relates to Dimension 9 (Persuasion Techniques) because grounding a claim in a felt instance before generalizing it is more persuasive than asserting the generalization and defending it afterward — the audience supplies its own evidence. Relates to Dimension 2 (Narrative Structure) because the pattern is a structural choice about ordering (inductive vs. deductive) that operates within sections and shapes the rhythm of a frameworks-heavy talk.
 
 ## Combinatorics
-Concrete Before Abstract is the sequencing layer on top of several content vehicles. It composes with `live-demo` (show the system working, then name the principle the demo proved — "transforms abstract claims into concrete proof"), with `master-story` (the master story's first telling lands as narrative before its thesis is extracted, and each recursive return re-applies the same concrete anchor to a new abstraction), with `vacation-photos` (a full-bleed image carries the concept while the speaker narrates toward its name), and with `mentor` / `the-big-why` (the concrete anchor often doubles as the answer to "why should the audience care" before the formal framing arrives). It frequently chains with `triad` (three concrete anchors, three named categories). It is the direct inverse of `abstract-attorney` (leading with dry, ungrounded abstraction) and is mutually reinforcing with the speaker's broader anti-jargon, audience-as-derivation stance.
+Concrete Before Abstract is the sequencing layer on top of several content vehicles. It composes with `live-demo` (show the system working, then name the principle the demo proved — "transforms abstract claims into concrete proof"), with `master-story` (the master story's first telling lands as narrative before its thesis is extracted, and each recursive return re-applies the same concrete anchor to a new abstraction), with `vacation-photos` (a full-bleed image carries the concept while the speaker narrates toward its name), and with `mentor` / `the-big-why` (the concrete anchor often doubles as the answer to "why should the audience care" before the formal framing arrives). It frequently chains with `triad` (three concrete anchors, three named categories). It is mutually reinforcing with the speaker's broader anti-jargon, audience-as-derivation stance.
 
 ## Related Reading
 - Heath, C., & Heath, D. (2007). *Made to Stick: Why Some Ideas Survive and Others Die.* Random House. The "Concrete" principle of the SUCCESs framework — abstract ideas are made memorable by grounding them in sensory, tangible specifics; the book argues that the "curse of knowledge" pushes experts toward abstraction and that concreteness is the antidote.
