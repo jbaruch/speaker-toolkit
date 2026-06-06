@@ -40,7 +40,8 @@ osascript "$DRIVER" "$BASE" "$STAGE" "$PNG" "$SLIDES"
 if [[ -f "$STAGE" ]]; then
   mkdir -p "$(dirname "$OUT")"
   mv -f "$STAGE" "$OUT"
-  echo "done -> $OUT"
+  # Structured stdout (per jbaruch/coding-policy: script-delegation); diagnostics go to stderr.
+  printf '{"output": "%s"}\n' "$OUT"
 else
   echo "ERROR: macro did not produce the staged file. Check the PowerPoint error dialog, and confirm DeckOps.pptm is open with macros enabled and Automation consent granted — see skills/presentation-creator/references/deck-editing-setup.md." >&2
   exit 1
