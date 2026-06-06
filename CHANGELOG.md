@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.18.13 — 2026-06-04
+
+### feat(presentation-creator) — QR insertion via real PowerPoint (#57 Phase F)
+
+Retires `generate-qr.py`'s python-pptx deck write (`insert_qr_on_slides` +
+`_remove_existing_qr` + `prs.save`) for an `InsertQR` VBA macro. `generate-qr.py`
+keeps everything else — URL/shortener resolve, per-slide background-color match
+(read-only), target-slide finding, and QR PNG generation — and calls
+`insert-qr.sh` for the write.
+
+- **`InsertQR`** (in `RunDeckOps.bas`) + `insert-qr.applescript` / `insert-qr.sh`
+  — places the QR bottom-right (2.0in, 0.3in margin) on the given 1-based slides,
+  removing any existing corner QR first (idempotent re-runs).
+- `generate-qr.py` threads the deck through uniquely-named intermediates (one
+  `InsertQR` pass per color variant) and moves the result back; the python-pptx
+  `Inches`/`Emu`/`RGBColor` imports and the QR-insert test are dropped.
+- The QR insert is now macOS + PowerPoint only (the rest of `generate-qr.py`
+  stays cross-platform). Completes #57's deck-writer retirement. Untestable in
+  Linux CI by design — validate by re-opening in PowerPoint and Keynote.
+
 ## 0.18.12 — 2026-06-04
 
 ### feat(presentation-creator) — placeholder slides via real PowerPoint (#57 Phase E)

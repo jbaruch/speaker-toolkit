@@ -403,7 +403,7 @@ speaker-toolkit-tile/
     |   +-- SKILL.md                          # Main creator workflow (7 phases)
     |   +-- scripts/
     |   |   +-- _pptx_repair.py               # Shared viewProps cleanup for PPTX integrity
-    |   |   +-- generate-qr.py                # QR code generation with bg-color matching
+    |   |   +-- generate-qr.py                # QR generation + bg-color match (insert via InsertQR)
     |   |   +-- extract-resources.py          # Resource link extraction from outlines
     |   |   +-- guardrail-check.py            # Outline guardrail validation
     |   |   +-- strip-template.py             # Strip demo slides from template
@@ -421,6 +421,8 @@ speaker-toolkit-tile/
     |   |   +-- inject-notes.sh                # Wrapper for SetSpeakerNotes (notes via real PowerPoint)
     |   |   +-- inject-notes.applescript       # AppleScript driver for SetSpeakerNotes (reads notes as UTF-8)
     |   |   +-- notes-to-packed.py             # Notes JSON -> SetSpeakerNotes wire format (tested)
+    |   |   +-- insert-qr.sh                    # Wrapper for InsertQR (QR PNG bottom-right via real PowerPoint)
+    |   |   +-- insert-qr.applescript           # AppleScript driver for InsertQR
     |   +-- references/
     |       +-- phase0-intake.md through phase7-post-event.md  # Phase detail docs
     |       +-- patterns/                     # Presentation Patterns taxonomy (102 entries)
