@@ -407,13 +407,14 @@ speaker-toolkit-tile/
     |   |   +-- extract-resources.py          # Resource link extraction from outlines
     |   |   +-- guardrail-check.py            # Outline guardrail validation
     |   |   +-- strip-template.py             # Strip demo slides from template
-    |   |   +-- insert-placeholder-slides.py  # Yellow placeholder slide insertion
     |   |   +-- export-pdf.py                 # Export deck to PDF (PowerPoint or LibreOffice)
     |   |   +-- RunDeckOps.bas                 # VBA: trim/reorder/import/text-replace via real PowerPoint
     |   |   +-- run-deck-ops.sh                # Wrapper for RunDeckOps (staging + move into place)
     |   |   +-- run-deck-ops.applescript       # AppleScript driver for RunDeckOps
     |   |   +-- make-bg-slide.sh               # Wrapper for MakeBgImageSlide (illustration -> bg slide)
     |   |   +-- make-bg-slide.applescript      # AppleScript driver for MakeBgImageSlide
+    |   |   +-- make-placeholder-slide.sh       # Wrapper for MakePlaceholderSlide (yellow [PLACEHOLDER] slide)
+    |   |   +-- make-placeholder-slide.applescript # AppleScript driver for MakePlaceholderSlide
     |   |   +-- apply-backgrounds.sh           # Wrapper for ApplyBackgrounds (bulk FULL-slide bg fills)
     |   |   +-- apply-backgrounds.applescript  # AppleScript driver for ApplyBackgrounds
     |   |   +-- backgrounds-manifest-to-spec.py # Manifest JSON -> ApplyBackgrounds spec (tested)

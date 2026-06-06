@@ -66,13 +66,6 @@ def backgrounds_manifest_to_spec():
 
 
 @pytest.fixture(scope="session")
-def insert_placeholder():
-    return _import_script(
-        os.path.join(SCRIPTS_PC, "insert-placeholder-slides.py"), "insert_placeholder"
-    )
-
-
-@pytest.fixture(scope="session")
 def notes_to_packed():
     return _import_script(
         os.path.join(SCRIPTS_PC, "notes-to-packed.py"), "notes_to_packed"

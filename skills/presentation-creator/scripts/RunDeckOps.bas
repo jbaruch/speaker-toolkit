@@ -405,6 +405,107 @@ Private Sub SetNotesBody(ByVal s As Slide, ByVal noteText As String)
     Next shp
 End Sub
 
+' Build a 1-slide deck holding a bright-yellow placeholder slide (a loud
+' [PLACEHOLDER] title + optional subtitle), sized to the base deck. Meant to be
+' InsertFromFile'd into the deck at a position via run-deck-ops.sh's order string
+' — Mac VBA's Slide.MoveTo raises E_INVALIDARG, so we build-then-assemble rather
+' than insert-and-move. Replaces the python-pptx insert-placeholder-slides.py.
+' Invoked via:
+'   run VB macro macro name "MakePlaceholderSlide" list of parameters _
+'       {basePath, outPath, titleText, subtitleText}
+Public Function MakePlaceholderSlide(ByVal basePath As String, _
+                                     ByVal outPath As String, _
+                                     ByVal titleText As String, _
+                                     ByVal subtitleText As String) As Long
+    Dim curTok As String
+    Dim base As Presentation
+    ' outer-boundary-process-contract — see the module-header error-handling contract.
+    On Error GoTo Fail6
+
+    curTok = "guard:base"
+    AssertNotOpen BaseName(basePath)
+    curTok = "open:base"
+    Set base = Presentations.Open(FileName:=basePath, WithWindow:=msoTrue)
+
+    Dim sw As Single, sh As Single
+    sw = base.PageSetup.SlideWidth
+    sh = base.PageSetup.SlideHeight
+
+    ' append a blank slide, remember it by stable SlideID
+    curTok = "add-slide"
+    Dim s As Slide
+    Set s = base.Slides.Add(base.Slides.Count + 1, ppLayoutBlank)
+    Dim keepID As Long
+    keepID = s.SlideID
+
+    ' loud yellow full-bleed background
+    curTok = "bg"
+    Dim bgShape As Shape
+    Set bgShape = s.Shapes.AddShape(msoShapeRectangle, 0, 0, sw, sh)
+    bgShape.Fill.Solid
+    bgShape.Fill.ForeColor.RGB = RGB(255, 242, 158)
+    bgShape.Line.Visible = msoFalse
+
+    ' [PLACEHOLDER]-prefixed title — centered, bold, 44pt
+    curTok = "title"
+    Dim ttl As String
+    ttl = titleText
+    If InStr(1, LTrim(ttl), "[PLACEHOLDER] ", vbTextCompare) <> 1 Then ttl = "[PLACEHOLDER] " & ttl
+    Dim margin As Single
+    margin = 36
+    Dim tb As Shape
+    Set tb = s.Shapes.AddTextbox(msoTextOrientationHorizontal, margin, sh / 3, sw - 2 * margin, 126)
+    tb.TextFrame.WordWrap = msoTrue
+    With tb.TextFrame.TextRange
+        .Text = ttl
+        .ParagraphFormat.Alignment = ppAlignCenter
+        .Font.Size = 44
+        .Font.Bold = msoTrue
+        .Font.Color.RGB = RGB(32, 32, 32)
+    End With
+
+    ' optional subtitle — centered, 20pt
+    If Len(subtitleText) > 0 Then
+        curTok = "subtitle"
+        Dim stb As Shape
+        Set stb = s.Shapes.AddTextbox(msoTextOrientationHorizontal, margin, sh / 3 + 140, sw - 2 * margin, 200)
+        stb.TextFrame.WordWrap = msoTrue
+        With stb.TextFrame.TextRange
+            .Text = subtitleText
+            .ParagraphFormat.Alignment = ppAlignCenter
+            .Font.Size = 20
+            .Font.Color.RGB = RGB(64, 64, 64)
+        End With
+    End If
+
+    ' trim to the placeholder slide only (compare by stable SlideID)
+    curTok = "trim-to-one"
+    Dim i As Long
+    For i = base.Slides.Count To 1 Step -1
+        If base.Slides(i).SlideID <> keepID Then base.Slides(i).Delete
+    Next i
+
+    curTok = "save"
+    base.SaveCopyAs FileName:=outPath
+    curTok = "close"
+    base.Close
+    MakePlaceholderSlide = 1
+    Exit Function
+
+Fail6:
+    Dim em As String
+    em = "MakePlaceholderSlide failed at [" & curTok & "]:" & vbCr & _
+         Err.Number & " - " & Err.Description
+    On Error Resume Next
+    If Not base Is Nothing Then
+        base.Saved = msoTrue
+        base.Close
+    End If
+    On Error GoTo 0
+    MsgBox em, vbCritical, "MakePlaceholderSlide"
+    MakePlaceholderSlide = -1
+End Function
+
 ' Filename portion of a POSIX path.
 Private Function BaseName(ByVal p As String) As String
     Dim k As Long
