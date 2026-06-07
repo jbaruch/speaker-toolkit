@@ -347,28 +347,32 @@ reference.
 
 **For pptx talks (template-driven):**
 
+Emit a deck op sequence from `slides.md` + the profile layout map, validate it,
+then build the deck with the real PowerPoint app — `BuildDeck` strips the
+template's demo slides and creates every slide from the ops. See
+[references/deckops-spec.md](references/deckops-spec.md).
+
 ```bash
-python3 scripts/strip-template.py "{template_pptx_path}" "{output_path}"
+python3 scripts/validate-deckops.py ops.txt
+scripts/build-deck.sh "{template_copy_pptx_path}" "{output_path}" ops.txt
 ```
 
-Then open with MCP `open_presentation` and walk `slides.md` in order: `add_slide` →
-`populate_placeholder` → `manage_image` for each slide. For non-illustrated
-slides and EXCEPTION-format slides, handle inline as normal (the `IMAGE-NN`
-placeholder resolves to a real asset). For FULL and IMG+TXT slides, build the
-slide structure (layout, title, footer) and **omit `manage_image`** — the
-slide is left without a picture shape. The illustrations skill handles
-illustrations in the post-walk apply pass: FULL slides get a slide BACKGROUND
-FILL (set by the PowerPoint `apply-backgrounds.sh` pass, so the layout's
-halftone-dot overlay covers them); IMG+TXT slides get a left-column picture
-shape via `apply-illustrations-to-deck.py`.
+For non-illustrated slides and EXCEPTION-format slides, emit the content inline
+(the `IMAGE-NN` placeholder resolves to a real asset → an `IMAGE` op). For FULL
+and IMG+TXT slides, emit only the slide structure (layout, `TITLE`, `FOOTER`)
+and **omit the `IMAGE` op** — the slide is left without a picture shape. The
+illustrations skill handles illustrations in the post-build apply pass: FULL
+slides get a slide BACKGROUND FILL (set by the PowerPoint `apply-backgrounds.sh`
+pass, so the layout's halftone-dot overlay covers them); IMG+TXT slides get a
+left-column picture shape via `apply-illustrations-to-deck.py`.
 
-After the structural walk completes, if `outline.yaml` declares `style_anchor`,
-delegate to `Skill(skill: "illustrations")` to generate illustrations, generate
-any progressive-reveal builds, and apply them to the deck. The illustrations
-skill still expects markdown-style inputs (style anchor block + per-slide
-image prompts) — when invoked, surface the relevant fields from `outline.yaml`
-in the format the illustrations skill consumes. Updating the illustrations
-skill to consume `outline.yaml` natively is tracked separately.
+After the build completes, if `outline.yaml` declares `style_anchor`, delegate
+to `Skill(skill: "illustrations")` to generate illustrations, generate any
+progressive-reveal builds, and apply them to the deck. The illustrations skill
+still expects markdown-style inputs (style anchor block + per-slide image
+prompts) — when invoked, surface the relevant fields from `outline.yaml` in the
+format the illustrations skill consumes. Updating the illustrations skill to
+consume `outline.yaml` natively is tracked separately.
 
 Inject speaker notes from `script.md` after the illustrations skill returns,
 via real PowerPoint — `skills/presentation-creator/scripts/inject-notes.sh`
@@ -378,8 +382,7 @@ python path needed is gone. THEN, as the final write, set the FULL-slide
 backgrounds via `skills/presentation-creator/scripts/apply-backgrounds.sh`
 using the manifest from the apply pass — it must run last, since any later
 python-pptx save would re-drop the per-slide background fills. See
-`rules/deck-editing-rules.md`. Full migration of creation off python-pptx + MCP
-onto real PowerPoint is tracked in #57.
+`rules/deck-editing-rules.md`.
 
 **For presenterm talks (terminal markdown):**
 

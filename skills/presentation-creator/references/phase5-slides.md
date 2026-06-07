@@ -25,19 +25,20 @@ Speaker-style data in `slide-design-spec.md` Sections 1–10 (extracted from the
 ## Step 5.1: Create the Deck
 
 Read the template path from `speaker-profile.json → infrastructure.template_pptx_path`.
-Strip demo slides from template, keep layouts only.
-
-> **Note:** The template stripping, slide deletion, and slide reordering code below
-> uses undocumented python-pptx internals (`slides._sldIdLst`, `part.drop_rel()`).
-> These work reliably as of python-pptx 0.6.x but could break on a major update.
-> If python-pptx adds public APIs for slide deletion/reordering in the future, prefer
-> those instead.
+The deck is built by the real PowerPoint app from a flat op sequence: `BuildDeck`
+opens a uniquely-named COPY of the template (for its custom layouts + masters),
+deletes the template's demo slides, then creates every slide from the ops and
+saves the output. You emit the ops while walking the outline (Step 5.2), then
+validate and build:
 
 ```bash
-python3 scripts/strip-template.py '{template_pptx_path}' '{output_path}'
+python3 scripts/validate-deckops.py ops.txt
+scripts/build-deck.sh '{template_copy_pptx_path}' '{output_path}' ops.txt
 ```
 
-Then open the clean deck with the MCP: `open_presentation(file_path=...)`.
+Op vocabulary, field layout, and state rules: `references/deckops-spec.md`. The
+template is read-only — pass a uniquely-named copy. macOS + Microsoft PowerPoint
+only; on first use walk the user through `references/deck-editing-setup.md`.
 
 ---
 
@@ -78,7 +79,7 @@ Each layout entry has: `index`, `name`, `placeholders[]`, and `use_for`.
 | Title + subtitle | Layout with TITLE + SUBTITLE | Bio, shownotes, section openers |
 | Bullet list | Layout with TITLE + BODY | Most content slides |
 | Comparison / two lists | Layout with TITLE + 2 BODY columns | Before/after, pros/cons |
-| Image/meme with title | Layout with TITLE only (no body) | Title in placeholder, image via `manage_image` |
+| Image/meme with title | Layout with TITLE only (no body) | Title in placeholder, image via an `IMAGE` op |
 | Full-bleed image/meme | BLANK layout (no placeholders) | Position everything manually |
 | Quote / caption | Caption layout if available | Attributed quotes, epigraphs |
 
@@ -100,58 +101,46 @@ in the speaker's template.
 
 ## Step 5.2: Walk the Outline — Slide Generation Workflow
 
-For each slide in the outline:
+Walk the outline in order and append ops to the sequence — one slide is a `SLIDE`
+op followed by its content ops. Field layout and geometry (points):
+`references/deckops-spec.md`.
 
-1. **Add slide** with the right layout (index from profile template_layouts):
-   ```
-   add_slide(layout_index=N, title="Slide Title")
-   ```
+1. **Start the slide** with the right layout (0-based index from profile template_layouts):
+   `SLIDE␟<layout_index>`
 
-2. **Populate placeholders** — title first, then body:
-   ```
-   populate_placeholder(slide_index=N, placeholder_idx=0, text="Title")
-   populate_placeholder(slide_index=N, placeholder_idx=1, text="Body text")
-   ```
+2. **Set placeholders** — title, subtitle, body:
+   `TITLE␟<text>`  ·  `SUBTITLE␟<text>`  ·  `BODY␟<text>`
 
-3. **Or use bullet points** for list content:
-   ```
-   add_bullet_points(slide_index=N, placeholder_idx=1, bullet_points=[...])
-   ```
+3. **Bullet list content** — one op per bullet, indent level 0-based:
+   `BULLET␟<level>␟<text>`
 
-4. **For image/meme slides** — use title-only or blank layout, add image:
-   ```
-   manage_image(slide_index=N, operation="add", image_source="path/to/image.png",
-                left=1, top=1.5, width=8, height=5)
-   ```
+4. **Image/meme slides** — title-only or blank layout, then an image:
+   `IMAGE␟<left>␟<top>␟<width>␟<height>␟<path>`
 
 4b. **For illustrated slides (Format: FULL or IMG+TXT):**
 
-   Build the slide structure (layout + title + footer) and skip image
-   insertion. The illustrations skill applies the image after this walk
-   completes — see Step 5.1b.
+   Emit the slide structure (layout, `TITLE`, `FOOTER`) and OMIT the `IMAGE` op.
+   The illustrations skill applies the image after the build completes — see
+   Step 5.1b.
 
    **For EXCEPTION format:**
    - Use appropriate layout for the content type (bullet list, comparison, etc.)
    - Image source comes from the `[IMAGE NN]` placeholder, not from `illustrations/`
 
-5. **For non-placeholder text** (captions, annotations):
-   ```
-   manage_text(slide_index=N, operation="add", text="Caption",
-               left=1, top=6, width=8, height=0.5,
-               font_size=14, color=[255,255,255])
-   ```
+5. **Non-placeholder text** (captions, annotations):
+   `TEXT␟<left>␟<top>␟<width>␟<height>␟<text>`
 
-6. **For shapes** (dividers, accent boxes):
-   ```
-   add_shape(slide_index=N, shape_type="RECTANGLE",
-             left=0, top=0, width=10, height=0.3,
-             fill_color=[0,188,212])
-   ```
+6. **Shapes** (dividers, accent boxes):
+   `SHAPE␟<msoAutoShapeType>␟<left>␟<top>␟<width>␟<height>`
+
+7. **Tables and charts:**
+   `TABLE␟<rows>␟<cols>␟<l>␟<t>␟<w>␟<h>` then `CELL␟<row>␟<col>␟<text>` per cell;
+   `CHART␟<xlChartType>␟<l>␟<t>␟<w>␟<h>` then `CAT␟<name>` and `SERIES␟<name>␟<v>␟<v>…`.
 
 ### Background Colors
 
-Read `design_rules.background_color_strategy` from the speaker profile. Apply the
-strategy when adding slides. Common strategies:
+Read `design_rules.background_color_strategy` from the speaker profile, then emit a
+`BG␟<r>␟<g>␟<b>` op on the slide. Common strategies:
 - `random_non_repeating` — pick a random saturated color, never repeat on adjacent slides
 - `theme_sequence` — follow the template's built-in color rotation
 
@@ -160,21 +149,20 @@ are appropriate (typically full-bleed image/meme slides only).
 
 ### Footer
 
-Read `design_rules.footer` from the speaker profile for exact position, font, size,
-and color adaptation rules. Add footer to EVERY slide using `manage_text`. The footer
-pattern template is in `footer.pattern` — substitute conference-specific values.
+Read the footer text pattern from `design_rules.footer.pattern`, substitute
+conference-specific values, and add a footer to EVERY slide with a `FOOTER␟<text>`
+op. The op carries only the text — `BuildDeck` applies fixed footer geometry and
+font size; the profile's position / font / size / color fields are not yet wired
+into the op.
 
 ### Text Overflow Prevention
 
 Template placeholders have fixed sizes. To avoid overflow:
 
-- **Titles**: Max ~60 characters. If longer, use `manage_text` with `auto_fit=True`.
+- **Titles**: Max ~60 characters.
 - **Body bullets**: Max 6-7 items per placeholder. For more, split across two slides.
 - **Bullet text**: Keep individual bullets under ~80 characters.
-- **Use `optimize_slide_text`** after populating to auto-resize if needed:
-  ```
-  optimize_slide_text(slide_index=N, min_font_size=12, max_font_size=28)
-  ```
+- **Emit an `OPTIMIZE` op** after the slide's content to autofit each text box to its shape.
 
 ---
 
@@ -210,19 +198,22 @@ needing author content.
 ## Step 5.5: Iteration Loop
 
 Free-form conversation. The author gives feedback in whatever format is natural.
+Edits drive the real PowerPoint app — there is no open session to mutate. Two
+mechanisms cover iteration: a global text replace via `run-deck-ops.sh`'s
+`replaceStr`, and build-then-assemble — rebuild the affected slide as a
+one-`SLIDE` fragment with `build-deck.sh`, then position it with
+`run-deck-ops.sh`'s order string (see `references/deckops-spec.md`).
 
 ### Slide-specific changes
 
 Author says: "Slide 12 — make the title shorter"
-→ `populate_placeholder(slide_index=11, placeholder_idx=0, text="New shorter title")`
+→ global text replace (replaces every occurrence, so use distinctive text):
+  `run-deck-ops.sh <deck> <out> "" "<unchanged order>" "Old long title=>Shorter"`
 
 Author says: "Slide 5 — change to two columns"
-→ Cannot change layout of existing slide via MCP. Instead:
-  1. Note content of slide 5
-  2. Generate a replacement slide with the new layout (appended at end)
-  3. Use `run-deck-ops.sh` to drop the old slide 5 and place the new one in its
-     position — express the FINAL slide order (see Structural changes below)
-  4. Re-open the output deck with MCP `open_presentation`
+  1. Build a one-`SLIDE` fragment on the two-column layout with `build-deck.sh`.
+  2. Use `run-deck-ops.sh` to drop the old slide 5 and place the fragment in its
+     position — express the FINAL slide order (see Structural changes below).
 
 ### Batch changes
 
@@ -232,16 +223,16 @@ requests to add slide numbers and explain it's a design rule.
 ### Content delivery
 
 Author provides an image for a placeholder slide:
-→ `manage_image(slide_index=N, operation="add", image_source="/path/to/image.png", ...)`
+→ Rebuild that slide as a one-`SLIDE` fragment with an `IMAGE` op, then position
+  it with `run-deck-ops.sh` (build-then-assemble).
 
 ### Structural changes (real PowerPoint via RunDeckOps)
 
-The MCP PPT server cannot delete or reorder slides, and python-pptx editing
-strips each slide's per-slide background fill — on illustrated decks that
-silently flattens full-bleed art to bare color. Make ALL structural edits
-(delete / reorder / cross-deck import / global text replace) by driving the
-real PowerPoint app, which serializes the file and preserves backgrounds,
-fonts, masters, and Keynote-openability. See `rules/deck-editing-rules.md`.
+Make ALL structural edits (delete / reorder / cross-deck import / global text
+replace) by driving the real PowerPoint app, which serializes the file and
+preserves backgrounds, fonts, masters, and Keynote-openability. python-pptx
+editing strips each slide's per-slide background fill — on illustrated decks that
+silently flattens full-bleed art to bare color. See `rules/deck-editing-rules.md`.
 
 ```bash
 scripts/run-deck-ops.sh <basePath> <outPath> <importSpec> <orderStr> <replaceStr>
@@ -259,8 +250,7 @@ listing tokens in the target order; import by adding an alias to `importSpec`.
 macOS + Microsoft PowerPoint only. On first use, walk the user through
 `references/deck-editing-setup.md` (enable VBA macros, import `RunDeckOps.bas`
 into a `DeckOps.pptm` container, grant Automation consent). The macro writes a
-COPY — the original is untouched, so re-open the OUTPUT deck with MCP
-(`open_presentation`) to continue editing.
+COPY — the original is untouched; continue editing from the OUTPUT deck.
 
 ## Step 5.6: Final Save
 
@@ -268,21 +258,23 @@ Save the .pptx. Export and publishing happen in Phase 6.
 
 ---
 
-## MCP Tool Quick Reference
+## Deck Op Quick Reference
 
-| Operation | Tool | Key params |
+| Operation | Op | Fields |
 |-----------|------|-----------|
-| Add slide | `add_slide` | layout_index, title, background_colors=[[r,g,b]] |
-| Set title/body | `populate_placeholder` | slide_index, placeholder_idx, text |
-| Add bullets | `add_bullet_points` | slide_index, placeholder_idx, bullet_points[] |
-| Add free text | `manage_text` | slide_index, operation="add", text, position, font |
-| Add image | `manage_image` | slide_index, operation="add", image_source, position |
-| Add shape | `add_shape` | slide_index, shape_type, position, colors |
-| Add table | `add_table` | slide_index, rows, cols, data, position |
-| Add chart | `add_chart` | slide_index, chart_type, categories, series |
-| Fix text overflow | `optimize_slide_text` | slide_index, min/max_font_size |
-| Inspect slide | `get_slide_info` | slide_index |
-| Save | `save_presentation` | file_path |
+| Start slide | `SLIDE` | `<0-based layout index>` |
+| Set title / subtitle / body | `TITLE` / `SUBTITLE` / `BODY` | `<text>` |
+| Add bullet | `BULLET` | `<0-based level>␟<text>` |
+| Add free text | `TEXT` | `<l>␟<t>␟<w>␟<h>␟<text>` |
+| Add image | `IMAGE` | `<l>␟<t>␟<w>␟<h>␟<path>` |
+| Add shape | `SHAPE` | `<msoAutoShapeType>␟<l>␟<t>␟<w>␟<h>` |
+| Slide background | `BG` | `<r>␟<g>␟<b>` |
+| Footer | `FOOTER` | `<text>` |
+| Autofit text | `OPTIMIZE` | — |
+| Add table / cell | `TABLE` / `CELL` | `<rows>␟<cols>␟<l>␟<t>␟<w>␟<h>` / `<row>␟<col>␟<text>` |
+| Add chart / category / series | `CHART` / `CAT` / `SERIES` | `<xlChartType>␟<l>␟<t>␟<w>␟<h>` / `<name>` / `<name>␟<v>…` |
+
+Full spec (delimiter, state rules, enum values, examples): `references/deckops-spec.md`.
 
 ---
 

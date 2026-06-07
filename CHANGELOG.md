@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.18.15 — 2026-06-07
+
+### feat(presentation-creator) — whole-deck creation via real PowerPoint (#57 Phase D)
+
+Retires the last python-pptx + MCP-PPT-server deck-writing path. Slide structure
+was created by stripping the template with `strip-template.py` (python-pptx) and
+then walking the deck through the MCP PPT server (`add_slide` /
+`populate_placeholder` / `add_bullet_points` / `manage_image` / `manage_text` /
+`add_shape` / `optimize_slide_text`). Both are gone — `BuildDeck` creates the
+whole deck in the real PowerPoint app, so the engine that ships valid,
+Keynote-openable `.pptx` is now the sole writer for creation as well as edits.
+Completes #57: real PowerPoint is the sole `.pptx` engine.
+
+- **`BuildDeck`** (in `RunDeckOps.bas`) — opens a uniquely-named template copy,
+  deletes the template's demo slides (subsumes `strip-template.py`), and executes
+  a flat op sequence: `SLIDE` / `TITLE` / `SUBTITLE` / `BODY` / `BULLET` / `TEXT`
+  / `IMAGE` / `SHAPE` / `BG` / `FOOTER` / `OPTIMIZE` / `TABLE` / `CELL` / `CHART`
+  / `CAT` / `SERIES` — full parity with the retired MCP surface, in one module
+  (VBA has no package manager; the macros share private helpers). When a layout
+  lacks the requested title/subtitle/body placeholder, `BuildDeck` preserves the
+  op's content in a fallback text box rather than dropping it silently.
+- **`build-deck.sh` / `build-deck.applescript`** — wrapper + driver. The
+  AppleScript reads the ops file as UTF-8 and passes it as one Unicode arg (no
+  VBA-side decoding); the wrapper validates first, stages locally, then moves the
+  output into place (sandboxed PowerPoint can't write to a Google Drive folder).
+- **`validate-deckops.py`** — deterministic, unit-tested
+  (`tests/test_validate_deckops.py`) op-sequence validator (UTF-8): op vocabulary,
+  arity, int/float fields, BG 0–255, non-negative layout index, and state rules
+  (ops need a prior `SLIDE`; `CELL` needs a `TABLE`; `CAT`/`SERIES` need a `CHART`;
+  `SERIES` needs ≥1 value; a `CHART` needs ≥1 `SERIES` so it never ships
+  PowerPoint's default sample data). `BuildDeck` raises a clear error on an
+  out-of-range layout index rather than silently remapping it. The
+  PowerPoint-driving layer stays manually validated.
+- **`references/deckops-spec.md`** — the op-sequence spec (delimiter, fields,
+  state rules, enum values, build-then-assemble for fragments).
+- **Removed `strip-template.py` and `_pptx_repair.py`** (and `test_strip_template.py`
+  + the `strip_template` / `pptx_repair` conftest fixtures) — `_pptx_repair.py`'s
+  only consumer was `strip-template.py`.
+- Rewired `SKILL.md` Step 5 and `phase5-slides.md` from the MCP walk to
+  emit-ops → `validate-deckops.py` → `build-deck.sh`; the MCP tool quick-reference
+  table is now a deck-op quick-reference. `slide-generation-rules.md` reconciled to
+  BuildDeck (not python-pptx, not MCP); the stale `_pptx_repair.py` / `generate-qr.py`
+  Keynote-carve-out example and the obsolete python-pptx code snippets are dropped.
+- macOS + PowerPoint only; untestable in Linux CI by design — validate by
+  re-opening output in PowerPoint and Keynote. The untestable-VBA gap for #57 is
+  owner-authorized (tracked in jbaruch/coding-policy#116).
+
 ## 0.18.13 — 2026-06-04
 
 ### feat(presentation-creator) — QR insertion via real PowerPoint (#57 Phase F)
