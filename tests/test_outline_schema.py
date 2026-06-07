@@ -636,15 +636,26 @@ def test_partial_accepts_talk_only(outline_schema, base_data):
 
 
 def test_partial_accepts_chapters_without_slides(outline_schema, base_data):
-    """Phase 2: chapters authored, slides not yet — no slide-dependent
-    cross-validator fires, so beats may carry slide_refs to not-yet-real slides."""
-    data = {
-        "talk": copy.deepcopy(base_data["talk"]),
-        "chapters": copy.deepcopy(base_data["chapters"]),
-    }
+    """Phase 2: chapters authored, slides not yet. Beats carry no slide_refs —
+    slides do not exist, so there is nothing to reference."""
+    chapters = copy.deepcopy(base_data["chapters"])
+    for c in chapters:
+        for beat in c.get("argument_beats", []):
+            beat["slide_refs"] = []
+    data = {"talk": copy.deepcopy(base_data["talk"]), "chapters": chapters}
     partial = outline_schema.PartialOutline.model_validate(data)
     assert len(partial.chapters) == 3
     assert partial.slides == []
+
+
+def test_partial_rejects_slide_refs_without_slides(outline_schema, base_data):
+    """Phase 2 invariant: a beat may not reference a slide that does not exist.
+    With no slides authored, every slide_ref is invalid."""
+    chapters = copy.deepcopy(base_data["chapters"])
+    chapters[0]["argument_beats"][0]["slide_refs"] = [1]
+    data = {"talk": copy.deepcopy(base_data["talk"]), "chapters": chapters}
+    with pytest.raises(ValidationError, match="slide_ref 1"):
+        outline_schema.PartialOutline.model_validate(data)
 
 
 def test_partial_still_validates_talk_fields(outline_schema, base_data):

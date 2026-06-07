@@ -117,10 +117,11 @@ def test_narrative_partial_renders_chapters_without_slides(
     extract_narrative, outline_schema, base_data,
 ):
     """Phase 2: chapters present, slides absent — full chapter body renders."""
-    data = {
-        "talk": copy.deepcopy(base_data["talk"]),
-        "chapters": copy.deepcopy(base_data["chapters"]),
-    }
+    chapters = copy.deepcopy(base_data["chapters"])
+    for c in chapters:
+        for beat in c.get("argument_beats", []):
+            beat["slide_refs"] = []  # no slides exist yet in the narrative phase
+    data = {"talk": copy.deepcopy(base_data["talk"]), "chapters": chapters}
     partial = outline_schema.PartialOutline.model_validate(data)
     out = extract_narrative.render(partial)
     assert "### The Setup" in out

@@ -409,6 +409,35 @@ class Slide(_StrictModel):
         return self
 
 
+# ── Shared cross-field checks ────────────────────────────────────────
+
+
+def _check_beat_slide_refs(
+    chapters: list["Chapter"], slides: list["Slide"],
+) -> None:
+    """Reject argument_beat slide_refs that point at a non-existent slide.
+
+    Shared by `Outline` (full) and `PartialOutline` (narrative phase). When no
+    slide is authored yet, the slide set is empty, so any ref is invalid — beats
+    must leave slide_refs empty until Phase 3 wires them to real slides.
+    """
+    slide_ns = {s.n for s in slides}
+    for c in chapters:
+        for beat in c.argument_beats:
+            for ref in beat.slide_refs:
+                if ref not in slide_ns:
+                    hint = (
+                        " — no slides are authored yet; leave slide_refs "
+                        "empty until Phase 3"
+                        if not slide_ns
+                        else ""
+                    )
+                    raise ValueError(
+                        f"chapter '{c.id}' argument_beat slide_ref {ref} "
+                        f"does not match any slide in slides[]{hint}",
+                    )
+
+
 # ── Top-level outline ────────────────────────────────────────────────
 
 
@@ -445,15 +474,7 @@ class Outline(_StrictModel):
 
     @model_validator(mode="after")
     def _argument_beat_slide_refs_valid(self) -> "Outline":
-        slide_ns = {s.n for s in self.slides}
-        for c in self.chapters:
-            for beat in c.argument_beats:
-                for ref in beat.slide_refs:
-                    if ref not in slide_ns:
-                        raise ValueError(
-                            f"chapter '{c.id}' argument_beat slide_ref {ref} "
-                            f"does not match any slide in slides[]",
-                        )
+        _check_beat_slide_refs(self.chapters, self.slides)
         return self
 
     @model_validator(mode="after")
@@ -573,9 +594,16 @@ class PartialOutline(_StrictModel):
     The narrative (`talk.thesis` + `chapters[].argument_beats`) is fully
     authored by the end of Phase 2, before any slide exists. `extract-narrative.py`
     renders from this view so the human can review and approve the narrative
-    during Phases 1–2. The full `Outline` (slides + every cross-field validator)
-    stays the Phase 3+ source-of-truth contract; this view runs only the
-    field-level validators on `talk` and `chapters`.
+    during Phases 1–2.
+
+    Every present section is still validated by its own field- and model-level
+    validators (a `slides[]` entry, if present, still runs its build-step and
+    EXCEPTION checks), and slide_refs are still checked for integrity. What this
+    view *skips* are the `Outline`-level cross-field validators that presuppose a
+    complete deck: `chapters`/`slides` `min_length`, the `big_idea` singleton,
+    slide-budget arithmetic, callback pairing, slide ordering/uniqueness,
+    chapter/interlude anchoring, and speaker attribution. The full `Outline`
+    stays the Phase 3+ source-of-truth contract.
     """
 
     talk: TalkMetadata
@@ -583,6 +611,11 @@ class PartialOutline(_StrictModel):
     chapters: list[Chapter] = Field(default_factory=list)
     slides: list[Slide] = Field(default_factory=list)
     interludes: list[Interlude] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _argument_beat_slide_refs_valid(self) -> "PartialOutline":
+        _check_beat_slide_refs(self.chapters, self.slides)
+        return self
 
 
 # ── Loader + CLI guard ───────────────────────────────────────────────

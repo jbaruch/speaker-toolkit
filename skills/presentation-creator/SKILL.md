@@ -215,8 +215,9 @@ python3 skills/presentation-creator/scripts/extract-narrative.py --partial outli
 
 Present `narrative.md` to the author. This is the narrative-approval point: the
 author reads the prose distillation and approves or revises the argument before
-any per-slide content is written in Phase 3. `argument_beats[].slide_refs` stays
-empty here — slides do not exist yet.
+any per-slide content is written in Phase 3. Leave `argument_beats[].slide_refs`
+empty here — slides do not exist yet, so `--partial` validation rejects any ref;
+wire them to real slides in Phase 3.
 
 **Slide budget** — read from `profile → guardrail_sources.slide_budgets` at runtime.
 If the profile is unavailable (summary-only mode), use these defaults:
