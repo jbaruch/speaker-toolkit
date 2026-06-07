@@ -53,8 +53,8 @@ def _import_script(path, name):
 # ── Session-scoped script modules ────────────────────────────────────
 
 @pytest.fixture(scope="session")
-def strip_template():
-    return _import_script(os.path.join(SCRIPTS_PC, "strip-template.py"), "strip_template")
+def validate_deckops():
+    return _import_script(os.path.join(SCRIPTS_PC, "validate-deckops.py"), "validate_deckops")
 
 
 @pytest.fixture(scope="session")
@@ -141,11 +141,6 @@ def generate_thumbnail():
     return _import_script(
         os.path.join(SCRIPTS_ILL, "generate-thumbnail.py"), "generate_thumbnail"
     )
-
-
-@pytest.fixture(scope="session")
-def pptx_repair():
-    return _import_script(os.path.join(SCRIPTS_PC, "_pptx_repair.py"), "_pptx_repair")
 
 
 @pytest.fixture(scope="session")

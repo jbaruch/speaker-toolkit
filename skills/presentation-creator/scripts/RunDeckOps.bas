@@ -1,7 +1,8 @@
 Attribute VB_Name = "DeckOps"
 ' =====================================================================
 ' DeckOps  -  the deck-operations VBA module: RunDeckOps (trim/reorder/
-' import/replace), MakeBgImageSlide, and ApplyBackgrounds.
+' import/replace), MakeBgImageSlide, ApplyBackgrounds, SetSpeakerNotes,
+' MakePlaceholderSlide, InsertQR, and BuildDeck (whole-deck creation).
 '
 ' One module, not three, on purpose: VBA has no package manager, the
 ' public macros share private helpers (BaseName / AliasPath / AssertNotOpen),
@@ -588,6 +589,226 @@ Fail7:
     MsgBox em, vbCritical, "InsertQR"
     InsertQR = -1
 End Function
+
+' Build a whole deck from a flat op sequence via the real PowerPoint app — the
+' unified creation engine that retires strip-template.py + the MCP structural
+' walk (add_slide / populate_placeholder / add_bullet_points / manage_text /
+' manage_image / add_shape / add_table / add_chart / optimize_slide_text). Opens
+' the template (for its custom layouts + masters), removes its demo slides, then
+' executes the ops and saves a COPY. Layout/placeholder/content choices are the
+' agent's judgment — it emits the ops; this only executes them.
+'
+' opsText is newline-separated; each line is "OP" then US(Chr31)-delimited args.
+' AppleScript reads the ops file as UTF-8 and passes it as one Unicode arg.
+' SLIDE starts a slide; subsequent ops apply to the current slide / table / chart.
+' Geometry is in points. Ops:
+'   SLIDE␟<0-based custom-layout index>
+'   TITLE␟<text>   SUBTITLE␟<text>   BODY␟<text>   BULLET␟<0-based level>␟<text>
+'   TEXT␟<l>␟<t>␟<w>␟<h>␟<text>      IMAGE␟<l>␟<t>␟<w>␟<h>␟<path>
+'   SHAPE␟<msoAutoShapeType>␟<l>␟<t>␟<w>␟<h>      BG␟<r>␟<g>␟<b>      FOOTER␟<text>
+'   TABLE␟<rows>␟<cols>␟<l>␟<t>␟<w>␟<h>   then CELL␟<1-based r>␟<c>␟<text> …
+'   CHART␟<xlChartType>␟<l>␟<t>␟<w>␟<h>   then CAT␟<name> … and SERIES␟<name>␟<v>␟<v>… …
+'   OPTIMIZE   (shrink current slide's text to fit its boxes)
+' Invoked via:
+'   run VB macro macro name "BuildDeck" list of parameters {basePath, outPath, opsText}
+Public Function BuildDeck(ByVal basePath As String, _
+                          ByVal outPath As String, _
+                          ByVal opsText As String) As Long
+    Dim curTok As String
+    Dim base As Presentation
+    ' outer-boundary-process-contract — see the module-header error-handling contract.
+    On Error GoTo Fail8
+
+    curTok = "guard:base"
+    AssertNotOpen BaseName(basePath)
+    curTok = "open:base"
+    Set base = Presentations.Open(FileName:=basePath, WithWindow:=msoTrue)
+
+    ' strip the template's demo slides (keeps masters + custom layouts) — subsumes strip-template.py
+    curTok = "strip"
+    Dim i As Long
+    For i = base.Slides.Count To 1 Step -1
+        base.Slides(i).Delete
+    Next i
+    Dim layouts As CustomLayouts
+    Set layouts = base.SlideMaster.CustomLayouts
+
+    Dim cur As Slide, curTbl As Table, curChart As Chart
+    Dim catBuf As Collection, serBuf As Collection   ' chart accumulation (flushed on next CHART/SLIDE/end)
+    Set catBuf = New Collection: Set serBuf = New Collection
+    Dim lines() As String, li As Long, f() As String, op As String, ln As String, placed As Long
+    lines = Split(opsText, vbLf)
+    placed = 0
+    For li = LBound(lines) To UBound(lines)
+        ln = lines(li)
+        If Len(ln) > 0 Then If Right(ln, 1) = vbCr Then ln = Left(ln, Len(ln) - 1)
+        If Len(Trim(ln)) > 0 Then
+            f = Split(ln, Chr(31))
+            op = UCase(Trim(f(0)))
+            curTok = "op:" & op & "#" & li
+            Select Case op
+                Case "SLIDE"
+                    FlushChart curChart, catBuf, serBuf: Set curChart = Nothing
+                    Dim lay As Long
+                    lay = CLng(f(1)) + 1
+                    If lay < 1 Then lay = 1
+                    If lay > layouts.Count Then lay = layouts.Count
+                    Set cur = base.Slides.AddSlide(base.Slides.Count + 1, layouts(lay))
+                    Set curTbl = Nothing
+                    placed = placed + 1
+                Case "TITLE": SetPlaceholderText cur, ppPlaceholderTitle, f(1)
+                Case "SUBTITLE": SetPlaceholderText cur, ppPlaceholderSubtitle, f(1)
+                Case "BODY": SetPlaceholderText cur, ppPlaceholderBody, f(1)
+                Case "BULLET": AddBulletLine cur, CLng(f(1)), f(2)
+                Case "TEXT"
+                    Dim tbx As Shape
+                    Set tbx = cur.Shapes.AddTextbox(msoTextOrientationHorizontal, CSng(f(1)), CSng(f(2)), CSng(f(3)), CSng(f(4)))
+                    tbx.TextFrame.WordWrap = msoTrue
+                    tbx.TextFrame.TextRange.Text = f(5)
+                Case "IMAGE"
+                    cur.Shapes.AddPicture FileName:=f(5), LinkToFile:=msoFalse, SaveWithDocument:=msoTrue, _
+                        Left:=CSng(f(1)), Top:=CSng(f(2)), Width:=CSng(f(3)), Height:=CSng(f(4))
+                Case "SHAPE"
+                    cur.Shapes.AddShape CLng(f(1)), CSng(f(2)), CSng(f(3)), CSng(f(4)), CSng(f(5))
+                Case "BG"
+                    cur.FollowMasterBackground = msoFalse
+                    cur.Background.Fill.Solid
+                    cur.Background.Fill.ForeColor.RGB = RGB(CLng(f(1)), CLng(f(2)), CLng(f(3)))
+                Case "FOOTER"
+                    Dim ft As Shape
+                    Set ft = cur.Shapes.AddTextbox(msoTextOrientationHorizontal, 7, base.PageSetup.SlideHeight - 28, base.PageSetup.SlideWidth - 14, 22)
+                    ft.TextFrame.TextRange.Text = f(1)
+                    ft.TextFrame.TextRange.Font.Size = 10
+                Case "OPTIMIZE": AutofitSlide cur
+                Case "TABLE"
+                    Set curTbl = cur.Shapes.AddTable(CLng(f(1)), CLng(f(2)), CSng(f(3)), CSng(f(4)), CSng(f(5)), CSng(f(6))).Table
+                Case "CELL"
+                    curTbl.Cell(CLng(f(1)), CLng(f(2))).Shape.TextFrame.TextRange.Text = f(3)
+                Case "CHART"
+                    FlushChart curChart, catBuf, serBuf
+                    Set curChart = cur.Shapes.AddChart2(-1, CLng(f(1)), CSng(f(2)), CSng(f(3)), CSng(f(4)), CSng(f(5))).Chart
+                Case "CAT": catBuf.Add f(1)
+                Case "SERIES"
+                    Dim sv As Collection, vi As Long
+                    Set sv = New Collection
+                    sv.Add f(1)                                  ' [1] = series name
+                    For vi = 2 To UBound(f): sv.Add CDbl(f(vi)): Next vi  ' [2..] = values
+                    serBuf.Add sv
+                Case Else
+                    Err.Raise vbObjectError + 521, , "Unknown BuildDeck op '" & op & "' on line " & li
+            End Select
+        End If
+    Next li
+    FlushChart curChart, catBuf, serBuf   ' flush the last chart
+
+    curTok = "save"
+    base.SaveCopyAs FileName:=outPath
+    curTok = "close"
+    base.Close
+    BuildDeck = placed
+    Exit Function
+
+Fail8:
+    Dim em As String
+    em = "BuildDeck failed at [" & curTok & "]:" & vbCr & _
+         Err.Number & " - " & Err.Description
+    On Error Resume Next
+    If Not base Is Nothing Then
+        base.Saved = msoTrue
+        base.Close
+    End If
+    On Error GoTo 0
+    MsgBox em, vbCritical, "BuildDeck"
+    BuildDeck = -1
+End Function
+
+' Set a placeholder's text by type (ppPlaceholderTitle / Subtitle / Body),
+' falling back to the slide's Title shape for titles. No-op if absent.
+Private Sub SetPlaceholderText(ByVal sld As Slide, ByVal phType As Long, ByVal txt As String)
+    If sld Is Nothing Then Exit Sub
+    Dim shp As Shape
+    For Each shp In sld.Shapes
+        If shp.Type = msoPlaceholder Then
+            If shp.PlaceholderFormat.Type = phType Then
+                shp.TextFrame.TextRange.Text = txt
+                Exit Sub
+            End If
+        End If
+    Next shp
+    If phType = ppPlaceholderTitle Then
+        On Error Resume Next
+        sld.Shapes.Title.TextFrame.TextRange.Text = txt
+        On Error GoTo 0
+    End If
+End Sub
+
+' Append a bullet paragraph to the slide's body placeholder at the given
+' 0-based indent level.
+Private Sub AddBulletLine(ByVal sld As Slide, ByVal level As Long, ByVal txt As String)
+    If sld Is Nothing Then Exit Sub
+    Dim shp As Shape, body As Shape
+    For Each shp In sld.Shapes
+        If shp.Type = msoPlaceholder Then
+            If shp.PlaceholderFormat.Type = ppPlaceholderBody Or shp.PlaceholderFormat.Type = ppPlaceholderObject Then
+                Set body = shp: Exit For
+            End If
+        End If
+    Next shp
+    If body Is Nothing Then Exit Sub
+    Dim tr As TextRange
+    Set tr = body.TextFrame.TextRange
+    If Len(tr.Text) > 0 Then tr.InsertAfter vbCr
+    Dim para As TextRange
+    Set para = tr.InsertAfter(txt)
+    para.IndentLevel = level + 1
+End Sub
+
+' Best-effort optimize_slide_text: shrink each text box's text to fit its shape.
+Private Sub AutofitSlide(ByVal sld As Slide)
+    If sld Is Nothing Then Exit Sub
+    Dim shp As Shape
+    For Each shp In sld.Shapes
+        If shp.HasTextFrame Then
+            On Error Resume Next
+            shp.TextFrame2.WordWrap = msoTrue
+            shp.TextFrame2.AutoSize = msoAutoSizeTextToFitShape
+            On Error GoTo 0
+        End If
+    Next shp
+End Sub
+
+' Apply buffered categories + series to a chart, then clear the buffers. Series
+' buffer items are Collections: [1]=name, [2..]=Double values. No-op if empty.
+Private Sub FlushChart(ByVal ch As Chart, ByVal catBuf As Collection, ByVal serBuf As Collection)
+    If ch Is Nothing Or serBuf.Count = 0 Then
+        ClearCol catBuf: ClearCol serBuf
+        Exit Sub
+    End If
+    ' categories array
+    Dim cats() As Variant, ci As Long
+    ReDim cats(1 To Application.Max(catBuf.Count, 1))
+    For ci = 1 To catBuf.Count: cats(ci) = catBuf(ci): Next ci
+    ' drop the chart's default series, then add ours
+    Do While ch.SeriesCollection.Count > 0
+        ch.SeriesCollection(1).Delete
+    Loop
+    Dim si As Long, sv As Collection, sr As Series, vals() As Variant, vi As Long
+    For si = 1 To serBuf.Count
+        Set sv = serBuf(si)
+        Set sr = ch.SeriesCollection.NewSeries
+        sr.Name = sv(1)
+        ReDim vals(1 To Application.Max(sv.Count - 1, 1))
+        For vi = 2 To sv.Count: vals(vi - 1) = sv(vi): Next vi
+        sr.Values = vals
+        If catBuf.Count > 0 Then sr.XValues = cats
+    Next si
+    ClearCol catBuf: ClearCol serBuf
+End Sub
+
+' Remove every item from a Collection (in place).
+Private Sub ClearCol(ByVal c As Collection)
+    Do While c.Count > 0: c.Remove 1: Loop
+End Sub
 
 ' Filename portion of a POSIX path.
 Private Function BaseName(ByVal p As String) As String

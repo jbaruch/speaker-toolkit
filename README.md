@@ -357,9 +357,8 @@ If the speaker profile doesn't exist yet (fewer than 10 talks parsed), the creat
 - Talks with YouTube recordings and slides (PPTX files and/or Google Drive exports)
 
 ### For the Presentation Creator & Illustrations Skills
-- MCP PPT server (for slide generation)
-- `python-pptx` (for speaker notes, structural edits)
-- Microsoft PowerPoint (for PDF export via AppleScript, macOS only)
+- Microsoft PowerPoint with VBA macros — the deck engine: slide generation, structural edits, speaker notes, backgrounds, and QR all drive the real app (macOS only). One-time `DeckOps.pptm` macro setup: `skills/presentation-creator/references/deck-editing-setup.md`
+- `python-pptx` (extraction reads + the illustration scrim/title apply pass)
 - A PowerPoint template (the vault captures the path; a generic template works too)
 
 ### For the Shownotes Publisher Skill
@@ -402,13 +401,14 @@ speaker-toolkit-tile/
     +-- presentation-creator/
     |   +-- SKILL.md                          # Main creator workflow (7 phases)
     |   +-- scripts/
-    |   |   +-- _pptx_repair.py               # Shared viewProps cleanup for PPTX integrity
     |   |   +-- generate-qr.py                # QR generation + bg-color match (insert via InsertQR)
     |   |   +-- extract-resources.py          # Resource link extraction from outlines
     |   |   +-- guardrail-check.py            # Outline guardrail validation
-    |   |   +-- strip-template.py             # Strip demo slides from template
     |   |   +-- export-pdf.py                 # Export deck to PDF (PowerPoint or LibreOffice)
-    |   |   +-- RunDeckOps.bas                 # VBA: trim/reorder/import/text-replace via real PowerPoint
+    |   |   +-- validate-deckops.py           # Validate a deck op sequence before BuildDeck (tested)
+    |   |   +-- build-deck.sh                  # Wrapper for BuildDeck (whole-deck creation via real PowerPoint)
+    |   |   +-- build-deck.applescript         # AppleScript driver for BuildDeck (reads ops as UTF-8)
+    |   |   +-- RunDeckOps.bas                 # VBA: BuildDeck + trim/reorder/import/notes/bg/placeholder/QR via real PowerPoint
     |   |   +-- run-deck-ops.sh                # Wrapper for RunDeckOps (staging + move into place)
     |   |   +-- run-deck-ops.applescript       # AppleScript driver for RunDeckOps
     |   |   +-- make-bg-slide.sh               # Wrapper for MakeBgImageSlide (illustration -> bg slide)
