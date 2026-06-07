@@ -5,6 +5,10 @@ deterministic half that catches typos / wrong arity / bad state before PowerPoin
 part-builds a deck. Fields are US (\\x1f) delimited.
 """
 
+import sys
+
+import pytest
+
 US = "\x1f"
 
 
@@ -175,3 +179,22 @@ def test_chart_state_resets_on_new_slide(validate_deckops):
 
 def test_op_name_is_case_insensitive(validate_deckops):
     assert validate_deckops.validate_ops("slide\x1f0\ntitle\x1fHi") == []
+
+
+def test_main_missing_file_actionable_error(validate_deckops, capsys, monkeypatch, tmp_path):
+    missing = tmp_path / "nope.txt"
+    monkeypatch.setattr(sys, "argv", ["validate-deckops.py", str(missing)])
+    with pytest.raises(SystemExit) as exc:
+        validate_deckops.main()
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "not found" in err and str(missing) in err
+
+
+def test_main_valid_file_prints_summary(validate_deckops, capsys, monkeypatch, tmp_path):
+    ops = tmp_path / "ops.txt"
+    ops.write_text(line("SLIDE", 0) + "\n" + line("TITLE", "Hi"), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["validate-deckops.py", str(ops)])
+    validate_deckops.main()
+    out = capsys.readouterr().out
+    assert '"slides": 1' in out and '"ops": 2' in out

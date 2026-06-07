@@ -119,7 +119,21 @@ def main() -> None:
     if len(sys.argv) != 2:
         print("usage: validate-deckops.py <ops-file>", file=sys.stderr)
         sys.exit(2)
-    text = Path(sys.argv[1]).read_text(encoding="utf-8")
+    path = Path(sys.argv[1])
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        print(f"ERROR: ops file not found: {path} — emit it per "
+              "references/deckops-spec.md.", file=sys.stderr)
+        sys.exit(1)
+    except UnicodeDecodeError as e:
+        print(f"ERROR: ops file {path} is not valid UTF-8 ({e}) — re-emit it as "
+              "UTF-8 per references/deckops-spec.md.", file=sys.stderr)
+        sys.exit(1)
+    except OSError as e:
+        print(f"ERROR: cannot read ops file {path}: {e.strerror or e} — check the "
+              "path and permissions.", file=sys.stderr)
+        sys.exit(1)
     errors = validate_ops(text)
     if errors:
         print("ERROR: invalid deck op sequence:", file=sys.stderr)
