@@ -352,7 +352,7 @@ bash skills/shownotes-publisher/scripts/content-only-gate.sh ~/Projects/shownote
   return 0.
 
 The allowed content prefixes are the named `ALLOWED_PREFIXES` at the top
-of `scripts/content-only-gate.sh`.
+of `skills/shownotes-publisher/scripts/content-only-gate.sh`.
 
 **Direct-push flow:**
 
@@ -360,7 +360,7 @@ of `scripts/content-only-gate.sh`.
 cd ~/Projects/shownotes
 git add _talks/{talk_page_stem}.md [assets/images/thumbnails/{talk_page_stem}-thumbnail.png]
 git commit -m "Add shownotes: {Talk Title} at {Conference}"
-git push
+git push origin main
 gh run watch --exit-status $(gh run list --workflow=pages-build-deployment --branch=main --limit=1 --json databaseId --jq '.[0].databaseId')
 curl -fsI "{site.url}/talks/{talk_page_stem}/" | head -1   # expect: HTTP/2 200
 ```
