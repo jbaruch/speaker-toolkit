@@ -335,8 +335,9 @@ Proceed immediately to Step 9.
 
 Pick the push flow with the **content-only gate**, then publish. Run
 the gate from the speaker-toolkit repo root, pointed at the shownotes
-repo — it inspects every pending change (staged, unstaged, untracked)
-and reports whether they touch only content paths:
+repo — it enumerates every path the push would land on `main`
+(committed-but-unpushed commits plus pending staged, unstaged, and
+untracked changes) and reports whether they all touch content paths:
 
 ```bash
 bash skills/shownotes-publisher/scripts/content-only-gate.sh ~/Projects/shownotes
@@ -345,8 +346,8 @@ bash skills/shownotes-publisher/scripts/content-only-gate.sh ~/Projects/shownote
 - **Exit 0** (content-only) → take the **direct-push** flow. This
   satisfies the Form B client-side gate of `jbaruch/coding-policy:
   ci-safety`'s Content-Only Direct-Push Carve-Out.
-- **Exit 1** (a change lies outside the content paths) or **exit 2**
-  (no pending changes, not a work tree, or can't tell) → take the
+- **Exit 1** (a path lies outside the content paths) or **exit 2**
+  (not on `main`, no upstream, empty push, or can't tell) → take the
   **branch + PR** flow. Never direct-push when the gate does not
   return 0.
 
