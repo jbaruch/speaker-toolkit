@@ -48,7 +48,7 @@ This is an antipattern to avoid in every presentation. Never ask the audience to
 - Absent (0 pts): Speaker asks negative ignorance questions, putting audience members in uncomfortable positions
 
 ## Relationship to Vault Dimensions
-This antipattern maps to Vault Dimension 4 (Audience Engagement) because asking people to admit ignorance disengages them emotionally and creates defensiveness, and to Vault Dimension 14 (Speaker Craft / Professionalism) because understanding audience psychology is a core professional skill.
+This antipattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 14 (Speaker Craft / Professionalism).
 
 ## Combinatorics
 The primary defenses against Negative Ignorance are Know Your Audience (pre-talk research eliminates the need for live polling), Seeding Satisfaction (pre-talk conversations reveal knowledge levels safely), and the Mentor pattern (providing baseline definitions without requiring anyone to request them). The Echo Chamber pattern can help during Q&A by reframing questions that inadvertently create the same dynamic.

@@ -49,7 +49,7 @@ This is an antipattern to avoid whenever possible. Step away from the podium, st
 - Absent (0 pts): Speaker remains behind the podium or barrier for the entire presentation, no audience proximity
 
 ## Relationship to Vault Dimensions
-This antipattern maps to Vault Dimension 4 (Audience Engagement) because physical distance directly reduces perceived connection and engagement, and to Vault Dimension 14 (Speaker Craft / Professionalism) because stage presence and spatial awareness are core professional skills.
+This antipattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 14 (Speaker Craft / Professionalism).
 
 ## Combinatorics
 The Bunker antipattern is prevented by Carnegie Hall rehearsal (practice moving while presenting), Preparation (arrange wireless microphone in advance), and Know Your Audience (understanding the room layout). The Weatherman pattern frees you from the podium by providing presenter view on your laptop rather than requiring notes at the podium. Make It Rain is almost impossible from behind a bunker — physical interaction demands physical proximity.

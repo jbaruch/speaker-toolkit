@@ -48,7 +48,7 @@ Use this pattern in every Q&A session, without exception. It is especially criti
 - Absent (0 pts): Speaker never repeats questions, answers are directed to the questioner rather than the room, rest of audience cannot follow Q&A
 
 ## Relationship to Vault Dimensions
-This pattern maps to Vault Dimension 4 (Audience Engagement) because it ensures the entire audience is included in the Q&A conversation, and to Vault Dimension 7 (Clarity / Communication) because it prevents miscommunication between questioner and speaker.
+This pattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 7 (Clarity / Communication).
 
 ## Combinatorics
 Echo Chamber naturally follows Seeding the First Question — once the ice is broken, Echo Chamber ensures every subsequent question is handled effectively. It supports Display of High Value by demonstrating composed, professional Q&A management. The pattern also helps manage the Hecklers antipattern by providing a mechanism for reframing hostile questions.

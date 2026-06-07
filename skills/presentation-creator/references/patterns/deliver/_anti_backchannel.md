@@ -24,7 +24,7 @@ The real-time conversation about your talk happening via Twitter, text messages,
 ## The Pattern in Detail
 While you are presenting, a parallel conversation is happening on laptops, tablets, and phones throughout the room. Attendees are live-tweeting your talk, posting reactions in conference Slack channels, texting colleagues, and commenting on real-time event apps. This is the backchannel — a second layer of communication that runs alongside your presentation, sometimes supporting it and sometimes undermining it.
 
-The backchannel is a double-edged sword. On the positive side, attendees sharing your key points on social media extend your reach far beyond the room. A well-received talk can generate hundreds of tweets, blog posts, and shares that amplify your message to thousands. Conference organizers often encourage this behavior because it builds buzz. The Social Media Advertising pattern describes how to leverage this dynamic proactively.
+The backchannel is a double-edged sword. On the positive side, attendees sharing your key points on social media extend your reach far beyond the room. A well-received talk can generate hundreds of tweets, blog posts, and shares that amplify your message to thousands. Conference organizers often encourage this behavior. The Social Media Advertising pattern describes how to leverage this dynamic proactively.
 
 On the negative side, the backchannel fragments audience attention. Every person composing a tweet is not fully listening to what you are saying. Every person reading their feed is processing someone else's summary rather than your actual words. And when the backchannel turns negative — snide comments about your slides, fact-checking your claims in real time, or hostile commentary from people who disagree — the effect can ripple through the room as people share the criticism, creating a secondary narrative that undermines your presentation while you are still delivering it.
 
@@ -49,7 +49,7 @@ This is an antipattern to manage, not eliminate. Accept the backchannel as a fea
 - Absent (0 pts): Speaker monitors the backchannel during delivery, reacts to online feedback in real time, or ignores the backchannel entirely without leveraging its potential
 
 ## Relationship to Vault Dimensions
-This antipattern maps to Vault Dimension 4 (Audience Engagement) because the backchannel competes for the same finite attention that engagement requires, and to Vault Dimension 14 (Speaker Craft / Professionalism) because managing the relationship with digital audience behavior is a modern professional skill.
+This antipattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 14 (Speaker Craft / Professionalism).
 
 ## Combinatorics
 The Backchannel antipattern interacts with Social Media Advertising (which leverages the backchannel proactively), Know Your Audience (understanding how digitally active this audience is), and Entertainment (compelling content reduces device distraction). The Preparation pattern should include deciding in advance whether to display your social media handle and conference hashtag, and committing to a no-monitoring policy during delivery.

@@ -47,7 +47,7 @@ Use this pattern for every presentation, with the depth of adaptation scaled to 
 - Absent (0 pts): Speaker delivers identically regardless of audience mood, context, or energy level
 
 ## Relationship to Vault Dimensions
-This pattern maps to Vault Dimension 4 (Audience Engagement) because emotional calibration directly affects how connected the audience feels, and to Vault Dimension 9 (Speaker Authority / Credibility) because a speaker who reads the room demonstrates emotional intelligence and respect for the audience, which enhances perceived credibility.
+This pattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 9 (Speaker Authority / Credibility).
 
 ## Combinatorics
 Emotional State works synergistically with Know Your Audience (research provides the baseline that emotional reading refines in real time), Seeding Satisfaction (pre-talk conversations are the primary emotional detection mechanism), and Social Media Advertising (online channels reveal community mood). It also informs how aggressively you employ Entertainment (humor in a somber room can backfire) and Breathing Room (a tired audience benefits from more pauses, not fewer).

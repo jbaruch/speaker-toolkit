@@ -48,7 +48,7 @@ This is an antipattern to avoid in every presentation. Always calibrate your voc
 - Absent (0 pts): Dense jargon throughout without definition, audience visibly struggling to follow, vocabulary clearly mismatched to audience level
 
 ## Relationship to Vault Dimensions
-This antipattern maps to Vault Dimension 7 (Clarity / Communication) because jargon directly impairs comprehension, to Vault Dimension 9 (Speaker Authority / Credibility) because while jargon may seem authoritative, audience confusion undermines actual credibility, and to Vault Dimension 14 (Speaker Craft / Professionalism) because vocabulary calibration is a fundamental professional skill.
+This antipattern maps to Vault Dimension 7 (Clarity / Communication). It also maps to Vault Dimension 9 (Speaker Authority / Credibility). It also maps to Vault Dimension 14 (Speaker Craft / Professionalism).
 
 ## Combinatorics
-Tower of Babble is the inverse of Leet Grammars (intentional, audience-appropriate domain language). The primary defense is Know Your Audience (understanding vocabulary expectations), supported by Carnegie Hall rehearsal with non-expert reviewers and Seeding Satisfaction conversations that reveal audience vocabulary level. The Mentor pattern also helps — a mentor mindset naturally drives toward accessible language because the goal is the audience's understanding, not the speaker's impression.
+Tower of Babble is the inverse of Leet Grammars (intentional, audience-appropriate domain language). The primary defense is Know Your Audience (understanding vocabulary expectations), supported by Carnegie Hall rehearsal with non-expert reviewers and Seeding Satisfaction conversations that reveal audience vocabulary level. The Mentor pattern also helps — a mentor mindset naturally drives toward accessible language.
