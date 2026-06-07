@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.18.16 — 2026-06-06
+
+### fix(shownotes-publisher) — use talk.slug as the filename, drop the date prefix
+
+`talk.slug` from `outline.yaml` is now the single source of truth for the
+`_talks/` filename and live URL: the filename is always `{talk_slug}.md`, never
+`{YYYY-MM-DD}-{talk_slug}.md`. The old `delivery_date`-conditional branch
+overrode the speaker's chosen slug with a date-prefixed name, so the published
+URL diverged from the slides + QR (which point at the bare slug) — it had to be
+renamed by hand and the Bitly QR repointed. The `{filename_stem}` indirection in
+Steps 1/2/6/7/8/9 collapses to `{talk_slug}`; the never-rename-a-published-file
+guard now covers legacy date-prefixed files. Fixes #66.
+
 ## 0.18.15 — 2026-06-07
 
 ### feat(presentation-creator) — whole-deck creation via real PowerPoint (#57 Phase D)

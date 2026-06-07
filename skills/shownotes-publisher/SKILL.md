@@ -75,9 +75,8 @@ Parse the JSON, never re-parse YAML by hand. Map fields directly:
 - `resources.json` (produced by `extract-resources.py` in Phase 6
   Step 6.0) — becomes the `## Resources` section. If the file is
   missing OR has no `approved: true` items, omit the section
-- Any existing `_talks/{filename_stem}.md` — if this is an update
-  (not a first publish), read it first so Step 7 preserves hand-edits.
-  `{filename_stem}` is defined in Step 2
+- Any existing `_talks/{talk_slug}.md` — if this is an update
+  (not a first publish), read it first so Step 7 preserves hand-edits
 
 **Ask the user EXACTLY one question — the slides PDF embed URL**
 (Google Drive `https://drive.google.com/file/d/.../preview` form).
@@ -94,9 +93,9 @@ Ask follow-ups ONLY on ambiguity:
 - `talk.thesis` empty → ask the speaker for a one-paragraph
   abstract (Step 4 rules apply)
 - `talk.delivery_date` missing → confirm whether the talk has
-  happened (pre-talk publish is fine; Step 2 picks the filename
-  convention by the field's presence)
-- Existing `_talks/{filename_stem}.md` exists AND speaker didn't
+  happened (pre-talk publish is fine; the date only feeds the body's
+  `**Date:**` line in Step 4, not the filename)
+- Existing `_talks/{talk_slug}.md` exists AND speaker didn't
   flag this as an update → ask before overwriting (Step 7)
 
 Proceed immediately to Step 2.
@@ -108,32 +107,19 @@ is the only source. Already kebab-case validated by `outline_schema.py`.
 Never invent it, never derive it from the venue or title, never
 rephrase.
 
-Filename convention in `_talks/`, picked by rule:
+The filename in `_talks/` is always `{talk_slug}.md` (e.g.,
+`geecon-2026-absolutely-right.md`). No date prefix — `talk.slug` is
+the single source of truth for both the filename and the live URL,
+and already carries any year qualifier the speaker chose. A date in
+the URL belongs *in* the slug, never bolted on by the publisher. The
+slug drives the thumbnail path and live URL in Steps 6, 8, and 9.
 
-- If `talk.delivery_date` is set → `{YYYY-MM-DD}-{talk_slug}.md`
-  (e.g., `2026-05-07-devoxx-uk-2026-300-tokens.md`)
-- If `talk.delivery_date` is not set (pre-talk publish) →
-  `{talk_slug}.md` (e.g., `geecon-2026-absolutely-right.md`)
+Full path: `~/Projects/shownotes/_talks/{talk_slug}.md`.
 
-Don't ask the user which convention to use. The presence of
-`delivery_date` is the signal.
-
-The chosen filename's stem (everything before `.md`) is the
-`{filename_stem}` used by Steps 6, 8, and 9 for the thumbnail path
-and the live URL. Examples:
-
-| `talk_slug` | `delivery_date` | filename | `filename_stem` |
-|---|---|---|---|
-| `devoxx-uk-2026-300-tokens` | `2026-05-07` | `2026-05-07-devoxx-uk-2026-300-tokens.md` | `2026-05-07-devoxx-uk-2026-300-tokens` |
-| `geecon-2026-absolutely-right` | (absent) | `geecon-2026-absolutely-right.md` | `geecon-2026-absolutely-right` |
-
-If an existing file at the conventional path was created in the
-OTHER convention (e.g., the file is `{talk_slug}.md` but
-`talk.delivery_date` is now set), keep the existing filename
-unchanged. Renaming a published talk breaks the live URL and any
-QR codes printed against it.
-
-Full path: `~/Projects/shownotes/_talks/{filename_stem}.md`.
+If a file already exists at a DIFFERENT path (e.g., a legacy
+`{YYYY-MM-DD}-{talk_slug}.md` from the old date-prefix convention),
+keep that existing filename unchanged. Renaming a published talk
+breaks the live URL and any QR codes printed against it.
 
 Proceed immediately to Step 3.
 
@@ -231,7 +217,7 @@ line; add it when the real URL lands.
 
 **Updating a published file when the URL lands:**
 
-1. Open the existing `_talks/{filename_stem}.md` (read-then-edit
+1. Open the existing `_talks/{talk_slug}.md` (read-then-edit
    per Step 7's preservation rule)
 2. Add the `**Slides:**` or `**Video:**` line in real markdown-link
    form, placed inside the field block (between `**Date:**` and the
@@ -249,19 +235,15 @@ Proceed immediately to Step 6.
 
 ## Step 6 — Thumbnail
 
-Thumbnails are resolved by **filename-stem naming convention** —
-the site's templates compute the path from the `.md` filename:
+Thumbnails are resolved by **slug naming convention** — the site's
+templates compute the path from the `.md` filename:
 
 ```
-/assets/images/thumbnails/{filename_stem}-thumbnail.png
+/assets/images/thumbnails/{talk_slug}-thumbnail.png
 ```
 
-(`{filename_stem}` as defined in Step 2.) Examples:
-
-| Talk file | Expected thumbnail file |
-|-----------|-------------------------|
-| `2026-05-07-devoxx-uk-2026-300-tokens.md` | `assets/images/thumbnails/2026-05-07-devoxx-uk-2026-300-tokens-thumbnail.png` |
-| `geecon-2026-absolutely-right.md` | `assets/images/thumbnails/geecon-2026-absolutely-right-thumbnail.png` |
+Example: `geecon-2026-absolutely-right.md` →
+`assets/images/thumbnails/geecon-2026-absolutely-right-thumbnail.png`.
 
 Drop the thumbnail file (4:3 PNG; the site resizes to 400×300) at
 that path. Do NOT set `thumbnail_url:` in frontmatter — it's
@@ -275,7 +257,7 @@ path.
 
 **Decide explicitly — do not skip this step.** Check whether the
 convention-path file already exists in the shownotes repo
-(`assets/images/thumbnails/{filename_stem}-thumbnail.png`):
+(`assets/images/thumbnails/{talk_slug}-thumbnail.png`):
 
 - **Exists** → done; the page uses it.
 - **Absent, and a source image is available** (the talk's slides
@@ -296,7 +278,7 @@ explicitly recording the deferral. Then proceed to Step 7.
 ## Step 7 — Write the File
 
 Compose the full file content per Steps 3 + 4 + 5 + 6 and write it
-to `~/Projects/shownotes/_talks/{filename_stem}.md`.
+to `~/Projects/shownotes/_talks/{talk_slug}.md`.
 
 If a file at that path already exists, this is an UPDATE — typically
 the video-add case from Step 5, or a resource refresh. In the update
@@ -333,7 +315,7 @@ Only after the build is green, open the rendered page locally:
 
 ```bash
 bundle exec jekyll serve --port 4000 2>&1 &
-open "http://localhost:4000/talks/{filename_stem}/"
+open "http://localhost:4000/talks/{talk_slug}/"
 ```
 
 Visually confirm: title, conference + date + correct video badge
@@ -354,15 +336,15 @@ preconditions).
 
 ```bash
 cd ~/Projects/shownotes
-git checkout -b shownotes/{filename_stem}
-git add _talks/{filename_stem}.md [assets/images/thumbnails/{filename_stem}-thumbnail.png]
+git checkout -b shownotes/{talk_slug}
+git add _talks/{talk_slug}.md [assets/images/thumbnails/{talk_slug}-thumbnail.png]
 git commit -m "Add shownotes: {Talk Title} at {Conference}"
-git push -u origin shownotes/{filename_stem}
+git push -u origin shownotes/{talk_slug}
 gh pr create --fill
 gh pr checks --watch --fail-fast
 # After merge, watch the Pages deployment and confirm 200:
 gh run watch --exit-status $(gh run list --workflow=pages-build-deployment --branch=main --limit=1 --json databaseId --jq '.[0].databaseId')
-curl -fsI "{site.url}/talks/{filename_stem}/" | head -1   # expect: HTTP/2 200
+curl -fsI "{site.url}/talks/{talk_slug}/" | head -1   # expect: HTTP/2 200
 ```
 
 **Direct-push (carve-out wired AND changes touch only carve-out
@@ -370,11 +352,11 @@ paths):**
 
 ```bash
 cd ~/Projects/shownotes
-git add _talks/{filename_stem}.md [assets/images/thumbnails/{filename_stem}-thumbnail.png]
+git add _talks/{talk_slug}.md [assets/images/thumbnails/{talk_slug}-thumbnail.png]
 git commit -m "Add shownotes: {Talk Title} at {Conference}"
 git push
 gh run watch --exit-status $(gh run list --workflow=pages-build-deployment --branch=main --limit=1 --json databaseId --jq '.[0].databaseId')
-curl -fsI "{site.url}/talks/{filename_stem}/" | head -1   # expect: HTTP/2 200
+curl -fsI "{site.url}/talks/{talk_slug}/" | head -1   # expect: HTTP/2 200
 ```
 
 The carve-out bypasses the PR cycle but NOT the CI/deploy watch —
