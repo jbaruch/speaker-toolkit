@@ -35,7 +35,7 @@ The pattern composes naturally with `mentor` (when the speaker pulls up a stool 
 ## When to Use / When to Avoid
 Use this pattern at section boundaries, during personal stories, at audience-question moments, before punchlines, and any time the slide behind you is not actively reinforcing what you are saying. Build planned blackouts into the deck during the prepare phase; rehearse the B key for unplanned ones during `carnegie-hall`.
 
-Avoid blackouts during demo-driven sections where the screen *is* the content (`live-demo`, `lipsync`). Avoid mechanical blackouts at fixed intervals — the technique works because it is deliberate; randomizing it makes it feel like a mistake. Also avoid blackouts in webinar contexts where the screen is the primary channel and there is no physical speaker for the audience to redirect attention to — in webinars, blanking the screen leaves the audience with nothing.
+Avoid blackouts during demo-driven sections where the screen *is* the content (`live-demo`, `lipsync`). Avoid mechanical blackouts at fixed intervals. Randomizing it makes it feel like a mistake. Also avoid blackouts in webinar contexts where the screen is the primary channel and there is no physical speaker for the audience to redirect attention to. In webinars, blanking the screen leaves the audience with nothing.
 
 ## Detection Heuristics
 The vault should look for: (a) explicit black or blank slides in the deck file, especially between major sections or before known personal-story moments; (b) video evidence of the speaker holding the room while the screen behind them is dark; (c) the B-key behavior on platforms where remote keystrokes are observable. The clearest signal is a deck with intentional black slides at section boundaries — this is unmistakably deliberate, not a missing-slide bug.
@@ -46,7 +46,7 @@ The vault should look for: (a) explicit black or blank slides in the deck file, 
 - Absent (0 pts): Every moment of the talk has a slide behind the speaker; no blackouts, no rests; the screen is on continuously regardless of whether it is relevant
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 12 (Pacing Clues) because deliberate blackouts function as pacing rests, equivalent to verbal pauses. Relates to Dimension 13 (Slide Design Patterns) because building black slides into the deck is a visible design choice — the deliberately empty slide is a slide-design decision.
+Relates to Dimension 12 (Pacing Clues). Relates to Dimension 13 (Slide Design Patterns).
 
 ## Combinatorics
 Pairs with `breathing-room` (the verbal and visual silences reinforce each other), `intermezzi` (a blackout is the minimalist intermezzo — same structural function with no decoration), `brain-breaks` (a blackout can punctuate a brain break), and `mentor` (the stool-and-conversation moment works best with the screen out of the way). It is independent from but compatible with `cave-painting` and `vacation-photos` — the styles those patterns produce alternate naturally with blackout rests.

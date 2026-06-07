@@ -46,7 +46,7 @@ Use entertainment elements in every presentation, calibrated to the audience and
 - Absent (0 pts): Presentation is purely informational with no entertainment elements, or entertainment overwhelms substance
 
 ## Relationship to Vault Dimensions
-This pattern maps to Vault Dimension 3 (Engagement / Entertainment Value) directly, and to Vault Dimension 10 (Memorability) because humorous moments, vivid stories, and apt analogies are the elements audiences remember long after the specific technical details fade.
+This pattern maps to Vault Dimension 3 (Engagement / Entertainment Value) directly, and to Vault Dimension 10 (Memorability).
 
 ## Combinatorics
 Entertainment works with Know Your Audience (understanding what this audience finds funny and relatable), Brain Breaks (entertainment naturally creates cognitive rest), and Make It Rain (physical props add entertainment value). It is the inverse of the Alienating Artifact antipattern, where entertainment choices exclude or offend. The Mentor pattern provides a useful frame for entertainment — humor and stories that serve the audience's learning journey rather than the speaker's ego.

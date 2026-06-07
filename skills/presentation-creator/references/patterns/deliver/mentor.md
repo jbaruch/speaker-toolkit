@@ -60,7 +60,7 @@ Use this pattern in every presentation, though the degree of mentor orientation 
 - Absent (0 pts): Speaker is clearly the hero of the narrative, talk focused on personal achievements with audience as passive admirers
 
 ## Relationship to Vault Dimensions
-This pattern maps to Vault Dimension 9 (Speaker Authority / Credibility) because paradoxically, the mentor stance enhances credibility — audiences trust speakers who demonstrate knowledge through service rather than self-promotion. It also maps to Vault Dimension 11 (Teaching Effectiveness) because the mentor frame directly improves knowledge transfer by orienting content around the learner's journey.
+This pattern maps to Vault Dimension 9 (Speaker Authority / Credibility). It also maps to Vault Dimension 11 (Teaching Effectiveness).
 
 ## Combinatorics
 Mentor works hand-in-hand with Narrative Arc (the hero's journey structure supports mentor framing), Display of High Value (confident authority in service of the audience), and Know Your Audience (understanding the hero means understanding who they are). It can tension productively with Entertainment — humor works differently from the mentor position than from the hero position — and with Greek Chorus, where supporting characters reinforce the mentor's guidance.

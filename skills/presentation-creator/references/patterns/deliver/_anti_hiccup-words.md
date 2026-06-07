@@ -46,7 +46,7 @@ This is an antipattern to recognize and mitigate, not a pattern to apply. Every 
 - Absent (0 pts): Frequent filler words throughout delivery, noticeably undermining credibility and distracting from content
 
 ## Relationship to Vault Dimensions
-This antipattern maps to Vault Dimension 7 (Clarity / Communication) because filler words literally obscure the message, and to Vault Dimension 14 (Speaker Craft / Professionalism) because filler word management is a fundamental professional speaking skill.
+This antipattern maps to Vault Dimension 7 (Clarity / Communication) and to Vault Dimension 14 (Speaker Craft / Professionalism).
 
 ## Combinatorics
 Hiccup Words is the direct inverse of the Breathing Room pattern — strategic silence replaces nervous filler. Carnegie Hall rehearsal with recording is the primary mitigation tool. The Display of High Value pattern is undermined by excessive fillers — a speaker who says "um" constantly cannot project confident authority. The Shoeless pattern may indirectly help by reducing overall anxiety, which reduces filler frequency.

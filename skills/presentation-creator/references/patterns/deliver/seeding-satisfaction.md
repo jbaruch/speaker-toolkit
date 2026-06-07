@@ -47,7 +47,7 @@ Use this pattern at every opportunity. It is especially valuable at conferences 
 - Absent (0 pts): Speaker arrives cold with no pre-talk audience interaction
 
 ## Relationship to Vault Dimensions
-This pattern maps to Vault Dimension 4 (Audience Engagement). Seeding Satisfaction operates on the engagement dimension by building rapport before the formal presentation begins, creating a foundation of goodwill that amplifies every other engagement technique used during the talk.
+This pattern maps to Vault Dimension 4 (Audience Engagement). Seeding Satisfaction operates on the engagement dimension by building rapport before the formal presentation begins.
 
 ## Combinatorics
 Seeding Satisfaction pairs naturally with Know Your Audience (pre-talk conversations validate research), Posse (supporters can help seed conversations), and Emotional State (mingling reveals audience mood). It also supports Seeding the First Question by identifying individuals who might be willing to ask the opening question during Q&A.

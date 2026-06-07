@@ -46,7 +46,7 @@ This is an antipattern to avoid in every presentation. There are no scenarios wh
 - Absent (0 pts): Multiple instances of going meta — speaker repeatedly comments on preparation, equipment, timing, or other behind-the-scenes concerns
 
 ## Relationship to Vault Dimensions
-This antipattern maps to Vault Dimension 9 (Speaker Authority / Credibility) because every meta-comment erodes the audience's confidence in the speaker, and to Vault Dimension 14 (Speaker Craft / Professionalism) because avoiding meta-commentary is a fundamental professional discipline.
+This antipattern maps to Vault Dimension 9 (Speaker Authority / Credibility) and to Vault Dimension 14 (Speaker Craft / Professionalism).
 
 ## Combinatorics
 Going Meta is the direct inverse of Display of High Value — one builds authority, the other erodes it. Carnegie Hall rehearsal helps prevent it by building familiarity that reduces the anxiety-driven narration impulse. Preparation reduces Going Meta by resolving issues in advance so there is nothing to apologize for. The Breathing Room pattern helps by providing comfortable silence as an alternative to nervous meta-commentary.

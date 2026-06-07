@@ -24,7 +24,7 @@ Actively downplay your own products, employer, or credentials at the moments whe
 ## The Pattern in Detail
 A vendor-affiliated speaker walks into a talk carrying an automatic credibility tax: the audience suspects the talk is a pitch in disguise. Anti-Sell is the deliberate work of paying that tax up front. The speaker mentions their employer or product in a deflated, self-deprecating register — "I work at X, but this isn't a pitch," "we make Y, which is fine, you can look it up later" — and then moves on to the topic. The hedge tells the audience: I know what you were worried about, and I will not be doing that.
 
-The pattern works because the audience's suspicion is a real cognitive load. If they spend the first ten minutes wondering when the pitch will arrive, they are not absorbing the content. Anti-Sell preempts the worry. Once the audience trusts that the talk is not a sales call, they grant the speaker the same attention they would grant a vendor-neutral expert. Paradoxically, this trust makes any later product mention land harder, because the audience now reads it as relevant context rather than agenda.
+If the audience spends the first ten minutes wondering when the pitch will arrive, they are not absorbing the content. Anti-Sell preempts the worry. Once the audience trusts that the talk is not a sales call, they grant the speaker the same attention they would grant a vendor-neutral expert. Paradoxically, this trust makes any later product mention land harder.
 
 A skilled Anti-Sell mention is brief, slightly humorous, and structurally tied to the topic — "I wrote a book about this, which was hard, so I guess it's good, maybe." The speaker concedes the conflict of interest, refuses to lean into it, and moves on. The pattern fails when the deflection is too long (now it sounds like the speaker is fishing for compliments) or too earnest (now it sounds like a different kind of pitch).
 
@@ -40,7 +40,7 @@ Look for moments where the speaker mentions their employer, product, book, or cr
 - Absent (0 pts): straight product or employer pitch with no visible hedge; or full vendor-neutrality with no need for the pattern
 
 ## Relationship to Vault Dimensions
-Dimension 11 (Self-Presentation): Anti-Sell is a direct rhetorical move on how the speaker positions themselves relative to commercial interests. Dimension 6 (Evidence and Persuasion): The pattern is a credibility move — the audience's increased trust amplifies any subsequent argument.
+Dimension 11 (Self-Presentation): how the speaker positions themselves relative to commercial interests. Dimension 6 (Evidence and Persuasion): a credibility move.
 
 ## Combinatorics
 Pairs naturally with Delayed Self-Introduction (the bio comes late, and when it comes it includes the Anti-Sell). The Big Why benefits when Anti-Sell has cleared the suspicion that the "why" is sales-driven. Mentor framing is reinforced — the speaker who refuses to pitch reads as someone there to teach. The pattern is the inverse of Disowning Your Topic, where the speaker sounds embarrassed by their own affiliation; Anti-Sell owns the affiliation while refusing to weaponize it.

@@ -21,7 +21,7 @@ difficulty: intermediate
 Outright hecklers, time sinks, and technical showoffs can wreck a presentation if not handled decisively. Learn to identify the types and have prepared responses for each.
 
 ## The Pattern in Detail
-Most audiences are polite, engaged, and respectful. But every speaker eventually encounters difficult audience members who, through malice or obliviousness, threaten to derail the presentation. The Hecklers antipattern categorizes these disruptors into three types and provides strategies for handling each. The key principle across all three types is the same: deal with them decisively but professionally, because the rest of the audience is watching how you respond, and your handling of the situation defines their perception of you.
+Most audiences are polite, engaged, and respectful. But every speaker eventually encounters difficult audience members who, through malice or obliviousness, threaten to derail the presentation. The Hecklers antipattern categorizes these disruptors into three types and provides strategies for handling each. The key principle across all three types is the same: deal with them decisively but professionally. The rest of the audience is watching how you respond, and your handling of the situation defines their perception of you.
 
 Type one is the outright heckler — the person who interrupts with contradictions, makes sarcastic comments, or directly challenges your authority. This is the rarest type in professional settings but the most dramatic when it occurs. The temptation is to engage in debate, but this is almost always a losing proposition. The heckler is not interested in learning or constructive dialogue; they want to demonstrate their own superiority. Speak confidently, acknowledge their point briefly, and move on. If they persist, offer to continue the discussion during a break. The audience is on your side — they came to hear your talk, not a debate — so leverage that goodwill. A calm, professional response to heckling actually elevates your credibility in the audience's eyes.
 
@@ -48,7 +48,7 @@ This is an antipattern to prepare for rather than a pattern to apply. Have strat
 - Absent (0 pts): Speaker loses control to a disruptive audience member — debate ensues, time is consumed, other audience members disengage
 
 ## Relationship to Vault Dimensions
-This antipattern maps to Vault Dimension 4 (Audience Engagement) because disruptions break the engagement of the broader audience, and to Vault Dimension 14 (Speaker Craft / Professionalism) because handling difficult audience members is a core professional skill that improves with experience.
+This antipattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 14 (Speaker Craft / Professionalism).
 
 ## Combinatorics
 Heckler management is supported by Display of High Value (confident authority deters disruption), Know Your Audience (understanding the audience composition helps anticipate disruption types), and the Echo Chamber pattern (repeating and reframing questions gives you control over hostile exchanges). The Posse pattern provides allies who can help manage disruptors indirectly — a supportive colleague who asks a productive question immediately after a disruption redirects the room's attention.

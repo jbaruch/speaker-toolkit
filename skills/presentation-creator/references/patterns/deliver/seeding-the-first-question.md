@@ -28,7 +28,7 @@ The technique works by making a provocative or incomplete statement early in you
 
 The ploy is usually transparent. Experienced conference-goers will recognize what you are doing. But the remarkable thing is that it works anyway. Even when the audience knows the question was seeded, the social dynamic still shifts once someone speaks up. After one person breaks the ice, others feel permission to ask their own genuine questions. The first question is a social trigger, not an intellectual one.
 
-You can place the seed anywhere in your talk depending on the desired effect. Plant it early for maximum anticipation — the audience sits with the question for most of the talk. Plant it late for immediate payoff — the Q&A starts naturally because the seed is fresh. You can also plant multiple seeds of varying difficulty to appeal to different audience segments. A technical seed attracts the experts; a conceptual seed attracts the curious generalists.
+You can place the seed anywhere in your talk depending on the desired effect. Plant it early for maximum anticipation — the audience sits with the question for most of the talk. Plant it late for immediate payoff — the Q&A starts naturally. You can also plant multiple seeds of varying difficulty to appeal to different audience segments. A technical seed attracts the experts; a conceptual seed attracts the curious generalists.
 
 An alternative to planting a seed in your content is to arrange for a confederate — a colleague or friend — to ask the first question. This is a blunter instrument but effective. The Greek Chorus and Posse patterns support this approach. Just ensure the planted question is genuinely useful, not obviously staged.
 
@@ -47,7 +47,7 @@ Use this pattern whenever your talk has a Q&A segment, especially with audiences
 - Absent (0 pts): No seeding evident, Q&A opens with awkward silence or forced participation
 
 ## Relationship to Vault Dimensions
-This pattern maps to Vault Dimension 4 (Audience Engagement). The entire purpose is to catalyze audience participation during Q&A, transforming a potentially dead segment into an active conversation. Effective seeding signals that the speaker has thought carefully about the audience interaction design, not just the content.
+This pattern maps to Vault Dimension 4 (Audience Engagement). It catalyzes audience participation during Q&A, transforming a potentially dead segment into an active conversation.
 
 ## Combinatorics
 Seeding the First Question works naturally with Posse and Greek Chorus (allies can ask the planted question), Know Your Audience (understanding what the audience will find provocatively incomplete), and Display of High Value (confidently handling the "spontaneous" first question reinforces authority). It also complements Preroll by maintaining engagement momentum from before the talk into the Q&A segment.

@@ -28,7 +28,7 @@ The most common failure mode is the panicked speedup. The speaker tries to deliv
 
 The correct response requires advance preparation. Before you ever arrive at the venue, you should know which sections of your talk are load-bearing and which are expandable. Label your content mentally (or in your speaker notes) as "must deliver," "nice to have," and "expendable." When you are shortchanged, you cut the expendable material entirely and abbreviate the nice-to-have material, preserving the core message and its supporting evidence at full quality. The audience gets a tighter, more focused talk rather than a compressed mess.
 
-Learn your presentation software's keyboard shortcuts for jumping to specific slides. In Keynote, you can type a slide number and press Enter to jump directly. In PowerPoint, similar shortcuts exist. This lets you skip sections cleanly — the audience never sees the slides you skipped, so they do not know they are getting an abbreviated version. Showing skipped slides (by visibly clicking through them) is the worst possible approach because it telegraphs to the audience that they are getting a diminished experience.
+Learn your presentation software's keyboard shortcuts for jumping to specific slides. In Keynote, you can type a slide number and press Enter to jump directly. In PowerPoint, similar shortcuts exist. This lets you skip sections cleanly — the audience never sees the slides you skipped, so they do not know they are getting an abbreviated version. Showing skipped slides (by visibly clicking through them) is the worst possible approach.
 
 The deeper lesson of Shortchanged is that every talk should be designed with modularity in mind. If your talk falls apart when you remove ten minutes, it was too tightly coupled. The Expansion Joints pattern is the proactive counterpart to this antipattern — build your talk with sections that can be cleanly added or removed based on available time.
 
@@ -47,7 +47,7 @@ This is an antipattern to be prepared for, not a pattern to apply. You cannot pr
 - Absent (0 pts): Speaker panics under time pressure — visible rushing, compressed delivery, audience clearly receives a degraded experience
 
 ## Relationship to Vault Dimensions
-This antipattern maps to Vault Dimension 12 (Delivery Mechanics) because the visible symptoms of being shortchanged are pacing and flow disruptions, and to Vault Dimension 14 (Speaker Craft / Professionalism) because handling schedule disruptions gracefully is a hallmark of professional speaker craft.
+This antipattern maps to Vault Dimension 12 (Delivery Mechanics) and to Vault Dimension 14 (Speaker Craft / Professionalism).
 
 ## Combinatorics
-The primary defense against Shortchanged is the Expansion Joints pattern (modular talk design). Preparation supports it by ensuring you know your keyboard shortcuts and have labeled your sections. Carnegie Hall rehearsal should include at least one run of the abbreviated version. The Weatherman pattern helps because a speaker using presenter view can see upcoming slides and make real-time decisions about what to skip.
+The primary defense against Shortchanged is the Expansion Joints pattern (modular talk design). Preparation supports it by ensuring you know your keyboard shortcuts and have labeled your sections. Carnegie Hall rehearsal should include at least one run of the abbreviated version. The Weatherman pattern helps. A speaker using presenter view can see upcoming slides and make real-time decisions about what to skip.

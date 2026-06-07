@@ -47,7 +47,7 @@ Use this pattern whenever you experience presentation anxiety, which for most sp
 - Absent (0 pts): Speaker appears physically uncomfortable, rigid, or visibly anxious throughout
 
 ## Relationship to Vault Dimensions
-This pattern maps to Vault Dimension 14 (Speaker Craft / Professionalism). While it might seem like a personal quirk rather than a professional skill, managing your physical state is a core aspect of speaker craft. A speaker who has learned to regulate their anxiety delivers more effectively, projects more authority, and creates a better experience for the audience.
+This pattern maps to Vault Dimension 14 (Speaker Craft / Professionalism). Managing your physical state is a core aspect of speaker craft.
 
 ## Combinatorics
-Shoeless complements Breathing Room (physical calm supports strategic pauses), Carnegie Hall (rehearsal can include comfort rituals to build association), and Preparation (comfort items are part of what you pack). It indirectly supports Display of High Value — a calm speaker projects more authority than a visibly nervous one. Crucible benefits as well, since post-talk reflection can identify which comfort rituals worked best.
+Shoeless complements Breathing Room (physical calm supports strategic pauses), Carnegie Hall (rehearsal can include comfort rituals to build association), and Preparation (comfort items are part of what you pack). It indirectly supports Display of High Value — a calm speaker projects more authority than a visibly nervous one. Crucible benefits as well. Post-talk reflection can identify which comfort rituals worked best.
