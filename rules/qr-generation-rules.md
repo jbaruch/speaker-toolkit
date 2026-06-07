@@ -16,9 +16,10 @@ python3 generate-qr.py --png-only --talk-slug SLUG --shownotes-url URL \
 
 ## 2. NEVER Use a Random Shortener Hash
 
-The custom back-half MUST be the talk slug. The script does this automatically:
-`--talk-slug devnexus26-robocoders` creates `bit.ly/devnexus26-robocoders`
-(not `bit.ly/a3xK9f`).
+The short link's back-half MUST ALWAYS be the talk slug — the bit.ly custom
+back-half AND the rebrand.ly slashtag, with no override. The script does this
+automatically: `--talk-slug devnexus26-robocoders` creates
+`bit.ly/devnexus26-robocoders` (not `bit.ly/a3xK9f`).
 
 Random hashes are untraceable and unprofessional. The back-half IS the slug.
 
@@ -59,3 +60,12 @@ the user to create it. Do not silently degrade to a raw URL.
 
 The script prints actionable creation commands — but the agent must treat a
 missing token as a blocker, not a fallback trigger.
+
+## 7. Replace Existing QRs In Place
+
+A deck adapted (trimmed) from another talk carries that talk's QR images. The QR
+step detects every existing QR — the closing slide AND any earlier shownotes
+slide — and replaces it in place at the same position and size, never adding a
+second QR beside it. Slide targeting lives in `generate-qr.py` and the in-place
+replacement in the `InsertQR` macro (`RunDeckOps.bas`); the QR-detection
+heuristic is named there.

@@ -529,11 +529,16 @@ Public Function InsertQR(ByVal basePath As String, _
     curTok = "open:base"
     Set base = Presentations.Open(FileName:=basePath, WithWindow:=msoTrue)
 
-    ' QR geometry mirrors generate-qr.py: 2.0in square, 0.3in margin, ~0.1in
-    ' position/size tolerance for detecting an existing QR to replace (points).
-    Const QR_SIDE As Single = 144
-    Const QR_MARGIN As Single = 21.6
-    Const TOL As Single = 7.2
+    ' QR geometry mirrors generate-qr.py. NEW placements go bottom-right at 2.0in
+    ' with a 0.3in margin. An EXISTING QR is detected by shape — a square picture
+    ' (width within SQUARE_TOL of height) whose side is in the 1.5-2.5in band, at
+    ' ANY position — and replaced in place (a deck adapted from another talk
+    ' carries inherited QRs at varying spots). Points.
+    Const QR_SIDE As Single = 144      ' 2.0in (new placement)
+    Const QR_MARGIN As Single = 21.6   ' 0.3in
+    Const QR_MIN As Single = 108       ' 1.5in (detection band low)
+    Const QR_MAX As Single = 180       ' 2.5in (detection band high)
+    Const SQUARE_TOL As Single = 7.2   ' 0.1in
     Dim sw As Single, sh As Single
     sw = base.PageSetup.SlideWidth
     sh = base.PageSetup.SlideHeight
@@ -552,19 +557,32 @@ Public Function InsertQR(ByVal basePath As String, _
                 "QR slide " & num & " out of range (deck has " & base.Slides.Count & ")"
             Dim s As Slide
             Set s = base.Slides(num)
-            ' remove an existing QR-sized picture in the bottom-right corner
+            ' find + remove EVERY QR-like picture, remembering the (lowest-index)
+            ' one's geometry so the replacement lands exactly where it sat — and
+            ' any accidental duplicate QR on the slide is cleaned up
             Dim i As Long, shp As Shape
+            Dim hasOld As Boolean, oldL As Single, oldT As Single, oldW As Single, oldH As Single
+            hasOld = False
             For i = s.Shapes.Count To 1 Step -1
                 Set shp = s.Shapes(i)
                 If shp.Type = msoPicture Then
-                    If Abs(shp.Left - qrLeft) < TOL And Abs(shp.Top - qrTop) < TOL _
-                       And Abs(shp.Width - QR_SIDE) < TOL Then
+                    If shp.Width >= QR_MIN And shp.Width <= QR_MAX _
+                       And Abs(shp.Width - shp.Height) < SQUARE_TOL Then
+                        oldL = shp.Left: oldT = shp.Top: oldW = shp.Width: oldH = shp.Height
                         shp.Delete
+                        hasOld = True
                     End If
                 End If
             Next i
-            s.Shapes.AddPicture FileName:=pngPath, LinkToFile:=msoFalse, _
-                SaveWithDocument:=msoTrue, Left:=qrLeft, Top:=qrTop, Width:=QR_SIDE, Height:=QR_SIDE
+            If hasOld Then
+                ' replace in place at the existing QR's position/size
+                s.Shapes.AddPicture FileName:=pngPath, LinkToFile:=msoFalse, _
+                    SaveWithDocument:=msoTrue, Left:=oldL, Top:=oldT, Width:=oldW, Height:=oldH
+            Else
+                ' new placement, bottom-right corner
+                s.Shapes.AddPicture FileName:=pngPath, LinkToFile:=msoFalse, _
+                    SaveWithDocument:=msoTrue, Left:=qrLeft, Top:=qrTop, Width:=QR_SIDE, Height:=QR_SIDE
+            End If
             placed = placed + 1
         End If
     Next k

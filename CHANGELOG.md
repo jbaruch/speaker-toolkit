@@ -21,6 +21,29 @@ at the point the argument was actually being shaped.
   before Phase 3. The plain (full-validation) extractor path is unchanged from
   Phase 3 onward.
 
+### fix(qr-generation) — replace inherited QRs in place; back-half always the slug (#56)
+
+On a deck adapted (trimmed) from another talk, the QR step added a second QR
+instead of replacing the inherited one, and only targeted the configured slide —
+leaving stale QRs on earlier slides (e.g. an early shownotes slide). Now every
+QR-bearing slide is detected and its QR replaced in place.
+
+- `generate-qr.py`: `slide_has_existing_qr` detects a QR-like picture (square, in
+  the QR size band) anywhere on a slide; `resolve_target_slide_indices` targets
+  every such slide in addition to the configured placement.
+- `RunDeckOps.bas` `InsertQR`: detects an existing QR-like picture at any position
+  and replaces it in place (same position/size), cleaning up an accidental
+  duplicate; new placements still go bottom-right.
+- The shortener back-half is now ALWAYS the talk slug — bit.ly custom back-half
+  and rebrand.ly slashtag — dropping the `preferred_short_path` override (removed
+  from the profile schema). Documented in `rules/qr-generation-rules.md`.
+- Bug 2 (fetch colored QRs from Bitly to drop the local `qrcode` dep) is
+  won't-fix: the dependency can't be dropped (rebrandly / `none` / `--png-only`
+  paths render locally), and the one-call QR-codes endpoint abandons the managed
+  bitlink model (custom domain, PATCH-able target, tracking).
+- macOS + PowerPoint only for the `InsertQR` change; untestable in Linux CI by
+  design. The QR-detection, slide-targeting, and back-half logic IS unit-tested.
+
 ### fix(qr-generation) — compose date-less talk slugs (QR + Phase 1) (#55)
 
 Completes the date-less-slug convention. #66 made the publisher consume

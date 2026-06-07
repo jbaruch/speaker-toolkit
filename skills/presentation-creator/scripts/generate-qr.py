@@ -54,6 +54,8 @@ except ImportError:
     sys.exit(1)
 
 from pptx import Presentation  # read-only: background-color match + slide-finding
+from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.util import Inches
 
 # --- Constants ---
 
@@ -64,6 +66,13 @@ QR_ERROR_CORRECTION = ERROR_CORRECT_M
 # QR placement: bottom-right, 2 inches wide, 0.3 inch margin from edges
 QR_WIDTH_INCHES = 2.0
 QR_MARGIN_INCHES = 0.3
+
+# Existing-QR detection: a roughly-square picture whose side sits in this band is
+# treated as a QR to replace. Decks adapted (trimmed) from another talk carry
+# inherited QRs at varying positions; this finds them regardless of placement.
+QR_DETECT_MIN_INCHES = 1.5
+QR_DETECT_MAX_INCHES = 2.5
+QR_SQUARE_TOL_INCHES = 0.1
 
 
 # --- Vault / Config Loading ---
@@ -305,9 +314,10 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
             "shortener_link_id": None,
         }
 
-    # Use talk slug as custom back-half by default (the decoupling layer).
-    # Profile's preferred_short_path overrides if explicitly set.
-    custom_back_half = config.get("preferred_short_path") or talk_slug
+    # The custom back-half (bit.ly) / slashtag (rebrand.ly) is ALWAYS the talk
+    # slug — no override (see rules/qr-generation-rules.md). It is the decoupling
+    # layer and the human-readable, traceable short path.
+    custom_back_half = talk_slug
 
     try:
         if shortener == "bitly":
@@ -480,6 +490,29 @@ def find_shownotes_slide(prs, shownotes_url):
     return None
 
 
+def slide_has_existing_qr(slide):
+    """True if the slide carries a QR-like picture: a roughly-square picture
+    whose side sits in the QR size band.
+
+    Decks adapted (trimmed) from another talk inherit that talk's QR images at
+    whatever positions they had. Detecting them by shape — independent of the
+    configured placement — lets every QR-bearing slide be targeted for
+    replacement, instead of only the config-positioned slide.
+    """
+    lo = Inches(QR_DETECT_MIN_INCHES)
+    hi = Inches(QR_DETECT_MAX_INCHES)
+    sq_tol = Inches(QR_SQUARE_TOL_INCHES)
+    for shape in slide.shapes:
+        if shape.shape_type != MSO_SHAPE_TYPE.PICTURE:
+            continue
+        w, h = shape.width, shape.height
+        if w is None or h is None:
+            continue
+        if lo <= w <= hi and abs(w - h) < sq_tol:
+            return True
+    return False
+
+
 def resolve_target_slide_indices(prs, config, shownotes_url):
     """Determine which slides should receive the QR code.
 
@@ -511,6 +544,13 @@ def resolve_target_slide_indices(prs, config, shownotes_url):
         if closing_idx not in indices:
             indices.append(closing_idx)
 
+    # Always target every slide that already carries a QR — a deck adapted from
+    # another talk inherits stale QRs (e.g. an early shownotes slide + closing)
+    # that must be replaced in place, not left beside a freshly-added one.
+    for idx, slide in enumerate(prs.slides):
+        if idx not in indices and slide_has_existing_qr(slide):
+            indices.append(idx)
+
     if not indices:
         # Default: last slide
         indices.append(slide_count - 1)
@@ -524,9 +564,10 @@ def insert_qr_via_powerpoint(deck_path, jobs, scripts_dir):
     """Insert the QR PNG(s) into the deck via the real PowerPoint app.
 
     Replaces the old python-pptx write (`insert-qr.sh` → InsertQR VBA macro), so
-    PowerPoint serializes a valid .pptx (see rules/deck-editing-rules.md). The
-    macro removes any existing corner QR before inserting (idempotent re-runs).
-    macOS + Microsoft PowerPoint only.
+    PowerPoint serializes a valid .pptx (see rules/deck-editing-rules.md). On each
+    target slide the macro detects any existing QR-like picture (square, in the QR
+    size band, at any position) and replaces it in place; otherwise it places a new
+    QR bottom-right (idempotent re-runs). macOS + Microsoft PowerPoint only.
 
     jobs: list of (png_path, [1-based slide numbers]) — one per QR color variant.
     Each variant is a separate InsertQR pass; the deck is threaded through

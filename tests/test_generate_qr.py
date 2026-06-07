@@ -3,9 +3,18 @@
 import os
 import json
 
+from PIL import Image
 from pptx import Presentation
+from pptx.util import Inches
 
 from conftest import make_deck
+
+
+def _square_png(tmp_path, name="sq.png"):
+    """Build a tiny PNG on disk (no binary fixture committed)."""
+    path = str(tmp_path / name)
+    Image.new("RGB", (50, 50), (0, 0, 0)).save(path)
+    return path
 
 
 def test_choose_fg_color_dark_bg(generate_qr):
@@ -99,6 +108,57 @@ def test_resolve_slide_bg_rgb_none_for_plain_deck(generate_qr, tmp_path):
     result = generate_qr.resolve_slide_bg_rgb(prs2.slides[0])
     # May be None or a default — both are acceptable
     assert result is None or isinstance(result, tuple)
+
+
+def test_slide_has_existing_qr_detects_square_qr_sized_picture(generate_qr, tmp_path):
+    prs = make_deck(1)
+    prs.slides[0].shapes.add_picture(_square_png(tmp_path), Inches(8), Inches(5), Inches(2.0), Inches(2.0))
+    assert generate_qr.slide_has_existing_qr(prs.slides[0]) is True
+
+
+def test_slide_has_existing_qr_ignores_non_square_picture(generate_qr, tmp_path):
+    prs = make_deck(1)
+    prs.slides[0].shapes.add_picture(_square_png(tmp_path), Inches(1), Inches(1), Inches(6.0), Inches(2.0))
+    assert generate_qr.slide_has_existing_qr(prs.slides[0]) is False
+
+
+def test_slide_has_existing_qr_ignores_out_of_band_square(generate_qr, tmp_path):
+    # Square, but 4in is outside the QR size band → not a QR.
+    prs = make_deck(1)
+    prs.slides[0].shapes.add_picture(_square_png(tmp_path), Inches(1), Inches(1), Inches(4.0), Inches(4.0))
+    assert generate_qr.slide_has_existing_qr(prs.slides[0]) is False
+
+
+def test_slide_has_existing_qr_false_for_plain_slide(generate_qr):
+    prs = make_deck(1)
+    assert generate_qr.slide_has_existing_qr(prs.slides[0]) is False
+
+
+def test_resolve_target_includes_inherited_qr_slides(generate_qr, tmp_path):
+    """A deck adapted from another talk: config targets only the closing slide,
+    but an earlier slide carries an inherited QR — it must also be targeted."""
+    prs = make_deck(4)
+    prs.slides[1].shapes.add_picture(_square_png(tmp_path), Inches(8), Inches(5), Inches(2.0), Inches(2.0))
+    indices = generate_qr.resolve_target_slide_indices(prs, {"slide_position": "closing"}, "https://example.com/notes")
+    assert 1 in indices   # inherited-QR slide
+    assert 3 in indices   # closing slide
+
+
+def test_back_half_is_always_slug_ignoring_preferred_short_path(generate_qr, monkeypatch):
+    """The back-half is ALWAYS the talk slug — a legacy preferred_short_path is ignored."""
+    captured = {}
+
+    def fake_create_bitly_link(long_url, api_token, custom_back_half=None, domain=None):
+        captured["back_half"] = custom_back_half
+        return {"short_url": "https://jbaru.ch/my-slug", "link_id": "id", "short_path": custom_back_half}
+
+    monkeypatch.setattr(generate_qr, "create_bitly_link", fake_create_bitly_link)
+    config = {"shortener": "bitly", "preferred_short_path": "legacy-override", "bitly_domain": "jbaru.ch"}
+    secrets = {"bitly": {"api_token": "tok"}}
+    generate_qr.resolve_short_url(
+        "https://jbaru.ch/my-slug", "my-slug", config, secrets, {}, dry_run=False, vault_path=None
+    )
+    assert captured["back_half"] == "my-slug"
 
 
 def test_insert_qr_via_powerpoint_orchestration(generate_qr, monkeypatch):

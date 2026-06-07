@@ -316,8 +316,7 @@ creation at runtime.
       "slide_position": "shownotes_slide|closing|both",
       "shortener": "bitly|rebrandly|none",
       "rebrandly_domain": "jbaru.ch | null",
-      "bg_color_match": true,
-      "preferred_short_path": "arcofai | null"
+      "bg_color_match": true
     },
     "thumbnail": {
       "enabled": true,
