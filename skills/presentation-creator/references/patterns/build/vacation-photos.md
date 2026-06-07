@@ -42,9 +42,9 @@ Vacation Photos works for stories and concepts, but talks frequently need to com
 
 - **Context.** Explain *why* the chart bumps and trends look the way they do. A line chart with "revenue 2010-2020" is data; a line chart with annotated callouts at the bumps ("market crash", "we shipped product X", "competitor entered") is narrative. The audience reads the same data but receives meaning rather than coordinates. The Vacation Photos compatible version: a single full-bleed chart with hand-annotated story beats overlaid as if marked up by the speaker live.
 
-The general rule: numbers without narrative are lost in the room within thirty seconds. Numbers with Scale, Compare, or Context anchoring are remembered because the audience now has a *story-shaped* container to hold them in. When designing data slides, ask which of the three techniques fits best — and treat the technique as a constraint rather than an afterthought.
+The general rule: numbers without narrative are lost in the room within thirty seconds. Numbers with Scale, Compare, or Context anchoring are remembered. When designing data slides, ask which of the three techniques fits best — and treat the technique as a constraint rather than an afterthought.
 
-This composes with the parent Vacation Photos pattern because the same one-image-one-beat slide cadence works for numerical-narrative slides; the difference is that the image is chosen for its *anchoring* function (representing the familiar magnitude) rather than for general aesthetic backdrop.
+This composes with the parent Vacation Photos pattern. The same one-image-one-beat slide cadence works for numerical-narrative slides. The difference is that the image is chosen for its *anchoring* function (representing the familiar magnitude) rather than for general aesthetic backdrop.
 
 ## When to Use / When to Avoid
 Use Vacation Photos when your content is narrative-driven, emotionally charged, or conceptual rather than data-heavy. Keynotes, inspirational talks, and story-based presentations are ideal candidates. The pattern also works well for introductory sections of technical talks, setting the emotional stage before diving into code or data.
@@ -63,7 +63,7 @@ When scoring talks, look for slides where images fill the entire slide canvas wi
 Dimension 8 (Slide Design): Vacation Photos represents a deliberate architectural choice about how slides function — as emotional/visual backdrops rather than information carriers. Dimension 13 (Visual Polish and Craft): The quality and curation of images directly reflects the presenter's investment in visual craft.
 
 ## Combinatorics
-Vacation Photos pairs powerfully with Unifying Visual Theme, where a consistent photographic style or subject matter creates visual coherence across the deck. It works well with Narrative Arc because image-driven slides naturally support storytelling flow. The Coda pattern is an essential companion, providing a place for the detailed references and text that Vacation Photos deliberately excludes from the spoken portion.
+Vacation Photos pairs powerfully with Unifying Visual Theme, where a consistent photographic style or subject matter creates visual coherence across the deck. It works well with Narrative Arc. The Coda pattern is an essential companion, providing a place for the detailed references and text that Vacation Photos deliberately excludes from the spoken portion.
 
 ## Related Reading
 - Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 6, 7 — full-bleed images as the dynamic, asymmetric foundation of slide design; "Going Visual" applies the picture superiority effect. New Riders.

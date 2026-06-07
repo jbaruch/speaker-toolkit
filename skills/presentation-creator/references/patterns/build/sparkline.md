@@ -26,7 +26,7 @@ Structure a persuasive presentation as an oscillation between "what is" (current
 ## The Pattern in Detail
 Sparkline is a persuasion-specific structural pattern named by Nancy Duarte in *Resonate* (2010). It is a sibling of, not a replacement for, `narrative-arc` — where narrative-arc is generic three-act story structure suited to virtually any presentation, sparkline is purpose-built for talks whose central job is to *move an audience to action*. The shape was derived from Duarte's analysis of game-changing presentations including Steve Jobs's 2007 iPhone launch and Martin Luther King Jr.'s "I Have a Dream" speech — both of which mapped exactly onto the form.
 
-The sparkline has three sections and two turning points. The **beginning** (≤10% of the talk's time) describes "what is" — the audience's current reality, the agreed baseline of the world. This is where the speaker establishes common ground and demonstrates that they understand the audience's perspective. Skipping this and jumping straight into the proposed change loses the audience because they have no contrast against which to measure the proposal.
+The sparkline has three sections and two turning points. The **beginning** (≤10% of the talk's time) describes "what is" — the audience's current reality, the agreed baseline of the world. This is where the speaker establishes common ground and demonstrates that they understand the audience's perspective. Skipping this and jumping straight into the proposed change loses the audience.
 
 The **first turning point — the Call to Adventure** — dramatizes the gap between "what is" and "what could be." This is the inciting incident, equivalent to the moment in a movie where the protagonist's life is thrown out of balance. The Big Idea is revealed at this turning point. After this, the audience cannot be neutral; they either start engaging with the proposed change or actively resist it.
 
@@ -39,7 +39,7 @@ The **end — the New Bliss** — is the speaker's vivid description of the worl
 The sparkline is **a form, not a formula.** Following the form does not produce identical talks; every sparkline-shaped presentation has its own unique contour driven by the specific oscillations the speaker chooses. The form constrains shape; it leaves content, voice, and pace fully variable.
 
 ### The Three Contrast Types — Engine of the Middle
-The sparkline's middle works because of contrast. A flat middle, even with strong opening and closing turning points, fails to persuade because the audience experiences it as monotonic information delivery. Duarte names three orthogonal contrast axes that drive the oscillation, and the strongest sparklines deliberately stack all three rather than relying on any one in isolation.
+The sparkline's middle works through contrast. A flat middle, even with strong opening and closing turning points, fails to persuade. The audience experiences it as monotonic information delivery. Duarte names three orthogonal contrast axes that drive the oscillation, and the strongest sparklines deliberately stack all three rather than relying on any one in isolation.
 
 **1. Content contrast — "what is" vs "what could be."** The default contrast axis: every content beat in the middle either reinforces current reality (extending the "what is" baseline established in the opening) or sketches the proposed future (deepening the "what could be" picture from the call to adventure). The middle oscillates between the two — a beat about the broken current state, then a beat about the promising future, then back. This rhythm produces the sparkline's literal up-and-down shape on a timeline.
 
@@ -76,7 +76,7 @@ The strongest signal is the explicit call-to-adventure moment. Its presence indi
 - Absent (0 pts): Generic three-act or topical structure; no identifiable gap-reveal moment; closing is a to-do list or "thanks"; no future-state vision
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 2 (Narrative Structure) as a top-level structural choice alongside `narrative-arc`. Relates to Dimension 5 (Storytelling/Narrative) because the sparkline encodes a story-shape onto content that might otherwise read as report-style information. Relates to Dimension 9 (Persuasion Techniques) because the sparkline IS the persuasion architecture — its purpose is to move the audience from one stance to another, and every element serves that purpose.
+Relates to Dimension 2 (Narrative Structure) as a top-level structural choice alongside `narrative-arc`. Relates to Dimension 5 (Storytelling/Narrative). Relates to Dimension 9 (Persuasion Techniques).
 
 ## Combinatorics
 Sparkline is composed of several other patterns acting in concert: it begins with `know-your-audience` and `mentor` (the speaker has researched the hero and adopted the mentor stance — the audience-as-hero framing lives in the "Adopting the Stance — Planning Implications" subsection of `mentor.md`); the gap-revelation is `call-to-adventure`; the closing zone is `call-to-action` followed by `new-bliss`. It pairs with `bookends` (the structural opening and closing slides mark the sparkline's three sections), with `foreshadowing` (early plants get paid off at later peaks), and with `star-moment` (a planted memorable beat usually lands at one of the high points in the oscillation).

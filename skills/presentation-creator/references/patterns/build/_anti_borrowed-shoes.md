@@ -18,7 +18,7 @@ difficulty: foundational
 # Borrowed Shoes
 
 ## Summary
-Presenting someone else's slides is like wearing someone else's shoes — uncomfortable and produces terrible results because individual presentation style is deeply imprinted onto materials.
+Presenting someone else's slides is like wearing someone else's shoes — uncomfortable and produces terrible results.
 
 ## The Pattern in Detail
 Borrowed Shoes is the antipattern of delivering a presentation using slides created by someone else without substantially reworking them to fit your own style, voice, and delivery rhythm. The metaphor is visceral and accurate: wearing someone else's shoes may technically get you from point A to point B, but the fit is wrong, the wear patterns do not match your gait, and every step feels slightly off. Similarly, presenting someone else's slides may technically convey the information, but the timing is wrong, the emphasis does not match your instincts, the humor falls flat, and the entire experience feels forced and uncomfortable — for both the presenter and the audience.
@@ -45,7 +45,7 @@ When scoring talks, watch for signs of disconnect between the presenter and the 
 - Absent (0 pts): Presenter clearly working from someone else's slides with no adaptation — visible discomfort at transitions, mismatched emphasis, inability to explain design choices
 
 ## Relationship to Vault Dimensions
-Dimension 7 (Language and Communication): Borrowed Shoes creates a mismatch between the presenter's natural communication style and the language embedded in the slides, producing awkward phrasing and forced delivery. Dimension 8 (Slide Design): The design choices in borrowed slides reflect someone else's visual thinking, creating a disconnect that the audience perceives even if they cannot articulate it. Dimension 14 (Overall Quality Indicators): A presenter working from borrowed material almost always delivers at a lower quality level than their natural capability, depressing overall presentation quality.
+Dimension 7 (Language and Communication): Borrowed Shoes creates a mismatch between the presenter's natural communication style and the language embedded in the slides. Dimension 8 (Slide Design): The design choices in borrowed slides reflect someone else's visual thinking. Dimension 14 (Overall Quality Indicators): A presenter working from borrowed material almost always delivers at a lower quality level than their natural capability.
 
 ## Combinatorics
 Borrowed Shoes is mitigated by the Crucible pattern (intensive rehearsal transforms unfamiliar material into internalized content), the Narrative Arc pattern (understanding the story structure helps the presenter navigate borrowed material), and the Carnegie Hall pattern (deliberate practice reduces the friction of presenting someone else's slides). When these patterns are applied rigorously, the worst effects of Borrowed Shoes can be reduced — though the ideal solution remains reworking the material to fit the presenter's own style.

@@ -45,7 +45,7 @@ When scoring talks, look for visual elements that are deliberately imperfect: ha
 - Absent (0 pts): All visual elements are digitally clean and standard, with no hand-drawn or rough aesthetic choices
 
 ## Relationship to Vault Dimensions
-Dimension 13 (Visual Polish and Craft): Analog Noise is a sophisticated expression of visual craft — it takes skill and intentionality to make imperfection look deliberate and aesthetically cohesive. Paradoxically, "rough" visuals often require more design effort than clean ones.
+Dimension 13 (Visual Polish and Craft): Analog Noise is a sophisticated expression of visual craft.
 
 ## Combinatorics
 Analog Noise pairs naturally with Defy Defaults, as both involve making unconventional visual choices. It shares philosophical DNA with Leet Grammars — both patterns involve intentional deviation from "correct" norms to create impact. The pattern can enhance Bookends and Intermezzi by giving section dividers a distinctive hand-crafted feel. It also works well as the visual layer for Emergence, where hand-drawn diagrams build incrementally to reveal complexity.
