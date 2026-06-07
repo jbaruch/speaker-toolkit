@@ -29,7 +29,7 @@ The key to effective foreshadowing is restraint. Choose one or two anchor points
 
 Timing matters enormously with foreshadowing. The longer the gap between the planted clue and the reveal, the bigger the impact when the connection is finally made. A clue planted in the first five minutes that pays off in the last five minutes of an hour-long talk creates a sense of architectural completeness that audiences find deeply satisfying. However, the gap cannot be so long that the audience has forgotten the original clue. Repetition of the foreshadowing element throughout the talk helps maintain the thread without giving away the payoff.
 
-Foreshadowing also creates a powerful incentive for the audience to stay engaged for the entire presentation. If they sense that something unexplained is building toward a revelation, they are less likely to check their phones or mentally drift. This is the same mechanism that keeps viewers watching a television series or reading a novel — the promise of payoff for attention invested.
+Foreshadowing also creates a powerful incentive for the audience to stay engaged for the entire presentation. If they sense that something unexplained is building toward a revelation, they are less likely to check their phones or mentally drift.
 
 ## When to Use / When to Avoid
 Use foreshadowing when your talk has a clear narrative thread and a revelatory conclusion. It works exceptionally well in talks that challenge conventional wisdom, reveal surprising connections between disparate topics, or build toward a non-obvious thesis. Conference keynotes and longer talks (45+ minutes) provide enough runway for the technique to pay off.
@@ -45,7 +45,7 @@ When scoring talks, look for elements that appear early without full explanation
 - Absent (0 pts): No planted clues, no callbacks, content proceeds linearly without narrative tension
 
 ## Relationship to Vault Dimensions
-Dimension 2 (Structure and Flow): Foreshadowing creates a non-linear structural layer on top of the presentation's sequential flow, connecting distant parts of the talk through thematic threads. Dimension 5 (Storytelling and Narrative): As a literary device, foreshadowing is fundamentally a storytelling technique that adds depth and engagement to the narrative.
+Dimension 2 (Structure and Flow): Foreshadowing creates a non-linear structural layer on top of the presentation's sequential flow, connecting distant parts of the talk through thematic threads. Dimension 5 (Storytelling and Narrative): Foreshadowing is a storytelling technique woven into the narrative.
 
 ## Combinatorics
 Foreshadowing pairs powerfully with Narrative Arc, as both create a sense of progression and resolution. It works well with Talklet when each self-contained section plants a clue that connects to a larger theme. The Backtracking pattern can serve as a reveal mechanism for foreshadowed elements. Intermezzi slides are a natural vehicle for carrying foreshadowing elements between sections.

@@ -46,7 +46,7 @@ When scoring talks, note whether corporate or conference branding appears on eve
 - Absent (0 pts): Heavy branding on every slide consuming significant screen real estate, decorative elements competing with content, visible template bloat reducing effective canvas
 
 ## Relationship to Vault Dimensions
-Dimension 13 (Slide Aesthetics): Floodmarks directly degrade slide aesthetics by cluttering the visual field with elements that serve organizational rather than communicative purposes. Dimension 14 (Overall Quality Indicators): Heavy template branding is often a signal that the presenter used defaults without customization, which correlates with lower overall presentation quality.
+Dimension 13 (Slide Aesthetics): Floodmarks directly degrade slide aesthetics. Dimension 14 (Overall Quality Indicators): Heavy template branding signals defaults used without customization.
 
 ## Combinatorics
 Floodmarks is the inverse of the Defy Defaults pattern, which encourages presenters to break free from default templates and create custom designs. It often co-occurs with Fontaholic, as corporate templates frequently introduce additional font families for branding elements. The Bookends pattern provides the architectural solution: branding on the first and last slides, clean canvas everywhere else. The Unifying Visual Theme pattern offers a positive alternative to Floodmarks — instead of branding noise, use a coherent visual metaphor that serves both the content and the aesthetic.

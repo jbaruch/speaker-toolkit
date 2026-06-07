@@ -65,7 +65,7 @@ The clearest absence-signal is a closing zone consisting only of "thanks", "ques
 - Absent (0 pts): No identifiable ask in the closing zone; talk ends on a thank-you, a credentials slide, a Q&A invite, or a generic value statement
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 4 (Audience Interaction) because the Call to Action is the most explicit moment of speaker-to-audience direction in the entire talk. Relates to Dimension 6 (Closing Pattern) as one of two named structural elements in the closing zone (alongside `coda` and `new-bliss`). Relates to Dimension 9 (Persuasion Techniques) because the Call to Action is the moment persuasion converts to behavior — without it, persuasion remains abstract.
+Relates to Dimension 4 (Audience Interaction). Relates to Dimension 6 (Closing Pattern) as one of two named structural elements in the closing zone (alongside `coda` and `new-bliss`). Relates to Dimension 9 (Persuasion Techniques).
 
 ## Combinatorics
 Call to Action pairs with `sparkline` (where it is the second of two turning points), with `the-big-why` (the asks must serve the Big Idea — every ask should make the Big Idea more real; the Big Idea construction rules live in the "Big Idea — Statement Format" subsection of `the-big-why.md`), and with `mentor` (the audience-as-hero stance dictates that the asks empower the audience's own journey rather than serve the speaker's agenda). It composes immediately with `new-bliss` (which must follow it for the closing to land) and with `coda` (which provides the reference materials supporting the asks — links, resources, contact information).
