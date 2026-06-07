@@ -32,7 +32,7 @@ To maximize the value of a required presentation, lean on collaborative patterns
 Remember that presentations change under the pressure of delivery. A required talk that starts as a dreaded obligation may evolve into something you genuinely enjoy delivering, especially as you discover which parts resonate and refine accordingly. The worst approach is to treat a required presentation as a chore to be endured — that attitude is transparent to the audience and creates a self-fulfilling prophecy of disengagement.
 
 ## When to Use / When to Avoid
-This pattern applies whenever a presentation is mandated rather than voluntary. It reframes the obligation as an opportunity. Avoid the bare-minimum trap — the audience deserves your best effort regardless of how the talk originated.
+This pattern applies whenever a presentation is mandated rather than voluntary. It reframes the obligation as an opportunity. Avoid the bare-minimum trap. The audience deserves your best effort regardless of how the talk originated.
 
 ## Detection Heuristics
 The vault should look for contextual clues that suggest a corporate or mandatory presentation scenario. References to internal tools, team structures, project timelines, or organizational processes are indicators.
