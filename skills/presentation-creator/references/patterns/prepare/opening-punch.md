@@ -30,7 +30,7 @@ Audiences grant a presenter roughly one to two minutes of goodwill before formin
 
 **Unexpected.** Reveal something that contradicts the audience's expectations. A counterintuitive fact, a surprising statistic, or a claim that violates received wisdom forces the audience into alertness. Tom Peters: "There must be surprise … some key facts that are not commonly known or are counterintuitive. No reason to do the presentation in the first place if there are no surprises."
 
-**Novel.** Show something the audience has not seen before. A previously unpublished image, fresh data from a study released that week, a working demo of something that did not exist a month ago. Novelty taps the brain's pattern-recognition reward circuit; the audience leans forward because they sense they are getting something not available elsewhere.
+**Novel.** Show something the audience has not seen before. A previously unpublished image, fresh data from a study released that week, a working demo of something that did not exist a month ago. Novelty taps the brain's pattern-recognition reward circuit; the audience leans forward, sensing they are getting something not available elsewhere.
 
 **Challenging.** Open by challenging the audience's assumptions or imagination. A provocative question that forces them to take a position. A reframing that makes their default mental model feel suddenly wrong. The challenge does not have to be confrontational — it just has to demand cognitive engagement rather than passive reception.
 
@@ -54,7 +54,7 @@ Generic openings — agenda slides, "let me introduce myself," "thanks for the i
 - Absent (0 pts): Generic opening — agenda slide, credential parade, formality, or filler — with no identifiable PUNCH element
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 1 (Opening Pattern) as the primary typology for opening hooks. Also relates to Dimension 4 (Audience Interaction) because Challenging and Humorous openings frequently solicit explicit audience response (a raised hand, a laugh, a verbal answer to a question), establishing a two-way pattern from the start.
+Relates to Dimension 1 (Opening Pattern) as the primary typology for opening hooks. Also relates to Dimension 4 (Audience Interaction): Challenging and Humorous openings frequently solicit explicit audience response (a raised hand, a laugh, a verbal answer to a question), establishing a two-way pattern from the start.
 
 ## Combinatorics
 Opening PUNCH pairs with `bookends` (the opening half of the bookend pair takes a PUNCH flavor; the closing half mirrors or completes it), with `narrative-arc` (the PUNCH is the arc's first beat), with `foreshadowing` (a Novel or Unexpected opening can plant a payoff that resolves later), and with `preroll` (the pre-talk visuals can prime the PUNCH). It is the deliberate inverse of the unnamed antipattern of the "agenda-slide opener" — the default-template behavior of opening with a list of what the talk will cover.

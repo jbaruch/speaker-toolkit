@@ -26,7 +26,7 @@ The average adult attention span for sustained focus on a single topic is approx
 
 The timing is important but not rigid. Something reinvigorating should appear at least every 15 minutes, but the exact interval depends on the density of your content and the energy level of the room. Dense technical content may need breaks every 10 minutes. Lighter material may sustain attention for the full 20 minutes. The key is to develop a feel for when the audience's energy is flagging and to have breaks ready to deploy.
 
-Contextualized humor is the gold standard of Brain Breaks. A joke or amusing anecdote that is directly relevant to the material you are presenting accomplishes two things simultaneously: it resets attention AND reinforces learning. Inside jokes — humor that only people in this community would appreciate — are particularly powerful because they mark you as an insider. An inside joke says "I am one of you" in a way that no credential or bio line can match. However, humor must be deployed carefully (see the Alienating Artifact antipattern for the risks of humor gone wrong).
+Contextualized humor is the gold standard of Brain Breaks. A joke or amusing anecdote that is directly relevant to the material you are presenting accomplishes two things simultaneously: it resets attention AND reinforces learning. Inside jokes — humor that only people in this community would appreciate — are particularly powerful: they mark you as an insider. An inside joke says "I am one of you" in a way that no credential or bio line can match. Humor must be deployed carefully (see the Alienating Artifact antipattern for the risks of humor gone wrong).
 
 Brain Breaks should be applied AFTER you have structured your narrative flow, not before. First build the skeleton of your presentation using Narrative Arc and other structural patterns. Then identify the natural points where the audience will need a breather and insert appropriate breaks. This prevents the common mistake of building a presentation around your jokes rather than around your ideas. The breaks serve the content, not the other way around.
 
@@ -44,7 +44,7 @@ The vault should look for evidence of strategic entertainment placement: humor, 
 - Absent (0 pts): No discernible breaks; presentation is a continuous monologue; audience attention likely flags
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 3 (Delivery/Presentation Skills) because Brain Breaks demonstrate the speaker's ability to manage audience energy. Relates to Dimension 12 (Time/Pacing) because strategic break placement is a critical pacing tool.
+Relates to Dimension 3 (Delivery/Presentation Skills). Relates to Dimension 12 (Time/Pacing).
 
 ## Combinatorics
 Pairs with Leet Grammars (insider humor is the most effective Brain Break), Narrative Arc (breaks should work within the narrative structure, not against it), Entertainment (Brain Breaks are targeted micro-entertainment), and Crucible (live delivery reveals which breaks work and which do not). The inverse is Alienating Artifact — a "break" that offends rather than refreshes.

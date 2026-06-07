@@ -44,7 +44,7 @@ The vault should look for evidence of pre-design thinking. Well-organized though
 - Absent (0 pts): Slides feel like the first draft; ideas are chopped into uniform slide-sized pieces; no evidence of structural planning
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 2 (Structure/Organization) because Fourthought directly produces better-organized presentations. Relates to Dimension 8 (Slide Design/Visual Quality) because separating design from thinking produces slides that serve ideas rather than constraining them.
+Relates to Dimension 2 (Structure/Organization). Relates to Dimension 8 (Slide Design/Visual Quality).
 
 ## Combinatorics
 Pairs naturally with Narrative Arc (Fourthought's organize phase is where you discover your arc), Unifying Visual Theme (the design phase is where visual themes are applied to already-organized ideas), and Backtracking (having a clear structure makes it easy to reference earlier material). Fourthought is the inverse of Cookie Cutter — where Cookie Cutter lets the tool drive the thinking, Fourthought insists that thinking drives the tool.

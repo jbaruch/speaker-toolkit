@@ -22,7 +22,7 @@ difficulty: foundational
 Build your presentation around three central ideas, leveraging the familiar three-act play structure.
 
 ## The Pattern in Detail
-The number three has deep roots in human cognition and culture. Three-act plays, three wishes, three little pigs, three strikes — the pattern is everywhere because our brains are wired to find satisfaction in groups of three. The Triad pattern applies this principle to presentation design: organize your material around exactly three central ideas, themes, or arguments.
+The number three has deep roots in human cognition and culture. Three-act plays, three wishes, three little pigs, three strikes — the pattern is everywhere. The Triad pattern applies this principle to presentation design: organize your material around exactly three central ideas, themes, or arguments.
 
 Limiting yourself to three major themes provides two critical benefits. First, it ensures sufficient coverage without overloading. With only two themes, a presentation can feel thin or binary. With four or more, the audience struggles to hold the structure in their heads and begins losing track of how pieces relate. Three is the sweet spot — rich enough to be substantive, constrained enough to be memorable. Ask any audience member to recall three things from a presentation they attended last week, and they might succeed. Ask them to recall five, and you will get blank stares.
 
@@ -30,7 +30,7 @@ The Triad maps naturally to the three-act play structure that underlies the Narr
 
 The Triad works especially well with the Talklet pattern. Three talklets correspond to three acts, and each talklet is a self-contained ~20-minute unit that covers one theme. This creates a presentation that is modular (any talklet can be cut or reordered for different time slots) while maintaining the coherence of a three-act structure. The transitions between talklets become the act breaks, natural moments for the audience to consolidate what they have learned before moving forward.
 
-A word of caution: do not force complex subjects into artificial triads. If your material genuinely has four pillars, do not contort it into three just to satisfy the pattern. The Triad is a guideline, not a law. However, before concluding that your material resists the Triad, challenge yourself — often what appears to be four separate themes can be reorganized into three themes with one subsumed by another. The discipline of the Triad frequently reveals structural insights about your own material.
+A word of caution: do not force complex subjects into artificial triads. If your material genuinely has four pillars, do not contort it into three just to satisfy the pattern. The Triad is a guideline, not a law. Before concluding that your material resists the Triad, challenge yourself — often what appears to be four separate themes can be reorganized into three themes with one subsumed by another. The discipline of the Triad frequently reveals structural insights about your own material.
 
 ## When to Use / When to Avoid
 Use the Triad for any presentation where you are synthesizing multiple ideas into a coherent whole. It is especially powerful for keynotes, conference talks, and any presentation over 20 minutes. Avoid forcing the Triad onto material that genuinely does not fit — a tutorial with seven sequential steps should not be artificially compressed into three sections. Also be cautious with very short talks (five minutes or less) where three themes may be too many.

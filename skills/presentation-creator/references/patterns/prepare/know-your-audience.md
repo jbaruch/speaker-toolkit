@@ -43,7 +43,7 @@ The vault should look for evidence that the speaker has tailored content to a sp
 - Absent (0 pts): Entirely generic content with no evidence of audience research or adaptation
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 4 (Audience Engagement) because knowing your audience is the foundation of all engagement strategies. Relates to Dimension 9 (Speaker Credibility/Ethos) because demonstrating audience awareness signals professionalism and respect, which builds trust.
+Relates to Dimension 4 (Audience Engagement). Relates to Dimension 9 (Speaker Credibility/Ethos).
 
 ## Combinatorics
 Pairs naturally with Emotional State (understanding audience mood requires knowing who they are) and Seeding Satisfaction (you cannot seed satisfaction without knowing what satisfies this particular audience). Also foundational to Brain Breaks (humor must be audience-appropriate) and Leet Grammars (jargon must match community expectations).

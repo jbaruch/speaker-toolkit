@@ -44,7 +44,7 @@ The vault should look for consistent visual elements that appear across multiple
 - Absent (0 pts): No visual coherence beyond default template; random or low-quality images; clip art
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 10 (Creativity/Originality) because a well-chosen visual theme demonstrates creative thinking about how to communicate. Relates to Dimension 13 (Visual Aids Effectiveness) because the theme directly impacts how effectively visuals support the message.
+Relates to Dimension 10 (Creativity/Originality). Relates to Dimension 13 (Visual Aids Effectiveness).
 
 ## Combinatorics
 Pairs with Brain Breaks (visual theme elements can serve as palate cleansers between dense sections), Defy Defaults (a custom visual theme is the opposite of default templates), and Narrative Arc (the visual theme should parallel and reinforce the narrative structure). The inverse is Photomaniac — using too many unrelated images that create visual noise rather than visual coherence.

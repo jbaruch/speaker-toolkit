@@ -27,7 +27,7 @@ The Takahashi method, originated by Masayoshi Takahashi who presented at a Ruby 
 
 The visual effect is striking and immediately distinctive. Where a conventional presentation might have 30-50 slides for a 90-minute talk, a Takahashi presentation might have 350 or more. Each slide acts as a visual punctuation mark for the speaker's words — emphasizing a key term, illustrating a concept with a single image, or creating dramatic pauses through blank or minimal slides. The audience experiences the presentation as a rapid-fire multimedia stream where visual and auditory channels work in tight synchronization.
 
-The Takahashi method works with virtually any presentation type because it shifts the information density from the slides to the speaker. In a conventional presentation, slides carry a significant portion of the content — bullet points, diagrams, code samples. In Takahashi, the slides carry almost none. They serve as visual anchors, emotional cues, and rhythm markers while the speaker carries the full content load verbally. This makes Takahashi presentations uniquely dependent on the speaker's delivery skills and deep knowledge of the material.
+The Takahashi method works with virtually any presentation type: it shifts the information density from the slides to the speaker. In a conventional presentation, slides carry a significant portion of the content — bullet points, diagrams, code samples. In Takahashi, the slides carry almost none. They serve as visual anchors, emotional cues, and rhythm markers while the speaker carries the full content load verbally. This makes Takahashi presentations uniquely dependent on the speaker's delivery skills and deep knowledge of the material.
 
 Building a Takahashi presentation requires a fundamentally different workflow. You write your talk first — every word, every transition, every pause — and then create slides that punctuate and emphasize key moments. Each slide takes seconds to create (it is just a word or an image) but choosing which moments deserve visual emphasis requires deep understanding of your own material and your audience's needs. The creation process is fast per-slide but thoughtful in aggregate.
 
@@ -45,7 +45,7 @@ The vault should look for the characteristic Takahashi signature: very high slid
 - Absent (0 pts): Standard slide density; no evidence of Takahashi method; slides carry content rather than punctuating it
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 8 (Slide Design/Visual Quality) because Takahashi is a deliberate and bold design choice. Relates to Dimension 12 (Time/Pacing) because the rapid slide transitions create a distinctive pacing pattern. Relates to Dimension 13 (Visual Aids Effectiveness) because the single-element-per-slide approach maximizes visual impact per slide.
+Relates to Dimension 8 (Slide Design/Visual Quality). Relates to Dimension 12 (Time/Pacing). Relates to Dimension 13 (Visual Aids Effectiveness).
 
 ## Combinatorics
 Pairs with Brain Breaks (the rapid visual changes function as continuous micro-breaks for attention). The inverse is Bullet-Riddled Corpse — where Takahashi puts one element per slide, the antipattern crams as many bullet points as possible onto each slide.

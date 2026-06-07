@@ -43,7 +43,7 @@ The vault should look for signs of disconnect between the apparent description o
 - Absent (0 pts): Significant disconnect between described and delivered content; audience likely feels misled about what the talk would cover
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 2 (Structure/Organization) because the mismatch between abstract and delivery is fundamentally a structural planning issue. Relates to Dimension 14 (Overall Impression/Polish) because abstract-delivery alignment affects the audience's overall trust and satisfaction.
+Relates to Dimension 2 (Structure/Organization). Relates to Dimension 14 (Overall Impression/Polish).
 
 ## Combinatorics
 Relates to Preroll (displaying the abstract), Narrative Arc (the arc may evolve away from the abstract), Fourthought (thorough pre-planning reduces divergence), Triad (structural commitments in abstracts), Crucible (iterative refinement that may cause divergence), and Carnegie Hall (extensive practice reveals when material diverges from the abstract).

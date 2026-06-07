@@ -43,7 +43,7 @@ The vault should look for specialized vocabulary used correctly and naturally. I
 - Absent (0 pts): Generic vocabulary only; no community-specific language; speaker could be addressing any audience
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 7 (Technical Depth/Accuracy) because correct use of specialized vocabulary demonstrates genuine technical knowledge. Relates to Dimension 10 (Creativity/Originality) because skillful deployment of community language shows creative communication ability.
+Relates to Dimension 7 (Technical Depth/Accuracy). Relates to Dimension 10 (Creativity/Originality).
 
 ## Combinatorics
 Pairs with Analog Noise (authentic personal touches reinforce community membership signals) and Brain Breaks (insider humor is the most effective break type). The inverse is Tower of Babble — using jargon incorrectly or excessively to the point of incomprehensibility.
