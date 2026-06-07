@@ -4,7 +4,7 @@ Structured reference taxonomy primarily based on *Presentation Patterns: Techniq
 Crafting Better Presentations* (Neal Ford, Matthew McCullough, Nathaniel Schutta, 2013),
 with supplementary patterns and reinforcements from *Presentation Zen* (Garr Reynolds,
 2nd ed., 2012) and *Resonate: Present Visual Stories that Transform Audiences* (Nancy
-Duarte, 2010). Contains 77 named patterns and 25 antipatterns organized by presentation
+Duarte, 2010). Contains 78 named patterns and 25 antipatterns organized by presentation
 lifecycle phase. See the Sources section at the end of this file for full citations.
 
 **This is the primary entry point.** The agent reads this file first, then drills into
@@ -57,7 +57,7 @@ combinatorics are needed.
 | alienating-artifact | Alienating Artifact | antipattern | 3, 10, 14 | guardrails | know-your-audience, brain-breaks |
 | celery | Celery | antipattern | 2, 14 | guardrails | required, know-your-audience, narrative-arc, brain-breaks |
 
-### Build Phase (37 patterns + 10 antipatterns)
+### Build Phase (38 patterns + 10 antipatterns)
 
 | ID | Name | Type | Vault Dims | Creator Phases | Related |
 |----|------|------|------------|----------------|---------|
@@ -71,6 +71,7 @@ combinatorics are needed.
 | star-moment | S.T.A.R. Moment | pattern | 3, 5, 13 | content, slides | the-big-why, sparkline, narrative-arc, vacation-photos, foreshadowing |
 | inoculation | Inoculation | pattern | 4, 9 | content, guardrails | know-your-audience, mentor, peer-review, sparkline, the-big-why |
 | master-story | Master Story | pattern | 2, 5, 7 | content | narrative-arc, foreshadowing, sparkline, the-big-why, star-moment |
+| concrete-before-abstract | Concrete Before Abstract | pattern | 11, 9, 2 | content | live-demo, master-story, vacation-photos, mentor, the-big-why, sparkline |
 | coda | Coda | pattern | 6, 8 | content, slides | infodeck, vacation-photos |
 | peer-review | Peer Review | pattern | 7, 8 | content, guardrails | leet-grammars |
 | foreshadowing | Foreshadowing | pattern | 2, 5 | content | narrative-arc, talklet, backtracking, intermezzi |
@@ -203,6 +204,7 @@ Build patterns — applied during outline writing.
 - make-it-rain, lightsaber, echo-chamber
 - opening-punch, screen-blackout
 - call-to-adventure, call-to-action, new-bliss, star-moment, inoculation, master-story
+- concrete-before-abstract
 
 ### Phase 4: Guardrails
 Antipatterns as warnings — scanned against the outline.
@@ -240,16 +242,16 @@ Reverse lookup: which patterns relate to each of the 14 rhetoric analysis dimens
 | Dim | Name | Patterns | Antipatterns |
 |-----|------|----------|--------------|
 | 1 | Opening Pattern | preroll, opening-punch, call-to-adventure | — |
-| 2 | Narrative Structure | narrative-arc, fourthought, triad, expansion-joints, talklet, context-keeper, breadcrumbs, bookends, intermezzi, foreshadowing, backtracking, a-la-carte-content, concurrent-creation, lightning-talk, sparkline, call-to-adventure, master-story | abstract-attorney, celery |
+| 2 | Narrative Structure | narrative-arc, fourthought, triad, expansion-joints, talklet, context-keeper, breadcrumbs, bookends, intermezzi, foreshadowing, backtracking, a-la-carte-content, concurrent-creation, lightning-talk, sparkline, call-to-adventure, master-story, concrete-before-abstract | abstract-attorney, celery |
 | 3 | Humor & Wit | brain-breaks, entertainment, star-moment | alienating-artifact |
 | 4 | Audience Interaction | know-your-audience, social-media-advertising, a-la-carte-content, posse, seeding-satisfaction, seeding-the-first-question, emotional-state, make-it-rain, echo-chamber, red-yellow-green, greek-chorus, opening-punch, call-to-action, inoculation | bunker, hecklers, backchannel, negative-ignorance, dual-headed-monster |
 | 5 | Transition Techniques | narrative-arc, foreshadowing, backtracking, context-keeper, bookends, intermezzi, soft-transitions, cave-painting, sparkline, new-bliss, star-moment, master-story | — |
 | 6 | Closing Pattern | coda, crawling-credits, call-to-action, new-bliss | — |
 | 7 | Verbal Signatures | leet-grammars, peer-review, breathing-room, echo-chamber, master-story | hiccup-words, borrowed-shoes, tower-of-babble |
 | 8 | Slide-to-Speech Relationship | fourthought, concurrent-creation, coda, vacation-photos, infodeck, gradual-consistency, charred-trail, takahashi, live-on-tape, peer-review | cookie-cutter, injured-outlines, bullet-riddled-corpse, borrowed-shoes, slideuments, lipstick-on-a-pig |
-| 9 | Persuasion Techniques | know-your-audience, required, the-big-why, proposed, display-of-high-value, emotional-state, mentor, greek-chorus, sparkline, call-to-adventure, call-to-action, new-bliss, inoculation | disowning-your-topic, going-meta, tower-of-babble, lipstick-on-a-pig |
+| 9 | Persuasion Techniques | know-your-audience, required, the-big-why, proposed, display-of-high-value, emotional-state, mentor, greek-chorus, sparkline, call-to-adventure, call-to-action, new-bliss, inoculation, concrete-before-abstract | disowning-your-topic, going-meta, tower-of-babble, lipstick-on-a-pig |
 | 10 | Cultural & Pop-Culture References | leet-grammars, unifying-visual-theme, entertainment | alienating-artifact, photomaniac |
-| 11 | Technical Content Delivery | live-demo, lipsync, traveling-highlights, crawling-code, emergence, mentor, lightsaber | dead-demo |
+| 11 | Technical Content Delivery | live-demo, lipsync, traveling-highlights, crawling-code, emergence, mentor, lightsaber, concrete-before-abstract | dead-demo |
 | 12 | Pacing Clues | crucible, expansion-joints, talklet, brain-breaks, lightning-talk, takahashi, carnegie-hall, breathing-room, weatherman, screen-blackout | shortchanged, disowning-your-topic |
 | 13 | Slide Design Patterns | unifying-visual-theme, takahashi, cave-painting, composite-animation, vacation-photos, defy-defaults, analog-noise, gradual-consistency, charred-trail, exuberant-title-top, invisibility, context-keeper, breadcrumbs, bookends, soft-transitions, intermezzi, preroll, crawling-credits, lipsync, traveling-highlights, crawling-code, emergence, screen-blackout, star-moment | cookie-cutter, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, laser-weapons |
 | 14 | Areas for Improvement | crucible, preparation, carnegie-hall, shoeless, stakeout | abstract-attorney, alienating-artifact, celery, injured-outlines, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, borrowed-shoes, slideuments, dead-demo, shortchanged, hiccup-words, disowning-your-topic, going-meta, bunker, hecklers, backchannel, laser-weapons, negative-ignorance, dual-headed-monster, tower-of-babble, lipstick-on-a-pig |
@@ -293,11 +295,11 @@ they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation 
 
 ## Summary Statistics
 
-- **Total entries:** 102 (77 patterns + 25 antipatterns)
-- **Observable (vault-scorable):** 91 (69 patterns + 22 antipatterns)
+- **Total entries:** 103 (78 patterns + 25 antipatterns)
+- **Observable (vault-scorable):** 92 (70 patterns + 22 antipatterns)
 - **Unobservable (go-live checklist):** 11 (8 patterns + 3 antipatterns)
 - **Prepare phase:** 22 (19 patterns + 3 antipatterns)
-- **Build phase:** 47 (37 patterns + 10 antipatterns)
+- **Build phase:** 48 (38 patterns + 10 antipatterns)
 - **Deliver phase:** 33 (21 patterns + 12 antipatterns)
 
 ## Sources
