@@ -48,7 +48,7 @@ This is an antipattern to avoid by investing appropriately in content before des
 - Absent (0 pts): Beautiful slides mask shallow or unstructured content — the talk looks great but delivers no lasting value
 
 ## Relationship to Vault Dimensions
-This antipattern maps to Vault Dimension 8 (Content Depth / Value), to Vault Dimension 9 (Speaker Authority / Credibility), and to Vault Dimension 14 (Speaker Craft / Professionalism).
+This antipattern maps to Vault Dimension 8 (Content Depth / Value). It also maps to Vault Dimension 9 (Speaker Authority / Credibility). It also maps to Vault Dimension 14 (Speaker Craft / Professionalism).
 
 ## Combinatorics
 Lipstick on a Pig is the inverse of Narrative Arc, which ensures content integrity before visual design. The Mentor pattern helps prevent it by orienting the talk around audience learning outcomes rather than speaker performance. Carnegie Hall rehearsal can reveal content gaps if rehearsal audiences are asked "What did you learn?" rather than "How did it look?" Know Your Audience provides the research foundation that generates substantive, audience-relevant content.

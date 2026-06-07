@@ -49,7 +49,7 @@ Use this pattern in every presentation. It is especially critical for first-time
 This pattern maps to Vault Dimension 9 (Speaker Authority / Credibility). The core of this dimension is the audience's perception of the speaker as a trustworthy source of knowledge. Display of High Value directly manages that perception by ensuring the speaker does not inadvertently erode the trust the audience is prepared to extend.
 
 ## Combinatorics
-Display of High Value is the inverse of the Going Meta antipattern (talking about the talk undermines authority). It pairs with Mentor (the right frame for authority), Know Your Audience (understanding what signals authority to this specific group), and Carnegie Hall (rehearsal builds the genuine confidence that this pattern projects). It is also supported by Preparation.
+Display of High Value is the inverse of the Going Meta antipattern (talking about the talk undermines authority). It pairs with Mentor, Know Your Audience, and Carnegie Hall. It is also supported by Preparation.
 
 ## Related Reading
 - Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 3 — "Create Common Ground" frames credibility as a function of shared experiences and qualifications revealed humbly: "Even your magnificent qualifications should be revealed in a humble and selfless way that connects with them." Wiley.

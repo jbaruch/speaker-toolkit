@@ -46,7 +46,7 @@ This is an antipattern to guard against, not a pattern to apply. Be vigilant abo
 - Absent (0 pts): Speaker clearly disowns portions of their material, rushing or skipping sections based on misread audience signals
 
 ## Relationship to Vault Dimensions
-This antipattern maps to Vault Dimension 9 (Speaker Authority / Credibility), to Vault Dimension 12 (Delivery Mechanics), and to Vault Dimension 14 (Speaker Craft / Professionalism).
+This antipattern maps to Vault Dimension 9 (Speaker Authority / Credibility). It also maps to Vault Dimension 12 (Delivery Mechanics). It also maps to Vault Dimension 14 (Speaker Craft / Professionalism).
 
 ## Combinatorics
 The primary defenses against Disowning Your Topic are Know Your Audience (accurate pre-talk research reduces reliance on in-the-moment reading), Carnegie Hall (rehearsal builds confidence in the material), and Crucible (post-talk feedback calibrates your audience-reading instincts). The Emotional State pattern should inform modest calibration, not wholesale abandonment — there is a crucial difference between adapting tone and disowning content.
