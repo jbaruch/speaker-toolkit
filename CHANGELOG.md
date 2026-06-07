@@ -46,6 +46,16 @@ published page instead of pointing at a stale `YYYY-MM-DD`-prefixed back-half.
 - Left intentionally: `url.template` date variables (URL *assembly*, configurable
   per deployed site — tracked in #17), and legacy date-prefixed filenames already
   published (the publisher's never-rename guard) or ingested into the vault.
+### fix(shownotes-publisher) — content-only gate decides direct-push vs branch+PR
+
+Step 9 runs `skills/shownotes-publisher/scripts/content-only-gate.sh` against the
+shownotes repo before publishing. When every pending change touches only the
+declared content globs, the skill direct-pushes to `main`; any out-of-glob path,
+or an indeterminate state, falls back to branch + PR. This is the Form B
+client-side gate that `jbaruch/coding-policy: ci-safety`'s Content-Only
+Direct-Push Carve-Out permits where server-side allowlist enforcement is not
+expressible on a github.com personal repo (coding-policy#119, shipped in
+coding-policy 0.3.52). Fixes #65.
 
 ## 0.18.16 — 2026-06-07
 

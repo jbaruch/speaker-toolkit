@@ -333,12 +333,38 @@ Proceed immediately to Step 9.
 
 ## Step 9 — Publish
 
-**Default flow — branch + PR.** Required under
-`jbaruch/coding-policy: ci-safety` unless the target repo has the
-Content-Only Direct-Push Carve-Out wired (authority-of-record rule
-+ server-side path enforcement on `_talks/**` /
-`assets/images/thumbnails/**` — see that rule for full
-preconditions).
+Pick the push flow with the **content-only gate**, then publish. Run
+the gate from the speaker-toolkit repo root, pointed at the shownotes
+repo — it inspects every pending change (staged, unstaged, untracked)
+and reports whether they touch only content paths:
+
+```bash
+bash skills/shownotes-publisher/scripts/content-only-gate.sh ~/Projects/shownotes
+```
+
+- **Exit 0** (content-only) → take the **direct-push** flow. This
+  satisfies the Form B client-side gate of `jbaruch/coding-policy:
+  ci-safety`'s Content-Only Direct-Push Carve-Out.
+- **Exit 1** (a change lies outside the content paths) or **exit 2**
+  (no pending changes, not a work tree, or can't tell) → take the
+  **branch + PR** flow. Never direct-push when the gate does not
+  return 0.
+
+The allowed content prefixes are the named `ALLOWED_PREFIXES` at the top
+of `scripts/content-only-gate.sh`.
+
+**Direct-push flow:**
+
+```bash
+cd ~/Projects/shownotes
+git add _talks/{talk_page_stem}.md [assets/images/thumbnails/{talk_page_stem}-thumbnail.png]
+git commit -m "Add shownotes: {Talk Title} at {Conference}"
+git push
+gh run watch --exit-status $(gh run list --workflow=pages-build-deployment --branch=main --limit=1 --json databaseId --jq '.[0].databaseId')
+curl -fsI "{site.url}/talks/{talk_page_stem}/" | head -1   # expect: HTTP/2 200
+```
+
+**Branch + PR flow:**
 
 ```bash
 cd ~/Projects/shownotes
@@ -353,22 +379,8 @@ gh run watch --exit-status $(gh run list --workflow=pages-build-deployment --bra
 curl -fsI "{site.url}/talks/{talk_page_stem}/" | head -1   # expect: HTTP/2 200
 ```
 
-**Direct-push (carve-out wired AND changes touch only carve-out
-paths):**
-
-```bash
-cd ~/Projects/shownotes
-git add _talks/{talk_page_stem}.md [assets/images/thumbnails/{talk_page_stem}-thumbnail.png]
-git commit -m "Add shownotes: {Talk Title} at {Conference}"
-git push
-gh run watch --exit-status $(gh run list --workflow=pages-build-deployment --branch=main --limit=1 --json databaseId --jq '.[0].databaseId')
-curl -fsI "{site.url}/talks/{talk_page_stem}/" | head -1   # expect: HTTP/2 200
-```
-
-The carve-out bypasses the PR cycle but NOT the CI/deploy watch —
-`ci-safety` requires both the run conclusion and the 200 to confirm
-the publish landed. If the carve-out status is unknown, default to
-the branch + PR flow.
+Either flow requires the CI/deploy watch + HTTP 200 — `ci-safety`
+confirms the publish via both the run conclusion and the 200, PR or not.
 
 If a QR code is needed for the live URL, hand off via
 `Skill(skill: "presentation-creator")` — the QR generation flow
