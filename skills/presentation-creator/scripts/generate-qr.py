@@ -174,7 +174,11 @@ def create_bitly_link(long_url, api_token, custom_back_half=None, domain=None):
             short_path = custom_back_half
             print(f"  Custom back-half set: {bitly_domain}/{custom_back_half}")
         except Exception as e:
-            print(f"  WARNING: Custom back-half failed ({e}), using generated: {short_url}")
+            # A random hash would silently break the slug=back-half contract
+            # (rules/qr-generation-rules.md §2), so surface the failure instead.
+            raise RuntimeError(
+                f"could not set custom back-half '{custom_back_half}' on {bitly_domain}: {e}"
+            ) from e
 
     return {
         "short_url": short_url,

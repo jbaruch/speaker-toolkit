@@ -210,3 +210,20 @@ def test_insert_qr_via_powerpoint_wrapper_failure_is_actionable(generate_qr, mon
     with pytest.raises(SystemExit) as exc:
         generate_qr.insert_qr_via_powerpoint("/decks/talk.pptx", [("/q/a.png", [1])], "/scripts")
     assert "deck-editing-setup.md" in str(exc.value)
+
+
+def test_create_bitly_link_raises_when_custom_back_half_fails(generate_qr, monkeypatch):
+    """If the custom back-half can't be set, fail rather than return a random hash —
+    the back-half must always be the slug (rules/qr-generation-rules.md §2)."""
+    import pytest
+
+    def fake_http(url, data=None, headers=None, method="GET"):
+        if url.endswith("/v4/bitlinks"):
+            return {"id": "bit.ly/abc123", "link": "https://bit.ly/abc123"}
+        raise RuntimeError("custom back-half already taken")
+
+    monkeypatch.setattr(generate_qr, "_http_request", fake_http)
+    with pytest.raises(RuntimeError, match="could not set custom back-half"):
+        generate_qr.create_bitly_link(
+            "https://example.com/notes", "tok", custom_back_half="my-slug", domain="jbaru.ch"
+        )

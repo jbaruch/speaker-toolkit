@@ -36,7 +36,9 @@ QR-bearing slide is detected and its QR replaced in place.
   duplicate; new placements still go bottom-right.
 - The shortener back-half is now ALWAYS the talk slug — bit.ly custom back-half
   and rebrand.ly slashtag — dropping the `preferred_short_path` override (removed
-  from the profile schema). Documented in `rules/qr-generation-rules.md`.
+  from the profile schema). If bit.ly can't set the slug back-half, the create now
+  fails (degrading to the raw URL) rather than silently keeping a random hash.
+  Documented in `rules/qr-generation-rules.md`.
 - Bug 2 (fetch colored QRs from Bitly to drop the local `qrcode` dep) is
   won't-fix: the dependency can't be dropped (rebrandly / `none` / `--png-only`
   paths render locally), and the one-call QR-codes endpoint abandons the managed
