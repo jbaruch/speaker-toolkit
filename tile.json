@@ -55,6 +55,9 @@
     },
     "tessl-version-floating": {
       "rules": "rules/tessl-version-floating.md"
+    },
+    "shownotes-content-publish": {
+      "rules": "rules/shownotes-content-publish.md"
     }
   },
   "keywords": [

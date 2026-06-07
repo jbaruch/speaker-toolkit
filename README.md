@@ -209,6 +209,7 @@ The tile ships persistent steering rules (auto-loaded by the agent at runtime vi
 | [`resources-gathering-rules`](rules/resources-gathering-rules.md) | Phase 6 shownotes / resources read paths. |
 | [`interaction-rules`](rules/interaction-rules.md) | Conversational stance and gate behavior across phases. |
 | [`tessl-version-floating`](rules/tessl-version-floating.md) | Authority-of-record for the `tessl.json` floating-spec carve-out (paired with `scripts/check-tessl-pins.sh`). |
+| [`shownotes-content-publish`](rules/shownotes-content-publish.md) | Authority-of-record for the shownotes content direct-push carve-out (paired with `skills/shownotes-publisher/scripts/content-only-gate.sh`). |
 
 ## Vault Skills Details
 

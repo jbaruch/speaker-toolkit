@@ -55,7 +55,9 @@ or an indeterminate state, falls back to branch + PR. This is the Form B
 client-side gate that `jbaruch/coding-policy: ci-safety`'s Content-Only
 Direct-Push Carve-Out permits where server-side allowlist enforcement is not
 expressible on a github.com personal repo (coding-policy#119, shipped in
-coding-policy 0.3.52). Fixes #65.
+coding-policy 0.3.52). The carve-out's precondition 1 is satisfied by a new
+authority-of-record steering rule, `rules/shownotes-content-publish.md`, naming
+the covered globs, the gate script, and the review the direct-push skips. Fixes #65.
 
 ## 0.18.16 — 2026-06-07
 
