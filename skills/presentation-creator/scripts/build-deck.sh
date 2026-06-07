@@ -39,11 +39,14 @@ DRIVER="$HERE/build-deck.applescript"
 python3 "$HERE/validate-deckops.py" "$OPS" >/dev/null
 
 # Sandboxed PowerPoint can't create a file in a Google Drive folder (E_FAIL) —
-# stage locally, then move into place with the shell.
-STAGE_DIR="$HOME/.deckops-staging"
-mkdir -p "$STAGE_DIR"
+# stage under the known-writable local root, then move into place with the shell.
+# A per-invocation staging dir keeps repeated / concurrent runs from colliding on
+# a shared output basename; the trap removes it on exit (success or failure).
+STAGE_ROOT="$HOME/.deckops-staging"
+mkdir -p "$STAGE_ROOT"
+STAGE_DIR="$(mktemp -d "$STAGE_ROOT/build.XXXXXX")"
+trap 'rm -rf "$STAGE_DIR"' EXIT
 STAGE="$STAGE_DIR/$(basename "$OUT")"
-rm -f "$STAGE"
 
 # osascript prints the macro's "BuildDeck returned: N" line — keep it off stdout.
 osascript "$DRIVER" "$TEMPLATE" "$STAGE" "$OPS" >&2
