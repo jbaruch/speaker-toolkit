@@ -838,7 +838,7 @@ Private Sub FlushChart(ByVal ch As Chart, ByVal catBuf As Collection, ByVal serB
     End If
     ' categories array
     Dim cats() As Variant, ci As Long
-    ReDim cats(1 To Application.Max(catBuf.Count, 1))
+    ReDim cats(1 To MaxL(catBuf.Count, 1))
     For ci = 1 To catBuf.Count: cats(ci) = catBuf(ci): Next ci
     ' drop the chart's default series, then add ours
     Do While ch.SeriesCollection.Count > 0
@@ -849,7 +849,7 @@ Private Sub FlushChart(ByVal ch As Chart, ByVal catBuf As Collection, ByVal serB
         Set sv = serBuf(si)
         Set sr = ch.SeriesCollection.NewSeries
         sr.Name = sv(1)
-        ReDim vals(1 To Application.Max(sv.Count - 1, 1))
+        ReDim vals(1 To MaxL(sv.Count - 1, 1))
         For vi = 2 To sv.Count: vals(vi - 1) = sv(vi): Next vi
         sr.Values = vals
         If catBuf.Count > 0 Then sr.XValues = cats
@@ -861,6 +861,12 @@ End Sub
 Private Sub ClearCol(ByVal c As Collection)
     Do While c.Count > 0: c.Remove 1: Loop
 End Sub
+
+' Larger of two Longs. PowerPoint VBA's Application has no Max (that is Excel's
+' WorksheetFunction), so chart array sizing uses this instead.
+Private Function MaxL(ByVal a As Long, ByVal b As Long) As Long
+    If a > b Then MaxL = a Else MaxL = b
+End Function
 
 ' Filename portion of a POSIX path.
 Private Function BaseName(ByVal p As String) As String
