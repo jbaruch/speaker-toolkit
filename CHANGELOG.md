@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.18.14 — 2026-06-07
+## 0.18.15 — 2026-06-07
 
 ### feat(presentation-creator) — whole-deck creation via real PowerPoint (#57 Phase D)
 
