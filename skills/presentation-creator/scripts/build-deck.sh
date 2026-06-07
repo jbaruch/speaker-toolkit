@@ -33,8 +33,10 @@ DRIVER="$HERE/build-deck.applescript"
 [[ -f "$DRIVER" ]]   || { echo "ERROR: driver not found: $DRIVER — reinstall the tile; build-deck.applescript must sit next to this script." >&2; exit 1; }
 
 # Validate the op sequence up front so malformed ops fail fast (with line/op
-# context) instead of part-building a deck inside PowerPoint.
-python3 "$HERE/validate-deckops.py" "$OPS" >&2
+# context) instead of part-building a deck inside PowerPoint. On failure the
+# validator writes errors to stderr and exits non-zero (set -e aborts); on
+# success its JSON summary on stdout is discarded — this script emits its own.
+python3 "$HERE/validate-deckops.py" "$OPS" >/dev/null
 
 # Sandboxed PowerPoint can't create a file in a Google Drive folder (E_FAIL) —
 # stage locally, then move into place with the shell.

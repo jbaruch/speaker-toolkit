@@ -645,14 +645,14 @@ Public Function BuildDeck(ByVal basePath As String, _
         If Len(Trim(ln)) > 0 Then
             f = Split(ln, Chr(31))
             op = UCase(Trim(f(0)))
-            curTok = "op:" & op & "#" & li
+            curTok = "op:" & op & "#" & (li + 1)
             Select Case op
                 Case "SLIDE"
                     FlushChart curChart, catBuf, serBuf: Set curChart = Nothing
                     Dim lay As Long
                     lay = CLng(f(1)) + 1
-                    If lay < 1 Then lay = 1
-                    If lay > layouts.Count Then lay = layouts.Count
+                    If lay < 1 Or lay > layouts.Count Then Err.Raise vbObjectError + 522, , _
+                        "SLIDE layout index " & f(1) & " out of range (template has " & layouts.Count & " custom layouts)"
                     Set cur = base.Slides.AddSlide(base.Slides.Count + 1, layouts(lay))
                     Set curTbl = Nothing
                     placed = placed + 1
@@ -695,7 +695,7 @@ Public Function BuildDeck(ByVal basePath As String, _
                     For vi = 2 To UBound(f): sv.Add CDbl(f(vi)): Next vi  ' [2..] = values
                     serBuf.Add sv
                 Case Else
-                    Err.Raise vbObjectError + 521, , "Unknown BuildDeck op '" & op & "' on line " & li
+                    Err.Raise vbObjectError + 521, , "Unknown BuildDeck op '" & op & "' on line " & (li + 1)
             End Select
         End If
     Next li

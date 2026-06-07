@@ -98,6 +98,4 @@ OPTIMIZE
 `BuildDeck` always builds from slide 1. To insert or replace a slide inside an
 existing deck (iteration, single-slide regeneration), build a one-`SLIDE`
 fragment deck with `build-deck.sh`, then position it with `run-deck-ops.sh`'s
-order string — the same pattern `MakePlaceholderSlide` and `InsertQR` use,
-because Mac VBA's `Slide.MoveTo` raises E_INVALIDARG. See
-`rules/deck-editing-rules.md`.
+order string. See `rules/deck-editing-rules.md`.

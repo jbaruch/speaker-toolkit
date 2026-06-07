@@ -149,9 +149,11 @@ are appropriate (typically full-bleed image/meme slides only).
 
 ### Footer
 
-Read `design_rules.footer` from the speaker profile for exact position, font, size,
-and color adaptation rules. Add a footer to EVERY slide with a `FOOTER␟<text>` op.
-The footer pattern template is in `footer.pattern` — substitute conference-specific values.
+Read the footer text pattern from `design_rules.footer.pattern`, substitute
+conference-specific values, and add a footer to EVERY slide with a `FOOTER␟<text>`
+op. The op carries only the text — `BuildDeck` applies fixed footer geometry and
+font size; the profile's position / font / size / color fields are not yet wired
+into the op.
 
 ### Text Overflow Prevention
 

@@ -95,6 +95,33 @@ def test_series_value_must_be_number(validate_deckops):
     assert any("SERIES" in e and "number" in e for e in errors)
 
 
+def test_series_requires_at_least_one_value(validate_deckops):
+    # SERIES with a name but no values would build an empty series — reject it.
+    text = "\n".join([
+        line("SLIDE", 0),
+        line("CHART", 51, 10, 20, 400, 300),
+        line("SERIES", "Revenue"),
+    ])
+    errors = validate_deckops.validate_ops(text)
+    assert any("SERIES" in e and "fields" in e for e in errors)
+
+
+def test_chart_without_series_rejected(validate_deckops):
+    # A CHART with no SERIES keeps PowerPoint's default sample data.
+    text = "\n".join([
+        line("SLIDE", 0),
+        line("CHART", 51, 10, 20, 400, 300),
+        line("CAT", "Q1"),
+    ])
+    errors = validate_deckops.validate_ops(text)
+    assert any("CHART has no SERIES" in e for e in errors)
+
+
+def test_negative_slide_layout_index_rejected(validate_deckops):
+    errors = validate_deckops.validate_ops(line("SLIDE", -1))
+    assert any("layout index must be >= 0" in e for e in errors)
+
+
 def test_bg_channel_out_of_range(validate_deckops):
     errors = validate_deckops.validate_ops(line("SLIDE", 0) + "\n" + line("BG", 300, 0, 0))
     assert any("0-255" in e for e in errors)
@@ -132,14 +159,18 @@ def test_table_state_resets_on_new_slide(validate_deckops):
 
 
 def test_chart_state_resets_on_new_slide(validate_deckops):
+    # The slide-1 chart gets its own SERIES so the only error is the slide-2
+    # SERIES landing with no chart in scope.
     text = "\n".join([
         line("SLIDE", 0),
         line("CHART", 51, 10, 20, 400, 300),
+        line("SERIES", "S1", 1, 2),
         line("SLIDE", 1),
-        line("SERIES", "S", 1, 2),
+        line("SERIES", "S2", 1, 2),
     ])
     errors = validate_deckops.validate_ops(text)
     assert any("SERIES before any CHART" in e for e in errors)
+    assert not any("CHART has no SERIES" in e for e in errors)
 
 
 def test_op_name_is_case_insensitive(validate_deckops):
