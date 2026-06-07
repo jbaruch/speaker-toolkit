@@ -39,7 +39,7 @@ GOOD — one AskUserQuestion per turn, sequentially:
   → wait for answer →
   "Any venue-specific context I should know about JCON Europe?"
   → wait for answer →
-  AskUserQuestion("Generated slug: 2026-06-23-jcon-robocoders — confirm?",
+  AskUserQuestion("Generated slug: jcon26-robocoders — confirm?",
     options=[{label:"Looks good (Recommended)", ...}, {label:"I want to adjust", ...}])
 ```
 

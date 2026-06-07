@@ -53,7 +53,7 @@ AskUserQuestion(
 → wait for answer →
 
 AskUserQuestion(
-  question: "Generated slug: 2026-06-23-jcon-robocoders — confirm?",
+  question: "Generated slug: jcon26-robocoders — confirm?",
   options: [
     {label: "Looks good (Recommended)", description: "Use this slug for shownotes and QR"},
     {label: "I want to adjust", description: "Let me edit the slug"}

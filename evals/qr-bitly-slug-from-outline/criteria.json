@@ -4,22 +4,22 @@
   "checklist": [
     {
       "name": "Talk slug read from outline.yaml",
-      "description": "The talk slug '2026-04-16-devnexus-robocoders-judgment-day' is read from outline.yaml (talk.slug field). The agent does not invent, abbreviate, or rephrase the slug. Any reference to --talk-slug uses this exact value",
+      "description": "The talk slug 'froconf26-cache-stampedes' is read from outline.yaml (talk.slug field). The agent does not invent, abbreviate, or rephrase the slug. Any reference to --talk-slug uses this exact value",
       "max_score": 15
     },
     {
       "name": "Shownotes URL constructed from pattern + outline.yaml slug",
-      "description": "The shownotes URL is exactly 'https://jbaru.ch/2026-04-16-devnexus-robocoders-judgment-day', constructed by substituting outline.yaml's talk.slug into the profile's shownotes_url_pattern. Not a made-up URL",
+      "description": "The shownotes URL is exactly 'https://jbaru.ch/froconf26-cache-stampedes', constructed by substituting outline.yaml's talk.slug into the profile's shownotes_url_pattern. Not a made-up URL",
       "max_score": 10
     },
     {
       "name": "Bitly custom back-half is the talk slug",
-      "description": "The planned bitly link uses the talk slug as the custom back-half: bit.ly/2026-04-16-devnexus-robocoders-judgment-day. NOT a random hash like bit.ly/a3xK9f. The plan explicitly references the slug being used as the back-half",
+      "description": "The planned bitly link uses the talk slug as the custom back-half: bit.ly/froconf26-cache-stampedes. NOT a random hash like bit.ly/a3xK9f. The plan explicitly references the slug being used as the back-half",
       "max_score": 15
     },
     {
       "name": "QR encodes bitly URL, not raw shownotes URL",
-      "description": "The QR code is planned to encode the bitly URL (https://bit.ly/2026-04-16-devnexus-robocoders-judgment-day), not the raw shownotes URL. The plan explains the decoupling rationale: if shownotes URL changes, update bitly target, printed QR stays valid",
+      "description": "The QR code is planned to encode the bitly URL (https://bit.ly/froconf26-cache-stampedes), not the raw shownotes URL. The plan explains the decoupling rationale: if shownotes URL changes, update bitly target, printed QR stays valid",
       "max_score": 15
     },
     {

@@ -19,12 +19,12 @@
     },
     {
       "name": "Shownotes URL uses slug from outline.yaml (talk.slug)",
-      "description": "The shownotes URL is constructed as https://jbaru.ch/2026-04-16-devnexus-robocoders-judgment-day, using the exact slug from outline.yaml (talk.slug field). The agent does not invent, abbreviate, or rephrase the slug",
+      "description": "The shownotes URL is constructed as https://jbaru.ch/froconf26-cache-stampedes, using the exact slug from outline.yaml (talk.slug field). The agent does not invent, abbreviate, or rephrase the slug",
       "max_score": 15
     },
     {
       "name": "Talk slug matches spec exactly",
-      "description": "Any reference to the talk slug uses exactly '2026-04-16-devnexus-robocoders-judgment-day' as written in the outline.yaml (talk.slug), not a shortened or modified version",
+      "description": "Any reference to the talk slug uses exactly 'froconf26-cache-stampedes' as written in the outline.yaml (talk.slug), not a shortened or modified version",
       "max_score": 10
     },
     {
