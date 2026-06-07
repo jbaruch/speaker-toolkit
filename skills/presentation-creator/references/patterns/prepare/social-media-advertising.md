@@ -43,7 +43,7 @@ The vault should look for evidence that the speaker has promoted the talk throug
 - Absent (0 pts): No social media or promotional elements present in the talk materials
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 4 (Audience Engagement) because social promotion pre-engages the audience before the talk begins, creating a warmer and more invested room from the start.
+Relates to Dimension 4 (Audience Engagement).
 
 ## Combinatorics
 Pairs well with Seeding Satisfaction (promoting what the audience will gain creates expectations you then fulfill). Also supports Know Your Audience (social channels reveal who is interested and what questions they have before you present).

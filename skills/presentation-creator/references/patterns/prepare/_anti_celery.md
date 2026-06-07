@@ -43,7 +43,7 @@ The vault should look for signs of low content density: minimal new information,
 - Absent (0 pts): Classic Celery — presentation takes more effort to attend than it provides in value; content could have been an email; no narrative structure
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 2 (Structure/Organization) because poor structure is a primary driver of the Celery experience — unstructured content feels lower-value even when the raw information is relevant. Relates to Dimension 14 (Overall Impression/Polish) because a Celery presentation leaves a strongly negative overall impression regardless of any individual positive element.
+Relates to Dimension 2 (Structure/Organization). Relates to Dimension 14 (Overall Impression/Polish).
 
 ## Combinatorics
 Relates to Required (the most common context for Celery presentations), Know Your Audience (misjudged audience level is a primary cause), Narrative Arc (the most powerful defense against Celery), and Brain Breaks (engagement techniques that prevent the Celery experience even with less-than-thrilling content). Narrative Arc is the inverse pattern — a strong arc ensures the audience's time investment pays off.

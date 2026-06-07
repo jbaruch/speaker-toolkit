@@ -45,7 +45,7 @@ The vault should look for evidence of modular content design: sections that can 
 - Absent (0 pts): Presentation is rigidly sequential with no apparent flexibility; speaker is visibly rushed or has obvious filler when time estimates miss
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 2 (Structure/Organization) because Expansion Joints require careful structural planning to work seamlessly. Relates to Dimension 12 (Time/Pacing) because they are the primary tool for adaptive time management during delivery.
+Relates to Dimension 2 (Structure/Organization). Relates to Dimension 12 (Time/Pacing).
 
 ## Combinatorics
 Pairs with Talklet (modular 20-minute units are natural expansion joints), Narrative Arc (joints must work within the arc, not break it). The inverse is Shortchanged — a talk that runs short because it lacks expandable material to fill the time appropriately.

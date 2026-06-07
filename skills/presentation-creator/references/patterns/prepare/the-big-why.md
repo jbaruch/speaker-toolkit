@@ -51,7 +51,7 @@ The Big Why is the speaker-side motivation; the audience-side counterpart is "wh
 
 The exercise is not about preparing for an actual elevator encounter — that scenario is rare. It is a forcing function. Compressing a 45-minute talk into 45 seconds is impossible without first knowing exactly what the core message *is*, and that compression makes it brutally obvious when the speaker has not yet found their point. Most failed elevator-test attempts go the same way: the speaker realizes a third of the way through the 45 seconds that they cannot actually name the one thing the audience should walk away with. That realization is the value of the exercise.
 
-Use the elevator test as a readiness gate: before moving from the prepare phase into slide-building, force yourself to deliver the core message out loud in 30–45 seconds, ideally to a real listener who can ask follow-up questions. If you cannot pass the test, you are not ready to build slides — you are still figuring out what the talk is about. Going to slideware before the elevator test passes guarantees a deck that wanders, because the deck is faithfully reflecting the unwandered structure of the speaker's own thinking.
+Use the elevator test as a readiness gate: before moving from the prepare phase into slide-building, force yourself to deliver the core message out loud in 30–45 seconds, ideally to a real listener who can ask follow-up questions. If you cannot pass the test, you are not ready to build slides — you are still figuring out what the talk is about. Going to slideware before the elevator test passes guarantees a deck that wanders.
 
 ## When to Use / When to Avoid
 Use this pattern at the very beginning of any presentation commitment. It is especially critical for voluntary presentations where motivation must sustain months of preparation. For required presentations, The Big Why helps you find genuine motivation within an obligation. There is no scenario where clarifying your motivation is harmful.
@@ -65,7 +65,7 @@ The vault should look for evidence of genuine motivation and personal connection
 - Absent (0 pts): No discernible personal investment in the topic; delivery feels mechanical or obligatory
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 9 (Speaker Credibility/Ethos) because a speaker with a clear, genuine motivation is inherently more credible and trustworthy than one who appears to be going through the motions.
+Relates to Dimension 9 (Speaker Credibility/Ethos).
 
 ## Combinatorics
 Pairs with Carnegie Hall (strong motivation drives extensive practice) and Crucible (motivation sustains you through the iterative refinement process). The Big Why is foundational — it does not conflict with any other pattern and enhances nearly all of them.

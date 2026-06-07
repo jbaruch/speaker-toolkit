@@ -43,7 +43,7 @@ The vault should look for evidence that the presentation was developed from a cl
 - Absent (0 pts): No evidence of structured planning; talk feels improvised or unfocused
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 9 (Speaker Credibility/Ethos) because a well-proposed talk demonstrates professionalism, planning ability, and respect for the audience's time and the organizers' trust.
+Relates to Dimension 9 (Speaker Credibility/Ethos).
 
 ## Combinatorics
 Pairs with Required (its counterpart for mandatory presentations), Peer Review (essential for polishing abstracts), and Know Your Audience (understanding conference attendees improves proposal targeting). The Proposed pattern also feeds into Abstract Attorney awareness — what you promise in your abstract, you must deliver on stage.
