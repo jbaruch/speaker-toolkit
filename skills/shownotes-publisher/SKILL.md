@@ -75,11 +75,11 @@ Parse the JSON, never re-parse YAML by hand. Map fields directly:
 - `resources.json` (produced by `extract-resources.py` in Phase 6
   Step 6.0) — becomes the `## Resources` section. If the file is
   missing OR has no `approved: true` items, omit the section
-- Any existing `_talks/` page for this talk — check `{talk_slug}.md`
-  first, then a legacy `{YYYY-MM-DD}-{talk_slug}.md` (older
-  date-prefix convention) — if this is an update (not a first
-  publish), read it first so Step 7 preserves hand-edits. The
-  filename that exists becomes `{talk_page_stem}` (defined in Step 2)
+- Any existing `_talks/` page — check `{talk_slug}.md`, then a legacy
+  `{YYYY-MM-DD}-{talk_slug}.md`. The filename that exists is
+  `{talk_page_stem}` (Step 2)
+- On an update, read that existing page first so Step 7 preserves
+  hand-edits
 
 **Ask the user EXACTLY one question — the slides PDF embed URL**
 (Google Drive `https://drive.google.com/file/d/.../preview` form).
@@ -111,12 +111,9 @@ is the only source. Already kebab-case validated by `outline_schema.py`.
 Never invent it, never derive it from the venue or title, never
 rephrase.
 
-For a NEW talk, the filename in `_talks/` is always `{talk_slug}.md`
-(e.g., `geecon-2026-absolutely-right.md`). No date prefix —
-`talk.slug` is the single source of truth for both the filename and
-the live URL, and already carries any year qualifier the speaker
-chose. A date in the URL belongs *in* the slug, never bolted on by
-the publisher.
+For a NEW talk, the filename is always `{talk_slug}.md` (e.g.,
+`geecon-2026-absolutely-right.md`). No date prefix. If the URL needs a
+date, encode it in `talk.slug`, never as a filename prefix.
 
 `{talk_page_stem}` is the published page's filename without `.md` —
 the value Steps 5–9 use for every file path, thumbnail path, preview
@@ -126,10 +123,9 @@ URL, branch name, and live-URL check:
   `{talk_page_stem}` = `{talk_slug}`; full path
   `~/Projects/shownotes/_talks/{talk_slug}.md`.
 - Updating a talk already published at a legacy
-  `{YYYY-MM-DD}-{talk_slug}.md` (older date-prefix convention) →
-  `{talk_page_stem}` = that existing date-prefixed stem. Keep the
-  filename unchanged; never rename a published talk — renaming breaks
-  the live URL and any QR codes printed against it.
+  `{YYYY-MM-DD}-{talk_slug}.md` → `{talk_page_stem}` = that existing
+  date-prefixed stem. Keep the filename unchanged. Never rename a
+  published talk.
 
 Proceed immediately to Step 3.
 
