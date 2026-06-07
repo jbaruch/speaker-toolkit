@@ -1,5 +1,31 @@
 # Changelog
 
+### fix(qr-generation) — compose date-less talk slugs (QR + Phase 1) (#55)
+
+Completes the date-less-slug convention. #66 made the publisher consume
+`talk.slug` verbatim (date-less filename and URL); this drops the date prefix
+from how slugs are *composed*, so the QR back-half and the Phase 1 slug match the
+published page instead of pointing at a stale `YYYY-MM-DD`-prefixed back-half.
+
+- `rules/qr-generation-rules.md` §4: the QR back-half IS `talk.slug`, composed in
+  Phase 1 (per the speaker's `slug_convention.template`) and used VERBATIM — no
+  invent / rephrase / re-derive / date-prefix. Replaces the old
+  `{YYYY-MM-DD}-{conference-slug}-{talk-short-name}` format and removes the
+  self-contradictory derive-from-delivery-date guidance. §2 example date-less.
+- `rules/interaction-rules.md` and
+  `skills/presentation-creator/references/phase1-intent.md`: the Phase 1
+  slug-confirmation examples are now date-less (`jcon26-robocoders`).
+- QR eval scenarios (`qr-bitly-slug-from-outline`,
+  `qr-missing-shortener-detection`): fixtures + criteria updated to a date-less
+  slug, in a synthetic namespace (`froconf26-cache-stampedes`) distinct from the
+  `devnexus`/`robocoders` examples used in skill/rule context (no fixture/example
+  bleeding).
+- `generate-qr.py` needed no change — it already uses the passed `--talk-slug`
+  verbatim as the custom back-half.
+- Left intentionally: `url.template` date variables (URL *assembly*, configurable
+  per deployed site — tracked in #17), and legacy date-prefixed filenames already
+  published (the publisher's never-rename guard) or ingested into the vault.
+
 ## 0.18.16 — 2026-06-07
 
 ### fix(shownotes-publisher) — use talk.slug as the filename, drop the date prefix

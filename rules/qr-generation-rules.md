@@ -17,8 +17,8 @@ python3 generate-qr.py --png-only --talk-slug SLUG --shownotes-url URL \
 ## 2. NEVER Use a Random Shortener Hash
 
 The custom back-half MUST be the talk slug. The script does this automatically:
-`--talk-slug 2026-04-16-devnexus-robocoders-judgment-day` creates
-`bit.ly/2026-04-16-devnexus-robocoders-judgment-day` (not `bit.ly/a3xK9f`).
+`--talk-slug devnexus26-robocoders` creates `bit.ly/devnexus26-robocoders`
+(not `bit.ly/a3xK9f`).
 
 Random hashes are untraceable and unprofessional. The back-half IS the slug.
 
@@ -33,22 +33,14 @@ URL is the only option.
 
 ## 4. Slug Convention
 
-Slug format: `{YYYY-MM-DD}-{conference-slug}-{talk-short-name}`
+The back-half IS `talk.slug` — composed and agreed with the author in Phase 1
+(per the speaker's `slug_convention.template`) and persisted in `outline.yaml` /
+`presentation-spec.md`. The QR step uses it VERBATIM: never invent, rephrase,
+re-derive, abbreviate, or date-prefix it. The back-half must equal the published
+shownotes slug.
 
-- Derive mechanically from: delivery date + conference name + talk title
 - Kebab-case, lowercase, no special characters
-- No abbreviations, no ambiguity
-- The slug is agreed with the author in Phase 1 and persisted in
-  `presentation-spec.md`. NEVER invent, rephrase, or re-derive it.
-
-Example: `2026-04-16-devnexus-robocoders-judgment-day`
-
-Read the speaker's convention from
-`publishing_process.shownotes.slug_convention.template` in the profile. If
-not set (or if it disagrees with recent shownotes entries under
-`publishing_process.shownotes.source.path_or_url` /
-`shownotes.source.talks_subdir`), treat the observed live convention as
-authoritative and offer to update the profile via vault-clarification.
+- No date prefix (e.g. `devnexus26-robocoders`, not `2026-04-16-devnexus-robocoders`)
 
 ## 5. Missing Shortener Config = STOP
 
