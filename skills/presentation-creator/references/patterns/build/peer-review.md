@@ -62,7 +62,7 @@ The inverse of Peer Review is the Tower of Babble antipattern, where unreviewed,
 ## When to Use / When to Avoid
 Use Peer Review for any presentation you care about. At minimum, always complete steps one and two (automated tools and reading aloud). For conference talks, client presentations, and any high-visibility event, aim for at least step three. Reserve steps four and five for keynotes, product launches, and career-defining moments.
 
-Avoid skipping Peer Review because you "know the material." Expertise in a subject does not guarantee clear communication of that subject. In fact, domain experts are often the worst at spotting their own unclear writing.
+Avoid skipping Peer Review on the claim that you "know the material." Expertise in a subject does not guarantee clear communication of that subject. In fact, domain experts are often the worst at spotting their own unclear writing.
 
 ## Detection Heuristics
 When scoring talks, look for the absence of errors rather than the presence of editing marks. Clean grammar, consistent capitalization, uniform punctuation style, and the absence of typos on slides are all strong indicators that Peer Review was applied. Inconsistent formatting — some slides with periods at the end of bullets, others without — suggests the pattern was not followed.
