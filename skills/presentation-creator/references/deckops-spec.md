@@ -65,6 +65,12 @@ and `CAT`/`SERIES` ops that follow. `SLIDE` resets the current table and chart.
 - Chart categories / series buffer and apply when the next `CHART` or `SLIDE`
   starts (or at end of input).
 
+## Missing Placeholders
+
+When the chosen layout lacks the `TITLE` / `SUBTITLE` / `BODY` placeholder,
+`BuildDeck` preserves that op's content in a fallback text box (a default band the
+author can reposition). `BULLET` follows the same body target. Content is never dropped.
+
 ## Enum Values
 
 `SHAPE` takes an `msoAutoShapeType` and `CHART` an `xlChartType` integer.

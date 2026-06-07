@@ -722,8 +722,10 @@ Fail8:
     BuildDeck = -1
 End Function
 
-' Set a placeholder's text by type (ppPlaceholderTitle / Subtitle / Body),
-' falling back to the slide's Title shape for titles. No-op if absent.
+' Set a placeholder's text by type (ppPlaceholderTitle / Subtitle / Body). If the
+' chosen layout lacks that placeholder, PRESERVE the content in a fallback text
+' box (FallbackBox) rather than dropping it silently — the caller would otherwise
+' report success on a deck missing the requested copy.
 Private Sub SetPlaceholderText(ByVal sld As Slide, ByVal phType As Long, ByVal txt As String)
     If sld Is Nothing Then Exit Sub
     Dim shp As Shape
@@ -735,33 +737,83 @@ Private Sub SetPlaceholderText(ByVal sld As Slide, ByVal phType As Long, ByVal t
             End If
         End If
     Next shp
-    If phType = ppPlaceholderTitle Then
-        On Error Resume Next
-        sld.Shapes.Title.TextFrame.TextRange.Text = txt
-        On Error GoTo 0
-    End If
+    ' placeholder absent — fall back so the content is never lost
+    Select Case phType
+        Case ppPlaceholderTitle
+            Dim ttlShape As Shape
+            Set ttlShape = Nothing
+            On Error Resume Next
+            Set ttlShape = sld.Shapes.Title
+            On Error GoTo 0
+            If ttlShape Is Nothing Then
+                FallbackBox(sld, "Title").TextFrame.TextRange.Text = txt
+            Else
+                ttlShape.TextFrame.TextRange.Text = txt
+            End If
+        Case ppPlaceholderSubtitle
+            FallbackBox(sld, "Subtitle").TextFrame.TextRange.Text = txt
+        Case Else
+            BodyTarget(sld).TextFrame.TextRange.Text = txt
+    End Select
 End Sub
 
-' Append a bullet paragraph to the slide's body placeholder at the given
-' 0-based indent level.
+' Append a bullet paragraph to the slide's body target at the given 0-based
+' indent level. Uses the body/object placeholder when present, else a fallback
+' text box (BodyTarget), so bullets are never dropped on a body-less layout.
 Private Sub AddBulletLine(ByVal sld As Slide, ByVal level As Long, ByVal txt As String)
     If sld Is Nothing Then Exit Sub
-    Dim shp As Shape, body As Shape
-    For Each shp In sld.Shapes
-        If shp.Type = msoPlaceholder Then
-            If shp.PlaceholderFormat.Type = ppPlaceholderBody Or shp.PlaceholderFormat.Type = ppPlaceholderObject Then
-                Set body = shp: Exit For
-            End If
-        End If
-    Next shp
-    If body Is Nothing Then Exit Sub
+    Dim body As Shape
+    Set body = BodyTarget(sld)
     Dim tr As TextRange
     Set tr = body.TextFrame.TextRange
     If Len(tr.Text) > 0 Then tr.InsertAfter vbCr
     Dim para As TextRange
     Set para = tr.InsertAfter(txt)
+    ' IndentLevel is a list property; guard it so a plain fallback box still keeps the text
+    On Error Resume Next
     para.IndentLevel = level + 1
+    On Error GoTo 0
 End Sub
+
+' The body/object placeholder if the layout has one, else a reused fallback text
+' box so BODY + BULLET content survives a body-less layout.
+Private Function BodyTarget(ByVal sld As Slide) As Shape
+    Dim shp As Shape
+    For Each shp In sld.Shapes
+        If shp.Type = msoPlaceholder Then
+            If shp.PlaceholderFormat.Type = ppPlaceholderBody _
+               Or shp.PlaceholderFormat.Type = ppPlaceholderObject Then
+                Set BodyTarget = shp: Exit Function
+            End If
+        End If
+    Next shp
+    Set BodyTarget = FallbackBox(sld, "Body")
+End Function
+
+' Create (or reuse) a named text box for content whose placeholder is missing
+' from the chosen layout. One box per (slide, role); geometry is a sensible
+' default band the author can reposition. Roles: "Title", "Subtitle", "Body".
+Private Function FallbackBox(ByVal sld As Slide, ByVal role As String) As Shape
+    Dim nm As String
+    nm = "DeckOps_" & role
+    Dim shp As Shape
+    For Each shp In sld.Shapes
+        If shp.Name = nm Then Set FallbackBox = shp: Exit Function
+    Next shp
+    Dim sw As Single, sh As Single, m As Single
+    sw = sld.Parent.PageSetup.SlideWidth
+    sh = sld.Parent.PageSetup.SlideHeight
+    m = 36
+    Dim t As Single, h As Single
+    Select Case role
+        Case "Title":    t = m:        h = sh * 0.18
+        Case "Subtitle": t = sh * 0.2: h = sh * 0.12
+        Case Else:       t = sh * 0.32: h = sh * 0.6
+    End Select
+    Set FallbackBox = sld.Shapes.AddTextbox(msoTextOrientationHorizontal, m, t, sw - 2 * m, h)
+    FallbackBox.Name = nm
+    FallbackBox.TextFrame.WordWrap = msoTrue
+End Function
 
 ' Best-effort optimize_slide_text: shrink each text box's text to fit its shape.
 Private Sub AutofitSlide(ByVal sld As Slide)

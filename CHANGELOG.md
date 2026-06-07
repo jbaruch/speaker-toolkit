@@ -18,7 +18,9 @@ Completes #57: real PowerPoint is the sole `.pptx` engine.
   a flat op sequence: `SLIDE` / `TITLE` / `SUBTITLE` / `BODY` / `BULLET` / `TEXT`
   / `IMAGE` / `SHAPE` / `BG` / `FOOTER` / `OPTIMIZE` / `TABLE` / `CELL` / `CHART`
   / `CAT` / `SERIES` — full parity with the retired MCP surface, in one module
-  (VBA has no package manager; the macros share private helpers).
+  (VBA has no package manager; the macros share private helpers). When a layout
+  lacks the requested title/subtitle/body placeholder, `BuildDeck` preserves the
+  op's content in a fallback text box rather than dropping it silently.
 - **`build-deck.sh` / `build-deck.applescript`** — wrapper + driver. The
   AppleScript reads the ops file as UTF-8 and passes it as one Unicode arg (no
   VBA-side decoding); the wrapper validates first, stages locally, then moves the
