@@ -1,5 +1,26 @@
 # Changelog
 
+### feat(presentation-creator) — generate narrative.md during Phases 1–2 for early review
+
+`narrative.md` (the prose distillation of `talk.thesis` + `chapters[].argument_beats`)
+can now be generated and reviewed before any slide exists. Previously
+`extract-narrative.py` called `load_outline()`, which runs the full `Outline`
+schema — `slides[]` (min 1), the `big_idea` singleton, paired callbacks, and
+slide-budget math — so the human-readable narrative could not appear until Phase 3,
+after slide content development had already begun. The narrative itself is fully
+authored by the end of Phase 2, so the author had no readable artifact to approve
+at the point the argument was actually being shaped.
+
+- New `PartialOutline` model + `load_outline_partial()` in `outline_schema.py`
+  validate `talk` (+ optional `chapters`) without the slide-dependent
+  cross-validators. The full `Outline` stays the Phase 3+ source-of-truth contract.
+- `extract-narrative.py --partial` renders from the partial view and emits a
+  "narrative arc not yet authored" note when chapters are absent.
+- SKILL.md: Phase 1 emits a thesis-only stub; Phase 2 regenerates the full
+  narrative and the gate now requires author approval of narrative + architecture
+  before Phase 3. The plain (full-validation) extractor path is unchanged from
+  Phase 3 onward.
+
 ### fix(qr-generation) — compose date-less talk slugs (QR + Phase 1) (#55)
 
 Completes the date-less-slug convention. #66 made the publisher consume

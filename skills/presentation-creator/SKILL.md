@@ -59,9 +59,9 @@ thresholds (1.5 slides/min, 45% Act 1 cap), ask for template/publishing interact
 | Phase | What happens | Gate |
 |-------|-------------|------|
 | 0: Intake | Load vault, gather context | Topic and context captured |
-| 1: Intent Distillation | Clarifying questions → `talk:` block of `outline.yaml` | Author confirms metadata |
-| 2: Rhetorical Architecture | Joint instrument selection → `architecture`, `applied_patterns`, `chapters[]` in `outline.yaml` | Author approves architecture |
-| 3: Content Development | Fill `slides[]` + `interludes[]` in `outline.yaml`; generate `narrative.md`, `script.md`, `slides.md`, `rhetorical-review.md` | Draft delivered |
+| 1: Intent Distillation | Clarifying questions → `talk:` block of `outline.yaml`; generate thesis-only `narrative.md` (partial) | Author confirms metadata |
+| 2: Rhetorical Architecture | Joint instrument selection → `architecture`, `applied_patterns`, `chapters[]` in `outline.yaml`; regenerate `narrative.md` (partial) for review | Author approves narrative + architecture |
+| 3: Content Development | Fill `slides[]` + `interludes[]` in `outline.yaml`; finalize `narrative.md` (full) + generate `script.md`, `slides.md`, `rhetorical-review.md` | Draft delivered |
 | 4: Revision & Guardrails | Iterate on feedback, run guardrail checks against `outline.yaml` | Author declares outline done |
 | 5: Slide Generation | Build .pptx from template (or presenterm `{slug}.md`) using `slides.md` build-sheet | Author declares slides done |
 | 6: Publishing | Export, shownotes, QR per speaker's workflow | Published and ready |
@@ -93,6 +93,18 @@ python3 skills/presentation-creator/scripts/check-rhetorical.py  outline.yaml > 
 ```
 
 Validate the YAML with `python3 skills/presentation-creator/scripts/outline_schema.py outline.yaml` — exits non-zero with a typed error if any validator fails.
+
+`narrative.md` is the exception to "by end of Phase 3" — it is generated earlier
+in partial form during Phases 1–2 so the author can review and approve the
+narrative before slide content development:
+
+```bash
+python3 skills/presentation-creator/scripts/extract-narrative.py --partial outline.yaml > narrative.md
+```
+
+`--partial` validates `talk` + `chapters` without requiring `slides[]`. The
+plain (full-validation) commands above apply from Phase 3 onward, once `slides[]`
+exists.
 
 **Late entry (single-task requests).**
 
@@ -159,6 +171,15 @@ Gate: Author confirms or edits the metadata.
 
 Save the partial outline to: `{presentations-dir}/{conference}/{year}/{talk-slug}/outline.yaml`
 
+Then generate the narrative stub so the author can read the thesis in prose form:
+
+```bash
+python3 skills/presentation-creator/scripts/extract-narrative.py --partial outline.yaml > narrative.md
+```
+
+At this phase `narrative.md` carries the thesis only — the chapter body fills in
+at Phase 2. Surface it to the author for an early read. Proceed immediately to Phase 2.
+
 The talk block is the source of truth for the slug, duration, mode, and other
 metadata. Later phases (Phase 2 architecture, Phase 3 slides, Phase 6 publishing)
 extend the SAME file with `chapters[]`, `slides[]`, `interludes[]`, etc. — do not
@@ -184,6 +205,19 @@ STYLE ANCHOR block back into the outline header.
 For each: present options, recommend based on spec, let author choose.
 If co-presented, add role split and voice differentiation — see [references/phase1-intent.md](references/phase1-intent.md).
 
+Once the architecture is set, author `chapters[]` (section headings, `target_min`,
+`argument_beats[]`) into `outline.yaml`, then regenerate the narrative — now with
+its chapter body — for human review:
+
+```bash
+python3 skills/presentation-creator/scripts/extract-narrative.py --partial outline.yaml > narrative.md
+```
+
+Present `narrative.md` to the author. This is the narrative-approval point: the
+author reads the prose distillation and approves or revises the argument before
+any per-slide content is written in Phase 3. `argument_beats[].slide_refs` stays
+empty here — slides do not exist yet.
+
 **Slide budget** — read from `profile → guardrail_sources.slide_budgets` at runtime.
 If the profile is unavailable (summary-only mode), use these defaults:
 
@@ -195,7 +229,7 @@ If the profile is unavailable (summary-only mode), use these defaults:
 | 60 min | 90 | 1.5 |
 | 75 min | 110 | 1.5 |
 
-Gate: Author approves the architecture.
+Gate: Author approves the narrative (`narrative.md`) and the architecture.
 
 ## Step 3 — Content Development
 

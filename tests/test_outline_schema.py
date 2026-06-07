@@ -1,7 +1,6 @@
 """Tests for outline_schema.py — pydantic validators on the outline source-of-truth."""
 
 import copy
-import os
 from pathlib import Path
 
 import pytest
@@ -622,6 +621,52 @@ def test_rejects_argument_beat_slide_ref_to_missing_slide(outline_schema, base_d
     data["chapters"][0]["argument_beats"][0]["slide_refs"] = [999]
     with pytest.raises(ValidationError, match="slide_ref 999"):
         outline_schema.Outline.model_validate(data)
+
+
+# ── Partial (narrative-phase) loader ─────────────────────────────────
+
+
+def test_partial_accepts_talk_only(outline_schema, base_data):
+    """Phase 1: only the talk block exists — no chapters, no slides."""
+    data = {"talk": copy.deepcopy(base_data["talk"])}
+    partial = outline_schema.PartialOutline.model_validate(data)
+    assert partial.talk.title == "Demo Talk"
+    assert partial.chapters == []
+    assert partial.slides == []
+
+
+def test_partial_accepts_chapters_without_slides(outline_schema, base_data):
+    """Phase 2: chapters authored, slides not yet — no slide-dependent
+    cross-validator fires, so beats may carry slide_refs to not-yet-real slides."""
+    data = {
+        "talk": copy.deepcopy(base_data["talk"]),
+        "chapters": copy.deepcopy(base_data["chapters"]),
+    }
+    partial = outline_schema.PartialOutline.model_validate(data)
+    assert len(partial.chapters) == 3
+    assert partial.slides == []
+
+
+def test_partial_still_validates_talk_fields(outline_schema, base_data):
+    """Field-level validators on talk still fire in partial mode."""
+    data = {"talk": copy.deepcopy(base_data["talk"])}
+    data["talk"]["architecture"] = "freeform-vibes"
+    with pytest.raises(ValidationError, match="architecture"):
+        outline_schema.PartialOutline.model_validate(data)
+
+
+def test_partial_rejects_unknown_field(outline_schema, base_data):
+    """extra='forbid' holds — misspelled keys fail loud even in partial mode."""
+    data = {"talk": copy.deepcopy(base_data["talk"]), "chapterz": []}
+    with pytest.raises(ValidationError, match="chapterz"):
+        outline_schema.PartialOutline.model_validate(data)
+
+
+def test_partial_loader_accepts_full_outline(outline_schema):
+    """--partial works at any phase: a complete outline also loads partially."""
+    partial = outline_schema.load_outline_partial(FIXTURE)
+    assert len(partial.chapters) == 3
+    assert len(partial.slides) == 8
 
 
 # ── CLI: --emit-json contract ─────────────────────────────────────────

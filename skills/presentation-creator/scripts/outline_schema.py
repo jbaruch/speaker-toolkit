@@ -564,6 +564,27 @@ class Outline(_StrictModel):
         return self
 
 
+# ── Narrative-phase partial view ─────────────────────────────────────
+
+
+class PartialOutline(_StrictModel):
+    """Talk metadata plus an optional, slide-less narrative scaffold.
+
+    The narrative (`talk.thesis` + `chapters[].argument_beats`) is fully
+    authored by the end of Phase 2, before any slide exists. `extract-narrative.py`
+    renders from this view so the human can review and approve the narrative
+    during Phases 1–2. The full `Outline` (slides + every cross-field validator)
+    stays the Phase 3+ source-of-truth contract; this view runs only the
+    field-level validators on `talk` and `chapters`.
+    """
+
+    talk: TalkMetadata
+    style_anchor: StyleAnchor | None = None
+    chapters: list[Chapter] = Field(default_factory=list)
+    slides: list[Slide] = Field(default_factory=list)
+    interludes: list[Interlude] = Field(default_factory=list)
+
+
 # ── Loader + CLI guard ───────────────────────────────────────────────
 
 
@@ -571,6 +592,12 @@ def load_outline(path: Path | str) -> Outline:
     text = Path(path).read_text(encoding="utf-8")
     data = yaml.safe_load(text)
     return Outline.model_validate(data)
+
+
+def load_outline_partial(path: Path | str) -> PartialOutline:
+    text = Path(path).read_text(encoding="utf-8")
+    data = yaml.safe_load(text)
+    return PartialOutline.model_validate(data)
 
 
 def main(argv: list[str]) -> int:

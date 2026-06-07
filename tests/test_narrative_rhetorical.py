@@ -96,6 +96,64 @@ def test_narrative_renders_thesis_when_present(
     assert "two-sentence thesis" in out
 
 
+# ── extract-narrative.py — partial (narrative-phase) rendering ───────
+
+
+def test_narrative_partial_thesis_only_stub(
+    extract_narrative, outline_schema, base_data,
+):
+    """Phase 1 stub: thesis renders, chapter body is a 'not yet authored' note."""
+    data = {"talk": copy.deepcopy(base_data["talk"])}
+    data["talk"]["thesis"] = "Treat context as a first-class artifact."
+    partial = outline_schema.PartialOutline.model_validate(data)
+    out = extract_narrative.render(partial)
+    assert "## Thesis" in out
+    assert "Treat context as a first-class artifact." in out
+    assert "Narrative arc not yet authored" in out
+    assert "### The Setup" not in out  # no chapters yet
+
+
+def test_narrative_partial_renders_chapters_without_slides(
+    extract_narrative, outline_schema, base_data,
+):
+    """Phase 2: chapters present, slides absent — full chapter body renders."""
+    data = {
+        "talk": copy.deepcopy(base_data["talk"]),
+        "chapters": copy.deepcopy(base_data["chapters"]),
+    }
+    partial = outline_schema.PartialOutline.model_validate(data)
+    out = extract_narrative.render(partial)
+    assert "### The Setup" in out
+    assert "### The Turn" in out
+    assert "Open cold with the receipt" in out
+    assert "Narrative arc not yet authored" not in out
+
+
+def test_narrative_cli_partial_renders_talk_only(
+    extract_narrative, base_data, tmp_path, capsys,
+):
+    """CLI --partial renders a talk-only outline to stdout."""
+    data = {"talk": copy.deepcopy(base_data["talk"])}
+    path = tmp_path / "partial.yaml"
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    rc = extract_narrative.main(["extract-narrative.py", "--partial", str(path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert out.startswith("# Demo Talk — Narrative Read")
+
+
+def test_narrative_cli_full_mode_rejects_slideless_outline(
+    extract_narrative, base_data, tmp_path, capsys,
+):
+    """Without --partial, a slides-less outline fails full validation (exit 1)."""
+    data = {"talk": copy.deepcopy(base_data["talk"])}
+    path = tmp_path / "slideless.yaml"
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    rc = extract_narrative.main(["extract-narrative.py", str(path)])
+    assert rc == 1
+    assert "failed to load" in capsys.readouterr().err
+
+
 # ── check-rhetorical.py — happy path ─────────────────────────────────
 
 

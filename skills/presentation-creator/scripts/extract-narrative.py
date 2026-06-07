@@ -24,7 +24,7 @@ from pydantic import ValidationError  # noqa: E402
 import outline_schema as _os  # noqa: E402
 
 
-def render(outline: _os.Outline) -> str:
+def render(outline: "_os.Outline | _os.PartialOutline") -> str:
     lines: list[str] = []
 
     lines.append(f"# {outline.talk.title} — Narrative Read")
@@ -49,9 +49,17 @@ def render(outline: _os.Outline) -> str:
             lines.append(para.strip())
             lines.append("")
 
-    chapter_total = sum(c.target_min for c in outline.chapters)
     lines.append("## Part 1 — The Talk as a Narrative")
     lines.append("")
+    if not outline.chapters:
+        lines.append(
+            "*Narrative arc not yet authored — chapters and argument beats "
+            "appear after Phase 2 (Rhetorical Architecture).*",
+        )
+        lines.append("")
+        return _finalize(lines)
+
+    chapter_total = sum(c.target_min for c in outline.chapters)
     lines.append(
         f"*Chapter time targets sum to {chapter_total:g} min "
         f"(talk slot: {outline.talk.duration_min:g} min).*",
@@ -80,7 +88,11 @@ def render(outline: _os.Outline) -> str:
                 lines.append(text)
             lines.append("")
 
-    # Collapse blank runs, ensure single trailing newline
+    return _finalize(lines)
+
+
+def _finalize(lines: list[str]) -> str:
+    """Collapse blank runs, ensure a single trailing newline."""
     cleaned: list[str] = []
     prev_blank = False
     for line in lines:
@@ -96,17 +108,23 @@ def render(outline: _os.Outline) -> str:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
+    args = argv[1:]
+    partial = "--partial" in args
+    args = [a for a in args if a != "--partial"]
+    if len(args) != 1:
         print(
-            "usage: extract-narrative.py <outline.yaml>\n"
-            "       prints narrative.md to stdout",
+            "usage: extract-narrative.py [--partial] <outline.yaml>\n"
+            "       prints narrative.md to stdout\n"
+            "       --partial: render the Phase 1–2 narrative scaffold "
+            "(talk + chapters, before slides are authored)",
             file=sys.stderr,
         )
         return 2
+    loader = _os.load_outline_partial if partial else _os.load_outline
     try:
-        outline = _os.load_outline(argv[1])
+        outline = loader(args[0])
     except (OSError, yaml.YAMLError, ValidationError) as exc:
-        print(f"failed to load {argv[1]}: {exc}", file=sys.stderr)
+        print(f"failed to load {args[0]}: {exc}", file=sys.stderr)
         return 1
     sys.stdout.write(render(outline))
     return 0
