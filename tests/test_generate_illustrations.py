@@ -135,6 +135,27 @@ def test_run_build_missing_keep_exits_nonzero_without_editing(
     assert list(builds_dir.glob("slide-60-build-*")) == []
 
 
+def test_run_build_negated_keep_is_not_a_preservation_clause(
+    generate_illustrations, monkeypatch, tmp_path
+):
+    # "Do not keep ..." is a removal, not a preservation clause: the slide is
+    # skipped (exit 1, no edit) exactly like a bare description, so the bare
+    # `keep` token can't satisfy the rule.
+    gi = generate_illustrations
+    outline = _single_build_slide([
+        {"step": 0, "description": "Erase Panel 1. Do not keep the old stamp.", "is_full": False},
+        {"step": 1, "description": "[FULL] all panels", "is_full": True},
+    ])
+    edit_calls = []
+    _stub_build_deps(gi, monkeypatch, tmp_path, outline, edit_calls)
+
+    with pytest.raises(SystemExit) as exc:
+        gi.run_build("ignored.md", "60")
+
+    assert exc.value.code == 1
+    assert edit_calls == []
+
+
 def test_run_build_with_keep_clause_runs_chain(
     generate_illustrations, monkeypatch, tmp_path
 ):

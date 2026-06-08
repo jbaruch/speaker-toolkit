@@ -406,18 +406,29 @@ def final_build_dest(builds_dir, slide_num, final_step, source_path):
     return os.path.join(builds_dir, f"slide-{slide_num:02d}-build-{final_step:02d}{src_ext}")
 
 
+def _has_keep_clause(description):
+    """True if the description has a positive "Keep <target>" sentence.
+
+    The bare token `keep` is not enough — "Do not keep Panel 3" is a removal,
+    not a preservation. Split on sentence boundaries and require a sentence that
+    *begins* with "Keep" followed by a target, matching the documented
+    "Keep the [X]." format and rejecting negated/non-clause wording.
+    """
+    return any(
+        re.match(r"\s*keep\s+\S", sentence, re.IGNORECASE)
+        for sentence in re.split(r"[.!?]+", description)
+    )
+
+
 def steps_missing_keep_clause(edit_steps):
-    """Build erase steps lacking an explicit "Keep ..." preservation list.
+    """Build erase steps lacking a positive "Keep <target>" preservation clause.
 
     Component #3 of the Edit Prompt Safety rule. An erase step with no Keep
     clause lets the model silently retain the element meant to be erased, so
     the build chain emits visually identical stages. Returns the offending
     steps (empty list means every step is compliant).
     """
-    return [
-        s for s in edit_steps
-        if not re.search(r"\bkeep\b", s["description"], re.IGNORECASE)
-    ]
+    return [s for s in edit_steps if not _has_keep_clause(s["description"])]
 
 
 def next_version(output_dir, slide_num):
