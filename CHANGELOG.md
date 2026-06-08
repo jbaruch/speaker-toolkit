@@ -1,5 +1,20 @@
 # Changelog
 
+### feat(illustrations,presentation-creator) — progressive-reveal build expansion in the deck
+
+The toolkit generated build frames (`--build`) but never assembled them into the
+deck — `builds.md`'s "Deck Insertion" was unimplemented. A new `ExpandBuilds` VBA
+pass (`RunDeckOps.bas`) replaces each progressive-reveal parent slide with its
+build frames as full-bleed background-fill slides (speaker notes on the final
+frame only), via real PowerPoint slide insertion — structural edits never use
+python-pptx (`rules/deck-editing-rules.md`). `build-expansion-manifest.py` emits
+the plan from the outline + generated frames; `build-expansion-to-packed.py`
+packs it into the wire format descending by parent; `expand-builds.sh` drives the
+macro. Run it before the by-index passes (notes/backgrounds/QR), which must key
+on the post-expansion deck since expansion renumbers later slides. The Python
+emitter + packer are unit-tested; the VBA pass is validated by opening a built
+deck (per the macOS VBA-untestable-in-CI rule).
+
 ### feat(illustrations) — poster-theatrical composition
 
 A deck-level composition choice, decided in the style wizard and baked into the

@@ -312,6 +312,93 @@ Fail3:
     ApplyBackgrounds = -1
 End Function
 
+' Expand progressive-reveal BUILD sequences: replace each parent slide with its
+' ordered build frames as full-bleed BACKGROUND-FILL slides (the layout's
+' halftone-dot overlay covers them, same as other full-bleed slides). Speaker
+' notes go on the FINAL frame only. Structural slide insertion goes through real
+' PowerPoint here — never python-pptx (rules/deck-editing-rules.md).
+'
+' Records MUST be ordered by parent slide DESCENDING so inserting one parent's
+' frames never shifts the original indices of lower-numbered parents still to be
+' expanded; the converter (build-expansion-to-packed.py) guarantees that order.
+' Run BEFORE any by-index pass (ApplyBackgrounds / SetSpeakerNotes / InsertQR) —
+' expansion renumbers later slides, so those passes must key on POST-expansion
+' indices.
+'
+' AppleScript reads the packed spec file as UTF-8 and passes it here as ONE
+' Unicode argument. Packed format: records separated by Chr(30) (RS); within a
+' record three fields separated by Chr(31) (US): parentIndex, finalNotes,
+' framesList; framesList is POSIX paths separated by Chr(29) (GS), build-00 first.
+' Invoked via:
+'   run VB macro macro name "ExpandBuilds" list of parameters _
+'       {basePath, outPath, packedSpec}
+Public Function ExpandBuilds(ByVal basePath As String, _
+                             ByVal outPath As String, _
+                             ByVal packedSpec As String) As Long
+    Dim curTok As String
+    Dim base As Presentation
+    ' outer-boundary-process-contract — see the module-header error-handling contract.
+    On Error GoTo FailEB
+
+    curTok = "guard:base"
+    AssertNotOpen BaseName(basePath)
+    curTok = "open:base"
+    Set base = Presentations.Open(FileName:=basePath, WithWindow:=msoTrue)
+
+    Dim records() As String, r As Long
+    Dim fields() As String, frames() As String
+    Dim parent As Long, noteText As String
+    Dim lay As CustomLayout, ns As Slide
+    Dim m As Long, expanded As Long
+    expanded = 0
+    If Len(packedSpec) > 0 Then
+        records = Split(packedSpec, Chr(30))
+        For r = LBound(records) To UBound(records)
+            If Len(Trim(records(r))) > 0 Then
+                fields = Split(records(r), Chr(31))
+                If UBound(fields) < 2 Then Err.Raise vbObjectError + 540, , _
+                    "Bad build record (need parent/notes/frames): " & records(r)
+                parent = CLng(Trim(fields(0)))
+                noteText = fields(1)
+                frames = Split(fields(2), Chr(29))
+                curTok = "build:" & parent
+                If parent < 1 Or parent > base.Slides.Count Then Err.Raise vbObjectError + 541, , _
+                    "Build parent " & parent & " out of range (deck has " & base.Slides.Count & ")"
+                Set lay = base.Slides(parent).CustomLayout
+                For m = LBound(frames) To UBound(frames)
+                    Set ns = base.Slides.AddSlide(parent + m, lay)
+                    ns.FollowMasterBackground = msoFalse
+                    ns.Background.Fill.UserPicture Trim(frames(m))
+                    If m = UBound(frames) And Len(noteText) > 0 Then SetNotesBody ns, noteText
+                Next m
+                ' the original parent now sits just past the inserted frames — drop it
+                base.Slides(parent + UBound(frames) + 1).Delete
+                expanded = expanded + 1
+            End If
+        Next r
+    End If
+
+    curTok = "save"
+    base.SaveCopyAs FileName:=outPath
+    curTok = "close"
+    base.Close
+    ExpandBuilds = expanded
+    Exit Function
+
+FailEB:
+    Dim em As String
+    em = "ExpandBuilds failed at [" & curTok & "]:" & vbCr & _
+         Err.Number & " - " & Err.Description
+    On Error Resume Next
+    If Not base Is Nothing Then
+        base.Saved = msoTrue
+        base.Close
+    End If
+    On Error GoTo 0
+    MsgBox em, vbCritical, "ExpandBuilds"
+    ExpandBuilds = -1
+End Function
+
 ' Set per-slide speaker notes via real PowerPoint, which serializes valid notes
 ' OOXML — so the <p:notesMasterIdLst> Keynote-compat hack python-pptx needed is
 ' unnecessary. AppleScript reads the notes file as UTF-8 and passes the packed

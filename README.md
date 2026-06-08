@@ -6,6 +6,12 @@ A six-skill presentation system for conference speakers: analyze your existing t
 
 ## What's New (Unreleased)
 
+**Progressive-reveal build expansion** — the toolkit now assembles generated
+build frames into the deck: a new `ExpandBuilds` PowerPoint pass replaces each
+progressive-reveal parent slide with its frames as full-bleed slides (notes on
+the final frame), so a build sequence becomes the sequential slides you advance
+through. Pairs with poster-theatrical for pure full-bleed, builds-and-all decks.
+
 **Poster-theatrical composition** — a style-wizard option where every slide is
 full-bleed and the title + footer are rendered *into* the image (stylized,
 blended), with only the QR code added afterward. No overlaid titles, no safe

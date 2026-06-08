@@ -139,6 +139,20 @@ def validate_profile():
 
 
 @pytest.fixture(scope="session")
+def build_expansion_manifest():
+    return _import_script(
+        os.path.join(SCRIPTS_ILL, "build-expansion-manifest.py"), "build_expansion_manifest"
+    )
+
+
+@pytest.fixture(scope="session")
+def build_expansion_to_packed():
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "build-expansion-to-packed.py"), "build_expansion_to_packed"
+    )
+
+
+@pytest.fixture(scope="session")
 def generate_illustrations():
     return _import_script(
         os.path.join(SCRIPTS_ILL, "generate-illustrations.py"), "generate_illustrations"

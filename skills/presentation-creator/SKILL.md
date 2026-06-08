@@ -433,6 +433,13 @@ prompts) — when invoked, surface the relevant fields from `outline.yaml` in th
 format the illustrations skill consumes. Updating the illustrations skill to
 consume `outline.yaml` natively is tracked separately.
 
+If any slide has progressive-reveal builds, expand them first with
+`skills/presentation-creator/scripts/expand-builds.sh` (manifest from
+`build-expansion-manifest.py`): it replaces each parent slide with its build
+frames as full-bleed slides. Run it BEFORE the by-index passes below — expansion
+renumbers later slides, so notes/backgrounds/QR must key on the post-expansion
+deck. See `rules/deck-editing-rules.md`.
+
 Inject speaker notes from `script.md` after the illustrations skill returns,
 via real PowerPoint — `skills/presentation-creator/scripts/inject-notes.sh`
 (notes JSON is the historical `{"<0-based slide #>": "text"}` map). PowerPoint

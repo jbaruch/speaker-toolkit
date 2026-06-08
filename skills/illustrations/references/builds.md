@@ -71,6 +71,25 @@ regenerating the entire chain.
 
 ## Deck Insertion
 
+Build slides are inserted via the `ExpandBuilds` VBA pass (real PowerPoint —
+structural slide insertion never uses python-pptx, per `rules/deck-editing-rules.md`):
+
+```bash
+# 1. Emit the build-expansion manifest from the outline + generated frames
+python3 skills/illustrations/scripts/build-expansion-manifest.py \
+    presentation-outline.md illustrations/builds/ --out builds-manifest.json
+
+# 2. Expand: replace each parent slide with its frames as full-bleed bg-fill slides
+skills/presentation-creator/scripts/expand-builds.sh \
+    <deck-copy.pptx> <deck-expanded.pptx> builds-manifest.json
+```
+
+`ExpandBuilds` processes parents descending so inserting one parent's frames
+doesn't shift lower-numbered parents. **Ordering**: run it BEFORE the by-index
+passes (`inject-notes.sh`, `apply-backgrounds.sh`, `insert-qr.sh`) — expansion
+renumbers every slide after a build parent, so those passes must key on the
+POST-expansion deck.
+
 Build slides are inserted as separate slides in the deck (not PowerPoint
 animations). Each step is a full-bleed image:
 

@@ -66,6 +66,18 @@ generating slide structure (see `rules/slide-generation-rules.md`).
 - Run this as the FINAL write of the build — after the structural walk, scrim/
   title, and speaker-note injection — so no later python-pptx save drops the fills.
 
+## Progressive-Reveal Build Expansion
+
+- `RunDeckOps.bas`'s `ExpandBuilds` replaces each progressive-reveal parent slide
+  with its build frames as full-bleed background-fill slides (notes on the final
+  frame only), via real PowerPoint slide insertion — never python-pptx. Invoke via
+  `skills/presentation-creator/scripts/expand-builds.sh <baseCopy> <out> <builds-manifest.json>`
+  (manifest from `build-expansion-manifest.py`).
+- Run `ExpandBuilds` BEFORE the by-index passes (notes, backgrounds, QR): it
+  renumbers every slide after a build parent, so those passes must key on the
+  POST-expansion deck. It processes parents descending so one parent's expansion
+  can't shift another's index.
+
 ## macOS-Only — VBA Layer Untestable in CI
 
 - The PowerPoint-driving layer (VBA + AppleScript) needs the Microsoft PowerPoint
