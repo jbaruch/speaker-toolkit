@@ -129,6 +129,10 @@ def test_run_build_missing_keep_exits_nonzero_without_editing(
     assert exc.value.code == 1
     assert edit_calls == []  # skipped before spending any edit API call
     assert "preservation list" in capsys.readouterr().err
+    # A skipped slide must leave no build artifact behind (validation runs
+    # before the final-image copy), so downstream checks aren't misled.
+    builds_dir = tmp_path / "builds"
+    assert list(builds_dir.glob("slide-60-build-*")) == []
 
 
 def test_run_build_with_keep_clause_runs_chain(

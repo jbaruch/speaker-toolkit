@@ -1362,16 +1362,6 @@ def run_build(outline_path, slide_arg):
             print(f"  SKIP — Builds declared but no build-NN entries parsed")
             continue
 
-        # Copy full image as the final build step. The dest path preserves
-        # the source extension — base images may be .jpg / .png / .webp
-        # depending on the generating vendor.
-        final_step = max(s["step"] for s in steps)
-        final_build = steps[-1]
-        if final_build["is_full"]:
-            dest = final_build_dest(builds_dir, num, final_step, full_image)
-            shutil.copy2(full_image, dest)
-            print(f"  build-{final_step:02d}: copied from slide-{num:02d} (full)")
-
         # Chain backwards: start from full, remove elements one at a time
         # Process steps in reverse order (excluding the final full step)
         edit_steps = [s for s in reversed(steps) if not s["is_full"]]
@@ -1379,8 +1369,9 @@ def run_build(outline_path, slide_arg):
         # Edit Prompt Safety component #3 (rules/illustration-rules.md): every
         # erase step must carry an explicit "Keep ..." preservation list. Without
         # it the model silently keeps the element that was meant to be erased, so
-        # the chain emits visually identical intermediate stages. Fail loud here,
-        # before spending any edit API calls on a chain that can't work.
+        # the chain emits visually identical intermediate stages. Validate before
+        # writing any artifact — a skipped slide must not leave a stray final
+        # build copy (or a "copied" log line) that misleads downstream checks.
         missing_keep = steps_missing_keep_clause(edit_steps)
         if missing_keep:
             build_failed = True
@@ -1395,6 +1386,16 @@ def run_build(outline_path, slide_arg):
                   "rules/illustration-rules.md component #3. Skipping slide.",
                   file=sys.stderr)
             continue
+
+        # Copy full image as the final build step. The dest path preserves
+        # the source extension — base images may be .jpg / .png / .webp
+        # depending on the generating vendor.
+        final_step = max(s["step"] for s in steps)
+        final_build = steps[-1]
+        if final_build["is_full"]:
+            dest = final_build_dest(builds_dir, num, final_step, full_image)
+            shutil.copy2(full_image, dest)
+            print(f"  build-{final_step:02d}: copied from slide-{num:02d} (full)")
 
         prev_image = full_image
 
