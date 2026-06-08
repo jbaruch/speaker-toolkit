@@ -30,6 +30,12 @@ validates that every erase step contains a `Keep` clause and skips the slide
 with an error if any step is missing one — component #3 is never silently
 dropped.
 
+Each build step's description is passed verbatim to the image editor as the
+edit prompt — phrase it as a removal, never as the resulting state. An additive
+or end-state description ("the CI server appears") contradicts component #1
+(`DO NOT add any new elements`, auto-appended); the editor obeys the suffix and
+the element survives instead of being erased.
+
 ## Style-Anchor Discipline
 
 Never simplify or rewrite the speaker's original style anchor when iterating.
