@@ -1282,3 +1282,14 @@ def test_gate_fails_when_outline_dir_missing(generate_illustrations, tmp_path):
     v = gi.check_style_explore(str(outline))
     assert v["gate_passed"] is False
     assert "outline_dir" in v["error"]
+
+
+def test_poster_embed_directive_normalizes_embedded_quotes(generate_illustrations):
+    # A title/footer containing double quotes must not create nested double
+    # quotes in the directive (they degrade model compliance).
+    gi = generate_illustrations
+    d = gi.apply_poster_embed_directive('a scene', 'He said "Hello"', 'tag "x"')
+    # The wrapping quotes around title/footer remain, but embedded ones are now '
+    assert '""' not in d
+    assert "He said 'Hello'" in d
+    assert "tag 'x'" in d

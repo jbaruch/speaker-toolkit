@@ -375,11 +375,17 @@ def apply_poster_embed_directive(prompt, title_text, footer_text):
         return prompt
     if "EMBEDDED TEXT" in prompt:
         prompt = prompt.split("EMBEDDED TEXT", 1)[0].rstrip()
+    # The directive wraps the title/footer in double quotes; normalize any
+    # embedded double quotes to single so a title like He said "Hi" doesn't
+    # produce ambiguous nested quotes that degrade model compliance.
+    title = title_text.replace('"', "'")
     footer_clause = ""
     if footer_text:
-        footer_clause = POSTER_FOOTER_CLAUSE_TEMPLATE.format(footer=footer_text)
+        footer_clause = POSTER_FOOTER_CLAUSE_TEMPLATE.format(
+            footer=footer_text.replace('"', "'")
+        )
     directive = POSTER_EMBED_DIRECTIVE_TEMPLATE.format(
-        title=title_text,
+        title=title,
         footer_clause=footer_clause,
     )
     return prompt + directive
