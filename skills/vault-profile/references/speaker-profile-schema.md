@@ -76,7 +76,20 @@ creation at runtime.
       "anti_sell_applicable": true,
       "commercial_intent": "none|subtle|direct",
       "profanity_default": "zero|moderate|heavy",
-      "closing_default": "name of default closing pattern for this mode"
+      "closing_default": "name of default closing pattern for this mode",
+      "typical_engine": "pptx|presenterm — optional; the engine this mode usually renders in"
+    }
+  ],
+
+  "presentation_engines": [
+    {
+      "id": "pptx",
+      "name": "human-readable engine name",
+      "renderer": "pptx|presenterm",
+      "when_to_use": "what spec signals suggest this engine",
+      "default_theme": "theme/template name for this engine, or null",
+      "usage_count": 18,
+      "out_of": 24
     }
   ],
 
@@ -356,6 +369,7 @@ automatically picks up changes when the profile is regenerated.
 |---|---|---|
 | `speaker` + `infrastructure` | Phase 0 (load) | Vault path, template reference, file conventions |
 | `presentation_modes` | Phase 2 (architecture) | Mode selection menu and recommendations |
+| `presentation_engines` | Phase 2 (Decision #2 — engine & theme sourcing), Phase 5 (slide generation) | Engine sourcing menu; Phase 5 reads the chosen renderer. Optional/additive — absent on older profiles, which fall back to a flat pptx/presenterm menu |
 | `design_rules` | Phase 5 (slide generation) | Background colors, footer specs, shape vocabulary |
 | `rhetoric_defaults` | Phase 1-3 (spec, architecture, content) | Voice calibration, opening/closing defaults |
 | `confirmed_intents` | Phase 2-4 (architecture, guardrails) | Hard rules that override pattern inference |

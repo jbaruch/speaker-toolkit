@@ -125,6 +125,11 @@ class SlideFormat(str, Enum):
     title = "TITLE"
 
 
+class Renderer(str, Enum):
+    pptx = "pptx"
+    presenterm = "presenterm"
+
+
 class AudienceTemperament(str, Enum):
     doer = "doer"
     supplier = "supplier"
@@ -306,6 +311,12 @@ class TalkMetadata(_StrictModel):
     catalog_reference: str | None = None
     delivery_count: int | None = Field(default=None, ge=1)
     delivery_date: str | None = None  # ISO YYYY-MM-DD
+
+    # Deck tooling + theme, sourced in Phase 2 Decision #2. All optional —
+    # older outlines without these fields still validate.
+    engine: Renderer | None = None  # pptx | presenterm; null = legacy/inferred
+    deck_theme: str | None = None  # free-string theme/template pointer (provenance)
+    engine_source: str | None = None  # how the engine was sourced (provenance)
 
     @field_validator("architecture")
     @classmethod

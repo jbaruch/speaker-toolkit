@@ -836,3 +836,246 @@ def test_render_explore_index_groups_by_style(generate_illustrations):
     assert "FAILED: rate limited" in md
     # representative slide mapping is documented in the header
     assert "FULL = slide 3" in md
+
+
+# ── Render-before-bake gate + rendered.json manifest ─────────────────
+
+
+def _write_gate_outline(tmp_path, model=None):
+    """Write an outline with a STYLE ANCHOR and one FULL slide; optional model."""
+    lines = ["# Plan", ""]
+    if model:
+        lines += [f"**Model:** `{model}`", ""]
+    lines += [
+        "### STYLE ANCHOR (FULL — 16:9, 1920x1080)",
+        "> A clean editorial illustration.",
+        "",
+        "### Slide 1: Intro",
+        "- Format: **FULL**",
+        "- Image prompt: `[STYLE ANCHOR] a thing`",
+        "",
+    ]
+    p = tmp_path / "outline.md"
+    p.write_text("\n".join(lines))
+    return p
+
+
+def _write_manifest(tmp_path, ok_models, cells=None):
+    se = tmp_path / "style-explore"
+    se.mkdir(exist_ok=True)
+    manifest = {
+        "schema_version": 1,
+        "outline": "outline.md",
+        "rendered_at": "2026-06-08T00:00:00Z",
+        "models_rendered_ok": ok_models,
+        "cells": cells or [],
+    }
+    path = se / "rendered.json"
+    path.write_text(json.dumps(manifest))
+    return path
+
+
+def test_rendered_manifest_excludes_failed(generate_illustrations, tmp_path):
+    # Outcome: a model that failed every cell never enters models_rendered_ok,
+    # so it can't pass the gate — you can't bake a model you never saw render.
+    gi = generate_illustrations
+    base = tmp_path / "style-explore"
+    base.mkdir()
+    outline = tmp_path / "outline.md"
+    outline.write_text("x")
+    results = [
+        {"style": "A", "format": "FULL", "model": "nano-banana-pro",
+         "status": "OK", "rel_path": "a/full/x.png"},
+        {"style": "A", "format": "FULL", "model": "gpt-image-2",
+         "status": "FAIL", "error": "boom"},
+    ]
+    path = gi.write_rendered_manifest(str(base), str(outline), results)
+    m = json.loads(open(path).read())
+    assert m["schema_version"] == 1
+    # nano-banana-pro resolves to its canonical id; the failed model is absent
+    assert m["models_rendered_ok"] == ["gemini-3-pro-image-preview"]
+    assert len(m["cells"]) == 2
+
+
+def test_gate_passes_when_model_rendered_ok(generate_illustrations, tmp_path):
+    gi = generate_illustrations
+    outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
+    _write_manifest(tmp_path, ["gemini-3-pro-image-preview"])
+    v = gi.check_style_explore(str(outline))
+    assert v["gate_passed"] is True
+    assert v["manifest_present"] is True
+
+
+def test_gate_passes_on_codename_resolution(generate_illustrations, tmp_path):
+    # Baking the codename must satisfy a grid that rendered the canonical id.
+    gi = generate_illustrations
+    outline = _write_gate_outline(tmp_path, model="nano-banana-pro")
+    _write_manifest(tmp_path, ["gemini-3-pro-image-preview"])
+    v = gi.check_style_explore(str(outline))
+    assert v["gate_passed"] is True
+    assert v["model_resolved"] == "gemini-3-pro-image-preview"
+
+
+def test_gate_fails_when_model_not_rendered(generate_illustrations, tmp_path):
+    gi = generate_illustrations
+    outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
+    _write_manifest(tmp_path, ["gpt-image-2"])
+    v = gi.check_style_explore(str(outline))
+    assert v["gate_passed"] is False
+    assert "not rendered" in v["error"]
+
+
+def test_gate_fails_when_no_manifest(generate_illustrations, tmp_path):
+    gi = generate_illustrations
+    outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
+    v = gi.check_style_explore(str(outline))
+    assert v["gate_passed"] is False
+    assert v["manifest_present"] is False
+    assert "never rendered" in v["error"]
+
+
+def test_gate_fails_when_no_model_baked(generate_illustrations, tmp_path):
+    gi = generate_illustrations
+    outline = _write_gate_outline(tmp_path, model=None)
+    _write_manifest(tmp_path, ["gemini-3-pro-image-preview"])
+    v = gi.check_style_explore(str(outline))
+    assert v["gate_passed"] is False
+    assert v["model_baked"] is None
+
+
+def test_gate_fails_when_model_only_failed(generate_illustrations, tmp_path):
+    gi = generate_illustrations
+    outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
+    cells = [{
+        "style": "A", "format": "FULL",
+        "model": "gemini-3-pro-image-preview",
+        "model_resolved": "gemini-3-pro-image-preview",
+        "status": "FAIL", "error": "boom",
+    }]
+    _write_manifest(tmp_path, [], cells=cells)
+    v = gi.check_style_explore(str(outline))
+    assert v["gate_passed"] is False
+
+
+def _stub_generate(gi, monkeypatch, outline_dict, output_dir, gen_calls):
+    monkeypatch.setattr(gi, "_load_context", lambda p: ({}, outline_dict, output_dir))
+    monkeypatch.setattr(gi.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        gi, "generate_image",
+        lambda *a, **k: (gen_calls.append(a), (b"x", "image/png"))[1],
+    )
+
+
+def test_run_generate_refuses_when_gate_fails(
+    generate_illustrations, monkeypatch, tmp_path, capsys
+):
+    # Outcome: with no rendered grid, run_generate exits non-zero BEFORE any
+    # image is generated — the model can't have been picked from real samples.
+    gi = generate_illustrations
+    outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
+    outline_dict = gi.parse_outline(str(outline))
+    gen_calls = []
+    _stub_generate(gi, monkeypatch, outline_dict, str(tmp_path), gen_calls)
+
+    with pytest.raises(SystemExit) as exc:
+        gi.run_generate(str(outline), ["all"])
+
+    assert exc.value.code == 1
+    assert gen_calls == []
+    assert "never rendered" in capsys.readouterr().err
+
+
+def test_run_generate_proceeds_when_gate_passes(
+    generate_illustrations, monkeypatch, tmp_path
+):
+    gi = generate_illustrations
+    outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
+    outline_dict = gi.parse_outline(str(outline))
+    _write_manifest(tmp_path, ["gemini-3-pro-image-preview"])
+    gen_calls = []
+    _stub_generate(gi, monkeypatch, outline_dict, str(tmp_path), gen_calls)
+
+    gi.run_generate(str(outline), ["all"])  # no SystemExit
+
+    assert len(gen_calls) == 1
+
+
+# ── Poster-theatrical composition (embedded title + footer) ──────────
+
+
+def _write_poster_outline(tmp_path, model="gemini-3-pro-image-preview",
+                          footer="jbaruch • Devoxx 2026", text="One team, one bench"):
+    lines = [
+        "# Plan", "",
+        f"**Model:** `{model}`",
+        "**Composition:** poster-theatrical",
+        f"**Embedded footer:** {footer}", "",
+        "### STYLE ANCHOR (FULL — 16:9, 1920x1080)",
+        "> A dramatic theatrical poster style.", "",
+        "### Slide 3: The Coordination Tax",
+        "- Format: **FULL**",
+        "- Image prompt: `[STYLE ANCHOR] one team at a shared workbench`",
+        f"- Text: **{text}**", "",
+    ]
+    p = tmp_path / "outline.md"
+    p.write_text("\n".join(lines))
+    return p
+
+
+def test_parse_poster_composition_and_footer(generate_illustrations, tmp_path):
+    gi = generate_illustrations
+    outline = _write_poster_outline(tmp_path)
+    r = gi.parse_outline(str(outline))
+    assert r["composition"] == "poster-theatrical"
+    assert r["embedded_footer"] == "jbaruch • Devoxx 2026"
+    assert r["slides"][0]["text"] == "One team, one bench"
+
+
+def test_poster_embed_directive_includes_title_and_footer(generate_illustrations):
+    gi = generate_illustrations
+    d = gi.apply_poster_embed_directive("a scene", "One team, one bench", "jbaruch • Devoxx 2026")
+    assert "EMBEDDED TEXT" in d
+    assert "One team, one bench" in d
+    assert "jbaruch • Devoxx 2026" in d
+    assert "TITLE SAFE ZONE" not in d
+
+
+def test_poster_embed_directive_omits_footer_when_absent(generate_illustrations):
+    gi = generate_illustrations
+    d = gi.apply_poster_embed_directive("a scene", "Title only", None)
+    assert "Title only" in d
+    assert "footer" not in d.lower()
+
+
+def test_poster_embed_directive_idempotent(generate_illustrations):
+    gi = generate_illustrations
+    once = gi.apply_poster_embed_directive("a scene", "T", "F")
+    twice = gi.apply_poster_embed_directive(once, "T", "F")
+    assert twice.count("EMBEDDED TEXT") == 1
+
+
+def test_run_generate_poster_embeds_text_and_skips_safe_zone(
+    generate_illustrations, monkeypatch, tmp_path
+):
+    # Outcome: in poster mode the generation prompt carries the embedded-text
+    # directive (title + footer) and never the safe-zone directive.
+    gi = generate_illustrations
+    outline = _write_poster_outline(tmp_path)
+    outline_dict = gi.parse_outline(str(outline))
+    _write_manifest(tmp_path, ["gemini-3-pro-image-preview"])  # satisfy the render gate
+
+    prompts = []
+    monkeypatch.setattr(gi, "_load_context", lambda p: ({}, outline_dict, str(tmp_path)))
+    monkeypatch.setattr(gi.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        gi, "generate_image",
+        lambda prompt, *a, **k: (prompts.append(prompt), (b"x", "image/png"))[1],
+    )
+
+    gi.run_generate(str(outline), ["all"])
+
+    assert len(prompts) == 1
+    assert "EMBEDDED TEXT" in prompts[0]
+    assert "One team, one bench" in prompts[0]
+    assert "jbaruch • Devoxx 2026" in prompts[0]
+    assert "TITLE SAFE ZONE" not in prompts[0]

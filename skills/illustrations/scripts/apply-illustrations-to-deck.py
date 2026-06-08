@@ -21,6 +21,11 @@ IMG+TXT — slide block has a `Format: IMG+TXT` line and no `Safe zone:`:
   2. Resize and position the picture as a left-column image (~60% of slide).
   3. Reposition title and body placeholders into the right column.
 
+FULL-POSTER — deck header has `**Composition:** poster-theatrical`; every FULL
+  slide is background-only. The title + footer are baked into the image by
+  `generate-illustrations.py`, so there is no scrim and no overlaid title — just
+  the background manifest entry. QR (inserted later) is the only added shape.
+
 The outline is the single source of truth for slide format and zone
 assignments — the same lines that `generate-illustrations.py` reads.
 See `rules/title-overlay-rules.md` for the title-overlay policy and
@@ -115,6 +120,18 @@ _ZONE_RE = re.compile(
 )
 _FORMAT_RE = re.compile(r"-\s*Format:\s*\**\s*(FULL|IMG\+TXT|EXCEPTION)\s*\**")
 
+# Poster-theatrical composition (rules/title-overlay-rules.md): title + footer
+# are baked into the image, so FULL slides get a background only — no scrim, no
+# overlaid title. QR is the only thing inserted afterward.
+POSTER_COMPOSITION = "poster-theatrical"
+_COMPOSITION_RE = re.compile(r"\*\*Composition:\*\*\s*`?([\w-]+)`?")
+
+
+def parse_composition(outline_path: Path) -> str | None:
+    """Read the deck-level `**Composition:**` header line, lowercased."""
+    m = _COMPOSITION_RE.search(outline_path.read_text(encoding="utf-8"))
+    return m.group(1).strip().lower() if m else None
+
 
 def parse_zones(outline_path: Path) -> dict:
     """Read `Safe zone:` lines from the outline.
@@ -143,6 +160,23 @@ def parse_img_txt_slides(outline_path: Path) -> set:
             if not _ZONE_RE.search(block_text):
                 img_txt.add(slide_num)
     return img_txt
+
+
+def parse_full_slides(outline_path: Path) -> set:
+    """Slide numbers whose Format is FULL with no Safe zone.
+
+    In poster-theatrical mode these are full-bleed backgrounds with the title +
+    footer baked into the image — no scrim, no overlaid title. Safe-zone FULL
+    slides are handled by the zones path instead (Safe zone takes precedence).
+    """
+    full = set()
+    for slide_num, block_text in parse_slide_blocks(outline_path).items():
+        if _ZONE_RE.search(block_text):
+            continue
+        format_match = _FORMAT_RE.search(block_text)
+        if format_match and format_match.group(1) == "FULL":
+            full.add(slide_num)
+    return full
 
 
 def replace_picture_blob(picture_shape, new_image_path: Path) -> None:
@@ -329,6 +363,7 @@ def apply_img_txt_layout(slide) -> tuple[int, int]:
 def apply(
     deck: Path, illust_dir: Path, zones: dict, img_txt_slides: set,
     out_deck: Path, ext: str, scrim_hex: str, scrim_alpha: int,
+    poster_full_slides: set | None = None,
 ) -> tuple[list[dict], dict]:
     """Apply scrim + title for FULL slides and the IMG+TXT layout.
 
@@ -344,6 +379,7 @@ def apply(
     prs = Presentation(str(out_deck))
     results = []
     backgrounds: dict[int, str] = {}
+    poster_full_slides = poster_full_slides or set()
 
     # FULL slides with Safe zone — scrim + title here; background via VBA pass
     for n, zone in sorted(zones.items()):
@@ -386,6 +422,21 @@ def apply(
             "picture_repositioned": pic_moved, "text_moved": text_moved,
         })
 
+    # Poster-theatrical FULL slides — background only. Title + footer are baked
+    # into the image, so no scrim and no overlaid title; QR (added later) is the
+    # only inserted shape.
+    for n in sorted(poster_full_slides):
+        illust = illust_dir / f"slide-{n:02d}.{ext}"
+        if not illust.exists():
+            print(f"  [{n:02d}] SKIP: missing {illust.name}")
+            continue
+        if n > len(prs.slides):
+            print(f"  [{n:02d}] SKIP: out of deck range")
+            continue
+        backgrounds[n] = str(illust.resolve())
+        print(f"  [{n:02d}] poster FULL  bg->VBA  (title+footer baked into image)")
+        results.append({"slide": n, "format": "FULL-POSTER", "zone": None})
+
     prs.save(str(out_deck))
     return results, backgrounds
 
@@ -410,13 +461,16 @@ def main():
 
     out_deck = args.out or args.deck.with_name(args.deck.stem + "-with-titles.pptx")
     backgrounds_out = args.backgrounds_out or out_deck.with_name(out_deck.stem + ".backgrounds.json")
+    poster = parse_composition(args.outline) == POSTER_COMPOSITION
     zones = parse_zones(args.outline)
     img_txt_slides = parse_img_txt_slides(args.outline)
-    total_slides = len(zones) + len(img_txt_slides)
+    # In poster-theatrical mode, FULL slides get a background only (text baked in).
+    poster_full_slides = parse_full_slides(args.outline) if poster else set()
+    total_slides = len(zones) + len(img_txt_slides) + len(poster_full_slides)
     if total_slides == 0:
         print(
-            f"No `Safe zone:` or `Format: IMG+TXT` lines found in "
-            f"{args.outline.name}. Nothing to do."
+            f"No `Safe zone:`, `Format: IMG+TXT`, or poster-theatrical FULL "
+            f"slides found in {args.outline.name}. Nothing to do."
         )
         return
 
@@ -428,7 +482,7 @@ def main():
 
     results, backgrounds = apply(
         args.deck, args.illustrations, zones, img_txt_slides, out_deck,
-        args.image_ext, scrim_hex, args.scrim_alpha,
+        args.image_ext, scrim_hex, args.scrim_alpha, poster_full_slides,
     )
     print(f"\nSaved {out_deck}")
     print(f"Updated {len(results)}/{total_slides} slides")
@@ -440,7 +494,7 @@ def main():
         print(f"Apply them via: apply-backgrounds.sh <uniquely-named copy of {out_deck.name}> "
               f"<final.pptx> {backgrounds_out.name}")
     else:
-        print("No FULL (Safe zone) slides — no background manifest written.")
+        print("No FULL background slides (Safe zone or poster) — no background manifest written.")
 
 
 if __name__ == "__main__":

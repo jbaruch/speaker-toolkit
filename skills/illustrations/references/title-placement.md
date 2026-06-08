@@ -33,6 +33,11 @@ Grammar: `- Safe zone: <zone> (<surface>)`
 
 Slides without a `Safe zone:` line generate and apply exactly as today.
 
+Poster-theatrical decks (`**Composition:** poster-theatrical` in the STYLE ANCHOR
+header) use no `Safe zone:` lines at all — the title and footer are baked into the
+image and only the QR code is inserted afterward. See `rules/title-overlay-rules.md`
+§0.
+
 ## Scripts
 
 | Script | Role |

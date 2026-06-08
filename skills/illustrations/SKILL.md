@@ -41,12 +41,12 @@ Do not restate them here — apply them.
 | `speaker-profile.json` → `visual_style_history` | Default style, departures, mode profiles, confirmed visual intents |
 | `speaker-profile.json` → `publishing_process.thumbnail` | Speaker photo path + aesthetic preference |
 | `illustrations/` (alongside outline) | Generated images, builds, model-comparison output |
-| `style-explore/` (alongside outline) | Phase 2 exploration grid (style × model × format) + `index.md` |
-| [skills/illustrations/references/strategy.md](references/strategy.md) | Phase 2 D#11 detail — optimization priorities, model shortlist, style proposals, exploration render, continuity devices |
+| `style-explore/` (alongside outline) | Phase 2 exploration grid (style × model × format) + `index.md` + `rendered.json` manifest |
+| [skills/illustrations/references/strategy.md](references/strategy.md) | Phase 2 detail — idea-sourcing wizard, optimization priorities, model shortlist, style proposals, exploration render, the render-before-bake gate, continuity devices |
 | [skills/illustrations/references/generation.md](references/generation.md) | Deck generation, edit/fix workflow, model comparison |
 | [skills/illustrations/references/builds.md](references/builds.md) | Backwards-chained build generation |
 | [skills/illustrations/references/thumbnails.md](references/thumbnails.md) | Phase 7 thumbnail composition + slide selection |
-| [skills/illustrations/references/style-explore-candidates-schema.md](references/style-explore-candidates-schema.md) | `candidates.json` contract for `--style-explore` |
+| [skills/illustrations/references/style-explore-candidates-schema.md](references/style-explore-candidates-schema.md) | `--style-explore` contract — `candidates.json` input + `rendered.json` output |
 | `skills/illustrations/scripts/model_registry.py` | Model roster, aliases, attributes; `--check-freshness` + `--shortlist` |
 | `skills/illustrations/scripts/generate-illustrations.py` | Deck illustrations, edits, fixes, builds, model comparison, style exploration |
 | `skills/illustrations/scripts/apply-illustrations-to-deck.py` | Insert illustrations + builds into a .pptx |
@@ -57,13 +57,13 @@ Do not restate them here — apply them.
 Determine which of three modes applies and execute only the matching steps:
 
 - **Strategy** — outline has no STYLE ANCHOR yet, or the author wants to revise
-  it. Run Step 2 (freshness), then Step 3 (style), then stop unless generation
-  was also requested.
+  it. Run Step 2 (freshness), then Steps 3-9 (style strategy), then stop unless
+  generation was also requested.
 - **Generation** — outline has a STYLE ANCHOR and per-slide prompts. Run
-  Step 2 (freshness), Step 4 (illustrations), Step 5 (builds, if any slides
-  have a `- Builds:` block), and Step 6 (apply to deck, if a .pptx exists).
+  Step 2 (freshness), Step 10 (illustrations), Step 11 (builds, if any slides
+  have a `- Builds:` block), and Step 12 (apply to deck, if a .pptx exists).
 - **Thumbnail** — talk has been delivered and a video URL is available.
-  Skip to Step 7.
+  Skip to Step 13.
 
 ### Multi-mode chaining
 
@@ -72,6 +72,10 @@ the visual style, then generate everything"), run them in order
 Strategy → Generation → Thumbnail. Proceed immediately to the first applicable
 step; do not pause for confirmation between modes. A single-mode invocation
 runs exactly the one matching step's chain and stops.
+
+"Proceed immediately" governs handoff between modes — it never overrides the
+within-Strategy human gates (Steps 3, 4, 9). Those stop for the speaker even in a
+chained invocation.
 
 ## Step 2 — Check Image-Model Freshness
 
@@ -108,47 +112,113 @@ that to the speaker — they keep the baked model or re-run the exploration
 `_call_<vendor>` adapter before it can render — surface that as a follow-up
 script change.
 
-Proceed immediately to Step 3 or Step 4 per Step 1's routing.
+Proceed immediately to Step 3 or Step 10 per Step 1's routing.
 
-## Step 3 — Define Style Strategy
+## Step 3 — Source Style Ideas
 
-Collaborate with the author to produce the Illustration Style Anchor. This
-single step covers the full strategy collaboration, in order:
+Open the strategy collaboration by asking where the visual ideas come from.
+Present an `AskUserQuestion` multi-select of idea sources — your usual, mode /
+series match, new to you, wild card, what's trending, "I'll drive (here are my
+references)" — plus a Quick-default fast path. The 3-4 proposals in Step 7 span
+the checked sources. Never skip this step silently; never bake a model or style
+from this menu by reasoning — every candidate reaches the speaker as a rendered
+sample in Steps 8-9.
 
-- Elicit optimization priorities with an `AskUserQuestion` multi-select
-  (checkboxes, not radio) — the speaker checks any of cost, speed, quality,
-  build-editability (e.g. `quality,build-editability`). Auto-add
-  build-editability when any slide has a `Builds:` block (build frames are
-  produced by editing the previous frame, so the model must support editing).
-- Define format vocabulary (FULL / IMG+TXT / EXCEPTION + any talk-specific
-  additions).
-- Narrow the roster to a shortlist by priority — no render yet:
-  ```bash
-  python3 skills/illustrations/scripts/model_registry.py --shortlist <priorities>
-  ```
-  The roster is a seed cache, not an allowlist. To rank a model not in it (a
-  new flagship from Step 2, or one the speaker names), WebSearch its
-  attributes and pass `--add '<json>'`, or list its id directly in
-  `candidates.json` — see strategy.md.
-- Propose 3–4 style options grounded in concept fit + vault context (the
-  speaker's `visual_style_history`, `rhetoric-style-summary.md` Section 13).
-- Render the exploration grid — write `style-explore/candidates.json` (styles
-  × shortlist × formats per the schema), then:
-  ```bash
-  python3 skills/illustrations/scripts/generate-illustrations.py \
-    <outline> --style-explore style-explore/candidates.json
-  ```
-  The speaker picks a style + model from `style-explore/index.md`.
-- Define visual continuity devices.
+Source vocabulary, the Quick-default path, no-profile degradation:
+[skills/illustrations/references/strategy.md](references/strategy.md).
 
-Full protocol — priority elicitation, the option template, the `candidates.json`
-contract, continuity options: [skills/illustrations/references/strategy.md](references/strategy.md).
+Proceed immediately to Step 4.
 
-Write the approved STYLE ANCHOR block (chosen model + per-format anchors +
-conventions) into the outline header. Proceed immediately to Step 4 if
-generation was also requested; otherwise finish here.
+## Step 4 — Establish Optimization Priorities
 
-## Step 4 — Generate Deck Illustrations
+Elicit what the speaker optimizes for with an `AskUserQuestion` multi-select
+(checkboxes, not radio): cost, speed, quality, build-editability. Auto-add
+build-editability when any slide has a `Builds:` block. Never skip this step
+silently — the priorities drive the shortlist in Step 6.
+
+Proceed immediately to Step 5.
+
+## Step 5 — Define Format Vocabulary
+
+Define the slide format types for this talk: FULL / IMG+TXT / EXCEPTION + any
+talk-specific additions. Also decide the composition: standard overlay (titles +
+footers overlaid at apply time, per-slide safe zones) or poster-theatrical (all
+full-bleed; title + footer baked into the image, no safe zones, QR-only overlay).
+Detail: [skills/illustrations/references/strategy.md](references/strategy.md).
+
+Proceed immediately to Step 6.
+
+## Step 6 — Narrow the Model Shortlist
+
+Filter the roster to a shortlist by the Step 4 priorities — no render yet:
+
+```bash
+python3 skills/illustrations/scripts/model_registry.py --shortlist <priorities>
+```
+
+The roster is a seed cache, not an allowlist. To rank a model not in it (a new
+flagship from Step 2, or one the speaker names), WebSearch its attributes and
+pass `--add '<json>'`, or list its id directly in `candidates.json` — see
+strategy.md.
+
+Proceed immediately to Step 7.
+
+## Step 7 — Propose Styles Across the Checked Sources
+
+Propose 3-4 style options spanning the Step 3 sources, grounded in concept fit +
+vault context (the speaker's `visual_style_history`, `rhetoric-style-summary.md`
+Section 13). These are candidates for the render, not a commitment — the speaker
+picks from rendered pixels, not prose. Option template:
+[skills/illustrations/references/strategy.md](references/strategy.md).
+
+Proceed immediately to Step 8.
+
+## Step 8 — Render the Exploration Grid
+
+Write `style-explore/candidates.json` (styles × shortlist × formats per the
+schema), then render:
+
+```bash
+python3 skills/illustrations/scripts/generate-illustrations.py \
+  <outline> --style-explore style-explore/candidates.json
+```
+
+This writes the grid under `style-explore/`, an `index.md` contact sheet, and a
+`rendered.json` manifest of what actually rendered. The grid is the only place a
+model becomes eligible to bake. Never skip this step silently. The speaker picks
+a style + model from `style-explore/index.md`.
+
+`candidates.json` input + `rendered.json` output contract:
+[skills/illustrations/references/style-explore-candidates-schema.md](references/style-explore-candidates-schema.md).
+
+Proceed immediately to Step 9.
+
+## Step 9 — Bake the Anchor, Then Verify
+
+Write the STYLE ANCHOR block — chosen model + per-format anchors + visual
+continuity devices — into the outline header. For poster-theatrical composition,
+also write `**Composition:** poster-theatrical` and `**Embedded footer:** <text>`.
+Then run the deterministic precheck and report its verdict in one line; never
+skip this step silently:
+
+```bash
+python3 skills/illustrations/scripts/generate-illustrations.py \
+  <outline> --check-style-explore
+```
+
+It confirms the baked model was rendered in the grid (exit 0) or refuses with an
+actionable message (exit non-zero). On failure the baked model was never shown —
+pick a rendered model from `style-explore/index.md` and re-verify, or re-render
+(Step 8). Step 10 generation re-runs the same gate, so a baked-but-unrendered
+model cannot generate.
+
+Full protocol — the option template, continuity options, the gate contract:
+[skills/illustrations/references/strategy.md](references/strategy.md).
+
+Proceed immediately to Step 10 if generation was also requested; otherwise finish
+here.
+
+## Step 10 — Generate Deck Illustrations
 
 Batch-generate every missing slide illustration from the outline:
 
@@ -166,9 +236,9 @@ overwriting — see `illustration-rules` Iteration Hygiene.
 Operational detail (compare modes, prompt patterns, retry ladder):
 [skills/illustrations/references/generation.md](references/generation.md).
 
-Proceed immediately to Step 5.
+Proceed immediately to Step 11.
 
-## Step 5 — Generate Builds
+## Step 11 — Generate Builds
 
 If any slides in the outline have a `- Builds:` block, generate the
 backwards-chained build images. Each step's input is the previous step's
@@ -185,9 +255,9 @@ depending on the model and source image). Build-00 is the empty frame;
 build-N is the full image. Detail and the per-step contract:
 [skills/illustrations/references/builds.md](references/builds.md).
 
-If no slides specify builds, proceed silently to Step 6.
+If no slides specify builds, proceed silently to Step 12.
 
-## Step 6 — Apply Illustrations to Deck
+## Step 12 — Apply Illustrations to Deck
 
 Insert generated illustrations and build sequences into the .pptx. Build
 slides replace their parent slide rather than duplicating after it; speaker
@@ -204,9 +274,9 @@ python3 skills/illustrations/scripts/apply-illustrations-to-deck.py \
 ```
 
 If no .pptx exists yet (Phase 5 hasn't run), finish here — presentation-creator
-Phase 5 will call back into this skill at Step 6 once the deck is built.
+Phase 5 will call back into this skill at Step 12 once the deck is built.
 
-## Step 7 — Generate Thumbnail
+## Step 13 — Generate Thumbnail
 
 Run the thumbnail composition for a delivered talk. Surface 3–5 candidate
 slides ranked by visual impact, let the speaker pick, then compose:

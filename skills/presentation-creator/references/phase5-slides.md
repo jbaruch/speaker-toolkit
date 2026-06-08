@@ -24,6 +24,10 @@ Speaker-style data in `slide-design-spec.md` Sections 1–10 (extracted from the
 
 ## Step 5.1: Create the Deck
 
+This step applies only when `talk.engine` is `pptx` (or null with a pptx
+inference confirmed in Step 5). For `presenterm`, hand-author `{slug}.md` instead
+(see the presenterm branch in SKILL.md Step 5).
+
 Read the template path from `speaker-profile.json → infrastructure.template_pptx_path`.
 The deck is built by the real PowerPoint app from a flat op sequence: `BuildDeck`
 opens a uniquely-named COPY of the template (for its custom layouts + masters),

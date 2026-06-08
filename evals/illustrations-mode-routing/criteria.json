@@ -4,37 +4,37 @@
   "checklist": [
     {
       "name": "Request A routes to Strategy mode",
-      "description": "Request A is identified as Strategy mode. The plan executes Step 2 (Define Style Strategy) and stops — does not run Steps 3–6. The 'why' notes that no STYLE ANCHOR exists yet, so generation cannot run.",
+      "description": "Request A is identified as Strategy mode. The plan executes the Strategy steps (Steps 3–9, style sourcing through bake-and-verify) and stops — does not run Generation (Steps 10–12) or Thumbnail (Step 13). The 'why' notes that no STYLE ANCHOR exists yet, so generation cannot run.",
       "max_score": 15
     },
     {
       "name": "Request B routes to Generation mode",
-      "description": "Request B is identified as Generation mode. The plan executes Step 3 (deck illustrations), Step 4 (builds — present because the outline has 3 build blocks), and Step 5 (apply to deck — present because a .pptx exists). It does NOT run Step 2 (STYLE ANCHOR already exists) and does NOT run Step 6 (no thumbnail requested).",
+      "description": "Request B is identified as Generation mode. The plan executes Step 10 (deck illustrations), Step 11 (builds — present because the outline has 3 build blocks), and Step 12 (apply to deck — present because a .pptx exists). It does NOT run the Strategy steps 3–9 (STYLE ANCHOR already exists) and does NOT run Step 13 (no thumbnail requested).",
       "max_score": 20
     },
     {
       "name": "Request C routes to Thumbnail mode",
-      "description": "Request C is identified as Thumbnail mode. The plan skips directly to Step 6 (Generate Thumbnail) and skips Steps 2–5. The 'why' notes that the talk has been delivered and the work is post-event.",
+      "description": "Request C is identified as Thumbnail mode. The plan skips directly to Step 13 (Generate Thumbnail) and skips the Strategy and Generation steps. The 'why' notes that the talk has been delivered and the work is post-event.",
       "max_score": 15
     },
     {
       "name": "Step references resolve against the skill's canonical sequence",
-      "description": "Step references in the plan correspond to the actual routing-step (mode router) and the five action-step entries the skill exposes (Strategy, Generation: deck illustrations, Generation: builds, Generation: apply-to-deck, Thumbnail). No invented or paraphrased step labels.",
+      "description": "Step references in the plan correspond to the actual routing step (Step 1, mode router), the Strategy chain (Steps 3–9), and the Generation/Thumbnail action steps (Step 10 deck illustrations, Step 11 builds, Step 12 apply-to-deck, Step 13 thumbnail). The freshness gate (Step 2) runs first in Strategy and Generation. No invented or paraphrased step labels.",
       "max_score": 15
     },
     {
       "name": "Request B includes builds because outline has Builds blocks",
-      "description": "The plan for Request B explicitly notes that Step 4 runs because the outline has slides with - Builds: blocks. If no builds existed, Step 4 would proceed silently per the skill's silence rule.",
+      "description": "The plan for Request B explicitly notes that Step 11 runs because the outline has slides with - Builds: blocks. If no builds existed, Step 11 would proceed silently per the skill's silence rule.",
       "max_score": 10
     },
     {
       "name": "Request B includes apply-to-deck because .pptx exists",
-      "description": "The plan for Request B explicitly notes that Step 5 runs because a clean deck .pptx exists. If no .pptx existed, Step 5 would finish without applying and presentation-creator's Phase 5 would call back later.",
+      "description": "The plan for Request B explicitly notes that Step 12 runs because a clean deck .pptx exists. If no .pptx existed, Step 12 would finish without applying and presentation-creator's Phase 5 would call back later.",
       "max_score": 10
     },
     {
-      "name": "Request A finishes after Step 2",
-      "description": "The plan for Request A states explicitly that the skill finishes after Step 2 because generation was not requested in the same invocation. Does NOT continue to Steps 3–6.",
+      "name": "Request A finishes after the Strategy steps",
+      "description": "The plan for Request A states explicitly that the skill finishes after the Strategy steps (3–9) because generation was not requested in the same invocation. Does NOT continue to Generation (Steps 10–12) or Thumbnail (Step 13).",
       "max_score": 10
     },
     {

@@ -6,6 +6,27 @@ A six-skill presentation system for conference speakers: analyze your existing t
 
 ## What's New (Unreleased)
 
+**Poster-theatrical composition** — a style-wizard option where every slide is
+full-bleed and the title + footer are rendered *into* the image (stylized,
+blended), with only the QR code added afterward. No overlaid titles, no safe
+zones — an "all art, no chrome" look. Chosen in the wizard and baked into the
+STYLE ANCHOR header.
+
+**Idea-sourcing wizard + render-before-bake gate** — illustration style strategy
+is now an explicit multi-select wizard: pick where the visual ideas come from
+(your usual, mode/series match, new, wild, what's trending, or bring your own),
+with a Quick-default fast path that still renders and shows. The strategy steps
+are individually gated, and a new `--check-style-explore` verdict plus a guard in
+`generate-illustrations.py` refuse to generate from any model that wasn't rendered
+in the exploration grid the speaker reviewed — you can no longer bake a model into
+the STYLE ANCHOR by reasoning alone.
+
+**Explicit engine & theme sourcing** — deck tooling (PowerPoint/pptx vs presenterm
+terminal-markdown) is now a first-class Phase 2 decision sourced through the same
+wizard, recorded on the outline (`talk.engine`) instead of inferred at build time.
+A live-coding talk that should run in a terminal tool no longer silently becomes a
+slide deck.
+
 **Structured style selection + model registry** — Phase 2 style strategy now
 runs as an ordered process: elicit what the speaker optimizes for (cost, speed,
 quality, build-editability), narrow the model roster to a priority-driven

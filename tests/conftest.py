@@ -24,6 +24,10 @@ SCRIPTS_ILL = os.path.join(
     os.path.dirname(__file__), os.pardir,
     "skills", "illustrations", "scripts",
 )
+SCRIPTS_VP = os.path.join(
+    os.path.dirname(__file__), os.pardir,
+    "skills", "vault-profile", "scripts",
+)
 
 
 def _import_script(path, name):
@@ -127,6 +131,11 @@ def check_rhetorical():
 @pytest.fixture(scope="session")
 def model_registry():
     return _import_script(os.path.join(SCRIPTS_ILL, "model_registry.py"), "model_registry")
+
+
+@pytest.fixture(scope="session")
+def validate_profile():
+    return _import_script(os.path.join(SCRIPTS_VP, "validate-profile.py"), "validate_profile")
 
 
 @pytest.fixture(scope="session")

@@ -1,5 +1,52 @@
 # Changelog
 
+### feat(illustrations) — poster-theatrical composition
+
+A deck-level composition choice, decided in the style wizard and baked into the
+STYLE ANCHOR header (`**Composition:** poster-theatrical` + `**Embedded footer:**`).
+In this mode every slide is full-bleed and the title + footer are rendered INTO
+the image — stylized and blended in the deck's own vocabulary — instead of
+overlaid afterward. Generation appends an `EMBEDDED TEXT` directive (folding the
+slide's `Text:` and the deck footer into the prompt) and skips the `TITLE SAFE
+ZONE` directive entirely; apply records poster FULL slides as background-only (no
+scrim, no overlaid title); deck-build omits the `TITLE`/`FOOTER` ops for those
+slides. The QR code is the only shape inserted after generation. `title-overlay-rules.md`
+§0 documents the opt-out. Small dense footer text (handles/hashtags/URLs) may be
+approximated by the model and need a re-roll or `--edit` touch-up.
+
+### feat(illustrations) — idea-sourcing wizard + render-before-bake gate
+
+Style strategy (SKILL.md Step 3) was a single prose step bundling six sub-actions
+with no enforcement, while the freshness gate (Step 2) was script-backed with a
+"never skip silently" verdict. An agent shortcut the unenforced collaboration: it
+ran the freshness check and `--shortlist`, then reasoned a model into the STYLE
+ANCHOR and skipped both the priorities question and the exploration-grid render —
+the speaker never saw a sample. Step 3 is now seven flat gated steps (source ideas
+→ priorities → format → shortlist → propose → render grid → bake + verify). The
+render writes a `style-explore/rendered.json` manifest of what actually rendered;
+a new `generate-illustrations.py --check-style-explore` verdict and a guard inside
+`run_generate` refuse generation unless the baked model was rendered in the grid,
+turning "did a human pick from real samples?" into a deterministic tripwire. The
+collaboration also became an explicit multi-select idea-sourcing wizard (your
+usual / mode-or-series match / new / wild / trending / bring-your-own) with a
+Quick-default fast path that still renders and shows. Shared wizard shape:
+`skills/presentation-creator/references/idea-sourcing-wizard.md`.
+
+### feat(presentation-creator) — explicit engine & theme sourcing (Phase 2 Decision #2)
+
+Deck tooling (PowerPoint/pptx vs presenterm terminal-markdown) was decided
+implicitly — inferred at Phase 5 with no record on the outline — so a demo-centric
+talk that should run in a terminal tool could silently become a slide deck. A new
+Phase 2 decision (#2, right after Mode) sources the engine via the shared
+idea-sourcing wizard, reading an optional `presentation_engines[]` roster and the
+chosen mode's `typical_engine`, and records `talk.engine` / `talk.deck_theme` /
+`talk.engine_source` on the outline. Phase 5 now branches on `talk.engine` instead
+of inferring; a null engine on a legacy outline falls back to inference with
+author confirmation. Theme stays a thin provenance pointer — no named-theme
+registry. New profile fields are optional/additive (no schema_version bump), so
+existing profiles and outlines still validate. The Phase 2 decisions renumber
+(Pattern Strategy #10→#11, Illustration Strategy #11→#12).
+
 ### fix(illustrations) — --build enforces the Keep-clause preservation list (#46)
 
 `--build` previously passed each `build-NN` description to the image editor

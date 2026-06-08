@@ -400,3 +400,55 @@ def test_imgtxt_geometry_constants_consistent(apply_illustrations):
     assert text_right <= apply_illustrations.SLIDE_W_IN, (
         "Text column must fit within the slide width"
     )
+
+
+# ── Poster-theatrical composition ────────────────────────────────────
+
+POSTER_OUTLINE = """\
+# Plan
+
+**Model:** `gemini-3-pro-image-preview`
+**Composition:** poster-theatrical
+**Embedded footer:** jbaruch • Devoxx 2026
+
+### Slide 3: The Coordination Tax
+- Format: **FULL**
+- Image prompt: `[STYLE ANCHOR] one team at a workbench`
+- Text: **One team, one bench**
+
+### Slide 7: The Tangle
+- Format: **FULL**
+- Image prompt: `[STYLE ANCHOR] many teams, snarl of wires`
+- Text: **Many teams, many wires**
+"""
+
+
+def test_parse_composition_poster(apply_illustrations, tmp_path):
+    outline = tmp_path / "outline.md"
+    outline.write_text(POSTER_OUTLINE)
+    assert apply_illustrations.parse_composition(outline) == "poster-theatrical"
+
+
+def test_parse_composition_absent(apply_illustrations, tmp_path):
+    outline = tmp_path / "outline.md"
+    outline.write_text("# Plan\n\n**Model:** `m`\n\n### Slide 1: A\n- Format: **FULL**\n")
+    assert apply_illustrations.parse_composition(outline) is None
+
+
+def test_parse_full_slides_poster(apply_illustrations, tmp_path):
+    # Poster FULL slides (no Safe zone) are collected for background-only apply.
+    outline = tmp_path / "outline.md"
+    outline.write_text(POSTER_OUTLINE)
+    assert apply_illustrations.parse_full_slides(outline) == {3, 7}
+
+
+def test_parse_full_slides_excludes_safe_zone(apply_illustrations, tmp_path):
+    # A FULL slide with a Safe zone belongs to the zones path, not poster.
+    text = (
+        "# Plan\n\n### Slide 1: A\n- Format: **FULL**\n"
+        "- Image prompt: `x`\n- Safe zone: upper_third\n"
+        "\n### Slide 2: B\n- Format: **FULL**\n- Image prompt: `y`\n"
+    )
+    outline = tmp_path / "outline.md"
+    outline.write_text(text)
+    assert apply_illustrations.parse_full_slides(outline) == {2}

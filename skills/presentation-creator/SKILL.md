@@ -151,6 +151,9 @@ talk:
   slide_budget: 75                  # from profile guardrail_sources.slide_budgets
   pacing_wpm: [135, 145]            # from profile rhetoric_defaults
   architecture: "narrative-arc"     # filled in Phase 2 — leave a placeholder
+  engine: "pptx"                    # pptx | presenterm — filled in Phase 2 Decision #2
+  deck_theme: ""                    # free-string theme/template pointer — Phase 2 Decision #2
+  engine_source: ""                 # provenance of the engine choice — Phase 2 Decision #2
   thesis: |
     Elaborated thesis paragraph(s). The single-sentence form goes on the
     call-to-adventure slide via `big_idea_text` in Phase 3.
@@ -195,13 +198,17 @@ create a separate spec or outline file.
 **The instrument menu comes from the vault, not from a static file.** Read the summary
 (sections 2-13) and profile `instrument_catalog` for options.
 
-**11 decisions to make together:**
+**12 decisions to make together:**
 
-Mode, Opening, Narrative, Humor, Audience Interaction, Closing, Slide Design,
-Persuasion, Template Patterns, Pattern Strategy, Illustration Strategy. Each reads
-from the matching `instrument_catalog` entry + summary section. Decision #10 uses the
+Mode, Engine & Theme Sourcing, Opening, Narrative, Humor, Audience Interaction,
+Closing, Slide Design, Persuasion, Template Patterns, Pattern Strategy,
+Illustration Strategy. Each reads from the matching `instrument_catalog` entry +
+summary section. Decision #2 (Engine & Theme Sourcing) picks the deck tooling
+(pptx vs presenterm) and theme via the idea-sourcing wizard; it reads `profile →
+presentation_engines` and the chosen mode's `typical_engine` and writes
+`talk.engine` / `talk.deck_theme` / `talk.engine_source`. Decision #11 uses the
 4-tier Pattern Strategy from [references/patterns/_index.md](references/patterns/_index.md) + `profile → pattern_profile`.
-Decision #11 (Illustration Strategy) is optional — only when the author wants
+Decision #12 (Illustration Strategy) is optional — only when the author wants
 AI-generated illustrations. Delegate to `Skill(skill: "illustrations")` for the full
 collaboration (style proposals grounded in vault `visual_style_history`, format
 vocabulary, model choice, visual continuity devices). The skill writes the approved
@@ -385,6 +392,13 @@ extracted by `extract-slides.py`) as the per-slide instruction list. See
 [references/phase5-slides.md](references/phase5-slides.md) for the full technical
 reference.
 
+Branch on `talk.engine` (read via `outline_schema.py`, never re-parse YAML by
+hand): `pptx` → the template-driven build below; `presenterm` → the terminal
+markdown build below. When `engine` is null (a legacy outline authored before
+Decision #2), infer from mode/context as before but confirm the choice with the
+author before building. A `style_anchor` set alongside `engine: presenterm` is a
+WARN — the illustration pipeline assumes pptx.
+
 **For pptx talks (template-driven):**
 
 Emit a deck op sequence from `slides.md` + the profile layout map, validate it,
@@ -405,6 +419,11 @@ illustrations skill handles illustrations in the post-build apply pass: FULL
 slides get a slide BACKGROUND FILL (set by the PowerPoint `apply-backgrounds.sh`
 pass, so the layout's halftone-dot overlay covers them); IMG+TXT slides get a
 left-column picture shape via `apply-illustrations-to-deck.py`.
+
+When the outline's STYLE ANCHOR declares `**Composition:** poster-theatrical`,
+also **omit the `TITLE` and `FOOTER` ops** for the FULL slides — the title and
+footer are rendered into the illustration itself, so the only post-build inserts
+on those slides are the background fill and the QR code.
 
 After the build completes, if `outline.yaml` declares `style_anchor`, delegate
 to `Skill(skill: "illustrations")` to generate illustrations, generate any

@@ -729,3 +729,45 @@ def test_cli_emit_json_validation_failure_to_stderr(outline_schema, capsys, tmp_
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "FAIL:" in captured.err
+
+
+# ── Engine / theme sourcing fields (Phase 2 Decision #2) ─────────────
+
+
+def test_accepts_pptx_engine(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["talk"]["engine"] = "pptx"
+    assert outline_schema.Outline.model_validate(data).talk.engine.value == "pptx"
+
+
+def test_accepts_presenterm_engine(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["talk"]["engine"] = "presenterm"
+    out = outline_schema.Outline.model_validate(data)
+    assert out.talk.engine.value == "presenterm"
+
+
+def test_rejects_unknown_engine(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["talk"]["engine"] = "reveal.js"
+    with pytest.raises(ValidationError, match="engine"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_absent_engine_still_validates(outline_schema, base_data):
+    # Back-compat: legacy outlines without engine/theme load clean and default
+    # to None so Phase 5 can fall back to inference.
+    data = copy.deepcopy(base_data)
+    out = outline_schema.Outline.model_validate(data)
+    assert out.talk.engine is None
+    assert out.talk.deck_theme is None
+    assert out.talk.engine_source is None
+
+
+def test_accepts_free_string_theme_and_source(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["talk"]["deck_theme"] = "dark minimal"
+    data["talk"]["engine_source"] = "match-mode"
+    out = outline_schema.Outline.model_validate(data)
+    assert out.talk.deck_theme == "dark minimal"
+    assert out.talk.engine_source == "match-mode"
