@@ -860,15 +860,29 @@ def _write_gate_outline(tmp_path, model=None):
     return p
 
 
-def _write_manifest(tmp_path, ok_models, cells=None):
+def _write_manifest(tmp_path, ok_models, cells=None, outline_dir=None):
     se = tmp_path / "style-explore"
     se.mkdir(exist_ok=True)
+    # The gate verifies live evidence: an OK cell whose rendered file exists on
+    # disk. When cells aren't supplied, build one per model AND create its file.
+    if cells is None:
+        cells = []
+        for m in ok_models:
+            rel = f"style/full/{m}.png"
+            fp = se / rel
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            fp.write_bytes(b"img")
+            cells.append({
+                "style": "S", "format": "FULL", "model": m,
+                "model_resolved": m, "status": "OK", "rel_path": rel,
+            })
     manifest = {
         "schema_version": 1,
         "outline": "outline.md",
+        "outline_dir": tmp_path.name if outline_dir is None else outline_dir,
         "rendered_at": "2026-06-08T00:00:00Z",
         "models_rendered_ok": ok_models,
-        "cells": cells or [],
+        "cells": cells,
     }
     path = se / "rendered.json"
     path.write_text(json.dumps(manifest))
@@ -1115,16 +1129,46 @@ def test_gate_fails_on_outline_mismatch(generate_illustrations, tmp_path):
     assert "copied or stale" in v["error"]
 
 
-def test_gate_fails_on_malformed_models_list(generate_illustrations, tmp_path):
+def test_gate_fails_when_rendered_file_missing(generate_illustrations, tmp_path):
+    # The core live-evidence check: a manifest can list a model in an OK cell,
+    # but if the rendered image file isn't on disk the gate must NOT pass —
+    # a hand-edited manifest can't fake a render the speaker never saw.
     gi = generate_illustrations
     outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
     _write_raw_manifest(tmp_path, {
-        "schema_version": 1, "outline": "outline.md",
-        "models_rendered_ok": "gemini-3-pro-image-preview", "cells": [],
+        "schema_version": 1, "outline": "outline.md", "outline_dir": tmp_path.name,
+        "models_rendered_ok": ["gemini-3-pro-image-preview"],
+        "cells": [{
+            "style": "S", "format": "FULL", "model": "gemini-3-pro-image-preview",
+            "model_resolved": "gemini-3-pro-image-preview", "status": "OK",
+            "rel_path": "style/full/gemini-3-pro-image-preview.png",  # never created
+        }],
     })
     v = gi.check_style_explore(str(outline))
     assert v["gate_passed"] is False
-    assert "models_rendered_ok" in v["error"]
+    assert v["rendered_models"] == []
+
+
+def test_gate_fails_on_outline_dir_mismatch(generate_illustrations, tmp_path):
+    # A grid copied from another talk (same outline filename, different dir).
+    gi = generate_illustrations
+    outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
+    _write_manifest(tmp_path, ["gemini-3-pro-image-preview"], outline_dir="some-other-talk")
+    v = gi.check_style_explore(str(outline))
+    assert v["gate_passed"] is False
+    assert "copied from" in v["error"]
+
+
+def test_gate_fails_on_malformed_cells(generate_illustrations, tmp_path):
+    gi = generate_illustrations
+    outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
+    _write_raw_manifest(tmp_path, {
+        "schema_version": 1, "outline": "outline.md", "outline_dir": tmp_path.name,
+        "models_rendered_ok": [], "cells": "not-a-list",
+    })
+    v = gi.check_style_explore(str(outline))
+    assert v["gate_passed"] is False
+    assert "cells" in v["error"]
 
 
 def test_run_generate_poster_rejects_non_full_slide(

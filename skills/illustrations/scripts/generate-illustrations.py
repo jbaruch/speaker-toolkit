@@ -973,6 +973,11 @@ def write_rendered_manifest(base_dir, outline_path, results):
     manifest = {
         "schema_version": 1,
         "outline": os.path.basename(outline_path),
+        # Talk-directory name — a per-talk discriminator. Outline filenames are
+        # commonly identical across talks (presentation-outline.md), so the
+        # basename alone can't tell a copied grid from this talk's; the dir name
+        # (typically the talk slug) can.
+        "outline_dir": os.path.basename(os.path.dirname(os.path.abspath(outline_path))),
         "rendered_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "models_rendered_ok": sorted(set(ok_models)),
         "cells": cells,
@@ -993,8 +998,10 @@ def check_style_explore(outline_path):
     """
     baked = parse_outline(outline_path).get("model")
     resolved = resolve_model_id(baked) if baked else None
-    manifest_path = os.path.join(style_explore_dir(outline_path), RENDERED_MANIFEST)
+    se_dir = style_explore_dir(outline_path)
+    manifest_path = os.path.join(se_dir, RENDERED_MANIFEST)
     outline_name = os.path.basename(outline_path)
+    outline_dir = os.path.basename(os.path.dirname(os.path.abspath(outline_path)))
 
     verdict = {
         "gate_passed": False,
@@ -1033,9 +1040,9 @@ def check_style_explore(outline_path):
 
     verdict["manifest_present"] = True
 
-    # Fail closed on a manifest we can't trust: an unsupported schema, a
-    # manifest copied in from a different talk, or a malformed model list. A
-    # blindly-trusted manifest would let a model the speaker never saw pass.
+    # Fail closed on a manifest we can't trust: an unsupported schema, or one
+    # copied in from a different talk (basename AND talk-dir must match — see
+    # rules/stateful-artifacts.md, "stale state is the default").
     if manifest.get("schema_version") != 1:
         verdict["error"] = (
             f"{manifest_path} has unsupported schema_version "
@@ -1050,13 +1057,37 @@ def check_style_explore(outline_path):
             "copied or stale. Re-run --style-explore for this outline."
         )
         return verdict
-    rendered = manifest.get("models_rendered_ok")
-    if not isinstance(rendered, list) or not all(isinstance(m, str) for m in rendered):
+    manifest_dir = manifest.get("outline_dir")
+    if manifest_dir is not None and manifest_dir != outline_dir:
         verdict["error"] = (
-            f"{manifest_path} has a malformed 'models_rendered_ok' (expected a "
-            "list of model-id strings) — re-run --style-explore to regenerate it."
+            f"{manifest_path} was rendered in talk directory "
+            f"{manifest_dir!r}, not {outline_dir!r} — it looks copied from "
+            "another talk. Re-run --style-explore for this talk."
         )
         return verdict
+    cells = manifest.get("cells")
+    if not isinstance(cells, list):
+        verdict["error"] = (
+            f"{manifest_path} has a malformed 'cells' (expected a list) — "
+            "re-run --style-explore to regenerate it."
+        )
+        return verdict
+
+    # Don't trust models_rendered_ok: a model is eligible only when a cell that
+    # rendered OK still has its image file on disk. A stale or hand-edited
+    # manifest that lists a model with no backing file does not pass the gate
+    # (rules/stateful-artifacts.md — verify against the live source).
+    verified = set()
+    for cell in cells:
+        if not isinstance(cell, dict) or cell.get("status") != "OK":
+            continue
+        rel = cell.get("rel_path")
+        if not isinstance(rel, str) or not os.path.isfile(os.path.join(se_dir, rel)):
+            continue
+        cell_model = resolve_model_id(cell.get("model_resolved") or cell.get("model"))
+        if cell_model:
+            verified.add(cell_model)
+    rendered = sorted(verified)
     verdict["rendered_models"] = rendered
 
     if resolved in rendered:

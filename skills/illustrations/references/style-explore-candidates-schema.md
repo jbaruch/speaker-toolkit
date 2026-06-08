@@ -62,6 +62,7 @@ teaches the reader to handle the new shape.
 {
   "schema_version": 1,
   "outline": "presentation-outline.md",
+  "outline_dir": "devnexus26-robocoders",
   "rendered_at": "2026-06-08T12:00:00Z",
   "models_rendered_ok": ["gemini-3-pro-image-preview"],
   "cells": [
@@ -75,11 +76,16 @@ teaches the reader to handle the new shape.
 }
 ```
 
-- `models_rendered_ok` — deduped canonical ids over cells with `status == "OK"`.
-  A model that failed every cell is absent, so it can't pass the gate — you can't
-  bake a model the speaker never saw render.
 - `cells` — one entry per rendered cell; `model_resolved` is the canonical id the
   gate compares against (codenames resolve via the registry alias map).
+- The gate does NOT trust `models_rendered_ok`. It derives the eligible set from
+  `cells` with `status == "OK"` whose `rel_path` image file still exists on disk
+  under `style-explore/` — a stale or hand-edited manifest listing a model with
+  no backing file does not pass (per `rules/stateful-artifacts.md`: verify against
+  the live source). `models_rendered_ok` remains a human-readable summary.
+- `outline` (basename) and `outline_dir` (talk-directory name) are both checked
+  against the current talk; a grid copied from another talk fails closed even when
+  the outline filename matches.
 - The render overwrites `rendered.json` each run (idempotent), so it always
   reflects the latest grid.
 - The gate checks the model only, not anchor text — editing an anchor paragraph
