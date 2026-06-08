@@ -1293,3 +1293,37 @@ def test_poster_embed_directive_normalizes_embedded_quotes(generate_illustration
     assert '""' not in d
     assert "He said 'Hello'" in d
     assert "tag 'x'" in d
+
+
+def test_gate_fails_closed_on_non_dict_manifest(generate_illustrations, tmp_path):
+    # A parseable-but-non-object rendered.json (e.g. a list) must fail closed,
+    # not crash with AttributeError.
+    gi = generate_illustrations
+    outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
+    se = tmp_path / "style-explore"
+    se.mkdir(exist_ok=True)
+    (se / "rendered.json").write_text("[1, 2, 3]")
+    v = gi.check_style_explore(str(outline))
+    assert v["gate_passed"] is False
+    assert "not a JSON object" in v["error"]
+
+
+def test_gate_fails_closed_on_non_string_cell_model(generate_illustrations, tmp_path):
+    # A non-string model value in a cell must be skipped, not crash resolve_model_id.
+    gi = generate_illustrations
+    outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
+    se = tmp_path / "style-explore"
+    se.mkdir(exist_ok=True)
+    rel = "style/full/x.png"
+    (se / rel).parent.mkdir(parents=True, exist_ok=True)
+    (se / rel).write_bytes(b"img")
+    _write_raw_manifest(tmp_path, {
+        "schema_version": 1, "outline": "outline.md", "outline_dir": tmp_path.name,
+        "models_rendered_ok": [],
+        "cells": [{
+            "style": "S", "format": "FULL", "model": ["not", "a", "string"],
+            "model_resolved": None, "status": "OK", "rel_path": rel,
+        }],
+    })
+    v = gi.check_style_explore(str(outline))  # must not raise
+    assert v["gate_passed"] is False

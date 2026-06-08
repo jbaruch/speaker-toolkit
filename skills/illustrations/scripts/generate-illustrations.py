@@ -1046,6 +1046,13 @@ def check_style_explore(outline_path):
 
     verdict["manifest_present"] = True
 
+    if not isinstance(manifest, dict):
+        verdict["error"] = (
+            f"{manifest_path} is not a JSON object — re-run --style-explore to "
+            "regenerate it."
+        )
+        return verdict
+
     # Fail closed on a manifest we can't trust: an unsupported schema, or one
     # copied in from a different talk (basename AND talk-dir must match — see
     # rules/stateful-artifacts.md, "stale state is the default").
@@ -1102,7 +1109,10 @@ def check_style_explore(outline_path):
             continue
         if not os.path.isfile(target):
             continue
-        cell_model = resolve_model_id(cell.get("model_resolved") or cell.get("model"))
+        cell_model_raw = cell.get("model_resolved") or cell.get("model")
+        if not isinstance(cell_model_raw, str):
+            continue
+        cell_model = resolve_model_id(cell_model_raw)
         if cell_model:
             verified.add(cell_model)
     rendered = sorted(verified)
