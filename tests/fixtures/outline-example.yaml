@@ -17,6 +17,12 @@ talk:
   slide_budget: 20
   pacing_wpm: [140, 160]
   architecture: "sparkline"
+  tldr: |
+    Agents ship code that violates constraints they were never given.
+
+    - They lack access to the constraint.
+    - They lack authority to push back.
+    - Treat context as a versioned engineering artifact and both gaps close.
   applied_patterns:
     - { id: "unifying-visual-theme" }
     - { id: "mentor" }

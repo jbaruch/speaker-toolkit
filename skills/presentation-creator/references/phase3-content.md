@@ -34,6 +34,7 @@ Authored in Phase 1; never re-edited carelessly. Field reference (see
 | `architecture` | yes | One of: `narrative-arc`, `sparkline`, `fourthought`, `triad`, `talklet`, `expansion-joints`, `lightning-talk`, `takahashi`, `cave-painting` |
 | `applied_patterns` | optional | Talk-level patterns (e.g., `bookends`, `mentor`, `anti-sell`) |
 | `thesis` | optional | Elaborated paragraph; the slide-ready single sentence lives on the call-to-adventure slide via `big_idea_text` |
+| `tldr` | optional | Short distillation of `thesis` (a couple of paragraphs or a bulleted list); `narrative.md` renders it verbatim as the TL;DR and never reprints `thesis` |
 | `shownotes_url_base` | optional | e.g., `https://speaking.example.com/` — used by Phase 6 |
 | `commercial_intent`, `profanity_register` | optional | Free prose |
 | `must_include`, `must_avoid` | optional | Lists of strings |
@@ -56,12 +57,13 @@ Authored in Phase 2; section-level scaffolding for `narrative.md`. Each chapter:
       tags: [hook]          # free-form authoring tags
 ```
 
-`argument_beats[].text` is the *prose argument* — what `narrative.md` will
-render. Keep it dense and one-paragraph per beat. The `slide_refs` field is a
+`argument_beats[].text` is the *prose argument* of the narrative arc and the
+body of the **partial** `narrative.md` (Phases 1–2). Keep it dense and
+one-paragraph per beat. Once slides are authored, the **full** `narrative.md`
+switches to a one-line-per-slide walk and no longer renders the beats. The beats
+are Phase 2 scaffolding, not final-artifact copy. The `slide_refs` field stays a
 structured cross-reference: the schema validator rejects any ref that doesn't
-match a real slide number in `slides[]`, and `narrative.md` renders each beat
-with a `*[slide N, slide M]*` marker so readers can trace beats back to the
-deck. Slide numbers also tend to appear inline in the prose naturally.
+match a real slide number in `slides[]`.
 
 ## The `slides:` and `interludes:` blocks
 

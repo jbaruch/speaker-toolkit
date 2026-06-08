@@ -294,6 +294,10 @@ class TalkMetadata(_StrictModel):
     # Spec metadata (collapsed from the legacy presentation-spec.md).
     # All optional — older outlines without these fields still validate.
     thesis: str | None = None
+    # A reader-facing summary of `thesis` — a couple of paragraphs or a short
+    # bulleted list. Authored as a distillation of the elaborated thesis;
+    # narrative.md renders it verbatim as the TL;DR (it never reprints `thesis`).
+    tldr: str | None = None
     shownotes_url_base: str | None = None
     commercial_intent: str | None = None
     profanity_register: str | None = None

@@ -1,6 +1,27 @@
 # Changelog
 
-### feat(presentation-creator) — generate narrative.md during Phases 1–2 for early review
+### feat(presentation-creator) — narrative.md becomes a TL;DR + slide-by-slide walk (#81)
+
+`narrative.md` used to print the full `talk.thesis` (in practice 3–4 elaborated
+paragraphs) and then the chapter `argument_beats` as prose with `*[slide N]*`
+markers. The two sections stated the same argument at different granularities, so
+the breakdown read as the thesis chopped into slide-tagged chunks — a reader saw
+the whole argument twice. The narrative is also the only artifact that gives "the
+idea + what's on each slide" in plain prose: `slides.md` is technical generation
+input and `script.md` is the spoken words.
+
+- New optional `talk.tldr` field on the outline schema: a short distillation of
+  `thesis` (a couple of paragraphs or a bulleted list), authored by the agent.
+  `narrative.md` renders it verbatim under `## TL;DR` and never reprints the
+  elaborated `thesis`.
+- Full `narrative.md` (slides authored) is now a one-line-per-slide walk grouped
+  by chapter — `**N. Title** — synopsis`, 1:1 with `slides[]`, with live-demo
+  interludes inlined at their anchor. The per-slide synopsis prefers
+  `text_overlay`, falling back to the slide's `visual`.
+- Partial `narrative.md` (Phases 1–2, no slides yet) keeps the chapter +
+  argument-beat scaffold so the author still reviews the arc before slides exist.
+- SKILL.md + phase3-content.md document the `tldr` field and the partial-vs-full
+  rendering split.
 
 `narrative.md` (the prose distillation of `talk.thesis` + `chapters[].argument_beats`)
 can now be generated and reviewed before any slide exists. Previously
