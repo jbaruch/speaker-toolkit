@@ -1123,18 +1123,20 @@ def run_generate(outline_path, slide_args, versioned=False):
     poster = outline.get("composition") == POSTER_COMPOSITION
 
     if poster:
-        # Poster-theatrical invariants: every slide must be FULL with no Safe
-        # zone (text is baked in, nothing overlaid). Fail fast on a mismatch
-        # rather than generate slides apply-to-deck can't place consistently.
+        # Poster-theatrical invariants: every illustrated slide must be FULL
+        # with no Safe zone (text is baked in, nothing overlaid). Validate the
+        # whole outline, not just this run's subset — a partial run must not be
+        # able to bypass the deck-level invariant. (outline["slides"] holds only
+        # prompt-bearing slides; EXCEPTION slides carry no prompt and render as
+        # real assets, so they are correctly out of scope here.)
         bad = [
-            num for num in to_generate
-            if slides_by_num[num]["format"] != "FULL"
-            or slides_by_num[num].get("safe_zone")
+            s["slide_num"] for s in outline["slides"]
+            if s["format"] != "FULL" or s.get("safe_zone")
         ]
         if bad:
             print(
-                "ERROR: poster-theatrical composition requires every slide to be "
-                f"Format: FULL with no Safe zone. Offending slide(s): "
+                "ERROR: poster-theatrical composition requires every illustrated "
+                f"slide to be Format: FULL with no Safe zone. Offending slide(s): "
                 f"{', '.join(map(str, bad))}. Fix the outline or drop the "
                 "**Composition:** poster-theatrical header.",
                 file=sys.stderr,

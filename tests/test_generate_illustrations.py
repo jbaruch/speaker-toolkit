@@ -1157,3 +1157,40 @@ def test_run_generate_poster_rejects_non_full_slide(
     assert exc.value.code == 1
     assert gen_calls == []
     assert "poster-theatrical" in capsys.readouterr().err
+
+
+def test_run_generate_poster_validates_whole_outline_not_just_subset(
+    generate_illustrations, monkeypatch, tmp_path, capsys
+):
+    # Even generating a single valid slide must fail if another slide in the
+    # outline violates the poster invariant — the invariant is deck-level.
+    gi = generate_illustrations
+    lines = [
+        "# Plan", "",
+        "**Model:** `gemini-3-pro-image-preview`",
+        "**Composition:** poster-theatrical",
+        "**Embedded footer:** jbaruch • Devoxx 2026", "",
+        "### STYLE ANCHOR (FULL — 16:9, 1920x1080)",
+        "> A poster style.", "",
+        "### Slide 1: Good",
+        "- Format: **FULL**",
+        "- Image prompt: `[STYLE ANCHOR] a thing`",
+        "- Text: **ok**", "",
+        "### Slide 2: Bad",
+        "- Format: **IMG+TXT**",
+        "- Image prompt: `[STYLE ANCHOR] another thing`",
+        "- Text: **nope**", "",
+    ]
+    outline = tmp_path / "outline.md"
+    outline.write_text("\n".join(lines))
+    outline_dict = gi.parse_outline(str(outline))
+    _write_manifest(tmp_path, ["gemini-3-pro-image-preview"])
+    gen_calls = []
+    _stub_generate(gi, monkeypatch, outline_dict, str(tmp_path), gen_calls)
+
+    with pytest.raises(SystemExit) as exc:
+        gi.run_generate(str(outline), ["1"])  # subset: only slide 1
+
+    assert exc.value.code == 1
+    assert gen_calls == []
+    assert "2" in capsys.readouterr().err  # slide 2 named as the offender
