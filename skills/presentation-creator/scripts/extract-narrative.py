@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
 """extract-narrative.py — render outline.yaml as narrative.md.
 
-A prose distillation of the talk's argument, organized by chapter. Drops
-production directives (image prompts, builds, format), drops the script
-(speaker dialogue lives in script.md), drops structural ledgers (those
-surface in rhetorical-review.md). Each chapter's argument_beats are
-joined as paragraphs; slide references appearing naturally in beat text
-are preserved as written.
+narrative.md is the reader's walk of the deck: a TL;DR of the idea, then a
+one-line-per-slide breakdown of what's on each slide. It drops production
+directives (image prompts, builds, format), the script (speaker dialogue
+lives in script.md), and structural ledgers (those surface in
+rhetorical-review.md).
+
+The TL;DR renders `talk.tldr` verbatim — a short distillation of the
+elaborated `talk.thesis`. The full thesis is never reprinted here.
+
+Two shapes, chosen by whether any slide is authored yet:
+  • full  (slides present)  — TL;DR + per-slide walk, grouped by chapter,
+                              with interludes inlined at their anchor.
+  • partial (no slides yet) — TL;DR + the Phase 2 narrative scaffold
+                              (chapters + argument_beats), so the author can
+                              review the arc before slides exist.
 """
 
 from __future__ import annotations
@@ -36,20 +45,92 @@ def render(outline: "_os.Outline | _os.PartialOutline") -> str:
     )
     lines.append("")
     lines.append(
-        "> A prose distillation of the outline. No image prompts, no "
-        "stage directions, no per-slide layout. Read top-to-bottom; the "
-        "argument is preserved, the production noise is stripped.",
+        "> The idea up top, then one line per slide — a quick walk of the "
+        "deck. No image prompts, no stage directions, no script; those live "
+        "in slides.md and script.md.",
     )
     lines.append("")
 
-    if outline.talk.thesis:
-        lines.append("## Thesis")
+    if outline.talk.tldr:
+        lines.append("## TL;DR")
         lines.append("")
-        for para in outline.talk.thesis.strip().split("\n\n"):
-            lines.append(para.strip())
-            lines.append("")
+        lines.append(outline.talk.tldr.strip())
+        lines.append("")
 
-    lines.append("## Part 1 — The Talk as a Narrative")
+    if outline.slides:
+        _render_slide_walk(outline, lines)
+    else:
+        _render_narrative_scaffold(outline, lines)
+
+    return _finalize(lines)
+
+
+def _slide_synopsis(slide: "_os.Slide") -> str:
+    """One-line gist of what's on the slide.
+
+    Prefers the on-screen `text_overlay`, falls back to `visual`. Collapses to
+    the first line and ignores the literal `none` placeholder authors use when
+    a slide carries no overlay.
+    """
+    for source in (slide.text_overlay, slide.visual):
+        if not source:
+            continue
+        first = source.strip().splitlines()[0].strip()
+        if first and first.lower() != "none":
+            return first
+    return ""
+
+
+def _render_slide_walk(
+    outline: "_os.Outline | _os.PartialOutline", lines: list[str],
+) -> None:
+    """Full view: one line per slide, grouped by chapter, interludes inlined."""
+    lines.append("## The Deck, Slide by Slide")
+    lines.append("")
+
+    chapters_by_id = {c.id: c for c in outline.chapters}
+
+    # Unified timeline: slides sort by number, interludes sort immediately
+    # after the slide they follow (after_slide).
+    timeline: list[tuple[tuple[int, int], str, object]] = []
+    for s in outline.slides:
+        timeline.append(((s.n, 0), "slide", s))
+    for il in outline.interludes:
+        timeline.append(((il.after_slide, 1), "interlude", il))
+    timeline.sort(key=lambda entry: entry[0])
+
+    current_chapter: str | None = None
+    for _, kind, obj in timeline:
+        chapter_id = obj.chapter  # type: ignore[attr-defined]
+        if chapter_id != current_chapter:
+            current_chapter = chapter_id
+            chapter = chapters_by_id.get(chapter_id)
+            if chapter is not None:
+                if lines and lines[-1].strip() != "":
+                    lines.append("")
+                header = f"### {chapter.title} (~{chapter.target_min:g} min)"
+                if chapter.cuttable:
+                    header += " — *cuttable*"
+                lines.append(header)
+                lines.append("")
+
+        if kind == "slide":
+            synopsis = _slide_synopsis(obj)  # type: ignore[arg-type]
+            entry = f"- **{obj.n}. {obj.title}**"  # type: ignore[attr-defined]
+            if synopsis:
+                entry += f" — {synopsis}"
+            lines.append(entry)
+        else:
+            lines.append(f"- *{obj.title} — live demo*")  # type: ignore[attr-defined]
+
+    lines.append("")
+
+
+def _render_narrative_scaffold(
+    outline: "_os.Outline | _os.PartialOutline", lines: list[str],
+) -> None:
+    """Partial view (no slides yet): the Phase 2 chapter + argument-beat arc."""
+    lines.append("## The Talk as a Narrative")
     lines.append("")
     if not outline.chapters:
         lines.append(
@@ -57,7 +138,7 @@ def render(outline: "_os.Outline | _os.PartialOutline") -> str:
             "appear after Phase 2 (Rhetorical Architecture).*",
         )
         lines.append("")
-        return _finalize(lines)
+        return
 
     chapter_total = sum(c.target_min for c in outline.chapters)
     lines.append(
@@ -79,16 +160,8 @@ def render(outline: "_os.Outline | _os.PartialOutline") -> str:
             continue
 
         for beat in chapter.argument_beats:
-            text = beat.text.strip()
-            if beat.slide_refs:
-                refs = ", ".join(f"slide {n}" for n in beat.slide_refs)
-                lines.append(f"{text}  ")
-                lines.append(f"*[{refs}]*")
-            else:
-                lines.append(text)
+            lines.append(beat.text.strip())
             lines.append("")
-
-    return _finalize(lines)
 
 
 def _finalize(lines: list[str]) -> str:

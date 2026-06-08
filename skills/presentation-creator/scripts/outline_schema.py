@@ -294,6 +294,10 @@ class TalkMetadata(_StrictModel):
     # Spec metadata (collapsed from the legacy presentation-spec.md).
     # All optional — older outlines without these fields still validate.
     thesis: str | None = None
+    # A reader-facing summary of `thesis` — a couple of paragraphs or a short
+    # bulleted list. Authored as a distillation of the elaborated thesis;
+    # narrative.md renders it verbatim as the TL;DR (it never reprints `thesis`).
+    tldr: str | None = None
     shownotes_url_base: str | None = None
     commercial_intent: str | None = None
     profanity_register: str | None = None
@@ -591,10 +595,11 @@ class Outline(_StrictModel):
 class PartialOutline(_StrictModel):
     """Talk metadata plus an optional, slide-less narrative scaffold.
 
-    The narrative (`talk.thesis` + `chapters[].argument_beats`) is fully
-    authored by the end of Phase 2, before any slide exists. `extract-narrative.py`
-    renders from this view so the human can review and approve the narrative
-    during Phases 1–2.
+    Before any slide exists, `narrative.md` renders `talk.tldr` as the TL;DR
+    plus the `chapters[].argument_beats` arc (fully authored by the end of
+    Phase 2); once `slides[]` are authored, the full view switches to a
+    per-slide walk. `extract-narrative.py` renders from this view so the human
+    can review and approve the narrative during Phases 1–2.
 
     Every present section is still validated by its own field- and model-level
     validators (a `slides[]` entry, if present, still runs its build-step and

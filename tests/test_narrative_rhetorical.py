@@ -56,19 +56,46 @@ def test_narrative_omits_applied_patterns(extract_narrative, outline):
     assert "applied_patterns" not in out
 
 
-def test_narrative_includes_argument_beats(extract_narrative, outline):
+def test_narrative_full_renders_per_slide_walk(extract_narrative, outline):
+    """Full mode walks slides[] one line each — not the argument beats."""
     out = extract_narrative.render(outline)
-    # First chapter's first beat
-    assert "Open cold with the receipt" in out
-    # Third chapter's beat
-    assert "Pay off the master story" in out
+    assert "## The Deck, Slide by Slide" in out
+    # One line per slide, keyed by slide number + title
+    assert "**1. Cold Open**" in out
+    assert "**11. New Bliss + Thanks**" in out
+    # The argument-beat prose must NOT appear in the full (slide) view
+    assert "Open cold with the receipt" not in out
+    assert "Pay off the master story" not in out
 
 
-def test_narrative_renders_slide_refs(extract_narrative, outline):
+def test_narrative_slide_synopsis_prefers_overlay_then_visual(
+    extract_narrative, outline,
+):
     out = extract_narrative.render(outline)
-    # Argument beats carry slide_refs — those should appear as a marker
-    assert "slide 1" in out
-    assert "slide 11" in out
+    # Slide 2 has a text_overlay — use it
+    assert "VALIDATION REMOVED · TESTS DELETED · TAX MISCOMPUTED" in out
+    # Slide 1's text_overlay is the literal "none" — fall back to its visual
+    assert "Receipt screenshot with one line circled in red." in out
+
+
+def test_narrative_inlines_interlude_at_anchor(
+    extract_narrative, outline_schema, base_data,
+):
+    """An interlude renders as a live-demo line right after its anchor slide."""
+    data = copy.deepcopy(base_data)
+    data["interludes"] = [{
+        "id": "demo-vat",
+        "after_slide": 8,
+        "title": "Live coding: agent rewrites the VAT calc",
+        "chapter": "ch2",
+        "script": [{"line": "Watch what happens."}],
+    }]
+    outline = outline_schema.Outline.model_validate(data)
+    out = extract_narrative.render(outline)
+    assert "- *Live coding: agent rewrites the VAT calc — live demo*" in out
+    # It sits between slide 8 and slide 10
+    assert out.index("**8. Master Story Recall**") < out.index("Live coding")
+    assert out.index("Live coding") < out.index("**10. Call to Action**")
 
 
 def test_narrative_omits_cuttable_marker_when_none(extract_narrative, outline):
@@ -85,29 +112,38 @@ def test_narrative_marks_cuttable_chapter(extract_narrative, outline_schema, bas
     assert "*cuttable*" in out
 
 
-def test_narrative_renders_thesis_when_present(
+def test_narrative_renders_tldr_when_present(extract_narrative, outline):
+    """The fixture's tldr renders under a TL;DR heading, bullets preserved."""
+    out = extract_narrative.render(outline)
+    assert "## TL;DR" in out
+    assert "Agents ship code that violates constraints" in out
+    assert "- They lack authority to push back." in out
+
+
+def test_narrative_never_reprints_full_thesis(
     extract_narrative, outline_schema, base_data,
 ):
+    """The elaborated talk.thesis must never appear — only the tldr does."""
     data = copy.deepcopy(base_data)
-    data["talk"]["thesis"] = "A two-sentence thesis goes here."
+    data["talk"]["thesis"] = "An elaborated multi-paragraph thesis goes here."
     outline = outline_schema.Outline.model_validate(data)
     out = extract_narrative.render(outline)
-    assert "## Thesis" in out
-    assert "two-sentence thesis" in out
+    assert "elaborated multi-paragraph thesis" not in out
+    assert "## TL;DR" in out
 
 
 # ── extract-narrative.py — partial (narrative-phase) rendering ───────
 
 
-def test_narrative_partial_thesis_only_stub(
+def test_narrative_partial_tldr_only_stub(
     extract_narrative, outline_schema, base_data,
 ):
-    """Phase 1 stub: thesis renders, chapter body is a 'not yet authored' note."""
+    """Phase 1 stub: tldr renders, chapter body is a 'not yet authored' note."""
     data = {"talk": copy.deepcopy(base_data["talk"])}
-    data["talk"]["thesis"] = "Treat context as a first-class artifact."
+    data["talk"]["tldr"] = "Treat context as a first-class artifact."
     partial = outline_schema.PartialOutline.model_validate(data)
     out = extract_narrative.render(partial)
-    assert "## Thesis" in out
+    assert "## TL;DR" in out
     assert "Treat context as a first-class artifact." in out
     assert "Narrative arc not yet authored" in out
     assert "### The Setup" not in out  # no chapters yet
