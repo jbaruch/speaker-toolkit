@@ -53,8 +53,9 @@ previous one.
 - The edit safety suffixes (`DO NOT add any new elements`, `let background
   continue naturally`) are auto-appended by the script — don't repeat them.
 - Keep each `build-NN:` entry on a **single line**. The parser reads only the
-  text up to the first newline, so erase/Keep clauses on continuation lines are
-  silently dropped (and the step then fails Keep-clause validation).
+  text up to the first newline, so any erase/Keep clauses on continuation lines
+  are silently dropped — losing those preservation items, and failing
+  Keep-clause validation outright when no `Keep` clause remains on the first line.
 
 Example (slide with three trial panels revealed progressively — each entry is
 one line):
