@@ -1336,7 +1336,7 @@ def run_build(outline_path, slide_arg):
         sys.exit(0)
 
     total_steps = sum(s["builds"]["count"] for s in to_build)
-    validation_failed = False
+    build_failed = False
     print(f"Model: {model}")
     print(f"Building {len(to_build)} slide(s), {total_steps} total build steps")
     print(f"Output: {builds_dir}/")
@@ -1383,7 +1383,7 @@ def run_build(outline_path, slide_arg):
         # before spending any edit API calls on a chain that can't work.
         missing_keep = steps_missing_keep_clause(edit_steps)
         if missing_keep:
-            validation_failed = True
+            build_failed = True
             print(f"  ERROR: {len(missing_keep)} build step(s) lack an explicit "
                   '"Keep ..." preservation list:', file=sys.stderr)
             for s in missing_keep:
@@ -1410,8 +1410,10 @@ def run_build(outline_path, slide_arg):
             )
 
             if image_bytes is None:
-                print(f"FAILED: {result[:100]}")
-                print(f"  Aborting remaining build steps for slide {num} (chain broken)")
+                build_failed = True
+                print(f"FAILED: {result[:100]}", file=sys.stderr)
+                print(f"  Aborting remaining build steps for slide {num} (chain broken)",
+                      file=sys.stderr)
                 break
 
             ext = mime_to_ext(result)
@@ -1431,11 +1433,12 @@ def run_build(outline_path, slide_arg):
 
     print("Done. Review build images in:", builds_dir)
 
-    # Surface skipped chains in the exit code so `--build all` automation can
-    # detect that some slides produced no build sequence (file-hygiene policy:
-    # non-zero exit on failure).
-    if validation_failed:
-        print("ERROR: one or more slides were skipped for missing Keep clauses.",
+    # Surface any incomplete chain in the exit code so `--build all` automation
+    # can detect that some slides produced no build sequence — whether skipped
+    # for a missing Keep clause or aborted on an edit failure (file-hygiene
+    # policy: non-zero exit on failure).
+    if build_failed:
+        print("ERROR: one or more slides did not produce a complete build chain.",
               file=sys.stderr)
         sys.exit(1)
 

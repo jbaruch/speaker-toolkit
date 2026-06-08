@@ -149,6 +149,31 @@ def test_run_build_with_keep_clause_runs_chain(
     assert len(edit_calls) == 1  # the single erase step was edited
 
 
+def test_run_build_exits_nonzero_when_edit_fails(
+    generate_illustrations, monkeypatch, tmp_path, capsys
+):
+    # Outcome: an edit failure mid-chain aborts the slide and still exits
+    # non-zero (file-hygiene: non-zero on failure), not only on validation.
+    gi = generate_illustrations
+    base = tmp_path / "slide-60.png"
+    base.write_bytes(b"img")
+    outline = _single_build_slide([
+        {"step": 0, "description": "Erase Panel 1. Keep the page chrome.", "is_full": False},
+        {"step": 1, "description": "[FULL] all panels", "is_full": True},
+    ])
+    monkeypatch.setattr(gi, "_load_context", lambda p: ({}, outline, str(tmp_path)))
+    monkeypatch.setattr(gi, "find_base_image", lambda d, n: str(base))
+    monkeypatch.setattr(gi, "effective_slide_format", lambda *a, **k: None)
+    monkeypatch.setattr(gi.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(gi, "edit_image", lambda *a, **k: (None, "api boom"))
+
+    with pytest.raises(SystemExit) as exc:
+        gi.run_build("ignored.md", "60")
+
+    assert exc.value.code == 1
+    assert "FAILED" in capsys.readouterr().err
+
+
 def test_resolve_prompt_with_anchor(generate_illustrations):
     anchors = {"WIDE": "A warm watercolor illustration."}
     prompt = "[STYLE ANCHOR] A confused developer"
