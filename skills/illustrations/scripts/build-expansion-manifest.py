@@ -50,43 +50,66 @@ SCHEMA_VERSION = 1
 
 _SLIDE_BLOCK_RE = re.compile(r"###\s+Slide\s+(\d+):(.*?)(?=\n###\s|\n##\s|\Z)", re.DOTALL)
 _BUILDS_RE = re.compile(r"-\s*Builds:\s*(\d+)\s+steps?")
+_STEP_RE = re.compile(r"-\s*build-(\d+):", re.MULTILINE)
 _FRAME_RE = re.compile(r"slide-\d+-build-(\d+)\.[A-Za-z0-9]+$")
 
 
-def parse_build_parents(outline_path: Path) -> list[int]:
-    """Return the slide numbers whose block declares a `Builds: N steps` line."""
+def parse_build_specs(outline_path: Path) -> list[dict]:
+    """Return build specs for each parent: {parent, count, steps}.
+
+    `count` is the declared `Builds: N steps`; `steps` are the build-MM step
+    numbers actually declared beneath it (the source of truth for which frames
+    must exist — the convention is not assumed 0-based).
+    """
     text = outline_path.read_text(encoding="utf-8")
-    parents = []
+    specs = []
     for m in _SLIDE_BLOCK_RE.finditer(text):
-        if _BUILDS_RE.search(m.group(2)):
-            parents.append(int(m.group(1)))
-    return parents
+        bm = _BUILDS_RE.search(m.group(2))
+        if not bm:
+            continue
+        steps = sorted(int(s) for s in _STEP_RE.findall(m.group(2)))
+        specs.append({"parent": int(m.group(1)), "count": int(bm.group(1)), "steps": steps})
+    return specs
 
 
-def frames_for(builds_dir: Path, parent: int) -> list[Path]:
-    """Build frame files for a parent, in ascending step order (build-00..N)."""
-    matches = []
+def frames_for(builds_dir: Path, parent: int) -> dict[int, Path]:
+    """Map step number -> build frame file for a parent (slide-NN-build-MM.<ext>)."""
+    found = {}
     for p in builds_dir.glob(f"slide-{parent:02d}-build-*"):
-        m = _FRAME_RE.search(p.name)
-        if m:
-            matches.append((int(m.group(1)), p))
-    return [p for _, p in sorted(matches, key=lambda t: t[0])]
+        fm = _FRAME_RE.search(p.name)
+        if fm:
+            found[int(fm.group(1))] = p
+    return found
 
 
 def build_manifest(outline_path: Path, builds_dir: Path) -> dict:
     builds = []
-    for parent in sorted(parse_build_parents(outline_path)):
-        frames = frames_for(builds_dir, parent)
-        if not frames:
+    for spec in sorted(parse_build_specs(outline_path), key=lambda s: s["parent"]):
+        parent, count, steps = spec["parent"], spec["count"], spec["steps"]
+        if not steps:
             raise SystemExit(
-                f"ERROR: slide {parent} declares a Builds block but no build "
-                f"frames (slide-{parent:02d}-build-NN.*) were found in "
-                f"{builds_dir}. Generate them first: generate-illustrations.py "
-                f"<outline> --build {parent}"
+                f"ERROR: slide {parent} declares `Builds: {count} steps` but has "
+                "no `build-NN:` entries beneath it. Author the build steps first "
+                "(see skills/illustrations/references/builds.md)."
+            )
+        if len(steps) != count:
+            raise SystemExit(
+                f"ERROR: slide {parent} declares `Builds: {count} steps` but has "
+                f"{len(steps)} `build-NN:` entries ({steps}). Fix the count or the "
+                "entries so they agree."
+            )
+        found = frames_for(builds_dir, parent)
+        missing = [s for s in steps if s not in found]
+        if missing:
+            raise SystemExit(
+                f"ERROR: slide {parent} is missing build frame(s) for step(s) "
+                f"{missing} (declared build-NN entries: {steps}). A partial "
+                "sequence would expand into a broken reveal. Regenerate: "
+                f"generate-illustrations.py <outline> --build {parent}"
             )
         builds.append({
             "parent": parent,
-            "frames": [str(f.resolve()) for f in frames],
+            "frames": [str(found[s].resolve()) for s in steps],
             "notes": "",
         })
     return {"schema_version": SCHEMA_VERSION, "builds": builds}

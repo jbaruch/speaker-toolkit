@@ -61,3 +61,15 @@ def test_cli_writes_packed_file(build_expansion_to_packed, tmp_path):
     packed = out.read_text()
     assert packed.split(US)[0] == "4"
     assert packed.split(US)[2].split(GS) == ["/b/00.jpg", "/b/01.jpg"]
+
+
+def test_wrong_schema_version_errors(build_expansion_to_packed):
+    bad = {"schema_version": 2, "builds": [{"parent": 7, "frames": ["/b/00.jpg"], "notes": ""}]}
+    with pytest.raises(ValueError, match="schema_version"):
+        build_expansion_to_packed.manifest_to_packed(bad)
+
+
+def test_missing_schema_version_errors(build_expansion_to_packed):
+    bad = {"builds": [{"parent": 7, "frames": ["/b/00.jpg"], "notes": ""}]}
+    with pytest.raises(ValueError, match="schema_version"):
+        build_expansion_to_packed.manifest_to_packed(bad)

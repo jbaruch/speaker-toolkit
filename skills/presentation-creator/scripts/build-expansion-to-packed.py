@@ -39,6 +39,11 @@ def manifest_to_packed(manifest: object) -> str:
     """
     if not isinstance(manifest, dict):
         raise ValueError('manifest must be a JSON object like {"builds": [...]}')
+    if manifest.get("schema_version") != 1:
+        raise ValueError(
+            f"unsupported manifest schema_version {manifest.get('schema_version')!r} "
+            "(expected 1) — regenerate it with build-expansion-manifest.py"
+        )
     builds = manifest.get("builds")
     if not isinstance(builds, list) or not builds:
         raise ValueError(
