@@ -59,7 +59,7 @@ thresholds (1.5 slides/min, 45% Act 1 cap), ask for template/publishing interact
 | Phase | What happens | Gate |
 |-------|-------------|------|
 | 0: Intake | Load vault, gather context | Topic and context captured |
-| 1: Intent Distillation | Clarifying questions → `talk:` block of `outline.yaml`; generate thesis-only `narrative.md` (partial) | Author confirms metadata |
+| 1: Intent Distillation | Clarifying questions → `talk:` block of `outline.yaml`; generate TL;DR-only `narrative.md` (partial) | Author confirms metadata |
 | 2: Rhetorical Architecture | Joint instrument selection → `architecture`, `applied_patterns`, `chapters[]` in `outline.yaml`; regenerate `narrative.md` (partial) for review | Author approves narrative + architecture |
 | 3: Content Development | Fill `slides[]` + `interludes[]` in `outline.yaml`; finalize `narrative.md` (full) + generate `script.md`, `slides.md`, `rhetorical-review.md` | Draft delivered |
 | 4: Revision & Guardrails | Iterate on feedback, run guardrail checks against `outline.yaml` | Author declares outline done |
@@ -175,7 +175,7 @@ Gate: Author confirms or edits the metadata.
 
 Save the partial outline to: `{presentations-dir}/{conference}/{year}/{talk-slug}/outline.yaml`
 
-Then generate the narrative stub so the author can read the thesis in prose form:
+Then generate the narrative stub so the author can read the TL;DR early:
 
 ```bash
 python3 skills/presentation-creator/scripts/extract-narrative.py --partial outline.yaml > narrative.md
@@ -219,8 +219,8 @@ python3 skills/presentation-creator/scripts/extract-narrative.py --partial outli
 ```
 
 Present `narrative.md` to the author. This is the narrative-approval point: the
-author reads the prose distillation and approves or revises the argument before
-any per-slide content is written in Phase 3. Leave `argument_beats[].slide_refs`
+author reads the TL;DR and the chapter arc and approves or revises the argument
+before any per-slide content is written in Phase 3. Leave `argument_beats[].slide_refs`
 empty here — slides do not exist yet, so `--partial` validation rejects any ref;
 wire them to real slides in Phase 3.
 

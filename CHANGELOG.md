@@ -23,8 +23,8 @@ input and `script.md` is the spoken words.
 - SKILL.md + phase3-content.md document the `tldr` field and the partial-vs-full
   rendering split.
 
-`narrative.md` (the prose distillation of `talk.thesis` + `chapters[].argument_beats`)
-can now be generated and reviewed before any slide exists. Previously
+`narrative.md` (the partial narrative scaffold) can now be generated and
+reviewed before any slide exists. Previously
 `extract-narrative.py` called `load_outline()`, which runs the full `Outline`
 schema — `slides[]` (min 1), the `big_idea` singleton, paired callbacks, and
 slide-budget math — so the human-readable narrative could not appear until Phase 3,
@@ -37,7 +37,7 @@ at the point the argument was actually being shaped.
   cross-validators. The full `Outline` stays the Phase 3+ source-of-truth contract.
 - `extract-narrative.py --partial` renders from the partial view and emits a
   "narrative arc not yet authored" note when chapters are absent.
-- SKILL.md: Phase 1 emits a thesis-only stub; Phase 2 regenerates the full
+- SKILL.md: Phase 1 emits a partial stub; Phase 2 regenerates the full
   narrative and the gate now requires author approval of narrative + architecture
   before Phase 3. The plain (full-validation) extractor path is unchanged from
   Phase 3 onward.
