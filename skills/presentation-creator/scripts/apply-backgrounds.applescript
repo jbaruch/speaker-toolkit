@@ -6,7 +6,9 @@ on run argv
 	if (count of argv) < 3 then error "Expected 3 args: basePath outPath specStr"
 	tell application "Microsoft PowerPoint"
 		activate
-		set rc to run VB macro macro name "ApplyBackgrounds" list of parameters {item 1 of argv, item 2 of argv, item 3 of argv}
+		with timeout of 1800 seconds
+			set rc to run VB macro macro name "ApplyBackgrounds" list of parameters {item 1 of argv, item 2 of argv, item 3 of argv}
+		end timeout
 	end tell
 	if rc < 0 then error "ApplyBackgrounds failed (rc=" & rc & ") — see the PowerPoint error dialog; confirm DeckOps.pptm is open with macros enabled and Automation consent granted."
 	return "ApplyBackgrounds returned: " & rc

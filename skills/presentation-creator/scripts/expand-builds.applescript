@@ -11,7 +11,9 @@ on run argv
 	set packed to read (POSIX file (item 3 of argv)) as «class utf8»
 	tell application "Microsoft PowerPoint"
 		activate
-		set rc to run VB macro macro name "ExpandBuilds" list of parameters {basePath, outPath, packed}
+		with timeout of 1800 seconds
+			set rc to run VB macro macro name "ExpandBuilds" list of parameters {basePath, outPath, packed}
+		end timeout
 	end tell
 	if rc < 0 then error "ExpandBuilds failed (rc=" & rc & ") — see the PowerPoint error dialog; confirm DeckOps.pptm is open with macros enabled and Automation consent granted."
 	return "ExpandBuilds returned: " & rc

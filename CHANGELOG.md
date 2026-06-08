@@ -1,5 +1,17 @@
 # Changelog
 
+### fix(presentation-creator) — deck-build AppleScript drivers time out on large decks (#85)
+
+The `run VB macro` call in every PowerPoint driver used osascript's default
+~120s AppleEvent window, so a large build (e.g. a 46-slide `BuildDeck`) died with
+`AppleEvent timed out (-1712)`. All eight drivers — including the new
+`expand-builds.applescript` — now wrap the macro call in `with timeout of 1800
+seconds`. (Issue #85 also reports the installed tile missing the `.applescript` /
+`.bas` files and a `BuildDeck` `-18` on all-BLANK sequences: the dev tree packs
+all drivers + `RunDeckOps.bas` — verified via `tessl plugin pack` — so the
+published gap is being re-verified on the next publish; the `BuildDeck -18`
+robustness fix is tracked separately in #85.)
+
 ### feat(illustrations,presentation-creator) — progressive-reveal build expansion in the deck
 
 The toolkit generated build frames (`--build`) but never assembled them into the
