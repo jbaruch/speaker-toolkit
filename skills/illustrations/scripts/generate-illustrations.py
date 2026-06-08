@@ -406,6 +406,20 @@ def final_build_dest(builds_dir, slide_num, final_step, source_path):
     return os.path.join(builds_dir, f"slide-{slide_num:02d}-build-{final_step:02d}{src_ext}")
 
 
+def steps_missing_keep_clause(edit_steps):
+    """Build erase steps lacking an explicit "Keep ..." preservation list.
+
+    Component #3 of the Edit Prompt Safety rule. An erase step with no Keep
+    clause lets the model silently retain the element meant to be erased, so
+    the build chain emits visually identical stages. Returns the offending
+    steps (empty list means every step is compliant).
+    """
+    return [
+        s for s in edit_steps
+        if not re.search(r"\bkeep\b", s["description"], re.IGNORECASE)
+    ]
+
+
 def next_version(output_dir, slide_num):
     """Find the next available version number for a slide."""
     existing = glob.glob(os.path.join(output_dir, f"slide-{slide_num:02d}-v*.*"))
@@ -1360,6 +1374,24 @@ def run_build(outline_path, slide_arg):
         # Chain backwards: start from full, remove elements one at a time
         # Process steps in reverse order (excluding the final full step)
         edit_steps = [s for s in reversed(steps) if not s["is_full"]]
+
+        # Edit Prompt Safety component #3 (rules/illustration-rules.md): every
+        # erase step must carry an explicit "Keep ..." preservation list. Without
+        # it the model silently keeps the element that was meant to be erased, so
+        # the chain emits visually identical intermediate stages. Fail loud here,
+        # before spending any edit API calls on a chain that can't work.
+        missing_keep = steps_missing_keep_clause(edit_steps)
+        if missing_keep:
+            print(f"  ERROR: {len(missing_keep)} build step(s) lack an explicit "
+                  '"Keep ..." preservation list:')
+            for s in missing_keep:
+                print(f"    build-{s['step']:02d}: {s['description'][:70]}")
+            print("  Phrase each step as an erase instruction naming every element "
+                  "that must persist")
+            print('  ("Erase X. Keep the Y. Keep the Z.") — see '
+                  "rules/illustration-rules.md component #3. Skipping slide.")
+            continue
+
         prev_image = full_image
 
         for step in edit_steps:

@@ -34,12 +34,36 @@ Output: `illustrations/builds/slide-NN-build-MM.jpg`.
 
 ## Edit-Prompt Authoring
 
-- Each step description must explicitly say what to KEEP: "keep the road",
-  "keep the soldiers", etc.
-- Always include: "no parchment patch", "no new frames", "solid lines not
-  dashed".
+Each `build-NN:` description is the **erase instruction** that turns the next
+stage into this one (backwards chaining), not a description of the end state.
+"Panel 2 revealed — sergeant, STILL? stamp" does not tell the model to erase
+anything, so the element survives and the stage comes out identical to the
+previous one.
+
+- Name what to ERASE, then list what to KEEP — one `Keep` clause per element
+  that must persist (page chrome, frames, already-revealed panels, borders,
+  labels). This is component #3 of the Edit Prompt Safety rule, and it is
+  mandatory: `--build` validates that every erase step carries a `Keep` clause
+  and skips the slide with an error if one is missing.
+- Pull the persisting elements from the slide's full `Image prompt` — the
+  chrome that never appears in any build line (header bars, FIG labels, rules)
+  is exactly what drifts when it isn't named.
+- Include the visual-consistency clauses where relevant: "no parchment patch",
+  "no new frames", "solid lines not dashed".
 - The edit safety suffixes (`DO NOT add any new elements`, `let background
-  continue naturally`) are auto-appended by the script.
+  continue naturally`) are auto-appended by the script — don't repeat them.
+
+Example (slide with three trial panels revealed progressively):
+
+```
+- build-02: Erase Panel 3 and the "LIFT +81 PTS" stamp. Keep the page chrome
+  (header bar, FIG label, bottom rule). Keep the three panel frames and their
+  TRIAL labels. Keep Panel 1 and Panel 2 content.
+- build-01: Erase Panel 2 and the "STILL?" stamp. Keep the page chrome. Keep
+  the three panel frames and labels. Keep Panel 1 content.
+- build-00: Erase Panel 1 content and the "PLUGIN USELESS?" stamp. Keep the
+  page chrome. Keep the three empty panel frames and their TRIAL labels.
+```
 
 For near-perfect results, use `--fix` for targeted corrections rather than
 regenerating the entire chain.

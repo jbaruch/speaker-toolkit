@@ -85,6 +85,30 @@ def test_parse_builds(generate_illustrations):
     assert slide2["builds"]["steps"][-1]["is_full"] is True
 
 
+def test_steps_missing_keep_clause_flags_bare_descriptions(generate_illustrations):
+    # End-state descriptions with no "Keep" clause are exactly the buggy
+    # pattern: the model keeps the element meant to be erased.
+    steps = [
+        {"step": 0, "description": "Empty page with three panel frames"},
+        {"step": 1, "description": "Panel 1 revealed -- sergeant + recruit"},
+    ]
+    missing = generate_illustrations.steps_missing_keep_clause(steps)
+    assert [s["step"] for s in missing] == [0, 1]
+
+
+def test_steps_missing_keep_clause_passes_erase_plus_keep(generate_illustrations):
+    steps = [
+        {"step": 0, "description": "Erase Panel 1. Keep the page chrome. Keep the frames."},
+        {"step": 1, "description": "Erase Panel 2. Keep the page chrome. Keep Panel 1."},
+    ]
+    assert generate_illustrations.steps_missing_keep_clause(steps) == []
+
+
+def test_steps_missing_keep_clause_is_case_insensitive(generate_illustrations):
+    steps = [{"step": 0, "description": "Erase the stamp. KEEP the header bar."}]
+    assert generate_illustrations.steps_missing_keep_clause(steps) == []
+
+
 def test_resolve_prompt_with_anchor(generate_illustrations):
     anchors = {"WIDE": "A warm watercolor illustration."}
     prompt = "[STYLE ANCHOR] A confused developer"
