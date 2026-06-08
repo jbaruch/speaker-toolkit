@@ -73,3 +73,9 @@ def test_missing_schema_version_errors(build_expansion_to_packed):
     bad = {"builds": [{"parent": 7, "frames": ["/b/00.jpg"], "notes": ""}]}
     with pytest.raises(ValueError, match="schema_version"):
         build_expansion_to_packed.manifest_to_packed(bad)
+
+
+def test_non_string_notes_errors(build_expansion_to_packed):
+    bad = {"schema_version": 1, "builds": [{"parent": 7, "frames": ["/b/00.jpg"], "notes": 123}]}
+    with pytest.raises(ValueError, match="notes for parent 7 must be a string"):
+        build_expansion_to_packed.manifest_to_packed(bad)

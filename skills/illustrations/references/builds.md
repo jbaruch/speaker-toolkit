@@ -75,9 +75,12 @@ Build slides are inserted via the `ExpandBuilds` VBA pass (real PowerPoint —
 structural slide insertion never uses python-pptx, per `rules/deck-editing-rules.md`):
 
 ```bash
-# 1. Emit the build-expansion manifest from the outline + generated frames
+# 1. Emit the build-expansion manifest from the outline + generated frames.
+#    Pass --notes <notes.json> so each parent's speaker notes ride onto its
+#    FINAL frame (expansion drops the parent slide, so notes must be carried).
 python3 skills/illustrations/scripts/build-expansion-manifest.py \
-    presentation-outline.md illustrations/builds/ --out builds-manifest.json
+    presentation-outline.md illustrations/builds/ \
+    --notes notes.json --out builds-manifest.json
 
 # 2. Expand: replace each parent slide with its frames as full-bleed bg-fill slides
 skills/presentation-creator/scripts/expand-builds.sh \
@@ -88,7 +91,9 @@ skills/presentation-creator/scripts/expand-builds.sh \
 doesn't shift lower-numbered parents. **Ordering**: run it BEFORE the by-index
 passes (`inject-notes.sh`, `apply-backgrounds.sh`, `insert-qr.sh`) — expansion
 renumbers every slide after a build parent, so those passes must key on the
-POST-expansion deck.
+POST-expansion deck. Build parents' notes are applied to the final frame by
+`ExpandBuilds` itself (from `--notes`), so the later `inject-notes.sh` pass must
+NOT also target those original parent indices.
 
 Build slides are inserted as separate slides in the deck (not PowerPoint
 animations). Each step is a full-bleed image:

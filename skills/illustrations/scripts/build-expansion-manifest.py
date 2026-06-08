@@ -82,7 +82,16 @@ def frames_for(builds_dir: Path, parent: int) -> dict[int, Path]:
     return found
 
 
-def build_manifest(outline_path: Path, builds_dir: Path) -> dict:
+def build_manifest(outline_path: Path, builds_dir: Path, notes_map: dict | None = None) -> dict:
+    """Build the expansion manifest.
+
+    notes_map: optional {"<0-based deck slide #>": "notes"} (the historical
+    inject-notes format). A build parent at 1-based outline slide N maps to
+    0-based key str(N-1); its notes ride onto the FINAL build frame so expansion
+    doesn't drop them. When omitted, notes are empty and the post-expansion
+    notes pass must carry them instead.
+    """
+    notes_map = notes_map or {}
     builds = []
     for spec in sorted(parse_build_specs(outline_path), key=lambda s: s["parent"]):
         parent, count, steps = spec["parent"], spec["count"], spec["steps"]
@@ -110,7 +119,7 @@ def build_manifest(outline_path: Path, builds_dir: Path) -> dict:
         builds.append({
             "parent": parent,
             "frames": [str(found[s].resolve()) for s in steps],
-            "notes": "",
+            "notes": str(notes_map.get(str(parent - 1), "")),
         })
     return {"schema_version": SCHEMA_VERSION, "builds": builds}
 
@@ -120,12 +129,24 @@ def main(argv=None):
     ap.add_argument("outline", type=Path, help="Path to the presentation outline markdown")
     ap.add_argument("builds_dir", type=Path, help="Directory with slide-NN-build-MM.<ext> frames")
     ap.add_argument("--out", type=Path, default=None, help="Also write the manifest JSON here")
+    ap.add_argument("--notes", type=Path, default=None,
+                    help='Optional notes JSON {"<0-based slide #>": "text"}; a build '
+                         "parent's notes ride onto its final frame so expansion keeps them")
     args = ap.parse_args(argv)
 
     if not args.outline.is_file():
         raise SystemExit(f"ERROR: outline not found: {args.outline}")
 
-    manifest = build_manifest(args.outline, args.builds_dir)
+    notes_map = None
+    if args.notes is not None:
+        try:
+            notes_map = json.loads(args.notes.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"ERROR: cannot read notes JSON {args.notes}: {exc}")
+        if not isinstance(notes_map, dict):
+            raise SystemExit(f"ERROR: notes JSON {args.notes} must be an object mapping slide # -> text")
+
+    manifest = build_manifest(args.outline, args.builds_dir, notes_map)
     text = json.dumps(manifest, indent=2)
     if args.out is not None:
         args.out.write_text(text + "\n", encoding="utf-8")

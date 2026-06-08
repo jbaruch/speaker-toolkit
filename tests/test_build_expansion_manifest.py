@@ -123,3 +123,25 @@ def test_cli_writes_out_file(build_expansion_manifest, tmp_path, capsys):
     written = json.loads(out.read_text())
     assert [b["parent"] for b in written["builds"]] == [7, 9]
     assert json.loads(capsys.readouterr().out)["schema_version"] == 1
+
+
+def test_carries_parent_notes_to_final_frame(build_expansion_manifest, tmp_path):
+    # The parent's notes (0-based key N-1) ride onto its build record so
+    # expansion doesn't drop them.
+    outline = _make_outline(tmp_path)
+    builds = tmp_path / "builds"
+    _make_frames(builds, 7, 4)
+    _make_frames(builds, 9, 2)
+    notes_map = {"6": "notes for slide 7", "8": "notes for slide 9"}  # 0-based
+    m = build_expansion_manifest.build_manifest(outline, builds, notes_map)
+    b7 = next(b for b in m["builds"] if b["parent"] == 7)
+    assert b7["notes"] == "notes for slide 7"
+
+
+def test_notes_default_empty_when_no_map(build_expansion_manifest, tmp_path):
+    outline = _make_outline(tmp_path)
+    builds = tmp_path / "builds"
+    _make_frames(builds, 7, 4)
+    _make_frames(builds, 9, 2)
+    m = build_expansion_manifest.build_manifest(outline, builds)
+    assert all(b["notes"] == "" for b in m["builds"])

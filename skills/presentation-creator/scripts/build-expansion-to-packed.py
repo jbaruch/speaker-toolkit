@@ -66,6 +66,8 @@ def manifest_to_packed(manifest: object) -> str:
         if not isinstance(frames, list) or not frames:
             raise ValueError(f"build for parent {parent} has no frames")
         notes = b.get("notes", "") or ""
+        if not isinstance(notes, str):
+            raise ValueError(f"notes for parent {parent} must be a string, got {type(notes).__name__}")
         for f in frames:
             if not isinstance(f, str):
                 raise ValueError(f"frame for parent {parent} must be a string path")
