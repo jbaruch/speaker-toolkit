@@ -1,5 +1,17 @@
 # Changelog
 
+### fix(illustrations) — --build enforces the Keep-clause preservation list (#46)
+
+`--build` previously passed each `build-NN` description to the image editor
+verbatim, auto-appending only safety clauses #1/#2; the mandatory preservation
+list (component #3 of Edit Prompt Safety) was never applied, so a step that
+erases a dense region left the element in place and the chain emitted visually
+identical intermediate stages. The build flow now validates that every erase
+step carries an explicit `Keep` clause and skips the slide with a stderr error
+and a non-zero exit when one is missing — instead of silently producing a broken
+chain. Build step descriptions must be authored as erase instructions with
+`Keep` clauses (see `skills/illustrations/references/builds.md`).
+
 ### feat(presentation-creator) — narrative.md becomes a TL;DR + slide-by-slide walk (#81)
 
 `narrative.md` used to print the full `talk.thesis` (in practice 3–4 elaborated

@@ -1336,6 +1336,7 @@ def run_build(outline_path, slide_arg):
         sys.exit(0)
 
     total_steps = sum(s["builds"]["count"] for s in to_build)
+    validation_failed = False
     print(f"Model: {model}")
     print(f"Building {len(to_build)} slide(s), {total_steps} total build steps")
     print(f"Output: {builds_dir}/")
@@ -1382,14 +1383,17 @@ def run_build(outline_path, slide_arg):
         # before spending any edit API calls on a chain that can't work.
         missing_keep = steps_missing_keep_clause(edit_steps)
         if missing_keep:
+            validation_failed = True
             print(f"  ERROR: {len(missing_keep)} build step(s) lack an explicit "
-                  '"Keep ..." preservation list:')
+                  '"Keep ..." preservation list:', file=sys.stderr)
             for s in missing_keep:
-                print(f"    build-{s['step']:02d}: {s['description'][:70]}")
+                print(f"    build-{s['step']:02d}: {s['description'][:70]}",
+                      file=sys.stderr)
             print("  Phrase each step as an erase instruction naming every element "
-                  "that must persist")
+                  "that must persist", file=sys.stderr)
             print('  ("Erase X. Keep the Y. Keep the Z.") — see '
-                  "rules/illustration-rules.md component #3. Skipping slide.")
+                  "rules/illustration-rules.md component #3. Skipping slide.",
+                  file=sys.stderr)
             continue
 
         prev_image = full_image
@@ -1426,6 +1430,14 @@ def run_build(outline_path, slide_arg):
         print()
 
     print("Done. Review build images in:", builds_dir)
+
+    # Surface skipped chains in the exit code so `--build all` automation can
+    # detect that some slides produced no build sequence (file-hygiene policy:
+    # non-zero exit on failure).
+    if validation_failed:
+        print("ERROR: one or more slides were skipped for missing Keep clauses.",
+              file=sys.stderr)
+        sys.exit(1)
 
 
 def run_fix(outline_path, slide_num, fix_prompt):
