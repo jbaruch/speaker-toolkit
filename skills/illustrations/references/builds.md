@@ -52,17 +52,17 @@ previous one.
   "no new frames", "solid lines not dashed".
 - The edit safety suffixes (`DO NOT add any new elements`, `let background
   continue naturally`) are auto-appended by the script — don't repeat them.
+- Keep each `build-NN:` entry on a **single line**. The parser reads only the
+  text up to the first newline, so erase/Keep clauses on continuation lines are
+  silently dropped (and the step then fails Keep-clause validation).
 
-Example (slide with three trial panels revealed progressively):
+Example (slide with three trial panels revealed progressively — each entry is
+one line):
 
 ```
-- build-02: Erase Panel 3 and the "LIFT +81 PTS" stamp. Keep the page chrome
-  (header bar, FIG label, bottom rule). Keep the three panel frames and their
-  TRIAL labels. Keep Panel 1 and Panel 2 content.
-- build-01: Erase Panel 2 and the "STILL?" stamp. Keep the page chrome. Keep
-  the three panel frames and labels. Keep Panel 1 content.
-- build-00: Erase Panel 1 content and the "PLUGIN USELESS?" stamp. Keep the
-  page chrome. Keep the three empty panel frames and their TRIAL labels.
+- build-02: Erase Panel 3 and the "LIFT +81 PTS" stamp. Keep the page chrome (header bar, FIG label, bottom rule). Keep the three panel frames and their TRIAL labels. Keep Panel 1 and Panel 2 content.
+- build-01: Erase Panel 2 and the "STILL?" stamp. Keep the page chrome. Keep the three panel frames and labels. Keep Panel 1 content.
+- build-00: Erase Panel 1 content and the "PLUGIN USELESS?" stamp. Keep the page chrome. Keep the three empty panel frames and their TRIAL labels.
 ```
 
 For near-perfect results, use `--fix` for targeted corrections rather than

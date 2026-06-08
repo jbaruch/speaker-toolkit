@@ -24,9 +24,11 @@ The `--edit` and `--fix` commands auto-append #1 and #2, but #3 must always
 be added manually.
 
 `--build` reads #3 from each build step's description (the erase instruction
-carries its own `Keep ...` list — see the Build Process section). It validates
-that every erase step contains a `Keep` clause and skips the slide with an
-error if any step is missing one — component #3 is never silently dropped.
+carries its own `Keep ...` list — see the Edit-Prompt Authoring section of
+`skills/illustrations/references/builds.md` for the authoring format). It
+validates that every erase step contains a `Keep` clause and skips the slide
+with an error if any step is missing one — component #3 is never silently
+dropped.
 
 ## Style-Anchor Discipline
 
