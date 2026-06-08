@@ -1,5 +1,29 @@
 # Changelog
 
+### docs(presentation-creator) — recurring per-build deck-editing runbook
+
+`deck-editing-setup.md` covered one-time setup but only implied the recurring
+requirement that `DeckOps.pptm` stay OPEN for the whole build (every pass calls a
+macro in that running instance). A new "Step 6 — Every build (recurring)" makes it
+explicit and lays out the pass sequence (structural build → ExpandBuilds → notes →
+backgrounds → QR) and the PowerPoint+Keynote validation. `phase5-slides.md` now
+surfaces the keep-open requirement on every build, not just first use.
+
+### fix(presentation-creator) — collapse per-illustration Powerbox prompts to zero
+
+Sandboxed PowerPoint threw a "grant access / select file" Powerbox prompt on
+every `Slide.Background.Fill.UserPicture` of an image outside its container (each
+Google Drive illustration) — one click per slide on a 40-slide deck. A new
+`stage-images-into-container.py` copies the referenced images into PowerPoint's
+own sandbox container (`~/Library/Containers/com.microsoft.Powerpoint/Data/.deckops-img-staging/`)
+and rewrites the manifest paths; `apply-backgrounds.sh` and `expand-builds.sh`
+stage before packing and clean up after the deck is written. A sandboxed app
+reads its own container without a prompt, so prompts collapse to zero with no
+Full Disk Access grant. Mac PowerPoint VBA has no `Application.FileDialog`, so a
+"grant one folder" macro is impossible — container-staging is the supported
+no-prompt path; if the container is absent the wrappers warn and fall back to the
+original paths. The stager is unit-tested across both manifest shapes.
+
 ### fix(presentation-creator) — deck-build AppleScript drivers time out on large decks (#85)
 
 The `run VB macro` call in every PowerPoint driver used osascript's default

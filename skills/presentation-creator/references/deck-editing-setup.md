@@ -7,8 +7,9 @@ First-time setup for the PowerPoint-native deck-editing tooling
 Steps 1–4 are manual GUI actions only the user can perform; the agent presents
 each and the user acts, then the agent proceeds. The Step 5 smoke test verifies
 the whole setup end-to-end before any real edit — so the agent does not pause to
-confirm each manual step, it confirms once via the smoke test. Run this once per
-machine; afterwards the agent invokes `run-deck-ops.sh` directly.
+confirm each manual step, it confirms once via the smoke test. Steps 1–4 run once
+per machine. **Step 6 is the recurring per-build flow** — read it before every
+real deck build.
 
 ## Step 1 — Enable VBA macros
 
@@ -55,6 +56,26 @@ of a deck and confirm it opens clean in PowerPoint **and** Keynote (no "Repair"
 prompt). Only then run the real edit. Given the history of lost work with other
 tools, always test first.
 
+## Step 6 — Every build (recurring)
+
+Steps 1–4 are one-time per machine; this is what happens on EVERY real deck build:
+
+1. **Open `DeckOps.pptm` first and keep it open for the entire build.** Every pass
+   (`BuildDeck`, `ExpandBuilds`, speaker notes, backgrounds, QR) drives a macro
+   that lives in this file; the scripts call it in the running PowerPoint instance.
+   If `DeckOps.pptm` is closed (or PowerPoint quits) mid-build, the next pass fails
+   with a macro-not-found error — reopen it and re-run that pass.
+2. The agent runs the passes in order against uniquely-named copies:
+   structural build → `ExpandBuilds` → speaker notes → backgrounds → QR.
+   `ExpandBuilds` runs before the by-index passes because it renumbers slides
+   (see `rules/deck-editing-rules.md`).
+3. On the FIRST run after setup, the user clicks the macOS Automation prompt
+   (Step 4). After that the agent runs the passes unattended — and no
+   per-illustration prompts, because images are staged into PowerPoint's container
+   (see the per-illustration caveat below).
+4. When the build finishes, open the output in PowerPoint **and** Keynote and
+   confirm it's clean (no "Repair" prompt, art present) before trusting it.
+
 ## Google Drive caveat (important)
 
 If decks live in a **Google Drive** "My Drive" folder (the macOS Google Drive
@@ -65,3 +86,24 @@ staging folder (`~/.deckops-staging/`) and then moving the result into the Drive
 destination with the shell (which writes to Drive normally). Keep using
 uniquely-named copies for the base/import/output so PowerPoint's
 filename-keyed open-deck cache never hands back the wrong deck.
+
+## Per-illustration prompt caveat (important)
+
+When the background/build passes set images with `Slide.Background.Fill.UserPicture`,
+sandboxed PowerPoint shows a Powerbox "grant access" / "select file" prompt for
+every image that lives OUTSIDE its container (e.g. each Google Drive illustration).
+On a 40-slide deck that is one click per slide.
+
+`apply-backgrounds.sh` and `expand-builds.sh` avoid this by staging the referenced
+images INTO PowerPoint's own sandbox container
+(`~/Library/Containers/com.microsoft.Powerpoint/Data/.deckops-img-staging/<pid>/`)
+via `stage-images-into-container.py`, then rewriting the manifest paths to the
+staged copies. A sandboxed app always reads its own container without a prompt, so
+every per-illustration prompt collapses to ZERO — no Full Disk Access grant
+required. The staged copies are removed once the output deck exists (the images are
+already embedded in the deck by then).
+
+Mac PowerPoint VBA has no `Application.FileDialog`, so a "grant one folder" macro is
+impossible; container-staging is the supported no-prompt path. If the container dir
+is absent (PowerPoint never launched), the wrappers warn and fall back to the
+original paths — the per-file prompts return, but nothing breaks.

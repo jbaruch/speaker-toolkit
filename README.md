@@ -12,6 +12,12 @@ progressive-reveal parent slide with its frames as full-bleed slides (notes on
 the final frame), so a build sequence becomes the sequential slides you advance
 through. Pairs with poster-theatrical for pure full-bleed, builds-and-all decks.
 
+**No more per-illustration permission clicks** — the background and build passes
+now stage illustrations into PowerPoint's own sandbox container before applying
+them, so the "grant access / select file" prompt that used to fire on every
+slide (once per Google Drive image) collapses to zero — no Full Disk Access grant
+needed.
+
 **Poster-theatrical composition** — a style-wizard option where every slide is
 full-bleed and the title + footer are rendered *into* the image (stylized,
 blended), with only the QR code added afterward. No overlaid titles, no safe

@@ -33,20 +33,42 @@ DRIVER="$HERE/expand-builds.applescript"
 [[ -f "$MANIFEST" ]] || { echo "ERROR: builds manifest not found: $MANIFEST — generate it with build-expansion-manifest.py." >&2; exit 1; }
 [[ -f "$DRIVER" ]]   || { echo "ERROR: driver not found: $DRIVER — reinstall the tile; expand-builds.applescript must sit next to this script." >&2; exit 1; }
 
-# Pack the manifest into the ExpandBuilds wire format (descending by parent;
-# deterministic, unit-tested in tests/test_build_expansion_to_packed.py).
 STAGE_DIR="$HOME/.deckops-staging"
 mkdir -p "$STAGE_DIR"
+
+# Sandboxed PowerPoint prompts (Powerbox) on each UserPicture of a frame image
+# OUTSIDE its container (e.g. Google Drive). Stage the frames INTO the container
+# first so the macro reads them prompt-free — no Full Disk Access needed. See
+# rules/deck-editing-rules.md. Falls back to original paths (and per-file prompts)
+# if the container is absent.
+PPT_CONTAINER="$HOME/Library/Containers/com.microsoft.Powerpoint/Data"
+IMG_STAGE=""
+EFFECTIVE_MANIFEST="$MANIFEST"
+if [[ -d "$PPT_CONTAINER" ]]; then
+  IMG_STAGE="$PPT_CONTAINER/.deckops-img-staging/$$"
+  STAGED_MANIFEST="$STAGE_DIR/$(basename "$OUT").builds.staged.json"
+  python3 "$HERE/stage-images-into-container.py" "$MANIFEST" --stage-dir "$IMG_STAGE" --out "$STAGED_MANIFEST" >/dev/null
+  EFFECTIVE_MANIFEST="$STAGED_MANIFEST"
+else
+  echo "WARN: PowerPoint container not found at $PPT_CONTAINER — reading frames from their original paths; macOS may prompt per file. Open PowerPoint once to create the container." >&2
+fi
+
+# Pack the (staged) manifest into the ExpandBuilds wire format (descending by
+# parent; deterministic, unit-tested in tests/test_build_expansion_to_packed.py).
 PACKED="$STAGE_DIR/$(basename "$OUT").builds.packed"
-python3 "$HERE/build-expansion-to-packed.py" "$MANIFEST" "$PACKED"
+python3 "$HERE/build-expansion-to-packed.py" "$EFFECTIVE_MANIFEST" "$PACKED"
 
 # Sandboxed PowerPoint can't create a file in a Google Drive folder (E_FAIL) —
-# stage locally, then move into place with the shell.
+# stage the OUTPUT deck locally, then move into place with the shell.
 STAGE="$STAGE_DIR/$(basename "$OUT")"
 rm -f "$STAGE"
 
 echo "staging -> $STAGE"
 osascript "$DRIVER" "$BASE" "$STAGE" "$PACKED"
+
+# Staged frames are embedded into the deck by UserPicture, so they're no longer
+# needed once the output deck exists.
+[[ -n "$IMG_STAGE" && -d "$IMG_STAGE" ]] && rm -rf "$IMG_STAGE"
 
 if [[ -f "$STAGE" ]]; then
   mkdir -p "$(dirname "$OUT")"

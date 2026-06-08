@@ -153,6 +153,13 @@ def build_expansion_to_packed():
 
 
 @pytest.fixture(scope="session")
+def stage_images_into_container():
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "stage-images-into-container.py"), "stage_images_into_container"
+    )
+
+
+@pytest.fixture(scope="session")
 def generate_illustrations():
     return _import_script(
         os.path.join(SCRIPTS_ILL, "generate-illustrations.py"), "generate_illustrations"

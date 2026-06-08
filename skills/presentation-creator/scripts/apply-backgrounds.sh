@@ -32,20 +32,42 @@ DRIVER="$HERE/apply-backgrounds.applescript"
 [[ -f "$MANIFEST" ]] || { echo "ERROR: backgrounds manifest not found: $MANIFEST — generate it with apply-illustrations-to-deck.py --backgrounds-out." >&2; exit 1; }
 [[ -f "$DRIVER" ]]   || { echo "ERROR: driver not found: $DRIVER — reinstall the tile; apply-backgrounds.applescript must sit next to this script." >&2; exit 1; }
 
-# Build the "#=path;#=path" spec from the manifest (deterministic; unit-tested
-# in tests/test_backgrounds_manifest_to_spec.py). Exits non-zero with an
-# actionable message on an empty or malformed manifest.
-SPEC="$(python3 "$HERE/backgrounds-manifest-to-spec.py" "$MANIFEST")"
-
-# Sandboxed PowerPoint can't create a file in a Google Drive folder (E_FAIL) —
-# stage locally, then move into place with the shell.
 STAGE_DIR="$HOME/.deckops-staging"
 mkdir -p "$STAGE_DIR"
+
+# Sandboxed PowerPoint prompts (Powerbox) on each UserPicture of an image OUTSIDE
+# its container (e.g. Google Drive). Stage the images INTO the container first so
+# the macro reads them prompt-free — no Full Disk Access needed. See
+# rules/deck-editing-rules.md. Falls back to original paths (and per-file prompts)
+# if the container is absent.
+PPT_CONTAINER="$HOME/Library/Containers/com.microsoft.Powerpoint/Data"
+IMG_STAGE=""
+EFFECTIVE_MANIFEST="$MANIFEST"
+if [[ -d "$PPT_CONTAINER" ]]; then
+  IMG_STAGE="$PPT_CONTAINER/.deckops-img-staging/$$"
+  STAGED_MANIFEST="$STAGE_DIR/$(basename "$OUT").bg.staged.json"
+  python3 "$HERE/stage-images-into-container.py" "$MANIFEST" --stage-dir "$IMG_STAGE" --out "$STAGED_MANIFEST" >/dev/null
+  EFFECTIVE_MANIFEST="$STAGED_MANIFEST"
+else
+  echo "WARN: PowerPoint container not found at $PPT_CONTAINER — reading images from their original paths; macOS may prompt per file. Open PowerPoint once to create the container." >&2
+fi
+
+# Build the "#=path;#=path" spec from the (staged) manifest (deterministic;
+# unit-tested in tests/test_backgrounds_manifest_to_spec.py). Exits non-zero with
+# an actionable message on an empty or malformed manifest.
+SPEC="$(python3 "$HERE/backgrounds-manifest-to-spec.py" "$EFFECTIVE_MANIFEST")"
+
+# Sandboxed PowerPoint can't create a file in a Google Drive folder (E_FAIL) —
+# stage the OUTPUT deck locally, then move into place with the shell.
 STAGE="$STAGE_DIR/$(basename "$OUT")"
 rm -f "$STAGE"
 
 echo "staging -> $STAGE"
 osascript "$DRIVER" "$BASE" "$STAGE" "$SPEC"
+
+# Staged images are embedded into the deck by UserPicture, so they're no longer
+# needed once the output deck exists.
+[[ -n "$IMG_STAGE" && -d "$IMG_STAGE" ]] && rm -rf "$IMG_STAGE"
 
 if [[ -f "$STAGE" ]]; then
   mkdir -p "$(dirname "$OUT")"

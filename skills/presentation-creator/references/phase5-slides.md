@@ -253,8 +253,11 @@ listing tokens in the target order; import by adding an alias to `importSpec`.
 
 macOS + Microsoft PowerPoint only. On first use, walk the user through
 `references/deck-editing-setup.md` (enable VBA macros, import `RunDeckOps.bas`
-into a `DeckOps.pptm` container, grant Automation consent). The macro writes a
-COPY — the original is untouched; continue editing from the OUTPUT deck.
+into a `DeckOps.pptm` container, grant Automation consent). On EVERY build, the
+user must open `DeckOps.pptm` first and keep it open for the whole sequence —
+each pass calls a macro in that running instance (see Step 6 of the setup doc).
+The macro writes a COPY — the original is untouched; continue editing from the
+OUTPUT deck.
 
 ## Step 5.6: Final Save
 
