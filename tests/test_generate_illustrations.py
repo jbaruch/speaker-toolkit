@@ -1258,3 +1258,27 @@ def test_gate_rejects_rel_path_traversal(generate_illustrations, tmp_path):
     v = gi.check_style_explore(str(outline))
     assert v["gate_passed"] is False
     assert v["rendered_models"] == []
+
+
+def test_gate_fails_when_outline_dir_missing(generate_illustrations, tmp_path):
+    # outline_dir is always written by our script; a manifest missing it is
+    # hand-edited/stale and must fail closed (can't bypass cross-talk detection).
+    gi = generate_illustrations
+    outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
+    se = tmp_path / "style-explore"
+    se.mkdir(exist_ok=True)
+    rel = "style/full/gemini-3-pro-image-preview.png"
+    (se / rel).parent.mkdir(parents=True, exist_ok=True)
+    (se / rel).write_bytes(b"img")
+    _write_raw_manifest(tmp_path, {
+        "schema_version": 1, "outline": "outline.md",  # no outline_dir
+        "models_rendered_ok": ["gemini-3-pro-image-preview"],
+        "cells": [{
+            "style": "S", "format": "FULL", "model": "gemini-3-pro-image-preview",
+            "model_resolved": "gemini-3-pro-image-preview", "status": "OK",
+            "rel_path": rel,
+        }],
+    })
+    v = gi.check_style_explore(str(outline))
+    assert v["gate_passed"] is False
+    assert "outline_dir" in v["error"]

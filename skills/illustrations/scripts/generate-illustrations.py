@@ -1058,11 +1058,12 @@ def check_style_explore(outline_path):
         )
         return verdict
     manifest_dir = manifest.get("outline_dir")
-    if manifest_dir is not None and manifest_dir != outline_dir:
+    if not isinstance(manifest_dir, str) or manifest_dir != outline_dir:
         verdict["error"] = (
-            f"{manifest_path} was rendered in talk directory "
-            f"{manifest_dir!r}, not {outline_dir!r} — it looks copied from "
-            "another talk. Re-run --style-explore for this talk."
+            f"{manifest_path} has outline_dir {manifest_dir!r}, expected "
+            f"{outline_dir!r} — missing or mismatched talk discriminator (the "
+            "grid looks copied from another talk or stale). Re-run "
+            "--style-explore for this talk."
         )
         return verdict
     cells = manifest.get("cells")
