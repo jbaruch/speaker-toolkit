@@ -1423,7 +1423,9 @@ def run_build(outline_path, slide_arg):
 
             if image_bytes is None:
                 build_failed = True
-                print(f"FAILED: {result[:100]}", file=sys.stderr)
+                print("FAILED")  # complete the stdout progress line opened above
+                print(f"  slide {num} build-{step_num:02d} edit failed: {result[:100]}",
+                      file=sys.stderr)
                 print(f"  Aborting remaining build steps for slide {num} (chain broken)",
                       file=sys.stderr)
                 break
@@ -1443,16 +1445,17 @@ def run_build(outline_path, slide_arg):
 
         print()
 
-    print("Done. Review build images in:", builds_dir)
-
     # Surface any incomplete chain in the exit code so `--build all` automation
     # can detect that some slides produced no build sequence — whether skipped
     # for a missing Keep clause or aborted on an edit failure (file-hygiene
-    # policy: non-zero exit on failure).
+    # policy: non-zero exit on failure). Exit before the success line so a failed
+    # run never prints a success-sounding "Done".
     if build_failed:
         print("ERROR: one or more slides did not produce a complete build chain.",
               file=sys.stderr)
         sys.exit(1)
+
+    print("Done. Review build images in:", builds_dir)
 
 
 def run_fix(outline_path, slide_num, fix_prompt):

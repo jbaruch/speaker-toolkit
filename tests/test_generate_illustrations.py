@@ -196,7 +196,11 @@ def test_run_build_exits_nonzero_when_edit_fails(
         gi.run_build("ignored.md", "60")
 
     assert exc.value.code == 1
-    assert "FAILED" in capsys.readouterr().err
+    out = capsys.readouterr()
+    # Diagnostic on stderr carries slide + step context; the success-sounding
+    # "Done" line never prints on a failed run.
+    assert "build-00 edit failed" in out.err
+    assert "Done. Review build images" not in out.out
 
 
 def test_resolve_prompt_with_anchor(generate_illustrations):
