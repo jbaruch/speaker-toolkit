@@ -149,7 +149,12 @@ def main(argv=None):
     manifest = build_manifest(args.outline, args.builds_dir, notes_map)
     text = json.dumps(manifest, indent=2)
     if args.out is not None:
-        args.out.write_text(text + "\n", encoding="utf-8")
+        try:
+            args.out.write_text(text + "\n", encoding="utf-8")
+        except OSError as exc:
+            print(f"ERROR: cannot write manifest {args.out}: {exc.strerror or exc} — "
+                  "check the path and that its directory is writable", file=sys.stderr)
+            return 1
     print(text)
     return 0
 

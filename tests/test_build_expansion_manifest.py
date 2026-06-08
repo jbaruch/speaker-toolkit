@@ -145,3 +145,16 @@ def test_notes_default_empty_when_no_map(build_expansion_manifest, tmp_path):
     _make_frames(builds, 9, 2)
     m = build_expansion_manifest.build_manifest(outline, builds)
     assert all(b["notes"] == "" for b in m["builds"])
+
+
+def test_unwritable_out_returns_error(build_expansion_manifest, tmp_path, capsys):
+    # --out pointing at a directory must fail cleanly (rc 1 + stderr), not raise.
+    outline = _make_outline(tmp_path)
+    builds = tmp_path / "builds"
+    _make_frames(builds, 7, 4)
+    _make_frames(builds, 9, 2)
+    out_dir = tmp_path / "outdir"
+    out_dir.mkdir()
+    rc = build_expansion_manifest.main([str(outline), str(builds), "--out", str(out_dir)])
+    assert rc == 1
+    assert "cannot write manifest" in capsys.readouterr().err

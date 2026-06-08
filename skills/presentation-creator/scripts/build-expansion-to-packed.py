@@ -98,7 +98,12 @@ def main(argv=None) -> int:
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
-    out_path.write_text(packed, encoding="utf-8")
+    try:
+        out_path.write_text(packed, encoding="utf-8")
+    except OSError as exc:
+        print(f"ERROR: cannot write packed output {out_path}: {exc.strerror or exc} — "
+              "check the path and that its directory is writable", file=sys.stderr)
+        return 1
     return 0
 
 

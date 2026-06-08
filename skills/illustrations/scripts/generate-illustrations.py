@@ -1037,14 +1037,16 @@ def check_style_explore(outline_path):
         )
         return verdict
 
+    # The file exists — "present" means present, even if unreadable below, so
+    # callers can tell "missing" from "present but invalid" via `error`.
+    verdict["manifest_present"] = True
+
     try:
         with open(manifest_path, "r", encoding="utf-8") as fh:
             manifest = json.load(fh)
     except (OSError, ValueError) as e:
         verdict["error"] = f"Could not read {manifest_path}: {e}"
         return verdict
-
-    verdict["manifest_present"] = True
 
     if not isinstance(manifest, dict):
         verdict["error"] = (

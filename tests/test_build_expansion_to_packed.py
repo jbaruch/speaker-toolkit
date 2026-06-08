@@ -79,3 +79,16 @@ def test_non_string_notes_errors(build_expansion_to_packed):
     bad = {"schema_version": 1, "builds": [{"parent": 7, "frames": ["/b/00.jpg"], "notes": 123}]}
     with pytest.raises(ValueError, match="notes for parent 7 must be a string"):
         build_expansion_to_packed.manifest_to_packed(bad)
+
+
+def test_unwritable_out_returns_error(build_expansion_to_packed, tmp_path, capsys):
+    import json
+    manifest = tmp_path / "builds.json"
+    manifest.write_text(json.dumps(
+        {"schema_version": 1, "builds": [{"parent": 4, "frames": ["/b/00.jpg"], "notes": ""}]}
+    ))
+    out_dir = tmp_path / "outdir"
+    out_dir.mkdir()
+    rc = build_expansion_to_packed.main([str(manifest), str(out_dir)])
+    assert rc == 1
+    assert "cannot write packed output" in capsys.readouterr().err
