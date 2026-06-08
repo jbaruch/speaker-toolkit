@@ -1,26 +1,28 @@
 #!/bin/bash
-# insert-qr.sh — place a QR PNG bottom-right on the given slides via the real
-# PowerPoint app (InsertQR VBA macro), replacing any existing corner QR. Replaces
+# insert-qr.sh — place a QR PNG on the given slides via the real PowerPoint app
+# (InsertQR VBA macro), replacing any existing QR in place. Replaces
 # generate-qr.py's python-pptx insert; generate-qr.py keeps URL resolve + per-slide
-# background-color match + PNG generation, then calls this for the write.
-# See rules/deck-editing-rules.md. macOS + Microsoft PowerPoint only.
+# background-color match + PNG generation + content-based QR detection, then calls
+# this for the write. See rules/deck-editing-rules.md. macOS + Microsoft PowerPoint only.
 #
 # Usage:
-#   insert-qr.sh <basePath> <outPath> <qr.png> <slideNumsCSV>
-#     basePath       deck to read (uniquely-named copy; base/out must not collide)
-#     outPath        where to write the COPY with the QR inserted
-#     qr.png         the (pre-generated, color-matched) QR PNG
-#     slideNumsCSV   comma-separated 1-based slide numbers, e.g. "5,12"
+#   insert-qr.sh <basePath> <outPath> <qr.png> <slidesSpec>
+#     basePath     deck to read (uniquely-named copy; base/out must not collide)
+#     outPath      where to write the COPY with the QR inserted
+#     qr.png       the (pre-generated, color-matched) QR PNG
+#     slidesSpec   ";"-joined per-slide entries "<num>[:<rL,rT,rW,rH>,...]" — the
+#                  rects (points) of existing QRs to replace; see InsertQR. e.g.
+#                  "12:450.00,80.00,200.16,200.16;38"
 #
 # Prerequisites: RunDeckOps.bas (which defines InsertQR) imported into an OPEN
 # macro-enabled deck (DeckOps.pptm), macros enabled, Automation consent granted.
 set -euo pipefail
 
 if [[ $# -lt 4 ]]; then
-  echo "usage: insert-qr.sh <basePath> <outPath> <qr.png> <slideNumsCSV>" >&2
+  echo "usage: insert-qr.sh <basePath> <outPath> <qr.png> <slidesSpec>" >&2
   exit 2
 fi
-BASE="$1"; OUT="$2"; PNG="$3"; SLIDES="$4"
+BASE="$1"; OUT="$2"; PNG="$3"; SPEC="$4"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRIVER="$HERE/insert-qr.applescript"
 
@@ -37,7 +39,7 @@ rm -f "$STAGE"
 
 # osascript prints the macro's "InsertQR returned: N" line — keep it off stdout
 # (stderr) so successful stdout is the documented JSON only.
-osascript "$DRIVER" "$BASE" "$STAGE" "$PNG" "$SLIDES" >&2
+osascript "$DRIVER" "$BASE" "$STAGE" "$PNG" "$SPEC" >&2
 
 if [[ -f "$STAGE" ]]; then
   mkdir -p "$(dirname "$OUT")"
