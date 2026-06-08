@@ -406,6 +406,31 @@ def final_build_dest(builds_dir, slide_num, final_step, source_path):
     return os.path.join(builds_dir, f"slide-{slide_num:02d}-build-{final_step:02d}{src_ext}")
 
 
+def _has_keep_clause(description):
+    """True if the description has a positive "Keep <target>" sentence.
+
+    The bare token `keep` is not enough — "Do not keep Panel 3" is a removal,
+    not a preservation. Split on sentence boundaries and require a sentence that
+    *begins* with "Keep" followed by a target, matching the documented
+    "Keep the [X]." format and rejecting negated/non-clause wording.
+    """
+    return any(
+        re.match(r"\s*keep\s+\S", sentence, re.IGNORECASE)
+        for sentence in re.split(r"[.!?]+", description)
+    )
+
+
+def steps_missing_keep_clause(edit_steps):
+    """Build erase steps lacking a positive "Keep <target>" preservation clause.
+
+    Component #3 of the Edit Prompt Safety rule. An erase step with no Keep
+    clause lets the model silently retain the element meant to be erased, so
+    the build chain emits visually identical stages. Returns the offending
+    steps (empty list means every step is compliant).
+    """
+    return [s for s in edit_steps if not _has_keep_clause(s["description"])]
+
+
 def next_version(output_dir, slide_num):
     """Find the next available version number for a slide."""
     existing = glob.glob(os.path.join(output_dir, f"slide-{slide_num:02d}-v*.*"))
@@ -1322,6 +1347,7 @@ def run_build(outline_path, slide_arg):
         sys.exit(0)
 
     total_steps = sum(s["builds"]["count"] for s in to_build)
+    build_failed = False
     print(f"Model: {model}")
     print(f"Building {len(to_build)} slide(s), {total_steps} total build steps")
     print(f"Output: {builds_dir}/")
@@ -1347,6 +1373,31 @@ def run_build(outline_path, slide_arg):
             print(f"  SKIP — Builds declared but no build-NN entries parsed")
             continue
 
+        # Chain backwards: start from full, remove elements one at a time
+        # Process steps in reverse order (excluding the final full step)
+        edit_steps = [s for s in reversed(steps) if not s["is_full"]]
+
+        # Edit Prompt Safety component #3 (rules/illustration-rules.md): every
+        # erase step must carry an explicit "Keep ..." preservation list. Without
+        # it the model silently keeps the element that was meant to be erased, so
+        # the chain emits visually identical intermediate stages. Validate before
+        # writing any artifact — a skipped slide must not leave a stray final
+        # build copy (or a "copied" log line) that misleads downstream checks.
+        missing_keep = steps_missing_keep_clause(edit_steps)
+        if missing_keep:
+            build_failed = True
+            print(f"  ERROR: {len(missing_keep)} build step(s) lack an explicit "
+                  '"Keep ..." preservation list:', file=sys.stderr)
+            for s in missing_keep:
+                print(f"    build-{s['step']:02d}: {s['description'][:70]}",
+                      file=sys.stderr)
+            print("  Phrase each step as an erase instruction naming every element "
+                  "that must persist", file=sys.stderr)
+            print('  ("Erase X. Keep the Y. Keep the Z.") — see '
+                  "rules/illustration-rules.md component #3. Skipping slide.",
+                  file=sys.stderr)
+            continue
+
         # Copy full image as the final build step. The dest path preserves
         # the source extension — base images may be .jpg / .png / .webp
         # depending on the generating vendor.
@@ -1357,9 +1408,6 @@ def run_build(outline_path, slide_arg):
             shutil.copy2(full_image, dest)
             print(f"  build-{final_step:02d}: copied from slide-{num:02d} (full)")
 
-        # Chain backwards: start from full, remove elements one at a time
-        # Process steps in reverse order (excluding the final full step)
-        edit_steps = [s for s in reversed(steps) if not s["is_full"]]
         prev_image = full_image
 
         for step in edit_steps:
@@ -1374,8 +1422,12 @@ def run_build(outline_path, slide_arg):
             )
 
             if image_bytes is None:
-                print(f"FAILED: {result[:100]}")
-                print(f"  Aborting remaining build steps for slide {num} (chain broken)")
+                build_failed = True
+                print("FAILED")  # complete the stdout progress line opened above
+                print(f"  slide {num} build-{step_num:02d} edit failed: {result[:100]}",
+                      file=sys.stderr)
+                print(f"  Aborting remaining build steps for slide {num} (chain broken)",
+                      file=sys.stderr)
                 break
 
             ext = mime_to_ext(result)
@@ -1392,6 +1444,16 @@ def run_build(outline_path, slide_arg):
             time.sleep(RATE_LIMIT_DELAY)
 
         print()
+
+    # Surface any incomplete chain in the exit code so `--build all` automation
+    # can detect that some slides produced no build sequence — whether skipped
+    # for a missing Keep clause or aborted on an edit failure (file-hygiene
+    # policy: non-zero exit on failure). Exit before the success line so a failed
+    # run never prints a success-sounding "Done".
+    if build_failed:
+        print("ERROR: one or more slides did not produce a complete build chain.",
+              file=sys.stderr)
+        sys.exit(1)
 
     print("Done. Review build images in:", builds_dir)
 

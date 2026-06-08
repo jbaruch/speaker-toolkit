@@ -3,6 +3,8 @@
 import json
 import os
 
+import pytest
+
 SAMPLE_OUTLINE = """\
 # Illustration Plan
 
@@ -83,6 +85,122 @@ def test_parse_builds(generate_illustrations):
     assert "builds" in slide2
     assert slide2["builds"]["count"] == 3
     assert slide2["builds"]["steps"][-1]["is_full"] is True
+
+
+def _single_build_slide(steps):
+    return {
+        "model": "gemini-3-pro-image-preview",
+        "slides": [{
+            "slide_num": 60, "title": "Trials", "format": "WIDE",
+            "builds": {"count": len(steps), "steps": steps},
+        }],
+    }
+
+
+def _stub_build_deps(gi, monkeypatch, tmp_path, outline, edit_calls):
+    base = tmp_path / "slide-60.png"
+    base.write_bytes(b"img")
+    monkeypatch.setattr(gi, "_load_context", lambda p: ({}, outline, str(tmp_path)))
+    monkeypatch.setattr(gi, "find_base_image", lambda d, n: str(base))
+    monkeypatch.setattr(gi, "effective_slide_format", lambda *a, **k: None)
+    monkeypatch.setattr(gi.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        gi, "edit_image",
+        lambda *a, **k: (edit_calls.append(a), (b"x", "image/png"))[1],
+    )
+
+
+def test_run_build_missing_keep_exits_nonzero_without_editing(
+    generate_illustrations, monkeypatch, tmp_path, capsys
+):
+    # Outcome: an erase step with no Keep clause skips the slide *before* any
+    # edit API call and exits non-zero so `--build all` automation can detect it.
+    gi = generate_illustrations
+    outline = _single_build_slide([
+        {"step": 0, "description": "Panel 1 revealed -- sergeant", "is_full": False},
+        {"step": 1, "description": "[FULL] all panels", "is_full": True},
+    ])
+    edit_calls = []
+    _stub_build_deps(gi, monkeypatch, tmp_path, outline, edit_calls)
+
+    with pytest.raises(SystemExit) as exc:
+        gi.run_build("ignored.md", "60")
+
+    assert exc.value.code == 1
+    assert edit_calls == []  # skipped before spending any edit API call
+    assert "preservation list" in capsys.readouterr().err
+    # A skipped slide must leave no build artifact behind (validation runs
+    # before the final-image copy), so downstream checks aren't misled.
+    builds_dir = tmp_path / "builds"
+    assert list(builds_dir.glob("slide-60-build-*")) == []
+
+
+def test_run_build_negated_keep_is_not_a_preservation_clause(
+    generate_illustrations, monkeypatch, tmp_path
+):
+    # "Do not keep ..." is a removal, not a preservation clause: the slide is
+    # skipped (exit 1, no edit) exactly like a bare description, so the bare
+    # `keep` token can't satisfy the rule.
+    gi = generate_illustrations
+    outline = _single_build_slide([
+        {"step": 0, "description": "Erase Panel 1. Do not keep the old stamp.", "is_full": False},
+        {"step": 1, "description": "[FULL] all panels", "is_full": True},
+    ])
+    edit_calls = []
+    _stub_build_deps(gi, monkeypatch, tmp_path, outline, edit_calls)
+
+    with pytest.raises(SystemExit) as exc:
+        gi.run_build("ignored.md", "60")
+
+    assert exc.value.code == 1
+    assert edit_calls == []
+
+
+def test_run_build_with_keep_clause_runs_chain(
+    generate_illustrations, monkeypatch, tmp_path
+):
+    # Outcome: a compliant erase step runs the edit chain. Uppercase KEEP also
+    # proves the clause check is case-insensitive at the behavior level.
+    gi = generate_illustrations
+    outline = _single_build_slide([
+        {"step": 0, "description": "Erase Panel 1. KEEP the page chrome.", "is_full": False},
+        {"step": 1, "description": "[FULL] all panels", "is_full": True},
+    ])
+    edit_calls = []
+    _stub_build_deps(gi, monkeypatch, tmp_path, outline, edit_calls)
+
+    gi.run_build("ignored.md", "60")  # no SystemExit
+
+    assert len(edit_calls) == 1  # the single erase step was edited
+
+
+def test_run_build_exits_nonzero_when_edit_fails(
+    generate_illustrations, monkeypatch, tmp_path, capsys
+):
+    # Outcome: an edit failure mid-chain aborts the slide and still exits
+    # non-zero (file-hygiene: non-zero on failure), not only on validation.
+    gi = generate_illustrations
+    base = tmp_path / "slide-60.png"
+    base.write_bytes(b"img")
+    outline = _single_build_slide([
+        {"step": 0, "description": "Erase Panel 1. Keep the page chrome.", "is_full": False},
+        {"step": 1, "description": "[FULL] all panels", "is_full": True},
+    ])
+    monkeypatch.setattr(gi, "_load_context", lambda p: ({}, outline, str(tmp_path)))
+    monkeypatch.setattr(gi, "find_base_image", lambda d, n: str(base))
+    monkeypatch.setattr(gi, "effective_slide_format", lambda *a, **k: None)
+    monkeypatch.setattr(gi.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(gi, "edit_image", lambda *a, **k: (None, "api boom"))
+
+    with pytest.raises(SystemExit) as exc:
+        gi.run_build("ignored.md", "60")
+
+    assert exc.value.code == 1
+    out = capsys.readouterr()
+    # Diagnostic on stderr carries slide + step context; the success-sounding
+    # "Done" line never prints on a failed run.
+    assert "build-00 edit failed" in out.err
+    assert "Done. Review build images" not in out.out
 
 
 def test_resolve_prompt_with_anchor(generate_illustrations):
