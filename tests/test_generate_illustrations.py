@@ -1079,3 +1079,81 @@ def test_run_generate_poster_embeds_text_and_skips_safe_zone(
     assert "One team, one bench" in prompts[0]
     assert "jbaruch • Devoxx 2026" in prompts[0]
     assert "TITLE SAFE ZONE" not in prompts[0]
+
+
+# ── Gate manifest validation + poster invariants (review hardening) ──
+
+
+def _write_raw_manifest(tmp_path, payload):
+    se = tmp_path / "style-explore"
+    se.mkdir(exist_ok=True)
+    (se / "rendered.json").write_text(json.dumps(payload))
+
+
+def test_gate_fails_on_unsupported_schema_version(generate_illustrations, tmp_path):
+    gi = generate_illustrations
+    outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
+    _write_raw_manifest(tmp_path, {
+        "schema_version": 2, "outline": "outline.md",
+        "models_rendered_ok": ["gemini-3-pro-image-preview"], "cells": [],
+    })
+    v = gi.check_style_explore(str(outline))
+    assert v["gate_passed"] is False
+    assert "schema_version" in v["error"]
+
+
+def test_gate_fails_on_outline_mismatch(generate_illustrations, tmp_path):
+    # A manifest copied in from a different talk must not pass the gate.
+    gi = generate_illustrations
+    outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
+    _write_raw_manifest(tmp_path, {
+        "schema_version": 1, "outline": "some-other-talk.md",
+        "models_rendered_ok": ["gemini-3-pro-image-preview"], "cells": [],
+    })
+    v = gi.check_style_explore(str(outline))
+    assert v["gate_passed"] is False
+    assert "copied or stale" in v["error"]
+
+
+def test_gate_fails_on_malformed_models_list(generate_illustrations, tmp_path):
+    gi = generate_illustrations
+    outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
+    _write_raw_manifest(tmp_path, {
+        "schema_version": 1, "outline": "outline.md",
+        "models_rendered_ok": "gemini-3-pro-image-preview", "cells": [],
+    })
+    v = gi.check_style_explore(str(outline))
+    assert v["gate_passed"] is False
+    assert "models_rendered_ok" in v["error"]
+
+
+def test_run_generate_poster_rejects_non_full_slide(
+    generate_illustrations, monkeypatch, tmp_path, capsys
+):
+    # Poster mode must fail fast if a slide isn't FULL or carries a Safe zone.
+    gi = generate_illustrations
+    lines = [
+        "# Plan", "",
+        "**Model:** `gemini-3-pro-image-preview`",
+        "**Composition:** poster-theatrical",
+        "**Embedded footer:** jbaruch • Devoxx 2026", "",
+        "### STYLE ANCHOR (FULL — 16:9, 1920x1080)",
+        "> A poster style.", "",
+        "### Slide 3: Bad Slide",
+        "- Format: **IMG+TXT**",
+        "- Image prompt: `[STYLE ANCHOR] a thing`",
+        "- Text: **nope**", "",
+    ]
+    outline = tmp_path / "outline.md"
+    outline.write_text("\n".join(lines))
+    outline_dict = gi.parse_outline(str(outline))
+    _write_manifest(tmp_path, ["gemini-3-pro-image-preview"])
+    gen_calls = []
+    _stub_generate(gi, monkeypatch, outline_dict, str(tmp_path), gen_calls)
+
+    with pytest.raises(SystemExit) as exc:
+        gi.run_generate(str(outline), ["all"])
+
+    assert exc.value.code == 1
+    assert gen_calls == []
+    assert "poster-theatrical" in capsys.readouterr().err

@@ -464,6 +464,16 @@ def main():
     poster = parse_composition(args.outline) == POSTER_COMPOSITION
     zones = parse_zones(args.outline)
     img_txt_slides = parse_img_txt_slides(args.outline)
+    # Poster-theatrical decks are all background-only FULL slides — no Safe zones,
+    # no IMG+TXT. Fail fast on a mix rather than apply contradictory layouts.
+    if poster and (zones or img_txt_slides):
+        offenders = sorted(set(zones) | img_txt_slides)
+        raise SystemExit(
+            "poster-theatrical composition does not allow `Safe zone:` or "
+            f"`Format: IMG+TXT` slides. Offending slide(s): "
+            f"{', '.join(map(str, offenders))}. Fix the outline or drop the "
+            "**Composition:** poster-theatrical header."
+        )
     # In poster-theatrical mode, FULL slides get a background only (text baked in).
     poster_full_slides = parse_full_slides(args.outline) if poster else set()
     total_slides = len(zones) + len(img_txt_slides) + len(poster_full_slides)

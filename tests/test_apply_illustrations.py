@@ -452,3 +452,24 @@ def test_parse_full_slides_excludes_safe_zone(apply_illustrations, tmp_path):
     outline = tmp_path / "outline.md"
     outline.write_text(text)
     assert apply_illustrations.parse_full_slides(outline) == {2}
+
+
+def test_apply_main_rejects_poster_with_safe_zone(apply_illustrations, tmp_path, monkeypatch):
+    # Poster mode + a Safe zone slide is contradictory — main() must fail fast.
+    import pytest
+    text = (
+        "# Plan\n\n**Composition:** poster-theatrical\n\n"
+        "### Slide 1: A\n- Format: **FULL**\n- Image prompt: `x`\n"
+        "- Safe zone: upper_third\n"
+    )
+    outline = tmp_path / "outline.md"
+    outline.write_text(text)
+    deck = tmp_path / "deck.pptx"
+    illust = tmp_path / "illustrations"
+    monkeypatch.setattr(
+        "sys.argv",
+        ["apply-illustrations-to-deck.py", str(deck), str(illust), str(outline)],
+    )
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+    assert "poster-theatrical" in str(exc.value)

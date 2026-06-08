@@ -1031,8 +1031,32 @@ def check_style_explore(outline_path):
         verdict["error"] = f"Could not read {manifest_path}: {e}"
         return verdict
 
-    rendered = manifest.get("models_rendered_ok") or []
     verdict["manifest_present"] = True
+
+    # Fail closed on a manifest we can't trust: an unsupported schema, a
+    # manifest copied in from a different talk, or a malformed model list. A
+    # blindly-trusted manifest would let a model the speaker never saw pass.
+    if manifest.get("schema_version") != 1:
+        verdict["error"] = (
+            f"{manifest_path} has unsupported schema_version "
+            f"{manifest.get('schema_version')!r} (expected 1) — re-run "
+            "--style-explore to regenerate it."
+        )
+        return verdict
+    if manifest.get("outline") != outline_name:
+        verdict["error"] = (
+            f"{manifest_path} was rendered for outline "
+            f"{manifest.get('outline')!r}, not {outline_name!r} — it looks "
+            "copied or stale. Re-run --style-explore for this outline."
+        )
+        return verdict
+    rendered = manifest.get("models_rendered_ok")
+    if not isinstance(rendered, list) or not all(isinstance(m, str) for m in rendered):
+        verdict["error"] = (
+            f"{manifest_path} has a malformed 'models_rendered_ok' (expected a "
+            "list of model-id strings) — re-run --style-explore to regenerate it."
+        )
+        return verdict
     verdict["rendered_models"] = rendered
 
     if resolved in rendered:
@@ -1097,6 +1121,25 @@ def run_generate(outline_path, slide_args, versioned=False):
     success = 0
     failed = 0
     poster = outline.get("composition") == POSTER_COMPOSITION
+
+    if poster:
+        # Poster-theatrical invariants: every slide must be FULL with no Safe
+        # zone (text is baked in, nothing overlaid). Fail fast on a mismatch
+        # rather than generate slides apply-to-deck can't place consistently.
+        bad = [
+            num for num in to_generate
+            if slides_by_num[num]["format"] != "FULL"
+            or slides_by_num[num].get("safe_zone")
+        ]
+        if bad:
+            print(
+                "ERROR: poster-theatrical composition requires every slide to be "
+                f"Format: FULL with no Safe zone. Offending slide(s): "
+                f"{', '.join(map(str, bad))}. Fix the outline or drop the "
+                "**Composition:** poster-theatrical header.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     for i, num in enumerate(to_generate):
         slide = slides_by_num[num]
