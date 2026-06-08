@@ -28,12 +28,16 @@ instead of replacing the inherited one, and only targeted the configured slide �
 leaving stale QRs on earlier slides (e.g. an early shownotes slide). Now every
 QR-bearing slide is detected and its QR replaced in place.
 
-- `generate-qr.py`: `slide_has_existing_qr` detects a QR-like picture (square, in
-  the QR size band) anywhere on a slide; `resolve_target_slide_indices` targets
-  every such slide in addition to the configured placement.
-- `RunDeckOps.bas` `InsertQR`: detects an existing QR-like picture at any position
-  and replaces it in place (same position/size), cleaning up an accidental
-  duplicate; new placements still go bottom-right.
+- `generate-qr.py`: QRs are detected by CONTENT, not size — `find_qr_rects`
+  flags a square picture that is both ~2-color and roughly balanced between those
+  colors, so it catches an inherited QR at any size (the same QR appeared at 1.8"
+  and 2.8" in the repro deck) while excluding colored diagrams and mostly-one-color
+  text screenshots. `resolve_target_slide_indices` targets every QR-bearing slide
+  in addition to the configured placement.
+- `RunDeckOps.bas` `InsertQR`: the macro can't run image libraries, so detection
+  stays in Python; it now receives each slide's existing-QR geometry and just
+  removes those exact shapes and places the QR there (same position/size, cleaning
+  up duplicates). New placements still go bottom-right.
 - The shortener back-half is now ALWAYS the talk slug — bit.ly custom back-half
   and rebrand.ly slashtag — dropping the `preferred_short_path` override (removed
   from the profile schema). If bit.ly can't set the slug back-half, the create now

@@ -507,18 +507,23 @@ Fail6:
     MakePlaceholderSlide = -1
 End Function
 
-' Insert a QR PNG bottom-right on the given 1-based slides, replacing any
-' existing QR-sized picture already in that corner (idempotent re-runs).
+' Insert a QR PNG on the given slides. Python identifies existing QR pictures by
+' content (it can run PIL; this macro can't) and hands their geometry over in the
+' spec; the macro removes those exact shapes and places the new QR there, or
+' bottom-right when a slide has none (idempotent re-runs).
 ' Replaces the python-pptx write in generate-qr.py — that script keeps the URL
 ' resolve + per-slide background-color match + PNG generation (reads only).
 ' Invoked via:
 '   run VB macro macro name "InsertQR" list of parameters _
-'       {basePath, outPath, pngPath, slideNumsCSV}
-' slideNumsCSV = comma-separated 1-based slide numbers, e.g. "5,12".
+'       {basePath, outPath, pngPath, slidesSpec}
+' slidesSpec = ";"-joined per-slide entries; each is "<1-based num>" optionally
+' followed by ":<rL,rT,rW,rH>[,<rL,rT,rW,rH>...]" — rects (POINTS) of existing
+' QRs to remove. The new QR is placed at the FIRST rect (exact in-place replace),
+' else bottom-right. E.g. "12:450.00,80.00,200.16,200.16;38".
 Public Function InsertQR(ByVal basePath As String, _
                          ByVal outPath As String, _
                          ByVal pngPath As String, _
-                         ByVal slideNumsCSV As String) As Long
+                         ByVal slidesSpec As String) As Long
     Dim curTok As String
     Dim base As Presentation
     ' outer-boundary-process-contract — see the module-header error-handling contract.
@@ -529,63 +534,72 @@ Public Function InsertQR(ByVal basePath As String, _
     curTok = "open:base"
     Set base = Presentations.Open(FileName:=basePath, WithWindow:=msoTrue)
 
-    ' QR geometry mirrors generate-qr.py. NEW placements go bottom-right at 2.0in
-    ' with a 0.3in margin. An EXISTING QR is detected by shape — a square picture
-    ' (width within SQUARE_TOL of height) whose side is in the 1.5-2.5in band, at
-    ' ANY position — and replaced in place (a deck adapted from another talk
-    ' carries inherited QRs at varying spots). Points.
+    ' NEW placements go bottom-right at 2.0in with a 0.3in margin. EXISTING QRs are
+    ' identified by Python (content-based) and passed in slidesSpec as rects to
+    ' remove; the new QR is placed at the first rect (exact in-place replace).
+    ' Geometry in POINTS; Val() parses locale-independently (always "." decimal).
     Const QR_SIDE As Single = 144      ' 2.0in (new placement)
     Const QR_MARGIN As Single = 21.6   ' 0.3in
-    Const QR_MIN As Single = 108       ' 1.5in (detection band low)
-    Const QR_MAX As Single = 180       ' 2.5in (detection band high)
-    Const SQUARE_TOL As Single = 7.2   ' 0.1in
+    Const RECT_TOL As Single = 2#      ' ~0.03in match tolerance (points)
     Dim sw As Single, sh As Single
     sw = base.PageSetup.SlideWidth
     sh = base.PageSetup.SlideHeight
-    Dim qrLeft As Single, qrTop As Single
-    qrLeft = sw - QR_SIDE - QR_MARGIN
-    qrTop = sh - QR_SIDE - QR_MARGIN
+    Dim newLeft As Single, newTop As Single
+    newLeft = sw - QR_SIDE - QR_MARGIN
+    newTop = sh - QR_SIDE - QR_MARGIN
 
-    Dim nums() As String, k As Long, num As Long, placed As Long
-    nums = Split(slideNumsCSV, ",")
+    Dim entries() As String, e As Long, placed As Long
+    Dim fields() As String, num As Long, s As Slide
+    Dim rects() As String, nRect As Long, r As Long
+    Dim rl As Single, rt As Single, rw As Single, rh As Single
+    Dim hasRect As Boolean, pL As Single, pT As Single, pW As Single, pH As Single
+    Dim i As Long, shp As Shape
+    entries = Split(slidesSpec, ";")
     placed = 0
-    For k = LBound(nums) To UBound(nums)
-        If Len(Trim(nums(k))) > 0 Then
-            num = CLng(Trim(nums(k)))
+    For e = LBound(entries) To UBound(entries)
+        If Len(Trim(entries(e))) > 0 Then
+            fields = Split(Trim(entries(e)), ":")
+            num = CLng(Trim(fields(0)))
             curTok = "slide:" & num
             If num < 1 Or num > base.Slides.Count Then Err.Raise vbObjectError + 520, , _
                 "QR slide " & num & " out of range (deck has " & base.Slides.Count & ")"
-            Dim s As Slide
             Set s = base.Slides(num)
-            ' find + remove EVERY QR-like picture, remembering the (lowest-index)
-            ' one's geometry so the replacement lands exactly where it sat — and
-            ' any accidental duplicate QR on the slide is cleaned up
-            Dim i As Long, shp As Shape
-            Dim hasOld As Boolean, oldL As Single, oldT As Single, oldW As Single, oldH As Single
-            hasOld = False
-            For i = s.Shapes.Count To 1 Step -1
-                Set shp = s.Shapes(i)
-                If shp.Type = msoPicture Then
-                    If shp.Width >= QR_MIN And shp.Width <= QR_MAX _
-                       And Abs(shp.Width - shp.Height) < SQUARE_TOL Then
-                        oldL = shp.Left: oldT = shp.Top: oldW = shp.Width: oldH = shp.Height
-                        shp.Delete
-                        hasOld = True
+
+            hasRect = False
+            If UBound(fields) >= 1 Then
+                rects = Split(fields(1), ",")
+                nRect = (UBound(rects) + 1) \ 4
+                For r = 0 To nRect - 1
+                    rl = Val(rects(r * 4)): rt = Val(rects(r * 4 + 1))
+                    rw = Val(rects(r * 4 + 2)): rh = Val(rects(r * 4 + 3))
+                    If r = 0 Then
+                        pL = rl: pT = rt: pW = rw: pH = rh: hasRect = True
                     End If
-                End If
-            Next i
-            If hasOld Then
-                ' replace in place at the existing QR's position/size
+                    ' delete every picture matching this rect (handles duplicates)
+                    For i = s.Shapes.Count To 1 Step -1
+                        Set shp = s.Shapes(i)
+                        If shp.Type = msoPicture Then
+                            If Abs(shp.Left - rl) < RECT_TOL And Abs(shp.Top - rt) < RECT_TOL _
+                               And Abs(shp.Width - rw) < RECT_TOL And Abs(shp.Height - rh) < RECT_TOL Then
+                                shp.Delete
+                            End If
+                        End If
+                    Next i
+                Next r
+            End If
+
+            If hasRect Then
+                ' replace in place at the inherited QR's exact position/size
                 s.Shapes.AddPicture FileName:=pngPath, LinkToFile:=msoFalse, _
-                    SaveWithDocument:=msoTrue, Left:=oldL, Top:=oldT, Width:=oldW, Height:=oldH
+                    SaveWithDocument:=msoTrue, Left:=pL, Top:=pT, Width:=pW, Height:=pH
             Else
                 ' new placement, bottom-right corner
                 s.Shapes.AddPicture FileName:=pngPath, LinkToFile:=msoFalse, _
-                    SaveWithDocument:=msoTrue, Left:=qrLeft, Top:=qrTop, Width:=QR_SIDE, Height:=QR_SIDE
+                    SaveWithDocument:=msoTrue, Left:=newLeft, Top:=newTop, Width:=QR_SIDE, Height:=QR_SIDE
             End If
             placed = placed + 1
         End If
-    Next k
+    Next e
 
     curTok = "save"
     base.SaveCopyAs FileName:=outPath

@@ -11,9 +11,42 @@ from conftest import make_deck
 
 
 def _square_png(tmp_path, name="sq.png"):
-    """Build a tiny PNG on disk (no binary fixture committed)."""
+    """A two-color (QR-like) PNG: quantizes to 2 colors with ~0 reconstruction
+    error, so the content-based detector treats it as a QR."""
     path = str(tmp_path / name)
-    Image.new("RGB", (50, 50), (0, 0, 0)).save(path)
+    im = Image.new("RGB", (50, 50), (255, 255, 255))
+    px = im.load()
+    for x in range(50):
+        for y in range(50):
+            if (x + y) % 2 == 0:
+                px[x, y] = (0, 0, 0)
+    im.save(path)
+    return path
+
+
+def _multicolor_png(tmp_path, name="multi.png"):
+    """A many-color (photo/diagram-like) PNG: a smooth gradient that does NOT
+    reduce to two colors, so the detector rejects it even when square."""
+    path = str(tmp_path / name)
+    im = Image.new("RGB", (60, 60))
+    px = im.load()
+    for x in range(60):
+        for y in range(60):
+            px[x, y] = ((x * 4) % 256, (y * 4) % 256, ((x + y) * 2) % 256)
+    im.save(path)
+    return path
+
+
+def _sparse_text_png(tmp_path, name="screenshot.png"):
+    """A mostly-white image with sparse dark 'text' — ~2-color but heavily skewed
+    to the background (like a doc screenshot), so it must NOT be taken for a QR."""
+    path = str(tmp_path / name)
+    im = Image.new("RGB", (80, 80), (255, 255, 255))
+    px = im.load()
+    for y in range(0, 80, 6):
+        for x in range(0, 80, 3):
+            px[x, y] = (0, 0, 0)
+    im.save(path)
     return path
 
 
@@ -122,16 +155,60 @@ def test_slide_has_existing_qr_ignores_non_square_picture(generate_qr, tmp_path)
     assert generate_qr.slide_has_existing_qr(prs.slides[0]) is False
 
 
-def test_slide_has_existing_qr_ignores_out_of_band_square(generate_qr, tmp_path):
-    # Square, but 4in is outside the QR size band → not a QR.
+def test_slide_has_existing_qr_detects_large_square_qr(generate_qr, tmp_path):
+    # Size-independent: a 2.8in two-color square is still a QR (the inherited
+    # shownotes QR in the #56 repro deck was 2.78in — outside the old 1.5-2.5 band).
     prs = make_deck(1)
-    prs.slides[0].shapes.add_picture(_square_png(tmp_path), Inches(1), Inches(1), Inches(4.0), Inches(4.0))
+    prs.slides[0].shapes.add_picture(_square_png(tmp_path), Inches(1), Inches(1), Inches(2.8), Inches(2.8))
+    assert generate_qr.slide_has_existing_qr(prs.slides[0]) is True
+
+
+def test_slide_has_existing_qr_ignores_multicolor_square(generate_qr, tmp_path):
+    # Square and in size range, but many colors (e.g. a Venn diagram) → not a QR.
+    prs = make_deck(1)
+    prs.slides[0].shapes.add_picture(_multicolor_png(tmp_path), Inches(2), Inches(2), Inches(2.0), Inches(2.0))
+    assert generate_qr.slide_has_existing_qr(prs.slides[0]) is False
+
+
+def test_slide_has_existing_qr_ignores_small_two_color_icon(generate_qr, tmp_path):
+    # Two-color but below the 1.5in floor → a small icon, not a QR.
+    prs = make_deck(1)
+    prs.slides[0].shapes.add_picture(_square_png(tmp_path), Inches(1), Inches(1), Inches(1.0), Inches(1.0))
+    assert generate_qr.slide_has_existing_qr(prs.slides[0]) is False
+
+
+def test_slide_has_existing_qr_ignores_text_screenshot(generate_qr, tmp_path):
+    # Near-square, in size range, ~2-color — but mostly-white with sparse text
+    # (unbalanced) → not a QR. Regression: a martinfowler.com screenshot (slide 28
+    # of the #56 repro deck) that the recon-error-only test wrongly accepted.
+    prs = make_deck(1)
+    prs.slides[0].shapes.add_picture(_sparse_text_png(tmp_path), Inches(2), Inches(1), Inches(4.0), Inches(4.0))
     assert generate_qr.slide_has_existing_qr(prs.slides[0]) is False
 
 
 def test_slide_has_existing_qr_false_for_plain_slide(generate_qr):
     prs = make_deck(1)
     assert generate_qr.slide_has_existing_qr(prs.slides[0]) is False
+
+
+def test_two_color_metrics_separate_qr_screenshot_photo(generate_qr, tmp_path):
+    qr_err, qr_min = generate_qr._two_color_metrics(open(_square_png(tmp_path, "q.png"), "rb").read())
+    multi_err, _ = generate_qr._two_color_metrics(open(_multicolor_png(tmp_path, "m.png"), "rb").read())
+    _, sshot_min = generate_qr._two_color_metrics(open(_sparse_text_png(tmp_path, "s.png"), "rb").read())
+    assert qr_err < 5.0 and qr_min >= 0.25     # QR: two-color AND balanced
+    assert multi_err > 20.0                     # photo/diagram: many colors
+    assert sshot_min < 0.25                     # screenshot: mostly background
+
+
+def test_find_qr_rects_returns_points_geometry(generate_qr, tmp_path):
+    prs = make_deck(1)
+    # placed at 8in,5in, 2in square → points: 576, 360, 144, 144
+    prs.slides[0].shapes.add_picture(_square_png(tmp_path), Inches(8), Inches(5), Inches(2.0), Inches(2.0))
+    rects = generate_qr.find_qr_rects(prs.slides[0])
+    assert len(rects) == 1
+    L, T, W, H = rects[0]
+    assert abs(L - 576) < 0.5 and abs(T - 360) < 0.5
+    assert abs(W - 144) < 0.5 and abs(H - 144) < 0.5
 
 
 def test_resolve_target_includes_inherited_qr_slides(generate_qr, tmp_path):
@@ -175,13 +252,19 @@ def test_insert_qr_via_powerpoint_orchestration(generate_qr, monkeypatch):
     monkeypatch.setattr(generate_qr.os.path, "isfile", lambda p: True)
 
     deck = "/decks/talk.pptx"
-    jobs = [("/q/a.png", [1, 3]), ("/q/b.png", [5])]
+    # job slides carry their existing-QR rects (points): slide 1 replaces in place,
+    # slide 3 is a new placement; slide 5 likewise new.
+    jobs = [
+        ("/q/a.png", [(1, [(100.0, 200.0, 144.0, 144.0)]), (3, [])]),
+        ("/q/b.png", [(5, [])]),
+    ]
     generate_qr.insert_qr_via_powerpoint(deck, jobs, "/scripts")
 
     wrapper = "/scripts/insert-qr.sh"
-    # one subprocess call per job; deck threaded through intermediates; CSV is 1-based, comma-joined
+    # one subprocess call per job; deck threaded through intermediates; spec is
+    # 1-based, ";"-joined, with per-slide removal rects after ":"
     assert calls == [
-        [wrapper, "/decks/talk.pptx", "/decks/talk.pptx.qrtmp0.pptx", "/q/a.png", "1,3"],
+        [wrapper, "/decks/talk.pptx", "/decks/talk.pptx.qrtmp0.pptx", "/q/a.png", "1:100.00,200.00,144.00,144.00;3"],
         [wrapper, "/decks/talk.pptx.qrtmp0.pptx", "/decks/talk.pptx.qrtmp1.pptx", "/q/b.png", "5"],
     ]
     # the prior intermediate is cleaned up; the final intermediate is moved onto the deck
@@ -194,7 +277,7 @@ def test_insert_qr_via_powerpoint_missing_wrapper(generate_qr, monkeypatch):
     import pytest
     monkeypatch.setattr(generate_qr.os.path, "isfile", lambda p: False)
     with pytest.raises(SystemExit):
-        generate_qr.insert_qr_via_powerpoint("/decks/talk.pptx", [("/q/a.png", [1])], "/scripts")
+        generate_qr.insert_qr_via_powerpoint("/decks/talk.pptx", [("/q/a.png", [(1, [])])], "/scripts")
 
 
 def test_insert_qr_via_powerpoint_wrapper_failure_is_actionable(generate_qr, monkeypatch):
@@ -208,8 +291,19 @@ def test_insert_qr_via_powerpoint_wrapper_failure_is_actionable(generate_qr, mon
     monkeypatch.setattr(generate_qr.subprocess, "run", boom)
     monkeypatch.setattr(generate_qr.os.path, "isfile", lambda p: True)
     with pytest.raises(SystemExit) as exc:
-        generate_qr.insert_qr_via_powerpoint("/decks/talk.pptx", [("/q/a.png", [1])], "/scripts")
+        generate_qr.insert_qr_via_powerpoint("/decks/talk.pptx", [("/q/a.png", [(1, [])])], "/scripts")
     assert "deck-editing-setup.md" in str(exc.value)
+
+
+def test_format_qr_spec_new_placement_and_replace(generate_qr):
+    # No rects → bare slide number (new bottom-right placement)
+    assert generate_qr._format_qr_spec([(5, [])]) == "5"
+    # One rect → "num:L,T,W,H" (replace in place), 2-decimal points
+    assert generate_qr._format_qr_spec([(12, [(450.0, 80.0, 200.16, 200.16)])]) == \
+        "12:450.00,80.00,200.16,200.16"
+    # Multiple slides + a duplicate-QR slide (two rects) → flattened, ";"-joined
+    assert generate_qr._format_qr_spec([(12, [(1, 2, 3, 4), (5, 6, 7, 8)]), (38, [])]) == \
+        "12:1.00,2.00,3.00,4.00,5.00,6.00,7.00,8.00;38"
 
 
 def test_create_bitly_link_raises_when_custom_back_half_fails(generate_qr, monkeypatch):

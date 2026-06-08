@@ -48,10 +48,12 @@ except ImportError:
     sys.exit(1)
 
 try:
-    from PIL import Image  # noqa: F401 — validates Pillow is available
+    from PIL import Image, ImageChops, ImageStat
 except ImportError:
     print("ERROR: 'Pillow' package not installed. Run: pip install Pillow")
     sys.exit(1)
+
+import io
 
 from pptx import Presentation  # read-only: background-color match + slide-finding
 from pptx.enum.shapes import MSO_SHAPE_TYPE
@@ -67,12 +69,23 @@ QR_ERROR_CORRECTION = ERROR_CORRECT_M
 QR_WIDTH_INCHES = 2.0
 QR_MARGIN_INCHES = 0.3
 
-# Existing-QR detection: a roughly-square picture whose side sits in this band is
-# treated as a QR to replace. Decks adapted (trimmed) from another talk carry
-# inherited QRs at varying positions; this finds them regardless of placement.
-QR_DETECT_MIN_INCHES = 1.5
-QR_DETECT_MAX_INCHES = 2.5
-QR_SQUARE_TOL_INCHES = 0.1
+# Existing-QR detection (content-based, size-independent). A QR is a SQUARE
+# picture that is BOTH essentially two colors AND roughly balanced between them:
+#   - it reconstructs near-perfectly when quantized to 2 colors (reconErr ≈ 0),
+#     unlike photos/diagrams (many colors → high error); and
+#   - its minority color covers a large fraction (~⅓+), unlike a text screenshot
+#     that is mostly one background color with sparse text.
+# Both axes are needed: a mostly-white doc screenshot is ~2-color but unbalanced.
+# Size is NOT a signal — a deck adapted from another talk carries inherited QRs at
+# arbitrary sizes (the same QR appeared at 1.8" and 2.8"); only a floor guards
+# against tiny 2-color icons. Validated on a real inherited deck: QRs scored
+# reconErr 0.0 / minority 0.34; a colored Venn 68 / 0.50; a martinfowler.com
+# screenshot 6.4 / 0.18. The VBA writer can't run PIL, so detection lives here and
+# the resulting geometry is handed to InsertQR.
+QR_DETECT_MIN_INCHES = 1.5      # side floor — excludes small 2-color icons
+QR_SQUARE_TOL_INCHES = 0.1      # |width − height| tolerance
+QR_RECON_ERR_MAX = 5.0          # max mean 2-color reconstruction error
+QR_MIN_MINORITY = 0.25          # min minority-color fraction (QRs are balanced)
 
 
 # --- Vault / Config Loading ---
@@ -494,27 +507,71 @@ def find_shownotes_slide(prs, shownotes_url):
     return None
 
 
-def slide_has_existing_qr(slide):
-    """True if the slide carries a QR-like picture: a roughly-square picture
-    whose side sits in the QR size band.
+def _two_color_metrics(blob):
+    """(reconstruction error, minority-color fraction) for the image quantized to
+    two colors.
 
-    Decks adapted (trimmed) from another talk inherit that talk's QR images at
-    whatever positions they had. Detecting them by shape — independent of the
-    configured placement — lets every QR-bearing slide be targeted for
-    replacement, instead of only the config-positioned slide.
+    A QR is BOTH ~2-color (low reconstruction error) AND ~balanced (large minority
+    fraction). Photos/diagrams have many colors → high error; text screenshots are
+    ~2-color but mostly one background → tiny minority fraction. Color-agnostic, so
+    black-on-white and white-on-purple QRs both qualify. Returns (255, 0) if the
+    image can't be read.
     """
-    lo = Inches(QR_DETECT_MIN_INCHES)
-    hi = Inches(QR_DETECT_MAX_INCHES)
-    sq_tol = Inches(QR_SQUARE_TOL_INCHES)
+    try:
+        im = Image.open(io.BytesIO(blob)).convert("RGB")
+    except Exception:
+        return 255.0, 0.0
+    q = im.quantize(colors=2)
+    means = ImageStat.Stat(ImageChops.difference(im, q.convert("RGB"))).mean
+    err = sum(means) / len(means) if means else 255.0
+    counts = sorted((c for c in q.histogram() if c > 0), reverse=True)
+    total = sum(counts)
+    minority = counts[1] / total if len(counts) > 1 and total else 0.0
+    return err, minority
+
+
+def _picture_is_qr(shape):
+    """A picture is an (inherited) QR when it is square, at least
+    QR_DETECT_MIN_INCHES on a side, ~2-color, and roughly balanced between those
+    colors.
+
+    Size-independent by design: a deck adapted from another talk carries that
+    talk's QR at whatever size it used (the same QR can appear at 1.8" and 2.8"),
+    so a size band can't identify it. The two-color + balance test does, while the
+    floor rejects tiny icons and the square test rejects banners/photos.
+    """
+    if shape.shape_type != MSO_SHAPE_TYPE.PICTURE:
+        return False
+    w, h = shape.width, shape.height
+    if w is None or h is None:
+        return False
+    if abs(w - h) >= Inches(QR_SQUARE_TOL_INCHES) or min(w, h) < Inches(QR_DETECT_MIN_INCHES):
+        return False
+    try:
+        blob = shape.image.blob
+    except Exception:
+        return False
+    err, minority = _two_color_metrics(blob)
+    return err < QR_RECON_ERR_MAX and minority >= QR_MIN_MINORITY
+
+
+def find_qr_rects(slide):
+    """QR pictures on the slide as (left, top, width, height) tuples in POINTS,
+    in slide z-order (first = lowest-index shape).
+
+    The VBA writer can't run PIL, so QR identification happens here and the
+    geometry is handed to InsertQR for exact in-place replacement.
+    """
+    rects = []
     for shape in slide.shapes:
-        if shape.shape_type != MSO_SHAPE_TYPE.PICTURE:
-            continue
-        w, h = shape.width, shape.height
-        if w is None or h is None:
-            continue
-        if lo <= w <= hi and abs(w - h) < sq_tol:
-            return True
-    return False
+        if _picture_is_qr(shape) and shape.left is not None and shape.top is not None:
+            rects.append((shape.left.pt, shape.top.pt, shape.width.pt, shape.height.pt))
+    return rects
+
+
+def slide_has_existing_qr(slide):
+    """True if the slide carries an (inherited) QR picture (see find_qr_rects)."""
+    return bool(find_qr_rects(slide))
 
 
 def resolve_target_slide_indices(prs, config, shownotes_url):
@@ -564,16 +621,38 @@ def resolve_target_slide_indices(prs, config, shownotes_url):
 
 # --- QR Insertion ---
 
+def _format_qr_spec(slide_specs):
+    """Encode per-slide insertion targets for the InsertQR macro.
+
+    Each entry is "<1-based num>", optionally followed by
+    ":<rL,rT,rW,rH>[,<rL,rT,rW,rH>...]" giving the rects (POINTS) of existing QR
+    pictures to remove on that slide. The macro deletes those shapes and places
+    the new QR at the FIRST rect (exact in-place replacement, preserving the
+    inherited size); with no rects it places a new QR bottom-right. Entries are
+    joined by ";". Detection is content-based (see find_qr_rects) because the VBA
+    writer can't run PIL — so the chosen geometry travels in this spec.
+    """
+    parts = []
+    for num, rects in slide_specs:
+        if rects:
+            flat = ",".join(f"{v:.2f}" for rect in rects for v in rect)
+            parts.append(f"{num}:{flat}")
+        else:
+            parts.append(str(num))
+    return ";".join(parts)
+
+
 def insert_qr_via_powerpoint(deck_path, jobs, scripts_dir):
     """Insert the QR PNG(s) into the deck via the real PowerPoint app.
 
     Replaces the old python-pptx write (`insert-qr.sh` → InsertQR VBA macro), so
-    PowerPoint serializes a valid .pptx (see rules/deck-editing-rules.md). On each
-    target slide the macro detects any existing QR-like picture (square, in the QR
-    size band, at any position) and replaces it in place; otherwise it places a new
-    QR bottom-right (idempotent re-runs). macOS + Microsoft PowerPoint only.
+    PowerPoint serializes a valid .pptx (see rules/deck-editing-rules.md). Python
+    has already identified each slide's existing QR(s) by content; the macro just
+    removes those exact shapes and places the new QR there (or bottom-right when a
+    slide has none). macOS + Microsoft PowerPoint only.
 
-    jobs: list of (png_path, [1-based slide numbers]) — one per QR color variant.
+    jobs: list of (png_path, slide_specs) — one per QR color variant, where
+    slide_specs is a list of (1-based slide number, [removal rects in points]).
     Each variant is a separate InsertQR pass; the deck is threaded through
     uniquely-named intermediates (PowerPoint keys open decks by filename) and the
     final result is moved back to deck_path.
@@ -582,14 +661,14 @@ def insert_qr_via_powerpoint(deck_path, jobs, scripts_dir):
     if not os.path.isfile(wrapper):
         raise SystemExit(f"insert-qr.sh not found at {wrapper} — reinstall the tile")
     current = deck_path
-    for n, (png_path, slide_nums) in enumerate(jobs):
+    for n, (png_path, slide_specs) in enumerate(jobs):
         out = f"{deck_path}.qrtmp{n}.pptx"  # distinct basename — no open-deck collision
-        csv = ",".join(str(x) for x in slide_nums)
+        spec = _format_qr_spec(slide_specs)
         try:
-            subprocess.run([wrapper, current, out, png_path, csv], check=True)
+            subprocess.run([wrapper, current, out, png_path, spec], check=True)
         except subprocess.CalledProcessError:
             raise SystemExit(
-                f"ERROR: QR insertion failed in PowerPoint (insert-qr.sh on slide(s) {csv}). "
+                f"ERROR: QR insertion failed in PowerPoint (insert-qr.sh, spec '{spec}'). "
                 "Confirm DeckOps.pptm is open with macros enabled and Automation consent "
                 "granted — see skills/presentation-creator/references/deck-editing-setup.md"
             )
@@ -757,6 +836,9 @@ def main():
         # different backgrounds (e.g., shownotes vs closing/thank-you).
         # Group slides by their QR color scheme to avoid redundant PNGs.
         slide_colors = {}  # idx -> (qr_bg, qr_fg)
+        # Existing-QR geometry per target slide (points), captured while the deck
+        # is open — the PowerPoint writer can't run PIL, so it gets these rects.
+        qr_rects_by_idx = {}  # idx -> [(L, T, W, H), ...]
         for idx in slide_indices:
             if explicit_bg:
                 bg_rgb = explicit_bg
@@ -770,7 +852,9 @@ def main():
             qr_bg = bg_rgb if bg_match else (255, 255, 255)
             qr_fg = choose_fg_color(qr_bg)
             slide_colors[idx] = (qr_bg, qr_fg)
-            print(f"  Slide {idx + 1}: bg=RGB{qr_bg}, fg=RGB{qr_fg}")
+            qr_rects_by_idx[idx] = find_qr_rects(prs.slides[idx])
+            placement = "replace in place" if qr_rects_by_idx[idx] else "new (bottom-right)"
+            print(f"  Slide {idx + 1}: bg=RGB{qr_bg}, fg=RGB{qr_fg} — {placement}")
 
         # Group slides by color scheme to generate minimal QR PNGs
         color_groups = {}  # (qr_bg, qr_fg) -> [slide_indices]
@@ -779,7 +863,7 @@ def main():
 
         if not args.dry_run:
             qr_paths_generated = []
-            insert_jobs = []  # (png_path, [1-based slide numbers]) — one per color variant
+            insert_jobs = []  # (png_path, [(1-based num, [removal rects])]) per color variant
             for (qr_bg, qr_fg), indices in color_groups.items():
                 if len(color_groups) == 1:
                     qr_filename = f"{args.talk_slug}-qr.png"
@@ -793,7 +877,8 @@ def main():
                 size_kb = os.path.getsize(qr_path) / 1024
                 print(f"  QR PNG saved: {qr_filename} ({size_kb:.1f} KB) — for slide(s) {[i + 1 for i in indices]}")
                 qr_paths_generated.append(qr_path)
-                insert_jobs.append((qr_path, [i + 1 for i in indices]))  # VBA is 1-based
+                # VBA is 1-based; pair each slide with its existing-QR rects
+                insert_jobs.append((qr_path, [(i + 1, qr_rects_by_idx[i]) for i in indices]))
 
             # Release the read-only deck handle, then write via the real
             # PowerPoint app (valid OOXML; see rules/deck-editing-rules.md).

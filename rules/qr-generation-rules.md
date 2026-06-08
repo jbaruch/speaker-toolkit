@@ -66,6 +66,13 @@ missing token as a blocker, not a fallback trigger.
 A deck adapted (trimmed) from another talk carries that talk's QR images. The QR
 step detects every existing QR — the closing slide AND any earlier shownotes
 slide — and replaces it in place at the same position and size, never adding a
-second QR beside it. Slide targeting lives in `generate-qr.py` and the in-place
-replacement in the `InsertQR` macro (`RunDeckOps.bas`); the QR-detection
-heuristic is named there.
+second QR beside it.
+
+Detection is by CONTENT, not size: an inherited QR can be any size (the same QR
+may appear at 1.8" and 2.8"), so a size band misses it. A QR is a square picture
+that is both ~2-color and roughly balanced between those colors — which excludes
+colored diagrams (many colors) and mostly-one-color text screenshots (unbalanced).
+This runs in `generate-qr.py` (`find_qr_rects`), which can read pixels; it hands
+the matched geometry to the `InsertQR` macro (`RunDeckOps.bas`), which can't run
+image libraries and just removes those exact shapes and places the QR there. The
+thresholds are named in `generate-qr.py`.
