@@ -1077,12 +1077,23 @@ def check_style_explore(outline_path):
     # rendered OK still has its image file on disk. A stale or hand-edited
     # manifest that lists a model with no backing file does not pass the gate
     # (rules/stateful-artifacts.md — verify against the live source).
+    abs_se = os.path.realpath(se_dir)
     verified = set()
     for cell in cells:
         if not isinstance(cell, dict) or cell.get("status") != "OK":
             continue
         rel = cell.get("rel_path")
-        if not isinstance(rel, str) or not os.path.isfile(os.path.join(se_dir, rel)):
+        if not isinstance(rel, str) or not rel:
+            continue
+        # rel_path must resolve to a file INSIDE this talk's style-explore/.
+        # Reject absolute paths and ../ traversal so a hand-edited manifest
+        # can't point at an arbitrary existing image to fake render evidence.
+        if os.path.isabs(rel):
+            continue
+        target = os.path.realpath(os.path.join(abs_se, rel))
+        if os.path.commonpath([abs_se, target]) != abs_se:
+            continue
+        if not os.path.isfile(target):
             continue
         cell_model = resolve_model_id(cell.get("model_resolved") or cell.get("model"))
         if cell_model:

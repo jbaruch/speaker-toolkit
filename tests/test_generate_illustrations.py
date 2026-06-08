@@ -1238,3 +1238,23 @@ def test_run_generate_poster_validates_whole_outline_not_just_subset(
     assert exc.value.code == 1
     assert gen_calls == []
     assert "2" in capsys.readouterr().err  # slide 2 named as the offender
+
+
+def test_gate_rejects_rel_path_traversal(generate_illustrations, tmp_path):
+    # A rel_path escaping style-explore/ (../ or absolute) must not count as
+    # render evidence, even if a file exists there.
+    gi = generate_illustrations
+    outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
+    (tmp_path / "evil.png").write_bytes(b"img")  # a real file OUTSIDE style-explore/
+    _write_raw_manifest(tmp_path, {
+        "schema_version": 1, "outline": "outline.md", "outline_dir": tmp_path.name,
+        "models_rendered_ok": ["gemini-3-pro-image-preview"],
+        "cells": [{
+            "style": "S", "format": "FULL", "model": "gemini-3-pro-image-preview",
+            "model_resolved": "gemini-3-pro-image-preview", "status": "OK",
+            "rel_path": "../evil.png",
+        }],
+    })
+    v = gi.check_style_explore(str(outline))
+    assert v["gate_passed"] is False
+    assert v["rendered_models"] == []
