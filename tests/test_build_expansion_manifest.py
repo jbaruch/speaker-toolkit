@@ -158,3 +158,24 @@ def test_unwritable_out_returns_error(build_expansion_manifest, tmp_path, capsys
     rc = build_expansion_manifest.main([str(outline), str(builds), "--out", str(out_dir)])
     assert rc == 1
     assert "cannot write manifest" in capsys.readouterr().err
+
+
+def test_non_contiguous_steps_error(build_expansion_manifest, tmp_path):
+    # `Builds: 2 steps` with build-00 + build-02 (count matches, but a gap) must
+    # fail — expansion would silently skip the intermediate reveal.
+    text = """\
+# Plan
+
+### Slide 7: Gappy
+- Format: **FULL**
+- Image prompt: `[STYLE ANCHOR] x`
+- Builds: 2 steps
+  - build-00: Empty. Keep frame.
+  - build-02: [FULL] full
+"""
+    outline = _make_outline(tmp_path, text)
+    builds = tmp_path / "builds"
+    _make_frames(builds, 7, [0, 2])
+    with pytest.raises(SystemExit) as exc:
+        build_expansion_manifest.build_manifest(outline, builds)
+    assert "not contiguous" in str(exc.value)

@@ -107,6 +107,14 @@ def build_manifest(outline_path: Path, builds_dir: Path, notes_map: dict | None 
                 f"{len(steps)} `build-NN:` entries ({steps}). Fix the count or the "
                 "entries so they agree."
             )
+        # steps must be a contiguous run (no gaps or duplicates), or expansion
+        # would silently skip a reveal. Start value is convention-agnostic
+        # (0-based or 1-based); only the contiguity matters.
+        if steps != list(range(steps[0], steps[0] + len(steps))):
+            raise SystemExit(
+                f"ERROR: slide {parent} build steps {steps} are not contiguous "
+                "(gap or duplicate). Number the build-NN entries sequentially."
+            )
         found = frames_for(builds_dir, parent)
         missing = [s for s in steps if s not in found]
         if missing:
