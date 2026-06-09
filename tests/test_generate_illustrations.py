@@ -104,6 +104,8 @@ def _stub_build_deps(gi, monkeypatch, tmp_path, outline, edit_calls):
     monkeypatch.setattr(gi, "find_base_image", lambda d, n: str(base))
     monkeypatch.setattr(gi, "effective_slide_format", lambda *a, **k: None)
     monkeypatch.setattr(gi.time, "sleep", lambda *a, **k: None)
+    # Render-before-bake gate passes by default here; the gate-fail test overrides it.
+    monkeypatch.setattr(gi, "check_style_explore", lambda p: {"gate_passed": True, "error": ""})
     monkeypatch.setattr(
         gi, "edit_image",
         lambda *a, **k: (edit_calls.append(a), (b"x", "image/png"))[1],
@@ -190,6 +192,7 @@ def test_run_build_exits_nonzero_when_edit_fails(
     monkeypatch.setattr(gi, "find_base_image", lambda d, n: str(base))
     monkeypatch.setattr(gi, "effective_slide_format", lambda *a, **k: None)
     monkeypatch.setattr(gi.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(gi, "check_style_explore", lambda p: {"gate_passed": True, "error": ""})
     monkeypatch.setattr(gi, "edit_image", lambda *a, **k: (None, "api boom"))
 
     with pytest.raises(SystemExit) as exc:
@@ -201,6 +204,32 @@ def test_run_build_exits_nonzero_when_edit_fails(
     # "Done" line never prints on a failed run.
     assert "build-00 edit failed" in out.err
     assert "Done. Review build images" not in out.out
+
+
+def test_run_build_refuses_when_render_gate_fails(
+    generate_illustrations, monkeypatch, tmp_path
+):
+    # run_build must enforce the same render-before-bake gate as run_generate:
+    # an unrendered baked model can't produce build frames either. Refuse before
+    # spending any edit API call.
+    gi = generate_illustrations
+    outline = _single_build_slide([
+        {"step": 0, "description": "Erase Panel 1. Keep the chrome.", "is_full": False},
+        {"step": 1, "description": "[FULL] all panels", "is_full": True},
+    ])
+    edit_calls = []
+    _stub_build_deps(gi, monkeypatch, tmp_path, outline, edit_calls)
+    # gate fails (baked model never rendered / manifest missing)
+    monkeypatch.setattr(
+        gi, "check_style_explore",
+        lambda p: {"gate_passed": False, "error": "model 'x' was never rendered in a grid"},
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        gi.run_build("ignored.md", "60")
+
+    assert exc.value.code == 1
+    assert edit_calls == []  # refused before any edit API call
 
 
 def test_resolve_prompt_with_anchor(generate_illustrations):

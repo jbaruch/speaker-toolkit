@@ -433,22 +433,28 @@ prompts) — when invoked, surface the relevant fields from `outline.yaml` in th
 format the illustrations skill consumes. Updating the illustrations skill to
 consume `outline.yaml` natively is tracked separately.
 
-If any slide has progressive-reveal builds, expand them first with
+If any slide has progressive-reveal builds, expand them FIRST with
 `skills/presentation-creator/scripts/expand-builds.sh` (manifest from
 `build-expansion-manifest.py`): it replaces each parent slide with its build
-frames as full-bleed slides. Run it BEFORE the by-index passes below — expansion
-renumbers later slides, so notes/backgrounds/QR must key on the post-expansion
-deck. See `rules/deck-editing-rules.md`.
-
-Inject speaker notes from `script.md` after the illustrations skill returns,
-via real PowerPoint — `skills/presentation-creator/scripts/inject-notes.sh`
-(notes JSON is the historical `{"<0-based slide #>": "text"}` map). PowerPoint
-writes valid notes OOXML, so the `<p:notesMasterIdLst>` Keynote patch the old
-python path needed is gone. THEN, as the final write, set the FULL-slide
-backgrounds via `skills/presentation-creator/scripts/apply-backgrounds.sh`
-using the manifest from the apply pass — it must run last, since any later
-python-pptx save would re-drop the per-slide background fills. See
+frames as full-bleed slides. Pass the speaker-notes JSON to
+`build-expansion-manifest.py --notes` so each build parent's note rides onto its
+FINAL frame during expansion (per `skills/illustrations/references/builds.md`);
+do not re-target those parent indices in any later notes pass. Run expansion
+BEFORE the by-index passes below — it renumbers later slides, so notes,
+backgrounds, and QR must key on the POST-expansion deck. See
 `rules/deck-editing-rules.md`.
+
+Inject the remaining speaker notes from `script.md` after the illustrations skill
+returns, via real PowerPoint — `skills/presentation-creator/scripts/inject-notes.sh`
+(notes JSON is the `{"<0-based slide #>": "text"}` map). When the deck was
+expanded, drop the build-parent entries already carried by `--notes` and key the
+remaining notes on the post-expansion slide order; with no builds, the original
+indices apply directly. PowerPoint writes valid notes OOXML, so the
+`<p:notesMasterIdLst>` Keynote patch the old python path needed is gone. THEN, as
+the final write, set the FULL-slide backgrounds via
+`skills/presentation-creator/scripts/apply-backgrounds.sh` using the manifest from
+the apply pass — it must run last; any later python-pptx save would re-drop the
+per-slide background fills. See `rules/deck-editing-rules.md`.
 
 **For presenterm talks (terminal markdown):**
 

@@ -1143,6 +1143,21 @@ def run_check_style_explore(outline_path):
     sys.exit(0)
 
 
+def enforce_render_gate(outline_path):
+    """Render-before-bake gate, shared by every model-producing deck path.
+
+    Refuse to produce images from a model that was never rendered in an
+    exploration grid the speaker could see. Both run_generate and run_build call
+    this so no path can bake an unrendered model — closing the hole where an agent
+    reasons a model into the anchor and skips the Step 8 grid. Exits non-zero with
+    the verdict's actionable message on failure.
+    """
+    verdict = check_style_explore(outline_path)
+    if not verdict["gate_passed"]:
+        print(f"ERROR: {verdict['error']}", file=sys.stderr)
+        sys.exit(1)
+
+
 # --- Main Commands ---
 
 def run_generate(outline_path, slide_args, versioned=False):
@@ -1161,13 +1176,7 @@ def run_generate(outline_path, slide_args, versioned=False):
         print("Nothing to generate — all requested slides already have images.")
         sys.exit(0)
 
-    # Render-before-bake gate: refuse to generate from a model that was never
-    # rendered in an exploration grid the speaker could see. Closes the path
-    # where an agent reasons a model into the anchor and skips Step 8.
-    verdict = check_style_explore(outline_path)
-    if not verdict["gate_passed"]:
-        print(f"ERROR: {verdict['error']}", file=sys.stderr)
-        sys.exit(1)
+    enforce_render_gate(outline_path)
 
     slides_by_num = {s["slide_num"]: s for s in outline["slides"]}
 
@@ -1669,6 +1678,10 @@ def run_build(outline_path, slide_arg):
     if not to_build:
         print("No slides with build specifications found in the outline.")
         sys.exit(0)
+
+    # Same render-before-bake gate as run_generate — build frames are produced
+    # from the baked model too, so this path must not bypass it.
+    enforce_render_gate(outline_path)
 
     total_steps = sum(s["builds"]["count"] for s in to_build)
     build_failed = False

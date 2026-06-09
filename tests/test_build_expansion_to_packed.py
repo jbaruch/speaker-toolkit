@@ -81,6 +81,25 @@ def test_non_string_notes_errors(build_expansion_to_packed):
         build_expansion_to_packed.manifest_to_packed(bad)
 
 
+def test_float_parent_rejected_not_truncated(build_expansion_to_packed):
+    # 7.9 must NOT silently truncate to slide 7 — a float parent is an error.
+    bad = _manifest([{"parent": 7.9, "frames": ["/b/00.jpg"], "notes": ""}])
+    with pytest.raises(ValueError, match="must be an integer"):
+        build_expansion_to_packed.manifest_to_packed(bad)
+
+
+def test_digit_string_parent_accepted(build_expansion_to_packed):
+    m = _manifest([{"parent": "7", "frames": ["/b/00.jpg"], "notes": ""}])
+    packed = build_expansion_to_packed.manifest_to_packed(m)
+    assert packed.split(US)[0] == "7"
+
+
+def test_non_positive_parent_rejected(build_expansion_to_packed):
+    bad = _manifest([{"parent": 0, "frames": ["/b/00.jpg"], "notes": ""}])
+    with pytest.raises(ValueError, match="positive slide number"):
+        build_expansion_to_packed.manifest_to_packed(bad)
+
+
 def test_unwritable_out_returns_error(build_expansion_to_packed, tmp_path, capsys):
     import json
     manifest = tmp_path / "builds.json"

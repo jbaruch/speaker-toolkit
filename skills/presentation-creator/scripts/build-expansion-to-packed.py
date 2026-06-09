@@ -54,10 +54,18 @@ def manifest_to_packed(manifest: object) -> str:
     def parent_of(b: object) -> int:
         if not isinstance(b, dict):
             raise ValueError(f"build entry must be an object, got {type(b).__name__}")
-        try:
-            return int(b["parent"])
-        except (KeyError, TypeError, ValueError):
-            raise ValueError(f"build entry has no integer 'parent': {b!r}") from None
+        p = b.get("parent")
+        # Accept an int or a digit-only string; reject floats/bools/other so a
+        # value like 7.9 can't silently truncate to the wrong slide index.
+        if isinstance(p, bool) or not isinstance(p, (int, str)):
+            raise ValueError(f"build entry 'parent' must be an integer, got {p!r}")
+        if isinstance(p, str):
+            if not p.isdigit():
+                raise ValueError(f"build entry 'parent' must be an integer, got {p!r}")
+            p = int(p)
+        if p < 1:
+            raise ValueError(f"build entry 'parent' must be a positive slide number, got {p}")
+        return p
 
     records = []
     for b in sorted(builds, key=parent_of, reverse=True):

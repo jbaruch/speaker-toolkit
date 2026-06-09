@@ -58,8 +58,9 @@ def _staged_name(src: Path) -> str:
 def _stage_one(raw_path: object, stage_dir: Path, where: str) -> str:
     """Copy one referenced image into stage_dir; return the staged absolute path.
 
-    `where` names the manifest slot (e.g. "slide 7", "parent 14 frame 2") so a
-    missing-file error points the author at the offending entry.
+    `where` names the manifest slot (e.g. "slide 7", "parent 14 frame 1") so a
+    missing-file error points the author at the offending entry. Frame indices are
+    0-based (the second frame is "frame 1"), matching enumerate(frames).
     """
     if not isinstance(raw_path, str):
         raise SystemExit(
