@@ -1,5 +1,25 @@
 # Changelog
 
+### fix(qr-generation) — recreate legacy non-slug links; capture the custom-domain decision (#56)
+
+Follow-up to the QR shortlink work shipped via #79, which enforced the slug-only
+back-half for newly-created links but left two gaps.
+
+- Slug-only back-half now applies to EXISTING tracked links too: a cached entry
+  whose back-half isn't the slug is no longer reused or retargeted in place — it's
+  recreated with the slug back-half (regression-tested).
+- First short link captures the custom-domain decision: before creating a NEW
+  shortened link, an absent `publishing_process.qr_code.{shortener}_domain` key
+  STOPS so the agent asks the user and saves the answer — the domain, or `null`
+  for "no custom domain" — so a configured custom domain is never silently
+  skipped. Absent = never asked; `null` = decided (default domain), never
+  re-asked. The MCP path makes the same check.
+- Documented the `bitly_domain` knob in the profile schema (the code and the
+  clarification flow already used it). `rules/qr-generation-rules.md` §2 (the
+  custom domain must be used when configured) and new §7 (the three-state
+  decision); phase6-publishing and the clarification prompts save an explicit
+  `null`.
+
 ### fix(illustrations) — --build enforces the Keep-clause preservation list (#46)
 
 `--build` previously passed each `build-NN` description to the image editor
