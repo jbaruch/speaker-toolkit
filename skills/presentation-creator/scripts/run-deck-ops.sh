@@ -25,6 +25,7 @@ if [[ $# -lt 5 ]]; then
 fi
 BASE="$1"; OUT="$2"; IMPORT="$3"; ORDER="$4"; REPLACE="$5"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$HERE/ensure-drivers.sh"  # restore .applescript/.bas drivers tessl install strips
 DRIVER="$HERE/run-deck-ops.applescript"
 
 [[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the source .pptx as <basePath>." >&2; exit 1; }

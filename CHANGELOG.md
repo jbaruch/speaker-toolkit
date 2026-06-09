@@ -1,5 +1,21 @@
 # Changelog
 
+### fix(presentation-creator) — restore deck drivers stripped by tessl install (#85)
+
+`tessl install` materializes only `.md/.py/.json/.sh/.txt` and STRIPS
+`.bas`/`.applescript`, so on every installed tile `RunDeckOps.bas` and the eight
+`.applescript` drivers were missing — the whole PowerPoint deck layer was dead
+(the `.sh` wrappers call `.applescript` drivers that call `RunDeckOps.bas`
+macros). Verified empirically: `tessl plugin pack` includes them, `tessl install`
+does not. Each driver now ships a byte-identical committed `.txt` mirror (which
+survives install); `sync-deck-drivers.py` recreates the real files from the
+mirrors (`materialize`), keeps mirrors in sync with the source drivers (`mirror`),
+and a `check` mode guards drift in CI. `ensure-drivers.sh`, sourced by every
+deck-ops wrapper, self-restores the `.applescript` drivers on first run; the
+guided setup restores `RunDeckOps.bas` for the one-time VBE import. The `.txt`
+mirrors are marked `linguist-generated` in `.gitattributes`; a unit test asserts
+they stay byte-identical to the real drivers.
+
 ### docs(presentation-creator) — recurring per-build deck-editing runbook
 
 `deck-editing-setup.md` covered one-time setup but only implied the recurring

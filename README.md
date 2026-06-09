@@ -12,6 +12,12 @@ progressive-reveal parent slide with its frames as full-bleed slides (notes on
 the final frame), so a build sequence becomes the sequential slides you advance
 through. Pairs with poster-theatrical for pure full-bleed, builds-and-all decks.
 
+**Deck tooling works on installed tiles** — `tessl install` strips `.bas`/`.applescript`
+files, which had left the PowerPoint deck layer dead on any installed copy. The
+drivers now ship as committed `.txt` mirrors and are restored automatically on
+first use (`sync-deck-drivers.py`), so `RunDeckOps.bas` and the AppleScript
+drivers are there when you need them — no manual recovery.
+
 **No more per-illustration permission clicks** — the background and build passes
 now stage illustrations into PowerPoint's own sandbox container before applying
 them, so the "grant access / select file" prompt that used to fire on every

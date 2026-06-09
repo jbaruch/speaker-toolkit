@@ -26,6 +26,7 @@ if [[ $# -lt 3 ]]; then
 fi
 TEMPLATE="$1"; OUT="$2"; OPS="$3"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$HERE/ensure-drivers.sh"  # restore .applescript/.bas drivers tessl install strips
 DRIVER="$HERE/build-deck.applescript"
 
 [[ -f "$TEMPLATE" ]] || { echo "ERROR: template not found: $TEMPLATE — pass a uniquely-named copy of the .pptx template." >&2; exit 1; }

@@ -1,1 +1,9 @@
 .github/workflows/*.lock.yml linguist-generated=true merge=ours
+
+# Deck-driver .txt mirrors: byte-identical copies of the .bas/.applescript
+# drivers, committed so they survive tessl install's extension filter (which
+# strips .bas/.applescript). Generated from the real files by
+# skills/presentation-creator/scripts/sync-deck-drivers.py mirror — collapse the
+# diff in review; the real driver is the source of truth.
+skills/presentation-creator/scripts/*.bas.txt linguist-generated=true
+skills/presentation-creator/scripts/*.applescript.txt linguist-generated=true

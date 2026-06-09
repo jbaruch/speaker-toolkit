@@ -24,6 +24,7 @@ if [[ $# -lt 3 ]]; then
 fi
 BASE="$1"; OUT="$2"; NOTES="$3"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$HERE/ensure-drivers.sh"  # restore .applescript/.bas drivers tessl install strips
 DRIVER="$HERE/inject-notes.applescript"
 
 [[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the built deck." >&2; exit 1; }

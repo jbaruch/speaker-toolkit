@@ -24,6 +24,7 @@ if [[ $# -lt 4 ]]; then
 fi
 BASE="$1"; OUT="$2"; PNG="$3"; SPEC="$4"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$HERE/ensure-drivers.sh"  # restore .applescript/.bas drivers tessl install strips
 DRIVER="$HERE/insert-qr.applescript"
 
 [[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the deck." >&2; exit 1; }

@@ -160,6 +160,13 @@ def stage_images_into_container():
 
 
 @pytest.fixture(scope="session")
+def sync_deck_drivers():
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "sync-deck-drivers.py"), "sync_deck_drivers"
+    )
+
+
+@pytest.fixture(scope="session")
 def generate_illustrations():
     return _import_script(
         os.path.join(SCRIPTS_ILL, "generate-illustrations.py"), "generate_illustrations"
