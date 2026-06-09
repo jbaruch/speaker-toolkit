@@ -87,12 +87,12 @@ Steps 1–4 are one-time per machine; this is what happens on EVERY real deck bu
    with a macro-not-found error — reopen it and re-run that pass.
 2. The agent runs the passes in order against uniquely-named copies:
    structural build → `ExpandBuilds` → speaker notes → backgrounds → QR.
-   `ExpandBuilds` runs before the by-index passes because it renumbers slides
+   `ExpandBuilds` renumbers later slides, so it runs before the by-index passes
    (see `rules/deck-editing-rules.md`).
 3. On the FIRST run after setup, the user clicks the macOS Automation prompt
-   (Step 4). After that the agent runs the passes unattended — and no
-   per-illustration prompts, because images are staged into PowerPoint's container
-   (see the per-illustration caveat below).
+   (Step 4). After that the agent runs the passes unattended, with no
+   per-illustration prompts (images are staged into PowerPoint's container — see
+   the per-illustration caveat below).
 4. When the build finishes, open the output in PowerPoint **and** Keynote and
    confirm it's clean (no "Repair" prompt, art present) before trusting it.
 
