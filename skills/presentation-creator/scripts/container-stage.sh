@@ -38,6 +38,9 @@ mkdir -p "$OUT_STAGE_DIR"
 
 _container_stage_cleanup() {
   [[ -n "${CONTAINER_STAGE:-}" && -d "${CONTAINER_STAGE:-}" ]] && rm -rf "$CONTAINER_STAGE"
+  return 0   # never let the trap's exit status override the script's (an EXIT
+             # trap's last status becomes the script's: a false [[ ]] would make a
+             # successful run exit non-zero on the no-container fallback path)
 }
 trap _container_stage_cleanup EXIT
 
