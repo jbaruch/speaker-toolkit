@@ -55,6 +55,27 @@ def test_parses_build_specs(build_expansion_manifest, tmp_path):
     assert s7["steps"] == [0, 1, 2, 3]
 
 
+def test_null_note_becomes_empty_not_literal_none(build_expansion_manifest, tmp_path):
+    outline = _make_outline(tmp_path)
+    builds = tmp_path / "builds"
+    _make_frames(builds, 7, 4)
+    _make_frames(builds, 9, 2)
+    # slide 9 -> 0-based key "8" carries an explicit JSON null
+    m = build_expansion_manifest.build_manifest(outline, builds, {"8": None})
+    notes_by_parent = {b["parent"]: b["notes"] for b in m["builds"]}
+    assert notes_by_parent[9] == "", "JSON null must be empty, never the literal 'None'"
+
+
+def test_non_string_note_is_rejected(build_expansion_manifest, tmp_path):
+    outline = _make_outline(tmp_path)
+    builds = tmp_path / "builds"
+    _make_frames(builds, 7, 4)
+    _make_frames(builds, 9, 2)
+    with pytest.raises(SystemExit) as exc:
+        build_expansion_manifest.build_manifest(outline, builds, {"6": 123})  # slide 7 -> key 6
+    assert "must be a string" in str(exc.value)
+
+
 def test_frames_for_maps_step_to_path(build_expansion_manifest, tmp_path):
     builds = tmp_path / "builds"
     _make_frames(builds, 7, 4)

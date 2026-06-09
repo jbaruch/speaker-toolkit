@@ -55,12 +55,17 @@ def _staged_name(src: Path) -> str:
     return f"{digest}-{src.name}"
 
 
-def _stage_one(raw_path: str, stage_dir: Path, where: str) -> str:
+def _stage_one(raw_path: object, stage_dir: Path, where: str) -> str:
     """Copy one referenced image into stage_dir; return the staged absolute path.
 
     `where` names the manifest slot (e.g. "slide 7", "parent 14 frame 2") so a
     missing-file error points the author at the offending entry.
     """
+    if not isinstance(raw_path, str):
+        raise SystemExit(
+            f"ERROR: image path for {where} must be a string, got "
+            f"{type(raw_path).__name__} — fix the manifest entry."
+        )
     src = Path(raw_path).expanduser()
     if not src.is_file():
         raise SystemExit(

@@ -124,16 +124,28 @@ def build_manifest(outline_path: Path, builds_dir: Path, notes_map: dict | None 
                 "sequence would expand into a broken reveal. Regenerate: "
                 f"generate-illustrations.py <outline> --build {parent}"
             )
+        # A null/absent note is empty; a non-string note is an error — never
+        # coerce it, or a JSON null would become the literal "None" on the final
+        # build frame (mirrors notes-to-packed.py's drop-empty contract).
+        raw_note = notes_map.get(str(parent - 1))
+        if raw_note is None:
+            raw_note = ""
+        elif not isinstance(raw_note, str):
+            raise SystemExit(
+                f"ERROR: note for slide {parent} (notes key {parent - 1}) must be a "
+                f"string, got {type(raw_note).__name__} — fix the --notes JSON."
+            )
         builds.append({
             "parent": parent,
             "frames": [str(found[s].resolve()) for s in steps],
-            "notes": str(notes_map.get(str(parent - 1), "")),
+            "notes": raw_note,
         })
     return {"schema_version": SCHEMA_VERSION, "builds": builds}
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(
+        description="Emit the build-expansion manifest for deck assembly.")
     ap.add_argument("outline", type=Path, help="Path to the presentation outline markdown")
     ap.add_argument("builds_dir", type=Path, help="Directory with slide-NN-build-MM.<ext> frames")
     ap.add_argument("--out", type=Path, default=None, help="Also write the manifest JSON here")

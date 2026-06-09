@@ -5,5 +5,5 @@
 # strips .bas/.applescript). Generated from the real files by
 # skills/presentation-creator/scripts/sync-deck-drivers.py mirror — collapse the
 # diff in review; the real driver is the source of truth.
-skills/presentation-creator/scripts/*.bas.txt linguist-generated=true
-skills/presentation-creator/scripts/*.applescript.txt linguist-generated=true
+skills/presentation-creator/scripts/*.bas.txt linguist-generated=true merge=ours
+skills/presentation-creator/scripts/*.applescript.txt linguist-generated=true merge=ours

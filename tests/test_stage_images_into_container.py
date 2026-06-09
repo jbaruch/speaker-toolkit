@@ -124,6 +124,17 @@ def test_unrecognized_shape_rejected(stage_images_into_container, tmp_path):
     assert "unrecognized manifest shape" in str(exc.value)
 
 
+def test_non_string_path_rejected_with_actionable_error(stage_images_into_container, tmp_path):
+    stage = tmp_path / "stage"
+    # a malformed manifest with a non-string (int) path value must not crash with
+    # a raw TypeError — it should raise SystemExit naming the offending slot
+    with pytest.raises(SystemExit) as exc:
+        stage_images_into_container.stage_manifest({"backgrounds": {"2": 123}}, stage)
+    msg = str(exc.value)
+    assert "slide 2" in msg
+    assert "must be a string" in msg
+
+
 def test_non_object_manifest_rejected(stage_images_into_container, tmp_path):
     stage = tmp_path / "stage"
     with pytest.raises(SystemExit) as exc:
