@@ -45,6 +45,9 @@ mkdir -p "$STAGE_DIR"
 PPT_CONTAINER="$HOME/Library/Containers/com.microsoft.Powerpoint/Data"
 IMG_STAGE=""
 EFFECTIVE_MANIFEST="$MANIFEST"
+# Always remove the per-run container staging dir on exit — success OR an early
+# failure under set -e — so frame copies never leak into PowerPoint's container.
+trap '[[ -n "${IMG_STAGE:-}" && -d "${IMG_STAGE:-}" ]] && rm -rf "$IMG_STAGE"' EXIT
 if [[ -d "$PPT_CONTAINER" ]]; then
   IMG_STAGE="$PPT_CONTAINER/.deckops-img-staging/$$"
   STAGED_MANIFEST="$STAGE_DIR/$(basename "$OUT").builds.staged.json"
@@ -66,10 +69,6 @@ rm -f "$STAGE"
 
 echo "staging -> $STAGE"
 osascript "$DRIVER" "$BASE" "$STAGE" "$PACKED"
-
-# Staged frames are embedded into the deck by UserPicture, so they're no longer
-# needed once the output deck exists.
-[[ -n "$IMG_STAGE" && -d "$IMG_STAGE" ]] && rm -rf "$IMG_STAGE"
 
 if [[ -f "$STAGE" ]]; then
   mkdir -p "$(dirname "$OUT")"
