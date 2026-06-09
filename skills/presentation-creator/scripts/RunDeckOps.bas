@@ -743,16 +743,20 @@ Public Function BuildDeck(ByVal basePath As String, _
     curTok = "open:base"
     Set base = Presentations.Open(FileName:=basePath, WithWindow:=msoTrue)
 
-    ' strip the template's demo slides (keeps masters + custom layouts) — subsumes strip-template.py
-    curTok = "strip"
+    ' Read the custom layouts WHILE the template's slides still exist. Deleting all
+    ' slides first makes Mac PowerPoint prune the now-unused layouts, so
+    ' SlideMaster.CustomLayouts comes back EMPTY and every SLIDE op fails "layout
+    ' index out of range (0 custom layouts)". So capture the original count now and
+    ' strip the demo slides AFTER the new ones are built — the RunDeckOps
+    ' append-then-delete pattern keeps the layouts referenced throughout.
+    curTok = "layouts"
     Dim i As Long
-    For i = base.Slides.Count To 1 Step -1
-        base.Slides(i).Delete
-    Next i
     Dim layouts As CustomLayouts
     Set layouts = base.SlideMaster.CustomLayouts
+    Dim nOrig As Long
+    nOrig = base.Slides.Count
 
-    Dim cur As Slide, curTbl As Table, curChart As Chart
+    Dim cur As Slide, curTbl As Table, curChart As Object  ' curChart late-bound: see CHART case
     Dim catBuf As Collection, serBuf As Collection   ' chart accumulation (flushed on next CHART/SLIDE/end)
     Set catBuf = New Collection: Set serBuf = New Collection
     Dim lines() As String, li As Long, f() As String, op As String, ln As String, placed As Long
@@ -805,7 +809,14 @@ Public Function BuildDeck(ByVal basePath As String, _
                     curTbl.Cell(CLng(f(1)), CLng(f(2))).Shape.TextFrame.TextRange.Text = f(3)
                 Case "CHART"
                     FlushChart curChart, catBuf, serBuf
-                    Set curChart = cur.Shapes.AddChart2(-1, CLng(f(1)), CSng(f(2)), CSng(f(3)), CSng(f(4)), CSng(f(5))).Chart
+                    ' AddChart2 is Windows-only — absent on Mac PowerPoint, where it
+                    ' raises a COMPILE error "method not found" that blocks the whole
+                    ' module. Late-bind via an Object Shapes ref so BuildDeck compiles
+                    ' on Mac; this CHART path only errors at RUNTIME if a CHART op is
+                    ' actually present (real decks emit SLIDE/TITLE/IMAGE/BG, never CHART).
+                    Dim chShapes As Object
+                    Set chShapes = cur.Shapes
+                    Set curChart = chShapes.AddChart2(-1, CLng(f(1)), CSng(f(2)), CSng(f(3)), CSng(f(4)), CSng(f(5))).Chart
                 Case "CAT": catBuf.Add f(1)
                 Case "SERIES"
                     Dim sv As Collection, vi As Long
@@ -819,6 +830,13 @@ Public Function BuildDeck(ByVal basePath As String, _
         End If
     Next li
     FlushChart curChart, catBuf, serBuf   ' flush the last chart
+
+    ' Now strip the original template slides (descending). The newly-built slides
+    ' reference the layouts, so they stay alive through this deletion.
+    curTok = "strip-original"
+    For i = nOrig To 1 Step -1
+        base.Slides(i).Delete
+    Next i
 
     curTok = "save"
     base.SaveCopyAs FileName:=outPath
@@ -950,7 +968,7 @@ End Sub
 
 ' Apply buffered categories + series to a chart, then clear the buffers. Series
 ' buffer items are Collections: [1]=name, [2..]=Double values. No-op if empty.
-Private Sub FlushChart(ByVal ch As Chart, ByVal catBuf As Collection, ByVal serBuf As Collection)
+Private Sub FlushChart(ByVal ch As Object, ByVal catBuf As Collection, ByVal serBuf As Collection)
     If ch Is Nothing Or serBuf.Count = 0 Then
         ClearCol catBuf: ClearCol serBuf
         Exit Sub
@@ -963,7 +981,7 @@ Private Sub FlushChart(ByVal ch As Chart, ByVal catBuf As Collection, ByVal serB
     Do While ch.SeriesCollection.Count > 0
         ch.SeriesCollection(1).Delete
     Loop
-    Dim si As Long, sv As Collection, sr As Series, vals() As Variant, vi As Long
+    Dim si As Long, sv As Collection, sr As Object, vals() As Variant, vi As Long  ' sr late-bound (Mac chart-type safety)
     For si = 1 To serBuf.Count
         Set sv = serBuf(si)
         Set sr = ch.SeriesCollection.NewSeries

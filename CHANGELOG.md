@@ -1,5 +1,24 @@
 # Changelog
 
+### fix(presentation-creator) — BuildDeck now compiles and runs on Mac PowerPoint
+
+Two Mac-only `BuildDeck` bugs, caught by a from-scratch deck validation (`BuildDeck`
+had never actually run on macOS):
+- `Shapes.AddChart2` is Windows-only; on Mac it raises a VBA compile error
+  ("method or data member not found") that — under Compile-On-Demand — only
+  surfaced when `BuildDeck` was first invoked, blocking the whole module. The chart
+  path is now late-bound (`Object`), so the module compiles on Mac; `CHART` ops
+  (never emitted by real decks) only error at runtime if actually used.
+- `BuildDeck` stripped the template's slides before reading
+  `SlideMaster.CustomLayouts`, and Mac PowerPoint prunes the now-unused layouts →
+  every SLIDE op failed "layout index out of range (0 custom layouts)". It now reads
+  the layouts while the slides exist and deletes the demo slides last (the
+  `RunDeckOps` append-then-delete pattern), keeping layouts referenced throughout.
+
+Validated end-to-end against a freshly-seeded `DeckOps.pptm`: `BuildDeck` built 46
+slides from the talk's deck-ops, then `ApplyBackgrounds` applied all 46 illustration
+backgrounds — a clean 38 MB deck.
+
 ### fix(presentation-creator) — restore deck drivers stripped by tessl install (#85)
 
 `tessl install` materializes only `.md/.py/.json/.sh/.txt` and STRIPS
