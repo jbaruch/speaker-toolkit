@@ -1,3 +1,7 @@
+---
+alwaysApply: true
+---
+
 # Title Overlay Rules
 
 Steering rules for placing overlaid slide titles on illustrated slides.

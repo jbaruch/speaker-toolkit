@@ -1,3 +1,7 @@
+---
+alwaysApply: true
+---
+
 # Illustration Rules
 
 ## Edit vs Regenerate — The Asymmetry Rule
