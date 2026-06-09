@@ -26,7 +26,8 @@ if [[ $# -lt 3 ]]; then
 fi
 TEMPLATE="$1"; OUT="$2"; OPS="$3"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$HERE/ensure-drivers.sh"  # restore .applescript/.bas drivers tessl install strips
+source "$HERE/ensure-drivers.sh"   # restore .applescript/.bas drivers tessl install strips
+source "$HERE/container-stage.sh"  # stage Google-Drive inputs into the container (no Powerbox prompts)
 DRIVER="$HERE/build-deck.applescript"
 
 [[ -f "$TEMPLATE" ]] || { echo "ERROR: template not found: $TEMPLATE — pass a uniquely-named copy of the .pptx template." >&2; exit 1; }
@@ -39,18 +40,15 @@ DRIVER="$HERE/build-deck.applescript"
 # success its JSON summary on stdout is discarded — this script emits its own.
 python3 "$HERE/validate-deckops.py" "$OPS" >/dev/null
 
-# Sandboxed PowerPoint can't create a file in a Google Drive folder (E_FAIL) —
-# stage under the known-writable local root, then move into place with the shell.
-# A per-invocation staging dir keeps repeated / concurrent runs from colliding on
-# a shared output basename; the trap removes it on exit (success or failure).
-STAGE_ROOT="$HOME/.deckops-staging"
-mkdir -p "$STAGE_ROOT"
-STAGE_DIR="$(mktemp -d "$STAGE_ROOT/build.XXXXXX")"
-trap 'rm -rf "$STAGE_DIR"' EXIT
-STAGE="$STAGE_DIR/$(basename "$OUT")"
+# Write the output INTO the container (OUT_STAGE_DIR is per-run), then shell-move
+# it to the destination. The container is the one place SaveCopyAs neither prompts
+# (Powerbox) nor E_FAILs (a Google-Drive folder fails; a local ~/.deckops-staging
+# subdir prompts). container-stage.sh owns the single cleanup trap — do not set
+# another here, or it would override that one and leak the staged copies.
+STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
 
 # osascript prints the macro's "BuildDeck returned: N" line — keep it off stdout.
-osascript "$DRIVER" "$TEMPLATE" "$STAGE" "$OPS" >&2
+osascript "$DRIVER" "$(stage_base "$TEMPLATE")" "$STAGE" "$OPS" >&2
 
 if [[ -f "$STAGE" ]]; then
   mkdir -p "$(dirname "$OUT")"

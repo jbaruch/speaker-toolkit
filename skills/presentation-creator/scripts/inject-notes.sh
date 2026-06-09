@@ -24,7 +24,8 @@ if [[ $# -lt 3 ]]; then
 fi
 BASE="$1"; OUT="$2"; NOTES="$3"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$HERE/ensure-drivers.sh"  # restore .applescript/.bas drivers tessl install strips
+source "$HERE/ensure-drivers.sh"   # restore .applescript/.bas drivers tessl install strips
+source "$HERE/container-stage.sh"  # stage Google-Drive inputs into the container (no Powerbox prompts)
 DRIVER="$HERE/inject-notes.applescript"
 
 [[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the built deck." >&2; exit 1; }
@@ -40,11 +41,11 @@ python3 "$HERE/notes-to-packed.py" "$NOTES" "$PACKED"
 
 # Sandboxed PowerPoint can't create a file in a Google Drive folder (E_FAIL) —
 # stage locally, then move into place with the shell.
-STAGE="$STAGE_DIR/$(basename "$OUT")"
+STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
 rm -f "$STAGE"
 
 echo "staging -> $STAGE"
-osascript "$DRIVER" "$BASE" "$STAGE" "$PACKED"
+osascript "$DRIVER" "$(stage_base "$BASE")" "$STAGE" "$PACKED"
 
 if [[ -f "$STAGE" ]]; then
   mkdir -p "$(dirname "$OUT")"

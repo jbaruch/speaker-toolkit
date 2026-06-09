@@ -107,23 +107,30 @@ destination with the shell (which writes to Drive normally). Keep using
 uniquely-named copies for the base/import/output so PowerPoint's
 filename-keyed open-deck cache never hands back the wrong deck.
 
-## Per-illustration prompt caveat (important)
+## Powerbox prompt caveat (important)
 
-When the background/build passes set images with `Slide.Background.Fill.UserPicture`,
-sandboxed PowerPoint shows a Powerbox "grant access" / "select file" prompt for
-every image that lives OUTSIDE its container (e.g. each Google Drive illustration).
-On a 40-slide deck that is one click per slide.
+Sandboxed PowerPoint shows a Powerbox "grant access" / "select file" prompt
+whenever a VBA macro touches a file OUTSIDE its container — opening a Google-Drive
+base deck or template (`Presentations.Open`), reading an illustration
+(`UserPicture`), or writing the output (`SaveCopyAs` to a Drive folder E_FAILs, and
+to a local `~/.deckops-staging` subdir prompts every run). On a 40-slide deck that
+is dozens of clicks.
 
-`apply-backgrounds.sh` and `expand-builds.sh` avoid this by staging the referenced
-images INTO PowerPoint's own sandbox container
-(`~/Library/Containers/com.microsoft.Powerpoint/Data/.deckops-img-staging/<pid>/`)
-via `stage-images-into-container.py`, then rewriting the manifest paths to the
-staged copies. A sandboxed app always reads its own container without a prompt, so
-every per-illustration prompt collapses to ZERO — no Full Disk Access grant
-required. The staged copies are removed once the output deck exists (the images are
-already embedded in the deck by then).
+Every deck-ops wrapper avoids this by routing ALL macro file I/O through
+PowerPoint's own sandbox container (`~/Library/Containers/com.microsoft.Powerpoint/Data/.deckops-stage/<pid>/`),
+which a sandboxed app reads and writes with no prompt:
+- `container-stage.sh` (sourced by every wrapper) provides `stage_base` — it copies
+  the base deck / template / QR image into the container and opens them from there.
+- `stage-images-into-container.py` stages illustration backgrounds the same way.
+- The OUTPUT is saved into the container (`OUT_STAGE_DIR`), then the shell (not
+  sandboxed) moves it to the Drive destination.
+- A single EXIT trap in `container-stage.sh` removes the per-run staging dir;
+  wrappers must NOT set their own EXIT trap (it would override that one and leak
+  copies).
+
+So a full build runs with ZERO prompts and no Full Disk Access grant. If the
+container is absent (PowerPoint never launched), the wrappers fall back to the
+original paths and a local output dir — prompts return, but nothing breaks.
 
 Mac PowerPoint VBA has no `Application.FileDialog`, so a "grant one folder" macro is
-impossible; container-staging is the supported no-prompt path. If the container dir
-is absent (PowerPoint never launched), the wrappers warn and fall back to the
-original paths — the per-file prompts return, but nothing breaks.
+impossible; container-staging is the supported no-prompt path.

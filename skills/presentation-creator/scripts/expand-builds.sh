@@ -27,7 +27,8 @@ if [[ $# -lt 3 ]]; then
 fi
 BASE="$1"; OUT="$2"; MANIFEST="$3"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$HERE/ensure-drivers.sh"  # restore .applescript/.bas drivers tessl install strips
+source "$HERE/ensure-drivers.sh"   # restore .applescript/.bas drivers tessl install strips
+source "$HERE/container-stage.sh"  # stage Google-Drive inputs into the container (no Powerbox prompts)
 DRIVER="$HERE/expand-builds.applescript"
 
 [[ -f "$BASE" ]]     || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the built deck." >&2; exit 1; }
@@ -37,24 +38,22 @@ DRIVER="$HERE/expand-builds.applescript"
 STAGE_DIR="$HOME/.deckops-staging"
 mkdir -p "$STAGE_DIR"
 
+# Open the base deck from the container so the macro doesn't trigger a Powerbox
+# prompt on the Google-Drive path.
+BASE="$(stage_base "$BASE")"
+
 # Sandboxed PowerPoint prompts (Powerbox) on each UserPicture of a frame image
 # OUTSIDE its container (e.g. Google Drive). Stage the frames INTO the container
-# first so the macro reads them prompt-free — no Full Disk Access needed. See
+# too so the macro reads them prompt-free — no Full Disk Access needed. See
 # rules/deck-editing-rules.md. Falls back to original paths (and per-file prompts)
 # if the container is absent.
-PPT_CONTAINER="$HOME/Library/Containers/com.microsoft.Powerpoint/Data"
-IMG_STAGE=""
 EFFECTIVE_MANIFEST="$MANIFEST"
-# Always remove the per-run container staging dir on exit — success OR an early
-# failure under set -e — so frame copies never leak into PowerPoint's container.
-trap '[[ -n "${IMG_STAGE:-}" && -d "${IMG_STAGE:-}" ]] && rm -rf "$IMG_STAGE"' EXIT
-if [[ -d "$PPT_CONTAINER" ]]; then
-  IMG_STAGE="$PPT_CONTAINER/.deckops-img-staging/$$"
+if [[ -n "$CONTAINER_STAGE" ]]; then
   STAGED_MANIFEST="$STAGE_DIR/$(basename "$OUT").builds.staged.json"
-  python3 "$HERE/stage-images-into-container.py" "$MANIFEST" --stage-dir "$IMG_STAGE" --out "$STAGED_MANIFEST" >/dev/null
+  python3 "$HERE/stage-images-into-container.py" "$MANIFEST" --stage-dir "$CONTAINER_STAGE/img" --out "$STAGED_MANIFEST" >/dev/null
   EFFECTIVE_MANIFEST="$STAGED_MANIFEST"
 else
-  echo "WARN: PowerPoint container not found at $PPT_CONTAINER — reading frames from their original paths; macOS may prompt per file. Open PowerPoint once to create the container." >&2
+  echo "WARN: PowerPoint container not found — reading frames from their original paths; macOS may prompt per file. Open PowerPoint once to create the container." >&2
 fi
 
 # Pack the (staged) manifest into the ExpandBuilds wire format (descending by
@@ -62,9 +61,9 @@ fi
 PACKED="$STAGE_DIR/$(basename "$OUT").builds.packed"
 python3 "$HERE/build-expansion-to-packed.py" "$EFFECTIVE_MANIFEST" "$PACKED"
 
-# Sandboxed PowerPoint can't create a file in a Google Drive folder (E_FAIL) —
-# stage the OUTPUT deck locally, then move into place with the shell.
-STAGE="$STAGE_DIR/$(basename "$OUT")"
+# Write the OUTPUT into the container (SaveCopyAs there neither prompts nor
+# E_FAILs), then shell-move it to the destination.
+STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
 rm -f "$STAGE"
 
 echo "staging -> $STAGE"

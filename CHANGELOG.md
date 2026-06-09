@@ -1,5 +1,20 @@
 # Changelog
 
+### fix(presentation-creator) — fully prompt-free deck builds (stage all macro I/O through the container)
+
+Extends the per-illustration container-staging to ALL macro file I/O. Sandboxed
+PowerPoint also prompts (Powerbox) when a macro opens a Google-Drive base deck or
+template, and when it saves output to a local `~/.deckops-staging` subdir (a
+per-run `build.XXXXXX` dir prompts every run; a Drive folder E_FAILs). A new shared
+`container-stage.sh` (sourced by every deck-ops wrapper) provides `stage_base` to
+copy base decks / templates / the QR image into the container and open them from
+there, and an `OUT_STAGE_DIR` inside the container for `SaveCopyAs`; the shell then
+moves the result to the Drive destination. One EXIT trap in the helper owns
+cleanup — `build-deck.sh` previously set its own trap that overrode the image-stage
+cleanup and leaked staged copies; that's resolved. A full build now runs with zero
+Powerbox prompts and no Full Disk Access grant. Validated end-to-end: BuildDeck +
+ApplyBackgrounds, 46 slides, ~0.8s each (no blocking prompts), staging auto-cleaned.
+
 ### fix(presentation-creator) — BuildDeck now compiles and runs on Mac PowerPoint
 
 Two Mac-only `BuildDeck` bugs, caught by a from-scratch deck validation (`BuildDeck`

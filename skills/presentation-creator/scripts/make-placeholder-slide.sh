@@ -28,7 +28,8 @@ if [[ $# -lt 4 ]]; then
 fi
 BASE="$1"; OUT="$2"; TITLE="$3"; SUBTITLE="$4"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$HERE/ensure-drivers.sh"  # restore .applescript/.bas drivers tessl install strips
+source "$HERE/ensure-drivers.sh"   # restore .applescript/.bas drivers tessl install strips
+source "$HERE/container-stage.sh"  # stage Google-Drive inputs into the container (no Powerbox prompts)
 DRIVER="$HERE/make-placeholder-slide.applescript"
 
 [[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy whose slide size the placeholder should match." >&2; exit 1; }
@@ -38,10 +39,10 @@ DRIVER="$HERE/make-placeholder-slide.applescript"
 # stage locally, then move into place with the shell.
 STAGE_DIR="$HOME/.deckops-staging"
 mkdir -p "$STAGE_DIR"
-STAGE="$STAGE_DIR/$(basename "$OUT")"
+STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
 rm -f "$STAGE"
 
-osascript "$DRIVER" "$BASE" "$STAGE" "$TITLE" "$SUBTITLE"
+osascript "$DRIVER" "$(stage_base "$BASE")" "$STAGE" "$TITLE" "$SUBTITLE"
 
 if [[ -f "$STAGE" ]]; then
   mkdir -p "$(dirname "$OUT")"

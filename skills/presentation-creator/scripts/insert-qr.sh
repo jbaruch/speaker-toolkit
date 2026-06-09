@@ -24,7 +24,8 @@ if [[ $# -lt 4 ]]; then
 fi
 BASE="$1"; OUT="$2"; PNG="$3"; SPEC="$4"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$HERE/ensure-drivers.sh"  # restore .applescript/.bas drivers tessl install strips
+source "$HERE/ensure-drivers.sh"   # restore .applescript/.bas drivers tessl install strips
+source "$HERE/container-stage.sh"  # stage Google-Drive inputs into the container (no Powerbox prompts)
 DRIVER="$HERE/insert-qr.applescript"
 
 [[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the deck." >&2; exit 1; }
@@ -35,12 +36,12 @@ DRIVER="$HERE/insert-qr.applescript"
 # stage locally, then move into place with the shell.
 STAGE_DIR="$HOME/.deckops-staging"
 mkdir -p "$STAGE_DIR"
-STAGE="$STAGE_DIR/$(basename "$OUT")"
+STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
 rm -f "$STAGE"
 
 # osascript prints the macro's "InsertQR returned: N" line — keep it off stdout
 # (stderr) so successful stdout is the documented JSON only.
-osascript "$DRIVER" "$BASE" "$STAGE" "$PNG" "$SPEC" >&2
+osascript "$DRIVER" "$(stage_base "$BASE")" "$STAGE" "$(stage_base "$PNG")" "$SPEC" >&2
 
 if [[ -f "$STAGE" ]]; then
   mkdir -p "$(dirname "$OUT")"
