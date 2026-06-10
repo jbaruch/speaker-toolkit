@@ -4,7 +4,29 @@
 
 A six-skill presentation system for conference speakers: analyze your existing talks to extract your rhetoric patterns, create new presentations that match your documented style, produce the deck illustrations + thumbnail visual layer, and publish talk pages to a Jekyll shownotes site.
 
-## What's New (Unreleased)
+## What's New (0.18.27)
+
+**Real PowerPoint deck engine** — decks are now created and edited through the
+real PowerPoint app (VBA driven via AppleScript), replacing python-pptx and the
+MCP PPT server, which had been silently emitting broken `.pptx` files. A single
+`DeckOps` module covers whole-deck creation, placeholder slides, background
+images, speaker notes, and QR insertion; the deterministic pieces (op validation,
+slide targeting, color matching) are unit-tested while the PowerPoint automation
+layer is validated by opening the deck. macOS + Microsoft PowerPoint.
+
+**QR codes that survive deck reuse** — the QR step detects an existing QR on any
+slide and replaces it in place, so a deck trimmed from another talk no longer ends
+up with a duplicate or a stale code. The short link's back-half is always the talk
+slug (bit.ly custom back-half and rebrand.ly slashtag), uses the vault's custom
+domain when one is configured, and the custom-domain decision is captured and
+saved on the first short link. Slugs are composed date-less, so the QR and the
+published shownotes page always match.
+
+**narrative.md for early review** — `narrative.md` is now a TL;DR plus a
+one-line-per-slide walk, generated from a partial outline in Phases 1–2 so the
+argument can be reviewed before any slide exists.
+
+## What's New (0.18.7)
 
 **Structured style selection + model registry** — Phase 2 style strategy now
 runs as an ordered process: elicit what the speaker optimizes for (cost, speed,
