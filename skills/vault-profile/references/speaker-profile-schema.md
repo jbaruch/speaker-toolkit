@@ -19,11 +19,27 @@ creation at runtime.
   the profile should be regenerated to incorporate new data.
 - **Manual trigger:** The user can request "update speaker profile" at any time.
 
+## Schema Versioning
+
+Current `schema_version`: **2**. The validator (`scripts/validate-profile.py`,
+`CURRENT_SCHEMA_VERSION`) accepts only the current version.
+
+- **v1 → v2** adds the coaching-outcome fields, all additive: `pattern_profile.score_drivers`,
+  `pattern_breadth`, `underused_patterns`, `by_mode`, `strengths`/`strengths_note`, and
+  `pacing.adherence`.
+- **Reader tolerance (dual-accept):** a reader written for v1 ignores the new fields; a
+  v2-aware reader (presentation-creator) treats each new field as optional and falls back
+  when it is absent on an older profile, the same way it already handles `presentation_engines`.
+- **Migration:** vault-profile regenerates the profile wholesale each run. A v1 file is
+  replaced by a v2 file on the next run — no in-place migration step. The only value carried
+  across regenerations is `infrastructure.template_layouts[].use_for` (merged by the
+  `(master_index, name)` pair, version-independent).
+
 ## Schema
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "generated_date": "2026-02-22",
   "talks_analyzed": 24,
 
@@ -152,7 +168,7 @@ creation at runtime.
       "worst_offenders": [
         {"filename": "2024-04-10-talk-slug.md", "slides_per_minute": 2.1, "budget_slides_per_minute": 1.5, "over_by": "40%"}
       ],
-      "note": "Quantitative time/slide pacing vs guardrail_sources.slide_budgets, derived from each talk's structured_data.slide_count and talk_duration_estimate. A talk is over budget when its slides_per_minute exceeds the budget for its duration band. Distinct from the qualitative 'rushing' read in vault Dimension 14 (transcript-evident time panic) — this is the corpus-level count. talk_duration_estimate is transcript-derived and approximate, so treat marginal overages as soft signals, not hard failures."
+      "note": "Quantitative time/slide pacing vs guardrail_sources.slide_budgets, derived from each talk's structured_data.slide_count and talk_duration_estimate. talk_duration_estimate is a human string (e.g. '35 min'); the producer parses its leading integer to numeric minutes before dividing, and skips talks with no parseable minute value, keeping slides_per_minute comparable across talks. A talk is over budget when its slides_per_minute exceeds the budget for its duration band. Distinct from the qualitative 'rushing' read in vault Dimension 14 (transcript-evident time panic) — this is the corpus-level count. The parsed estimate is transcript-derived and approximate; treat marginal overages as soft signals, not hard failures."
     }
   },
 

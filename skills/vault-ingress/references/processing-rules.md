@@ -155,7 +155,7 @@ For each goal with `status` not in (`achieved`, `retired`):
   - `improving` — moved toward `target` versus `baseline_value` but not there yet.
   - `stalled` — no meaningful movement from `baseline_value`.
   - `regressed` — moved away from `target` (worse than `baseline_value`).
-- Only count talks newly processed since `set_date` toward movement — a goal can't
+- Only count talks processed after `set_date` toward movement — a goal can't
   be judged on talks that predate it.
 - Never overwrite `baseline_value`, `target`, `issue`, or `set_date` — those are the
   fixed yardstick; verification is non-owner and touches status fields only.

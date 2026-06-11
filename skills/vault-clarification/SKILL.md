@@ -99,11 +99,15 @@ prior session — then ask the speaker (via `AskUserQuestion`, one topic at a ti
 **1–2** they want to focus on before the next batch of talks. Coaching only works when
 the speaker owns the target, so never auto-pick more than they choose.
 
-For each chosen focus area, write an `improvement_goals` record to the tracking DB:
-capture `baseline_value` from the current Section 15 figure, record the speaker's stated
-`target`, set `status: "active"`, `set_date` to today, and `schema_version: 1`. Retire
-goals the speaker no longer wants (`status: "retired"`); leave `achieved` goals in place
-as history. Record schema and `kind` values:
+For each chosen focus area, write a **complete** `improvement_goals` record to the
+tracking DB per the schema — every field, not a subset. A partial record can't be
+verified: vault-ingress needs `metric` to compute `current_value`, and `id`/`issue`/
+`kind` to identify and route the goal. Set `id` (kebab-case), `issue`, `kind`, `metric`,
+`baseline_value` (from the current Section 15 figure), the speaker's stated `target`,
+`status: "active"`, `set_date` to today, `set_by: "vault-clarification"`, `current_value: ""`,
+`last_checked: null`, `checked_by: null`, and `schema_version: 1`. Retire goals the
+speaker no longer wants (`status: "retired"`); leave `achieved` goals in place as history.
+Full field list and `kind` values:
 [references/schemas-config.md](references/schemas-config.md) Improvement Goals Schema.
 
 A later vault-ingress run verifies these against the fresh baseline — see

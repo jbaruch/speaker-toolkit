@@ -118,8 +118,12 @@ patterns in the `never_tried` and `rare` tiers of `mastery_levels`, kept only wh
 the pattern's taxonomy Vault Dims fit the speaker's `presentation_modes`. This is the
 positive-space coaching signal, framed as growth, not deficiency.
 
-Compute `pattern_profile.by_mode` — the per-mode baseline. Group `processed_talks`
-by their presentation mode and, for each mode with **≥3 talks**, emit
+Compute `pattern_profile.by_mode` — the per-mode baseline. The tracking DB has no
+per-talk mode field. Assign each `processed_talk` to the `presentation_modes` entry
+whose signal profile best matches the talk's `structured_data` (slide/meme density,
+`audience_interaction_count`, humor register, commercial-intent cues vs. each mode's
+`when_to_use`). This assignment is a classification judgment, not a stored value — it
+stays LLM-side. Then, for each mode with **≥3 assigned talks**, emit
 `average_pattern_score`, `avg_distinct_patterns_per_talk`, `top_antipatterns`, and
 `stable: true`. Modes below 3 talks are omitted (or `stable: false`); consumers fall
 back to the global baseline. This prevents false underuse findings when a short-format
@@ -131,25 +135,27 @@ This is the positive-space counterpart to `recurring_issues`/`underused_patterns
 keep it distinct from Step 8 badges (badges are celebratory, strengths are actionable
 reinforcement the creator skill amplifies).
 
-Compute `pacing.adherence` — for each scored talk derive `slides_per_minute` from
-`structured_data.slide_count ÷ talk_duration_estimate`, compare against the
-`guardrail_sources.slide_budgets` band for its duration, and count talks over budget.
+Compute `pacing.adherence` — for each scored talk derive `slides_per_minute` as
+`structured_data.slide_count ÷ minutes`, where `minutes` is the leading integer parsed
+from `talk_duration_estimate` (a human string like `"35 min"`); skip talks whose
+estimate has no parseable minute value. Compare against the
+`guardrail_sources.slide_budgets` band for that duration and count talks over budget.
 Emit the over-budget rate, trend, and worst offenders. This is the quantitative
-counterpart to Dimension 14's transcript-evident "rushing" read; `talk_duration_estimate`
-is approximate, so flag marginal overages softly.
+counterpart to Dimension 14's transcript-evident "rushing" read. The parsed estimate is
+approximate. Flag marginal overages softly.
 
 Cross-check against Section 15 of `rhetoric-style-summary.md`, which carries the same
 baselines in prose. See
 [references/speaker-profile-schema.md](references/speaker-profile-schema.md)
 `pattern_profile`.
 
-Set `schema_version` to `1` and `generated_date` to today's date in `YYYY-MM-DD` form.
+Set `schema_version` to `2` and `generated_date` to today's date in `YYYY-MM-DD` form.
 
 Proceed immediately to Step 5.
 
 ## Step 5 — Validate the Profile
 
-Pipe the constructed profile dict through `scripts/validate-profile.py` to verify all required top-level keys exist and `schema_version` is `1`.
+Pipe the constructed profile dict through `scripts/validate-profile.py` to verify all required top-level keys exist and `schema_version` is `2`.
 
 ```bash
 echo "$PROFILE_JSON" | python3 skills/vault-profile/scripts/validate-profile.py
