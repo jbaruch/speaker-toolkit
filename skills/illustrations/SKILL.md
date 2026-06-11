@@ -144,8 +144,8 @@ Ask the speaker — `AskUserQuestion`, never infer — how titles and footers ar
 
 - **Bleed** — title + footer baked into every image, stylized to the art (the
   example noir deck). Striking and consistent, but **not editable** after
-  generation. Sets `composition: poster-theatrical` and locks every slide to
-  **FULL** (no IMG+TXT, no safe zones); the text treatment + footer are recorded
+  generation. Sets `style_anchor.composition: poster-theatrical` and locks every
+  slide to **FULL** (no IMG+TXT, no safe zones); the text treatment + footer are recorded
   in the anchor at Step 9.
 - **Overlay** — titles + footers added by PowerPoint over a per-slide safe zone.
   Editable, uniform font, less integrated. Standard composition; the format

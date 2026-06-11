@@ -135,7 +135,7 @@ def test_outline_consumers_use_shared_schema_loader(path):
 
 
 def _context_artifact_files() -> list[Path]:
-    """Repo-own scripts, skill prose, and rules — the context agents load.
+    """Repo-owned scripts, skill prose, and rules — the context agents load.
 
     CHANGELOG.md is excluded by construction (it lives at the repo root, not
     under skills/ or rules/): it is the archive and legitimately names the old
