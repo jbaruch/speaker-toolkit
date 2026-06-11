@@ -113,10 +113,10 @@ good things absent — and `score_drivers` MUST name whichever moved:
   the score with zero antipatterns.
 
 Also compute `pattern_breadth` (average distinct observable patterns per talk +
-trend) and `underused_patterns` (observable patterns from `never_used_patterns` /
-`mastery_levels.never_tried`+`rare`, filtered to those whose taxonomy Vault Dims fit
-the speaker's `presentation_modes`) — the positive-space coaching signal, framed as
-growth, not deficiency.
+trend) and `underused_patterns` — the union of `never_used_patterns` with the
+patterns in the `never_tried` and `rare` tiers of `mastery_levels`, kept only where
+the pattern's taxonomy Vault Dims fit the speaker's `presentation_modes`. This is the
+positive-space coaching signal, framed as growth, not deficiency.
 
 Compute `pattern_profile.by_mode` — the per-mode baseline. Group `processed_talks`
 by their presentation mode and, for each mode with **≥3 talks**, emit

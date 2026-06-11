@@ -87,7 +87,7 @@ Each subagent returns this JSON after processing one talk:
 {
   "filename": "the .md filename",
   "rhetoric_notes": "500-1000 words: qualitative observations across dimensions 1-13",
-  "areas_for_improvement": "100-300 words: honest critical reflection (dimension 14); name the related antipattern ID + severity per issue where one of the dim-14 antipatterns applies",
+  "areas_for_improvement": "100-300 words: honest critical reflection (Dimension 14); name the related antipattern ID + severity per issue where a Dimension 14 antipattern applies",
   "transcript_source": "youtube_auto|whisper|manual  (how the transcript was obtained)",
   "structured_data": {
     "delivery_language": "en|de|ru|etc  (primary language of the talk)",
