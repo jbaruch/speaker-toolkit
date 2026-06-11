@@ -1,5 +1,176 @@
 # Changelog
 
+### fix(illustrations) — read outline.yaml, not a phantom presentation-outline.md
+
+The three outline-consuming illustration scripts (`generate-illustrations.py`,
+`apply-illustrations-to-deck.py`, `build-expansion-manifest.py`) regex-parsed a
+`presentation-outline.md` that nothing in the toolkit generates — `outline.yaml`
+is the single source of truth, and the model was left guessing how to hand-author
+the markdown. All three now load `outline.yaml` through the shared
+`outline_schema` loader (the partial view, so they work in Phase 2 before the deck
+is complete). A new deterministic contract test
+(`tests/test_outline_source_is_yaml.py`) discovers every outline-consuming script
+and fails if any declares a `.md` outline argument, skips the shared loader, or
+references the phantom file.
+
+The schema gained the illustration-layer fields that previously lived only in the
+hand-authored markdown: `style_anchor.composition` + `style_anchor.embedded_footer`
+(deck-wide), per-slide `safe_zone` (zone + surface), and per-build `erase`. `erase`
+carries the backwards-chaining edit prompt with its mandatory "Keep ..." clauses,
+while the additive `desc` stays the human-facing reveal in `slides.md` — resolving
+the long-standing mismatch where the generator expected erase prompts but the
+authoring contract produced additive ones. `build-expansion-manifest.py` dropped
+its now-redundant count/contiguity guards (the schema enforces contiguous-from-0
+build steps at load).
+
+### fix(presentation-creator) — fully prompt-free deck builds (stage all macro I/O through the container)
+
+Extends the per-illustration container-staging to ALL macro file I/O. Sandboxed
+PowerPoint also prompts (Powerbox) when a macro opens a Google-Drive base deck or
+template, and when it saves output to a local `~/.deckops-staging` subdir (a
+per-run `build.XXXXXX` dir prompts every run; a Drive folder E_FAILs). A new shared
+`container-stage.sh` (sourced by every deck-ops wrapper) provides `stage_base` to
+copy base decks / templates / the QR image into the container and open them from
+there, and an `OUT_STAGE_DIR` inside the container for `SaveCopyAs`; the shell then
+moves the result to the Drive destination. One EXIT trap in the helper owns
+cleanup — `build-deck.sh` previously set its own trap that overrode the image-stage
+cleanup and leaked staged copies; that's resolved. A full build now runs with zero
+Powerbox prompts and no Full Disk Access grant. Validated end-to-end: BuildDeck +
+ApplyBackgrounds, 46 slides, ~0.8s each (no blocking prompts), staging auto-cleaned.
+
+### fix(presentation-creator) — BuildDeck now compiles and runs on Mac PowerPoint
+
+Two Mac-only `BuildDeck` bugs, caught by a from-scratch deck validation (`BuildDeck`
+had never actually run on macOS):
+- `Shapes.AddChart2` is Windows-only; on Mac it raises a VBA compile error
+  ("method or data member not found") that — under Compile-On-Demand — only
+  surfaced when `BuildDeck` was first invoked, blocking the whole module. The chart
+  path is now late-bound (`Object`), so the module compiles on Mac; `CHART` ops
+  (never emitted by real decks) only error at runtime if actually used.
+- `BuildDeck` stripped the template's slides before reading
+  `SlideMaster.CustomLayouts`, and Mac PowerPoint prunes the now-unused layouts →
+  every SLIDE op failed "layout index out of range (0 custom layouts)". It now reads
+  the layouts while the slides exist and deletes the demo slides last (the
+  `RunDeckOps` append-then-delete pattern), keeping layouts referenced throughout.
+
+Validated end-to-end against a freshly-seeded `DeckOps.pptm`: `BuildDeck` built 46
+slides from the talk's deck-ops, then `ApplyBackgrounds` applied all 46 illustration
+backgrounds — a clean 38 MB deck.
+
+### fix(presentation-creator) — restore deck drivers stripped by tessl install (#85)
+
+`tessl install` materializes only `.md/.py/.json/.sh/.txt` and STRIPS
+`.bas`/`.applescript`, so on every installed tile `RunDeckOps.bas` and the eight
+`.applescript` drivers were missing — the whole PowerPoint deck layer was dead
+(the `.sh` wrappers call `.applescript` drivers that call `RunDeckOps.bas`
+macros). Verified empirically: `tessl plugin pack` includes them, `tessl install`
+does not. Each driver now ships a byte-identical committed `.txt` mirror (which
+survives install); `sync-deck-drivers.py` recreates the real files from the
+mirrors (`materialize`), keeps mirrors in sync with the source drivers (`mirror`),
+and a `check` mode guards drift in CI. `ensure-drivers.sh`, sourced by every
+deck-ops wrapper, self-restores the `.applescript` drivers on first run; the
+guided setup restores `RunDeckOps.bas` for the one-time VBE import. The `.txt`
+mirrors are marked `linguist-generated` in `.gitattributes`; a unit test asserts
+they stay byte-identical to the real drivers.
+
+### docs(presentation-creator) — recurring per-build deck-editing runbook
+
+`deck-editing-setup.md` covered one-time setup but only implied the recurring
+requirement that `DeckOps.pptm` stay OPEN for the whole build (every pass calls a
+macro in that running instance). A new "Step 6 — Every build (recurring)" makes it
+explicit and lays out the pass sequence (structural build → ExpandBuilds → notes →
+backgrounds → QR) and the PowerPoint+Keynote validation. `phase5-slides.md` now
+surfaces the keep-open requirement on every build, not just first use.
+
+### fix(presentation-creator) — collapse per-illustration Powerbox prompts to zero
+
+Sandboxed PowerPoint threw a "grant access / select file" Powerbox prompt on
+every `Slide.Background.Fill.UserPicture` of an image outside its container (each
+Google Drive illustration) — one click per slide on a 40-slide deck. A new
+`stage-images-into-container.py` copies the referenced images into PowerPoint's
+own sandbox container (`~/Library/Containers/com.microsoft.Powerpoint/Data/.deckops-img-staging/`)
+and rewrites the manifest paths; `apply-backgrounds.sh` and `expand-builds.sh`
+stage before packing and clean up after the deck is written. A sandboxed app
+reads its own container without a prompt, so prompts collapse to zero with no
+Full Disk Access grant. Mac PowerPoint VBA has no `Application.FileDialog`, so a
+"grant one folder" macro is impossible — container-staging is the supported
+no-prompt path; if the container is absent the wrappers warn and fall back to the
+original paths. The stager is unit-tested across both manifest shapes.
+
+### fix(presentation-creator) — deck-build AppleScript drivers time out on large decks (#85)
+
+The `run VB macro` call in every PowerPoint driver used osascript's default
+~120s AppleEvent window, so a large build (e.g. a 46-slide `BuildDeck`) died with
+`AppleEvent timed out (-1712)`. All eight drivers — including the new
+`expand-builds.applescript` — now wrap the macro call in `with timeout of 1800
+seconds`. (Issue #85 also reports the installed tile missing the `.applescript` /
+`.bas` files and a `BuildDeck` `-18` on all-BLANK sequences: the dev tree packs
+all drivers + `RunDeckOps.bas` — verified via `tessl plugin pack` — so the
+published gap is being re-verified on the next publish; the `BuildDeck -18`
+robustness fix is tracked separately in #85.)
+
+### feat(illustrations,presentation-creator) — progressive-reveal build expansion in the deck
+
+The toolkit generated build frames (`--build`) but never assembled them into the
+deck — `builds.md`'s "Deck Insertion" was unimplemented. A new `ExpandBuilds` VBA
+pass (`RunDeckOps.bas`) replaces each progressive-reveal parent slide with its
+build frames as full-bleed background-fill slides (speaker notes on the final
+frame only), via real PowerPoint slide insertion — structural edits never use
+python-pptx (`rules/deck-editing-rules.md`). `build-expansion-manifest.py` emits
+the plan from the outline + generated frames; `build-expansion-to-packed.py`
+packs it into the wire format descending by parent; `expand-builds.sh` drives the
+macro. Run it before the by-index passes (notes/backgrounds/QR), which must key
+on the post-expansion deck since expansion renumbers later slides. The Python
+emitter + packer are unit-tested; the VBA pass is validated by opening a built
+deck (per the macOS VBA-untestable-in-CI rule).
+
+### feat(illustrations) — poster-theatrical composition
+
+A deck-level composition choice, decided in the style wizard and baked into the
+STYLE ANCHOR header (`**Composition:** poster-theatrical` + `**Embedded footer:**`).
+In this mode every slide is full-bleed and the title + footer are rendered INTO
+the image — stylized and blended in the deck's own vocabulary — instead of
+overlaid afterward. Generation appends an `EMBEDDED TEXT` directive (folding the
+slide's `Text:` and the deck footer into the prompt) and skips the `TITLE SAFE
+ZONE` directive entirely; apply records poster FULL slides as background-only (no
+scrim, no overlaid title); deck-build omits the `TITLE`/`FOOTER` ops for those
+slides. The QR code is the only shape inserted after generation. `title-overlay-rules.md`
+§0 documents the opt-out. Small dense footer text (handles/hashtags/URLs) may be
+approximated by the model and need a re-roll or `--edit` touch-up.
+
+### feat(illustrations) — idea-sourcing wizard + render-before-bake gate
+
+Style strategy (SKILL.md Step 3) was a single prose step bundling six sub-actions
+with no enforcement, while the freshness gate (Step 2) was script-backed with a
+"never skip silently" verdict. An agent shortcut the unenforced collaboration: it
+ran the freshness check and `--shortlist`, then reasoned a model into the STYLE
+ANCHOR and skipped both the priorities question and the exploration-grid render —
+the speaker never saw a sample. Step 3 is now seven flat gated steps (source ideas
+→ priorities → format → shortlist → propose → render grid → bake + verify). The
+render writes a `style-explore/rendered.json` manifest of what actually rendered;
+a new `generate-illustrations.py --check-style-explore` verdict and a guard inside
+`run_generate` refuse generation unless the baked model was rendered in the grid,
+turning "did a human pick from real samples?" into a deterministic tripwire. The
+collaboration also became an explicit multi-select idea-sourcing wizard (your
+usual / mode-or-series match / new / wild / trending / bring-your-own) with a
+Quick-default fast path that still renders and shows. Shared wizard shape:
+`skills/presentation-creator/references/idea-sourcing-wizard.md`.
+
+### feat(presentation-creator) — explicit engine & theme sourcing (Phase 2 Decision #2)
+
+Deck tooling (PowerPoint/pptx vs presenterm terminal-markdown) was decided
+implicitly — inferred at Phase 5 with no record on the outline — so a demo-centric
+talk that should run in a terminal tool could silently become a slide deck. A new
+Phase 2 decision (#2, right after Mode) sources the engine via the shared
+idea-sourcing wizard, reading an optional `presentation_engines[]` roster and the
+chosen mode's `typical_engine`, and records `talk.engine` / `talk.deck_theme` /
+`talk.engine_source` on the outline. Phase 5 now branches on `talk.engine` instead
+of inferring; a null engine on a legacy outline falls back to inference with
+author confirmation. Theme stays a thin provenance pointer — no named-theme
+registry. New profile fields are optional/additive (no schema_version bump), so
+existing profiles and outlines still validate. The Phase 2 decisions renumber
+(Pattern Strategy #10→#11, Illustration Strategy #11→#12).
+
 ## 0.18.26 — 2026-06-09
 
 ### fix(qr-generation) — recreate legacy non-slug links; capture the custom-domain decision (#56)

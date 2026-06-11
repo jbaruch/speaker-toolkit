@@ -5,19 +5,21 @@ Implements the policy in
 
 ## Outline schema addition
 
-Each slide block in `presentation-outline.md` gains one optional line:
+Each slide in `outline.yaml` gains one optional `safe_zone` field:
 
-```markdown
-### Slide 3: The Question
-- Format: **FULL**
-- Image prompt: `[STYLE ANCHOR]. <scene description> ...`
-- Safe zone: upper_third (uniform backdrop drawn from the style anchor)
-- Text: **how many hours last week...**
+```yaml
+slides:
+  - n: 3
+    title: "The Question"
+    format: FULL
+    image_prompt: "[STYLE ANCHOR]. <scene description> ..."
+    text_overlay: "how many hours last week..."
+    safe_zone:
+      zone: upper_third
+      surface: "uniform backdrop drawn from the style anchor"
 ```
 
-Grammar: `- Safe zone: <zone> (<surface>)`
-
-- `<zone>` — one of `upper_third`, `middle_third`, `lower_third`,
+- `zone` — one of `upper_third`, `middle_third`, `lower_third`,
   `left_half`, `right_half`. Horizontal bands reserve a full-width
   strip; half-frame zones reserve one side of the frame for the title
   column and push the subject to the opposite side. `left_third` /
@@ -25,19 +27,23 @@ Grammar: `- Safe zone: <zone> (<surface>)`
   horizontal title text. `middle_third` is for styles whose subject
   naturally frames a clean center opening (TV sets, monitors, windows,
   portrait frames, vignettes).
-- `<surface>` — optional short phrase describing what fills the zone in
+- `surface` — optional short phrase describing what fills the zone in
   the deck's own visual vocabulary (e.g. "unbroken painted sky", "flat
   studio backdrop", "parchment grain", "gradient wash"). If omitted, a
   generic default is used, but results are noticeably better with an
   explicit style-anchored surface.
 
-Slides without a `Safe zone:` line generate and apply exactly as today.
+Slides without a `safe_zone` field generate and apply exactly as today.
+
+Poster-theatrical decks (`style_anchor.composition: poster-theatrical`) use no
+`safe_zone` fields at all — the title and footer are baked into the image and
+only the QR code is inserted afterward. See `rules/title-overlay-rules.md` §0.
 
 ## Scripts
 
 | Script | Role |
 |--------|------|
-| `generate-illustrations.py` | Parses `Safe zone:` and appends the SAFE ZONE directive to each prompt before calling Gemini. |
+| `generate-illustrations.py` | Reads `safe_zone` and appends the SAFE ZONE directive to each prompt before calling Gemini. |
 | `apply-illustrations-to-deck.py` | Swaps generated images into a .pptx, adds a zone-sized scrim rectangle behind the title, and positions title text. Reads the same outline for zone data. Accepts `--scrim-color` / `--scrim-alpha`. |
 | `suggest-scrim-color.py` | Samples the darkest 5% of pixels across a deck's illustrations and prints a scrim color + alpha tuned to the deck's natural shadow tone. |
 
@@ -46,10 +52,10 @@ All three live in `skills/illustrations/scripts/`.
 ## End-to-end workflow
 
 ```bash
-# 1. Author presentation-outline.md with `Safe zone:` lines
+# 1. Author outline.yaml with `safe_zone` fields
 
 # 2. Generate illustrations — directive appended automatically
-python3 skills/illustrations/scripts/generate-illustrations.py presentation-outline.md all
+python3 skills/illustrations/scripts/generate-illustrations.py outline.yaml all
 
 # 3. (Optional) Sample a scrim color tuned to the deck's style
 python3 skills/illustrations/scripts/suggest-scrim-color.py illustrations/
@@ -57,7 +63,7 @@ python3 skills/illustrations/scripts/suggest-scrim-color.py illustrations/
 
 # 4. Apply to deck
 python3 skills/illustrations/scripts/apply-illustrations-to-deck.py \
-    deck.pptx illustrations/ presentation-outline.md \
+    deck.pptx illustrations/ outline.yaml \
     --out deck-with-titles.pptx \
     --scrim-color 100903 --scrim-alpha 47553   # omit for plain 45% black
 ```

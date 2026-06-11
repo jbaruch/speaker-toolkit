@@ -14,7 +14,7 @@
     },
     {
       "name": "Explicit decision point before generation",
-      "description": "The agent presents a clear choose-one decision to the speaker — keep the baked model, re-run the style exploration (Step 3) to pick a current one, or switch to a named roster model — and waits for a response. Silently swapping the model, or proceeding to image generation without acknowledgement of the choice, fails this criterion.",
+      "description": "The agent presents a clear choose-one decision to the speaker — keep the baked model, re-run the style exploration (Steps 3–9) to pick a current one, or switch to a named roster model — and waits for a response. Silently swapping the model, or proceeding to image generation without acknowledgement of the choice, fails this criterion.",
       "max_score": 28
     },
     {

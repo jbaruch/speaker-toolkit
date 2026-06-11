@@ -29,6 +29,8 @@ if [[ $# -lt 5 ]]; then
 fi
 BASE="$1"; TEMPLATE="$2"; IMAGE="$3"; TITLE="$4"; OUT="$5"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$HERE/ensure-drivers.sh"   # restore .applescript/.bas drivers tessl install strips
+source "$HERE/container-stage.sh"  # stage Google-Drive inputs into the container (no Powerbox prompts)
 DRIVER="$HERE/make-bg-slide.applescript"
 
 [[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the comic-template deck as <basePath>." >&2; exit 1; }
@@ -39,10 +41,10 @@ DRIVER="$HERE/make-bg-slide.applescript"
 # stage locally, then move into place with the shell.
 STAGE_DIR="$HOME/.deckops-staging"
 mkdir -p "$STAGE_DIR"
-STAGE="$STAGE_DIR/$(basename "$OUT")"
+STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
 rm -f "$STAGE"
 
-osascript "$DRIVER" "$BASE" "$TEMPLATE" "$IMAGE" "$TITLE" "$STAGE"
+osascript "$DRIVER" "$(stage_base "$BASE")" "$(stage_base "$TEMPLATE")" "$(stage_base "$IMAGE")" "$TITLE" "$STAGE"
 
 if [[ -f "$STAGE" ]]; then
   mkdir -p "$(dirname "$OUT")"

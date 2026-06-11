@@ -1,0 +1,26 @@
+{
+  "context": "Tests the load-bearing render-before-bake behavior of the illustrations style-strategy steps: a model and style must be chosen from rendered samples the speaker sees, never written into the STYLE ANCHOR from reasoning alone. The speaker's phrasing ('I want the quality-tier model and a clean editorial look — just set up the anchor') is the trap — it invites the agent to commit a model and style from training knowledge. The tile's contribution is to source idea directions, propose several candidate styles, render them, and let the speaker pick from pixels before anything is baked. A baseline agent without the skill confidently writes a named model and a single style into the anchor from description alone — the exact failure this scenario guards.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Elicits idea direction / priorities before proposing",
+      "description": "The agent surfaces where the style ideas should come from and/or what the speaker optimizes for (a multi-option prompt) before committing to a look — rather than jumping straight to one style. Treating 'quality-tier' and 'editorial' as a starting point to confirm, not a final spec, satisfies this.",
+      "max_score": 20
+    },
+    {
+      "name": "Proposes multiple candidate styles, not one from prose",
+      "description": "The agent offers several distinct candidate styles (grounded in the talk's concepts) rather than declaring a single style. The styles are presented as candidates to compare, not a settled choice.",
+      "max_score": 20
+    },
+    {
+      "name": "Renders the candidates and shows them before committing",
+      "description": "The agent produces actual rendered sample images for the candidate styles and model(s) and has the speaker pick from the rendered output — the model and style are selected from images the speaker sees, not from text descriptions. This is the core behavior under test.",
+      "max_score": 35
+    },
+    {
+      "name": "Does not write a model into the STYLE ANCHOR without a render",
+      "description": "The agent does NOT bake a specific model name (or a final style) into the outline's STYLE ANCHOR header purely from the speaker's 'quality-tier model' phrasing. Committing the anchor is gated on a render the speaker reviewed; writing a model from reasoning alone fails this criterion.",
+      "max_score": 25
+    }
+  ]
+}

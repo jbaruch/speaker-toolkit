@@ -125,6 +125,31 @@ class SlideFormat(str, Enum):
     title = "TITLE"
 
 
+class Composition(str, Enum):
+    """Deck-wide illustration composition (see rules/title-overlay-rules.md).
+
+    `standard` overlays titles/footers at apply time over a reserved safe zone;
+    `poster-theatrical` bakes title + footer into the image as part of the scene.
+    Absence of the field means `standard`.
+    """
+
+    standard = "standard"
+    poster_theatrical = "poster-theatrical"
+
+
+class SafeZoneName(str, Enum):
+    upper_third = "upper_third"
+    middle_third = "middle_third"
+    lower_third = "lower_third"
+    left_half = "left_half"
+    right_half = "right_half"
+
+
+class Renderer(str, Enum):
+    pptx = "pptx"
+    presenterm = "presenterm"
+
+
 class AudienceTemperament(str, Enum):
     doer = "doer"
     supplier = "supplier"
@@ -210,9 +235,29 @@ class RunningGagEntry(_StrictModel):
     appearance_index: int = Field(ge=1)
 
 
+class SafeZone(_StrictModel):
+    """Per-slide title safe zone for standard-composition illustrations.
+
+    Reserves negative space in the generated image for an overlaid title;
+    `surface` optionally overrides the default backdrop description for the
+    zone. See rules/title-overlay-rules.md.
+    """
+
+    zone: SafeZoneName
+    surface: str | None = None
+
+
 class Build(_StrictModel):
     step: int = Field(ge=0)
     desc: str
+    # Backwards-erase prompt for `generate-illustrations.py --build`. `desc` is
+    # the additive, human-facing reveal ("Add the second pillar"); `erase` is the
+    # instruction that turns step N+1 into this step by removing what N+1 added,
+    # with explicit "Keep ..." clauses for everything that must persist. The
+    # final (full-image) step needs no erase prompt — it is copied from the base
+    # slide image. Optional so slides whose builds are only deck-budget
+    # placeholders validate; --build refuses any non-final step missing it.
+    erase: str | None = None
 
 
 # ── Screenplay-form script ───────────────────────────────────────────
@@ -273,6 +318,10 @@ class StyleAnchor(_StrictModel):
     full: str
     imgtxt: str
     conventions: str
+    # Deck-wide composition; null == standard overlay. poster-theatrical bakes
+    # the title (+ embedded_footer) into every image. See rules/title-overlay-rules.md.
+    composition: Composition | None = None
+    embedded_footer: str | None = None
 
 
 # ── Talk metadata ────────────────────────────────────────────────────
@@ -306,6 +355,12 @@ class TalkMetadata(_StrictModel):
     catalog_reference: str | None = None
     delivery_count: int | None = Field(default=None, ge=1)
     delivery_date: str | None = None  # ISO YYYY-MM-DD
+
+    # Deck tooling + theme, sourced in Phase 2 Decision #2. All optional —
+    # older outlines without these fields still validate.
+    engine: Renderer | None = None  # pptx | presenterm; null = legacy/inferred
+    deck_theme: str | None = None  # free-string theme/template pointer (provenance)
+    engine_source: str | None = None  # how the engine was sourced (provenance)
 
     @field_validator("architecture")
     @classmethod
@@ -370,6 +425,7 @@ class Slide(_StrictModel):
     visual: str | None = None
     text_overlay: str | None = None
     image_prompt: str | None = None
+    safe_zone: SafeZone | None = None
     builds: list[Build] = Field(default_factory=list)
     script: list[ScriptItem] = Field(default_factory=list)
     applied_patterns: list[AppliedPattern] = Field(default_factory=list)

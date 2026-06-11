@@ -151,6 +151,9 @@ talk:
   slide_budget: 75                  # from profile guardrail_sources.slide_budgets
   pacing_wpm: [135, 145]            # from profile rhetoric_defaults
   architecture: "narrative-arc"     # filled in Phase 2 — leave a placeholder
+  engine: "pptx"                    # pptx | presenterm — filled in Phase 2 Decision #2
+  deck_theme: ""                    # free-string theme/template pointer — Phase 2 Decision #2
+  engine_source: ""                 # provenance of the engine choice — Phase 2 Decision #2
   thesis: |
     Elaborated thesis paragraph(s). The single-sentence form goes on the
     call-to-adventure slide via `big_idea_text` in Phase 3.
@@ -195,13 +198,17 @@ create a separate spec or outline file.
 **The instrument menu comes from the vault, not from a static file.** Read the summary
 (sections 2-13) and profile `instrument_catalog` for options.
 
-**11 decisions to make together:**
+**12 decisions to make together:**
 
-Mode, Opening, Narrative, Humor, Audience Interaction, Closing, Slide Design,
-Persuasion, Template Patterns, Pattern Strategy, Illustration Strategy. Each reads
-from the matching `instrument_catalog` entry + summary section. Decision #10 uses the
+Mode, Engine & Theme Sourcing, Opening, Narrative, Humor, Audience Interaction,
+Closing, Slide Design, Persuasion, Template Patterns, Pattern Strategy,
+Illustration Strategy. Each reads from the matching `instrument_catalog` entry +
+summary section. Decision #2 (Engine & Theme Sourcing) picks the deck tooling
+(pptx vs presenterm) and theme via the idea-sourcing wizard; it reads `profile →
+presentation_engines` and the chosen mode's `typical_engine` and writes
+`talk.engine` / `talk.deck_theme` / `talk.engine_source`. Decision #11 uses the
 4-tier Pattern Strategy from [references/patterns/_index.md](references/patterns/_index.md) + `profile → pattern_profile`.
-Decision #11 (Illustration Strategy) is optional — only when the author wants
+Decision #12 (Illustration Strategy) is optional — only when the author wants
 AI-generated illustrations. Delegate to `Skill(skill: "illustrations")` for the full
 collaboration (style proposals grounded in vault `visual_style_history`, format
 vocabulary, model choice, visual continuity devices). The skill writes the approved
@@ -385,6 +392,13 @@ extracted by `extract-slides.py`) as the per-slide instruction list. See
 [references/phase5-slides.md](references/phase5-slides.md) for the full technical
 reference.
 
+Branch on `talk.engine` (read via `outline_schema.py`, never re-parse YAML by
+hand): `pptx` → the template-driven build below; `presenterm` → the terminal
+markdown build below. When `engine` is null (a legacy outline authored before
+Decision #2), infer from mode/context as before but confirm the choice with the
+author before building. A `style_anchor` set alongside `engine: presenterm` is a
+WARN — the illustration pipeline assumes pptx.
+
 **For pptx talks (template-driven):**
 
 Emit a deck op sequence from `slides.md` + the profile layout map, validate it,
@@ -406,6 +420,11 @@ slides get a slide BACKGROUND FILL (set by the PowerPoint `apply-backgrounds.sh`
 pass, so the layout's halftone-dot overlay covers them); IMG+TXT slides get a
 left-column picture shape via `apply-illustrations-to-deck.py`.
 
+When the outline's STYLE ANCHOR declares `**Composition:** poster-theatrical`,
+also **omit the `TITLE` and `FOOTER` ops** for the FULL slides — the title and
+footer are rendered into the illustration itself, so the only post-build inserts
+on those slides are the background fill and the QR code.
+
 After the build completes, if `outline.yaml` declares `style_anchor`, delegate
 to `Skill(skill: "illustrations")` to generate illustrations, generate any
 progressive-reveal builds, and apply them to the deck. The illustrations skill
@@ -414,15 +433,28 @@ prompts) — when invoked, surface the relevant fields from `outline.yaml` in th
 format the illustrations skill consumes. Updating the illustrations skill to
 consume `outline.yaml` natively is tracked separately.
 
-Inject speaker notes from `script.md` after the illustrations skill returns,
-via real PowerPoint — `skills/presentation-creator/scripts/inject-notes.sh`
-(notes JSON is the historical `{"<0-based slide #>": "text"}` map). PowerPoint
-writes valid notes OOXML, so the `<p:notesMasterIdLst>` Keynote patch the old
-python path needed is gone. THEN, as the final write, set the FULL-slide
-backgrounds via `skills/presentation-creator/scripts/apply-backgrounds.sh`
-using the manifest from the apply pass — it must run last, since any later
-python-pptx save would re-drop the per-slide background fills. See
+If any slide has progressive-reveal builds, expand them FIRST with
+`skills/presentation-creator/scripts/expand-builds.sh` (manifest from
+`build-expansion-manifest.py`): it replaces each parent slide with its build
+frames as full-bleed slides. Pass the speaker-notes JSON to
+`build-expansion-manifest.py --notes` so each build parent's note rides onto its
+FINAL frame during expansion (per `skills/illustrations/references/builds.md`);
+do not re-target those parent indices in any later notes pass. Run expansion
+BEFORE the by-index passes below — it renumbers later slides, so notes,
+backgrounds, and QR must key on the POST-expansion deck. See
 `rules/deck-editing-rules.md`.
+
+Inject the remaining speaker notes from `script.md` after the illustrations skill
+returns, via real PowerPoint — `skills/presentation-creator/scripts/inject-notes.sh`
+(notes JSON is the `{"<0-based slide #>": "text"}` map). When the deck was
+expanded, drop the build-parent entries already carried by `--notes` and key the
+remaining notes on the post-expansion slide order; with no builds, the original
+indices apply directly. PowerPoint writes valid notes OOXML, so the
+`<p:notesMasterIdLst>` Keynote patch the old python path needed is gone. THEN, as
+the final write, set the FULL-slide backgrounds via
+`skills/presentation-creator/scripts/apply-backgrounds.sh` using the manifest from
+the apply pass — it must run last; any later python-pptx save would re-drop the
+per-slide background fills. See `rules/deck-editing-rules.md`.
 
 **For presenterm talks (terminal markdown):**
 

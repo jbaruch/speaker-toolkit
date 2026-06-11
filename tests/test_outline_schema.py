@@ -616,6 +616,79 @@ def test_requires_format_on_every_slide(outline_schema, base_data):
         outline_schema.Outline.model_validate(data)
 
 
+# ── Illustration-layer fields (consumed by the illustrations skill) ──
+
+
+def test_accepts_build_erase_field(outline_schema, base_data):
+    """builds[].erase carries the backwards-erase prompt for --build."""
+    data = copy.deepcopy(base_data)
+    slide_with_builds = next(s for s in data["slides"] if s.get("builds"))
+    slide_with_builds["builds"][1]["erase"] = (
+        "Erase the middle and right terminals. Keep the three labeled frames."
+    )
+    outline = outline_schema.Outline.model_validate(data)
+    target = next(s for s in outline.slides if s.builds)
+    assert target.builds[1].erase.startswith("Erase the middle")
+    # Steps without an erase prompt default to None.
+    assert target.builds[0].erase is None
+
+
+def test_rejects_unknown_build_field(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    slide_with_builds = next(s for s in data["slides"] if s.get("builds"))
+    slide_with_builds["builds"][0]["eraze"] = "typo"
+    with pytest.raises(ValidationError, match="eraze"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_accepts_style_anchor_composition_and_footer(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["style_anchor"]["composition"] = "poster-theatrical"
+    data["style_anchor"]["embedded_footer"] = "@speaker · example.com/talk"
+    outline = outline_schema.Outline.model_validate(data)
+    assert outline.style_anchor.composition == outline_schema.Composition.poster_theatrical
+    assert outline.style_anchor.embedded_footer == "@speaker · example.com/talk"
+
+
+def test_style_anchor_composition_defaults_none(outline_schema):
+    """Absent composition means standard overlay (None)."""
+    outline = outline_schema.load_outline(FIXTURE)
+    assert outline.style_anchor.composition is None
+    assert outline.style_anchor.embedded_footer is None
+
+
+def test_rejects_unknown_composition(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["style_anchor"]["composition"] = "billboard"
+    with pytest.raises(ValidationError, match="composition"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_accepts_slide_safe_zone(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["slides"][0]["safe_zone"] = {
+        "zone": "upper_third",
+        "surface": "a clean band of sky",
+    }
+    outline = outline_schema.Outline.model_validate(data)
+    assert outline.slides[0].safe_zone.zone == outline_schema.SafeZoneName.upper_third
+    assert outline.slides[0].safe_zone.surface == "a clean band of sky"
+
+
+def test_safe_zone_surface_optional(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["slides"][0]["safe_zone"] = {"zone": "lower_third"}
+    outline = outline_schema.Outline.model_validate(data)
+    assert outline.slides[0].safe_zone.surface is None
+
+
+def test_rejects_unknown_safe_zone(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["slides"][0]["safe_zone"] = {"zone": "diagonal_slash"}
+    with pytest.raises(ValidationError, match="zone"):
+        outline_schema.Outline.model_validate(data)
+
+
 def test_rejects_argument_beat_slide_ref_to_missing_slide(outline_schema, base_data):
     data = copy.deepcopy(base_data)
     data["chapters"][0]["argument_beats"][0]["slide_refs"] = [999]
@@ -729,3 +802,45 @@ def test_cli_emit_json_validation_failure_to_stderr(outline_schema, capsys, tmp_
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "FAIL:" in captured.err
+
+
+# ── Engine / theme sourcing fields (Phase 2 Decision #2) ─────────────
+
+
+def test_accepts_pptx_engine(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["talk"]["engine"] = "pptx"
+    assert outline_schema.Outline.model_validate(data).talk.engine.value == "pptx"
+
+
+def test_accepts_presenterm_engine(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["talk"]["engine"] = "presenterm"
+    out = outline_schema.Outline.model_validate(data)
+    assert out.talk.engine.value == "presenterm"
+
+
+def test_rejects_unknown_engine(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["talk"]["engine"] = "reveal.js"
+    with pytest.raises(ValidationError, match="engine"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_absent_engine_still_validates(outline_schema, base_data):
+    # Back-compat: legacy outlines without engine/theme load clean and default
+    # to None so Phase 5 can fall back to inference.
+    data = copy.deepcopy(base_data)
+    out = outline_schema.Outline.model_validate(data)
+    assert out.talk.engine is None
+    assert out.talk.deck_theme is None
+    assert out.talk.engine_source is None
+
+
+def test_accepts_free_string_theme_and_source(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["talk"]["deck_theme"] = "dark minimal"
+    data["talk"]["engine_source"] = "match-mode"
+    out = outline_schema.Outline.model_validate(data)
+    assert out.talk.deck_theme == "dark minimal"
+    assert out.talk.engine_source == "match-mode"

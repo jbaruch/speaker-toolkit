@@ -26,22 +26,43 @@ if [[ $# -lt 3 ]]; then
 fi
 BASE="$1"; OUT="$2"; MANIFEST="$3"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$HERE/ensure-drivers.sh"   # restore .applescript/.bas drivers tessl install strips
+source "$HERE/container-stage.sh"  # stage Google-Drive inputs into the container (no Powerbox prompts)
 DRIVER="$HERE/apply-backgrounds.applescript"
 
 [[ -f "$BASE" ]]     || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the built .pptx as <basePath>." >&2; exit 1; }
 [[ -f "$MANIFEST" ]] || { echo "ERROR: backgrounds manifest not found: $MANIFEST — generate it with apply-illustrations-to-deck.py --backgrounds-out." >&2; exit 1; }
 [[ -f "$DRIVER" ]]   || { echo "ERROR: driver not found: $DRIVER — reinstall the tile; apply-backgrounds.applescript must sit next to this script." >&2; exit 1; }
 
-# Build the "#=path;#=path" spec from the manifest (deterministic; unit-tested
-# in tests/test_backgrounds_manifest_to_spec.py). Exits non-zero with an
-# actionable message on an empty or malformed manifest.
-SPEC="$(python3 "$HERE/backgrounds-manifest-to-spec.py" "$MANIFEST")"
-
-# Sandboxed PowerPoint can't create a file in a Google Drive folder (E_FAIL) —
-# stage locally, then move into place with the shell.
 STAGE_DIR="$HOME/.deckops-staging"
 mkdir -p "$STAGE_DIR"
-STAGE="$STAGE_DIR/$(basename "$OUT")"
+
+# Open the base deck from the container so the macro doesn't trigger a Powerbox
+# prompt on the Google-Drive path.
+BASE="$(stage_base "$BASE")"
+
+# Sandboxed PowerPoint prompts (Powerbox) on each UserPicture of an image OUTSIDE
+# its container (e.g. Google Drive). Stage the images INTO the container too so the
+# macro reads them prompt-free — no Full Disk Access needed. See
+# rules/deck-editing-rules.md. Falls back to original paths (and per-file prompts)
+# if the container is absent.
+EFFECTIVE_MANIFEST="$MANIFEST"
+if [[ -n "$CONTAINER_STAGE" ]]; then
+  STAGED_MANIFEST="$STAGE_DIR/$(basename "$OUT").bg.staged.json"
+  python3 "$HERE/stage-images-into-container.py" "$MANIFEST" --stage-dir "$CONTAINER_STAGE/img" --out "$STAGED_MANIFEST" >/dev/null
+  EFFECTIVE_MANIFEST="$STAGED_MANIFEST"
+else
+  echo "WARN: PowerPoint container not found — reading images from their original paths; macOS may prompt per file. Open PowerPoint once to create the container." >&2
+fi
+
+# Build the "#=path;#=path" spec from the (staged) manifest (deterministic;
+# unit-tested in tests/test_backgrounds_manifest_to_spec.py). Exits non-zero with
+# an actionable message on an empty or malformed manifest.
+SPEC="$(python3 "$HERE/backgrounds-manifest-to-spec.py" "$EFFECTIVE_MANIFEST")"
+
+# Write the OUTPUT into the container (SaveCopyAs there neither prompts nor
+# E_FAILs), then shell-move it to the destination.
+STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
 rm -f "$STAGE"
 
 echo "staging -> $STAGE"

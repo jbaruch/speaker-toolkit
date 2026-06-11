@@ -1,5 +1,5 @@
 {
-  "context": "Tests the illustrations skill's Step 3 model-selection logic: priorities drive a data-narrowed model shortlist before any rendering. The deck has progressive-reveal builds (slides 4 and 9), and the speaker optimizes for cost. The tile's contribution is the staged process — surface priorities, recognize builds require an edit-capable model, narrow the roster by attributes, then confirm visually — rather than naming a model from general knowledge. A baseline agent without the skill tends to recommend a single model on quality/reputation grounds.",
+  "context": "Tests the illustrations skill's style-strategy model-selection logic (Steps 4-6): priorities drive a data-narrowed model shortlist before any rendering. The deck has progressive-reveal builds (slides 4 and 9), and the speaker optimizes for cost. The tile's contribution is the staged process — surface priorities, recognize builds require an edit-capable model, narrow the roster by attributes, then confirm visually — rather than naming a model from general knowledge. A baseline agent without the skill tends to recommend a single model on quality/reputation grounds.",
   "type": "weighted_checklist",
   "checklist": [
     {

@@ -28,6 +28,45 @@ argument can be reviewed before any slide exists.
 
 ## What's New (0.18.7)
 
+**Progressive-reveal build expansion** — the toolkit now assembles generated
+build frames into the deck: a new `ExpandBuilds` PowerPoint pass replaces each
+progressive-reveal parent slide with its frames as full-bleed slides (notes on
+the final frame), so a build sequence becomes the sequential slides you advance
+through. Pairs with poster-theatrical for pure full-bleed, builds-and-all decks.
+
+**Deck tooling works on installed tiles** — `tessl install` strips `.bas`/`.applescript`
+files, which had left the PowerPoint deck layer dead on any installed copy. The
+drivers now ship as committed `.txt` mirrors and are restored automatically on
+first use (`sync-deck-drivers.py`), so `RunDeckOps.bas` and the AppleScript
+drivers are there when you need them — no manual recovery.
+
+**No more per-illustration permission clicks** — the background and build passes
+now stage illustrations into PowerPoint's own sandbox container before applying
+them, so the "grant access / select file" prompt that used to fire on every
+slide (once per Google Drive image) collapses to zero — no Full Disk Access grant
+needed.
+
+**Poster-theatrical composition** — a style-wizard option where every slide is
+full-bleed and the title + footer are rendered *into* the image (stylized,
+blended), with only the QR code added afterward. No overlaid titles, no safe
+zones — an "all art, no chrome" look. Chosen in the wizard and baked into the
+STYLE ANCHOR header.
+
+**Idea-sourcing wizard + render-before-bake gate** — illustration style strategy
+is now an explicit multi-select wizard: pick where the visual ideas come from
+(your usual, mode/series match, new, wild, what's trending, or bring your own),
+with a Quick-default fast path that still renders and shows. The strategy steps
+are individually gated, and a new `--check-style-explore` verdict plus a guard in
+`generate-illustrations.py` refuse to generate from any model that wasn't rendered
+in the exploration grid the speaker reviewed — you can no longer bake a model into
+the STYLE ANCHOR by reasoning alone.
+
+**Explicit engine & theme sourcing** — deck tooling (PowerPoint/pptx vs presenterm
+terminal-markdown) is now a first-class Phase 2 decision sourced through the same
+wizard, recorded on the outline (`talk.engine`) instead of inferred at build time.
+A live-coding talk that should run in a terminal tool no longer silently becomes a
+slide deck.
+
 **Structured style selection + model registry** — Phase 2 style strategy now
 runs as an ordered process: elicit what the speaker optimizes for (cost, speed,
 quality, build-editability), narrow the model roster to a priority-driven

@@ -2,23 +2,23 @@
 """
 Generate illustrations for a presentation outline.
 
-Parses the outline markdown for style anchors and per-slide image prompts,
-generates images via the appropriate vendor API (Google Gemini, Google
-Imagen, or OpenAI — dispatched by model-name prefix), and saves them
-to an illustrations/ directory.
+Reads outline.yaml (the single source of truth) for the baked model, per-format
+style anchors, and per-slide image prompts, generates images via the
+appropriate vendor API (Google Gemini, Google Imagen, or OpenAI — dispatched by
+model-name prefix), and saves them to an illustrations/ directory.
 
 Usage:
-    python3 generate-illustrations.py <outline.md> all
-    python3 generate-illustrations.py <outline.md> remaining
-    python3 generate-illustrations.py <outline.md> 2 5 9
-    python3 generate-illustrations.py <outline.md> 2-10
-    python3 generate-illustrations.py <outline.md> --compare 2
-    python3 generate-illustrations.py <outline.md> --style-explore candidates.json
-    python3 generate-illustrations.py <outline.md> --edit 5 "Erase the label"
-    python3 generate-illustrations.py <outline.md> --build 5
-    python3 generate-illustrations.py <outline.md> --build all
-    python3 generate-illustrations.py <outline.md> --fix 5 "Make the road wider"
-    python3 generate-illustrations.py <outline.md> -v 2 5 9
+    python3 generate-illustrations.py <outline.yaml> all
+    python3 generate-illustrations.py <outline.yaml> remaining
+    python3 generate-illustrations.py <outline.yaml> 2 5 9
+    python3 generate-illustrations.py <outline.yaml> 2-10
+    python3 generate-illustrations.py <outline.yaml> --compare 2
+    python3 generate-illustrations.py <outline.yaml> --style-explore candidates.json
+    python3 generate-illustrations.py <outline.yaml> --edit 5 "Erase the label"
+    python3 generate-illustrations.py <outline.yaml> --build 5
+    python3 generate-illustrations.py <outline.yaml> --build all
+    python3 generate-illustrations.py <outline.yaml> --fix 5 "Make the road wider"
+    python3 generate-illustrations.py <outline.yaml> -v 2 5 9
 
 Requires:
     - For Google models (gemini-*, nano-banana-*, imagen-*):
@@ -43,8 +43,23 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from datetime import datetime, timezone
 
 from model_registry import COMPARE_MODELS, is_supported_model, resolve_model_id
+
+# outline.yaml is the single source of truth; its pydantic schema + loader live
+# with the presentation-creator scripts. Add that dir to the path so this skill
+# parses the one schema rather than re-deriving an outline format.
+sys.path.insert(
+    0,
+    os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__), os.pardir, os.pardir,
+            "presentation-creator", "scripts",
+        )
+    ),
+)
+import outline_schema  # noqa: E402  (path appended above)
 
 # --- Constants ---
 
@@ -108,6 +123,27 @@ SAFE_ZONE_DIRECTIVE_TEMPLATE = (
     "the frame. This negative space will carry an overlaid title."
 )
 
+# Poster-theatrical composition (see rules/title-overlay-rules.md): the title
+# and footer are rendered INTO the image as part of the scene, stylized in the
+# deck's own visual vocabulary — not overlaid afterward. The opposite of a safe
+# zone: text is integrated, no negative space is reserved.
+POSTER_COMPOSITION = "poster-theatrical"
+
+POSTER_EMBED_DIRECTIVE_TEMPLATE = (
+    " EMBEDDED TEXT -- CRITICAL COMPOSITION RULE: Render the title \"{title}\" "
+    "as an integral, stylized part of the scene itself — painted, carved, "
+    "printed, lit, woven, or sculpted into the composition in the artwork's "
+    "own lettering and materials, not pasted on as a flat overlay or caption. "
+    "{footer_clause}All text must be fully blended and integrated into the "
+    "illustration as if it belongs there. Do NOT reserve blank negative space "
+    "for a title; the text is part of the artwork."
+)
+
+POSTER_FOOTER_CLAUSE_TEMPLATE = (
+    "Also integrate the footer \"{footer}\" small along the lower edge of the "
+    "frame, in the same stylized treatment. "
+)
+
 # Canonical MIME <-> extension mapping
 _MIME_EXT_MAP = {
     "image/jpeg": ".jpg",
@@ -154,117 +190,83 @@ def family_key_name(family):
 
 # --- Outline Parsing ---
 
-def parse_outline(path):
-    """Parse a presentation outline markdown file.
+def _collapse_anchor(text):
+    """Collapse a (possibly multi-line) anchor block into one prompt-ready line."""
+    return " ".join(text.split())
 
-    Returns:
+
+def parse_outline(path):
+    """Project outline.yaml onto the view the generator needs.
+
+    outline.yaml is the single source of truth (schema + loader in
+    skills/presentation-creator/scripts/outline_schema.py). The generated
+    `.md` artifacts are never read here. Returns:
+
         dict with keys:
-            model: str — model name from the header
-            anchors: dict[str, str] — format name → anchor paragraph
-            slides: list[dict] — each with slide_num, title, format, prompt
+            model: str | None — baked illustration model (style_anchor.model)
+            anchors: dict[str, str] — format token ("FULL"/"IMG+TXT") → anchor
+            slides: list[dict] — prompt-bearing slides only, each with
+                slide_num, title, format, prompt, and optional safe_zone /
+                text / builds
+            composition: str | None — "poster-theatrical" or None (standard)
+            embedded_footer: str | None — poster-theatrical baked footer
+
+    Build steps map to the generator's backwards-chaining view: each step's
+    `description` is the `erase` prompt (additive `desc` stays human-facing in
+    slides.md), and `is_full` marks the final step (a copy of the base image).
+    A non-final step with no `erase` prompt becomes an empty description, which
+    --build flags as missing its mandatory "Keep ..." clause.
+
+    Uses the partial loader: the illustrations skill reads the outline in Phase 2
+    (style strategy, before the deck is complete) as well as Phase 5, so it must
+    not require the full-deck invariants (big-idea singleton, slide budget,
+    callback pairing) that only hold once authoring finishes.
     """
-    with open(path, "r", encoding="utf-8") as f:
-        text = f.read()
+    outline = outline_schema.load_outline_partial(path)
+    anchor = outline.style_anchor
 
     result = {
-        "model": None,
-        "anchors": {},
+        "model": anchor.model if anchor else None,
+        "anchors": {
+            "FULL": _collapse_anchor(anchor.full),
+            "IMG+TXT": _collapse_anchor(anchor.imgtxt),
+        } if anchor else {},
         "slides": [],
+        "composition": (
+            anchor.composition.value if anchor and anchor.composition else None
+        ),
+        "embedded_footer": anchor.embedded_footer if anchor else None,
     }
 
-    # Extract model name: **Model:** `model-name`
-    model_match = re.search(r"\*\*Model:\*\*\s*`([^`]+)`", text)
-    if model_match:
-        result["model"] = model_match.group(1)
-
-    # Extract style anchors: ### STYLE ANCHOR (FORMAT — dimensions)\n> paragraph
-    # Format tokens may include `+` and `-` (e.g. IMG+TXT) — match the
-    # parser used by the per-slide Format: line below.
-    anchor_pattern = re.compile(
-        r"###\s+STYLE ANCHOR\s+\(([\w+-]+)\s*—[^)]*\)\s*\n>\s*(.+?)(?=\n###|\n---|\n##|\Z)",
-        re.DOTALL,
-    )
-    for match in anchor_pattern.finditer(text):
-        format_name = match.group(1).strip()
-        anchor_text = match.group(2).strip()
-        # Collapse multi-line blockquote into single paragraph
-        anchor_text = re.sub(r"\n>\s*", " ", anchor_text)
-        result["anchors"][format_name] = anchor_text
-
-    # Extract per-slide data
-    slide_pattern = re.compile(
-        r"###\s+Slide\s+(\d+):\s*(.+?)(?=\n###|\n##|\Z)", re.DOTALL
-    )
-    for match in slide_pattern.finditer(text):
-        slide_num = int(match.group(1))
-        title = match.group(2).split("\n")[0].strip()
-        block = match.group(0)
-
-        # Extract format
-        # Allow `+` and `-` inside format tokens (e.g. IMG+TXT, IMG-TXT) on
-        # top of \w's alphanumerics+underscore. The downstream apply script's
-        # regex already permits IMG+TXT explicitly — keep these in sync.
-        fmt_match = re.search(r"-\s*Format:\s*\*\*([\w+-]+)\*\*", block)
-        slide_format = fmt_match.group(1) if fmt_match else None
-
-        # Extract image prompt
-        prompt_match = re.search(r"-\s*Image prompt:\s*`(.+?)`", block, re.DOTALL)
-        prompt = prompt_match.group(1).strip() if prompt_match else None
-
-        # Extract optional Safe zone: <zone> (<surface>)
-        safe_zone = None
-        _zone_alt = "|".join(VALID_SAFE_ZONES)
-        zone_match = re.search(
-            rf"-\s*Safe zone:\s*({_zone_alt})"
-            r"(?:\s*\(([^)]+)\))?",
-            block,
-        )
-        if zone_match:
-            zone = zone_match.group(1)
-            surface = (zone_match.group(2) or "").strip() or None
-            safe_zone = {"zone": zone, "surface": surface}
-        elif re.search(r"-\s*Safe zone:", block):
-            print(
-                f"  WARNING: Slide {slide_num}: Safe zone field present but invalid; "
-                f"expected one of {', '.join(sorted(VALID_SAFE_ZONES))}"
-            )
-
-        # Extract build specifications
-        builds = None
-        builds_match = re.search(r"-\s*Builds:\s*(\d+)\s+steps?", block)
-        if builds_match:
-            build_count = int(builds_match.group(1))
-            build_steps = []
-            build_step_pattern = re.compile(
-                r"-\s*build-(\d+):\s*(.+?)(?=\n\s*-\s*build-|\n\s*(?!-\s*build-)|\Z)",
-                re.DOTALL,
-            )
-            for bm in build_step_pattern.finditer(block):
-                step_num = int(bm.group(1))
-                step_desc = bm.group(2).strip().split("\n")[0].strip()
-                is_full = "[FULL]" in step_desc
-                build_steps.append({
-                    "step": step_num,
-                    "description": step_desc,
-                    "is_full": is_full,
-                })
-            builds = {
-                "count": build_count,
-                "steps": sorted(build_steps, key=lambda s: s["step"]),
+    for slide in outline.slides:
+        if not slide.image_prompt:
+            continue
+        slide_data = {
+            "slide_num": slide.n,
+            "title": slide.title,
+            "format": slide.format.value,
+            "prompt": slide.image_prompt.strip(),
+        }
+        if slide.safe_zone:
+            slide_data["safe_zone"] = {
+                "zone": slide.safe_zone.zone.value,
+                "surface": slide.safe_zone.surface,
             }
-
-        if prompt:
-            slide_data = {
-                "slide_num": slide_num,
-                "title": title,
-                "format": slide_format,
-                "prompt": prompt,
-            }
-            if safe_zone:
-                slide_data["safe_zone"] = safe_zone
-            if builds:
-                slide_data["builds"] = builds
-            result["slides"].append(slide_data)
+        text = (slide.text_overlay or "").strip()
+        if text and text.lower() != "none":
+            slide_data["text"] = text
+        if slide.builds:
+            max_step = max(b.step for b in slide.builds)
+            steps = [
+                {
+                    "step": b.step,
+                    "description": b.erase or "",
+                    "is_full": b.step == max_step,
+                }
+                for b in sorted(slide.builds, key=lambda b: b.step)
+            ]
+            slide_data["builds"] = {"count": len(steps), "steps": steps}
+        result["slides"].append(slide_data)
 
     return result
 
@@ -313,6 +315,35 @@ def apply_safe_zone_directive(prompt, safe_zone):
     directive = SAFE_ZONE_DIRECTIVE_TEMPLATE.format(
         zone_words=zone.replace("_", " "),
         surface=surface,
+    )
+    return prompt + directive
+
+
+def apply_poster_embed_directive(prompt, title_text, footer_text):
+    """Append the poster-theatrical EMBEDDED TEXT directive to a prompt.
+
+    Used when the deck's composition is poster-theatrical: the title (and, when
+    present, the footer) are rendered into the image as a stylized part of the
+    scene rather than overlaid afterward. The inverse of a safe zone — no
+    negative space is reserved. See rules/title-overlay-rules.md.
+    Idempotent: an existing EMBEDDED TEXT block is replaced.
+    """
+    if not title_text:
+        return prompt
+    if "EMBEDDED TEXT" in prompt:
+        prompt = prompt.split("EMBEDDED TEXT", 1)[0].rstrip()
+    # The directive wraps the title/footer in double quotes; normalize any
+    # embedded double quotes to single so a title like He said "Hi" doesn't
+    # produce ambiguous nested quotes that degrade model compliance.
+    title = title_text.replace('"', "'")
+    footer_clause = ""
+    if footer_text:
+        footer_clause = POSTER_FOOTER_CLAUSE_TEMPLATE.format(
+            footer=footer_text.replace('"', "'")
+        )
+    directive = POSTER_EMBED_DIRECTIVE_TEMPLATE.format(
+        title=title,
+        footer_clause=footer_clause,
     )
     return prompt + directive
 
@@ -864,6 +895,226 @@ def edit_image(input_path, edit_prompt, model, keys, slide_format=None):
     return _call_gemini(parts, model, keys["gemini"])
 
 
+# --- Style-explore manifest + render-before-bake gate ---
+
+RENDERED_MANIFEST = "rendered.json"
+
+
+def style_explore_dir(outline_path):
+    """The style-explore/ directory alongside the outline."""
+    return os.path.join(
+        os.path.dirname(os.path.abspath(outline_path)), "style-explore"
+    )
+
+
+def write_rendered_manifest(base_dir, outline_path, results):
+    """Persist a machine-readable record of what the grid actually rendered.
+
+    index.md is for humans; this manifest is the source of truth the
+    render-before-bake gate reads. Only OK cells make a model gate-eligible —
+    a model that failed every cell produced no image the speaker could pick.
+    Idempotent: a re-run overwrites it with the latest grid.
+    """
+    cells = []
+    ok_models = []
+    for r in results:
+        resolved = resolve_model_id(r["model"])
+        cell = {
+            "style": r["style"],
+            "format": r["format"],
+            "model": r["model"],
+            "model_resolved": resolved,
+            "status": r["status"],
+        }
+        if r["status"] == "OK":
+            cell["rel_path"] = r.get("rel_path")
+            ok_models.append(resolved)
+        else:
+            cell["error"] = r.get("error")
+        cells.append(cell)
+
+    manifest = {
+        "schema_version": 1,
+        "outline": os.path.basename(outline_path),
+        # Talk-directory name — a per-talk discriminator. Outline filenames are
+        # identical across talks (outline.yaml), so the basename alone can't
+        # tell a copied grid from this talk's; the dir name (typically the talk
+        # slug) can.
+        "outline_dir": os.path.basename(os.path.dirname(os.path.abspath(outline_path))),
+        "rendered_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "models_rendered_ok": sorted(set(ok_models)),
+        "cells": cells,
+    }
+    manifest_path = os.path.join(base_dir, RENDERED_MANIFEST)
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+    return manifest_path
+
+
+def check_style_explore(outline_path):
+    """Render-before-bake gate: was the outline's baked model actually rendered?
+
+    Reads the baked **Model:** from the outline header and style-explore/
+    rendered.json. gate_passed is True iff the manifest exists and the baked
+    model (resolved to its canonical id) is among the OK-rendered models.
+    Returns a verdict dict; never raises on a missing/unbaked model.
+    """
+    baked = parse_outline(outline_path).get("model")
+    resolved = resolve_model_id(baked) if baked else None
+    se_dir = style_explore_dir(outline_path)
+    manifest_path = os.path.join(se_dir, RENDERED_MANIFEST)
+    outline_name = os.path.basename(outline_path)
+    outline_dir = os.path.basename(os.path.dirname(os.path.abspath(outline_path)))
+
+    verdict = {
+        "gate_passed": False,
+        "model_baked": baked,
+        "model_resolved": resolved,
+        "rendered_models": [],
+        "manifest_present": False,
+        "error": None,
+    }
+
+    if not baked:
+        verdict["error"] = (
+            "No **Model:** is baked into the outline header. Run the style "
+            "exploration first and pick a model from the rendered grid: "
+            f"generate-illustrations.py {outline_name} "
+            "--style-explore style-explore/candidates.json"
+        )
+        return verdict
+
+    if not os.path.isfile(manifest_path):
+        verdict["error"] = (
+            f"No style-explore/{RENDERED_MANIFEST} next to {outline_name} — the "
+            "exploration grid was never rendered, so the baked model "
+            f"'{baked}' was never seen. Render it first: "
+            f"generate-illustrations.py {outline_name} "
+            "--style-explore style-explore/candidates.json"
+        )
+        return verdict
+
+    # The file exists — "present" means present, even if unreadable below, so
+    # callers can tell "missing" from "present but invalid" via `error`.
+    verdict["manifest_present"] = True
+
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as fh:
+            manifest = json.load(fh)
+    except (OSError, ValueError) as e:
+        verdict["error"] = f"Could not read {manifest_path}: {e}"
+        return verdict
+
+    if not isinstance(manifest, dict):
+        verdict["error"] = (
+            f"{manifest_path} is not a JSON object — re-run --style-explore to "
+            "regenerate it."
+        )
+        return verdict
+
+    # Fail closed on a manifest we can't trust: an unsupported schema, or one
+    # copied in from a different talk (basename AND talk-dir must match — see
+    # rules/stateful-artifacts.md, "stale state is the default").
+    if manifest.get("schema_version") != 1:
+        verdict["error"] = (
+            f"{manifest_path} has unsupported schema_version "
+            f"{manifest.get('schema_version')!r} (expected 1) — re-run "
+            "--style-explore to regenerate it."
+        )
+        return verdict
+    if manifest.get("outline") != outline_name:
+        verdict["error"] = (
+            f"{manifest_path} was rendered for outline "
+            f"{manifest.get('outline')!r}, not {outline_name!r} — it looks "
+            "copied or stale. Re-run --style-explore for this outline."
+        )
+        return verdict
+    manifest_dir = manifest.get("outline_dir")
+    if not isinstance(manifest_dir, str) or manifest_dir != outline_dir:
+        verdict["error"] = (
+            f"{manifest_path} has outline_dir {manifest_dir!r}, expected "
+            f"{outline_dir!r} — missing or mismatched talk discriminator (the "
+            "grid looks copied from another talk or stale). Re-run "
+            "--style-explore for this talk."
+        )
+        return verdict
+    cells = manifest.get("cells")
+    if not isinstance(cells, list):
+        verdict["error"] = (
+            f"{manifest_path} has a malformed 'cells' (expected a list) — "
+            "re-run --style-explore to regenerate it."
+        )
+        return verdict
+
+    # Don't trust models_rendered_ok: a model is eligible only when a cell that
+    # rendered OK still has its image file on disk. A stale or hand-edited
+    # manifest that lists a model with no backing file does not pass the gate
+    # (rules/stateful-artifacts.md — verify against the live source).
+    abs_se = os.path.realpath(se_dir)
+    verified = set()
+    for cell in cells:
+        if not isinstance(cell, dict) or cell.get("status") != "OK":
+            continue
+        rel = cell.get("rel_path")
+        if not isinstance(rel, str) or not rel:
+            continue
+        # rel_path must resolve to a file INSIDE this talk's style-explore/.
+        # Reject absolute paths and ../ traversal so a hand-edited manifest
+        # can't point at an arbitrary existing image to fake render evidence.
+        if os.path.isabs(rel):
+            continue
+        target = os.path.realpath(os.path.join(abs_se, rel))
+        if os.path.commonpath([abs_se, target]) != abs_se:
+            continue
+        if not os.path.isfile(target):
+            continue
+        cell_model_raw = cell.get("model_resolved") or cell.get("model")
+        if not isinstance(cell_model_raw, str):
+            continue
+        cell_model = resolve_model_id(cell_model_raw)
+        if cell_model:
+            verified.add(cell_model)
+    rendered = sorted(verified)
+    verdict["rendered_models"] = rendered
+
+    if resolved in rendered:
+        verdict["gate_passed"] = True
+    else:
+        verdict["error"] = (
+            f"Baked model '{baked}' (resolved: {resolved}) was not rendered in "
+            "the exploration grid. Models that rendered OK: "
+            f"{', '.join(rendered) or 'none'}. Pick one of those, or re-run "
+            f"--style-explore with '{baked}' in candidates.json so the speaker "
+            "can see it before it's baked."
+        )
+    return verdict
+
+
+def run_check_style_explore(outline_path):
+    """CLI wrapper for the render-before-bake gate; emits verdict JSON."""
+    verdict = check_style_explore(outline_path)
+    print(json.dumps(verdict, indent=2))
+    if not verdict["gate_passed"]:
+        print(verdict["error"], file=sys.stderr)
+        sys.exit(1)
+    sys.exit(0)
+
+
+def enforce_render_gate(outline_path):
+    """Render-before-bake gate, shared by every model-producing deck path.
+
+    Refuse to produce images from a model that was never rendered in an
+    exploration grid the speaker could see. Both run_generate and run_build call
+    this so no path can bake an unrendered model — closing the hole where an agent
+    reasons a model into the anchor and skips the Step 8 grid. Exits non-zero with
+    the verdict's actionable message on failure.
+    """
+    verdict = check_style_explore(outline_path)
+    if not verdict["gate_passed"]:
+        print(f"ERROR: {verdict['error']}", file=sys.stderr)
+        sys.exit(1)
+
+
 # --- Main Commands ---
 
 def run_generate(outline_path, slide_args, versioned=False):
@@ -882,6 +1133,8 @@ def run_generate(outline_path, slide_args, versioned=False):
         print("Nothing to generate — all requested slides already have images.")
         sys.exit(0)
 
+    enforce_render_gate(outline_path)
+
     slides_by_num = {s["slide_num"]: s for s in outline["slides"]}
 
     print(f"Model: {model}")
@@ -894,16 +1147,50 @@ def run_generate(outline_path, slide_args, versioned=False):
 
     success = 0
     failed = 0
+    poster = outline.get("composition") == POSTER_COMPOSITION
+
+    if poster:
+        # Poster-theatrical invariants: every illustrated slide must be FULL
+        # with no Safe zone (text is baked in, nothing overlaid). Validate the
+        # whole outline, not just this run's subset — a partial run must not be
+        # able to bypass the deck-level invariant. (outline["slides"] holds only
+        # prompt-bearing slides; EXCEPTION slides carry no prompt and render as
+        # real assets, so they are correctly out of scope here.)
+        bad = [
+            s["slide_num"] for s in outline["slides"]
+            if s["format"] != "FULL" or s.get("safe_zone")
+        ]
+        if bad:
+            print(
+                "ERROR: poster-theatrical composition requires every illustrated "
+                f"slide to be Format: FULL with no Safe zone. Offending slide(s): "
+                f"{', '.join(map(str, bad))}. Fix the outline or drop the "
+                "**Composition:** poster-theatrical header.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     for i, num in enumerate(to_generate):
         slide = slides_by_num[num]
-        # Safe zone presence forces FULL throughout — anchor selection,
-        # sizing, and the directive itself all use the effective format
-        # so the prompt, the image geometry, and the apply-step layout
-        # stay internally consistent.
-        eff_format = effective_slide_format(slide["format"], slide.get("safe_zone"))
-        prompt = resolve_prompt(slide["prompt"], eff_format, outline["anchors"])
-        prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"))
+        if poster:
+            # Poster-theatrical: every slide is full-bleed and the title +
+            # footer are rendered INTO the image (stylized, blended); no safe
+            # zone is reserved. See rules/title-overlay-rules.md.
+            eff_format = "FULL"
+            prompt = resolve_prompt(slide["prompt"], eff_format, outline["anchors"])
+            prompt = apply_poster_embed_directive(
+                prompt,
+                slide.get("text") or slide["title"],
+                outline.get("embedded_footer"),
+            )
+        else:
+            # Safe zone presence forces FULL throughout — anchor selection,
+            # sizing, and the directive itself all use the effective format
+            # so the prompt, the image geometry, and the apply-step layout
+            # stay internally consistent.
+            eff_format = effective_slide_format(slide["format"], slide.get("safe_zone"))
+            prompt = resolve_prompt(slide["prompt"], eff_format, outline["anchors"])
+            prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"))
 
         print(f"[{i+1}/{len(to_generate)}] Slide {num}: {slide['title']}")
 
@@ -1273,8 +1560,11 @@ def run_style_explore(outline_path, candidates_path):
     with open(index_path, "w", encoding="utf-8") as f:
         f.write(render_explore_index(candidates, results))
 
+    manifest_path = write_rendered_manifest(base_dir, outline_path, results)
+
     print()
     print(f"Wrote {index_path}")
+    print(f"Wrote {manifest_path}")
     print("Review the grid, pick a style + model, then bake them into the outline header.")
 
 
@@ -1345,6 +1635,10 @@ def run_build(outline_path, slide_arg):
     if not to_build:
         print("No slides with build specifications found in the outline.")
         sys.exit(0)
+
+    # Same render-before-bake gate as run_generate — build frames are produced
+    # from the baked model too, so this path must not bypass it.
+    enforce_render_gate(outline_path)
 
     total_steps = sum(s["builds"]["count"] for s in to_build)
     build_failed = False
@@ -1501,20 +1795,20 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate illustrations for a presentation outline.",
         epilog="Examples:\n"
-               "  %(prog)s outline.md all\n"
-               "  %(prog)s outline.md remaining\n"
-               "  %(prog)s outline.md 2 5 9\n"
-               "  %(prog)s outline.md 2-10\n"
-               "  %(prog)s outline.md --compare 2\n"
-               "  %(prog)s outline.md --style-explore style-explore/candidates.json\n"
-               "  %(prog)s outline.md --edit 5 \"Erase the label\"\n"
-               "  %(prog)s outline.md --build 5\n"
-               "  %(prog)s outline.md --build all\n"
-               "  %(prog)s outline.md --fix 5 \"Make the road wider\"\n"
-               "  %(prog)s outline.md -v 2 5 9\n",
+               "  %(prog)s outline.yaml all\n"
+               "  %(prog)s outline.yaml remaining\n"
+               "  %(prog)s outline.yaml 2 5 9\n"
+               "  %(prog)s outline.yaml 2-10\n"
+               "  %(prog)s outline.yaml --compare 2\n"
+               "  %(prog)s outline.yaml --style-explore style-explore/candidates.json\n"
+               "  %(prog)s outline.yaml --edit 5 \"Erase the label\"\n"
+               "  %(prog)s outline.yaml --build 5\n"
+               "  %(prog)s outline.yaml --build all\n"
+               "  %(prog)s outline.yaml --fix 5 \"Make the road wider\"\n"
+               "  %(prog)s outline.yaml -v 2 5 9\n",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("outline", help="Path to the presentation outline markdown file")
+    parser.add_argument("outline", help="Path to outline.yaml (the single source of truth)")
     parser.add_argument(
         "--vault",
         default=None,
@@ -1530,7 +1824,13 @@ def main():
         "--style-explore",
         metavar="CANDIDATES_JSON",
         help="Render a style x model x format grid from a candidates.json "
-             "(Phase 2 strategy); writes style-explore/ + index.md",
+             "(Phase 2 strategy); writes style-explore/ + index.md + rendered.json",
+    )
+    parser.add_argument(
+        "--check-style-explore",
+        action="store_true",
+        help="Render-before-bake gate: verify the outline's baked model was "
+             "rendered in style-explore/; emits verdict JSON, exits non-zero on fail",
     )
     parser.add_argument(
         "--edit",
@@ -1580,6 +1880,8 @@ def main():
         run_compare(args.outline, args.compare)
     elif args.style_explore:
         run_style_explore(args.outline, args.style_explore)
+    elif args.check_style_explore:
+        run_check_style_explore(args.outline)
     else:
         run_generate(args.outline, args.slides, versioned=args.version)
 

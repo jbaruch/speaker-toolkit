@@ -309,7 +309,13 @@ Conventions:
 
 - `step: 0` is the empty frame (title/borders only, no content)
 - The final step matches the full slide image
-- Build descriptions are edit instructions for the image model (what to show at that step)
+- `desc` is the additive reveal — what the audience sees at that step. It is
+  human-facing (renders in `slides.md`) and is what you author here
+- Each build step also accepts an optional `erase` field: the backwards-chaining
+  edit prompt (with mandatory "Keep …" clauses) that `generate-illustrations.py
+  --build` sends to the image model. The illustrations skill authors `erase`
+  during generation — not content authoring — see
+  `skills/illustrations/references/builds.md`
 - Each build counts toward `slide_budget` (the validator expands `max(len(builds), 1)`)
 - Script cues mid-slide reference the build steps: `cue: "BUILD 01"`
 

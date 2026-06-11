@@ -1,0 +1,1 @@
+Renders style+model samples and shows them before baking a model into the STYLE ANCHOR (Steps 7-9)

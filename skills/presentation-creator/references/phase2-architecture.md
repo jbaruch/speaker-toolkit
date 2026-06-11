@@ -27,6 +27,35 @@ Read `presentation_modes[]` from the speaker profile. Each mode has a `when_to_u
 field — use these to build a selection logic table dynamically. Present the modes
 with their descriptions and match signals from the spec.
 
+### Decision #2: Engine & Theme Sourcing
+
+Pick the deck's tooling (pptx template vs presenterm terminal-markdown) and theme
+right after Mode — engine depends on the mode's `typical_engine` and constrains
+Slide Design, Template Patterns, and Illustration Strategy (presenterm has no pptx
+layouts; the illustration pipeline assumes pptx). Deciding it late forces
+re-litigation.
+
+Source the choice via the shared wizard:
+[idea-sourcing-wizard.md](idea-sourcing-wizard.md). Engine-specific bindings:
+
+- **Reads**: `profile → presentation_engines[]` (roster + `usage_count`/`out_of`),
+  the chosen mode's `typical_engine`, recent talks' `outline.yaml` `engine`,
+  `WebSearch` (trends), author-supplied references.
+- **Presents**: the multi-select source menu, proposals spanning the checked
+  sources, then a single-select picking the final engine (+ theme pointer).
+- **Quick-default**: resolve engine by precedence — chosen mode's `typical_engine`
+  → highest-usage `presentation_engines` entry → `pptx`; set `engine_source:
+  "quick-default"`; proceed immediately with a one-line note.
+- **Writes**: `talk.engine` (closed enum `pptx|presenterm`), `talk.deck_theme`
+  (free-string pointer), `talk.engine_source` (provenance).
+- **Summary-only / no-profile**: present a flat two-option pptx/presenterm menu
+  with hard-coded when-to-use; no usage tiers, no "your usual"/"series" sources;
+  quick-default → pptx.
+
+Theme stays a thin provenance pointer — the deck's look is owned by `design_rules`
+and, for illustrated decks, the illustration STYLE ANCHOR. Do not build a named
+deck-theme registry here.
+
 ### Opening Pattern Selection Logic
 
 Read `instrument_catalog.opening_patterns[]` from the speaker profile. Each pattern
@@ -59,7 +88,7 @@ When sparkline is selected (or whenever the talk includes a call-to-action momen
 
 This is an architecture-phase concern (not a content-phase one) because the asks shape the entire backward-design of the talk: if you can't name a credible Doer ask, the talk lacks an actionable thesis; if you can't name an Influencer ask, you haven't accounted for audience members who can't directly execute but can spread the idea. Write the four asks before writing any other content; the rest of the talk is in service of making them feel earned.
 
-### Decision #10: Pattern Strategy
+### Decision #11: Pattern Strategy
 
 Read [patterns/_index.md](patterns/_index.md) for the full taxonomy and
 `profile → pattern_profile` for the speaker's pattern history.
@@ -109,11 +138,11 @@ from the reference files alone (no usage stats). All patterns presented as "new"
 tier separation, just a flat relevant-patterns list). Contextual antipattern warnings
 still apply.
 
-Enhance decisions 2-9 with pattern cross-references as shared vocabulary: when recommending
+Enhance decisions 3-10 with pattern cross-references as shared vocabulary: when recommending
 an opening pattern, reference the taxonomy ID; when selecting a narrative structure, note
 which Presentation Patterns it maps to (e.g., "problem-solution" = Narrative Arc + Triad).
 
-### Decision #11: Illustration Strategy (when applicable)
+### Decision #12: Illustration Strategy (when applicable)
 
 Not every talk needs generated illustrations — demo-heavy, data-heavy, or
 screenshot-driven talks may not. When the author wants AI-generated illustrations,

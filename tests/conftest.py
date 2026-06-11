@@ -24,6 +24,10 @@ SCRIPTS_ILL = os.path.join(
     os.path.dirname(__file__), os.pardir,
     "skills", "illustrations", "scripts",
 )
+SCRIPTS_VP = os.path.join(
+    os.path.dirname(__file__), os.pardir,
+    "skills", "vault-profile", "scripts",
+)
 
 
 def _import_script(path, name):
@@ -127,6 +131,39 @@ def check_rhetorical():
 @pytest.fixture(scope="session")
 def model_registry():
     return _import_script(os.path.join(SCRIPTS_ILL, "model_registry.py"), "model_registry")
+
+
+@pytest.fixture(scope="session")
+def validate_profile():
+    return _import_script(os.path.join(SCRIPTS_VP, "validate-profile.py"), "validate_profile")
+
+
+@pytest.fixture(scope="session")
+def build_expansion_manifest():
+    return _import_script(
+        os.path.join(SCRIPTS_ILL, "build-expansion-manifest.py"), "build_expansion_manifest"
+    )
+
+
+@pytest.fixture(scope="session")
+def build_expansion_to_packed():
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "build-expansion-to-packed.py"), "build_expansion_to_packed"
+    )
+
+
+@pytest.fixture(scope="session")
+def stage_images_into_container():
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "stage-images-into-container.py"), "stage_images_into_container"
+    )
+
+
+@pytest.fixture(scope="session")
+def sync_deck_drivers():
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "sync-deck-drivers.py"), "sync_deck_drivers"
+    )
 
 
 @pytest.fixture(scope="session")
