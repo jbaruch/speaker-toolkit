@@ -271,6 +271,25 @@ def _print_missing_key_help(service, key_name, vault_path):
         print(f'    \"{service}\": {{\"{key_name}\": \"YOUR_KEY\"}}')
 
 
+def _require_domain_decision(config, shortener, vault_path):
+    """A custom-domain decision must be recorded before the FIRST short link is
+    created. An ABSENT `{shortener}_domain` key means the user was never asked —
+    STOP so the agent asks and saves the answer. A present value (a domain string,
+    or null for "no custom domain") is a recorded decision and proceeds.
+    """
+    key = f"{shortener}_domain"
+    if key in config:
+        return
+    default_domain = "bit.ly" if shortener == "bitly" else "the shortener default"
+    profile = os.path.join(vault_path, "speaker-profile.json") if vault_path else "the speaker profile"
+    print(f"ERROR: No custom-domain decision recorded for shortener '{shortener}'.")
+    print("  Before creating the first short link, ask the user whether they have a")
+    print(f"  custom domain (e.g. jbaru.ch), then save the answer under")
+    print(f"  publishing_process.qr_code.{key} in {profile}:")
+    print(f'    a domain string (e.g. "jbaru.ch"), or null for no custom domain ({default_domain}).')
+    sys.exit(1)
+
+
 def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dry_run=False, vault_path=None):
     """Resolve the short URL for a talk, using cache or API as needed.
 
@@ -296,6 +315,13 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
         if entry.get("talk_slug") == talk_slug:
             existing = entry
             break
+
+    # Enforce slug-only back-half on EXISTING links too: a tracked shortened link
+    # whose back-half isn't the slug is legacy — don't reuse it from cache or
+    # retarget it in place; drop it so a slug-based link is recreated below.
+    if existing and existing.get("shortener_link_id") and existing.get("short_path") != talk_slug:
+        print(f"  Legacy non-slug back-half '{existing.get('short_path')}' for '{talk_slug}' — recreating with the slug")
+        existing = None
 
     # If cached and target matches, reuse
     if existing and existing.get("target_url") == shownotes_url:
@@ -354,6 +380,7 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
                 meta["updated_at"] = datetime.date.today().isoformat()
                 return existing["short_url"], meta
             else:
+                _require_domain_decision(config, "bitly", vault_path)
                 # Create new link with talk slug as custom back-half
                 domain_label = bitly_domain or "bit.ly"
                 print(f"  Creating {domain_label} link for {shownotes_url} (back-half: {custom_back_half})")
@@ -384,6 +411,7 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
                 meta["updated_at"] = datetime.date.today().isoformat()
                 return existing["short_url"], meta
             else:
+                _require_domain_decision(config, "rebrandly", vault_path)
                 print(f"  Creating rebrand.ly link for {shownotes_url} (slashtag: {custom_back_half})")
                 result = create_rebrandly_link(shownotes_url, api_key, domain, custom_back_half)
                 meta = {

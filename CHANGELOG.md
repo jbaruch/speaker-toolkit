@@ -171,6 +171,30 @@ registry. New profile fields are optional/additive (no schema_version bump), so
 existing profiles and outlines still validate. The Phase 2 decisions renumber
 (Pattern Strategy #10→#11, Illustration Strategy #11→#12).
 
+## 0.18.26 — 2026-06-09
+
+### fix(qr-generation) — recreate legacy non-slug links; capture the custom-domain decision (#56)
+
+Follow-up to the QR shortlink work shipped via #79, which enforced the slug-only
+back-half for newly-created links but left two gaps.
+
+- Slug-only back-half now applies to EXISTING tracked links too: a cached entry
+  whose back-half isn't the slug is no longer reused or retargeted in place — it's
+  recreated with the slug back-half (regression-tested).
+- First short link captures the custom-domain decision: before creating a NEW
+  shortened link, an absent `publishing_process.qr_code.{shortener}_domain` key
+  STOPS so the agent asks the user and saves the answer — the domain, or `null`
+  for "no custom domain" — so a configured custom domain is never silently
+  skipped. Absent = never asked; `null` = decided (default domain), never
+  re-asked. The MCP path makes the same check.
+- Documented the `bitly_domain` knob in the profile schema (the code and the
+  clarification flow already used it). `rules/qr-generation-rules.md` §2 (the
+  custom domain must be used when configured) and new §7 (the three-state
+  decision); phase6-publishing and the clarification prompts save an explicit
+  `null`.
+
+## 0.18.25 — 2026-06-08
+
 ### fix(illustrations) — --build enforces the Keep-clause preservation list (#46)
 
 `--build` previously passed each `build-NN` description to the image editor
@@ -182,6 +206,8 @@ step carries an explicit `Keep` clause and skips the slide with a stderr error
 and a non-zero exit when one is missing — instead of silently producing a broken
 chain. Build step descriptions must be authored as erase instructions with
 `Keep` clauses (see `skills/illustrations/references/builds.md`).
+
+## 0.18.24 — 2026-06-08
 
 ### feat(presentation-creator) — narrative.md becomes a TL;DR + slide-by-slide walk (#81)
 
@@ -225,6 +251,8 @@ at the point the argument was actually being shaped.
   before Phase 3. The plain (full-validation) extractor path is unchanged from
   Phase 3 onward.
 
+## 0.18.23 — 2026-06-08
+
 ### fix(qr-generation) — replace inherited QRs in place; back-half always the slug (#56)
 
 On a deck adapted (trimmed) from another talk, the QR step added a second QR
@@ -254,6 +282,23 @@ QR-bearing slide is detected and its QR replaced in place.
 - macOS + PowerPoint only for the `InsertQR` change; untestable in Linux CI by
   design. The QR-detection, slide-targeting, and back-half logic IS unit-tested.
 
+## 0.18.22 — 2026-06-07
+
+### fix(shownotes-publisher) — content-only gate decides direct-push vs branch+PR
+
+Step 9 runs `skills/shownotes-publisher/scripts/content-only-gate.sh` against the
+shownotes repo before publishing. When every pending change touches only the
+declared content globs, the skill direct-pushes to `main`; any out-of-glob path,
+or an indeterminate state, falls back to branch + PR. This is the Form B
+client-side gate that `jbaruch/coding-policy: ci-safety`'s Content-Only
+Direct-Push Carve-Out permits where server-side allowlist enforcement is not
+expressible on a github.com personal repo (coding-policy#119, shipped in
+coding-policy 0.3.52). The carve-out's precondition 1 is satisfied by a new
+authority-of-record steering rule, `rules/shownotes-content-publish.md`, naming
+the covered globs, the gate script, and the review the direct-push skips. Fixes #65.
+
+## 0.18.20 — 2026-06-07
+
 ### fix(qr-generation) — compose date-less talk slugs (QR + Phase 1) (#55)
 
 Completes the date-less-slug convention. #66 made the publisher consume
@@ -279,18 +324,6 @@ published page instead of pointing at a stale `YYYY-MM-DD`-prefixed back-half.
 - Left intentionally: `url.template` date variables (URL *assembly*, configurable
   per deployed site — tracked in #17), and legacy date-prefixed filenames already
   published (the publisher's never-rename guard) or ingested into the vault.
-### fix(shownotes-publisher) — content-only gate decides direct-push vs branch+PR
-
-Step 9 runs `skills/shownotes-publisher/scripts/content-only-gate.sh` against the
-shownotes repo before publishing. When every pending change touches only the
-declared content globs, the skill direct-pushes to `main`; any out-of-glob path,
-or an indeterminate state, falls back to branch + PR. This is the Form B
-client-side gate that `jbaruch/coding-policy: ci-safety`'s Content-Only
-Direct-Push Carve-Out permits where server-side allowlist enforcement is not
-expressible on a github.com personal repo (coding-policy#119, shipped in
-coding-policy 0.3.52). The carve-out's precondition 1 is satisfied by a new
-authority-of-record steering rule, `rules/shownotes-content-publish.md`, naming
-the covered globs, the gate script, and the review the direct-push skips. Fixes #65.
 
 ## 0.18.16 — 2026-06-07
 

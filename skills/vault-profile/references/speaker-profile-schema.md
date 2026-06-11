@@ -328,6 +328,7 @@ creation at runtime.
       "insert_into_deck": true,
       "slide_position": "shownotes_slide|closing|both",
       "shortener": "bitly|rebrandly|none",
+      "bitly_domain": "jbaru.ch | null",
       "rebrandly_domain": "jbaru.ch | null",
       "bg_color_match": true
     },

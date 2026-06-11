@@ -321,3 +321,91 @@ def test_create_bitly_link_raises_when_custom_back_half_fails(generate_qr, monke
         generate_qr.create_bitly_link(
             "https://example.com/notes", "tok", custom_back_half="my-slug", domain="jbaru.ch"
         )
+
+
+def test_legacy_non_slug_cache_entry_is_recreated_with_slug(generate_qr, monkeypatch):
+    """A tracked link with a legacy non-slug back-half is NOT reused/retargeted —
+    it is recreated with the slug, even when the cached target matches."""
+    created = {}
+
+    def fake_create_bitly_link(long_url, api_token, custom_back_half=None, domain=None):
+        created["back_half"] = custom_back_half
+        return {"short_url": f"https://jbaru.ch/{custom_back_half}", "link_id": "new-id", "short_path": custom_back_half}
+
+    def boom_update(*a, **k):
+        raise AssertionError("update_bitly_link must not be called for a legacy non-slug entry")
+
+    monkeypatch.setattr(generate_qr, "create_bitly_link", fake_create_bitly_link)
+    monkeypatch.setattr(generate_qr, "update_bitly_link", boom_update)
+    tracking_db = {"qr_codes": [{
+        "talk_slug": "my-slug",
+        "target_url": "https://jbaru.ch/my-slug",   # cached target matches → would reuse without the fix
+        "shortener": "bitly",
+        "short_path": "legacy-hash",                # NON-slug back-half
+        "short_url": "https://bit.ly/legacy-hash",
+        "shortener_link_id": "old-id",
+    }]}
+    short_url, meta = generate_qr.resolve_short_url(
+        "https://jbaru.ch/my-slug", "my-slug",
+        {"shortener": "bitly", "bitly_domain": "jbaru.ch"},
+        {"bitly": {"api_token": "tok"}}, tracking_db, dry_run=False, vault_path=None,
+    )
+    assert created["back_half"] == "my-slug"
+    assert meta["short_path"] == "my-slug"
+    assert meta["shortener_link_id"] == "new-id"
+    assert short_url == "https://jbaru.ch/my-slug"
+
+
+def test_missing_custom_domain_decision_stops_before_first_link(generate_qr, monkeypatch):
+    """First short link with NO recorded custom-domain decision (key absent) STOPS
+    so the agent asks the user — it must not silently default to bit.ly."""
+    import pytest
+    monkeypatch.setattr(generate_qr, "create_bitly_link",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must STOP before creating")))
+    with pytest.raises(SystemExit):
+        generate_qr.resolve_short_url(
+            "https://jbaru.ch/my-slug", "my-slug",
+            {"shortener": "bitly"},   # no bitly_domain key → decision not recorded
+            {"bitly": {"api_token": "tok"}}, {}, dry_run=False, vault_path=None,
+        )
+
+
+def test_explicit_null_custom_domain_proceeds(generate_qr, monkeypatch):
+    """An explicit null custom-domain decision is recorded — proceed on the default
+    domain, no STOP, no re-ask."""
+    captured = {}
+
+    def fake_create_bitly_link(long_url, api_token, custom_back_half=None, domain=None):
+        captured["domain"] = domain
+        return {"short_url": f"https://bit.ly/{custom_back_half}", "link_id": "id", "short_path": custom_back_half}
+
+    monkeypatch.setattr(generate_qr, "create_bitly_link", fake_create_bitly_link)
+    short_url, meta = generate_qr.resolve_short_url(
+        "https://jbaru.ch/my-slug", "my-slug",
+        {"shortener": "bitly", "bitly_domain": None},   # recorded decision: no custom domain
+        {"bitly": {"api_token": "tok"}}, {}, dry_run=False, vault_path=None,
+    )
+    assert captured["domain"] is None
+    assert meta["short_path"] == "my-slug"
+
+
+def test_slug_cache_entry_is_reused(generate_qr, monkeypatch):
+    """A tracked entry whose back-half is already the slug is reused from cache —
+    no API call — when the target matches."""
+    def boom_create(*a, **k):
+        raise AssertionError("must reuse cache, not create a new link")
+
+    monkeypatch.setattr(generate_qr, "create_bitly_link", boom_create)
+    tracking_db = {"qr_codes": [{
+        "talk_slug": "my-slug",
+        "target_url": "https://jbaru.ch/my-slug",
+        "shortener": "bitly",
+        "short_path": "my-slug",
+        "short_url": "https://jbaru.ch/my-slug",
+        "shortener_link_id": "id",
+    }]}
+    short_url, meta = generate_qr.resolve_short_url(
+        "https://jbaru.ch/my-slug", "my-slug", {"shortener": "bitly"}, {}, tracking_db, dry_run=False,
+    )
+    assert short_url == "https://jbaru.ch/my-slug"
+    assert meta["short_path"] == "my-slug"

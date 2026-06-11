@@ -137,6 +137,14 @@ Read `publishing_process.qr_code`. If `enabled`:
 **None path (no shortening):**
 - Script encodes the raw shownotes URL directly into the QR code
 
+**First short link — confirm the custom domain:** before a short link is created
+for the first time, ensure `publishing_process.qr_code.{shortener}_domain` is
+recorded in the profile. If the key is absent, ASK the user whether they have a
+custom domain (e.g. `jbaru.ch`) and SAVE the answer — the domain, or `null` for
+"no custom domain" — then proceed. See `rules/qr-generation-rules.md` §7. The
+Direct API path enforces this (the script STOPS if the key is absent); on the MCP
+path make the check before resolving the link.
+
 3. Run the QR generation script:
    ```bash
    # MCP-preresolved mode:

@@ -17,9 +17,13 @@ python3 generate-qr.py --png-only --talk-slug SLUG --shownotes-url URL \
 ## 2. NEVER Use a Random Shortener Hash
 
 The short link's back-half MUST ALWAYS be the talk slug — the bit.ly custom
-back-half AND the rebrand.ly slashtag, with no override. The script does this
-automatically: `--talk-slug devnexus26-robocoders` creates
-`bit.ly/devnexus26-robocoders` (not `bit.ly/a3xK9f`).
+back-half AND the rebrand.ly slashtag, with no override. When a custom domain is
+configured in the vault profile (`bitly_domain` / `rebrandly_domain`), the short
+link MUST use it. The script does this automatically: `--talk-slug
+devnexus26-robocoders` with `bitly_domain: jbaru.ch` creates
+`jbaru.ch/devnexus26-robocoders` (not `bit.ly/a3xK9f`). If the slug back-half
+can't be set, the script fails to a raw-URL fallback rather than keeping a random
+hash.
 
 Random hashes are untraceable and unprofessional. The back-half IS the slug.
 
@@ -61,7 +65,23 @@ the user to create it. Do not silently degrade to a raw URL.
 The script prints actionable creation commands — but the agent must treat a
 missing token as a blocker, not a fallback trigger.
 
-## 7. Replace Existing QRs In Place
+## 7. First Short Link = ASK + SAVE the Custom Domain
+
+The first time a short link is created for the active shortener, the custom-domain
+decision MUST be recorded in the vault profile. Three states of
+`publishing_process.qr_code.{shortener}_domain`:
+
+- Key ABSENT → never asked. ASK whether the user has a custom domain (e.g.
+  `jbaru.ch`) and SAVE the answer before the link is created.
+- A domain string → use it for the short link.
+- `null` → recorded decision: no custom domain, use the shortener default (`bit.ly`).
+
+Save the decision either way — the domain string, or `null` for "no custom domain".
+A `null` is a recorded decision, not an absent value; never re-ask once saved. On
+the Direct API path `generate-qr.py` STOPS when the key is absent; on the MCP path
+the agent makes the same check before resolving the link.
+
+## 8. Replace Existing QRs In Place
 
 A deck adapted (trimmed) from another talk carries that talk's QR images. The QR
 step detects every existing QR — the closing slide AND any earlier shownotes
