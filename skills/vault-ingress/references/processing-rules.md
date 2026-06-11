@@ -48,8 +48,10 @@ Backfill empty `structured_data` from earlier runs using `rhetoric_notes`.
 abstract. Adherence is consistency with this speaker's own validated style, which
 is why it can only be computed once a baseline exists.
 
-**Gate:** produce an assessment only when 10+ talks have status `processed` or
-`processed_partial`. Below that, return `""`. The subagent reads the baseline from
+**Gate:** produce an assessment only when 10+ **scored** talks exist — talks with
+status `processed`/`processed_partial` that carry a `pattern_score`. The assessment
+anchors to `pattern_score` vs. the baseline. An unscored talk cannot be assessed.
+Below that, return `""`. The subagent reads the baseline from
 Section 15 of `rhetoric-style-summary.md` (signature patterns, recurring
 antipatterns, running average pattern score) — see Rhetoric Summary — Improvement
 & Adherence Sections below.

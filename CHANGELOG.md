@@ -13,11 +13,12 @@ speaker's own established style baseline**.
   departure classification) and required anchors: cite this talk's `pattern_score`
   vs. the running average and name any recurring antipattern that reappeared.
 - **Rhetoric-summary Section 15 now has a schema.** Previously "Section 15
-  aggregates improvement areas" with no structure. Now four required subsections —
+  aggregates improvement areas" with no structure. Now five required subsections —
   recurring improvement themes (each tagged with antipattern ID + severity + talk
-  count), the pattern-score baseline + trajectory, signature patterns, and
-  resolved issues — making Section 15 the explicit baseline per-talk adherence
-  measures against. Section 16 (speaker-confirmed intent) boundary documented.
+  count), the pattern-score + breadth baseline, signature patterns, underused
+  patterns (growth), and resolved issues — making Section 15 the explicit baseline
+  per-talk adherence measures against. Section 16 (speaker-confirmed intent)
+  boundary documented.
 - **Declining pattern scores are now attributed, not just flagged.** Adds
   `pattern_profile.score_drivers` to the speaker profile: a `declining` `score_trend`
   must name its causes. Attribution is **symmetric** — a decline comes from either

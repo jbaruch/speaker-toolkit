@@ -170,9 +170,9 @@ If `{vault_root}/speaker-profile.json` already exists, diff the new profile agai
 - New instruments added to `instrument_catalog`
 - Revised thresholds in `guardrail_sources`
 - New guardrails added to `recurring_issues`
-- Shifts in `pattern_profile.score_drivers` — a newly `declining` direction, a new `rising_antipatterns` entry, or a `pattern_breadth.trend` flipping to `narrowing` (using fewer of the toolkit) is a regression signal worth flagging.
+- Shifts in `pattern_profile.score_drivers` — a newly `declining` direction, a new `antipattern_drivers` entry with a rising `frequency_trend`, or a `pattern_breadth.trend` flipping to `narrowing` (using fewer of the toolkit) is a regression signal worth flagging.
 - A worsening `pacing.adherence.trend` or a rising `over_budget_rate` — the speaker is increasingly running long.
-- **New presentation modes** — flag prominently since they affect creator-skill behavior more than other field changes.
+- **New presentation modes** — flag prominently (the highest-signal field change for creator-skill behavior).
 
 If no prior profile exists, skip this step and proceed.
 

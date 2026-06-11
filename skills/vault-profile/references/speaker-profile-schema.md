@@ -274,13 +274,13 @@ creation at runtime.
     ],
     "score_drivers": {
       "direction": "improving|stable|declining|insufficient_history",
-      "rising_antipatterns": [
+      "antipattern_drivers": [
         {"pattern_id": "shortchanged", "frequency_trend": "increasing", "evidence": "detected in 4 of the last 6 talks, up from 1 of the prior 6"}
       ],
-      "fading_patterns": [
+      "pattern_drivers": [
         {"pattern_id": "bookends", "usage_trend": "decreasing", "evidence": "signature pattern absent from the last 3 talks"}
       ],
-      "note": "Attribution for score_trend — turns a bare trend into named causes. A declining score has TWO symmetric causes; attribute to whichever moved: (1) antipatterns rising — rising_antipatterns MUST list every antipattern_frequency entry with trend='increasing'; (2) patterns fading or breadth narrowing — fading_patterns MUST list every pattern_usage entry with trend='decreasing' (signature OR regular, not signature-only), and a pattern_breadth.trend='narrowing' is itself a driver even when no single pattern fades. Underuse alone can drive a decline with zero antipatterns. When 'improving', the inverse drives it. Empty driver arrays are valid only when direction is 'stable' or 'insufficient_history' (<10 talks_scored)."
+      "note": "Attribution for score_trend — names which patterns/antipatterns moved the score, in EITHER direction. Array names denote the metric, not the direction; each entry's own trend field (frequency_trend / usage_trend, each 'increasing'|'decreasing'|'stable') is authoritative. antipattern_drivers = antipattern_frequency entries whose movement shifted the score (frequency_trend='increasing' lowers it, 'decreasing' raises it). pattern_drivers = pattern_usage entries whose movement shifted the score, signature OR regular (usage_trend='decreasing' lowers it, 'increasing' raises it); a pattern_breadth.trend other than 'stable' is itself a pattern_driver even when no single pattern moves. For direction='declining', list the rising antipatterns + the fading/narrowing patterns; for 'improving', the receding antipatterns + the growing patterns/breadth. Underuse alone can drive a decline with zero antipatterns. Empty driver arrays are valid only when direction is 'stable' or 'insufficient_history' (<10 talks_scored)."
     },
     "by_mode": [
       {

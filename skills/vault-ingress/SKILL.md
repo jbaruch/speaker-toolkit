@@ -194,9 +194,10 @@ Proceed immediately to Step 8.
 
 ## Step 8 — Verify Improvement Goals
 
-If the tracking DB has no `improvement_goals` (or none with active status), skip this
-step silently. Otherwise, with the final Section 15 baseline now current, verify each
-active goal: compute its `current_value`, set `status`
+If the tracking DB has no `improvement_goals` in a verifiable state (none whose
+`status` is outside `achieved`/`retired`), skip this step silently. Otherwise, with the
+final Section 15 baseline now current, verify each such goal: compute its
+`current_value`, set `status`
 (`achieved|improving|stalled|regressed`), and write the verification fields back —
 full rubric in [references/processing-rules.md](references/processing-rules.md)
 Improvement Goal Verification. Report each goal's status in the run summary;

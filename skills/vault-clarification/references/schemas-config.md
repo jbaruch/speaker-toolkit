@@ -83,7 +83,7 @@ skips verification; the next clarification session migrates it.
     "status": "active|improving|achieved|stalled|regressed|retired",
     "current_value": "",
     "last_checked": null,
-    "checked_by": "vault-ingress"
+    "checked_by": null
   }]
 }
 ```
