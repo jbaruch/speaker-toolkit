@@ -7,12 +7,14 @@ fixes baked-text drift between slides. Step 5 now asks the speaker — never inf
 how titles + footers render: **Bleed** (baked into each image, stylized to the
 art, FULL-only, not editable; the noir reference deck) or **Overlay** (PowerPoint
 text over a safe zone, editable, uniform font). Choosing Bleed sets
-`style_anchor.composition: poster-theatrical` and locks every slide to FULL.
+`style_anchor.composition: poster-theatrical` and locks every illustrated slide
+to FULL (EXCEPTION/screenshot slides without an `image_prompt` are exempt).
 
 Adds `style_anchor.text_treatment` — the per-deck rendering directive for baked
 title + footer (e.g. "glowing hand-script neon on an in-scene surface"). It lives
-on the anchor and is applied to every slide, so titles/footers render identically;
-previously the model picked a treatment per call and they drifted.
+on the anchor and is applied to every illustrated slide's baked text, so
+titles/footers render identically; previously the model picked a treatment per
+call and they drifted.
 
 Codifies the anchor-vs-per-slide split: the anchor owns the style,
 `text_treatment`, and the full `embedded_footer` (everything that must stay
