@@ -664,6 +664,20 @@ def test_rejects_unknown_composition(outline_schema, base_data):
         outline_schema.Outline.model_validate(data)
 
 
+def test_accepts_style_anchor_text_treatment(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["style_anchor"]["text_treatment"] = (
+        "glowing hand-script neon rendered on an in-scene surface"
+    )
+    outline = outline_schema.Outline.model_validate(data)
+    assert outline.style_anchor.text_treatment.startswith("glowing hand-script")
+
+
+def test_style_anchor_text_treatment_defaults_none(outline_schema):
+    outline = outline_schema.load_outline(FIXTURE)
+    assert outline.style_anchor.text_treatment is None
+
+
 def test_accepts_slide_safe_zone(outline_schema, base_data):
     data = copy.deepcopy(base_data)
     data["slides"][0]["safe_zone"] = {

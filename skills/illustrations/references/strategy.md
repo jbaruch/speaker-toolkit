@@ -223,10 +223,18 @@ and `style_anchor.imgtxt`; the visual continuity devices go in
 prompts, aspect-ratio tokens, reserved keywords) into the anchor at the same time.
 
 When the composition is poster-theatrical, also set
-`style_anchor.composition: poster-theatrical` and
-`style_anchor.embedded_footer: <footer text>`. Generation reads these to embed the
+`style_anchor.composition: poster-theatrical`,
+`style_anchor.embedded_footer: <footer text>`, and
+`style_anchor.text_treatment: <how baked title + footer render>` (e.g. "glowing
+hand-script neon on an in-scene surface"). Generation reads these to embed the
 title + footer into each image and skip safe zones; apply and deck-build read them
-to leave titles/footers off the slide (QR only). Standard-overlay decks omit both.
+to leave titles/footers off the slide (QR only). Standard-overlay decks omit all three.
+
+The anchor owns everything that must stay consistent: the per-format style, the
+`text_treatment`, and the full `embedded_footer`. The per-slide `image_prompt`
+carries only the scene; `text_overlay` carries only that slide's literal title
+string — never the text styling. Putting the treatment in the anchor is what
+keeps every baked title and footer rendering identically across the deck.
 
 Then run the render-before-bake gate and report its one-line verdict:
 

@@ -1,5 +1,33 @@
 # Changelog
 
+### feat(illustrations) — FULL-bleed composition as a first-class choice + `text_treatment` anchor field
+
+Makes the poster-theatrical (full-bleed) path a deliberate, asked-for choice and
+fixes baked-text drift between slides. Step 5 now asks the speaker — never infers —
+how titles + footers render: **Bleed** (baked into each image, stylized to the
+art, FULL-only, not editable; the noir reference deck) or **Overlay** (PowerPoint
+text over a safe zone, editable, uniform font). Choosing Bleed sets
+`style_anchor.composition: poster-theatrical` and locks every slide to FULL.
+
+Adds `style_anchor.text_treatment` — the per-deck rendering directive for baked
+title + footer (e.g. "glowing hand-script neon on an in-scene surface"). It lives
+on the anchor and is applied to every slide, so titles/footers render identically;
+previously the model picked a treatment per call and they drifted.
+
+Codifies the anchor-vs-per-slide split: the anchor owns the style,
+`text_treatment`, and the full `embedded_footer` (everything that must stay
+consistent); the per-slide `image_prompt` carries only the scene and `text_overlay`
+carries only that slide's literal title string. Also completes the outline.yaml
+migration across all loaded context: stale markdown-format guidance in
+`presentation-creator/SKILL.md` (incl. the obsolete "illustrations expects
+markdown-style inputs" note), `phase2-architecture.md`, `generate-illustrations.py`
+runtime messages, `generate-thumbnail.py`, `title-overlay-rules.md` §0,
+`thumbnail-generation-rules.md`, and `resources-gathering-rules.md` now name the
+`style_anchor.*` YAML fields. The `test_outline_source_is_yaml.py` contract test
+scans skill prose + `rules/` (not just scripts) and fails on either a phantom
+`presentation-outline.md` reference or the legacy markdown bold-field syntax
+(`**Composition:**` / `**Embedded footer:**`) anywhere in loaded context.
+
 ### fix(illustrations) — read outline.yaml, not a phantom presentation-outline.md
 
 The three outline-consuming illustration scripts (`generate-illustrations.py`,

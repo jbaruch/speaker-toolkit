@@ -715,7 +715,7 @@ def main():
                              "anchor (e.g., retro tech-manual sepia, watercolor) "
                              "before composition — fixes palette mismatch on "
                              "decks with a strong visual style. Pass through from "
-                             "Phase 2's STYLE ANCHOR block when present.")
+                             "Phase 2's style_anchor block when present.")
     parser.add_argument("--title-position", choices=["top", "bottom", "overlay"],
                         default="top",
                         help="Title text position (default: top)")

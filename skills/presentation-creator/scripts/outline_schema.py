@@ -322,6 +322,12 @@ class StyleAnchor(_StrictModel):
     # the title (+ embedded_footer) into every image. See rules/title-overlay-rules.md.
     composition: Composition | None = None
     embedded_footer: str | None = None
+    # How baked title + footer text is rendered in poster-theatrical mode (e.g.
+    # "glowing hand-script neon on an in-scene surface"). Lives on the anchor so
+    # every slide's text is styled identically; the per-slide image_prompt carries
+    # only the scene and text_overlay carries only the literal title string. Only
+    # consumed in poster-theatrical mode; null falls back to a generic treatment.
+    text_treatment: str | None = None
 
 
 # ── Talk metadata ────────────────────────────────────────────────────

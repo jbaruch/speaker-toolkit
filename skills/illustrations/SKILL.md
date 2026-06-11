@@ -37,7 +37,7 @@ Do not restate them here — apply them.
 
 | File / Reference | Purpose |
 |------------------|---------|
-| `outline.yaml` | Source of truth — `style_anchor` (model, per-format anchors, composition, embedded_footer) + per-slide `format` / `image_prompt` / `safe_zone` / `builds` |
+| `outline.yaml` | Source of truth — `style_anchor` (model, per-format anchors, composition, embedded_footer, text_treatment) + per-slide `format` / `image_prompt` / `text_overlay` / `safe_zone` / `builds` |
 | `speaker-profile.json` → `visual_style_history` | Default style, departures, mode profiles, confirmed visual intents |
 | `speaker-profile.json` → `publishing_process.thumbnail` | Speaker photo path + aesthetic preference |
 | `illustrations/` (alongside outline) | Generated images, builds, model-comparison output |
@@ -138,12 +138,19 @@ silently — the priorities drive the shortlist in Step 6.
 
 Proceed immediately to Step 5.
 
-## Step 5 — Define Format Vocabulary
+## Step 5 — Define Format Vocabulary + Composition
 
-Define the slide format types for this talk: FULL / IMG+TXT / EXCEPTION + any
-talk-specific additions. Also decide the composition: standard overlay (titles +
-footers overlaid at apply time, per-slide safe zones) or poster-theatrical (all
-full-bleed; title + footer baked into the image, no safe zones, QR-only overlay).
+Ask the speaker — `AskUserQuestion`, never infer — how titles and footers are rendered:
+
+- **Bleed** — title + footer baked into every image, stylized to the art (the
+  example noir deck). Striking and consistent, but **not editable** after
+  generation. Sets `composition: poster-theatrical` and locks every slide to
+  **FULL** (no IMG+TXT, no safe zones); the text treatment + footer are recorded
+  in the anchor at Step 9.
+- **Overlay** — titles + footers added by PowerPoint over a per-slide safe zone.
+  Editable, uniform font, less integrated. Standard composition; the format
+  vocabulary is FULL / IMG+TXT / EXCEPTION + any talk-specific additions.
+
 Detail: [skills/illustrations/references/strategy.md](references/strategy.md).
 
 Proceed immediately to Step 6.
@@ -197,9 +204,22 @@ Proceed immediately to Step 9.
 
 Write the `style_anchor` block — chosen model + per-format anchors + visual
 continuity devices (`conventions`) — into `outline.yaml`. For poster-theatrical
-composition, also set `style_anchor.composition: poster-theatrical` and
-`style_anchor.embedded_footer: <text>`. Then run the deterministic precheck and
-report its verdict in one line; never skip this step silently:
+composition, also set `style_anchor.composition: poster-theatrical`,
+`style_anchor.embedded_footer: <text>`, and `style_anchor.text_treatment: <how
+baked title + footer are rendered>` (e.g. "glowing hand-script neon on an
+in-scene surface").
+
+Anchor vs per-slide split — everything that must look identical across slides
+lives in the anchor; only the scene and the literal title vary per slide:
+
+- **Anchor**: visual style (per-format anchors), `text_treatment` (the title +
+  footer rendering style), and `embedded_footer` (the full footer text). These
+  keep every baked title/footer consistent.
+- **Per slide**: `image_prompt` carries only the scene; `text_overlay` carries
+  only the literal title string for that slide — never the text styling.
+
+Then run the deterministic precheck and report its verdict in one line; never
+skip this step silently:
 
 ```bash
 python3 skills/illustrations/scripts/generate-illustrations.py \

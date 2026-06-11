@@ -16,7 +16,8 @@ _FIXTURE_DATA = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
 
 
 def _write_outline(tmp_path, *, slides, model: str | None = "imagen-4",
-                   composition=None, embedded_footer=None, name="outline.yaml"):
+                   composition=None, embedded_footer=None, text_treatment=None,
+                   name="outline.yaml"):
     """Write a minimal valid outline.yaml (partial view) for parser tests.
 
     Reuses the canonical fixture's talk block, then sets the style anchor and
@@ -35,6 +36,8 @@ def _write_outline(tmp_path, *, slides, model: str | None = "imagen-4",
             anchor["composition"] = composition
         if embedded_footer is not None:
             anchor["embedded_footer"] = embedded_footer
+        if text_treatment is not None:
+            anchor["text_treatment"] = text_treatment
         data["style_anchor"] = anchor
     p = tmp_path / name
     p.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
@@ -978,10 +981,11 @@ def test_run_generate_proceeds_when_gate_passes(
 
 
 def _write_poster_outline(tmp_path, model="gemini-3-pro-image-preview",
-                          footer="jbaruch • Devoxx 2026", text="One team, one bench"):
+                          footer="jbaruch • Devoxx 2026", text="One team, one bench",
+                          text_treatment="glowing hand-script neon on an in-scene surface"):
     return _write_outline(
         tmp_path, model=model, composition="poster-theatrical",
-        embedded_footer=footer, slides=[
+        embedded_footer=footer, text_treatment=text_treatment, slides=[
             {"n": 3, "chapter": "c", "title": "The Coordination Tax",
              "format": "FULL", "text_overlay": text,
              "image_prompt": "[STYLE ANCHOR] one team at a shared workbench"},
@@ -995,6 +999,7 @@ def test_parse_poster_composition_and_footer(generate_illustrations, tmp_path):
     r = gi.parse_outline(str(outline))
     assert r["composition"] == "poster-theatrical"
     assert r["embedded_footer"] == "jbaruch • Devoxx 2026"
+    assert r["text_treatment"] == "glowing hand-script neon on an in-scene surface"
     assert r["slides"][0]["text"] == "One team, one bench"
 
 
@@ -1004,6 +1009,24 @@ def test_poster_embed_directive_includes_title_and_footer(generate_illustrations
     assert "EMBEDDED TEXT" in d
     assert "One team, one bench" in d
     assert "jbaruch • Devoxx 2026" in d
+
+
+def test_poster_embed_directive_uses_anchor_text_treatment(generate_illustrations):
+    # The anchor's text_treatment must appear verbatim in the directive so every
+    # slide's baked title/footer renders identically.
+    gi = generate_illustrations
+    d = gi.apply_poster_embed_directive(
+        "a scene", "One team, one bench", "footer",
+        "glowing hand-script neon on an in-scene surface",
+    )
+    assert "glowing hand-script neon on an in-scene surface" in d
+
+
+def test_poster_embed_directive_falls_back_to_default_treatment(generate_illustrations):
+    # With no anchor text_treatment, the generic default is used (back-compat).
+    gi = generate_illustrations
+    d = gi.apply_poster_embed_directive("a scene", "Title", None)
+    assert gi.DEFAULT_POSTER_TEXT_TREATMENT in d
     assert "TITLE SAFE ZONE" not in d
 
 
@@ -1045,6 +1068,8 @@ def test_run_generate_poster_embeds_text_and_skips_safe_zone(
     assert "EMBEDDED TEXT" in prompts[0]
     assert "One team, one bench" in prompts[0]
     assert "jbaruch • Devoxx 2026" in prompts[0]
+    # The anchor's text_treatment rides through run_generate into the prompt.
+    assert "glowing hand-script neon on an in-scene surface" in prompts[0]
     assert "TITLE SAFE ZONE" not in prompts[0]
 
 

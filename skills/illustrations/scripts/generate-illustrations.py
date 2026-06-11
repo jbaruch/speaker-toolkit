@@ -131,12 +131,19 @@ POSTER_COMPOSITION = "poster-theatrical"
 
 POSTER_EMBED_DIRECTIVE_TEMPLATE = (
     " EMBEDDED TEXT -- CRITICAL COMPOSITION RULE: Render the title \"{title}\" "
-    "as an integral, stylized part of the scene itself — painted, carved, "
-    "printed, lit, woven, or sculpted into the composition in the artwork's "
-    "own lettering and materials, not pasted on as a flat overlay or caption. "
+    "as an integral, stylized part of the scene itself — {treatment} — not "
+    "pasted on as a flat overlay or caption. "
     "{footer_clause}All text must be fully blended and integrated into the "
     "illustration as if it belongs there. Do NOT reserve blank negative space "
     "for a title; the text is part of the artwork."
+)
+
+# Fallback when the style anchor declares no text_treatment. The anchor's
+# text_treatment (when set) makes every baked title/footer render identically;
+# without it the model picks a treatment per call, so titles drift between slides.
+DEFAULT_POSTER_TEXT_TREATMENT = (
+    "painted, carved, printed, lit, woven, or sculpted into the composition in "
+    "the artwork's own lettering and materials"
 )
 
 POSTER_FOOTER_CLAUSE_TEMPLATE = (
@@ -210,6 +217,7 @@ def parse_outline(path):
                 text / builds
             composition: str | None — "poster-theatrical" or None (standard)
             embedded_footer: str | None — poster-theatrical baked footer
+            text_treatment: str | None — anchor's baked-text rendering style
 
     Build steps map to the generator's backwards-chaining view: each step's
     `description` is the `erase` prompt (additive `desc` stays human-facing in
@@ -236,6 +244,7 @@ def parse_outline(path):
             anchor.composition.value if anchor and anchor.composition else None
         ),
         "embedded_footer": anchor.embedded_footer if anchor else None,
+        "text_treatment": anchor.text_treatment if anchor else None,
     }
 
     for slide in outline.slides:
@@ -319,13 +328,17 @@ def apply_safe_zone_directive(prompt, safe_zone):
     return prompt + directive
 
 
-def apply_poster_embed_directive(prompt, title_text, footer_text):
+def apply_poster_embed_directive(prompt, title_text, footer_text, text_treatment=None):
     """Append the poster-theatrical EMBEDDED TEXT directive to a prompt.
 
     Used when the deck's composition is poster-theatrical: the title (and, when
     present, the footer) are rendered into the image as a stylized part of the
     scene rather than overlaid afterward. The inverse of a safe zone — no
     negative space is reserved. See rules/title-overlay-rules.md.
+
+    `text_treatment` is the style anchor's per-deck rendering directive (how
+    baked text looks); passing the same value on every slide keeps titles and
+    footers visually consistent. When None, a generic treatment is used.
     Idempotent: an existing EMBEDDED TEXT block is replaced.
     """
     if not title_text:
@@ -341,8 +354,10 @@ def apply_poster_embed_directive(prompt, title_text, footer_text):
         footer_clause = POSTER_FOOTER_CLAUSE_TEMPLATE.format(
             footer=footer_text.replace('"', "'")
         )
+    treatment = (text_treatment or "").strip() or DEFAULT_POSTER_TEXT_TREATMENT
     directive = POSTER_EMBED_DIRECTIVE_TEMPLATE.format(
         title=title,
+        treatment=treatment,
         footer_clause=footer_clause,
     )
     return prompt + directive
@@ -588,8 +603,8 @@ def _load_context(outline_path, require_model=True, vault_path=None, compare_mod
     outline = parse_outline(outline_path)
 
     if require_model and not outline["model"]:
-        print("ERROR: No model found in outline. Add a **Model:** `model-name` line")
-        print("to the Illustration Style Anchor section.")
+        print("ERROR: No model found in outline. Add a `style_anchor.model` field")
+        print("to outline.yaml.")
         sys.exit(1)
 
     families = set()
@@ -954,7 +969,7 @@ def write_rendered_manifest(base_dir, outline_path, results):
 def check_style_explore(outline_path):
     """Render-before-bake gate: was the outline's baked model actually rendered?
 
-    Reads the baked **Model:** from the outline header and style-explore/
+    Reads the baked `style_anchor.model` from outline.yaml and style-explore/
     rendered.json. gate_passed is True iff the manifest exists and the baked
     model (resolved to its canonical id) is among the OK-rendered models.
     Returns a verdict dict; never raises on a missing/unbaked model.
@@ -977,7 +992,7 @@ def check_style_explore(outline_path):
 
     if not baked:
         verdict["error"] = (
-            "No **Model:** is baked into the outline header. Run the style "
+            "No `style_anchor.model` is baked into outline.yaml. Run the style "
             "exploration first and pick a model from the rendered grid: "
             f"generate-illustrations.py {outline_name} "
             "--style-explore style-explore/candidates.json"
@@ -1163,9 +1178,9 @@ def run_generate(outline_path, slide_args, versioned=False):
         if bad:
             print(
                 "ERROR: poster-theatrical composition requires every illustrated "
-                f"slide to be Format: FULL with no Safe zone. Offending slide(s): "
-                f"{', '.join(map(str, bad))}. Fix the outline or drop the "
-                "**Composition:** poster-theatrical header.",
+                f"slide to be format FULL with no safe_zone. Offending slide(s): "
+                f"{', '.join(map(str, bad))}. Fix the outline or drop "
+                "`style_anchor.composition: poster-theatrical`.",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -1182,6 +1197,7 @@ def run_generate(outline_path, slide_args, versioned=False):
                 prompt,
                 slide.get("text") or slide["title"],
                 outline.get("embedded_footer"),
+                outline.get("text_treatment"),
             )
         else:
             # Safe zone presence forces FULL throughout — anchor selection,
@@ -1291,7 +1307,7 @@ def run_compare(outline_path, slide_num):
     print("=" * 70)
     print()
     print(f"Review images in: {output_dir}/")
-    print("Set your chosen model in the outline: **Model:** `model-name`")
+    print("Set your chosen model in outline.yaml: `style_anchor.model: model-name`")
 
 
 # --- Style Exploration (Phase 2 strategy: style x model x format grid) ---
@@ -1565,7 +1581,7 @@ def run_style_explore(outline_path, candidates_path):
     print()
     print(f"Wrote {index_path}")
     print(f"Wrote {manifest_path}")
-    print("Review the grid, pick a style + model, then bake them into the outline header.")
+    print("Review the grid, pick a style + model, then bake them into outline.yaml's style_anchor.")
 
 
 def run_edit(outline_path, slide_num, edit_prompt):
@@ -1628,7 +1644,7 @@ def run_build(outline_path, slide_arg):
         slide = slides_by_num[num]
         if "builds" not in slide:
             print(f"ERROR: Slide {num} has no build specification in the outline.")
-            print("Add a '- Builds: N steps' section with build-00 through build-NN entries.")
+            print("Add a `builds:` block (step 0 through N, each with desc + erase).")
             sys.exit(1)
         to_build = [slide]
 
@@ -1660,11 +1676,11 @@ def run_build(outline_path, slide_arg):
 
         print(f"Slide {num}: {slide['title']} — {len(steps)} build steps")
 
-        # An outline can declare `- Builds: N steps` without any parsable
-        # `build-XX:` entries beneath it — skip cleanly rather than crashing
-        # on max() of an empty sequence.
+        # Defensive: the schema guarantees a non-empty, contiguous-from-0
+        # `builds` list, so this can't fire from a valid outline.yaml — but guard
+        # against an empty sequence rather than crashing on max() of nothing.
         if not steps:
-            print(f"  SKIP — Builds declared but no build-NN entries parsed")
+            print(f"  SKIP — builds block has no steps")
             continue
 
         # Chain backwards: start from full, remove elements one at a time
