@@ -150,8 +150,10 @@ ground-truth narrative and must not be applied silently.
    speaker pre-authorized this batch ("just apply everything, don't ask").
 2. **Apply approved changes.** Integrate confirmed `new_patterns` and
    `summary_updates` into `rhetoric-style-summary.md`. Sections 1–14 map to
-   the 14 dimensions; Section 15 aggregates improvement areas; Section 16
-   captures speaker-confirmed intent. **Recount status from the DB every
+   the 14 dimensions; Sections 15–16 are the cross-talk improvement & adherence
+   baseline and speaker-confirmed intent — structure defined in
+   [references/processing-rules.md](references/processing-rules.md) Rhetoric
+   Summary — Improvement & Adherence Sections. **Recount status from the DB every
    time** — never increment manually.
 3. **Report.** Output: talks processed, new patterns, current state, skipped
    talks. Flag structural changes prominently (new presentation mode, new
@@ -190,7 +192,19 @@ If the profile doesn't exist, skip this step silently.
 
 Proceed immediately to Step 8.
 
-## Step 8 — Same-Week Clarification Trigger
+## Step 8 — Verify Improvement Goals
+
+If the tracking DB has no `improvement_goals` (or none with active status), skip this
+step silently. Otherwise, with the final Section 15 baseline now current, verify each
+active goal: compute its `current_value`, set `status`
+(`achieved|improving|stalled|regressed`), and write the verification fields back —
+full rubric in [references/processing-rules.md](references/processing-rules.md)
+Improvement Goal Verification. Report each goal's status in the run summary;
+`regressed` or `stalled` goals are the speaker's own priorities — surface them first.
+
+Proceed immediately to Step 9.
+
+## Step 9 — Same-Week Clarification Trigger
 
 If no talks were newly processed in this run, finish here without further action.
 
@@ -229,7 +243,9 @@ verbatim details may be lost.
 - Create `transcripts/`, `slides/`, `analyses/` dirs if missing.
 - Re-read tracking DB before writing (single source of truth).
 - Preserve all summary content — add/refine, never delete.
-- After 10+ talks, start providing adherence assessments.
+- After 10+ scored talks, produce per-talk adherence assessments against the
+  Section 15 baseline — definition in
+  [references/processing-rules.md](references/processing-rules.md) Adherence Assessment.
 
 For input-quality edge cases that require non-default handling — wide-angle
 room recordings, Whisper hallucination on bad audio, non-speaker talks

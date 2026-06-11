@@ -1,5 +1,66 @@
 # Changelog
 
+### feat(vault) — define the self-improvement outcomes of talk ingress
+
+Turns three previously under-specified coaching surfaces into a coherent
+three-level subsystem keyed on one definition: **adherence = consistency with the
+speaker's own established style baseline**.
+
+- **`adherence_assessment` is now defined** (`vault-ingress/references/processing-rules.md`).
+  Previously a bare one-liner ("after 10+ talks, start providing adherence
+  assessments") with no statement of adherence *to what*. Now a gated 2–4 sentence
+  judgment with three ordered checks (pattern adherence, intent adherence,
+  departure classification) and required anchors: cite this talk's `pattern_score`
+  vs. the running average and name any recurring antipattern that reappeared.
+- **Rhetoric-summary Section 15 now has a schema.** Previously "Section 15
+  aggregates improvement areas" with no structure. Now four required subsections —
+  recurring improvement themes (each tagged with antipattern ID + severity + talk
+  count), the pattern-score baseline + trajectory, signature patterns, and
+  resolved issues — making Section 15 the explicit baseline per-talk adherence
+  measures against. Section 16 (speaker-confirmed intent) boundary documented.
+- **Declining pattern scores are now attributed, not just flagged.** Adds
+  `pattern_profile.score_drivers` to the speaker profile: a `declining` `score_trend`
+  must name its causes. Attribution is **symmetric** — a decline comes from either
+  bad things present (antipatterns rising) or good things absent (patterns fading /
+  pattern range narrowing), and underuse alone can lower the score with zero
+  antipatterns. vault-profile Step 4 computes it; Step 6 surfaces shifts in the diff.
+- **Pattern underuse is now a first-class signal, not only antipatterns.** Adds
+  `pattern_profile.pattern_breadth` (avg distinct patterns per talk + widening/stable/
+  narrowing trend) to isolate "using enough of your toolkit" from antipattern
+  avoidance, and `pattern_profile.underused_patterns` (never/rarely-used observable
+  patterns that fit the speaker's modes) as positive-space coaching. Section 15 gains
+  a "Underused patterns (growth)" subsection and a breadth line; Dimension 14 and the
+  adherence pattern-check both treat underuse as a legitimate finding. Framed as range
+  and fit, explicitly **not** count-maximization — cramming patterns is its own
+  antipattern.
+- Dimension 14 (`rhetoric-dimensions.md`) now asks each improvement issue to name
+  its related antipattern ID + severity where one applies — the per-issue tagging
+  that feeds both Section 15 aggregation and profile decline attribution.
+
+Four additions turn the diagnostics into an actual coaching loop:
+
+- **Closed the loop — improvement goals + verification.** New `improvement_goals`
+  artifact in the tracking DB (owner: vault-clarification; reader/updater:
+  vault-ingress, verification fields only; per-record `schema_version`). The speaker
+  picks 1–2 focus areas from Section 15 (new clarification Step 6); a later ingress
+  run (new Step 8) checks each against the fresh baseline and sets
+  `achieved|improving|stalled|regressed`. The system now verifies the speaker acted,
+  not just diagnoses. Schema in vault-clarification `schemas-config.md`; verification
+  rubric in vault-ingress `processing-rules.md`.
+- **Mode-relative baselines.** Adds `pattern_profile.by_mode` (per-mode score,
+  breadth, top antipatterns; `stable` at ≥3 talks). Adherence and underuse now compare
+  a talk to ITS mode's baseline when stable, else global — a lightning talk no longer
+  reads as "underusing audience interaction" against a keynote yardstick.
+- **Strengths reinforcement.** Adds `pattern_profile.strengths` (signature patterns +
+  combinations with a `lean_in` line) and reframes Section 15's signature-patterns
+  subsection as "lean in / double down" — the positive counterpart to recurring
+  issues, distinct from celebratory badges.
+- **Pacing/time adherence.** Adds `pacing.adherence` (talks over slide-budget, rate,
+  trend, worst offenders), computed in vault-profile Step 4 from `slide_count` ÷
+  `talk_duration_estimate` vs `slide_budgets`. The quantitative counterpart to
+  Dimension 14's qualitative "rushing" read; marginal overages flagged softly since
+  duration is transcript-estimated.
+
 ### feat(illustrations) — FULL-bleed composition as a first-class choice + `text_treatment` anchor field
 
 Makes the poster-theatrical (full-bleed) path a deliberate, asked-for choice and

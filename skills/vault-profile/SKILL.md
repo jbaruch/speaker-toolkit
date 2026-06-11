@@ -103,6 +103,46 @@ guardrail_sources, pacing, pattern_profile, visual_style_history,
 publishing_process, design_rules, badges
 ```
 
+When building `pattern_profile`, attribute `score_trend` instead of leaving it a
+bare label. A declining score has two symmetric causes — bad things present and
+good things absent — and `score_drivers` MUST name whichever moved:
+- **Antipatterns rising** — every `antipattern_frequency` entry with `trend` `increasing`.
+- **Patterns fading or breadth narrowing** — every `pattern_usage` entry with `trend`
+  `decreasing` (signature OR regular), and a `pattern_breadth.trend` of `narrowing`,
+  which drives a decline even when no single pattern fades. Underuse alone can lower
+  the score with zero antipatterns.
+
+Also compute `pattern_breadth` (average distinct observable patterns per talk +
+trend) and `underused_patterns` (observable patterns from `never_used_patterns` /
+`mastery_levels.never_tried`+`rare`, filtered to those whose taxonomy Vault Dims fit
+the speaker's `presentation_modes`) — the positive-space coaching signal, framed as
+growth, not deficiency.
+
+Compute `pattern_profile.by_mode` — the per-mode baseline. Group `processed_talks`
+by their presentation mode and, for each mode with **≥3 talks**, emit
+`average_pattern_score`, `avg_distinct_patterns_per_talk`, `top_antipatterns`, and
+`stable: true`. Modes below 3 talks are omitted (or `stable: false`); consumers fall
+back to the global baseline. This prevents false underuse findings when a short-format
+mode is judged against a keynote baseline.
+
+Compute `pattern_profile.strengths` — the speaker's signature patterns (from
+`mastery_levels.signature`) and `signature_combinations`, each with a `lean_in` line.
+This is the positive-space counterpart to `recurring_issues`/`underused_patterns`;
+keep it distinct from Step 8 badges (badges are celebratory, strengths are actionable
+reinforcement the creator skill amplifies).
+
+Compute `pacing.adherence` — for each scored talk derive `slides_per_minute` from
+`structured_data.slide_count ÷ talk_duration_estimate`, compare against the
+`guardrail_sources.slide_budgets` band for its duration, and count talks over budget.
+Emit the over-budget rate, trend, and worst offenders. This is the quantitative
+counterpart to Dimension 14's transcript-evident "rushing" read; `talk_duration_estimate`
+is approximate, so flag marginal overages softly.
+
+Cross-check against Section 15 of `rhetoric-style-summary.md`, which carries the same
+baselines in prose. See
+[references/speaker-profile-schema.md](references/speaker-profile-schema.md)
+`pattern_profile`.
+
 Set `schema_version` to `1` and `generated_date` to today's date in `YYYY-MM-DD` form.
 
 Proceed immediately to Step 5.
@@ -130,6 +170,8 @@ If `{vault_root}/speaker-profile.json` already exists, diff the new profile agai
 - New instruments added to `instrument_catalog`
 - Revised thresholds in `guardrail_sources`
 - New guardrails added to `recurring_issues`
+- Shifts in `pattern_profile.score_drivers` — a newly `declining` direction, a new `rising_antipatterns` entry, or a `pattern_breadth.trend` flipping to `narrowing` (using fewer of the toolkit) is a regression signal worth flagging.
+- A worsening `pacing.adherence.trend` or a rising `over_budget_rate` — the speaker is increasingly running long.
 - **New presentation modes** — flag prominently since they affect creator-skill behavior more than other field changes.
 
 If no prior profile exists, skip this step and proceed.

@@ -66,9 +66,18 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "created_at": "2026-04-15",
     "updated_at": "2026-04-15"
   }],
-  "confirmed_intents": []
+  "confirmed_intents": [],
+  "improvement_goals": []
 }
 ```
+
+`improvement_goals` is the coaching-loop artifact — speaker-chosen focus areas that
+a later ingress run verifies. vault-clarification owns the record shape; vault-ingress
+writes only the verification fields. Record schema, lifecycle, and owner/reader
+contract:
+[../../vault-clarification/references/schemas-config.md](../../vault-clarification/references/schemas-config.md)
+Improvement Goals Schema. Verification rubric: [processing-rules.md](processing-rules.md)
+Improvement Goal Verification.
 
 ## Per-Talk Subagent Return Schema
 
@@ -78,7 +87,7 @@ Each subagent returns this JSON after processing one talk:
 {
   "filename": "the .md filename",
   "rhetoric_notes": "500-1000 words: qualitative observations across dimensions 1-13",
-  "areas_for_improvement": "100-300 words: honest critical reflection (dimension 14)",
+  "areas_for_improvement": "100-300 words: honest critical reflection (dimension 14); name the related antipattern ID + severity per issue where one of the dim-14 antipatterns applies",
   "transcript_source": "youtube_auto|whisper|manual  (how the transcript was obtained)",
   "structured_data": {
     "delivery_language": "en|de|ru|etc  (primary language of the talk)",
@@ -141,7 +150,7 @@ Each subagent returns this JSON after processing one talk:
     "opening_lines": ["first 2-3 sentences of the talk, verbatim"],
     "closing_lines": ["last 2-3 sentences of the talk, verbatim"]
   },
-  "adherence_assessment": "1-3 sentences, or '' if <10 talks parsed",
+  "adherence_assessment": "2-4 sentences vs. the Section 15 baseline — cite pattern_score vs running average + any recurring antipattern that reappeared; '' if <10 talks scored. See processing-rules.md Adherence Assessment",
   "new_patterns": "100-300 words on NEW patterns not in summary, or ''",
   "summary_updates": "50-200 words: additions for rhetoric-style-summary.md by section #, or ''",
   "pattern_observations": {

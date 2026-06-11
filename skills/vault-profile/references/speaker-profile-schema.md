@@ -143,7 +143,17 @@ creation at runtime.
     "slides_per_minute": {"comfortable": 1.4, "max": 1.5},
     "meme_section_pace": "30-40 sec/slide",
     "data_section_pace": "60-90 sec/slide",
-    "demo_pace": "minimal slides, live tool is the content"
+    "demo_pace": "minimal slides, live tool is the content",
+    "adherence": {
+      "talks_over_budget": 5,
+      "talks_scored": 24,
+      "over_budget_rate": 0.21,
+      "trend": "improving|stable|worsening",
+      "worst_offenders": [
+        {"filename": "2024-04-10-talk-slug.md", "slides_per_minute": 2.1, "budget_slides_per_minute": 1.5, "over_by": "40%"}
+      ],
+      "note": "Quantitative time/slide pacing vs guardrail_sources.slide_budgets, derived from each talk's structured_data.slide_count and talk_duration_estimate. A talk is over budget when its slides_per_minute exceeds the budget for its duration band. Distinct from the qualitative 'rushing' read in vault Dimension 14 (transcript-evident time panic) — this is the corpus-level count. talk_duration_estimate is transcript-derived and approximate, so treat marginal overages as soft signals, not hard failures."
+    }
   },
 
   "guardrail_sources": {
@@ -249,6 +259,50 @@ creation at runtime.
     "talks_scored": 24,
     "average_pattern_score": 6.8,
     "score_trend": "improving|stable|declining",
+    "pattern_breadth": {
+      "avg_distinct_patterns_per_talk": 7.4,
+      "trend": "widening|stable|narrowing",
+      "note": "Distinct observable patterns deployed per talk, averaged across scored talks — the 'are you using enough of your toolkit' dimension, isolated from antipattern avoidance. A narrowing trend lowers pattern_score with zero antipatterns involved. Breadth is range, not a target to maximize: more patterns is not automatically better (cramming is its own antipattern), but a contracting range is a regression signal symmetric to rising antipatterns."
+    },
+    "underused_patterns": [
+      {
+        "pattern_id": "sparkline",
+        "mastery_level": "never_tried|rare",
+        "fits_modes": ["b"],
+        "note": "observable, high-fit for an established mode, never or rarely deployed — a growth opportunity, NOT a deficiency. Drawn from never_used_patterns + mastery_levels, filtered to patterns whose Vault Dims match the speaker's modes. Surfaced so coaching covers positive space, not only antipatterns. Distinct from a fading_pattern, which the speaker DID use and dropped."
+      }
+    ],
+    "score_drivers": {
+      "direction": "improving|stable|declining|insufficient_history",
+      "rising_antipatterns": [
+        {"pattern_id": "shortchanged", "frequency_trend": "increasing", "evidence": "detected in 4 of the last 6 talks, up from 1 of the prior 6"}
+      ],
+      "fading_patterns": [
+        {"pattern_id": "bookends", "usage_trend": "decreasing", "evidence": "signature pattern absent from the last 3 talks"}
+      ],
+      "note": "Attribution for score_trend — turns a bare trend into named causes. A declining score has TWO symmetric causes; attribute to whichever moved: (1) antipatterns rising — rising_antipatterns MUST list every antipattern_frequency entry with trend='increasing'; (2) patterns fading or breadth narrowing — fading_patterns MUST list every pattern_usage entry with trend='decreasing' (signature OR regular, not signature-only), and a pattern_breadth.trend='narrowing' is itself a driver even when no single pattern fades. Underuse alone can drive a decline with zero antipatterns. When 'improving', the inverse drives it. Empty driver arrays are valid only when direction is 'stable' or 'insufficient_history' (<10 talks_scored)."
+    },
+    "by_mode": [
+      {
+        "mode_id": "a",
+        "talks_in_mode": 11,
+        "stable": true,
+        "average_pattern_score": 7.2,
+        "avg_distinct_patterns_per_talk": 8.1,
+        "top_antipatterns": ["shortchanged"],
+        "note": "Per-mode baseline. Adherence, breadth, and underuse should compare a talk to ITS mode's baseline, not the global one — a lightning talk that 'underuses audience interaction' is a false positive, not the same finding as a keynote doing so. stable=true only when talks_in_mode >= 3; below that, omit the mode or mark stable=false and fall back to the global baseline."
+      }
+    ],
+    "strengths": [
+      {
+        "pattern_id": "narrative-arc",
+        "kind": "signature_pattern|signature_combination",
+        "mastery_level": "signature",
+        "evidence": "deployed in 22 of 24 talks at strong confidence",
+        "lean_in": "your structural backbone — keep building talks around it; it's what audiences remember"
+      }
+    ],
+    "strengths_note": "The positive counterpart to recurring_issues and underused_patterns: what the speaker already does well, framed as 'lean in / double down', so coaching is not purely deficit-oriented. Sourced from mastery_levels.signature and signature_combinations. Distinct from badges (which are fun/celebratory) — strengths are actionable reinforcement the creator skill can amplify. For kind='signature_combination', pattern_id holds the combination label.",
     "note": "Only observable patterns are included. Patterns marked observable: false in the taxonomy (pre-event logistics, physical stage behaviors, external systems) are excluded from scoring and surfaced as a go-live checklist in creator Phase 6 instead.",
     "pattern_usage": [
       {

@@ -91,7 +91,31 @@ See [references/schemas-config.md](references/schemas-config.md) for the full sc
 
 Proceed immediately to Step 6.
 
-## Step 6 — Mark Session Complete
+## Step 6 — Set Improvement Goals
+
+Close the coaching loop. Review Section 15 of `rhetoric-style-summary.md` — recurring
+improvement themes, underused patterns, and any `regressed`/`stalled` goals from a
+prior session — then ask the speaker (via `AskUserQuestion`, one topic at a time) which
+**1–2** they want to focus on before the next batch of talks. Coaching only works when
+the speaker owns the target, so never auto-pick more than they choose.
+
+For each chosen focus area, write an `improvement_goals` record to the tracking DB:
+capture `baseline_value` from the current Section 15 figure, record the speaker's stated
+`target`, set `status: "active"`, `set_date` to today, and `schema_version: 1`. Retire
+goals the speaker no longer wants (`status: "retired"`); leave `achieved` goals in place
+as history. Record schema and `kind` values:
+[references/schemas-config.md](references/schemas-config.md) Improvement Goals Schema.
+
+A later vault-ingress run verifies these against the fresh baseline — see
+[../vault-ingress/references/processing-rules.md](../vault-ingress/references/processing-rules.md)
+Improvement Goal Verification.
+
+If Section 15 has no recurring themes or underused patterns yet (early vault, too few
+talks for a baseline), say so and skip goal-setting — proceed to Step 7.
+
+Proceed immediately to Step 7.
+
+## Step 7 — Mark Session Complete
 
 Increment `config.clarification_sessions_completed` in the tracking DB. This counter
 gates profile generation (vault-profile skill requires >= 1).
