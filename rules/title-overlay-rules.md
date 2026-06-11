@@ -10,15 +10,20 @@ safety net that applies regardless of placement.
 
 ## 0. Poster-Theatrical Composition Opts Out Entirely
 
-Narrow exception for the poster-theatrical composition. When the deck's STYLE
-ANCHOR header declares `**Composition:** poster-theatrical`, the title and footer
-are rendered INTO the image as a stylized part of the scene — nothing in
-sections 1–7 applies to that deck:
+Narrow exception for the poster-theatrical composition. When the deck's
+`style_anchor.composition` is `poster-theatrical`, every illustrated slide (one
+with an `image_prompt`) is FULL and the title and footer are rendered INTO the
+image as a stylized part of the scene — nothing in sections 1–7 applies to that
+deck. EXCEPTION / non-illustrated slides (real screenshots, no `image_prompt`)
+are not generated and keep their own treatment:
 
 - No `TITLE SAFE ZONE` directive — generation appends the `EMBEDDED TEXT`
   directive instead (`generate-illustrations.py` `apply_poster_embed_directive`),
-  folding the slide's `Text:` and the deck's `**Embedded footer:**` into the prompt.
-- No `Safe zone:` lines on poster slides; no zone assignment, no zone picker.
+  folding the slide's `text_overlay` and the deck's `style_anchor.embedded_footer`
+  into the prompt, styled per `style_anchor.text_treatment`.
+- `style_anchor.text_treatment` is authored once and applied to every illustrated
+  slide's baked text, so titles and footers render identically across the deck.
+- No `safe_zone` on poster slides; no zone assignment, no zone picker.
 - No scrim and no overlaid title text box at apply time — poster FULL slides get
   a background fill only (`apply-illustrations-to-deck.py` `parse_full_slides`).
 - The QR code is the only shape inserted after generation; everything else is

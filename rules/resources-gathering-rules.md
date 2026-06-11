@@ -11,8 +11,7 @@ matching, book patterns, RFC citations, and tool mentions consistently.
 Manual scanning misses items and introduces inconsistency.
 
 ```bash
-python3 skills/presentation-creator/scripts/extract-resources.py \
-  presentation-outline.md --spec presentation-spec.md
+python3 skills/presentation-creator/scripts/extract-resources.py outline.yaml
 ```
 
 ## 2. Speaker Review is Mandatory
@@ -38,8 +37,7 @@ higher in the review list and flag them as "from Coda section."
 ## 4. File Location
 
 `resources.json` lives in the talk working directory alongside
-`presentation-outline.md` and `presentation-spec.md`. It is talk-specific,
-not vault-level. Path:
+`outline.yaml`. It is talk-specific, not vault-level. Path:
 
 ```
 {presentations-dir}/{conference}/{year}/{talk-slug}/resources.json

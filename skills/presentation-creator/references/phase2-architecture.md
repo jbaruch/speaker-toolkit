@@ -155,7 +155,7 @@ visual continuity devices):
 Skill(skill: "illustrations")
 ```
 
-The skill writes the approved STYLE ANCHOR block back into the outline header,
+The skill writes the approved `style_anchor` block into `outline.yaml`,
 then returns control to Phase 2. Continue with the next decision (or the
 architecture gate) once the skill returns.
 

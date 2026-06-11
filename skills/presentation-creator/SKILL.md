@@ -212,7 +212,7 @@ Decision #12 (Illustration Strategy) is optional — only when the author wants
 AI-generated illustrations. Delegate to `Skill(skill: "illustrations")` for the full
 collaboration (style proposals grounded in vault `visual_style_history`, format
 vocabulary, model choice, visual continuity devices). The skill writes the approved
-STYLE ANCHOR block back into the outline header.
+`style_anchor` block into `outline.yaml`.
 
 For each: present options, recommend based on spec, let author choose.
 If co-presented, add role split and voice differentiation — see [references/phase1-intent.md](references/phase1-intent.md).
@@ -309,8 +309,8 @@ interludes:                 # production interludes between slides — usually l
 ```
 
 When an illustration strategy is defined, every non-EXCEPTION slide carries an
-`image_prompt`. The `[STYLE ANCHOR]` token in the prompt references the header
-anchor — the illustrations pipeline substitutes the actual anchor text at
+`image_prompt`. The `[STYLE ANCHOR]` token in the prompt references the
+`style_anchor` — the illustrations pipeline substitutes the actual anchor text at
 generation time. Talks without `style_anchor` use `visual:` + `text_overlay:` only.
 
 **Placeholders** — use typed, independent numbering (each type starts at 01):
@@ -420,7 +420,7 @@ slides get a slide BACKGROUND FILL (set by the PowerPoint `apply-backgrounds.sh`
 pass, so the layout's halftone-dot overlay covers them); IMG+TXT slides get a
 left-column picture shape via `apply-illustrations-to-deck.py`.
 
-When the outline's STYLE ANCHOR declares `**Composition:** poster-theatrical`,
+When `outline.yaml`'s `style_anchor.composition` is `poster-theatrical`,
 also **omit the `TITLE` and `FOOTER` ops** for the FULL slides — the title and
 footer are rendered into the illustration itself, so the only post-build inserts
 on those slides are the background fill and the QR code.
@@ -428,10 +428,8 @@ on those slides are the background fill and the QR code.
 After the build completes, if `outline.yaml` declares `style_anchor`, delegate
 to `Skill(skill: "illustrations")` to generate illustrations, generate any
 progressive-reveal builds, and apply them to the deck. The illustrations skill
-still expects markdown-style inputs (style anchor block + per-slide image
-prompts) — when invoked, surface the relevant fields from `outline.yaml` in the
-format the illustrations skill consumes. Updating the illustrations skill to
-consume `outline.yaml` natively is tracked separately.
+reads `outline.yaml` directly (`style_anchor` + per-slide `image_prompt` /
+`builds`) — no surfacing or format translation needed.
 
 If any slide has progressive-reveal builds, expand them FIRST with
 `skills/presentation-creator/scripts/expand-builds.sh` (manifest from

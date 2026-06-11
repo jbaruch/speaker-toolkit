@@ -166,9 +166,10 @@ override the CLI default whenever the profile signals a clear illustrated
 brand.
 
 **Deck illustration anchor — `--portrait-style`.** When the deck has its
-own Illustration Style Anchor (Phase 2's `STYLE ANCHOR` block in
-`presentation-outline.md`), pass it to the script via `--portrait-style
-"<anchor>"`. The script pre-stylizes the speaker photo into the
+own style anchor (Phase 2's `style_anchor` block in `outline.yaml`), pass
+`style_anchor.full` (optionally combined with `style_anchor.conventions`) to
+the script via `--portrait-style "<anchor>"` — it takes a single prompt string,
+not the structured block. The script pre-stylizes the speaker photo into the
 anchor's medium (sepia tech-manual, watercolor, pen-and-ink, retro
 poster, etc.) before composition. This fixes the palette mismatch that
 either standard aesthetic produces on illustrated decks: photographic

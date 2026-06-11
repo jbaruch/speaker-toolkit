@@ -16,11 +16,20 @@ from pathlib import Path
 
 import pytest
 
-SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SKILLS_DIR = REPO_ROOT / "skills"
+RULES_DIR = REPO_ROOT / "rules"
 
 # The phantom artifact the illustration scripts used to regex-parse. Nothing in
 # the toolkit generates it — the source of truth is outline.yaml.
 PHANTOM_MARKDOWN_OUTLINE = "presentation-outline.md"
+
+# Markdown bold-field syntax the legacy markdown outline used for deck-level
+# fields; outline.yaml carries these as style_anchor.composition / .embedded_footer.
+# The bold-field form must never appear in loaded context (it would teach the
+# agent the outline is markdown). `**Model:**` is deliberately NOT forbidden:
+# extract-slides.py legitimately renders it into the generated slides.md.
+FORBIDDEN_MD_OUTLINE_FIELDS = ("**Composition:**", "**Embedded footer:**")
 
 
 def _script_files() -> list[Path]:
@@ -125,10 +134,28 @@ def test_outline_consumers_use_shared_schema_loader(path):
     )
 
 
-def test_no_script_ingests_phantom_markdown_outline():
-    """No script anywhere references the phantom presentation-outline.md."""
+def _context_artifact_files() -> list[Path]:
+    """Repo-owned scripts, skill prose, and rules — the context agents load.
+
+    CHANGELOG.md is excluded by construction (it lives at the repo root, not
+    under skills/ or rules/): it is the archive and legitimately names the old
+    `presentation-outline.md` in historical entries.
+    """
+    files = list(_script_files())
+    files += [p for p in SKILLS_DIR.glob("**/*.md")]
+    files += [p for p in RULES_DIR.glob("*.md")]
+    return sorted(set(files))
+
+
+def test_no_context_artifact_references_phantom_markdown_outline():
+    """No script, skill doc, or rule references the phantom presentation-outline.md.
+
+    Scripts, skill prose, and rules are all loaded as agent context, so a stale
+    reference there misleads the agent into hand-authoring a file nothing
+    generates. The source of truth is outline.yaml.
+    """
     offenders = []
-    for path in _script_files():
+    for path in _context_artifact_files():
         src = path.read_text(encoding="utf-8")
         if PHANTOM_MARKDOWN_OUTLINE in src:
             line_nos = [
@@ -136,8 +163,27 @@ def test_no_script_ingests_phantom_markdown_outline():
                 for i, line in enumerate(src.splitlines())
                 if PHANTOM_MARKDOWN_OUTLINE in line
             ]
-            offenders.append(f"{path.relative_to(SKILLS_DIR)}:{line_nos}")
+            offenders.append(f"{path.relative_to(REPO_ROOT)}:{line_nos}")
     assert not offenders, (
-        f"scripts reference the phantom '{PHANTOM_MARKDOWN_OUTLINE}' "
+        f"context artifacts reference the phantom '{PHANTOM_MARKDOWN_OUTLINE}' "
         f"(nothing generates it — use outline.yaml): {offenders}"
+    )
+
+
+def test_no_context_artifact_uses_markdown_outline_field_syntax():
+    """No loaded context uses the legacy markdown bold-field outline syntax.
+
+    Catches stale guidance that survives a filename swap — e.g. telling the agent
+    the deck declares `**Composition:** poster-theatrical` rather than setting
+    `style_anchor.composition` in outline.yaml.
+    """
+    offenders = []
+    for path in _context_artifact_files():
+        src = path.read_text(encoding="utf-8")
+        hits = [tok for tok in FORBIDDEN_MD_OUTLINE_FIELDS if tok in src]
+        if hits:
+            offenders.append(f"{path.relative_to(REPO_ROOT)}: {hits}")
+    assert not offenders, (
+        "context artifacts use legacy markdown outline field syntax — set the "
+        f"corresponding style_anchor.* field in outline.yaml instead: {offenders}"
     )
