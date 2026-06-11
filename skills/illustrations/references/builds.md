@@ -26,44 +26,52 @@ because the model preserves the existing composition and style at each step.
 ## Run
 
 ```bash
-python3 skills/illustrations/scripts/generate-illustrations.py presentation-outline.md --build 5     # one slide
-python3 skills/illustrations/scripts/generate-illustrations.py presentation-outline.md --build all   # all builds
+python3 skills/illustrations/scripts/generate-illustrations.py outline.yaml --build 5     # one slide
+python3 skills/illustrations/scripts/generate-illustrations.py outline.yaml --build all   # all builds
 ```
 
 Output: `illustrations/builds/slide-NN-build-MM.jpg`.
 
 ## Edit-Prompt Authoring
 
-Each `build-NN:` description is the **erase instruction** that turns the next
-stage into this one (backwards chaining), not a description of the end state.
-"Panel 2 revealed — sergeant, STILL? stamp" does not tell the model to erase
-anything, so the element survives and the stage comes out identical to the
-previous one.
+Each build step in `outline.yaml` carries two fields. `desc` is the additive,
+human-facing reveal ("Add the third panel") — it renders in `slides.md` and the
+script. `erase` is the **erase instruction** that turns the next stage into this
+one (backwards chaining), and it is the prompt `--build` actually sends to the
+image model. "Panel 2 revealed — sergeant, STILL? stamp" does not tell the model
+to erase anything, so the element survives and the stage comes out identical to
+the previous one.
 
-- Name what to ERASE, then list what to KEEP — one `Keep` clause per element
-  that must persist (page chrome, frames, already-revealed panels, borders,
-  labels). This is component #3 of the Edit Prompt Safety rule, and it is
-  mandatory: `--build` validates that every erase step carries a `Keep` clause
-  and skips the slide with an error if one is missing.
-- Pull the persisting elements from the slide's full `Image prompt` — the
-  chrome that never appears in any build line (header bars, FIG labels, rules)
-  is exactly what drifts when it isn't named.
+- `erase` names what to ERASE, then lists what to KEEP — one `Keep` clause per
+  element that must persist (page chrome, frames, already-revealed panels,
+  borders, labels). This is component #3 of the Edit Prompt Safety rule, and it
+  is mandatory: `--build` validates that every non-final step's `erase` carries
+  a `Keep` clause and skips the slide with an error if one is missing.
+- The final (highest-numbered) step is a copy of the full slide image — it needs
+  no `erase` prompt.
+- Pull the persisting elements from the slide's full `image_prompt` — the chrome
+  that never appears in any build step (header bars, FIG labels, rules) is
+  exactly what drifts when it isn't named.
 - Include the visual-consistency clauses where relevant: "no parchment patch",
   "no new frames", "solid lines not dashed".
 - The edit safety suffixes (`DO NOT add any new elements`, `let background
   continue naturally`) are auto-appended by the script — don't repeat them.
-- Keep each `build-NN:` entry on a **single line**. The parser reads only the
-  text up to the first newline, so any erase/Keep clauses on continuation lines
-  are silently dropped — losing those preservation items, and failing
-  Keep-clause validation outright when no `Keep` clause remains on the first line.
 
-Example (slide with three trial panels revealed progressively — each entry is
-one line):
+Example (slide with three trial panels revealed progressively):
 
-```
-- build-02: Erase Panel 3 and the "LIFT +81 PTS" stamp. Keep the page chrome (header bar, FIG label, bottom rule). Keep the three panel frames and their TRIAL labels. Keep Panel 1 and Panel 2 content.
-- build-01: Erase Panel 2 and the "STILL?" stamp. Keep the page chrome. Keep the three panel frames and labels. Keep Panel 1 content.
-- build-00: Erase Panel 1 content and the "PLUGIN USELESS?" stamp. Keep the page chrome. Keep the three empty panel frames and their TRIAL labels.
+```yaml
+builds:
+  - step: 0
+    desc: "Empty trial panels — three labeled frames, no content"
+    erase: 'Erase Panel 1 content and the "PLUGIN USELESS?" stamp. Keep the page chrome. Keep the three empty panel frames and their TRIAL labels.'
+  - step: 1
+    desc: "Panel 1 content + PLUGIN USELESS? stamp"
+    erase: 'Erase Panel 2 and the "STILL?" stamp. Keep the page chrome. Keep the three panel frames and labels. Keep Panel 1 content.'
+  - step: 2
+    desc: "Panel 2 content + STILL? stamp"
+    erase: 'Erase Panel 3 and the "LIFT +81 PTS" stamp. Keep the page chrome (header bar, FIG label, bottom rule). Keep the three panel frames and their TRIAL labels. Keep Panel 1 and Panel 2 content.'
+  - step: 3
+    desc: "Panel 3 content + LIFT +81 PTS stamp — full slide"
 ```
 
 For near-perfect results, use `--fix` for targeted corrections rather than
@@ -79,7 +87,7 @@ structural slide insertion never uses python-pptx, per `rules/deck-editing-rules
 #    Pass --notes <notes.json> so each parent's speaker notes ride onto its
 #    FINAL frame (expansion drops the parent slide, so notes must be carried).
 python3 skills/illustrations/scripts/build-expansion-manifest.py \
-    presentation-outline.md illustrations/builds/ \
+    outline.yaml illustrations/builds/ \
     --notes notes.json --out builds-manifest.json
 
 # 2. Expand: replace each parent slide with its frames as full-bleed bg-fill slides

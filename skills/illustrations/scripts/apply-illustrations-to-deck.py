@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Apply generated illustrations to a deck.
 
-Two slide formats are supported, distinguished by the per-slide outline block:
+Reads outline.yaml (the single source of truth — schema + loader in
+skills/presentation-creator/scripts/outline_schema.py). Two slide formats are
+supported, distinguished by the per-slide fields:
 
-FULL — slide block has a `Safe zone:` field (any of upper_third / middle_third /
+FULL — slide has a `safe_zone:` field (zone of upper_third / middle_third /
   lower_third / left_half / right_half):
   1. Record the slide + illustration in the backgrounds manifest (--backgrounds-out).
      The illustration becomes the slide BACKGROUND FILL via a later ApplyBackgrounds
@@ -16,30 +18,30 @@ FULL — slide block has a `Safe zone:` field (any of upper_third / middle_third
      upper_third/middle_third/lower_third -> full-width band at the matching Y;
      left_half/right_half -> narrower column on that side.
 
-IMG+TXT — slide block has a `Format: IMG+TXT` line and no `Safe zone:`:
+IMG+TXT — slide has `format: IMG+TXT` and no `safe_zone`:
   1. Replace the background picture with the matching illustration.
   2. Resize and position the picture as a left-column image (~60% of slide).
   3. Reposition title and body placeholders into the right column.
 
-FULL-POSTER — deck header has `**Composition:** poster-theatrical`; every FULL
+FULL-POSTER — style_anchor sets `composition: poster-theatrical`; every FULL
   slide is background-only. The title + footer are baked into the image by
   `generate-illustrations.py`, so there is no scrim and no overlaid title — just
   the background manifest entry. QR (inserted later) is the only added shape.
 
 The outline is the single source of truth for slide format and zone
-assignments — the same lines that `generate-illustrations.py` reads.
+assignments — the same fields that `generate-illustrations.py` reads.
 See `rules/title-overlay-rules.md` for the title-overlay policy and
 `skills/illustrations/references/generation.md` for the format vocabulary.
 
 Usage:
-    apply-illustrations-to-deck.py DECK ILLUSTRATIONS_DIR OUTLINE_MD \\
+    apply-illustrations-to-deck.py DECK ILLUSTRATIONS_DIR OUTLINE_YAML \\
         [--out OUT_DECK] [--image-ext jpg|jpeg|png] \\
         [--scrim-color RRGGBB] [--scrim-alpha 0-100000]
 """
 import argparse
 import json
-import re
 import shutil
+import sys
 from pathlib import Path
 
 from lxml import etree
@@ -47,6 +49,17 @@ from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE, MSO_SHAPE_TYPE
 from pptx.oxml.ns import qn
 from pptx.util import Inches
+
+# outline.yaml is the single source of truth; its schema + loader live with the
+# presentation-creator scripts.
+sys.path.insert(
+    0,
+    str(
+        (Path(__file__).resolve().parent.parent.parent
+         / "presentation-creator" / "scripts")
+    ),
+)
+import outline_schema  # noqa: E402  (path appended above)
 
 # 16:9 slide geometry (inches)
 SLIDE_W_IN = 13.333
@@ -97,86 +110,58 @@ DEFAULT_SCRIM_ALPHA = 45000
 SCRIM_SHAPE_NAME = "_title_scrim"
 
 
-def parse_slide_blocks(outline_path: Path) -> dict:
-    """Parse per-slide blocks from the outline.
-
-    Returns {slide_num: block_text}. Block scope is from the slide's `### Slide N:`
-    header up to the next `###` or `##` (so fields are never matched against the
-    wrong slide).
-    """
-    text = outline_path.read_text()
-    blocks = {}
-    slide_block_re = re.compile(
-        r"###\s+Slide\s+(\d+):(.*?)(?=\n###\s|\n##\s|\Z)", re.DOTALL
-    )
-    for block_match in slide_block_re.finditer(text):
-        slide_num = int(block_match.group(1))
-        blocks[slide_num] = block_match.group(2)
-    return blocks
-
-
-_ZONE_RE = re.compile(
-    r"-\s*Safe zone:\s*(upper_third|middle_third|lower_third|left_half|right_half)"
-)
-_FORMAT_RE = re.compile(r"-\s*Format:\s*\**\s*(FULL|IMG\+TXT|EXCEPTION)\s*\**")
-
 # Poster-theatrical composition (rules/title-overlay-rules.md): title + footer
 # are baked into the image, so FULL slides get a background only — no scrim, no
 # overlaid title. QR is the only thing inserted afterward.
 POSTER_COMPOSITION = "poster-theatrical"
-_COMPOSITION_RE = re.compile(r"\*\*Composition:\*\*\s*`?([\w-]+)`?")
 
 
 def parse_composition(outline_path: Path) -> str | None:
-    """Read the deck-level `**Composition:**` header line, lowercased."""
-    m = _COMPOSITION_RE.search(outline_path.read_text(encoding="utf-8"))
-    return m.group(1).strip().lower() if m else None
+    """Deck-level composition from style_anchor; None means standard overlay."""
+    anchor = outline_schema.load_outline_partial(outline_path).style_anchor
+    if anchor and anchor.composition is not None:
+        return anchor.composition.value
+    return None
 
 
 def parse_zones(outline_path: Path) -> dict:
-    """Read `Safe zone:` lines from the outline.
+    """Read `safe_zone` from the outline.
 
     Returns {slide_num: zone_name} where zone_name is a key of ZONE_LAYOUT.
-    Slides without a Safe zone field are absent from the dict.
+    Slides without a safe_zone are absent from the dict.
     """
-    zones = {}
-    for slide_num, block_text in parse_slide_blocks(outline_path).items():
-        zone_match = _ZONE_RE.search(block_text)
-        if zone_match:
-            zones[slide_num] = zone_match.group(1)
-    return zones
+    return {
+        s.n: s.safe_zone.zone.value
+        for s in outline_schema.load_outline_partial(outline_path).slides
+        if s.safe_zone
+    }
 
 
 def parse_img_txt_slides(outline_path: Path) -> set:
-    """Read `Format: IMG+TXT` lines from the outline.
+    """Slide numbers whose format is IMG+TXT and which have no safe_zone.
 
-    Returns a set of slide numbers whose Format is IMG+TXT and which do NOT have
-    a Safe zone field (Safe zone takes precedence, since it implies FULL).
+    Safe zone takes precedence (it implies FULL), so a slide carrying both is
+    handled by the zones path instead.
     """
-    img_txt = set()
-    for slide_num, block_text in parse_slide_blocks(outline_path).items():
-        format_match = _FORMAT_RE.search(block_text)
-        if format_match and format_match.group(1) == "IMG+TXT":
-            if not _ZONE_RE.search(block_text):
-                img_txt.add(slide_num)
-    return img_txt
+    return {
+        s.n
+        for s in outline_schema.load_outline_partial(outline_path).slides
+        if s.format.value == "IMG+TXT" and not s.safe_zone
+    }
 
 
 def parse_full_slides(outline_path: Path) -> set:
-    """Slide numbers whose Format is FULL with no Safe zone.
+    """Slide numbers whose format is FULL with no safe_zone.
 
     In poster-theatrical mode these are full-bleed backgrounds with the title +
     footer baked into the image — no scrim, no overlaid title. Safe-zone FULL
-    slides are handled by the zones path instead (Safe zone takes precedence).
+    slides are handled by the zones path instead (safe zone takes precedence).
     """
-    full = set()
-    for slide_num, block_text in parse_slide_blocks(outline_path).items():
-        if _ZONE_RE.search(block_text):
-            continue
-        format_match = _FORMAT_RE.search(block_text)
-        if format_match and format_match.group(1) == "FULL":
-            full.add(slide_num)
-    return full
+    return {
+        s.n
+        for s in outline_schema.load_outline_partial(outline_path).slides
+        if s.format.value == "FULL" and not s.safe_zone
+    }
 
 
 def replace_picture_blob(picture_shape, new_image_path: Path) -> None:
@@ -445,7 +430,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("deck", type=Path, help="Path to source .pptx")
     ap.add_argument("illustrations", type=Path, help="Directory with slide-NN.<ext> files")
-    ap.add_argument("outline", type=Path, help="Path to presentation-outline.md")
+    ap.add_argument("outline", type=Path, help="Path to outline.yaml (the single source of truth)")
     ap.add_argument("--out", type=Path, default=None, help="Output deck (default: <stem>-with-titles.pptx)")
     ap.add_argument("--image-ext", default="jpg", choices=["jpg", "jpeg", "png"])
     ap.add_argument("--scrim-color", default=DEFAULT_SCRIM_HEX,
@@ -469,17 +454,17 @@ def main():
     if poster and (zones or img_txt_slides):
         offenders = sorted(set(zones) | img_txt_slides)
         raise SystemExit(
-            "poster-theatrical composition does not allow `Safe zone:` or "
-            f"`Format: IMG+TXT` slides. Offending slide(s): "
-            f"{', '.join(map(str, offenders))}. Fix the outline or drop the "
-            "**Composition:** poster-theatrical header."
+            "poster-theatrical composition does not allow `safe_zone` or "
+            f"`format: IMG+TXT` slides. Offending slide(s): "
+            f"{', '.join(map(str, offenders))}. Fix the outline or drop "
+            "`composition: poster-theatrical` from style_anchor."
         )
     # In poster-theatrical mode, FULL slides get a background only (text baked in).
     poster_full_slides = parse_full_slides(args.outline) if poster else set()
     total_slides = len(zones) + len(img_txt_slides) + len(poster_full_slides)
     if total_slides == 0:
         print(
-            f"No `Safe zone:`, `Format: IMG+TXT`, or poster-theatrical FULL "
+            f"No `safe_zone`, `format: IMG+TXT`, or poster-theatrical FULL "
             f"slides found in {args.outline.name}. Nothing to do."
         )
         return

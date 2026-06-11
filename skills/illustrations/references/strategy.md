@@ -1,7 +1,7 @@
 # Illustration Strategy — Detail
 
-The Steps 3-9 collaboration in `SKILL.md`. Produces the Illustration Style Anchor
-block written into the outline header, and guarantees the baked model came from a
+The Steps 3-9 collaboration in `SKILL.md`. Produces the `style_anchor` block
+written into `outline.yaml`, and guarantees the baked model came from a
 rendered grid the speaker saw.
 
 Not every talk needs generated illustrations — demo-heavy, data-heavy, or
@@ -216,17 +216,17 @@ the model set — then re-render.
 
 ## Step 9: Bake the Anchor, Then Verify
 
-Bake the choice: the chosen model goes into the outline header's `**Model:**
-\`<model-name>\`` line; the chosen style's anchor paragraphs become the per-format
-STYLE ANCHOR blocks; add the visual continuity devices below. Bake model-specific
-prompt conventions (negative prompts, aspect-ratio tokens, reserved keywords) into
-the anchor at the same time.
+Bake the choice into `outline.yaml`'s `style_anchor`: the chosen model goes in
+`style_anchor.model`; the chosen style's anchor paragraphs become `style_anchor.full`
+and `style_anchor.imgtxt`; the visual continuity devices go in
+`style_anchor.conventions`. Bake model-specific prompt conventions (negative
+prompts, aspect-ratio tokens, reserved keywords) into the anchor at the same time.
 
-When the composition is poster-theatrical, also write two header lines:
-`**Composition:** poster-theatrical` and `**Embedded footer:** <footer text>`.
-Generation reads these to embed the title + footer into each image and skip safe
-zones; apply and deck-build read them to leave titles/footers off the slide
-(QR only). Standard-overlay decks omit both lines.
+When the composition is poster-theatrical, also set
+`style_anchor.composition: poster-theatrical` and
+`style_anchor.embedded_footer: <footer text>`. Generation reads these to embed the
+title + footer into each image and skip safe zones; apply and deck-build read them
+to leave titles/footers off the slide (QR only). Standard-overlay decks omit both.
 
 Then run the render-before-bake gate and report its one-line verdict:
 
@@ -235,7 +235,7 @@ python3 skills/illustrations/scripts/generate-illustrations.py \
   <outline> --check-style-explore
 ```
 
-It reads the baked `**Model:**`, resolves codenames to canonical ids, and confirms
+It reads the baked `style_anchor.model`, resolves codenames to canonical ids, and confirms
 the model appears among `rendered.json`'s OK renders. Exit 0 = the speaker saw
 this model; exit non-zero = the baked model was never rendered. On failure, pick a
 rendered model from `index.md` and re-verify, or re-render (Step 8). Step 10
@@ -257,6 +257,6 @@ generation re-runs the same gate, so a baked-but-unrendered model can't generate
 ## Gate
 
 The author approves the optimization priorities, format vocabulary, style anchor
-paragraphs, and model choice; these become the Illustration Style Anchor section
-in the outline header. The `--check-style-explore` verdict is the machine-checked
+paragraphs, and model choice; these become the `style_anchor` block in
+`outline.yaml`. The `--check-style-explore` verdict is the machine-checked
 precondition — once it passes, Step 10 generation can run.

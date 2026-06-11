@@ -2,23 +2,23 @@
 """
 Generate illustrations for a presentation outline.
 
-Parses the outline markdown for style anchors and per-slide image prompts,
-generates images via the appropriate vendor API (Google Gemini, Google
-Imagen, or OpenAI — dispatched by model-name prefix), and saves them
-to an illustrations/ directory.
+Reads outline.yaml (the single source of truth) for the baked model, per-format
+style anchors, and per-slide image prompts, generates images via the
+appropriate vendor API (Google Gemini, Google Imagen, or OpenAI — dispatched by
+model-name prefix), and saves them to an illustrations/ directory.
 
 Usage:
-    python3 generate-illustrations.py <outline.md> all
-    python3 generate-illustrations.py <outline.md> remaining
-    python3 generate-illustrations.py <outline.md> 2 5 9
-    python3 generate-illustrations.py <outline.md> 2-10
-    python3 generate-illustrations.py <outline.md> --compare 2
-    python3 generate-illustrations.py <outline.md> --style-explore candidates.json
-    python3 generate-illustrations.py <outline.md> --edit 5 "Erase the label"
-    python3 generate-illustrations.py <outline.md> --build 5
-    python3 generate-illustrations.py <outline.md> --build all
-    python3 generate-illustrations.py <outline.md> --fix 5 "Make the road wider"
-    python3 generate-illustrations.py <outline.md> -v 2 5 9
+    python3 generate-illustrations.py <outline.yaml> all
+    python3 generate-illustrations.py <outline.yaml> remaining
+    python3 generate-illustrations.py <outline.yaml> 2 5 9
+    python3 generate-illustrations.py <outline.yaml> 2-10
+    python3 generate-illustrations.py <outline.yaml> --compare 2
+    python3 generate-illustrations.py <outline.yaml> --style-explore candidates.json
+    python3 generate-illustrations.py <outline.yaml> --edit 5 "Erase the label"
+    python3 generate-illustrations.py <outline.yaml> --build 5
+    python3 generate-illustrations.py <outline.yaml> --build all
+    python3 generate-illustrations.py <outline.yaml> --fix 5 "Make the road wider"
+    python3 generate-illustrations.py <outline.yaml> -v 2 5 9
 
 Requires:
     - For Google models (gemini-*, nano-banana-*, imagen-*):
@@ -46,6 +46,20 @@ import uuid
 from datetime import datetime, timezone
 
 from model_registry import COMPARE_MODELS, is_supported_model, resolve_model_id
+
+# outline.yaml is the single source of truth; its pydantic schema + loader live
+# with the presentation-creator scripts. Add that dir to the path so this skill
+# parses the one schema rather than re-deriving an outline format.
+sys.path.insert(
+    0,
+    os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__), os.pardir, os.pardir,
+            "presentation-creator", "scripts",
+        )
+    ),
+)
+import outline_schema  # noqa: E402  (path appended above)
 
 # --- Constants ---
 
@@ -176,140 +190,83 @@ def family_key_name(family):
 
 # --- Outline Parsing ---
 
-def parse_outline(path):
-    """Parse a presentation outline markdown file.
+def _collapse_anchor(text):
+    """Collapse a (possibly multi-line) anchor block into one prompt-ready line."""
+    return " ".join(text.split())
 
-    Returns:
+
+def parse_outline(path):
+    """Project outline.yaml onto the view the generator needs.
+
+    outline.yaml is the single source of truth (schema + loader in
+    skills/presentation-creator/scripts/outline_schema.py). The generated
+    `.md` artifacts are never read here. Returns:
+
         dict with keys:
-            model: str — model name from the header
-            anchors: dict[str, str] — format name → anchor paragraph
-            slides: list[dict] — each with slide_num, title, format, prompt
+            model: str | None — baked illustration model (style_anchor.model)
+            anchors: dict[str, str] — format token ("FULL"/"IMG+TXT") → anchor
+            slides: list[dict] — prompt-bearing slides only, each with
+                slide_num, title, format, prompt, and optional safe_zone /
+                text / builds
+            composition: str | None — "poster-theatrical" or None (standard)
+            embedded_footer: str | None — poster-theatrical baked footer
+
+    Build steps map to the generator's backwards-chaining view: each step's
+    `description` is the `erase` prompt (additive `desc` stays human-facing in
+    slides.md), and `is_full` marks the final step (a copy of the base image).
+    A non-final step with no `erase` prompt becomes an empty description, which
+    --build flags as missing its mandatory "Keep ..." clause.
+
+    Uses the partial loader: the illustrations skill reads the outline in Phase 2
+    (style strategy, before the deck is complete) as well as Phase 5, so it must
+    not require the full-deck invariants (big-idea singleton, slide budget,
+    callback pairing) that only hold once authoring finishes.
     """
-    with open(path, "r", encoding="utf-8") as f:
-        text = f.read()
+    outline = outline_schema.load_outline_partial(path)
+    anchor = outline.style_anchor
 
     result = {
-        "model": None,
-        "anchors": {},
+        "model": anchor.model if anchor else None,
+        "anchors": {
+            "FULL": _collapse_anchor(anchor.full),
+            "IMG+TXT": _collapse_anchor(anchor.imgtxt),
+        } if anchor else {},
         "slides": [],
-        "composition": None,
-        "embedded_footer": None,
+        "composition": (
+            anchor.composition.value if anchor and anchor.composition else None
+        ),
+        "embedded_footer": anchor.embedded_footer if anchor else None,
     }
 
-    # Extract model name: **Model:** `model-name`
-    model_match = re.search(r"\*\*Model:\*\*\s*`([^`]+)`", text)
-    if model_match:
-        result["model"] = model_match.group(1)
-
-    # Deck-level composition mode (poster-theatrical bakes title + footer into
-    # the image; see rules/title-overlay-rules.md). Optional header lines:
-    #   **Composition:** poster-theatrical
-    #   **Embedded footer:** <footer text>
-    comp_match = re.search(r"\*\*Composition:\*\*\s*`?([\w-]+)`?", text)
-    if comp_match:
-        result["composition"] = comp_match.group(1).strip().lower()
-    footer_match = re.search(r"\*\*Embedded footer:\*\*\s*(.+)", text)
-    if footer_match:
-        result["embedded_footer"] = footer_match.group(1).strip()
-
-    # Extract style anchors: ### STYLE ANCHOR (FORMAT — dimensions)\n> paragraph
-    # Format tokens may include `+` and `-` (e.g. IMG+TXT) — match the
-    # parser used by the per-slide Format: line below.
-    anchor_pattern = re.compile(
-        r"###\s+STYLE ANCHOR\s+\(([\w+-]+)\s*—[^)]*\)\s*\n>\s*(.+?)(?=\n###|\n---|\n##|\Z)",
-        re.DOTALL,
-    )
-    for match in anchor_pattern.finditer(text):
-        format_name = match.group(1).strip()
-        anchor_text = match.group(2).strip()
-        # Collapse multi-line blockquote into single paragraph
-        anchor_text = re.sub(r"\n>\s*", " ", anchor_text)
-        result["anchors"][format_name] = anchor_text
-
-    # Extract per-slide data
-    slide_pattern = re.compile(
-        r"###\s+Slide\s+(\d+):\s*(.+?)(?=\n###|\n##|\Z)", re.DOTALL
-    )
-    for match in slide_pattern.finditer(text):
-        slide_num = int(match.group(1))
-        title = match.group(2).split("\n")[0].strip()
-        block = match.group(0)
-
-        # Extract format
-        # Allow `+` and `-` inside format tokens (e.g. IMG+TXT, IMG-TXT) on
-        # top of \w's alphanumerics+underscore. The downstream apply script's
-        # regex already permits IMG+TXT explicitly — keep these in sync.
-        fmt_match = re.search(r"-\s*Format:\s*\*\*([\w+-]+)\*\*", block)
-        slide_format = fmt_match.group(1) if fmt_match else None
-
-        # Extract image prompt
-        prompt_match = re.search(r"-\s*Image prompt:\s*`(.+?)`", block, re.DOTALL)
-        prompt = prompt_match.group(1).strip() if prompt_match else None
-
-        # Extract optional Safe zone: <zone> (<surface>)
-        safe_zone = None
-        _zone_alt = "|".join(VALID_SAFE_ZONES)
-        zone_match = re.search(
-            rf"-\s*Safe zone:\s*({_zone_alt})"
-            r"(?:\s*\(([^)]+)\))?",
-            block,
-        )
-        if zone_match:
-            zone = zone_match.group(1)
-            surface = (zone_match.group(2) or "").strip() or None
-            safe_zone = {"zone": zone, "surface": surface}
-        elif re.search(r"-\s*Safe zone:", block):
-            print(
-                f"  WARNING: Slide {slide_num}: Safe zone field present but invalid; "
-                f"expected one of {', '.join(sorted(VALID_SAFE_ZONES))}"
-            )
-
-        # Extract optional on-slide text (the title/overlay text). In
-        # poster-theatrical composition this is rendered into the image;
-        # otherwise apply-illustrations-to-deck.py overlays it later.
-        text_match = re.search(r"-\s*Text:\s*(.+)", block)
-        slide_text = None
-        if text_match:
-            slide_text = text_match.group(1).strip().strip("*").strip()
-
-        # Extract build specifications
-        builds = None
-        builds_match = re.search(r"-\s*Builds:\s*(\d+)\s+steps?", block)
-        if builds_match:
-            build_count = int(builds_match.group(1))
-            build_steps = []
-            build_step_pattern = re.compile(
-                r"-\s*build-(\d+):\s*(.+?)(?=\n\s*-\s*build-|\n\s*(?!-\s*build-)|\Z)",
-                re.DOTALL,
-            )
-            for bm in build_step_pattern.finditer(block):
-                step_num = int(bm.group(1))
-                step_desc = bm.group(2).strip().split("\n")[0].strip()
-                is_full = "[FULL]" in step_desc
-                build_steps.append({
-                    "step": step_num,
-                    "description": step_desc,
-                    "is_full": is_full,
-                })
-            builds = {
-                "count": build_count,
-                "steps": sorted(build_steps, key=lambda s: s["step"]),
+    for slide in outline.slides:
+        if not slide.image_prompt:
+            continue
+        slide_data = {
+            "slide_num": slide.n,
+            "title": slide.title,
+            "format": slide.format.value,
+            "prompt": slide.image_prompt.strip(),
+        }
+        if slide.safe_zone:
+            slide_data["safe_zone"] = {
+                "zone": slide.safe_zone.zone.value,
+                "surface": slide.safe_zone.surface,
             }
-
-        if prompt:
-            slide_data = {
-                "slide_num": slide_num,
-                "title": title,
-                "format": slide_format,
-                "prompt": prompt,
-            }
-            if safe_zone:
-                slide_data["safe_zone"] = safe_zone
-            if slide_text:
-                slide_data["text"] = slide_text
-            if builds:
-                slide_data["builds"] = builds
-            result["slides"].append(slide_data)
+        text = (slide.text_overlay or "").strip()
+        if text and text.lower() != "none":
+            slide_data["text"] = text
+        if slide.builds:
+            max_step = max(b.step for b in slide.builds)
+            steps = [
+                {
+                    "step": b.step,
+                    "description": b.erase or "",
+                    "is_full": b.step == max_step,
+                }
+                for b in sorted(slide.builds, key=lambda b: b.step)
+            ]
+            slide_data["builds"] = {"count": len(steps), "steps": steps}
+        result["slides"].append(slide_data)
 
     return result
 
@@ -980,9 +937,9 @@ def write_rendered_manifest(base_dir, outline_path, results):
         "schema_version": 1,
         "outline": os.path.basename(outline_path),
         # Talk-directory name — a per-talk discriminator. Outline filenames are
-        # commonly identical across talks (presentation-outline.md), so the
-        # basename alone can't tell a copied grid from this talk's; the dir name
-        # (typically the talk slug) can.
+        # identical across talks (outline.yaml), so the basename alone can't
+        # tell a copied grid from this talk's; the dir name (typically the talk
+        # slug) can.
         "outline_dir": os.path.basename(os.path.dirname(os.path.abspath(outline_path))),
         "rendered_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "models_rendered_ok": sorted(set(ok_models)),
@@ -1838,20 +1795,20 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate illustrations for a presentation outline.",
         epilog="Examples:\n"
-               "  %(prog)s outline.md all\n"
-               "  %(prog)s outline.md remaining\n"
-               "  %(prog)s outline.md 2 5 9\n"
-               "  %(prog)s outline.md 2-10\n"
-               "  %(prog)s outline.md --compare 2\n"
-               "  %(prog)s outline.md --style-explore style-explore/candidates.json\n"
-               "  %(prog)s outline.md --edit 5 \"Erase the label\"\n"
-               "  %(prog)s outline.md --build 5\n"
-               "  %(prog)s outline.md --build all\n"
-               "  %(prog)s outline.md --fix 5 \"Make the road wider\"\n"
-               "  %(prog)s outline.md -v 2 5 9\n",
+               "  %(prog)s outline.yaml all\n"
+               "  %(prog)s outline.yaml remaining\n"
+               "  %(prog)s outline.yaml 2 5 9\n"
+               "  %(prog)s outline.yaml 2-10\n"
+               "  %(prog)s outline.yaml --compare 2\n"
+               "  %(prog)s outline.yaml --style-explore style-explore/candidates.json\n"
+               "  %(prog)s outline.yaml --edit 5 \"Erase the label\"\n"
+               "  %(prog)s outline.yaml --build 5\n"
+               "  %(prog)s outline.yaml --build all\n"
+               "  %(prog)s outline.yaml --fix 5 \"Make the road wider\"\n"
+               "  %(prog)s outline.yaml -v 2 5 9\n",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("outline", help="Path to the presentation outline markdown file")
+    parser.add_argument("outline", help="Path to outline.yaml (the single source of truth)")
     parser.add_argument(
         "--vault",
         default=None,

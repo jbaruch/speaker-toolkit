@@ -61,7 +61,7 @@ teaches the reader to handle the new shape.
 ```json
 {
   "schema_version": 1,
-  "outline": "presentation-outline.md",
+  "outline": "outline.yaml",
   "outline_dir": "devnexus26-robocoders",
   "rendered_at": "2026-06-08T12:00:00Z",
   "models_rendered_ok": ["gemini-3-pro-image-preview"],

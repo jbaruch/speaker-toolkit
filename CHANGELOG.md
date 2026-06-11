@@ -1,5 +1,28 @@
 # Changelog
 
+### fix(illustrations) — read outline.yaml, not a phantom presentation-outline.md
+
+The three outline-consuming illustration scripts (`generate-illustrations.py`,
+`apply-illustrations-to-deck.py`, `build-expansion-manifest.py`) regex-parsed a
+`presentation-outline.md` that nothing in the toolkit generates — `outline.yaml`
+is the single source of truth, and the model was left guessing how to hand-author
+the markdown. All three now load `outline.yaml` through the shared
+`outline_schema` loader (the partial view, so they work in Phase 2 before the deck
+is complete). A new deterministic contract test
+(`tests/test_outline_source_is_yaml.py`) discovers every outline-consuming script
+and fails if any declares a `.md` outline argument, skips the shared loader, or
+references the phantom file.
+
+The schema gained the illustration-layer fields that previously lived only in the
+hand-authored markdown: `style_anchor.composition` + `style_anchor.embedded_footer`
+(deck-wide), per-slide `safe_zone` (zone + surface), and per-build `erase`. `erase`
+carries the backwards-chaining edit prompt with its mandatory "Keep ..." clauses,
+while the additive `desc` stays the human-facing reveal in `slides.md` — resolving
+the long-standing mismatch where the generator expected erase prompts but the
+authoring contract produced additive ones. `build-expansion-manifest.py` dropped
+its now-redundant count/contiguity guards (the schema enforces contiguous-from-0
+build steps at load).
+
 ### fix(presentation-creator) — fully prompt-free deck builds (stage all macro I/O through the container)
 
 Extends the per-illustration container-staging to ALL macro file I/O. Sandboxed

@@ -1,39 +1,42 @@
-"""Tests for build-expansion-manifest.py — the deck-assembly build plan emitter."""
+"""Tests for build-expansion-manifest.py — the deck-assembly build plan emitter.
 
-import json
-
-import pytest
-
-OUTLINE = """\
-# Plan
-
-**Model:** `gemini-3-pro-image-preview`
-
-### Slide 3: Plain
-- Format: **FULL**
-- Image prompt: `[STYLE ANCHOR] a thing`
-
-### Slide 7: The Pipeline
-- Format: **FULL**
-- Image prompt: `[STYLE ANCHOR] a pipeline`
-- Builds: 4 steps
-  - build-00: Empty track. Keep the frame.
-  - build-01: Add build stage. Keep the rest.
-  - build-02: Add test stage. Keep the rest.
-  - build-03: [FULL] full pipeline
-
-### Slide 9: Rollback
-- Format: **FULL**
-- Image prompt: `[STYLE ANCHOR] rollback`
-- Builds: 2 steps
-  - build-00: Empty. Keep frame.
-  - build-01: [FULL] full
+parse_build_specs reads outline.yaml; the schema guarantees build steps are
+contiguous from 0, so this emitter no longer re-validates count/contiguity
+(those failure modes are caught at load and covered by test_outline_schema.py).
 """
 
+import copy
+import json
+from pathlib import Path
 
-def _make_outline(tmp_path, text=OUTLINE):
-    p = tmp_path / "presentation-outline.md"
-    p.write_text(text)
+import pytest
+import yaml
+
+FIXTURE = Path(__file__).parent / "fixtures" / "outline-example.yaml"
+_TALK = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))["talk"]
+
+DEFAULT_SLIDES = [
+    {"n": 3, "chapter": "c", "title": "Plain", "format": "FULL",
+     "image_prompt": "[STYLE ANCHOR] a thing"},
+    {"n": 7, "chapter": "c", "title": "The Pipeline", "format": "FULL",
+     "image_prompt": "[STYLE ANCHOR] a pipeline", "builds": [
+         {"step": 0, "desc": "Empty track"},
+         {"step": 1, "desc": "Build stage revealed"},
+         {"step": 2, "desc": "Test stage revealed"},
+         {"step": 3, "desc": "Full pipeline"},
+     ]},
+    {"n": 9, "chapter": "c", "title": "Rollback", "format": "FULL",
+     "image_prompt": "[STYLE ANCHOR] rollback", "builds": [
+         {"step": 0, "desc": "Empty"},
+         {"step": 1, "desc": "Full"},
+     ]},
+]
+
+
+def _make_outline(tmp_path, slides=None):
+    data = {"talk": copy.deepcopy(_TALK), "slides": slides or DEFAULT_SLIDES}
+    p = tmp_path / "outline.yaml"
+    p.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     return p
 
 
@@ -112,18 +115,6 @@ def test_missing_middle_frame_errors(build_expansion_manifest, tmp_path):
     assert "[1]" in str(exc.value)  # the missing step is named
 
 
-def test_count_mismatch_errors(build_expansion_manifest, tmp_path):
-    # Declared `Builds: 4 steps` but only 3 build-NN entries → fail.
-    text = OUTLINE.replace("  - build-03: [FULL] full pipeline\n", "")
-    outline = _make_outline(tmp_path, text)
-    builds = tmp_path / "builds"
-    _make_frames(builds, 7, [0, 1, 2])
-    _make_frames(builds, 9, 2)
-    with pytest.raises(SystemExit) as exc:
-        build_expansion_manifest.build_manifest(outline, builds)
-    assert "slide 7" in str(exc.value)
-
-
 def test_all_frames_present_passes(build_expansion_manifest, tmp_path):
     outline = _make_outline(tmp_path)
     builds = tmp_path / "builds"
@@ -179,24 +170,3 @@ def test_unwritable_out_returns_error(build_expansion_manifest, tmp_path, capsys
     rc = build_expansion_manifest.main([str(outline), str(builds), "--out", str(out_dir)])
     assert rc == 1
     assert "cannot write manifest" in capsys.readouterr().err
-
-
-def test_non_contiguous_steps_error(build_expansion_manifest, tmp_path):
-    # `Builds: 2 steps` with build-00 + build-02 (count matches, but a gap) must
-    # fail — expansion would silently skip the intermediate reveal.
-    text = """\
-# Plan
-
-### Slide 7: Gappy
-- Format: **FULL**
-- Image prompt: `[STYLE ANCHOR] x`
-- Builds: 2 steps
-  - build-00: Empty. Keep frame.
-  - build-02: [FULL] full
-"""
-    outline = _make_outline(tmp_path, text)
-    builds = tmp_path / "builds"
-    _make_frames(builds, 7, [0, 2])
-    with pytest.raises(SystemExit) as exc:
-        build_expansion_manifest.build_manifest(outline, builds)
-    assert "not contiguous" in str(exc.value)

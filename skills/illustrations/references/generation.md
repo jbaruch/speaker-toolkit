@@ -19,7 +19,7 @@ Before generating, ensure:
    }
    ```
    For single-model generation (`generate`, `--edit`, `--build`, `--fix`),
-   only the key for the outline's baked `**Model:**` vendor is required —
+   only the key for the outline's baked `style_anchor.model` vendor is required —
    the other can be omitted. For `--compare`, every vendor in `COMPARE_MODELS`
    is hit; for `--style-explore`, every vendor among the `candidates.json`
    models is hit — provide all corresponding keys (the current roster spans
@@ -28,9 +28,8 @@ Before generating, ensure:
    https://aistudio.google.com/app/apikey (Google) and
    https://platform.openai.com/api-keys (OpenAI).
 
-2. **Model availability** — verify the model in the outline header is
-   accessible with your key. The script reads it from the
-   `**Model:** \`model-name\`` line in the Illustration Style Anchor section.
+2. **Model availability** — verify the baked model is accessible with your key.
+   The script reads it from `outline.yaml`'s `style_anchor.model` field.
    Imagen models have no edit endpoint — `--edit`, `--build`, and `--fix`
    require a Gemini or OpenAI model.
 
@@ -40,7 +39,7 @@ Before generating, ensure:
 ## Slide Selection Modes
 
 ```bash
-python3 skills/illustrations/scripts/generate-illustrations.py presentation-outline.md remaining
+python3 skills/illustrations/scripts/generate-illustrations.py outline.yaml remaining
 ```
 
 `remaining` skips slides whose images already exist; `all` regenerates every
@@ -56,7 +55,7 @@ grid) — see [strategy.md](strategy.md) Sub-steps 3 and 5.
 slide's prompt across the cached `COMPARE_MODELS` roster.
 
 ```bash
-python3 skills/illustrations/scripts/generate-illustrations.py presentation-outline.md --compare 2
+python3 skills/illustrations/scripts/generate-illustrations.py outline.yaml --compare 2
 ```
 
 Output lands in `illustrations/model-comparison/`. The roster, vendor aliases,
@@ -77,8 +76,8 @@ cannot know what to preserve.
 
 ## Slide Format Vocabulary
 
-The outline's Illustration Style Anchor block defines format codes per slide.
-The `apply-illustrations-to-deck.py` script maps each code to a layout +
+Each slide's `format` field defines its format code. The
+`apply-illustrations-to-deck.py` script maps each code to a layout +
 positioning:
 
 | Outline Format | Layout | Image Handling |
@@ -120,7 +119,7 @@ for the full policy (auto-loaded).
 
 ```bash
 python3 skills/illustrations/scripts/apply-illustrations-to-deck.py \
-  deck.pptx illustrations/ presentation-outline.md \
+  deck.pptx illustrations/ outline.yaml \
   --out deck-with-titles.pptx \
   --scrim-color 100903 --scrim-alpha 47553   # omit for plain 45% black
 ```
@@ -132,10 +131,10 @@ The script:
    for the PowerPoint background pass below — it does NOT insert a picture shape.
 2. Adds a zone-sized scrim rectangle above the (later) background and below the title.
 3. Repositions title text boxes into the declared safe zone.
-4. For each slide with `Format: IMG+TXT`, applies the IMG+TXT layout
+4. For each slide with `format: IMG+TXT`, applies the IMG+TXT layout
    (image ~60% on the left as a picture shape, title placeholder + body on the right).
 5. Inserts build sequences (see [skills/illustrations/references/builds.md](builds.md)) for any slide with a
-   `- Builds:` block.
+   `builds:` block.
 
 Then set the FULL-slide backgrounds via the real PowerPoint app, so each
 illustration becomes the slide BACKGROUND FILL (covered by the layout's

@@ -12,8 +12,8 @@ Before any thumbnail work, confirm the inputs:
    `visual_style_history`.
 2. **`secrets.json`** — Gemini API key.
 3. **`presentation-spec.md`** — talk slug, metadata.
-4. **`presentation-outline.md`** — slide references; the
-   Illustration Style Anchor block (if present) feeds `--portrait-style`.
+4. **`outline.yaml`** — slide references; the
+   `style_anchor` block (if present) feeds `--portrait-style`.
 5. **YouTube video URL** — provided by the speaker at trigger time.
 
 If shownotes are needed too (Step 7.2 in presentation-creator) and don't
@@ -91,10 +91,10 @@ it looks off-brand.
 
 ## Sub-step 6: Pass Through the Deck's Style Anchor
 
-If `presentation-outline.md` has an `## Illustration Style Anchor` section
-(with one or more `### STYLE ANCHOR (FORMAT — ratio)` entries inside it),
-pass the matching entry's anchor paragraph to `generate-thumbnail.py` via
-`--portrait-style "<anchor>"`. The script pre-stylizes the speaker photo
+If `outline.yaml` has a `style_anchor` block (with `full` / `imgtxt` anchor
+paragraphs), pass the matching format's anchor paragraph to
+`generate-thumbnail.py` via `--portrait-style "<anchor>"`. The script
+pre-stylizes the speaker photo
 into the anchor's medium (sepia tech-manual, watercolor, pen-and-ink, etc.)
 before composition, so the output palette matches the deck. Without this pass-through, photographic skin tones beside
 an illustrated background produce a jarring two-medium composite even when
@@ -119,7 +119,7 @@ python3 skills/illustrations/scripts/generate-thumbnail.py \
   --brand-colors "#5B2C6F,#C0392B" \
   --output thumbnail.png
 
-# Anchor-matched (when the deck has an Illustration Style Anchor section)
+# Anchor-matched (when the deck has a style_anchor block)
 python3 skills/illustrations/scripts/generate-thumbnail.py \
   --slide-image illustrations/slide-15.png \
   --speaker-photo ~/photos/headshot.jpg \

@@ -1,70 +1,73 @@
-"""Tests for apply-illustrations-to-deck.py — zone parsing, scrim, title repositioning."""
+"""Tests for apply-illustrations-to-deck.py — zone parsing, scrim, title repositioning.
 
+The parsers read outline.yaml (the single source of truth); tests build minimal
+partial outlines via _write_outline.
+"""
+
+import copy
 from pathlib import Path
 
+import yaml
 from pptx import Presentation
 from pptx.util import Inches
 
 from conftest import make_deck
 
 
-OUTLINE_WITH_ZONES = """\
-### Slide 2: The Problem
-- Format: **FULL**
-- Image prompt: `A confused developer`
-- Safe zone: upper_third (painted sky backdrop)
-- Text: **The Problem**
+FIXTURE = Path(__file__).parent / "fixtures" / "outline-example.yaml"
+_TALK = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))["talk"]
 
-### Slide 5: The Solution
-- Format: **FULL**
-- Image prompt: `A clean architecture`
-- Safe zone: lower_third (flat gradient)
-- Text: **The Solution**
 
-### Slide 8: Split View
-- Format: **FULL**
-- Image prompt: `Side by side comparison`
-- Safe zone: left_half (studio backdrop)
-- Text: **Before and After**
-"""
+def _write_outline(tmp_path, slides, *, composition=None, embedded_footer=None,
+                   name="outline.yaml"):
+    """Write a minimal partial outline.yaml for the apply parsers.
 
-OUTLINE_NO_ZONES = """\
-### Slide 1: Title
-- Format: **FULL**
-- Image prompt: `A title slide`
-- Text: **Title**
-"""
+    `slides` is a list of dicts; each needs at least `n` + `format`. chapter and
+    title are filled in so the partial schema validates.
+    """
+    norm = [{"chapter": "c", "title": "S", **s} for s in slides]
+    data = {"talk": copy.deepcopy(_TALK), "slides": norm}
+    if composition is not None or embedded_footer is not None:
+        anchor = {"model": "imagen-4", "full": "F", "imgtxt": "I", "conventions": "C"}
+        if composition is not None:
+            anchor["composition"] = composition
+        if embedded_footer is not None:
+            anchor["embedded_footer"] = embedded_footer
+        data["style_anchor"] = anchor
+    p = tmp_path / name
+    p.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return p
+
+
+ZONES_SLIDES = [
+    {"n": 2, "format": "FULL", "safe_zone": {"zone": "upper_third", "surface": "painted sky"}},
+    {"n": 5, "format": "FULL", "safe_zone": {"zone": "lower_third", "surface": "flat gradient"}},
+    {"n": 8, "format": "FULL", "safe_zone": {"zone": "left_half", "surface": "studio backdrop"}},
+]
+
+NO_ZONES_SLIDES = [{"n": 1, "format": "FULL", "image_prompt": "A title slide"}]
 
 
 def test_parse_zones(apply_illustrations, tmp_path):
-    outline = tmp_path / "outline.md"
-    outline.write_text(OUTLINE_WITH_ZONES)
+    outline = _write_outline(tmp_path, ZONES_SLIDES)
     zones = apply_illustrations.parse_zones(outline)
     assert zones == {2: "upper_third", 5: "lower_third", 8: "left_half"}
 
 
 def test_parse_zones_empty(apply_illustrations, tmp_path):
-    outline = tmp_path / "outline.md"
-    outline.write_text(OUTLINE_NO_ZONES)
+    outline = _write_outline(tmp_path, NO_ZONES_SLIDES)
     zones = apply_illustrations.parse_zones(outline)
     assert zones == {}
 
 
 def test_parse_zones_all_types(apply_illustrations, tmp_path):
-    text = """\
-### Slide 1: A
-- Safe zone: upper_third (sky)
-### Slide 2: B
-- Safe zone: middle_third (frame)
-### Slide 3: C
-- Safe zone: lower_third (ground)
-### Slide 4: D
-- Safe zone: left_half (wall)
-### Slide 5: E
-- Safe zone: right_half (backdrop)
-"""
-    outline = tmp_path / "outline.md"
-    outline.write_text(text)
+    outline = _write_outline(tmp_path, [
+        {"n": 1, "format": "FULL", "safe_zone": {"zone": "upper_third"}},
+        {"n": 2, "format": "FULL", "safe_zone": {"zone": "middle_third"}},
+        {"n": 3, "format": "FULL", "safe_zone": {"zone": "lower_third"}},
+        {"n": 4, "format": "FULL", "safe_zone": {"zone": "left_half"}},
+        {"n": 5, "format": "FULL", "safe_zone": {"zone": "right_half"}},
+    ])
     zones = apply_illustrations.parse_zones(outline)
     assert len(zones) == 5
     assert zones[1] == "upper_third"
@@ -147,19 +150,12 @@ def test_reposition_title_placeholder(apply_illustrations, tmp_path):
 
 
 def test_parse_zones_no_cross_slide_match(apply_illustrations, tmp_path):
-    """Safe zone from slide 5 doesn't leak into slide 4."""
-    text = """\
-### Slide 4: No Zone Here
-- Format: **FULL**
-- Image prompt: `A scene`
-
-### Slide 5: Has Zone
-- Format: **FULL**
-- Image prompt: `Another scene`
-- Safe zone: lower_third (gradient)
-"""
-    outline = tmp_path / "outline.md"
-    outline.write_text(text)
+    """A slide without a safe_zone stays absent; the neighbouring zone doesn't leak."""
+    outline = _write_outline(tmp_path, [
+        {"n": 4, "format": "FULL", "image_prompt": "A scene"},
+        {"n": 5, "format": "FULL", "image_prompt": "Another scene",
+         "safe_zone": {"zone": "lower_third", "surface": "gradient"}},
+    ])
     zones = apply_illustrations.parse_zones(outline)
     assert 4 not in zones
     assert zones.get(5) == "lower_third"
@@ -168,30 +164,19 @@ def test_parse_zones_no_cross_slide_match(apply_illustrations, tmp_path):
 # ── IMG+TXT layout tests ─────────────────────────────────────────────
 
 
-OUTLINE_MIXED_FORMATS = """\
-### Slide 1: Hook
-- Format: **FULL**
-- Image prompt: `Opening scene`
-- Safe zone: upper_third (sky)
-
-### Slide 2: Detail
-- Format: **IMG+TXT**
-- Image prompt: `A diagram with explanation`
-
-### Slide 3: Exception
-- Format: **EXCEPTION** — real screenshot
-- Visual: screenshot of the dashboard
-
-### Slide 4: Both fields
-- Format: **IMG+TXT**
-- Safe zone: lower_third (gradient)
-- Image prompt: `Mixed signals`
-"""
+MIXED_FORMAT_SLIDES = [
+    {"n": 1, "format": "FULL", "image_prompt": "Opening scene",
+     "safe_zone": {"zone": "upper_third", "surface": "sky"}},
+    {"n": 2, "format": "IMG+TXT", "image_prompt": "A diagram with explanation"},
+    {"n": 3, "format": "EXCEPTION", "format_justification": "real screenshot",
+     "visual": "screenshot of the dashboard"},
+    {"n": 4, "format": "IMG+TXT", "image_prompt": "Mixed signals",
+     "safe_zone": {"zone": "lower_third", "surface": "gradient"}},
+]
 
 
 def test_parse_img_txt_slides(apply_illustrations, tmp_path):
-    outline = tmp_path / "outline.md"
-    outline.write_text(OUTLINE_MIXED_FORMATS)
+    outline = _write_outline(tmp_path, MIXED_FORMAT_SLIDES)
     img_txt = apply_illustrations.parse_img_txt_slides(outline)
     # Slide 2 is IMG+TXT only — included
     assert 2 in img_txt
@@ -199,24 +184,22 @@ def test_parse_img_txt_slides(apply_illustrations, tmp_path):
     assert 1 not in img_txt
     # Slide 3 is EXCEPTION — excluded
     assert 3 not in img_txt
-    # Slide 4 has both Format: IMG+TXT and Safe zone — Safe zone wins, excluded
+    # Slide 4 has both format IMG+TXT and a safe_zone — safe zone wins, excluded
     assert 4 not in img_txt
 
 
 def test_parse_img_txt_slides_empty(apply_illustrations, tmp_path):
-    outline = tmp_path / "outline.md"
-    outline.write_text(OUTLINE_NO_ZONES)
+    outline = _write_outline(tmp_path, NO_ZONES_SLIDES)
     img_txt = apply_illustrations.parse_img_txt_slides(outline)
     assert img_txt == set()
 
 
 def test_parse_zones_and_img_txt_disjoint(apply_illustrations, tmp_path):
-    """A slide with both Safe zone and Format: IMG+TXT goes to zones, not img_txt."""
-    outline = tmp_path / "outline.md"
-    outline.write_text(OUTLINE_MIXED_FORMATS)
+    """A slide with both a safe_zone and format IMG+TXT goes to zones, not img_txt."""
+    outline = _write_outline(tmp_path, MIXED_FORMAT_SLIDES)
     zones = apply_illustrations.parse_zones(outline)
     img_txt = apply_illustrations.parse_img_txt_slides(outline)
-    # Slide 4 has Safe zone — it's a FULL slide via the zone path
+    # Slide 4 has a safe_zone — it's a FULL slide via the zone path
     assert zones.get(4) == "lower_third"
     assert 4 not in img_txt
 
@@ -337,10 +320,9 @@ def test_apply_full_records_background_not_picture(apply_illustrations, tmp_path
     illust_dir.mkdir()
     (illust_dir / "slide-02.png").write_bytes(_MIN_PNG)
 
-    outline = tmp_path / "outline.md"
-    outline.write_text(
-        "### Slide 2: The Problem\n- Format: **FULL**\n- Safe zone: upper_third (sky)\n"
-    )
+    outline = _write_outline(tmp_path, [
+        {"n": 2, "format": "FULL", "safe_zone": {"zone": "upper_third", "surface": "sky"}},
+    ])
     out_deck = tmp_path / "out.pptx"
 
     zones = apply_illustrations.parse_zones(outline)
@@ -368,8 +350,7 @@ def test_apply_imgtxt_keeps_picture_shape(apply_illustrations, tmp_path):
     illust_dir.mkdir()
     (illust_dir / "slide-02.png").write_bytes(_MIN_PNG)
 
-    outline = tmp_path / "outline.md"
-    outline.write_text("### Slide 2: Detail\n- Format: **IMG+TXT**\n")
+    outline = _write_outline(tmp_path, [{"n": 2, "format": "IMG+TXT"}])
     out_deck = tmp_path / "out.pptx"
 
     img_txt = apply_illustrations.parse_img_txt_slides(outline)
@@ -404,66 +385,55 @@ def test_imgtxt_geometry_constants_consistent(apply_illustrations):
 
 # ── Poster-theatrical composition ────────────────────────────────────
 
-POSTER_OUTLINE = """\
-# Plan
-
-**Model:** `gemini-3-pro-image-preview`
-**Composition:** poster-theatrical
-**Embedded footer:** jbaruch • Devoxx 2026
-
-### Slide 3: The Coordination Tax
-- Format: **FULL**
-- Image prompt: `[STYLE ANCHOR] one team at a workbench`
-- Text: **One team, one bench**
-
-### Slide 7: The Tangle
-- Format: **FULL**
-- Image prompt: `[STYLE ANCHOR] many teams, snarl of wires`
-- Text: **Many teams, many wires**
-"""
+POSTER_SLIDES = [
+    {"n": 3, "format": "FULL", "text_overlay": "One team, one bench",
+     "image_prompt": "[STYLE ANCHOR] one team at a workbench"},
+    {"n": 7, "format": "FULL", "text_overlay": "Many teams, many wires",
+     "image_prompt": "[STYLE ANCHOR] many teams, snarl of wires"},
+]
 
 
 def test_parse_composition_poster(apply_illustrations, tmp_path):
-    outline = tmp_path / "outline.md"
-    outline.write_text(POSTER_OUTLINE)
+    outline = _write_outline(
+        tmp_path, POSTER_SLIDES,
+        composition="poster-theatrical", embedded_footer="jbaruch • Devoxx 2026",
+    )
     assert apply_illustrations.parse_composition(outline) == "poster-theatrical"
 
 
 def test_parse_composition_absent(apply_illustrations, tmp_path):
-    outline = tmp_path / "outline.md"
-    outline.write_text("# Plan\n\n**Model:** `m`\n\n### Slide 1: A\n- Format: **FULL**\n")
+    outline = _write_outline(tmp_path, [{"n": 1, "format": "FULL"}])
     assert apply_illustrations.parse_composition(outline) is None
 
 
 def test_parse_full_slides_poster(apply_illustrations, tmp_path):
-    # Poster FULL slides (no Safe zone) are collected for background-only apply.
-    outline = tmp_path / "outline.md"
-    outline.write_text(POSTER_OUTLINE)
+    # Poster FULL slides (no safe_zone) are collected for background-only apply.
+    outline = _write_outline(
+        tmp_path, POSTER_SLIDES,
+        composition="poster-theatrical", embedded_footer="jbaruch • Devoxx 2026",
+    )
     assert apply_illustrations.parse_full_slides(outline) == {3, 7}
 
 
 def test_parse_full_slides_excludes_safe_zone(apply_illustrations, tmp_path):
-    # A FULL slide with a Safe zone belongs to the zones path, not poster.
-    text = (
-        "# Plan\n\n### Slide 1: A\n- Format: **FULL**\n"
-        "- Image prompt: `x`\n- Safe zone: upper_third\n"
-        "\n### Slide 2: B\n- Format: **FULL**\n- Image prompt: `y`\n"
-    )
-    outline = tmp_path / "outline.md"
-    outline.write_text(text)
+    # A FULL slide with a safe_zone belongs to the zones path, not poster.
+    outline = _write_outline(tmp_path, [
+        {"n": 1, "format": "FULL", "image_prompt": "x",
+         "safe_zone": {"zone": "upper_third"}},
+        {"n": 2, "format": "FULL", "image_prompt": "y"},
+    ])
     assert apply_illustrations.parse_full_slides(outline) == {2}
 
 
 def test_apply_main_rejects_poster_with_safe_zone(apply_illustrations, tmp_path, monkeypatch):
-    # Poster mode + a Safe zone slide is contradictory — main() must fail fast.
+    # Poster mode + a safe_zone slide is contradictory — main() must fail fast.
     import pytest
-    text = (
-        "# Plan\n\n**Composition:** poster-theatrical\n\n"
-        "### Slide 1: A\n- Format: **FULL**\n- Image prompt: `x`\n"
-        "- Safe zone: upper_third\n"
+    outline = _write_outline(
+        tmp_path,
+        [{"n": 1, "format": "FULL", "image_prompt": "x",
+          "safe_zone": {"zone": "upper_third"}}],
+        composition="poster-theatrical",
     )
-    outline = tmp_path / "outline.md"
-    outline.write_text(text)
     deck = tmp_path / "deck.pptx"
     illust = tmp_path / "illustrations"
     monkeypatch.setattr(

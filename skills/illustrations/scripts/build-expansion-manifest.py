@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Emit the build-expansion manifest for deck assembly.
 
-Reads a presentation outline + the generated build frames and produces a JSON
-manifest describing how each progressive-reveal parent slide expands into its
-sequence of full-bleed frames. The manifest is consumed by the ExpandBuilds VBA
-pass (via expand-builds.sh) which replaces each parent slide with its frames.
+Reads outline.yaml (the single source of truth) + the generated build frames and
+produces a JSON manifest describing how each progressive-reveal parent slide
+expands into its sequence of full-bleed frames. The manifest is consumed by the
+ExpandBuilds VBA pass (via expand-builds.sh) which replaces each parent slide
+with its frames.
 
 Why a manifest (not direct deck edits): structural deck edits go through real
 PowerPoint / RunDeckOps, never python-pptx — see rules/deck-editing-rules.md.
@@ -23,7 +24,7 @@ Manifest shape (schema_version 1):
       ]
     }
 
-- `parent` — the 1-based outline slide number that carries the `Builds:` block.
+- `parent` — the 1-based outline slide number that carries the `builds` block.
 - `frames` — absolute paths to build-00 .. build-N, in ascending step order.
   The parent slide is replaced by these frames (build-00 first, build-N last).
 - `notes` — speaker notes for the FINAL frame only (empty when none); earlier
@@ -33,7 +34,7 @@ ExpandBuilds processes parents in descending slide order so inserting a parent's
 frames never shifts the indices of lower-numbered parents still to be expanded.
 
 Usage:
-    build-expansion-manifest.py OUTLINE_MD BUILDS_DIR [--out manifest.json]
+    build-expansion-manifest.py OUTLINE_YAML BUILDS_DIR [--out manifest.json]
 
 stdout: the manifest JSON (also written to --out when given).
 Exit non-zero with a stderr diagnostic when a declared build parent has no
@@ -46,29 +47,33 @@ import re
 import sys
 from pathlib import Path
 
+# outline.yaml is the single source of truth; its schema + loader live with the
+# presentation-creator scripts.
+sys.path.insert(
+    0,
+    str(Path(__file__).resolve().parent.parent.parent
+        / "presentation-creator" / "scripts"),
+)
+import outline_schema  # noqa: E402  (path appended above)
+
 SCHEMA_VERSION = 1
 
-_SLIDE_BLOCK_RE = re.compile(r"###\s+Slide\s+(\d+):(.*?)(?=\n###\s|\n##\s|\Z)", re.DOTALL)
-_BUILDS_RE = re.compile(r"-\s*Builds:\s*(\d+)\s+steps?")
-_STEP_RE = re.compile(r"-\s*build-(\d+):", re.MULTILINE)
 _FRAME_RE = re.compile(r"slide-\d+-build-(\d+)\.[A-Za-z0-9]+$")
 
 
 def parse_build_specs(outline_path: Path) -> list[dict]:
-    """Return build specs for each parent: {parent, count, steps}.
+    """Return build specs for each parent slide: {parent, count, steps}.
 
-    `count` is the declared `Builds: N steps`; `steps` are the build-MM step
-    numbers actually declared beneath it (the source of truth for which frames
-    must exist — the convention is not assumed 0-based).
+    Read from outline.yaml's per-slide `builds`. The schema guarantees steps are
+    contiguous from 0, so `steps` is [0, 1, ..., N-1] and `count` == len(steps).
     """
-    text = outline_path.read_text(encoding="utf-8")
+    outline = outline_schema.load_outline_partial(outline_path)
     specs = []
-    for m in _SLIDE_BLOCK_RE.finditer(text):
-        bm = _BUILDS_RE.search(m.group(2))
-        if not bm:
+    for slide in outline.slides:
+        if not slide.builds:
             continue
-        steps = sorted(int(s) for s in _STEP_RE.findall(m.group(2)))
-        specs.append({"parent": int(m.group(1)), "count": int(bm.group(1)), "steps": steps})
+        steps = sorted(b.step for b in slide.builds)
+        specs.append({"parent": slide.n, "count": len(steps), "steps": steps})
     return specs
 
 
@@ -93,28 +98,12 @@ def build_manifest(outline_path: Path, builds_dir: Path, notes_map: dict | None 
     """
     notes_map = notes_map or {}
     builds = []
+    # parse_build_specs reads outline.yaml through the schema, which already
+    # guarantees each slide's build steps are contiguous from 0 — so step
+    # count, ordering, and contiguity need no re-checking here. The only
+    # remaining failure mode is a declared step whose frame isn't on disk yet.
     for spec in sorted(parse_build_specs(outline_path), key=lambda s: s["parent"]):
-        parent, count, steps = spec["parent"], spec["count"], spec["steps"]
-        if not steps:
-            raise SystemExit(
-                f"ERROR: slide {parent} declares `Builds: {count} steps` but has "
-                "no `build-NN:` entries beneath it. Author the build steps first "
-                "(see skills/illustrations/references/builds.md)."
-            )
-        if len(steps) != count:
-            raise SystemExit(
-                f"ERROR: slide {parent} declares `Builds: {count} steps` but has "
-                f"{len(steps)} `build-NN:` entries ({steps}). Fix the count or the "
-                "entries so they agree."
-            )
-        # steps must be a contiguous run (no gaps or duplicates), or expansion
-        # would silently skip a reveal. Start value is convention-agnostic
-        # (0-based or 1-based); only the contiguity matters.
-        if steps != list(range(steps[0], steps[0] + len(steps))):
-            raise SystemExit(
-                f"ERROR: slide {parent} build steps {steps} are not contiguous "
-                "(gap or duplicate). Number the build-NN entries sequentially."
-            )
+        parent, steps = spec["parent"], spec["steps"]
         found = frames_for(builds_dir, parent)
         missing = [s for s in steps if s not in found]
         if missing:
@@ -146,7 +135,7 @@ def build_manifest(outline_path: Path, builds_dir: Path, notes_map: dict | None 
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Emit the build-expansion manifest for deck assembly.")
-    ap.add_argument("outline", type=Path, help="Path to the presentation outline markdown")
+    ap.add_argument("outline", type=Path, help="Path to outline.yaml (the single source of truth)")
     ap.add_argument("builds_dir", type=Path, help="Directory with slide-NN-build-MM.<ext> frames")
     ap.add_argument("--out", type=Path, default=None, help="Also write the manifest JSON here")
     ap.add_argument("--notes", type=Path, default=None,

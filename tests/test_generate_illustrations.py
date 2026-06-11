@@ -1,90 +1,95 @@
-"""Tests for generate-illustrations.py — outline parsing and slide selection (no API calls)."""
+"""Tests for generate-illustrations.py — outline parsing and slide selection (no API calls).
 
+parse_outline reads outline.yaml (the single source of truth) and projects it
+onto the generator's view; these tests drive the canonical fixture.
+"""
+
+import copy
 import json
-import os
+from pathlib import Path
 
 import pytest
+import yaml
 
-SAMPLE_OUTLINE = """\
-# Illustration Plan
+FIXTURE = Path(__file__).parent / "fixtures" / "outline-example.yaml"
+_FIXTURE_DATA = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
 
-**Model:** `gemini-3-pro-image-preview`
 
-### STYLE ANCHOR (WIDE — 16:9, 1920x1080)
-> A warm watercolor illustration with soft edges and muted earth tones.
-> Characters rendered in a loose, sketchy style with visible brushstrokes.
+def _write_outline(tmp_path, *, slides, model: str | None = "imagen-4",
+                   composition=None, embedded_footer=None, name="outline.yaml"):
+    """Write a minimal valid outline.yaml (partial view) for parser tests.
 
----
-
-### Slide 2: The Problem
-- Format: **WIDE**
-- Image prompt: `[STYLE ANCHOR] A confused developer staring at a tangled web of microservices`
-- Builds: 3 steps
-  - build-01: Show only the developer
-  - build-02: Add the first few microservices
-  - build-03: [FULL] Complete tangled web
-
-### Slide 5: The Solution
-- Format: **WIDE**
-- Image prompt: `[STYLE ANCHOR] A clean architecture diagram with clear boundaries`
-
-### Slide 9: Demo
-- Format: **WIDE**
-- Image prompt: `A terminal showing green test output`
-"""
+    Reuses the canonical fixture's talk block, then sets the style anchor and
+    the slides the test cares about. parse_outline reads it via
+    load_outline_partial, so full-deck invariants are not required.
+    """
+    data = {"talk": copy.deepcopy(_FIXTURE_DATA["talk"]), "slides": slides}
+    if model:
+        anchor = {
+            "model": model,
+            "full": "A clean editorial illustration, 16:9.",
+            "imgtxt": "A portrait illustration, 2:3.",
+            "conventions": "Recurring motif.",
+        }
+        if composition is not None:
+            anchor["composition"] = composition
+        if embedded_footer is not None:
+            anchor["embedded_footer"] = embedded_footer
+        data["style_anchor"] = anchor
+    p = tmp_path / name
+    p.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return p
 
 
 def test_parse_model(generate_illustrations):
-    outline = generate_illustrations.parse_outline.__wrapped__(SAMPLE_OUTLINE) \
-        if hasattr(generate_illustrations.parse_outline, '__wrapped__') else None
-
-    # parse_outline takes a file path, so write to a temp file
-    import tempfile
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
-        f.write(SAMPLE_OUTLINE)
-        f.flush()
-        result = generate_illustrations.parse_outline(f.name)
-    os.unlink(f.name)
-
-    assert result["model"] == "gemini-3-pro-image-preview"
+    result = generate_illustrations.parse_outline(FIXTURE)
+    assert result["model"] == "imagen-4"
 
 
 def test_parse_anchors(generate_illustrations):
-    import tempfile
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
-        f.write(SAMPLE_OUTLINE)
-        f.flush()
-        result = generate_illustrations.parse_outline(f.name)
-    os.unlink(f.name)
-
-    assert "WIDE" in result["anchors"]
-    assert "watercolor" in result["anchors"]["WIDE"]
+    result = generate_illustrations.parse_outline(FIXTURE)
+    # Anchors are keyed by the format token the generator resolves against.
+    assert "FULL" in result["anchors"]
+    assert "IMG+TXT" in result["anchors"]
+    assert "Photorealistic" in result["anchors"]["FULL"]
 
 
-def test_parse_slides(generate_illustrations):
-    import tempfile
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
-        f.write(SAMPLE_OUTLINE)
-        f.flush()
-        result = generate_illustrations.parse_outline(f.name)
-    os.unlink(f.name)
-
+def test_parse_slides_excludes_promptless(generate_illustrations):
+    # Slide 7 is EXCEPTION (a real screenshot) with no image_prompt — it is not
+    # an illustration target and must be excluded from the generator's view.
+    result = generate_illustrations.parse_outline(FIXTURE)
     nums = [s["slide_num"] for s in result["slides"]]
-    assert nums == [2, 5, 9]
+    assert nums == [1, 2, 3, 5, 8, 10, 11]
+    assert 7 not in nums
 
 
-def test_parse_builds(generate_illustrations):
-    import tempfile
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
-        f.write(SAMPLE_OUTLINE)
-        f.flush()
-        result = generate_illustrations.parse_outline(f.name)
-    os.unlink(f.name)
+def test_parse_slide_text_overlay_none_is_dropped(generate_illustrations):
+    # Slide 1's text_overlay is the sentinel "none" — it must not surface as
+    # on-slide text (which would leak as a poster title).
+    result = generate_illustrations.parse_outline(FIXTURE)
+    slide1 = next(s for s in result["slides"] if s["slide_num"] == 1)
+    assert "text" not in slide1
 
-    slide2 = next(s for s in result["slides"] if s["slide_num"] == 2)
-    assert "builds" in slide2
-    assert slide2["builds"]["count"] == 3
-    assert slide2["builds"]["steps"][-1]["is_full"] is True
+
+def test_parse_builds_maps_erase_and_is_full(generate_illustrations, tmp_path):
+    # builds[].erase becomes the generator's edit prompt; the final (max) step
+    # is is_full and carries no erase prompt (it is copied from the base image).
+    data = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
+    slide2 = next(s for s in data["slides"] if s["n"] == 2)
+    for b in slide2["builds"][:-1]:
+        b["erase"] = f"Erase the step {b['step']} content. Keep the three frames."
+    p = tmp_path / "outline.yaml"
+    p.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    result = generate_illustrations.parse_outline(str(p))
+    s2 = next(s for s in result["slides"] if s["slide_num"] == 2)
+    assert s2["builds"]["count"] == 4
+    steps = s2["builds"]["steps"]
+    assert steps[-1]["is_full"] is True
+    assert all(not st["is_full"] for st in steps[:-1])
+    assert steps[0]["description"].startswith("Erase the step 0")
+    # The final full step needs no erase prompt.
+    assert steps[-1]["description"] == ""
 
 
 def _single_build_slide(steps):
@@ -126,7 +131,7 @@ def test_run_build_missing_keep_exits_nonzero_without_editing(
     _stub_build_deps(gi, monkeypatch, tmp_path, outline, edit_calls)
 
     with pytest.raises(SystemExit) as exc:
-        gi.run_build("ignored.md", "60")
+        gi.run_build("ignored.yaml", "60")
 
     assert exc.value.code == 1
     assert edit_calls == []  # skipped before spending any edit API call
@@ -152,7 +157,7 @@ def test_run_build_negated_keep_is_not_a_preservation_clause(
     _stub_build_deps(gi, monkeypatch, tmp_path, outline, edit_calls)
 
     with pytest.raises(SystemExit) as exc:
-        gi.run_build("ignored.md", "60")
+        gi.run_build("ignored.yaml", "60")
 
     assert exc.value.code == 1
     assert edit_calls == []
@@ -171,7 +176,7 @@ def test_run_build_with_keep_clause_runs_chain(
     edit_calls = []
     _stub_build_deps(gi, monkeypatch, tmp_path, outline, edit_calls)
 
-    gi.run_build("ignored.md", "60")  # no SystemExit
+    gi.run_build("ignored.yaml", "60")  # no SystemExit
 
     assert len(edit_calls) == 1  # the single erase step was edited
 
@@ -196,7 +201,7 @@ def test_run_build_exits_nonzero_when_edit_fails(
     monkeypatch.setattr(gi, "edit_image", lambda *a, **k: (None, "api boom"))
 
     with pytest.raises(SystemExit) as exc:
-        gi.run_build("ignored.md", "60")
+        gi.run_build("ignored.yaml", "60")
 
     assert exc.value.code == 1
     out = capsys.readouterr()
@@ -226,7 +231,7 @@ def test_run_build_refuses_when_render_gate_fails(
     )
 
     with pytest.raises(SystemExit) as exc:
-        gi.run_build("ignored.md", "60")
+        gi.run_build("ignored.yaml", "60")
 
     assert exc.value.code == 1
     assert edit_calls == []  # refused before any edit API call
@@ -301,50 +306,26 @@ def test_mime_ext_roundtrip(generate_illustrations):
 
 # --- Safe zone directive tests ---
 
-OUTLINE_WITH_SAFE_ZONE = """\
-# Illustration Plan
 
-**Model:** `gemini-3-pro-image-preview`
-
-### STYLE ANCHOR (WIDE — 16:9, 1920x1080)
-> A warm watercolor illustration.
-
----
-
-### Slide 3: The Question
-- Format: **WIDE**
-- Image prompt: `[STYLE ANCHOR] A confused developer`
-- Safe zone: upper_third (painted sky)
-- Text: **The Question**
-
-### Slide 7: No Zone
-- Format: **WIDE**
-- Image prompt: `A terminal output`
-"""
-
-
-def test_parse_safe_zone(generate_illustrations):
-    import tempfile
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
-        f.write(OUTLINE_WITH_SAFE_ZONE)
-        f.flush()
-        result = generate_illustrations.parse_outline(f.name)
-    os.unlink(f.name)
-
+def test_parse_safe_zone(generate_illustrations, tmp_path):
+    outline = _write_outline(tmp_path, model="gemini-3-pro-image-preview", slides=[
+        {"n": 3, "chapter": "c", "title": "The Question", "format": "FULL",
+         "image_prompt": "[STYLE ANCHOR] A confused developer",
+         "safe_zone": {"zone": "upper_third", "surface": "painted sky"}},
+    ])
+    result = generate_illustrations.parse_outline(str(outline))
     slide3 = next(s for s in result["slides"] if s["slide_num"] == 3)
     assert "safe_zone" in slide3
     assert slide3["safe_zone"]["zone"] == "upper_third"
     assert slide3["safe_zone"]["surface"] == "painted sky"
 
 
-def test_parse_no_safe_zone(generate_illustrations):
-    import tempfile
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
-        f.write(OUTLINE_WITH_SAFE_ZONE)
-        f.flush()
-        result = generate_illustrations.parse_outline(f.name)
-    os.unlink(f.name)
-
+def test_parse_no_safe_zone(generate_illustrations, tmp_path):
+    outline = _write_outline(tmp_path, model="gemini-3-pro-image-preview", slides=[
+        {"n": 7, "chapter": "c", "title": "No Zone", "format": "FULL",
+         "image_prompt": "A terminal output"},
+    ])
+    result = generate_illustrations.parse_outline(str(outline))
     slide7 = next(s for s in result["slides"] if s["slide_num"] == 7)
     assert "safe_zone" not in slide7
 
@@ -492,35 +473,16 @@ def test_load_secrets_partial_file(generate_illustrations, tmp_path, monkeypatch
 
 # --- Multipart body for OpenAI edits ---
 
-def test_parse_outline_handles_img_plus_txt_format(generate_illustrations):
-    # Outline using the documented `IMG+TXT` portrait format must parse
-    # the `+` character — the original `\w+` regex silently dropped it.
-    # Mismatched parsing would route non-16:9 slides through the FULL
-    # sizing default in the cross-vendor dispatchers.
-    import tempfile
-    outline = """\
-# Plan
-**Model:** `gpt-image-2`
-
-### STYLE ANCHOR (FULL — 16:9, 1920x1080)
-> A FULL anchor.
-
-### STYLE ANCHOR (IMG+TXT — Portrait 2:3, 1024x1536)
-> An IMG+TXT anchor.
-
-### Slide 3: A wide slide
-- Format: **FULL**
-- Image prompt: `[STYLE ANCHOR] something wide`
-
-### Slide 7: A portrait slide
-- Format: **IMG+TXT**
-- Image prompt: `[STYLE ANCHOR] something tall`
-"""
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
-        f.write(outline)
-        f.flush()
-        result = generate_illustrations.parse_outline(f.name)
-    os.unlink(f.name)
+def test_parse_outline_handles_img_plus_txt_format(generate_illustrations, tmp_path):
+    # The IMG+TXT portrait format must survive the round-trip: it keys the
+    # anchor map and drives 2:3 sizing in the cross-vendor dispatchers.
+    outline = _write_outline(tmp_path, model="gpt-image-2", slides=[
+        {"n": 3, "chapter": "c", "title": "A wide slide", "format": "FULL",
+         "image_prompt": "[STYLE ANCHOR] something wide"},
+        {"n": 7, "chapter": "c", "title": "A portrait slide", "format": "IMG+TXT",
+         "image_prompt": "[STYLE ANCHOR] something tall"},
+    ])
+    result = generate_illustrations.parse_outline(str(outline))
 
     assert "FULL" in result["anchors"]
     assert "IMG+TXT" in result["anchors"]
@@ -568,32 +530,18 @@ def test_final_build_dest_preserves_extension(generate_illustrations, tmp_path):
     ).endswith("slide-05-build-03.jpg")
 
 
-def test_parse_builds_empty_step_list(generate_illustrations):
-    # An outline that declares `- Builds: N steps` without any parsable
-    # `build-XX:` entries must not crash the parser, and the resulting
-    # `steps` list must be empty so run_build's empty-guard fires.
-    import tempfile
-    outline = """\
-# Plan
-**Model:** `gemini-3-pro-image-preview`
-
-### STYLE ANCHOR (WIDE — 16:9, 1920x1080)
-> A style.
-
-### Slide 4: Empty builds
-- Format: **WIDE**
-- Image prompt: `[STYLE ANCHOR] something`
-- Builds: 5 steps
-"""
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
-        f.write(outline)
-        f.flush()
-        result = generate_illustrations.parse_outline(f.name)
-    os.unlink(f.name)
-
+def test_parse_empty_builds_list_yields_no_builds_key(generate_illustrations, tmp_path):
+    # A slide with an empty `builds: []` is not a build slide — parse_outline
+    # must omit the "builds" key entirely (the schema forbids a count without
+    # contiguous steps, so the old "declared N steps, zero entries" markdown
+    # failure mode can no longer occur).
+    outline = _write_outline(tmp_path, model="gemini-3-pro-image-preview", slides=[
+        {"n": 4, "chapter": "c", "title": "Empty builds", "format": "FULL",
+         "image_prompt": "[STYLE ANCHOR] something", "builds": []},
+    ])
+    result = generate_illustrations.parse_outline(str(outline))
     slide4 = next(s for s in result["slides"] if s["slide_num"] == 4)
-    assert slide4["builds"]["count"] == 5
-    assert slide4["builds"]["steps"] == []
+    assert "builds" not in slide4
 
 
 def test_multipart_body_structure(generate_illustrations):
@@ -752,7 +700,7 @@ def test_run_style_explore_missing_candidates_exits_cleanly(generate_illustratio
     # non-zero exit, not a FileNotFoundError traceback.
     with pytest.raises(SystemExit) as exc:
         generate_illustrations.run_style_explore(
-            str(tmp_path / "outline.md"), str(tmp_path / "nope.json")
+            str(tmp_path / "outline.yaml"), str(tmp_path / "nope.json")
         )
     assert exc.value.code == 1
     assert "candidates file not found" in capsys.readouterr().err
@@ -765,7 +713,7 @@ def test_run_style_explore_bad_candidates_exits_cleanly(generate_illustrations, 
     p = tmp_path / "candidates.json"
     p.write_text(json.dumps({"schema_version": 2}))
     with pytest.raises(SystemExit) as exc:
-        generate_illustrations.run_style_explore(str(tmp_path / "outline.md"), str(p))
+        generate_illustrations.run_style_explore(str(tmp_path / "outline.yaml"), str(p))
     assert exc.value.code == 1
     err = capsys.readouterr().err
     assert "ERROR" in err and "schema_version" in err
@@ -777,12 +725,10 @@ def test_run_style_explore_empty_plan_exits_cleanly(generate_illustrations, tmp_
     # formats yields zero renders — exit non-zero before writing an empty
     # index.md, rather than succeeding with an empty contact sheet.
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    outline = tmp_path / "outline.md"
-    outline.write_text(
-        "# Plan\n\n**Model:** `gemini-3-pro-image-preview`\n\n"
-        "### STYLE ANCHOR (FULL — 16:9, 1920x1080)\n> A base.\n\n"
-        "### Slide 3: Wide\n- Format: **FULL**\n- Image prompt: `[STYLE ANCHOR] wide`\n"
-    )
+    outline = _write_outline(tmp_path, model="gemini-3-pro-image-preview", slides=[
+        {"n": 3, "chapter": "c", "title": "Wide", "format": "FULL",
+         "image_prompt": "[STYLE ANCHOR] wide"},
+    ])
     cand = _candidates(
         slides={"FULL": 3},
         models=["gemini-3-pro-image-preview"],
@@ -800,12 +746,10 @@ def test_run_style_explore_unsupported_model_exits(generate_illustrations, tmp_p
     # A candidate model with no vendor adapter must fail fast with an actionable
     # stderr message, not get misrouted to the Gemini endpoint.
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    outline = tmp_path / "outline.md"
-    outline.write_text(
-        "# Plan\n\n**Model:** `gemini-3-pro-image-preview`\n\n"
-        "### STYLE ANCHOR (FULL — 16:9, 1920x1080)\n> A base.\n\n"
-        "### Slide 3: Wide\n- Format: **FULL**\n- Image prompt: `[STYLE ANCHOR] wide`\n"
-    )
+    outline = _write_outline(tmp_path, model="gemini-3-pro-image-preview", slides=[
+        {"n": 3, "chapter": "c", "title": "Wide", "format": "FULL",
+         "image_prompt": "[STYLE ANCHOR] wide"},
+    ])
     cand = _candidates(
         slides={"FULL": 3},
         models=["midjourney-v7"],
@@ -825,13 +769,11 @@ def test_run_style_explore_safezone_format_mismatch_skipped(generate_illustratio
     # (its geometry would disagree); with no usable targets left, the run exits
     # non-zero and both diagnostics go to stderr.
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    outline = tmp_path / "outline.md"
-    outline.write_text(
-        "# Plan\n\n**Model:** `gemini-3-pro-image-preview`\n\n"
-        "### STYLE ANCHOR (IMG+TXT — Portrait 2:3, 1024x1536)\n> A base.\n\n"
-        "### Slide 4: Portrait with zone\n- Format: **IMG+TXT**\n"
-        "- Image prompt: `[STYLE ANCHOR] tall`\n- Safe zone: upper_third (sky)\n"
-    )
+    outline = _write_outline(tmp_path, model="gemini-3-pro-image-preview", slides=[
+        {"n": 4, "chapter": "c", "title": "Portrait with zone", "format": "IMG+TXT",
+         "image_prompt": "[STYLE ANCHOR] tall",
+         "safe_zone": {"zone": "upper_third", "surface": "sky"}},
+    ])
     cand = _candidates(
         slides={"IMG+TXT": 4},
         models=["gemini-3-pro-image-preview"],
@@ -871,22 +813,11 @@ def test_render_explore_index_groups_by_style(generate_illustrations):
 
 
 def _write_gate_outline(tmp_path, model=None):
-    """Write an outline with a STYLE ANCHOR and one FULL slide; optional model."""
-    lines = ["# Plan", ""]
-    if model:
-        lines += [f"**Model:** `{model}`", ""]
-    lines += [
-        "### STYLE ANCHOR (FULL — 16:9, 1920x1080)",
-        "> A clean editorial illustration.",
-        "",
-        "### Slide 1: Intro",
-        "- Format: **FULL**",
-        "- Image prompt: `[STYLE ANCHOR] a thing`",
-        "",
-    ]
-    p = tmp_path / "outline.md"
-    p.write_text("\n".join(lines))
-    return p
+    """Write an outline with a style anchor and one FULL slide; optional model."""
+    return _write_outline(tmp_path, model=model, slides=[
+        {"n": 1, "chapter": "c", "title": "Intro", "format": "FULL",
+         "image_prompt": "[STYLE ANCHOR] a thing"},
+    ])
 
 
 def _write_manifest(tmp_path, ok_models, cells=None, outline_dir=None):
@@ -907,7 +838,7 @@ def _write_manifest(tmp_path, ok_models, cells=None, outline_dir=None):
             })
     manifest = {
         "schema_version": 1,
-        "outline": "outline.md",
+        "outline": "outline.yaml",
         "outline_dir": tmp_path.name if outline_dir is None else outline_dir,
         "rendered_at": "2026-06-08T00:00:00Z",
         "models_rendered_ok": ok_models,
@@ -924,7 +855,7 @@ def test_rendered_manifest_excludes_failed(generate_illustrations, tmp_path):
     gi = generate_illustrations
     base = tmp_path / "style-explore"
     base.mkdir()
-    outline = tmp_path / "outline.md"
+    outline = tmp_path / "outline.yaml"
     outline.write_text("x")
     results = [
         {"style": "A", "format": "FULL", "model": "nano-banana-pro",
@@ -1048,21 +979,14 @@ def test_run_generate_proceeds_when_gate_passes(
 
 def _write_poster_outline(tmp_path, model="gemini-3-pro-image-preview",
                           footer="jbaruch • Devoxx 2026", text="One team, one bench"):
-    lines = [
-        "# Plan", "",
-        f"**Model:** `{model}`",
-        "**Composition:** poster-theatrical",
-        f"**Embedded footer:** {footer}", "",
-        "### STYLE ANCHOR (FULL — 16:9, 1920x1080)",
-        "> A dramatic theatrical poster style.", "",
-        "### Slide 3: The Coordination Tax",
-        "- Format: **FULL**",
-        "- Image prompt: `[STYLE ANCHOR] one team at a shared workbench`",
-        f"- Text: **{text}**", "",
-    ]
-    p = tmp_path / "outline.md"
-    p.write_text("\n".join(lines))
-    return p
+    return _write_outline(
+        tmp_path, model=model, composition="poster-theatrical",
+        embedded_footer=footer, slides=[
+            {"n": 3, "chapter": "c", "title": "The Coordination Tax",
+             "format": "FULL", "text_overlay": text,
+             "image_prompt": "[STYLE ANCHOR] one team at a shared workbench"},
+        ],
+    )
 
 
 def test_parse_poster_composition_and_footer(generate_illustrations, tmp_path):
@@ -1137,7 +1061,7 @@ def test_gate_fails_on_unsupported_schema_version(generate_illustrations, tmp_pa
     gi = generate_illustrations
     outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
     _write_raw_manifest(tmp_path, {
-        "schema_version": 2, "outline": "outline.md",
+        "schema_version": 2, "outline": "outline.yaml",
         "models_rendered_ok": ["gemini-3-pro-image-preview"], "cells": [],
     })
     v = gi.check_style_explore(str(outline))
@@ -1150,7 +1074,7 @@ def test_gate_fails_on_outline_mismatch(generate_illustrations, tmp_path):
     gi = generate_illustrations
     outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
     _write_raw_manifest(tmp_path, {
-        "schema_version": 1, "outline": "some-other-talk.md",
+        "schema_version": 1, "outline": "some-other-talk.yaml",
         "models_rendered_ok": ["gemini-3-pro-image-preview"], "cells": [],
     })
     v = gi.check_style_explore(str(outline))
@@ -1165,7 +1089,7 @@ def test_gate_fails_when_rendered_file_missing(generate_illustrations, tmp_path)
     gi = generate_illustrations
     outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
     _write_raw_manifest(tmp_path, {
-        "schema_version": 1, "outline": "outline.md", "outline_dir": tmp_path.name,
+        "schema_version": 1, "outline": "outline.yaml", "outline_dir": tmp_path.name,
         "models_rendered_ok": ["gemini-3-pro-image-preview"],
         "cells": [{
             "style": "S", "format": "FULL", "model": "gemini-3-pro-image-preview",
@@ -1192,7 +1116,7 @@ def test_gate_fails_on_malformed_cells(generate_illustrations, tmp_path):
     gi = generate_illustrations
     outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
     _write_raw_manifest(tmp_path, {
-        "schema_version": 1, "outline": "outline.md", "outline_dir": tmp_path.name,
+        "schema_version": 1, "outline": "outline.yaml", "outline_dir": tmp_path.name,
         "models_rendered_ok": [], "cells": "not-a-list",
     })
     v = gi.check_style_explore(str(outline))
@@ -1205,20 +1129,11 @@ def test_run_generate_poster_rejects_non_full_slide(
 ):
     # Poster mode must fail fast if a slide isn't FULL or carries a Safe zone.
     gi = generate_illustrations
-    lines = [
-        "# Plan", "",
-        "**Model:** `gemini-3-pro-image-preview`",
-        "**Composition:** poster-theatrical",
-        "**Embedded footer:** jbaruch • Devoxx 2026", "",
-        "### STYLE ANCHOR (FULL — 16:9, 1920x1080)",
-        "> A poster style.", "",
-        "### Slide 3: Bad Slide",
-        "- Format: **IMG+TXT**",
-        "- Image prompt: `[STYLE ANCHOR] a thing`",
-        "- Text: **nope**", "",
-    ]
-    outline = tmp_path / "outline.md"
-    outline.write_text("\n".join(lines))
+    outline = _write_poster_outline(tmp_path, text="nope")
+    # Override the single slide with a non-FULL one to trip the invariant.
+    data = yaml.safe_load(outline.read_text(encoding="utf-8"))
+    data["slides"][0]["format"] = "IMG+TXT"
+    outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     outline_dict = gi.parse_outline(str(outline))
     _write_manifest(tmp_path, ["gemini-3-pro-image-preview"])
     gen_calls = []
@@ -1238,24 +1153,16 @@ def test_run_generate_poster_validates_whole_outline_not_just_subset(
     # Even generating a single valid slide must fail if another slide in the
     # outline violates the poster invariant — the invariant is deck-level.
     gi = generate_illustrations
-    lines = [
-        "# Plan", "",
-        "**Model:** `gemini-3-pro-image-preview`",
-        "**Composition:** poster-theatrical",
-        "**Embedded footer:** jbaruch • Devoxx 2026", "",
-        "### STYLE ANCHOR (FULL — 16:9, 1920x1080)",
-        "> A poster style.", "",
-        "### Slide 1: Good",
-        "- Format: **FULL**",
-        "- Image prompt: `[STYLE ANCHOR] a thing`",
-        "- Text: **ok**", "",
-        "### Slide 2: Bad",
-        "- Format: **IMG+TXT**",
-        "- Image prompt: `[STYLE ANCHOR] another thing`",
-        "- Text: **nope**", "",
-    ]
-    outline = tmp_path / "outline.md"
-    outline.write_text("\n".join(lines))
+    outline = _write_outline(
+        tmp_path, model="gemini-3-pro-image-preview",
+        composition="poster-theatrical", embedded_footer="jbaruch • Devoxx 2026",
+        slides=[
+            {"n": 1, "chapter": "c", "title": "Good", "format": "FULL",
+             "text_overlay": "ok", "image_prompt": "[STYLE ANCHOR] a thing"},
+            {"n": 2, "chapter": "c", "title": "Bad", "format": "IMG+TXT",
+             "text_overlay": "nope", "image_prompt": "[STYLE ANCHOR] another thing"},
+        ],
+    )
     outline_dict = gi.parse_outline(str(outline))
     _write_manifest(tmp_path, ["gemini-3-pro-image-preview"])
     gen_calls = []
@@ -1276,7 +1183,7 @@ def test_gate_rejects_rel_path_traversal(generate_illustrations, tmp_path):
     outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image-preview")
     (tmp_path / "evil.png").write_bytes(b"img")  # a real file OUTSIDE style-explore/
     _write_raw_manifest(tmp_path, {
-        "schema_version": 1, "outline": "outline.md", "outline_dir": tmp_path.name,
+        "schema_version": 1, "outline": "outline.yaml", "outline_dir": tmp_path.name,
         "models_rendered_ok": ["gemini-3-pro-image-preview"],
         "cells": [{
             "style": "S", "format": "FULL", "model": "gemini-3-pro-image-preview",
@@ -1300,7 +1207,7 @@ def test_gate_fails_when_outline_dir_missing(generate_illustrations, tmp_path):
     (se / rel).parent.mkdir(parents=True, exist_ok=True)
     (se / rel).write_bytes(b"img")
     _write_raw_manifest(tmp_path, {
-        "schema_version": 1, "outline": "outline.md",  # no outline_dir
+        "schema_version": 1, "outline": "outline.yaml",  # no outline_dir
         "models_rendered_ok": ["gemini-3-pro-image-preview"],
         "cells": [{
             "style": "S", "format": "FULL", "model": "gemini-3-pro-image-preview",
@@ -1347,7 +1254,7 @@ def test_gate_fails_closed_on_non_string_cell_model(generate_illustrations, tmp_
     (se / rel).parent.mkdir(parents=True, exist_ok=True)
     (se / rel).write_bytes(b"img")
     _write_raw_manifest(tmp_path, {
-        "schema_version": 1, "outline": "outline.md", "outline_dir": tmp_path.name,
+        "schema_version": 1, "outline": "outline.yaml", "outline_dir": tmp_path.name,
         "models_rendered_ok": [],
         "cells": [{
             "style": "S", "format": "FULL", "model": ["not", "a", "string"],

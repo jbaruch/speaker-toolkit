@@ -24,8 +24,8 @@ This skill is an action router — pick the step that matches the user's intent 
 Step 1 inspects the request and the talk-directory state to decide the mode (Strategy / Generation / Thumbnail) and which subsequent step is the entry point. The "Multi-mode chaining" section at the end of Step 1 is the one explicit exception, and only triggers when a single invocation requests multiple modes.
 
 Owns every AI-generated image the toolkit produces: deck illustrations, build
-chains, and thumbnails. Reads the vault for visual history, the
-`presentation-outline.md` for slide-level prompts, and the `speaker-profile.json`
+chains, and thumbnails. Reads the vault for visual history, `outline.yaml` for
+the style anchor and slide-level prompts, and the `speaker-profile.json`
 for `visual_style_history` and `publishing_process.thumbnail` config.
 
 The auto-loaded steering rules are the constitution: `illustration-rules`
@@ -37,7 +37,7 @@ Do not restate them here — apply them.
 
 | File / Reference | Purpose |
 |------------------|---------|
-| `presentation-outline.md` | Source of truth — STYLE ANCHOR header + per-slide Format/Illustration/Image prompt |
+| `outline.yaml` | Source of truth — `style_anchor` (model, per-format anchors, composition, embedded_footer) + per-slide `format` / `image_prompt` / `safe_zone` / `builds` |
 | `speaker-profile.json` → `visual_style_history` | Default style, departures, mode profiles, confirmed visual intents |
 | `speaker-profile.json` → `publishing_process.thumbnail` | Speaker photo path + aesthetic preference |
 | `illustrations/` (alongside outline) | Generated images, builds, model-comparison output |
@@ -61,7 +61,7 @@ Determine which of three modes applies and execute only the matching steps:
   generation was also requested.
 - **Generation** — outline has a STYLE ANCHOR and per-slide prompts. Run
   Step 2 (freshness), Step 10 (illustrations), Step 11 (builds, if any slides
-  have a `- Builds:` block), and Step 12 (apply to deck, if a .pptx exists).
+  have a `builds:` block), and Step 12 (apply to deck, if a .pptx exists).
 - **Thumbnail** — talk has been delivered and a video URL is available.
   Skip to Step 13.
 
@@ -195,11 +195,11 @@ Proceed immediately to Step 9.
 
 ## Step 9 — Bake the Anchor, Then Verify
 
-Write the STYLE ANCHOR block — chosen model + per-format anchors + visual
-continuity devices — into the outline header. For poster-theatrical composition,
-also write `**Composition:** poster-theatrical` and `**Embedded footer:** <text>`.
-Then run the deterministic precheck and report its verdict in one line; never
-skip this step silently:
+Write the `style_anchor` block — chosen model + per-format anchors + visual
+continuity devices (`conventions`) — into `outline.yaml`. For poster-theatrical
+composition, also set `style_anchor.composition: poster-theatrical` and
+`style_anchor.embedded_footer: <text>`. Then run the deterministic precheck and
+report its verdict in one line; never skip this step silently:
 
 ```bash
 python3 skills/illustrations/scripts/generate-illustrations.py \
@@ -224,7 +224,7 @@ Batch-generate every missing slide illustration from the outline:
 
 ```bash
 python3 skills/illustrations/scripts/generate-illustrations.py \
-  presentation-outline.md remaining
+  outline.yaml remaining
 ```
 
 Review with the author. For targeted corrections use `--fix` (preserves the
@@ -240,13 +240,16 @@ Proceed immediately to Step 11.
 
 ## Step 11 — Generate Builds
 
-If any slides in the outline have a `- Builds:` block, generate the
+If any slides in the outline have a `builds:` block, generate the
 backwards-chained build images. Each step's input is the previous step's
-output — never regenerate independently from prompts.
+output — never regenerate independently from prompts. The edit prompt for each
+step comes from `builds[].erase` (the additive `builds[].desc` is the
+human-facing reveal); `--build` skips any non-final step whose `erase` prompt
+lacks a "Keep ..." clause.
 
 ```bash
 python3 skills/illustrations/scripts/generate-illustrations.py \
-  presentation-outline.md --build all
+  outline.yaml --build all
 ```
 
 Output: `illustrations/builds/slide-NN-build-MM.<ext>` where `<ext>` is
@@ -263,14 +266,14 @@ Insert generated illustrations and build sequences into the .pptx. Build
 slides replace their parent slide rather than duplicating after it; speaker
 notes go on the final build step only.
 
-The script contract is `DECK ILLUSTRATIONS_DIR OUTLINE_MD` (positional, in
+The script contract is `DECK ILLUSTRATIONS_DIR OUTLINE_YAML` (positional, in
 that order), with optional `--out`, `--image-ext`, `--scrim-color`,
 `--scrim-alpha`. It writes a new `<stem>-with-titles.pptx` next to the
 input deck unless `--out` is given.
 
 ```bash
 python3 skills/illustrations/scripts/apply-illustrations-to-deck.py \
-  deck.pptx illustrations/ presentation-outline.md
+  deck.pptx illustrations/ outline.yaml
 ```
 
 If no .pptx exists yet (Phase 5 hasn't run), finish here — presentation-creator
