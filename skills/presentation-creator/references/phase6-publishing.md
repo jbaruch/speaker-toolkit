@@ -87,7 +87,6 @@ Examples:
 | `https://speaking.example.com` | `/{slug}/` | `arc-of-ai` | `https://speaking.example.com/arc-of-ai/` |
 | `https://speaker.dev` | `/talks/{slug}/` | `arc-of-ai` | `https://speaker.dev/talks/arc-of-ai/` |
 | `https://example.com` | `/{yyyy}-{mm}-{dd}-{slug}/` | `jfokus-robocoders` | `https://example.com/2026-04-16-jfokus-robocoders/` |
-| `https://jbaru.ch` | `/talks/{slug}/` | `devnexus26-robocoders` | `https://jbaru.ch/talks/devnexus26-robocoders/` |
 
 If the SSG uses per-file `permalink:` frontmatter (common in Eleventy), read
 the permalink from the newly-generated page's frontmatter rather than
@@ -149,20 +148,20 @@ path make the check before resolving the link.
    ```bash
    # MCP-preresolved mode:
    python3 skills/presentation-creator/scripts/generate-qr.py deck.pptx \
-     --talk-slug SLUG --short-url https://bit.ly/arcofai
+     --talk-slug SLUG --short-url SHORT_URL
 
    # Direct API mode:
    python3 skills/presentation-creator/scripts/generate-qr.py deck.pptx \
-     --talk-slug SLUG --shownotes-url https://jbaru.ch/arc-of-ai \
+     --talk-slug SLUG --shownotes-url SHOWNOTES_URL \
      --vault /path/to/vault
 
    # No shortening:
    python3 skills/presentation-creator/scripts/generate-qr.py deck.pptx \
-     --talk-slug SLUG --shownotes-url https://jbaru.ch/arc-of-ai
+     --talk-slug SLUG --shownotes-url SHOWNOTES_URL
 
    # PNG-only (no deck — for presenterm, PDF, or standalone use):
    python3 skills/presentation-creator/scripts/generate-qr.py --png-only \
-     --talk-slug SLUG --shownotes-url https://jbaru.ch/arc-of-ai \
+     --talk-slug SLUG --shownotes-url SHOWNOTES_URL \
      --output /path/to/qr.png --bg-color 128,0,128
    ```
 

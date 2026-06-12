@@ -753,11 +753,11 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate a QR code and insert it into a PowerPoint deck.",
         epilog="Examples:\n"
-               "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url https://jbaru.ch/arc-of-ai\n"
-               "  %(prog)s deck.pptx --talk-slug arc-of-ai --short-url https://bit.ly/arcofai\n"
-               "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url URL --dry-run\n"
-               "  %(prog)s --png-only --talk-slug SLUG --shownotes-url URL --output qr.png\n"
-               "  %(prog)s --png-only --talk-slug SLUG --short-url URL --bg-color 128,0,128\n",
+               "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url https://example.com/arc-of-ai\n"
+               "  %(prog)s deck.pptx --talk-slug arc-of-ai --short-url https://example.com/arcofai\n"
+               "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url https://example.com/arc-of-ai --dry-run\n"
+               "  %(prog)s --png-only --talk-slug SLUG --shownotes-url https://example.com/arc-of-ai --output qr.png\n"
+               "  %(prog)s --png-only --talk-slug SLUG --short-url https://example.com/arcofai --bg-color 128,0,128\n",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("deck", nargs="?", default=None, help="Path to the .pptx deck file (not required with --png-only)")

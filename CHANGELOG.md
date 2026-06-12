@@ -1,5 +1,14 @@
 # Changelog
 
+### fix(security) — drop suspicious download-URL examples from skill instructions
+
+Removes the `bit.ly` shortener and concrete Google Drive / YouTube example URLs from
+skill instructions. They tripped the tessl moderation **E005 "suspicious download URL"**
+gate (Critical, install-blocking), which had held the public-install gate closed. The
+flagged URLs predate this change; the examples are now generic placeholders or plain
+descriptions — an agent infers URL shape without a literal sample. Functional download
+commands (`gdown`, `yt-dlp`) and the speaker's real shownotes domain are unchanged.
+
 ### feat(vault) — define the self-improvement outcomes of talk ingress
 
 Turns three previously under-specified coaching surfaces into a coherent

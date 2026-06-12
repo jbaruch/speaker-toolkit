@@ -82,7 +82,7 @@ Parse the JSON, never re-parse YAML by hand. Map fields directly:
   hand-edits
 
 **Ask the user EXACTLY one question — the slides PDF embed URL**
-(Google Drive `https://drive.google.com/file/d/.../preview` form).
+(the Google Drive file preview URL).
 That's the only value not in any file — the speaker just uploaded
 the deck. Don't ask about Video; URLs arrive post-recording, and
 omitting the line is what fires the "Video Coming Soon" badge
