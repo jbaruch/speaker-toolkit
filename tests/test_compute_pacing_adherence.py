@@ -168,6 +168,19 @@ def test_main_rejects_wrong_shape_talks(compute_pacing_adherence, monkeypatch, c
     assert "ERROR" in err
 
 
+def test_main_rejects_nonpositive_budget(compute_pacing_adherence, monkeypatch, capsys):
+    # slides_per_min of 0 would divide-by-zero; must be a controlled ERROR + rc 1.
+    payload = {
+        "talks": [_talk("a.md", "2024-01-01", 90, "45 min")],
+        "slide_budgets": [{"duration_min": 20, "max_slides": 30, "slides_per_min": 0}],
+    }
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+    rc = compute_pacing_adherence.main()
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert "positive" in err
+
+
 def test_main_rejects_malformed_budget(compute_pacing_adherence, monkeypatch, capsys):
     # budget entries missing required keys are caught at the boundary, not raised.
     payload = {

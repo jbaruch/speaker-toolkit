@@ -78,7 +78,10 @@ def budget_for(minutes: int, budgets: list[dict]) -> float | None:
     ordered = sorted(budgets, key=lambda b: b["duration_min"])
     applicable = [b for b in ordered if b["duration_min"] <= minutes]
     band = applicable[-1] if applicable else ordered[0]
-    return float(band["slides_per_min"])
+    value = float(band["slides_per_min"])
+    if value <= 0:
+        raise ValueError(f"slide budget slides_per_min must be positive, got {value}")
+    return value
 
 
 def _over_budget_rate(talks: list[dict]) -> float:
