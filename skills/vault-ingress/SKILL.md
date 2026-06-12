@@ -77,10 +77,8 @@ URLs, status `"pending"`). For `remote_url` or `none` source types, skip the
 scan — the vault ingests only the talks the speaker has already registered
 elsewhere. Extract
 `video_url`, `slides_url` from frontmatter/links. Parse IDs from URLs:
-- `youtube_id`: extract the `v=` parameter from YouTube URLs
-  (e.g., `https://www.youtube.com/watch?v=aBcDeFg` → `youtube_id: "aBcDeFg"`)
-- `google_drive_id`: extract the file ID from Google Drive URLs
-  (e.g., `https://drive.google.com/file/d/1AbCdEfGhIjK/view` → `google_drive_id: "1AbCdEfGhIjK"`)
+- `youtube_id`: extract the `v=` parameter from the YouTube URL
+- `google_drive_id`: extract the file ID from the Google Drive URL
 
 Default status is always `"pending"` for new entries.
 
