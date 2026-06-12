@@ -753,8 +753,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate a QR code and insert it into a PowerPoint deck.",
         epilog="Examples:\n"
-               "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url URL\n"
-               "  %(prog)s deck.pptx --talk-slug arc-of-ai --short-url URL\n"
+               "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url https://example.com/arc-of-ai\n"
+               "  %(prog)s deck.pptx --talk-slug arc-of-ai --short-url https://example.com/arcofai\n"
                "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url URL --dry-run\n"
                "  %(prog)s --png-only --talk-slug SLUG --shownotes-url URL --output qr.png\n"
                "  %(prog)s --png-only --talk-slug SLUG --short-url URL --bg-color 128,0,128\n",

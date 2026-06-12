@@ -108,8 +108,8 @@ abstract is the elevator pitch.
 
 **Don't:**
 ```markdown
-**Slides:** <slides-url>
-**Video:** <video-url>
+**Slides:** <google-drive-url>
+**Video:** <youtube-url>
 ```
 
 **What happens:** The parser's URL extraction regex
@@ -124,8 +124,8 @@ forgiving.
 
 **Do:** Always wrap in markdown link syntax:
 ```markdown
-**Slides:** [View Slides](<slides-url>)
-**Video:** [View Video](<video-url>)
+**Slides:** [View Slides](<google-drive-url>)
+**Video:** [View Video](<youtube-url>)
 ```
 
 ## 4. Multiple H1s in the Body
