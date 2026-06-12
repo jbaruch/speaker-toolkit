@@ -139,6 +139,13 @@ def validate_profile():
 
 
 @pytest.fixture(scope="session")
+def compute_pacing_adherence():
+    return _import_script(
+        os.path.join(SCRIPTS_VP, "compute-pacing-adherence.py"), "compute_pacing_adherence"
+    )
+
+
+@pytest.fixture(scope="session")
 def build_expansion_manifest():
     return _import_script(
         os.path.join(SCRIPTS_ILL, "build-expansion-manifest.py"), "build_expansion_manifest"

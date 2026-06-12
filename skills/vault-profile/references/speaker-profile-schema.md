@@ -168,7 +168,7 @@ Current `schema_version`: **2**. The validator (`scripts/validate-profile.py`,
       "worst_offenders": [
         {"filename": "2024-04-10-talk-slug.md", "slides_per_minute": 2.1, "budget_slides_per_minute": 1.5, "over_by": "40%"}
       ],
-      "note": "Quantitative time/slide pacing vs guardrail_sources.slide_budgets, derived from each talk's structured_data.slide_count and talk_duration_estimate. talk_duration_estimate is a human string (e.g. '35 min'); the producer parses its leading integer to numeric minutes before dividing, and skips talks with no parseable minute value, keeping slides_per_minute comparable across talks. A talk is over budget when its slides_per_minute exceeds the budget for its duration band. Distinct from the qualitative 'rushing' read in vault Dimension 14 (transcript-evident time panic) — this is the corpus-level count. The parsed estimate is transcript-derived and approximate; treat marginal overages as soft signals, not hard failures."
+      "note": "Quantitative time/slide pacing, computed by scripts/compute-pacing-adherence.py from each talk's structured_data.slide_count and structured_data.talk_duration_estimate vs guardrail_sources.slide_budgets. Duration parsing and budget-band selection live in that script's docstring. Distinct from the qualitative 'rushing' read in vault Dimension 14 (transcript-evident time panic) — this is the corpus-level count. The duration estimate is transcript-derived and approximate; treat marginal overages as soft signals, not hard failures."
     }
   },
 

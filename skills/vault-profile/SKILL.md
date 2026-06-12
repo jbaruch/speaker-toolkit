@@ -30,6 +30,7 @@ Read `tracking-database.json` from there to get `vault_root`.
 | [references/schemas-config.md](references/schemas-config.md) | Config fields + confirmed intents schema |
 | `scripts/load-vault.py` | Read vault sources, emit JSON payload to stdout |
 | `scripts/validate-profile.py` | Validate profile required keys + `schema_version` |
+| `scripts/compute-pacing-adherence.py` | Compute `pacing.adherence` from scored talks + slide budgets |
 
 ## Prerequisites
 
@@ -135,14 +136,26 @@ This is the positive-space counterpart to `recurring_issues`/`underused_patterns
 keep it distinct from Step 8 badges (badges are celebratory, strengths are actionable
 reinforcement the creator skill amplifies).
 
-Compute `pacing.adherence` — for each scored talk derive `slides_per_minute` as
-`structured_data.slide_count ÷ minutes`, where `minutes` is the leading integer parsed
-from `talk_duration_estimate` (a human string like `"35 min"`); skip talks whose
-estimate has no parseable minute value. Compare against the
-`guardrail_sources.slide_budgets` band for that duration and count talks over budget.
-Emit the over-budget rate, trend, and worst offenders. This is the quantitative
-counterpart to Dimension 14's transcript-evident "rushing" read. The parsed estimate is
-approximate. Flag marginal overages softly.
+Compute `pacing.adherence` by running `scripts/compute-pacing-adherence.py`. The
+deterministic arithmetic — duration parsing, slides-per-minute, budget-band
+classification, over-budget counts, rate, and trend — lives in the script per
+`script-delegation`, not in this prose.
+
+```bash
+echo "$PACING_INPUT" | python3 skills/vault-profile/scripts/compute-pacing-adherence.py
+```
+
+**I/O contract** (parse + budget-band rules in the script's top-of-file docstring):
+- Stdin (JSON): `{"talks": [...], "slide_budgets": [...]}`. Pass each scored talk as
+  `{filename, date, slide_count, talk_duration_estimate}`, taking `slide_count` and
+  `talk_duration_estimate` from the talk's `structured_data`; pass
+  `guardrail_sources.slide_budgets` unchanged.
+- Stdout (JSON): the `pacing.adherence` object (`talks_over_budget`, `talks_scored`,
+  `over_budget_rate`, `trend`, `worst_offenders`). Copy it into `pacing.adherence`.
+- Exit non-zero on malformed input.
+
+This is the quantitative counterpart to Dimension 14's transcript-evident "rushing"
+read. The duration estimate is approximate. Flag marginal overages softly.
 
 Cross-check against Section 15 of `rhetoric-style-summary.md`, which carries the same
 baselines in prose. See
