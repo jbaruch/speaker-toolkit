@@ -757,7 +757,7 @@ def main():
                "  %(prog)s deck.pptx --talk-slug arc-of-ai --short-url https://example.com/arcofai\n"
                "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url https://example.com/arc-of-ai --dry-run\n"
                "  %(prog)s --png-only --talk-slug SLUG --shownotes-url https://example.com/arc-of-ai --output qr.png\n"
-               "  %(prog)s --png-only --talk-slug SLUG --short-url URL --bg-color 128,0,128\n",
+               "  %(prog)s --png-only --talk-slug SLUG --short-url https://example.com/arcofai --bg-color 128,0,128\n",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("deck", nargs="?", default=None, help="Path to the .pptx deck file (not required with --png-only)")
