@@ -120,10 +120,10 @@ positive-space coaching signal, framed as growth, not deficiency.
 
 Compute `pattern_profile.by_mode` — the per-mode baseline. The tracking DB has no
 per-talk mode field. Assign each `processed_talk` to the `presentation_modes` entry
-whose signal profile best matches the talk's `structured_data` (slide/meme density,
-`audience_interaction_count`, humor register, commercial-intent cues vs. each mode's
-`when_to_use`). This assignment is a classification judgment, not a stored value — it
-stays LLM-side. Then, for each mode with **≥3 assigned talks**, emit
+whose `when_to_use` best matches the talk's `structured_data` — `slide_count` and
+`meme_count` density, `audience_interaction_count`, `opening_type`,
+`narrative_arc_type`, and `slide_design_style`. This assignment is a classification
+judgment, not a stored value — it stays LLM-side. Then, for each mode with **≥3 assigned talks**, emit
 `average_pattern_score`, `avg_distinct_patterns_per_talk`, `top_antipatterns`, and
 `stable: true`. Modes below 3 talks are omitted (or `stable: false`); consumers fall
 back to the global baseline. This prevents false underuse findings when a short-format

@@ -74,7 +74,7 @@ skips verification; the next clarification session migrates it.
     "schema_version": 1,
     "issue": "Shortchanged — rushing the final third under time pressure",
     "kind": "antipattern|underuse|pacing|other",
-    "antipattern_id": "shortchanged",
+    "antipattern_id": "shortchanged (null unless kind=antipattern)",
     "metric": "fraction of recent talks exhibiting Shortchanged",
     "baseline_value": "4 of last 6 (0.67)",
     "target": "at or below 1 of 3 (0.33)",
@@ -91,6 +91,8 @@ skips verification; the next clarification session migrates it.
 - `kind` ties the goal to a coaching surface: `antipattern` (a recurring antipattern
   to reduce), `underuse` (a signature pattern to stop dropping, or an underused
   pattern to start using), `pacing` (hit the time/slide budget), `other` (free-form).
+- `antipattern_id` is set only when `kind` is `antipattern`; it is `null` for
+  `underuse`, `pacing`, and `other` goals (no antipattern exists to reference).
 - `baseline_value` is captured from Section 15 of `rhetoric-style-summary.md` at the
   moment the goal is set — the fixed yardstick the next run measures against.
 - `target` is the speaker's own stated aim, not a generic standard.
