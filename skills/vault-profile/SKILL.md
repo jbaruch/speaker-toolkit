@@ -150,8 +150,10 @@ echo "$PACING_INPUT" | python3 skills/vault-profile/scripts/compute-pacing-adher
   `{filename, date, slide_count, talk_duration_estimate}`, taking `slide_count` and
   `talk_duration_estimate` from the talk's `structured_data`; pass
   `guardrail_sources.slide_budgets` unchanged.
-- Stdout (JSON): the `pacing.adherence` object (`talks_over_budget`, `talks_scored`,
-  `over_budget_rate`, `trend`, `worst_offenders`). Copy it into `pacing.adherence`.
+- Stdout (JSON): the `pacing.adherence` data fields (`talks_over_budget`,
+  `talks_scored`, `over_budget_rate`, `trend`, `worst_offenders`). Copy them into
+  `pacing.adherence`; the schema's `note` is optional descriptive text (as elsewhere
+  in the schema) and is not emitted by the script.
 - Exit non-zero on malformed input.
 
 This is the quantitative counterpart to Dimension 14's transcript-evident "rushing"

@@ -150,7 +150,18 @@ def main() -> int:
         print("ERROR: stdin JSON must be an object with 'talks' and "
               "'slide_budgets'.", file=sys.stderr)
         return 1
-    print(json.dumps(compute(payload), indent=2))
+    if not isinstance(payload.get("talks", []), list) or not isinstance(
+        payload.get("slide_budgets", []), list
+    ):
+        print("ERROR: 'talks' and 'slide_budgets' must be JSON arrays.",
+              file=sys.stderr)
+        return 1
+    try:
+        result = compute(payload)
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        print(f"ERROR: malformed payload shape: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(result, indent=2))
     return 0
 
 

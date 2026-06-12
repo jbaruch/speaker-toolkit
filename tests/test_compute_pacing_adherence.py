@@ -155,3 +155,27 @@ def test_main_rejects_non_json(compute_pacing_adherence, monkeypatch, capsys):
     err = capsys.readouterr().err
     assert rc == 1
     assert "valid JSON" in err
+
+
+def test_main_rejects_wrong_shape_talks(compute_pacing_adherence, monkeypatch, capsys):
+    # talks as a string must yield a controlled ERROR + rc 1, not a traceback.
+    monkeypatch.setattr(
+        "sys.stdin", io.StringIO(json.dumps({"talks": "oops", "slide_budgets": []}))
+    )
+    rc = compute_pacing_adherence.main()
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert "ERROR" in err
+
+
+def test_main_rejects_malformed_budget(compute_pacing_adherence, monkeypatch, capsys):
+    # budget entries missing required keys are caught at the boundary, not raised.
+    payload = {
+        "talks": [_talk("a.md", "2024-01-01", 90, "45 min")],
+        "slide_budgets": [{"oops": 1}],
+    }
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+    rc = compute_pacing_adherence.main()
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert "ERROR" in err
