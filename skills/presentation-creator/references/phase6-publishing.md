@@ -148,20 +148,20 @@ path make the check before resolving the link.
    ```bash
    # MCP-preresolved mode:
    python3 skills/presentation-creator/scripts/generate-qr.py deck.pptx \
-     --talk-slug SLUG --short-url <short-url>
+     --talk-slug SLUG --short-url SHORT_URL
 
    # Direct API mode:
    python3 skills/presentation-creator/scripts/generate-qr.py deck.pptx \
-     --talk-slug SLUG --shownotes-url <shownotes-url> \
+     --talk-slug SLUG --shownotes-url SHOWNOTES_URL \
      --vault /path/to/vault
 
    # No shortening:
    python3 skills/presentation-creator/scripts/generate-qr.py deck.pptx \
-     --talk-slug SLUG --shownotes-url <shownotes-url>
+     --talk-slug SLUG --shownotes-url SHOWNOTES_URL
 
    # PNG-only (no deck — for presenterm, PDF, or standalone use):
    python3 skills/presentation-creator/scripts/generate-qr.py --png-only \
-     --talk-slug SLUG --shownotes-url <shownotes-url> \
+     --talk-slug SLUG --shownotes-url SHOWNOTES_URL \
      --output /path/to/qr.png --bg-color 128,0,128
    ```
 
