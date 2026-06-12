@@ -52,6 +52,12 @@ def test_budget_band_short_talk_uses_smallest(compute_pacing_adherence):
     assert compute_pacing_adherence.budget_for(10, BUDGETS) == 1.5
 
 
+def test_budget_accepts_duration_minutes_key(compute_pacing_adherence):
+    # parity with guardrail-check: duration_minutes is tolerated alongside duration_min
+    budgets = [{"duration_minutes": 45, "max_slides": 70, "slides_per_min": 1.5}]
+    assert compute_pacing_adherence.budget_for(50, budgets) == 1.5
+
+
 # ── compute: counts + rate ───────────────────────────────────────────
 
 def test_over_budget_count_and_rate(compute_pacing_adherence):

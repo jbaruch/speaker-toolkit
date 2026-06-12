@@ -36,8 +36,9 @@ Stdout (JSON):
 Duration parsing: the first integer in `talk_duration_estimate` is the value;
 an "hour"/"hr" unit multiplies it by 60 (so "1 hour" -> 60). Talks with no
 parseable minutes, missing/zero slide_count, or zero minutes are skipped (not
-scored). Budget band: the entry with the largest `duration_min` <= the talk's
-minutes, or the smallest band when the talk is shorter than every band.
+scored). Budget band: the entry with the largest duration <= the talk's minutes
+(band duration read from `duration_min` or `duration_minutes`), or the smallest
+band when the talk is shorter than every band.
 Trend compares the over-budget rate of the older half vs. the newer half of the
 date-sorted scored talks; fewer than 4 scored talks yields "stable".
 
@@ -71,12 +72,25 @@ def parse_minutes(estimate: object) -> int | None:
     return value or None
 
 
+def _band_minutes(band: dict) -> int:
+    """Band duration, tolerating `duration_min` or `duration_minutes`.
+
+    Matches the both-key tolerance in presentation-creator/guardrail-check.py.
+    """
+    value = band.get("duration_min")
+    if value is None:
+        value = band.get("duration_minutes")
+    if value is None:
+        raise KeyError("budget band missing duration_min/duration_minutes")
+    return value
+
+
 def budget_for(minutes: int, budgets: list[dict]) -> float | None:
-    """slides_per_min of the applicable band (largest duration_min <= minutes)."""
+    """slides_per_min of the applicable band (largest duration <= minutes)."""
     if not budgets:
         return None
-    ordered = sorted(budgets, key=lambda b: b["duration_min"])
-    applicable = [b for b in ordered if b["duration_min"] <= minutes]
+    ordered = sorted(budgets, key=_band_minutes)
+    applicable = [b for b in ordered if _band_minutes(b) <= minutes]
     band = applicable[-1] if applicable else ordered[0]
     value = float(band["slides_per_min"])
     if value <= 0:
