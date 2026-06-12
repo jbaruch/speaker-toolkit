@@ -59,8 +59,8 @@ Four additions turn the diagnostics into an actual coaching loop:
 - **Pacing/time adherence.** Adds `pacing.adherence` (talks over slide-budget, rate,
   trend, worst offenders), computed in vault-profile Step 4 from `slide_count` ÷
   `talk_duration_estimate` vs `slide_budgets`. The quantitative counterpart to
-  Dimension 14's qualitative "rushing" read; marginal overages flagged softly since
-  duration is transcript-estimated.
+  Dimension 14's qualitative "rushing" read; marginal overages flagged softly
+  (duration is only transcript-estimated).
 
 ### feat(illustrations) — FULL-bleed composition as a first-class choice + `text_treatment` anchor field
 
