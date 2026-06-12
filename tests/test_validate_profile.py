@@ -16,7 +16,7 @@ def _minimal_profile():
         "presentation_modes", "instrument_catalog", "rhetoric_defaults",
         "confirmed_intents", "guardrail_sources", "pacing", "pattern_profile",
         "visual_style_history", "publishing_process", "design_rules", "badges",
-    )} | {"schema_version": 1}
+    )} | {"schema_version": 2}
 
 
 def _run(validate_profile, profile, tmp_path):
@@ -57,3 +57,14 @@ def test_profile_missing_required_key_is_invalid(validate_profile, tmp_path, cap
     assert rc == 1
     assert out["valid"] is False
     assert "design_rules" in out["missing_keys"]
+
+
+def test_profile_with_outdated_schema_version_is_invalid(validate_profile, tmp_path, capsys):
+    # The v1→v2 bump (coaching-outcome fields) must be enforced: a v1 profile
+    # is rejected so a stale write can't pass validation.
+    profile = _minimal_profile() | {"schema_version": 1}
+    rc = _run(validate_profile, profile, tmp_path)
+    out = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    assert out["valid"] is False
+    assert out["schema_version"] == 1

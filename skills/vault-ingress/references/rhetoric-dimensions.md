@@ -165,6 +165,12 @@ For each talk, determine:
 
 Critically assess what could be improved in this talk's delivery and rhetoric. Look for: uneven pacing (rushing through the last third because of time pressure), weak transitions, jokes that don't land, audience engagement that falls flat, slides that are too dense or too sparse, arguments that lack support, sections that drag, abrupt endings, time management issues (visible "5 minutes left" panic), filler words overuse, unclear structure, missed callback opportunities, underused audience interaction. Be honest and constructive — the goal is to identify patterns to avoid, not just patterns to replicate.
 
+Structure the output so Section 15 of the summary can aggregate it: for each distinct issue, name the related antipattern ID where one of the Dimension 14 antipatterns above applies (the same match also belongs in `pattern_observations.antipatterns_detected`) and rate its `severity` (`hard_limit|warning|info`). Issues with no matching antipattern are still reported as prose. This per-issue tagging is what lets the speaker profile attribute a declining pattern-score trend to specific antipatterns.
+
+Underuse is a first-class improvement area, not only antipatterns: skipping the speaker's own signature patterns, or a narrow pattern range (few distinct patterns deployed), is worth flagging even though it maps to no antipattern ID — a "clean" talk with no antipatterns can still leave the toolkit underused. Report it as prose, distinct from "use more patterns for their own sake" — the point is range and fit, not count.
+
+Pacing here is the **qualitative** read — transcript-evident rushing, visible "5 minutes left" panic, sections that drag. The **quantitative** counterpart (slides-per-minute vs the speaker's slide budgets across the corpus) is computed in the speaker profile as `pacing.adherence`; don't try to compute budget overages from a single transcript here.
+
 ## 15. Structured Data Extraction
 
 Count and categorize these for the `structured_data` output:

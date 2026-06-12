@@ -30,6 +30,7 @@ Read `tracking-database.json` from there to get `vault_root`.
 | [references/schemas-config.md](references/schemas-config.md) | Config fields + confirmed intents schema |
 | `scripts/load-vault.py` | Read vault sources, emit JSON payload to stdout |
 | `scripts/validate-profile.py` | Validate profile required keys + `schema_version` |
+| `scripts/compute-pacing-adherence.py` | Compute `pacing.adherence` from scored talks + slide budgets |
 
 ## Prerequisites
 
@@ -103,13 +104,73 @@ guardrail_sources, pacing, pattern_profile, visual_style_history,
 publishing_process, design_rules, badges
 ```
 
-Set `schema_version` to `1` and `generated_date` to today's date in `YYYY-MM-DD` form.
+When building `pattern_profile`, attribute `score_trend` instead of leaving it a
+bare label. A declining score has two symmetric causes — bad things present and
+good things absent — and `score_drivers` MUST name whichever moved:
+- **Antipatterns rising** — every `antipattern_frequency` entry with `trend` `increasing`.
+- **Patterns fading or breadth narrowing** — every `pattern_usage` entry with `trend`
+  `decreasing` (signature OR regular), and a `pattern_breadth.trend` of `narrowing`,
+  which drives a decline even when no single pattern fades. Underuse alone can lower
+  the score with zero antipatterns.
+
+Also compute `pattern_breadth` (average distinct observable patterns per talk +
+trend) and `underused_patterns` — the union of `never_used_patterns` with the
+patterns in the `never_tried` and `rare` tiers of `mastery_levels`, kept only where
+the pattern's taxonomy Vault Dims fit the speaker's `presentation_modes`. This is the
+positive-space coaching signal, framed as growth, not deficiency.
+
+Compute `pattern_profile.by_mode` — the per-mode baseline. The tracking DB has no
+per-talk mode field. Assign each `processed_talk` to the `presentation_modes` entry
+whose `when_to_use` best matches the talk's `structured_data` — `slide_count` and
+`meme_count` density, `audience_interaction_count`, `opening_type`,
+`narrative_arc_type`, and `slide_design_style`. This assignment is a classification
+judgment, not a stored value — it stays LLM-side. Then, for each mode with **≥3 assigned talks**, emit
+`average_pattern_score`, `avg_distinct_patterns_per_talk`, `top_antipatterns`, and
+`stable: true`. Modes below 3 talks are omitted (or `stable: false`); consumers fall
+back to the global baseline. This prevents false underuse findings when a short-format
+mode is judged against a keynote baseline.
+
+Compute `pattern_profile.strengths` — the speaker's signature patterns (from
+`mastery_levels.signature`) and `signature_combinations`, each with a `lean_in` line.
+This is the positive-space counterpart to `recurring_issues`/`underused_patterns`;
+keep it distinct from Step 8 badges (badges are celebratory, strengths are actionable
+reinforcement the creator skill amplifies).
+
+Compute `pacing.adherence` by running `scripts/compute-pacing-adherence.py`. The
+deterministic arithmetic — duration parsing, slides-per-minute, budget-band
+classification, over-budget counts, rate, and trend — lives in the script per
+`script-delegation`, not in this prose.
+
+```bash
+echo "$PACING_INPUT" | python3 skills/vault-profile/scripts/compute-pacing-adherence.py
+```
+
+**I/O contract** (parse + budget-band rules in the script's top-of-file docstring):
+- Stdin (JSON): `{"talks": [...], "slide_budgets": [...]}`. Pass each scored talk as
+  `{filename, date, slide_count, talk_duration_estimate}`, taking `slide_count` and
+  `talk_duration_estimate` from the talk's `structured_data`; pass
+  `guardrail_sources.slide_budgets` unchanged.
+- Stdout (JSON): the `pacing.adherence` data fields (`talks_over_budget`,
+  `talks_scored`, `over_budget_rate`, `trend`, `worst_offenders`). Copy them into
+  `pacing.adherence`; the schema's `note` is optional descriptive text (as elsewhere
+  in the schema) and is not emitted by the script.
+- Exit non-zero on malformed input.
+
+This is the quantitative counterpart to Dimension 14's transcript-evident "rushing"
+read. The duration estimate is approximate. Flag marginal overages softly.
+
+Cross-check against Section 15 of `rhetoric-style-summary.md`, which carries the same
+baselines in prose. See
+[references/speaker-profile-schema.md](references/speaker-profile-schema.md)
+`pattern_profile`.
+
+Set `schema_version` to `2` and `generated_date` to today's date in `YYYY-MM-DD` form.
 
 Proceed immediately to Step 5.
 
 ## Step 5 — Validate the Profile
 
-Pipe the constructed profile dict through `scripts/validate-profile.py` to verify all required top-level keys exist and `schema_version` is `1`.
+Pipe the constructed profile dict through `scripts/validate-profile.py` to verify all required top-level keys exist and `schema_version` is `2`.
 
 ```bash
 echo "$PROFILE_JSON" | python3 skills/vault-profile/scripts/validate-profile.py
@@ -130,7 +191,9 @@ If `{vault_root}/speaker-profile.json` already exists, diff the new profile agai
 - New instruments added to `instrument_catalog`
 - Revised thresholds in `guardrail_sources`
 - New guardrails added to `recurring_issues`
-- **New presentation modes** — flag prominently since they affect creator-skill behavior more than other field changes.
+- Shifts in `pattern_profile.score_drivers` — a newly `declining` direction, a new `antipattern_drivers` entry with a rising `frequency_trend`, or a `pattern_breadth.trend` flipping to `narrowing` (using fewer of the toolkit) is a regression signal worth flagging.
+- A worsening `pacing.adherence.trend` or a rising `over_budget_rate` — the speaker is increasingly running long.
+- **New presentation modes** — flag prominently (the highest-signal field change for creator-skill behavior).
 
 If no prior profile exists, skip this step and proceed.
 

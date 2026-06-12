@@ -50,7 +50,11 @@ Then load local references per phase:
 [references/patterns/_index.md](references/patterns/_index.md).
 
 **Checks:** Warn if `profile.generated_date < summary."Last updated"` (stale profile).
-Warn if `schema_version > 1`. If profile doesn't exist (<10 talks), run in
+Accept `schema_version` 1 and 2 (dual-accept reader): the v2 coaching fields
+(`pattern_profile.score_drivers`, `pattern_breadth`, `underused_patterns`, `by_mode`,
+`strengths`; `pacing.adherence`) are optional — use them when present, fall back when a
+v1 profile omits them. Warn only if `schema_version > 2` (a profile newer than this
+reader). If profile doesn't exist (<10 talks), run in
 **summary-only mode** — read instruments from summary prose, use default guardrail
 thresholds (1.5 slides/min, 45% Act 1 cap), ask for template/publishing interactively.
 

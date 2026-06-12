@@ -52,3 +52,50 @@ clarification sessions when the speaker confirms a pattern is intentional.
   }]
 }
 ```
+
+## Improvement Goals Schema
+
+Stored in the `improvement_goals` array of the tracking database. This is the
+artifact that closes the coaching loop: the speaker picks 1–2 focus areas, and a
+later ingress run checks whether the targeted issue actually moved. Without it the
+system diagnoses but never verifies that the speaker acted.
+
+**Owner:** vault-clarification owns the record shape and migrations (it creates and
+retires goals during a session). **Reader/updater:** vault-ingress reads active
+goals and writes only the verification fields (`status`, `current_value`,
+`last_checked`, `checked_by`) — never the shape. On a record whose `schema_version`
+it does not recognize, vault-ingress treats it as read-only "no usable goal" and
+skips verification; the next clarification session migrates it.
+
+```json
+{
+  "improvement_goals": [{
+    "id": "reduce-shortchanged",
+    "schema_version": 1,
+    "issue": "Shortchanged — rushing the final third under time pressure",
+    "kind": "antipattern|underuse|pacing|other",
+    "antipattern_id": "shortchanged (null unless kind=antipattern)",
+    "metric": "fraction of recent talks exhibiting Shortchanged",
+    "baseline_value": "4 of last 6 (0.67)",
+    "target": "at or below 1 of 3 (0.33)",
+    "set_date": "2026-06-11",
+    "set_by": "vault-clarification",
+    "status": "active|improving|achieved|stalled|regressed|retired",
+    "current_value": "",
+    "last_checked": null,
+    "checked_by": null
+  }]
+}
+```
+
+- `kind` ties the goal to a coaching surface: `antipattern` (a recurring antipattern
+  to reduce), `underuse` (a signature pattern to stop dropping, or an underused
+  pattern to start using), `pacing` (hit the time/slide budget), `other` (free-form).
+- `antipattern_id` is set only when `kind` is `antipattern`; it is `null` for
+  `underuse`, `pacing`, and `other` goals (no antipattern exists to reference).
+- `baseline_value` is captured from Section 15 of `rhetoric-style-summary.md` at the
+  moment the goal is set — the fixed yardstick the next run measures against.
+- `target` is the speaker's own stated aim, not a generic standard.
+- Verification rubric (how vault-ingress sets `status`) lives in
+  [../../vault-ingress/references/processing-rules.md](../../vault-ingress/references/processing-rules.md)
+  Improvement Goal Verification.
