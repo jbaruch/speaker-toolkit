@@ -18,7 +18,9 @@ description: |
   Required repository secrets (set at
   https://github.com/<owner>/<repo>/settings/secrets/actions):
     - ANTHROPIC_API_KEY — Claude Code engine authentication
-    - TESSL_TOKEN       — tessl install authentication
+
+  No tessl token is required: jbaruch/coding-policy is a public plugin, so
+  `tessl install` runs unauthenticated.
 
   Project `.mcp.json` is neutralized at runtime: this workflow runs
   Claude with `--strict-mcp-config` (set under `engine.args` below) so
@@ -81,10 +83,12 @@ network:
 # runner user's `${HOME}` — rules out `tessl install --global`.
 # `/tmp/gh-aw/` satisfies both.
 steps:
+  # No token on purpose: jbaruch/coding-policy is a public plugin, so
+  # `tessl install` runs unauthenticated. Passing a revoked/expired api-key is
+  # worse than none — tessl tries to auth as that key, fails, and aborts with
+  # "Please authenticate" instead of taking the unauthenticated public path.
   - name: Install Tessl CLI
     uses: tesslio/setup-tessl@v2
-    with:
-      token: ${{ secrets.TESSL_TOKEN }}
   - name: Install jbaruch/coding-policy (latest published)
     run: |
       mkdir -p /tmp/gh-aw/coding-policy
