@@ -272,7 +272,7 @@ def test_stylize_portrait_returns_stylized_bytes(generate_thumbnail, monkeypatch
     b64, mime = generate_thumbnail.stylize_portrait(
         "ORIGINAL_B64", "image/jpeg",
         "retro tech-manual, sepia, pen-and-ink crosshatching",
-        "gemini-3-pro-image-preview", "key",
+        "gemini-3-pro-image", "key",
     )
     assert mime == "image/png"
     # Stylized bytes are returned base64-encoded

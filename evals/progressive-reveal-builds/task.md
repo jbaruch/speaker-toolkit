@@ -34,7 +34,7 @@ talk:
   architecture: "narrative-arc"
 
 style_anchor:
-  model: "gemini-3-pro-image-preview"
+  model: "gemini-3-pro-image"
   full: |
     Retro U.S. Military WWII technical manual style. Pen-and-ink line art on
     aged parchment background with foxing. Blue-ink leader lines, decorative

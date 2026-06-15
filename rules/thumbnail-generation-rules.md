@@ -186,8 +186,8 @@ only when the anchor itself describes comic-book treatment.
 ## 8. Model Selection and Retry Ladder
 
 Face-composition with real-person photos only works on Nano Banana Pro
-(`gemini-3-pro-image-preview`, the script's default). Earlier variants
-(`gemini-2.5-flash-image`, `gemini-3.1-flash-image-preview`) reject any
+(`gemini-3-pro-image`, the script's default). Earlier variants
+(`gemini-2.5-flash-image`, `gemini-3.1-flash-image`) reject any
 face-composition prompt. Use `--model` only when you know the newer model
 accepts the composition you need.
 
