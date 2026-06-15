@@ -70,7 +70,7 @@ teaches the reader to handle the new shape.
      "model": "nano-banana-pro", "model_resolved": "gemini-3-pro-image",
      "status": "OK", "rel_path": "blueprint-schematic/full/gemini-3-pro-image.png"},
     {"style": "Blueprint Schematic", "format": "FULL",
-     "model": "gpt-image-2", "model_resolved": "gpt-image-2",
+     "model": "gpt-image-2", "model_resolved": "gpt-image-2-2026-04-21",
      "status": "FAIL", "error": "rate limited"}
   ]
 }
