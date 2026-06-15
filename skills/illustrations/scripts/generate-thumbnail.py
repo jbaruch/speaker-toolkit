@@ -20,7 +20,7 @@ Usage:
       [--portrait-style "<anchor>"] \
       [--title-position top|bottom|overlay] \
       [--brand-colors "#5B2C6F,#C0392B"] \
-      [--model gemini-3-pro-image-preview]
+      [--model gemini-3-pro-image]
 
     # Extract slide image from PPTX (helper mode, no Gemini)
     python3 generate-thumbnail.py --extract-slide deck.pptx 15 \
@@ -47,11 +47,13 @@ except ImportError:
     print("ERROR: 'Pillow' package not installed. Run: pip install Pillow")
     sys.exit(1)
 
+# GEMINI_API_BASE is the single source of truth for the vendor endpoint.
+from model_registry import GEMINI_API_BASE
+
 
 # --- Constants ---
 
-GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-DEFAULT_MODEL = "gemini-3-pro-image-preview"
+DEFAULT_MODEL = "gemini-3-pro-image"
 
 YOUTUBE_WIDTH = 1280
 YOUTUBE_HEIGHT = 720
@@ -324,7 +326,7 @@ def stylize_portrait(speaker_b64, speaker_mime, anchor, model, api_key):
 # styling demands ("high visual energy, competes against hundreds of others")
 # when applied to a real-person photograph. Softer framing — "combine these two
 # images into a 16:9 graphic, image 2 goes in a circular badge" — passes through
-# on gemini-3-pro-image-preview. We apply viral styling to TYPOGRAPHY and
+# on gemini-3-pro-image. We apply viral styling to TYPOGRAPHY and
 # COMPOSITION rather than to the face, and avoid realism claims.
 #
 # Aesthetic note (Issue #23):

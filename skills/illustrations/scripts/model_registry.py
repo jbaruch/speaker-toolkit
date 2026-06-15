@@ -22,6 +22,16 @@ import json
 import sys
 from datetime import date, datetime
 
+# --- Vendor endpoints ---
+#
+# Single source of truth for the API bases. Both generate-illustrations.py and
+# generate-thumbnail.py import these so a version bump happens in one place.
+# Gemini generateContent and Imagen :predict share this base. It stays on v1beta:
+# verified 2026-06-15 that gemini-3-pro-image (the default) is served only on
+# v1beta and 404s on v1, though flash/imagen exist on both.
+GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+OPENAI_API_BASE = "https://api.openai.com/v1"
+
 # --- Registry ---
 #
 # Each entry:
@@ -32,7 +42,10 @@ from datetime import date, datetime
 #              "nano-banana" line is Google's codename for the Gemini image
 #              models; without this map a refresh agent searching the web sees
 #              "Gemini 3 Pro Image" and drops the "nano-banana-*" entry as
-#              unknown. Aliases keep the two names bound to one id.
+#              unknown. Aliases keep the two names bound to one id. The
+#              "-preview" Gemini ids are kept here as aliases too: Google
+#              deprecates them 2026-06-25, so canonical is the GA id, but baked
+#              outlines that reference the preview id still resolve.
 #   cost     — relative price tier: low | medium | high
 #   speed    — relative latency tier: fast | medium | slow
 #   quality  — relative fidelity tier: medium | high
@@ -50,25 +63,25 @@ from datetime import date, datetime
 # Tiers are coarse and drift with the market. The freshness check refreshes
 # both the roster and these tiers when new flagships ship — bump
 # REGISTRY_LAST_REVIEWED (ISO date) whenever this block is reconciled.
-REGISTRY_LAST_REVIEWED = "2026-06-02"
+REGISTRY_LAST_REVIEWED = "2026-06-15"
 REGISTRY_FRESHNESS_MAX_AGE_DAYS = 90
 
 MODEL_REGISTRY = [
     {
-        "id": "gemini-3-pro-image-preview",
+        "id": "gemini-3-pro-image",
         "display": "Gemini 3 Pro Image (Nano Banana Pro)",
         "family": "gemini",
-        "aliases": ["nano-banana-pro", "nano-banana-pro-preview", "gemini-3-pro-image"],
+        "aliases": ["gemini-3-pro-image-preview", "nano-banana-pro", "nano-banana-pro-preview"],
         "cost": "medium",
         "speed": "medium",
         "quality": "high",
         "edit": "strong",
     },
     {
-        "id": "gemini-3.1-flash-image-preview",
+        "id": "gemini-3.1-flash-image",
         "display": "Gemini 3.1 Flash Image (Nano Banana)",
         "family": "gemini",
-        "aliases": ["nano-banana", "gemini-flash-image"],
+        "aliases": ["gemini-3.1-flash-image-preview", "nano-banana", "gemini-flash-image"],
         "cost": "low",
         "speed": "fast",
         "quality": "medium",
@@ -85,10 +98,12 @@ MODEL_REGISTRY = [
         "edit": "none",
     },
     {
-        "id": "gpt-image-2",
+        # Snapshot-pinned for reproducible illustration style; the rolling
+        # "gpt-image-2" alias resolves here so baked outlines still dispatch.
+        "id": "gpt-image-2-2026-04-21",
         "display": "GPT Image 2",
         "family": "openai",
-        "aliases": [],
+        "aliases": ["gpt-image-2"],
         "cost": "high",
         "speed": "slow",
         "quality": "high",
@@ -116,7 +131,7 @@ def resolve_model_id(name):
     Matches the id or any alias, case-insensitively. Unknown / ad-hoc ids are
     returned unchanged so they still dispatch by family. This is what keeps an
     outline that baked `nano-banana-pro` working against the real
-    `gemini-3-pro-image-preview` endpoint.
+    `gemini-3-pro-image` endpoint.
     """
     if not name:
         return name

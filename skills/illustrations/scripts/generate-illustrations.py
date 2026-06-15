@@ -45,7 +45,13 @@ import urllib.request
 import uuid
 from datetime import datetime, timezone
 
-from model_registry import COMPARE_MODELS, is_supported_model, resolve_model_id
+from model_registry import (
+    COMPARE_MODELS,
+    GEMINI_API_BASE,
+    OPENAI_API_BASE,
+    is_supported_model,
+    resolve_model_id,
+)
 
 # outline.yaml is the single source of truth; its pydantic schema + loader live
 # with the presentation-creator scripts. Add that dir to the path so this skill
@@ -63,9 +69,9 @@ import outline_schema  # noqa: E402  (path appended above)
 
 # --- Constants ---
 
-GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-OPENAI_API_BASE = "https://api.openai.com/v1"
-
+# GEMINI_API_BASE / OPENAI_API_BASE are imported from model_registry (the single
+# source of truth for vendor endpoints).
+#
 # The model roster, vendor aliases, and per-model attributes live in
 # model_registry.py (the single source of truth). --compare uses COMPARE_MODELS
 # from there; resolve_model_id() maps baked codenames (e.g. nano-banana-pro) to
@@ -1680,7 +1686,7 @@ def run_build(outline_path, slide_arg):
         # `builds` list, so this can't fire from a valid outline.yaml — but guard
         # against an empty sequence rather than crashing on max() of nothing.
         if not steps:
-            print(f"  SKIP — builds block has no steps")
+            print("  SKIP — builds block has no steps")
             continue
 
         # Chain backwards: start from full, remove elements one at a time

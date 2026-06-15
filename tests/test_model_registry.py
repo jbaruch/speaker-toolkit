@@ -34,18 +34,29 @@ def test_imagen_has_no_edit_support(model_registry):
 # --- Alias resolution (the nano-banana fix) ---
 
 def test_resolve_nano_banana_pro_alias(model_registry):
-    assert model_registry.resolve_model_id("nano-banana-pro-preview") == "gemini-3-pro-image-preview"
-    assert model_registry.resolve_model_id("nano-banana-pro") == "gemini-3-pro-image-preview"
-    assert model_registry.resolve_model_id("gemini-3-pro-image") == "gemini-3-pro-image-preview"
+    assert model_registry.resolve_model_id("nano-banana-pro-preview") == "gemini-3-pro-image"
+    assert model_registry.resolve_model_id("nano-banana-pro") == "gemini-3-pro-image"
+
+
+def test_resolve_deprecated_preview_ids_to_ga(model_registry):
+    # Google deprecates the "-preview" Gemini ids 2026-06-25; they're kept as
+    # aliases so a baked outline still resolves to the GA canonical id.
+    assert model_registry.resolve_model_id("gemini-3-pro-image-preview") == "gemini-3-pro-image"
+    assert model_registry.resolve_model_id("gemini-3.1-flash-image-preview") == "gemini-3.1-flash-image"
+
+
+def test_resolve_rolling_openai_alias_to_snapshot(model_registry):
+    # The canonical id is snapshot-pinned; the rolling alias resolves to it.
+    assert model_registry.resolve_model_id("gpt-image-2") == "gpt-image-2-2026-04-21"
 
 
 def test_resolve_is_case_insensitive(model_registry):
-    assert model_registry.resolve_model_id("Nano-Banana-Pro") == "gemini-3-pro-image-preview"
-    assert model_registry.resolve_model_id("  GPT-IMAGE-2  ") == "gpt-image-2"
+    assert model_registry.resolve_model_id("Nano-Banana-Pro") == "gemini-3-pro-image"
+    assert model_registry.resolve_model_id("  GPT-IMAGE-2  ") == "gpt-image-2-2026-04-21"
 
 
 def test_resolve_canonical_id_unchanged(model_registry):
-    assert model_registry.resolve_model_id("gpt-image-2") == "gpt-image-2"
+    assert model_registry.resolve_model_id("gpt-image-2-2026-04-21") == "gpt-image-2-2026-04-21"
 
 
 def test_resolve_unknown_passthrough(model_registry):
@@ -78,7 +89,7 @@ def test_is_supported_model(model_registry):
 def test_model_attributes_via_alias(model_registry):
     attrs = model_registry.model_attributes("nano-banana-pro")
     assert attrs is not None
-    assert attrs["id"] == "gemini-3-pro-image-preview"
+    assert attrs["id"] == "gemini-3-pro-image"
     assert model_registry.model_attributes("totally-unknown") is None
 
 
@@ -141,7 +152,7 @@ def test_shortlist_injects_web_discovered_model(model_registry):
     ids = [m["id"] for m in ranked]
     assert "gemini-5-ultra-image" in ids
     # high quality + low cost ranks it ahead of the cached high-cost model
-    assert ids.index("gemini-5-ultra-image") < ids.index("gpt-image-2")
+    assert ids.index("gemini-5-ultra-image") < ids.index("gpt-image-2-2026-04-21")
 
 
 def test_shortlist_injected_model_respects_editability_filter(model_registry):

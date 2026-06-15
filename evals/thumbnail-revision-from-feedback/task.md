@@ -61,7 +61,7 @@ talk:
   architecture: "narrative-arc"
 
 style_anchor:
-  model: "gemini-3-pro-image-preview"
+  model: "gemini-3-pro-image"
   full: |
     Retro sci-fi propaganda poster aesthetic. Bold colors, dramatic lighting.
   imgtxt: |

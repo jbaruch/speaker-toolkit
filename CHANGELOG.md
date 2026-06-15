@@ -1,5 +1,19 @@
 # Changelog
 
+### fix(illustrations) — migrate image-gen model ids to GA, pin OpenAI snapshot
+
+Google deprecates the `-preview` Gemini image ids on 2026-06-25. The registry's canonical
+ids move to the GA strings (`gemini-3-pro-image`, `gemini-3.1-flash-image`); the `-preview`
+ids are demoted to aliases so baked outlines still resolve. OpenAI's canonical id is
+snapshot-pinned to `gpt-image-2-2026-04-21` (rolling `gpt-image-2` kept as an alias) for
+reproducible illustration style; both confirmed live against the API. `GEMINI_API_BASE` /
+`OPENAI_API_BASE` are hoisted into `model_registry.py` as the single source of truth — they
+were duplicated across `generate-illustrations.py` and `generate-thumbnail.py`, whose own
+`DEFAULT_MODEL` also moves to the GA id. The Gemini base stays on `v1beta`: verified live
+that `gemini-3-pro-image` (the default) is served only on `v1beta` and 404s on `v1`. Rule
+prose, the candidates-schema reference, and the illustration eval fixtures are updated to
+the GA ids. Resolves #94.
+
 ### fix(security) — drop suspicious download-URL examples from skill instructions
 
 Removes the `bit.ly` shortener and concrete Google Drive / YouTube example URLs from

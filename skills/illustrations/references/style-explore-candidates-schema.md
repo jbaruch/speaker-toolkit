@@ -18,7 +18,7 @@ and `rendered.json` (output the script writes). One doc owns both.
 {
   "schema_version": 1,
   "slides": { "FULL": 7, "IMG+TXT": 12 },
-  "models": ["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"],
+  "models": ["gemini-3-pro-image", "gemini-3.1-flash-image"],
   "styles": [
     {
       "name": "Blueprint Schematic",
@@ -64,13 +64,13 @@ teaches the reader to handle the new shape.
   "outline": "outline.yaml",
   "outline_dir": "devnexus26-robocoders",
   "rendered_at": "2026-06-08T12:00:00Z",
-  "models_rendered_ok": ["gemini-3-pro-image-preview"],
+  "models_rendered_ok": ["gemini-3-pro-image"],
   "cells": [
     {"style": "Blueprint Schematic", "format": "FULL",
-     "model": "nano-banana-pro", "model_resolved": "gemini-3-pro-image-preview",
-     "status": "OK", "rel_path": "blueprint-schematic/full/gemini-3-pro-image-preview.png"},
+     "model": "nano-banana-pro", "model_resolved": "gemini-3-pro-image",
+     "status": "OK", "rel_path": "blueprint-schematic/full/gemini-3-pro-image.png"},
     {"style": "Blueprint Schematic", "format": "FULL",
-     "model": "gpt-image-2", "model_resolved": "gpt-image-2",
+     "model": "gpt-image-2", "model_resolved": "gpt-image-2-2026-04-21",
      "status": "FAIL", "error": "rate limited"}
   ]
 }
