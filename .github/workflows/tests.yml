@@ -17,9 +17,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     # Backstop against the apt step hanging on flaky runner networking: fail
-    # fast and re-runnable instead of consuming the 6h default job limit. A
-    # healthy run (cache hit + pytest) finishes in a couple of minutes.
-    timeout-minutes: 20
+    # fast and re-runnable instead of consuming the 6h default job limit.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -32,16 +31,43 @@ jobs:
         # preconditioned by `coding-policy: dependency-management`'s
         # runtime-managed-manifest carve-out.
         run: ./scripts/check-tessl-pins.sh
-      - name: Install system dependencies (ffmpeg, libreoffice-impress)
-        # Cached across runs (key = package set + `version`) so the slow,
-        # network-flaky libreoffice download only happens on a cache miss
-        # instead of every run. ffmpeg drives the video-slide-extraction tests;
-        # libreoffice-impress drives the PPTX->PDF export tests. Both groups
-        # skipif their binary is absent, so a cache/install hiccup degrades
-        # coverage rather than red-failing the suite.
-        uses: awalsh128/cache-apt-pkgs-action@681749ae568c81c2037cb9185e38b709b261bd2f # v1.6.1
+      - name: Cache apt package downloads
+        # Cache the downloaded .deb archives (kept in a runner-writable dir via
+        # Dir::Cache::Archives below), so the slow libreoffice fetch only hits
+        # the network on a cache miss. Bump the key suffix to invalidate.
+        uses: actions/cache@v4
         with:
-          packages: ffmpeg libreoffice-impress
-          version: "1.0"
+          path: /tmp/apt-cache
+          key: apt-${{ runner.os }}-ffmpeg-libreoffice-impress-v1
+      - name: Install system dependencies (ffmpeg, libreoffice-impress)
+        # ffmpeg drives the video-slide-extraction tests; libreoffice-impress
+        # drives the PPTX->PDF export tests. Both test groups skipif their
+        # binary is absent, so an install hiccup degrades coverage rather than
+        # red-failing the suite.
+        #
+        # Why this is verbose instead of a plain `apt-get install`: the plain
+        # form intermittently wedged for the full 6h job limit (the identical
+        # install completes in ~2-3 min in a clean Ubuntu container locally, so
+        # it is a flaky-mirror infra issue, not a debconf prompt). The fixes:
+        #   - Acquire::*::Timeout + Acquire::Retries bound each mirror
+        #     connection (apt has effectively no default cap → the actual hang).
+        #   - `timeout` per command turns a stall into a fast, visible failure.
+        #   - Timestamped, line-by-line output (`set -x` + the stamp filter)
+        #     shows exactly which package/URL it is on if it stalls again.
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euxo pipefail
+          sudo mkdir -p /tmp/apt-cache/partial
+          sudo chmod -R 777 /tmp/apt-cache
+          sudo tee /etc/apt/apt.conf.d/99ci >/dev/null <<'CONF'
+          Dir::Cache::Archives "/tmp/apt-cache";
+          Acquire::Retries "3";
+          Acquire::http::Timeout "30";
+          Acquire::https::Timeout "30";
+          CONF
+          stamp() { while IFS= read -r line; do printf '%s %s\n' "$(date -u +%H:%M:%S)" "$line"; done; }
+          timeout 300 sudo -E apt-get update 2>&1 | stamp
+          timeout 600 sudo -E apt-get install -y ffmpeg libreoffice-impress 2>&1 | stamp
       - run: pip install ".[test]"
       - run: pytest -v --tb=short
