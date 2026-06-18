@@ -5,9 +5,21 @@ on:
     branches: [main]
   pull_request:
 
+# Cancel superseded runs. tests.yml has no fast path: the apt install of
+# libreoffice is minutes-long and, on flaky runner networking, can wedge for
+# hours. Without this, every new push to a PR left the prior run's install
+# zombying toward the 6h job limit (observed: 3 stuck runs at once).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Backstop against the apt step hanging on flaky runner networking: fail
+    # fast and re-runnable instead of consuming the 6h default job limit. A
+    # healthy run (cache hit + pytest) finishes in a couple of minutes.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -20,9 +32,16 @@ jobs:
         # preconditioned by `coding-policy: dependency-management`'s
         # runtime-managed-manifest carve-out.
         run: ./scripts/check-tessl-pins.sh
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg libreoffice-impress
+      - name: Install system dependencies (ffmpeg, libreoffice-impress)
+        # Cached across runs (key = package set + `version`) so the slow,
+        # network-flaky libreoffice download only happens on a cache miss
+        # instead of every run. ffmpeg drives the video-slide-extraction tests;
+        # libreoffice-impress drives the PPTX->PDF export tests. Both groups
+        # skipif their binary is absent, so a cache/install hiccup degrades
+        # coverage rather than red-failing the suite.
+        uses: awalsh128/cache-apt-pkgs-action@681749ae568c81c2037cb9185e38b709b261bd2f # v1.6.1
+        with:
+          packages: ffmpeg libreoffice-impress
+          version: "1.0"
       - run: pip install ".[test]"
       - run: pytest -v --tb=short
