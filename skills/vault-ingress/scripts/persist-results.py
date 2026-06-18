@@ -141,18 +141,38 @@ def merge_talk(talk, ret):
     return promoted
 
 
+def load_json(path, label):
+    """Read and parse a JSON file, failing visibly with operator guidance.
+
+    Turns the two expected input failures — file missing/unreadable and malformed
+    JSON — into actionable stderr diagnostics + a non-zero exit, instead of a raw
+    Python traceback.
+    """
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"ERROR: {label} file not found: {path}", file=sys.stderr)
+        sys.exit(1)
+    except OSError as e:
+        print(f"ERROR: cannot read {label} file {path}: {e}", file=sys.stderr)
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f"ERROR: {label} file {path} is not valid JSON: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main():
     if len(sys.argv) != 3:
         print(f"Usage: {sys.argv[0]} <tracking-database.json> <batch-returns.json>", file=sys.stderr)
         sys.exit(1)
     db_path, batch_path = sys.argv[1], sys.argv[2]
 
-    with open(db_path, encoding="utf-8") as f:
-        db = json.load(f)
-    with open(batch_path, encoding="utf-8") as f:
-        returns = json.load(f)
+    db = load_json(db_path, "tracking database")
+    returns = load_json(batch_path, "batch-returns")
     if not isinstance(returns, list):
-        print("batch-returns.json must be a JSON array of subagent returns", file=sys.stderr)
+        print(f"ERROR: {batch_path} must be a JSON array of subagent returns, "
+              f"got {type(returns).__name__}", file=sys.stderr)
         sys.exit(1)
 
     by_name = {t.get("filename"): t for t in db.get("talks", [])}

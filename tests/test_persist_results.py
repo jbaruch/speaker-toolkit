@@ -142,3 +142,42 @@ def test_cli_fails_visibly_on_filename_mismatch(persist_results, tmp_path):
     )
     assert result.returncode == 1
     assert "no talk in DB matches" in result.stderr
+
+
+def test_cli_missing_input_file_is_actionable(persist_results, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([_return()]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(tmp_path / "nope.json"), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert "tracking database file not found" in result.stderr
+    assert "Traceback" not in result.stderr  # no raw traceback
+
+
+def test_cli_malformed_json_is_actionable(persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text("{ not valid json ")
+    batch.write_text(json.dumps([_return()]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert "not valid JSON" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_cli_non_array_batch_is_actionable(persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(json.dumps({"talks": [_talk()]}))
+    batch.write_text(json.dumps({"filename": "talk.md"}))  # object, not array
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert "must be a JSON array" in result.stderr
