@@ -124,7 +124,11 @@ def test_cli_writes_db_and_reports(persist_results, tmp_path):
     assert result.returncode == 0, result.stderr
     out = json.loads(db.read_text())["talks"][0]
     assert out["slide_count"] == 62
-    assert "persisted 1 talk(s)" in result.stdout
+    # Structured JSON summary on stdout (not prose), per script-delegation.
+    report = json.loads(result.stdout)
+    assert report["persisted"] == 1
+    assert report["talks"][0]["filename"] == "talk.md"
+    assert "slide_count" in report["talks"][0]["promoted"]
 
 
 def test_cli_fails_visibly_on_filename_mismatch(persist_results, tmp_path):

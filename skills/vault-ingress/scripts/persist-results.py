@@ -30,7 +30,10 @@ Usage:
 
     batch-returns.json is a JSON array of subagent return objects (the shape in
     references/schemas-db.md -> "Per-Talk Subagent Return Schema"). The DB is
-    rewritten in place; a one-line-per-talk merge report is printed.
+    rewritten in place; a structured JSON summary is printed to stdout:
+        {"persisted": <int>, "db_path": "<path>",
+         "talks": [{"filename": "...", "status": "...", "promoted": ["..."]}]}
+    Diagnostics and errors go to stderr; exit code is non-zero on failure.
 
 Example:
     persist-results.py ~/.claude/rhetoric-knowledge-vault/tracking-database.json batch-returns.json
@@ -153,6 +156,7 @@ def main():
         sys.exit(1)
 
     by_name = {t.get("filename"): t for t in db.get("talks", [])}
+    summary = []
     for ret in returns:
         name = ret.get("filename")
         talk = by_name.get(name)
@@ -162,11 +166,14 @@ def main():
             print(f"ERROR: no talk in DB matches return filename: {name!r}", file=sys.stderr)
             sys.exit(1)
         promoted = merge_talk(talk, ret)
-        print(f"merged {name}: status={talk.get('status')} promoted={promoted}")
+        summary.append({"filename": name, "status": talk.get("status"), "promoted": promoted})
 
     with open(db_path, "w", encoding="utf-8") as f:
         json.dump(db, f, indent=2, ensure_ascii=False)
-    print(f"persisted {len(returns)} talk(s) to {db_path}")
+
+    json.dump({"persisted": len(summary), "db_path": db_path, "talks": summary},
+              sys.stdout, ensure_ascii=False)
+    sys.stdout.write("\n")
 
 
 if __name__ == "__main__":

@@ -124,20 +124,15 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
 - **Update tracking DB — deterministic merge, NOT hand-mapping.** Collect the
   batch's subagent JSON returns into an array file (`batch-returns.json`) and run
   `scripts/persist-results.py {vault_root}/tracking-database.json batch-returns.json`.
-  The script merges **every** schema-declared field from each return into the
-  matching talk entry: it sets the scalar result fields, deep-merges the full
-  `structured_data` and `verbatim_examples` blocks (additive — earlier-run data is
-  never clobbered), normalizes `pattern_observations` into the DB shape (IDs +
-  integer score, keeping the detailed arrays Section 15 reads), and **promotes the
-  declared queryable scalars** (`slide_count`, `slide_design_style`,
-  `illustration_style`, `opening_type`, `closing_type`, `narrative_arc_type`,
-  `audience_interaction_count`, `co_presenter`, `delivery_language`,
-  `pattern_score`) to the talk's top level. Do NOT hand-copy fields one at a time —
-  that is exactly what dropped structured data before: it was computed and reached
-  the analysis files but never landed in the DB. To add a new queryable scalar,
-  extend the return schema AND the script's `PROMOTE` list — never reintroduce
-  manual mapping. Field-extraction semantics:
-  [references/processing-rules.md](references/processing-rules.md).
+  The script merges each return into its matching talk entry, promotes the declared
+  queryable scalars to the talk top level, and rewrites the DB in place; it prints a
+  JSON merge summary to stdout and exits non-zero if a return's `filename` matches no
+  talk. Do NOT hand-copy fields one at a time — that is what dropped structured data
+  before (it was computed and reached the analysis files but never landed in the DB).
+  Contract, the promoted-scalar allowlist, and merge semantics live in
+  `scripts/persist-results.py` (top-of-file docstring and the `PROMOTE` list) — to make
+  a new field queryable, extend the return schema and that list; never reintroduce
+  manual mapping.
 - **Write per-talk analysis files** — write
   `{vault_root}/analyses/{talk_filename}.md` for each processed talk: all 14
   dimensions, structured data, verbatim examples, and a "Presentation Patterns
