@@ -92,6 +92,11 @@ def vtt_cleanup():
 
 
 @pytest.fixture(scope="session")
+def persist_results():
+    return _import_script(os.path.join(SCRIPTS_VI, "persist-results.py"), "persist_results")
+
+
+@pytest.fixture(scope="session")
 def extract_resources():
     return _import_script(
         os.path.join(SCRIPTS_PC, "extract-resources.py"), "extract_resources"

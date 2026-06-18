@@ -1,5 +1,34 @@
 # Changelog
 
+### fix(vault-ingress) — Step 4 persists structured fields deterministically
+
+vault-ingress Step 4 told the orchestrator to hand-copy each subagent field into the
+tracking DB, so anything it forgot was silently dropped: the rich `structured_data` the
+subagents compute reached the per-talk analysis files but almost never landed in
+`tracking-database.json` (1/196 talks had `slide_count`, `opening_type`,
+`narrative_arc_type`, etc.). New `scripts/persist-results.py` removes the human from the
+merge loop — it deep-merges the full `structured_data`/`verbatim_examples` blocks
+(additive, so re-runs refine rather than wipe), normalizes `pattern_observations` into the
+DB shape while keeping the detailed arrays Section 15 reads, and promotes the declared
+queryable scalars (`slide_count`, `slide_design_style`, `illustration_style`,
+`opening_type`, `closing_type`, `narrative_arc_type`, `audience_interaction_count`,
+`co_presenter`, `delivery_language`, `pattern_score`) to each talk's top level. Fails
+visibly on a filename mismatch instead of skipping. Step 4, `processing-rules.md`, and the
+`schemas-db.md` talk entry are updated to the deterministic-merge contract. Resolves #97.
+
+### feat(vault-ingress) — Step 9 hands off into clarification for same-week talks
+
+vault-ingress Step 9 only *recommended* running `vault-clarification` for a freshly-ingested
+talk delivered in the past 7 days — too weak for the case where it matters most, since
+clarification quality decays fast and a recommendation buried at the end of a long ingress
+report is easy to skip. Step 9 now tiers the handoff by recency: a talk delivered within
+the past 7 days gets an explicit inline offer (via `AskUserQuestion`) to run
+`vault-clarification` immediately, pre-seeded with the candidate topics Step 9 already
+computes (per-talk `areas_for_improvement` and low-confidence/unverifiable
+`pattern_observations`); on acceptance it invokes the skill carrying that seed agenda. The
+7–30 day (full session) and 30+ day (compressed session) windows stay recommend-only.
+Resolves #98.
+
 ### fix(illustrations) — migrate image-gen model ids to GA, pin OpenAI snapshot
 
 Google deprecates the `-preview` Gemini image ids on 2026-06-25. The registry's canonical

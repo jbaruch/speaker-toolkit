@@ -35,11 +35,14 @@ count(patterns) − count(antipatterns). Return in the `pattern_observations` fi
 
 ## Structured Field Extraction
 
-When the analysis identifies co-presenters, delivery language, or other structured
-metadata, populate the corresponding DB fields (`co_presenter`, `delivery_language`,
-etc.) — do NOT leave structured data buried only in `rhetoric_notes` free text.
+The subagent's job is to **return** every structured field it identifies (co-presenter,
+delivery language, slide counts, opening/closing types, etc.) in the `structured_data`
+block per the return schema — never to leave them buried only in `rhetoric_notes` free
+text. If it's in the analysis, it must be in `structured_data`.
 
-Backfill empty `structured_data` from earlier runs using `rhetoric_notes`.
+Persisting those fields is deterministic and script-owned, not a manual per-run mapping —
+SKILL.md Step 4 runs `scripts/persist-results.py` for the merge. Authors do not re-derive
+that logic here.
 
 ## Adherence Assessment
 
