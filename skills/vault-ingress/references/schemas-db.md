@@ -42,10 +42,17 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "rhetoric_notes": "", "areas_for_improvement": "",
     "structured_data": {}, "verbatim_examples": {},
     "adherence_assessment": "", "processed_date": null,
+    "_comment_queryable_scalars": "Promoted from the subagent return by scripts/persist-results.py (PROMOTE list) — do NOT hand-map in Step 4.",
+    "co_presenter": false, "delivery_language": "en",
+    "slide_count": 0, "slide_design_style": null, "illustration_style": null,
+    "opening_type": null, "closing_type": null, "narrative_arc_type": null,
+    "audience_interaction_count": 0, "pattern_score": 0,
     "pattern_observations": {
       "pattern_ids": [],
       "antipattern_ids": [],
-      "pattern_score": 0
+      "pattern_score": 0,
+      "patterns_detected": [],
+      "antipatterns_detected": []
     }
   }],
   "pptx_catalog": [{

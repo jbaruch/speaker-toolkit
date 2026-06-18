@@ -35,11 +35,28 @@ count(patterns) − count(antipatterns). Return in the `pattern_observations` fi
 
 ## Structured Field Extraction
 
-When the analysis identifies co-presenters, delivery language, or other structured
-metadata, populate the corresponding DB fields (`co_presenter`, `delivery_language`,
-etc.) — do NOT leave structured data buried only in `rhetoric_notes` free text.
+Persistence of structured fields is **deterministic and script-owned**, not a manual
+per-run mapping. Step 4 runs `scripts/persist-results.py`, which merges the subagent's
+entire `structured_data` block into the talk entry and promotes a declared set of
+queryable scalars (`slide_count`, `slide_design_style`, `illustration_style`,
+`opening_type`, `closing_type`, `narrative_arc_type`, `audience_interaction_count`,
+`co_presenter`, `delivery_language`, `pattern_score`) to the talk's top level. This is
+deliberate: hand-copying fields one at a time silently dropped nearly all structured data
+even though the subagents computed it — the script removes the human from the merge loop
+so nothing is lost to per-run diligence.
 
-Backfill empty `structured_data` from earlier runs using `rhetoric_notes`.
+Consequences for analysis:
+- The subagent's job is only to **return** the structured fields it identifies
+  (co-presenter, delivery language, slide counts, opening/closing types, etc.) in the
+  `structured_data` block per the return schema — never to leave them buried only in
+  `rhetoric_notes` free text. If it's in the analysis, it must be in `structured_data`.
+- To make a new field queryable at the talk top level, add it to the return schema AND to
+  the `PROMOTE` list in `scripts/persist-results.py`. Do not reintroduce manual mapping in
+  Step 4.
+
+The merge is additive — re-running a talk (e.g. after `needs-reprocessing`) refines fields
+without wiping data from earlier runs, so empty `structured_data` is backfilled rather than
+overwritten.
 
 ## Adherence Assessment
 

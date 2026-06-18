@@ -38,6 +38,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | [references/video-slide-extraction.md](references/video-slide-extraction.md) | Video-to-slides pipeline — layout heuristics, tuning, limitations |
 | [references/processing-rules.md](references/processing-rules.md) | Language policy, pattern migration logic, structured field rules |
 | [references/known-issues.md](references/known-issues.md) | Edge cases — wide-angle recordings, Whisper hallucination, non-speaker talks |
+| `scripts/persist-results.py` | Deterministically merge batch subagent returns into the tracking DB (Step 4) |
 | `scripts/pptx-extraction.py` | Extract visual design data from .pptx files |
 | `scripts/video-slide-extraction.py` | Extract slides from video via ffmpeg + perceptual dedup |
 | `scripts/batch-download-videos.sh` | Parallel video download for batch processing |
@@ -120,12 +121,23 @@ analysis, pattern-taxonomy tagging, and the return-JSON shape — lives in
 Runs after each batch inside Step 3's loop (not as a separate post-loop
 phase). Mechanical persistence of the batch's subagent JSON returns:
 
-- **Update tracking DB** — set `status`, `processed_date`, all result fields.
-  Persist `pattern_observations` IDs + score. Populate structured fields
-  (`co_presenter`, `delivery_language`, etc.) — do not leave structured data
-  buried in free-text prose. See
-  [references/processing-rules.md](references/processing-rules.md) for field
-  extraction rules.
+- **Update tracking DB — deterministic merge, NOT hand-mapping.** Collect the
+  batch's subagent JSON returns into an array file (`batch-returns.json`) and run
+  `scripts/persist-results.py {vault_root}/tracking-database.json batch-returns.json`.
+  The script merges **every** schema-declared field from each return into the
+  matching talk entry: it sets the scalar result fields, deep-merges the full
+  `structured_data` and `verbatim_examples` blocks (additive — earlier-run data is
+  never clobbered), normalizes `pattern_observations` into the DB shape (IDs +
+  integer score, keeping the detailed arrays Section 15 reads), and **promotes the
+  declared queryable scalars** (`slide_count`, `slide_design_style`,
+  `illustration_style`, `opening_type`, `closing_type`, `narrative_arc_type`,
+  `audience_interaction_count`, `co_presenter`, `delivery_language`,
+  `pattern_score`) to the talk's top level. Do NOT hand-copy fields one at a time —
+  that is exactly what dropped structured data before: it was computed and reached
+  the analysis files but never landed in the DB. To add a new queryable scalar,
+  extend the return schema AND the script's `PROMOTE` list — never reintroduce
+  manual mapping. Field-extraction semantics:
+  [references/processing-rules.md](references/processing-rules.md).
 - **Write per-talk analysis files** — write
   `{vault_root}/analyses/{talk_filename}.md` for each processed talk: all 14
   dimensions, structured data, verbatim examples, and a "Presentation Patterns
@@ -207,24 +219,32 @@ Proceed immediately to Step 9.
 
 If no talks were newly processed in this run, finish here without further action.
 
-Otherwise, scan the newly-processed talks for delivery date. For any talk whose
-`date` is within the past 7 days, explicitly recommend running
-`Skill(skill: "vault-clarification")` NOW — memory of the delivery is freshest
-right after the talk, and verbal beats that didn't appear in auto-captions
-(bilingual jokes rendered in a non-primary language, improvised asides, fly-bys
-that weren't in the deck) need speaker confirmation while they're still
-recoverable.
-
-Surface these as candidate clarification topics in the recommendation:
+Otherwise, scan the newly-processed talks for delivery date and bucket each by how
+long ago it was delivered (`today − date`). The handoff strength is tiered by recency —
+clarification quality decays fast, so the freshest talks get an active handoff, not a
+footnote. For every bucket, first compute that talk's **candidate clarification topics**:
 - Each per-talk `areas_for_improvement` entry.
-- Any `pattern_observations` the subagent flagged as **unverifiable from
-  transcript alone** (low confidence, heavy reliance on visual cues, non-English
-  dialogue without captions).
+- Any `pattern_observations` the subagent flagged as **unverifiable from transcript
+  alone** (low confidence, heavy reliance on visual cues, non-English dialogue without
+  captions).
 
-For older talks (30+ days), recommend the compressed clarification session
-instead of the full one — memory has decayed and detailed recall is unreliable.
-For talks in the 7–30 day window, recommend the full session but note that some
-verbatim details may be lost.
+**≤7 days (same-week) — hand off inline, don't just recommend.** This is the
+freshest-possible clarification window: memory of the delivery is sharpest right after
+the talk, and verbal beats that didn't appear in auto-captions (bilingual jokes rendered
+in a non-primary language, improvised asides, fly-bys that weren't in the deck) are only
+recoverable now. Do NOT bury this as a closing recommendation. Use `AskUserQuestion` to
+**offer to run `vault-clarification` right now**, showing the candidate topics you
+computed so the speaker sees exactly what the session would cover. If they accept, invoke
+`Skill(skill: "vault-clarification")` immediately, carrying those candidate topics as the
+session's seed agenda. If they decline, note it and finish.
+
+**7–30 days — recommend the full session.** Recommend running
+`Skill(skill: "vault-clarification")`, listing the candidate topics, but note that some
+verbatim details may already be lost. Do not auto-invoke.
+
+**30+ days — recommend the compressed session.** Memory has decayed and detailed recall
+is unreliable; recommend the compressed clarification instead of the full one. Do not
+auto-invoke.
 
 ## Error Handling
 
