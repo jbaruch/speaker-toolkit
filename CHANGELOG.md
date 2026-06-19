@@ -1,6 +1,17 @@
 # Changelog
 
-### fix(vault-ingress) — Step 4 persists structured fields deterministically
+### fix(illustrations) — secrets.json read no longer hangs on a cloud placeholder
+
+`load_secrets()` read `{vault}/secrets.json` with a plain `json.load(open(path))`. When that
+file is a cloud-synced (e.g. iCloud) "dataless" placeholder — listed in the directory but
+with its bytes evicted to the cloud — the read syscall blocks indefinitely while the OS
+tries to materialize it. If the cloud is unreachable, the call never returns, freezing every
+generate/build/edit run (and the test suite) before any work starts; `os.path.isfile()`
+returns instantly because the metadata is local, so the guard didn't help. The read now runs
+on a daemon thread with a bounded `SECRETS_READ_TIMEOUT` (10s); on overrun it raises
+TimeoutError and `load_secrets` falls back to the existing `GEMINI_API_KEY` / `OPENAI_API_KEY`
+env-var path with a loud stderr warning — the same degrade-don't-crash behavior it already had
+for malformed/unreadable files (no silent swallow). Found while working on the build-edit fix.
 
 vault-ingress Step 4 told the orchestrator to hand-copy each subagent field into the
 tracking DB, so anything it forgot was silently dropped: the rich `structured_data` the

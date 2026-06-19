@@ -6,6 +6,7 @@ onto the generator's view; these tests drive the canonical fixture.
 
 import copy
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -474,6 +475,46 @@ def test_load_secrets_partial_file(generate_illustrations, tmp_path, monkeypatch
     keys, _ = generate_illustrations.load_secrets(str(tmp_path))
     assert keys["gemini"] == "g"
     assert keys["openai"] == "env-o"
+
+
+def test_read_file_with_timeout_returns_bytes(generate_illustrations, tmp_path):
+    p = tmp_path / "f.bin"
+    p.write_bytes(b"hello")
+    assert generate_illustrations._read_file_with_timeout(str(p), 5) == b"hello"
+
+
+def test_read_file_with_timeout_raises_on_stall(generate_illustrations, tmp_path):
+    # A named pipe with no writer blocks the open/read forever — the closest
+    # portable stand-in for a cloud "dataless" placeholder that never
+    # materializes. The reader must give up and raise TimeoutError, not hang.
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("os.mkfifo not available on this platform")
+    fifo = tmp_path / "stalled.json"
+    os.mkfifo(fifo)
+    with pytest.raises(TimeoutError):
+        generate_illustrations._read_file_with_timeout(str(fifo), 0.5)
+
+
+def test_load_secrets_timeout_warns_and_falls_back(
+    generate_illustrations, tmp_path, monkeypatch, capsys
+):
+    # A stalled secrets read must degrade to env vars with a loud warning —
+    # never hang, never silently swallow.
+    gi = generate_illustrations
+    (tmp_path / "secrets.json").write_text(json.dumps({"gemini": {"api_key": "g"}}))
+
+    def _boom(path, timeout):
+        raise TimeoutError(f"reading {path} timed out after {timeout}s")
+
+    monkeypatch.setattr(gi, "_read_file_with_timeout", _boom)
+    monkeypatch.setenv("GEMINI_API_KEY", "env-g")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    keys, _ = gi.load_secrets(str(tmp_path))
+    err = capsys.readouterr().err
+    assert keys["gemini"] == "env-g"   # fell back to env
+    assert keys["openai"] is None
+    assert "timed out" in err and "secrets.json" in err
 
 
 # --- Multipart body for OpenAI edits ---

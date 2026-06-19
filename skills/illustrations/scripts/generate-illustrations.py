@@ -39,6 +39,7 @@ import os
 import re
 import shutil
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -102,6 +103,13 @@ def sizing_for(slide_format):
     return FORMAT_SIZING.get(slide_format, FORMAT_SIZING["FULL"])
 
 RATE_LIMIT_DELAY = 5  # seconds between API requests
+
+# Max seconds to spend reading secrets.json before giving up and falling back to
+# env vars. A cloud-synced (e.g. iCloud) "dataless" placeholder can block the
+# read syscall indefinitely while the OS tries to materialize it; without a
+# bound, load_secrets() — and therefore every generate/build/edit run — hangs
+# forever. Generous enough to let a present-but-slow file finish downloading.
+SECRETS_READ_TIMEOUT = 10
 
 IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"]
 
@@ -504,6 +512,38 @@ def ext_to_mime(ext):
 
 # --- Shared Setup ---
 
+def _read_file_with_timeout(path, timeout):
+    """Read a file's bytes, abandoning the read if it overruns `timeout` seconds.
+
+    A cloud-synced (e.g. iCloud) "dataless" placeholder can block the read
+    syscall indefinitely while the OS tries to materialize it, so a plain
+    open().read() would hang forever. The read runs on a daemon thread; if it
+    doesn't finish in time we raise TimeoutError and let the caller fall back.
+    The abandoned thread stays blocked but is a daemon, so it never holds up
+    process exit. (A thread, not signal.alarm: signals only fire on the main
+    thread and aren't portable.)
+
+    Returns the file bytes, or raises TimeoutError / the underlying OSError.
+    """
+    result = {}
+
+    def _worker():
+        try:
+            with open(path, "rb") as f:
+                result["data"] = f.read()
+        except OSError as e:  # propagate to the caller's thread below
+            result["error"] = e
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        raise TimeoutError(f"reading {path} timed out after {timeout}s")
+    if "error" in result:
+        raise result["error"]
+    return result["data"]
+
+
 def load_secrets(vault_path=None):
     """Load API keys from vault secrets.json with env-var fallbacks.
 
@@ -525,11 +565,20 @@ def load_secrets(vault_path=None):
 
     if os.path.isfile(secrets_path):
         try:
-            with open(secrets_path, "r", encoding="utf-8") as f:
-                secrets = json.load(f)
+            raw = _read_file_with_timeout(secrets_path, SECRETS_READ_TIMEOUT)
+            secrets = json.loads(raw.decode("utf-8"))
             keys["gemini"] = secrets.get("gemini", {}).get("api_key") or None
             keys["openai"] = secrets.get("openai", {}).get("api_key") or None
-        except json.JSONDecodeError as e:
+        except TimeoutError:
+            print(
+                f"WARNING: reading {secrets_path} timed out after "
+                f"{SECRETS_READ_TIMEOUT}s; falling back to environment "
+                "variables. A cloud-synced (e.g. iCloud) 'dataless' placeholder "
+                "can block until it downloads — open the file once to "
+                "materialize it, or set GEMINI_API_KEY / OPENAI_API_KEY.",
+                file=sys.stderr,
+            )
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
             print(
                 f"WARNING: {secrets_path} is not valid JSON ({e}); "
                 "falling back to environment variables. Fix the file or "
