@@ -403,6 +403,18 @@ def test_apply_compose_only_directive_idempotent(generate_illustrations):
     assert twice.count("COMPOSE ONLY THE SCENE") == 1
 
 
+def test_apply_compose_only_preserves_caller_text_with_phrase(generate_illustrations):
+    # A speaker prompt (or an already-appended safe-zone/poster directive) that
+    # happens to contain the words "COMPOSE ONLY THE SCENE" must NOT be truncated:
+    # the guard appends, it never splits away caller content.
+    gi = generate_illustrations
+    prompt = "A lab. COMPOSE ONLY THE SCENE as the author noted. TITLE SAFE ZONE -- reserve the top."
+    result = gi.apply_compose_only_directive(prompt)
+    assert result.startswith(prompt)            # nothing dropped
+    assert "TITLE SAFE ZONE" in result          # prior directive survives
+    assert result.endswith(gi.COMPOSE_ONLY_DIRECTIVE)
+
+
 def test_effective_slide_format_safe_zone_wins(generate_illustrations):
     # apply-illustrations-to-deck.py gives Safe zone precedence over the
     # Format token — slides with any Safe zone field are treated as

@@ -416,13 +416,18 @@ def apply_compose_only_directive(prompt):
     """Append the style-only COMPOSE ONLY guard to a fresh-generation prompt.
 
     Keeps the always-injected style anchor from leaking per-slide content /
-    page-furniture onto every slide (issue #87). Applied to fresh generation
-    (generate / style-explore / compare), not to erase-only edits — those carry
-    their own "DO NOT add any new elements" suffix. Idempotent: an existing
-    COMPOSE ONLY block is replaced.
+    page-furniture onto every slide. Applied to fresh generation (generate /
+    style-explore / compare), not to erase-only edits — those carry their own
+    "DO NOT add any new elements" suffix.
+
+    Idempotent without ever discarding caller text: we test for our exact
+    appended directive, not the bare phrase, so a speaker prompt that happens to
+    contain the words "COMPOSE ONLY THE SCENE" keeps all of its content (and the
+    safe-zone / poster directives appended before this) instead of being
+    truncated at the phrase.
     """
-    if "COMPOSE ONLY THE SCENE" in prompt:
-        prompt = prompt.split("COMPOSE ONLY THE SCENE", 1)[0].rstrip()
+    if COMPOSE_ONLY_DIRECTIVE in prompt:
+        return prompt
     return prompt + COMPOSE_ONLY_DIRECTIVE
 
 

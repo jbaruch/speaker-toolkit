@@ -236,7 +236,7 @@ carries only the scene; `text_overlay` carries only that slide's literal title
 string — never the text styling. Putting the treatment in the anchor is what
 keeps every baked title and footer rendering identically across the deck.
 
-The anchor (and `conventions`) is injected into **every** slide, so it must be
+The anchor, including `conventions`, is injected into **every** slide, so it must be
 **STYLE ONLY** — medium, palette, rendering, lettering, recurring-character
 conventions. Keep per-slide scene content and page-furniture (parts
 inventories, step strips, numbered stations, exploded diagrams, callouts) out

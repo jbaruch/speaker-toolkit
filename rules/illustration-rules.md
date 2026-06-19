@@ -51,11 +51,10 @@ inventories, step strips, numbered stations, exploded diagrams, callouts.
 That furniture is per-slide **content** — it belongs in the individual slide's
 `image_prompt`, not the anchor.
 
-This is most dangerous for **document-style aesthetics** (instruction booklet,
-blueprint, newspaper, schematic), where the page furniture *reads* like a style
-convention but is actually content. Fold a parts-inventory or step-strip into
-the anchor and the whole deck's furniture renders on every slide — including
-the title slide, which becomes "the entire deck on one image." (See #87.)
+This is most acute for **document-style aesthetics** (instruction booklet,
+blueprint, newspaper, schematic), where page furniture *reads* like a style
+convention but is per-slide content — keep it in each slide's `image_prompt`,
+never in the anchor.
 
 Never simplify or rewrite the speaker's original style anchor when iterating.
 The specificity of the *style* (period vocabulary, document conventions,
