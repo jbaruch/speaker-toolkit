@@ -42,14 +42,13 @@ the element survives instead of being erased.
 
 ## Style-Anchor Discipline
 
-The style anchor is injected into **every** slide's prompt, so anything in it
-renders on **every** slide. The anchor therefore defines **STYLE ONLY** —
-medium, palette, rendering technique, lettering/text treatment, period
-vocabulary, material constraints, and recurring-character conventions. It must
-**never** contain per-slide scene content or recurring page-furniture: parts
-inventories, step strips, numbered stations, exploded diagrams, callouts.
-That furniture is per-slide **content** — it belongs in the individual slide's
-`image_prompt`, not the anchor.
+The style anchor defines **STYLE ONLY** — medium, palette, rendering technique,
+lettering/text treatment, period vocabulary, material constraints, and
+recurring-character conventions. It renders on **every** slide. Keep per-slide
+scene content and recurring page-furniture out of it — parts inventories, step
+strips, numbered stations, exploded diagrams, callouts. That furniture is
+per-slide **content** — put it in the individual slide's `image_prompt`, not the
+anchor.
 
 This is most acute for **document-style aesthetics** (instruction booklet,
 blueprint, newspaper, schematic), where page furniture *reads* like a style
