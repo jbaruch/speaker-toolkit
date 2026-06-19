@@ -42,12 +42,34 @@ the element survives instead of being erased.
 
 ## Style-Anchor Discipline
 
+The style anchor defines **STYLE ONLY** — medium, palette, rendering technique,
+lettering/text treatment, period vocabulary, material constraints, and
+recurring-character conventions. It renders on **every** slide. Keep per-slide
+scene content and recurring page-furniture out of it — parts inventories, step
+strips, numbered stations, exploded diagrams, callouts. That furniture is
+per-slide **content** — put it in the individual slide's `image_prompt`, not the
+anchor.
+
+This is most acute for **document-style aesthetics** (instruction booklet,
+blueprint, newspaper, schematic), where page furniture *reads* like a style
+convention but is per-slide content — keep it in each slide's `image_prompt`,
+never in the anchor.
+
 Never simplify or rewrite the speaker's original style anchor when iterating.
-The specificity of the anchor (period vocabulary, document conventions,
-material constraints) is what produces a coherent style across slides; pruning
+The specificity of the *style* (period vocabulary, document conventions,
+material constraints) is what produces a coherent look across slides; pruning
 it for "cleanliness" reverts the output to a generic illustrative default.
 
-Append to the anchor for new constraints — don't replace.
+Append to the anchor for new **style** constraints — don't replace. Reconcile
+the two halves of this rule by separating axes: **prune content** that crept in
+(scene elements, page furniture), but **preserve and extend style** specificity.
+"Don't prune" protects the style detail, not smuggled-in content.
+
+`generate-illustrations.py` appends a generation-time `COMPOSE ONLY THE SCENE`
+guard to every fresh-generation prompt as a backstop, telling the model to
+render only what the per-slide scene names. The guard reduces leakage; a
+style-only anchor prevents it. Both matter — don't rely on the guard to excuse
+a content-laden anchor.
 
 ## Build Process — Progressive Reveals
 

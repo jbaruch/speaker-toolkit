@@ -1,5 +1,33 @@
 # Changelog
 
+### fix(illustrations) — style-anchor `conventions` reach every generation prompt
+
+`style_anchor.conventions` is a required field where `strategy.md` Step 9 tells authors
+to bake the deck-wide, generation-relevant style rules (palette constraints like strict
+grayscale, sequential numbering, recurring motifs). But `generate-illustrations.py`'s
+`parse_outline` only read `style_anchor.full`/`imgtxt` — it validated `conventions` via the
+schema and then threw it away, so those load-bearing rules never reached the image model.
+A deck whose `conventions` said "no sepia / no warm tint" still drifted sepia because the
+rule, though it "existed" in the outline, was never sent. `parse_outline` now folds the
+collapsed `conventions` into every per-format anchor (the `[STYLE ANCHOR]` token expands to
+"<format anchor> <conventions>") and surfaces the raw text under a new `conventions` key;
+an empty `conventions` appends no stray separator. Resolves #83.
+
+### fix(illustrations) — style anchor stays style-only; compose-only guard blocks furniture leak
+
+The style anchor is injected into every slide's prompt, so anything in it renders on every
+slide — yet nothing enforced that the anchor was *style-only*, and *Style-Anchor Discipline*
+pushed the other way ("be specific, don't prune"). For document-style aesthetics (instruction
+booklet, blueprint, newspaper), the page furniture — parts inventories, step strips, numbered
+stations, exploded diagrams — reads like a style convention but is per-slide content, so the
+whole deck's furniture cross-contaminated every slide (the title slide became "the entire deck
+on one image"). `generate-illustrations.py` now appends a `COMPOSE ONLY THE SCENE` directive to
+every fresh-generation prompt (generate / style-explore / compare — not erase-only edits),
+pinning the model to the per-slide scene and barring instruction-page furniture and
+other-slide elements. `rules/illustration-rules.md` (*Style-Anchor Discipline*) and
+`strategy.md` Step 9 are rewritten to mandate a style-only anchor and reconcile "append, don't
+prune" by axis: prune smuggled-in content, preserve and extend style specificity. Resolves #87.
+
 ### fix(illustrations) — secrets.json read no longer hangs on a cloud placeholder
 
 `load_secrets()` read `{vault}/secrets.json` with a plain `json.load(open(path))`. When that

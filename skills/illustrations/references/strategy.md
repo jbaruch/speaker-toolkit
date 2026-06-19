@@ -236,6 +236,15 @@ carries only the scene; `text_overlay` carries only that slide's literal title
 string — never the text styling. Putting the treatment in the anchor is what
 keeps every baked title and footer rendering identically across the deck.
 
+The anchor, including `conventions`, is injected into **every** slide, so it must be
+**STYLE ONLY** — medium, palette, rendering, lettering, recurring-character
+conventions. Keep per-slide scene content and page-furniture (parts
+inventories, step strips, numbered stations, exploded diagrams, callouts) out
+of it and in the slide's own `image_prompt`; otherwise the whole deck's
+furniture renders on every slide. This is acute for document-style aesthetics
+(instruction booklet, blueprint, newspaper) where furniture masquerades as a
+style convention. See *Style-Anchor Discipline* in `rules/illustration-rules.md`.
+
 Then run the render-before-bake gate and report its one-line verdict:
 
 ```bash
