@@ -641,6 +641,34 @@ def test_rejects_unknown_build_field(outline_schema, base_data):
         outline_schema.Outline.model_validate(data)
 
 
+def test_accepts_build_erase_region(outline_schema, base_data):
+    """builds[].erase_region carries the optional normalized mask box (#90)."""
+    data = copy.deepcopy(base_data)
+    slide_with_builds = next(s for s in data["slides"] if s.get("builds"))
+    slide_with_builds["builds"][0]["erase_region"] = [0.1, 0.2, 0.5, 0.8]
+    outline = outline_schema.Outline.model_validate(data)
+    target = next(s for s in outline.slides if s.builds)
+    assert target.builds[0].erase_region == (0.1, 0.2, 0.5, 0.8)
+    # Steps without a region default to None (whole-frame edit).
+    assert target.builds[1].erase_region is None
+
+
+def test_rejects_erase_region_out_of_range(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    slide_with_builds = next(s for s in data["slides"] if s.get("builds"))
+    slide_with_builds["builds"][0]["erase_region"] = [0.1, 0.2, 1.5, 0.8]  # > 1
+    with pytest.raises(ValidationError, match="normalized"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_rejects_erase_region_inverted_box(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    slide_with_builds = next(s for s in data["slides"] if s.get("builds"))
+    slide_with_builds["builds"][0]["erase_region"] = [0.5, 0.2, 0.3, 0.8]  # x0 >= x1
+    with pytest.raises(ValidationError, match="x0 < x1"):
+        outline_schema.Outline.model_validate(data)
+
+
 def test_accepts_style_anchor_composition_and_footer(outline_schema, base_data):
     data = copy.deepcopy(base_data)
     data["style_anchor"]["composition"] = "poster-theatrical"

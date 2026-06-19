@@ -1,5 +1,24 @@
 # Changelog
 
+### fix(illustrations) — masked/composited build edits keep static backgrounds pixel-stable
+
+Backward-chaining progressive-reveal builds (`--build`) sent the whole frame to the image
+model with only a text prompt and no mask, so the model was free to redraw everything: a
+static background that must stay fixed across the reveal (a conveyor, a baseplate, a panel
+frame, blueprint chrome) drifted in position/size or silently lost elements between frames —
+even when the `erase` prompt named them in a `Keep` clause. A `Keep` clause reduces drift
+but a maskless edit cannot guarantee the kept pixels survive. Build steps now take an
+optional `erase_region` — a normalized `[x0, y0, x1, y1]` box (0..1, origin top-left, schema
+validated) around the element being erased. When set, `--build` confines the edit to that
+box: OpenAI receives a real edit mask (only the transparent box is regenerated), and for
+both vendors the returned image is composited back over the prior frame via Pillow so every
+pixel outside the box is the source pixel exactly. The box is still redrawn by the model
+(the erased area shows real background, not a flat fill). Without a region the historical
+whole-frame regeneration is unchanged, so existing outlines need no edits. Pillow (already a
+project dependency) is imported lazily only when a region is used. `Build.erase_region` is
+added to the outline schema; `rules/illustration-rules.md` and
+`skills/illustrations/references/builds.md` document when and how to use it. Resolves #90.
+
 ### fix(illustrations) — style-anchor `conventions` reach every generation prompt
 
 `style_anchor.conventions` is a required field where `strategy.md` Step 9 tells authors

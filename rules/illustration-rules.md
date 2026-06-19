@@ -86,10 +86,25 @@ Each step's input is the PREVIOUS step's output (chained edits work because
 the per-step diff is small and the style is preserved on erasure — see the
 edit-vs-regenerate asymmetry rule above).
 
+**Static backgrounds drift unless you scope the edit.** A maskless edit sends
+the whole frame to the model and lets it redraw everything, so a background
+that must stay fixed across the reveal (a conveyor, a baseplate, a panel frame,
+blueprint chrome) can shift in position/size or silently lose elements — even
+when the `erase` prompt names them in a `Keep` clause. A `Keep` clause *reduces*
+drift but cannot *guarantee* pixel-stability. When a build has a static
+background that must not move, give the step an **`erase_region`**: a normalized
+`[x0, y0, x1, y1]` box (0..1, origin top-left) around the element being erased.
+`--build` then confines the edit to that box — OpenAI gets a real edit mask, and
+for both vendors the result is composited back over the prior frame so every
+pixel outside the box is the source pixel exactly. See
+`skills/illustrations/references/builds.md`.
+
 Don't:
 
-- Use PIL or parchment masking to "blank out" regions — the texture mismatch
-  is obvious. Always erase via image-edit, not pixel paste.
+- Use parchment masking or a flat-fill paste to "blank out" regions — the
+  texture mismatch is obvious. `erase_region` is NOT a flat fill: the box is
+  still redrawn by the image model (so the erased area shows real background),
+  and only the *unchanged* surroundings are taken from the prior frame.
 - Generate each build stage independently from prompts — visual drift
   between stages will be jarring even if each individual stage looks fine.
 
