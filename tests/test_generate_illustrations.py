@@ -58,6 +58,28 @@ def test_parse_anchors(generate_illustrations):
     assert "Photorealistic" in result["anchors"]["FULL"]
 
 
+def test_parse_anchors_fold_in_conventions(generate_illustrations):
+    # #83: the required `conventions` block holds deck-wide, generation-relevant
+    # style rules. It must be folded into EVERY format's anchor so it reaches the
+    # model on every slide — parsing it but never injecting it was the bug.
+    result = generate_illustrations.parse_outline(FIXTURE)
+    assert "brass compass" in result["anchors"]["FULL"]
+    assert "brass compass" in result["anchors"]["IMG+TXT"]
+    # Also surfaced raw for callers/tests.
+    assert result["conventions"] and "brass compass" in result["conventions"]
+
+
+def test_parse_anchors_no_conventions_is_clean(generate_illustrations, tmp_path):
+    # An empty conventions string must not append a stray separator to the anchor.
+    data = copy.deepcopy(_FIXTURE_DATA)
+    data["style_anchor"]["conventions"] = ""
+    p = tmp_path / "outline.yaml"
+    p.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    result = generate_illustrations.parse_outline(str(p))
+    assert result["conventions"] is None
+    assert not result["anchors"]["FULL"].endswith(" ")
+
+
 def test_parse_slides_excludes_promptless(generate_illustrations):
     # Slide 7 is EXCEPTION (a real screenshot) with no image_prompt — it is not
     # an illustration target and must be excluded from the generator's view.
@@ -362,6 +384,23 @@ def test_apply_safe_zone_default_surface(generate_illustrations):
     result = generate_illustrations.apply_safe_zone_directive("A scene", safe_zone)
     assert "TITLE SAFE ZONE" in result
     assert "left half" in result
+
+
+def test_apply_compose_only_directive(generate_illustrations):
+    # #87: the style anchor renders on every slide, so the fresh-gen prompt must
+    # carry a guard pinning the model to THIS slide's scene and barring
+    # deck-wide page-furniture.
+    result = generate_illustrations.apply_compose_only_directive("A lone brick")
+    assert "COMPOSE ONLY THE SCENE" in result
+    assert result.startswith("A lone brick")
+    assert "instruction-page furniture" in result
+
+
+def test_apply_compose_only_directive_idempotent(generate_illustrations):
+    once = generate_illustrations.apply_compose_only_directive("A scene")
+    twice = generate_illustrations.apply_compose_only_directive(once)
+    assert once == twice
+    assert twice.count("COMPOSE ONLY THE SCENE") == 1
 
 
 def test_effective_slide_format_safe_zone_wins(generate_illustrations):

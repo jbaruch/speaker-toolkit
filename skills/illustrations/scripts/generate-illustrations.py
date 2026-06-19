@@ -225,7 +225,9 @@ def parse_outline(path):
 
         dict with keys:
             model: str | None — baked illustration model (style_anchor.model)
-            anchors: dict[str, str] — format token ("FULL"/"IMG+TXT") → anchor
+            anchors: dict[str, str] — format token ("FULL"/"IMG+TXT") → anchor,
+                with the deck-wide `conventions` rules folded in (see below)
+            conventions: str | None — the raw deck-wide convention rules
             slides: list[dict] — prompt-bearing slides only, each with
                 slide_num, title, format, prompt, and optional safe_zone /
                 text / builds
@@ -247,12 +249,27 @@ def parse_outline(path):
     outline = outline_schema.load_outline_partial(path)
     anchor = outline.style_anchor
 
+    # `conventions` holds the deck-wide, generation-relevant style rules
+    # (palette constraints, sequential numbering, recurring motifs — see
+    # strategy.md Step 9). It is a REQUIRED style_anchor field, but it only
+    # earns its keep if it reaches the model on every slide, so fold it into
+    # each per-format anchor: the `[STYLE ANCHOR]` token then expands to
+    # "<format anchor> <conventions>". Parsing it but never injecting it was
+    # issue #83's silent-drop failure (strict-grayscale / numbering rules that
+    # "existed" in the outline yet never reached generation).
+    conventions = _collapse_anchor(anchor.conventions) if anchor else ""
+
+    def _anchor_with_conventions(text):
+        text = _collapse_anchor(text)
+        return f"{text} {conventions}".strip() if conventions else text
+
     result = {
         "model": anchor.model if anchor else None,
         "anchors": {
-            "FULL": _collapse_anchor(anchor.full),
-            "IMG+TXT": _collapse_anchor(anchor.imgtxt),
+            "FULL": _anchor_with_conventions(anchor.full),
+            "IMG+TXT": _anchor_with_conventions(anchor.imgtxt),
         } if anchor else {},
+        "conventions": conventions or None,
         "slides": [],
         "composition": (
             anchor.composition.value if anchor and anchor.composition else None
@@ -375,6 +392,38 @@ def apply_poster_embed_directive(prompt, title_text, footer_text, text_treatment
         footer_clause=footer_clause,
     )
     return prompt + directive
+
+
+# Style anchors are injected into EVERY slide's prompt, so anything in them
+# renders on every slide. The anchor must stay STYLE-ONLY (medium, palette,
+# rendering, lettering, recurring-character conventions — see Style-Anchor
+# Discipline in rules/illustration-rules.md). This directive is the
+# generation-time backstop: it tells the model to render only what THIS slide's
+# scene describes, so deck-wide "page furniture" (parts inventories, step
+# strips, numbered stations, exploded diagrams, stray callouts) — which reads
+# like a style convention in document/instruction-page aesthetics but is
+# actually per-slide content — can't cross-contaminate every slide. See #87.
+COMPOSE_ONLY_DIRECTIVE = (
+    " COMPOSE ONLY THE SCENE -- CRITICAL COMPOSITION RULE: Render only the "
+    "subjects and objects this slide's scene names. Do NOT add instruction-page "
+    "furniture (parts inventories, step strips, numbered stations, exploded "
+    "assembly diagrams, callouts) or elements drawn from other slides unless "
+    "this scene explicitly asks for them."
+)
+
+
+def apply_compose_only_directive(prompt):
+    """Append the style-only COMPOSE ONLY guard to a fresh-generation prompt.
+
+    Keeps the always-injected style anchor from leaking per-slide content /
+    page-furniture onto every slide (issue #87). Applied to fresh generation
+    (generate / style-explore / compare), not to erase-only edits — those carry
+    their own "DO NOT add any new elements" suffix. Idempotent: an existing
+    COMPOSE ONLY block is replaced.
+    """
+    if "COMPOSE ONLY THE SCENE" in prompt:
+        prompt = prompt.split("COMPOSE ONLY THE SCENE", 1)[0].rstrip()
+    return prompt + COMPOSE_ONLY_DIRECTIVE
 
 
 def effective_slide_format(slide_format, safe_zone):
@@ -1263,6 +1312,10 @@ def run_generate(outline_path, slide_args, versioned=False):
             prompt = resolve_prompt(slide["prompt"], eff_format, outline["anchors"])
             prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"))
 
+        # Style-only guard: the anchor renders on every slide, so pin the model
+        # to this slide's scene and keep deck-wide page-furniture from leaking (#87).
+        prompt = apply_compose_only_directive(prompt)
+
         print(f"[{i+1}/{len(to_generate)}] Slide {num}: {slide['title']}")
 
         image_bytes, result = generate_image(prompt, model, keys, eff_format)
@@ -1308,6 +1361,7 @@ def run_compare(outline_path, slide_num):
     eff_format = effective_slide_format(slide["format"], slide.get("safe_zone"))
     prompt = resolve_prompt(slide["prompt"], eff_format, outline["anchors"])
     prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"))
+    prompt = apply_compose_only_directive(prompt)
 
     output_dir = os.path.join(
         os.path.dirname(os.path.abspath(outline_path)),
@@ -1575,8 +1629,11 @@ def run_style_explore(outline_path, candidates_path):
             anchor = style["anchors"].get(eff_format) or style["anchors"].get(fmt)
             if not anchor:
                 continue
-            prompt = apply_safe_zone_directive(
-                resolve_prompt(scene_prompt, eff_format, {eff_format: anchor}), safe_zone
+            prompt = apply_compose_only_directive(
+                apply_safe_zone_directive(
+                    resolve_prompt(scene_prompt, eff_format, {eff_format: anchor}),
+                    safe_zone,
+                )
             )
             for model in candidates["models"]:
                 plan.append((style["name"], fmt, model, prompt, eff_format))
