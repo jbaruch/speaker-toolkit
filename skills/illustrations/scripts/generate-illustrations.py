@@ -27,7 +27,8 @@ Requires:
     - For OpenAI models (gpt-image-*):
         OpenAI API key in {vault}/secrets.json under "openai".api_key
         or OPENAI_API_KEY env var (fallback).
-    - Python 3.8+ (uses the walrus operator and other 3.8+ syntax). The core
+    - Python 3.10+ (matches the project's requires-python in pyproject.toml;
+      uses union-type syntax via the shared outline_schema). The core
       generation paths are stdlib-only. The masked-edit build path
       (`--build` with a step `erase_region`) needs Pillow, a declared project
       dependency (pyproject.toml); it is imported lazily only when a region is
@@ -39,6 +40,7 @@ import base64
 import glob
 import io
 import json
+import math
 import os
 import re
 import shutil
@@ -863,18 +865,25 @@ def _require_pil():
 def _region_to_pixels(region, width, height):
     """Convert a normalized [x0,y0,x1,y1] box to an integer pixel box.
 
-    Clamps to the image bounds and guarantees a non-empty (>=1px) box so a
-    rounding collapse can't produce a zero-area crop.
+    Uses floor for the top-left edge and ceil for the bottom-right so any box
+    with positive normalized area maps to a crop of at least 1px per side —
+    including a box flush against the right/bottom edge (e.g. x1 == 1.0), where
+    rounding both edges would collapse them onto `width`/`height` and yield a
+    zero-width hole (Pillow then errors / the composite crops nothing). Clamps
+    to the image bounds, and as a final guard shifts a still-degenerate edge
+    back by 1px so the crop is never empty.
     """
     x0, y0, x1, y1 = region
-    left = max(0, min(width, round(x0 * width)))
-    top = max(0, min(height, round(y0 * height)))
-    right = max(0, min(width, round(x1 * width)))
-    bottom = max(0, min(height, round(y1 * height)))
+    left = max(0, min(width, math.floor(x0 * width)))
+    top = max(0, min(height, math.floor(y0 * height)))
+    right = max(0, min(width, math.ceil(x1 * width)))
+    bottom = max(0, min(height, math.ceil(y1 * height)))
     if right <= left:
-        right = min(width, left + 1)
+        left = max(0, min(left, width - 1))
+        right = left + 1
     if bottom <= top:
-        bottom = min(height, top + 1)
+        top = max(0, min(top, height - 1))
+        bottom = top + 1
     return left, top, right, bottom
 
 

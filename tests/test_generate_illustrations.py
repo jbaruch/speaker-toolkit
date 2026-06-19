@@ -1443,11 +1443,23 @@ def test_parse_builds_surfaces_erase_region(generate_illustrations, tmp_path):
 
 def test_region_to_pixels_clamps_and_is_nonempty(generate_illustrations):
     gi = generate_illustrations
-    # Normal box maps to rounded pixel coords.
+    # Normal box maps to floor/ceil pixel coords.
     assert gi._region_to_pixels([0.0, 0.0, 0.5, 0.5], 100, 200) == (0, 0, 50, 100)
-    # A degenerate (zero-width after rounding) box is widened to >= 1px, never empty.
+    # A degenerate (zero-width after flooring) box is widened to >= 1px, never empty.
     left, top, right, bottom = gi._region_to_pixels([0.5, 0.5, 0.5001, 0.5001], 100, 100)
     assert right > left and bottom > top
+
+
+def test_region_to_pixels_edge_box_at_one_is_nonempty(generate_illustrations):
+    gi = generate_illustrations
+    # A thin box flush against the right/bottom edge (x1 == y1 == 1.0) must NOT
+    # collapse to width/height==left/top. round() on both edges would put left
+    # and right both at 100 (empty); floor/ceil + the boundary guard keep it >=1px.
+    left, top, right, bottom = gi._region_to_pixels([0.999, 0.999, 1.0, 1.0], 100, 100)
+    assert right > left and bottom > top
+    assert right <= 100 and bottom <= 100   # stays in bounds
+    # A full-frame box maps to the whole image.
+    assert gi._region_to_pixels([0.0, 0.0, 1.0, 1.0], 100, 80) == (0, 0, 100, 80)
 
 
 def test_build_edit_mask_is_transparent_only_in_region(generate_illustrations, tmp_path):
