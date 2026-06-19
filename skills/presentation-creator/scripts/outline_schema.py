@@ -258,6 +258,30 @@ class Build(_StrictModel):
     # slide image. Optional so slides whose builds are only deck-budget
     # placeholders validate; --build refuses any non-final step missing it.
     erase: str | None = None
+    # Optional erase region as a normalized bounding box [x0, y0, x1, y1] in
+    # 0..1 image coords (origin top-left). When set, --build confines the edit to
+    # this box: the static background outside it is preserved pixel-for-pixel
+    # (OpenAI gets a real edit mask; Gemini's full regeneration is composited back
+    # over the prior frame outside the box). Without it, the whole frame is
+    # regenerated and a static background can drift (#90). Belongs only on
+    # non-final steps — the final step is a verbatim copy, never edited.
+    erase_region: tuple[float, float, float, float] | None = None
+
+    @model_validator(mode="after")
+    def _check_erase_region(self) -> "Build":
+        if self.erase_region is None:
+            return self
+        x0, y0, x1, y1 = self.erase_region
+        if not all(0.0 <= v <= 1.0 for v in self.erase_region):
+            raise ValueError(
+                f"erase_region values must be in 0..1 (normalized), got {self.erase_region}"
+            )
+        if x0 >= x1 or y0 >= y1:
+            raise ValueError(
+                "erase_region must be [x0, y0, x1, y1] with x0 < x1 and y0 < y1, "
+                f"got {self.erase_region}"
+            )
+        return self
 
 
 # ── Screenplay-form script ───────────────────────────────────────────

@@ -27,13 +27,17 @@ Requires:
     - For OpenAI models (gpt-image-*):
         OpenAI API key in {vault}/secrets.json under "openai".api_key
         or OPENAI_API_KEY env var (fallback).
-    - Python 3.8+ (stdlib only — no pip install needed; uses the walrus
-      operator and other 3.8+ syntax)
+    - Python 3.8+ (uses the walrus operator and other 3.8+ syntax). The core
+      generation paths are stdlib-only. The masked-edit build path
+      (`--build` with a step `erase_region`) needs Pillow, a declared project
+      dependency (pyproject.toml); it is imported lazily only when a region is
+      used, so plain generation still runs without it.
 """
 
 import argparse
 import base64
 import glob
+import io
 import json
 import os
 import re
@@ -302,6 +306,12 @@ def parse_outline(path):
                     "step": b.step,
                     "description": b.erase or "",
                     "is_full": b.step == max_step,
+                    # Normalized [x0, y0, x1, y1] erase box, or None. Drives the
+                    # masked/composited edit path that keeps a static background
+                    # pixel-stable across build frames (#90).
+                    "erase_region": (
+                        list(b.erase_region) if b.erase_region else None
+                    ),
                 }
                 for b in sorted(slide.builds, key=lambda b: b.step)
             ]
@@ -828,6 +838,95 @@ def _call_imagen(prompt, model, api_key, aspect_ratio=IMAGEN_DEFAULT_ASPECT):
     return None, f"No image in Imagen response: {json.dumps(body)[:500]}"
 
 
+# --- Masked / composited edits (build static-background stability, #90) ---
+
+def _require_pil():
+    """Import Pillow lazily, exiting with an actionable message if it's absent.
+
+    Pillow is a declared project dependency (pyproject.toml) used across the
+    illustration scripts, but only the masked-edit build path needs it — the
+    import stays lazy so plain generation runs on a bare stdlib environment.
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        print(
+            "ERROR: a build step's `erase_region` needs Pillow, which isn't "
+            "importable. Install the project deps (Pillow is in pyproject.toml): "
+            "pip install Pillow",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return Image
+
+
+def _region_to_pixels(region, width, height):
+    """Convert a normalized [x0,y0,x1,y1] box to an integer pixel box.
+
+    Clamps to the image bounds and guarantees a non-empty (>=1px) box so a
+    rounding collapse can't produce a zero-area crop.
+    """
+    x0, y0, x1, y1 = region
+    left = max(0, min(width, round(x0 * width)))
+    top = max(0, min(height, round(y0 * height)))
+    right = max(0, min(width, round(x1 * width)))
+    bottom = max(0, min(height, round(y1 * height)))
+    if right <= left:
+        right = min(width, left + 1)
+    if bottom <= top:
+        bottom = min(height, top + 1)
+    return left, top, right, bottom
+
+
+def build_edit_mask_png(input_path, region):
+    """Build an OpenAI edit mask: transparent over `region`, opaque elsewhere.
+
+    OpenAI /images/edits regenerates only the fully-transparent (alpha=0) area
+    of the mask and leaves the rest untouched. The mask matches the input
+    image's pixel dimensions. Returns PNG bytes.
+    """
+    Image = _require_pil()
+    with Image.open(input_path) as im:
+        width, height = im.size
+    left, top, right, bottom = _region_to_pixels(region, width, height)
+    # Fully opaque = "keep"; punch a transparent hole over the erase box, the
+    # only region the model may redraw.
+    mask = Image.new("RGBA", (width, height), (0, 0, 0, 255))
+    hole = Image.new("RGBA", (right - left, bottom - top), (0, 0, 0, 0))
+    mask.paste(hole, (left, top))
+    buf = io.BytesIO()
+    mask.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def composite_region(prior_path, new_bytes, region):
+    """Paste the edited `region` from new_bytes onto the prior frame's pixels.
+
+    Everything OUTSIDE the box is taken verbatim from the prior frame, so a
+    static background stays pixel-identical across build frames; only the box is
+    replaced with the (resized-to-match) edited content. This is the guarantee
+    behind #90 — a maskless regeneration can drift the whole frame, but the
+    composite snaps the kept region back to the source pixels. Returns
+    (png_bytes, "image/png").
+    """
+    Image = _require_pil()
+    with Image.open(prior_path) as prior_im:
+        prior = prior_im.convert("RGB")
+    width, height = prior.size
+    with Image.open(io.BytesIO(new_bytes)) as new_im:
+        new = new_im.convert("RGB")
+        # The vendor may return a different geometry than the prior frame;
+        # align before cropping so the box lands on the same content.
+        if new.size != prior.size:
+            new = new.resize(prior.size)
+    left, top, right, bottom = _region_to_pixels(region, width, height)
+    out = prior.copy()
+    out.paste(new.crop((left, top, right, bottom)), (left, top))
+    buf = io.BytesIO()
+    out.save(buf, format="PNG")
+    return buf.getvalue(), "image/png"
+
+
 # --- OpenAI API ---
 
 def _multipart_body(fields, files):
@@ -906,20 +1005,29 @@ def _call_openai_generate(prompt, model, api_key, size=OPENAI_DEFAULT_SIZE):
     return _extract_openai_image(body)
 
 
-def _call_openai_edit(input_path, prompt, model, api_key, size=OPENAI_DEFAULT_SIZE):
-    """Call OpenAI /images/edits to edit an existing image."""
+def _call_openai_edit(input_path, prompt, model, api_key, size=OPENAI_DEFAULT_SIZE,
+                      mask_png=None):
+    """Call OpenAI /images/edits to edit an existing image.
+
+    When `mask_png` is given (a PNG matching the image dimensions), only its
+    fully-transparent region is regenerated and the rest is preserved — the
+    build static-background fix (#90).
+    """
     with open(input_path, "rb") as f:
         image_bytes = f.read()
     ext = os.path.splitext(input_path)[1].lower()
     mime = ext_to_mime(ext)
     filename = os.path.basename(input_path)
 
+    files = [("image", filename, mime, image_bytes)]
+    if mask_png is not None:
+        files.append(("mask", "mask.png", "image/png", mask_png))
     body, boundary = _multipart_body(
         # gpt-image-* returns base64 by default; do not send
         # `response_format` (legacy DALL-E knob; gpt-image-* 400s on it).
         fields={"model": model, "prompt": prompt, "size": size,
                 "quality": "high", "n": "1"},
-        files=[("image", filename, mime, image_bytes)],
+        files=files,
     )
     url = f"{OPENAI_API_BASE}/images/edits"
     headers = {
@@ -971,7 +1079,8 @@ def generate_image(prompt, model, keys, slide_format=None):
     return _call_gemini([{"text": prompt}], model, keys["gemini"])
 
 
-def edit_image(input_path, edit_prompt, model, keys, slide_format=None):
+def edit_image(input_path, edit_prompt, model, keys, slide_format=None,
+               erase_region=None):
     """Edit an existing image via the appropriate vendor endpoint.
 
     Auto-appends vendor-agnostic safety suffixes to the prompt to prevent
@@ -980,6 +1089,11 @@ def edit_image(input_path, edit_prompt, model, keys, slide_format=None):
     Args:
         slide_format: see generate_image — controls OpenAI edit size so
             the output matches the source slide's geometry.
+        erase_region: optional normalized [x0,y0,x1,y1] box. When set, the edit
+            is confined to that box — OpenAI gets a real edit mask, and for
+            BOTH vendors the result is composited back over the prior frame so
+            the static background outside the box stays pixel-identical (#90).
+            When None, the historical whole-frame regeneration is used.
 
     Returns:
         tuple (image_bytes, mime_type) on success, or (None, error_message) on failure.
@@ -996,10 +1110,7 @@ def edit_image(input_path, edit_prompt, model, keys, slide_format=None):
     model = resolve_model_id(model)
     family = model_family(model)
     sizing = sizing_for(slide_format)
-    if family == "openai":
-        return _call_openai_edit(
-            input_path, edit_prompt, model, keys["openai"], size=sizing["openai_size"]
-        )
+
     if family == "imagen":
         return None, (
             f"Image editing is not supported for Imagen models ({model}). "
@@ -1007,16 +1118,33 @@ def edit_image(input_path, edit_prompt, model, keys, slide_format=None):
             "model for --edit / --build / --fix workflows."
         )
 
-    # Gemini path: send image as base64 inline data on generateContent
-    with open(input_path, "rb") as f:
-        image_data = base64.b64encode(f.read()).decode("utf-8")
-    ext = os.path.splitext(input_path)[1].lower()
-    input_mime = ext_to_mime(ext)
-    parts = [
-        {"inlineData": {"mimeType": input_mime, "data": image_data}},
-        {"text": edit_prompt},
-    ]
-    return _call_gemini(parts, model, keys["gemini"])
+    if family == "openai":
+        # A mask lets the model edit in-place with surrounding context; the
+        # composite below then guarantees the kept region byte-for-byte.
+        mask_png = build_edit_mask_png(input_path, erase_region) if erase_region else None
+        image_bytes, result = _call_openai_edit(
+            input_path, edit_prompt, model, keys["openai"],
+            size=sizing["openai_size"], mask_png=mask_png,
+        )
+    else:
+        # Gemini path: send image as base64 inline data on generateContent.
+        # Gemini has no mask param, so it always regenerates the whole frame;
+        # the composite below is what keeps its static background stable.
+        with open(input_path, "rb") as f:
+            image_data = base64.b64encode(f.read()).decode("utf-8")
+        ext = os.path.splitext(input_path)[1].lower()
+        input_mime = ext_to_mime(ext)
+        parts = [
+            {"inlineData": {"mimeType": input_mime, "data": image_data}},
+            {"text": edit_prompt},
+        ]
+        image_bytes, result = _call_gemini(parts, model, keys["gemini"])
+
+    # Confine the change to the erase box: paste the edited region back over the
+    # prior frame so everything outside it is the source pixels exactly (#90).
+    if erase_region and image_bytes is not None:
+        return composite_region(input_path, image_bytes, erase_region)
+    return image_bytes, result
 
 
 # --- Style-explore manifest + render-before-bake gate ---
@@ -1840,12 +1968,21 @@ def run_build(outline_path, slide_arg):
         for step in edit_steps:
             step_num = step["step"]
             desc = step["description"]
+            region = step.get("erase_region")
 
-            print(f"  build-{step_num:02d}: {desc[:60]}...", end=" ", flush=True)
+            label = "  build-{:02d}{}: {}...".format(
+                step_num, " [masked]" if region else "", desc[:60]
+            )
+            print(label, end=" ", flush=True)
 
+            # An erase_region confines the edit to that box and composites the
+            # rest from prev_image, so the static background stays pixel-stable
+            # down the chain (#90). Without a region, the whole frame is
+            # regenerated (historical behavior; may drift).
             image_bytes, result = edit_image(
                 prev_image, desc, model, keys,
                 effective_slide_format(slide["format"], slide.get("safe_zone")),
+                erase_region=region,
             )
 
             if image_bytes is None:

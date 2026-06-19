@@ -57,6 +57,32 @@ the previous one.
 - The edit safety suffixes (`DO NOT add any new elements`, `let background
   continue naturally`) are auto-appended by the script — don't repeat them.
 
+### `erase_region` — pixel-stable static backgrounds
+
+A step may also carry an optional **`erase_region`**: a normalized
+`[x0, y0, x1, y1]` bounding box (0..1, origin top-left) around the element being
+erased. It is the fix for build drift (#90): a maskless edit redraws the whole
+frame, so a static background can shift or lose elements between frames even
+with a `Keep` clause. With `erase_region`, `--build` confines the change to the
+box — OpenAI receives a real edit mask, and for both vendors the result is
+composited back over the prior frame, so every pixel **outside** the box is the
+source pixel exactly. The box is still redrawn by the model (the erased area
+shows real background, not a flat fill).
+
+Use it whenever a build has a background that must not move (conveyors,
+baseplates, panel frames, blueprint chrome). Omit it for free-form scenes where
+whole-frame regeneration is fine. The progress line marks masked steps
+`build-NN [masked]`. The final (full-image) step is a verbatim copy and never
+takes a region.
+
+```yaml
+builds:
+  - step: 1
+    desc: "Panel 1 content + PLUGIN USELESS? stamp"
+    erase: 'Erase Panel 2 and the "STILL?" stamp. Keep the page chrome. Keep the three panel frames and labels. Keep Panel 1 content.'
+    erase_region: [0.34, 0.18, 0.66, 0.82]   # the middle (Panel 2) column only
+```
+
 Example (slide with three trial panels revealed progressively):
 
 ```yaml

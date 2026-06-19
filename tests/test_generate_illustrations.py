@@ -5,6 +5,7 @@ onto the generator's view; these tests drive the canonical fixture.
 """
 
 import copy
+import io
 import json
 import os
 from pathlib import Path
@@ -205,6 +206,40 @@ def test_run_build_with_keep_clause_runs_chain(
     gi.run_build("ignored.yaml", "60")  # no SystemExit
 
     assert len(edit_calls) == 1  # the single erase step was edited
+
+
+def test_run_build_forwards_erase_region_to_edit(
+    generate_illustrations, monkeypatch, tmp_path
+):
+    # #90: a step's erase_region must reach edit_image as the erase_region
+    # kwarg so the masked/composited path engages; a step without one forwards
+    # None (historical whole-frame edit).
+    gi = generate_illustrations
+    outline = _single_build_slide([
+        {"step": 0, "description": "Erase Panel 0. Keep the chrome.",
+         "is_full": False, "erase_region": None},
+        {"step": 1, "description": "Erase Panel 1. Keep the chrome.",
+         "is_full": False, "erase_region": [0.1, 0.2, 0.5, 0.8]},
+        {"step": 2, "description": "[FULL] all panels", "is_full": True},
+    ])
+    base = tmp_path / "slide-60.png"
+    base.write_bytes(b"img")
+    calls = []
+    monkeypatch.setattr(gi, "_load_context", lambda p: ({}, outline, str(tmp_path)))
+    monkeypatch.setattr(gi, "find_base_image", lambda d, n: str(base))
+    monkeypatch.setattr(gi, "effective_slide_format", lambda *a, **k: None)
+    monkeypatch.setattr(gi.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(gi, "check_style_explore", lambda p: {"gate_passed": True, "error": ""})
+    monkeypatch.setattr(
+        gi, "edit_image",
+        lambda *a, **k: (calls.append(k.get("erase_region")), (b"x", "image/png"))[1],
+    )
+
+    gi.run_build("ignored.yaml", "60")
+
+    # Backwards chain edits step 1 then step 0; collect by region presence.
+    assert [0.1, 0.2, 0.5, 0.8] in calls
+    assert None in calls
 
 
 def test_run_build_exits_nonzero_when_edit_fails(
@@ -1382,3 +1417,82 @@ def test_gate_fails_closed_on_non_string_cell_model(generate_illustrations, tmp_
     })
     v = gi.check_style_explore(str(outline))  # must not raise
     assert v["gate_passed"] is False
+
+
+# --- #90: masked / composited build edits ---
+
+
+def test_parse_builds_surfaces_erase_region(generate_illustrations, tmp_path):
+    # parse_outline must surface a step's erase_region as a plain list (or None)
+    # so run_build can engage the masked/composited path.
+    data = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
+    slide2 = next(s for s in data["slides"] if s["n"] == 2)
+    for b in slide2["builds"][:-1]:
+        b["erase"] = f"Erase step {b['step']}. Keep the three frames."
+    slide2["builds"][0]["erase_region"] = [0.1, 0.2, 0.5, 0.8]
+    p = tmp_path / "outline.yaml"
+    p.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    result = generate_illustrations.parse_outline(str(p))
+    s2 = next(s for s in result["slides"] if s["slide_num"] == 2)
+    steps = s2["builds"]["steps"]
+    assert steps[0]["erase_region"] == [0.1, 0.2, 0.5, 0.8]
+    # A step without a region surfaces None, not a missing key.
+    assert steps[1]["erase_region"] is None
+
+
+def test_region_to_pixels_clamps_and_is_nonempty(generate_illustrations):
+    gi = generate_illustrations
+    # Normal box maps to rounded pixel coords.
+    assert gi._region_to_pixels([0.0, 0.0, 0.5, 0.5], 100, 200) == (0, 0, 50, 100)
+    # A degenerate (zero-width after rounding) box is widened to >= 1px, never empty.
+    left, top, right, bottom = gi._region_to_pixels([0.5, 0.5, 0.5001, 0.5001], 100, 100)
+    assert right > left and bottom > top
+
+
+def test_build_edit_mask_is_transparent_only_in_region(generate_illustrations, tmp_path):
+    # The OpenAI mask must be opaque (keep) everywhere except a transparent hole
+    # over the erase box (the only region the model may redraw).
+    from PIL import Image
+    gi = generate_illustrations
+    src = tmp_path / "frame.png"
+    Image.new("RGB", (100, 100), (10, 20, 30)).save(src)
+
+    mask_png = gi.build_edit_mask_png(str(src), [0.4, 0.4, 0.6, 0.6])
+    mask = Image.open(io.BytesIO(mask_png)).convert("RGBA")
+    assert mask.size == (100, 100)
+    assert mask.getpixel((50, 50))[3] == 0     # inside box -> transparent
+    assert mask.getpixel((5, 5))[3] == 255     # outside box -> opaque
+
+
+def test_composite_region_keeps_background_pixel_identical(generate_illustrations, tmp_path):
+    # The guarantee behind #90: outside the box, output == prior frame exactly;
+    # inside the box, output == the edited (new) content.
+    from PIL import Image
+    gi = generate_illustrations
+    prior = tmp_path / "prior.png"
+    Image.new("RGB", (100, 100), (10, 20, 30)).save(prior)
+    new_buf = io.BytesIO()
+    Image.new("RGB", (100, 100), (200, 100, 50)).save(new_buf, format="PNG")
+
+    out_bytes, mime = gi.composite_region(str(prior), new_buf.getvalue(), [0.4, 0.4, 0.6, 0.6])
+    assert mime == "image/png"
+    out = Image.open(io.BytesIO(out_bytes)).convert("RGB")
+    assert out.getpixel((5, 5)) == (10, 20, 30)    # background preserved
+    assert out.getpixel((50, 50)) == (200, 100, 50)  # box replaced with new content
+
+
+def test_composite_region_resizes_mismatched_new_image(generate_illustrations, tmp_path):
+    # When the vendor returns a different geometry, the new image is resized to
+    # the prior frame before compositing, so the box still lands correctly.
+    from PIL import Image
+    gi = generate_illustrations
+    prior = tmp_path / "prior.png"
+    Image.new("RGB", (100, 100), (0, 0, 0)).save(prior)
+    new_buf = io.BytesIO()
+    Image.new("RGB", (40, 40), (255, 255, 255)).save(new_buf, format="PNG")  # different size
+
+    out_bytes, _ = gi.composite_region(str(prior), new_buf.getvalue(), [0.0, 0.0, 1.0, 1.0])
+    out = Image.open(io.BytesIO(out_bytes)).convert("RGB")
+    assert out.size == (100, 100)
+    assert out.getpixel((50, 50)) == (255, 255, 255)
