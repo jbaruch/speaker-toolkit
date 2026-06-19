@@ -13,6 +13,8 @@ TimeoutError and `load_secrets` falls back to the existing `GEMINI_API_KEY` / `O
 env-var path with a loud stderr warning — the same degrade-don't-crash behavior it already had
 for malformed/unreadable files (no silent swallow). Found while working on the build-edit fix.
 
+### fix(vault-ingress) — Step 4 persists structured fields deterministically
+
 vault-ingress Step 4 told the orchestrator to hand-copy each subagent field into the
 tracking DB, so anything it forgot was silently dropped: the rich `structured_data` the
 subagents compute reached the per-talk analysis files but almost never landed in
