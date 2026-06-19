@@ -61,7 +61,7 @@ the previous one.
 
 A step may also carry an optional **`erase_region`**: a normalized
 `[x0, y0, x1, y1]` bounding box (0..1, origin top-left) around the element being
-erased. It is the fix for build drift (#90): a maskless edit redraws the whole
+erased. It is the fix for build drift: a maskless edit redraws the whole
 frame, so a static background can shift or lose elements between frames even
 with a `Keep` clause. With `erase_region`, `--build` confines the change to the
 box — OpenAI receives a real edit mask, and for both vendors the result is
