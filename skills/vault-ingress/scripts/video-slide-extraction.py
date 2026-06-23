@@ -25,6 +25,13 @@ import os
 import sys
 from pathlib import Path
 
+# Pipeline version — stamped into every video-extracted vault entry (DB row +
+# PDF metadata) so artifacts record which extraction iteration produced them.
+# Bump this whenever extraction BEHAVIOR changes: default --fps or --threshold,
+# the download tier, region-detection logic, dedup hashing, or PDF assembly.
+# See references/video-slide-extraction.md ("Pipeline Versioning") for the policy.
+PIPELINE_VERSION = "0.7.0"
+
 # Check dependencies
 try:
     import imagehash
@@ -158,6 +165,9 @@ def combine_to_pdf(unique_slides, output_pdf, slide_region=None):
     Saves FULL (uncropped) frames — the crop region was only used for
     hash comparison. The full frame preserves speaker PiP context which
     can be useful for analyzing co-presentation dynamics.
+
+    Stamps PIPELINE_VERSION into the PDF's producer/creator metadata so the
+    durable artifact itself records which extraction iteration produced it.
     """
     images = []
     for frame_path, _ in unique_slides:
@@ -168,7 +178,11 @@ def combine_to_pdf(unique_slides, output_pdf, slide_region=None):
         print("  WARNING: No unique slides found")
         return None
 
-    images[0].save(output_pdf, save_all=True, append_images=images[1:])
+    producer = f"speaker-toolkit/video-slide-extraction {PIPELINE_VERSION}"
+    images[0].save(
+        output_pdf, save_all=True, append_images=images[1:],
+        producer=producer, creator=producer,
+    )
     size_mb = os.path.getsize(output_pdf) / (1024 * 1024)
     print(f"  Saved PDF: {output_pdf} ({len(images)} pages, {size_mb:.1f} MB)")
     return output_pdf
@@ -217,6 +231,7 @@ def extract_slides_from_video(video_path, output_dir, youtube_id,
 
     result = {
         "slide_source": "video_extracted",
+        "pipeline_version": PIPELINE_VERSION,
         "total_frames_extracted": len(frames),
         "unique_slides_count": len(unique_slides),
         "hash_threshold_used": hash_threshold,
@@ -234,6 +249,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="Extract slide images from conference talk videos."
     )
+    parser.add_argument("--version", action="version",
+                        version=f"%(prog)s {PIPELINE_VERSION}")
     parser.add_argument("video", help="Path to downloaded MP4 video")
     parser.add_argument("outdir", help="Directory for intermediate files and output PDF")
     parser.add_argument("youtube_id", help="YouTube video ID (used for naming)")
