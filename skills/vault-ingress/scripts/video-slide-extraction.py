@@ -23,15 +23,34 @@ import glob
 import json
 import os
 import sys
-from pathlib import Path
 
-# Check dependencies
+# Pipeline version — stamped into every video-extracted vault entry (DB row +
+# PDF metadata) so artifacts record which extraction iteration produced them.
+# Bump this whenever extraction BEHAVIOR changes: default --fps or --threshold,
+# the download tier, region-detection logic, dedup hashing, or PDF assembly.
+# See skills/vault-ingress/references/video-slide-extraction.md ("Pipeline
+# Versioning") for the policy.
+PIPELINE_VERSION = "0.7.0"
+
+# Shape version of the structured_data.video_extraction record (distinct from
+# PIPELINE_VERSION, which tracks extractor behavior — this tracks the record's
+# field shape). Bump on any field add/remove/rename. Records written before this
+# field existed have no schema_version and are read as the legacy shape (0).
+# See skills/vault-ingress/references/schemas-db.md ("Video Extraction Output Schema").
+SCHEMA_VERSION = 1
+
+# Heavy deps are only needed for the extraction pipeline itself. Import them
+# without exiting on failure so the module stays importable (and --version /
+# --help stay answerable) in a minimal environment. main() enforces presence
+# before any extraction runs.
 try:
     import imagehash
     from PIL import Image
-except ImportError:
-    print("ERROR: Install dependencies: pip install imagehash Pillow")
-    sys.exit(1)
+    _DEPS_ERROR = None
+except ImportError as exc:
+    imagehash = None
+    Image = None
+    _DEPS_ERROR = exc
 
 
 def extract_frames(video_path, frames_dir, fps=0.5):
@@ -158,6 +177,9 @@ def combine_to_pdf(unique_slides, output_pdf, slide_region=None):
     Saves FULL (uncropped) frames — the crop region was only used for
     hash comparison. The full frame preserves speaker PiP context which
     can be useful for analyzing co-presentation dynamics.
+
+    Stamps PIPELINE_VERSION into the PDF's producer/creator metadata so the
+    durable artifact itself records which extraction iteration produced it.
     """
     images = []
     for frame_path, _ in unique_slides:
@@ -168,7 +190,11 @@ def combine_to_pdf(unique_slides, output_pdf, slide_region=None):
         print("  WARNING: No unique slides found")
         return None
 
-    images[0].save(output_pdf, save_all=True, append_images=images[1:])
+    producer = f"speaker-toolkit/video-slide-extraction {PIPELINE_VERSION}"
+    images[0].save(
+        output_pdf, save_all=True, append_images=images[1:],
+        producer=producer, creator=producer,
+    )
     size_mb = os.path.getsize(output_pdf) / (1024 * 1024)
     print(f"  Saved PDF: {output_pdf} ({len(images)} pages, {size_mb:.1f} MB)")
     return output_pdf
@@ -217,6 +243,8 @@ def extract_slides_from_video(video_path, output_dir, youtube_id,
 
     result = {
         "slide_source": "video_extracted",
+        "schema_version": SCHEMA_VERSION,
+        "pipeline_version": PIPELINE_VERSION,
         "total_frames_extracted": len(frames),
         "unique_slides_count": len(unique_slides),
         "hash_threshold_used": hash_threshold,
@@ -234,14 +262,33 @@ def main():
     parser = argparse.ArgumentParser(
         description="Extract slide images from conference talk videos."
     )
-    parser.add_argument("video", help="Path to downloaded MP4 video")
-    parser.add_argument("outdir", help="Directory for intermediate files and output PDF")
-    parser.add_argument("youtube_id", help="YouTube video ID (used for naming)")
+    parser.add_argument("--version", action="store_true",
+                        help="Print the pipeline version as JSON and exit")
+    parser.add_argument("video", nargs="?", help="Path to downloaded MP4 video")
+    parser.add_argument("outdir", nargs="?",
+                        help="Directory for intermediate files and output PDF")
+    parser.add_argument("youtube_id", nargs="?",
+                        help="YouTube video ID (used for naming)")
     parser.add_argument("--fps", type=float, default=0.5,
                         help="Frames per second to extract (default: 0.5)")
     parser.add_argument("--threshold", type=int, default=8,
                         help="Perceptual hash distance threshold (default: 8)")
     args = parser.parse_args()
+
+    # Structured version query — JSON, not prose, per script-delegation. Handled
+    # before the dependency guard so the version stays queryable in a minimal env.
+    if args.version:
+        print(json.dumps({"pipeline_version": PIPELINE_VERSION}))
+        return
+
+    if None in (args.video, args.outdir, args.youtube_id):
+        parser.error("video, outdir, and youtube_id are required")
+
+    if _DEPS_ERROR is not None:
+        print(json.dumps(
+            {"error": "Install dependencies: pip install imagehash Pillow"}),
+            file=sys.stderr)
+        sys.exit(1)
 
     os.makedirs(args.outdir, exist_ok=True)
     result = extract_slides_from_video(

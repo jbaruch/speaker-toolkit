@@ -194,6 +194,8 @@ Stored in `structured_data.video_extraction` on the talk entry:
 ```json
 {
   "slide_source": "video_extracted",
+  "schema_version": 1,
+  "pipeline_version": "0.7.0",
   "total_frames_extracted": 1500,
   "unique_slides_count": 85,
   "hash_threshold_used": 8,
@@ -203,6 +205,22 @@ Stored in `structured_data.video_extraction` on the talk entry:
   "fps_used": 0.5
 }
 ```
+
+The owner of this record's shape is `skills/vault-ingress/scripts/video-slide-extraction.py`.
+Two version fields track two independent axes:
+
+- `schema_version` (integer) — the record's **field shape**. Current value: `1`. The
+  script bumps it on any field add/remove/rename. **Reader contract:** a record with no
+  `schema_version` is the legacy pre-versioning shape — treat it as `schema_version 0`
+  and read the fields that are present; a record with a `schema_version` higher than the
+  reader accepts is "no usable prior state" (re-extract to refresh). Readers never
+  migrate in place — the owner script rewrites the record on the next extraction.
+- `pipeline_version` (string) — the extractor **behavior** (`PIPELINE_VERSION`) that
+  produced the entry. The script bumps it when extraction behavior changes (see
+  `skills/vault-ingress/references/video-slide-extraction.md` — "Pipeline Versioning").
+  The same value is
+  mirrored in the output PDF's producer/creator metadata. A pre-versioning entry has no
+  `pipeline_version`.
 
 The resulting PDF is named `{youtube_id}.pdf` in the `slides/` directory and analyzed
 the same as a Google Drive PDF for dimension 13 (slide design patterns).

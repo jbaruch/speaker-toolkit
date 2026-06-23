@@ -107,8 +107,30 @@ Update the talk's DB entry: `slide_source: "video_extracted"`,
 | Output | Location | Purpose |
 |--------|----------|---------|
 | Slide PDF | `slides/{youtube_id}.pdf` | Visual analysis (same as Google Drive PDFs) |
-| Extraction metadata | `structured_data.video_extraction` | Frame counts, region detection, threshold |
+| Extraction metadata | `structured_data.video_extraction` | Frame counts, region detection, threshold, pipeline version |
 | Intermediate frames | Deleted after PDF generation | Saves disk space |
+
+## Pipeline Versioning
+
+The extractor carries a `PIPELINE_VERSION` constant (top of
+`skills/vault-ingress/scripts/video-slide-extraction.py`). It is stamped into every
+video-extracted artifact in two places:
+
+- **Vault DB row** — the script's JSON output includes `pipeline_version`, which
+  lands in `structured_data.video_extraction.pipeline_version` when you record
+  the DB entry.
+- **PDF metadata** — the producer/creator fields of `slides/{youtube_id}.pdf`
+  read `speaker-toolkit/video-slide-extraction <version>`.
+
+Query the running version with `video-slide-extraction.py --version`, which
+prints `{"pipeline_version": "<version>"}` (JSON, queryable without the
+extraction dependencies installed).
+
+**Bump policy:** increment `PIPELINE_VERSION` in the same change that alters
+extraction *behavior* — the default `--fps` or `--threshold`, the 720p download
+tier, region-detection logic, the dedup hashing, or PDF assembly. A bump pairs
+with the behavior change so re-ingested vaults are comparable across iterations.
+Pure refactors, comments, and doc edits that don't change output do not bump.
 
 ## Layout Detection Heuristics
 
