@@ -122,7 +122,9 @@ artifact in two places:
 - **PDF metadata** — the producer/creator fields of `slides/{youtube_id}.pdf`
   read `speaker-toolkit/video-slide-extraction <version>`.
 
-Query the running version with `video-slide-extraction.py --version`.
+Query the running version with `video-slide-extraction.py --version`, which
+prints `{"pipeline_version": "<version>"}` (JSON, queryable without the
+extraction dependencies installed).
 
 **Bump policy:** increment `PIPELINE_VERSION` in the same change that alters
 extraction *behavior* — the default `--fps` or `--threshold`, the 720p download

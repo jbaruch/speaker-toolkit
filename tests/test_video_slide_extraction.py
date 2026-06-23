@@ -1,11 +1,18 @@
 """Tests for video-slide-extraction.py — frame extraction, dedup, PDF output."""
 
+import json
 import os
 import shutil
 import subprocess
+import sys
 
 import pytest
 from PIL import Image
+
+SCRIPT_PATH = os.path.join(
+    os.path.dirname(__file__), os.pardir,
+    "skills", "vault-ingress", "scripts", "video-slide-extraction.py",
+)
 
 
 def test_crop_frame_none_region(video_slide_extraction):
@@ -82,6 +89,16 @@ def test_pipeline_version_is_semver(video_slide_extraction):
     assert all(p.isdigit() for p in parts)
 
 
+def test_version_flag_emits_json(video_slide_extraction):
+    """`--version` prints structured JSON (not prose) per script-delegation."""
+    proc = subprocess.run(
+        [sys.executable, SCRIPT_PATH, "--version"],
+        capture_output=True, text=True, check=True,
+    )
+    payload = json.loads(proc.stdout)
+    assert payload == {"pipeline_version": video_slide_extraction.PIPELINE_VERSION}
+
+
 def test_combine_to_pdf_stamps_version_metadata(video_slide_extraction, tmp_path):
     """The output PDF records PIPELINE_VERSION in its producer/creator metadata."""
     frames = []
@@ -94,7 +111,8 @@ def test_combine_to_pdf_stamps_version_metadata(video_slide_extraction, tmp_path
     output = str(tmp_path / "slides.pdf")
     video_slide_extraction.combine_to_pdf(frames, output)
 
-    raw = open(output, "rb").read()
+    with open(output, "rb") as f:
+        raw = f.read()
     version = video_slide_extraction.PIPELINE_VERSION
     # Pillow serializes PDF metadata strings as UTF-16BE; match either encoding.
     def present(s):
