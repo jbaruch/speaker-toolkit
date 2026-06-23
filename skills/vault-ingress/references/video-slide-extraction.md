@@ -113,8 +113,8 @@ Update the talk's DB entry: `slide_source: "video_extracted"`,
 ## Pipeline Versioning
 
 The extractor carries a `PIPELINE_VERSION` constant (top of
-`scripts/video-slide-extraction.py`). It is stamped into every video-extracted
-artifact in two places:
+`skills/vault-ingress/scripts/video-slide-extraction.py`). It is stamped into every
+video-extracted artifact in two places:
 
 - **Vault DB row** — the script's JSON output includes `pipeline_version`, which
   lands in `structured_data.video_extraction.pipeline_version` when you record

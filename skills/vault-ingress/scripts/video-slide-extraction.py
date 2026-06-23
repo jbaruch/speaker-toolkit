@@ -28,14 +28,15 @@ import sys
 # PDF metadata) so artifacts record which extraction iteration produced them.
 # Bump this whenever extraction BEHAVIOR changes: default --fps or --threshold,
 # the download tier, region-detection logic, dedup hashing, or PDF assembly.
-# See references/video-slide-extraction.md ("Pipeline Versioning") for the policy.
+# See skills/vault-ingress/references/video-slide-extraction.md ("Pipeline
+# Versioning") for the policy.
 PIPELINE_VERSION = "0.7.0"
 
 # Shape version of the structured_data.video_extraction record (distinct from
 # PIPELINE_VERSION, which tracks extractor behavior — this tracks the record's
 # field shape). Bump on any field add/remove/rename. Records written before this
 # field existed have no schema_version and are read as the legacy shape (0).
-# See references/schemas-db.md ("Video Extraction Output Schema").
+# See skills/vault-ingress/references/schemas-db.md ("Video Extraction Output Schema").
 SCHEMA_VERSION = 1
 
 # Heavy deps are only needed for the extraction pipeline itself. Import them

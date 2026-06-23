@@ -206,8 +206,8 @@ Stored in `structured_data.video_extraction` on the talk entry:
 }
 ```
 
-The owner of this record's shape is `scripts/video-slide-extraction.py`. Two version
-fields track two independent axes:
+The owner of this record's shape is `skills/vault-ingress/scripts/video-slide-extraction.py`.
+Two version fields track two independent axes:
 
 - `schema_version` (integer) — the record's **field shape**. Current value: `1`. The
   script bumps it on any field add/remove/rename. **Reader contract:** a record with no
@@ -217,7 +217,8 @@ fields track two independent axes:
   migrate in place — the owner script rewrites the record on the next extraction.
 - `pipeline_version` (string) — the extractor **behavior** (`PIPELINE_VERSION`) that
   produced the entry. The script bumps it when extraction behavior changes (see
-  `references/video-slide-extraction.md` — "Pipeline Versioning"). The same value is
+  `skills/vault-ingress/references/video-slide-extraction.md` — "Pipeline Versioning").
+  The same value is
   mirrored in the output PDF's producer/creator metadata. A pre-versioning entry has no
   `pipeline_version`.
 
