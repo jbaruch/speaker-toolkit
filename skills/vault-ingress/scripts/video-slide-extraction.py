@@ -31,6 +31,13 @@ import sys
 # See references/video-slide-extraction.md ("Pipeline Versioning") for the policy.
 PIPELINE_VERSION = "0.7.0"
 
+# Shape version of the structured_data.video_extraction record (distinct from
+# PIPELINE_VERSION, which tracks extractor behavior — this tracks the record's
+# field shape). Bump on any field add/remove/rename. Records written before this
+# field existed have no schema_version and are read as the legacy shape (0).
+# See references/schemas-db.md ("Video Extraction Output Schema").
+SCHEMA_VERSION = 1
+
 # Heavy deps are only needed for the extraction pipeline itself. Import them
 # without exiting on failure so the module stays importable (and --version /
 # --help stay answerable) in a minimal environment. main() enforces presence
@@ -235,6 +242,7 @@ def extract_slides_from_video(video_path, output_dir, youtube_id,
 
     result = {
         "slide_source": "video_extracted",
+        "schema_version": SCHEMA_VERSION,
         "pipeline_version": PIPELINE_VERSION,
         "total_frames_extracted": len(frames),
         "unique_slides_count": len(unique_slides),

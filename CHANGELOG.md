@@ -10,9 +10,12 @@ pre-split monolith's ≈`0.6.0`) is stamped into the vault DB row
 (`structured_data.video_extraction.pipeline_version`) and the output PDF's
 producer/creator metadata. A `--version` flag prints `{"pipeline_version": "<version>"}`
 (JSON, queryable without the extraction dependencies installed). The dependency import was
-deferred so the version/help paths answer in a minimal environment.
-`references/video-slide-extraction.md` documents a bump-on-behavior-change policy and
-`references/schemas-db.md` records the new field. Resolves #103.
+deferred so the version/help paths answer in a minimal environment. The
+`structured_data.video_extraction` record also gains a `schema_version` (record-shape
+version, distinct from the behavior-tracking `pipeline_version`) with a documented
+reader/default contract for legacy entries. `references/video-slide-extraction.md`
+documents a bump-on-behavior-change policy and `references/schemas-db.md` records both
+fields and the reader contract. Resolves #103.
 
 ### fix(illustrations) — masked/composited build edits keep static backgrounds pixel-stable
 
