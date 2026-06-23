@@ -1,5 +1,19 @@
 # Changelog
 
+### feat(vault-ingress) — version the video slide-extraction pipeline
+
+The video slide-extraction pipeline (`video-slide-extraction.py`) carried no version
+marker, so video-extracted vault artifacts couldn't record which extraction iteration
+produced them — and output depends on tunable knobs (`--fps`, `--threshold`, the 720p
+download tier). A new `PIPELINE_VERSION` constant (starting at `0.7.0`, successor to the
+pre-split monolith's ≈`0.6.0`) is stamped into the vault DB row
+(`structured_data.video_extraction.pipeline_version`) and the output PDF's
+producer/creator metadata. A `--version` flag prints `{"pipeline_version": "<version>"}`
+(JSON, queryable without the extraction dependencies installed). The dependency import was
+deferred so the version/help paths answer in a minimal environment.
+`references/video-slide-extraction.md` documents a bump-on-behavior-change policy and
+`references/schemas-db.md` records the new field. Resolves #103.
+
 ### fix(illustrations) — masked/composited build edits keep static backgrounds pixel-stable
 
 Backward-chaining progressive-reveal builds (`--build`) sent the whole frame to the image

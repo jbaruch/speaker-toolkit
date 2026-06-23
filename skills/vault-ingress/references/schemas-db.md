@@ -194,6 +194,7 @@ Stored in `structured_data.video_extraction` on the talk entry:
 ```json
 {
   "slide_source": "video_extracted",
+  "pipeline_version": "0.7.0",
   "total_frames_extracted": 1500,
   "unique_slides_count": 85,
   "hash_threshold_used": 8,
@@ -203,6 +204,14 @@ Stored in `structured_data.video_extraction` on the talk entry:
   "fps_used": 0.5
 }
 ```
+
+`pipeline_version` records the `PIPELINE_VERSION` of `video-slide-extraction.py` that
+produced the entry. The owner of this shape is the video-extraction script; it bumps the
+value whenever extraction behavior changes (see
+`references/video-slide-extraction.md` — "Pipeline Versioning"). Readers treat the field
+as additive: an older entry written before the field existed has no `pipeline_version`,
+which means "produced by a pre-versioning iteration." The same value is mirrored in the
+output PDF's producer/creator metadata.
 
 The resulting PDF is named `{youtube_id}.pdf` in the `slides/` directory and analyzed
 the same as a Google Drive PDF for dimension 13 (slide design patterns).
