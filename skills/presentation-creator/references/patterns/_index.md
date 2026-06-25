@@ -4,7 +4,7 @@ Structured reference taxonomy primarily based on *Presentation Patterns: Techniq
 Crafting Better Presentations* (Neal Ford, Matthew McCullough, Nathaniel Schutta, 2013),
 with supplementary patterns and reinforcements from *Presentation Zen* (Garr Reynolds,
 2nd ed., 2012) and *Resonate: Present Visual Stories that Transform Audiences* (Nancy
-Duarte, 2010). Contains 78 named patterns and 25 antipatterns organized by presentation
+Duarte, 2010). Contains 78 named patterns and 26 antipatterns organized by presentation
 lifecycle phase. See the Sources section at the end of this file for full citations.
 
 **This is the primary entry point.** The agent reads this file first, then drills into
@@ -110,7 +110,7 @@ combinatorics are needed.
 | slideuments | Slideuments | antipattern | 8, 14 | guardrails | infodeck, charred-trail, gradual-consistency |
 | dead-demo | Dead Demo | antipattern | 11, 14 | guardrails | live-demo, a-la-carte-content |
 
-### Deliver Phase (21 patterns + 12 antipatterns)
+### Deliver Phase (21 patterns + 13 antipatterns)
 
 | ID | Name | Type | Vault Dims | Creator Phases | Related |
 |----|------|------|------------|----------------|---------|
@@ -147,6 +147,7 @@ combinatorics are needed.
 | dual-headed-monster | Dual-Headed Monster | antipattern | 4, 14 | guardrails | live-on-tape, weatherman |
 | tower-of-babble | Tower of Babble | antipattern | 7, 9, 14 | guardrails | know-your-audience, leet-grammars |
 | lipstick-on-a-pig | Lipstick on a Pig | antipattern | 8, 9, 14 | guardrails | narrative-arc |
+| flyover | Flyover | antipattern | 4, 14 | guardrails | know-your-audience, seeding-satisfaction, mentor |
 
 ---
 
@@ -209,7 +210,7 @@ Build patterns — applied during outline writing.
 ### Phase 4: Guardrails
 Antipatterns as warnings — scanned against the outline.
 
-**All 25 antipatterns**, with two flag types:
+**All 26 antipatterns**, with two flag types:
 - `[RECURRING]` — from `pattern_profile.antipattern_frequency` (speaker-specific)
 - `[CONTEXTUAL]` — detected in the current outline (new detection)
 
@@ -244,7 +245,7 @@ Reverse lookup: which patterns relate to each of the 14 rhetoric analysis dimens
 | 1 | Opening Pattern | preroll, opening-punch, call-to-adventure | — |
 | 2 | Narrative Structure | narrative-arc, fourthought, triad, expansion-joints, talklet, context-keeper, breadcrumbs, bookends, intermezzi, foreshadowing, backtracking, a-la-carte-content, concurrent-creation, lightning-talk, sparkline, call-to-adventure, master-story, concrete-before-abstract | abstract-attorney, celery |
 | 3 | Humor & Wit | brain-breaks, entertainment, star-moment | alienating-artifact |
-| 4 | Audience Interaction | know-your-audience, social-media-advertising, a-la-carte-content, posse, seeding-satisfaction, seeding-the-first-question, emotional-state, make-it-rain, echo-chamber, red-yellow-green, greek-chorus, opening-punch, call-to-action, inoculation | bunker, hecklers, backchannel, negative-ignorance, dual-headed-monster |
+| 4 | Audience Interaction | know-your-audience, social-media-advertising, a-la-carte-content, posse, seeding-satisfaction, seeding-the-first-question, emotional-state, make-it-rain, echo-chamber, red-yellow-green, greek-chorus, opening-punch, call-to-action, inoculation | bunker, hecklers, backchannel, negative-ignorance, dual-headed-monster, flyover |
 | 5 | Transition Techniques | narrative-arc, foreshadowing, backtracking, context-keeper, bookends, intermezzi, soft-transitions, cave-painting, sparkline, new-bliss, star-moment, master-story | — |
 | 6 | Closing Pattern | coda, crawling-credits, call-to-action, new-bliss | — |
 | 7 | Verbal Signatures | leet-grammars, peer-review, breathing-room, echo-chamber, master-story | hiccup-words, borrowed-shoes, tower-of-babble |
@@ -254,7 +255,7 @@ Reverse lookup: which patterns relate to each of the 14 rhetoric analysis dimens
 | 11 | Technical Content Delivery | live-demo, lipsync, traveling-highlights, crawling-code, emergence, mentor, lightsaber, concrete-before-abstract | dead-demo |
 | 12 | Pacing Clues | crucible, expansion-joints, talklet, brain-breaks, lightning-talk, takahashi, carnegie-hall, breathing-room, weatherman, screen-blackout | shortchanged, disowning-your-topic |
 | 13 | Slide Design Patterns | unifying-visual-theme, takahashi, cave-painting, composite-animation, vacation-photos, defy-defaults, analog-noise, gradual-consistency, charred-trail, exuberant-title-top, invisibility, context-keeper, breadcrumbs, bookends, soft-transitions, intermezzi, preroll, crawling-credits, lipsync, traveling-highlights, crawling-code, emergence, screen-blackout, star-moment | cookie-cutter, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, laser-weapons |
-| 14 | Areas for Improvement | crucible, preparation, carnegie-hall, shoeless, stakeout | abstract-attorney, alienating-artifact, celery, injured-outlines, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, borrowed-shoes, slideuments, dead-demo, shortchanged, hiccup-words, disowning-your-topic, going-meta, bunker, hecklers, backchannel, laser-weapons, negative-ignorance, dual-headed-monster, tower-of-babble, lipstick-on-a-pig |
+| 14 | Areas for Improvement | crucible, preparation, carnegie-hall, shoeless, stakeout | abstract-attorney, alienating-artifact, celery, injured-outlines, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, borrowed-shoes, slideuments, dead-demo, shortchanged, hiccup-words, disowning-your-topic, going-meta, bunker, hecklers, backchannel, laser-weapons, negative-ignorance, dual-headed-monster, tower-of-babble, lipstick-on-a-pig, flyover |
 
 ---
 
@@ -295,12 +296,12 @@ they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation 
 
 ## Summary Statistics
 
-- **Total entries:** 103 (78 patterns + 25 antipatterns)
-- **Observable (vault-scorable):** 92 (70 patterns + 22 antipatterns)
+- **Total entries:** 104 (78 patterns + 26 antipatterns)
+- **Observable (vault-scorable):** 93 (70 patterns + 23 antipatterns)
 - **Unobservable (go-live checklist):** 11 (8 patterns + 3 antipatterns)
 - **Prepare phase:** 22 (19 patterns + 3 antipatterns)
 - **Build phase:** 48 (38 patterns + 10 antipatterns)
-- **Deliver phase:** 33 (21 patterns + 12 antipatterns)
+- **Deliver phase:** 34 (21 patterns + 13 antipatterns)
 
 ## Sources
 

@@ -1,5 +1,19 @@
 # Changelog
 
+### feat(presentation-creator) — add the Flyover antipattern (audience condescension)
+
+The Presentation Patterns taxonomy had no entry for the speaker who treats the room in
+front of them as "flyover country" — diminishing the local audience or region while
+valorizing their own home region/employer ("you might not have noticed it here, but where
+I'm from it's a real thing"). The behavior sat in the gap between Negative Ignorance and
+Alienating Artifact with no first-class name. Adds `deliver/_anti_flyover.md` (deliver
+phase, dimensions 4 + 14, inverse of Know Your Audience) and wires it into `_index.md`
+(catalog row, dimension maps, summary statistics). Bumps the taxonomy to 104 entries
+(78 patterns + 26 antipatterns); the `outline_schema.py` antipattern enum auto-discovers
+the new file and its count test is updated. Also reconciles a pre-existing README
+miscount (Build phase listed 47/37 where the taxonomy holds 48/38) so the README totals
+match `_index.md` at 104 entries / 93 observable.
+
 ### feat(vault-ingress) — version the video slide-extraction pipeline
 
 The video slide-extraction pipeline (`video-slide-extraction.py`) carried no version
