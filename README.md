@@ -392,7 +392,7 @@ that leave no trace in recordings).
 
 **How it integrates:**
 
-| Integration point | Observable patterns (91) | Unobservable patterns (11) |
+| Integration point | Observable patterns (93) | Unobservable patterns (11) |
 |---|---|---|
 | **Vault scoring** (Step 3 B2) | Scored per talk, aggregated into `pattern_profile` | Excluded from scoring |
 | **Creator Phase 2** | 4-tier Pattern Strategy (Signature / Contextual / New to You / Shake It Up) | Included in recommendations |

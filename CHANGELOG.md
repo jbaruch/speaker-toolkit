@@ -14,6 +14,8 @@ the new file and its count test is updated. Also reconciles a pre-existing READM
 miscount (Build phase listed 47/37 where the taxonomy holds 48/38) so the README totals
 match `_index.md` at 104 entries / 93 observable.
 
+### feat(vault-ingress) — version the video slide-extraction pipeline
+
 The video slide-extraction pipeline (`video-slide-extraction.py`) carried no version
 marker, so video-extracted vault artifacts couldn't record which extraction iteration
 produced them — and output depends on tunable knobs (`--fps`, `--threshold`, the 720p
