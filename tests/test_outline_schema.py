@@ -32,9 +32,9 @@ def test_fixture_loads_clean(outline_schema):
 
 
 def test_pattern_enum_discovered(outline_schema):
-    # 78 patterns + 25 antipatterns per _index.md taxonomy
+    # 78 patterns + 26 antipatterns per _index.md taxonomy
     assert len(outline_schema.PATTERN_IDS) == 78
-    assert len(outline_schema.ANTIPATTERN_IDS) == 25
+    assert len(outline_schema.ANTIPATTERN_IDS) == 26
     assert "sparkline" in outline_schema.PATTERN_IDS
     assert "slideuments" in outline_schema.ANTIPATTERN_IDS
 
