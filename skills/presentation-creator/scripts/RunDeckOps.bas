@@ -45,13 +45,20 @@ Attribute VB_Name = "DeckOps"
 '
 ' ERROR-HANDLING CONTRACT (applies to every Public macro below):
 ' outer-boundary-process-contract — each Public macro is the OUTERMOST boundary,
-' invoked from AppleScript which reads the return code, and the shell wrapper
+' invoked from AppleScript which reads the return value, and the shell wrapper
 ' treats a MISSING output file as failure. VBA has no typed exception catching,
 ' so each macro uses a catch-all `On Error GoTo FailN`. Caller's silent-failure
-' shape: no return code + no output file. What the catch emits: a MsgBox + a -1
-' return so the caller observes the failure. Why propagation breaks the contract:
-' an unhandled VBA error would leave the deck open with no return code and no
-' output, silently breaking the AppleScript/shell failure signal.
+' shape: no return value + no output file. What the catch emits: each macro is
+' typed `As Variant` and RETURNS the diagnostic string "ERROR: <macro> failed at
+' [<token>]: <Err.Number> - <Err.Description>"; the success path returns the
+' numeric count. The driver surfaces an "ERROR:"-prefixed return as an osascript
+' error, so Err.Description reaches the CLI instead of dying in a dialog. A MsgBox
+' here would be FATAL: an osascript-driven run has no human to dismiss the modal,
+' so it hangs the call and then blocks every subsequent macro run (PowerPoint
+' error -18) — that regression is why this layer never calls MsgBox. Why
+' propagation breaks the contract: an unhandled VBA error would leave the deck
+' open with no return value and no output, silently breaking the AppleScript/shell
+' failure signal.
 ' =====================================================================
 Option Explicit
 
@@ -59,7 +66,7 @@ Public Function RunDeckOps(ByVal basePath As String, _
                            ByVal outPath As String, _
                            ByVal importSpec As String, _
                            ByVal orderStr As String, _
-                           ByVal replaceStr As String) As Long
+                           ByVal replaceStr As String) As Variant
     Dim curTok As String
     Dim base As Presentation
     ' outer-boundary-process-contract — see the module-header error-handling contract.
@@ -149,16 +156,14 @@ Public Function RunDeckOps(ByVal basePath As String, _
 
 Fail:
     Dim em As String
-    em = "RunDeckOps failed at [" & curTok & "]:" & vbCr & _
-         Err.Number & " - " & Err.Description
+    em = "ERROR: RunDeckOps failed at [" & curTok & "]: " & Err.Number & " - " & Err.Description
     On Error Resume Next
     If Not base Is Nothing Then
         base.Saved = msoTrue
         base.Close
     End If
     On Error GoTo 0
-    MsgBox em, vbCritical, "RunDeckOps"
-    RunDeckOps = -1
+    RunDeckOps = em
 End Function
 
 ' Create a 1-slide deck: clone a comic TEMPLATE slide (inherits the layout's
@@ -173,7 +178,7 @@ Public Function MakeBgImageSlide(ByVal basePath As String, _
                                  ByVal templateNum As String, _
                                  ByVal imagePath As String, _
                                  ByVal titleText As String, _
-                                 ByVal outPath As String) As Long
+                                 ByVal outPath As String) As Variant
     Dim curTok As String
     Dim base As Presentation
     ' outer-boundary-process-contract — see the module-header error-handling contract.
@@ -234,16 +239,14 @@ Public Function MakeBgImageSlide(ByVal basePath As String, _
 
 Fail2:
     Dim em As String
-    em = "MakeBgImageSlide failed at [" & curTok & "]:" & vbCr & _
-         Err.Number & " - " & Err.Description
+    em = "ERROR: MakeBgImageSlide failed at [" & curTok & "]: " & Err.Number & " - " & Err.Description
     On Error Resume Next
     If Not base Is Nothing Then
         base.Saved = msoTrue
         base.Close
     End If
     On Error GoTo 0
-    MsgBox em, vbCritical, "MakeBgImageSlide"
-    MakeBgImageSlide = -1
+    MakeBgImageSlide = em
 End Function
 
 ' Set per-slide BACKGROUND FILLS in bulk — the creation-time counterpart of
@@ -258,7 +261,7 @@ End Function
 ' specStr = "<1-based slide #>=/posix/path[;<#>=/posix/path2 ...]"
 Public Function ApplyBackgrounds(ByVal basePath As String, _
                                  ByVal outPath As String, _
-                                 ByVal specStr As String) As Long
+                                 ByVal specStr As String) As Variant
     Dim curTok As String
     Dim base As Presentation
     ' outer-boundary-process-contract — see the module-header error-handling contract.
@@ -300,16 +303,14 @@ Public Function ApplyBackgrounds(ByVal basePath As String, _
 
 Fail3:
     Dim em As String
-    em = "ApplyBackgrounds failed at [" & curTok & "]:" & vbCr & _
-         Err.Number & " - " & Err.Description
+    em = "ERROR: ApplyBackgrounds failed at [" & curTok & "]: " & Err.Number & " - " & Err.Description
     On Error Resume Next
     If Not base Is Nothing Then
         base.Saved = msoTrue
         base.Close
     End If
     On Error GoTo 0
-    MsgBox em, vbCritical, "ApplyBackgrounds"
-    ApplyBackgrounds = -1
+    ApplyBackgrounds = em
 End Function
 
 ' Expand progressive-reveal BUILD sequences: replace each parent slide with its
@@ -334,7 +335,7 @@ End Function
 '       {basePath, outPath, packedSpec}
 Public Function ExpandBuilds(ByVal basePath As String, _
                              ByVal outPath As String, _
-                             ByVal packedSpec As String) As Long
+                             ByVal packedSpec As String) As Variant
     Dim curTok As String
     Dim base As Presentation
     ' outer-boundary-process-contract — see the module-header error-handling contract.
@@ -387,16 +388,14 @@ Public Function ExpandBuilds(ByVal basePath As String, _
 
 FailEB:
     Dim em As String
-    em = "ExpandBuilds failed at [" & curTok & "]:" & vbCr & _
-         Err.Number & " - " & Err.Description
+    em = "ERROR: ExpandBuilds failed at [" & curTok & "]: " & Err.Number & " - " & Err.Description
     On Error Resume Next
     If Not base Is Nothing Then
         base.Saved = msoTrue
         base.Close
     End If
     On Error GoTo 0
-    MsgBox em, vbCritical, "ExpandBuilds"
-    ExpandBuilds = -1
+    ExpandBuilds = em
 End Function
 
 ' Set per-slide speaker notes via real PowerPoint, which serializes valid notes
@@ -411,7 +410,7 @@ End Function
 '       {basePath, outPath, packedNotes}
 Public Function SetSpeakerNotes(ByVal basePath As String, _
                                 ByVal outPath As String, _
-                                ByVal packedNotes As String) As Long
+                                ByVal packedNotes As String) As Variant
     Dim curTok As String
     Dim base As Presentation
     ' outer-boundary-process-contract — see the module-header error-handling contract.
@@ -452,16 +451,14 @@ Public Function SetSpeakerNotes(ByVal basePath As String, _
 
 Fail4:
     Dim em As String
-    em = "SetSpeakerNotes failed at [" & curTok & "]:" & vbCr & _
-         Err.Number & " - " & Err.Description
+    em = "ERROR: SetSpeakerNotes failed at [" & curTok & "]: " & Err.Number & " - " & Err.Description
     On Error Resume Next
     If Not base Is Nothing Then
         base.Saved = msoTrue
         base.Close
     End If
     On Error GoTo 0
-    MsgBox em, vbCritical, "SetSpeakerNotes"
-    SetSpeakerNotes = -1
+    SetSpeakerNotes = em
 End Function
 
 ' Write noteText into a slide's notes body placeholder (creating the notes page
@@ -504,7 +501,7 @@ End Sub
 Public Function MakePlaceholderSlide(ByVal basePath As String, _
                                      ByVal outPath As String, _
                                      ByVal titleText As String, _
-                                     ByVal subtitleText As String) As Long
+                                     ByVal subtitleText As String) As Variant
     Dim curTok As String
     Dim base As Presentation
     ' outer-boundary-process-contract — see the module-header error-handling contract.
@@ -582,16 +579,14 @@ Public Function MakePlaceholderSlide(ByVal basePath As String, _
 
 Fail6:
     Dim em As String
-    em = "MakePlaceholderSlide failed at [" & curTok & "]:" & vbCr & _
-         Err.Number & " - " & Err.Description
+    em = "ERROR: MakePlaceholderSlide failed at [" & curTok & "]: " & Err.Number & " - " & Err.Description
     On Error Resume Next
     If Not base Is Nothing Then
         base.Saved = msoTrue
         base.Close
     End If
     On Error GoTo 0
-    MsgBox em, vbCritical, "MakePlaceholderSlide"
-    MakePlaceholderSlide = -1
+    MakePlaceholderSlide = em
 End Function
 
 ' Insert a QR PNG on the given slides. Python identifies existing QR pictures by
@@ -610,7 +605,7 @@ End Function
 Public Function InsertQR(ByVal basePath As String, _
                          ByVal outPath As String, _
                          ByVal pngPath As String, _
-                         ByVal slidesSpec As String) As Long
+                         ByVal slidesSpec As String) As Variant
     Dim curTok As String
     Dim base As Presentation
     ' outer-boundary-process-contract — see the module-header error-handling contract.
@@ -697,16 +692,14 @@ Public Function InsertQR(ByVal basePath As String, _
 
 Fail7:
     Dim em As String
-    em = "InsertQR failed at [" & curTok & "]:" & vbCr & _
-         Err.Number & " - " & Err.Description
+    em = "ERROR: InsertQR failed at [" & curTok & "]: " & Err.Number & " - " & Err.Description
     On Error Resume Next
     If Not base Is Nothing Then
         base.Saved = msoTrue
         base.Close
     End If
     On Error GoTo 0
-    MsgBox em, vbCritical, "InsertQR"
-    InsertQR = -1
+    InsertQR = em
 End Function
 
 ' Build a whole deck from a flat op sequence via the real PowerPoint app — the
@@ -732,7 +725,7 @@ End Function
 '   run VB macro macro name "BuildDeck" list of parameters {basePath, outPath, opsText}
 Public Function BuildDeck(ByVal basePath As String, _
                           ByVal outPath As String, _
-                          ByVal opsText As String) As Long
+                          ByVal opsText As String) As Variant
     Dim curTok As String
     Dim base As Presentation
     ' outer-boundary-process-contract — see the module-header error-handling contract.
@@ -847,16 +840,14 @@ Public Function BuildDeck(ByVal basePath As String, _
 
 Fail8:
     Dim em As String
-    em = "BuildDeck failed at [" & curTok & "]:" & vbCr & _
-         Err.Number & " - " & Err.Description
+    em = "ERROR: BuildDeck failed at [" & curTok & "]: " & Err.Number & " - " & Err.Description
     On Error Resume Next
     If Not base Is Nothing Then
         base.Saved = msoTrue
         base.Close
     End If
     On Error GoTo 0
-    MsgBox em, vbCritical, "BuildDeck"
-    BuildDeck = -1
+    BuildDeck = em
 End Function
 
 ' Set a placeholder's text by type (ppPlaceholderTitle / Subtitle / Body). If the

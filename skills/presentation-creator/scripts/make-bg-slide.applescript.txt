@@ -10,6 +10,6 @@ on run argv
 			set rc to run VB macro macro name "MakeBgImageSlide" list of parameters {item 1 of argv, item 2 of argv, item 3 of argv, item 4 of argv, item 5 of argv}
 		end timeout
 	end tell
-	if rc < 0 then error "MakeBgImageSlide failed (rc=" & rc & ") — see the PowerPoint error dialog; confirm DeckOps.pptm is open with macros enabled and Automation consent granted."
+	if (rc as string) starts with "ERROR" then error (rc as string) & " — confirm DeckOps.pptm is open with macros enabled and Automation consent granted."
 	return "MakeBgImageSlide returned: " & rc
 end run
