@@ -55,6 +55,6 @@ if [[ -f "$STAGE" ]]; then
   mv -f "$STAGE" "$OUT"
   python3 -c 'import json,sys; print(json.dumps({"output": sys.argv[1]}))' "$OUT"
 else
-  echo "ERROR: macro did not produce the staged deck. Check the PowerPoint error dialog, and confirm DeckOps.pptm is open with macros enabled and Automation consent granted — see skills/presentation-creator/references/deck-editing-setup.md." >&2
+  echo "ERROR: macro did not produce the staged deck. On a macro error the osascript step above already aborted with the VBA Err.Description; reaching here means the macro returned without error but wrote no file. Confirm DeckOps.pptm is open with macros enabled and Automation consent granted — see skills/presentation-creator/references/deck-editing-setup.md." >&2
   exit 1
 fi

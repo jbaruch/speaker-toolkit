@@ -14,6 +14,6 @@ on run argv
 			set rc to run VB macro macro name "SetSpeakerNotes" list of parameters {basePath, outPath, packed}
 		end timeout
 	end tell
-	if rc < 0 then error "SetSpeakerNotes failed (rc=" & rc & ") — see the PowerPoint error dialog; confirm DeckOps.pptm is open with macros enabled and Automation consent granted."
+	if (rc as string) starts with "ERROR" then error (rc as string) & " — confirm DeckOps.pptm is open with macros enabled and Automation consent granted."
 	return "SetSpeakerNotes returned: " & rc
 end run

@@ -1,5 +1,17 @@
 # Changelog
 
+### fix(presentation-creator) — deck drivers surface VBA errors to the CLI instead of a modal (#85)
+
+Every RunDeckOps macro's failure handler popped a `MsgBox` and returned a bare `-1`. Under
+osascript automation no human dismisses that modal, so it hung the run and then blocked every
+subsequent macro call (PowerPoint `-18`) — the `BuildDeck -18`-on-large-decks symptom reported in
+#85 — while the real `Err.Description` died in a dialog the CLI cannot read. All eight Public macros
+are now typed `As Variant` and return `"ERROR: <macro> failed at [<token>]: <Err.Number> -
+<Err.Description>"` on failure (the success path still returns the numeric count); each AppleScript
+driver surfaces an `ERROR:`-prefixed return as an `osascript` error, so the description reaches
+stderr. No macro calls `MsgBox`. This closes the last open item in #85 — the driver/`.bas`
+packaging restore and the 1800s `with timeout` wrap already shipped.
+
 ### feat(presentation-creator) — add the Flyover antipattern (audience condescension)
 
 The Presentation Patterns taxonomy had no entry for the speaker who treats the room in

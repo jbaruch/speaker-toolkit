@@ -12,6 +12,6 @@ on run argv
 			set rc to run VB macro macro name "BuildDeck" list of parameters {item 1 of argv, item 2 of argv, ops}
 		end timeout
 	end tell
-	if rc < 0 then error "BuildDeck failed (rc=" & rc & ") — see the PowerPoint error dialog; confirm DeckOps.pptm is open with macros enabled and Automation consent granted."
+	if (rc as string) starts with "ERROR" then error (rc as string) & " — confirm DeckOps.pptm is open with macros enabled and Automation consent granted."
 	return "BuildDeck returned: " & rc
 end run
