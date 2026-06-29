@@ -1,5 +1,22 @@
 # Changelog
 
+### chore — migrate `tile.json` manifest to `.tessl-plugin/plugin.json`
+
+Converts the legacy `tile.json` manifest to the current `.tessl-plugin/plugin.json` form via
+`tessl plugin migrate`: the `steering` field becomes `rules`, `skills` becomes an array of skill
+directory paths, and `tile.json` is removed. Reconciles residual "tile" terminology to "plugin"
+across user-facing prose and script messages — README (including the manifest field rename, so the
+old "Steering Rules" section is now "Rules" matching `plugin.json` → `rules`), `deck-editing-setup.md`,
+`processing-rules.md`, `tessl-version-floating.md`, `presentation-creator/SKILL.md`, the deck-build
+`.sh` wrappers, `ensure-drivers.sh`, `generate-qr.py`, and `sync-deck-drivers.py` — and renames the
+publish workflow `publish-tile.yml` → `publish-plugin.yml` (cosmetic `name:` and filename; the
+trigger is push-to-main, so publishing is unaffected). The gh-aw reviewer prompts' "installed tile"
+load-indicator wording becomes "installed plugin". Adds a root `.tesslignore` so the published
+plugin ships its context surfaces (skills, rules, evals, manifest, `.mcp.json`, README) and excludes
+CI, tests, repo-side scripts, and dev config. Live contracts are left intact: the `.tessl/tiles/`
+runtime install path, `v1/tiles/...` registry routes, frozen `evals/*` scenario content, the
+`deckops-spec.md` example slide, and historical CHANGELOG references to `tile.json`.
+
 ## 0.18.42 — 2026-06-30
 
 ### chore — stamp the CHANGELOG version backlog and wire auto-stamping

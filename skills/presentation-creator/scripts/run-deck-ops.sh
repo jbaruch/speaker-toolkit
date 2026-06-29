@@ -30,7 +30,7 @@ source "$HERE/container-stage.sh"  # stage Google-Drive inputs into the containe
 DRIVER="$HERE/run-deck-ops.applescript"
 
 [[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the source .pptx as <basePath>." >&2; exit 1; }
-[[ -f "$DRIVER" ]] || { echo "ERROR: driver not found: $DRIVER — reinstall the tile; run-deck-ops.applescript must sit next to this script." >&2; exit 1; }
+[[ -f "$DRIVER" ]] || { echo "ERROR: driver not found: $DRIVER — reinstall the plugin; run-deck-ops.applescript must sit next to this script." >&2; exit 1; }
 
 # Sandboxed PowerPoint can READ from a Google Drive File-Provider folder but
 # fails to CREATE a new file there via VBA (E_FAIL -2147467259). So save to a

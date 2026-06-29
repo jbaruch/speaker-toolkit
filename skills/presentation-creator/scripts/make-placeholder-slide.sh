@@ -33,7 +33,7 @@ source "$HERE/container-stage.sh"  # stage Google-Drive inputs into the containe
 DRIVER="$HERE/make-placeholder-slide.applescript"
 
 [[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy whose slide size the placeholder should match." >&2; exit 1; }
-[[ -f "$DRIVER" ]] || { echo "ERROR: driver not found: $DRIVER — reinstall the tile; make-placeholder-slide.applescript must sit next to this script." >&2; exit 1; }
+[[ -f "$DRIVER" ]] || { echo "ERROR: driver not found: $DRIVER — reinstall the plugin; make-placeholder-slide.applescript must sit next to this script." >&2; exit 1; }
 
 # Sandboxed PowerPoint can't create a file in a Google Drive folder (E_FAIL) —
 # stage locally, then move into place with the shell.

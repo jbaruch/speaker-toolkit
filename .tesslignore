@@ -1,0 +1,30 @@
+# Exclude build artifacts, CI, and dev/test files from the published plugin.
+# The plugin ships its context surfaces — skills/, rules/, evals/,
+# .tessl-plugin/plugin.json, README.md, CHANGELOG.md (see
+# jbaruch/coding-policy: context-artifacts; evals/ is a standard plugin
+# directory the publish layer runs, so it is NOT excluded). Everything
+# below is repo-side tooling consumers never load.
+
+# CI / workflows
+.github/
+
+# Tests + dev/test config
+tests/
+pyproject.toml
+
+# Repo-side CI helper scripts (plugin runtime scripts live under skills/*/scripts/)
+scripts/
+
+# Project-consumer config, not plugin content
+tessl.json
+.env.example
+
+# Local install / build state
+.tessl/
+.venv/
+node_modules/
+package-lock.json
+
+# VCS metadata
+.gitignore
+.gitattributes

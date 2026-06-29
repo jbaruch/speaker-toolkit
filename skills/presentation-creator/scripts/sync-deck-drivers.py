@@ -4,7 +4,7 @@
 `tessl install` only materializes a fixed set of extensions (.md .py .json .sh
 .txt) — it STRIPS `.bas` and `.applescript`. The PowerPoint deck layer needs
 `RunDeckOps.bas` (imported into DeckOps.pptm) and the eight `*.applescript`
-drivers (invoked by the `.sh` wrappers via osascript), so every installed tile
+drivers (invoked by the `.sh` wrappers via osascript), so every installed plugin
 would otherwise have a dead deck layer.
 
 Fix: each driver has a committed `.txt` mirror (which survives install). This
@@ -16,7 +16,7 @@ Modes:
                            .bas/.applescript). Default: only when the real file is
                            MISSING (install-restore; a no-op in the dev tree where
                            the reals exist, and never clobbers an in-progress edit).
-                           --force overwrites — use after a tile UPDATE to refresh
+                           --force overwrites — use after a plugin UPDATE to refresh
                            a stale materialized driver.
   mirror                 — regenerate the `.txt` mirrors from the real files. Run
                            after editing a `.bas`/`.applescript` so the mirror
@@ -72,7 +72,7 @@ def materialize(base: Path, force: bool = False) -> list[Path]:
     """Recreate real drivers from their `.txt` mirrors. Returns the files written.
 
     Create-if-missing by default (install-restore, never clobbers a dev edit);
-    --force overwrites to refresh a stale driver after a tile update.
+    --force overwrites to refresh a stale driver after a plugin update.
     """
     written: list[Path] = []
     for m in _mirrors(base):
@@ -125,7 +125,7 @@ def main(argv=None) -> int:
         description="Keep deck-ops .bas/.applescript drivers shippable past tessl's extension filter.")
     ap.add_argument("mode", choices=("materialize", "mirror", "check"))
     ap.add_argument("--force", action="store_true",
-                    help="materialize: overwrite existing real drivers (refresh after a tile update)")
+                    help="materialize: overwrite existing real drivers (refresh after a plugin update)")
     ap.add_argument("--dir", type=Path, default=Path(__file__).resolve().parent,
                     help="the scripts dir holding the drivers (default: this script's dir)")
     args = ap.parse_args(argv)

@@ -23,4 +23,4 @@ No other manifest in this repo is covered. Every other dependency-bearing manife
 ## Scope Limits
 
 - The carve-out does not widen to "any manifest". To extend it to a new manifest, name the manifest in the **Covered Manifests** list above AND ensure `scripts/check-tessl-pins.sh` walks it. Adding a manifest without updating both invalidates the precondition.
-- The carve-out does not widen by transitivity. Manifests `tessl install` does not rewrite — manifests inside vendored tiles, manifests in subtrees not consumed by `tessl install` — still pin per the default policy.
+- The carve-out does not widen by transitivity. Manifests `tessl install` does not rewrite — manifests inside vendored plugins, manifests in subtrees not consumed by `tessl install` — still pin per the default policy.
