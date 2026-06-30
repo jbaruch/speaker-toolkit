@@ -1,5 +1,6 @@
 ---
-alwaysApply: true
+alwaysApply: false
+applyTo: "skills/presentation-creator/** — when generating or replacing QR codes during the presentation publishing flow (Phase 6)"
 ---
 
 # QR Generation Rules

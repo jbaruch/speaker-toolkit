@@ -7,9 +7,10 @@ ALWAYS/NEVER/STOP voice as its siblings, referenced by the publishing flow (`pha
 and `generate-qr.py`, yet absent from the manifest's `rules` array and carrying no frontmatter — so it
 never auto-loaded. The `tile.json` → `.tessl-plugin/plugin.json` migration (#106) preserved the
 pre-existing omission rather than introducing it. Resolves it as a steering rule (#109): adds
-`alwaysApply: true` frontmatter so the QR-step contract loads for presentation tasks, declares it in
-`.tessl-plugin/plugin.json`, and adds the README rules-table row. Behavior change: the QR rules now
-auto-load instead of being reference-only.
+conditional frontmatter (`alwaysApply: false` + `applyTo:` scoped to the presentation-creator QR
+flow) per `jbaruch/coding-policy: rule-frontmatter`, declares it in `.tessl-plugin/plugin.json`, and
+adds the README rules-table row. Behavior change: the QR rules now auto-load during the presentation
+publishing flow instead of being reference-only.
 
 ## 0.18.44 — 2026-06-30
 
