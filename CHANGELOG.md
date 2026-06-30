@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.44 — 2026-06-30
+
 ### fix(vault-ingress,vault-profile) — strip suspicious download-URL patterns from skill instructions
 
 The `.tessl-plugin/plugin.json` migration (0.18.43) packages skills as directories, so vault-ingress's
