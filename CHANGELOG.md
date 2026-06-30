@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.42 — 2026-06-30
+
 ### chore — stamp the CHANGELOG version backlog and wire auto-stamping
 
 The CHANGELOG had accumulated un-headed `### ` blocks since 0.18.27 (stamping stopped at the
