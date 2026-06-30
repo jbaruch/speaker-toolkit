@@ -17,7 +17,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
       "enabled": true,
       "source": {
         "type": "local_jekyll|local_hugo|local_eleventy|local_astro|remote_url|none",
-        "path_or_url": "/path/to/shownotes-site-root (or https://... for remote_url)",
+        "path_or_url": "/path/to/shownotes-site-root (or a remote https URL for remote_url)",
         "talks_subdir": "_talks"
       },
       "url": {"base": "https://speaking.example.com", "template": "/{slug}/"},

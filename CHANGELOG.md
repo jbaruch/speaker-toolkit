@@ -1,5 +1,14 @@
 # Changelog
 
+### fix(vault-ingress,vault-profile) — strip suspicious download-URL patterns from skill instructions
+
+The `.tessl-plugin/plugin.json` migration (0.18.43) packages skills as directories, so vault-ingress's
+reference docs are now scanned at publish — and tessl moderation flagged a Google Drive direct-download
+URL (in the `gdown` PDF-fetch example) plus two truncated URL placeholders in the shownotes schema docs
+as a Critical E005 finding, blocking the 0.18.43 release. Pass the bare Google Drive file id to `gdown`
+(it accepts a `url_or_id` argument, so no download URL is needed) and replace the truncated placeholders
+with prose.
+
 ## 0.18.43 — 2026-06-30
 
 ### chore — migrate `tile.json` manifest to `.tessl-plugin/plugin.json`
