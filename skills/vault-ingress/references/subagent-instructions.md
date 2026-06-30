@@ -59,10 +59,10 @@ download via yt-dlp, then transcribe locally with Whisper. Falls back to
 
 - **`pptx` / `both`** — run
   `python3 skills/vault-ingress/scripts/pptx-extraction.py <path.pptx>`.
-- **`pdf`** — download via gdown:
+- **`pdf`** — download via gdown (pass the bare Google Drive file id; gdown
+  accepts a `url_or_id` argument, so no full download URL is needed):
   ```bash
-  "{python_path}" -m gdown \
-    "https://drive.google.com/uc?id={google_drive_id}" \
+  "{python_path}" -m gdown "{google_drive_id}" \
     -O "{vault_root}/slides/{google_drive_id}.pdf"
   ```
 - **`video_extracted`** — download video at 720p, then extract slides:

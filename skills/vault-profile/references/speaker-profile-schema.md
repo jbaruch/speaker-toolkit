@@ -372,7 +372,7 @@ Current `schema_version`: **2**. The validator (`scripts/validate-profile.py`,
       "enabled": true,
       "source": {
         "type": "local_jekyll|local_hugo|local_eleventy|local_astro|remote_url|none",
-        "path_or_url": "/path/to/shownotes-site-root (or https://... for remote_url)",
+        "path_or_url": "/path/to/shownotes-site-root (or a remote https URL for remote_url)",
         "talks_subdir": "_talks"
       },
       "url": {
@@ -394,7 +394,7 @@ Current `schema_version`: **2**. The validator (`scripts/validate-profile.py`,
     "qr_code": {
       "enabled": true,
       "target": "shownotes_url|custom_url",
-      "custom_url": "https://... (only when target=custom_url)",
+      "custom_url": "a full https URL (only when target=custom_url)",
       "insert_into_deck": true,
       "slide_position": "shownotes_slide|closing|both",
       "shortener": "bitly|rebrandly|none",
