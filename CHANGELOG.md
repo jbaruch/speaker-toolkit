@@ -1,5 +1,18 @@
 # Changelog
 
+### chore — stamp the CHANGELOG version backlog and wire auto-stamping
+
+The CHANGELOG had accumulated un-headed `### ` blocks since 0.18.27 (stamping stopped at the
+`## 0.18.26` heading) because no stamp step was wired — against `jbaruch/coding-policy:
+context-artifacts` CHANGELOG Hygiene. Reconstructs and inserts the missing `## <version> — <date>`
+headings for 0.18.29–0.18.41, with boundaries derived from each version's publish-bump commit and
+validated against every entry's introducing commit (0.18.27/0.18.28/0.18.33 had no net-new entries
+and are omitted). Wires `jbaruch/coding-policy/.github/actions/stamp-changelog` before
+`tesslio/patch-version-publish` so future un-headed top blocks are stamped automatically at publish;
+this entry is the first the wired step will stamp.
+
+## 0.18.41 — 2026-06-29
+
 ### fix(presentation-creator) — deck drivers surface VBA errors to the CLI instead of a modal (#85)
 
 Every RunDeckOps macro's failure handler popped a `MsgBox` and returned a bare `-1`. Under
@@ -11,6 +24,8 @@ are now typed `As Variant` and return `"ERROR: <macro> failed at [<token>]: <Err
 driver surfaces an `ERROR:`-prefixed return as an `osascript` error, so the description reaches
 stderr. No macro calls `MsgBox`. This closes the last open item in #85 — the driver/`.bas`
 packaging restore and the 1800s `with timeout` wrap already shipped.
+
+## 0.18.40 — 2026-06-25
 
 ### feat(presentation-creator) — add the Flyover antipattern (audience condescension)
 
@@ -25,6 +40,8 @@ phase, dimensions 4 + 14, inverse of Know Your Audience) and wires it into `_ind
 the new file and its count test is updated. Also reconciles a pre-existing README
 miscount (Build phase listed 47/37 where the taxonomy holds 48/38) so the README totals
 match `_index.md` at 104 entries / 93 observable.
+
+## 0.18.39 — 2026-06-23
 
 ### feat(vault-ingress) — version the video slide-extraction pipeline
 
@@ -42,6 +59,8 @@ version, distinct from the behavior-tracking `pipeline_version`) with a document
 reader/default contract for legacy entries. `references/video-slide-extraction.md`
 documents a bump-on-behavior-change policy and `references/schemas-db.md` records both
 fields and the reader contract. Resolves #103.
+
+## 0.18.38 — 2026-06-19
 
 ### fix(illustrations) — masked/composited build edits keep static backgrounds pixel-stable
 
@@ -61,6 +80,8 @@ whole-frame regeneration is unchanged, so existing outlines need no edits. Pillo
 project dependency) is imported lazily only when a region is used. `Build.erase_region` is
 added to the outline schema; `rules/illustration-rules.md` and
 `skills/illustrations/references/builds.md` document when and how to use it. Resolves #90.
+
+## 0.18.37 — 2026-06-19
 
 ### fix(illustrations) — style-anchor `conventions` reach every generation prompt
 
@@ -90,6 +111,8 @@ other-slide elements. `rules/illustration-rules.md` (*Style-Anchor Discipline*) 
 `strategy.md` Step 9 are rewritten to mandate a style-only anchor and reconcile "append, don't
 prune" by axis: prune smuggled-in content, preserve and extend style specificity. Resolves #87.
 
+## 0.18.36 — 2026-06-19
+
 ### fix(illustrations) — secrets.json read no longer hangs on a cloud placeholder
 
 `load_secrets()` read `{vault}/secrets.json` with a plain `json.load(open(path))`. When that
@@ -102,6 +125,8 @@ on a daemon thread with a bounded `SECRETS_READ_TIMEOUT` (10s); on overrun it ra
 TimeoutError and `load_secrets` falls back to the existing `GEMINI_API_KEY` / `OPENAI_API_KEY`
 env-var path with a loud stderr warning — the same degrade-don't-crash behavior it already had
 for malformed/unreadable files (no silent swallow). Found while working on the build-edit fix.
+
+## 0.18.35 — 2026-06-18
 
 ### fix(vault-ingress) — Step 4 persists structured fields deterministically
 
@@ -132,6 +157,8 @@ computes (per-talk `areas_for_improvement` and low-confidence/unverifiable
 7–30 day (full session) and 30+ day (compressed session) windows stay recommend-only.
 Resolves #98.
 
+## 0.18.34 — 2026-06-15
+
 ### fix(illustrations) — migrate image-gen model ids to GA, pin OpenAI snapshot
 
 Google deprecates the `-preview` Gemini image ids on 2026-06-25. The registry's canonical
@@ -146,6 +173,8 @@ that `gemini-3-pro-image` (the default) is served only on `v1beta` and 404s on `
 prose, the candidates-schema reference, and the illustration eval fixtures are updated to
 the GA ids. Resolves #94.
 
+## 0.18.32 — 2026-06-12
+
 ### fix(security) — drop suspicious download-URL examples from skill instructions
 
 Removes the `bit.ly` shortener and concrete Google Drive / YouTube example URLs from
@@ -154,6 +183,8 @@ gate (Critical, install-blocking), which had held the public-install gate closed
 flagged URLs predate this change; the examples are now generic placeholders or plain
 descriptions — an agent infers URL shape without a literal sample. Functional download
 commands (`gdown`, `yt-dlp`) and the speaker's real shownotes domain are unchanged.
+
+## 0.18.31 — 2026-06-12
 
 ### feat(vault) — define the self-improvement outcomes of talk ingress
 
@@ -217,6 +248,8 @@ Four additions turn the diagnostics into an actual coaching loop:
   Dimension 14's qualitative "rushing" read; marginal overages flagged softly
   (duration is only transcript-estimated).
 
+## 0.18.30 — 2026-06-11
+
 ### feat(illustrations) — FULL-bleed composition as a first-class choice + `text_treatment` anchor field
 
 Makes the poster-theatrical (full-bleed) path a deliberate, asked-for choice and
@@ -246,6 +279,8 @@ runtime messages, `generate-thumbnail.py`, `title-overlay-rules.md` §0,
 scans skill prose + `rules/` (not just scripts) and fails on either a phantom
 `presentation-outline.md` reference or the legacy markdown bold-field syntax
 (`**Composition:**` / `**Embedded footer:**`) anywhere in loaded context.
+
+## 0.18.29 — 2026-06-11
 
 ### fix(illustrations) — read outline.yaml, not a phantom presentation-outline.md
 

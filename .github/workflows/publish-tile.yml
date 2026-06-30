@@ -53,6 +53,16 @@ jobs:
       # duplicate cost producing the same numbers a maintainer would
       # already see at publish time, and could mask a publish-layer
       # eval failure with a parallel pass.
+      # Stamp the CHANGELOG's un-headed `### ` blocks with the
+      # `## <version> — <date>` heading the publish step is about to
+      # assign, per `jbaruch/coding-policy: context-artifacts` CHANGELOG
+      # Hygiene. Wired immediately before `tesslio/patch-version-publish`;
+      # it commits with `[skip ci]` and no push (the publish step's own
+      # commit carries it). Idempotent — a no-op when the top section is
+      # already headed. Reads the version from the registry via the tessl
+      # CLI installed by `setup-tessl` above.
+      - name: Stamp CHANGELOG with the published version
+        uses: jbaruch/coding-policy/.github/actions/stamp-changelog@e75074c8105a25baf9fa0f42b9fc07ca1d313a3e # main @ 2026-06-29
       - uses: tesslio/patch-version-publish@v1
         with:
           token: ${{ secrets.TESSL_TOKEN }}
