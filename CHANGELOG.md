@@ -1,5 +1,16 @@
 # Changelog
 
+### fix(rules) — declare `qr-generation-rules.md` in the manifest
+
+`rules/qr-generation-rules.md` was a steering rule in everything but configuration: same imperative
+ALWAYS/NEVER/STOP voice as its siblings, referenced by the publishing flow (`phase6-publishing.md` §7)
+and `generate-qr.py`, yet absent from the manifest's `rules` array and carrying no frontmatter — so it
+never auto-loaded. The `tile.json` → `.tessl-plugin/plugin.json` migration (#106) preserved the
+pre-existing omission rather than introducing it. Resolves it as a steering rule (#109): adds
+`alwaysApply: true` frontmatter so the QR-step contract loads for presentation tasks, declares it in
+`.tessl-plugin/plugin.json`, and adds the README rules-table row. Behavior change: the QR rules now
+auto-load instead of being reference-only.
+
 ## 0.18.44 — 2026-06-30
 
 ### fix(vault-ingress,vault-profile) — strip suspicious download-URL patterns from skill instructions

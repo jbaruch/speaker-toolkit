@@ -265,6 +265,7 @@ The plugin ships persistent rules (auto-loaded by the agent at runtime via `.tes
 | [`deck-editing-rules`](rules/deck-editing-rules.md) | Structural edits (delete/reorder/import) to illustrated decks via real PowerPoint (macOS), not python-pptx. |
 | [`guardrail-rules`](rules/guardrail-rules.md) | Creator guardrail checks (slide budget, Act 1 ratio, profanity, branding, antipattern scan). |
 | [`illustration-rules`](rules/illustration-rules.md) | Edit vs regenerate asymmetry, build chains, iteration hygiene. |
+| [`qr-generation-rules`](rules/qr-generation-rules.md) | QR step contract: always via `generate-qr.py`, slug back-half, shortener-URL encoding, custom-domain save, in-place replacement. |
 | [`title-overlay-rules`](rules/title-overlay-rules.md) | Title-safe-zone composition policy for FULL illustrations. |
 | [`thumbnail-generation-rules`](rules/thumbnail-generation-rules.md) | Phase 7 thumbnail composition specifics. |
 | [`resources-gathering-rules`](rules/resources-gathering-rules.md) | Phase 6 shownotes / resources read paths. |

@@ -1,3 +1,7 @@
+---
+alwaysApply: true
+---
+
 # QR Generation Rules
 
 ## 1. ALWAYS Use generate-qr.py
