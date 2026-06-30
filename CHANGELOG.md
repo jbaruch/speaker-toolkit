@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.43 — 2026-06-30
+
 ### chore — migrate `tile.json` manifest to `.tessl-plugin/plugin.json`
 
 Converts the legacy `tile.json` manifest to the current `.tessl-plugin/plugin.json` form via
