@@ -32,7 +32,7 @@ DRIVER="$HERE/build-deck.applescript"
 
 [[ -f "$TEMPLATE" ]] || { echo "ERROR: template not found: $TEMPLATE — pass a uniquely-named copy of the .pptx template." >&2; exit 1; }
 [[ -f "$OPS" ]]      || { echo "ERROR: ops file not found: $OPS — emit it per references/deckops-spec.md and validate with validate-deckops.py." >&2; exit 1; }
-[[ -f "$DRIVER" ]]   || { echo "ERROR: driver not found: $DRIVER — reinstall the tile; build-deck.applescript must sit next to this script." >&2; exit 1; }
+[[ -f "$DRIVER" ]]   || { echo "ERROR: driver not found: $DRIVER — reinstall the plugin; build-deck.applescript must sit next to this script." >&2; exit 1; }
 
 # Validate the op sequence up front so malformed ops fail fast (with line/op
 # context) instead of part-building a deck inside PowerPoint. On failure the

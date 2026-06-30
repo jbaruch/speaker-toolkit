@@ -1,4 +1,4 @@
-name: Review & Publish Tile
+name: Review & Publish Plugin
 
 permissions:
   id-token: write

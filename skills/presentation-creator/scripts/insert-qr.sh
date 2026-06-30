@@ -30,7 +30,7 @@ DRIVER="$HERE/insert-qr.applescript"
 
 [[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the deck." >&2; exit 1; }
 [[ -f "$PNG" ]]    || { echo "ERROR: QR PNG not found: $PNG — generate it first with generate-qr.py." >&2; exit 1; }
-[[ -f "$DRIVER" ]] || { echo "ERROR: driver not found: $DRIVER — reinstall the tile; insert-qr.applescript must sit next to this script." >&2; exit 1; }
+[[ -f "$DRIVER" ]] || { echo "ERROR: driver not found: $DRIVER — reinstall the plugin; insert-qr.applescript must sit next to this script." >&2; exit 1; }
 
 # Sandboxed PowerPoint can't create a file in a Google Drive folder (E_FAIL) —
 # stage locally, then move into place with the shell.

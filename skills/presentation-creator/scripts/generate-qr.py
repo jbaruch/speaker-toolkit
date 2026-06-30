@@ -687,7 +687,7 @@ def insert_qr_via_powerpoint(deck_path, jobs, scripts_dir):
     """
     wrapper = os.path.join(scripts_dir, "insert-qr.sh")
     if not os.path.isfile(wrapper):
-        raise SystemExit(f"insert-qr.sh not found at {wrapper} — reinstall the tile")
+        raise SystemExit(f"insert-qr.sh not found at {wrapper} — reinstall the plugin")
     current = deck_path
     for n, (png_path, slide_specs) in enumerate(jobs):
         out = f"{deck_path}.qrtmp{n}.pptx"  # distinct basename — no open-deck collision

@@ -11,7 +11,7 @@ confirm each manual step, it confirms once via the smoke test. Steps 1–4 run o
 per machine. **Step 6 is the recurring per-build flow** — read it before every
 real deck build.
 
-Heads-up for installed tiles: `tessl install` ships only `.md/.py/.json/.sh/.txt`
+Heads-up for installed plugins: `tessl install` ships only `.md/.py/.json/.sh/.txt`
 and STRIPS `.bas`/`.applescript`, so `RunDeckOps.bas` and the `.applescript`
 drivers aren't on disk after install — Step 3 restores them from their committed
 `.txt` mirrors. A dev checkout already has them.
@@ -38,7 +38,7 @@ deck must never carry the macro.
 
 ## Step 3 — Import the macro
 
-**First, on an installed tile, restore the stripped drivers** (a dev checkout
+**First, on an installed plugin, restore the stripped drivers** (a dev checkout
 already has them, so this is a no-op there):
 
 ```bash
@@ -55,7 +55,7 @@ or ⌥F11), select **DeckOps.pptm's** project in the left pane, then
 **File → Import File…** and choose
 `skills/presentation-creator/scripts/RunDeckOps.bas`. Save `DeckOps.pptm` (⌘S).
 
-To UPDATE the macro later (e.g. after a tile update): re-run the materializer with
+To UPDATE the macro later (e.g. after a plugin update): re-run the materializer with
 `materialize --force` to refresh the on-disk `.bas`, then in the VBA editor
 right-click the `DeckOps` module → **Remove** (No to export) → **Import File…** the
 refreshed `.bas` → save.

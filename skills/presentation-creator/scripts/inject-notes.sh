@@ -30,7 +30,7 @@ DRIVER="$HERE/inject-notes.applescript"
 
 [[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the built deck." >&2; exit 1; }
 [[ -f "$NOTES" ]]  || { echo "ERROR: notes JSON not found: $NOTES — a {\"<0-based slide #>\": \"text\"} map." >&2; exit 1; }
-[[ -f "$DRIVER" ]] || { echo "ERROR: driver not found: $DRIVER — reinstall the tile; inject-notes.applescript must sit next to this script." >&2; exit 1; }
+[[ -f "$DRIVER" ]] || { echo "ERROR: driver not found: $DRIVER — reinstall the plugin; inject-notes.applescript must sit next to this script." >&2; exit 1; }
 
 # Pack the 0-based notes JSON into the SetSpeakerNotes wire format (1-based,
 # control-char delimited). Deterministic; unit-tested in tests/test_notes_to_packed.py.

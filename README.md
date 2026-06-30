@@ -34,7 +34,7 @@ progressive-reveal parent slide with its frames as full-bleed slides (notes on
 the final frame), so a build sequence becomes the sequential slides you advance
 through. Pairs with poster-theatrical for pure full-bleed, builds-and-all decks.
 
-**Deck tooling works on installed tiles** — `tessl install` strips `.bas`/`.applescript`
+**Deck tooling works on installed plugins** — `tessl install` strips `.bas`/`.applescript`
 files, which had left the PowerPoint deck layer dead on any installed copy. The
 drivers now ship as committed `.txt` mirrors and are restored automatically on
 first use (`sync-deck-drivers.py`), so `RunDeckOps.bas` and the AppleScript
@@ -200,7 +200,7 @@ All skills are generic — they work for any speaker. All personalization lives 
 
 | Component | What it defines |
 |-----------|----------------|
-| **Skills** (this tile) | Process: phases, gates, output formats, guardrail structure |
+| **Skills** (this plugin) | Process: phases, gates, output formats, guardrail structure |
 | **Vault** (your data) | Content: what instruments exist, what the speaker sounds like, thresholds to enforce |
 
 The vault lives at `~/.claude/rhetoric-knowledge-vault/` by default. If you prefer a different location (e.g., Google Drive for backup), the skill creates a symlink from the canonical path to your chosen directory. If you don't have a vault yet, the skill creates it from scratch on first run.
@@ -254,9 +254,9 @@ vault-profile      ----+      slide-design-spec.md           illustrations
                                                               _talks/<file>.md
 ```
 
-### Steering Rules
+### Rules
 
-The tile ships persistent steering rules (auto-loaded by the agent at runtime via `tile.json` → `steering`). Keep this table in sync with the manifest:
+The plugin ships persistent rules (auto-loaded by the agent at runtime via `.tessl-plugin/plugin.json` → `rules`). Keep this table in sync with the manifest:
 
 | Rule | Scope |
 |------|-------|
@@ -436,8 +436,8 @@ If the speaker profile doesn't exist yet (fewer than 10 talks parsed), the creat
 ## File Reference
 
 ```
-speaker-toolkit-tile/
-+-- tile.json
+speaker-toolkit/
++-- .tessl-plugin/plugin.json
 +-- README.md
 +-- CHANGELOG.md
 +-- pyproject.toml                            # Dependencies + pytest config
@@ -446,7 +446,7 @@ speaker-toolkit-tile/
 |   +-- test_*.py                             # One test file per script
 +-- .github/workflows/
 |   +-- tests.yml                             # pytest on push/PR (ffmpeg + LibreOffice)
-|   +-- publish-tile.yml                      # Tessl skill review + publish
+|   +-- publish-plugin.yml                    # Tessl skill review + publish
 +-- skills/
     +-- vault-ingress/
     |   +-- SKILL.md                          # Main vault workflow (6 steps)

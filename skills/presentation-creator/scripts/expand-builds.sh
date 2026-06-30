@@ -33,7 +33,7 @@ DRIVER="$HERE/expand-builds.applescript"
 
 [[ -f "$BASE" ]]     || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the built deck." >&2; exit 1; }
 [[ -f "$MANIFEST" ]] || { echo "ERROR: builds manifest not found: $MANIFEST — generate it with build-expansion-manifest.py." >&2; exit 1; }
-[[ -f "$DRIVER" ]]   || { echo "ERROR: driver not found: $DRIVER — reinstall the tile; expand-builds.applescript must sit next to this script." >&2; exit 1; }
+[[ -f "$DRIVER" ]]   || { echo "ERROR: driver not found: $DRIVER — reinstall the plugin; expand-builds.applescript must sit next to this script." >&2; exit 1; }
 
 STAGE_DIR="$HOME/.deckops-staging"
 mkdir -p "$STAGE_DIR"

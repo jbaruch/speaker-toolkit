@@ -1,0 +1,27 @@
+{
+  "name": "jbaruch/speaker-toolkit",
+  "version": "0.18.42",
+  "description": "Six-skill presentation system: ingest talks into a rhetoric vault, run interactive clarification, generate a speaker profile, create presentations that match your documented patterns, produce the deck illustrations + thumbnail visual layer, and publish talk pages to a Jekyll shownotes site. Includes a 102-entry Presentation Patterns taxonomy (91 observable, 11 unobservable go-live items) for scoring, brainstorming, and go-live preparation.",
+  "private": false,
+  "skills": [
+    "skills/vault-ingress",
+    "skills/vault-clarification",
+    "skills/vault-profile",
+    "skills/presentation-creator",
+    "skills/illustrations",
+    "skills/shownotes-publisher"
+  ],
+  "rules": [
+    "rules/vault-language-policy.md",
+    "rules/slide-generation-rules.md",
+    "rules/deck-editing-rules.md",
+    "rules/guardrail-rules.md",
+    "rules/illustration-rules.md",
+    "rules/title-overlay-rules.md",
+    "rules/thumbnail-generation-rules.md",
+    "rules/resources-gathering-rules.md",
+    "rules/interaction-rules.md",
+    "rules/tessl-version-floating.md",
+    "rules/shownotes-content-publish.md"
+  ]
+}

@@ -26,7 +26,7 @@ but any talks with status `"processed"` or `"processed_partial"` have no
 ## Pattern Tagging Rules
 
 Scan observations against the pattern taxonomy index at
-`skills/presentation-creator/references/patterns/_index.md` (path relative to tile root).
+`skills/presentation-creator/references/patterns/_index.md` (path relative to plugin root).
 Skip patterns marked `observable: false` — these are pre-event logistics and physical
 stage behaviors that cannot be detected from transcripts or slides. For each observable
 pattern/antipattern, determine if the talk exhibits it (strong/moderate/weak confidence),
