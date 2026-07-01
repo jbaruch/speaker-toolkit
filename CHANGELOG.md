@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.45 — 2026-07-01
+
 ### fix(rules) — declare `qr-generation-rules.md` in the manifest
 
 `rules/qr-generation-rules.md` was a steering rule in everything but configuration: same imperative
