@@ -17,6 +17,7 @@
     "rules/deck-editing-rules.md",
     "rules/guardrail-rules.md",
     "rules/illustration-rules.md",
+    "rules/qr-generation-rules.md",
     "rules/title-overlay-rules.md",
     "rules/thumbnail-generation-rules.md",
     "rules/resources-gathering-rules.md",
