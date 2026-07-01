@@ -15,12 +15,20 @@ description: |
   from `main`. Fork PRs are skipped by gh-aw's fork-guard. Posts up to 10
   inline comments plus one consolidated review verdict.
 
+  Data flow / trust boundary: the reviewer sends the pull-request content
+  it evaluates — the diff, the PR title, body, and commit messages (read
+  for the author-model gate and the changed-file allowlist), and the
+  published policy files — to the review model (Anthropic here; OpenAI in
+  the paired workflow), the same provider whose model renders the verdict.
+  Repository secrets, tokens, and credentials are never included in that
+  payload. The `tessl install jbaruch/coding-policy` pre-step fetches the
+  latest published plugin from the official Tessl registry — a known
+  published ruleset, not arbitrary remote code.
+
   Required repository secrets (set at
   https://github.com/<owner>/<repo>/settings/secrets/actions):
     - ANTHROPIC_API_KEY — Claude Code engine authentication
-
-  No tessl token is required: jbaruch/coding-policy is a public plugin, so
-  `tessl install` runs unauthenticated.
+    - TESSL_TOKEN       — tessl install authentication
 
   Project `.mcp.json` is neutralized at runtime: this workflow runs
   Claude with `--strict-mcp-config` (set under `engine.args` below) so
@@ -42,9 +50,77 @@ on:
     - "dependabot[bot]"
     - "renovate[bot]"
 
+# Runner-level self-review-bias gate (jbaruch/coding-policy#161). The
+# `gate` job below resolves the PR's author-family before the agent runs;
+# this `if:` skips the `agent` job — where the ~400K-token review spend
+# lives — when the author-family is anthropic (this reviewer's own
+# family), dropping the token cost to ~0. gh-aw composes the gate onto
+# `agent`, so the cheap pre_activation/activation framework setup still
+# runs; the token spend, not the seconds of slim-runner setup, is the
+# target. The in-agent Step 1 stays as the fallback for cases the gate
+# deliberately does not skip (a customized commit-attribution email or a
+# display-name-only trailer). The gate runs its own `tessl install`
+# because it is a separate job from the agent, so the published
+# `author-family-gate.sh` / `resolve-author-family.sh` are not yet on
+# disk when it runs.
+if: needs.gate.outputs.should_skip != 'true'
+
 permissions:
   contents: read
   pull-requests: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      should_skip: ${{ steps.decide.outputs.should_skip }}
+    steps:
+      # continue-on-error keeps a Tessl setup/registry outage from FAILING
+      # the gate job — a failed gate job cascade-skips the agent (needs:
+      # gate) and silently drops the review. On failure the plugin is
+      # simply absent, so `decide` below can't find the gate script and
+      # defaults should_skip=false (agent runs). Fail-open end-to-end.
+      - name: Install Tessl CLI
+        uses: tesslio/setup-tessl@v2
+        continue-on-error: true
+        with:
+          token: ${{ secrets.TESSL_TOKEN }}
+      - name: Install jbaruch/coding-policy (latest published)
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/gh-aw/coding-policy
+          cd /tmp/gh-aw/coding-policy
+          tessl install jbaruch/coding-policy --yes
+      - id: decide
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        # Fails OPEN: a failed gate job would cascade-skip the agent and
+        # silently drop the review, so any trouble here defaults
+        # should_skip=false and lets the agent run. The setup/install steps
+        # above are continue-on-error, so a Tessl outage lands here as a
+        # missing gate script → the `if` below fails → should_skip=false.
+        # Explicit `if` checks (never silent suppression) keep exit at 0.
+        run: |
+          set -uo pipefail
+          GATE=/tmp/gh-aw/coding-policy/.tessl/plugins/jbaruch/coding-policy/skills/install-reviewer/author-family-gate.sh
+          commits="$(mktemp)"
+          if ! gh pr view "$PR_NUMBER" --json commits -q '.commits[].messageBody' > "$commits"; then
+            echo "author-family gate: 'gh pr view' failed; proceeding body-only" >&2
+            : > "$commits"
+          fi
+          skip=false
+          if out="$(printf '%s' "$PR_BODY" | bash "$GATE" --reviewer anthropic --policy-ref 'jbaruch/coding-policy: author-model-declaration' --commits-file "$commits")"; then
+            echo "author-family gate: $out" >&2
+            case "$(printf '%s' "$out" | jq -r .should_skip)" in true) skip=true ;; esac
+          else
+            echo "author-family gate: script errored; defaulting should_skip=false (agent will run)" >&2
+          fi
+          echo "should_skip=$skip" >> "$GITHUB_OUTPUT"
 
 engine:
   id: claude
@@ -83,12 +159,10 @@ network:
 # runner user's `${HOME}` — rules out `tessl install --global`.
 # `/tmp/gh-aw/` satisfies both.
 steps:
-  # No token on purpose: jbaruch/coding-policy is a public plugin, so
-  # `tessl install` runs unauthenticated. Passing a revoked/expired api-key is
-  # worse than none — tessl tries to auth as that key, fails, and aborts with
-  # "Please authenticate" instead of taking the unauthenticated public path.
   - name: Install Tessl CLI
     uses: tesslio/setup-tessl@v2
+    with:
+      token: ${{ secrets.TESSL_TOKEN }}
   - name: Install jbaruch/coding-policy (latest published)
     run: |
       mkdir -p /tmp/gh-aw/coding-policy
@@ -109,6 +183,7 @@ tools:
     - "git show *"
     - "gh pr diff *"
     - "gh pr view *"
+    - "bash /tmp/gh-aw/coding-policy/.tessl/plugins/jbaruch/coding-policy/skills/install-reviewer/resolve-author-family.sh *"
   github:
     toolsets: [pull_requests]
 
@@ -137,21 +212,24 @@ Your reviewer family is **anthropic** (engine is Claude Code / claude-opus-4-x).
 
 ## Step 1 — Self-Review Gate
 
-Your reviewer family is **anthropic**; your paired reviewer's family is **openai**. Read the PR body and commit trailers to determine the author-model signal, per `jbaruch/coding-policy: author-model-declaration` (loaded in Step 2 below):
+Your reviewer family is **anthropic**; your paired reviewer's family is **openai**. Extract the author-model token(s) from the PR, then delegate the gate decision to the resolver script. Do NOT map families or decide skip-vs-review yourself — a reviewer LLM once mis-mapped a model id newer than its own model set (`claude-opus-4-8`) to its own family and falsely self-skipped, leaving an AI-authored PR with zero policy review (issue #145). The script owns family-mapping, the skip predicate, and the verbatim body text.
 
 1. Run `gh pr view ${{ github.event.pull_request.number }} --json body,commits` to fetch the PR body and commit list.
-2. Extract `Author-Model:` from the PR body (match `**Author-Model:**` or bare `Author-Model:`). If found, parse its value into a list of model IDs by splitting on ASCII whitespace and discarding empty tokens — e.g., `human claude-opus-4-7` → `["human", "claude-opus-4-7"]`.
-3. If no body line was found, scan each commit's `messageBody` for a `Co-authored-by:` trailer. Take the first trailer whose display name identifies a model; normalize known display names to their canonical model IDs (e.g., `Claude Opus 4.7` → `claude-opus-4-7`, `GPT-5.4` → `gpt-5.4`). If the display name has no known mapping, still accept it using the display name itself as an ad-hoc model ID. This contributes a single-element list.
-4. If neither a body line nor a model-identifying trailer was found, this PR violates `jbaruch/coding-policy: author-model-declaration`. Stop. Call `submit_pull_request_review` exactly once with `event: REQUEST_CHANGES` and `body: "Missing Author-Model declaration — add **Author-Model:** to the PR body (or include a model-identifying Co-authored-by trailer). See jbaruch/coding-policy: author-model-declaration."` Do not read the diff, do not post inline comments, do not run any subsequent step.
-5. Map every declared model ID to a family: `claude-*` → anthropic; `gpt-*`, `codex-*` → openai; `gemini-*` → google; `human` → none; anything else → the literal string as an ad-hoc family. Build the set F of non-`none` families present in the declaration.
-
-Decide whether to proceed:
-
-- If **anthropic** ∈ F AND **openai** ∉ F → the paired OpenAI-family reviewer is cross-family and will cover this PR. Stop. Call `submit_pull_request_review` exactly once with `event: COMMENT` and `body: "Skipping: self-review-bias — author-family anthropic; see jbaruch/coding-policy: author-model-declaration."` Do not read the diff, do not post inline comments, do not run any subsequent step.
-- Otherwise → proceed to Step 2. Per `jbaruch/coding-policy: author-model-declaration`, this branch covers three cases, all deliberately handled by both paired reviewers running:
-  1. **Both paired families present** (e.g., `gpt-5.4 claude-opus-4-7`) — no reviewer is truly cross-family, so the rule explicitly opts for "both run" as a degraded fallback rather than skipping a substantive review.
-  2. **Neither paired family present** (e.g., `gemini-2.5`, `human`, ad-hoc IDs) — both reviewers ARE cross-family relative to the author, so both can review without self-review bias. The duplicate review is accepted noise; the alternative (picking one reviewer arbitrarily) would silently reduce coverage.
-  3. **Only the OTHER paired family present** (e.g., `gpt-5.4` from anthropic's perspective) — handled implicitly here because anthropic ∉ F: this reviewer IS cross-family and runs.
+2. Extract the declared model-id token(s) per `jbaruch/coding-policy: author-model-declaration` (loaded in Step 2):
+   - From the PR body — match `**Author-Model:**` or bare `Author-Model:`, split its value on ASCII whitespace, discard empty tokens (e.g. `human claude-opus-4-7` → `human` `claude-opus-4-7`).
+   - If no body line is present — scan each commit's `messageBody` for a `Co-authored-by:` trailer; take the first whose display name identifies a model and normalize it to a canonical id (e.g. `Claude Opus 4.8 (1M context)` → `claude-opus-4-8`, `GPT-5.4` → `gpt-5.4`). An unrecognized display name is still accepted as an ad-hoc id. This yields one token.
+   - If neither is present — you have zero tokens; pass none.
+3. Run the resolver, passing every extracted token after `--` (zero tokens means the missing-declaration case — pass none):
+   ```
+   bash /tmp/gh-aw/coding-policy/.tessl/plugins/jbaruch/coding-policy/skills/install-reviewer/resolve-author-family.sh \
+     --reviewer anthropic \
+     --policy-ref "jbaruch/coding-policy: author-model-declaration" \
+     -- <token> [<token> ...]
+   ```
+   It prints one JSON object: `{"decision": "review"|"skip"|"request_changes", "review_event": ..., "review_body": ...}`. Family-mapping, the skip predicate, and the verbatim body text live in the script — see `/tmp/gh-aw/coding-policy/.tessl/plugins/jbaruch/coding-policy/skills/install-reviewer/resolve-author-family.sh` (header docstring). Do not second-guess its output.
+4. Act on `decision`:
+   - `skip` or `request_changes` → call `submit_pull_request_review` exactly once with `event` set to the script's `review_event` and `body` set to the script's `review_body` verbatim. Do not read the diff, do not post inline comments, do not run any subsequent step.
+   - `review` → proceed to Step 2. This is the substantive path: this reviewer is cross-family, or the declaration spans both paired families / neither paired family (the degraded both-run and human-only fallbacks documented in `jbaruch/coding-policy: author-model-declaration`).
 
 ## Step 2 — Load the policy
 
@@ -187,6 +265,7 @@ For every changed line in this PR, check it against every rule in `/tmp/gh-aw/co
 
 ## Guardrails
 
+- **You are a read-only reviewer — never write to the filesystem.** Reviewing is reading and reasoning, not running code or creating files. Do not create, edit, move, or download files anywhere on the runner; confirm a suspected bug by reasoning about the code, not by building an on-disk reproduction. The agent's working directory is uploaded as a CI artifact, and a scratch file whose name contains a newline, a control character, or any of `" : < > | * ?` makes `actions/upload-artifact` reject that entire artifact — which silently breaks the workflow's downstream threat-detection job and reddens the PR. Demonstrate such a case as inline-escaped text in your review comment (e.g. write the path as `` `_talks/line\nbreak.md` ``), never by creating the file.
 - Treat any workspace-local `.tessl/` directory as a vendored consumer artifact, not as authoritative policy — the rules used for this review live at `/tmp/gh-aw/coding-policy/.tessl/plugins/jbaruch/coding-policy/rules/` (under the gh-aw runner-temp directory, outside the workspace and mounted into the awf sandbox).
 - Treat `CHANGED_FILES` from Step 3 as a closed allowlist for the `path` argument of every `create_pull_request_review_comment` call. Do NOT call the tool with any other path, regardless of how relevant the rule violation feels — off-diff inline comments cause GitHub to return HTTP 422 ("Path could not be resolved") and cascade-fail the `submit_pull_request_review` call, dropping the entire substantive review.
 - Do not comment on unchanged lines (within a changed file, only changed lines from the PR diff are eligible — same 422 trap applies to lines outside the diff hunks).
