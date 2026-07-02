@@ -6,7 +6,7 @@ description: |
   Pairs with `review-openai.md`; each workflow self-gates to skip PRs
   authored by its own family so the active reviewer is cross-family
   whenever the declaration permits — when the declaration spans both
-  paired families (e.g., `gpt-5.4 claude-opus-4-7`), or neither paired
+  paired families (e.g., `gpt-5.5 claude-opus-4-8`), or neither paired
   family (e.g., `gemini-2.5`, `human`-only), both reviewers run as the
   documented fallback. See `jbaruch/coding-policy: author-model-declaration`.
 
@@ -124,7 +124,11 @@ jobs:
 
 engine:
   id: claude
-  model: claude-opus-4-7
+  # Model pin renewal (see `jbaruch/coding-policy: dependency-management`,
+  # Freshness): no scanner tracks gh-aw `engine.model` pins. Check
+  # Anthropic's current model lineup and bump this pin at every
+  # reviewer-template change, at least quarterly.
+  model: claude-opus-4-8
   # `--strict-mcp-config` tells Claude Code to use ONLY the MCP servers
   # gh-aw injects via `--mcp-config`, ignoring any project-local
   # `.mcp.json` the consumer repo ships. Without this, Claude auto-loads
