@@ -301,3 +301,10 @@ never wordless — judge Dimensions 8 and 13 from the rendered image instead (se
 Into Images" and [subagent-instructions.md](subagent-instructions.md)).
 `has_text_frame_shapes` reports shapes carrying text frames — not whether the
 slide shows text.
+
+`image_area_ratio` measures PICTURE **shapes** only. A slide whose image is a
+*background* reports `background_type: "image"` and
+`text_extraction_confidence: "low"` while `image_area_ratio` stays `0.0` — the
+background covers the canvas by definition and has no picture geometry to
+measure. Read the confidence, never the ratio, to decide whether a slide needs
+a visual pass.
