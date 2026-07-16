@@ -1,146 +1,51 @@
 # Changelog
 
-### feat(patterns) — add `second-look`: two-layer slide legibility as a shownotes conversion engine
+### feat(patterns) — add `second-look`
 
-Adds a vault-derived build/slides pattern, taking the taxonomy to 109 entries (82 patterns + 27
-antipatterns; 97 observable). Joins `delayed-self-introduction`, `three-part-close`,
-`progressive-reveal`, `anti-sell`, and `meme-as-argument` as patterns observed in the speaker's own
-corpus rather than sourced from a book.
+Vault-derived build/slides pattern: build the slide in two legibility layers — a room layer that lands
+from the back row, and a reward layer visibly present but too fine to read live. The unresolved detail
+drives shownotes visits; the slide sells the return trip rather than teaching in the room. The mechanism
+is a curiosity gap (Loewenstein 1994), not the disfluency claim retired below — hence the mandatory room
+layer. Boundaries against `_anti_ant-fonts` and `_anti_slideuments`, and the link to `spaced-followup`
+(the destination is a spaced re-exposure), are stated in the file.
 
-**The pattern.** Build the slide in two legibility layers: a room layer that lands from the back row,
-and a reward layer that is visibly present but deliberately too fine to read live. The unresolved
-detail drives shownotes visits. The slide does not teach in the room — it sells the return trip.
+Detection carries a caveat: the pattern is executed with text rendered inside images, so shape-level
+PPTX extraction reports these slides as image-only and inverts the finding. Detectable only from
+rendered slide images. The pipeline fix is #116.
 
-**Why it is not the retired disfluency claim.** `analog-noise`'s "Do Not Make It Hard to Read"
-(same release) retires the idea that decoding effort deepens encoding. Second Look makes no encoding
-claim: nothing about a tiny label makes it better remembered. The mechanism is a curiosity gap
-(Loewenstein 1994) — a *specific, closeable* gap that the audience knows they have. Hence the pattern's
-non-negotiable condition: the gap must be legible *as a gap*. An audience that cannot read the slide
-and does not know what they missed has not experienced a gap, they have experienced a bad slide. That
-condition is what makes the room layer mandatory and what separates this from `_anti_ant-fonts`.
-
-**Grounded in the deck, not the theory.** Written after rendering and reading
-*The AI-Native Developer: From Tools to Teammates* (Arc of AI 2026, 58pp). Slide 1 carries a room layer
-of three elements (title + OPTIMISTIC / SKEPTICAL callouts) over a reward layer nobody in the room can
-read — including a skeleton in the sub-floor plenum labeled PREVIOUS SPEAKER (OVERTIME VIOLATION), a
-joke that exists only for the second look. The destination is themed rather than bolted on (a
-FIELD INTELLIGENCE PACKAGE — SHOWNOTES requisition slide mid-deck, repeated at the close as
-THIS MANUAL IS NOW DECLASSIFIED. DISTRIBUTE FREELY). The deck's most transferable move: a
-`unifying-visual-theme` drawn from the reference-artifact family (manual, map, dossier, blueprint) is
-*definitionally* something you consult later, so the theme pre-sells the return trip before any slide
-asks for it.
-
-**Boundaries stated in-file.** Against `_anti_ant-fonts` — the test is whether the audience *needed* to
-read it; payload behind an unreadable font is the antipattern, bonus detail is this pattern. Against
-`_anti_slideuments` — slideuments cram both jobs into one layer and degrade both; Second Look separates
-them by legibility stratum, so the artifact is good at both because it is not doing both *at once*.
-Against `analog-noise` — surface resemblance (both may be line art), different mechanism (isolation
-effect vs curiosity gap). Its most consequential link is to `spaced-followup`: a shownotes visit days
-later is a self-motivated spaced re-exposure, so Second Look is the in-room *pull* for the same
-re-exposure `spaced-followup` achieves by *push*.
-
-**Detection carries an extraction caveat that inverts the result.** The pattern is executed with text
-rendered *inside* images, so shape-level PPTX extraction reports these slides as "a single full-bleed
-image with no text" and scores them `vacation-photos` / `cave-painting` — the opposite of what is on
-screen. Second Look is detectable only from rendered slide images. The vault's existing analysis of the
-Arc of AI talk demonstrates the failure: it scored Dimension 8 as "slides are overwhelmingly image-based
-… speakers carry nearly 100% of the information verbally," which is backwards for a deck whose slides
-carry far more than the narration does. Tracked separately; the analysis needs a re-run against rendered
-images, and the ingress pipeline needs to stop inferring text density from shape counts.
-
-Surface sync: `_index.md` (build table, Phase 5/6 lookups, dims 8 and 13, statistics, Sources — now
-records vault-derived provenance explicitly), `README.md`, `tests/test_outline_schema.py` (81 → 82).
-
-Also drops the duplicated taxonomy counts from `phase3-content.md`, which claimed "78 patterns / 25
-antipatterns matching the index" while the index said 26 — stale before this branch, and a rot magnet
-by construction. The enum is discovered at runtime from the `references/patterns/{prepare,build,deliver}/*.md`
-globs — the filesystem is the source of truth and `_index.md` mirrors it for human readers — so the prose
-now names that relationship instead of restating a number that has already drifted once.
-
-### feat(patterns) — map *Make It Stick* into the taxonomy: 4 new entries, 5 refinements, 1 correction
+### feat(patterns) — map *Make It Stick* into the taxonomy
 
 Adds *Make It Stick: The Science of Successful Learning* (Brown, Roediger & McDaniel, 2014) as the
-catalog's fourth supplementary source, following the integration precedent set by *Presentation Zen*
-(2 patterns + 3 refinements) and *Resonate* (7 patterns + 6 refinements). Taxonomy grows from 104 to
-108 entries (81 patterns + 27 antipatterns; 96 observable, 12 unobservable).
+catalog's fourth supplementary source, following the *Presentation Zen* and *Resonate* precedent. The
+existing corpus covered attention, persuasion, and aesthetics but not retention. Taxonomy: 104 → 109
+entries (82 patterns + 27 antipatterns; 97 observable, 12 unobservable).
 
-**Why this source lands on empty ground.** The existing 104 entries are overwhelmingly about
-attention, persuasion, and aesthetics — how to hook a room, move it, and not bore it. Essentially
-nothing in the catalog addressed *retention*: whether anything survives the walk to the next session.
-Make It Stick is a book about exactly that, so it contributes rather than duplicates. The one place
-the catalog already reached for retention science (`analog-noise`) reached for the wrong study — see
-the correction below.
+New: `guess-first` (generation effect), `retrieval-beat` (testing effect), `spaced-followup` (spacing
+effect — unobservable; adds a **Post-Event** section to the go-live checklist, the catalog's first entry
+firing after the talk), and the `nodding-room` antipattern (fluency illusion). Refinements folded into
+`carnegie-hall`, `brain-breaks`, `know-your-audience`, `red-yellow-green`, and `analog-noise`.
 
-**New patterns:**
-- `guess-first` (build) — the generation effect: make the audience commit an answer before the reveal,
-  because a wrong guess is an asset. Its boundary with `concrete-before-abstract` is stated explicitly
-  in the file, since the two are close neighbors and easily conflated: concrete-before-abstract
-  withholds the *label* from a receptive audience; guess-first withholds the *answer* and demands a
-  swing at it. They compose (instance → attempt → reveal → label).
-- `retrieval-beat` (build) — the testing effect: at moments where you would restate an earlier point,
-  make the room recall it instead. Displaces the summary-slide close and the reminder reflex.
-- `spaced-followup` (deliver, unobservable) — the spacing effect operates on a scale of days, so it
-  cannot be executed inside a 45-minute talk; the only place to spend it is after. Adds a **Post-Event**
-  subsection to the go-live checklist in `_index.md` — the catalog's first checklist item that fires
-  after the talk rather than before or during it.
+**Correction — `analog-noise` was overclaiming.** It asserted as settled fact that hard-to-read fonts
+improve retention (Diemand-Yauman et al. 2011, the study behind Sans Forgetica). That finding has
+replicated poorly: a meta-analysis found essentially nothing for problem solving, and Sans Forgetica
+studies found no benefit over an ordinary font. Re-grounded on the isolation effect (von Restorff),
+which supports the same practice and derives the pattern's key constraint from its mechanism. The
+desirable-difficulties framework is not retired — it concerns effortful *retrieval*, not effortful
+*reading*. Full argument in the file's "Do Not Make It Hard to Read".
 
-**New antipattern:**
-- `nodding-room` (deliver) — the fluency illusion, audience-side: good content, smooth delivery, a room
-  nodding along, nothing retained, and the speaker reading the nods as success. Distinct from
-  `lipstick-on-a-pig`, where the content is genuinely bad; here everything is good and the talk is
-  simply built as a broadcast. Detected structurally (zero audience-production moments in a
-  teaching-shaped talk), never from audience reaction — retention is invisible in a recording, but its
-  absence has a clean signature. Explicitly does not apply to keynotes and performance-shaped talks,
-  whose contract with the audience is *watch this*, not *learn this*.
+**Rejected, recorded so it is not relitigated:** interleaving (a centerpiece of the book, but braiding
+topic threads is workshop guidance and fights `talklet`); mnemonics as a standalone pattern (the book
+frames them as retrieval scaffolding, and `star-moment`'s sound-bite sub-type covers the speaker-side
+use).
 
-**Refinements folded into existing patterns:**
-- `carnegie-hall` — "Rehearse by Retrieval, Not Rereading." The four-rehearsal framework never said what
-  practice *is*, and the default (advance through the deck until it feels smooth) is the fluency illusion
-  aimed at its own author: each slide cues the words that go with it, so the speaker never once produces
-  the talk from memory. Adds closed-deck retrieval and spacing the four rehearsals across days.
-- `brain-breaks` — "The Consolidation Pause." The pattern already claimed breaks let the audience
-  "consolidate"; a joke does not consolidate anything. Adds retrieve/connect/reflect forms that point the
-  break back at the content, and the alternation principle. Humor is not displaced.
-- `know-your-audience` — "Learning Styles Are a Myth." The meshing hypothesis has no support (Pashler et
-  al., 2008). Redirects the defensible instinct: match modality to *material*, not to a person's
-  self-reported style.
-- `red-yellow-green` — "Smile Sheets Do Not Measure Retention." A green card means "I enjoyed that," and
-  the moves that most improve retention (retrieval, generation) introduce friction that costs green
-  cards. Names the consequence: `crucible` fed satisfaction data across ten deliveries will faithfully
-  optimize the talk into `nodding-room` while every ratio climbs.
-- `analog-noise` — see correction below.
+Every new file states its own limits: the generation- and testing-effect literatures study learners
+across sessions, not audiences in a room for 45 minutes, so no file claims a talk produces month-later
+recall.
 
-**Correction — `analog-noise` was overclaiming.** The file asserted as settled fact that "readers retain
-MORE information from text set in hard-to-read fonts," citing the disfluency strand of desirable-difficulty
-research (Diemand-Yauman, Oppenheimer & Vaughan, 2011 — the study behind Sans Forgetica). That finding has
-replicated poorly: a meta-analysis across studies including the large original effect found essentially
-nothing for problem solving, multiple Sans Forgetica studies found no benefit over an ordinary font, and
-some later work finds recall is *worse* for disfluent text. The desirable-difficulties framework itself
-(Bjork & Bjork) is not retired — it is about effortful *retrieval*, not effortful *reading*, and the font
-study's popularity blurred two claims that were never the same. Rather than delete the justification, the
-pattern is re-grounded on the **isolation effect** (von Restorff), which is well-replicated and supports
-the same practice for a better reason: a sketch among clean graphics is memorable because it is
-*different*, not because it is *harder*. This also derives the pattern's key constraint from its mechanism
-— isolation needs a uniform field to isolate against, so making every slide sketchy spends the budget
-everywhere and buys nothing. Adds "Do Not Make It Hard to Read" recording the retired claim so it does not
-get re-added, and the rule it leaves behind: legibility is never the thing you trade away.
-
-**Deliberately rejected.** Interleaving is a centerpiece of the book and is not adopted: mixing topic
-threads is workshop guidance, it fights `talklet`, and it would be bad advice for a conference talk.
-Mnemonics are not adopted as a standalone pattern — the book frames them as retrieval scaffolding rather
-than learning, and `star-moment`'s repeatable-sound-bite sub-type covers the presenter-side use.
-
-**On not repeating the analog-noise mistake.** Every new file states its own limits: the
-generation-effect and testing-effect literatures largely study learners across sessions, not audiences in
-a single room for 45 minutes. No file claims a conference talk produces durable month-later recall. What
-the patterns claim to buy in the room is attention, a sharper reveal, and an honest read on what landed;
-durability is what `spaced-followup` chases, and that file calls itself a bet rather than a guarantee.
-
-Surface sync: `_index.md` (catalog tables, phase-grouped lookup for Phases 2/3/5/6, dimension mapping for
-dims 2/4/6/11/12/14, go-live checklist, summary statistics, Sources), `README.md` (counts, phase lists,
-observable split, directory tree), and `tests/test_outline_schema.py` (discovery-count assertions, 78/26 →
-81/27). Pattern ids are discovered from the filesystem by `_discover_pattern_ids()`, so no schema change
-was needed; the new patterns carry no instance metadata.
+Also drops the duplicated taxonomy counts from `phase3-content.md`, which claimed "78 patterns / 25
+antipatterns matching the index" while the index said 26 — stale before this branch. The enum is
+discovered from the `references/patterns/{prepare,build,deliver}/*.md` globs; the filesystem is the
+source of truth and `_index.md` mirrors it for human readers.
 
 ## 0.18.45 — 2026-07-01
 
