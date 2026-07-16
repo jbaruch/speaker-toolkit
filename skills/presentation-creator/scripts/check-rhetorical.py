@@ -297,11 +297,11 @@ def _check_register_coverage(outline: _os.Outline) -> list[CheckResult]:
             f"(covered: {sorted(declared)}). Every register left unanswered is "
             f"a slice of the room whose question the talk never reaches.",
         )]
+    by_register = dict(sorted(declared.items()))
     return [CheckResult(
         "Register coverage",
         "PASS",
-        f"All four registers answered: "
-        f"{ {k: v for k, v in sorted(declared.items())} }",
+        f"All four registers answered: {by_register}",
     )]
 
 
