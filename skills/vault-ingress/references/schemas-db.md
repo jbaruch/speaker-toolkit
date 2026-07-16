@@ -265,7 +265,7 @@ Produced by `scripts/pptx-extraction.py`.
       "slide_number": 1,
       "background_color_hex": "#5B2C6F",
       "background_type": "solid|pattern|image|gradient|solid_from_layout|unknown",
-      "layout_name": "TITLE",
+      "layout_name": "Title Slide  (free text from slide.slide_layout.name — not an enum)",
       "shape_count": 3,
       "has_text_frame_shapes": true,
       "has_image": false,
