@@ -12,14 +12,8 @@ illustration decks render every title, callout label, stamp, and annotation
 *inside the picture*, where python-pptx cannot see any of it. Such a slide
 extracts as one full-bleed image with no text.
 
-**The failure it caused (issue #116):** the Arc of AI 2026 deck — 58 pages of
-densely annotated technical-manual illustrations, the wordiest slides in the
-corpus — was analyzed as *"overwhelmingly image-based … only about 10 slides
-have any text overlay at all … the speakers carry nearly 100% of the
-information verbally."* Dimension 8 came out exactly backwards, and the deck
-scored as `vacation-photos` / `cave-painting`, patterns that mean the
-opposite of what it is. The tell was the analysis quoting `10x5.62 inches`, a
-python-pptx shape measurement: the analyst had read the JSON, not the slides.
+Read that way, Dimension 8 inverts: the densest decks in the corpus score as
+wordless backdrops. Incident and worked example: issue #116 and the CHANGELOG.
 
 **Mitigations:**
 

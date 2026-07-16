@@ -124,16 +124,18 @@ When any slide in a deck reports `text_extraction_confidence: "low"`:
    | `video_extracted` | already at `{vault_root}/slides/{youtube_id}.pdf` |
    | `pptx` | none exists — export it from the deck (below) |
 
-   For `pptx`, export first (PowerPoint via AppleScript, LibreOffice fallback):
+   For `pptx`, export first (PowerPoint via AppleScript, LibreOffice fallback).
+   A `pptx`-sourced talk may have no `slides_url`, so `google_drive_id` can be
+   absent — render to a temp path, which needs no id and no cleanup:
 
    ```bash
    python3 skills/presentation-creator/scripts/export-pdf.py \
-     "{pptx_path}" "{vault_root}/slides/{google_drive_id}.pdf"
+     "{pptx_path}" "{tmp}/deck.pdf"
    ```
 
-   If the export fails and no `google_drive_id` PDF exists, say so in the
-   analysis and mark Dimensions 8 and 13 low-confidence rather than judging
-   them from the extraction JSON — an unreadable deck is not a wordless one.
+   If the export fails and no PDF exists for the talk, say so in the analysis
+   and mark Dimensions 8 and 13 low-confidence rather than judging them from
+   the extraction JSON — an unreadable deck is not a wordless one.
 
 2. Render the pages and read them:
 
