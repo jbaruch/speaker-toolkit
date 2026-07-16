@@ -4,6 +4,21 @@ Edge cases and recovery strategies that don't change the happy-path workflow
 but matter when the input data is degraded. Linked from `SKILL.md`'s
 Important Notes section as one-line summaries.
 
+## Stale Vault Artifacts Are Not Inputs
+
+A vault may hold files left by tools that predate this skill. The known case is
+a vault-root `extract_pptx_visual.py` and its `pptx-extraction-results.json`,
+orphaned when per-file extraction replaced them.
+
+Nothing in this skill reads them. `skills/vault-ingress/scripts/pptx-extraction.py`
+runs per PPTX and feeds the analysis directly; no step consumes an aggregate
+results file. [schemas-db.md](schemas-db.md) describes what that script emits,
+which is not what the orphaned file contains.
+
+Before treating any vault file as an input, confirm a step reads it. A
+plausible filename in the vault root is not a contract, and building against
+one produces code that runs clean against data nothing consumes.
+
 ## Shape Extraction Is Blind to Text Baked Into Images
 
 `skills/vault-ingress/scripts/pptx-extraction.py` reads text out of PPTX
