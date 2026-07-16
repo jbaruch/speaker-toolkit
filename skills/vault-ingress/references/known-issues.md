@@ -13,7 +13,7 @@ illustration decks render every title, callout label, stamp, and annotation
 extracts as one full-bleed image with no text.
 
 Read that way, Dimension 8 inverts: the densest decks in the corpus score as
-wordless backdrops. Incident and worked example: issue #116 and the CHANGELOG.
+wordless backdrops.
 
 **Mitigations:**
 

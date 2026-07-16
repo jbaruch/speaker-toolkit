@@ -302,9 +302,14 @@ Into Images" and [subagent-instructions.md](subagent-instructions.md)).
 `has_text_frame_shapes` reports shapes carrying text frames — not whether the
 slide shows text.
 
-`image_area_ratio` measures PICTURE **shapes** only. A slide whose image is a
-*background* reports `background_type: "image"` and
-`text_extraction_confidence: "low"` while `image_area_ratio` stays `0.0` — the
-background covers the canvas by definition and has no picture geometry to
-measure. Read the confidence, never the ratio, to decide whether a slide needs
-a visual pass.
+`image_area_ratio` is the **largest** PICTURE shape's area as a fraction of the
+slide, rounded to 3 decimals; `0.0` when the slide has no picture, or when a
+picture's geometry is unreadable. Always present. The confidence threshold
+compares against the unrounded value, so a reported ratio equal to the
+threshold is not proof of which way the slide was classified.
+
+It measures picture **shapes** only. A slide whose image is a *background*
+reports `background_type: "image"` and `text_extraction_confidence: "low"`
+while `image_area_ratio` stays `0.0` — the background covers the canvas by
+definition and has no picture geometry to measure. Read the confidence, never
+the ratio, to decide whether a slide needs a visual pass.

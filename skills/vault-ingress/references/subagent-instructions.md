@@ -101,8 +101,8 @@ an English translation preceding it.
 
 ### Slides with `text_extraction_confidence: low` — look at the pixels
 
-`pptx-extraction.py` reads text out of PPTX *shapes*. Text rendered inside a
-picture — the norm for AI-generated illustration decks, where titles, callout
+`skills/vault-ingress/scripts/pptx-extraction.py` reads text out of PPTX
+*shapes*. Text rendered inside a picture — the norm for AI-generated illustration decks, where titles, callout
 labels, stamps, and annotations are all baked into the image — is invisible to
 it. On those slides the extractor emits `text_extraction_confidence: "low"`
 and its `text_content_preview` is empty or partial.
