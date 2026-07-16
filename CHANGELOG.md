@@ -53,8 +53,9 @@ records vault-derived provenance explicitly), `README.md`, `tests/test_outline_s
 
 Also drops the duplicated taxonomy counts from `phase3-content.md`, which claimed "78 patterns / 25
 antipatterns matching the index" while the index said 26 — stale before this branch, and a rot magnet
-by construction: the enum is discovered at runtime and `_index.md` is the authority, so the prose now
-points there instead of restating a number that has already drifted once.
+by construction. The enum is discovered at runtime from the `references/patterns/{prepare,build,deliver}/*.md`
+globs — the filesystem is the source of truth and `_index.md` mirrors it for human readers — so the prose
+now names that relationship instead of restating a number that has already drifted once.
 
 ### feat(patterns) — map *Make It Stick* into the taxonomy: 4 new entries, 5 refinements, 1 correction
 

@@ -3,9 +3,11 @@
 Structured reference taxonomy primarily based on *Presentation Patterns: Techniques for
 Crafting Better Presentations* (Neal Ford, Matthew McCullough, Nathaniel Schutta, 2013),
 with supplementary patterns and reinforcements from *Presentation Zen* (Garr Reynolds,
-2nd ed., 2012) and *Resonate: Present Visual Stories that Transform Audiences* (Nancy
-Duarte, 2010). Contains 82 named patterns and 27 antipatterns organized by presentation
-lifecycle phase. See the Sources section at the end of this file for full citations.
+2nd ed., 2012), *Resonate: Present Visual Stories that Transform Audiences* (Nancy
+Duarte, 2010), and *Make It Stick: The Science of Successful Learning* (Peter C. Brown,
+Henry L. Roediger III, Mark A. McDaniel, 2014), plus a set of vault-derived patterns
+observed across the speaker's corpus. Contains 82 named patterns and 27 antipatterns
+organized by presentation lifecycle phase. See the Sources section at the end of this file for full citations.
 
 **This is the primary entry point.** The agent reads this file first, then drills into
 individual pattern files only when detailed descriptions, scoring criteria, or
