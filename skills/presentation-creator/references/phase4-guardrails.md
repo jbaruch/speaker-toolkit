@@ -4,7 +4,7 @@ Phase 4 runs two complementary checkers against `outline.yaml`:
 
 | Script | Surface | Output |
 |--------|---------|--------|
-| `scripts/check-rhetorical.py outline.yaml` | Closed pattern taxonomy — opening PUNCH, big-idea singleton, thesis preview/payoff, sparkline elements, master-story threading, callback ledger, inoculation count, progressive-list contiguity, running gags, duration accounting | `rhetorical-review.md` |
+| `scripts/check-rhetorical.py outline.yaml` | Closed pattern taxonomy — opening PUNCH, big-idea singleton, thesis preview/payoff, sparkline elements, register coverage or match, master-story threading, callback ledger, inoculation count, progressive-list contiguity, running gags, duration accounting | `rhetorical-review.md` |
 | `scripts/guardrail-check.py outline.yaml <speaker-profile.json>` | Profile-aware rules — slide budget, Act 1 ratio, branding, profanity, data attribution, closing completeness, cut-line availability (conditional on `modular_design`) | stdout report |
 
 Anti-pattern frequency from `profile.pattern_profile.antipattern_frequency` and

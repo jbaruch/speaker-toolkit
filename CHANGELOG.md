@@ -1,5 +1,54 @@
 # Changelog
 
+### feat(presentation-creator) — wire the cover-or-match decision into intake and enforce it
+
+The `walk-around` cover-or-match call is worthless as a retrospective score — by review time the talk is
+already built in one register. It now enters at intake and is enforced.
+
+- **Intake** — `phase0-intake.md` Step 0.4 ("Read the Audience Spread") asks whether the room is mixed in
+  what it accepts as proof; the old Step 0.4 renumbers to 0.5. The step heads off homogeneity asserted from
+  job titles (unverified ⇒ heterogeneous) and the speaker's own register answering for the room.
+- **Schema** — `talk.audience_spread` required; `talk.dominant_register` required iff homogeneous, rejected
+  otherwise. `walk-around` gains `registers` instance metadata.
+- **Check** — `check-rhetorical.py` gains `_check_register_coverage`, mirroring `_check_sparkline_requirements`.
+  The `script-delegation` split: the agent judges which registers a claim lands, the script checks the union.
+  Detecting register from prose would be the regex trap. Zero walk-arounds FLAGs under either spread (an
+  `N/A` there would let a homogeneous talk name a dominant register it never answers), and a `walk-around`
+  without `registers:` FLAGs by location rather than reading as absent — mirroring `_check_opening_punch`'s
+  treatment of a flavorless `opening-punch`.
+
+**Breaking:** `audience_spread` is required, so older outlines fail validation with an actionable message —
+deliberate, since a default would let the question be skipped, which is the failure being fixed. The six
+`eval-resources/` outline fixtures are migrated here (all mixed-room conference talks ⇒ `heterogeneous`);
+every `outline*.yaml` in the repo validates. Twelve tests cover the validators and both check branches.
+
+Also suppresses a pre-existing pyright finding on `SlideFormat.title` inline with a stated reason per
+`language-diagnostics` — a str-Enum member named after a str method is a false positive.
+
+### feat(patterns) — map *The Whole Brain Business Book* into the taxonomy
+
+Adds `walk-around` and the `golden-rule` antipattern from Ned Herrmann's *The Whole Brain Business Book*
+(2nd ed., 2015), Ch. 8 and Ch. 13. Taxonomy: 109 → 111 entries (83 patterns + 28 antipatterns; 99
+observable). The catalog had no entry for audience heterogeneity in *what counts as proof*.
+
+**Why this is not the learning-styles error.** `know-your-audience`'s "Learning Styles Are a Myth" would
+condemn a naive HBDI import. Herrmann prescribes *coverage* — assume the room is diverse, hit everything,
+identify nobody — which is the opposite of the meshing hypothesis (identify a style, tailor to it) that
+Pashler et al. refuted. The quadrant vocabulary is imported as a recognizable handle; the brain model, the
+HBDI instrument, audience typing, and the book's gender-differences section (sourced to *Men Are from Mars,
+Women Are from Venus*) stay out. `walk-around.md` states the boundary, the anti-meshing warning, and the
+replicable premise the pattern rests on.
+
+**Resolves a contradiction in the source.** Ch. 8 says cover all four quadrants; Ch. 13's MIT/CMU story says
+the opposite — a metaphor-driven introduction was rejected by engineering faculty and the identical model
+re-registered as "a first-order engineering approximation" won them over. The discriminator is audience
+spread. Deliberately not filed under `leet-grammars`: that governs vocabulary and belonging, this governs the
+epistemic form of the justification.
+
+`golden-rule` joins `nodding-room` in Dimension 14's corner of failures that draw good feedback — both are
+talks a subset of the room enjoys, which is why neither self-corrects, and both mislead `crucible` when its
+feedback comes from inside the speaker's own register.
+
 ## 0.18.50 — 2026-07-16
 
 ### feat(patterns) — add `second-look`

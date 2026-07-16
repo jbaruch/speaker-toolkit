@@ -205,6 +205,106 @@ def _check_sparkline_requirements(outline: _os.Outline) -> list[CheckResult]:
     return out
 
 
+def _check_register_coverage(outline: _os.Outline) -> list[CheckResult]:
+    """Enforce the `walk-around` cover-or-match decision declared at intake.
+
+    - `heterogeneous` — the union of registers declared across every
+      walk-around application must cover all four. A mixed room contains all
+      four questions; leaving one unanswered leaves that slice of the room
+      waiting.
+    - `homogeneous` — the declared `dominant_register` must actually appear
+      among the declared registers. A room matched on paper and not in the
+      talk is matched nowhere.
+
+    Zero walk-around applications FLAGs under either spread — a declared
+    spread with no audit is an undefended claim, and `N/A` would let a
+    homogeneous talk name a dominant register it never answers.
+
+    A `walk-around` declared without `registers:` also FLAGs, naming the
+    locations, rather than being silently skipped (mirrors
+    `_check_opening_punch`'s treatment of a flavorless `opening-punch`).
+    """
+    spread = outline.talk.audience_spread
+    declared: dict[str, list[str]] = {}
+    unannotated: list[str] = []
+    for location, p in _all_applied_patterns(outline):
+        if p.id != "walk-around":
+            continue
+        if not p.registers:
+            unannotated.append(location)
+            continue
+        for r in p.registers:
+            declared.setdefault(r.value, []).append(location)
+
+    # Label tracks the spread so the section header stays stable for readers
+    # and for anything parsing the report.
+    label = (
+        "Register match"
+        if spread == _os.AudienceSpread.homogeneous
+        else "Register coverage"
+    )
+
+    if unannotated:
+        return [CheckResult(
+            label,
+            "FLAG",
+            f"`walk-around` declared at {unannotated} with no `registers:` set "
+            f"— name which of {{A, B, C, D}} each claim answers, or the audit "
+            f"cannot be checked.",
+        )]
+
+    if spread == _os.AudienceSpread.homogeneous:
+        dom = outline.talk.dominant_register
+        assert dom is not None  # schema validator guarantees this
+        if not declared:
+            return [CheckResult(
+                "Register match",
+                "FLAG",
+                f"Room declared homogeneous on register `{dom.value}`, but no "
+                f"claim declares a walk-around answering it. Matching a room "
+                f"is a claim about the talk, not just about the audience — "
+                f"answer `{dom.value}` on the load-bearing claims, or "
+                f"re-declare the spread as heterogeneous.",
+            )]
+        if dom.value not in declared:
+            return [CheckResult(
+                "Register match",
+                "FLAG",
+                f"Room declared homogeneous on register `{dom.value}`, but no "
+                f"walk-around answers it (declared: "
+                f"{sorted(declared)}). Match the room or re-declare the spread.",
+            )]
+        return [CheckResult(
+            "Register match",
+            "PASS",
+            f"Homogeneous room matched on `{dom.value}` at {declared[dom.value]}",
+        )]
+
+    missing = [r.value for r in _os.Register if r.value not in declared]
+    if not declared:
+        return [CheckResult(
+            "Register coverage",
+            "FLAG",
+            "Room declared heterogeneous, but no claim declares a walk-around. "
+            "A mixed room contains all four questions — audit the load-bearing "
+            "claims, or re-declare the spread as homogeneous.",
+        )]
+    if missing:
+        return [CheckResult(
+            "Register coverage",
+            "FLAG",
+            f"Room declared heterogeneous; registers {missing} unanswered "
+            f"(covered: {sorted(declared)}). Every register left unanswered is "
+            f"a slice of the room whose question the talk never reaches.",
+        )]
+    by_register = dict(sorted(declared.items()))
+    return [CheckResult(
+        "Register coverage",
+        "PASS",
+        f"All four registers answered: {by_register}",
+    )]
+
+
 def _check_master_story_threading(outline: _os.Outline) -> CheckResult:
     """Each master-story id must have `introduce` before any `recall-N`,
     and recall indexes should appear in increasing order."""
@@ -415,6 +515,7 @@ def render(outline: _os.Outline) -> tuple[str, int]:
         _check_big_idea(outline),
         _check_thesis_ordering(outline),
         *_check_sparkline_requirements(outline),
+        *_check_register_coverage(outline),
         _check_master_story_threading(outline),
         _check_inoculation_count(outline),
         _check_progressive_lists(outline),

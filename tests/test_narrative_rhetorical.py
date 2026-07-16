@@ -205,6 +205,195 @@ def test_rhetorical_passes_opening_punch(check_rhetorical, outline):
     assert "### Opening PUNCH — ✅ **PASS**" in content
 
 
+# ── check-rhetorical.py — register coverage (walk-around) ────────────
+
+
+def _outline_from(outline_schema, base_data, mutate):
+    data = copy.deepcopy(base_data)
+    mutate(data)
+    return outline_schema.Outline.model_validate(data)
+
+
+def test_register_coverage_passes_when_all_four_answered(
+    check_rhetorical, outline,
+):
+    content, flag_count = check_rhetorical.render(outline)
+    assert "### Register coverage — ✅ **PASS**" in content
+    assert flag_count == 0
+
+
+def test_register_coverage_flags_missing_register(
+    check_rhetorical, outline_schema, base_data,
+):
+    """Dropping the C+D walk-around leaves a heterogeneous room half-answered."""
+    def mutate(data):
+        for slide in data["slides"]:
+            slide["applied_patterns"] = [
+                p for p in slide.get("applied_patterns", [])
+                if p.get("id") != "walk-around" or p.get("registers") != ["C", "D"]
+            ]
+    o = _outline_from(outline_schema, base_data, mutate)
+    content, flag_count = check_rhetorical.render(o)
+    assert "Register coverage" in content
+    assert "['C', 'D'] unanswered" in content
+    assert flag_count >= 1
+
+
+def test_register_coverage_flags_heterogeneous_with_no_walk_around(
+    check_rhetorical, outline_schema, base_data,
+):
+    def mutate(data):
+        for slide in data["slides"]:
+            slide["applied_patterns"] = [
+                p for p in slide.get("applied_patterns", [])
+                if p.get("id") != "walk-around"
+            ]
+    o = _outline_from(outline_schema, base_data, mutate)
+    content, flag_count = check_rhetorical.render(o)
+    assert "no claim declares a walk-around" in content
+    assert flag_count >= 1
+
+
+def test_register_match_flags_unmatched_homogeneous_room(
+    check_rhetorical, outline_schema, base_data,
+):
+    """A room declared homogeneous on C, with no walk-around answering C."""
+    def mutate(data):
+        data["talk"]["audience_spread"] = "homogeneous"
+        data["talk"]["dominant_register"] = "C"
+        for slide in data["slides"]:
+            slide["applied_patterns"] = [
+                p for p in slide.get("applied_patterns", [])
+                if p.get("id") != "walk-around" or p.get("registers") != ["C", "D"]
+            ]
+    o = _outline_from(outline_schema, base_data, mutate)
+    content, flag_count = check_rhetorical.render(o)
+    assert "Register match" in content
+    assert "no walk-around answers it" in content
+    assert flag_count >= 1
+
+
+def test_register_match_passes_when_dominant_answered(
+    check_rhetorical, outline_schema, base_data,
+):
+    def mutate(data):
+        data["talk"]["audience_spread"] = "homogeneous"
+        data["talk"]["dominant_register"] = "C"
+    o = _outline_from(outline_schema, base_data, mutate)
+    content, _ = check_rhetorical.render(o)
+    assert "### Register match — ✅ **PASS**" in content
+
+
+def test_register_match_flags_homogeneous_with_zero_walk_arounds(
+    check_rhetorical, outline_schema, base_data,
+):
+    """A homogeneous room with no audit at all must not pass as N/A.
+
+    Declaring `dominant_register: C` and supplying no register evidence is an
+    unanswered claim, not an inapplicable check.
+    """
+    def mutate(data):
+        data["talk"]["audience_spread"] = "homogeneous"
+        data["talk"]["dominant_register"] = "C"
+        for slide in data["slides"]:
+            slide["applied_patterns"] = [
+                p for p in slide.get("applied_patterns", [])
+                if p.get("id") != "walk-around"
+            ]
+    o = _outline_from(outline_schema, base_data, mutate)
+    content, flag_count = check_rhetorical.render(o)
+    assert "Register match — ⚠️" in content
+    assert "no claim declares a walk-around answering it" in content
+    assert flag_count >= 1
+    assert "N/A" not in content.split("### Register match")[1].split("###")[0]
+
+
+def test_register_coverage_flags_walk_around_without_registers(
+    check_rhetorical, outline_schema, base_data,
+):
+    """A walk-around with no `registers:` is unverifiable, not absent."""
+    def mutate(data):
+        for slide in data["slides"]:
+            for p in slide.get("applied_patterns", []):
+                if p.get("id") == "walk-around":
+                    p.pop("registers", None)
+    o = _outline_from(outline_schema, base_data, mutate)
+    content, flag_count = check_rhetorical.render(o)
+    assert "no `registers:` set" in content
+    assert flag_count >= 1
+
+
+def test_register_coverage_counts_interlude_walk_around(
+    check_rhetorical, outline_schema, base_data,
+):
+    """An interlude is a located, claim-bearing unit — its walk-around counts.
+
+    A live demo answering "how does it work, in what order" is a B answer no
+    slide can match. Only talk-level (which has no claim to locate) is barred.
+    """
+    def mutate(data):
+        # Drop the slide-level C+D audit, and answer C+D from a demo instead.
+        for slide in data["slides"]:
+            slide["applied_patterns"] = [
+                p for p in slide.get("applied_patterns", [])
+                if p.get("id") != "walk-around" or p.get("registers") != ["C", "D"]
+            ]
+        data["interludes"] = [{
+            "id": "demo-migration",
+            "after_slide": 8,
+            "title": "Live: migrating a service",
+            "chapter": "ch2",
+            "script": [{"line": "Watch who has to be paged."}],
+            "applied_patterns": [{"id": "walk-around", "registers": ["C", "D"]}],
+        }]
+    o = _outline_from(outline_schema, base_data, mutate)
+    content, flag_count = check_rhetorical.render(o)
+    assert "### Register coverage — ✅ **PASS**" in content
+    assert "interlude demo-migration" in content
+    assert flag_count == 0
+
+
+def test_unannotated_walk_around_label_tracks_spread(
+    check_rhetorical, outline_schema, base_data,
+):
+    """The section header must stay 'Register match' for a homogeneous room.
+
+    A homogeneous run that emits 'Register coverage' breaks the header any
+    reader — or downstream parse — keys on.
+    """
+    def mutate(data):
+        data["talk"]["audience_spread"] = "homogeneous"
+        data["talk"]["dominant_register"] = "A"
+        for slide in data["slides"]:
+            for p in slide.get("applied_patterns", []):
+                if p.get("id") == "walk-around":
+                    p.pop("registers", None)
+    o = _outline_from(outline_schema, base_data, mutate)
+    content, _ = check_rhetorical.render(o)
+    assert "### Register match — ⚠️" in content
+    assert "### Register coverage" not in content
+
+
+def test_register_coverage_flags_unannotated_before_absent(
+    check_rhetorical, outline_schema, base_data,
+):
+    """The unannotated message must win over 'no claim declares a walk-around'.
+
+    Reporting an unannotated walk-around as absent misdescribes the outline.
+    """
+    def mutate(data):
+        data["talk"]["audience_spread"] = "homogeneous"
+        data["talk"]["dominant_register"] = "A"
+        for slide in data["slides"]:
+            for p in slide.get("applied_patterns", []):
+                if p.get("id") == "walk-around":
+                    p.pop("registers", None)
+    o = _outline_from(outline_schema, base_data, mutate)
+    content, _ = check_rhetorical.render(o)
+    assert "no `registers:` set" in content
+    assert "no claim declares a walk-around" not in content
+
+
 def test_rhetorical_reports_big_idea_location(check_rhetorical, outline):
     content, _ = check_rhetorical.render(outline)
     # Fixture has big_idea on slide 5 (Call to Adventure)

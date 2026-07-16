@@ -35,10 +35,79 @@ def test_pattern_enum_discovered(outline_schema):
     # Discovered from references/patterns/{prepare,build,deliver}/*.md — the
     # filesystem is the source of truth. _index.md mirrors these totals for
     # human readers; adding a pattern means updating both.
-    assert len(outline_schema.PATTERN_IDS) == 82
-    assert len(outline_schema.ANTIPATTERN_IDS) == 27
+    assert len(outline_schema.PATTERN_IDS) == 83
+    assert len(outline_schema.ANTIPATTERN_IDS) == 28
     assert "sparkline" in outline_schema.PATTERN_IDS
     assert "slideuments" in outline_schema.ANTIPATTERN_IDS
+
+
+# ── Audience spread / register (walk-around) ─────────────────────────
+
+
+def test_homogeneous_requires_dominant_register(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["talk"]["audience_spread"] = "homogeneous"
+    with pytest.raises(ValidationError, match="dominant_register"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_heterogeneous_rejects_dominant_register(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["talk"]["audience_spread"] = "heterogeneous"
+    data["talk"]["dominant_register"] = "A"
+    with pytest.raises(ValidationError, match="dominant_register"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_homogeneous_with_register_validates(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["talk"]["audience_spread"] = "homogeneous"
+    data["talk"]["dominant_register"] = "A"
+    outline = outline_schema.Outline.model_validate(data)
+    assert outline.talk.dominant_register.value == "A"
+
+
+def test_rejects_unknown_audience_spread(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["talk"]["audience_spread"] = "mostly-engineers"
+    with pytest.raises(ValidationError, match="audience_spread"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_audience_spread_is_required(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    del data["talk"]["audience_spread"]
+    with pytest.raises(ValidationError, match="audience_spread"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_rejects_unknown_register(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["talk"]["applied_patterns"].append(
+        {"id": "walk-around", "registers": ["E"]},
+    )
+    with pytest.raises(ValidationError, match="registers"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_walk_around_rejected_at_talk_level(outline_schema, base_data):
+    """A talk-level walk-around would satisfy coverage with no per-claim evidence."""
+    data = copy.deepcopy(base_data)
+    data["talk"]["applied_patterns"].append(
+        {"id": "walk-around", "registers": ["A", "B", "C", "D"]},
+    )
+    with pytest.raises(ValidationError, match="per-claim"):
+        outline_schema.Outline.model_validate(data)
+
+
+def test_registers_rejected_on_other_patterns(outline_schema, base_data):
+    """`registers` is walk-around's instance metadata — no other pattern takes it."""
+    data = copy.deepcopy(base_data)
+    data["talk"]["applied_patterns"].append(
+        {"id": "mentor", "registers": ["A"]},
+    )
+    with pytest.raises(ValidationError, match="registers"):
+        outline_schema.Outline.model_validate(data)
 
 
 # ── Talk-level validators ────────────────────────────────────────────
