@@ -9,6 +9,7 @@ talk:
   speakers: ["Baruch Sadogursky"]
   duration_min: 45
   audience: "Senior developers and tech leads"
+  audience_spread: "heterogeneous"
   mode: "keynote"
   venue: "FroConf 2026"
   slide_budget: 60

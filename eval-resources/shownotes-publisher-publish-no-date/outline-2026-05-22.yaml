@@ -8,6 +8,7 @@ talk:
   speakers: ["Riley Hayes"]
   duration_min: 40
   audience: "Backend engineers using AI coding agents in CI/CD"
+  audience_spread: "heterogeneous"
   mode: "cautionary-tale"
   venue: "GeeCON 2026"
   slide_budget: 8

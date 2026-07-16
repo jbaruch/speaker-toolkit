@@ -2,78 +2,49 @@
 
 ### feat(presentation-creator) — wire the cover-or-match decision into intake and enforce it
 
-The `walk-around` cover-or-match call is worth nothing as a retrospective score — by review time the
-talk is already built in one register. It now enters at intake and is enforced deterministically.
+The `walk-around` cover-or-match call is worthless as a retrospective score — by review time the talk is
+already built in one register. It now enters at intake and is enforced.
 
-- **Intake** — `phase0-intake.md` gains Step 0.4 ("Read the Audience Spread"), asked right after the
-  audience-as-hero stance: *is this room mixed in what it accepts as proof, or does it all speak one
-  language?* Step 0.4 (Report and Advance) renumbers to 0.5. The step heads off both failure modes:
-  homogeneity asserted from job titles ("they're all engineers" describes badges, not what persuades
-  them — unverified ⇒ heterogeneous, since coverage is the safe default and matching is the bet), and
-  the speaker's own register answering for the room.
-- **Schema** — `talk.audience_spread` (`heterogeneous` | `homogeneous`) is required; `talk.dominant_register`
-  (`A`/`B`/`C`/`D`) is required iff homogeneous and rejected otherwise. `walk-around` gains `registers`
-  instance metadata declaring which questions an application answers, alongside `star-moment`'s `subtype`
-  and `opening-punch`'s `flavors`.
-- **Check** — `check-rhetorical.py` gains `_check_register_coverage`, mirroring `_check_sparkline_requirements`:
-  a heterogeneous talk must answer all four registers across its declared walk-arounds; a homogeneous talk
-  must actually answer its declared dominant register. The split follows `script-delegation` — the agent
-  judges which registers a claim lands (reasoning), the script checks the union (deterministic). Detecting
-  register from prose would be the regex trap.
+- **Intake** — `phase0-intake.md` Step 0.4 ("Read the Audience Spread") asks whether the room is mixed in
+  what it accepts as proof; the old Step 0.4 renumbers to 0.5. The step heads off homogeneity asserted from
+  job titles (unverified ⇒ heterogeneous) and the speaker's own register answering for the room.
+- **Schema** — `talk.audience_spread` required; `talk.dominant_register` required iff homogeneous, rejected
+  otherwise. `walk-around` gains `registers` instance metadata.
+- **Check** — `check-rhetorical.py` gains `_check_register_coverage`, mirroring `_check_sparkline_requirements`.
+  The `script-delegation` split: the agent judges which registers a claim lands, the script checks the union.
+  Detecting register from prose would be the regex trap.
 
-**Breaking:** `audience_spread` is required, so outlines predating this release fail validation with an
-actionable message. That is deliberate — the field exists to force the question, and defaulting it would
-let the decision be skipped, which is the failure the change addresses.
+**Breaking:** `audience_spread` is required, so older outlines fail validation with an actionable message —
+deliberate, since a default would let the question be skipped, which is the failure being fixed. The six
+`eval-resources/` outline fixtures are migrated here (all mixed-room conference talks ⇒ `heterogeneous`);
+every `outline*.yaml` in the repo validates. Twelve tests cover the validators and both check branches.
 
-The fixture now exercises the full loop: a heterogeneous room walked around A+B on the Big Idea claim and
-C+D on the S.T.A.R. claim. Twelve tests cover the validators and both check branches.
-
-Also suppresses a pre-existing pyright finding on `SlideFormat.title` (a str-Enum member named after a str
-method — Enum members shadow inherited methods by design, so the assignment-type error is a false positive),
-inline with a stated reason per `language-diagnostics`.
+Also suppresses a pre-existing pyright finding on `SlideFormat.title` inline with a stated reason per
+`language-diagnostics` — a str-Enum member named after a str method is a false positive.
 
 ### feat(patterns) — map *The Whole Brain Business Book* into the taxonomy
 
 Adds `walk-around` and the `golden-rule` antipattern from Ned Herrmann's *The Whole Brain Business Book*
 (2nd ed., 2015), Ch. 8 and Ch. 13. Taxonomy: 109 → 111 entries (83 patterns + 28 antipatterns; 99
-observable). Fills a real gap — the catalog had no entry for audience heterogeneity in *what counts as
-proof*.
+observable). The catalog had no entry for audience heterogeneity in *what counts as proof*.
 
-`walk-around` audits each load-bearing claim against four standing questions (what exactly / how does it
-work / who does it affect / where does it lead) and revises until all four are answered. `golden-rule` is
-its null case: building the talk you would want to receive, defending every claim in your own preferred
-register, and mistaking your satisfaction for the room's.
+**Why this is not the learning-styles error.** `know-your-audience`'s "Learning Styles Are a Myth" would
+condemn a naive HBDI import. Herrmann prescribes *coverage* — assume the room is diverse, hit everything,
+identify nobody — which is the opposite of the meshing hypothesis (identify a style, tailor to it) that
+Pashler et al. refuted. The quadrant vocabulary is imported as a recognizable handle; the brain model, the
+HBDI instrument, audience typing, and the book's gender-differences section (sourced to *Men Are from Mars,
+Women Are from Venus*) stay out. `walk-around.md` states the boundary, the anti-meshing warning, and the
+replicable premise the pattern rests on.
 
-**Why this book does not repeat the learning-styles error.** HBDI is a self-report typology with
-brain-based claims, and `know-your-audience`'s "Learning Styles Are a Myth" (previous release) would
-condemn a naive import. Herrmann's actual prescription is not meshing: "The fail-safe assumption is that
-the population you'll be communicating with will be mentally diverse. Therefore, I recommend delivering
-each significant communication point in all quadrants and modes." That is *coverage* — assume
-heterogeneity, hit everything, identify nobody — and it is the opposite of the meshing hypothesis
-(identify a person's style, tailor to it), which is the only claim Pashler et al. refuted. Herrmann also
-disavows the left/right dichotomy himself (Ch. 2, "The 'Right-Brain/Left-Brain' Trap") and frames the
-model as a metaphor.
+**Resolves a contradiction in the source.** Ch. 8 says cover all four quadrants; Ch. 13's MIT/CMU story says
+the opposite — a metaphor-driven introduction was rejected by engineering faculty and the identical model
+re-registered as "a first-order engineering approximation" won them over. The discriminator is audience
+spread. Deliberately not filed under `leet-grammars`: that governs vocabulary and belonging, this governs the
+epistemic form of the justification.
 
-**What is imported and what is not.** The Walk-Around procedure and the A/B/C/D quadrant vocabulary come
-in — the vocabulary is retained as a recognizable handle for readers who have met it, not as a theory.
-The physiological grounding, the HBDI instrument, audience typing, and the book's Ch. 8 gender-differences
-section (which cites *Men Are from Mars, Women Are from Venus* as support) stay out. The premise the
-pattern actually needs — audiences differ in what evidence persuades them — rests on the Elaboration
-Likelihood Model and need-for-cognition, and predates all of it in Aristotle. Both files state the
-boundary and the anti-meshing warning explicitly.
-
-**Resolves a contradiction in the source.** Ch. 8 prescribes covering all four quadrants; Ch. 13's
-MIT/CMU story prescribes the opposite — a metaphor-driven introduction was rejected by engineering
-faculty ("the walls went up") and the identical model re-registered as "a first-order engineering
-approximation to mental diversity" won them over. `walk-around` resolves it on audience spread: cover a
-heterogeneous room, match a homogeneous one, and verify homogeneity rather than assuming it from job
-titles. The catalog had nothing on this distinction. The re-registering move is deliberately not filed
-under `leet-grammars` — that pattern governs vocabulary and belonging, while this governs the epistemic
-form of the justification; a speaker can deploy flawless jargon and still offer the wrong kind of proof.
-
-`golden-rule` joins `nodding-room` in a distinct corner of Dimension 14: failures that draw good feedback.
-Both are talks a subset of the room genuinely enjoys, which is why neither self-corrects — and both mislead
-`crucible` when the feedback it consumes comes from inside the speaker's own register.
+`golden-rule` joins `nodding-room` in Dimension 14's corner of failures that draw good feedback — both are
+talks a subset of the room enjoys, which is why neither self-corrects, and both mislead `crucible` when its
+feedback comes from inside the speaker's own register.
 
 ## 0.18.50 — 2026-07-16
 

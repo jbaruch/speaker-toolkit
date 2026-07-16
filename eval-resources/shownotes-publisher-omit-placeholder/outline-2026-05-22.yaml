@@ -7,6 +7,7 @@ talk:
   speakers: ["Riley Hayes"]
   duration_min: 35
   audience: "Infrastructure and platform engineers"
+  audience_spread: "heterogeneous"
   mode: "war-stories"
   venue: "KafkaEU 2026"
   slide_budget: 8

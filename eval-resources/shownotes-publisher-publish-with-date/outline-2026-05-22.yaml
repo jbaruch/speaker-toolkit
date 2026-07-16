@@ -10,6 +10,7 @@ talk:
   speakers: ["Riley Hayes"]
   duration_min: 45
   audience: "ML platform engineers, infrastructure leads"
+  audience_spread: "heterogeneous"
   mode: "lessons-from-production"
   venue: "MLOpsCon 2026"
   slide_budget: 10
