@@ -115,19 +115,37 @@ the corpus scored as wordless backdrops, inverting Dimension 8.
 
 When any slide in a deck reports `text_extraction_confidence: "low"`:
 
-1. Render the slide images and read them — the PDF is already at
-   `{vault_root}/slides/{google_drive_id}.pdf`:
+1. Get a PDF to render. Which one depends on `slide_source` — the `pptx` path
+   never downloads one, so it has to be produced:
+
+   | `slide_source` | PDF |
+   |---|---|
+   | `pdf`, `both` | already at `{vault_root}/slides/{google_drive_id}.pdf` |
+   | `video_extracted` | already at `{vault_root}/slides/{youtube_id}.pdf` |
+   | `pptx` | none exists — export it from the deck (below) |
+
+   For `pptx`, export first (PowerPoint via AppleScript, LibreOffice fallback):
 
    ```bash
-   pdftoppm -png -r 100 -f <first> -l <last> \
-     "{vault_root}/slides/{google_drive_id}.pdf" "{tmp}/slide"
+   python3 skills/presentation-creator/scripts/export-pdf.py \
+     "{pptx_path}" "{vault_root}/slides/{google_drive_id}.pdf"
    ```
 
-2. Judge **Dimension 8** (Slide-to-Speech Relationship) and **Dimension 13**
+   If the export fails and no `google_drive_id` PDF exists, say so in the
+   analysis and mark Dimensions 8 and 13 low-confidence rather than judging
+   them from the extraction JSON — an unreadable deck is not a wordless one.
+
+2. Render the pages and read them:
+
+   ```bash
+   pdftoppm -png -r 100 -f <first> -l <last> "{pdf_path}" "{tmp}/slide"
+   ```
+
+3. Judge **Dimension 8** (Slide-to-Speech Relationship) and **Dimension 13**
    (Slide Design) from the rendered images, never from the extraction JSON.
    The question Dimension 8 asks — dense or minimal, image-heavy or
    text-heavy — is exactly the one the JSON cannot answer for these slides.
-3. Count `image_only_slide_count` from what the rendered slide *shows*, not
+4. Count `image_only_slide_count` from what the rendered slide *shows*, not
    from what the extractor could reach. A slide carrying baked-in text is not
    image-only, whatever the JSON says.
 
