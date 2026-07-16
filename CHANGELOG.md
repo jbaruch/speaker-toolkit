@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.50 — 2026-07-16
+
 ### feat(patterns) — add `second-look`
 
 Vault-derived build/slides pattern: build the slide in two legibility layers — a room layer that lands
