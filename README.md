@@ -169,7 +169,7 @@ The vault skill will:
 2. Scan for talks and .pptx files
 3. Process talks in parallel batches of 5
 4. Extract rhetoric patterns across 14 dimensions
-5. Score each talk against the 86 observable Presentation Patterns
+5. Score each talk against the 99 observable Presentation Patterns entries
 6. Build a running narrative summary and slide design spec
 7. Run an interactive clarification session to validate findings and capture your intent
 8. Generate a structured speaker profile with pattern mastery data (after 10+ talks)
