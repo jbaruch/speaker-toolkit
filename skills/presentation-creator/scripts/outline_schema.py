@@ -415,18 +415,21 @@ class TalkMetadata(_StrictModel):
 
     @model_validator(mode="after")
     def _walk_around_is_per_claim(self) -> "TalkMetadata":
-        """`walk-around` audits a claim, and claims live on slides.
+        """`walk-around` audits a claim, and a claim has a location.
 
-        A talk-level application is a blanket assertion that the talk answers
-        a register somewhere, with nothing to check it against — the
-        unfalsifiable shape the audit exists to prevent.
+        Slides and interludes both carry claims and are individually
+        checkable — a live demo answering "how does it work in what order"
+        is a B answer no slide can match. Talk level carries no claim: it
+        asserts that the talk answers a register somewhere, with nothing to
+        check it against, which is the unfalsifiable shape the audit exists
+        to prevent.
         """
         if any(p.id == "walk-around" for p in self.applied_patterns):
             raise ValueError(
                 "`walk-around` is a per-claim audit and cannot be declared at "
-                "talk level — attach it to the slides carrying the "
-                "load-bearing claims, with `registers:` naming what each one "
-                "answers",
+                "talk level — attach it to the slides or interludes carrying "
+                "the load-bearing claims, with `registers:` naming what each "
+                "one answers",
             )
         return self
 

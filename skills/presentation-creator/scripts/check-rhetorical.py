@@ -236,9 +236,17 @@ def _check_register_coverage(outline: _os.Outline) -> list[CheckResult]:
         for r in p.registers:
             declared.setdefault(r.value, []).append(location)
 
+    # Label tracks the spread so the section header stays stable for readers
+    # and for anything parsing the report.
+    label = (
+        "Register match"
+        if spread == _os.AudienceSpread.homogeneous
+        else "Register coverage"
+    )
+
     if unannotated:
         return [CheckResult(
-            "Register coverage",
+            label,
             "FLAG",
             f"`walk-around` declared at {unannotated} with no `registers:` set "
             f"— name which of {{A, B, C, D}} each claim answers, or the audit "

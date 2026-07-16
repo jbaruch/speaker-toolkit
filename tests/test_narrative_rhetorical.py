@@ -323,6 +323,57 @@ def test_register_coverage_flags_walk_around_without_registers(
     assert flag_count >= 1
 
 
+def test_register_coverage_counts_interlude_walk_around(
+    check_rhetorical, outline_schema, base_data,
+):
+    """An interlude is a located, claim-bearing unit — its walk-around counts.
+
+    A live demo answering "how does it work, in what order" is a B answer no
+    slide can match. Only talk-level (which has no claim to locate) is barred.
+    """
+    def mutate(data):
+        # Drop the slide-level C+D audit, and answer C+D from a demo instead.
+        for slide in data["slides"]:
+            slide["applied_patterns"] = [
+                p for p in slide.get("applied_patterns", [])
+                if p.get("id") != "walk-around" or p.get("registers") != ["C", "D"]
+            ]
+        data["interludes"] = [{
+            "id": "demo-migration",
+            "after_slide": 8,
+            "title": "Live: migrating a service",
+            "chapter": "ch2",
+            "script": [{"line": "Watch who has to be paged."}],
+            "applied_patterns": [{"id": "walk-around", "registers": ["C", "D"]}],
+        }]
+    o = _outline_from(outline_schema, base_data, mutate)
+    content, flag_count = check_rhetorical.render(o)
+    assert "### Register coverage — ✅ **PASS**" in content
+    assert "interlude demo-migration" in content
+    assert flag_count == 0
+
+
+def test_unannotated_walk_around_label_tracks_spread(
+    check_rhetorical, outline_schema, base_data,
+):
+    """The section header must stay 'Register match' for a homogeneous room.
+
+    A homogeneous run that emits 'Register coverage' breaks the header any
+    reader — or downstream parse — keys on.
+    """
+    def mutate(data):
+        data["talk"]["audience_spread"] = "homogeneous"
+        data["talk"]["dominant_register"] = "A"
+        for slide in data["slides"]:
+            for p in slide.get("applied_patterns", []):
+                if p.get("id") == "walk-around":
+                    p.pop("registers", None)
+    o = _outline_from(outline_schema, base_data, mutate)
+    content, _ = check_rhetorical.render(o)
+    assert "### Register match — ⚠️" in content
+    assert "### Register coverage" not in content
+
+
 def test_register_coverage_flags_unannotated_before_absent(
     check_rhetorical, outline_schema, base_data,
 ):
