@@ -90,6 +90,16 @@ def test_rejects_unknown_register(outline_schema, base_data):
         outline_schema.Outline.model_validate(data)
 
 
+def test_walk_around_rejected_at_talk_level(outline_schema, base_data):
+    """A talk-level walk-around would satisfy coverage with no per-claim evidence."""
+    data = copy.deepcopy(base_data)
+    data["talk"]["applied_patterns"].append(
+        {"id": "walk-around", "registers": ["A", "B", "C", "D"]},
+    )
+    with pytest.raises(ValidationError, match="per-claim"):
+        outline_schema.Outline.model_validate(data)
+
+
 def test_registers_rejected_on_other_patterns(outline_schema, base_data):
     """`registers` is walk-around's instance metadata — no other pattern takes it."""
     data = copy.deepcopy(base_data)

@@ -414,6 +414,23 @@ class TalkMetadata(_StrictModel):
     applied_patterns: list[AppliedPattern] = Field(default_factory=list)
 
     @model_validator(mode="after")
+    def _walk_around_is_per_claim(self) -> "TalkMetadata":
+        """`walk-around` audits a claim, and claims live on slides.
+
+        A talk-level application is a blanket assertion that the talk answers
+        a register somewhere, with nothing to check it against — the
+        unfalsifiable shape the audit exists to prevent.
+        """
+        if any(p.id == "walk-around" for p in self.applied_patterns):
+            raise ValueError(
+                "`walk-around` is a per-claim audit and cannot be declared at "
+                "talk level — attach it to the slides carrying the "
+                "load-bearing claims, with `registers:` naming what each one "
+                "answers",
+            )
+        return self
+
+    @model_validator(mode="after")
     def _register_matches_spread(self) -> "TalkMetadata":
         if self.audience_spread == AudienceSpread.homogeneous:
             if self.dominant_register is None:
