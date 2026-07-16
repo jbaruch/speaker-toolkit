@@ -1,5 +1,52 @@
 # Changelog
 
+### feat(patterns) — add `second-look`
+
+Vault-derived build/slides pattern: build the slide in two legibility layers — a room layer that lands
+from the back row, and a reward layer visibly present but too fine to read live. The unresolved detail
+drives shownotes visits; the slide sells the return trip rather than teaching in the room. The mechanism
+is a curiosity gap (Loewenstein 1994), not the disfluency claim retired below — hence the mandatory room
+layer. Boundaries against `_anti_ant-fonts` and `_anti_slideuments`, and the link to `spaced-followup`
+(the destination is a spaced re-exposure), are stated in the file.
+
+Detection carries a caveat: the pattern is executed with text rendered inside images, so shape-level
+PPTX extraction reports these slides as image-only and inverts the finding. Detectable only from
+rendered slide images. The pipeline fix is #116.
+
+### feat(patterns) — map *Make It Stick* into the taxonomy
+
+Adds *Make It Stick: The Science of Successful Learning* (Brown, Roediger & McDaniel, 2014) as the
+catalog's fourth supplementary source, following the *Presentation Zen* and *Resonate* precedent. The
+existing corpus covered attention, persuasion, and aesthetics but not retention. Taxonomy: 104 → 109
+entries (82 patterns + 27 antipatterns; 97 observable, 12 unobservable).
+
+New: `guess-first` (generation effect), `retrieval-beat` (testing effect), `spaced-followup` (spacing
+effect — unobservable; adds a **Post-Event** section to the go-live checklist, the catalog's first entry
+firing after the talk), and the `nodding-room` antipattern (fluency illusion). Refinements folded into
+`carnegie-hall`, `brain-breaks`, `know-your-audience`, `red-yellow-green`, and `analog-noise`.
+
+**Correction — `analog-noise` was overclaiming.** It asserted as settled fact that hard-to-read fonts
+improve retention (Diemand-Yauman et al. 2011, the study behind Sans Forgetica). That finding has
+replicated poorly: a meta-analysis found essentially nothing for problem solving, and Sans Forgetica
+studies found no benefit over an ordinary font. Re-grounded on the isolation effect (von Restorff),
+which supports the same practice and derives the pattern's key constraint from its mechanism. The
+desirable-difficulties framework is not retired — it concerns effortful *retrieval*, not effortful
+*reading*. Full argument in the file's "Do Not Make It Hard to Read".
+
+**Rejected, recorded so it is not relitigated:** interleaving (a centerpiece of the book, but braiding
+topic threads is workshop guidance and fights `talklet`); mnemonics as a standalone pattern (the book
+frames them as retrieval scaffolding, and `star-moment`'s sound-bite sub-type covers the speaker-side
+use).
+
+Every new file states its own limits: the generation- and testing-effect literatures study learners
+across sessions, not audiences in a room for 45 minutes, so no file claims a talk produces month-later
+recall.
+
+Also drops the duplicated taxonomy counts from `phase3-content.md`, which claimed "78 patterns / 25
+antipatterns matching the index" while the index said 26 — stale before this branch. The enum is
+discovered from the `references/patterns/{prepare,build,deliver}/*.md` globs; the filesystem is the
+source of truth and `_index.md` mirrors it for human readers.
+
 ## 0.18.45 — 2026-07-01
 
 ### fix(rules) — declare `qr-generation-rules.md` in the manifest

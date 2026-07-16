@@ -315,7 +315,7 @@ notes which named patterns and antipatterns are detected per talk.
 - Talks are processed in **parallel batches of 5** subagents
 - Transcripts are downloaded via `yt-dlp` (with `youtube-transcript-api` fallback)
 - Slides are acquired from PPTX files (preferred, richer data) or downloaded as PDFs via `gdown`
-- Each talk is scored against 93 observable patterns from the taxonomy
+- Each talk is scored against the taxonomy's 97 observable entries (73 patterns + 24 antipatterns)
 - Each batch updates the summary, per-talk analysis files, and triggers profile regeneration
 - An interactive clarification session resolves ambiguities and captures confirmed intent
 
@@ -376,24 +376,24 @@ two are invoked via typed `Skill(...)` handoffs.
 
 ### Presentation Patterns Taxonomy
 
-The creator includes a structured reference taxonomy of 104 presentation patterns and
+The creator includes a structured reference taxonomy of 109 presentation patterns and
 antipatterns from *Presentation Patterns* (Ford, McCullough, Schutta 2013) supplemented
-by *Presentation Zen* (Reynolds, 2nd ed. 2012), *Resonate* (Duarte 2010), and a small
-set of vault-derived patterns observed across the corpus (`delayed-self-introduction`,
-`three-part-close`, `progressive-reveal`, `anti-sell`, `meme-as-argument`), organized
-by presentation lifecycle:
+by *Presentation Zen* (Reynolds, 2nd ed. 2012), *Resonate* (Duarte 2010), *Make It Stick*
+(Brown, Roediger, McDaniel 2014), and a small set of vault-derived patterns observed
+across the corpus (`delayed-self-introduction`, `three-part-close`, `progressive-reveal`,
+`anti-sell`, `meme-as-argument`, `second-look`), organized by presentation lifecycle:
 
 - **Prepare** (22): Know Your Audience, Narrative Arc, Triad, Talklet, Brain Breaks, Takahashi, Cave Painting, Opening PUNCH, and more
-- **Build** (48): Foreshadowing, Bookends, Defy Defaults, Vacation Photos, Traveling Highlights, Emergence, Sparkline, Call to Adventure, Call to Action, New Bliss, S.T.A.R. Moment, Three-Part Close, Progressive Reveal, Meme as Argument, and more
-- **Deliver** (34): Carnegie Hall, Breathing Room, Echo Chamber, Seeding the First Question, Screen Blackout, Delayed Self-Introduction, Anti-Sell, Flyover, and more
+- **Build** (51): Foreshadowing, Bookends, Defy Defaults, Vacation Photos, Traveling Highlights, Emergence, Sparkline, Call to Adventure, Call to Action, New Bliss, S.T.A.R. Moment, Three-Part Close, Progressive Reveal, Meme as Argument, Guess First, Retrieval Beat, Second Look, and more
+- **Deliver** (36): Carnegie Hall, Breathing Room, Echo Chamber, Seeding the First Question, Screen Blackout, Delayed Self-Introduction, Anti-Sell, Flyover, Spaced Follow-Up, The Nodding Room, and more
 
-Of the 104 entries, **93 are observable** (detectable from transcripts and slides) and
-**11 are unobservable** (pre-event logistics, physical stage behaviors, external systems
-that leave no trace in recordings).
+Of the 109 entries, **97 are observable** (detectable from transcripts and slides) and
+**12 are unobservable** (pre-event logistics, physical stage behaviors, post-event
+follow-up, and external systems that leave no trace in recordings).
 
 **How it integrates:**
 
-| Integration point | Observable patterns (93) | Unobservable patterns (11) |
+| Integration point | Observable patterns (97) | Unobservable patterns (12) |
 |---|---|---|
 | **Vault scoring** (Step 3 B2) | Scored per talk, aggregated into `pattern_profile` | Excluded from scoring |
 | **Creator Phase 2** | 4-tier Pattern Strategy (Signature / Contextual / New to You / Shake It Up) | Included in recommendations |
@@ -488,11 +488,11 @@ speaker-toolkit/
     |   |   +-- insert-qr.applescript           # AppleScript driver for InsertQR
     |   +-- references/
     |       +-- phase0-intake.md through phase7-post-event.md  # Phase detail docs
-    |       +-- patterns/                     # Presentation Patterns taxonomy (104 entries)
+    |       +-- patterns/                     # Presentation Patterns taxonomy (109 entries)
     |           +-- _index.md                 # Master index, phase mapping, dimension lookup
     |           +-- prepare/                  # 19 patterns + 3 antipatterns
-    |           +-- build/                    # 38 patterns + 10 antipatterns
-    |           +-- deliver/                  # 21 patterns + 13 antipatterns (11 unobservable)
+    |           +-- build/                    # 41 patterns + 10 antipatterns
+    |           +-- deliver/                  # 22 patterns + 14 antipatterns (12 unobservable)
     +-- illustrations/
     |   +-- SKILL.md                          # Visual layer workflow (7 mode-routed steps)
     |   +-- scripts/

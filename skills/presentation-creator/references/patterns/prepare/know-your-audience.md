@@ -31,6 +31,19 @@ The payoff of this research extends beyond content calibration. A prepared speak
 
 Ultimately, audience research is not a one-time activity. If you deliver the same talk at multiple venues, recalibrate each time. A talk that kills at a practitioner conference may fall flat at an executive summit. The content may be identical, but the framing, vocabulary, and examples must shift to match the people in the room.
 
+### Learning Styles Are a Myth
+Audience research turns up a lot of real variation. One apparent axis is not real, and it is worth naming because it is the single most widely believed idea about audiences that has no evidence behind it: the notion that people are visual, auditory, or kinesthetic learners, and that a good speaker serves each style in turn.
+
+The specific claim — the *meshing hypothesis*, that matching delivery to a person's preferred style improves their learning — has been tested and does not hold up. Pashler and colleagues' 2008 review found that almost none of the enormous literature used the experimental design capable of testing the claim, and the few studies that did failed to support it. People absolutely have style *preferences*, and they report them sincerely; those preferences just do not predict what they learn from. Designing around them buys nothing.
+
+The practical consequence is a redirect, not a subtraction. "I should add a diagram for the visual learners" is the wrong instinct with a defensible conclusion attached, and speakers should stop reaching for the wrong instinct:
+
+- **Match the modality to the material, not to the person.** Spatial relationships want a diagram — for everyone in the room, not for a visual subgroup. A time sequence wants an animation. A causal argument wants words. The content has a natural form and the audience's alleged style has no vote in it. This is the same conclusion the learning-styles reasoning arrives at, reached honestly.
+- **Vary the modality anyway, for other reasons.** Changing mode resets attention (`brain-breaks.md`), and multiple representations of a hard idea genuinely help — not because they hit different learners, but because they hit the same learner from different angles.
+- **Spend the research on what varies for real.** Prior knowledge, motivation, vocabulary, attitude toward the topic, and what the audience is afraid of are all genuinely variable, genuinely predictive of what a talk needs, and are what the rest of this pattern is about. Duarte's six-dimensional framework below is a far better use of preparation time than a modality inventory.
+
+The corollary matters for anyone teaching from the stage: the difficulty an audience has with your material is almost never a style mismatch. It is prior knowledge, or it is that your explanation is not as clear as it feels from inside your own head.
+
 ## When to Use / When to Avoid
 Use this pattern always — there is no scenario where understanding your audience is detrimental. Even for impromptu talks, spend whatever time you have gathering intelligence. The only caution is over-researching to the point of paralysis; at some point you must commit to a direction and trust your preparation.
 
@@ -50,3 +63,5 @@ Pairs naturally with Emotional State (understanding audience mood requires knowi
 
 ## Related Reading
 - Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Ch. 3 — "Get to Know the Hero" provides a six-dimensional audience analysis framework (Lifestyle / Knowledge / Motivation / Values / Influence / Respect), an audience segmentation method beyond demographics (people / places / things), and the resistance map (Comfort Zone / Fear / Vulnerabilities / Misunderstanding / Obstacles / Politics). Wiley.
+- Brown, P. C., Roediger, H. L., III, & McDaniel, M. A. (2014). *Make It Stick: The Science of Successful Learning.* Ch. 6 — "Get Beyond Learning Styles" reviews the evidence against the meshing hypothesis and covers the differences between learners that *are* real and worth designing for (prior knowledge, structure-building, rule- versus example-learning). Belknap Press / Harvard University Press.
+- Pashler, H., McDaniel, M., Rohrer, D., & Bjork, R. (2008). "Learning styles: Concepts and evidence." *Psychological Science in the Public Interest*, 9(3) — the review that found the evidence base for style-matching essentially absent.
