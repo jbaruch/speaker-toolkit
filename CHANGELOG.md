@@ -3,7 +3,7 @@
 ### fix(vault-ingress) — stop reporting unreadable slides as wordless (#116)
 
 `pptx-extraction.py` reads text out of PPTX *shapes*. AI-generated illustration decks bake every title,
-callout label, and annotation into the picture, where python-pptx cannot see them — so those slides
+callout label, and annotation into the picture, where python-pptx cannot see them — so those slides were
 extracted as one full-bleed image with no text, and the analysis subagent read that absence as evidence.
 Dimension 8 came out backwards for exactly the decks whose slides carry the most: the Arc of AI 2026 deck
 (113 densely annotated slides) was recorded as *"overwhelmingly image-based … the speakers carry nearly

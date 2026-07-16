@@ -303,8 +303,9 @@ Into Images" and [subagent-instructions.md](subagent-instructions.md)).
 slide shows text.
 
 `image_area_ratio` is the **largest** PICTURE shape's area as a fraction of the
-slide, rounded to 3 decimals; `0.0` when the slide has no picture, or when a
-picture's geometry is unreadable. Always present. The confidence threshold
+slide, rounded to 3 decimals; always present. `0.0` means no picture, unreadable
+picture geometry, **or** a picture small enough to round down — it is not proof
+that the slide has no picture. The confidence threshold
 compares against the unrounded value, so a reported ratio equal to the
 threshold is not proof of which way the slide was classified.
 

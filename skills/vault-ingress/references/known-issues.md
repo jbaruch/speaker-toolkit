@@ -17,11 +17,12 @@ wordless backdrops.
 
 **Mitigations:**
 
-- The extractor no longer asserts absence. A slide whose picture is large
-  enough to be carrying text reports `text_extraction_confidence: "low"` and
-  an `image_area_ratio`; the threshold is the script's
-  (`skills/vault-ingress/scripts/pptx-extraction.py`,
-  `_TEXT_BEARING_IMAGE_AREA_RATIO`).
+- The extractor no longer asserts absence. `text_extraction_confidence: "low"`
+  fires on two conditions: a picture large enough to be carrying text (the
+  threshold is the script's — `skills/vault-ingress/scripts/pptx-extraction.py`,
+  `_TEXT_BEARING_IMAGE_AREA_RATIO`), or an image *background*, which covers the
+  canvas while leaving `image_area_ratio` at `0.0`. Read the confidence, not the
+  ratio.
 - On any low-confidence slide, judge Dimensions 8 and 13 from the **rendered
   image**, never the JSON — see `subagent-instructions.md` § "Slides with
   `text_extraction_confidence: low`". An empty `text_content_preview` there
