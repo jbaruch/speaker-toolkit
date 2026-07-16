@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.52 — 2026-07-16
+
 ### fix(vault-ingress) — stop reporting unreadable slides as wordless (#116)
 
 `pptx-extraction.py` reads text out of PPTX *shapes*. AI-generated illustration decks bake every title,
