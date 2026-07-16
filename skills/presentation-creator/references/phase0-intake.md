@@ -69,7 +69,9 @@ Two failure modes to head off while the speaker is still answering:
 1. **Homogeneity asserted from job titles.** "They're all engineers" describes badges, not what persuades them — the engineer who wants to know who gets paged is in that room. Push once: "what makes you confident they all want the same kind of proof?" Unverified ⇒ `heterogeneous`. Coverage is the safe default; matching is the bet.
 2. **The speaker's own register answering for the room.** The register a speaker reaches for is the one they find convincing, which makes it invisible to them. Ask what kind of evidence *they* would want, note it, and treat it as the register most at risk of crowding out the other three (see `references/patterns/prepare/_anti_golden-rule.md`).
 
-Record the answer in the spec. `check-rhetorical.py` enforces it at Phase 4 — heterogeneous talks must answer all four registers across their declared `walk-around` applications; homogeneous talks must actually answer their declared dominant register. Neither is a judgment the script makes: the agent decides which registers a claim lands, the script checks the union.
+Record the answer in the spec. `check-rhetorical.py` enforces the declaration at Phase 4; its decision contract lives in `_check_register_coverage`'s docstring.
+
+What this step owes that check: `talk.audience_spread`, `talk.dominant_register` when the room is homogeneous, and — during Phase 3 — a `registers:` list on each `walk-around` application naming which questions that claim answers. Judging which registers a claim lands is the agent's call; the script only reads what the agent declared.
 
 ### Step 0.5: Report and Advance
 

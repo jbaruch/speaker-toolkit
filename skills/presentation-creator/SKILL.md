@@ -350,9 +350,10 @@ python3 skills/presentation-creator/scripts/guardrail-check.py   outline.yaml pa
 
 `check-rhetorical.py` enforces the **closed pattern taxonomy** (opening PUNCH,
 big-idea singleton, thesis preview/payoff ordering, sparkline structural
-elements when applicable, master-story threading, callback ledger, inoculation
-count, progressive-list contiguity, duration accounting). Output is the
-`rhetorical-review.md` artifact — PASS / FLAG / N/A per check.
+elements when applicable, register coverage or match, master-story threading,
+callback ledger, inoculation count, progressive-list contiguity, duration
+accounting). Output is the `rhetorical-review.md` artifact — PASS / FLAG / N/A
+per check.
 
 `guardrail-check.py` enforces **speaker-profile-aware rules** that depend on
 runtime profile data — currently: slide budget, Act 1 ratio limits, branding,
