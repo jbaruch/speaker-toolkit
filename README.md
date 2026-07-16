@@ -315,7 +315,7 @@ notes which named patterns and antipatterns are detected per talk.
 - Talks are processed in **parallel batches of 5** subagents
 - Transcripts are downloaded via `yt-dlp` (with `youtube-transcript-api` fallback)
 - Slides are acquired from PPTX files (preferred, richer data) or downloaded as PDFs via `gdown`
-- Each talk is scored against 97 observable patterns from the taxonomy
+- Each talk is scored against the taxonomy's 97 observable entries (73 patterns + 24 antipatterns)
 - Each batch updates the summary, per-talk analysis files, and triggers profile regeneration
 - An interactive clarification session resolves ambiguities and captures confirmed intent
 
