@@ -205,6 +205,85 @@ def test_rhetorical_passes_opening_punch(check_rhetorical, outline):
     assert "### Opening PUNCH — ✅ **PASS**" in content
 
 
+# ── check-rhetorical.py — register coverage (walk-around) ────────────
+
+
+def _outline_from(outline_schema, base_data, mutate):
+    data = copy.deepcopy(base_data)
+    mutate(data)
+    return outline_schema.Outline.model_validate(data)
+
+
+def test_register_coverage_passes_when_all_four_answered(
+    check_rhetorical, outline,
+):
+    content, flag_count = check_rhetorical.render(outline)
+    assert "### Register coverage — ✅ **PASS**" in content
+    assert flag_count == 0
+
+
+def test_register_coverage_flags_missing_register(
+    check_rhetorical, outline_schema, base_data,
+):
+    """Dropping the C+D walk-around leaves a heterogeneous room half-answered."""
+    def mutate(data):
+        for slide in data["slides"]:
+            slide["applied_patterns"] = [
+                p for p in slide.get("applied_patterns", [])
+                if p.get("id") != "walk-around" or p.get("registers") != ["C", "D"]
+            ]
+    o = _outline_from(outline_schema, base_data, mutate)
+    content, flag_count = check_rhetorical.render(o)
+    assert "Register coverage" in content
+    assert "['C', 'D'] unanswered" in content
+    assert flag_count >= 1
+
+
+def test_register_coverage_flags_heterogeneous_with_no_walk_around(
+    check_rhetorical, outline_schema, base_data,
+):
+    def mutate(data):
+        for slide in data["slides"]:
+            slide["applied_patterns"] = [
+                p for p in slide.get("applied_patterns", [])
+                if p.get("id") != "walk-around"
+            ]
+    o = _outline_from(outline_schema, base_data, mutate)
+    content, flag_count = check_rhetorical.render(o)
+    assert "no claim declares a walk-around" in content
+    assert flag_count >= 1
+
+
+def test_register_match_flags_unmatched_homogeneous_room(
+    check_rhetorical, outline_schema, base_data,
+):
+    """A room declared homogeneous on C, with no walk-around answering C."""
+    def mutate(data):
+        data["talk"]["audience_spread"] = "homogeneous"
+        data["talk"]["dominant_register"] = "C"
+        for slide in data["slides"]:
+            slide["applied_patterns"] = [
+                p for p in slide.get("applied_patterns", [])
+                if p.get("id") != "walk-around" or p.get("registers") != ["C", "D"]
+            ]
+    o = _outline_from(outline_schema, base_data, mutate)
+    content, flag_count = check_rhetorical.render(o)
+    assert "Register match" in content
+    assert "no walk-around answers it" in content
+    assert flag_count >= 1
+
+
+def test_register_match_passes_when_dominant_answered(
+    check_rhetorical, outline_schema, base_data,
+):
+    def mutate(data):
+        data["talk"]["audience_spread"] = "homogeneous"
+        data["talk"]["dominant_register"] = "C"
+    o = _outline_from(outline_schema, base_data, mutate)
+    content, _ = check_rhetorical.render(o)
+    assert "### Register match — ✅ **PASS**" in content
+
+
 def test_rhetorical_reports_big_idea_location(check_rhetorical, outline):
     content, _ = check_rhetorical.render(outline)
     # Fixture has big_idea on slide 5 (Call to Adventure)

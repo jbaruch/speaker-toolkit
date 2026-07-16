@@ -1,5 +1,37 @@
 # Changelog
 
+### feat(presentation-creator) — wire the cover-or-match decision into intake and enforce it
+
+The `walk-around` cover-or-match call is worth nothing as a retrospective score — by review time the
+talk is already built in one register. It now enters at intake and is enforced deterministically.
+
+- **Intake** — `phase0-intake.md` gains Step 0.4 ("Read the Audience Spread"), asked right after the
+  audience-as-hero stance: *is this room mixed in what it accepts as proof, or does it all speak one
+  language?* Step 0.4 (Report and Advance) renumbers to 0.5. The step heads off both failure modes:
+  homogeneity asserted from job titles ("they're all engineers" describes badges, not what persuades
+  them — unverified ⇒ heterogeneous, since coverage is the safe default and matching is the bet), and
+  the speaker's own register answering for the room.
+- **Schema** — `talk.audience_spread` (`heterogeneous` | `homogeneous`) is required; `talk.dominant_register`
+  (`A`/`B`/`C`/`D`) is required iff homogeneous and rejected otherwise. `walk-around` gains `registers`
+  instance metadata declaring which questions an application answers, alongside `star-moment`'s `subtype`
+  and `opening-punch`'s `flavors`.
+- **Check** — `check-rhetorical.py` gains `_check_register_coverage`, mirroring `_check_sparkline_requirements`:
+  a heterogeneous talk must answer all four registers across its declared walk-arounds; a homogeneous talk
+  must actually answer its declared dominant register. The split follows `script-delegation` — the agent
+  judges which registers a claim lands (reasoning), the script checks the union (deterministic). Detecting
+  register from prose would be the regex trap.
+
+**Breaking:** `audience_spread` is required, so outlines predating this release fail validation with an
+actionable message. That is deliberate — the field exists to force the question, and defaulting it would
+let the decision be skipped, which is the failure the change addresses.
+
+The fixture now exercises the full loop: a heterogeneous room walked around A+B on the Big Idea claim and
+C+D on the S.T.A.R. claim. Twelve tests cover the validators and both check branches.
+
+Also suppresses a pre-existing pyright finding on `SlideFormat.title` (a str-Enum member named after a str
+method — Enum members shadow inherited methods by design, so the assignment-type error is a false positive),
+inline with a stated reason per `language-diagnostics`.
+
 ### feat(patterns) — map *The Whole Brain Business Book* into the taxonomy
 
 Adds `walk-around` and the `golden-rule` antipattern from Ned Herrmann's *The Whole Brain Business Book*

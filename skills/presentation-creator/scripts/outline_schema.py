@@ -85,6 +85,31 @@ ARCHITECTURE_IDS: frozenset[str] = frozenset({
 # ── Closed enums for instance metadata ───────────────────────────────
 
 
+class AudienceSpread(str, Enum):
+    """Whether the room is mixed in what it accepts as proof.
+
+    Drives `walk-around`'s cover-or-match decision. Homogeneity is a claim
+    about what persuades the room, never about job titles.
+    """
+
+    heterogeneous = "heterogeneous"
+    homogeneous = "homogeneous"
+
+
+class Register(str, Enum):
+    """The four question archetypes a `walk-around` answers.
+
+    Herrmann's quadrant letters, kept as a recognizable handle. These name
+    kinds of question, never kinds of person — see
+    `references/patterns/prepare/walk-around.md`.
+    """
+
+    a_precision = "A"  # what exactly, and how do you know?
+    b_process = "B"  # how does it work, in what order?
+    c_impact = "C"  # who does this affect, and how will it land?
+    d_implication = "D"  # where does this lead, what does it connect to?
+
+
 class PunchFlavor(str, Enum):
     personal = "personal"
     unexpected = "unexpected"
@@ -122,7 +147,10 @@ class SlideFormat(str, Enum):
     img_txt = "IMG+TXT"
     exception = "EXCEPTION"
     demo = "DEMO"
-    title = "TITLE"
+    # Enum members shadow inherited str methods by design — `SlideFormat.title`
+    # resolves to the member, never to `str.title`. The assignment-type finding
+    # is a false positive on every str-Enum member named after a str method.
+    title = "TITLE"  # pyright: ignore[reportAssignmentType]
 
 
 class Composition(str, Enum):
@@ -169,11 +197,13 @@ _PATTERN_INSTANCE_FIELDS: dict[str, frozenset[str]] = {
     "foreshadowing": frozenset({"plant_id"}),
     "call-to-adventure": frozenset({"big_idea_text"}),
     "call-to-action": frozenset({"asks"}),
+    "walk-around": frozenset({"registers"}),
 }
 
 _ALL_INSTANCE_FIELDS: frozenset[str] = frozenset({
     "flavors", "subtype", "resistance_vector",
     "story_id", "beat", "plant_id", "big_idea_text", "asks",
+    "registers",
 })
 
 
@@ -189,6 +219,10 @@ class AppliedPattern(_StrictModel):
     plant_id: str | None = None
     big_idea_text: str | None = None
     asks: dict[AudienceTemperament, str] | None = None
+    # Which of the four question archetypes this walk-around application
+    # answers. The agent judges which registers a claim actually lands;
+    # check-rhetorical.py checks the union across the talk.
+    registers: list[Register] | None = Field(default=None, min_length=1)
 
     @field_validator("id")
     @classmethod
@@ -363,12 +397,39 @@ class TalkMetadata(_StrictModel):
     speakers: list[str] = Field(min_length=1)
     duration_min: float = Field(gt=0)
     audience: str
+    # Whether the room is mixed in what it accepts as proof, or uniform.
+    # Drives the `walk-around` cover-or-match decision: a heterogeneous room
+    # gets all four registers, a homogeneous one gets its own. Declared at
+    # intake so the choice is made deliberately rather than defaulted into.
+    audience_spread: AudienceSpread
+    # Which register a homogeneous room speaks. Required iff the room is
+    # homogeneous; forbidden otherwise (there is no single register to name
+    # for a mixed room).
+    dominant_register: Register | None = None
     mode: str
     venue: str
     slide_budget: int = Field(gt=0)
     pacing_wpm: tuple[int, int]
     architecture: str
     applied_patterns: list[AppliedPattern] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _register_matches_spread(self) -> "TalkMetadata":
+        if self.audience_spread == AudienceSpread.homogeneous:
+            if self.dominant_register is None:
+                raise ValueError(
+                    "audience_spread 'homogeneous' requires 'dominant_register' "
+                    "(A=precision/evidence, B=process/sequence, C=human impact, "
+                    "D=implication) — name the register the room speaks, or set "
+                    "audience_spread to 'heterogeneous' and cover all four",
+                )
+        elif self.dominant_register is not None:
+            raise ValueError(
+                "audience_spread 'heterogeneous' does not accept "
+                "'dominant_register' — a mixed room has no single register; "
+                "cover all four via walk-around instead",
+            )
+        return self
 
     # Spec metadata (collapsed from the legacy presentation-spec.md).
     # All optional — older outlines without these fields still validate.

@@ -4,7 +4,8 @@
 # builds expansion, EXCEPTION format with justification, opening-punch
 # with flavors, sparkline architecture with all four required patterns,
 # foreshadowing plant + payoff via callbacks, big-idea singleton,
-# master-story across two chapters, inoculation with resistance vector.
+# master-story across two chapters, inoculation with resistance vector,
+# heterogeneous audience walked around all four registers (A+B, then C+D).
 
 talk:
   title: "Demo Talk"
@@ -12,6 +13,7 @@ talk:
   speakers: ["Speaker One"]
   duration_min: 30
   audience: "Senior engineers"
+  audience_spread: "heterogeneous"
   mode: "keynote"
   venue: "DemoConf 2026"
   slide_budget: 20
@@ -157,6 +159,8 @@ slides:
     applied_patterns:
       - id: call-to-adventure
         big_idea_text: "Treat context as an engineering artifact."
+      - id: walk-around
+        registers: [A, B]
     big_idea: true
     thesis: preview
 
@@ -172,6 +176,8 @@ slides:
     callbacks:
       - { kind: pay, id: receipt-motif, variation: "Revealed in full" }
     applied_patterns:
+      - id: walk-around
+        registers: [C, D]
       - id: star-moment
         subtype: shocking-statistic
       - id: inoculation

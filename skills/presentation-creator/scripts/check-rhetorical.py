@@ -205,6 +205,77 @@ def _check_sparkline_requirements(outline: _os.Outline) -> list[CheckResult]:
     return out
 
 
+def _check_register_coverage(outline: _os.Outline) -> list[CheckResult]:
+    """Enforce the `walk-around` cover-or-match decision declared at intake.
+
+    - `heterogeneous` — the union of registers declared across every
+      walk-around application must cover all four. A mixed room contains all
+      four questions; leaving one unanswered leaves that slice of the room
+      waiting.
+    - `homogeneous` — the declared `dominant_register` must actually appear
+      among the declared registers. A room matched on paper and not in the
+      talk is matched nowhere.
+
+    Zero walk-around applications is a FLAG on a heterogeneous talk (nothing
+    was audited) and N/A on a homogeneous one (matching needs no audit trail
+    beyond the dominant register, which is checked when walk-arounds exist).
+    """
+    spread = outline.talk.audience_spread
+    declared: dict[str, list[str]] = {}
+    for location, p in _all_applied_patterns(outline):
+        if p.id == "walk-around" and p.registers:
+            for r in p.registers:
+                declared.setdefault(r.value, []).append(location)
+
+    if spread == _os.AudienceSpread.homogeneous:
+        dom = outline.talk.dominant_register
+        assert dom is not None  # schema validator guarantees this
+        if not declared:
+            return [CheckResult(
+                "Register match",
+                "N/A",
+                f"Homogeneous room declared (register `{dom.value}`); no "
+                f"walk-around applications to check.",
+            )]
+        if dom.value not in declared:
+            return [CheckResult(
+                "Register match",
+                "FLAG",
+                f"Room declared homogeneous on register `{dom.value}`, but no "
+                f"walk-around answers it (declared: "
+                f"{sorted(declared)}). Match the room or re-declare the spread.",
+            )]
+        return [CheckResult(
+            "Register match",
+            "PASS",
+            f"Homogeneous room matched on `{dom.value}` at {declared[dom.value]}",
+        )]
+
+    missing = [r.value for r in _os.Register if r.value not in declared]
+    if not declared:
+        return [CheckResult(
+            "Register coverage",
+            "FLAG",
+            "Room declared heterogeneous, but no claim declares a walk-around. "
+            "A mixed room contains all four questions — audit the load-bearing "
+            "claims, or re-declare the spread as homogeneous.",
+        )]
+    if missing:
+        return [CheckResult(
+            "Register coverage",
+            "FLAG",
+            f"Room declared heterogeneous; registers {missing} unanswered "
+            f"(covered: {sorted(declared)}). Every register left unanswered is "
+            f"a slice of the room whose question the talk never reaches.",
+        )]
+    return [CheckResult(
+        "Register coverage",
+        "PASS",
+        f"All four registers answered: "
+        f"{ {k: v for k, v in sorted(declared.items())} }",
+    )]
+
+
 def _check_master_story_threading(outline: _os.Outline) -> CheckResult:
     """Each master-story id must have `introduce` before any `recall-N`,
     and recall indexes should appear in increasing order."""
@@ -415,6 +486,7 @@ def render(outline: _os.Outline) -> tuple[str, int]:
         _check_big_idea(outline),
         _check_thesis_ordering(outline),
         *_check_sparkline_requirements(outline),
+        *_check_register_coverage(outline),
         _check_master_story_threading(outline),
         _check_inoculation_count(outline),
         _check_progressive_lists(outline),
