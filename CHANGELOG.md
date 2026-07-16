@@ -1,5 +1,56 @@
 # Changelog
 
+### feat(patterns) — add `second-look`: two-layer slide legibility as a shownotes conversion engine
+
+Adds a vault-derived build/slides pattern, taking the taxonomy to 109 entries (82 patterns + 27
+antipatterns; 97 observable). Joins `delayed-self-introduction`, `three-part-close`,
+`progressive-reveal`, `anti-sell`, and `meme-as-argument` as patterns observed in the speaker's own
+corpus rather than sourced from a book.
+
+**The pattern.** Build the slide in two legibility layers: a room layer that lands from the back row,
+and a reward layer that is visibly present but deliberately too fine to read live. The unresolved
+detail drives shownotes visits. The slide does not teach in the room — it sells the return trip.
+
+**Why it is not the retired disfluency claim.** `analog-noise`'s "Do Not Make It Hard to Read"
+(same release) retires the idea that decoding effort deepens encoding. Second Look makes no encoding
+claim: nothing about a tiny label makes it better remembered. The mechanism is a curiosity gap
+(Loewenstein 1994) — a *specific, closeable* gap that the audience knows they have. Hence the pattern's
+non-negotiable condition: the gap must be legible *as a gap*. An audience that cannot read the slide
+and does not know what they missed has not experienced a gap, they have experienced a bad slide. That
+condition is what makes the room layer mandatory and what separates this from `_anti_ant-fonts`.
+
+**Grounded in the deck, not the theory.** Written after rendering and reading
+*The AI-Native Developer: From Tools to Teammates* (Arc of AI 2026, 58pp). Slide 1 carries a room layer
+of three elements (title + OPTIMISTIC / SKEPTICAL callouts) over a reward layer nobody in the room can
+read — including a skeleton in the sub-floor plenum labeled PREVIOUS SPEAKER (OVERTIME VIOLATION), a
+joke that exists only for the second look. The destination is themed rather than bolted on (a
+FIELD INTELLIGENCE PACKAGE — SHOWNOTES requisition slide mid-deck, repeated at the close as
+THIS MANUAL IS NOW DECLASSIFIED. DISTRIBUTE FREELY). The deck's most transferable move: a
+`unifying-visual-theme` drawn from the reference-artifact family (manual, map, dossier, blueprint) is
+*definitionally* something you consult later, so the theme pre-sells the return trip before any slide
+asks for it.
+
+**Boundaries stated in-file.** Against `_anti_ant-fonts` — the test is whether the audience *needed* to
+read it; payload behind an unreadable font is the antipattern, bonus detail is this pattern. Against
+`_anti_slideuments` — slideuments cram both jobs into one layer and degrade both; Second Look separates
+them by legibility stratum, so the artifact is good at both because it is not doing both *at once*.
+Against `analog-noise` — surface resemblance (both may be line art), different mechanism (isolation
+effect vs curiosity gap). Its most consequential link is to `spaced-followup`: a shownotes visit days
+later is a self-motivated spaced re-exposure, so Second Look is the in-room *pull* for the same
+re-exposure `spaced-followup` achieves by *push*.
+
+**Detection carries an extraction caveat that inverts the result.** The pattern is executed with text
+rendered *inside* images, so shape-level PPTX extraction reports these slides as "a single full-bleed
+image with no text" and scores them `vacation-photos` / `cave-painting` — the opposite of what is on
+screen. Second Look is detectable only from rendered slide images. The vault's existing analysis of the
+Arc of AI talk demonstrates the failure: it scored Dimension 8 as "slides are overwhelmingly image-based
+… speakers carry nearly 100% of the information verbally," which is backwards for a deck whose slides
+carry far more than the narration does. Tracked separately; the analysis needs a re-run against rendered
+images, and the ingress pipeline needs to stop inferring text density from shape counts.
+
+Surface sync: `_index.md` (build table, Phase 5/6 lookups, dims 8 and 13, statistics, Sources — now
+records vault-derived provenance explicitly), `README.md`, `tests/test_outline_schema.py` (81 → 82).
+
 ### feat(patterns) — map *Make It Stick* into the taxonomy: 4 new entries, 5 refinements, 1 correction
 
 Adds *Make It Stick: The Science of Successful Learning* (Brown, Roediger & McDaniel, 2014) as the

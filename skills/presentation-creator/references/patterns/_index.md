@@ -4,7 +4,7 @@ Structured reference taxonomy primarily based on *Presentation Patterns: Techniq
 Crafting Better Presentations* (Neal Ford, Matthew McCullough, Nathaniel Schutta, 2013),
 with supplementary patterns and reinforcements from *Presentation Zen* (Garr Reynolds,
 2nd ed., 2012) and *Resonate: Present Visual Stories that Transform Audiences* (Nancy
-Duarte, 2010). Contains 81 named patterns and 27 antipatterns organized by presentation
+Duarte, 2010). Contains 82 named patterns and 27 antipatterns organized by presentation
 lifecycle phase. See the Sources section at the end of this file for full citations.
 
 **This is the primary entry point.** The agent reads this file first, then drills into
@@ -57,7 +57,7 @@ combinatorics are needed.
 | alienating-artifact | Alienating Artifact | antipattern | 3, 10, 14 | guardrails | know-your-audience, brain-breaks |
 | celery | Celery | antipattern | 2, 14 | guardrails | required, know-your-audience, narrative-arc, brain-breaks |
 
-### Build Phase (40 patterns + 10 antipatterns)
+### Build Phase (41 patterns + 10 antipatterns)
 
 | ID | Name | Type | Vault Dims | Creator Phases | Related |
 |----|------|------|------------|----------------|---------|
@@ -74,6 +74,7 @@ combinatorics are needed.
 | concrete-before-abstract | Concrete Before Abstract | pattern | 11, 9, 2 | content | live-demo, master-story, vacation-photos, mentor, the-big-why, sparkline |
 | guess-first | Guess First | pattern | 2, 4, 11 | content, slides | concrete-before-abstract, retrieval-beat, live-demo, progressive-reveal, foreshadowing, inoculation |
 | retrieval-beat | Retrieval Beat | pattern | 4, 12 | architecture, content, slides | guess-first, backtracking, breadcrumbs, brain-breaks, spaced-followup, bookends |
+| second-look | Second Look | pattern | 8, 13 | slides, publishing | unifying-visual-theme, spaced-followup, coda, star-moment, vacation-photos, gradual-consistency, infodeck |
 | coda | Coda | pattern | 6, 8 | content, slides | infodeck, vacation-photos |
 | peer-review | Peer Review | pattern | 7, 8 | content, guardrails | leet-grammars |
 | foreshadowing | Foreshadowing | pattern | 2, 5 | content | narrative-arc, talklet, backtracking, intermezzi |
@@ -229,6 +230,7 @@ Visual/construction patterns — applied during slide generation.
 - preroll, crawling-credits, bookends, intermezzi, breadcrumbs
 - screen-blackout
 - guess-first, retrieval-beat *(question/answer slide construction — the deck must withhold)*
+- second-look *(two-layer legibility — requires a destination; without one it is ant-fonts)*
 - cookie-cutter, ant-fonts, fontaholic, floodmarks, photomaniac, laser-weapons *(antipatterns)*
 
 ### Phase 6: Publishing
@@ -240,6 +242,7 @@ Delivery prep patterns — final checklist before the talk.
 - social-media-advertising, preroll, live-on-tape
 - call-to-action *(go-live preparation — confirm asks are concrete and immediately executable)*
 - spaced-followup *(post-event — the only checklist item that fires after the talk)*
+- second-look *(confirm the shownotes destination exists and the deck is actually published)*
 
 ---
 
@@ -256,12 +259,12 @@ Reverse lookup: which patterns relate to each of the 14 rhetoric analysis dimens
 | 5 | Transition Techniques | narrative-arc, foreshadowing, backtracking, context-keeper, bookends, intermezzi, soft-transitions, cave-painting, sparkline, new-bliss, star-moment, master-story | — |
 | 6 | Closing Pattern | coda, crawling-credits, call-to-action, new-bliss, spaced-followup | — |
 | 7 | Verbal Signatures | leet-grammars, peer-review, breathing-room, echo-chamber, master-story | hiccup-words, borrowed-shoes, tower-of-babble |
-| 8 | Slide-to-Speech Relationship | fourthought, concurrent-creation, coda, vacation-photos, infodeck, gradual-consistency, charred-trail, takahashi, live-on-tape, peer-review | cookie-cutter, injured-outlines, bullet-riddled-corpse, borrowed-shoes, slideuments, lipstick-on-a-pig |
+| 8 | Slide-to-Speech Relationship | fourthought, concurrent-creation, coda, vacation-photos, infodeck, gradual-consistency, charred-trail, takahashi, live-on-tape, peer-review, second-look | cookie-cutter, injured-outlines, bullet-riddled-corpse, borrowed-shoes, slideuments, lipstick-on-a-pig |
 | 9 | Persuasion Techniques | know-your-audience, required, the-big-why, proposed, display-of-high-value, emotional-state, mentor, greek-chorus, sparkline, call-to-adventure, call-to-action, new-bliss, inoculation, concrete-before-abstract | disowning-your-topic, going-meta, tower-of-babble, lipstick-on-a-pig |
 | 10 | Cultural & Pop-Culture References | leet-grammars, unifying-visual-theme, entertainment | alienating-artifact, photomaniac |
 | 11 | Technical Content Delivery | live-demo, lipsync, traveling-highlights, crawling-code, emergence, mentor, lightsaber, concrete-before-abstract, guess-first | dead-demo |
 | 12 | Pacing Clues | crucible, expansion-joints, talklet, brain-breaks, lightning-talk, takahashi, carnegie-hall, breathing-room, weatherman, screen-blackout, retrieval-beat | shortchanged, disowning-your-topic, nodding-room |
-| 13 | Slide Design Patterns | unifying-visual-theme, takahashi, cave-painting, composite-animation, vacation-photos, defy-defaults, analog-noise, gradual-consistency, charred-trail, exuberant-title-top, invisibility, context-keeper, breadcrumbs, bookends, soft-transitions, intermezzi, preroll, crawling-credits, lipsync, traveling-highlights, crawling-code, emergence, screen-blackout, star-moment | cookie-cutter, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, laser-weapons |
+| 13 | Slide Design Patterns | unifying-visual-theme, takahashi, cave-painting, composite-animation, vacation-photos, defy-defaults, analog-noise, gradual-consistency, charred-trail, exuberant-title-top, invisibility, context-keeper, breadcrumbs, bookends, soft-transitions, intermezzi, preroll, crawling-credits, lipsync, traveling-highlights, crawling-code, emergence, screen-blackout, star-moment, second-look | cookie-cutter, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, laser-weapons |
 | 14 | Areas for Improvement | crucible, preparation, carnegie-hall, shoeless, stakeout | abstract-attorney, alienating-artifact, celery, injured-outlines, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, borrowed-shoes, slideuments, dead-demo, shortchanged, hiccup-words, disowning-your-topic, going-meta, bunker, hecklers, backchannel, laser-weapons, negative-ignorance, dual-headed-monster, tower-of-babble, lipstick-on-a-pig, flyover, nodding-room |
 
 ---
@@ -308,16 +311,17 @@ they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation 
 
 ## Summary Statistics
 
-- **Total entries:** 108 (81 patterns + 27 antipatterns)
-- **Observable (vault-scorable):** 96 (72 patterns + 24 antipatterns)
+- **Total entries:** 109 (82 patterns + 27 antipatterns)
+- **Observable (vault-scorable):** 97 (73 patterns + 24 antipatterns)
 - **Unobservable (go-live checklist):** 12 (9 patterns + 3 antipatterns)
 - **Prepare phase:** 22 (19 patterns + 3 antipatterns)
-- **Build phase:** 50 (40 patterns + 10 antipatterns)
+- **Build phase:** 51 (41 patterns + 10 antipatterns)
 - **Deliver phase:** 36 (22 patterns + 14 antipatterns)
 
 ## Sources
 
 - Ford, N., McCullough, M., & Schutta, N. (2013). *Presentation Patterns: Techniques for Crafting Better Presentations.* Addison-Wesley. — primary taxonomy source.
 - Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). New Riders. — supplementary source; reinforces ~17 existing patterns and contributes the `opening-punch` and `screen-blackout` patterns plus three refinement subsections folded into existing patterns: "Hara Hachi Bu — The 90–95% Finish Line" (in `breathing-room.md`), "Plan Analog Before Going Digital" (in `concurrent-creation.md`), and "The Elevator Test" (in `the-big-why.md`).
+- Vault-derived patterns — observed across the speaker's own corpus rather than sourced from a book: `delayed-self-introduction`, `three-part-close`, `progressive-reveal`, `anti-sell`, `meme-as-argument`, `second-look`. Mechanism support is cited per-file where a literature basis exists (e.g. `second-look` cites Loewenstein's information-gap account of curiosity); the evidence is field observation.
 - Brown, P. C., Roediger, H. L., III, & McDaniel, M. A. (2014). *Make It Stick: The Science of Successful Learning.* Belknap Press / Harvard University Press. — supplementary source; the catalog's only retention-science source. Contributes three new patterns (`guess-first`, `retrieval-beat`, `spaced-followup`) and one new antipattern (`nodding-room`), plus five refinement subsections folded into existing patterns: "Rehearse by Retrieval, Not Rereading" (in `carnegie-hall.md`), "The Consolidation Pause" (in `brain-breaks.md`), "Learning Styles Are a Myth" (in `know-your-audience.md`), "Smile Sheets Do Not Measure Retention" (in `red-yellow-green.md`), and "Do Not Make It Hard to Read" (in `analog-noise.md`, which corrects a retracted disfluency claim the file previously carried).
 - Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Wiley. — supplementary source; reinforces ~20 existing patterns and contributes seven new build-phase patterns (`sparkline`, `call-to-adventure`, `call-to-action`, `new-bliss`, `star-moment`, `inoculation`, `master-story`) plus six refinement subsections folded into existing patterns: "Adopting the Stance — Planning Implications" (in `mentor.md`), "The Big Idea — Statement Format" (in `the-big-why.md`), "Numerical Narrative — Making Numbers Land" (in `vacation-photos.md`), "Screening with Critics — Beyond Copyediting" (in `peer-review.md`), "Murder Your Darlings — The Pre-Delivery Cut Pass" (in `crucible.md`), and "The Three Contrast Types — Engine of the Middle" (in `sparkline.md`).
