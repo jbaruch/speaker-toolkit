@@ -6,7 +6,8 @@ Important Notes section as one-line summaries.
 
 ## Shape Extraction Is Blind to Text Baked Into Images
 
-`pptx-extraction.py` reads text out of PPTX **shapes**. AI-generated
+`skills/vault-ingress/scripts/pptx-extraction.py` reads text out of PPTX
+**shapes**. AI-generated
 illustration decks render every title, callout label, stamp, and annotation
 *inside the picture*, where python-pptx cannot see any of it. Such a slide
 extracts as one full-bleed image with no text.
@@ -24,7 +25,8 @@ python-pptx shape measurement: the analyst had read the JSON, not the slides.
 
 - The extractor no longer asserts absence. A slide whose picture is large
   enough to be carrying text reports `text_extraction_confidence: "low"` and
-  an `image_area_ratio`; the threshold is the script's (`pptx-extraction.py`,
+  an `image_area_ratio`; the threshold is the script's
+  (`skills/vault-ingress/scripts/pptx-extraction.py`,
   `_TEXT_BEARING_IMAGE_AREA_RATIO`).
 - On any low-confidence slide, judge Dimensions 8 and 13 from the **rendered
   image**, never the JSON — see `subagent-instructions.md` § "Slides with

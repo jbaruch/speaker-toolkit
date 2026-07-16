@@ -264,7 +264,7 @@ Produced by `scripts/pptx-extraction.py`.
     {
       "slide_number": 1,
       "background_color_hex": "#5B2C6F",
-      "background_type": "solid|pattern|image|gradient",
+      "background_type": "solid|pattern|image|gradient|solid_from_layout|unknown",
       "layout_name": "TITLE",
       "shape_count": 3,
       "has_text_frame_shapes": true,
