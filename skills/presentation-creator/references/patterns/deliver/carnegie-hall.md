@@ -11,7 +11,7 @@ detection_signals:
   - "well-timed pacing"
   - "smooth transitions between sections"
   - "confident recovery from disruptions"
-related_patterns: [crucible]
+related_patterns: [crucible, retrieval-beat]
 inverse_of: []
 difficulty: foundational
 observable: false
@@ -33,6 +33,23 @@ The rehearsal process also builds muscle memory for your presentation flow. When
 
 Many speakers skip rehearsal because they "know the material." Knowing the material and being able to deliver it compellingly are entirely different skills. A jazz musician knows music theory, but still practices before a gig. Your presentation deserves the same respect.
 
+### Rehearse by Retrieval, Not Rereading
+The four-rehearsal framework says how many times to practice and what to aim at each time. It does not say what practice *is*, and the default answer most speakers reach for is the one that does the least good: open the deck, advance through it, talk over each slide until the whole thing feels smooth.
+
+That is rereading with extra steps, and its smoothness is a lie. Each slide **cues** the words that go with it, so the speaker never once has to produce the talk from memory — the deck produces it for them. What builds across those run-throughs is fluency in the presence of the cue, and the speaker experiences that fluency as mastery. Then the cue changes. The clicker fails, the projector shows the wrong slide, a question arrives two sections early, the fire alarm eats six minutes and the deck has to be re-planned live — and the fluency evaporates, because it was never in the speaker. It was in the slides.
+
+This is the *fluency illusion* aimed at its own author, and it is the exact mechanism `_anti_nodding-room.md` describes on the audience side. The room mistakes recognition for learning; the speaker mistakes a cued run-through for knowing the talk. Both are betrayed by the same finding: the feeling of ease is produced by the presence of the cue, not by the strength of the memory.
+
+The fix costs nothing and changes the four rehearsals from the inside:
+
+- **Close the deck and retrieve the spine.** Before running the slides, say the talk's structure out loud from memory — sections, order, the point of each, the transitions between. Where you stall is where the talk is actually weak; the run-through would have papered over exactly that spot, because the slide would have told you what came next.
+- **Rehearse the transitions cold.** The joins are what the deck cues most aggressively and what fails first when anything goes wrong. Practice going from section three to section four with nothing in front of you.
+- **Let it be uncomfortable.** Closed-deck rehearsal feels markedly worse than an open-deck run-through. That is the tell that it is working, not a sign to stop; smoothness is the sensation the cue produces, and you have just removed the cue.
+
+**Space them.** The four rehearsals crammed into the night before are massed practice, which produces the strongest possible feeling of readiness and the weakest retention — the same trade as cramming for an exam, with the same morning-after result. Four rehearsals across four days beat four rehearsals across one evening, and it is not close. The one that lands the day before does the least work of the four; the one that lands five days out, when the material has gone cold enough that retrieving it is genuinely hard, does the most.
+
+This does not replace the four-rehearsal structure — pacing, delivery, audition, groove all still apply. It changes what happens inside each: retrieve first with the deck closed, then run it open to test what the retrieval revealed. The audition pass in front of colleagues remains the highest-fidelity rehearsal available precisely because a live audience is the one condition that removes every cue you have been leaning on.
+
 ## When to Use / When to Avoid
 Use this pattern for every presentation, scaling the number of rehearsals to the stakes involved. A keynote demands all four rehearsals; a familiar talk at a local meetup might need only a quick timing pass. Avoid over-rehearsing to the point where delivery becomes robotic — the goal is confident flexibility, not rote memorization. If you find yourself delivering lines identically every time with no room for spontaneity, you have crossed the line.
 
@@ -52,3 +69,8 @@ This pattern maps to Vault Dimension 12 (Delivery Mechanics) through the direct 
 
 ## Combinatorics
 Carnegie Hall is the rehearsal counterpart to Preparation's logistics focus. Together they form the complete pre-performance foundation. Carnegie Hall directly enables Breathing Room (you can only place strategic pauses when you know your timing), supports Display of High Value (rehearsal builds the confidence that projects authority), and feeds into Crucible (post-delivery refinement builds on rehearsal insights). The Shoeless pattern can be incorporated into rehearsals to test comfort rituals.
+
+It shares its central mechanism with `retrieval-beat` — closed-deck rehearsal is a Retrieval Beat the speaker performs on themselves — and its failure mode with `_anti_nodding-room.md`, which is the same fluency illusion seated in the audience instead of on the stage. A speaker who rehearses by rereading and a room that learns by nodding are making identical mistakes about what ease means.
+
+## Related Reading
+- Brown, P. C., Roediger, H. L., III, & McDaniel, M. A. (2014). *Make It Stick: The Science of Successful Learning.* Ch. 5 — "Avoid Illusions of Knowing" supplies the fluency-illusion mechanism behind cued rehearsal; Ch. 3 — "Mix Up Your Practice" supplies the massed-versus-spaced argument for distributing the four rehearsals across days rather than one evening. Belknap Press / Harvard University Press.

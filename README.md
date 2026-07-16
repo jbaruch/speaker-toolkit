@@ -376,20 +376,20 @@ two are invoked via typed `Skill(...)` handoffs.
 
 ### Presentation Patterns Taxonomy
 
-The creator includes a structured reference taxonomy of 104 presentation patterns and
+The creator includes a structured reference taxonomy of 108 presentation patterns and
 antipatterns from *Presentation Patterns* (Ford, McCullough, Schutta 2013) supplemented
-by *Presentation Zen* (Reynolds, 2nd ed. 2012), *Resonate* (Duarte 2010), and a small
-set of vault-derived patterns observed across the corpus (`delayed-self-introduction`,
-`three-part-close`, `progressive-reveal`, `anti-sell`, `meme-as-argument`), organized
-by presentation lifecycle:
+by *Presentation Zen* (Reynolds, 2nd ed. 2012), *Resonate* (Duarte 2010), *Make It Stick*
+(Brown, Roediger, McDaniel 2014), and a small set of vault-derived patterns observed
+across the corpus (`delayed-self-introduction`, `three-part-close`, `progressive-reveal`,
+`anti-sell`, `meme-as-argument`), organized by presentation lifecycle:
 
 - **Prepare** (22): Know Your Audience, Narrative Arc, Triad, Talklet, Brain Breaks, Takahashi, Cave Painting, Opening PUNCH, and more
-- **Build** (48): Foreshadowing, Bookends, Defy Defaults, Vacation Photos, Traveling Highlights, Emergence, Sparkline, Call to Adventure, Call to Action, New Bliss, S.T.A.R. Moment, Three-Part Close, Progressive Reveal, Meme as Argument, and more
-- **Deliver** (34): Carnegie Hall, Breathing Room, Echo Chamber, Seeding the First Question, Screen Blackout, Delayed Self-Introduction, Anti-Sell, Flyover, and more
+- **Build** (50): Foreshadowing, Bookends, Defy Defaults, Vacation Photos, Traveling Highlights, Emergence, Sparkline, Call to Adventure, Call to Action, New Bliss, S.T.A.R. Moment, Three-Part Close, Progressive Reveal, Meme as Argument, Guess First, Retrieval Beat, and more
+- **Deliver** (36): Carnegie Hall, Breathing Room, Echo Chamber, Seeding the First Question, Screen Blackout, Delayed Self-Introduction, Anti-Sell, Flyover, Spaced Follow-Up, The Nodding Room, and more
 
-Of the 104 entries, **93 are observable** (detectable from transcripts and slides) and
-**11 are unobservable** (pre-event logistics, physical stage behaviors, external systems
-that leave no trace in recordings).
+Of the 108 entries, **96 are observable** (detectable from transcripts and slides) and
+**12 are unobservable** (pre-event logistics, physical stage behaviors, post-event
+follow-up, and external systems that leave no trace in recordings).
 
 **How it integrates:**
 
@@ -488,11 +488,11 @@ speaker-toolkit/
     |   |   +-- insert-qr.applescript           # AppleScript driver for InsertQR
     |   +-- references/
     |       +-- phase0-intake.md through phase7-post-event.md  # Phase detail docs
-    |       +-- patterns/                     # Presentation Patterns taxonomy (104 entries)
+    |       +-- patterns/                     # Presentation Patterns taxonomy (108 entries)
     |           +-- _index.md                 # Master index, phase mapping, dimension lookup
     |           +-- prepare/                  # 19 patterns + 3 antipatterns
-    |           +-- build/                    # 38 patterns + 10 antipatterns
-    |           +-- deliver/                  # 21 patterns + 13 antipatterns (11 unobservable)
+    |           +-- build/                    # 40 patterns + 10 antipatterns
+    |           +-- deliver/                  # 22 patterns + 14 antipatterns (12 unobservable)
     +-- illustrations/
     |   +-- SKILL.md                          # Visual layer workflow (7 mode-routed steps)
     |   +-- scripts/

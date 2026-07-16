@@ -1,5 +1,90 @@
 # Changelog
 
+### feat(patterns) — map *Make It Stick* into the taxonomy: 4 new entries, 5 refinements, 1 correction
+
+Adds *Make It Stick: The Science of Successful Learning* (Brown, Roediger & McDaniel, 2014) as the
+catalog's fourth supplementary source, following the integration precedent set by *Presentation Zen*
+(2 patterns + 3 refinements) and *Resonate* (7 patterns + 6 refinements). Taxonomy grows from 104 to
+108 entries (81 patterns + 27 antipatterns; 96 observable, 12 unobservable).
+
+**Why this source lands on empty ground.** The existing 104 entries are overwhelmingly about
+attention, persuasion, and aesthetics — how to hook a room, move it, and not bore it. Essentially
+nothing in the catalog addressed *retention*: whether anything survives the walk to the next session.
+Make It Stick is a book about exactly that, so it contributes rather than duplicates. The one place
+the catalog already reached for retention science (`analog-noise`) reached for the wrong study — see
+the correction below.
+
+**New patterns:**
+- `guess-first` (build) — the generation effect: make the audience commit an answer before the reveal,
+  because a wrong guess is an asset. Its boundary with `concrete-before-abstract` is stated explicitly
+  in the file, since the two are close neighbors and easily conflated: concrete-before-abstract
+  withholds the *label* from a receptive audience; guess-first withholds the *answer* and demands a
+  swing at it. They compose (instance → attempt → reveal → label).
+- `retrieval-beat` (build) — the testing effect: at moments where you would restate an earlier point,
+  make the room recall it instead. Displaces the summary-slide close and the reminder reflex.
+- `spaced-followup` (deliver, unobservable) — the spacing effect operates on a scale of days, so it
+  cannot be executed inside a 45-minute talk; the only place to spend it is after. Adds a **Post-Event**
+  subsection to the go-live checklist in `_index.md` — the catalog's first checklist item that fires
+  after the talk rather than before or during it.
+
+**New antipattern:**
+- `nodding-room` (deliver) — the fluency illusion, audience-side: good content, smooth delivery, a room
+  nodding along, nothing retained, and the speaker reading the nods as success. Distinct from
+  `lipstick-on-a-pig`, where the content is genuinely bad; here everything is good and the talk is
+  simply built as a broadcast. Detected structurally (zero audience-production moments in a
+  teaching-shaped talk), never from audience reaction — retention is invisible in a recording, but its
+  absence has a clean signature. Explicitly does not apply to keynotes and performance-shaped talks,
+  whose contract with the audience is *watch this*, not *learn this*.
+
+**Refinements folded into existing patterns:**
+- `carnegie-hall` — "Rehearse by Retrieval, Not Rereading." The four-rehearsal framework never said what
+  practice *is*, and the default (advance through the deck until it feels smooth) is the fluency illusion
+  aimed at its own author: each slide cues the words that go with it, so the speaker never once produces
+  the talk from memory. Adds closed-deck retrieval and spacing the four rehearsals across days.
+- `brain-breaks` — "The Consolidation Pause." The pattern already claimed breaks let the audience
+  "consolidate"; a joke does not consolidate anything. Adds retrieve/connect/reflect forms that point the
+  break back at the content, and the alternation principle. Humor is not displaced.
+- `know-your-audience` — "Learning Styles Are a Myth." The meshing hypothesis has no support (Pashler et
+  al., 2008). Redirects the defensible instinct: match modality to *material*, not to a person's
+  self-reported style.
+- `red-yellow-green` — "Smile Sheets Do Not Measure Retention." A green card means "I enjoyed that," and
+  the moves that most improve retention (retrieval, generation) introduce friction that costs green
+  cards. Names the consequence: `crucible` fed satisfaction data across ten deliveries will faithfully
+  optimize the talk into `nodding-room` while every ratio climbs.
+- `analog-noise` — see correction below.
+
+**Correction — `analog-noise` was overclaiming.** The file asserted as settled fact that "readers retain
+MORE information from text set in hard-to-read fonts," citing the disfluency strand of desirable-difficulty
+research (Diemand-Yauman, Oppenheimer & Vaughan, 2011 — the study behind Sans Forgetica). That finding has
+replicated poorly: a meta-analysis across studies including the large original effect found essentially
+nothing for problem solving, multiple Sans Forgetica studies found no benefit over an ordinary font, and
+some later work finds recall is *worse* for disfluent text. The desirable-difficulties framework itself
+(Bjork & Bjork) is not retired — it is about effortful *retrieval*, not effortful *reading*, and the font
+study's popularity blurred two claims that were never the same. Rather than delete the justification, the
+pattern is re-grounded on the **isolation effect** (von Restorff), which is well-replicated and supports
+the same practice for a better reason: a sketch among clean graphics is memorable because it is
+*different*, not because it is *harder*. This also derives the pattern's key constraint from its mechanism
+— isolation needs a uniform field to isolate against, so making every slide sketchy spends the budget
+everywhere and buys nothing. Adds "Do Not Make It Hard to Read" recording the retired claim so it does not
+get re-added, and the rule it leaves behind: legibility is never the thing you trade away.
+
+**Deliberately rejected.** Interleaving is a centerpiece of the book and is not adopted: mixing topic
+threads is workshop guidance, it fights `talklet`, and it would be bad advice for a conference talk.
+Mnemonics are not adopted as a standalone pattern — the book frames them as retrieval scaffolding rather
+than learning, and `star-moment`'s repeatable-sound-bite sub-type covers the presenter-side use.
+
+**On not repeating the analog-noise mistake.** Every new file states its own limits: the
+generation-effect and testing-effect literatures largely study learners across sessions, not audiences in
+a single room for 45 minutes. No file claims a conference talk produces durable month-later recall. What
+the patterns claim to buy in the room is attention, a sharper reveal, and an honest read on what landed;
+durability is what `spaced-followup` chases, and that file calls itself a bet rather than a guarantee.
+
+Surface sync: `_index.md` (catalog tables, phase-grouped lookup for Phases 2/3/5/6, dimension mapping for
+dims 2/4/6/11/12/14, go-live checklist, summary statistics, Sources), `README.md` (counts, phase lists,
+observable split, directory tree), and `tests/test_outline_schema.py` (discovery-count assertions, 78/26 →
+81/27). Pattern ids are discovered from the filesystem by `_discover_pattern_ids()`, so no schema change
+was needed; the new patterns carry no instance metadata.
+
 ## 0.18.45 — 2026-07-01
 
 ### fix(rules) — declare `qr-generation-rules.md` in the manifest

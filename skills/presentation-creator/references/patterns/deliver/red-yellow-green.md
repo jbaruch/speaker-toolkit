@@ -10,7 +10,7 @@ detection_signals:
   - "audience feedback mechanism"
   - "exit polling"
   - "colored card voting"
-related_patterns: [crucible, know-your-audience]
+related_patterns: [crucible, know-your-audience, retrieval-beat, spaced-followup]
 inverse_of: []
 difficulty: foundational
 observable: false
@@ -32,6 +32,21 @@ The system also provides psychological safety for the audience. Dropping a red c
 
 One refinement is to add a small comment card for anyone who wants to provide written feedback alongside their color card. This captures the detail that the color system lacks without requiring it of everyone. You might also experiment with a fourth color or a numbered scale, but simplicity is the pattern's core virtue — resist the temptation to complicate it.
 
+### Smile Sheets Do Not Measure Retention
+Everything above is true and the pattern is worth running. It is worth being exact about what the cards measure, because the answer is narrower than it looks and the gap has consequences.
+
+A green card means *"I enjoyed that."* It does not mean *"I learned that,"* and the two travel together far less reliably than anyone would like — the training literature has been unhappy about the weak relationship between end-of-session satisfaction ratings and actual learning for decades, which is why "smile sheet" is a pejorative in that field. The card is cast on the way out, at the emotional peak, by someone who has not yet tried to use anything they heard. It is a review of an experience, not a measurement of an outcome.
+
+Worse, the two can point in opposite directions. Fluent, frictionless, well-polished delivery reliably produces high satisfaction and — on its own — poor retention; that is `_anti_nodding-room.md` in one sentence. Meanwhile the moves that most improve retention are the ones that introduce friction: a `retrieval-beat` that makes someone fail to remember in front of their peers, a `guess-first` that makes the room commit to a wrong number. Those moments do not feel good. A room asked to work is a room slightly less inclined to reach for the green card.
+
+The consequence lands on `crucible.md`. Crucible's engine is iterative refinement driven by feedback, and an engine is only as good as its input. Feed it satisfaction data across ten deliveries and it will faithfully optimize toward the smoothest, most agreeable, most nodding-friendly version of the talk — sanding off the friction that was doing the actual work, while the ratios climb the whole way. The mechanism is invisible from the inside because every signal says it is working.
+
+So keep the cards, and calibrate what you spend them on:
+
+- **Read them as what they are.** Ratios are an energy and fit signal — did this land with this room, in this slot, at this venue. That is genuinely useful and this pattern remains the cheapest way to get it. It is not a learning measurement, and a run of green cards is not evidence anything stuck.
+- **Do not let a red-card dip veto a retrieval move.** If the ratios dropped the delivery you started asking the room to work, that is expected, and it is not a reason to revert. Effortful is supposed to feel worse.
+- **Pair with an instrument that measures recall.** `retrieval-beat` gives you an in-room read on what actually landed — a room that cannot answer has told you more than a bucket of green cards can. `spaced-followup` gives you the two-week version, which is the only signal in this catalog that measures what survived rather than what pleased.
+
 ## When to Use / When to Avoid
 Use this pattern whenever you want honest, high-participation feedback and have logistical control over the room setup (you need to place cards and a collection bucket). It works best at conferences and meetups where you will present the same talk multiple times and want to track improvement. Avoid it in very small settings (under ten people) where anonymity is impossible and direct conversation is better, or in venues where you cannot control the room setup.
 
@@ -51,3 +66,8 @@ This pattern maps to Vault Dimension 4 (Audience Engagement). While it operates 
 
 ## Combinatorics
 Red Yellow Green feeds directly into Crucible (feedback drives iterative improvement), supports Know Your Audience (feedback patterns reveal audience preferences), and pairs with Seeding Satisfaction (positive pre-talk interactions often correlate with more generous post-talk feedback). It can also inform Emotional State adjustments for future deliveries at similar venues.
+
+Its blind spot is covered by `retrieval-beat` (in-room recall) and `spaced-followup` (delayed recall), which measure what the cards cannot; see "Smile Sheets Do Not Measure Retention" above for why the pairing matters and how satisfaction-only feedback steers `crucible` toward `_anti_nodding-room.md`.
+
+## Related Reading
+- Brown, P. C., Roediger, H. L., III, & McDaniel, M. A. (2014). *Make It Stick: The Science of Successful Learning.* Ch. 5 — "Avoid Illusions of Knowing" establishes that subjective confidence and satisfaction are systematically poor proxies for learning, and that fluent delivery inflates both while doing little for retention. Belknap Press / Harvard University Press.
