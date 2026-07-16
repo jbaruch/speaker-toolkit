@@ -38,7 +38,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "slide_source": "pptx|pdf|both|video_extracted|none  (set in Step 2 per slide source hierarchy)",
     "pptx_visual_status": "pending|extracted|no_pptx",
     "status": "pending|processed|processed_partial|needs-reprocessing|skipped_no_sources|skipped_download_failed",
-    "reprocess_reason": "null|pattern_scoring_added|image_text_extraction_fixed  (set when status changed to needs-reprocessing by migration)",
+    "reprocess_reason": "null|pattern_scoring_added  (set when status changed to needs-reprocessing by migration)",
     "rhetoric_notes": "", "areas_for_improvement": "",
     "structured_data": {}, "verbatim_examples": {},
     "adherence_assessment": "", "processed_date": null,
