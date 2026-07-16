@@ -146,7 +146,7 @@ When any slide in a deck reports `text_extraction_confidence: "low"`:
 3. Judge **Dimension 8** (Slide-to-Speech Relationship) and **Dimension 13**
    (Slide Design) from the rendered images, never from the extraction JSON.
    The question Dimension 8 asks — dense or minimal, image-heavy or
-   text-heavy — is exactly the one the JSON cannot answer for these slides.
+   text-heavy — is the one the JSON cannot answer for these slides.
 4. Count `image_only_slide_count` from what the rendered slide *shows*, not
    from what the extractor could reach. A slide carrying baked-in text is not
    image-only, whatever the JSON says.

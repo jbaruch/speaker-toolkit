@@ -44,8 +44,8 @@ How do slides complement the spoken word? Are slides dense or minimal? Does the 
 
 Answer this dimension from the **rendered slides** whenever any slide reports
 `text_extraction_confidence: low`. Shape-level extraction cannot see text baked
-into a picture, so "image-heavy vs. text-heavy" is precisely the judgment its
-output is least able to support. Slides can carry far more than the narration
+into a picture, so "image-heavy vs. text-heavy" is the judgment its output is
+least able to support. Slides can carry far more than the narration
 does — that excess is a Dimension 8 finding, not an absence.
 
 **Related Patterns:** Fourthought, Concurrent Creation, Coda, Vacation Photos, Infodeck, Gradual Consistency, Charred Trail, Takahashi, Live on Tape, Peer Review | **Antipatterns:** Cookie Cutter, Injured Outlines, Bullet-Riddled Corpse, Borrowed Shoes, Slideuments, Lipstick on a Pig
