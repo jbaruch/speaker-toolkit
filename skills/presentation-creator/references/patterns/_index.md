@@ -5,8 +5,9 @@ Crafting Better Presentations* (Neal Ford, Matthew McCullough, Nathaniel Schutta
 with supplementary patterns and reinforcements from *Presentation Zen* (Garr Reynolds,
 2nd ed., 2012), *Resonate: Present Visual Stories that Transform Audiences* (Nancy
 Duarte, 2010), and *Make It Stick: The Science of Successful Learning* (Peter C. Brown,
-Henry L. Roediger III, Mark A. McDaniel, 2014), plus a set of vault-derived patterns
-observed across the speaker's corpus. Contains 82 named patterns and 27 antipatterns
+Henry L. Roediger III, Mark A. McDaniel, 2014), and *The Whole Brain Business Book* (Ned
+Herrmann, 2nd ed., 2015), plus a set of vault-derived patterns observed across the
+speaker's corpus. Contains 83 named patterns and 28 antipatterns
 organized by presentation lifecycle phase. See the Sources section at the end of this file for full citations.
 
 **This is the primary entry point.** The agent reads this file first, then drills into
@@ -33,11 +34,12 @@ combinatorics are needed.
 
 ## Pattern Catalog
 
-### Prepare Phase (19 patterns + 3 antipatterns)
+### Prepare Phase (20 patterns + 4 antipatterns)
 
 | ID | Name | Type | Vault Dims | Creator Phases | Related |
 |----|------|------|------------|----------------|---------|
 | know-your-audience | Know Your Audience | pattern | 4, 9 | intake | emotional-state, seeding-satisfaction |
+| walk-around | Walk-Around | pattern | 4, 9 | architecture, content, guardrails | know-your-audience, inoculation, leet-grammars, crucible, peer-review, concrete-before-abstract |
 | opening-punch | Opening PUNCH | pattern | 1, 4 | intent, content | bookends, narrative-arc, foreshadowing, preroll, know-your-audience |
 | social-media-advertising | Social Media Advertising | pattern | 4 | publishing | seeding-satisfaction |
 | required | Required | pattern | 9 | intake, intent | proposed, posse, concurrent-creation, crucible |
@@ -59,6 +61,7 @@ combinatorics are needed.
 | abstract-attorney | Abstract Attorney | antipattern | 2, 14 | intent, guardrails | preroll, narrative-arc, fourthought, triad, crucible, carnegie-hall |
 | alienating-artifact | Alienating Artifact | antipattern | 3, 10, 14 | guardrails | know-your-audience, brain-breaks |
 | celery | Celery | antipattern | 2, 14 | guardrails | required, know-your-audience, narrative-arc, brain-breaks |
+| golden-rule | The Golden Rule | antipattern | 4, 9, 14 | guardrails | walk-around, know-your-audience, leet-grammars, crucible |
 
 ### Build Phase (41 patterns + 10 antipatterns)
 
@@ -182,6 +185,7 @@ Planning patterns — inform spec construction.
 - proposed
 - mentor
 - opening-punch
+- walk-around *(audit load-bearing claims for register spread)*
 - abstract-attorney *(antipattern — warn about abstract drift)*
 
 ### Phase 2: Architecture
@@ -197,7 +201,7 @@ Structural patterns relevant here:
 - narrative-arc, triad, talklet, expansion-joints, lightning-talk, takahashi, cave-painting
 - a-la-carte-content, context-keeper, bookends, intermezzi
 - unifying-visual-theme, vacation-photos, infodeck
-- brain-breaks, greek-chorus, retrieval-beat
+- brain-breaks, greek-chorus, retrieval-beat, walk-around
 - live-demo *(if demo-driven mode)*
 - sparkline *(if persuasive mode — alternative to narrative-arc)*
 - call-to-adventure *(architectural placement of sparkline turning point 1)*
@@ -215,11 +219,12 @@ Build patterns — applied during outline writing.
 - call-to-adventure, call-to-action, new-bliss, star-moment, inoculation, master-story
 - concrete-before-abstract
 - guess-first, retrieval-beat
+- walk-around
 
 ### Phase 4: Guardrails
 Antipatterns as warnings — scanned against the outline.
 
-**All 27 antipatterns**, with two flag types:
+**All 28 antipatterns**, with two flag types:
 - `[RECURRING]` — from `pattern_profile.antipattern_frequency` (speaker-specific)
 - `[CONTEXTUAL]` — detected in the current outline (new detection)
 
@@ -258,17 +263,17 @@ Reverse lookup: which patterns relate to each of the 14 rhetoric analysis dimens
 | 1 | Opening Pattern | preroll, opening-punch, call-to-adventure | — |
 | 2 | Narrative Structure | narrative-arc, fourthought, triad, expansion-joints, talklet, context-keeper, breadcrumbs, bookends, intermezzi, foreshadowing, backtracking, a-la-carte-content, concurrent-creation, lightning-talk, sparkline, call-to-adventure, master-story, concrete-before-abstract, guess-first | abstract-attorney, celery |
 | 3 | Humor & Wit | brain-breaks, entertainment, star-moment | alienating-artifact |
-| 4 | Audience Interaction | know-your-audience, social-media-advertising, a-la-carte-content, posse, seeding-satisfaction, seeding-the-first-question, emotional-state, make-it-rain, echo-chamber, red-yellow-green, greek-chorus, opening-punch, call-to-action, inoculation, guess-first, retrieval-beat | bunker, hecklers, backchannel, negative-ignorance, dual-headed-monster, flyover, nodding-room |
+| 4 | Audience Interaction | know-your-audience, social-media-advertising, a-la-carte-content, posse, seeding-satisfaction, seeding-the-first-question, emotional-state, make-it-rain, echo-chamber, red-yellow-green, greek-chorus, opening-punch, call-to-action, inoculation, guess-first, retrieval-beat, walk-around | bunker, hecklers, backchannel, negative-ignorance, dual-headed-monster, flyover, nodding-room, golden-rule |
 | 5 | Transition Techniques | narrative-arc, foreshadowing, backtracking, context-keeper, bookends, intermezzi, soft-transitions, cave-painting, sparkline, new-bliss, star-moment, master-story | — |
 | 6 | Closing Pattern | coda, crawling-credits, call-to-action, new-bliss, spaced-followup | — |
 | 7 | Verbal Signatures | leet-grammars, peer-review, breathing-room, echo-chamber, master-story | hiccup-words, borrowed-shoes, tower-of-babble |
 | 8 | Slide-to-Speech Relationship | fourthought, concurrent-creation, coda, vacation-photos, infodeck, gradual-consistency, charred-trail, takahashi, live-on-tape, peer-review, second-look | cookie-cutter, injured-outlines, bullet-riddled-corpse, borrowed-shoes, slideuments, lipstick-on-a-pig |
-| 9 | Persuasion Techniques | know-your-audience, required, the-big-why, proposed, display-of-high-value, emotional-state, mentor, greek-chorus, sparkline, call-to-adventure, call-to-action, new-bliss, inoculation, concrete-before-abstract | disowning-your-topic, going-meta, tower-of-babble, lipstick-on-a-pig |
+| 9 | Persuasion Techniques | know-your-audience, required, the-big-why, proposed, display-of-high-value, emotional-state, mentor, greek-chorus, sparkline, call-to-adventure, call-to-action, new-bliss, inoculation, concrete-before-abstract, walk-around | disowning-your-topic, going-meta, tower-of-babble, lipstick-on-a-pig, golden-rule |
 | 10 | Cultural & Pop-Culture References | leet-grammars, unifying-visual-theme, entertainment | alienating-artifact, photomaniac |
 | 11 | Technical Content Delivery | live-demo, lipsync, traveling-highlights, crawling-code, emergence, mentor, lightsaber, concrete-before-abstract, guess-first | dead-demo |
 | 12 | Pacing Clues | crucible, expansion-joints, talklet, brain-breaks, lightning-talk, takahashi, carnegie-hall, breathing-room, weatherman, screen-blackout, retrieval-beat | shortchanged, disowning-your-topic, nodding-room |
 | 13 | Slide Design Patterns | unifying-visual-theme, takahashi, cave-painting, composite-animation, vacation-photos, defy-defaults, analog-noise, gradual-consistency, charred-trail, exuberant-title-top, invisibility, context-keeper, breadcrumbs, bookends, soft-transitions, intermezzi, preroll, crawling-credits, lipsync, traveling-highlights, crawling-code, emergence, screen-blackout, star-moment, second-look | cookie-cutter, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, laser-weapons |
-| 14 | Areas for Improvement | crucible, preparation, carnegie-hall, shoeless, stakeout | abstract-attorney, alienating-artifact, celery, injured-outlines, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, borrowed-shoes, slideuments, dead-demo, shortchanged, hiccup-words, disowning-your-topic, going-meta, bunker, hecklers, backchannel, laser-weapons, negative-ignorance, dual-headed-monster, tower-of-babble, lipstick-on-a-pig, flyover, nodding-room |
+| 14 | Areas for Improvement | crucible, preparation, carnegie-hall, shoeless, stakeout | abstract-attorney, alienating-artifact, celery, injured-outlines, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, borrowed-shoes, slideuments, dead-demo, shortchanged, hiccup-words, disowning-your-topic, going-meta, bunker, hecklers, backchannel, laser-weapons, negative-ignorance, dual-headed-monster, tower-of-babble, lipstick-on-a-pig, flyover, nodding-room, golden-rule |
 
 ---
 
@@ -314,10 +319,10 @@ they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation 
 
 ## Summary Statistics
 
-- **Total entries:** 109 (82 patterns + 27 antipatterns)
-- **Observable (vault-scorable):** 97 (73 patterns + 24 antipatterns)
+- **Total entries:** 111 (83 patterns + 28 antipatterns)
+- **Observable (vault-scorable):** 99 (74 patterns + 25 antipatterns)
 - **Unobservable (go-live checklist):** 12 (9 patterns + 3 antipatterns)
-- **Prepare phase:** 22 (19 patterns + 3 antipatterns)
+- **Prepare phase:** 24 (20 patterns + 4 antipatterns)
 - **Build phase:** 51 (41 patterns + 10 antipatterns)
 - **Deliver phase:** 36 (22 patterns + 14 antipatterns)
 
@@ -327,4 +332,5 @@ they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation 
 - Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). New Riders. — supplementary source; reinforces ~17 existing patterns and contributes the `opening-punch` and `screen-blackout` patterns plus three refinement subsections folded into existing patterns: "Hara Hachi Bu — The 90–95% Finish Line" (in `breathing-room.md`), "Plan Analog Before Going Digital" (in `concurrent-creation.md`), and "The Elevator Test" (in `the-big-why.md`).
 - Vault-derived patterns — observed across the speaker's own corpus rather than sourced from a book: `delayed-self-introduction`, `three-part-close`, `progressive-reveal`, `anti-sell`, `meme-as-argument`, `second-look`. Mechanism support is cited per-file where a literature basis exists (e.g. `second-look` cites Loewenstein's information-gap account of curiosity); the evidence is field observation.
 - Brown, P. C., Roediger, H. L., III, & McDaniel, M. A. (2014). *Make It Stick: The Science of Successful Learning.* Belknap Press / Harvard University Press. — supplementary source; the catalog's only retention-science source. Contributes three new patterns (`guess-first`, `retrieval-beat`, `spaced-followup`) and one new antipattern (`nodding-room`), plus five refinement subsections folded into existing patterns: "Rehearse by Retrieval, Not Rereading" (in `carnegie-hall.md`), "The Consolidation Pause" (in `brain-breaks.md`), "Learning Styles Are a Myth" (in `know-your-audience.md`), "Smile Sheets Do Not Measure Retention" (in `red-yellow-green.md`), and "Do Not Make It Hard to Read" (in `analog-noise.md`, which corrects a retracted disfluency claim the file previously carried).
+- Herrmann, N., & Herrmann-Nehdi, A. (2015). *The Whole Brain Business Book* (2nd ed.). McGraw-Hill. — supplementary source; contributes `walk-around` and the `golden-rule` antipattern from Ch. 8 (Communicating Across Thinking Styles) and Ch. 13 (Influencing and Getting Buy-In). The catalog imports the four-question Walk-Around procedure and the A/B/C/D quadrant vocabulary as a recognizable handle; it does not import the Whole Brain Model's physiological claims, the HBDI instrument, audience typing, or the book's gender-differences section. See `walk-around.md` Related Reading for the boundary and for the replicable premise (Elaboration Likelihood / need for cognition) the pattern actually rests on.
 - Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Wiley. — supplementary source; reinforces ~20 existing patterns and contributes seven new build-phase patterns (`sparkline`, `call-to-adventure`, `call-to-action`, `new-bliss`, `star-moment`, `inoculation`, `master-story`) plus six refinement subsections folded into existing patterns: "Adopting the Stance — Planning Implications" (in `mentor.md`), "The Big Idea — Statement Format" (in `the-big-why.md`), "Numerical Narrative — Making Numbers Land" (in `vacation-photos.md`), "Screening with Critics — Beyond Copyediting" (in `peer-review.md`), "Murder Your Darlings — The Pre-Delivery Cut Pass" (in `crucible.md`), and "The Three Contrast Types — Engine of the Middle" (in `sparkline.md`).

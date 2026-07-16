@@ -35,8 +35,8 @@ def test_pattern_enum_discovered(outline_schema):
     # Discovered from references/patterns/{prepare,build,deliver}/*.md — the
     # filesystem is the source of truth. _index.md mirrors these totals for
     # human readers; adding a pattern means updating both.
-    assert len(outline_schema.PATTERN_IDS) == 82
-    assert len(outline_schema.ANTIPATTERN_IDS) == 27
+    assert len(outline_schema.PATTERN_IDS) == 83
+    assert len(outline_schema.ANTIPATTERN_IDS) == 28
     assert "sparkline" in outline_schema.PATTERN_IDS
     assert "slideuments" in outline_schema.ANTIPATTERN_IDS
 

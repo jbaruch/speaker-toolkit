@@ -1,5 +1,48 @@
 # Changelog
 
+### feat(patterns) — map *The Whole Brain Business Book* into the taxonomy
+
+Adds `walk-around` and the `golden-rule` antipattern from Ned Herrmann's *The Whole Brain Business Book*
+(2nd ed., 2015), Ch. 8 and Ch. 13. Taxonomy: 109 → 111 entries (83 patterns + 28 antipatterns; 99
+observable). Fills a real gap — the catalog had no entry for audience heterogeneity in *what counts as
+proof*.
+
+`walk-around` audits each load-bearing claim against four standing questions (what exactly / how does it
+work / who does it affect / where does it lead) and revises until all four are answered. `golden-rule` is
+its null case: building the talk you would want to receive, defending every claim in your own preferred
+register, and mistaking your satisfaction for the room's.
+
+**Why this book does not repeat the learning-styles error.** HBDI is a self-report typology with
+brain-based claims, and `know-your-audience`'s "Learning Styles Are a Myth" (previous release) would
+condemn a naive import. Herrmann's actual prescription is not meshing: "The fail-safe assumption is that
+the population you'll be communicating with will be mentally diverse. Therefore, I recommend delivering
+each significant communication point in all quadrants and modes." That is *coverage* — assume
+heterogeneity, hit everything, identify nobody — and it is the opposite of the meshing hypothesis
+(identify a person's style, tailor to it), which is the only claim Pashler et al. refuted. Herrmann also
+disavows the left/right dichotomy himself (Ch. 2, "The 'Right-Brain/Left-Brain' Trap") and frames the
+model as a metaphor.
+
+**What is imported and what is not.** The Walk-Around procedure and the A/B/C/D quadrant vocabulary come
+in — the vocabulary is retained as a recognizable handle for readers who have met it, not as a theory.
+The physiological grounding, the HBDI instrument, audience typing, and the book's Ch. 8 gender-differences
+section (which cites *Men Are from Mars, Women Are from Venus* as support) stay out. The premise the
+pattern actually needs — audiences differ in what evidence persuades them — rests on the Elaboration
+Likelihood Model and need-for-cognition, and predates all of it in Aristotle. Both files state the
+boundary and the anti-meshing warning explicitly.
+
+**Resolves a contradiction in the source.** Ch. 8 prescribes covering all four quadrants; Ch. 13's
+MIT/CMU story prescribes the opposite — a metaphor-driven introduction was rejected by engineering
+faculty ("the walls went up") and the identical model re-registered as "a first-order engineering
+approximation to mental diversity" won them over. `walk-around` resolves it on audience spread: cover a
+heterogeneous room, match a homogeneous one, and verify homogeneity rather than assuming it from job
+titles. The catalog had nothing on this distinction. The re-registering move is deliberately not filed
+under `leet-grammars` — that pattern governs vocabulary and belonging, while this governs the epistemic
+form of the justification; a speaker can deploy flawless jargon and still offer the wrong kind of proof.
+
+`golden-rule` joins `nodding-room` in a distinct corner of Dimension 14: failures that draw good feedback.
+Both are talks a subset of the room genuinely enjoys, which is why neither self-corrects — and both mislead
+`crucible` when the feedback it consumes comes from inside the speaker's own register.
+
 ## 0.18.50 — 2026-07-16
 
 ### feat(patterns) — add `second-look`
