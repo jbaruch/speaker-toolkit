@@ -99,6 +99,62 @@ Apply all 14 dimensions from
 `"English translation" (original text)`. Never quote non-English text without
 an English translation preceding it.
 
+### Slides with `text_extraction_confidence: low` — look at the pixels
+
+`skills/vault-ingress/scripts/pptx-extraction.py` reads text out of PPTX
+*shapes*. Text rendered inside a picture — the norm for AI-generated illustration decks, where titles, callout
+labels, stamps, and annotations are all baked into the image — is invisible to
+it. On those slides the extractor emits `text_extraction_confidence: "low"`
+and its `text_content_preview` is empty or partial.
+
+**An empty `text_content_preview` on a low-confidence slide is not evidence of
+a wordless slide.** It means the extractor could not read the slide at all.
+Reading it as absence inverts Dimension 8 — see
+[known-issues.md](known-issues.md) § "Shape Extraction Is Blind to Text Baked
+Into Images".
+
+When any slide in a deck reports `text_extraction_confidence: "low"`:
+
+1. Get a PDF to render. Which one depends on `slide_source` — the `pptx` path
+   never downloads one, so it has to be produced:
+
+   | `slide_source` | PDF |
+   |---|---|
+   | `pdf`, `both` | already at `{vault_root}/slides/{google_drive_id}.pdf` |
+   | `video_extracted` | already at `{vault_root}/slides/{youtube_id}.pdf` |
+   | `pptx` | none exists — export it from the deck (below) |
+
+   For `pptx`, export first (PowerPoint via AppleScript, LibreOffice fallback).
+   A `pptx`-sourced talk may have no `slides_url`, so `google_drive_id` can be
+   absent — render to a temp path, which needs no id and no cleanup:
+
+   ```bash
+   python3 skills/presentation-creator/scripts/export-pdf.py \
+     "{pptx_path}" "{tmp}/deck.pdf"
+   ```
+
+   If the export fails and no PDF exists for the talk, say so in the analysis
+   and mark Dimensions 8 and 13 low-confidence rather than judging them from
+   the extraction JSON — an unreadable deck is not a wordless one.
+
+2. Render the pages and read them:
+
+   ```bash
+   pdftoppm -png -r 100 -f <first> -l <last> "{pdf_path}" "{tmp}/slide"
+   ```
+
+3. Judge **Dimension 8** (Slide-to-Speech Relationship) and **Dimension 13**
+   (Slide Design) from the rendered images, never from the extraction JSON.
+   The question Dimension 8 asks — dense or minimal, image-heavy or
+   text-heavy — is the one the JSON cannot answer for these slides.
+4. Count `image_only_slide_count` from what the rendered slide *shows*, not
+   from what the extractor could reach. A slide carrying baked-in text is not
+   image-only, whatever the JSON says.
+
+Structural fields stay authoritative for what they actually measure —
+`shape_count`, `background_color_hex`, `layout_name`, fonts, and
+`has_text_frame_shapes` (which reports text-frame shapes, not on-screen text).
+
 ## B2. Tag Presentation Patterns
 
 Scan observations against the pattern taxonomy at

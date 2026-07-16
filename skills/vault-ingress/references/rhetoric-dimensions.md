@@ -42,6 +42,12 @@ Recurring phrases, characteristic expressions, filler patterns, catchphrases, fa
 ## 8. Slide-to-Speech Relationship
 How do slides complement the spoken word? Are slides dense or minimal? Does the speaker read slides or use them as springboards? Image-heavy vs. text-heavy? Speaker notes vs. improvisation clues?
 
+Answer this dimension from the **rendered slides** whenever any slide reports
+`text_extraction_confidence: low`. Shape-level extraction cannot see text baked
+into a picture, so "image-heavy vs. text-heavy" is the judgment its output is
+least able to support. Slides can carry far more than the narration
+does — that excess is a Dimension 8 finding, not an absence.
+
 **Related Patterns:** Fourthought, Concurrent Creation, Coda, Vacation Photos, Infodeck, Gradual Consistency, Charred Trail, Takahashi, Live on Tape, Peer Review | **Antipatterns:** Cookie Cutter, Injured Outlines, Bullet-Riddled Corpse, Borrowed Shoes, Slideuments, Lipstick on a Pig
 
 ## 9. Persuasion Techniques
@@ -177,7 +183,10 @@ Count and categorize these for the `structured_data` output:
 - **slide_count**: Total slides in the PDF
 - **talk_duration_estimate**: From transcript length or explicit time references
 - **meme_count**: Slides that are primarily memes/reaction images
-- **image_only_slide_count**: Slides with no extractable text
+- **image_only_slide_count**: Slides that genuinely show no text. Judge from the
+  rendered slide, not from the extraction JSON — a slide whose text is baked into
+  its picture reports no *extractable* text while being densely worded. See
+  `subagent-instructions.md` § "Slides with `text_extraction_confidence: low`"
 - **audience_interaction_count**: Show-of-hands, polls, rhetorical questions expecting response
 - **opening_type**: Categorize as one of: provocative_image, failure_framing, audience_poll, story, bold_claim, demo_cold_open
 - **closing_type**: Categorize as one of: summary_cta, callback, open_question, demo_finale, resource_list

@@ -1,5 +1,39 @@
 # Changelog
 
+### fix(vault-ingress) — stop reporting unreadable slides as wordless (#116)
+
+`pptx-extraction.py` reads text out of PPTX *shapes*. AI-generated illustration decks bake every title,
+callout label, and annotation into the picture, where python-pptx cannot see them — so those slides were
+extracted as one full-bleed image with no text, and the analysis subagent read that absence as evidence.
+Dimension 8 came out backwards for exactly the decks whose slides carry the most: the Arc of AI 2026 deck
+(113 densely annotated slides) was recorded as *"overwhelmingly image-based … the speakers carry nearly
+100% of the information verbally"*, and scored `vacation-photos` / `cave-painting` — patterns meaning the
+opposite of what it is.
+
+- **The extractor no longer asserts absence.** A slide whose largest picture covers at least
+  `_TEXT_BEARING_IMAGE_AREA_RATIO` of the canvas — or whose background is an image, which covers the
+  canvas by definition — reports `text_extraction_confidence: "low"` plus an `image_area_ratio`. A text
+  overlay does not clear it: extracting *some* text is not evidence of extracting *all* of it. Re-run on
+  the Arc of AI deck: 113/113 slides low-confidence, ratio 1.0.
+- **`has_text_placeholder` → `has_text_frame_shapes`.** The old name asserted a claim the extractor cannot
+  make; the new one names what it measures.
+- **The analyst looks at pixels.** `subagent-instructions.md` requires Dimensions 8 and 13 to be judged
+  from rendered slide images whenever any slide is low-confidence, and `rhetoric-dimensions.md` no longer
+  lets `image_only_slide_count`'s "no *extractable* text" qualifier get lost — the drift that produced the
+  bug.
+- `known-issues.md` documents the failure mode so the conclusion "the slides are wordless" is never drawn
+  from extraction output again.
+
+`pptx-extraction.py` had no coverage for these fields; 9 tests added, decks and PNGs built programmatically
+per `testing-standards`.
+
+Reprocess-flagging of pre-fix analyses is deliberately **not** included. The vault's
+`pptx-extraction-results.json` is written by `extract_pptx_visual.py` — a vault-local script absent from
+this repo, emitting a schema this repo does not define (path-keyed, abbreviated per-slide fields). A
+migration reading it would couple repo code to an unowned contract, and against the real vault the attempt
+returned zero affected decks while reporting success. Tracked separately; the full reparse covers these
+analyses regardless.
+
 ## 0.18.51 — 2026-07-16
 
 ### feat(presentation-creator) — wire the cover-or-match decision into intake and enforce it

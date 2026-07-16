@@ -264,11 +264,13 @@ Produced by `scripts/pptx-extraction.py`.
     {
       "slide_number": 1,
       "background_color_hex": "#5B2C6F",
-      "background_type": "solid|pattern|image|gradient",
-      "layout_name": "TITLE",
+      "background_type": "solid|pattern|image|gradient|solid_from_layout|unknown",
+      "layout_name": "Title Slide  (free text from slide.slide_layout.name — not an enum)",
       "shape_count": 3,
-      "has_text_placeholder": true,
+      "has_text_frame_shapes": true,
       "has_image": false,
+      "image_area_ratio": 0.0,
+      "text_extraction_confidence": "high|low",
       "text_content_preview": "Talk Title",
       "footer_text": "@handle | #conf | #topic | website",
       "has_speaker_notes": true,
@@ -290,3 +292,25 @@ Produced by `scripts/pptx-extraction.py`.
   }
 }
 ```
+
+**`text_extraction_confidence` gates how the text fields may be read.** These
+come from PPTX *shapes*; text rendered inside a picture is invisible to the
+extractor. On a `"low"` slide an empty `text_content_preview` means unreadable,
+never wordless — judge Dimensions 8 and 13 from the rendered image instead (see
+[known-issues.md](known-issues.md) § "Shape Extraction Is Blind to Text Baked
+Into Images" and [subagent-instructions.md](subagent-instructions.md)).
+`has_text_frame_shapes` reports shapes carrying text frames — not whether the
+slide shows text.
+
+`image_area_ratio` is the **largest** PICTURE shape's area as a fraction of the
+slide, rounded to 3 decimals; always present. `0.0` means no picture, unreadable
+picture geometry, **or** a picture small enough to round down — it is not proof
+that the slide has no picture. The confidence threshold
+compares against the unrounded value, so a reported ratio equal to the
+threshold is not proof of which way the slide was classified.
+
+It measures picture **shapes** only. A slide whose image is a *background*
+reports `background_type: "image"` and `text_extraction_confidence: "low"`
+while `image_area_ratio` stays `0.0` — the background covers the canvas by
+definition and has no picture geometry to measure. Read the confidence, never
+the ratio, to decide whether a slide needs a visual pass.
