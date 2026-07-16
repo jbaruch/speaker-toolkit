@@ -51,6 +51,11 @@ images, and the ingress pipeline needs to stop inferring text density from shape
 Surface sync: `_index.md` (build table, Phase 5/6 lookups, dims 8 and 13, statistics, Sources — now
 records vault-derived provenance explicitly), `README.md`, `tests/test_outline_schema.py` (81 → 82).
 
+Also drops the duplicated taxonomy counts from `phase3-content.md`, which claimed "78 patterns / 25
+antipatterns matching the index" while the index said 26 — stale before this branch, and a rot magnet
+by construction: the enum is discovered at runtime and `_index.md` is the authority, so the prose now
+points there instead of restating a number that has already drifted once.
+
 ### feat(patterns) — map *Make It Stick* into the taxonomy: 4 new entries, 5 refinements, 1 correction
 
 Adds *Make It Stick: The Science of Successful Learning* (Brown, Roediger & McDaniel, 2014) as the

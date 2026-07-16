@@ -18,13 +18,14 @@ combinatorics are needed.
    for the ones you want to present as options.
 2. **During vault Step 3 (Analysis):** Scan against observable patterns only — skip
    patterns marked `observable: false` (pre-event logistics, physical stage behaviors,
-   and external systems that leave no trace in transcripts or slides).
+   post-event follow-up, and external systems that leave no trace in transcripts or
+   slides).
 3. **During creator Phase 4 (Guardrails):** Read all antipatterns and compare against
    the outline. Flag matches as `[RECURRING]` (from speaker profile) or `[CONTEXTUAL]`
    (new detection). Skip unobservable antipatterns.
 4. **During creator Phase 6 (Publishing / Go-Live):** Surface unobservable patterns as
-   a go-live preparation checklist — these are actions to take before and during delivery
-   that the vault cannot score retroactively.
+   a go-live preparation checklist — these are actions to take before, during, and after
+   delivery that the vault cannot score retroactively.
 
 ---
 
@@ -273,8 +274,8 @@ Reverse lookup: which patterns relate to each of the 14 rhetoric analysis dimens
 
 ## Unobservable Patterns — Go-Live Checklist
 
-These patterns involve pre-event logistics, physical stage behaviors, or external systems
-that leave **no trace in transcripts or slides**. The vault cannot score them. Instead,
+These patterns involve pre-event logistics, physical stage behaviors, post-event
+follow-up, or external systems that leave **no trace in transcripts or slides**. The vault cannot score them. Instead,
 they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation checklist.
 
 **Do not include these in vault scoring or the speaker profile's `pattern_profile`.**

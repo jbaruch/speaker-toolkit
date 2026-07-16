@@ -162,8 +162,8 @@ attributed parentheticals describe a specific speaker's action.
 
 Patterns are declared via `applied_patterns:` on slides, interludes, or the
 talk itself. Pattern IDs come from the closed enum discovered at runtime from
-`references/patterns/{prepare,build,deliver}/*.md` (78 patterns / 25
-antipatterns matching the index). Antipatterns are never declared in
+`references/patterns/{prepare,build,deliver}/*.md`; `references/patterns/_index.md`
+carries the authoritative counts. Antipatterns are never declared in
 `outline.yaml` — they surface as detections in `rhetorical-review.md`.
 
 ### Opening PUNCH (slide-level)

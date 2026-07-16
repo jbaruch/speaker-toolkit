@@ -315,7 +315,7 @@ notes which named patterns and antipatterns are detected per talk.
 - Talks are processed in **parallel batches of 5** subagents
 - Transcripts are downloaded via `yt-dlp` (with `youtube-transcript-api` fallback)
 - Slides are acquired from PPTX files (preferred, richer data) or downloaded as PDFs via `gdown`
-- Each talk is scored against 93 observable patterns from the taxonomy
+- Each talk is scored against 97 observable patterns from the taxonomy
 - Each batch updates the summary, per-talk analysis files, and triggers profile regeneration
 - An interactive clarification session resolves ambiguities and captures confirmed intent
 
@@ -393,7 +393,7 @@ follow-up, and external systems that leave no trace in recordings).
 
 **How it integrates:**
 
-| Integration point | Observable patterns (93) | Unobservable patterns (11) |
+| Integration point | Observable patterns (97) | Unobservable patterns (12) |
 |---|---|---|
 | **Vault scoring** (Step 3 B2) | Scored per talk, aggregated into `pattern_profile` | Excluded from scoring |
 | **Creator Phase 2** | 4-tier Pattern Strategy (Signature / Contextual / New to You / Shake It Up) | Included in recommendations |
