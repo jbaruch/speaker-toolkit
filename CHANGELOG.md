@@ -12,7 +12,10 @@ already built in one register. It now enters at intake and is enforced.
   otherwise. `walk-around` gains `registers` instance metadata.
 - **Check** — `check-rhetorical.py` gains `_check_register_coverage`, mirroring `_check_sparkline_requirements`.
   The `script-delegation` split: the agent judges which registers a claim lands, the script checks the union.
-  Detecting register from prose would be the regex trap.
+  Detecting register from prose would be the regex trap. Zero walk-arounds FLAGs under either spread (an
+  `N/A` there would let a homogeneous talk name a dominant register it never answers), and a `walk-around`
+  without `registers:` FLAGs by location rather than reading as absent — mirroring `_check_opening_punch`'s
+  treatment of a flavorless `opening-punch`.
 
 **Breaking:** `audience_spread` is required, so older outlines fail validation with an actionable message —
 deliberate, since a default would let the question be skipped, which is the failure being fixed. The six

@@ -216,16 +216,34 @@ def _check_register_coverage(outline: _os.Outline) -> list[CheckResult]:
       among the declared registers. A room matched on paper and not in the
       talk is matched nowhere.
 
-    Zero walk-around applications is a FLAG on a heterogeneous talk (nothing
-    was audited) and N/A on a homogeneous one (matching needs no audit trail
-    beyond the dominant register, which is checked when walk-arounds exist).
+    Zero walk-around applications FLAGs under either spread — a declared
+    spread with no audit is an undefended claim, and `N/A` would let a
+    homogeneous talk name a dominant register it never answers.
+
+    A `walk-around` declared without `registers:` also FLAGs, naming the
+    locations, rather than being silently skipped (mirrors
+    `_check_opening_punch`'s treatment of a flavorless `opening-punch`).
     """
     spread = outline.talk.audience_spread
     declared: dict[str, list[str]] = {}
+    unannotated: list[str] = []
     for location, p in _all_applied_patterns(outline):
-        if p.id == "walk-around" and p.registers:
-            for r in p.registers:
-                declared.setdefault(r.value, []).append(location)
+        if p.id != "walk-around":
+            continue
+        if not p.registers:
+            unannotated.append(location)
+            continue
+        for r in p.registers:
+            declared.setdefault(r.value, []).append(location)
+
+    if unannotated:
+        return [CheckResult(
+            "Register coverage",
+            "FLAG",
+            f"`walk-around` declared at {unannotated} with no `registers:` set "
+            f"— name which of {{A, B, C, D}} each claim answers, or the audit "
+            f"cannot be checked.",
+        )]
 
     if spread == _os.AudienceSpread.homogeneous:
         dom = outline.talk.dominant_register
@@ -233,9 +251,12 @@ def _check_register_coverage(outline: _os.Outline) -> list[CheckResult]:
         if not declared:
             return [CheckResult(
                 "Register match",
-                "N/A",
-                f"Homogeneous room declared (register `{dom.value}`); no "
-                f"walk-around applications to check.",
+                "FLAG",
+                f"Room declared homogeneous on register `{dom.value}`, but no "
+                f"claim declares a walk-around answering it. Matching a room "
+                f"is a claim about the talk, not just about the audience — "
+                f"answer `{dom.value}` on the load-bearing claims, or "
+                f"re-declare the spread as heterogeneous.",
             )]
         if dom.value not in declared:
             return [CheckResult(

@@ -150,6 +150,8 @@ talk:
   speakers: ["Speaker Name"]        # multi-speaker talks list every speaker here
   duration_min: 50
   audience: "who, in one sentence"
+  audience_spread: "heterogeneous"    # or "homogeneous" — set at intake (Step 0.4)
+  # dominant_register: "A"           # REQUIRED iff homogeneous; omit otherwise
   mode: "from profile presentation_modes"
   venue: "Conference Year, City"
   slide_budget: 75                  # from profile guardrail_sources.slide_budgets
