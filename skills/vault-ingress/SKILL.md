@@ -92,6 +92,21 @@ Run `scripts/pptx-extraction.py` for extraction.
 logic. In brief: talks with `status` `"processed"` or `"processed_partial"` that
 lack `pattern_observations` are marked `"needs-reprocessing"`.
 
+**Image-text extraction migration:** Analyses produced before the image-text fix
+recorded unreadable slides as wordless (see
+[references/known-issues.md](references/known-issues.md) § "Shape Extraction Is
+Blind to Text Baked Into Images"). Flag them for reparse:
+
+```bash
+python3 skills/vault-ingress/scripts/flag-image-text-reprocess.py \
+  {vault_root}/tracking-database.json \
+  {vault_root}/pptx-extraction-results.json --apply
+```
+
+Dry run without `--apply`. Emits a JSON summary — report `talks_flagged`. Marks
+matching talks `needs-reprocessing` with `reprocess_reason:
+image_text_extraction_fixed`; idempotent, so re-running Step 1 is safe.
+
 Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
 "X processed, Y remaining. PPTX: A cataloged, B matched, C extracted."
 
