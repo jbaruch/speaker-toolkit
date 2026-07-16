@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.51 — 2026-07-16
+
 ### feat(presentation-creator) — wire the cover-or-match decision into intake and enforce it
 
 The `walk-around` cover-or-match call is worthless as a retrospective score — by review time the talk is
