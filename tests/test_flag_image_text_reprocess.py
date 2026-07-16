@@ -85,8 +85,12 @@ def test_flag_is_idempotent(flag_script):
     assert changed_again == []
 
 
-def test_flag_does_not_clobber_a_different_reprocess_reason(flag_script):
-    """A talk already queued for another migration gets re-flagged for this one."""
+def test_flag_overrides_a_different_reprocess_reason(flag_script):
+    """A talk queued for another migration is re-flagged for this one.
+
+    This migration is the more recent claim on the talk; both reasons lead to
+    the same reparse, so the newer one wins rather than being skipped.
+    """
     db = _db()
     db["talks"][0]["reprocess_reason"] = "pattern_scoring_added"
     changed = flag_script.flag(db, {"deck-a.pptx": 1})
@@ -158,3 +162,53 @@ def test_cli_missing_file_exits_nonzero(flag_script, tmp_path, capsys):
     rc = flag_script.main(["flag", str(tmp_path / "nope.json"), str(tmp_path)])
     assert rc == 1
     assert "not a file" in capsys.readouterr().err
+
+
+# ── extraction output shapes (single-file vs directory) ──────────────
+
+
+def test_affected_decks_reads_single_file_output(flag_script):
+    """`pptx-extraction.py <deck.pptx>` emits one bare deck dict, not a list.
+
+    Falling through to [] there reported zero affected talks for exactly the
+    decks this migration exists to catch.
+    """
+    single = {
+        "pptx_path": "deck-a.pptx",
+        "slide_count": 2,
+        "per_slide_visual": [
+            {"text_extraction_confidence": "low"},
+            {"text_extraction_confidence": "high"},
+        ],
+    }
+    assert flag_script.affected_decks(single) == {"deck-a.pptx": 1}
+
+
+def test_affected_decks_reads_wrapper_shapes(flag_script):
+    """Directory mode wraps decks under `decks` / `results`."""
+    deck = {
+        "pptx_path": "deck-a.pptx",
+        "per_slide_visual": [{"text_extraction_confidence": "low"}],
+    }
+    assert flag_script.affected_decks({"decks": [deck]}) == {"deck-a.pptx": 1}
+    assert flag_script.affected_decks({"results": [deck]}) == {"deck-a.pptx": 1}
+    assert flag_script.affected_decks([deck]) == {"deck-a.pptx": 1}
+
+
+def test_cli_flags_from_single_file_extraction(flag_script, tmp_path, capsys):
+    """End-to-end on the real single-file shape."""
+    db_path = tmp_path / "db.json"
+    db_path.write_text(json.dumps(_db()), encoding="utf-8")
+    ex_path = tmp_path / "ex.json"
+    ex_path.write_text(json.dumps({
+        "pptx_path": "deck-a.pptx",
+        "slide_count": 1,
+        "per_slide_visual": [{"text_extraction_confidence": "low"}],
+    }), encoding="utf-8")
+
+    rc = flag_script.main(["flag", str(db_path), str(ex_path), "--apply"])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["talks_flagged"] == 1
+    written = json.loads(db_path.read_text(encoding="utf-8"))
+    assert written["talks"][0]["status"] == "needs-reprocessing"

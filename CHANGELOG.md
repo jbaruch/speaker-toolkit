@@ -20,8 +20,7 @@ opposite of what it is.
   from rendered slide images whenever any slide is low-confidence, and `rhetoric-dimensions.md` no longer
   lets `image_only_slide_count`'s "no *extractable* text" qualifier get lost — the drift that produced the
   bug.
-- **Pre-fix analyses are flagged, not silently stale.** `scripts/flag-image-text-reprocess.py` marks
-  affected talks `needs-reprocessing` / `image_text_extraction_fixed`. It dual-accepts both extraction
+- **Pre-fix analyses are flagged, not silently stale.** `skills/vault-ingress/scripts/flag-image-text-reprocess.py` marks affected talks `needs-reprocessing` / `image_text_extraction_fixed`. It dual-accepts both extraction
   shapes, reading the legacy `has_image && !has_text_placeholder` signature for decks not yet re-extracted;
   it over-flags decorative-image slides, which is the safe direction.
 - `known-issues.md` documents the failure mode so the conclusion "the slides are wordless" is never drawn

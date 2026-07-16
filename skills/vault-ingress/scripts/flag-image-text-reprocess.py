@@ -46,11 +46,23 @@ def slide_is_unreadable(slide: dict) -> bool:
     )
 
 
+def _decks(extraction: dict | list) -> list:
+    """Normalize every shape `pptx-extraction.py` emits into a deck list.
+
+    Single-file mode (`pptx-extraction.py <deck.pptx>`) emits one bare deck
+    dict with `pptx_path` at the top level; directory mode emits a list, or a
+    wrapper keyed `decks` / `results`.
+    """
+    if isinstance(extraction, list):
+        return extraction
+    if "per_slide_visual" in extraction or "pptx_path" in extraction:
+        return [extraction]
+    return extraction.get("decks", extraction.get("results", []))
+
+
 def affected_decks(extraction: dict | list) -> dict[str, int]:
     """Map deck path → count of slides the extractor could not read."""
-    decks = extraction if isinstance(extraction, list) else extraction.get(
-        "decks", extraction.get("results", []),
-    )
+    decks = _decks(extraction)
     out: dict[str, int] = {}
     for deck in decks:
         if not isinstance(deck, dict):

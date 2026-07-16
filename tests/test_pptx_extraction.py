@@ -1,5 +1,6 @@
 """Tests for pptx-extraction.py — PPTX visual data extraction."""
 
+import pytest
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
@@ -288,3 +289,46 @@ def test_retired_field_is_gone(pptx_extraction, tmp_path):
     data = _first_slide(pptx_extraction, prs, tmp_path)
     assert "has_text_placeholder" not in data
     assert "has_text_frame_shapes" in data
+
+
+def test_image_background_slide_is_low_confidence(
+    pptx_extraction, tmp_path, monkeypatch,
+):
+    """An image *background* covers the slide and can carry baked-in text.
+
+    It is not a PICTURE shape, so the shape walk never sees it — the same
+    blindness as issue #116, one layer down. python-pptx cannot author an
+    image background, so the classifier is stubbed to report one and the
+    assertion is on the emitted contract, not on the stub.
+    """
+    monkeypatch.setattr(
+        pptx_extraction, "get_background_color", lambda slide: (None, "image"),
+    )
+    prs = Presentation()
+    prs.slides.add_slide(prs.slide_layouts[6])  # no pictures, no text
+    data = _first_slide(pptx_extraction, prs, tmp_path)
+
+    assert data["background_type"] == "image"
+    assert data["has_image"] is False        # not a PICTURE shape
+    assert data["image_area_ratio"] == 0.0   # no picture geometry at all
+    assert data["text_extraction_confidence"] == "low"
+
+
+def test_area_ratio_is_not_rounded_across_the_threshold(pptx_extraction):
+    """Rounding must not decide classification.
+
+    A picture at 0.4996 of the slide is below the threshold; rounding it to
+    0.5 first would flip it and make the threshold depend on the rounding.
+    """
+    class _Prs:
+        slide_width = 10000
+        slide_height = 10000
+
+    class _Shape:
+        # 0.4996 of the slide area — just under the threshold.
+        width = 4996
+        height = 10000
+
+    ratio = pptx_extraction.picture_area_ratio(_Shape(), _Prs())
+    assert ratio < pptx_extraction._TEXT_BEARING_IMAGE_AREA_RATIO
+    assert ratio == pytest.approx(0.4996)

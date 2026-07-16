@@ -51,7 +51,7 @@ def picture_area_ratio(shape, prs):
         return 0.0
     if not shape.width or not shape.height:
         return 0.0
-    return min(round((shape.width * shape.height) / slide_area, 3), 1.0)
+    return min((shape.width * shape.height) / slide_area, 1.0)
 
 
 def rgb_to_hex(rgb):
@@ -241,6 +241,9 @@ def extract_pptx(pptx_path):
         }
 
         text_parts = []
+        # Unrounded — the threshold compares against true geometry; the
+        # reported value is rounded only for readability.
+        max_image_ratio = 0.0
         for shape in slide.shapes:
             shape_info = extract_shape_info(shape)
             slide_data["shapes_summary"].append(shape_info)
@@ -257,8 +260,8 @@ def extract_pptx(pptx_path):
             if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
                 slide_data["has_image"] = True
                 ratio = picture_area_ratio(shape, prs)
-                if ratio > slide_data["image_area_ratio"]:
-                    slide_data["image_area_ratio"] = ratio
+                if ratio > max_image_ratio:
+                    max_image_ratio = ratio
 
             # Check for text-frame shapes
             if shape.has_text_frame:
@@ -273,7 +276,15 @@ def extract_pptx(pptx_path):
             t[:50] for t in text_parts if t.strip()
         )[:200]
 
-        if slide_data["image_area_ratio"] >= _TEXT_BEARING_IMAGE_AREA_RATIO:
+        slide_data["image_area_ratio"] = round(max_image_ratio, 3)
+
+        # A picture large enough to carry text, or an image *background* (which
+        # covers the whole slide by definition), can both be hiding rendered
+        # text the shape walk never sees.
+        if (
+            max_image_ratio >= _TEXT_BEARING_IMAGE_AREA_RATIO
+            or bg_type == "image"
+        ):
             slide_data["text_extraction_confidence"] = "low"
 
         # Track background colors

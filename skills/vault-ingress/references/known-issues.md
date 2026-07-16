@@ -33,8 +33,8 @@ python-pptx shape measurement: the analyst had read the JSON, not the slides.
 - `has_text_frame_shapes` (formerly `has_text_placeholder`) names what it
   measures: shapes with text frames. It is not a claim about on-screen text.
 - Analyses produced before the fix are flagged for reparse by
-  `scripts/flag-image-text-reprocess.py` (`reprocess_reason:
-  image_text_extraction_fixed`).
+  `skills/vault-ingress/scripts/flag-image-text-reprocess.py`
+  (`reprocess_reason: image_text_extraction_fixed`).
 
 **Applies to:** any deck with full-bleed or near-full-bleed imagery —
 increasingly the norm as illustration generation gets cheaper. Never conclude
