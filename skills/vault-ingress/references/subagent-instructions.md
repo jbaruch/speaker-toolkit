@@ -109,9 +109,9 @@ and its `text_content_preview` is empty or partial.
 
 **An empty `text_content_preview` on a low-confidence slide is not evidence of
 a wordless slide.** It means the extractor could not read the slide at all.
-Treating it as absence is what produced the failure in
-[known-issues.md](known-issues.md) — a deck whose slides were the densest in
-the corpus scored as wordless backdrops, inverting Dimension 8.
+Reading it as absence inverts Dimension 8 — see
+[known-issues.md](known-issues.md) § "Shape Extraction Is Blind to Text Baked
+Into Images".
 
 When any slide in a deck reports `text_extraction_confidence: "low"`:
 
