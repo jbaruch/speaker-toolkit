@@ -99,6 +99,42 @@ Apply all 14 dimensions from
 `"English translation" (original text)`. Never quote non-English text without
 an English translation preceding it.
 
+### Slides with `text_extraction_confidence: low` — look at the pixels
+
+`pptx-extraction.py` reads text out of PPTX *shapes*. Text rendered inside a
+picture — the norm for AI-generated illustration decks, where titles, callout
+labels, stamps, and annotations are all baked into the image — is invisible to
+it. On those slides the extractor emits `text_extraction_confidence: "low"`
+and its `text_content_preview` is empty or partial.
+
+**An empty `text_content_preview` on a low-confidence slide is not evidence of
+a wordless slide.** It means the extractor could not read the slide at all.
+Treating it as absence is what produced the failure in
+[known-issues.md](known-issues.md) — a deck whose slides were the densest in
+the corpus scored as wordless backdrops, inverting Dimension 8.
+
+When any slide in a deck reports `text_extraction_confidence: "low"`:
+
+1. Render the slide images and read them — the PDF is already at
+   `{vault_root}/slides/{google_drive_id}.pdf`:
+
+   ```bash
+   pdftoppm -png -r 100 -f <first> -l <last> \
+     "{vault_root}/slides/{google_drive_id}.pdf" "{tmp}/slide"
+   ```
+
+2. Judge **Dimension 8** (Slide-to-Speech Relationship) and **Dimension 13**
+   (Slide Design) from the rendered images, never from the extraction JSON.
+   The question Dimension 8 asks — dense or minimal, image-heavy or
+   text-heavy — is exactly the one the JSON cannot answer for these slides.
+3. Count `image_only_slide_count` from what the rendered slide *shows*, not
+   from what the extractor could reach. A slide carrying baked-in text is not
+   image-only, whatever the JSON says.
+
+Structural fields stay authoritative for what they actually measure —
+`shape_count`, `background_color_hex`, `layout_name`, fonts, and
+`has_text_frame_shapes` (which reports text-frame shapes, not on-screen text).
+
 ## B2. Tag Presentation Patterns
 
 Scan observations against the pattern taxonomy at

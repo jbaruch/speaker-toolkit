@@ -267,8 +267,10 @@ Produced by `scripts/pptx-extraction.py`.
       "background_type": "solid|pattern|image|gradient",
       "layout_name": "TITLE",
       "shape_count": 3,
-      "has_text_placeholder": true,
+      "has_text_frame_shapes": true,
       "has_image": false,
+      "image_area_ratio": 0.0,
+      "text_extraction_confidence": "high|low",
       "text_content_preview": "Talk Title",
       "footer_text": "@handle | #conf | #topic | website",
       "has_speaker_notes": true,
@@ -290,3 +292,12 @@ Produced by `scripts/pptx-extraction.py`.
   }
 }
 ```
+
+**`text_extraction_confidence` gates how the text fields may be read.** These
+come from PPTX *shapes*; text rendered inside a picture is invisible to the
+extractor. On a `"low"` slide an empty `text_content_preview` means unreadable,
+never wordless — judge Dimensions 8 and 13 from the rendered image instead (see
+[known-issues.md](known-issues.md) § "Shape Extraction Is Blind to Text Baked
+Into Images" and [subagent-instructions.md](subagent-instructions.md)).
+`has_text_frame_shapes` reports shapes carrying text frames — not whether the
+slide shows text.

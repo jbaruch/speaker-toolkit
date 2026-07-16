@@ -4,6 +4,42 @@ Edge cases and recovery strategies that don't change the happy-path workflow
 but matter when the input data is degraded. Linked from `SKILL.md`'s
 Important Notes section as one-line summaries.
 
+## Shape Extraction Is Blind to Text Baked Into Images
+
+`pptx-extraction.py` reads text out of PPTX **shapes**. AI-generated
+illustration decks render every title, callout label, stamp, and annotation
+*inside the picture*, where python-pptx cannot see any of it. Such a slide
+extracts as one full-bleed image with no text.
+
+**The failure it caused (issue #116):** the Arc of AI 2026 deck — 58 pages of
+densely annotated technical-manual illustrations, the wordiest slides in the
+corpus — was analyzed as *"overwhelmingly image-based … only about 10 slides
+have any text overlay at all … the speakers carry nearly 100% of the
+information verbally."* Dimension 8 came out exactly backwards, and the deck
+scored as `vacation-photos` / `cave-painting`, patterns that mean the
+opposite of what it is. The tell was the analysis quoting `10x5.62 inches`, a
+python-pptx shape measurement: the analyst had read the JSON, not the slides.
+
+**Mitigations:**
+
+- The extractor no longer asserts absence. A slide whose picture is large
+  enough to be carrying text reports `text_extraction_confidence: "low"` and
+  an `image_area_ratio`; the threshold is the script's (`pptx-extraction.py`,
+  `_TEXT_BEARING_IMAGE_AREA_RATIO`).
+- On any low-confidence slide, judge Dimensions 8 and 13 from the **rendered
+  image**, never the JSON — see `subagent-instructions.md` § "Slides with
+  `text_extraction_confidence: low`". An empty `text_content_preview` there
+  means unreadable, not wordless.
+- `has_text_frame_shapes` (formerly `has_text_placeholder`) names what it
+  measures: shapes with text frames. It is not a claim about on-screen text.
+- Analyses produced before the fix are flagged for reparse by
+  `scripts/flag-image-text-reprocess.py` (`reprocess_reason:
+  image_text_extraction_fixed`).
+
+**Applies to:** any deck with full-bleed or near-full-bleed imagery —
+increasingly the norm as illustration generation gets cheaper. Never conclude
+"the slides are wordless" from extraction output alone.
+
 ## Wide-Angle Room Recordings Defeat Slide Dedup
 
 When the camera captures the full stage (speaker moving + slides on screen

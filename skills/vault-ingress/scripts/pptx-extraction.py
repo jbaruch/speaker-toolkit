@@ -29,6 +29,31 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.util import Emu, Inches, Pt
 
 
+# A picture covering at least this fraction of the slide is large enough to be
+# carrying rendered text — AI-generated illustration decks bake titles, callout
+# labels, and annotations into the image, where python-pptx cannot see them.
+# Below this, a picture reads as decorative and the extractable text is the
+# whole story. Tuned to catch full-bleed and near-full-bleed layouts; a slide
+# at or above it gets text_extraction_confidence "low" whether or not text
+# frames are also present, since a text overlay does not prove the picture
+# underneath is wordless.
+_TEXT_BEARING_IMAGE_AREA_RATIO = 0.5
+
+
+def picture_area_ratio(shape, prs):
+    """Return a picture shape's area as a fraction of the slide (0.0–1.0).
+
+    Missing geometry (any of width/height/slide dimensions absent or zero)
+    returns 0.0 — unknown size is not evidence of a large picture.
+    """
+    slide_area = (prs.slide_width or 0) * (prs.slide_height or 0)
+    if not slide_area:
+        return 0.0
+    if not shape.width or not shape.height:
+        return 0.0
+    return min(round((shape.width * shape.height) / slide_area, 3), 1.0)
+
+
 def rgb_to_hex(rgb):
     """Convert RGBColor to hex string."""
     if rgb is None:
@@ -191,8 +216,21 @@ def extract_pptx(pptx_path):
             "background_type": bg_type,
             "layout_name": slide.slide_layout.name if slide.slide_layout else None,
             "shape_count": len(slide.shapes),
-            "has_text_placeholder": False,
+            # True when at least one shape carries a text frame. Names what it
+            # measures — shapes the extractor can read text out of. It is NOT
+            # a claim about whether the slide shows text; text rendered inside
+            # a picture is invisible here (see text_extraction_confidence).
+            "has_text_frame_shapes": False,
             "has_image": False,
+            # Largest picture's area as a fraction of the slide (0.0–1.0).
+            "image_area_ratio": 0.0,
+            # "high" — no picture is large enough to be carrying rendered text,
+            #          so extractable text is the whole story for this slide.
+            # "low"  — a picture covers enough of the slide to carry text the
+            #          shape-level extractor cannot see. Absence of extracted
+            #          text proves nothing; judge this slide from the rendered
+            #          image, never from these fields.
+            "text_extraction_confidence": "high",
             "has_speaker_notes": bool(
                 slide.has_notes_slide and
                 slide.notes_slide.notes_text_frame.text.strip()
@@ -218,10 +256,13 @@ def extract_pptx(pptx_path):
             # Check for images
             if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
                 slide_data["has_image"] = True
+                ratio = picture_area_ratio(shape, prs)
+                if ratio > slide_data["image_area_ratio"]:
+                    slide_data["image_area_ratio"] = ratio
 
-            # Check for text placeholders
+            # Check for text-frame shapes
             if shape.has_text_frame:
-                slide_data["has_text_placeholder"] = True
+                slide_data["has_text_frame_shapes"] = True
                 text_parts.append(shape.text_frame.text)
 
                 # Detect footer by position (bottom 15% of slide) and small font
@@ -231,6 +272,9 @@ def extract_pptx(pptx_path):
         slide_data["text_content_preview"] = " | ".join(
             t[:50] for t in text_parts if t.strip()
         )[:200]
+
+        if slide_data["image_area_ratio"] >= _TEXT_BEARING_IMAGE_AREA_RATIO:
+            slide_data["text_extraction_confidence"] = "low"
 
         # Track background colors
         if bg_hex:
