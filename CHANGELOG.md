@@ -1,5 +1,18 @@
 # Changelog
 
+### docs(vault-ingress) — record that stale vault artifacts are not inputs
+
+A vault can hold files left by tools that predate this skill. `extract_pptx_visual.py` and its
+`pptx-extraction-results.json` are the known case — orphaned when per-file extraction replaced them, and
+read by nothing: not the skill, not the vault's own scripts or docs. `skills/vault-ingress/scripts/pptx-extraction.py`
+runs per PPTX and feeds the analysis directly; no step consumes an aggregate results file.
+
+Worth a note because the fossil is convincing. While building the (since-dropped) #116 reprocess migration,
+it was mistaken for a live input and a migration was written against it — correct-looking code reading data
+nothing consumes. Issue #120 was filed on the same unverified premise and is closed (`not planned`). The
+durable rule: confirm a step reads a file before treating it as an input; a plausible filename in the vault
+root is not a contract.
+
 ## 0.18.52 — 2026-07-16
 
 ### fix(vault-ingress) — stop reporting unreadable slides as wordless (#116)
