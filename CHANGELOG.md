@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.53 — 2026-07-17
+
 ### docs(vault-ingress) — record that stale vault artifacts are not inputs
 
 A vault can hold files left by tools that predate this skill. `extract_pptx_visual.py` and its
