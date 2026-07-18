@@ -35,32 +35,118 @@ jobs:
       - uses: tesslio/setup-tessl@v2
         with:
           token: ${{ secrets.TESSL_TOKEN }}
-      - name: Review changed skills only
-        # Per `jbaruch/coding-policy: context-artifacts` "Mandatory
-        # Review" (changed-skills-loop clause): tessl skill review is
-        # LLM-backed and credit-consuming; re-running against
-        # unchanged content reproduces the prior rubric output. The
-        # composite action iterates over skills whose files changed
-        # since `github.event.before`. On workflow_dispatch or initial
-        # push it falls back to reviewing every skill; on an
-        # unreachable base it hard-fails (no silent skip).
-        uses: jbaruch/coding-policy/.github/actions/skill-review@2a9df6575e153ce0d98900fdae26384c06df478f # main @ 2026-05-13
-      # No explicit `tessl eval run .` step here: per
-      # `jbaruch/coding-policy: plugin-evals` (Persistence), the
-      # Tessl-publish layer owns persistence execution — the eval
-      # suite runs automatically inside `tesslio/patch-version-publish`
-      # below. Adding a parallel `tessl eval run` step would be
-      # duplicate cost producing the same numbers a maintainer would
-      # already see at publish time, and could mask a publish-layer
-      # eval failure with a parallel pass.
-      # Stamp the CHANGELOG's un-headed `### ` blocks with the
-      # `## <version> — <date>` heading the publish step is about to
-      # assign, per `jbaruch/coding-policy: context-artifacts` CHANGELOG
-      # Hygiene. Wired immediately before `tesslio/patch-version-publish`;
-      # it commits with `[skip ci]` and no push (the publish step's own
-      # commit carries it). Idempotent — a no-op when the top section is
-      # already headed. Reads the version from the registry via the tessl
-      # CLI installed by `setup-tessl` above.
+      # Reviews only the skills whose files changed in this push.
+      #
+      # This step VENDORS the `jbaruch/coding-policy/.github/actions/skill-review`
+      # composite verbatim, adding one thing the upstream action cannot yet express:
+      # tolerance for a tessl "out of credits" (403) billing outage. A `uses:` step's
+      # failure can't be classified by error content from the consumer, so the
+      # credit-vs-real-failure distinction has to live in a `run:` step here. Revert
+      # to `uses:` once the action grows a native credit-outage input — tracked in
+      # jbaruch/coding-policy#188.
+      #
+      # Tolerance is fail-SAFE and narrow: ONLY a credit-outage signature (the
+      # "run out of credits" phrase AND a 403) skips, publishing unreviewed until
+      # credits reset (monthly, on the 1st); every other non-zero exit still
+      # hard-fails the publish, so a genuine below-threshold score or tooling
+      # error blocks it as before.
+      - name: Skill review (changed only)
+        shell: bash
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_OVERRIDE: ''
+          THRESHOLD: '85'
+          SKILLS_DIR: skills
+        run: |
+          # Pipefail so a failing `git diff` propagates instead of silently
+          # producing an empty changed-skills set (which would skip the
+          # mandatory review per jbaruch/coding-policy `context-artifacts`).
+          set -eo pipefail
+
+          if [ -n "$BASE_OVERRIDE" ]; then
+            base="$BASE_OVERRIDE"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ] \
+               || [ -z "$EVENT_BEFORE" ] \
+               || [ "$EVENT_BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            base=""
+          else
+            base="$EVENT_BEFORE"
+          fi
+          if [ -z "$base" ]; then
+            mapfile -t skills < <(find "$SKILLS_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)
+            echo "Reviewing all ${#skills[@]} skill(s) (manual trigger or initial push)."
+          else
+            # Validate the base is a real commit before relying on it for
+            # the diff. If not reachable in the local clone, try a shallow
+            # fetch; if that fails too, hard-fail rather than silently
+            # converting an unreachable base into "no changes".
+            if ! git rev-parse --verify "${base}^{commit}" >/dev/null 2>&1; then
+              echo "Base $base not reachable in clone; fetching..."
+              git fetch --no-tags --depth=50 origin "$base" 2>/dev/null \
+                || git fetch --unshallow origin 2>/dev/null \
+                || true
+            fi
+            if ! git rev-parse --verify "${base}^{commit}" >/dev/null 2>&1; then
+              echo "::error::Base $base is not a reachable commit; refusing to silently skip skill review."
+              echo "::error::Set actions/checkout fetch-depth: 0 in the calling workflow, or pass an explicit base-ref."
+              exit 1
+            fi
+            # Strip the SKILLS_DIR prefix from each diff path and pull
+            # out the first path component beneath it — works for any
+            # depth (single-component `skills` or nested `pkg/skills`).
+            mapfile -t skills < <(git diff --name-only "$base..HEAD" -- "$SKILLS_DIR/" \
+              | awk -v prefix="$SKILLS_DIR/" '
+                  index($0, prefix) == 1 {
+                    rest = substr($0, length(prefix) + 1)
+                    slash = index(rest, "/")
+                    if (slash > 0) print substr(rest, 1, slash - 1)
+                  }' | sort -u)
+            echo "Detected ${#skills[@]} changed skill(s) since ${base:0:7}."
+          fi
+          if [ "${#skills[@]}" -eq 0 ]; then
+            echo "No skill changes — review skipped."
+            exit 0
+          fi
+          for skill in "${skills[@]}"; do
+            [ -f "$SKILLS_DIR/$skill/SKILL.md" ] || { echo "  - $skill: deleted, skipping"; continue; }
+            echo "::group::Reviewing $skill"
+            # Capture output so an out-of-credits outage (a billing state, not a
+            # skill defect) can be told apart from a real review failure. Do NOT
+            # blanket-swallow: only the credit signature is tolerated.
+            set +e
+            review_out="$(tessl skill review --threshold "$THRESHOLD" "$SKILLS_DIR/$skill/SKILL.md" 2>&1)"
+            rc=$?
+            set -e
+            printf '%s\n' "$review_out"
+            echo "::endgroup::"
+            [ "$rc" -eq 0 ] && continue
+            # Require BOTH the credit phrase AND the 403 status (fixed-string, not
+            # regex) so only the actual billing outage skips — any other failure
+            # whose text happens to contain the phrase still hard-fails (fail-safe).
+            if printf '%s' "$review_out" | grep -qiF 'run out of credits' \
+               && printf '%s' "$review_out" | grep -qF '403'; then
+              # tessl credits reset monthly on the 1st; name the resume date so the
+              # skip window is legible. The gate self-heals: every publish re-tries,
+              # so a mid-month top-up restores review immediately, and by the 1st
+              # credits are back regardless.
+              # Explicit fallback (not error-swallowing): keeps a date failure
+              # from turning a credit-skip into a hard abort under `set -e`.
+              resume="$(date -u -d "$(date -u +%Y-%m-01) +1 month" +%Y-%m-01)" || resume="the 1st of next month"
+              echo "::warning::tessl org out of credits (403) — skipping review for '$skill'. Publishing UNREVIEWED; review resumes by $resume (monthly credit reset)."
+              {
+                echo "### ⚠️ Skill review skipped — tessl credits exhausted"
+                echo ""
+                echo "\`$skill\` was **not** reviewed: the tessl org is out of credits (403)."
+                echo "It is publishing **without** review. The gate self-heals — top up credits to restore it immediately, otherwise it resumes by **$resume** (monthly reset)."
+                echo ""
+                echo "Tracking upstream tooling: jbaruch/coding-policy#188."
+              } >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            echo "::error::Skill review failed for '$skill' (exit $rc) — not a credits outage; blocking publish."
+            exit "$rc"
+          done
       - name: Stamp CHANGELOG with the published version
         uses: jbaruch/coding-policy/.github/actions/stamp-changelog@e75074c8105a25baf9fa0f42b9fc07ca1d313a3e # main @ 2026-06-29
       - uses: tesslio/patch-version-publish@v1
