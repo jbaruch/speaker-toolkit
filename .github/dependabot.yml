@@ -1,0 +1,22 @@
+# Renewal mechanism for pinned GitHub Actions, per
+# jbaruch/coding-policy: dependency-management (every pinned dependency needs an
+# automated renewal mechanism). Dependabot opens a weekly PR when a newer
+# version of a pinned action is released; that PR's CI gate is the acceptance
+# check for the bump.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore(ci)"
+    ignore:
+      # gh-aw-generated review-*.lock.yml files pin a coordinated action set per
+      # compiler version; bump those via `gh aw compile`, not Dependabot.
+      - dependency-name: "actions/cache*"
+      - dependency-name: "actions/download-artifact"
+      - dependency-name: "actions/github-script"
+      - dependency-name: "actions/setup-node"
+      - dependency-name: "actions/upload-artifact"
+      - dependency-name: "github/gh-aw-actions*"
