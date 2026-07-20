@@ -1,8 +1,8 @@
 # Copilot code review — scope
 
-This repository runs a separate policy reviewer (the OpenAI Codex code-review app, guided by
-`AGENTS.md ## Review guidelines`, which reviews every PR against the installed `jbaruch/coding-policy`
-rules). It owns conventions and policy. **Your job is the complementary lane: correctness and risk.**
+This repository runs a separate policy reviewer (the `.github/workflows/review-codex.yml` workflow —
+the OpenAI Codex CLI on a ChatGPT subscription — which reviews every PR against the installed
+`jbaruch/coding-policy` rules). It owns conventions and policy. **Your job is the complementary lane: correctness and risk.**
 Spend your review budget where the policy reviewer does not look.
 
 ## Review for
