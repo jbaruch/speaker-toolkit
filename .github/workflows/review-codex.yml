@@ -1,0 +1,111 @@
+name: PR Policy Review (Codex, subscription)
+
+# Reviews every same-repo pull request against the jbaruch/coding-policy rules
+# using the Codex CLI authenticated by a ChatGPT subscription (no API key).
+#
+# Repo secrets required (Settings -> Secrets and variables -> Actions):
+#   CODEX_AUTH_JSON — a `codex login` (Sign in with ChatGPT) token. On a trusted
+#     machine run `codex login`, confirm ~/.codex/auth.json has
+#     "auth_mode":"chatgpt" and "has_refresh_token":true, then:
+#       gh secret set CODEX_AUTH_JSON < ~/.codex/auth.json
+#     Re-run that whenever the review fails on expired auth.
+#     See https://learn.chatgpt.com/docs/auth/ci-cd-auth
+#   TESSL_TOKEN — from https://tessl.io/account/api-keys, used to install the
+#     jbaruch/coding-policy policy in CI.
+#
+# The token is read ONLY from the secret at runtime, never persisted. Codex
+# refreshes the access token in-memory for the run.
+#
+# Security posture (accepted): this pull_request workflow exposes the
+# subscription credential to same-repo PRs, which require write access — trusted
+# per GitHub's model; forks are excluded and get no secret. Accidental and
+# content-injection leaks are mitigated: every token is ::add-mask::-redacted
+# from the logs before Codex runs, the review output is scanned for credential
+# material, and the token is deleted before the post step. A malicious
+# write-access collaborator is out of scope — the universal CI-secret residual.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: codex-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Fork PRs cannot read secrets — skip them (adopt via the adopt-fork-pr skill).
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: tesslio/setup-tessl@v2
+        with:
+          token: ${{ secrets.TESSL_TOKEN }}
+
+      - name: Load the jbaruch/coding-policy rules
+        run: tessl install jbaruch/coding-policy
+
+      # renovate: datasource=npm depName=@openai/codex
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex@0.142.5
+
+      - name: Write auth.json from the secret (runtime-only, never persisted)
+        env:
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CODEX_AUTH_JSON:-}" ]; then
+            echo "error: CODEX_AUTH_JSON secret is empty — run 'codex login' on a trusted machine and 'gh secret set CODEX_AUTH_JSON < ~/.codex/auth.json' (see this workflow's header)" >&2
+            exit 1
+          fi
+          export CODEX_HOME="$HOME/.codex"
+          mkdir -p "$CODEX_HOME"; chmod 700 "$CODEX_HOME"
+          printf '%s' "$CODEX_AUTH_JSON" > "$CODEX_HOME/auth.json"
+          chmod 600 "$CODEX_HOME/auth.json"
+
+      - name: Redact the credential from CI logs
+        run: bash .github/codex-review/mask-secrets.sh "$HOME/.codex/auth.json"
+
+      - name: Run Codex policy review
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.ref }}"
+          git fetch --no-tags --depth=1 origin "$base"
+          # Prepend the PR's base ref so the prompt's diff instruction resolves
+          # for any base branch (main, master, …), not a hardcoded one.
+          { printf 'This PR targets base branch `%s`; review the diff `git diff origin/%s...HEAD`.\n\n' "$base" "$base"; cat .github/codex-review/prompt.md; } \
+            | codex exec \
+              --json \
+              --skip-git-repo-check \
+              --dangerously-bypass-approvals-and-sandbox \
+              --output-schema .github/codex-review/schema.json \
+              --output-last-message /tmp/codex-final.json \
+              -
+
+      - name: Guard against credential leakage, then drop the token
+        run: |
+          set -euo pipefail
+          bash .github/codex-review/assert-no-secret-leak.sh "$HOME/.codex/auth.json" /tmp/codex-final.json
+          rm -f "$HOME/.codex/auth.json"
+
+      - name: Post the review
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash .github/codex-review/post-review.sh \
+            "${{ github.repository_owner }}" \
+            "${{ github.event.repository.name }}" \
+            "${{ github.event.pull_request.number }}" \
+            /tmp/codex-final.json
