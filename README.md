@@ -448,7 +448,7 @@ speaker-toolkit/
 |   +-- test_*.py                             # One test file per script
 +-- .github/workflows/
 |   +-- tests.yml                             # pytest on push/PR (ffmpeg + LibreOffice)
-|   +-- publish-plugin.yml                    # Tessl skill review + publish
+|   +-- publish.yml                    # Tessl skill review + publish
 +-- skills/
     +-- vault-ingress/
     |   +-- SKILL.md                          # Main vault workflow (6 steps)
