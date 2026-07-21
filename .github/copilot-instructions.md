@@ -1,8 +1,9 @@
 # Copilot code review — scope
 
-This repository runs a separate policy reviewer (the `.github/workflows/review-codex.yml` workflow —
-the OpenAI Codex CLI on a ChatGPT subscription — which reviews every PR against the installed
-`jbaruch/coding-policy` rules). It owns conventions and policy. **Your job is the complementary lane: correctness and risk.**
+This repository is reviewed by a separate policy reviewer — the central `jbaruch/coding-policy`
+fleet reviewer (a scheduled GitHub App that reviews every PR against the installed
+`jbaruch/coding-policy` rules, enrolled via the `.github/fleet-review-enabled` marker). It owns
+conventions and policy. **Your job is the complementary lane: correctness and risk.**
 Spend your review budget where the policy reviewer does not look.
 
 ## Review for
