@@ -1,0 +1,26 @@
+name: Review & Publish Plugin
+
+# Thin caller for the canonical fleet publish pipeline
+# (jbaruch/coding-policy#206). Display name preserved for run-name watchers.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  publish:
+    uses: jbaruch/coding-policy/.github/workflows/publish-plugin.yml@b7eb9d08b78f72810891aa5fe7bf3e4fa6eb55f6
+    secrets:
+      TESSL_TOKEN: ${{ secrets.TESSL_TOKEN }}
+    with:
+      stamp-changelog: true
+      # Enforce the tessl-version-floating carve-out before publishing.
+      pre-publish-script: scripts/check-tessl-pins.sh
+      skill-review-credit-outage: skip
