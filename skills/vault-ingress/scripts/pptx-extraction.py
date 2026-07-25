@@ -53,6 +53,9 @@ _OCR_TEXT_MAX_CHARS = 8000
 # per slide on a 100-slide deck.
 _ocr_unavailable_warned = False
 
+# Cached tesseract availability for this process: None = not checked yet.
+_tesseract_available = None
+
 
 class OcrUnavailableError(Exception):
     """Tesseract (or its Python binding) is not available on this machine."""
@@ -79,17 +82,25 @@ def normalize_ocr_text(text):
     return re.sub(r"\s+", " ", text).strip()
 
 
-def ocr_image_bytes(blob):
-    """OCR a single image blob. Returns normalized text (maybe empty).
+def _require_tesseract():
+    """Ensure tesseract + bindings are available; cache the result per process.
 
-    Raises OcrUnavailableError when the engine or its binding is missing.
-    Unreadable blobs and per-image OCR failures return "" so one bad picture
-    does not abort the deck.
+    Raises OcrUnavailableError when missing. Subsequent calls in the same
+    process do not re-spawn the version check.
     """
+    global _tesseract_available
+    if _tesseract_available is True:
+        return
+    if _tesseract_available is False:
+        raise OcrUnavailableError(
+            "tesseract binary not found; install tesseract-ocr (apt) or "
+            "tesseract (brew)"
+        )
+
     try:
         import pytesseract
-        from PIL import Image
     except ImportError as e:
+        _tesseract_available = False
         raise OcrUnavailableError(
             "OCR requires Pillow and pytesseract; install project dependencies"
         ) from e
@@ -97,9 +108,31 @@ def ocr_image_bytes(blob):
     try:
         pytesseract.get_tesseract_version()
     except pytesseract.TesseractNotFoundError as e:
+        _tesseract_available = False
         raise OcrUnavailableError(
             "tesseract binary not found; install tesseract-ocr (apt) or "
             "tesseract (brew)"
+        ) from e
+
+    _tesseract_available = True
+
+
+def ocr_image_bytes(blob):
+    """OCR a single image blob. Returns normalized text (maybe empty).
+
+    Raises OcrUnavailableError when the engine or its binding is missing.
+    Unreadable blobs and per-image OCR failures return "" so one bad picture
+    does not abort the deck.
+    """
+    global _tesseract_available
+    _require_tesseract()
+
+    try:
+        import pytesseract
+        from PIL import Image
+    except ImportError as e:
+        raise OcrUnavailableError(
+            "OCR requires Pillow and pytesseract; install project dependencies"
         ) from e
 
     try:
@@ -114,6 +147,7 @@ def ocr_image_bytes(blob):
     try:
         raw = pytesseract.image_to_string(img)
     except pytesseract.TesseractNotFoundError as e:
+        _tesseract_available = False
         raise OcrUnavailableError(
             "tesseract binary not found; install tesseract-ocr (apt) or "
             "tesseract (brew)"

@@ -342,16 +342,37 @@ def test_area_ratio_is_not_rounded_across_the_threshold(pptx_extraction):
 
 
 def _png_with_text(path, text="VENUE PREPARATION", w=800, h=200):
-    """Build a high-contrast PNG with clear text via Pillow (no binary fixture)."""
+    """Build a high-contrast PNG with clear text via Pillow (no binary fixture).
+
+    Prefer a TrueType font when the OS has one; otherwise draw with the
+    default bitmap font on a small canvas and nearest-neighbor upscale so OCR
+    stays reliable without fixtures.
+    """
     from PIL import Image, ImageDraw, ImageFont
 
-    img = Image.new("RGB", (w, h), "white")
-    draw = ImageDraw.Draw(img)
-    try:
-        font = ImageFont.load_default(size=48)
-    except TypeError:
-        font = ImageFont.load_default()
-    draw.text((20, 60), text, fill="black", font=font)
+    font = None
+    for candidate in (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  # CI (Ubuntu)
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",     # macOS
+        "/Library/Fonts/Arial Bold.ttf",
+    ):
+        try:
+            font = ImageFont.truetype(candidate, 48)
+            break
+        except OSError:
+            continue
+
+    if font is None:
+        scale = 8
+        small = Image.new("RGB", (max(w // scale, 100), max(h // scale, 40)), "white")
+        ImageDraw.Draw(small).text(
+            (2, 2), text, fill="black", font=ImageFont.load_default(),
+        )
+        img = small.resize((w, h), Image.Resampling.NEAREST)
+    else:
+        img = Image.new("RGB", (w, h), "white")
+        ImageDraw.Draw(img).text((20, 60), text, fill="black", font=font)
+
     img.save(path, format="PNG")
     return str(path)
 
