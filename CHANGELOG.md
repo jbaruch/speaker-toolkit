@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.61 — 2026-07-25
+
 ### feat(vault-ingress) — OCR baked-in slide text on low-confidence slides (#129)
 
 #116 / #119 stopped the extractor from **asserting absence** on full-bleed /
