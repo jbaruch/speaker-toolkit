@@ -272,6 +272,8 @@ Produced by `scripts/pptx-extraction.py`.
       "image_area_ratio": 0.0,
       "text_extraction_confidence": "high|low",
       "text_content_preview": "Talk Title",
+      "ocr_text": "",
+      "text_extraction_method": "shapes|shapes+ocr|shapes+ocr_unavailable",
       "footer_text": "@handle | #conf | #topic | website",
       "has_speaker_notes": true,
       "shapes_summary": [
@@ -293,12 +295,22 @@ Produced by `scripts/pptx-extraction.py`.
 }
 ```
 
-**`text_extraction_confidence` gates how the text fields may be read.** These
-come from PPTX *shapes*; text rendered inside a picture is invisible to the
-extractor. On a `"low"` slide an empty `text_content_preview` means unreadable,
-never wordless — judge Dimensions 8 and 13 from the rendered image instead (see
-[known-issues.md](known-issues.md) § "Shape Extraction Is Blind to Text Baked
-Into Images" and [subagent-instructions.md](subagent-instructions.md)).
+**`text_extraction_confidence` gates how the text fields may be read.**
+`text_content_preview` comes from PPTX *shapes*; text rendered inside a picture
+is invisible to the shape walk. On a `"low"` slide:
+
+- empty `text_content_preview` means *unreadable by shapes*, never wordless
+- `ocr_text` holds the script-owned OCR inventory from picture blobs when the
+  engine ran (`text_extraction_method: "shapes+ocr"`). Use it for cites,
+  transcript cross-checks, language policy on slide text, and pattern evidence
+- `text_extraction_method` is `"shapes"` when OCR was not attempted (high
+  confidence, `--no-ocr`, or no picture blob), `"shapes+ocr"` when it ran,
+  `"shapes+ocr_unavailable"` when the engine was missing
+- Dimensions 8/13 **design** judgment (density, two-layer legibility, composition)
+  still requires the rendered image — OCR is inventory, not layout (see
+  [known-issues.md](known-issues.md) § "Shape Extraction Is Blind to Text Baked
+  Into Images" and [subagent-instructions.md](subagent-instructions.md))
+
 `has_text_frame_shapes` reports shapes carrying text frames — not whether the
 slide shows text.
 

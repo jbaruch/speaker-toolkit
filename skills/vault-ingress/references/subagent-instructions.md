@@ -99,24 +99,40 @@ Apply all 14 dimensions from
 `"English translation" (original text)`. Never quote non-English text without
 an English translation preceding it.
 
-### Slides with `text_extraction_confidence: low` — look at the pixels
+### Slides with `text_extraction_confidence: low` — inventory + pixels
 
 `skills/vault-ingress/scripts/pptx-extraction.py` reads text out of PPTX
 *shapes*. Text rendered inside a picture — the norm for AI-generated illustration decks, where titles, callout
 labels, stamps, and annotations are all baked into the image — is invisible to
-it. On those slides the extractor emits `text_extraction_confidence: "low"`
-and its `text_content_preview` is empty or partial.
+the shape walk. On those slides the extractor emits
+`text_extraction_confidence: "low"`, keeps `text_content_preview` as
+shape-only (often empty), and — when PICTURE blobs exist — fills `ocr_text`
+via tesseract (`text_extraction_method: "shapes+ocr"`).
 
 **An empty `text_content_preview` on a low-confidence slide is not evidence of
-a wordless slide.** It means the extractor could not read the slide at all.
-Reading it as absence inverts Dimension 8 — see
+a wordless slide.** It means shapes could not read the text. Prefer `ocr_text`
+for the word inventory; if that is also empty (engine missing, image
+background with no picture blob, or genuinely blank art), still do not treat
+absence as proof — look at the rendered page. Reading shape emptiness as
+"wordless" inverts Dimension 8 — see
 [known-issues.md](known-issues.md) § "Shape Extraction Is Blind to Text Baked
 Into Images".
 
+**Use the two channels for different jobs:**
+
+| Job | Source |
+|---|---|
+| Word inventory, transcript cross-check, slide-text language policy, citational pattern evidence (`second-look` labels, buried jokes) | `ocr_text` (and shape `text_content_preview` when present) |
+| Density / two-layer legibility / composition / Dim 8–13 design judgment | **Rendered page images** (OCR is not a layout oracle) |
+
 When any slide in a deck reports `text_extraction_confidence: "low"`:
 
-1. Get a PDF to render. Which one depends on `slide_source` — the `pptx` path
-   never downloads one, so it has to be produced:
+1. Read `ocr_text` and `text_extraction_method` from the extraction JSON first.
+   Non-empty `ocr_text` is the citeable inventory. `shapes+ocr_unavailable`
+   means install tesseract next time; do not invent words.
+
+2. Get a PDF to render for design judgment. Which one depends on `slide_source`
+   — the `pptx` path never downloads one, so it has to be produced:
 
    | `slide_source` | PDF |
    |---|---|
@@ -134,22 +150,22 @@ When any slide in a deck reports `text_extraction_confidence: "low"`:
    ```
 
    If the export fails and no PDF exists for the talk, say so in the analysis
-   and mark Dimensions 8 and 13 low-confidence rather than judging them from
-   the extraction JSON — an unreadable deck is not a wordless one.
+   and mark Dimensions 8 and 13 design fields low-confidence rather than
+   judging layout from shape JSON alone — an unreadable deck is not a wordless
+   one. Still use any `ocr_text` that the extractor produced from picture blobs.
 
-2. Render the pages and read them:
+3. Render the pages and read them for design:
 
    ```bash
    pdftoppm -png -r 100 -f <first> -l <last> "{pdf_path}" "{tmp}/slide"
    ```
 
-3. Judge **Dimension 8** (Slide-to-Speech Relationship) and **Dimension 13**
-   (Slide Design) from the rendered images, never from the extraction JSON.
-   The question Dimension 8 asks — dense or minimal, image-heavy or
-   text-heavy — is the one the JSON cannot answer for these slides.
-4. Count `image_only_slide_count` from what the rendered slide *shows*, not
-   from what the extractor could reach. A slide carrying baked-in text is not
-   image-only, whatever the JSON says.
+4. Judge **Dimension 8** structure (dense vs minimal, room vs reward layer) and
+   **Dimension 13** (Slide Design) from the rendered images. Cross-check the
+   spoken word against `ocr_text` where the inventory exists.
+5. Count `image_only_slide_count` from what the rendered slide *shows* (and
+   from non-empty `ocr_text`), not from empty shape text alone. A slide
+   carrying baked-in text is not image-only.
 
 Structural fields stay authoritative for what they actually measure —
 `shape_count`, `background_color_hex`, `layout_name`, fonts, and

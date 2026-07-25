@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### feat(vault-ingress) — OCR baked-in slide text on low-confidence slides (#129)
+
+#116 / #119 stopped the extractor from **asserting absence** on full-bleed /
+image-baked decks (`text_extraction_confidence: low` + analyst looks at pixels).
+That fixed inverted "wordless backdrop" scoring. It did not extract the actual
+words baked into those pictures.
+
+This closes the other half: when confidence is low and PICTURE shapes exist,
+`pptx-extraction.py` OCRs the picture blobs (tesseract via pytesseract) into
+`ocr_text` and records `text_extraction_method` (`shapes` | `shapes+ocr` |
+`shapes+ocr_unavailable`). Shape text stays in `text_content_preview`. Design
+judgment (density, two-layer legibility, Dim 8/13) still needs rendered pages —
+OCR is inventory for cites, transcript cross-checks, language policy, and
+patterns like `second-look`.
+
+- Soft-fail if tesseract is missing (one stderr warning; method
+  `shapes+ocr_unavailable`); `--no-ocr` for shape-only runs
+- CI installs `tesseract-ocr`; tests inject a fake engine for the contract and
+  hit real tesseract for integration (skipif absent)
+- Docs: `schemas-db.md`, `known-issues.md`, `subagent-instructions.md`,
+  `second-look` detection heuristics
+
 ## 0.18.53 — 2026-07-17
 
 ### docs(vault-ingress) — record that stale vault artifacts are not inputs

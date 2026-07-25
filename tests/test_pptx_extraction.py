@@ -332,3 +332,204 @@ def test_area_ratio_is_not_rounded_across_the_threshold(pptx_extraction):
     ratio = pptx_extraction.picture_area_ratio(_Shape(), _Prs())
     assert ratio < pptx_extraction._TEXT_BEARING_IMAGE_AREA_RATIO
     assert ratio == pytest.approx(0.4996)
+
+
+# ── OCR inventory on low-confidence slides (issue #129) ──────────────
+#
+# #116/#119 stopped asserting absence. #129 fills a word inventory from
+# picture blobs so analysis can cite and cross-check, without replacing
+# the vision pass for design dimensions.
+
+
+def _png_with_text(path, text="VENUE PREPARATION", w=800, h=200):
+    """Build a high-contrast PNG with clear text via Pillow (no binary fixture)."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    img = Image.new("RGB", (w, h), "white")
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.load_default(size=48)
+    except TypeError:
+        font = ImageFont.load_default()
+    draw.text((20, 60), text, fill="black", font=font)
+    img.save(path, format="PNG")
+    return str(path)
+
+
+def test_normalize_ocr_text(pptx_extraction):
+    assert pptx_extraction.normalize_ocr_text("  a \n\tb  ") == "a b"
+    assert pptx_extraction.normalize_ocr_text("") == ""
+    assert pptx_extraction.normalize_ocr_text(None) == ""
+
+
+def test_high_confidence_slide_method_is_shapes_only(pptx_extraction, tmp_path):
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[5])
+    slide.shapes.title.text = "A real title"
+    data = _first_slide(pptx_extraction, prs, tmp_path)
+    assert data["text_extraction_confidence"] == "high"
+    assert data["text_extraction_method"] == "shapes"
+    assert data["ocr_text"] == ""
+
+
+def test_full_bleed_runs_ocr_fn_and_records_inventory(
+    pptx_extraction, tmp_path,
+):
+    """Low-confidence picture slide gets ocr_text from the OCR path."""
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    slide.shapes.add_picture(
+        _png_with_text(tmp_path / "labeled.png"), 0, 0,
+        width=prs.slide_width, height=prs.slide_height,
+    )
+    path = str(tmp_path / "deck.pptx")
+    prs.save(path)
+
+    data = pptx_extraction.extract_pptx(
+        path, ocr_fn=lambda blobs: "VENUE PREPARATION",
+    )["per_slide_visual"][0]
+
+    assert data["text_extraction_confidence"] == "low"
+    assert data["text_content_preview"] == ""  # shapes still empty
+    assert data["ocr_text"] == "VENUE PREPARATION"
+    assert data["text_extraction_method"] == "shapes+ocr"
+
+
+def test_no_ocr_flag_skips_inventory(pptx_extraction, tmp_path):
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    slide.shapes.add_picture(
+        _png_with_text(tmp_path / "labeled.png"), 0, 0,
+        width=prs.slide_width, height=prs.slide_height,
+    )
+    path = str(tmp_path / "deck.pptx")
+    prs.save(path)
+
+    called = []
+
+    def spy(blobs):
+        called.append(blobs)
+        return "SHOULD NOT APPEAR"
+
+    data = pptx_extraction.extract_pptx(
+        path, ocr=False, ocr_fn=spy,
+    )["per_slide_visual"][0]
+
+    assert called == []
+    assert data["ocr_text"] == ""
+    assert data["text_extraction_method"] == "shapes"
+    assert data["text_extraction_confidence"] == "low"
+
+
+def test_small_decorative_image_does_not_ocr(pptx_extraction, tmp_path):
+    """High-confidence slides must not pay for OCR."""
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[5])
+    slide.shapes.title.text = "Title"
+    slide.shapes.add_picture(
+        _png_with_text(tmp_path / "logo.png", text="LOGO"), 0, 0,
+        width=int(prs.slide_width * 0.1), height=int(prs.slide_height * 0.1),
+    )
+    path = str(tmp_path / "deck.pptx")
+    prs.save(path)
+
+    called = []
+    data = pptx_extraction.extract_pptx(
+        path, ocr_fn=lambda blobs: called.append(blobs) or "X",
+    )["per_slide_visual"][0]
+
+    assert data["text_extraction_confidence"] == "high"
+    assert called == []
+    assert data["ocr_text"] == ""
+    assert data["text_extraction_method"] == "shapes"
+
+
+def test_ocr_unavailable_records_method_not_crash(pptx_extraction, tmp_path):
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    slide.shapes.add_picture(
+        _png(tmp_path / "i.png"), 0, 0,
+        width=prs.slide_width, height=prs.slide_height,
+    )
+    path = str(tmp_path / "deck.pptx")
+    prs.save(path)
+
+    def boom(_blobs):
+        raise pptx_extraction.OcrUnavailableError("no engine")
+
+    data = pptx_extraction.extract_pptx(path, ocr_fn=boom)["per_slide_visual"][0]
+    assert data["ocr_text"] == ""
+    assert data["text_extraction_method"] == "shapes+ocr_unavailable"
+    assert data["text_extraction_confidence"] == "low"
+
+
+def test_image_background_without_picture_does_not_claim_ocr(
+    pptx_extraction, tmp_path, monkeypatch,
+):
+    """Image background is low-confidence but has no PICTURE blob to OCR."""
+    monkeypatch.setattr(
+        pptx_extraction, "get_background_color", lambda slide: (None, "image"),
+    )
+    prs = Presentation()
+    prs.slides.add_slide(prs.slide_layouts[6])
+    path = str(tmp_path / "deck.pptx")
+    prs.save(path)
+
+    called = []
+    data = pptx_extraction.extract_pptx(
+        path, ocr_fn=lambda blobs: called.append(blobs) or "X",
+    )["per_slide_visual"][0]
+
+    assert data["text_extraction_confidence"] == "low"
+    assert called == []
+    assert data["ocr_text"] == ""
+    assert data["text_extraction_method"] == "shapes"
+
+
+def test_ocr_text_capped(pptx_extraction, monkeypatch):
+    monkeypatch.setattr(
+        pptx_extraction, "ocr_image_bytes", lambda blob: "A" * 9000,
+    )
+    out = pptx_extraction.ocr_picture_blobs([b"x"])
+    assert len(out) == pptx_extraction._OCR_TEXT_MAX_CHARS
+
+
+def test_ocr_image_bytes_reads_clear_text(pptx_extraction, tmp_path):
+    """Integration: real tesseract on a programmatic text PNG."""
+    pytesseract = pytest.importorskip("pytesseract")
+    try:
+        pytesseract.get_tesseract_version()
+    except pytesseract.TesseractNotFoundError:
+        pytest.skip("tesseract binary not installed")
+
+    path = tmp_path / "clear.png"
+    _png_with_text(path, text="VENUE PREPARATION")
+    text = pptx_extraction.ocr_image_bytes(path.read_bytes())
+    assert "VENUE" in text.upper()
+    assert "PREPARATION" in text.upper()
+
+
+def test_full_bleed_with_baked_text_end_to_end(pptx_extraction, tmp_path):
+    """Integration: full-bleed labeled picture yields non-empty ocr_text."""
+    pytesseract = pytest.importorskip("pytesseract")
+    try:
+        pytesseract.get_tesseract_version()
+    except pytesseract.TesseractNotFoundError:
+        pytest.skip("tesseract binary not installed")
+
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    slide.shapes.add_picture(
+        _png_with_text(tmp_path / "labeled.png", text="VENUE PREPARATION"),
+        0, 0, width=prs.slide_width, height=prs.slide_height,
+    )
+    path = str(tmp_path / "deck.pptx")
+    prs.save(path)
+
+    data = pptx_extraction.extract_pptx(path)["per_slide_visual"][0]
+    assert data["text_extraction_confidence"] == "low"
+    assert data["text_content_preview"] == ""
+    assert data["text_extraction_method"] == "shapes+ocr"
+    assert "VENUE" in data["ocr_text"].upper()
+    assert "PREPARATION" in data["ocr_text"].upper()
+
