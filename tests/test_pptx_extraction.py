@@ -532,4 +532,3 @@ def test_full_bleed_with_baked_text_end_to_end(pptx_extraction, tmp_path):
     assert data["text_extraction_method"] == "shapes+ocr"
     assert "VENUE" in data["ocr_text"].upper()
     assert "PREPARATION" in data["ocr_text"].upper()
-

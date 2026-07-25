@@ -404,7 +404,9 @@ def extract_pptx(pptx_path, *, ocr=True, ocr_fn=None):
                     max_image_ratio = ratio
                 try:
                     picture_entries.append((ratio, shape.image.blob))
-                except Exception as e:
+                except ValueError as e:
+                    # python-pptx raises ValueError when the picture has no
+                    # embedded image (missing blip rId) — skip that shape.
                     sys.stderr.write(
                         f"WARN: could not read picture blob on slide "
                         f"{i + 1}: {e}\n"
