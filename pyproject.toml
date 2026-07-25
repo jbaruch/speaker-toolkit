@@ -11,6 +11,8 @@ dependencies = [
     "lxml",
     "qrcode",
     "Pillow",
+    # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
+    "pytesseract==0.3.13",
     "imagehash",
     "numpy",
     "pydantic==2.13.4",

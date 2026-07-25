@@ -49,9 +49,9 @@ Avoid it with no destination — density with nowhere to go is `_anti_ant-fonts.
 Be honest about the ceiling. The conversion is real but it is a fraction of a room, and this pattern will not rescue a talk nobody cared about. It compounds interest on attention you have already earned; it does not create attention.
 
 ## Detection Heuristics
-**Extraction caveat first, because it inverts the result.** This pattern is typically executed with text rendered *inside* images rather than in text boxes. Structural PPTX inspection will report these slides as "a single full-bleed image with no text" and score them as `vacation-photos` or `cave-painting` — the exact opposite of what is on screen. Second Look can only be detected from **rendered slide images**, never from shape-level text extraction. A deck reporting near-zero text shapes alongside consistently large image fills is a candidate to re-examine visually, not a confirmed image-only deck.
+**Extraction caveat first, because it inverts the result.** This pattern is typically executed with text rendered *inside* images rather than in text boxes. Structural PPTX inspection alone will report these slides as "a single full-bleed image with no text" and score them as `vacation-photos` or `cave-painting` — the exact opposite of what is on screen. After #129 the extractor OCRs picture blobs into `ocr_text` on low-confidence slides — use that inventory for cites (fine labels, buried jokes) and for the "transcript never mentions the fine labels" check. Two-layer **legibility** structure still requires **rendered slide images**; OCR is not a size hierarchy. A deck with near-zero text shapes, large image fills, and dense `ocr_text` is a strong candidate, not an image-only deck.
 
-Given rendered images, look for:
+Given rendered images (and `ocr_text` where present), look for:
 - A clear two-layer legibility split: a small number of elements sized for the back row, surrounded by a much finer stratum
 - Detail that goes unnarrated — the transcript never mentions the fine labels, footnotes, or marginalia
 - Buried payoffs at the fine scale: jokes, stamps, easter eggs, contradictory classifications, annotations that reward magnification

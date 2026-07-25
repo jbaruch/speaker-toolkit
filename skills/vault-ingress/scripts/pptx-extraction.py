@@ -4,11 +4,17 @@
 Produces per-slide visual data and global design statistics as JSON.
 Skips static exports, conflict copies, and template files.
 
+On slides where a picture is large enough to hide baked-in text (see
+text_extraction_confidence), picture blobs are OCR'd so the analysis has a
+word inventory — not just "unreadable by shapes." Design judgment (density,
+two-layer legibility) still needs rendered pages; OCR is inventory only.
+
 Usage:
-    pptx-extraction.py <path> [--skip template]
+    pptx-extraction.py <path> [--skip template] [--no-ocr]
 
     <path>       Path to a single .pptx file or a directory to scan recursively
     --skip       Additional skip patterns (case-insensitive substring match on filename)
+    --no-ocr     Skip OCR even on low-confidence slides (shape walk only)
 
 Examples:
     pptx-extraction.py /path/to/talk.pptx
@@ -17,6 +23,7 @@ Examples:
 
 import argparse
 import glob
+import io
 import json
 import os
 import re
@@ -28,7 +35,6 @@ from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.util import Emu, Inches, Pt
 
-
 # A picture covering at least this fraction of the slide is large enough to be
 # carrying rendered text — AI-generated illustration decks bake titles, callout
 # labels, and annotations into the image, where python-pptx cannot see them.
@@ -38,6 +44,21 @@ from pptx.util import Emu, Inches, Pt
 # frames are also present, since a text overlay does not prove the picture
 # underneath is wordless.
 _TEXT_BEARING_IMAGE_AREA_RATIO = 0.5
+
+# Cap so one dense manual page cannot blow out the JSON. Inventory is for
+# cites and transcript cross-checks, not a full document dump.
+_OCR_TEXT_MAX_CHARS = 8000
+
+# One stderr warning per process when the OCR engine is missing — not once
+# per slide on a 100-slide deck.
+_ocr_unavailable_warned = False
+
+# Cached tesseract availability for this process: None = not checked yet.
+_tesseract_available = None
+
+
+class OcrUnavailableError(Exception):
+    """Tesseract (or its Python binding) is not available on this machine."""
 
 
 def picture_area_ratio(shape, prs):
@@ -52,6 +73,145 @@ def picture_area_ratio(shape, prs):
     if not shape.width or not shape.height:
         return 0.0
     return min((shape.width * shape.height) / slide_area, 1.0)
+
+
+def normalize_ocr_text(text):
+    """Collapse whitespace and strip; empty input stays empty."""
+    if not text:
+        return ""
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _require_tesseract():
+    """Ensure tesseract + bindings are available; cache the result per process.
+
+    Raises OcrUnavailableError when missing. Subsequent calls in the same
+    process do not re-spawn the version check.
+    """
+    global _tesseract_available
+    if _tesseract_available is True:
+        return
+    if _tesseract_available is False:
+        raise OcrUnavailableError(
+            "tesseract binary not found; install tesseract-ocr (apt) or "
+            "tesseract (brew)"
+        )
+
+    try:
+        import pytesseract
+    except ImportError as e:
+        _tesseract_available = False
+        raise OcrUnavailableError(
+            "OCR requires Pillow and pytesseract; install project dependencies"
+        ) from e
+
+    try:
+        pytesseract.get_tesseract_version()
+    except pytesseract.TesseractNotFoundError as e:
+        _tesseract_available = False
+        raise OcrUnavailableError(
+            "tesseract binary not found; install tesseract-ocr (apt) or "
+            "tesseract (brew)"
+        ) from e
+
+    _tesseract_available = True
+
+
+def ocr_image_bytes(blob):
+    """OCR a single image blob. Returns normalized text (maybe empty).
+
+    Raises OcrUnavailableError when the engine or its binding is missing.
+    Unreadable blobs and per-image OCR failures return "" so one bad picture
+    does not abort the deck.
+    """
+    global _tesseract_available
+    _require_tesseract()
+
+    try:
+        import pytesseract
+        from PIL import Image
+    except ImportError as e:
+        raise OcrUnavailableError(
+            "OCR requires Pillow and pytesseract; install project dependencies"
+        ) from e
+
+    try:
+        img = Image.open(io.BytesIO(blob))
+    except OSError as e:
+        sys.stderr.write(f"WARN: OCR skipped unreadable image blob: {e}\n")
+        return ""
+
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+
+    try:
+        raw = pytesseract.image_to_string(img)
+    except pytesseract.TesseractNotFoundError as e:
+        _tesseract_available = False
+        raise OcrUnavailableError(
+            "tesseract binary not found; install tesseract-ocr (apt) or "
+            "tesseract (brew)"
+        ) from e
+    except pytesseract.TesseractError as e:
+        sys.stderr.write(f"WARN: OCR failed on image blob: {e}\n")
+        return ""
+
+    return normalize_ocr_text(raw)
+
+
+def ocr_picture_blobs(blobs):
+    """OCR picture blobs; join non-empty results with ' | '.
+
+    Raises OcrUnavailableError if the engine is missing. Returns "" when every
+    blob is empty or unreadable. Caller is responsible for sort order.
+    """
+    parts = []
+    for blob in blobs:
+        text = ocr_image_bytes(blob)
+        if text:
+            parts.append(text)
+    joined = " | ".join(parts)
+    if len(joined) > _OCR_TEXT_MAX_CHARS:
+        return joined[:_OCR_TEXT_MAX_CHARS]
+    return joined
+
+
+def apply_ocr_to_slide(slide_data, picture_blobs, *, ocr=True, ocr_fn=None):
+    """Fill ocr_text + text_extraction_method on a per-slide dict.
+
+    OCR runs only when confidence is low and at least one picture blob is
+    available. Image-background slides with no PICTURE shapes have no blob to
+    OCR here (rendering the page is out of this script's scope).
+
+    ocr_fn is injectable for tests (signature: list[bytes] -> str). Default
+    is ocr_picture_blobs.
+    """
+    slide_data["ocr_text"] = ""
+    slide_data["text_extraction_method"] = "shapes"
+
+    if slide_data.get("text_extraction_confidence") != "low":
+        return slide_data
+    if not ocr:
+        return slide_data
+    if not picture_blobs:
+        # Low confidence without a picture blob (image background only) —
+        # nothing this path can inventory.
+        return slide_data
+
+    run_ocr = ocr_fn if ocr_fn is not None else ocr_picture_blobs
+    global _ocr_unavailable_warned
+    try:
+        slide_data["ocr_text"] = run_ocr(picture_blobs)
+        slide_data["text_extraction_method"] = "shapes+ocr"
+    except OcrUnavailableError as e:
+        slide_data["text_extraction_method"] = "shapes+ocr_unavailable"
+        if not _ocr_unavailable_warned:
+            sys.stderr.write(
+                f"WARN: OCR unavailable ({e}); low-confidence slides will "
+                f"have empty ocr_text. Install tesseract to enable.\n"
+            )
+            _ocr_unavailable_warned = True
+    return slide_data
 
 
 def rgb_to_hex(rgb):
@@ -189,8 +349,14 @@ def extract_template_layouts(prs):
     return layouts
 
 
-def extract_pptx(pptx_path):
-    """Main extraction function."""
+def extract_pptx(pptx_path, *, ocr=True, ocr_fn=None):
+    """Main extraction function.
+
+    ocr: when True (default), low-confidence slides with PICTURE shapes get
+         an OCR inventory in ocr_text.
+    ocr_fn: optional callable(list[bytes]) -> str for tests; default uses
+            tesseract via ocr_picture_blobs.
+    """
     prs = Presentation(pptx_path)
     result = {
         "pptx_path": pptx_path,
@@ -227,15 +393,20 @@ def extract_pptx(pptx_path):
             # "high" — no picture is large enough to be carrying rendered text,
             #          so extractable text is the whole story for this slide.
             # "low"  — a picture covers enough of the slide to carry text the
-            #          shape-level extractor cannot see. Absence of extracted
-            #          text proves nothing; judge this slide from the rendered
-            #          image, never from these fields.
+            #          shape-level extractor cannot see. Absence of shape text
+            #          proves nothing; read ocr_text for inventory and still
+            #          judge design dimensions from the rendered image.
             "text_extraction_confidence": "high",
             "has_speaker_notes": bool(
                 slide.has_notes_slide and
                 slide.notes_slide.notes_text_frame.text.strip()
             ),
+            # Shape-frame text only. Baked-in picture text lands in ocr_text.
             "text_content_preview": "",
+            # OCR inventory when confidence is low and picture blobs exist.
+            "ocr_text": "",
+            # shapes | shapes+ocr | shapes+ocr_unavailable
+            "text_extraction_method": "shapes",
             "footer_text": "",
             "shapes_summary": []
         }
@@ -244,6 +415,9 @@ def extract_pptx(pptx_path):
         # Unrounded — the threshold compares against true geometry; the
         # reported value is rounded only for readability.
         max_image_ratio = 0.0
+        # (ratio, blob) pairs — sorted largest-first before OCR so the primary
+        # full-bleed image is inventoried first.
+        picture_entries = []
         for shape in slide.shapes:
             shape_info = extract_shape_info(shape)
             slide_data["shapes_summary"].append(shape_info)
@@ -262,6 +436,15 @@ def extract_pptx(pptx_path):
                 ratio = picture_area_ratio(shape, prs)
                 if ratio > max_image_ratio:
                     max_image_ratio = ratio
+                try:
+                    picture_entries.append((ratio, shape.image.blob))
+                except ValueError as e:
+                    # python-pptx raises ValueError when the picture has no
+                    # embedded image (missing blip rId) — skip that shape.
+                    sys.stderr.write(
+                        f"WARN: could not read picture blob on slide "
+                        f"{i + 1}: {e}\n"
+                    )
 
             # Check for text-frame shapes
             if shape.has_text_frame:
@@ -286,6 +469,12 @@ def extract_pptx(pptx_path):
             or bg_type == "image"
         ):
             slide_data["text_extraction_confidence"] = "low"
+
+        picture_entries.sort(key=lambda item: item[0], reverse=True)
+        picture_blobs = [blob for _, blob in picture_entries]
+        apply_ocr_to_slide(
+            slide_data, picture_blobs, ocr=ocr, ocr_fn=ocr_fn,
+        )
 
         # Track background colors
         if bg_hex:
@@ -318,7 +507,7 @@ def should_skip(basename, skip_patterns):
     return False, None
 
 
-def batch_extract(directory, skip_patterns):
+def batch_extract(directory, skip_patterns, *, ocr=True):
     """Extract from all .pptx files in a directory, skipping unwanted files."""
     results = []
     skipped = []
@@ -332,7 +521,7 @@ def batch_extract(directory, skip_patterns):
             continue
 
         try:
-            data = extract_pptx(pptx_path)
+            data = extract_pptx(pptx_path, ocr=ocr)
             results.append(data)
             print(f"OK:   {pptx_path} ({data['slide_count']} slides)", file=sys.stderr)
         except Exception as e:
@@ -349,13 +538,19 @@ def main():
     parser.add_argument("path", help="Single .pptx file or directory to scan recursively")
     parser.add_argument("--skip", action="append", default=["template"],
                         help="Skip patterns (case-insensitive, default: template)")
+    parser.add_argument(
+        "--no-ocr",
+        action="store_true",
+        help="Skip OCR on low-confidence slides (shape walk only)",
+    )
     args = parser.parse_args()
+    ocr = not args.no_ocr
 
     if os.path.isfile(args.path):
-        result = extract_pptx(args.path)
+        result = extract_pptx(args.path, ocr=ocr)
         print(json.dumps(result, indent=2))
     elif os.path.isdir(args.path):
-        results, skipped = batch_extract(args.path, args.skip)
+        results, skipped = batch_extract(args.path, args.skip, ocr=ocr)
         output = {"results": results, "skipped": skipped}
         print(json.dumps(output, indent=2))
     else:
