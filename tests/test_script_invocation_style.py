@@ -58,9 +58,19 @@ def skill_files() -> list[Path]:
     return [f for f in files if f.suffix != ".txt"]
 
 
-def test_skill_files_exist(skill_files: list[Path]) -> None:
-    """Guard the guard: an empty file list would make every check below vacuous."""
-    assert len(skill_files) > 50
+def test_both_categories_are_scanned(skill_files: list[Path]) -> None:
+    """Guard the guard, per category.
+
+    A bare total-count assertion is not enough: there are 149 skill docs and 50
+    scripts, so the scripts glob could stop matching entirely and the docs alone
+    would still clear any total the scripts could have contributed to. Assert
+    each category is populated, so neither check can go half-vacuous.
+    """
+    docs = [f for f in skill_files if f.suffix == ".md"]
+    scripts = [f for f in skill_files if "/scripts/" in f.as_posix()]
+
+    assert len(docs) >= 100, f"skill docs missing from the scan (found {len(docs)})"
+    assert len(scripts) >= 40, f"skill scripts missing from the scan (found {len(scripts)})"
 
 
 def test_no_dot_slash_script_invocations(skill_files: list[Path]) -> None:
