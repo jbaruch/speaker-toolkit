@@ -1,5 +1,19 @@
 # Changelog
 
+### test(packaging) — guard against exec-bit-dependent script invocation
+
+`tessl install` strips the executable bit from every packaged script: all 41
+installed `.sh` / `.py` files arrive mode 644 in a consumer install, including
+the 33 that are `100755` in git. A `./scripts/foo.sh` invocation therefore works
+in this checkout and fails only for consumers — the same failure shape as the
+0.18.43-0.18.61 packaging regression fixed in #132.
+
+Nothing was broken: every existing call site already names an interpreter
+(`bash x.sh`, `python3 x.py`) or uses `source "$HERE/x.sh"`, none of which
+consult the exec bit. `tests/test_script_invocation_style.py` holds that
+convention in place across skill docs and skill scripts, and asserts its own
+detectors fire so the guard can't pass vacuously. Closes #134.
+
 ## 0.18.62 — 2026-07-26
 
 ### fix(packaging) — ship the skill scripts again, and gate it so they can't vanish
