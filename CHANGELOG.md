@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.62 — 2026-07-26
+
 ### fix(packaging) — ship the skill scripts again, and gate it so they can't vanish
 
 Every published version from **0.18.43 through 0.18.61** shipped with **zero**
