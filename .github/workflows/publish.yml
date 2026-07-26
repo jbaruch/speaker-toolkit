@@ -21,6 +21,7 @@ jobs:
       TESSL_TOKEN: ${{ secrets.TESSL_TOKEN }}
     with:
       stamp-changelog: true
-      # Enforce the tessl-version-floating carve-out before publishing.
-      pre-publish-script: scripts/check-tessl-pins.sh
+      # Repo-side pre-publish gates: the tessl-version-floating carve-out and
+      # the package-contents check. Composed because this input takes one path.
+      pre-publish-script: scripts/pre-publish-checks.sh
       skill-review-credit-outage: skip

@@ -1,5 +1,34 @@
 # Changelog
 
+### fix(packaging) — ship the skill scripts again, and gate it so they can't vanish
+
+Every published version from **0.18.43 through 0.18.61** shipped with **zero**
+of the 59 `skills/*/scripts/` files. Consumers got SKILL.md files instructing
+them to run scripts that were not in the package.
+
+Cause: `.tesslignore` uses gitignore pattern semantics, where an unanchored
+`scripts/` matches a directory of that name at *every* depth. The entry was
+added in the tile.json → plugin.json migration (0.18.43) to exclude the
+repo-root CI helper directory — its own comment reads "plugin runtime scripts
+live under skills/*/scripts/", which is exactly what it was silently deleting.
+`tests/` had the same defect. `tessl plugin publish` reported success either
+way: its "manifest references excluded paths" check inspects paths named
+literally in the manifest, and the manifest declares skill *directories*.
+
+- `.tesslignore`: anchored every repo-root-only pattern with a leading slash,
+  and documented the depth-matching semantics at the top of the file
+- `scripts/check-package-contents.sh`: new gate. Walks every tracked file under
+  the manifest's declared `skills` / `rules` entries and fails when
+  `.tesslignore` would strip any of them, naming the offending pattern and line.
+  Matching runs against a throwaway empty git repo with `core.excludesFile`
+  pointed at `.tesslignore`, so the repo's own `.gitignore` can neither mask a
+  violation nor invent one
+- Wired at both gates: `tests.yml` (pre-merge) and, via the new
+  `scripts/pre-publish-checks.sh` composer, the publish workflow's
+  `pre-publish-script` (which takes a single path)
+- `.mcp.json` stays packed — tessl treats it as a manifest-referenced surface
+  and packing fails without it
+
 ## 0.18.61 — 2026-07-25
 
 ### feat(vault-ingress) — OCR baked-in slide text on low-confidence slides (#129)
