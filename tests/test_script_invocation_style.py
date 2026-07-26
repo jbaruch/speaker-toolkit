@@ -7,8 +7,11 @@ and fails only for consumers, which is the same shape as the 0.18.43-0.18.61
 packaging regression: correct in the repo, broken in the package, silent until
 someone else trips on it.
 
-Every invocation must therefore name an interpreter (`bash x.sh`, `python3
-x.py`) or use `source` / `.`, none of which consult the exec bit.
+The outcome under test is "no invocation consults the exec bit" — NOT "the
+string `./` never appears". `bash ./scripts/foo.sh` names an interpreter and is
+fine; `FOO=1 "$HERE/x.sh"` is an environment-prefixed execution and is not. So
+classification looks at what immediately precedes each script reference rather
+than at how the line happens to start.
 
 See issue #134.
 """
@@ -21,63 +24,77 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# A bare "./..." path ending in .sh/.py — an execution that needs the exec bit.
-# Anchored on a non-path character so "../foo.sh" and "x/./y.sh" don't match.
-DOT_SLASH_INVOCATION = re.compile(
-    r"(?:^|[^A-Za-z0-9_/.-])\./[A-Za-z0-9_./-]*\.(?:sh|py)\b"
+# A "./..." path ending in .sh/.py. Anchored on a non-path character so
+# "../foo.sh" and "x/./y.sh" don't match.
+DOT_SLASH_REFERENCE = re.compile(
+    r"(?:^|[^A-Za-z0-9_/.-])(\./[A-Za-z0-9_./-]*\.(?:sh|py))\b"
 )
 
-# A sibling script addressed through a variable, e.g. "$HERE/ensure-drivers.sh".
-VAR_PATH_INVOCATION = re.compile(
-    r"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/[A-Za-z0-9_.-]+\.(?:sh|py)\b"
+# A script addressed through a variable, e.g. "$HERE/ensure-drivers.sh".
+VAR_PATH_REFERENCE = re.compile(
+    r"(\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/[A-Za-z0-9_.-]+\.(?:sh|py))\b"
 )
 
-# Prefixes that make a reference safe: an explicit interpreter, or sourcing.
-SAFE_PREFIX = re.compile(r"^\s*(?:source\s|\.\s|bash\s|sh\s|python3?\s|exec\s+(?:bash|sh|python3?)\s)")
+# Text immediately before a reference that hands it to an interpreter or sources
+# it — neither consults the exec bit. The optional quote covers `bash "$HERE/x"`,
+# and this matches inside markdown prose too (``Run `bash ./x.sh` `` ends with
+# "bash " at the reference).
+INTERPRETER_BEFORE = re.compile(
+    r"(?:^|[^A-Za-z0-9_.-])(?:source|\.|bash|sh|zsh|python3?|uv\s+run|exec\s+(?:bash|sh|zsh|python3?))\s+[\"']?$"
+)
 
-# Shell keywords that precede a command WITHOUT changing whether that command
-# runs. `if "$HERE/x.sh"; then` executes the script exactly like a bare call, so
-# these must be peeled off and the remainder classified — never treated as
-# making the line non-executing.
+# Text immediately before a reference that stores it rather than running it:
+# `DRIVER="$HERE/x.sh"`. An environment-assignment PREFIX (`FOO=1 "$HERE/x.sh"`)
+# does not match, because a space separates the assignment from the command.
+ASSIGNMENT_BEFORE = re.compile(r"=[\"']?$")
+
+# Shell keywords that precede a command without changing whether it runs.
+# `if "$HERE/x.sh"; then` executes the script exactly like a bare call.
 CONTROL_PREFIX = re.compile(r"^\s*(?:if|elif|while|until|then|else|do|!|time)\s+")
 
-# Commands that name a path without executing it. `test`/`[` inspect it, the
-# rest copy or print it — none consult the exec bit.
-# `[` / `[[` sit outside the \b group: no word boundary exists between a
-# bracket and the space that follows it, so `\b` would never match there.
+# Commands that name a path without executing it. `[` / `[[` sit outside the \b
+# group: no word boundary exists between a bracket and the space after it.
 NON_EXECUTING = re.compile(
     r"^\s*(?:\[\[?(?=\s)|(?:test|cp|mv|rm|cat|chmod|chown|mkdir|touch|echo|"
     r"printf|ls|grep|sed|awk|head|tail|wc|diff|install|ln|return|shift)\b)"
 )
 
-# `X=...`, `local X=...`, `export X=...` — a path stored, not run.
-ASSIGNMENT = re.compile(
-    r"^\s*(?:local\s+|declare\s+|export\s+|readonly\s+)?[A-Za-z_][A-Za-z0-9_]*="
-)
-
-# Shell separators between commands. A line can chain several, and only the
-# segment holding the script path decides whether that script is executed.
+# Shell separators. Only the segment holding the reference decides its fate.
 SEGMENT_SEPARATOR = re.compile(r"&&|\|\||;|\|")
 
 
-def _reference_is_safe(segment: str) -> bool:
-    """True when this command segment names a script without needing exec.
+def _reference_is_safe(segment: str, match: re.Match) -> bool:
+    """True when this specific reference is named without needing the exec bit."""
+    before = segment[:match.start(1)]
 
-    Peels leading control keywords first, so `if bash "$HERE/x.sh"; then` is
-    judged on `bash "$HERE/x.sh"` while `if "$HERE/x.sh"; then` is judged on the
-    bare invocation and correctly flagged.
-    """
+    if INTERPRETER_BEFORE.search(before):
+        return True
+    if ASSIGNMENT_BEFORE.search(before):
+        return True
+
+    # Fall back to the command word opening the segment: `[ -f "$HERE/x.sh" ]`
+    # and `cp "$HERE/a.sh" "$DEST"` inspect or copy, never execute.
     candidate = segment
     while True:
         peeled = CONTROL_PREFIX.sub("", candidate, count=1)
         if peeled == candidate:
             break
         candidate = peeled
-    return bool(
-        SAFE_PREFIX.match(candidate)
-        or NON_EXECUTING.match(candidate)
-        or ASSIGNMENT.match(candidate)
-    )
+    return bool(NON_EXECUTING.match(candidate))
+
+
+def _unsafe_references(line: str, reference: re.Pattern) -> list[str]:
+    """Every reference on this line that would need the stripped exec bit."""
+    if line.lstrip().startswith("#"):
+        return []
+    if not reference.search(line):
+        return []
+    unsafe = []
+    for segment in SEGMENT_SEPARATOR.split(line):
+        for match in reference.finditer(segment):
+            if not _reference_is_safe(segment, match):
+                unsafe.append(match.group(1))
+    return unsafe
 
 
 def _tracked(*globs: str) -> list[Path]:
@@ -91,6 +108,16 @@ def _tracked(*globs: str) -> list[Path]:
 def _lines(path: Path) -> list[tuple[int, str]]:
     text = path.read_text(encoding="utf-8", errors="replace")
     return list(enumerate(text.splitlines(), start=1))
+
+
+def _scan(skill_files: list[Path], reference: re.Pattern) -> list[str]:
+    offenders = []
+    for path in skill_files:
+        for lineno, line in _lines(path):
+            if _unsafe_references(line, reference):
+                rel = path.relative_to(REPO_ROOT)
+                offenders.append(f"{rel}:{lineno}: {line.strip()}")
+    return offenders
 
 
 @pytest.fixture(scope="module")
@@ -117,43 +144,19 @@ def test_both_categories_are_scanned(skill_files: list[Path]) -> None:
     assert len(scripts) >= 40, f"skill scripts missing from the scan (found {len(scripts)})"
 
 
-def test_no_dot_slash_script_invocations(skill_files: list[Path]) -> None:
-    """No `./foo.sh` — it needs an exec bit the consumer's install does not have."""
-    offenders = []
-    for path in skill_files:
-        for lineno, line in _lines(path):
-            if DOT_SLASH_INVOCATION.search(line):
-                rel = path.relative_to(REPO_ROOT)
-                offenders.append(f"{rel}:{lineno}: {line.strip()}")
-
+def test_no_exec_bit_dependent_dot_slash_invocations(skill_files: list[Path]) -> None:
+    """`./foo.sh` needs an exec bit the consumer's install does not have."""
+    offenders = _scan(skill_files, DOT_SLASH_REFERENCE)
     assert not offenders, (
-        "Scripts invoked via a bare './' path. tessl install strips the "
-        "executable bit, so these work in this checkout and fail for "
-        "consumers. Prefix with an interpreter (`bash x.sh`, `python3 x.py`).\n"
-        + "\n".join(offenders)
+        "Scripts executed via a './' path with no interpreter. tessl install "
+        "strips the executable bit, so these work in this checkout and fail "
+        "for consumers. Prefix with `bash` / `python3`.\n" + "\n".join(offenders)
     )
 
 
-def test_sibling_scripts_are_sourced_or_interpreted(skill_files: list[Path]) -> None:
-    """A `$HERE/foo.sh` reference must be sourced or given an interpreter."""
-    offenders = []
-    for path in skill_files:
-        for lineno, line in _lines(path):
-            if line.lstrip().startswith("#"):
-                continue
-            if not VAR_PATH_INVOCATION.search(line):
-                continue
-            # Judge each command segment on its own; only the one holding the
-            # script path determines whether that script gets executed.
-            unsafe = [
-                seg for seg in SEGMENT_SEPARATOR.split(line)
-                if VAR_PATH_INVOCATION.search(seg) and not _reference_is_safe(seg)
-            ]
-            if not unsafe:
-                continue
-            rel = path.relative_to(REPO_ROOT)
-            offenders.append(f"{rel}:{lineno}: {line.strip()}")
-
+def test_no_exec_bit_dependent_sibling_invocations(skill_files: list[Path]) -> None:
+    """A `$HERE/foo.sh` execution must be sourced or given an interpreter."""
+    offenders = _scan(skill_files, VAR_PATH_REFERENCE)
     assert not offenders, (
         "Sibling scripts executed directly through a variable path. tessl "
         "install strips the executable bit; use `source \"$HERE/x.sh\"` or "
@@ -161,46 +164,50 @@ def test_sibling_scripts_are_sourced_or_interpreted(skill_files: list[Path]) -> 
     )
 
 
-def test_detector_catches_a_dot_slash_invocation() -> None:
-    """The regex must actually fire — a guard that never matches guards nothing."""
-    assert DOT_SLASH_INVOCATION.search("./scripts/build-deck.sh --deck x")
-    assert DOT_SLASH_INVOCATION.search("run ./generate-qr.py")
-    assert not DOT_SLASH_INVOCATION.search("bash scripts/build-deck.sh")
-    assert not DOT_SLASH_INVOCATION.search("python3 scripts/generate-qr.py")
-
-
-@pytest.mark.parametrize("line", [
+UNSAFE_LINES = [
+    './scripts/build-deck.sh --deck x',
+    'run ./generate-qr.py',
     '"$HERE/ensure-drivers.sh"',
     'if "$HERE/ensure-drivers.sh"; then',
     'elif "$HERE/ensure-drivers.sh"; then',
     'while "$HERE/poll.sh"; do',
     'if ! "$HERE/ensure-drivers.sh"; then',
     'mkdir -p "$OUT" && "$HERE/ensure-drivers.sh"',
-])
-def test_detector_flags_executed_sibling_scripts(line: str) -> None:
-    """A shell conditional still EXECUTES its command — `if` is not a pass."""
-    unsafe = [
-        seg for seg in SEGMENT_SEPARATOR.split(line)
-        if VAR_PATH_INVOCATION.search(seg) and not _reference_is_safe(seg)
-    ]
-    assert unsafe, f"should have been flagged: {line}"
+    # Environment-assignment PREFIX: the script still executes.
+    'FOO=1 "$HERE/ensure-drivers.sh"',
+    'DEBUG=1 ./scripts/build-deck.sh',
+]
 
-
-@pytest.mark.parametrize("line", [
+SAFE_LINES = [
     'source "$HERE/ensure-drivers.sh"',
     '. "$HERE/ensure-drivers.sh"',
     'bash "$HERE/ensure-drivers.sh"',
     'python3 "$HERE/persist-results.py"',
+    # An interpreter makes a './' path fine — the outcome, not the spelling.
+    'bash ./scripts/build-deck.sh',
+    'python3 ./scripts/generate-qr.py',
+    'Run `bash ./scripts/build-deck.sh` to build the deck.',
     'if bash "$HERE/ensure-drivers.sh"; then',
     'if [ -f "$HERE/ensure-drivers.sh" ]; then',
     'if ! source "$HERE/ensure-drivers.sh"; then',
     'DRIVER="$HERE/ensure-drivers.sh"',
-    'cp "$HERE/RunDeckOps.bas.py" "$DEST"',
+    'cp "$HERE/RunDeckOps.bas" "$DEST"',
     'bash "$HERE/a.sh" && bash "$HERE/b.sh"',
-])
+    'FOO=1 bash "$HERE/ensure-drivers.sh"',
+]
+
+
+@pytest.mark.parametrize("line", UNSAFE_LINES)
+def test_detector_flags_exec_bit_dependent_lines(line: str) -> None:
+    """A detector that never fires guards nothing."""
+    flagged = (_unsafe_references(line, DOT_SLASH_REFERENCE)
+               + _unsafe_references(line, VAR_PATH_REFERENCE))
+    assert flagged, f"should have been flagged: {line}"
+
+
+@pytest.mark.parametrize("line", SAFE_LINES)
 def test_detector_accepts_safe_references(line: str) -> None:
-    unsafe = [
-        seg for seg in SEGMENT_SEPARATOR.split(line)
-        if VAR_PATH_INVOCATION.search(seg) and not _reference_is_safe(seg)
-    ]
-    assert not unsafe, f"should have been accepted: {line}"
+    """A detector that fires on everything is noise, not a guard."""
+    flagged = (_unsafe_references(line, DOT_SLASH_REFERENCE)
+               + _unsafe_references(line, VAR_PATH_REFERENCE))
+    assert not flagged, f"should have been accepted: {line}"
