@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.63 — 2026-07-26
+
 ### test(packaging) — guard against exec-bit-dependent script invocation
 
 `tessl install` strips the executable bit from every packaged script: all 41
