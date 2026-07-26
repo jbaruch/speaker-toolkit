@@ -35,6 +35,50 @@ VAR_PATH_INVOCATION = re.compile(
 # Prefixes that make a reference safe: an explicit interpreter, or sourcing.
 SAFE_PREFIX = re.compile(r"^\s*(?:source\s|\.\s|bash\s|sh\s|python3?\s|exec\s+(?:bash|sh|python3?)\s)")
 
+# Shell keywords that precede a command WITHOUT changing whether that command
+# runs. `if "$HERE/x.sh"; then` executes the script exactly like a bare call, so
+# these must be peeled off and the remainder classified — never treated as
+# making the line non-executing.
+CONTROL_PREFIX = re.compile(r"^\s*(?:if|elif|while|until|then|else|do|!|time)\s+")
+
+# Commands that name a path without executing it. `test`/`[` inspect it, the
+# rest copy or print it — none consult the exec bit.
+# `[` / `[[` sit outside the \b group: no word boundary exists between a
+# bracket and the space that follows it, so `\b` would never match there.
+NON_EXECUTING = re.compile(
+    r"^\s*(?:\[\[?(?=\s)|(?:test|cp|mv|rm|cat|chmod|chown|mkdir|touch|echo|"
+    r"printf|ls|grep|sed|awk|head|tail|wc|diff|install|ln|return|shift)\b)"
+)
+
+# `X=...`, `local X=...`, `export X=...` — a path stored, not run.
+ASSIGNMENT = re.compile(
+    r"^\s*(?:local\s+|declare\s+|export\s+|readonly\s+)?[A-Za-z_][A-Za-z0-9_]*="
+)
+
+# Shell separators between commands. A line can chain several, and only the
+# segment holding the script path decides whether that script is executed.
+SEGMENT_SEPARATOR = re.compile(r"&&|\|\||;|\|")
+
+
+def _reference_is_safe(segment: str) -> bool:
+    """True when this command segment names a script without needing exec.
+
+    Peels leading control keywords first, so `if bash "$HERE/x.sh"; then` is
+    judged on `bash "$HERE/x.sh"` while `if "$HERE/x.sh"; then` is judged on the
+    bare invocation and correctly flagged.
+    """
+    candidate = segment
+    while True:
+        peeled = CONTROL_PREFIX.sub("", candidate, count=1)
+        if peeled == candidate:
+            break
+        candidate = peeled
+    return bool(
+        SAFE_PREFIX.match(candidate)
+        or NON_EXECUTING.match(candidate)
+        or ASSIGNMENT.match(candidate)
+    )
+
 
 def _tracked(*globs: str) -> list[Path]:
     result = subprocess.run(
@@ -95,18 +139,17 @@ def test_sibling_scripts_are_sourced_or_interpreted(skill_files: list[Path]) -> 
     offenders = []
     for path in skill_files:
         for lineno, line in _lines(path):
-            stripped = line.lstrip()
-            if stripped.startswith("#"):
+            if line.lstrip().startswith("#"):
                 continue
             if not VAR_PATH_INVOCATION.search(line):
                 continue
-            if SAFE_PREFIX.match(line):
-                continue
-            # An assignment or a non-executing mention (test -f, cp, rm, cat…)
-            # never consults the exec bit.
-            if re.match(r"^\s*(?:local\s+|declare\s+|export\s+)?[A-Za-z_][A-Za-z0-9_]*=", line):
-                continue
-            if re.match(r"^\s*(?:if|test|\[|cp|mv|rm|cat|chmod|mkdir|touch|echo|printf|ls)\b", stripped):
+            # Judge each command segment on its own; only the one holding the
+            # script path determines whether that script gets executed.
+            unsafe = [
+                seg for seg in SEGMENT_SEPARATOR.split(line)
+                if VAR_PATH_INVOCATION.search(seg) and not _reference_is_safe(seg)
+            ]
+            if not unsafe:
                 continue
             rel = path.relative_to(REPO_ROOT)
             offenders.append(f"{rel}:{lineno}: {line.strip()}")
@@ -126,12 +169,38 @@ def test_detector_catches_a_dot_slash_invocation() -> None:
     assert not DOT_SLASH_INVOCATION.search("python3 scripts/generate-qr.py")
 
 
-def test_detector_distinguishes_sourced_from_executed() -> None:
-    executed = '"$HERE/ensure-drivers.sh"'
-    sourced = 'source "$HERE/ensure-drivers.sh"'
-    interpreted = 'bash "$HERE/ensure-drivers.sh"'
+@pytest.mark.parametrize("line", [
+    '"$HERE/ensure-drivers.sh"',
+    'if "$HERE/ensure-drivers.sh"; then',
+    'elif "$HERE/ensure-drivers.sh"; then',
+    'while "$HERE/poll.sh"; do',
+    'if ! "$HERE/ensure-drivers.sh"; then',
+    'mkdir -p "$OUT" && "$HERE/ensure-drivers.sh"',
+])
+def test_detector_flags_executed_sibling_scripts(line: str) -> None:
+    """A shell conditional still EXECUTES its command — `if` is not a pass."""
+    unsafe = [
+        seg for seg in SEGMENT_SEPARATOR.split(line)
+        if VAR_PATH_INVOCATION.search(seg) and not _reference_is_safe(seg)
+    ]
+    assert unsafe, f"should have been flagged: {line}"
 
-    assert VAR_PATH_INVOCATION.search(executed)
-    assert not SAFE_PREFIX.match(executed)
-    assert SAFE_PREFIX.match(sourced)
-    assert SAFE_PREFIX.match(interpreted)
+
+@pytest.mark.parametrize("line", [
+    'source "$HERE/ensure-drivers.sh"',
+    '. "$HERE/ensure-drivers.sh"',
+    'bash "$HERE/ensure-drivers.sh"',
+    'python3 "$HERE/persist-results.py"',
+    'if bash "$HERE/ensure-drivers.sh"; then',
+    'if [ -f "$HERE/ensure-drivers.sh" ]; then',
+    'if ! source "$HERE/ensure-drivers.sh"; then',
+    'DRIVER="$HERE/ensure-drivers.sh"',
+    'cp "$HERE/RunDeckOps.bas.py" "$DEST"',
+    'bash "$HERE/a.sh" && bash "$HERE/b.sh"',
+])
+def test_detector_accepts_safe_references(line: str) -> None:
+    unsafe = [
+        seg for seg in SEGMENT_SEPARATOR.split(line)
+        if VAR_PATH_INVOCATION.search(seg) and not _reference_is_safe(seg)
+    ]
+    assert not unsafe, f"should have been accepted: {line}"
