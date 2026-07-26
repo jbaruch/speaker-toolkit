@@ -1,30 +1,37 @@
 # Exclude build artifacts, CI, and dev/test files from the published plugin.
 # The plugin ships its context surfaces — skills/, rules/, evals/,
-# .tessl-plugin/plugin.json, README.md, CHANGELOG.md (see
-# jbaruch/coding-policy: context-artifacts; evals/ is a standard plugin
-# directory the publish layer runs, so it is NOT excluded). Everything
-# below is repo-side tooling consumers never load.
+# .tessl-plugin/plugin.json, README.md (see jbaruch/coding-policy:
+# context-artifacts; evals/ is a standard plugin directory the publish layer
+# runs, so it is NOT excluded). Everything below is repo-side tooling
+# consumers never load.
+#
+# PATTERNS ARE GITIGNORE SEMANTICS: an unanchored "foo/" matches a directory
+# named foo at EVERY depth, not just the repo root. Anchor repo-root artifacts
+# with a leading slash so they cannot reach into skills/<name>/. Enforced by
+# scripts/check-package-contents.sh.
 
 # CI / workflows
-.github/
+/.github/
 
 # Tests + dev/test config
-tests/
-pyproject.toml
+/tests/
+/pyproject.toml
 
 # Repo-side CI helper scripts (plugin runtime scripts live under skills/*/scripts/)
-scripts/
+/scripts/
 
 # Project-consumer config, not plugin content
-tessl.json
-.env.example
+/tessl.json
+/.env.example
+# .mcp.json is NOT excluded: tessl treats it as a manifest-referenced plugin
+# surface (the tessl MCP server the skills call), and packing fails without it.
 
 # Local install / build state
-.tessl/
-.venv/
+/.tessl/
+/.venv/
 node_modules/
 package-lock.json
 
 # VCS metadata
-.gitignore
-.gitattributes
+/.gitignore
+/.gitattributes
