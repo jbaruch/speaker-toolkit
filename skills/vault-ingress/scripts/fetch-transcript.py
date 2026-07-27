@@ -118,8 +118,8 @@ def validate_transcript(text, *, min_words=DEFAULT_MIN_WORDS, duration_seconds=N
         return False, (
             "transcript is a raw VTT caption payload — it carries inline "
             "<00:00:00.000><c> timing tags and stores every line twice, so word "
-            "counts read ~3.6x high; clean it with vault-ingress/scripts/"
-            "vtt-cleanup.py before use")
+            "counts read ~3.6x high; clean it with "
+            "skills/vault-ingress/scripts/vtt-cleanup.py before use")
 
     marker_chars = sum(text.count(m) * len(m) for m in NON_SPEECH_MARKERS)
     if marker_chars > len(text) * 0.5:

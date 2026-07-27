@@ -101,9 +101,16 @@ when no audio is obtainable at all.
 
 ### `transcript_source` is required
 
-Set `transcript_source` on the talk entry: `youtube_auto` (yt-dlp captions),
+Set `transcript_source` on the talk entry: `youtube_auto` (caption track),
 `whisper` (local transcription), or `manual`. Downstream tools use it to gauge
 transcript reliability.
+
+**One exception, and only one:** `method: "existing"` from the fetcher. No fetch
+ran, so provenance is unknown — leave the recorded value alone, and leave the
+field absent when it was already absent. `manual` asserts a human produced the
+transcript; writing it on an unknown file is a false claim that makes a
+downstream reader trust ASR more than it should. Absent is honest; invented is
+not.
 
 ## B. Analyze for Rhetoric & Style (NOT content)
 
