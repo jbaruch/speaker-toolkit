@@ -102,6 +102,11 @@ def write_analysis():
 
 
 @pytest.fixture(scope="session")
+def fetch_transcript():
+    return _import_script(os.path.join(SCRIPTS_VI, "fetch-transcript.py"), "fetch_transcript")
+
+
+@pytest.fixture(scope="session")
 def extract_resources():
     return _import_script(
         os.path.join(SCRIPTS_PC, "extract-resources.py"), "extract_resources"

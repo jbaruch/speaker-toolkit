@@ -44,6 +44,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | `scripts/video-slide-extraction.py` | Extract slides from video via ffmpeg + perceptual dedup |
 | `scripts/batch-download-videos.sh` | Parallel video download for batch processing |
 | `scripts/vtt-cleanup.py` | Clean VTT subtitles into plain transcript text |
+| `scripts/fetch-transcript.py` | Fetch a transcript, validate it, write only if real (captions → local Whisper) |
 
 A talk is processable when it has `video_url`. Slide sources, in order of preference:
 1. `pptx_path` — richest data (exact colors, fonts, shapes via python-pptx)
@@ -112,10 +113,24 @@ batch. When all batches have finished, proceed to Step 6.
 
 Each subagent receives the talk's DB entry and current
 `rhetoric-style-summary.md`, runs A → B → B2 → C, and returns a JSON payload.
-Full procedure — transcript download (YouTube auto-subs → youtube-transcript-api
-→ Whisper fallback chain), slide acquisition per `slide_source`, rhetoric/style
-analysis, pattern-taxonomy tagging, and the return-JSON shape — lives in
+Full procedure — slide acquisition per `slide_source`, rhetoric/style analysis,
+pattern-taxonomy tagging, and the return-JSON shape — lives in
 [references/subagent-instructions.md](references/subagent-instructions.md).
+
+Transcripts come from `scripts/fetch-transcript.py`, never from inline fetch
+code. It tries the caption track, falls back to local Whisper, validates the
+result, and writes atomically only on success — so a failed fetch leaves no file
+rather than leaving a crash report where speech belongs:
+
+```bash
+python3 skills/vault-ingress/scripts/fetch-transcript.py <video-id-or-url> \
+    --out {vault_root}/transcripts/<youtube_id>.txt [--duration-seconds N]
+```
+
+Exit 0 wrote (or kept) a valid transcript; exit 1 means no source produced one
+and the talk is `processed_partial` at best; exit 2 is an argument or tool-state
+error. Validation thresholds and failure signatures are the script's own — see
+its module docstring and the constants above `validate_transcript`.
 
 ## Step 4 — Persist Subagent Results
 

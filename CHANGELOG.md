@@ -1,5 +1,53 @@
 # Changelog
 
+### feat(vault-ingress) — a real transcript fetcher that validates before it writes
+
+Four of the vault's transcripts were Python tracebacks. Not truncated files —
+the fetcher's own crash, written to the transcript path:
+
+> `AttributeError: type object 'YouTubeTranscriptApi' has no attribute 'get_transcript'`
+
+`youtube-transcript-api` 1.0 removed that classmethod, every fetch raised, and
+the traceback landed where speech belongs. The error handler then raised too
+(`NameError: name 'sys' is not defined`), so the failure path failed as well.
+Two more transcripts are zero bytes. Nothing validated any of it, so a talk with
+a stack trace for a transcript was indistinguishable from a talk with a real one
+— and `0MGvxG-sc6g` (Java Puzzlers NG S01) was marked `processed` off an empty
+file and recorded that nowhere.
+
+The traceback reads `File "<string>"`. The fetch was a `python3 -c` heredoc and
+no committed fetcher existed anywhere in `skills/`. That is the root cause, and
+it is what `rules/script-delegation.md` Scripts Are Real Files prevents: a real
+script gets an exit code, a stderr channel, and tests. An inline heredoc gets to
+write its stack trace into the corpus and exit 0.
+
+`scripts/fetch-transcript.py` tries the caption track, falls back to local
+Whisper, and validates before writing — empty, a Python-error signature at the
+head, a word floor, mostly-`[Music]` caption tracks, and a words-per-minute floor
+when a runtime is supplied. The write is atomic and happens only after validation
+passes, so a failed fetch leaves no file rather than a crash report.
+
+The validation is pure, so CI exercises every failure mode from fixtures — no
+network, no YouTube, no Apple-Silicon Whisper. Two bugs surfaced while repairing
+the real corpus with it, both caught before merge and both now regression-tested:
+
+- Library exceptions propagated instead of falling through, so a video with
+  captions disabled crashed the fetcher rather than reaching Whisper — the
+  original defect one layer up. `YouTubeTranscriptApiException` is now caught and
+  returns `None`.
+- One test passed `not-a-video` as an unresolvable id. It is eleven characters
+  drawn from the id alphabet, so it IS well-formed, and the test reached YouTube.
+  Replaced with a URL carrying no id, which fails at resolution before any
+  network call.
+
+`segments_to_text` accepts both the pre-1.0 dict shape and the 1.0 object shape;
+pinning to one shape is what broke the previous fetch.
+
+`youtube-transcript-api` is pinned at 1.2.4 and declared. The pin is deliberate
+rather than habitual: an uncontrolled upgrade of this exact library is what
+corrupted the data, so the next API break arrives as a Dependabot PR instead of
+as tracebacks in the corpus.
+
 ## 0.18.71 — 2026-07-27
 
 ### fix(tests) — the invocation guard now catches bare `scripts/foo.py` commands

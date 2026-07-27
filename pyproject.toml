@@ -17,6 +17,12 @@ dependencies = [
     "numpy",
     "pydantic==2.13.4",
     "PyYAML==6.0.3",
+    # Pinned deliberately, not by habit: 1.0 removed the `get_transcript`
+    # classmethod, and that uncontrolled API change is what put four Python
+    # tracebacks into the vault's transcripts. Pin + Dependabot pip ecosystem
+    # in .github/dependabot.yml (weekly), so the next break lands as a reviewed
+    # bump rather than as corrupt data.
+    "youtube-transcript-api==1.2.4",
 ]
 
 [project.optional-dependencies]
