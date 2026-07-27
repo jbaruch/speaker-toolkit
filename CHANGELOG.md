@@ -1,5 +1,30 @@
 # Changelog
 
+### fix(vault-ingress) — reject raw VTT payloads, stop inventing a transcript source
+
+Two defects in the transcript work shipped in 0.18.72, both found by running it
+against the real corpus.
+
+**A raw VTT dump passes every validator.** 26 of the vault's 206 transcripts held
+YouTube's karaoke caption payload rather than cleaned text — each line once with
+inline `<00:00:01.020><c>word</c>` timing tags, then again as plain text. Word
+counts read **3.6× high**, uniformly: a 37-minute meetup talk measured 18,543
+words, implying a two-hour session and a wildly wrong words-per-minute figure.
+
+The length floor cannot catch this, because a doubled transcript has MORE words,
+not fewer. `validate_transcript` now rejects the timing-tag signature and names
+`vtt-cleanup.py` — which already existed for exactly this and had simply never
+been run on those files. A test asserts the fixture clears the word floor before
+the VTT check fires, so the guard cannot pass for the wrong reason.
+
+**`method: "existing"` told agents to write `manual`.** The mapping said to fall
+back to `manual` when `transcript_source` was absent. `manual` means a human
+produced the transcript; a batch-24 agent dutifully wrote it onto a file that is
+unmistakably YouTube ASR, then flagged the result as a placeholder. An absent
+field now stays absent — the script learns nothing about provenance on that path,
+and a downstream reader weighing transcript reliability would trust `manual` more
+than the ASR it probably is.
+
 ## 0.18.72 — 2026-07-27
 
 ### feat(vault-ingress) — a real transcript fetcher that validates before it writes

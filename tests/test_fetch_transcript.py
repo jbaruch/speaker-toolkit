@@ -57,6 +57,35 @@ def test_short_stub_is_rejected(fetch_transcript):
     assert "125 words" in reason
 
 
+def _raw_vtt(lines=200):
+    """YouTube's karaoke caption payload: each line once tagged, once plain."""
+    out = []
+    for n in range(lines):
+        stamp = f"00:00:{n // 60:02d}.{n % 60:03d}"
+        out.append(f"so<{stamp}><c> before</c><{stamp}><c> we</c><{stamp}><c> start</c>")
+        out.append("so before we start")
+    return "\n".join(out)
+
+
+RAW_VTT_FIXTURE = _raw_vtt()
+
+
+def test_raw_vtt_payload_is_rejected(fetch_transcript):
+    """A raw VTT dump has MORE words than the cleaned text, so the length floor
+    cannot catch it — 26 corpus transcripts sat in this shape reading 3.6x their
+    true length, and a meetup talk read as an 18,543-word two-hour session."""
+    ok, reason = fetch_transcript.validate_transcript(RAW_VTT_FIXTURE)
+    assert not ok
+    assert "raw VTT" in reason and "vtt-cleanup.py" in reason
+
+
+def test_raw_vtt_is_caught_despite_passing_the_word_floor(fetch_transcript):
+    """Guard the guard: prove the fixture is long enough to clear the floor."""
+    stripped = fetch_transcript.VTT_TIMING_TAG.sub("", RAW_VTT_FIXTURE)
+    assert fetch_transcript.count_words(stripped) > fetch_transcript.DEFAULT_MIN_WORDS
+    assert fetch_transcript.validate_transcript(stripped)[0] is True
+
+
 def test_mostly_non_speech_markers_is_rejected(fetch_transcript):
     """A caption track of [Music]/[Applause] parses fine and says nothing."""
     ok, reason = fetch_transcript.validate_transcript(MUSIC_FIXTURE, min_words=10)
