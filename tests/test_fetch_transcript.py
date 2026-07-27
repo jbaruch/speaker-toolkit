@@ -128,7 +128,31 @@ def test_caption_errors_fall_through_instead_of_propagating(fetch_transcript, mo
         raise TranscriptsDisabled("eg6gqvUFh6Q")
 
     monkeypatch.setattr(YouTubeTranscriptApi, "fetch", boom, raising=False)
-    assert fetch_transcript.fetch_captions("eg6gqvUFh6Q", ["en"]) is None
+    assert fetch_transcript.fetch_captions("eg6gqvUFh6Q", ["en"]) == (None, None)
+
+
+def test_captions_report_the_track_language(fetch_transcript, monkeypatch):
+    """`delivery_language` derives from this, so the TRACK's language is what counts.
+
+    It differs from the first requested preference whenever that language has no
+    track and the API falls back — returning the request would silently mislabel
+    every such talk.
+    """
+    from youtube_transcript_api import YouTubeTranscriptApi
+
+    class Segment:
+        def __init__(self, text):
+            self.text = text
+
+    class Fetched(list):
+        language_code = "ru"
+
+    monkeypatch.setattr(YouTubeTranscriptApi, "fetch",
+                        lambda self, *a, **k: Fetched([Segment("привет")]),
+                        raising=False)
+    text, language = fetch_transcript.fetch_captions("x", ["en", "ru"])
+    assert text == "привет"
+    assert language == "ru"
 
 
 def test_write_is_atomic_and_leaves_no_partial(fetch_transcript, tmp_path):

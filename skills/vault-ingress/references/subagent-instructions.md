@@ -29,12 +29,26 @@ its module docstring.
 | 1 | no source produced a valid transcript | `processed_partial` at best — say so in `rhetoric_notes` |
 | 2 | argument or tool-state error | the id or the environment is wrong, not the talk |
 
-Set `transcript_source` from the returned `method`: `youtube_auto` for
-`captions`, `whisper` for `whisper`. Pass `--duration-seconds` when the runtime
-is known — it enables the words-per-minute check that catches a caption track
-returning only its opening minute.
+Map the returned `method` to `transcript_source`:
 
-Record the detected language as `delivery_language`.
+| `method` | `transcript_source` |
+|---|---|
+| `captions` | `youtube_auto` |
+| `whisper` | `whisper` |
+| `existing` | leave the talk's current `transcript_source` unchanged; set `manual` only when the field is absent |
+
+`existing` means a valid transcript was already on disk and no fetch ran, so the
+script learned nothing about where it came from — overwriting the recorded source
+would replace a known value with a guess.
+
+Set `delivery_language` from the returned `language`: the caption track's own
+language code, or Whisper's detected language. It is `null` on the `existing`
+path — keep whatever the talk already records, and leave the field unset rather
+than guessing when there is nothing to copy.
+
+Pass `--duration-seconds` when the runtime is known — it enables the
+words-per-minute check that catches a caption track returning only its opening
+minute.
 
 **A transcript already on disk is not proof of a transcript.** Ten corpus files
 were empty, a traceback, or a stub. Running the script without `--force` is the
