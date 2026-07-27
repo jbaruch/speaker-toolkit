@@ -87,7 +87,7 @@ Default status is always `"pending"` for new entries.
 **Scan for .pptx files:** Recursively glob `**/*.pptx` in `pptx_source_dir`; fuzzy-match
 to `talks[]` entries. Report counts. See [references/schemas-db.md](references/schemas-db.md)
 for the PPTX extraction output schema (per-slide visual data, shape types, global design stats).
-Run `scripts/pptx-extraction.py` for extraction.
+Run `python3 scripts/pptx-extraction.py` for extraction.
 
 **Pattern taxonomy migration:** See [references/processing-rules.md](references/processing-rules.md) for migration
 logic. In brief: talks with `status` `"processed"` or `"processed_partial"` that
@@ -178,7 +178,7 @@ Runs once after all Step 3 batches have completed.
 Process PPTX files not yet extracted during Step 3: unmatched catalog entries, talks
 that used PDF as primary but have a PPTX available, or entries with
 `pptx_visual_status: "pending"`. Skip if already `"extracted"`.
-Run `scripts/pptx-extraction.py <path.pptx>` for each file.
+Run `python3 scripts/pptx-extraction.py <path.pptx>` for each file.
 
 **PPTX matching rules:** The .pptx files are in `Conference/Year/TalkName.pptx` and
 shownotes entries have `conference` and `title` fields. Fuzzy-match by: normalize

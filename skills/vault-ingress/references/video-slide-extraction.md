@@ -76,7 +76,7 @@ Google Drive PDFs used elsewhere in the vault.
 
 ## Usage
 
-Run `scripts/video-slide-extraction.py` for each video after downloading it:
+Run `python3 scripts/video-slide-extraction.py` for each video after downloading it:
 
 ```bash
 # Download video at 720p

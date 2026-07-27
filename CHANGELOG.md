@@ -1,5 +1,47 @@
 # Changelog
 
+### fix(tests) — the invocation guard now catches bare `scripts/foo.py` commands
+
+`tests/test_script_invocation_style.py` guards the outcome "no invocation
+consults the exec bit", because `tessl install` strips it from every packaged
+script. Its two detectors matched `./foo.py` and `$VAR/foo.py`, and a bare
+repo-relative `scripts/foo.py` is neither — so a line reading ``Run
+`scripts/foo.py` `` passed CI and still failed in a consumer install, which is
+the exact failure shape the guard exists to prevent (#138).
+
+Not hypothetical: `watch-pr-reviews.sh` exited 126 during the 0.18.70 release
+because the mounted copy is mode 644, and the fenced block in
+`illustrations/references/generation.md` would have handed a consumer
+`skills/presentation-creator/scripts/apply-backgrounds.sh` to copy and run.
+
+A bare path is genuinely ambiguous where the other two forms are not — it is a
+valid FILE NAME as well as a valid COMMAND, and `script-as-black-box` REQUIRES
+skills to cite scripts by path, so a detector that flagged every bare path would
+push authors to stop citing scripts at all. Classification is therefore by
+markdown structure, never by parsing prose:
+
+- Inside a fenced code block — the surface a consumer copies verbatim — a bare
+  path at command position with no interpreter is unsafe. Exhaustive.
+- In prose, only a code span introduced by an enumerated execution verb (run,
+  invoke, execute, through) counts. Pointer verbs that also precede script paths
+  in these docs (see, in, from, live in, defined in) are excluded deliberately.
+- Table rows are pointers by construction and are never flagged.
+
+The prose half is an approximation with a stated gap — a novel execution verb
+slips through it — and stands as a second net over the fenced-block rule rather
+than as the primary guard. Naming the limit beats implying a completeness the
+check does not have.
+
+`.py` files are scanned as prose rather than as shell. Treating them as shell
+false-positived two docstring references that wrapped across a line boundary,
+and Python reaches a script through `subprocess`, where the path sits inside
+brackets and quotes and never lands at command position.
+
+Per `language-diagnostics` Adopting on a Dirty Tree, the detector and the 14
+fixes it surfaced land together. That is more sites than the seven the issue
+listed, and one of them — the `apply-backgrounds.sh` fenced block — was not on
+that list at all.
+
 ## 0.18.70 — 2026-07-27
 
 ### fix(vault-ingress) — stamp `processed_date` at second resolution, not day
