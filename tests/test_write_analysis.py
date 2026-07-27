@@ -356,12 +356,35 @@ def test_carriage_returns_do_not_break_table_rows(write_analysis):
     assert "\r" not in rows[0]
 
 
-@pytest.mark.parametrize("bad", ["", ".", "..", "...", "....", "/", "../"])
+@pytest.mark.parametrize("bad", ["", ".", "..", "...", "....", "/", "../",
+                                 "   ", "\n", " . "])
 def test_names_that_resolve_to_no_file_are_rejected(write_analysis, bad):
     """The docstring promised dots-only names are rejected; an equality check
     against ("", ".", "..") let "..." through and produced a "....md" file."""
     with pytest.raises(SystemExit):
         write_analysis.safe_output_name(bad)
+
+
+def test_output_name_strips_whitespace_and_respects_case(write_analysis):
+    """`filename` is model-generated, so a stray newline or trailing space must
+    not reach the filesystem, and TALK.MD must not become TALK.MD.md."""
+    assert write_analysis.safe_output_name("  talk.md\n") == "talk.md"
+    assert write_analysis.safe_output_name("TALK.MD") == "TALK.MD"
+    assert write_analysis.safe_output_name("Talk.Md") == "Talk.Md"
+    assert write_analysis.safe_output_name(" talk ") == "talk.md"
+
+
+def test_none_valued_structured_fields_are_omitted(write_analysis):
+    """A None means 'could not determine'; rendering the literal 'None' reads as
+    a finding rather than an absence."""
+    md = write_analysis.render_analysis(_return(structured_data={
+        "slide_count": 31,
+        "delivery_language": None,
+        "meme_count": 0,
+    }))
+    assert "- **slide_count:** 31" in md
+    assert "- **meme_count:** 0" in md, "0 is a determined value, not an absence"
+    assert "delivery_language" not in md
 
 
 def test_cli_missing_input_file_is_actionable(write_analysis, tmp_path):

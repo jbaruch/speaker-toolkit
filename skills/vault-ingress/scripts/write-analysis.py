@@ -158,7 +158,10 @@ def render_structured_data(sd):
     if not isinstance(sd, dict) or not sd:
         return []
     out = ["## Structured Data", ""]
-    scalars = [(k, v) for k, v in sd.items() if isinstance(v, SCALARS) or v is None]
+    # A None value means the subagent could not determine the field. Rendering it
+    # as the literal "None" reads as a finding rather than an absence, and the
+    # nested-block branch below already drops None — so drop it here too.
+    scalars = [(k, v) for k, v in sd.items() if isinstance(v, SCALARS)]
     if scalars:
         for key, val in scalars:
             out.append(f"- **{key}:** {val}")
@@ -275,14 +278,16 @@ def safe_output_name(filename):
     basename is kept, and a name that is nothing but separators or dots is
     rejected rather than silently coerced into a plausible file.
     """
-    base = os.path.basename(filename.replace("\\", "/").rstrip("/"))
+    base = os.path.basename(filename.replace("\\", "/").strip().rstrip("/")).strip()
     # `...` survives basename and is not caught by an equality check, so test for
-    # "contains nothing but dots" rather than enumerating the short cases.
-    if not base.strip("."):
+    # "contains nothing but dots or whitespace" rather than enumerating cases.
+    if not base.strip(". \t\r\n"):
         print(f"ERROR: return `filename` {filename!r} does not name a file; "
               f"cannot place its analysis file", file=sys.stderr)
         sys.exit(1)
-    return base if base.endswith(".md") else base + ".md"
+    # Match the extension case-insensitively so `TALK.MD` does not become
+    # `TALK.MD.md`.
+    return base if base.lower().endswith(".md") else base + ".md"
 
 
 def load_json(path, label):
