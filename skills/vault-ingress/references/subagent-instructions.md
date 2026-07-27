@@ -8,52 +8,65 @@ returns the JSON shape in [schemas-db.md](schemas-db.md).
 
 ### Transcript download
 
-**YouTube talks** — `yt-dlp` with auto-subtitles across likely languages:
+One command. Do NOT hand-roll a fetch — an inline `python3 -c` fetch here is
+what wrote four Python tracebacks into `transcripts/` when the upstream library
+renamed a method, and nothing noticed because nothing validated the output.
 
 ```bash
-yt-dlp --write-auto-sub --sub-lang "en,ru,he,fr,de,es,ja" --skip-download \
-  --sub-format vtt \
-  -o "{vault_root}/transcripts/{youtube_id}" \
-  "https://www.youtube.com/watch?v={youtube_id}"
+python3 skills/vault-ingress/scripts/fetch-transcript.py {youtube_id} \
+  --out "{vault_root}/transcripts/{youtube_id}.txt" \
+  [--duration-seconds {seconds}]
 ```
 
-The VTT filename includes the language code (e.g., `{youtube_id}.ru.vtt`).
-Record the detected language as `delivery_language`. After download, clean the
-VTT:
+The script owns the whole chain — caption track first, local Whisper fallback,
+validation, atomic write. It prints one JSON object and never leaves a file
+behind on failure. Exit codes and the JSON shape are the script's contract; see
+its module docstring.
+
+| exit | meaning | what to do |
+|---|---|---|
+| 0 | a valid transcript is at `--out` | continue; read `method` to set `transcript_source` |
+| 1 | no source produced a valid transcript | `processed_partial` at best — say so in `rhetoric_notes` |
+| 2 | argument or tool-state error | the id or the environment is wrong, not the talk |
+
+Map the returned `method` to `transcript_source`:
+
+| `method` | `transcript_source` |
+|---|---|
+| `captions` | `youtube_auto` |
+| `whisper` | `whisper` |
+| `existing` | leave the talk's current `transcript_source` unchanged; set `manual` only when the field is absent |
+
+`existing` means a valid transcript was already on disk and no fetch ran, so the
+script learned nothing about where it came from — overwriting the recorded source
+would replace a known value with a guess.
+
+Set `delivery_language` from the returned `language`: the caption track's own
+language code, or Whisper's detected language. It is `null` on the `existing`
+path — keep whatever the talk already records, and leave the field unset rather
+than guessing when there is nothing to copy.
+
+Pass `--duration-seconds` when the runtime is known — it enables the
+words-per-minute check that catches a caption track returning only its opening
+minute.
+
+**A transcript already on disk is not proof of a transcript.** Ten corpus files
+were empty, a traceback, or a stub. Running the script without `--force` is the
+check: it validates any existing file and either keeps it or replaces it.
+
+**Non-YouTube talks** (InfoQ, Vimeo, conference platforms): acquire the audio or
+video file, then pass it to the same script with `--audio`. Do not call
+`mlx_whisper.transcribe()` yourself — the validation, the atomic write and the
+JSON contract all live in the script, and a hand-rolled call has none of them.
 
 ```bash
-python3 skills/vault-ingress/scripts/vtt-cleanup.py \
-  "{vault_root}/transcripts/{youtube_id}.{lang}.vtt"
+python3 skills/vault-ingress/scripts/fetch-transcript.py {talk_label} \
+  --audio "{path_to_audio_or_video}" \
+  --out "{vault_root}/transcripts/{talk_id}.txt"
 ```
 
-This strips timestamps, cue markers, and deduplicates lines. Output:
-`transcripts/{youtube_id}.txt`.
-
-**Fallback 1 — `youtube-transcript-api`** (when yt-dlp has no auto-captions):
-
-```bash
-"{python_path}" -c "
-from youtube_transcript_api import YouTubeTranscriptApi
-transcript = YouTubeTranscriptApi.get_transcript('{youtube_id}', languages=['en','ru','he','fr','de'])
-for entry in transcript:
-    print(entry['text'])
-" > "{vault_root}/transcripts/{youtube_id}.txt"
-```
-
-**Fallback 2 — Whisper** (no captions at all; requires downloaded video/audio):
-
-```bash
-ffmpeg -i "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
-  -vn -acodec libmp3lame \
-  "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp3"
-```
-
-Then transcribe with MLX Whisper (`mlx_whisper.transcribe()`) or OpenAI
-Whisper. Set `transcript_source: "whisper"`.
-
-**Non-YouTube talks** (InfoQ, Vimeo, conference platforms): attempt audio
-download via yt-dlp, then transcribe locally with Whisper. Falls back to
-`processed_partial` if audio fails.
+Set `transcript_source: whisper` on exit 0. Fall back to `processed_partial`
+when no audio is obtainable at all.
 
 ### Slide acquisition (per `slide_source`)
 

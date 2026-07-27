@@ -188,7 +188,7 @@ Each subagent returns this JSON after processing one talk:
 
 ## Video Extraction Output Schema
 
-Produced by `scripts/video-slide-extraction.py`.
+Produced by `skills/vault-ingress/scripts/video-slide-extraction.py`.
 Stored in `structured_data.video_extraction` on the talk entry:
 
 ```json
@@ -227,7 +227,7 @@ the same as a Google Drive PDF for dimension 13 (slide design patterns).
 
 ## PPTX Extraction Output Schema
 
-Produced by `scripts/pptx-extraction.py`.
+Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
 
 ### What the Script Extracts (mapped to slide-design-spec.md sections)
 

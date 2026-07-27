@@ -17,11 +17,26 @@ dependencies = [
     "numpy",
     "pydantic==2.13.4",
     "PyYAML==6.0.3",
+    # Pinned deliberately, not by habit: 1.0 removed the `get_transcript`
+    # classmethod, and that uncontrolled API change is what put four Python
+    # tracebacks into the vault's transcripts. Pin + Dependabot pip ecosystem
+    # in .github/dependabot.yml (weekly), so the next break lands as a reviewed
+    # bump rather than as corrupt data.
+    "youtube-transcript-api==1.2.4",
 ]
 
 [project.optional-dependencies]
 test = [
     "pytest",
+]
+# Local Whisper transcription, used by vault-ingress/scripts/fetch-transcript.py
+# when a video has no caption track. Optional and not in the base dependency set
+# because mlx-whisper requires Apple Silicon and cannot install on the Linux CI
+# runners — see `rules/testing-standards.md` Platform-Bound Untestable Carve-Out.
+# The script imports it lazily and degrades with an actionable message, so the
+# caption path works everywhere without it.
+whisper = [
+    "mlx-whisper==0.4.3",
 ]
 
 [tool.setuptools]

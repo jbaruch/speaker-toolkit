@@ -96,7 +96,7 @@ cp "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.pdf" "{vault_root}/sli
 rm "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4"
 ```
 
-For batch downloads: `scripts/batch-download-videos.sh <vault_root> ID1 ID2 ...`
+For batch downloads: `skills/vault-ingress/scripts/batch-download-videos.sh <vault_root> ID1 ID2 ...`
 
 Update the talk's DB entry: `slide_source: "video_extracted"`,
 `slides_local_path: "slides/{youtube_id}.pdf"`,

@@ -1,5 +1,80 @@
 # Changelog
 
+### feat(vault-ingress) — a real transcript fetcher that validates before it writes
+
+Four of the vault's transcripts were Python tracebacks. Not truncated files —
+the fetcher's own crash, written to the transcript path:
+
+> `AttributeError: type object 'YouTubeTranscriptApi' has no attribute 'get_transcript'`
+
+`youtube-transcript-api` 1.0 removed that classmethod, every fetch raised, and
+the traceback landed where speech belongs. The error handler then raised too
+(`NameError: name 'sys' is not defined`), so the failure path failed as well.
+Two more transcripts are zero bytes. Nothing validated any of it, so a talk with
+a stack trace for a transcript was indistinguishable from a talk with a real one
+— and `0MGvxG-sc6g` (Java Puzzlers NG S01) was marked `processed` off an empty
+file and recorded that nowhere.
+
+The traceback reads `File "<string>"`. The fetch was a `python3 -c` heredoc and
+no committed fetcher existed anywhere in `skills/`. That is the root cause, and
+it is what `rules/script-delegation.md` Scripts Are Real Files prevents: a real
+script gets an exit code, a stderr channel, and tests. An inline heredoc gets to
+write its stack trace into the corpus and exit 0.
+
+`scripts/fetch-transcript.py` tries the caption track, falls back to local
+Whisper, and validates before writing — empty, a Python-error signature at the
+head, a word floor, mostly-`[Music]` caption tracks, and a words-per-minute floor
+when a runtime is supplied. The write is atomic and happens only after validation
+passes, so a failed fetch leaves no file rather than a crash report.
+
+The validation is pure, so CI exercises every failure mode from fixtures — no
+network, no YouTube, no Apple-Silicon Whisper. Two bugs surfaced while repairing
+the real corpus with it, both caught before merge and both now regression-tested:
+
+- Library exceptions propagated instead of falling through, so a video with
+  captions disabled crashed the fetcher rather than reaching Whisper — the
+  original defect one layer up. `YouTubeTranscriptApiException` is now caught and
+  returns `None`.
+- One test passed `not-a-video` as an unresolvable id. It is eleven characters
+  drawn from the id alphabet, so it IS well-formed, and the test reached YouTube.
+  Replaced with a URL carrying no id, which fails at resolution before any
+  network call.
+
+`segments_to_text` accepts both the pre-1.0 dict shape and the 1.0 object shape;
+pinning to one shape is what broke the previous fetch.
+
+**The inline fetch that caused all of this was still committed.** The reviewer
+found it: `references/subagent-instructions.md` still told every subagent to run
+
+```
+"{python_path}" -c "
+from youtube_transcript_api import YouTubeTranscriptApi
+transcript = YouTubeTranscriptApi.get_transcript(...)
+" > "{vault_root}/transcripts/{youtube_id}.txt"
+```
+
+— the literal heredoc whose output is in the corpus, redirect and all. Fixing
+`SKILL.md` while leaving that in the reference agents are sent to would have
+changed nothing about what agents actually do. The section is now one call to
+the script, with its exit-code contract tabled and a note that a transcript
+already on disk is not proof of a transcript.
+
+Tool-state failures now honour the JSON contract. A missing `yt-dlp` raised
+`FileNotFoundError` and the script died without printing its documented object —
+the same silent-failure shape it exists to prevent, one level up. `yt-dlp` and
+`mlx_whisper.transcribe()` are both guarded, and both return `None` so the caller
+emits the failure JSON and exits 1.
+
+`rules/transcript-fetch-authority.md` is the authority of record for the Whisper
+layer's Platform-Bound Untestable Carve-Out, naming the exempt wrapper and its
+four-step manual validation — including the step that proves a missing `yt-dlp`
+still yields the JSON contract and still leaves no file behind.
+
+`youtube-transcript-api` is pinned at 1.2.4 and declared. The pin is deliberate
+rather than habitual: an uncontrolled upgrade of this exact library is what
+corrupted the data, so the next API break arrives as a Dependabot PR instead of
+as tracebacks in the corpus.
+
 ## 0.18.71 — 2026-07-27
 
 ### fix(tests) — the invocation guard now catches bare `scripts/foo.py` commands
