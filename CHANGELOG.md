@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.64 — 2026-07-27
+
 ### fix(vault-ingress) — stamp `processed_date` when a subagent return omits it
 
 `persist-results.py` copied `processed_date` only when the return carried it.
