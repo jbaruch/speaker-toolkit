@@ -111,6 +111,74 @@ def test_scalar_result_fields_copied(persist_results):
     assert talk["transcript_source"] == "youtube_auto"
 
 
+def test_run_date_stamped_when_return_omits_processed_date(persist_results):
+    """The reparse regression: a return that reports status but no date left the
+    previous run's date in place, so the DB could not say which talks it covered."""
+    ret = _return()
+    del ret["processed_date"]
+    talk = _talk(processed_date="2026-04-09")
+    _, stamped = persist_results.merge_talk(talk, ret, run_date="2026-07-26")
+    assert talk["processed_date"] == "2026-07-26"
+    assert stamped is True
+
+
+def test_return_processed_date_wins_over_run_date(persist_results):
+    talk = _talk()
+    _, stamped = persist_results.merge_talk(talk, _return(), run_date="2026-07-26")
+    assert talk["processed_date"] == "2026-06-18"
+    assert stamped is False
+
+
+def test_empty_processed_date_is_stamped(persist_results):
+    talk = _talk(processed_date="2026-04-09")
+    _, stamped = persist_results.merge_talk(talk, _return(processed_date=""),
+                                            run_date="2026-07-26")
+    assert talk["processed_date"] == "2026-07-26"
+    assert stamped is True
+
+
+def test_no_run_date_leaves_processed_date_untouched(persist_results):
+    ret = _return()
+    del ret["processed_date"]
+    talk = _talk(processed_date="2026-04-09")
+    _, stamped = persist_results.merge_talk(talk, ret)
+    assert talk["processed_date"] == "2026-04-09"
+    assert stamped is False
+
+
+def test_cli_run_date_pins_the_stamp(persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    ret = _return()
+    del ret["processed_date"]
+    db.write_text(json.dumps({"talks": [_talk(processed_date="2026-04-09")]}))
+    batch.write_text(json.dumps([ret]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch),
+         "--run-date", "2026-07-26"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(db.read_text())["talks"][0]["processed_date"] == "2026-07-26"
+    report = json.loads(result.stdout)
+    assert report["run_date"] == "2026-07-26"
+    assert report["talks"][0]["stamped_processed_date"] is True
+
+
+def test_cli_rejects_malformed_run_date(persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(json.dumps({"talks": [_talk()]}))
+    batch.write_text(json.dumps([_return()]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch),
+         "--run-date", "26-07-2026"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode != 0
+    assert "YYYY-MM-DD" in result.stderr
+
+
 def test_cli_writes_db_and_reports(persist_results, tmp_path):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"

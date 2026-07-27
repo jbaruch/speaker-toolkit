@@ -11,7 +11,10 @@ and the queryable scalars are promoted to the talk's top level.
 
 For each return (matched to a talk by `filename`) it:
   1. Sets the scalar result fields (status, processed_date, rhetoric_notes,
-     areas_for_improvement, adherence_assessment, transcript_source).
+     areas_for_improvement, adherence_assessment, transcript_source). A return
+     that omits `processed_date` is stamped with the run date, because otherwise
+     the talk keeps whatever date the previous run set and the DB cannot answer
+     "which talks has this reparse actually covered".
   2. Deep-merges the full `structured_data` and `verbatim_examples` blocks —
      additive: dicts recurse, new non-empty values win, existing data is never
      clobbered by missing/empty values (re-runs refine, never wipe).
@@ -26,14 +29,18 @@ It does NOT touch rhetoric-style-summary.md or the analysis files — those are
 written elsewhere in Step 4/Step 5. It owns only the tracking-DB merge.
 
 Usage:
-    persist-results.py <tracking-database.json> <batch-returns.json>
+    persist-results.py <tracking-database.json> <batch-returns.json> [--run-date YYYY-MM-DD]
 
     batch-returns.json is a JSON array of subagent return objects (the shape in
     references/schemas-db.md -> "Per-Talk Subagent Return Schema"). The DB is
     rewritten in place; a structured JSON summary is printed to stdout:
-        {"persisted": <int>, "db_path": "<path>",
-         "talks": [{"filename": "...", "status": "...", "promoted": ["..."]}]}
+        {"persisted": <int>, "db_path": "<path>", "run_date": "<YYYY-MM-DD>",
+         "talks": [{"filename": "...", "status": "...", "promoted": ["..."],
+                    "stamped_processed_date": <bool>}]}
     Diagnostics and errors go to stderr; exit code is non-zero on failure.
+
+    --run-date pins the stamp instead of reading the clock; the whole batch
+    shares one date so a run that straddles midnight does not split across two.
 
 Example:
     persist-results.py ~/.claude/rhetoric-knowledge-vault/tracking-database.json batch-returns.json
@@ -41,6 +48,7 @@ Example:
 
 import json
 import sys
+from datetime import date
 
 # Queryable scalars promoted from the subagent return onto the talk's top level.
 # (top_level_field, dotted source path within the return). To add a new queryable
@@ -121,10 +129,22 @@ def normalize_pattern_observations(existing, incoming):
     return obs
 
 
-def merge_talk(talk, ret):
+def merge_talk(talk, ret, run_date=None):
+    """Merge one return into its talk. Returns (promoted_fields, stamped_date).
+
+    `run_date` stamps `processed_date` when the return omits it. Callers that
+    care about reproducibility pass it explicitly; it is never read from the
+    clock inside the merge.
+    """
     for f in SCALARS:
         if f in ret and not is_empty(ret[f]):
             talk[f] = ret[f]
+    # A return that reports a status but no date would otherwise leave the
+    # previous run's date in place, making the talk look untouched by this run.
+    stamped = False
+    if run_date and is_empty(ret.get("processed_date")):
+        talk["processed_date"] = run_date
+        stamped = True
     if isinstance(ret.get("structured_data"), dict):
         talk["structured_data"] = deep_merge(talk.get("structured_data") or {}, ret["structured_data"])
     if isinstance(ret.get("verbatim_examples"), dict):
@@ -138,7 +158,7 @@ def merge_talk(talk, ret):
         if not is_empty(val):
             talk[field] = val
             promoted.append(field)
-    return promoted
+    return promoted, stamped
 
 
 def load_json(path, label):
@@ -162,11 +182,41 @@ def load_json(path, label):
         sys.exit(1)
 
 
-def main():
-    if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} <tracking-database.json> <batch-returns.json>", file=sys.stderr)
+def parse_args(argv):
+    """Split positional paths from the optional --run-date flag.
+
+    Returns (db_path, batch_path, run_date). An absent flag resolves to today,
+    so the common call site needs no extra argument.
+    """
+    args, run_date = [], None
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--run-date":
+            if i + 1 >= len(argv):
+                print("ERROR: --run-date requires a YYYY-MM-DD value", file=sys.stderr)
+                sys.exit(1)
+            run_date = argv[i + 1]
+            i += 2
+            continue
+        args.append(argv[i])
+        i += 1
+    if len(args) != 2:
+        print(f"Usage: {sys.argv[0]} <tracking-database.json> <batch-returns.json> "
+              f"[--run-date YYYY-MM-DD]", file=sys.stderr)
         sys.exit(1)
-    db_path, batch_path = sys.argv[1], sys.argv[2]
+    if run_date is None:
+        run_date = date.today().isoformat()
+    else:
+        try:
+            date.fromisoformat(run_date)
+        except ValueError:
+            print(f"ERROR: --run-date must be YYYY-MM-DD, got {run_date!r}", file=sys.stderr)
+            sys.exit(1)
+    return args[0], args[1], run_date
+
+
+def main():
+    db_path, batch_path, run_date = parse_args(sys.argv[1:])
 
     db = load_json(db_path, "tracking database")
     returns = load_json(batch_path, "batch-returns")
@@ -185,14 +235,15 @@ def main():
             # mismatch, not something to silently skip.
             print(f"ERROR: no talk in DB matches return filename: {name!r}", file=sys.stderr)
             sys.exit(1)
-        promoted = merge_talk(talk, ret)
-        summary.append({"filename": name, "status": talk.get("status"), "promoted": promoted})
+        promoted, stamped = merge_talk(talk, ret, run_date)
+        summary.append({"filename": name, "status": talk.get("status"),
+                        "promoted": promoted, "stamped_processed_date": stamped})
 
     with open(db_path, "w", encoding="utf-8") as f:
         json.dump(db, f, indent=2, ensure_ascii=False)
 
-    json.dump({"persisted": len(summary), "db_path": db_path, "talks": summary},
-              sys.stdout, ensure_ascii=False)
+    json.dump({"persisted": len(summary), "db_path": db_path, "run_date": run_date,
+               "talks": summary}, sys.stdout, ensure_ascii=False)
     sys.stdout.write("\n")
 
 
