@@ -40,10 +40,19 @@ Record the detected language as `delivery_language`.
 were empty, a traceback, or a stub. Running the script without `--force` is the
 check: it validates any existing file and either keeps it or replaces it.
 
-**Non-YouTube talks** (InfoQ, Vimeo, conference platforms): the script resolves
-only YouTube ids. Acquire the audio by hand, transcribe with
-`mlx_whisper.transcribe()`, and set `transcript_source: whisper` — or fall back
-to `processed_partial` when no audio is obtainable.
+**Non-YouTube talks** (InfoQ, Vimeo, conference platforms): acquire the audio or
+video file, then pass it to the same script with `--audio`. Do not call
+`mlx_whisper.transcribe()` yourself — the validation, the atomic write and the
+JSON contract all live in the script, and a hand-rolled call has none of them.
+
+```bash
+python3 skills/vault-ingress/scripts/fetch-transcript.py {talk_label} \
+  --audio "{path_to_audio_or_video}" \
+  --out "{vault_root}/transcripts/{talk_id}.txt"
+```
+
+Set `transcript_source: whisper` on exit 0. Fall back to `processed_partial`
+when no audio is obtainable at all.
 
 ### Slide acquisition (per `slide_source`)
 

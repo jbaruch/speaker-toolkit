@@ -153,6 +153,45 @@ def test_cli_rejects_an_unresolvable_video(fetch_transcript, tmp_path):
     )
     assert result.returncode == 2
     assert "11-character video id" in result.stderr
+    assert json.loads(result.stdout)["ok"] is False
+    assert not (tmp_path / "x.txt").exists()
+
+
+def test_cli_emits_json_on_an_argument_error(fetch_transcript, tmp_path):
+    """The contract promises JSON on every non-zero exit, argparse included.
+
+    A wrapper that parses stdout must not get silence when the invocation is
+    malformed — silence is the failure mode this whole script exists to end.
+    """
+    result = subprocess.run(
+        [sys.executable, fetch_transcript.__file__, "eg6gqvUFh6Q"],  # no --out
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["ok"] is False
+
+
+def test_cli_help_still_exits_zero(fetch_transcript):
+    """`--help` is a success path and must not be turned into a JSON error."""
+    result = subprocess.run(
+        [sys.executable, fetch_transcript.__file__, "--help"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    assert "--audio" in result.stdout
+
+
+def test_cli_rejects_a_missing_audio_file(fetch_transcript, tmp_path):
+    result = subprocess.run(
+        [sys.executable, fetch_transcript.__file__, "infoq-java-puzzlers",
+         "--audio", str(tmp_path / "absent.mp3"),
+         "--out", str(tmp_path / "x.txt")],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 2
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert "does not exist" in payload["reason"]
     assert not (tmp_path / "x.txt").exists()
 
 

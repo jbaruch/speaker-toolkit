@@ -14,8 +14,9 @@ description: Authority of record for the Whisper transcription layer's Platform-
 
 ## Covered Artifact
 
-- `fetch_whisper()` in `skills/vault-ingress/scripts/fetch-transcript.py` — the audio download plus `mlx_whisper.transcribe()` call. Nothing else in the file is exempt.
+- `transcribe_audio()` in `skills/vault-ingress/scripts/fetch-transcript.py` — the `mlx_whisper.transcribe()` call — and `fetch_whisper()`, which downloads audio and delegates to it. Both the YouTube `--method whisper` path and the non-YouTube `--audio` path reach the exemption through `transcribe_audio()`; nothing else in the file is exempt.
 - `mlx-whisper` is declared as the optional `whisper` extra in `pyproject.toml`, never a base dependency. The caption path and every validator work without it.
+- Non-YouTube talks route through `--audio` on this same script. Transcription is deterministic script work per `jbaruch/coding-policy: script-delegation`, so no skill prose may call `mlx_whisper.transcribe()` directly — a hand-rolled call carries none of the validation, atomic write, or JSON contract, which is the defect class this script was written to end.
 
 ## Precondition 1 — CI-Runnable Pieces Are Extracted and Tested
 
@@ -32,8 +33,9 @@ Run against a talk whose caption track is disabled, on Apple Silicon with the
 2. Observe: exit 0, one JSON object on stdout with `"method": "whisper"` and a `words` count plausible for the runtime (conference delivery is 110–160 wpm).
 3. Confirm `/tmp/t.txt` holds prose, not `[Music]` markers or a traceback.
 4. Re-run with `yt-dlp` removed from `PATH`. Expect exit 1, a stderr line naming the install command, one JSON object with `"ok": false`, and NO file at the output path.
+5. `--audio <local file> --out /tmp/a.txt` on a non-YouTube recording: exit 0, `"method": "whisper"`, prose at the output path.
 
-A pass requires all four. Step 4 is the one that matters: it proves a tool-state failure still honours the JSON contract and still leaves nothing behind.
+A pass requires all five. Step 4 is the one that matters: it proves a tool-state failure still honours the JSON contract and still leaves nothing behind.
 
 ## Scope Limits
 

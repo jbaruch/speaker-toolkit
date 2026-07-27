@@ -26,9 +26,15 @@ Usage:
     fetch-transcript.py <video-id-or-url> --out <path> [--languages en,ru,he]
                         [--method auto|captions|whisper] [--force]
                         [--duration-seconds N] [--min-words N]
+    fetch-transcript.py <label> --audio <file> --out <path>   # non-YouTube talk
 
-Output: one JSON object on stdout —
-    {"ok": bool, "video_id": "...", "method": "captions|whisper|none",
+`--audio` transcribes a local audio or video file instead of downloading one, so
+InfoQ / Vimeo / conference-platform talks route through this script rather than
+through hand-rolled `mlx_whisper.transcribe()` calls in skill prose. The
+positional argument is then just a label for the JSON output.
+
+Output: one JSON object on stdout, on EVERY exit path including argument errors —
+    {"ok": bool, "video_id": "...", "method": "captions|whisper|existing|none",
      "words": int, "path": "...", "reason": "..."}
 Exit:   0 wrote a valid transcript (or --force absent and a valid one existed)
         1 could not obtain a valid transcript — nothing was written
@@ -178,6 +184,32 @@ def fetch_captions(video_id, languages):
     return segments_to_text(segments)
 
 
+def transcribe_audio(audio_path, video_id, model):
+    """Transcribe a local audio/video file. Returns text, or None on failure."""
+    try:
+        import mlx_whisper
+    except ImportError:
+        print("mlx-whisper is not installed (Apple Silicon only) — "
+              "`pip install 'speaker-toolkit[whisper]'`, or supply the transcript "
+              "by hand. On other platforms use a caption track or an external "
+              "transcription service.", file=sys.stderr)
+        return None
+
+    try:
+        result = mlx_whisper.transcribe(str(audio_path), path_or_hf_repo=model)
+    except (OSError, ValueError, RuntimeError) as exc:
+        # Model download failure, unreadable audio, or an unsupported runtime.
+        # Must not escape as a traceback — callers parse this script's stdout.
+        print(f"mlx_whisper could not transcribe {video_id}: "
+              f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        return None
+    text = result.get("text") if isinstance(result, dict) else None
+    if not text:
+        print(f"mlx_whisper returned no text for {video_id}", file=sys.stderr)
+        return None
+    return text
+
+
 def fetch_whisper(video_id, work_dir, model):
     """Download audio and transcribe locally. Returns text, or None on failure."""
     url = f"https://www.youtube.com/watch?v={video_id}"
@@ -200,31 +232,7 @@ def fetch_whisper(video_id, work_dir, model):
               f"{download.stderr.strip()[:400]}", file=sys.stderr)
         return None
 
-    # The Python API, not a CLI. `python -m mlx_whisper` has no `__main__` and
-    # the console-script name is not reliably on PATH for every caller, so
-    # shelling out drifts; `transcribe()` returns the text directly.
-    try:
-        import mlx_whisper
-    except ImportError:
-        print("mlx-whisper is not installed (Apple Silicon only) — "
-              "`pip install mlx-whisper`, or supply the transcript by hand. "
-              "On other platforms use a caption track or an external "
-              "transcription service.", file=sys.stderr)
-        return None
-
-    try:
-        result = mlx_whisper.transcribe(str(audio), path_or_hf_repo=model)
-    except (OSError, ValueError, RuntimeError) as exc:
-        # Model download failure, unreadable audio, or an unsupported runtime.
-        # Same contract reason as the yt-dlp guard above.
-        print(f"mlx_whisper could not transcribe {video_id}: "
-              f"{type(exc).__name__}: {exc}", file=sys.stderr)
-        return None
-    text = result.get("text") if isinstance(result, dict) else None
-    if not text:
-        print(f"mlx_whisper returned no text for {video_id}", file=sys.stderr)
-        return None
-    return text
+    return transcribe_audio(audio, video_id, model)
 
 
 def write_atomically(path, text):
@@ -270,13 +278,46 @@ def main(argv=None):
     parser.add_argument("--min-words", type=int, default=DEFAULT_MIN_WORDS)
     parser.add_argument("--whisper-model",
                         default="mlx-community/whisper-large-v3-turbo")
-    args = parser.parse_args(argv)
+    parser.add_argument("--audio", default=None,
+                        help="transcribe this local audio/video file instead of "
+                             "downloading one (non-YouTube talks)")
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        # argparse writes usage to stderr and exits without stdout. The contract
+        # promises one JSON object on EVERY non-zero exit, so a wrapper parsing
+        # stdout must not get silence when the arguments are wrong. `--help`
+        # exits 0 and is re-raised untouched.
+        if exc.code:
+            emit(False, "", "none", 0, "", "invalid arguments — see stderr", 2)
+        raise
+
+    if args.audio:
+        audio_path = Path(args.audio)
+        if not audio_path.exists():
+            emit(False, args.video, "none", 0, args.out,
+                 f"--audio file does not exist: {audio_path}", 2)
+        out = Path(args.out)
+        text = transcribe_audio(audio_path, args.video, args.whisper_model)
+        if text is None:
+            emit(False, args.video, "none", 0, out,
+                 "local transcription produced no text — see stderr", 1)
+        ok, reason = validate_transcript(
+            text, min_words=args.min_words,
+            duration_seconds=args.duration_seconds)
+        if not ok:
+            emit(False, args.video, "whisper", count_words(text), out, reason, 1)
+        write_atomically(out, text)
+        emit(True, args.video, "whisper", count_words(text), out, reason, 0)
 
     video_id = resolve_video_id(args.video)
     if not video_id:
         print(f"cannot find an 11-character video id in {args.video!r} — "
-              "pass a bare id or a YouTube URL", file=sys.stderr)
-        return 2
+              "pass a bare id, a YouTube URL, or use --audio for a "
+              "non-YouTube talk", file=sys.stderr)
+        emit(False, args.video, "none", 0, args.out,
+             "no YouTube video id in the argument; use --audio for a "
+             "non-YouTube talk", 2)
 
     out = Path(args.out)
     if out.exists() and not args.force:
