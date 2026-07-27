@@ -283,8 +283,3 @@ def deck_with_text(tmp_path):
 def make_deck(slide_count):
     """Public helper for tests that need a Presentation without saving."""
     return _make_deck(slide_count)
-
-
-@pytest.fixture(scope="session")
-def load_vault():
-    return _import_script(os.path.join(SCRIPTS_VP, "load-vault.py"), "load_vault")
