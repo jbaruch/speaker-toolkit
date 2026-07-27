@@ -272,6 +272,7 @@ The plugin ships persistent rules (auto-loaded by the agent at runtime via `.tes
 | [`interaction-rules`](rules/interaction-rules.md) | Conversational stance and gate behavior across phases. |
 | [`tessl-version-floating`](rules/tessl-version-floating.md) | Authority-of-record for the `tessl.json` floating-spec carve-out (paired with `scripts/check-tessl-pins.sh`). |
 | [`shownotes-content-publish`](rules/shownotes-content-publish.md) | Authority-of-record for the shownotes content direct-push carve-out (paired with `skills/shownotes-publisher/scripts/content-only-gate.sh`). |
+| [`transcript-fetch-authority`](rules/transcript-fetch-authority.md) | Authority-of-record for the Whisper layer's platform-bound untestable carve-out (paired with `skills/vault-ingress/scripts/fetch-transcript.py`). |
 
 ## Vault Skills Details
 

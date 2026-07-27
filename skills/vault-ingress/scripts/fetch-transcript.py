@@ -182,11 +182,19 @@ def fetch_whisper(video_id, work_dir, model):
     """Download audio and transcribe locally. Returns text, or None on failure."""
     url = f"https://www.youtube.com/watch?v={video_id}"
     audio = Path(work_dir) / "audio.mp3"
-    download = subprocess.run(
-        ["yt-dlp", "-x", "--audio-format", "mp3", "--no-playlist",
-         "-o", str(Path(work_dir) / "audio.%(ext)s"), url],
-        capture_output=True, text=True,
-    )
+    try:
+        download = subprocess.run(
+            ["yt-dlp", "-x", "--audio-format", "mp3", "--no-playlist",
+             "-o", str(Path(work_dir) / "audio.%(ext)s"), url],
+            capture_output=True, text=True,
+        )
+    except (FileNotFoundError, OSError) as exc:
+        # A missing yt-dlp must not escape as a traceback: this script's callers
+        # parse its stdout JSON, and a script that dies without emitting it is
+        # the same silent-failure shape the whole file exists to prevent.
+        print(f"cannot run yt-dlp ({exc}) — install it with "
+              "`brew install yt-dlp` or `pip install yt-dlp`", file=sys.stderr)
+        return None
     if download.returncode != 0 or not audio.exists():
         print(f"yt-dlp could not download audio for {video_id}: "
               f"{download.stderr.strip()[:400]}", file=sys.stderr)
@@ -204,7 +212,14 @@ def fetch_whisper(video_id, work_dir, model):
               "transcription service.", file=sys.stderr)
         return None
 
-    result = mlx_whisper.transcribe(str(audio), path_or_hf_repo=model)
+    try:
+        result = mlx_whisper.transcribe(str(audio), path_or_hf_repo=model)
+    except (OSError, ValueError, RuntimeError) as exc:
+        # Model download failure, unreadable audio, or an unsupported runtime.
+        # Same contract reason as the yt-dlp guard above.
+        print(f"mlx_whisper could not transcribe {video_id}: "
+              f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        return None
     text = result.get("text") if isinstance(result, dict) else None
     if not text:
         print(f"mlx_whisper returned no text for {video_id}", file=sys.stderr)

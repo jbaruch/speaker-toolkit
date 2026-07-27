@@ -43,6 +43,33 @@ the real corpus with it, both caught before merge and both now regression-tested
 `segments_to_text` accepts both the pre-1.0 dict shape and the 1.0 object shape;
 pinning to one shape is what broke the previous fetch.
 
+**The inline fetch that caused all of this was still committed.** The reviewer
+found it: `references/subagent-instructions.md` still told every subagent to run
+
+```
+"{python_path}" -c "
+from youtube_transcript_api import YouTubeTranscriptApi
+transcript = YouTubeTranscriptApi.get_transcript(...)
+" > "{vault_root}/transcripts/{youtube_id}.txt"
+```
+
+— the literal heredoc whose output is in the corpus, redirect and all. Fixing
+`SKILL.md` while leaving that in the reference agents are sent to would have
+changed nothing about what agents actually do. The section is now one call to
+the script, with its exit-code contract tabled and a note that a transcript
+already on disk is not proof of a transcript.
+
+Tool-state failures now honour the JSON contract. A missing `yt-dlp` raised
+`FileNotFoundError` and the script died without printing its documented object —
+the same silent-failure shape it exists to prevent, one level up. `yt-dlp` and
+`mlx_whisper.transcribe()` are both guarded, and both return `None` so the caller
+emits the failure JSON and exits 1.
+
+`rules/transcript-fetch-authority.md` is the authority of record for the Whisper
+layer's Platform-Bound Untestable Carve-Out, naming the exempt wrapper and its
+four-step manual validation — including the step that proves a missing `yt-dlp`
+still yields the JSON contract and still leaves no file behind.
+
 `youtube-transcript-api` is pinned at 1.2.4 and declared. The pin is deliberate
 rather than habitual: an uncontrolled upgrade of this exact library is what
 corrupted the data, so the next API break arrives as a Dependabot PR instead of
