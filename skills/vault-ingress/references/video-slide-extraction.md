@@ -122,6 +122,14 @@ screencasts, where there is nothing to crop, and for wide-angle room recordings,
 where the region cannot be identified safely. The caller cannot distinguish
 them, and must not treat an uncropped extraction as a verified one.
 
+**A returned region is not a verified one either.** Detection is dependable only
+for broadcast composites — a fixed slide rectangle beside static venue
+furniture. On room recordings it returns the speaker about as readily as the
+screen: a torso is rectangular, well-filled, and the right size and aspect. A
+by-eye check of 94 corpus decks found correct screen crops and confident crops
+of a presenter's chest in the same pass. Look at the crop before trusting
+anything derived from it.
+
 **Wide-angle room recordings are out of scope by design.** No crop ships without
 ground truth to validate it, because a wrong crop silently discards real slide
 content while no crop merely leaves the over-count visible. Extracted page

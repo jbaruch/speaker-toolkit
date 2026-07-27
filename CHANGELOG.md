@@ -1,5 +1,33 @@
 # Changelog
 
+### fix(vault-ingress) — gate slide-region detection on plausibility, and stop overclaiming it
+
+0.18.66 replaced the all-pixels bounding box with connected-component selection.
+That fixed the broadcast-composite case and introduced a worse one: with no size
+or shape constraint, the chosen component can be the changing TEXT BLOCK inside
+a full-frame slide. Cropping to it discards the rest of the deck. Confirmed on a
+corpus talk whose "HELLO My name is Baruch" title slide was cropped to a 9%
+fragment with the name cut off — content loss, where the previous code had
+safely declined to crop.
+
+Selection now requires the component to look like a projected display: at least
+15% of frame area and an aspect ratio between 1.0 and 2.4. Measured over 94
+corpus decks, ungated selection returned boxes with aspect ratios from 0.32 to
+9.45; the gate cuts 55 detections to 26 and turns the confirmed content-loss
+case into a `None`.
+
+**The 26 survivors are not thereby correct.** A by-eye check found the gate still
+passes a presenter's torso on a talk with no visible screen — rectangular,
+well-filled, right size, right aspect. Fill, area and aspect cannot separate a
+person from a screen. The docstring and the reference now say so directly: a
+returned region is a hint to verify, never ground truth, and no slide count
+should be derived from a crop nobody looked at.
+
+Reliable use is the case it was built for — a broadcast composite with a fixed
+slide rectangle beside static venue furniture. Room recordings need a signal
+this function does not have (screen-edge geometry, projector luminance, or
+boundary stability across frames) and ground truth to validate against.
+
 ## 0.18.66 — 2026-07-27
 
 ### fix(vault-ingress) — slide-region detection merged the speaker PiP into the slide box
