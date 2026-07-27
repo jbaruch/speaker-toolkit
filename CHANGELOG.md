@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.67 — 2026-07-27
+
 ### fix(vault-ingress) — gate slide-region detection on plausibility, and stop overclaiming it
 
 0.18.66 replaced the all-pixels bounding box with connected-component selection.
