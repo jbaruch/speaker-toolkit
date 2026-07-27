@@ -38,9 +38,12 @@ Usage:
     --run-date sets the "Processed" line when a return omits `processed_date`,
     matching persist-results.py's stamping so the DB and the file agree.
 
-    Writes one file per return; prints a JSON summary to stdout:
+    Writes one file per PROCESSED return; a return whose status is present and
+    not in PROCESSED_STATUSES is skipped rather than allowed to overwrite an
+    earlier run's good file with a stub. Prints a JSON summary to stdout:
         {"written": <int>, "dir": "<path>",
-         "files": [{"filename": "...", "path": "...", "bytes": <int>}]}
+         "files": [{"filename": "...", "path": "...", "bytes": <int>}],
+         "skipped": [{"filename": "...", "status": "..."}]}
     Diagnostics and errors go to stderr; exit code is non-zero on failure.
 
 Example:
@@ -58,6 +61,14 @@ TABLE_BLOCKS = ("per_slide_visual",)
 
 # Scalar types that render inline in the Structured Data bullet list.
 SCALARS = (str, int, float, bool)
+
+# Statuses whose returns carry an analysis worth writing. A return that reports
+# a skipped status has no analysis to render, and writing one anyway would
+# replace a good file from an earlier run with a near-empty stub — the file is
+# keyed on the talk, so a later skip silently destroys an earlier success.
+# A return with NO status is written: status is optional in the return schema
+# and its absence is not evidence of a skip.
+PROCESSED_STATUSES = frozenset({"processed", "processed_partial"})
 
 
 def as_prose(value):
@@ -95,7 +106,11 @@ def md_escape_cell(value):
     audit than one with a visible separator.
     """
     text = "" if value is None else str(value)
-    return text.replace("|", "\\|").replace("\n", " ").strip()
+    # Both newline forms end a row; a bare \r breaks rendering in some viewers
+    # even though it is invisible in the source.
+    return (text.replace("|", "\\|")
+                .replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+                .strip())
 
 
 def render_table(rows):
@@ -261,7 +276,9 @@ def safe_output_name(filename):
     rejected rather than silently coerced into a plausible file.
     """
     base = os.path.basename(filename.replace("\\", "/").rstrip("/"))
-    if base in ("", ".", ".."):
+    # `...` survives basename and is not caught by an equality check, so test for
+    # "contains nothing but dots" rather than enumerating the short cases.
+    if not base.strip("."):
         print(f"ERROR: return `filename` {filename!r} does not name a file; "
               f"cannot place its analysis file", file=sys.stderr)
         sys.exit(1)
@@ -343,7 +360,7 @@ def main():
               f"path exists as a directory and is writable", file=sys.stderr)
         sys.exit(1)
 
-    written = []
+    written, skipped = [], []
     for i, ret in enumerate(returns):
         if not isinstance(ret, dict):
             print(f"ERROR: batch-returns entry {i} is a {type(ret).__name__}, not a "
@@ -355,6 +372,10 @@ def main():
             print("ERROR: a return has no `filename` field; cannot place its "
                   "analysis file", file=sys.stderr)
             sys.exit(1)
+        status = ret.get("status")
+        if status and status not in PROCESSED_STATUSES:
+            skipped.append({"filename": name, "status": status})
+            continue
         safe_name = safe_output_name(name)
         path = os.path.join(out_dir, safe_name)
         body = render_analysis(ret, title=titles.get(name), run_date=run_date)
@@ -367,8 +388,8 @@ def main():
             sys.exit(1)
         written.append({"filename": name, "path": path, "bytes": len(body.encode())})
 
-    json.dump({"written": len(written), "dir": out_dir, "files": written},
-              sys.stdout, ensure_ascii=False)
+    json.dump({"written": len(written), "dir": out_dir, "files": written,
+               "skipped": skipped}, sys.stdout, ensure_ascii=False)
     sys.stdout.write("\n")
 
 

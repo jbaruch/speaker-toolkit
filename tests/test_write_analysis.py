@@ -12,6 +12,8 @@ import re
 import subprocess
 import sys
 
+import pytest
+
 
 def _return(**overrides):
     ret = {
@@ -292,6 +294,74 @@ def test_cli_non_object_return_entry_is_actionable(write_analysis, tmp_path):
     assert result.returncode != 0
     assert "not a subagent return object" in result.stderr
     assert "Traceback" not in result.stderr
+
+
+def test_skipped_status_never_overwrites_an_existing_analysis(write_analysis, tmp_path):
+    """A later skipped return must not replace an earlier good file with a stub —
+    the file is keyed on the talk, so the overwrite is silent data loss."""
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    good = out / "talk.md"
+    good.write_text("# real analysis from a successful run\n")
+    batch.write_text(json.dumps([_return(status="skipped_no_video")]))
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert good.read_text() == "# real analysis from a successful run\n"
+    report = json.loads(result.stdout)
+    assert report["written"] == 0
+    assert report["skipped"] == [{"filename": "talk.md", "status": "skipped_no_video"}]
+
+
+def test_processed_partial_still_writes(write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    batch.write_text(json.dumps([_return(status="processed_partial")]))
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (out / "talk.md").exists()
+    assert json.loads(result.stdout)["written"] == 1
+
+
+def test_return_without_status_still_writes(write_analysis, tmp_path):
+    """`status` is optional in the return schema; absence is not a skip."""
+    ret = _return()
+    del ret["status"]
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    batch.write_text(json.dumps([ret]))
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["written"] == 1
+
+
+def test_carriage_returns_do_not_break_table_rows(write_analysis):
+    ret = _return()
+    ret["pattern_observations"]["patterns_detected"] = [
+        {"pattern_id": "triad", "confidence": "strong",
+         "evidence": "line one\r\nline two\rline three"}
+    ]
+    md = write_analysis.render_analysis(ret)
+    rows = [ln for ln in md.splitlines() if ln.startswith("| `triad`")]
+    assert len(rows) == 1
+    assert "\r" not in rows[0]
+
+
+@pytest.mark.parametrize("bad", ["", ".", "..", "...", "....", "/", "../"])
+def test_names_that_resolve_to_no_file_are_rejected(write_analysis, bad):
+    """The docstring promised dots-only names are rejected; an equality check
+    against ("", ".", "..") let "..." through and produced a "....md" file."""
+    with pytest.raises(SystemExit):
+        write_analysis.safe_output_name(bad)
 
 
 def test_cli_missing_input_file_is_actionable(write_analysis, tmp_path):
