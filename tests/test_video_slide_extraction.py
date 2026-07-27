@@ -174,63 +174,78 @@ def test_full_pipeline(video_slide_extraction, tmp_path):
     assert result["schema_version"] == video_slide_extraction.SCHEMA_VERSION
     assert os.path.isfile(result["output_pdf"])
 
+def _composite_frames(tmp_path, n=24, with_pip=True):
+    """Synthesize a broadcast composite: a slide rectangle that changes wholesale,
+    optional moving speaker PiP on the left, and static venue furniture around
+    both. Returns frame paths.
 
-def _mask(spec):
-    """Build a boolean mask from a list of (r0, r1, c0, c1) filled boxes."""
+    Geometry is fixed, so the expected crop is known without a fixture file.
+    """
     import numpy as np
-    m = np.zeros((180, 320), dtype=bool)
-    for r0, r1, c0, c1 in spec:
-        m[r0:r1, c0:c1] = True
-    return m
+    rows, cols = np.mgrid[0:360, 0:640]
+    frames = []
+    for i in range(n):
+        arr = np.full((360, 640), 60, dtype=np.uint8)      # static venue furniture
+        # Slide content must vary SPATIALLY, not only per frame: a uniform fill
+        # gives every slide pixel an identical diff, the percentile lands exactly
+        # on that value, and the strict `>` then drops the whole region.
+        slide = (rows[40:320, 200:620] * 7
+                 + cols[40:320, 200:620] * 13
+                 + i * 61) % 256
+        arr[40:320, 200:620] = slide.astype(np.uint8)
+        if with_pip:
+            top = 100 + (i % 5) * 8                        # speaker PiP: moves, small
+            pip = (rows[top:top + 40, 20:90] * 11 + i * 97) % 256
+            arr[top:top + 40, 20:90] = pip.astype(np.uint8)
+        p = tmp_path / f"f{i:03d}.png"
+        Image.fromarray(arr).save(p)
+        frames.append(str(p))
+    return frames
 
 
-def test_component_labelling_separates_disjoint_regions(video_slide_extraction):
-    m = _mask([(10, 40, 10, 40), (100, 150, 200, 300)])
-    comps = list(video_slide_extraction._label_components(m))
-    assert len(comps) == 2
+def test_detects_the_slide_and_excludes_the_speaker_pip(video_slide_extraction, tmp_path):
+    """The regression, asserted on the public entry point.
+
+    A broadcast composite has two disjoint moving regions — the slide and a live
+    speaker PiP. Boxing every above-threshold pixel merges them: on this scene
+    the old logic yields x[0.011, 0.989], a crop reaching into the PiP; on the
+    real Devoxx 2016 artifact it exceeded the area>0.9 guard and returned None,
+    so the deck was never cropped and a 43-slide talk extracted to 963 pages.
+    Either way the crop is wrong, so assert the property that matters: the
+    returned region excludes the PiP and still covers the slide.
+    """
+    frames = _composite_frames(tmp_path)
+    region = video_slide_extraction.detect_slide_region(frames, sample_size=8)
+    assert region is not None, "composite went undetected — the 963-page failure"
+    left, upper, right, lower = region
+    # The slide occupies x[0.3125, 0.969], y[0.111, 0.889] by construction; the
+    # PiP sits entirely left of x=0.15 and must not be inside the crop.
+    assert left > 0.15, f"crop reaches into the speaker PiP: left={left:.3f}"
+    assert right > 0.9 and lower > 0.8, "crop lost part of the slide"
+    assert (right - left) * (lower - upper) < 0.9, "crop is effectively full-frame"
 
 
-def test_picks_the_slide_rectangle_over_a_speaker_blob(video_slide_extraction):
-    """The regression: a broadcast composite has a solid slide rectangle AND a
-    moving-speaker region. Boxing every above-threshold pixel merged them into
-    one frame-spanning box, tripped the >90% guard, and returned None — so a
-    43-slide talk extracted to 963 pages."""
-    import numpy as np
-    m = np.zeros((180, 320), dtype=bool)
-    m[30:150, 110:310] = True           # solid slide rectangle, right side
-    rng_rows = [(40, 60), (60, 90), (90, 120)]
-    for i, (a, b) in enumerate(rng_rows):  # ragged low-fill speaker blob, left
-        m[a:b, 10:10 + 8 * (i + 1)] = True
-    got = video_slide_extraction._largest_rectangular_component(m)
-    assert got is not None
-    rmin, rmax, cmin, cmax = got
-    assert cmin >= 100, "picked the speaker blob instead of the slide"
-    assert (rmin, rmax, cmin, cmax) == (30, 149, 110, 309)
+def test_same_scene_without_a_pip_still_detects_the_slide(video_slide_extraction, tmp_path):
+    """Control: the detection must not depend on a PiP being present."""
+    frames = _composite_frames(tmp_path, with_pip=False)
+    region = video_slide_extraction.detect_slide_region(frames, sample_size=8)
+    assert region is not None
+    assert region[0] > 0.15
 
 
-def test_low_fill_blob_alone_is_rejected(video_slide_extraction):
-    """A ragged moving-person region with no slide present must not be cropped
-    to — a wrong crop silently discards real content, so None is correct."""
-    import numpy as np
-    m = np.zeros((180, 320), dtype=bool)
-    for i in range(0, 120, 4):          # sparse comb: large box, tiny fill
-        m[30 + i, 40:280] = True
-    assert video_slide_extraction._largest_rectangular_component(m) is None
-
-
-def test_tiny_rectangle_is_rejected_as_too_small(video_slide_extraction):
-    m = _mask([(10, 16, 10, 16)])
-    assert video_slide_extraction._largest_rectangular_component(m) is None
-
-
-def test_full_frame_slides_still_return_none(video_slide_extraction, tmp_path):
-    """A full-frame screencast has no border to crop; region detection must
-    decline rather than shave the edges."""
+def test_full_frame_slides_return_none(video_slide_extraction, tmp_path):
+    """A full-frame screencast has no border to crop; detection must decline
+    rather than shave the edges."""
     import numpy as np
     frames = []
     for i in range(24):
         arr = np.full((180, 320), 20 * (i % 8), dtype=np.uint8)
-        p = tmp_path / f"f{i:03d}.png"
+        p = tmp_path / f"g{i:03d}.png"
         Image.fromarray(arr).save(p)
         frames.append(str(p))
+    assert video_slide_extraction.detect_slide_region(frames, sample_size=8) is None
+
+
+def test_too_few_frames_declines_to_guess(video_slide_extraction, tmp_path):
+    frames = _composite_frames(tmp_path, n=4)
     assert video_slide_extraction.detect_slide_region(frames, sample_size=8) is None

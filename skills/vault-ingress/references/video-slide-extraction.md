@@ -110,26 +110,27 @@ Update the talk's DB entry: `slide_source: "video_extracted"`,
 | Extraction metadata | `structured_data.video_extraction` | Frame counts, region detection, threshold, pipeline version |
 | Intermediate frames | Deleted after PDF generation | Saves disk space |
 
-## Slide-Region Detection and Its Limit
+## Slide-Region Detection — Contract and Limit
 
-Detection averages frame-to-frame difference, thresholds it, labels 4-connected
-components, and picks the component that best fills its own bounding box. The
-fill test is what separates a slide (changes wholesale, nearly fills its box)
-from a live speaker picture-in-picture (a ragged moving blob). Constants live at
-`_largest_rectangular_component` in the script.
+`detect_slide_region(frames)` returns either a `(left, upper, right, lower)`
+crop as fractions of the frame, or `None` meaning "do not crop". Selection
+criteria and constants live in `skills/vault-ingress/scripts/video-slide-extraction.py`
+(`detect_slide_region` docstring and `_largest_rectangular_component`).
 
-Taking a bounding box over ALL above-threshold pixels instead merges the two
-disjoint regions, spans the frame, and returns `None` — the failure that let one
-43-slide talk extract to 963 pages.
+**A `None` is not a failure signal.** It is returned both for full-frame
+screencasts, where there is nothing to crop, and for wide-angle room recordings,
+where the region cannot be identified safely. The caller cannot distinguish
+them, and must not treat an uncropped extraction as a verified one.
 
-**Wide-angle room recordings are not handled.** Where the camera frames the room
-rather than compositing a slide feed, ambient motion clears the threshold across
-the whole frame, every region merges into one low-fill blob, and detection
-returns `None`. That is deliberate — no crop is safer than a wrong crop, which
-would silently discard real slide content. Extracted page counts for those
-recordings stay unreliable in both directions; treat any slide count derived
-from them as needing in-frame corroboration (a "Slide N of M" status bar, a
-thumbnail rail, in-deck numbering, or a spoken count).
+**Wide-angle room recordings are out of scope by design.** No crop ships without
+ground truth to validate it, because a wrong crop silently discards real slide
+content while no crop merely leaves the over-count visible. Extracted page
+counts for those recordings stay unreliable in BOTH directions.
+
+**Therefore: never report an extracted page count as a slide count.** Corroborate
+in-frame first — a "Slide N of M" status bar, a visible thumbnail rail, in-deck
+numbering, or the speaker stating a count. With no corroboration, record the
+count as low-confidence and say why.
 
 ## Pipeline Versioning
 
