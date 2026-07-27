@@ -7,6 +7,9 @@ the tracking DB, with the declared queryable scalars promoted to the talk top le
 import json
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
+
+import pytest
 
 
 def _return(**overrides):
@@ -251,25 +254,47 @@ def test_cli_non_array_batch_is_actionable(persist_results, tmp_path):
     assert "must be a JSON array" in result.stderr
 
 
-def test_default_stamp_is_second_resolution(persist_results, tmp_path):
+def test_default_stamp_is_second_resolution(persist_results):
     """A day-granular stamp cannot order a talk against a fix that shipped the
     same day — during the 2026-07-26 reparse, 90 talks shared one date and the
-    re-check backlog had to flag every one because ordering was unknowable."""
+    re-check backlog had to flag every one because ordering was unknowable.
+
+    The clock is injected, not read: a test asserting a stamp produced from the
+    live wall clock is non-deterministic by construction."""
+    frozen = datetime(2026, 7, 27, 14, 3, 22, 456789, tzinfo=timezone.utc)
+    assert persist_results.default_stamp(frozen) == "2026-07-27T14:03:22+00:00"
+
+
+def test_default_stamp_normalizes_to_utc(persist_results):
+    """Stamps written on machines in different zones must order against each other."""
+    frozen = datetime(2026, 7, 27, 16, 3, 22, tzinfo=timezone(timedelta(hours=2)))
+    assert persist_results.default_stamp(frozen) == "2026-07-27T14:03:22+00:00"
+
+
+def test_explicit_offset_timestamp_is_normalized_to_utc(persist_results):
+    assert persist_results.normalize_stamp(
+        "2026-07-27T16:03:22.987654+02:00") == "2026-07-27T14:03:22+00:00"
+
+
+def test_naive_timestamp_is_rejected_with_an_actionable_message(persist_results):
+    """A naive timestamp cannot be ordered against one from another machine."""
+    with pytest.raises(ValueError) as excinfo:
+        persist_results.normalize_stamp("2026-07-27T14:03:22")
+    assert "+00:00" in str(excinfo.value)
+
+
+def test_cli_rejects_a_naive_timestamp(persist_results, tmp_path):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    ret = _return()
-    del ret["processed_date"]
     db.write_text(json.dumps({"talks": [_talk()]}))
-    batch.write_text(json.dumps([ret]))
+    batch.write_text(json.dumps([_return()]))
     result = subprocess.run(
-        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        [sys.executable, persist_results.__file__, str(db), str(batch),
+         "--run-date", "2026-07-27T14:03:22"],
         capture_output=True, text=True,
     )
-    assert result.returncode == 0, result.stderr
-    stamp = json.loads(db.read_text())["talks"][0]["processed_date"]
-    assert "T" in stamp and len(stamp) > 10, f"not a timestamp: {stamp!r}"
-    from datetime import datetime
-    datetime.fromisoformat(stamp)  # parses or raises
+    assert result.returncode == 1
+    assert "timezone-aware" in result.stderr
 
 
 def test_explicit_date_only_stamp_is_still_accepted(persist_results, tmp_path):

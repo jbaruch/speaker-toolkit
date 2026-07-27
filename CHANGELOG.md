@@ -17,6 +17,17 @@ and so records written before this change stay readable; the instrumentation
 partition in `load-vault.py` compares stamps lexically, and ISO-8601 sorts
 correctly against a bare date either way.
 
+The clock is injectable. `default_stamp(now=None)` takes the moment as an
+argument so the regression test freezes it rather than asserting whatever the
+run-time clock produced — the first cut tested the default path through a live
+subprocess clock, which `testing-standards` Determinism forbids and which cannot
+assert an exact stamp at all.
+
+A `--run-date` timestamp must now carry a timezone offset, and is normalized to
+UTC at second resolution before it is stored. Ordering talks across machines is
+the point of the stamp and a naive timestamp has no defined position in that
+order; the first cut accepted one and preserved whatever offset it arrived with.
+
 ## 0.18.68 — 2026-07-27
 
 ### fix(presentation-creator) — antipattern scoring polarity was inverted in 26 of 28 files
