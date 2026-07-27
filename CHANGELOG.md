@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.70 — 2026-07-27
+
 ### fix(vault-ingress) — stamp `processed_date` at second resolution, not day
 
 0.18.64 made the merge stamp `processed_date` when a return omitted it, and gave
