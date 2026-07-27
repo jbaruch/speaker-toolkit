@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.71 — 2026-07-27
+
 ### fix(tests) — the invocation guard now catches bare `scripts/foo.py` commands
 
 `tests/test_script_invocation_style.py` guards the outcome "no invocation
