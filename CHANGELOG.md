@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.69 — 2026-07-27
+
 ### feat(vault-profile) — partition talks by extractor generation before computing baselines
 
 `load-vault.py` fed every `processed` talk into the profile's `pattern_score`
