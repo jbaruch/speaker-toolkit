@@ -80,7 +80,6 @@ Each now opens its detection section with an explicit NAME TRAP warning.
   minutes without deploying the pattern.
 - `crawling-code` is an authored deck reveal, not a live IDE screencast where
   code happens to scroll.
-||||||| parent of f6c08f1 (feat(vault-profile): partition talks by extractor generation for baselines)
 
 ## 0.18.67 — 2026-07-27
 
