@@ -1,5 +1,22 @@
 # Changelog
 
+### fix(vault-ingress) — stamp `processed_date` at second resolution, not day
+
+0.18.64 made the merge stamp `processed_date` when a return omitted it, and gave
+the stamp a day's resolution. That is too coarse for the case it exists to serve.
+
+During the 2026-07-26 reparse, 90 talks landed under a single date while four
+scoring fixes shipped across the same two days. Nothing in the DB could order a
+talk against a fix that published that afternoon, so the re-check backlog had to
+flag every talk in the run rather than the subset that actually predated each
+fix — 100 flagged where the true number is smaller and unknowable.
+
+The default stamp is now a UTC ISO-8601 timestamp at second resolution. A
+date-only `--run-date` is still accepted so callers can pin a stamp for tests
+and so records written before this change stay readable; the instrumentation
+partition in `load-vault.py` compares stamps lexically, and ISO-8601 sorts
+correctly against a bare date either way.
+
 ## 0.18.68 — 2026-07-27
 
 ### fix(presentation-creator) — antipattern scoring polarity was inverted in 26 of 28 files

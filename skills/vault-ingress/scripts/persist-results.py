@@ -48,7 +48,27 @@ Example:
 
 import json
 import sys
-from datetime import date
+from datetime import date, datetime, timezone
+
+
+def _parse_stamp(value):
+    """Accept a bare date or a full ISO-8601 timestamp.
+
+    Date-only is still accepted so a caller can pin a stamp for tests and so
+    existing records stay readable, but the default is second-resolution: a
+    day-granular stamp cannot answer "was this talk scored before or after the
+    fix that shipped this afternoon".
+    """
+    try:
+        date.fromisoformat(value)
+        return True
+    except ValueError:
+        pass
+    try:
+        datetime.fromisoformat(value)
+        return True
+    except ValueError:
+        return False
 
 # Queryable scalars promoted from the subagent return onto the talk's top level.
 # (top_level_field, dotted source path within the return). To add a new queryable
@@ -185,15 +205,17 @@ def load_json(path, label):
 def parse_args(argv):
     """Split positional paths from the optional --run-date flag.
 
-    Returns (db_path, batch_path, run_date). An absent flag resolves to today,
-    so the common call site needs no extra argument.
+    Returns (db_path, batch_path, run_date). An absent flag resolves to the
+    current UTC timestamp at second resolution, so the common call site needs no
+    extra argument and the stamp can order talks against a same-day fix.
     """
     args, run_date = [], None
     i = 0
     while i < len(argv):
         if argv[i] == "--run-date":
             if i + 1 >= len(argv):
-                print("ERROR: --run-date requires a YYYY-MM-DD value", file=sys.stderr)
+                print("ERROR: --run-date requires a YYYY-MM-DD or ISO-8601 value",
+                      file=sys.stderr)
                 sys.exit(1)
             run_date = argv[i + 1]
             i += 2
@@ -202,15 +224,19 @@ def parse_args(argv):
         i += 1
     if len(args) != 2:
         print(f"Usage: {sys.argv[0]} <tracking-database.json> <batch-returns.json> "
-              f"[--run-date YYYY-MM-DD]", file=sys.stderr)
+              f"[--run-date YYYY-MM-DD|ISO-8601]", file=sys.stderr)
         sys.exit(1)
     if run_date is None:
-        run_date = date.today().isoformat()
+        # Second resolution, not day. A date-only stamp cannot order a talk
+        # against a fix that shipped the same day, which is the normal case
+        # during an active reparse: 90 talks in one run all stamped the same
+        # date, and the re-check backlog had to flag every one of them because
+        # ordering was unknowable.
+        run_date = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     else:
-        try:
-            date.fromisoformat(run_date)
-        except ValueError:
-            print(f"ERROR: --run-date must be YYYY-MM-DD, got {run_date!r}", file=sys.stderr)
+        if not _parse_stamp(run_date):
+            print(f"ERROR: --run-date must be YYYY-MM-DD or an ISO-8601 timestamp, "
+                  f"got {run_date!r}", file=sys.stderr)
             sys.exit(1)
     return args[0], args[1], run_date
 

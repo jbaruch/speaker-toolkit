@@ -249,3 +249,58 @@ def test_cli_non_array_batch_is_actionable(persist_results, tmp_path):
     )
     assert result.returncode == 1
     assert "must be a JSON array" in result.stderr
+
+
+def test_default_stamp_is_second_resolution(persist_results, tmp_path):
+    """A day-granular stamp cannot order a talk against a fix that shipped the
+    same day — during the 2026-07-26 reparse, 90 talks shared one date and the
+    re-check backlog had to flag every one because ordering was unknowable."""
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    ret = _return()
+    del ret["processed_date"]
+    db.write_text(json.dumps({"talks": [_talk()]}))
+    batch.write_text(json.dumps([ret]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    stamp = json.loads(db.read_text())["talks"][0]["processed_date"]
+    assert "T" in stamp and len(stamp) > 10, f"not a timestamp: {stamp!r}"
+    from datetime import datetime
+    datetime.fromisoformat(stamp)  # parses or raises
+
+
+def test_explicit_date_only_stamp_is_still_accepted(persist_results, tmp_path):
+    """Callers pinning a stamp for reproducibility keep working, and records
+    written before this change stay readable."""
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    ret = _return()
+    del ret["processed_date"]
+    db.write_text(json.dumps({"talks": [_talk()]}))
+    batch.write_text(json.dumps([ret]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch),
+         "--run-date", "2026-07-26"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(db.read_text())["talks"][0]["processed_date"] == "2026-07-26"
+
+
+def test_explicit_timestamp_is_accepted(persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    ret = _return()
+    del ret["processed_date"]
+    db.write_text(json.dumps({"talks": [_talk()]}))
+    batch.write_text(json.dumps([ret]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch),
+         "--run-date", "2026-07-27T14:03:22+00:00"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(db.read_text())["talks"][0]["processed_date"].startswith("2026-07-27T14:03:22")
