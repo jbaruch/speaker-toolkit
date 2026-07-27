@@ -110,6 +110,27 @@ Update the talk's DB entry: `slide_source: "video_extracted"`,
 | Extraction metadata | `structured_data.video_extraction` | Frame counts, region detection, threshold, pipeline version |
 | Intermediate frames | Deleted after PDF generation | Saves disk space |
 
+## Slide-Region Detection and Its Limit
+
+Detection averages frame-to-frame difference, thresholds it, labels 4-connected
+components, and picks the component that best fills its own bounding box. The
+fill test is what separates a slide (changes wholesale, nearly fills its box)
+from a live speaker picture-in-picture (a ragged moving blob). Constants live at
+`_largest_rectangular_component` in the script.
+
+Taking a bounding box over ALL above-threshold pixels instead merges the two
+disjoint regions, spans the frame, and returns `None` — the failure that let one
+43-slide talk extract to 963 pages.
+
+**Wide-angle room recordings are not handled.** Where the camera frames the room
+rather than compositing a slide feed, ambient motion clears the threshold across
+the whole frame, every region merges into one low-fill blob, and detection
+returns `None`. That is deliberate — no crop is safer than a wrong crop, which
+would silently discard real slide content. Extracted page counts for those
+recordings stay unreliable in both directions; treat any slide count derived
+from them as needing in-frame corroboration (a "Slide N of M" status bar, a
+thumbnail rail, in-deck numbering, or a spoken count).
+
 ## Pipeline Versioning
 
 The extractor carries a `PIPELINE_VERSION` constant (top of
