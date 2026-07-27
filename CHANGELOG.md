@@ -22,6 +22,13 @@ from is exactly what does not survive a long run.
 An undated talk counts as stale — excluding one only narrows the sample, while
 including it silently contaminates the baseline.
 
+The instrumentation gap is not the only reason the cohorts are incomparable, and
+the epoch happens to separate both. Pre-reparse observations put patterns and
+antipatterns in ONE undifferentiated list, so a stored per-mode average such as
+mode (i)'s 19.35 counts antipatterns alongside patterns. A reparsed score is
+`count(patterns) - count(antipatterns)`. Comparing the two compares different
+quantities and reads as "on baseline" where the talk may be well above it.
+
 At the time of writing the split is 95/0, because the stale-scored talks all sit
 at `needs-reprocessing` and were never eligible for the baseline. The guard costs
 nothing and catches the case it exists for: generating a profile from a vault
