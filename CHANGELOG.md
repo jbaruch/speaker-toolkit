@@ -1,5 +1,33 @@
 # Changelog
 
+### fix(vault-ingress) — stamp `processed_date` at second resolution, not day
+
+0.18.64 made the merge stamp `processed_date` when a return omitted it, and gave
+the stamp a day's resolution. That is too coarse for the case it exists to serve.
+
+During the 2026-07-26 reparse, 90 talks landed under a single date while four
+scoring fixes shipped across the same two days. Nothing in the DB could order a
+talk against a fix that published that afternoon, so the re-check backlog had to
+flag every talk in the run rather than the subset that actually predated each
+fix — 100 flagged where the true number is smaller and unknowable.
+
+The default stamp is now a UTC ISO-8601 timestamp at second resolution. A
+date-only `--run-date` is still accepted so callers can pin a stamp for tests
+and so records written before this change stay readable; the instrumentation
+partition in `load-vault.py` compares stamps lexically, and ISO-8601 sorts
+correctly against a bare date either way.
+
+The clock is injectable. `default_stamp(now=None)` takes the moment as an
+argument so the regression test freezes it rather than asserting whatever the
+run-time clock produced — the first cut tested the default path through a live
+subprocess clock, which `testing-standards` Determinism forbids and which cannot
+assert an exact stamp at all.
+
+A `--run-date` timestamp must now carry a timezone offset, and is normalized to
+UTC at second resolution before it is stored. Ordering talks across machines is
+the point of the stamp and a naive timestamp has no defined position in that
+order; the first cut accepted one and preserved whatever offset it arrived with.
+
 ## 0.18.69 — 2026-07-27
 
 ### feat(vault-profile) — partition talks by extractor generation before computing baselines

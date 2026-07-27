@@ -29,18 +29,23 @@ It does NOT touch rhetoric-style-summary.md or the analysis files — those are
 written elsewhere in Step 4/Step 5. It owns only the tracking-DB merge.
 
 Usage:
-    persist-results.py <tracking-database.json> <batch-returns.json> [--run-date YYYY-MM-DD]
+    persist-results.py <tracking-database.json> <batch-returns.json>
+                       [--run-date YYYY-MM-DD|<ISO-8601 timestamp>]
 
     batch-returns.json is a JSON array of subagent return objects (the shape in
     references/schemas-db.md -> "Per-Talk Subagent Return Schema"). The DB is
     rewritten in place; a structured JSON summary is printed to stdout:
-        {"persisted": <int>, "db_path": "<path>", "run_date": "<YYYY-MM-DD>",
+        {"persisted": <int>, "db_path": "<path>",
+         "run_date": "<YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS+00:00>",
          "talks": [{"filename": "...", "status": "...", "promoted": ["..."],
                     "stamped_processed_date": <bool>}]}
     Diagnostics and errors go to stderr; exit code is non-zero on failure.
 
-    --run-date pins the stamp instead of reading the clock; the whole batch
-    shares one date so a run that straddles midnight does not split across two.
+    Absent --run-date, the stamp is the current UTC time at second resolution.
+    --run-date pins it instead of reading the clock; the whole batch shares one
+    stamp so a run that straddles midnight does not split across two. It accepts
+    either a bare YYYY-MM-DD or an ISO-8601 timestamp; a timestamp must carry a
+    timezone offset and is normalized to UTC at second resolution.
 
 Example:
     persist-results.py ~/.claude/rhetoric-knowledge-vault/tracking-database.json batch-returns.json
@@ -48,7 +53,41 @@ Example:
 
 import json
 import sys
-from datetime import date
+from datetime import datetime, timezone
+
+
+def default_stamp(now=None):
+    """Resolve the default run stamp: UTC, second resolution.
+
+    `now` is injectable so a test can freeze it; the production call site passes
+    nothing and reads the clock once per batch. Second resolution rather than
+    day: a day-granular stamp cannot answer "was this talk scored before or
+    after the fix that shipped this afternoon".
+    """
+    moment = datetime.now(timezone.utc) if now is None else now
+    return moment.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def normalize_stamp(value):
+    """Normalize a --run-date value to the stamp to store, or raise ValueError.
+
+    A bare YYYY-MM-DD passes through unchanged, so a caller can still pin a day
+    and records written before second resolution stay readable. A timestamp must
+    carry a timezone — ordering talks against a same-day fix is the whole point
+    of the stamp, and a naive timestamp from another machine cannot be ordered
+    against one from this one — and is normalized to UTC at second resolution.
+    """
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+        return value
+    except ValueError:
+        pass
+    moment = datetime.fromisoformat(value)  # raises ValueError on anything else
+    if moment.tzinfo is None:
+        raise ValueError(
+            f"timestamp {value!r} has no timezone — append an offset "
+            f"(e.g. {value}+00:00) so stamps from different machines order")
+    return default_stamp(moment)
 
 # Queryable scalars promoted from the subagent return onto the talk's top level.
 # (top_level_field, dotted source path within the return). To add a new queryable
@@ -185,15 +224,17 @@ def load_json(path, label):
 def parse_args(argv):
     """Split positional paths from the optional --run-date flag.
 
-    Returns (db_path, batch_path, run_date). An absent flag resolves to today,
-    so the common call site needs no extra argument.
+    Returns (db_path, batch_path, run_date). An absent flag resolves to the
+    current UTC timestamp at second resolution, so the common call site needs no
+    extra argument and the stamp can order talks against a same-day fix.
     """
     args, run_date = [], None
     i = 0
     while i < len(argv):
         if argv[i] == "--run-date":
             if i + 1 >= len(argv):
-                print("ERROR: --run-date requires a YYYY-MM-DD value", file=sys.stderr)
+                print("ERROR: --run-date requires a YYYY-MM-DD or ISO-8601 value",
+                      file=sys.stderr)
                 sys.exit(1)
             run_date = argv[i + 1]
             i += 2
@@ -202,15 +243,21 @@ def parse_args(argv):
         i += 1
     if len(args) != 2:
         print(f"Usage: {sys.argv[0]} <tracking-database.json> <batch-returns.json> "
-              f"[--run-date YYYY-MM-DD]", file=sys.stderr)
+              f"[--run-date YYYY-MM-DD|ISO-8601]", file=sys.stderr)
         sys.exit(1)
     if run_date is None:
-        run_date = date.today().isoformat()
+        # Second resolution, not day. A date-only stamp cannot order a talk
+        # against a fix that shipped the same day, which is the normal case
+        # during an active reparse: 90 talks in one run all stamped the same
+        # date, and the re-check backlog had to flag every one of them because
+        # ordering was unknowable.
+        run_date = default_stamp()
     else:
         try:
-            date.fromisoformat(run_date)
-        except ValueError:
-            print(f"ERROR: --run-date must be YYYY-MM-DD, got {run_date!r}", file=sys.stderr)
+            run_date = normalize_stamp(run_date)
+        except ValueError as e:
+            print(f"ERROR: --run-date must be YYYY-MM-DD or a timezone-aware "
+                  f"ISO-8601 timestamp: {e}", file=sys.stderr)
             sys.exit(1)
     return args[0], args[1], run_date
 
