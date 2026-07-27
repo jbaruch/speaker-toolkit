@@ -52,6 +52,11 @@ ASSIGNMENT_BEFORE = re.compile(r"=[\"']?$")
 # `if "$HERE/x.sh"; then` executes the script exactly like a bare call.
 CONTROL_PREFIX = re.compile(r"^\s*(?:if|elif|while|until|then|else|do|!|time)\s+")
 
+# An environment-assignment PREFIX: `FOO=1 scripts/x.sh` runs the script. The
+# trailing `\s+` is what separates this from an assignment OF a path
+# (`DRIVER=skills/x/scripts/y.sh`), which stores it and never runs it.
+ENV_ASSIGNMENT_PREFIX = re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+")
+
 # Commands that name a path without executing it. `[` / `[[` sit outside the \b
 # group: no word boundary exists between a bracket and the space after it.
 NON_EXECUTING = re.compile(
@@ -106,10 +111,16 @@ def _bare_is_at_command_position(segment: str, match: re.Match) -> bool:
     A bare path appearing as an ARGUMENT (`cat skills/x/scripts/y.py`,
     `--manifest scripts/z.json`) is data, not an invocation, so only a
     segment-initial reference counts.
+
+    Environment-assignment PREFIXES are peeled, because `FOO=1 scripts/x.sh`
+    still executes the script and still needs the exec bit — the same call the
+    `$VAR` detector already treats as unsafe. An assignment OF the path
+    (`DRIVER=skills/x/scripts/y.sh`) stores it instead, and survives the peel
+    because no whitespace separates the `=` from the value.
     """
     before = segment[:match.start(1)]
     while True:
-        peeled = CONTROL_PREFIX.sub("", before, count=1)
+        peeled = ENV_ASSIGNMENT_PREFIX.sub("", CONTROL_PREFIX.sub("", before, count=1), count=1)
         if peeled == before:
             break
         before = peeled
@@ -293,6 +304,11 @@ UNSAFE_BARE_FENCED = [
     'skills/presentation-creator/scripts/apply-backgrounds.sh \\',
     'scripts/load-vault.py > /tmp/out.json',
     'if scripts/poll.sh; then',
+    # Environment-assignment PREFIX: the script still executes. Matches how the
+    # `$VAR` detector already classifies `FOO=1 "$HERE/ensure-drivers.sh"`.
+    'FOO=1 scripts/poll.sh',
+    'A=1 B=2 skills/x/scripts/y.sh',
+    'DEBUG=1 skills/presentation-creator/scripts/apply-backgrounds.sh a b',
 ]
 
 SAFE_BARE_FENCED = [
@@ -300,7 +316,9 @@ SAFE_BARE_FENCED = [
     'bash skills/presentation-creator/scripts/apply-backgrounds.sh a b c',
     'cp skills/x/scripts/RunDeckOps.bas "$DEST"',
     'cat skills/x/scripts/y.py',
+    # Assignment OF the path stores it; no whitespace after the `=`.
     'DRIVER=skills/x/scripts/y.sh',
+    'FOO=1 bash scripts/poll.sh',
     'cp deck-with-titles.pptx deck-bg-src.pptx',
 ]
 

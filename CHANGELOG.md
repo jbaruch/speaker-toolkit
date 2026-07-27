@@ -42,6 +42,14 @@ fixes it surfaced land together. That is more sites than the seven the issue
 listed, and one of them — the `apply-backgrounds.sh` fenced block — was not on
 that list at all.
 
+An environment-assignment prefix counts as an invocation: `FOO=1 scripts/x.sh`
+runs the script and needs the exec bit, which is how the `$VAR` detector has
+always classified `FOO=1 "$HERE/x.sh"`. The first cut of the bare detector read
+the assignment as "not command position" and passed it — a false negative in a
+guard, which is worse than no guard. An assignment OF a path
+(`DRIVER=skills/x/scripts/y.sh`) still stores rather than runs; the whitespace
+after the `=` is what separates the two.
+
 Every one of those invocations also moves to a repo-relative path that actually
 resolves (`skills/<name>/scripts/<file>`, per `skill-authoring` Script
 References). The first cut added the interpreter and kept the `scripts/<file>`
