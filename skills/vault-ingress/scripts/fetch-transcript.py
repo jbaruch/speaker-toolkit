@@ -192,21 +192,24 @@ def fetch_whisper(video_id, work_dir, model):
               f"{download.stderr.strip()[:400]}", file=sys.stderr)
         return None
 
-    transcribe = subprocess.run(
-        [sys.executable, "-m", "mlx_whisper", "--model", model,
-         "--output-dir", str(work_dir), "--output-format", "txt", str(audio)],
-        capture_output=True, text=True,
-    )
-    if transcribe.returncode != 0:
-        print(f"mlx_whisper failed for {video_id}: "
-              f"{transcribe.stderr.strip()[:400]}", file=sys.stderr)
+    # The Python API, not a CLI. `python -m mlx_whisper` has no `__main__` and
+    # the console-script name is not reliably on PATH for every caller, so
+    # shelling out drifts; `transcribe()` returns the text directly.
+    try:
+        import mlx_whisper
+    except ImportError:
+        print("mlx-whisper is not installed (Apple Silicon only) — "
+              "`pip install mlx-whisper`, or supply the transcript by hand. "
+              "On other platforms use a caption track or an external "
+              "transcription service.", file=sys.stderr)
         return None
 
-    produced = list(Path(work_dir).glob("*.txt"))
-    if not produced:
-        print(f"mlx_whisper wrote no .txt for {video_id}", file=sys.stderr)
+    result = mlx_whisper.transcribe(str(audio), path_or_hf_repo=model)
+    text = result.get("text") if isinstance(result, dict) else None
+    if not text:
+        print(f"mlx_whisper returned no text for {video_id}", file=sys.stderr)
         return None
-    return produced[0].read_text(encoding="utf-8")
+    return text
 
 
 def write_atomically(path, text):

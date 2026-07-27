@@ -29,6 +29,15 @@ dependencies = [
 test = [
     "pytest",
 ]
+# Local Whisper transcription, used by vault-ingress/scripts/fetch-transcript.py
+# when a video has no caption track. Optional and not in the base dependency set
+# because mlx-whisper requires Apple Silicon and cannot install on the Linux CI
+# runners — see `rules/testing-standards.md` Platform-Bound Untestable Carve-Out.
+# The script imports it lazily and degrades with an actionable message, so the
+# caption path works everywhere without it.
+whisper = [
+    "mlx-whisper==0.4.3",
+]
 
 [tool.setuptools]
 py-modules = []
