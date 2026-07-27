@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.72 — 2026-07-27
+
 ### feat(vault-ingress) — a real transcript fetcher that validates before it writes
 
 Four of the vault's transcripts were Python tracebacks. Not truncated files —
