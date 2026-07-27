@@ -1,5 +1,26 @@
 # Changelog
 
+### fix(vault-ingress) — stamp `processed_date` when a subagent return omits it
+
+`persist-results.py` copied `processed_date` only when the return carried it.
+Subagent returns routinely omit the field — three of three in one batch of the
+2026-07-26 full reparse — so a talk merged with `status: processed` kept
+whatever date the *previous* run had written. Two talks reparsed that day still
+read `2026-04-09`, and one read `2026-05-01`.
+
+The damage is to queryability, not to the analysis: every scalar and the pattern
+score landed correctly. But "which talks has this reparse covered" is answered
+from `processed_date`, and that question drives batch selection, the Section 15
+recount, and the operator's read on progress. The DB reported 2 talks touched
+when the real figure was 5.
+
+`merge_talk` now takes an injectable `run_date` and stamps it when the return
+omits or empties the field; a date the return *does* supply still wins. The CLI
+resolves one date for the whole batch — so a run straddling midnight doesn't
+split across two — and `--run-date` pins it for tests. The stdout summary gained
+`run_date` plus a per-talk `stamped_processed_date` flag, so a stamp is visible
+in the batch report rather than silent.
+
 ## 0.18.63 — 2026-07-26
 
 ### test(packaging) — guard against exec-bit-dependent script invocation
