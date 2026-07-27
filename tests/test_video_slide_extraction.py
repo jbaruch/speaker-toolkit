@@ -249,3 +249,70 @@ def test_full_frame_slides_return_none(video_slide_extraction, tmp_path):
 def test_too_few_frames_declines_to_guess(video_slide_extraction, tmp_path):
     frames = _composite_frames(tmp_path, n=4)
     assert video_slide_extraction.detect_slide_region(frames, sample_size=8) is None
+
+
+def _fullframe_slide_frames(tmp_path, n=24):
+    """A FULL-FRAME deck: the whole frame is the slide, and only a text block
+    changes between slides. There is no border to crop."""
+    import numpy as np
+    rows, cols = np.mgrid[0:360, 0:640]
+    frames = []
+    for i in range(n):
+        arr = np.full((360, 640), 245, dtype=np.uint8)     # slide background
+        block = (rows[120:200, 180:460] * 3 + i * 83) % 256  # the changing text
+        arr[120:200, 180:460] = block.astype(np.uint8)
+        p = tmp_path / f"s{i:03d}.png"
+        Image.fromarray(arr).save(p)
+        frames.append(str(p))
+    return frames
+
+
+def test_full_frame_deck_is_not_cropped_into_its_own_text_block(
+        video_slide_extraction, tmp_path):
+    """Regression on the plausibility gate.
+
+    Component selection alone returns the changing text block inside a
+    full-frame slide — a well-filled rectangle that is NOT the display. Cropping
+    to it discards the rest of the deck. Observed on a real corpus talk whose
+    'HELLO My name is Baruch' title slide was cropped to a 9% fragment with the
+    name cut off.
+    """
+    frames = _fullframe_slide_frames(tmp_path)
+    assert video_slide_extraction.detect_slide_region(frames, sample_size=8) is None
+
+
+def test_region_smaller_than_the_area_floor_is_rejected(video_slide_extraction):
+    import numpy as np
+    m = np.zeros((180, 320), dtype=bool)
+    m[60:90, 100:180] = True                 # solid, 4:3-ish, but only ~4% of frame
+    assert video_slide_extraction._largest_rectangular_component(m) is None
+
+
+def test_strip_and_column_shapes_are_rejected(video_slide_extraction):
+    """Aspect gate: a wide strip or a tall column is never a projected display.
+
+    Both shapes are sized ABOVE the 15% area floor on purpose. A strip that also
+    fails on area would pass this test while the aspect gate silently regressed.
+    """
+    import numpy as np
+    total = 180 * 320
+
+    strip = np.zeros((180, 320), dtype=bool)
+    strip[60:110, 5:315] = True              # 50x310 -> aspect 6.2, 27% of frame
+    assert (50 * 310) / total > 0.15, "strip must clear the area floor to test aspect"
+    assert video_slide_extraction._largest_rectangular_component(strip) is None
+
+    column = np.zeros((180, 320), dtype=bool)
+    column[5:175, 100:220] = True            # 170x120 -> aspect 0.71, 35% of frame
+    assert (170 * 120) / total > 0.15, "column must clear the area floor to test aspect"
+    assert video_slide_extraction._largest_rectangular_component(column) is None
+
+
+def test_a_plausible_screen_of_the_same_area_is_accepted(video_slide_extraction):
+    """Control for the two shape tests: same size band, display-like aspect, so
+    the rejections above are attributable to aspect and nothing else."""
+    import numpy as np
+    m = np.zeros((180, 320), dtype=bool)
+    m[40:150, 60:260] = True                 # 110x200 -> aspect 1.82, 38% of frame
+    got = video_slide_extraction._largest_rectangular_component(m)
+    assert got == (40, 149, 60, 259)

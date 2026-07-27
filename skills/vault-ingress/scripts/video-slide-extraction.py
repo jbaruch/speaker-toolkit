@@ -30,7 +30,7 @@ import sys
 # the download tier, region-detection logic, dedup hashing, or PDF assembly.
 # See skills/vault-ingress/references/video-slide-extraction.md ("Pipeline
 # Versioning") for the policy.
-PIPELINE_VERSION = "0.8.0"
+PIPELINE_VERSION = "0.8.1"
 
 # Shape version of the structured_data.video_extraction record (distinct from
 # PIPELINE_VERSION, which tracks extractor behavior — this tracks the record's
@@ -99,14 +99,33 @@ def _label_components(mask):
             yield np.array(rows), np.array(cols)
 
 
-def _largest_rectangular_component(mask, min_fill=0.5, min_area_frac=0.02):
+# A crop is only taken when the chosen component actually looks like a projected
+# display. These bounds exist because component selection alone will happily
+# return a text block inside a FULL-FRAME slide — cropping a deck into a fragment
+# of itself and silently discarding the rest. Measured over 94 corpus decks,
+# unconstrained selection produced boxes with aspect ratios from 0.32 to 9.45;
+# the gate leaves 26. A missed crop leaves an over-count visible; a
+# wrong crop destroys content, so these are deliberately strict.
+_MIN_REGION_AREA_FRAC = 0.15   # smaller than this is a slide element, not a slide
+_MIN_REGION_ASPECT = 1.0       # 4:3 is 1.33, 16:9 is 1.78; allow margin either way
+_MAX_REGION_ASPECT = 2.4
+
+
+def _largest_rectangular_component(mask, min_fill=0.5,
+                                   min_area_frac=_MIN_REGION_AREA_FRAC,
+                                   min_aspect=_MIN_REGION_ASPECT,
+                                   max_aspect=_MAX_REGION_ASPECT):
     """Pick the component most likely to be the projected slide.
 
-    A slide region is a solid rectangle that changes wholesale between slides,
-    so its component nearly fills its own bounding box. A speaker
-    picture-in-picture is an irregular blob of moving person, so it fills much
-    less of its box. Score by box area, keeping only components that are both
-    rectangular enough and big enough to be a deck.
+    A slide region is a solid rectangle that changes wholesale between slides, so
+    its component nearly fills its own bounding box; a speaker picture-in-picture
+    is an irregular blob of moving person and fills much less. Fill ratio
+    separates those two. Area and aspect then reject the other failure mode —
+    a localized text block inside a full-frame deck, which is rectangular and
+    well-filled but is not the display.
+
+    The mask is 320x180, so its pixel aspect equals the source frame's aspect for
+    16:9 recordings and box_w/box_h is directly comparable to a display ratio.
 
     Returns (rmin, rmax, cmin, cmax) or None when nothing qualifies.
     """
@@ -117,11 +136,15 @@ def _largest_rectangular_component(mask, min_fill=0.5, min_area_frac=0.02):
     for rows, cols in _label_components(mask):
         rmin, rmax = int(rows.min()), int(rows.max())
         cmin, cmax = int(cols.min()), int(cols.max())
-        box_area = (rmax - rmin + 1) * (cmax - cmin + 1)
+        box_h, box_w = rmax - rmin + 1, cmax - cmin + 1
+        box_area = box_h * box_w
         if box_area / total < min_area_frac:
             continue
         # Fill ratio separates a solid slide rectangle from a person-shaped blob.
         if len(rows) / box_area < min_fill:
+            continue
+        # Aspect rejects strips and columns — neither is a projected display.
+        if not (min_aspect <= box_w / box_h <= max_aspect):
             continue
         if box_area > best_area:
             best, best_area = (rmin, rmax, cmin, cmax), box_area
@@ -138,14 +161,21 @@ def detect_slide_region(frames, sample_size=10):
     Returns (left, upper, right, lower) as fraction of image dimensions,
     or None if slides appear to be full-frame.
 
-    KNOWN LIMIT — wide-angle room recordings are NOT handled. When the camera
-    frames the whole room rather than compositing a slide feed, ambient motion
-    exceeds the threshold across the entire frame and every region merges into
-    one low-fill blob. This returns None there, which is deliberate: no crop is
-    safer than a wrong crop, because a wrong crop silently discards real slide
-    content. Those recordings need a different signal (screen-edge detection or
-    projector-luminance segmentation) and their own ground truth before any
-    heuristic ships. See references/video-slide-extraction.md.
+    A RETURNED REGION IS NOT A VERIFIED ONE. Detection is reliable only for the
+    extreme case it was built for: a broadcast composite where a fixed slide
+    rectangle sits beside static venue furniture. On room recordings it can and
+    does return the speaker — a torso is rectangular, well-filled, and passes
+    every size and aspect gate a screen passes. Spot-checking 94 corpus decks by
+    eye found correct screen crops and confident crops of a presenter's chest in
+    the same pass. Treat the output as a hint to verify, never as ground truth,
+    and never derive a slide count from a crop nobody looked at.
+
+    KNOWN LIMIT — wide-angle room recordings are NOT reliably handled. Ambient
+    motion clears the threshold across the frame and the largest plausible
+    component is as often a person as a screen. Separating them needs a signal
+    this function does not have (screen-edge geometry, projector luminance, or
+    boundary stability across frames) plus ground truth to validate against.
+    See references/video-slide-extraction.md.
     """
     import numpy as np
 
