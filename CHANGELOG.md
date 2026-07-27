@@ -1,5 +1,32 @@
 # Changelog
 
+### feat(vault-ingress) — `write-analysis.py` renders the per-talk analysis files
+
+Step 4 has two halves: merge the batch returns into the tracking DB, and write
+`analyses/{talk_filename}.md` per processed talk. `persist-results.py` owned the
+first. The second was assigned to the orchestrator in prose with no executable
+form — so it depended on an agent choosing to hand-write a 160-line document per
+talk, and across the 2026-07-26 full reparse it was skipped for all 82 talks.
+Zero analysis files were touched that day. The DB held the corrected analysis
+while every `analyses/*.md` still asserted what the reparse had just refuted: one
+file claimed `live_demo: true` for a talk whose speaker says on tape "I didn't do
+live demo. I'm not stupid."
+
+The new script consumes the SAME `batch-returns.json` the merge consumes, so the
+two halves cannot drift. It renders provenance, Dimensions 1–13, Dimension 14,
+adherence assessment, structured data (scalars as a list, `per_slide_visual` as a
+table, remaining nested blocks as fenced JSON), verbatim examples, the scoring
+tables, and the reparse's `catalog_feedback` block. A section whose source field
+is absent is skipped rather than emitted as an empty heading.
+
+Two shape hazards are handled because real returns hit both: prose fields that
+arrive as a list of finding objects instead of the schema's string (observed on
+`areas_for_improvement` and `new_patterns`) are coerced to bullets rather than
+failing the batch, and evidence strings containing `|` or newlines are escaped so
+they cannot split a markdown table row.
+
+Step 4's SKILL.md bullet now names the script instead of describing the document.
+
 ## 0.18.64 — 2026-07-27
 
 ### fix(vault-ingress) — stamp `processed_date` when a subagent return omits it

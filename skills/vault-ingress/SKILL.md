@@ -39,6 +39,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | [references/processing-rules.md](references/processing-rules.md) | Language policy, pattern migration logic, structured field rules |
 | [references/known-issues.md](references/known-issues.md) | Edge cases — wide-angle recordings, Whisper hallucination, non-speaker talks |
 | `scripts/persist-results.py` | Deterministically merge batch subagent returns into the tracking DB (Step 4) |
+| `scripts/write-analysis.py` | Render per-talk `analyses/*.md` from the same batch returns (Step 4) |
 | `scripts/pptx-extraction.py` | Extract visual design data from .pptx files |
 | `scripts/video-slide-extraction.py` | Extract slides from video via ffmpeg + perceptual dedup |
 | `scripts/batch-download-videos.sh` | Parallel video download for batch processing |
@@ -123,7 +124,7 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
 
 - **Update tracking DB — deterministic merge, NOT hand-mapping.** Collect the
   batch's subagent JSON returns into an array file (`batch-returns.json`) and run
-  `scripts/persist-results.py {vault_root}/tracking-database.json batch-returns.json`.
+  `python3 scripts/persist-results.py {vault_root}/tracking-database.json batch-returns.json`.
   The script merges each return into its matching talk entry, promotes the declared
   queryable scalars to the talk top level, and rewrites the DB in place; it prints a
   JSON merge summary to stdout and exits non-zero if a return's `filename` matches no
@@ -133,10 +134,14 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   `scripts/persist-results.py` (top-of-file docstring and the `PROMOTE` list) — to make
   a new field queryable, extend the return schema and that list; never reintroduce
   manual mapping.
-- **Write per-talk analysis files** — write
-  `{vault_root}/analyses/{talk_filename}.md` for each processed talk: all 14
-  dimensions, structured data, verbatim examples, and a "Presentation Patterns
-  Scoring" section. Create `analyses/` directory if missing.
+- **Write per-talk analysis files — run the script, do NOT hand-write them.** Run
+  `python3 scripts/write-analysis.py batch-returns.json {vault_root}/analyses --talks {vault_root}/tracking-database.json`
+  over the SAME `batch-returns.json` the merge consumed, so the DB and the files
+  cannot diverge. It renders `{vault_root}/analyses/{talk_filename}.md` per return —
+  14 dimensions, structured data, verbatim examples, "Presentation Patterns Scoring",
+  and catalog feedback — creates `analyses/` if missing, prints a JSON summary, and
+  exits non-zero on a return with no `filename`. Section list and field handling live
+  in `scripts/write-analysis.py` (top-of-file docstring).
 
 Proceed immediately to Step 5.
 

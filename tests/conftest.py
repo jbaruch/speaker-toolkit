@@ -97,6 +97,11 @@ def persist_results():
 
 
 @pytest.fixture(scope="session")
+def write_analysis():
+    return _import_script(os.path.join(SCRIPTS_VI, "write-analysis.py"), "write_analysis")
+
+
+@pytest.fixture(scope="session")
 def extract_resources():
     return _import_script(
         os.path.join(SCRIPTS_PC, "extract-resources.py"), "extract_resources"
