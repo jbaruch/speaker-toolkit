@@ -34,7 +34,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "video_url": "YouTube watch URL (required — only source needed for processing)",
     "youtube_id": "aBcDeFg", "google_drive_id": "1AbCdEfGhIjK",
     "pptx_path": "Conference/Year/Talk Name.pptx  (optional — highest quality slide source when available)",
-    "transcript_source": "youtube_auto|whisper|manual|none  (how the transcript was obtained)",
+    "transcript_source": "youtube_auto|whisper|manual|none  (how the transcript was obtained; MAY BE ABSENT — see below)",
     "slide_source": "pptx|pdf|both|video_extracted|none  (set in Step 2 per slide source hierarchy)",
     "pptx_visual_status": "pending|extracted|no_pptx",
     "status": "pending|processed|processed_partial|needs-reprocessing|skipped_no_sources|skipped_download_failed",
@@ -55,6 +55,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
       "antipatterns_detected": []
     }
   }],
+  "_comment_absent_transcript_source": "Absent transcript_source: the key may be MISSING on a talk, and missing is meaningful — it means provenance is unknown, not that no transcript exists (that is the explicit value `none`). It arises on one path: fetch-transcript.py returning method `existing`, where a valid transcript was already on disk and no fetch ran, so nothing was learned about where it came from. Writers MUST NOT backfill a guess; `manual` in particular asserts a human produced it. Readers gauging transcript reliability MUST treat absent as unknown and MUST NOT default it to any value.",
   "pptx_catalog": [{
     "pptx_path": "Conference/Year/Talk Name.pptx",
     "talk_filename": "2024-04-10-talk-slug.md or null",
@@ -95,7 +96,7 @@ Each subagent returns this JSON after processing one talk:
   "filename": "the .md filename",
   "rhetoric_notes": "500-1000 words: qualitative observations across dimensions 1-13",
   "areas_for_improvement": "100-300 words: honest critical reflection (Dimension 14); name the related antipattern ID + severity per issue where a Dimension 14 antipattern applies",
-  "transcript_source": "youtube_auto|whisper|manual  (how the transcript was obtained)",
+  "transcript_source": "youtube_auto|whisper|manual  (how the transcript was obtained; OMIT the key entirely when provenance is unknown — see Absent transcript_source in the DB schema above)",
   "structured_data": {
     "delivery_language": "en|de|ru|etc  (primary language of the talk)",
     "co_presenter": false,
