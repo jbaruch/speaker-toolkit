@@ -225,10 +225,13 @@ def write_atomically(path, text):
         with os.fdopen(handle, "w", encoding="utf-8") as fh:
             fh.write(text)
         os.replace(tmp, path)
-    except BaseException:
+    finally:
+        # `finally`, not a catch: cleanup must also run on KeyboardInterrupt and
+        # SystemExit, and neither may be swallowed (`rules/error-handling.md`).
+        # After a successful os.replace the temp path is gone, so this is a no-op
+        # on the happy path.
         if os.path.exists(tmp):
             os.unlink(tmp)
-        raise
 
 
 def emit(ok, video_id, method, words, path, reason, code):

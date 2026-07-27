@@ -38,13 +38,13 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | [references/video-slide-extraction.md](references/video-slide-extraction.md) | Video-to-slides pipeline — layout heuristics, tuning, limitations |
 | [references/processing-rules.md](references/processing-rules.md) | Language policy, pattern migration logic, structured field rules |
 | [references/known-issues.md](references/known-issues.md) | Edge cases — wide-angle recordings, Whisper hallucination, non-speaker talks |
-| `scripts/persist-results.py` | Deterministically merge batch subagent returns into the tracking DB (Step 4) |
-| `scripts/write-analysis.py` | Render per-talk `analyses/*.md` from the same batch returns (Step 4) |
-| `scripts/pptx-extraction.py` | Extract visual design data from .pptx files |
-| `scripts/video-slide-extraction.py` | Extract slides from video via ffmpeg + perceptual dedup |
-| `scripts/batch-download-videos.sh` | Parallel video download for batch processing |
-| `scripts/vtt-cleanup.py` | Clean VTT subtitles into plain transcript text |
-| `scripts/fetch-transcript.py` | Fetch a transcript, validate it, write only if real (captions → local Whisper) |
+| `skills/vault-ingress/scripts/persist-results.py` | Deterministically merge batch subagent returns into the tracking DB (Step 4) |
+| `skills/vault-ingress/scripts/write-analysis.py` | Render per-talk `analyses/*.md` from the same batch returns (Step 4) |
+| `skills/vault-ingress/scripts/pptx-extraction.py` | Extract visual design data from .pptx files |
+| `skills/vault-ingress/scripts/video-slide-extraction.py` | Extract slides from video via ffmpeg + perceptual dedup |
+| `skills/vault-ingress/scripts/batch-download-videos.sh` | Parallel video download for batch processing |
+| `skills/vault-ingress/scripts/vtt-cleanup.py` | Clean VTT subtitles into plain transcript text |
+| `skills/vault-ingress/scripts/fetch-transcript.py` | Fetch a transcript, validate it, write only if real (captions → local Whisper) |
 
 A talk is processable when it has `video_url`. Slide sources, in order of preference:
 1. `pptx_path` — richest data (exact colors, fonts, shapes via python-pptx)
@@ -117,7 +117,7 @@ Full procedure — slide acquisition per `slide_source`, rhetoric/style analysis
 pattern-taxonomy tagging, and the return-JSON shape — lives in
 [references/subagent-instructions.md](references/subagent-instructions.md).
 
-Transcripts come from `scripts/fetch-transcript.py`, never from inline fetch
+Transcripts come from `skills/vault-ingress/scripts/fetch-transcript.py`, never from inline fetch
 code. It tries the caption track, falls back to local Whisper, validates the
 result, and writes atomically only on success — so a failed fetch leaves no file
 rather than leaving a crash report where speech belongs:
@@ -146,7 +146,7 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   talk. Do NOT hand-copy fields one at a time — that is what dropped structured data
   before (it was computed and reached the analysis files but never landed in the DB).
   Contract, the promoted-scalar allowlist, and merge semantics live in
-  `scripts/persist-results.py` (top-of-file docstring and the `PROMOTE` list) — to make
+  `skills/vault-ingress/scripts/persist-results.py` (top-of-file docstring and the `PROMOTE` list) — to make
   a new field queryable, extend the return schema and that list; never reintroduce
   manual mapping.
 - **Write per-talk analysis files — run the script, do NOT hand-write them.** Run
@@ -156,7 +156,7 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   14 dimensions, structured data, verbatim examples, "Presentation Patterns Scoring",
   and catalog feedback — creates `analyses/` if missing, prints a JSON summary, and
   exits non-zero on a return with no `filename`. Section list and field handling live
-  in `scripts/write-analysis.py` (top-of-file docstring).
+  in `skills/vault-ingress/scripts/write-analysis.py` (top-of-file docstring).
 
 Proceed immediately to Step 5.
 
