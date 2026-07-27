@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.66 — 2026-07-27
+
 ### fix(vault-ingress) — slide-region detection merged the speaker PiP into the slide box
 
 `detect_slide_region` built a frame-difference map and then took the bounding
