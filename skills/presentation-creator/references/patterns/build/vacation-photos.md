@@ -54,10 +54,14 @@ Avoid Vacation Photos when the audience needs to see and retain specific details
 ## Detection Heuristics
 When scoring talks, look for slides where images fill the entire slide canvas with little or no text overlay. The presence of high-resolution, well-composed photography (not clip art or low-quality screenshots) is a positive indicator. The presenter should be delivering substantive content verbally rather than reading from the slides.
 
+**Empty shape text is NOT evidence of a wordless slide.** Judge "few or no words" from the RENDERED PAGE, never from an extractor's shape inventory. Illustrated decks bake titles, callouts and labels into the picture, where the shape walk cannot see them and OCR may still miss outlined display type. A 160-slide deck with zero text runs scored a mechanical `strong` here and proved to be among the most densely worded in the corpus — this pattern's own criteria reproduced the extraction bug the vault exists to correct.
+
+The question is not "does the slide carry text in shapes" but "does the slide carry the argument". A full-bleed image under a baked-in title stating the claim is not Vacation Photos — the audience reads the claim. Vacation Photos requires the words to live in the speaker's mouth.
+
 ## Scoring Criteria
-- Strong signal (2 pts): Multiple full-bleed image slides with no or minimal text, high-quality photography, presenter clearly serving as the verbal narrative layer
+- Strong signal (2 pts): Multiple full-bleed image slides carrying no or minimal words ON THE RENDERED PAGE, high-quality photography, presenter clearly serving as the verbal narrative layer
 - Moderate signal (1 pt): Some image-heavy slides but mixed with text-heavy ones, or images used but not full-bleed, or image quality is inconsistent
-- Absent (0 pts): No full-bleed image slides, text dominates every slide, images used only as small illustrations within text-heavy layouts
+- Absent (0 pts): No full-bleed image slides, text dominates every slide, images used only as small illustrations within text-heavy layouts — or the slides are full-bleed images whose baked-in lettering carries the argument, which is a different pattern and may be `second-look`
 
 ## Relationship to Vault Dimensions
 Dimension 8 (Slide Design): Vacation Photos represents a deliberate architectural choice about how slides function — as emotional/visual backdrops rather than information carriers. Dimension 13 (Visual Polish and Craft): The quality and curation of images directly reflects the presenter's investment in visual craft.

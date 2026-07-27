@@ -61,7 +61,7 @@ Do not flag a talk merely for being tell-shaped. Keynotes, inspirational talks, 
 ## Scoring Criteria
 - Strong signal (2 pts — antipattern present): A teaching-shaped talk with zero audience-production moments across its full length; rhetorical self-answered questions; restatement callbacks; summary-slide close; optionally, explicit appeals to room reaction as evidence of comprehension
 - Moderate signal (1 pt): A teaching-shaped talk with a single token production moment (one show of hands early, never repeated) in an otherwise pure-broadcast structure, or a summary close in a talk that otherwise engages
-- Absent (0 pts): The talk demands production from the audience at multiple points, or the talk is performance-shaped and the antipattern does not apply
+- Absent (0 pts — antipattern not present): The talk demands production from the audience at multiple points, or the talk is performance-shaped and the antipattern does not apply
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 4 (Audience Interaction) as the primary axis — the antipattern *is* the null case of audience interaction, dressed as a room that is engaged. Relates to Dimension 12 (Pacing Clues), since a talk with no production beats has no gather-and-consolidate rhythm and runs as an undifferentiated stream. Relates to Dimension 14 (Areas for Improvement), where it belongs in a distinct category: unlike most entries in Dimension 14, this one flags talks that are *already good* and would be improved by the one thing their positive feedback will never ask for.

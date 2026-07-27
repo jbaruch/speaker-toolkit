@@ -40,9 +40,9 @@ If you find yourself reaching for a demo because you have time to fill, stop and
 When scoring talks, evaluate whether each demonstration is preceded by a problem statement and followed by a synthesis. Demos that begin with "let me show you the tool" without narrative framing are strong Dead Demo signals. Also note the demo's position in the talk — demos placed at the end as apparent time fillers are suspicious. Watch the audience during the demo: if engagement drops visibly, the demo is likely serving as padding rather than content.
 
 ## Scoring Criteria
-- Strong signal (2 pts): All demonstrations are narratively motivated — preceded by a problem or question, accompanied by purposeful commentary, and followed by synthesis that connects the demo to the larger message
+- Strong signal (2 pts — antipattern present): Demonstrations used as time fillers with no narrative connection, feature touring without context, audience engagement visibly declining during demo sections
 - Moderate signal (1 pt): Demonstrations are partially integrated with the narrative — some framing present but incomplete, or demo content occasionally drifts into feature touring without clear purpose
-- Absent (0 pts): Demonstrations used as time fillers with no narrative connection, feature touring without context, audience engagement visibly declining during demo sections
+- Absent (0 pts — antipattern not present): All demonstrations are narratively motivated — preceded by a problem or question, accompanied by purposeful commentary, and followed by synthesis that connects the demo to the larger message
 
 ## Relationship to Vault Dimensions
 Dimension 11 (Demonstrations and Tools): Dead Demo is the anti-form of demonstration — tool interaction that fails to serve any communicative purpose, degrading rather than enhancing the presentation's engagement with tools and technology. Dimension 14 (Overall Quality Indicators): A purposeless demonstration is one of the most visible quality failures in a technical presentation, signaling insufficient preparation and weak narrative design.

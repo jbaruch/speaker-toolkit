@@ -41,9 +41,9 @@ The only exception is when branding is mandated by a conference or organization 
 When scoring talks, note whether corporate or conference branding appears on every slide or only on bookend slides. Measure the approximate percentage of slide area consumed by non-content elements (logos, bars, footers, headers, decorative elements). Look for slides where branding elements overlap with or crowd the actual content. A presenter who has clean content slides with branding only on bookends has explicitly addressed this antipattern.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Clean content slides with maximum canvas devoted to content, branding limited to bookend slides (title and closing), no persistent visual noise
+- Strong signal (2 pts — antipattern present): Heavy branding on every slide consuming significant screen real estate, decorative elements competing with content, visible template bloat reducing effective canvas
 - Moderate signal (1 pt): Branding present on all slides but minimal (small logo in corner, thin footer bar) that does not significantly reduce content area
-- Absent (0 pts): Heavy branding on every slide consuming significant screen real estate, decorative elements competing with content, visible template bloat reducing effective canvas
+- Absent (0 pts — antipattern not present): Clean content slides with maximum canvas devoted to content, branding limited to bookend slides (title and closing), no persistent visual noise
 
 ## Relationship to Vault Dimensions
 Dimension 13 (Slide Aesthetics): Floodmarks directly degrade slide aesthetics. Dimension 14 (Overall Quality Indicators): Heavy template branding signals defaults used without customization.

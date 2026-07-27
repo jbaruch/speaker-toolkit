@@ -44,9 +44,9 @@ This is an antipattern to avoid whenever possible. Step away from the podium, st
 - Speaker grips the podium or leans on furniture as a physical crutch
 
 ## Scoring Criteria
-- Strong signal (2 pts): Speaker moves freely in the space, closes distance with audience, uses the stage and room actively, no dependence on physical barriers
+- Strong signal (2 pts — antipattern present): Speaker remains behind the podium or barrier for the entire presentation, no audience proximity
 - Moderate signal (1 pt): Speaker occasionally steps away from the podium but returns to it as a primary position
-- Absent (0 pts): Speaker remains behind the podium or barrier for the entire presentation, no audience proximity
+- Absent (0 pts — antipattern not present): Speaker moves freely in the space, closes distance with audience, uses the stage and room actively, no dependence on physical barriers
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 14 (Speaker Craft / Professionalism).

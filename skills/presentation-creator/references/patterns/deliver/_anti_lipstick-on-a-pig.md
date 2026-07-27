@@ -43,9 +43,9 @@ This is an antipattern to avoid by investing appropriately in content before des
 - Preparation time was heavily skewed toward design over research and structuring
 
 ## Scoring Criteria
-- Strong signal (2 pts): Content is substantive and well-structured, with visual design that enhances rather than replaces the message — both substance and style are present
+- Strong signal (2 pts — antipattern present): Beautiful slides mask shallow or unstructured content — the talk looks great but delivers no lasting value
 - Moderate signal (1 pt): Content is reasonable but could be deeper, visual polish slightly outweighs structural rigor
-- Absent (0 pts): Beautiful slides mask shallow or unstructured content — the talk looks great but delivers no lasting value
+- Absent (0 pts — antipattern not present): Content is substantive and well-structured, with visual design that enhances rather than replaces the message — both substance and style are present
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 8 (Content Depth / Value). It also maps to Vault Dimension 9 (Speaker Authority / Credibility). It also maps to Vault Dimension 14 (Speaker Craft / Professionalism).

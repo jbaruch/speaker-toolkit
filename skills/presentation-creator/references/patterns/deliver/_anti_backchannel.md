@@ -44,9 +44,9 @@ This is an antipattern to manage, not eliminate. Accept the backchannel as a fea
 - Audience attention appears fragmented
 
 ## Scoring Criteria
-- Strong signal (2 pts): Speaker acknowledges the backchannel constructively (provides handle, encourages sharing) without being distracted by it, delivers with full focus on the room
+- Strong signal (2 pts — antipattern present): Speaker monitors the backchannel during delivery, reacts to online feedback in real time, or ignores the backchannel entirely without leveraging its potential
 - Moderate signal (1 pt): Speaker is occasionally distracted by backchannel awareness but mostly maintains focus
-- Absent (0 pts): Speaker monitors the backchannel during delivery, reacts to online feedback in real time, or ignores the backchannel entirely without leveraging its potential
+- Absent (0 pts — antipattern not present): Speaker acknowledges the backchannel constructively (provides handle, encourages sharing) without being distracted by it, delivers with full focus on the room
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 14 (Speaker Craft / Professionalism).

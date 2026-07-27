@@ -38,9 +38,9 @@ This is an antipattern — it should always be avoided. Be vigilant against crea
 The vault should look for signs of low content density: minimal new information, content that could be conveyed more efficiently in writing, no discernible narrative structure, and the general feeling that the audience's time is not being respected.
 
 ## Scoring Criteria
-- Strong signal (2 pts): High content-to-time ratio; every minute delivers value; audience would not have been better served by a document or email
+- Strong signal (2 pts — antipattern present): Classic Celery — presentation takes more effort to attend than it provides in value; content could have been an email; no narrative structure
 - Moderate signal (1 pt): Adequate content but with noticeable padding; some sections feel like time-fillers rather than value-adders
-- Absent (0 pts): Classic Celery — presentation takes more effort to attend than it provides in value; content could have been an email; no narrative structure
+- Absent (0 pts — antipattern not present): High content-to-time ratio; every minute delivers value; audience would not have been better served by a document or email
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 2 (Structure/Organization). Relates to Dimension 14 (Overall Impression/Polish).

@@ -41,9 +41,9 @@ This is an antipattern to recognize and mitigate, not a pattern to apply. Every 
 - Speaker seems unaware of their verbal tics
 
 ## Scoring Criteria
-- Strong signal (2 pts): Minimal filler words throughout — speaker pauses confidently instead of filling gaps, delivery is clean and professional
+- Strong signal (2 pts — antipattern present): Frequent filler words throughout delivery, noticeably undermining credibility and distracting from content
 - Moderate signal (1 pt): Occasional filler words present but not distractingly frequent — speaker shows awareness and sometimes self-corrects
-- Absent (0 pts): Frequent filler words throughout delivery, noticeably undermining credibility and distracting from content
+- Absent (0 pts — antipattern not present): Minimal filler words throughout — speaker pauses confidently instead of filling gaps, delivery is clean and professional
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 7 (Clarity / Communication) and to Vault Dimension 14 (Speaker Craft / Professionalism).

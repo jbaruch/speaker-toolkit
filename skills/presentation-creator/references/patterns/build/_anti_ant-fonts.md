@@ -42,9 +42,9 @@ The solution is never to make the text smaller. The solution is one of: reduce t
 When scoring talks, evaluate text readability from the audience perspective. Any text below 18-point font for code or 24-point font for regular text is a warning sign. The presenter saying "you probably can't read this" is an automatic detection trigger. Inconsistent text sizes across slides (indicating auto-shrinking) is another strong signal. Also watch for audience members squinting, leaning forward, or pulling out their phones to photograph a slide — all behavioral indicators of Ant Fonts.
 
 ## Scoring Criteria
-- Strong signal (2 pts): All text is clearly readable from the back of the room, consistent font sizes across slides, no auto-shrunk content, code at 18pt or larger
+- Strong signal (2 pts — antipattern present): Multiple slides with small text, presenter acknowledges readability issues ("you probably can't read this"), auto-shrunk fonts visible, code in small font sizes
 - Moderate signal (1 pt): Most text is readable, with one or two slides that push the readability boundary, no verbal acknowledgment of illegibility
-- Absent (0 pts): Multiple slides with small text, presenter acknowledges readability issues ("you probably can't read this"), auto-shrunk fonts visible, code in small font sizes
+- Absent (0 pts — antipattern not present): All text is clearly readable from the back of the room, consistent font sizes across slides, no auto-shrunk content, code at 18pt or larger
 
 ## Relationship to Vault Dimensions
 Dimension 13 (Slide Aesthetics): Ant Fonts directly degrade the visual quality of slides, producing cramped, cluttered layouts that are aesthetically unpleasant and functionally illegible. Dimension 14 (Overall Quality Indicators): The presence of unreadable text is one of the most immediately visible negative quality signals in any presentation, suggesting insufficient preparation and poor audience awareness.

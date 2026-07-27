@@ -68,7 +68,7 @@ Do not flag a short talk for thin coverage — a lightning talk has room for one
 ## Scoring Criteria
 - Strong signal (2 pts — antipattern present): Every load-bearing claim in a full-length talk defended in a single register; at least one archetype wholly absent; ideally corroborated by Q&A clustering on the gap or by projecting language
 - Moderate signal (1 pt): Two registers present but heavily lopsided, with a conspicuous archetype missing on the talk's central claim
-- Absent (0 pts): Claims defended across multiple registers, or a homogeneous room matched with evident deliberation
+- Absent (0 pts — antipattern not present): Claims defended across multiple registers, or a homogeneous room matched with evident deliberation
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 4 (Audience Interaction) — the antipattern is a failure of audience modeling, with the speaker's own preferences substituted for the room's. Relates to Dimension 9 (Persuasion Techniques), since it determines what the talk offers as proof and to whom that proof is legible. Relates to Dimension 14 (Areas for Improvement), where it belongs with `_anti_nodding-room.md` in the category of failures that draw good feedback: both are talks a subset of the room genuinely enjoys, which is exactly why neither gets corrected.

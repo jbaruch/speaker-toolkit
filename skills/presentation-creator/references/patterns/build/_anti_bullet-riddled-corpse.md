@@ -42,9 +42,9 @@ The one exception is when you are deliberately creating an Infodeck — a slide 
 When scoring talks, count the proportion of slides that consist primarily of bullet points (three or more text bullets occupying the majority of the slide). Note whether the audience appears to be reading ahead of the speaker. Look for auto-shrunk fonts (inconsistent text sizes that indicate PowerPoint has compressed the text to fit). Also note if the presenter is reading bullet points verbatim from the slide.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Slides use visual communication — images, diagrams, single phrases, key words — rather than bullet points, with spoken narration providing the detail that would otherwise be in bullets
+- Strong signal (2 pts — antipattern present): Majority of slides are bullet-point lists of four or more items, presenter reads bullets from slides, fonts are auto-shrunk to accommodate text volume
 - Moderate signal (1 pt): Mix of bullet-heavy slides and visual slides, or bullets present but kept to three or fewer short items per slide
-- Absent (0 pts): Majority of slides are bullet-point lists of four or more items, presenter reads bullets from slides, fonts are auto-shrunk to accommodate text volume
+- Absent (0 pts — antipattern not present): Slides use visual communication — images, diagrams, single phrases, key words — rather than bullet points, with spoken narration providing the detail that would otherwise be in bullets
 
 ## Relationship to Vault Dimensions
 Dimension 8 (Slide Design): Bullet-Riddled Corpse is a fundamental failure of slide design that misunderstands the purpose of projected visuals in a live presentation. Dimension 13 (Slide Aesthetics): Text-heavy bullet slides are among the least aesthetically pleasing slide formats, producing dense, uniform visual patterns that numb the audience. Dimension 14 (Overall Quality Indicators): The prevalence of bullet-point slides is one of the most reliable negative indicators of overall presentation quality.

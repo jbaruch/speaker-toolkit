@@ -41,9 +41,9 @@ This is an antipattern to avoid in every presentation. There are no scenarios wh
 - Speaker references problems the audience would not have noticed otherwise
 
 ## Scoring Criteria
-- Strong signal (2 pts): Speaker never goes meta — no apologies, no preparation commentary, no equipment excuses, all problems handled invisibly
+- Strong signal (2 pts — antipattern present): Multiple instances of going meta — speaker repeatedly comments on preparation, equipment, timing, or other behind-the-scenes concerns
 - Moderate signal (1 pt): One or two minor meta-comments that are quickly moved past without dwelling
-- Absent (0 pts): Multiple instances of going meta — speaker repeatedly comments on preparation, equipment, timing, or other behind-the-scenes concerns
+- Absent (0 pts — antipattern not present): Speaker never goes meta — no apologies, no preparation commentary, no equipment excuses, all problems handled invisibly
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 9 (Speaker Authority / Credibility) and to Vault Dimension 14 (Speaker Craft / Professionalism).

@@ -42,9 +42,9 @@ This is an antipattern to be prepared for, not a pattern to apply. You cannot pr
 - Content feels compressed or incomplete in the final third of the talk
 
 ## Scoring Criteria
-- Strong signal (2 pts): Speaker handles time reduction gracefully — sections are cleanly omitted, core message is preserved at full quality, audience may not even notice the abbreviation
+- Strong signal (2 pts — antipattern present): Speaker panics under time pressure — visible rushing, compressed delivery, audience clearly receives a degraded experience
 - Moderate signal (1 pt): Speaker adapts to time pressure but with visible strain — some rushing evident, minor content awkwardness
-- Absent (0 pts): Speaker panics under time pressure — visible rushing, compressed delivery, audience clearly receives a degraded experience
+- Absent (0 pts — antipattern not present): Speaker handles time reduction gracefully — sections are cleanly omitted, core message is preserved at full quality, audience may not even notice the abbreviation
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 12 (Delivery Mechanics) and to Vault Dimension 14 (Speaker Craft / Professionalism).

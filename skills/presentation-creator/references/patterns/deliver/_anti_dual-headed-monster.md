@@ -36,6 +36,8 @@ When hybrid is unavoidable, appoint a "remote advocate" — a person dedicated t
 ## When to Use / When to Avoid
 This is an antipattern to avoid when possible and to manage carefully when unavoidable. If given the choice, present to one audience at a time. If hybrid is required, declare a primary audience and optimize for them. Always have a dedicated technology manager or remote advocate so the speaker is not splitting their attention between presenting and troubleshooting.
 
+**NAME TRAP — this is NOT about two presenters.** It requires a SIMULTANEOUS live and remote audience. A co-presented talk with one room is not this antipattern, however many heads are on stage. 15 of 16 corpus detections were name-driven false positives on exactly that reading. If nothing in the evidence shows a remote audience being served at the same time as the room, the entry does not apply — and the catalog has no co-presentation vocabulary, so partner dynamics belong in `catalog_feedback`, not here.
+
 ## Detection Heuristics
 - Speaker alternates between addressing the camera and the room
 - Technology management visibly competes with delivery for the speaker's attention
@@ -43,9 +45,9 @@ This is an antipattern to avoid when possible and to manage carefully when unavo
 - Q&A is awkward, with separate live and remote question queues
 
 ## Scoring Criteria
-- Strong signal (2 pts): Speaker clearly optimizes for one audience, with appropriate accommodation for the other — technology is managed by a dedicated person, delivery is coherent and focused
+- Strong signal (2 pts — antipattern present): Speaker tries to serve both audiences equally, resulting in a fragmented experience for everyone — visible context-switching, technology struggles, and disjointed delivery
 - Moderate signal (1 pt): Speaker attempts hybrid delivery with some success but visible compromises and occasional technology-related disruptions
-- Absent (0 pts): Speaker tries to serve both audiences equally, resulting in a fragmented experience for everyone — visible context-switching, technology struggles, and disjointed delivery
+- Absent (0 pts — antipattern not present): Speaker clearly optimizes for one audience, with appropriate accommodation for the other — technology is managed by a dedicated person, delivery is coherent and focused
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 14 (Speaker Craft / Professionalism).

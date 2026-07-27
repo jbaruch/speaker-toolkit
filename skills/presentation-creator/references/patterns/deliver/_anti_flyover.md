@@ -44,9 +44,9 @@ This is an antipattern and should always be avoided. Share your home-region or h
 - Pattern recurs across the talk rather than appearing once — a sign it reflects the speaker's actual stance, not a slip
 
 ## Scoring Criteria
-- Strong signal (2 pts): Speaker shares home-region/high-scale experience as a peer, never positioning the present audience as inferior; the room is treated as capable and worth addressing as equals
+- Strong signal (2 pts — antipattern present): Speaker repeatedly diminishes the audience or their region while valorizing their own, severing trust with the room
 - Moderate signal (1 pt): Mostly respectful, but an occasional comparison frames the local audience or region as behind
-- Absent (0 pts): Speaker repeatedly diminishes the audience or their region while valorizing their own, severing trust with the room
+- Absent (0 pts — antipattern not present): Speaker shares home-region/high-scale experience as a peer, never positioning the present audience as inferior; the room is treated as capable and worth addressing as equals
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 4 (Audience Engagement) — it actively dismantles the speaker-audience relationship — and to Vault Dimension 14 (Speaker Craft / Professionalism), where condescension toward the room reads as a fundamental failure of professional respect.

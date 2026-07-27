@@ -38,9 +38,9 @@ Be aware of this antipattern whenever you have pre-published a description of yo
 The vault should look for signs of disconnect between the apparent description of the talk and the delivered content. Significant structural deviations from what the talk claims to cover, missing promised topics, or unexpected diversions all trigger this antipattern.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Content closely matches what was promised; any deviations are explicitly acknowledged and justified
+- Strong signal (2 pts — antipattern present): Significant disconnect between described and delivered content; audience likely feels misled about what the talk would cover
 - Moderate signal (1 pt): Generally follows the described topics but some promised elements are missing or replaced without explanation
-- Absent (0 pts): Significant disconnect between described and delivered content; audience likely feels misled about what the talk would cover
+- Absent (0 pts — antipattern not present): Content closely matches what was promised; any deviations are explicitly acknowledged and justified
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 2 (Structure/Organization). Relates to Dimension 14 (Overall Impression/Polish).
