@@ -52,6 +52,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import NoReturn
 
 # Text that proves the "transcript" is a crash report rather than speech. Anchored
 # at the head of the file: a talk about Python may legitimately say "traceback".
@@ -257,7 +258,13 @@ def write_atomically(path, text):
             os.unlink(tmp)
 
 
-def emit(ok, video_id, method, words, path, reason, code):
+def emit(ok, video_id, method, words, path, reason, code) -> NoReturn:
+    """Print the contract object and exit. Never returns — hence `NoReturn`.
+
+    The annotation is load-bearing, not decoration: callers rely on `emit` ending
+    the process, and without it a type checker reads the code after an `emit` as
+    reachable and every value guarded by one as possibly unbound.
+    """
     print(json.dumps({"ok": ok, "video_id": video_id, "method": method,
                       "words": words, "path": str(path), "reason": reason}))
     sys.exit(code)
@@ -307,7 +314,12 @@ def main(argv=None):
             duration_seconds=args.duration_seconds)
         if not ok:
             emit(False, args.video, "whisper", count_words(text), out, reason, 1)
-        write_atomically(out, text)
+        try:
+            write_atomically(out, text)
+        except OSError as exc:
+            print(f"cannot write the transcript to {out}: {exc}", file=sys.stderr)
+            emit(False, args.video, "whisper", count_words(text), out,
+                 f"transcript produced but could not be written: {exc}", 2)
         emit(True, args.video, "whisper", count_words(text), out, reason, 0)
 
     video_id = resolve_video_id(args.video)
@@ -321,7 +333,18 @@ def main(argv=None):
 
     out = Path(args.out)
     if out.exists() and not args.force:
-        existing = out.read_text(encoding="utf-8", errors="replace")
+        try:
+            existing = out.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            # Unreadable existing file: emit rather than traceback. Refusing is
+            # deliberate — silently refetching would overwrite a file we could
+            # not inspect, and the point of this script is never to destroy data
+            # it has not validated.
+            print(f"cannot read the existing transcript at {out}: {exc} — "
+                  "fix the permissions, or delete the file to refetch",
+                  file=sys.stderr)
+            emit(False, video_id, "none", 0, out,
+                 f"existing transcript unreadable: {exc}", 2)
         ok, reason = validate_transcript(
             existing, min_words=args.min_words,
             duration_seconds=args.duration_seconds)
@@ -347,7 +370,15 @@ def main(argv=None):
         ok, reason = validate_transcript(
             text, min_words=args.min_words, duration_seconds=args.duration_seconds)
         if ok:
-            write_atomically(out, text)
+            try:
+                write_atomically(out, text)
+            except OSError as exc:
+                # write_atomically's `finally` has already removed the temp file,
+                # so the output path is untouched. Emit rather than traceback.
+                print(f"cannot write the transcript to {out}: {exc}",
+                      file=sys.stderr)
+                emit(False, video_id, name, count_words(text), out,
+                     f"transcript fetched but could not be written: {exc}", 2)
             emit(True, video_id, name, count_words(text), out, reason, 0)
         failures.append(f"{name}: {reason}")
 

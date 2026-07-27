@@ -171,6 +171,31 @@ def test_cli_emits_json_on_an_argument_error(fetch_transcript, tmp_path):
     assert json.loads(result.stdout)["ok"] is False
 
 
+def test_cli_emits_json_when_the_existing_transcript_is_unreadable(
+        fetch_transcript, tmp_path):
+    """An unreadable file must not traceback past the JSON contract.
+
+    It also must not be silently refetched — overwriting a file the script could
+    not inspect is exactly the data loss it exists to prevent.
+    """
+    out = tmp_path / "eg6gqvUFh6Q.txt"
+    out.write_text(_talk(900), encoding="utf-8")
+    out.chmod(0o000)
+    try:
+        result = subprocess.run(
+            [sys.executable, fetch_transcript.__file__, "eg6gqvUFh6Q",
+             "--out", str(out)],
+            capture_output=True, text=True,
+        )
+    finally:
+        out.chmod(0o644)
+    assert result.returncode == 2
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert "unreadable" in payload["reason"]
+    assert out.read_text(encoding="utf-8") == _talk(900), "existing file was clobbered"
+
+
 def test_cli_help_still_exits_zero(fetch_transcript):
     """`--help` is a success path and must not be turned into a JSON error."""
     result = subprocess.run(

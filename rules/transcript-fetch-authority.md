@@ -6,11 +6,11 @@ description: Authority of record for the Whisper transcription layer's Platform-
 
 # Transcript Fetch Authority
 
-## Why
+## Carve-Out Claimed
 
-- `skills/vault-ingress/scripts/fetch-transcript.py` acquires a talk transcript from a caption track, falling back to local Whisper transcription of the downloaded audio.
-- The Whisper layer needs `mlx-whisper`, which requires Apple Silicon and cannot install on the project's Linux CI runners.
-- `jbaruch/coding-policy: testing-standards` Platform-Bound Untestable Carve-Out permits an exempt layer under three preconditions. This rule is the authority of record satisfying precondition 3: it names the carve-out, the exempt artifact, and where the manual validation procedure lives.
+- `jbaruch/coding-policy: testing-standards` Platform-Bound Untestable Carve-Out.
+- This rule is the authority of record satisfying precondition 3 — it names the carve-out, the exempt artifact, and where the manual validation procedure lives.
+- Qualifying condition: `mlx-whisper` requires Apple Silicon and cannot install on the project's Linux CI runners.
 
 ## Covered Artifact
 
