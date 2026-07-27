@@ -36,6 +36,8 @@ Use Crawling Code whenever you need to present a code listing longer than approx
 
 Avoid Crawling Code for very short code snippets (under ten lines) where a single static slide is sufficient. Also avoid it when the code is being shown for illustrative purposes only — if the audience does not need to read and understand the actual code, a simpler approach like a screenshot or a pseudocode summary is more appropriate and far less work to produce.
 
+**NAME TRAP — this is NOT a live IDE screencast.** The pattern is an AUTHORED DECK technique: code scrolling or transitioning under deliberate highlighting that the speaker built into the slides. A talk conducted entirely in a real editor, however much code scrolls past, is `live-demo` — the scrolling is the tool's behaviour, not a designed reveal. Score this only when the movement was authored.
+
 ## Detection Heuristics
 When scoring talks, look for code that scrolls or transitions through visible regions, with clear visual differentiation between highlighted (active) lines and shaded (contextual) lines. Note whether the presenter maintains visible context around the highlighted code or shows lines in complete isolation. Smooth scrolling with consistent pacing is a strong positive signal.
 

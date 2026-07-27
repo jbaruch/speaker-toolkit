@@ -43,9 +43,9 @@ This is an antipattern to avoid in every presentation. Never ask the audience to
 - Speaker proceeds based on misleading polling data
 
 ## Scoring Criteria
-- Strong signal (2 pts): Speaker calibrates content level through research, positive polling, or brief definitions — never asks the audience to admit ignorance
+- Strong signal (2 pts — antipattern present): Speaker asks negative ignorance questions, putting audience members in uncomfortable positions
 - Moderate signal (1 pt): Speaker uses mixed polling approaches, occasionally slipping into negative framing but mostly positive
-- Absent (0 pts): Speaker asks negative ignorance questions, putting audience members in uncomfortable positions
+- Absent (0 pts — antipattern not present): Speaker calibrates content level through research, positive polling, or brief definitions — never asks the audience to admit ignorance
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 14 (Speaker Craft / Professionalism).

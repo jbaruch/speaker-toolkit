@@ -50,6 +50,8 @@ So keep the cards, and calibrate what you spend them on:
 ## When to Use / When to Avoid
 Use this pattern whenever you want honest, high-participation feedback and have logistical control over the room setup (you need to place cards and a collection bucket). It works best at conferences and meetups where you will present the same talk multiple times and want to track improvement. Avoid it in very small settings (under ten people) where anonymity is impossible and direct conversation is better, or in venues where you cannot control the room setup.
 
+**NAME TRAP — this is NOT about a talk discussing red/yellow/green.** The entry is a physical exit-poll feedback mechanism. A talk that builds a red/yellow/green status indicator, semaphore, or confidence signal as its SUBJECT MATTER does not deploy this pattern. One corpus talk spends roughly forty minutes constructing a literal red/yellow/green LED semaphore and does not deploy it. Keyword matching on the colours is the failure mode; look for cards near the exit, not for the words.
+
 ## Detection Heuristics
 - Physical feedback mechanism visible near the room exit
 - Speaker mentions the feedback system at the start or end of the talk

@@ -43,9 +43,9 @@ This is an antipattern to prepare for rather than a pattern to apply. Have strat
 - Speaker-audience dynamic becomes adversarial
 
 ## Scoring Criteria
-- Strong signal (2 pts): Speaker handles disruptive audience members gracefully — redirects time sinks, deflects hecklers, and maintains professional composure throughout, protecting the experience for the broader audience
+- Strong signal (2 pts — antipattern present): Speaker loses control to a disruptive audience member — debate ensues, time is consumed, other audience members disengage
 - Moderate signal (1 pt): Speaker manages disruptions but with visible stress or some loss of presentation momentum
-- Absent (0 pts): Speaker loses control to a disruptive audience member — debate ensues, time is consumed, other audience members disengage
+- Absent (0 pts — antipattern not present): Speaker handles disruptive audience members gracefully — redirects time sinks, deflects hecklers, and maintains professional composure throughout, protecting the experience for the broader audience
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 14 (Speaker Craft / Professionalism).

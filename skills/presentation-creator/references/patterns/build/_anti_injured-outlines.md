@@ -38,9 +38,9 @@ This is an antipattern and should always be avoided. Every level of every outlin
 When scoring talks, examine every bulleted list and hierarchical outline for single-child levels. A heading with exactly one sub-bullet is the canonical signal. Also look for outlines that have inconsistent depth — one section with three levels of nesting while another has only one level — which may indicate Injured Outlines that were partially addressed but not fully resolved.
 
 ## Scoring Criteria
-- Strong signal (2 pts): All outlines and bulleted lists have at least two items at every level, indicating thorough and complete hierarchical thinking
+- Strong signal (2 pts — antipattern present): Multiple instances of single sub-bullets under headings, orphaned outline items, or hierarchies that add structural complexity without adding meaning
 - Moderate signal (1 pt): Most outlines are well-formed, with one or two instances of single-child hierarchies that do not significantly impact comprehension
-- Absent (0 pts): Multiple instances of single sub-bullets under headings, orphaned outline items, or hierarchies that add structural complexity without adding meaning
+- Absent (0 pts — antipattern not present): All outlines and bulleted lists have at least two items at every level, indicating thorough and complete hierarchical thinking
 
 ## Relationship to Vault Dimensions
 Dimension 8 (Slide Design): Injured Outlines represent a structural flaw in slide content organization. Dimension 14 (Overall Quality Indicators): The presence of Injured Outlines is a signal of insufficient preparation and incomplete analytical thinking.

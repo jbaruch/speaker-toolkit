@@ -43,9 +43,9 @@ This is an antipattern to avoid in every presentation. Always calibrate your voc
 - Translator struggling with undefined technical terms
 
 ## Scoring Criteria
-- Strong signal (2 pts): Vocabulary is precisely calibrated to audience level, technical terms are defined on first use, complex concepts are explained in accessible language alongside precise terminology
+- Strong signal (2 pts — antipattern present): Dense jargon throughout without definition, audience visibly struggling to follow, vocabulary clearly mismatched to audience level
 - Moderate signal (1 pt): Mostly accessible language but occasional undefined jargon slips through
-- Absent (0 pts): Dense jargon throughout without definition, audience visibly struggling to follow, vocabulary clearly mismatched to audience level
+- Absent (0 pts — antipattern not present): Vocabulary is precisely calibrated to audience level, technical terms are defined on first use, complex concepts are explained in accessible language alongside precise terminology
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 7 (Clarity / Communication). It also maps to Vault Dimension 9 (Speaker Authority / Credibility). It also maps to Vault Dimension 14 (Speaker Craft / Professionalism).

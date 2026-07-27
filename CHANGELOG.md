@@ -1,5 +1,50 @@
 # Changelog
 
+### fix(presentation-creator) — antipattern scoring polarity was inverted in 26 of 28 files
+
+`Strong signal (2 pts)` described the antipattern being ABSENT in 26 antipattern
+files and PRESENT in the two newest. Subagents record `confidence` in
+`antipatterns_detected` meaning "how strongly present", so the same value meant
+opposite things depending on which file a scorer happened to open. Every one of
+the corpus's 3,228 antipattern observations is affected, and no scorer could
+tell which convention produced any given one.
+
+Five independent reparse agents reported it before it was acted on.
+
+All 28 files now read `Strong signal (2 pts — antipattern present)` and
+`Absent (0 pts — antipattern not present)`. `tests/test_pattern_catalog.py`
+holds the convention along with the other structural contracts a scorer depends
+on: complete 3-bullet scales on all 111 entries, `id` matching filename (the
+invented-id class that let `terminal-as-deck` be scored 14 times), unique ids,
+`type:` agreeing with the `_anti_` prefix, index-vs-file agreement on which
+entries are unobservable, and the index's summary statistics.
+
+### fix(presentation-creator) — `vacation-photos` encoded the extraction bug it should resist
+
+Its detection signals were "full-bleed image slides" plus "minimal text on image
+slides", which silently equates *the slide is an image* with *the slide has no
+words*. On a 160-slide deck with zero shape-level text runs a mechanical read
+scores `strong`; the rendered pages show one of the most densely worded decks in
+the corpus. The pattern reproduced the exact inversion the vault reparse exists
+to correct, so fixing the extractor could not fix the score.
+
+Detection now says to judge from the rendered page, and names the real question:
+not whether the slide carries text in shapes, but whether it carries the
+argument. A full-bleed image under a baked-in title stating the claim is not
+this pattern.
+
+### fix(presentation-creator) — three entries whose names drive false positives
+
+Each now opens its detection section with an explicit NAME TRAP warning.
+
+- `dual-headed-monster` requires a simultaneous live AND remote audience, not two
+  presenters. 15 of 16 corpus detections were false positives on that misreading.
+- `red-yellow-green` is a physical exit-poll mechanism, not a talk that discusses
+  red/yellow/green. One corpus talk builds a literal LED semaphore for forty
+  minutes without deploying the pattern.
+- `crawling-code` is an authored deck reveal, not a live IDE screencast where
+  code happens to scroll.
+
 ## 0.18.67 — 2026-07-27
 
 ### fix(vault-ingress) — gate slide-region detection on plausibility, and stop overclaiming it

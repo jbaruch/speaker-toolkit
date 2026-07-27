@@ -41,9 +41,9 @@ This is an antipattern to guard against, not a pattern to apply. Be vigilant abo
 - Content quality degrades in the second half compared to the first
 
 ## Scoring Criteria
-- Strong signal (2 pts): Speaker maintains consistent quality, pacing, and confidence throughout, regardless of audience demeanor — no evidence of panic adjustments
+- Strong signal (2 pts — antipattern present): Speaker clearly disowns portions of their material, rushing or skipping sections based on misread audience signals
 - Moderate signal (1 pt): Speaker shows minor signs of adjusting to perceived audience mood but mostly maintains prepared delivery
-- Absent (0 pts): Speaker clearly disowns portions of their material, rushing or skipping sections based on misread audience signals
+- Absent (0 pts — antipattern not present): Speaker maintains consistent quality, pacing, and confidence throughout, regardless of audience demeanor — no evidence of panic adjustments
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 9 (Speaker Authority / Credibility). It also maps to Vault Dimension 12 (Delivery Mechanics). It also maps to Vault Dimension 14 (Speaker Craft / Professionalism).

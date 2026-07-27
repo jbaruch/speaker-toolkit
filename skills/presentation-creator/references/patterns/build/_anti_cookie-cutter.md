@@ -41,9 +41,9 @@ The instinct toward Cookie Cutter thinking may be strongest when a presenter is 
 When scoring talks, look for slides that feel overstuffed — text that is clearly compressed to fit, diagrams with overlapping labels, bullet lists that extend to the bottom of the slide. Also look for ideas that feel artificially truncated at slide boundaries, as if the explanation was cut short because the slide ran out of space. Auto-shrunk fonts (inconsistent text sizes across slides) are a telltale indicator of the software accommodating Cookie Cutter behavior.
 
 ## Scoring Criteria
-- Strong signal (2 pts): No evidence of cookie-cutter thinking — ideas span as many slides as they need, content is appropriately sized, and slide boundaries are invisible to the audience
+- Strong signal (2 pts — antipattern present): Consistent pattern of one-idea-per-slide regardless of idea complexity, with visible cramming, auto-shrunk fonts, and ideas that feel truncated at slide boundaries
 - Moderate signal (1 pt): Occasional cramming on some slides, but most ideas are given appropriate space; some variation in text size suggesting occasional forced fitting
-- Absent (0 pts): Consistent pattern of one-idea-per-slide regardless of idea complexity, with visible cramming, auto-shrunk fonts, and ideas that feel truncated at slide boundaries
+- Absent (0 pts — antipattern not present): No evidence of cookie-cutter thinking — ideas span as many slides as they need, content is appropriately sized, and slide boundaries are invisible to the audience
 
 ## Relationship to Vault Dimensions
 Dimension 8 (Slide Design): Cookie Cutter fundamentally compromises slide design by subordinating design decisions to arbitrary size constraints rather than content requirements. Dimension 13 (Slide Aesthetics): The visual cramming that results from Cookie Cutter thinking produces aesthetically poor slides with inconsistent text sizes, cluttered layouts, and no visual breathing room.

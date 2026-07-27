@@ -41,9 +41,9 @@ Invest time in developing a Unifying Visual Theme before selecting individual im
 When scoring talks, evaluate whether images connect specifically to the content they accompany or could be swapped between slides (or between presentations) without anyone noticing. Stock photo cliches — handshakes, light bulbs, puzzle pieces, road metaphors — are automatic warning signals. Also check image resolution: pixelated or watermarked images indicate Photomaniac behavior combined with insufficient investment in visual assets.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Images are specific, purposeful, and clearly connected to the narrative content they accompany, forming a coherent visual vocabulary rather than a random collection
+- Strong signal (2 pts — antipattern present): Random stock photos with tenuous connections to content, visual cliches (handshakes, light bulbs, puzzle pieces), pixelated or low-resolution images, no unifying visual theme
 - Moderate signal (1 pt): Most images relate to their content, but some feel generic or decorative; overall visual theme is present but inconsistent
-- Absent (0 pts): Random stock photos with tenuous connections to content, visual cliches (handshakes, light bulbs, puzzle pieces), pixelated or low-resolution images, no unifying visual theme
+- Absent (0 pts — antipattern not present): Images are specific, purposeful, and clearly connected to the narrative content they accompany, forming a coherent visual vocabulary rather than a random collection
 
 ## Relationship to Vault Dimensions
 Dimension 10 (Visual Storytelling): Photomaniac is a direct failure of visual storytelling. The images tell no story. Dimension 13 (Slide Aesthetics): While individual Photomaniac images may be attractive, the lack of visual coherence degrades the overall aesthetic of the presentation. Dimension 14 (Overall Quality Indicators): Random stock photo selection signals a superficial approach to presentation design that prioritizes appearance over substance.

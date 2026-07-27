@@ -38,9 +38,9 @@ This is an antipattern — it should always be avoided. There is no scenario whe
 The vault should look for material that could alienate audience segments: profanity, sexual content, exclusionary humor, culturally insensitive references, or imagery that assumes audience homogeneity. Even mild instances should be flagged.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Presentation is entirely professional and inclusive; humor (if present) is contextualized and inoffensive; no exclusionary references
+- Strong signal (2 pts — antipattern present): Contains clearly offensive, exclusionary, or alienating material that would disengage significant portions of a diverse audience
 - Moderate signal (1 pt): Mostly professional but occasional borderline material that might make some audience members uncomfortable
-- Absent (0 pts): Contains clearly offensive, exclusionary, or alienating material that would disengage significant portions of a diverse audience
+- Absent (0 pts — antipattern not present): Presentation is entirely professional and inclusive; humor (if present) is contextualized and inoffensive; no exclusionary references
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 3 (Delivery/Presentation Skills). Relates to Dimension 10 (Creativity/Originality). Relates to Dimension 14 (Overall Impression/Polish).

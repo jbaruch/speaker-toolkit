@@ -41,9 +41,9 @@ The only context where deliberate font variety might be acceptable is when the v
 When scoring talks, count the number of distinct font families used across the slide deck. Two or three fonts is normal. Four is suspicious. Five or more is a clear Fontaholic signal. Also look for inconsistency within slides — a title in one font, a subtitle in another, body text in a third, and a callout in a fourth is a classic pattern. Pay special attention to decorative or display fonts used for single elements, which are often the first sign of Fontaholic behavior.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Consistent typographic palette of two to three font families throughout the entire deck, with variety achieved through size, weight, and style rather than new typefaces
+- Strong signal (2 pts — antipattern present): Five or more font families used across the deck, inconsistent typography within individual slides, ransom-note visual effect
 - Moderate signal (1 pt): Generally consistent typography with one or two additional fonts used for specific purposes (code, quotes), total of four or fewer font families
-- Absent (0 pts): Five or more font families used across the deck, inconsistent typography within individual slides, ransom-note visual effect
+- Absent (0 pts — antipattern not present): Consistent typographic palette of two to three font families throughout the entire deck, with variety achieved through size, weight, and style rather than new typefaces
 
 ## Relationship to Vault Dimensions
 Dimension 13 (Slide Aesthetics): Typography is one of the most fundamental elements of visual design, and Fontaholic behavior directly degrades the aesthetic quality of slides by introducing visual chaos where consistency is needed. Dimension 14 (Overall Quality Indicators): Typographic inconsistency is a reliable signal of inexperience or inattention to design details, impacting the perceived professionalism of the entire presentation.
