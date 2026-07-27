@@ -30,7 +30,7 @@ import sys
 # the download tier, region-detection logic, dedup hashing, or PDF assembly.
 # See skills/vault-ingress/references/video-slide-extraction.md ("Pipeline
 # Versioning") for the policy.
-PIPELINE_VERSION = "0.7.0"
+PIPELINE_VERSION = "0.8.0"
 
 # Shape version of the structured_data.video_extraction record (distinct from
 # PIPELINE_VERSION, which tracks extractor behavior — this tracks the record's
@@ -68,6 +68,66 @@ def extract_frames(video_path, frames_dir, fps=0.5):
     return frames
 
 
+def _label_components(mask):
+    """Label 4-connected True regions in a boolean mask.
+
+    Implemented with an explicit stack rather than scipy.ndimage.label so the
+    extractor keeps its declared dependency set (numpy/Pillow/imagehash); the
+    mask is 180x320, so the cost is irrelevant.
+
+    Yields (row_indices, col_indices) arrays per component.
+    """
+    import numpy as np
+
+    seen = np.zeros(mask.shape, dtype=bool)
+    h, w = mask.shape
+    for r0 in range(h):
+        for c0 in range(w):
+            if not mask[r0, c0] or seen[r0, c0]:
+                continue
+            rows, cols, stack = [], [], [(r0, c0)]
+            seen[r0, c0] = True
+            while stack:
+                r, c = stack.pop()
+                rows.append(r)
+                cols.append(c)
+                for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    rr, cc = r + dr, c + dc
+                    if 0 <= rr < h and 0 <= cc < w and mask[rr, cc] and not seen[rr, cc]:
+                        seen[rr, cc] = True
+                        stack.append((rr, cc))
+            yield np.array(rows), np.array(cols)
+
+
+def _largest_rectangular_component(mask, min_fill=0.5, min_area_frac=0.02):
+    """Pick the component most likely to be the projected slide.
+
+    A slide region is a solid rectangle that changes wholesale between slides,
+    so its component nearly fills its own bounding box. A speaker
+    picture-in-picture is an irregular blob of moving person, so it fills much
+    less of its box. Score by box area, keeping only components that are both
+    rectangular enough and big enough to be a deck.
+
+    Returns (rmin, rmax, cmin, cmax) or None when nothing qualifies.
+    """
+    import numpy as np
+
+    total = mask.size
+    best, best_area = None, 0
+    for rows, cols in _label_components(mask):
+        rmin, rmax = int(rows.min()), int(rows.max())
+        cmin, cmax = int(cols.min()), int(cols.max())
+        box_area = (rmax - rmin + 1) * (cmax - cmin + 1)
+        if box_area / total < min_area_frac:
+            continue
+        # Fill ratio separates a solid slide rectangle from a person-shaped blob.
+        if len(rows) / box_area < min_fill:
+            continue
+        if box_area > best_area:
+            best, best_area = (rmin, rmax, cmin, cmax), box_area
+    return best
+
+
 def detect_slide_region(frames, sample_size=10):
     """Auto-detect the slide region by analyzing variance across sample frames.
 
@@ -77,6 +137,15 @@ def detect_slide_region(frames, sample_size=10):
 
     Returns (left, upper, right, lower) as fraction of image dimensions,
     or None if slides appear to be full-frame.
+
+    KNOWN LIMIT — wide-angle room recordings are NOT handled. When the camera
+    frames the whole room rather than compositing a slide feed, ambient motion
+    exceeds the threshold across the entire frame and every region merges into
+    one low-fill blob. This returns None there, which is deliberate: no crop is
+    safer than a wrong crop, because a wrong crop silently discards real slide
+    content. Those recordings need a different signal (screen-edge detection or
+    projector-luminance segmentation) and their own ground truth before any
+    heuristic ships. See references/video-slide-extraction.md.
     """
     import numpy as np
 
@@ -100,15 +169,20 @@ def detect_slide_region(frames, sample_size=10):
     threshold = np.percentile(avg_diff, 60)
     mask = avg_diff > threshold
 
-    # Find bounding box of the active region
-    rows = np.any(mask, axis=1)
-    cols = np.any(mask, axis=0)
-
-    if not rows.any() or not cols.any():
+    if not mask.any():
         return None  # No clear region detected
 
-    rmin, rmax = np.where(rows)[0][[0, -1]]
-    cmin, cmax = np.where(cols)[0][[0, -1]]
+    # A broadcast composite has MORE than one moving thing: the slide rectangle
+    # and a live speaker picture-in-picture, which are disjoint. Taking the
+    # bounding box of every above-threshold pixel merges them into one box that
+    # spans the frame, trips the >90% guard below, and returns None — so the
+    # deck is never cropped and the deduper hashes the moving presenter. That is
+    # how one 43-slide talk extracted to 963 pages. Pick the best single
+    # component instead of boxing them all.
+    component = _largest_rectangular_component(mask)
+    if component is None:
+        return None
+    rmin, rmax, cmin, cmax = component
 
     h, w = avg_diff.shape  # 180, 320
 

@@ -1,5 +1,40 @@
 # Changelog
 
+### fix(vault-ingress) — slide-region detection merged the speaker PiP into the slide box
+
+`detect_slide_region` built a frame-difference map and then took the bounding
+box of **every** above-threshold pixel. A conference broadcast composite has
+more than one moving thing — the slide rectangle and a live speaker
+picture-in-picture — and they are disjoint. Boxing them together produced a
+region spanning the frame, which tripped the existing `area > 0.9` guard and
+returned `None`. The deck was therefore never cropped, and the deduper went on
+hashing the moving presenter and the JPEG noise around him.
+
+Measured cost on Devoxx 2016 Docker Container Lifecycles: **963 extracted pages
+for a 43-slide deck**, ~22x. The venue furniture sat at zero pixel variance and
+the PiP at ~30, while the slide rectangle occupied only `x [0.32, 0.965]`,
+`y [0.17, 0.842]`. Re-hashing the crop alone collapses 963 to 170.
+
+Detection now labels 4-connected components of the mask and picks the one that
+best fills its own bounding box — a slide changes wholesale and nearly fills its
+box, a person-shaped blob does not. Component labelling is a small explicit
+stack walk rather than `scipy.ndimage.label`, keeping the extractor's declared
+dependency set. Validated against the two talks whose geometry was measured
+independently: Docker resolves to `x [0.302, 0.967]`, `y [0.197, 0.848]`, within
+~2% on every edge, and the JFokus 2015 composite now detects where it did not.
+
+**Wide-angle room recordings remain unhandled, deliberately.** When the camera
+frames the room instead of compositing a feed, ambient motion clears the
+threshold everywhere and all regions merge into one low-fill blob; detection
+returns `None`. Raising the percentile does surface a high-fill candidate, but
+on CodeMash 2017 that candidate is 42% of frame width where the screen was
+measured at ~22% — probably the presenters. No crop is shipped without ground
+truth to validate it, because a wrong crop silently discards real slide content
+whereas no crop merely leaves the existing over-count in place.
+
+`PIPELINE_VERSION` 0.7.0 to 0.8.0 per the file's own policy: region-detection
+logic changed.
+
 ## 0.18.65 — 2026-07-27
 
 ### feat(vault-ingress) — `write-analysis.py` renders the per-talk analysis files

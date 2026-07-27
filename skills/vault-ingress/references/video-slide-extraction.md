@@ -110,6 +110,28 @@ Update the talk's DB entry: `slide_source: "video_extracted"`,
 | Extraction metadata | `structured_data.video_extraction` | Frame counts, region detection, threshold, pipeline version |
 | Intermediate frames | Deleted after PDF generation | Saves disk space |
 
+## Slide-Region Detection — Contract and Limit
+
+`detect_slide_region(frames)` returns either a `(left, upper, right, lower)`
+crop as fractions of the frame, or `None` meaning "do not crop". Selection
+criteria and constants live in `skills/vault-ingress/scripts/video-slide-extraction.py`
+(`detect_slide_region` docstring and `_largest_rectangular_component`).
+
+**A `None` is not a failure signal.** It is returned both for full-frame
+screencasts, where there is nothing to crop, and for wide-angle room recordings,
+where the region cannot be identified safely. The caller cannot distinguish
+them, and must not treat an uncropped extraction as a verified one.
+
+**Wide-angle room recordings are out of scope by design.** No crop ships without
+ground truth to validate it, because a wrong crop silently discards real slide
+content while no crop merely leaves the over-count visible. Extracted page
+counts for those recordings stay unreliable in BOTH directions.
+
+**Therefore: never report an extracted page count as a slide count.** Corroborate
+in-frame first — a "Slide N of M" status bar, a visible thumbnail rail, in-deck
+numbering, or the speaker stating a count. With no corroboration, record the
+count as low-confidence and say why.
+
 ## Pipeline Versioning
 
 The extractor carries a `PIPELINE_VERSION` constant (top of

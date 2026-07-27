@@ -173,3 +173,79 @@ def test_full_pipeline(video_slide_extraction, tmp_path):
     assert result["pipeline_version"] == video_slide_extraction.PIPELINE_VERSION
     assert result["schema_version"] == video_slide_extraction.SCHEMA_VERSION
     assert os.path.isfile(result["output_pdf"])
+
+def _composite_frames(tmp_path, n=24, with_pip=True):
+    """Synthesize a broadcast composite: a slide rectangle that changes wholesale,
+    optional moving speaker PiP on the left, and static venue furniture around
+    both. Returns frame paths.
+
+    Geometry is fixed, so the expected crop is known without a fixture file.
+    """
+    import numpy as np
+    rows, cols = np.mgrid[0:360, 0:640]
+    frames = []
+    for i in range(n):
+        arr = np.full((360, 640), 60, dtype=np.uint8)      # static venue furniture
+        # Slide content must vary SPATIALLY, not only per frame: a uniform fill
+        # gives every slide pixel an identical diff, the percentile lands exactly
+        # on that value, and the strict `>` then drops the whole region.
+        slide = (rows[40:320, 200:620] * 7
+                 + cols[40:320, 200:620] * 13
+                 + i * 61) % 256
+        arr[40:320, 200:620] = slide.astype(np.uint8)
+        if with_pip:
+            top = 100 + (i % 5) * 8                        # speaker PiP: moves, small
+            pip = (rows[top:top + 40, 20:90] * 11 + i * 97) % 256
+            arr[top:top + 40, 20:90] = pip.astype(np.uint8)
+        p = tmp_path / f"f{i:03d}.png"
+        Image.fromarray(arr).save(p)
+        frames.append(str(p))
+    return frames
+
+
+def test_detects_the_slide_and_excludes_the_speaker_pip(video_slide_extraction, tmp_path):
+    """The regression, asserted on the public entry point.
+
+    A broadcast composite has two disjoint moving regions — the slide and a live
+    speaker PiP. Boxing every above-threshold pixel merges them: on this scene
+    the old logic yields x[0.011, 0.989], a crop reaching into the PiP; on the
+    real Devoxx 2016 artifact it exceeded the area>0.9 guard and returned None,
+    so the deck was never cropped and a 43-slide talk extracted to 963 pages.
+    Either way the crop is wrong, so assert the property that matters: the
+    returned region excludes the PiP and still covers the slide.
+    """
+    frames = _composite_frames(tmp_path)
+    region = video_slide_extraction.detect_slide_region(frames, sample_size=8)
+    assert region is not None, "composite went undetected — the 963-page failure"
+    left, upper, right, lower = region
+    # The slide occupies x[0.3125, 0.969], y[0.111, 0.889] by construction; the
+    # PiP sits entirely left of x=0.15 and must not be inside the crop.
+    assert left > 0.15, f"crop reaches into the speaker PiP: left={left:.3f}"
+    assert right > 0.9 and lower > 0.8, "crop lost part of the slide"
+    assert (right - left) * (lower - upper) < 0.9, "crop is effectively full-frame"
+
+
+def test_same_scene_without_a_pip_still_detects_the_slide(video_slide_extraction, tmp_path):
+    """Control: the detection must not depend on a PiP being present."""
+    frames = _composite_frames(tmp_path, with_pip=False)
+    region = video_slide_extraction.detect_slide_region(frames, sample_size=8)
+    assert region is not None
+    assert region[0] > 0.15
+
+
+def test_full_frame_slides_return_none(video_slide_extraction, tmp_path):
+    """A full-frame screencast has no border to crop; detection must decline
+    rather than shave the edges."""
+    import numpy as np
+    frames = []
+    for i in range(24):
+        arr = np.full((180, 320), 20 * (i % 8), dtype=np.uint8)
+        p = tmp_path / f"g{i:03d}.png"
+        Image.fromarray(arr).save(p)
+        frames.append(str(p))
+    assert video_slide_extraction.detect_slide_region(frames, sample_size=8) is None
+
+
+def test_too_few_frames_declines_to_guess(video_slide_extraction, tmp_path):
+    frames = _composite_frames(tmp_path, n=4)
+    assert video_slide_extraction.detect_slide_region(frames, sample_size=8) is None
