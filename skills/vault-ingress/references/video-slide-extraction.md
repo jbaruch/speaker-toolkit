@@ -76,7 +76,7 @@ Google Drive PDFs used elsewhere in the vault.
 
 ## Usage
 
-Run `python3 scripts/video-slide-extraction.py` for each video after downloading it:
+Run `python3 skills/vault-ingress/scripts/video-slide-extraction.py` for each video after downloading it:
 
 ```bash
 # Download video at 720p
@@ -86,7 +86,7 @@ yt-dlp -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]"
   "https://www.youtube.com/watch?v={youtube_id}"
 
 # Extract slides
-python3 scripts/video-slide-extraction.py \
+python3 skills/vault-ingress/scripts/video-slide-extraction.py \
   "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
   "{vault_root}/slides-rebuild/{youtube_id}" \
   "{youtube_id}"

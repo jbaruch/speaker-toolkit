@@ -42,7 +42,7 @@ Process the steps below in order; each step's output (vault payload, aggregated 
 
 ## Step 1 — Load Vault Sources
 
-Run `python3 scripts/load-vault.py` to read `tracking-database.json`, `rhetoric-style-summary.md`, and `slide-design-spec.md` from the vault root. The script emits a single JSON payload on stdout.
+Run `python3 skills/vault-profile/scripts/load-vault.py` to read `tracking-database.json`, `rhetoric-style-summary.md`, and `slide-design-spec.md` from the vault root. The script emits a single JSON payload on stdout.
 
 ```bash
 python3 skills/vault-profile/scripts/load-vault.py > /tmp/vault-payload.json
@@ -143,7 +143,7 @@ This is the positive-space counterpart to `recurring_issues`/`underused_patterns
 keep it distinct from Step 8 badges (badges are celebratory, strengths are actionable
 reinforcement the creator skill amplifies).
 
-Compute `pacing.adherence` by running `python3 scripts/compute-pacing-adherence.py`. The
+Compute `pacing.adherence` by running `python3 skills/vault-profile/scripts/compute-pacing-adherence.py`. The
 deterministic arithmetic — duration parsing, slides-per-minute, budget-band
 classification, over-budget counts, rate, and trend — lives in the script per
 `script-delegation`, not in this prose.
@@ -177,7 +177,7 @@ Proceed immediately to Step 5.
 
 ## Step 5 — Validate the Profile
 
-Pipe the constructed profile dict through `python3 scripts/validate-profile.py` to verify all required top-level keys exist and `schema_version` is `2`.
+Pipe the constructed profile dict through `python3 skills/vault-profile/scripts/validate-profile.py` to verify all required top-level keys exist and `schema_version` is `2`.
 
 ```bash
 echo "$PROFILE_JSON" | python3 skills/vault-profile/scripts/validate-profile.py

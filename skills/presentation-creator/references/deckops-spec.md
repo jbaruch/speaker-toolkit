@@ -9,8 +9,8 @@ You (the agent) emit the op sequence from `slides.md` + the profile layout map â
 layout, placeholder, and content choices are your judgment. Then:
 
 ```bash
-python3 scripts/validate-deckops.py ops.txt          # exit 0 + {"slides":N,"ops":M}, or exit 1 + errors
-bash scripts/build-deck.sh <template-copy.pptx> <out.pptx> ops.txt
+python3 skills/presentation-creator/scripts/validate-deckops.py ops.txt          # exit 0 + {"slides":N,"ops":M}, or exit 1 + errors
+bash skills/presentation-creator/scripts/build-deck.sh <template-copy.pptx> <out.pptx> ops.txt
 ```
 
 `build-deck.sh` re-runs the validator first, so a malformed sequence fails fast

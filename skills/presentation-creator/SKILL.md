@@ -414,8 +414,8 @@ template's demo slides and creates every slide from the ops. See
 [references/deckops-spec.md](references/deckops-spec.md).
 
 ```bash
-python3 scripts/validate-deckops.py ops.txt
-bash scripts/build-deck.sh "{template_copy_pptx_path}" "{output_path}" ops.txt
+python3 skills/presentation-creator/scripts/validate-deckops.py ops.txt
+bash skills/presentation-creator/scripts/build-deck.sh "{template_copy_pptx_path}" "{output_path}" ops.txt
 ```
 
 For non-illustrated slides and EXCEPTION-format slides, emit the content inline

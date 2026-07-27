@@ -42,6 +42,14 @@ fixes it surfaced land together. That is more sites than the seven the issue
 listed, and one of them — the `apply-backgrounds.sh` fenced block — was not on
 that list at all.
 
+Every one of those invocations also moves to a repo-relative path that actually
+resolves (`skills/<name>/scripts/<file>`, per `skill-authoring` Script
+References). The first cut added the interpreter and kept the `scripts/<file>`
+shorthand, which resolves from nowhere. Six further sites carrying the same
+shorthand are corrected in the same pass: they sit in the files being edited, so
+fixing only the flagged lines would have left each file mixing two conventions —
+the state `skill-authoring` explicitly forbids.
+
 ## 0.18.70 — 2026-07-27
 
 ### fix(vault-ingress) — stamp `processed_date` at second resolution, not day

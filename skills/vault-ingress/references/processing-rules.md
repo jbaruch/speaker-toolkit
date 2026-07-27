@@ -41,7 +41,7 @@ block per the return schema — never to leave them buried only in `rhetoric_not
 text. If it's in the analysis, it must be in `structured_data`.
 
 Persisting those fields is deterministic and script-owned, not a manual per-run mapping —
-SKILL.md Step 4 uses `scripts/persist-results.py` for the merge. Authors do not re-derive
+SKILL.md Step 4 uses `skills/vault-ingress/scripts/persist-results.py` for the merge. Authors do not re-derive
 that logic here.
 
 ## Adherence Assessment
