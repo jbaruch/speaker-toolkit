@@ -280,6 +280,20 @@ def test_cli_unwritable_output_dir_is_actionable(write_analysis, tmp_path):
     assert "Traceback" not in result.stderr
 
 
+def test_cli_non_object_return_entry_is_actionable(write_analysis, tmp_path):
+    """An array of filenames is the plausible operator mistake — it passes the
+    is-a-list check and then dies on .get()."""
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps(["talk.md", "other.md"]))
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(tmp_path / "a")],
+        capture_output=True, text=True,
+    )
+    assert result.returncode != 0
+    assert "not a subagent return object" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_cli_missing_input_file_is_actionable(write_analysis, tmp_path):
     result = subprocess.run(
         [sys.executable, write_analysis.__file__,

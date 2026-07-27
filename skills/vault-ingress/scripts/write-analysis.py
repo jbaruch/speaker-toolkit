@@ -344,7 +344,12 @@ def main():
         sys.exit(1)
 
     written = []
-    for ret in returns:
+    for i, ret in enumerate(returns):
+        if not isinstance(ret, dict):
+            print(f"ERROR: batch-returns entry {i} is a {type(ret).__name__}, not a "
+                  f"subagent return object; check that {batch_path} is an array of "
+                  f"returns and not an array of filenames or paths", file=sys.stderr)
+            sys.exit(1)
         name = ret.get("filename")
         if not name:
             print("ERROR: a return has no `filename` field; cannot place its "
