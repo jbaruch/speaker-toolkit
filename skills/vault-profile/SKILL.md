@@ -50,7 +50,8 @@ python3 skills/vault-profile/scripts/load-vault.py > /tmp/vault-payload.json
 
 **I/O contract:**
 - Args: optional vault-root path; defaults to `~/.claude/rhetoric-knowledge-vault`.
-- Stdout (JSON): `{vault_root, config, confirmed_intents, talks, processed_talks, summary, design_spec}`.
+- Stdout (JSON): `{vault_root, config, confirmed_intents, talks, processed_talks, baseline_talks, stale_instrumentation_talks, baseline_note, summary, design_spec}`.
+- `baseline_talks` and `stale_instrumentation_talks` partition `processed_talks` by which extractor generation scored them; `baseline_note` states the consequence. Partition criterion: see `skills/vault-profile/scripts/load-vault.py` — `partition_by_instrumentation` and the `INSTRUMENTATION_EPOCH` constant above it.
 - Exit non-zero with stderr message if `tracking-database.json` or `rhetoric-style-summary.md` are missing or malformed.
 
 If the script aborts on missing `rhetoric-style-summary.md`, run vault-ingress first. If `slide-design-spec.md` is missing, `design_spec` is `""` and the design-spec section of the profile remains empty — continue without aborting.
@@ -120,14 +121,10 @@ the pattern's taxonomy Vault Dims fit the speaker's `presentation_modes`. This i
 positive-space coaching signal, framed as growth, not deficiency.
 
 **Every `pattern_score` baseline comes from `baseline_talks`, never from
-`processed_talks`.** `load-vault.py` partitions processed talks by which
-extractor generation scored them and states the reason in `baseline_note`. Talks
-in `stale_instrumentation_talks` were scored blind to text baked into images and
-to payload held in OOXML tables, so their scores measure scan depth rather than
-delivery; a mean over both cohorts tracks reparse progress rather than the
-speaker. This binds `average_pattern_score`, `by_mode`, `score_trend`,
+`processed_talks`** — `average_pattern_score`, `by_mode`, `score_trend`,
 `pattern_breadth`, and every adherence comparison. Where `baseline_talks` is too
-small for a mode, emit `stable: false` — never top it up from the stale cohort.
+small for a mode, emit `stable: false`; never top it up from
+`stale_instrumentation_talks`.
 
 Compute `pattern_profile.by_mode` — the per-mode baseline. The tracking DB has no
 per-talk mode field. Assign each `baseline_talk` to the `presentation_modes` entry
