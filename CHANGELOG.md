@@ -1,5 +1,39 @@
 # Changelog
 
+### feat(vault-profile) — partition talks by extractor generation before computing baselines
+
+`load-vault.py` fed every `processed` talk into the profile's `pattern_score`
+baselines regardless of which extractor scored it. Talks scored before the
+2026-07-26 reparse were measured by an extractor blind to text baked into images
+and to payload held in OOXML tables, so their scores record scan depth rather
+than delivery — the same talk moved 13 to 39 on re-scan with no change in the
+recording.
+
+The payload now carries `baseline_talks` and `stale_instrumentation_talks` plus a
+`baseline_note` stating why, and the skill binds `average_pattern_score`,
+`by_mode`, `score_trend`, `pattern_breadth` and every adherence comparison to the
+former. A mode with too few current-instrumentation talks emits `stable: false`
+rather than being topped up from the stale cohort.
+
+Partitioning in the script rather than in skill prose is the point: the filter is
+deterministic, and prose asking an agent to remember which cohort a number came
+from is exactly what does not survive a long run.
+
+An undated talk counts as stale — excluding one only narrows the sample, while
+including it silently contaminates the baseline.
+
+The instrumentation gap is not the only reason the cohorts are incomparable, and
+the epoch happens to separate both. Pre-reparse observations put patterns and
+antipatterns in ONE undifferentiated list, so a stored per-mode average such as
+mode (i)'s 19.35 counts antipatterns alongside patterns. A reparsed score is
+`count(patterns) - count(antipatterns)`. Comparing the two compares different
+quantities and reads as "on baseline" where the talk may be well above it.
+
+At the time of writing the split is 95/0, because the stale-scored talks all sit
+at `needs-reprocessing` and were never eligible for the baseline. The guard costs
+nothing and catches the case it exists for: generating a profile from a vault
+that is partway through a reparse.
+
 ## 0.18.68 — 2026-07-27
 
 ### fix(presentation-creator) — antipattern scoring polarity was inverted in 26 of 28 files
