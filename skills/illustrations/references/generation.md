@@ -144,7 +144,7 @@ Run this as the FINAL write of the build, AFTER speaker notes are injected:
 ```bash
 # operate on a uniquely-named copy — PowerPoint keys open decks by filename
 cp deck-with-titles.pptx deck-bg-src.pptx
-skills/presentation-creator/scripts/apply-backgrounds.sh \
+bash skills/presentation-creator/scripts/apply-backgrounds.sh \
   deck-bg-src.pptx deck-final.pptx deck-with-titles.backgrounds.json
 ```
 

@@ -87,7 +87,7 @@ Default status is always `"pending"` for new entries.
 **Scan for .pptx files:** Recursively glob `**/*.pptx` in `pptx_source_dir`; fuzzy-match
 to `talks[]` entries. Report counts. See [references/schemas-db.md](references/schemas-db.md)
 for the PPTX extraction output schema (per-slide visual data, shape types, global design stats).
-Run `scripts/pptx-extraction.py` for extraction.
+Run `python3 skills/vault-ingress/scripts/pptx-extraction.py` for extraction.
 
 **Pattern taxonomy migration:** See [references/processing-rules.md](references/processing-rules.md) for migration
 logic. In brief: talks with `status` `"processed"` or `"processed_partial"` that
@@ -124,7 +124,7 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
 
 - **Update tracking DB — deterministic merge, NOT hand-mapping.** Collect the
   batch's subagent JSON returns into an array file (`batch-returns.json`) and run
-  `python3 scripts/persist-results.py {vault_root}/tracking-database.json batch-returns.json`.
+  `python3 skills/vault-ingress/scripts/persist-results.py {vault_root}/tracking-database.json batch-returns.json`.
   The script merges each return into its matching talk entry, promotes the declared
   queryable scalars to the talk top level, and rewrites the DB in place; it prints a
   JSON merge summary to stdout and exits non-zero if a return's `filename` matches no
@@ -135,7 +135,7 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   a new field queryable, extend the return schema and that list; never reintroduce
   manual mapping.
 - **Write per-talk analysis files — run the script, do NOT hand-write them.** Run
-  `python3 scripts/write-analysis.py batch-returns.json {vault_root}/analyses --talks {vault_root}/tracking-database.json`
+  `python3 skills/vault-ingress/scripts/write-analysis.py batch-returns.json {vault_root}/analyses --talks {vault_root}/tracking-database.json`
   over the SAME `batch-returns.json` the merge consumed, so the DB and the files
   cannot diverge. It renders `{vault_root}/analyses/{talk_filename}.md` per return —
   14 dimensions, structured data, verbatim examples, "Presentation Patterns Scoring",
@@ -178,7 +178,7 @@ Runs once after all Step 3 batches have completed.
 Process PPTX files not yet extracted during Step 3: unmatched catalog entries, talks
 that used PDF as primary but have a PPTX available, or entries with
 `pptx_visual_status: "pending"`. Skip if already `"extracted"`.
-Run `scripts/pptx-extraction.py <path.pptx>` for each file.
+Run `python3 skills/vault-ingress/scripts/pptx-extraction.py <path.pptx>` for each file.
 
 **PPTX matching rules:** The .pptx files are in `Conference/Year/TalkName.pptx` and
 shownotes entries have `conference` and `title` fields. Fuzzy-match by: normalize

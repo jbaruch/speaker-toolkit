@@ -117,7 +117,7 @@ python3 skills/illustrations/scripts/build-expansion-manifest.py \
     --notes notes.json --out builds-manifest.json
 
 # 2. Expand: replace each parent slide with its frames as full-bleed bg-fill slides
-skills/presentation-creator/scripts/expand-builds.sh \
+bash skills/presentation-creator/scripts/expand-builds.sh \
     <deck-copy.pptx> <deck-expanded.pptx> builds-manifest.json
 ```
 

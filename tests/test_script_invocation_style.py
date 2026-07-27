@@ -52,6 +52,11 @@ ASSIGNMENT_BEFORE = re.compile(r"=[\"']?$")
 # `if "$HERE/x.sh"; then` executes the script exactly like a bare call.
 CONTROL_PREFIX = re.compile(r"^\s*(?:if|elif|while|until|then|else|do|!|time)\s+")
 
+# An environment-assignment PREFIX: `FOO=1 scripts/x.sh` runs the script. The
+# trailing `\s+` is what separates this from an assignment OF a path
+# (`DRIVER=skills/x/scripts/y.sh`), which stores it and never runs it.
+ENV_ASSIGNMENT_PREFIX = re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+")
+
 # Commands that name a path without executing it. `[` / `[[` sit outside the \b
 # group: no word boundary exists between a bracket and the space after it.
 NON_EXECUTING = re.compile(
@@ -61,6 +66,93 @@ NON_EXECUTING = re.compile(
 
 # Shell separators. Only the segment holding the reference decides its fate.
 SEGMENT_SEPARATOR = re.compile(r"&&|\|\||;|\|")
+
+# A bare repo-relative path: `scripts/foo.py`, `skills/x/scripts/y.sh`. No
+# leading `./`, no `$VAR`. This form is genuinely ambiguous in a way the other
+# two are not — it is a valid FILE NAME as well as a valid COMMAND, and
+# `rules/script-as-black-box.md` actively requires skills to name script paths
+# as pointers ("see skills/release/resolve-publish-run.sh"). So a bare path
+# cannot be flagged on sight; the classification below is by markdown STRUCTURE,
+# not by parsing the surrounding prose.
+BARE_PATH_REFERENCE = re.compile(
+    r"(?:^|[^A-Za-z0-9_/.$-])((?:scripts|skills)/[A-Za-z0-9_./-]*\.(?:sh|py))\b"
+)
+
+FENCE = re.compile(r"^\s*```")
+
+# A markdown table row. Key Files tables name scripts in code spans and are
+# pointers by construction, never commands.
+TABLE_ROW = re.compile(r"^\s*\|")
+
+# An inline code span.
+CODE_SPAN = re.compile(r"`([^`]+)`")
+
+# Prose verbs that make the code span after them a command rather than a name.
+# Deliberately tight and enumerable (`rules/script-delegation.md` The Regex
+# Trap): every entry means "execute this", and pointer verbs that also precede
+# script paths in these docs — see, in, from, live(s) in, defined in, owned by,
+# with, via — are deliberately excluded, because flagging those would fight
+# `script-as-black-box`.
+#
+# Known limit, stated rather than papered over: a novel execution verb slips
+# through this list. The fenced-block rule below has no such gap, and a fenced
+# block is the surface a consumer actually copies from — this inline rule is a
+# second net over prose, not the primary guard.
+RUN_VERB_BEFORE = re.compile(
+    r"(?:^|[^A-Za-z0-9_-])(?:run|runs|running|invoke|invokes|invoking|"
+    r"execute|executes|executing|through)\s+$",
+    re.IGNORECASE,
+)
+
+
+def _bare_is_at_command_position(segment: str, match: re.Match) -> bool:
+    """True when a bare path opens its segment, i.e. it IS the command word.
+
+    A bare path appearing as an ARGUMENT (`cat skills/x/scripts/y.py`,
+    `--manifest scripts/z.json`) is data, not an invocation, so only a
+    segment-initial reference counts.
+
+    Environment-assignment PREFIXES are peeled, because `FOO=1 scripts/x.sh`
+    still executes the script and still needs the exec bit — the same call the
+    `$VAR` detector already treats as unsafe. An assignment OF the path
+    (`DRIVER=skills/x/scripts/y.sh`) stores it instead, and survives the peel
+    because no whitespace separates the `=` from the value.
+    """
+    before = segment[:match.start(1)]
+    while True:
+        peeled = ENV_ASSIGNMENT_PREFIX.sub("", CONTROL_PREFIX.sub("", before, count=1), count=1)
+        if peeled == before:
+            break
+        before = peeled
+    return not before.strip()
+
+
+def _unsafe_bare_references(line: str, in_fence: bool) -> list[str]:
+    """Bare-path invocations on this line, classified by markdown structure."""
+    if line.lstrip().startswith("#") and not in_fence:
+        return []
+    if TABLE_ROW.match(line):
+        return []
+
+    unsafe = []
+    if in_fence:
+        # Inside a fence the reader copies the line verbatim. A bare path at
+        # command position with no interpreter needs the stripped exec bit.
+        for segment in SEGMENT_SEPARATOR.split(line):
+            for match in BARE_PATH_REFERENCE.finditer(segment):
+                if _bare_is_at_command_position(segment, match):
+                    unsafe.append(match.group(1))
+        return unsafe
+
+    # In prose, only a span introduced by an execution verb is a command.
+    for span in CODE_SPAN.finditer(line):
+        if not RUN_VERB_BEFORE.search(line[:span.start()]):
+            continue
+        content = span.group(1)
+        match = BARE_PATH_REFERENCE.search(" " + content)
+        if match and _bare_is_at_command_position(" " + content, match):
+            unsafe.append(match.group(1))
+    return unsafe
 
 
 def _reference_is_safe(segment: str, match: re.Match) -> bool:
@@ -120,6 +212,34 @@ def _scan(skill_files: list[Path], reference: re.Pattern) -> list[str]:
     return offenders
 
 
+def _scan_bare(skill_files: list[Path]) -> list[str]:
+    """Scan for bare-path invocations, tracking fenced-block state per file.
+
+    Fence state is why this cannot reuse `_scan`: the same line means different
+    things inside and outside a code fence, so classification is not a pure
+    function of the line.
+
+    Shell scripts are shell top to bottom, so every line counts as fenced. A
+    `.py` file is NOT — a bare path at the start of one of its lines is a
+    docstring continuation, never a command, and two such wrapped references
+    false-positived when `.py` was treated as shell. Python invokes a script
+    through `subprocess`, where the path sits inside brackets and quotes and so
+    is never at command position anyway.
+    """
+    offenders = []
+    for path in skill_files:
+        is_markdown = path.suffix == ".md"
+        in_fence = path.suffix == ".sh"
+        for lineno, line in _lines(path):
+            if is_markdown and FENCE.match(line):
+                in_fence = not in_fence
+                continue
+            if _unsafe_bare_references(line, in_fence):
+                rel = path.relative_to(REPO_ROOT)
+                offenders.append(f"{rel}:{lineno}: {line.strip()}")
+    return offenders
+
+
 @pytest.fixture(scope="module")
 def skill_files() -> list[Path]:
     """Every skill doc and skill script — the surfaces a consumer executes."""
@@ -162,6 +282,82 @@ def test_no_exec_bit_dependent_sibling_invocations(skill_files: list[Path]) -> N
         "install strips the executable bit; use `source \"$HERE/x.sh\"` or "
         "`bash \"$HERE/x.sh\"`.\n" + "\n".join(offenders)
     )
+
+
+def test_no_exec_bit_dependent_bare_path_invocations(skill_files: list[Path]) -> None:
+    """A bare `scripts/foo.py` command needs the exec bit just like `./foo.py`.
+
+    This is the gap that let the #137 defect reach CI green (issue #138): the
+    other two detectors match `./foo.py` and `$VAR/foo.py`, and a bare
+    repo-relative path is neither.
+    """
+    offenders = _scan_bare(skill_files)
+    assert not offenders, (
+        "Scripts invoked through a bare repo-relative path with no interpreter. "
+        "tessl install strips the executable bit, so these work in this checkout "
+        "and fail for consumers. Prefix with `bash` / `python3`.\n"
+        + "\n".join(offenders)
+    )
+
+
+UNSAFE_BARE_FENCED = [
+    'skills/presentation-creator/scripts/apply-backgrounds.sh \\',
+    'scripts/load-vault.py > /tmp/out.json',
+    'if scripts/poll.sh; then',
+    # Environment-assignment PREFIX: the script still executes. Matches how the
+    # `$VAR` detector already classifies `FOO=1 "$HERE/ensure-drivers.sh"`.
+    'FOO=1 scripts/poll.sh',
+    'A=1 B=2 skills/x/scripts/y.sh',
+    'DEBUG=1 skills/presentation-creator/scripts/apply-backgrounds.sh a b',
+]
+
+SAFE_BARE_FENCED = [
+    'python3 skills/vault-profile/scripts/load-vault.py > /tmp/out.json',
+    'bash skills/presentation-creator/scripts/apply-backgrounds.sh a b c',
+    'cp skills/x/scripts/RunDeckOps.bas "$DEST"',
+    'cat skills/x/scripts/y.py',
+    # Assignment OF the path stores it; no whitespace after the `=`.
+    'DRIVER=skills/x/scripts/y.sh',
+    'FOO=1 bash scripts/poll.sh',
+    'cp deck-with-titles.pptx deck-bg-src.pptx',
+]
+
+UNSAFE_BARE_PROSE = [
+    'Run `scripts/load-vault.py` to read the vault sources.',
+    'Compute it by running `scripts/compute-pacing-adherence.py`. The',
+    'Pipe the profile dict through `scripts/validate-profile.py` to verify keys.',
+]
+
+# Pointers, not commands. `rules/script-as-black-box.md` REQUIRES these — a
+# detector that flagged them would push authors to stop citing scripts at all.
+SAFE_BARE_PROSE = [
+    'Partition criterion: see `skills/vault-profile/scripts/load-vault.py` — the constant.',
+    'The validator (`scripts/validate-profile.py`, schema_version 2) checks keys.',
+    'Per-model attributes live in `skills/illustrations/scripts/model_registry.py`.',
+    '| `scripts/load-vault.py` | Read vault sources, emit JSON to stdout |',
+    '| `skills/illustrations/scripts/model_registry.py` | Model roster |',
+    'Run `python3 scripts/load-vault.py` to read the vault sources.',
+]
+
+
+@pytest.mark.parametrize("line", UNSAFE_BARE_FENCED)
+def test_bare_detector_flags_fenced_invocations(line: str) -> None:
+    assert _unsafe_bare_references(line, in_fence=True), f"should have been flagged: {line}"
+
+
+@pytest.mark.parametrize("line", SAFE_BARE_FENCED)
+def test_bare_detector_accepts_fenced_non_invocations(line: str) -> None:
+    assert not _unsafe_bare_references(line, in_fence=True), f"should have been accepted: {line}"
+
+
+@pytest.mark.parametrize("line", UNSAFE_BARE_PROSE)
+def test_bare_detector_flags_prose_invocations(line: str) -> None:
+    assert _unsafe_bare_references(line, in_fence=False), f"should have been flagged: {line}"
+
+
+@pytest.mark.parametrize("line", SAFE_BARE_PROSE)
+def test_bare_detector_accepts_prose_pointers(line: str) -> None:
+    assert not _unsafe_bare_references(line, in_fence=False), f"should have been accepted: {line}"
 
 
 UNSAFE_LINES = [
