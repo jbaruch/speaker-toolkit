@@ -119,8 +119,18 @@ patterns in the `never_tried` and `rare` tiers of `mastery_levels`, kept only wh
 the pattern's taxonomy Vault Dims fit the speaker's `presentation_modes`. This is the
 positive-space coaching signal, framed as growth, not deficiency.
 
+**Every `pattern_score` baseline comes from `baseline_talks`, never from
+`processed_talks`.** `load-vault.py` partitions processed talks by which
+extractor generation scored them and states the reason in `baseline_note`. Talks
+in `stale_instrumentation_talks` were scored blind to text baked into images and
+to payload held in OOXML tables, so their scores measure scan depth rather than
+delivery; a mean over both cohorts tracks reparse progress rather than the
+speaker. This binds `average_pattern_score`, `by_mode`, `score_trend`,
+`pattern_breadth`, and every adherence comparison. Where `baseline_talks` is too
+small for a mode, emit `stable: false` — never top it up from the stale cohort.
+
 Compute `pattern_profile.by_mode` — the per-mode baseline. The tracking DB has no
-per-talk mode field. Assign each `processed_talk` to the `presentation_modes` entry
+per-talk mode field. Assign each `baseline_talk` to the `presentation_modes` entry
 whose `when_to_use` best matches the talk's `structured_data` — `slide_count` and
 `meme_count` density, `audience_interaction_count`, `opening_type`,
 `narrative_arc_type`, and `slide_design_style`. This assignment is a classification

@@ -37,8 +37,13 @@ def _ids(files):
     return [os.path.basename(f)[:-3] for f in files]
 
 
+def _read(path):
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
 def _front(path, key):
-    m = re.search(rf"^{key}:\s*(\S+)\s*$", open(path, encoding="utf-8").read(), re.M)
+    m = re.search(rf"^{key}:\s*(\S+)\s*$", _read(path), re.M)
     return m.group(1) if m else None
 
 
@@ -56,7 +61,7 @@ def test_antipattern_scoring_polarity_is_direct(path):
     ambiguous — a scorer cannot tell "strongly present" from "strongly clean"
     without opening the individual file.
     """
-    strong = STRONG_RE.search(open(path, encoding="utf-8").read())
+    strong = STRONG_RE.search(_read(path))
     assert strong, f"{os.path.basename(path)}: no 'Strong signal (2 pts...)' bullet"
     assert "antipattern present" in strong.group(1), (
         f"{os.path.basename(path)} scores on the inverted scale: "
@@ -65,7 +70,7 @@ def test_antipattern_scoring_polarity_is_direct(path):
 
 @pytest.mark.parametrize("path", ANTI_FILES, ids=_ids(ANTI_FILES))
 def test_antipattern_absent_bullet_is_labelled(path):
-    absent = ABSENT_RE.search(open(path, encoding="utf-8").read())
+    absent = ABSENT_RE.search(_read(path))
     assert absent, f"{os.path.basename(path)}: no 'Absent (0 pts...)' bullet"
     assert "not present" in absent.group(1), (
         f"{os.path.basename(path)}: 'Absent (0 pts)' must read "
@@ -75,7 +80,7 @@ def test_antipattern_absent_bullet_is_labelled(path):
 @pytest.mark.parametrize("path", ENTRY_FILES, ids=_ids(ENTRY_FILES))
 def test_scoring_block_is_complete(path):
     """A partial scale is worse than none — a scorer fills the gap by guessing."""
-    text = open(path, encoding="utf-8").read()
+    text = _read(path)
     assert "## Scoring Criteria" in text, f"{os.path.basename(path)}: no scoring block"
     assert STRONG_RE.search(text), f"{os.path.basename(path)}: missing Strong bullet"
     assert MODERATE_RE.search(text), f"{os.path.basename(path)}: missing Moderate bullet"
@@ -116,7 +121,7 @@ def test_unobservable_files_match_the_index():
     """
     flagged = {str(_front(f, "id")) for f in ENTRY_FILES
                if _front(f, "observable") == "false"}
-    index = open(INDEX, encoding="utf-8").read()
+    index = _read(INDEX)
     section = index[index.index("## Unobservable Patterns"):]
     listed = set(re.findall(r"^\| ([a-z0-9-]+) \|", section, re.M))
     assert flagged == listed, (
@@ -127,7 +132,7 @@ def test_unobservable_files_match_the_index():
 def test_index_summary_statistics_are_accurate():
     """The counts are quoted into briefs and skill prose; a stale total sends
     scorers looking for entries that do not exist."""
-    index = open(INDEX, encoding="utf-8").read()
+    index = _read(INDEX)
     total = len(ENTRY_FILES)
     anti = len(ANTI_FILES)
     unobs = sum(1 for f in ENTRY_FILES if _front(f, "observable") == "false")

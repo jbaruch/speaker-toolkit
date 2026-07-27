@@ -68,3 +68,34 @@ def test_profile_with_outdated_schema_version_is_invalid(validate_profile, tmp_p
     assert rc == 1
     assert out["valid"] is False
     assert out["schema_version"] == 1
+
+
+# --- load-vault instrumentation partitioning -------------------------------
+
+def _talks(*dates):
+    return [{"filename": f"t{i}.md", "status": "processed", "processed_date": d}
+            for i, d in enumerate(dates)]
+
+
+def test_partition_splits_on_the_epoch(load_vault):
+    current, stale = load_vault.partition_by_instrumentation(
+        _talks("2026-07-27", "2026-07-26", "2026-07-25", "2026-05-01"))
+    assert [t["processed_date"] for t in current] == ["2026-07-27", "2026-07-26"]
+    assert [t["processed_date"] for t in stale] == ["2026-07-25", "2026-05-01"]
+
+
+def test_undated_talks_are_treated_as_stale(load_vault):
+    """Excluding an undated talk only narrows the sample; including it would
+    silently contaminate the baseline."""
+    talks = _talks("2026-07-27")
+    talks.append({"filename": "x.md", "status": "processed"})
+    talks.append({"filename": "y.md", "status": "processed", "processed_date": None})
+    current, stale = load_vault.partition_by_instrumentation(talks)
+    assert len(current) == 1
+    assert {t["filename"] for t in stale} == {"x.md", "y.md"}
+
+
+def test_epoch_is_injectable_for_callers(load_vault):
+    current, stale = load_vault.partition_by_instrumentation(
+        _talks("2020-01-01"), epoch="2019-01-01")
+    assert len(current) == 1 and not stale
