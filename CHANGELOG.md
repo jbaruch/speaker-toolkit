@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.65 — 2026-07-27
+
 ### feat(vault-ingress) — `write-analysis.py` renders the per-talk analysis files
 
 Step 4 has two halves: merge the batch returns into the tracking DB, and write
