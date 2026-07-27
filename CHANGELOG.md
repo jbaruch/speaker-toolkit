@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.68 — 2026-07-27
+
 ### fix(presentation-creator) — antipattern scoring polarity was inverted in 26 of 28 files
 
 `Strong signal (2 pts)` described the antipattern being ABSENT in 26 antipattern
