@@ -215,6 +215,71 @@ def test_cli_non_array_batch_is_actionable(write_analysis, tmp_path):
     assert "must be a JSON array" in result.stderr
 
 
+def test_output_name_is_confined_to_the_output_dir(write_analysis):
+    """`filename` comes from a model-generated return, so it is untrusted for
+    path purposes — tracking-database.json sits one level above analyses/."""
+    assert write_analysis.safe_output_name("../tracking-database.json") == \
+        "tracking-database.json.md"
+    assert write_analysis.safe_output_name("/etc/passwd") == "passwd.md"
+    assert write_analysis.safe_output_name("a/b/talk.md") == "talk.md"
+    assert write_analysis.safe_output_name("talk.md") == "talk.md"
+
+
+def test_cli_does_not_write_outside_the_output_dir(write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    victim = tmp_path / "tracking-database.json"
+    victim.write_text('{"talks": []}')
+    batch.write_text(json.dumps([_return(filename="../tracking-database.json")]))
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert victim.read_text() == '{"talks": []}', "the sibling file was overwritten"
+    assert (out / "tracking-database.json.md").exists()
+
+
+def test_cli_rejects_filename_that_names_no_file(write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([_return(filename="../")]))
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(tmp_path / "a")],
+        capture_output=True, text=True,
+    )
+    assert result.returncode != 0
+    assert "does not name a file" in result.stderr
+
+
+def test_cli_rejects_malformed_tracking_db(write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    db = tmp_path / "not-a-db.json"
+    batch.write_text(json.dumps([_return()]))
+    db.write_text(json.dumps(["not", "a", "db"]))
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(tmp_path / "a"),
+         "--talks", str(db)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode != 0
+    assert "talks" in result.stderr
+
+
+def test_cli_unwritable_output_dir_is_actionable(write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([_return()]))
+    # A regular file where the output directory should be: makedirs raises OSError.
+    blocker = tmp_path / "blocked"
+    blocker.write_text("i am a file, not a directory")
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(blocker)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode != 0
+    assert "cannot create output directory" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_cli_missing_input_file_is_actionable(write_analysis, tmp_path):
     result = subprocess.run(
         [sys.executable, write_analysis.__file__,

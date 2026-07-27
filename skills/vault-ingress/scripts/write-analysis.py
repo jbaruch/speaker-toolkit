@@ -250,6 +250,24 @@ def render_analysis(ret, title=None, run_date=None):
     return "\n".join(out).rstrip() + "\n"
 
 
+def safe_output_name(filename):
+    """Map a return's `filename` to a basename inside the output directory.
+
+    `filename` arrives from a subagent return, which is model-generated text, so
+    it is untrusted for path purposes. An absolute path or a `../` segment would
+    otherwise let `os.path.join` escape the analyses directory and overwrite
+    something else — `tracking-database.json` sits one level up. Only the
+    basename is kept, and a name that is nothing but separators or dots is
+    rejected rather than silently coerced into a plausible file.
+    """
+    base = os.path.basename(filename.replace("\\", "/").rstrip("/"))
+    if base in ("", ".", ".."):
+        print(f"ERROR: return `filename` {filename!r} does not name a file; "
+              f"cannot place its analysis file", file=sys.stderr)
+        sys.exit(1)
+    return base if base.endswith(".md") else base + ".md"
+
+
 def load_json(path, label):
     """Read and parse a JSON file, failing visibly with operator guidance."""
     try:
@@ -310,9 +328,21 @@ def main():
     titles = {}
     if talks_path:
         db = load_json(talks_path, "tracking database")
-        titles = {t.get("filename"): t.get("title") for t in db.get("talks", [])}
+        if not isinstance(db, dict) or not isinstance(db.get("talks"), list):
+            print(f"ERROR: {talks_path} is not a tracking database — expected a JSON "
+                  f"object with a `talks` array; pass the vault's "
+                  f"tracking-database.json or drop --talks", file=sys.stderr)
+            sys.exit(1)
+        titles = {t.get("filename"): t.get("title")
+                  for t in db["talks"] if isinstance(t, dict)}
 
-    os.makedirs(out_dir, exist_ok=True)
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+    except OSError as e:
+        print(f"ERROR: cannot create output directory {out_dir}: {e} — check the "
+              f"path exists as a directory and is writable", file=sys.stderr)
+        sys.exit(1)
+
     written = []
     for ret in returns:
         name = ret.get("filename")
@@ -320,10 +350,16 @@ def main():
             print("ERROR: a return has no `filename` field; cannot place its "
                   "analysis file", file=sys.stderr)
             sys.exit(1)
-        path = os.path.join(out_dir, name if name.endswith(".md") else name + ".md")
+        safe_name = safe_output_name(name)
+        path = os.path.join(out_dir, safe_name)
         body = render_analysis(ret, title=titles.get(name), run_date=run_date)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(body)
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(body)
+        except OSError as e:
+            print(f"ERROR: cannot write analysis file {path}: {e} — check the "
+                  f"output directory is writable and has free space", file=sys.stderr)
+            sys.exit(1)
         written.append({"filename": name, "path": path, "bytes": len(body.encode())})
 
     json.dump({"written": len(written), "dir": out_dir, "files": written},
