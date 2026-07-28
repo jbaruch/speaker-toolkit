@@ -22,6 +22,16 @@ formatting slip. `True` is not read as a score of 1.
 Each coercion is reported as `coerced_pattern_score` in the stdout summary rather
 than fixed silently, so the rate stays visible.
 
+A reviewer then caught a second bug that the first version of the bool test had
+HIDDEN. That test asserted `canonicalize_pattern_score` in isolation and passed,
+while `merge_talk` still persisted `pattern_score: True` — `isinstance(True, int)`
+holds in Python, so a bool sailed through `normalize_pattern_observations`'s
+numeric branch and reached the DB as a numeric score. Every non-dict, non-numeric
+shape now exits 1, and the test asserts the persisted OUTCOME across `True`,
+`False`, `"19"` and `["19"]`. All four fail without the fix — verified by
+reverting the guard alone, which is the only way to know a regression test
+regresses on anything.
+
 The schema invites the error twice over — the field is NAMED for a number but
 holds a dict, and `antipatterns_detected` means an array of objects one level up
 and an integer count inside `pattern_score`. Restating the requirement in the

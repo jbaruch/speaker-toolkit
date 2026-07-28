@@ -177,8 +177,17 @@ def canonicalize_pattern_score(incoming):
     if not isinstance(incoming, dict):
         return False
     score = incoming.get("pattern_score")
-    if not isinstance(score, (int, float)) or isinstance(score, bool):
+    if score is None or isinstance(score, dict):
         return False
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        # `True` satisfies isinstance(x, int) in Python, so a bool would sail
+        # through the numeric branch below AND through
+        # normalize_pattern_observations, persisting as a numeric score. Reject
+        # every non-numeric shape here rather than letting one reach the DB.
+        raise ValueError(
+            f"pattern_score is {score!r} ({type(score).__name__}), which is "
+            "neither the declared dict nor a number. Emit "
+            '{"patterns_used": N, "antipatterns_detected": M, "score": N-M}.')
     used = len(incoming.get("patterns_detected") or [])
     against = len(incoming.get("antipatterns_detected") or [])
     if used - against != score:

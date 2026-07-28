@@ -394,9 +394,27 @@ def test_bare_int_contradicting_the_arrays_fails_loudly(persist_results, tmp_pat
     assert "42" in result.stderr
 
 
-def test_bare_float_and_bool_scores(persist_results):
-    """`True` is an int in Python — it must not be read as a score of 1."""
-    obs = {"patterns_detected": [{"pattern_id": "a"}], "antipatterns_detected": [],
-           "pattern_score": True}
-    assert persist_results.canonicalize_pattern_score(obs) is False
-    assert obs["pattern_score"] is True
+@pytest.mark.parametrize("bad", [True, False, "19", ["19"]])
+def test_non_numeric_pattern_score_never_reaches_the_db(persist_results, tmp_path, bad):
+    """Assert the persisted OUTCOME, not the helper.
+
+    An earlier version of this test called `canonicalize_pattern_score` directly
+    and passed while `merge_talk` still persisted `pattern_score: True` — because
+    `isinstance(True, int)` holds in Python, so a bool sailed through
+    `normalize_pattern_observations`'s numeric branch. Testing the helper in
+    isolation is exactly what hid the bug.
+    """
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    ret = _return()
+    ret["pattern_observations"]["pattern_score"] = bad
+    db.write_text(json.dumps({"talks": [_talk()]}))
+    batch.write_text(json.dumps([ret]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1, f"{bad!r} was accepted: {result.stdout}"
+    assert "pattern_score" in result.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    assert "pattern_score" not in stored, f"{bad!r} reached the DB as {stored.get('pattern_score')!r}"
