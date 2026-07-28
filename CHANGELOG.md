@@ -55,8 +55,13 @@ writer and readers cannot skew mid-run.
 
 Type-checking only the BARE `pattern_score` left the declared dict unexamined, so
 `{"score": True}` or `{"score": "19"}` still reached the DB — the same defect one
-level in. The inner value now gets the same check, with tests across `True`,
-`False`, `"19"` and `["19"]` at both levels.
+level in. The inner value now gets the same check.
+
+Both checks require an **integer**, not merely a number. The talk schema declares
+`pattern_score` an integer and it is count(patterns) minus count(antipatterns),
+so a float is never right however numeric it looks — `1.5` would have persisted
+into an integer field. Tested across `True`, `False`, `"19"`, `["19"]`, `1.5` and
+`1.0` at both levels.
 
 ### fix(vault-ingress) — reject raw VTT payloads, stop inventing a transcript source
 

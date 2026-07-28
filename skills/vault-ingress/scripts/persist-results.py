@@ -202,20 +202,23 @@ def canonicalize_pattern_score(incoming):
         inner = score.get("score")
         if inner is None:
             return False
-        if isinstance(inner, bool) or not isinstance(inner, (int, float)):
+        if isinstance(inner, bool) or not isinstance(inner, int):
             raise ValueError(
                 f"pattern_score.score is {inner!r} ({type(inner).__name__}), "
-                "which is not a number. Emit "
+                "but the talk schema declares pattern_score an integer — it is "
+                "count(patterns) minus count(antipatterns), so a float cannot be "
+                "right. Emit "
                 '{"patterns_used": N, "antipatterns_detected": M, "score": N-M}.')
         return False
-    if isinstance(score, bool) or not isinstance(score, (int, float)):
-        # `True` satisfies isinstance(x, int) in Python, so a bool would sail
-        # through the numeric branch below AND through
-        # normalize_pattern_observations, persisting as a numeric score. Reject
-        # every non-numeric shape here rather than letting one reach the DB.
+    if isinstance(score, bool) or not isinstance(score, int):
+        # Two traps in one check. `True` satisfies isinstance(x, int), so a bool
+        # would sail through here AND through normalize_pattern_observations,
+        # persisting as a numeric score. And the talk schema declares
+        # pattern_score an INTEGER — it is count minus count — so a float is
+        # never right, however numeric it looks.
         raise ValueError(
             f"pattern_score is {score!r} ({type(score).__name__}), which is "
-            "neither the declared dict nor a number. Emit "
+            "neither the declared dict nor an integer. Emit "
             '{"patterns_used": N, "antipatterns_detected": M, "score": N-M}.')
     used = len(incoming.get("patterns_detected") or [])
     against = len(incoming.get("antipatterns_detected") or [])

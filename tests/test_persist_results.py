@@ -394,7 +394,7 @@ def test_bare_int_contradicting_the_arrays_fails_loudly(persist_results, tmp_pat
     assert "42" in result.stderr
 
 
-@pytest.mark.parametrize("bad", [True, False, "19", ["19"]])
+@pytest.mark.parametrize("bad", [True, False, "19", ["19"], 1.5, 1.0])
 def test_non_numeric_pattern_score_never_reaches_the_db(persist_results, tmp_path, bad):
     """Assert the persisted OUTCOME, not the helper.
 
@@ -420,7 +420,7 @@ def test_non_numeric_pattern_score_never_reaches_the_db(persist_results, tmp_pat
     assert "pattern_score" not in stored, f"{bad!r} reached the DB as {stored.get('pattern_score')!r}"
 
 
-@pytest.mark.parametrize("inner", [True, False, "19", ["19"]])
+@pytest.mark.parametrize("inner", [True, False, "19", ["19"], 1.5, 1.0])
 def test_invalid_score_inside_the_declared_dict_is_rejected(
         persist_results, tmp_path, inner):
     """The dict is the declared shape, but its `score` is what PROMOTE writes.
