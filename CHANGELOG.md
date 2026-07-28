@@ -1,5 +1,136 @@
 # Changelog
 
+### fix(vault-ingress) — a bare-int `pattern_score` no longer silently drops the scalar
+
+Subagents write `"pattern_score": 19` instead of the declared
+`{"patterns_used": 22, "antipatterns_detected": 3, "score": 19}` on roughly a
+third of returns — 5 of 16 across two batches, from independent agents that never
+see each other's work.
+
+It looked cosmetic and is not. `normalize_pattern_observations` already accepted
+the int, so the nested value landed and the return looked fine. But PROMOTE
+resolves `pattern_observations.pattern_score.score`, `dig` returns None on an
+int, and the queryable top-level `pattern_score` **was silently dropped** — the
+exact missing-scalar defect this script was written to fix (1 of 200 talks had
+`slide_count` before it), reintroduced through the input shape.
+
+`canonicalize_pattern_score` now rebuilds the dict before promotion, and
+**recomputes rather than trusting**: a supplied int that disagrees with the
+arrays exits 1 naming both numbers, because that is a real inconsistency, not a
+formatting slip. `True` is not read as a score of 1.
+
+Each coercion is reported as `coerced_pattern_score` in the stdout summary rather
+than fixed silently, so the rate stays visible.
+
+A reviewer then caught a second bug that the first version of the bool test had
+HIDDEN. That test asserted `canonicalize_pattern_score` in isolation and passed,
+while `merge_talk` still persisted `pattern_score: True` — `isinstance(True, int)`
+holds in Python, so a bool sailed through `normalize_pattern_observations`'s
+numeric branch and reached the DB as a numeric score. Every non-dict, non-numeric
+shape now exits 1, and the test asserts the persisted OUTCOME across `True`,
+`False`, `"19"` and `["19"]`. All four fail without the fix — verified by
+reverting the guard alone, which is the only way to know a regression test
+regresses on anything.
+
+The schema invites the error twice over — the field is NAMED for a number but
+holds a dict, and `antipatterns_detected` means an array of objects one level up
+and an integer count inside `pattern_score`. Restating the requirement in the
+brief did not move the rate across four batches, so the tooling absorbs the
+variant instead. `merge_talk` now returns a third element; its four existing test
+call sites are updated.
+
+### fix(vault-ingress) — one validator for the merge, not several disagreeing ones
+
+Six review rounds each found a different hole in `pattern_score` validation, and
+patching them one at a time was treating symptoms. The cause was structural: TWO
+functions independently decided what a valid score was — `canonicalize_pattern_score`
+checking the incoming shape, `normalize_pattern_observations` re-deciding with its
+own `isinstance(score, (int, float))`, and PROMOTE resolving the top-level scalar
+through a third path, a dotted lookup. Every round tightened one and left the
+others, so they disagreed in a new way each time.
+
+`resolve_pattern_score` now decides once. `normalize_pattern_observations` takes
+already-validated inputs and decides nothing. `pattern_score` leaves PROMOTE
+entirely and is set from the resolved value — the dotted path
+`pattern_observations.pattern_score.score` is what silently dropped the scalar
+whenever a subagent sent the bare int, because `dig` returns None on an int.
+
+Reading the file properly then turned up three more silent-drop defects that no
+review round had reached:
+
+- **A wrong-typed content block was skipped and the merge reported success.**
+  `structured_data`, `verbatim_examples` and `pattern_observations` were each
+  guarded by a bare `isinstance(..., dict)`; a `structured_data` arriving as a
+  list lost the entire analysis and still exited 0.
+- **A detection array of bare id strings killed the script mid-merge.**
+  `p.get("pattern_id")` raised `AttributeError` before any JSON was printed —
+  the exact die-without-saying-so shape this file exists to prevent.
+- **A detection array supplied as a plain string had its CHARACTERS counted as
+  detections**, feeding a silently wrong number into the score cross-check.
+
+All three now fail loudly, and validation runs before any write so a malformed
+return leaves the talk untouched rather than half-merged. An incomplete score
+object — present but missing `score` — is malformed too, not absent.
+
+`migrate_records` stamps every record rather than only the talks a batch touched;
+partial stamping would leave the artifact permanently mixed-version, so a reader
+could not distinguish an unversioned record from an untouched one. The count is
+reported as `migrated_records`.
+
+Each of the eight new tests was verified to FAIL with its guard reverted. A
+regression test nobody has watched fail guards nothing — which this PR already
+demonstrated the hard way, when a bool test asserting the helper in isolation
+passed while the DB was taking `pattern_score: True`.
+
+### fix(vault-ingress) — version the talk record, validate the score inside the dict
+
+`persist-results.py` now stamps `schema_version` on every talk record it merges.
+v1 is the implicit unversioned shape all pre-2026-07-28 records carry, in which
+`transcript_source` was documented as always present — though 95 of 209 records
+never had it. v2 documents the field as optional and gives ABSENT a meaning:
+provenance unknown, distinct from the explicit `none`.
+
+The bump is additive, which `stateful-artifacts` Cross-Pipeline Schema Bumps
+permits without a staged rollout — a v1 reader reads a v2 record unchanged,
+because v2 removes a guarantee rather than adding a field. Readers do not gate on
+the value yet; that contract is #147, sequenced after the in-flight reparse so
+writer and readers cannot skew mid-run.
+
+Type-checking only the BARE `pattern_score` left the declared dict unexamined, so
+`{"score": True}` or `{"score": "19"}` still reached the DB — the same defect one
+level in. The inner value now gets the same check.
+
+Both checks require an **integer**, not merely a number. The talk schema declares
+`pattern_score` an integer and it is count(patterns) minus count(antipatterns),
+so a float is never right however numeric it looks — `1.5` would have persisted
+into an integer field. Tested across `True`, `False`, `"19"`, `["19"]`, `1.5` and
+`1.0` at both levels.
+
+### fix(vault-ingress) — reject raw VTT payloads, stop inventing a transcript source
+
+Two defects in the transcript work shipped in 0.18.72, both found by running it
+against the real corpus.
+
+**A raw VTT dump passes every validator.** 26 of the vault's 206 transcripts held
+YouTube's karaoke caption payload rather than cleaned text — each line once with
+inline `<00:00:01.020><c>word</c>` timing tags, then again as plain text. Word
+counts read **3.6× high**, uniformly: a 37-minute meetup talk measured 18,543
+words, implying a two-hour session and a wildly wrong words-per-minute figure.
+
+The length floor cannot catch this, because a doubled transcript has MORE words,
+not fewer. `validate_transcript` now rejects the timing-tag signature and names
+`vtt-cleanup.py` — which already existed for exactly this and had simply never
+been run on those files. A test asserts the fixture clears the word floor before
+the VTT check fires, so the guard cannot pass for the wrong reason.
+
+**`method: "existing"` told agents to write `manual`.** The mapping said to fall
+back to `manual` when `transcript_source` was absent. `manual` means a human
+produced the transcript; a batch-24 agent dutifully wrote it onto a file that is
+unmistakably YouTube ASR, then flagged the result as a placeholder. An absent
+field now stays absent — the script learns nothing about provenance on that path,
+and a downstream reader weighing transcript reliability would trust `manual` more
+than the ASR it probably is.
+
 ## 0.18.72 — 2026-07-27
 
 ### feat(vault-ingress) — a real transcript fetcher that validates before it writes

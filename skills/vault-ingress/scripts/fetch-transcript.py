@@ -69,6 +69,12 @@ FAILURE_SIGNATURES = (
 )
 FAILURE_SCAN_CHARS = 400
 
+# Raw WebVTT karaoke markup. A raw dump has MORE words than the cleaned text
+# (every line is stored twice), so the length floor below cannot catch it —
+# 26 corpus transcripts sat in this shape reading 3.6x their true length.
+VTT_TIMING_TAG = re.compile(r"<\d\d:\d\d:\d\d\.\d\d\d>|</?c>")
+VTT_SCAN_CHARS = 4000
+
 # A caption track that is almost entirely these markers carries no speech.
 NON_SPEECH_MARKERS = ("[Music]", "[Applause]", "[Laughter]", "[музыка]")
 
@@ -107,6 +113,13 @@ def validate_transcript(text, *, min_words=DEFAULT_MIN_WORDS, duration_seconds=N
         return False, (
             f"transcript has {words} words, below the {min_words}-word floor — "
             "too short to be a talk; the fetch probably returned a stub")
+
+    if VTT_TIMING_TAG.search(text[:VTT_SCAN_CHARS]):
+        return False, (
+            "transcript is a raw VTT caption payload — it carries inline "
+            "<00:00:00.000><c> timing tags and stores every line twice, so word "
+            "counts read ~3.6x high; clean it with "
+            "skills/vault-ingress/scripts/vtt-cleanup.py before use")
 
     marker_chars = sum(text.count(m) * len(m) for m in NON_SPEECH_MARKERS)
     if marker_chars > len(text) * 0.5:

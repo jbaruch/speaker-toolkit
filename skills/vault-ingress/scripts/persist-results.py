@@ -38,8 +38,14 @@ Usage:
         {"persisted": <int>, "db_path": "<path>",
          "run_date": "<YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS+00:00>",
          "talks": [{"filename": "...", "status": "...", "promoted": ["..."],
-                    "stamped_processed_date": <bool>}]}
+                    "stamped_processed_date": <bool>,
+                    "coerced_pattern_score": <bool>}]}
     Diagnostics and errors go to stderr; exit code is non-zero on failure.
+
+    `coerced_pattern_score` is true when the return supplied `pattern_score` as a
+    bare int and it was rebuilt into the declared dict. The coercion is reported
+    rather than silent so the rate stays visible — a return shape that needs
+    fixing this often is a schema problem, not a one-off.
 
     Absent --run-date, the stamp is the current UTC time at second resolution.
     --run-date pins it instead of reading the clock; the whole batch shares one
@@ -89,6 +95,21 @@ def normalize_stamp(value):
             f"(e.g. {value}+00:00) so stamps from different machines order")
     return default_stamp(moment)
 
+# Tracking-DB talk-record schema version, stamped by this writer on every merge.
+#
+# v1 is the implicit, unversioned shape every pre-2026-07-28 record carries:
+# `transcript_source` was documented as always present, though 95 of 209 records
+# never had it.
+# v2 documents `transcript_source` as optional and gives ABSENT a meaning —
+# provenance unknown, distinct from the explicit value `none` (no transcript).
+#
+# The bump is ADDITIVE, which `rules/stateful-artifacts.md` Cross-Pipeline Schema
+# Bumps permits without a staged rollout: a v1 reader reads a v2 record
+# unchanged, because v2 removes a guarantee rather than adding a field. Readers
+# do not gate on this value yet — that contract is #147, deliberately sequenced
+# after the in-flight reparse so writer and readers do not skew mid-run.
+TALK_SCHEMA_VERSION = 2
+
 # Queryable scalars promoted from the subagent return onto the talk's top level.
 # (top_level_field, dotted source path within the return). To add a new queryable
 # scalar, add it here AND to the return schema — never reintroduce hand-mapping.
@@ -102,8 +123,11 @@ PROMOTE = [
     ("audience_interaction_count", "structured_data.audience_interaction_count"),
     ("co_presenter",               "structured_data.co_presenter"),
     ("delivery_language",          "structured_data.delivery_language"),
-    ("pattern_score",              "pattern_observations.pattern_score.score"),
 ]
+
+# NOT in PROMOTE: `pattern_score`. It is set explicitly in merge_talk from
+# resolve_pattern_score, because a dotted-path lookup silently yields nothing
+# when a subagent sends the bare int instead of the declared dict.
 
 # Scalar result fields copied verbatim when present in the return.
 SCALARS = [
@@ -144,37 +168,149 @@ def deep_merge(dst, src):
     return dst
 
 
-def normalize_pattern_observations(existing, incoming):
+def require_mapping(ret, field):
+    """Return `ret[field]` as a dict, or None when absent. Raise on any other type.
+
+    The three blocks carrying a return's actual content — `structured_data`,
+    `verbatim_examples`, `pattern_observations` — were each guarded by a bare
+    `isinstance(..., dict)` test that SKIPPED a malformed block and reported
+    success. A return whose `structured_data` arrived as a list lost the entire
+    analysis and still exited 0.
+
+    That is the silent-drop shape this script exists to eliminate, so a wrong
+    type is now loud. Absent stays legal: a return need not carry every block.
+    """
+    if field not in ret or ret[field] is None:
+        return None
+    value = ret[field]
+    if not isinstance(value, dict):
+        raise ValueError(
+            f"{field} is a {type(value).__name__}, but the return schema declares "
+            f"it a JSON object. Refusing to skip it silently — a dropped {field} "
+            "loses the whole block while the merge still reports success.")
+    return value
+
+
+def require_detections(observations, field):
+    """Return a detection array as a list of dicts, or None when absent.
+
+    Both consumers assume list-of-dicts: one calls `len()` on it to recompute the
+    score, the other calls `p.get("pattern_id")` on each element. A list of bare
+    id STRINGS — a plausible return shape — raises AttributeError mid-merge and
+    kills the script before it prints its JSON, and a plain string makes `len()`
+    count characters as detections.
+    """
+    if field not in observations or observations[field] is None:
+        return None
+    value = observations[field]
+    if not isinstance(value, list):
+        raise ValueError(
+            f"pattern_observations.{field} is a {type(value).__name__}, but the "
+            "return schema declares it an array of detection objects.")
+    bad = next((e for e in value if not isinstance(e, dict)), None)
+    if bad is not None:
+        raise ValueError(
+            f"pattern_observations.{field} contains {bad!r} "
+            f"({type(bad).__name__}); every element must be an object carrying a "
+            "`pattern_id`.")
+    return value
+
+
+def resolve_pattern_score(observations, patterns, antipatterns):
+    """Single source of truth for the talk's `pattern_score`.
+
+    Returns (score, coerced); `score` is None when the return carries none.
+
+    Every defect here came from TWO functions independently deciding what a valid
+    score was — one normalizing the nested DB value, the other resolving the
+    promoted top-level scalar through a dotted path. Each review round tightened
+    one and left the other, so they disagreed in a new way each time. One
+    function decides now, and both consumers read its answer.
+
+    Subagents emit `"pattern_score": 19` instead of the declared
+    `{"patterns_used": N, "antipatterns_detected": M, "score": N-M}` on roughly a
+    third of returns. The schema invites it twice over: the field is NAMED for a
+    number but holds a dict, and `antipatterns_detected` means an array of
+    objects one level up and an integer count inside `pattern_score`. Restating
+    the requirement in the brief has not moved the rate across four batches, so
+    the tooling absorbs the variant — and recomputes rather than trusting it.
+
+    The score is count(patterns) minus count(antipatterns), so it is an INTEGER
+    by construction. `True` satisfies `isinstance(x, int)` in Python and a float
+    looks numeric; neither is a score.
+    """
+    if "pattern_score" not in observations or observations["pattern_score"] is None:
+        return None, False
+
+    raw = observations["pattern_score"]
+    coerced = not isinstance(raw, dict)
+    nested = raw if coerced else raw.get("score")
+    if nested is None:
+        if coerced:
+            return None, False
+        # A `pattern_score` object present but missing `score` is malformed, not
+        # absent: the declared shape carries the number, so silently returning
+        # "no score" here would drop it exactly like the bare int used to.
+        raise ValueError(
+            "pattern_score is an object with no `score` key "
+            f"(got keys {sorted(raw)}). Emit "
+            '{"patterns_used": N, "antipatterns_detected": M, "score": N-M}.')
+
+    label = "pattern_score" if coerced else "pattern_score.score"
+    if isinstance(nested, bool) or not isinstance(nested, int):
+        raise ValueError(
+            f"{label} is {nested!r} ({type(nested).__name__}). It must be an "
+            "integer — the score is count(patterns) minus count(antipatterns), "
+            "so a float, a string and a bool are all wrong. Emit "
+            '{"patterns_used": N, "antipatterns_detected": M, "score": N-M}.')
+
+    # Only the coerced form is cross-checked. It is the shape that arrived
+    # without its accompanying counts, so the arrays are the only evidence that
+    # the number is right.
+    if coerced:
+        used, against = len(patterns or []), len(antipatterns or [])
+        if used - against != nested:
+            raise ValueError(
+                f"pattern_score is the bare int {nested}, but patterns_detected "
+                f"({used}) minus antipatterns_detected ({against}) is "
+                f"{used - against}. Refusing to guess which is right.")
+    return nested, coerced
+
+
+def normalize_pattern_observations(existing, patterns, antipatterns, score):
     """Map the subagent return shape onto the DB shape, keeping both views.
 
-    Subagent returns {patterns_detected, antipatterns_detected, pattern_score:{score}}.
-    The DB declares {pattern_ids, antipattern_ids, pattern_score:int}. Section 15
-    aggregation reads the detailed *_detected arrays, so keep those too.
+    Takes already-validated inputs and decides nothing about their shape, so it
+    cannot drift from the validator the way its predecessor did.
     """
     obs = dict(existing) if isinstance(existing, dict) else {}
-    patterns = incoming.get("patterns_detected")
-    antipatterns = incoming.get("antipatterns_detected")
     if patterns is not None:
         obs["patterns_detected"] = patterns
         obs["pattern_ids"] = [p.get("pattern_id") for p in patterns if p.get("pattern_id")]
     if antipatterns is not None:
         obs["antipatterns_detected"] = antipatterns
         obs["antipattern_ids"] = [p.get("pattern_id") for p in antipatterns if p.get("pattern_id")]
-    score = incoming.get("pattern_score")
-    if isinstance(score, dict) and "score" in score:
-        obs["pattern_score"] = score["score"]
-    elif isinstance(score, (int, float)):
+    if score is not None:
         obs["pattern_score"] = score
     return obs
 
 
 def merge_talk(talk, ret, run_date=None):
-    """Merge one return into its talk. Returns (promoted_fields, stamped_date).
+    """Merge one return into its talk. Returns (promoted, stamped, coerced_score).
 
-    `run_date` stamps `processed_date` when the return omits it. Callers that
-    care about reproducibility pass it explicitly; it is never read from the
-    clock inside the merge.
+    Every block is validated BEFORE anything is written, so a malformed return
+    leaves the talk untouched rather than half-merged. `run_date` stamps
+    `processed_date` when the return omits it; it is never read from the clock
+    inside the merge.
     """
+    structured = require_mapping(ret, "structured_data")
+    verbatim = require_mapping(ret, "verbatim_examples")
+    observations = require_mapping(ret, "pattern_observations") or {}
+    patterns = require_detections(observations, "patterns_detected")
+    antipatterns = require_detections(observations, "antipatterns_detected")
+    score, coerced_score = resolve_pattern_score(observations, patterns, antipatterns)
+
+    talk["schema_version"] = TALK_SCHEMA_VERSION
     for f in SCALARS:
         if f in ret and not is_empty(ret[f]):
             talk[f] = ret[f]
@@ -184,20 +320,50 @@ def merge_talk(talk, ret, run_date=None):
     if run_date and is_empty(ret.get("processed_date")):
         talk["processed_date"] = run_date
         stamped = True
-    if isinstance(ret.get("structured_data"), dict):
-        talk["structured_data"] = deep_merge(talk.get("structured_data") or {}, ret["structured_data"])
-    if isinstance(ret.get("verbatim_examples"), dict):
-        talk["verbatim_examples"] = deep_merge(talk.get("verbatim_examples") or {}, ret["verbatim_examples"])
-    if isinstance(ret.get("pattern_observations"), dict):
+    if structured is not None:
+        talk["structured_data"] = deep_merge(talk.get("structured_data") or {}, structured)
+    if verbatim is not None:
+        talk["verbatim_examples"] = deep_merge(talk.get("verbatim_examples") or {}, verbatim)
+    if observations:
         talk["pattern_observations"] = normalize_pattern_observations(
-            talk.get("pattern_observations"), ret["pattern_observations"])
+            talk.get("pattern_observations"), patterns, antipatterns, score)
+
     promoted = []
     for field, path in PROMOTE:
         val = dig(ret, path)
         if not is_empty(val):
             talk[field] = val
             promoted.append(field)
-    return promoted, stamped
+    # `pattern_score` is set from the resolved value rather than dug out of the
+    # return. The dotted path `pattern_observations.pattern_score.score` is what
+    # silently dropped the scalar whenever a subagent sent the bare int, because
+    # `dig` returns None on an int — the promoted scalar and the nested value
+    # must come from one decision, not two lookups.
+    if score is not None:
+        talk["pattern_score"] = score
+        promoted.append("pattern_score")
+    return promoted, stamped, coerced_score
+
+
+def migrate_records(db):
+    """Bring every talk record to the current schema version. Returns the count.
+
+    `stateful-artifacts` puts migration on the OWNER skill, and this script is
+    the tracking DB's only writer. Stamping just the talks a batch happened to
+    touch would leave the file permanently mixed-version — a reader could not
+    tell an unversioned record from one this writer had never seen, which is the
+    ambiguity the version exists to remove.
+
+    The migration is a stamp, not a transform: v1 to v2 removes a documented
+    guarantee about `transcript_source` rather than changing any stored value,
+    so no record needs rewriting to satisfy v2.
+    """
+    migrated = 0
+    for talk in db.get("talks", []):
+        if talk.get("schema_version") != TALK_SCHEMA_VERSION:
+            talk["schema_version"] = TALK_SCHEMA_VERSION
+            migrated += 1
+    return migrated
 
 
 def load_json(path, label):
@@ -272,6 +438,9 @@ def main():
               f"got {type(returns).__name__}", file=sys.stderr)
         sys.exit(1)
 
+    # Migrate the whole artifact, not just the talks this batch touches.
+    migrated = migrate_records(db)
+
     by_name = {t.get("filename"): t for t in db.get("talks", [])}
     summary = []
     for ret in returns:
@@ -282,14 +451,20 @@ def main():
             # mismatch, not something to silently skip.
             print(f"ERROR: no talk in DB matches return filename: {name!r}", file=sys.stderr)
             sys.exit(1)
-        promoted, stamped = merge_talk(talk, ret, run_date)
+        try:
+            promoted, stamped, coerced = merge_talk(talk, ret, run_date)
+        except ValueError as exc:
+            print(f"ERROR: {name}: {exc}", file=sys.stderr)
+            sys.exit(1)
         summary.append({"filename": name, "status": talk.get("status"),
-                        "promoted": promoted, "stamped_processed_date": stamped})
+                        "promoted": promoted, "stamped_processed_date": stamped,
+                        "coerced_pattern_score": coerced})
 
     with open(db_path, "w", encoding="utf-8") as f:
         json.dump(db, f, indent=2, ensure_ascii=False)
 
     json.dump({"persisted": len(summary), "db_path": db_path, "run_date": run_date,
+               "schema_version": TALK_SCHEMA_VERSION, "migrated_records": migrated,
                "talks": summary}, sys.stdout, ensure_ascii=False)
     sys.stdout.write("\n")
 

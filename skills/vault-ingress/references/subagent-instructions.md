@@ -35,11 +35,15 @@ Map the returned `method` to `transcript_source`:
 |---|---|
 | `captions` | `youtube_auto` |
 | `whisper` | `whisper` |
-| `existing` | leave the talk's current `transcript_source` unchanged; set `manual` only when the field is absent |
+| `existing` | leave the talk's current `transcript_source` unchanged; when the field is absent, leave it absent |
 
 `existing` means a valid transcript was already on disk and no fetch ran, so the
 script learned nothing about where it came from — overwriting the recorded source
-would replace a known value with a guess.
+would replace a known value with a guess, and inventing one where the field is
+absent is the same error with no prior value to lose. `manual` in particular
+means a human produced the transcript; writing it on an unknown-provenance file
+asserts something false, and a downstream reader weighing transcript reliability
+would trust it more than the ASR it probably is.
 
 Set `delivery_language` from the returned `language`: the caption track's own
 language code, or Whisper's detected language. It is `null` on the `existing`
@@ -97,9 +101,16 @@ when no audio is obtainable at all.
 
 ### `transcript_source` is required
 
-Set `transcript_source` on the talk entry: `youtube_auto` (yt-dlp captions),
+Set `transcript_source` on the talk entry: `youtube_auto` (caption track),
 `whisper` (local transcription), or `manual`. Downstream tools use it to gauge
 transcript reliability.
+
+**One exception, and only one:** `method: "existing"` from the fetcher. No fetch
+ran, so provenance is unknown — leave the recorded value alone, and leave the
+field absent when it was already absent. `manual` asserts a human produced the
+transcript; writing it on an unknown file is a false claim that makes a
+downstream reader trust ASR more than it should. Absent is honest; invented is
+not.
 
 ## B. Analyze for Rhetoric & Style (NOT content)
 
