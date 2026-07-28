@@ -474,3 +474,104 @@ def test_schema_version_is_stamped_over_an_older_value(persist_results, tmp_path
     )
     assert result.returncode == 0, result.stderr
     assert json.loads(db.read_text())["talks"][0]["schema_version"] == 2
+
+
+@pytest.mark.parametrize("block", ["structured_data", "verbatim_examples",
+                                   "pattern_observations"])
+def test_a_malformed_content_block_fails_loudly(persist_results, tmp_path, block):
+    """A wrong-typed block used to be SKIPPED while the merge reported success.
+
+    `structured_data` arriving as a list lost the entire analysis and still
+    exited 0 — the silent-drop shape this script exists to eliminate.
+    """
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    ret = _return()
+    ret[block] = [{"slide_count": 60}]  # a list where an object is declared
+    db.write_text(json.dumps({"talks": [_talk()]}))
+    batch.write_text(json.dumps([ret]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1, f"{block} was skipped silently: {result.stdout}"
+    assert block in result.stderr
+
+
+@pytest.mark.parametrize("bad", [
+    ["narrative-arc", "bookends"],          # bare id strings
+    "narrative-arc",                        # a string: len() counts characters
+    {"pattern_id": "narrative-arc"},        # a single object, not an array
+])
+def test_malformed_detection_arrays_fail_loudly(persist_results, tmp_path, bad):
+    """List-of-strings raised AttributeError mid-merge and killed the script
+    before it printed its JSON; a plain string made `len()` count characters as
+    detections and fed a silently wrong number into the score cross-check."""
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    ret = _return()
+    ret["pattern_observations"]["patterns_detected"] = bad
+    db.write_text(json.dumps({"talks": [_talk()]}))
+    batch.write_text(json.dumps([ret]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1, f"{bad!r} was accepted: {result.stdout}"
+    assert "patterns_detected" in result.stderr
+    assert "Traceback" not in result.stderr, "died instead of reporting"
+
+
+def test_a_malformed_return_leaves_the_talk_untouched(persist_results, tmp_path):
+    """Validation runs before any write, so a bad return is not half-merged."""
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    ret = _return()
+    ret["pattern_observations"]["patterns_detected"] = ["narrative-arc"]
+    original = _talk()
+    db.write_text(json.dumps({"talks": [original]}))
+    batch.write_text(json.dumps([ret]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert json.loads(db.read_text())["talks"][0] == original
+
+
+def test_migration_stamps_every_record_not_just_merged_ones(persist_results, tmp_path):
+    """Stamping only touched talks leaves the artifact permanently mixed-version,
+    so a reader cannot tell an unversioned record from an untouched one."""
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    merged, untouched = _talk(), _talk()
+    untouched["filename"] = "other-talk.md"
+    db.write_text(json.dumps({"talks": [merged, untouched]}))
+    batch.write_text(json.dumps([_return()]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["migrated_records"] == 2
+    for talk in json.loads(db.read_text())["talks"]:
+        assert talk["schema_version"] == persist_results.TALK_SCHEMA_VERSION
+
+
+def test_score_object_without_a_score_key_fails_loudly(persist_results, tmp_path):
+    """Present-but-incomplete is malformed, not absent — returning "no score"
+    would drop the value exactly like the bare int used to."""
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    ret = _return()
+    ret["pattern_observations"]["pattern_score"] = {
+        "patterns_used": 2, "antipatterns_detected": 1}
+    db.write_text(json.dumps({"talks": [_talk()]}))
+    batch.write_text(json.dumps([ret]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert "no `score` key" in result.stderr
+    assert "pattern_score" not in json.loads(db.read_text())["talks"][0]

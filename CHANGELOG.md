@@ -39,6 +39,49 @@ brief did not move the rate across four batches, so the tooling absorbs the
 variant instead. `merge_talk` now returns a third element; its four existing test
 call sites are updated.
 
+### fix(vault-ingress) — one validator for the merge, not several disagreeing ones
+
+Six review rounds each found a different hole in `pattern_score` validation, and
+patching them one at a time was treating symptoms. The cause was structural: TWO
+functions independently decided what a valid score was — `canonicalize_pattern_score`
+checking the incoming shape, `normalize_pattern_observations` re-deciding with its
+own `isinstance(score, (int, float))`, and PROMOTE resolving the top-level scalar
+through a third path, a dotted lookup. Every round tightened one and left the
+others, so they disagreed in a new way each time.
+
+`resolve_pattern_score` now decides once. `normalize_pattern_observations` takes
+already-validated inputs and decides nothing. `pattern_score` leaves PROMOTE
+entirely and is set from the resolved value — the dotted path
+`pattern_observations.pattern_score.score` is what silently dropped the scalar
+whenever a subagent sent the bare int, because `dig` returns None on an int.
+
+Reading the file properly then turned up three more silent-drop defects that no
+review round had reached:
+
+- **A wrong-typed content block was skipped and the merge reported success.**
+  `structured_data`, `verbatim_examples` and `pattern_observations` were each
+  guarded by a bare `isinstance(..., dict)`; a `structured_data` arriving as a
+  list lost the entire analysis and still exited 0.
+- **A detection array of bare id strings killed the script mid-merge.**
+  `p.get("pattern_id")` raised `AttributeError` before any JSON was printed —
+  the exact die-without-saying-so shape this file exists to prevent.
+- **A detection array supplied as a plain string had its CHARACTERS counted as
+  detections**, feeding a silently wrong number into the score cross-check.
+
+All three now fail loudly, and validation runs before any write so a malformed
+return leaves the talk untouched rather than half-merged. An incomplete score
+object — present but missing `score` — is malformed too, not absent.
+
+`migrate_records` stamps every record rather than only the talks a batch touched;
+partial stamping would leave the artifact permanently mixed-version, so a reader
+could not distinguish an unversioned record from an untouched one. The count is
+reported as `migrated_records`.
+
+Each of the eight new tests was verified to FAIL with its guard reverted. A
+regression test nobody has watched fail guards nothing — which this PR already
+demonstrated the hard way, when a bool test asserting the helper in isolation
+passed while the DB was taking `pattern_score: True`.
+
 ### fix(vault-ingress) — version the talk record, validate the score inside the dict
 
 `persist-results.py` now stamps `schema_version` on every talk record it merges.
