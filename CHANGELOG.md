@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.73 — 2026-07-28
+
 ### fix(vault-ingress) — a bare-int `pattern_score` no longer silently drops the scalar
 
 Subagents write `"pattern_score": 19` instead of the declared
