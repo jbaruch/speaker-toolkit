@@ -34,6 +34,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "video_url": "YouTube watch URL (required — only source needed for processing)",
     "youtube_id": "aBcDeFg", "google_drive_id": "1AbCdEfGhIjK",
     "pptx_path": "Conference/Year/Talk Name.pptx  (optional — highest quality slide source when available)",
+    "schema_version": 2,
     "transcript_source": "youtube_auto|whisper|manual|none  (how the transcript was obtained; MAY BE ABSENT — see below)",
     "slide_source": "pptx|pdf|both|video_extracted|none  (set in Step 2 per slide source hierarchy)",
     "pptx_visual_status": "pending|extracted|no_pptx",
@@ -55,6 +56,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
       "antipatterns_detected": []
     }
   }],
+  "_comment_schema_version": "Talk-record schema version, stamped by persist-results.py (TALK_SCHEMA_VERSION) on every merge. v1 is the implicit unversioned shape every pre-2026-07-28 record carries, in which transcript_source was documented as always present. v2 documents it as optional and gives ABSENT a meaning. The bump is additive — a v1 reader reads a v2 record unchanged, since v2 removes a guarantee rather than adding a field — so no staged rollout is required (stateful-artifacts Cross-Pipeline Schema Bumps). Readers do not gate on this value yet; that contract is issue #147, sequenced after the in-flight reparse so writer and readers cannot skew mid-run.",
   "_comment_absent_transcript_source": "Absent transcript_source: the key may be MISSING on a talk, and missing is meaningful — it means provenance is unknown, not that no transcript exists (that is the explicit value `none`). It arises on one path: fetch-transcript.py returning method `existing`, where a valid transcript was already on disk and no fetch ran, so nothing was learned about where it came from. Writers MUST NOT backfill a guess; `manual` in particular asserts a human produced it. Readers gauging transcript reliability MUST treat absent as unknown and MUST NOT default it to any value.",
   "pptx_catalog": [{
     "pptx_path": "Conference/Year/Talk Name.pptx",

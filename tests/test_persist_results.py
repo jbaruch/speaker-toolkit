@@ -418,3 +418,59 @@ def test_non_numeric_pattern_score_never_reaches_the_db(persist_results, tmp_pat
     assert "pattern_score" in result.stderr
     stored = json.loads(db.read_text())["talks"][0]
     assert "pattern_score" not in stored, f"{bad!r} reached the DB as {stored.get('pattern_score')!r}"
+
+
+@pytest.mark.parametrize("inner", [True, False, "19", ["19"]])
+def test_invalid_score_inside_the_declared_dict_is_rejected(
+        persist_results, tmp_path, inner):
+    """The dict is the declared shape, but its `score` is what PROMOTE writes.
+
+    Type-checking only the bare form left `{"score": True}` reaching the DB
+    unexamined — the same defect one level in.
+    """
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    ret = _return()
+    ret["pattern_observations"]["pattern_score"] = {
+        "patterns_used": 2, "antipatterns_detected": 1, "score": inner}
+    db.write_text(json.dumps({"talks": [_talk()]}))
+    batch.write_text(json.dumps([ret]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1, f"{inner!r} was accepted: {result.stdout}"
+    assert "pattern_score.score" in result.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    assert "pattern_score" not in stored
+
+
+def test_merge_stamps_the_talk_schema_version(persist_results, tmp_path):
+    """stateful-artifacts requires a schema_version on every record."""
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(json.dumps({"talks": [_talk()]}))
+    batch.write_text(json.dumps([_return()]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    talk = json.loads(db.read_text())["talks"][0]
+    assert talk["schema_version"] == persist_results.TALK_SCHEMA_VERSION
+
+
+def test_schema_version_is_stamped_over_an_older_value(persist_results, tmp_path):
+    """A v1 record merged by this writer becomes v2 — that is the migration."""
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    old = _talk()
+    old["schema_version"] = 1
+    db.write_text(json.dumps({"talks": [old]}))
+    batch.write_text(json.dumps([_return()]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(db.read_text())["talks"][0]["schema_version"] == 2

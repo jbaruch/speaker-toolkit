@@ -39,6 +39,25 @@ brief did not move the rate across four batches, so the tooling absorbs the
 variant instead. `merge_talk` now returns a third element; its four existing test
 call sites are updated.
 
+### fix(vault-ingress) — version the talk record, validate the score inside the dict
+
+`persist-results.py` now stamps `schema_version` on every talk record it merges.
+v1 is the implicit unversioned shape all pre-2026-07-28 records carry, in which
+`transcript_source` was documented as always present — though 95 of 209 records
+never had it. v2 documents the field as optional and gives ABSENT a meaning:
+provenance unknown, distinct from the explicit `none`.
+
+The bump is additive, which `stateful-artifacts` Cross-Pipeline Schema Bumps
+permits without a staged rollout — a v1 reader reads a v2 record unchanged,
+because v2 removes a guarantee rather than adding a field. Readers do not gate on
+the value yet; that contract is #147, sequenced after the in-flight reparse so
+writer and readers cannot skew mid-run.
+
+Type-checking only the BARE `pattern_score` left the declared dict unexamined, so
+`{"score": True}` or `{"score": "19"}` still reached the DB — the same defect one
+level in. The inner value now gets the same check, with tests across `True`,
+`False`, `"19"` and `["19"]` at both levels.
+
 ### fix(vault-ingress) — reject raw VTT payloads, stop inventing a transcript source
 
 Two defects in the transcript work shipped in 0.18.72, both found by running it

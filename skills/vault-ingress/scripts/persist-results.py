@@ -95,6 +95,21 @@ def normalize_stamp(value):
             f"(e.g. {value}+00:00) so stamps from different machines order")
     return default_stamp(moment)
 
+# Tracking-DB talk-record schema version, stamped by this writer on every merge.
+#
+# v1 is the implicit, unversioned shape every pre-2026-07-28 record carries:
+# `transcript_source` was documented as always present, though 95 of 209 records
+# never had it.
+# v2 documents `transcript_source` as optional and gives ABSENT a meaning —
+# provenance unknown, distinct from the explicit value `none` (no transcript).
+#
+# The bump is ADDITIVE, which `rules/stateful-artifacts.md` Cross-Pipeline Schema
+# Bumps permits without a staged rollout: a v1 reader reads a v2 record
+# unchanged, because v2 removes a guarantee rather than adding a field. Readers
+# do not gate on this value yet — that contract is #147, deliberately sequenced
+# after the in-flight reparse so writer and readers do not skew mid-run.
+TALK_SCHEMA_VERSION = 2
+
 # Queryable scalars promoted from the subagent return onto the talk's top level.
 # (top_level_field, dotted source path within the return). To add a new queryable
 # scalar, add it here AND to the return schema — never reintroduce hand-mapping.
@@ -177,7 +192,21 @@ def canonicalize_pattern_score(incoming):
     if not isinstance(incoming, dict):
         return False
     score = incoming.get("pattern_score")
-    if score is None or isinstance(score, dict):
+    if score is None:
+        return False
+    if isinstance(score, dict):
+        # The declared shape — but its `score` is what PROMOTE writes to the DB,
+        # so it needs the same type check the bare form gets. A dict carrying
+        # `{"score": True}` or `{"score": "19"}` would otherwise reach the DB
+        # unexamined, which is the same defect one level in.
+        inner = score.get("score")
+        if inner is None:
+            return False
+        if isinstance(inner, bool) or not isinstance(inner, (int, float)):
+            raise ValueError(
+                f"pattern_score.score is {inner!r} ({type(inner).__name__}), "
+                "which is not a number. Emit "
+                '{"patterns_used": N, "antipatterns_detected": M, "score": N-M}.')
         return False
     if isinstance(score, bool) or not isinstance(score, (int, float)):
         # `True` satisfies isinstance(x, int) in Python, so a bool would sail
@@ -235,6 +264,7 @@ def merge_talk(talk, ret, run_date=None):
     # Before PROMOTE digs `pattern_observations.pattern_score.score`, which a
     # bare int cannot satisfy.
     coerced_score = canonicalize_pattern_score(ret.get("pattern_observations"))
+    talk["schema_version"] = TALK_SCHEMA_VERSION
     for f in SCALARS:
         if f in ret and not is_empty(ret[f]):
             talk[f] = ret[f]
