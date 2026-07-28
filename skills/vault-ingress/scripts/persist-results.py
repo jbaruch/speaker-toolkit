@@ -38,8 +38,14 @@ Usage:
         {"persisted": <int>, "db_path": "<path>",
          "run_date": "<YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS+00:00>",
          "talks": [{"filename": "...", "status": "...", "promoted": ["..."],
-                    "stamped_processed_date": <bool>}]}
+                    "stamped_processed_date": <bool>,
+                    "coerced_pattern_score": <bool>}]}
     Diagnostics and errors go to stderr; exit code is non-zero on failure.
+
+    `coerced_pattern_score` is true when the return supplied `pattern_score` as a
+    bare int and it was rebuilt into the declared dict. The coercion is reported
+    rather than silent so the rate stays visible — a return shape that needs
+    fixing this often is a schema problem, not a one-off.
 
     Absent --run-date, the stamp is the current UTC time at second resolution.
     --run-date pins it instead of reading the clock; the whole batch shares one
@@ -144,6 +150,48 @@ def deep_merge(dst, src):
     return dst
 
 
+def canonicalize_pattern_score(incoming):
+    """Coerce a bare-int `pattern_score` into the declared dict shape.
+
+    Returns True when a coercion happened. Raises ValueError when the supplied
+    integer contradicts the arrays.
+
+    Subagents write `"pattern_score": 19` instead of
+    `{"patterns_used": 22, "antipatterns_detected": 3, "score": 19}` on roughly a
+    third of returns, and the schema invites it twice over: the field is NAMED
+    for a number but holds a dict, and `antipatterns_detected` means an array of
+    objects one level up and an integer count inside `pattern_score`.
+
+    The bare int is not harmless. `normalize_pattern_observations` accepts it, so
+    the nested value lands and the return looks fine — but PROMOTE resolves
+    `pattern_observations.pattern_score.score`, `dig` returns None on an int, and
+    the queryable top-level `pattern_score` scalar is **silently dropped**. That
+    is precisely the missing-scalar defect this script was written to fix,
+    reintroduced through the input shape.
+
+    Restating the requirement in the brief has not moved the rate across four
+    batches, so the tooling absorbs the variant instead — and recomputes rather
+    than trusting it, because a coerced value that disagrees with the arrays is a
+    real inconsistency, not a formatting slip.
+    """
+    if not isinstance(incoming, dict):
+        return False
+    score = incoming.get("pattern_score")
+    if not isinstance(score, (int, float)) or isinstance(score, bool):
+        return False
+    used = len(incoming.get("patterns_detected") or [])
+    against = len(incoming.get("antipatterns_detected") or [])
+    if used - against != score:
+        raise ValueError(
+            f"pattern_score is the bare int {score}, but patterns_detected "
+            f"({used}) minus antipatterns_detected ({against}) is {used - against}. "
+            "Refusing to guess which is right — fix the return so pattern_score is "
+            '{"patterns_used": N, "antipatterns_detected": M, "score": N-M}.')
+    incoming["pattern_score"] = {
+        "patterns_used": used, "antipatterns_detected": against, "score": score}
+    return True
+
+
 def normalize_pattern_observations(existing, incoming):
     """Map the subagent return shape onto the DB shape, keeping both views.
 
@@ -169,12 +217,15 @@ def normalize_pattern_observations(existing, incoming):
 
 
 def merge_talk(talk, ret, run_date=None):
-    """Merge one return into its talk. Returns (promoted_fields, stamped_date).
+    """Merge one return into its talk. Returns (promoted, stamped, coerced_score).
 
     `run_date` stamps `processed_date` when the return omits it. Callers that
     care about reproducibility pass it explicitly; it is never read from the
     clock inside the merge.
     """
+    # Before PROMOTE digs `pattern_observations.pattern_score.score`, which a
+    # bare int cannot satisfy.
+    coerced_score = canonicalize_pattern_score(ret.get("pattern_observations"))
     for f in SCALARS:
         if f in ret and not is_empty(ret[f]):
             talk[f] = ret[f]
@@ -197,7 +248,7 @@ def merge_talk(talk, ret, run_date=None):
         if not is_empty(val):
             talk[field] = val
             promoted.append(field)
-    return promoted, stamped
+    return promoted, stamped, coerced_score
 
 
 def load_json(path, label):
@@ -282,9 +333,14 @@ def main():
             # mismatch, not something to silently skip.
             print(f"ERROR: no talk in DB matches return filename: {name!r}", file=sys.stderr)
             sys.exit(1)
-        promoted, stamped = merge_talk(talk, ret, run_date)
+        try:
+            promoted, stamped, coerced = merge_talk(talk, ret, run_date)
+        except ValueError as exc:
+            print(f"ERROR: {name}: {exc}", file=sys.stderr)
+            sys.exit(1)
         summary.append({"filename": name, "status": talk.get("status"),
-                        "promoted": promoted, "stamped_processed_date": stamped})
+                        "promoted": promoted, "stamped_processed_date": stamped,
+                        "coerced_pattern_score": coerced})
 
     with open(db_path, "w", encoding="utf-8") as f:
         json.dump(db, f, indent=2, ensure_ascii=False)

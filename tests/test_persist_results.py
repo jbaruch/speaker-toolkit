@@ -120,21 +120,21 @@ def test_run_date_stamped_when_return_omits_processed_date(persist_results):
     ret = _return()
     del ret["processed_date"]
     talk = _talk(processed_date="2026-04-09")
-    _, stamped = persist_results.merge_talk(talk, ret, run_date="2026-07-26")
+    _, stamped, _ = persist_results.merge_talk(talk, ret, run_date="2026-07-26")
     assert talk["processed_date"] == "2026-07-26"
     assert stamped is True
 
 
 def test_return_processed_date_wins_over_run_date(persist_results):
     talk = _talk()
-    _, stamped = persist_results.merge_talk(talk, _return(), run_date="2026-07-26")
+    _, stamped, _ = persist_results.merge_talk(talk, _return(), run_date="2026-07-26")
     assert talk["processed_date"] == "2026-06-18"
     assert stamped is False
 
 
 def test_empty_processed_date_is_stamped(persist_results):
     talk = _talk(processed_date="2026-04-09")
-    _, stamped = persist_results.merge_talk(talk, _return(processed_date=""),
+    _, stamped, _ = persist_results.merge_talk(talk, _return(processed_date=""),
                                             run_date="2026-07-26")
     assert talk["processed_date"] == "2026-07-26"
     assert stamped is True
@@ -144,7 +144,7 @@ def test_no_run_date_leaves_processed_date_untouched(persist_results):
     ret = _return()
     del ret["processed_date"]
     talk = _talk(processed_date="2026-04-09")
-    _, stamped = persist_results.merge_talk(talk, ret)
+    _, stamped, _ = persist_results.merge_talk(talk, ret)
     assert talk["processed_date"] == "2026-04-09"
     assert stamped is False
 
@@ -329,3 +329,74 @@ def test_explicit_timestamp_is_accepted(persist_results, tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert json.loads(db.read_text())["talks"][0]["processed_date"].startswith("2026-07-27T14:03:22")
+
+
+def test_bare_int_pattern_score_is_coerced_and_promoted(persist_results, tmp_path):
+    """The bare int is not harmless: PROMOTE digs
+    `pattern_observations.pattern_score.score`, `dig` returns None on an int, and
+    the queryable top-level scalar is silently dropped — the exact missing-scalar
+    defect this script exists to fix, reintroduced through the input shape.
+
+    Roughly a third of returns arrive this way; the schema invites it.
+    """
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    ret = _return()
+    ret["pattern_observations"]["pattern_score"] = 1  # 2 patterns - 1 antipattern
+    db.write_text(json.dumps({"talks": [_talk()]}))
+    batch.write_text(json.dumps([ret]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["talks"][0]["coerced_pattern_score"] is True
+    assert "pattern_score" in payload["talks"][0]["promoted"]
+    talk = json.loads(db.read_text())["talks"][0]
+    assert talk["pattern_score"] == 1
+
+
+def test_dict_pattern_score_is_not_reported_as_coerced(persist_results, tmp_path):
+    """Guard the guard: the flag must distinguish the two shapes."""
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(json.dumps({"talks": [_talk()]}))
+    batch.write_text(json.dumps([_return()]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["talks"][0]["coerced_pattern_score"] is False
+    assert "pattern_score" in payload["talks"][0]["promoted"]
+
+
+def test_bare_int_contradicting_the_arrays_fails_loudly(persist_results, tmp_path):
+    """A coerced value that disagrees with the arrays is a real inconsistency.
+
+    Recomputing silently would launder it; the script refuses to guess which
+    number is right.
+    """
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    ret = _return()
+    ret["pattern_observations"]["pattern_score"] = 42  # arrays say 2 - 1 = 1
+    db.write_text(json.dumps({"talks": [_talk()]}))
+    batch.write_text(json.dumps([ret]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert "Refusing to guess" in result.stderr
+    assert "42" in result.stderr
+
+
+def test_bare_float_and_bool_scores(persist_results):
+    """`True` is an int in Python — it must not be read as a score of 1."""
+    obs = {"patterns_detected": [{"pattern_id": "a"}], "antipatterns_detected": [],
+           "pattern_score": True}
+    assert persist_results.canonicalize_pattern_score(obs) is False
+    assert obs["pattern_score"] is True

@@ -1,5 +1,34 @@
 # Changelog
 
+### fix(vault-ingress) — a bare-int `pattern_score` no longer silently drops the scalar
+
+Subagents write `"pattern_score": 19` instead of the declared
+`{"patterns_used": 22, "antipatterns_detected": 3, "score": 19}` on roughly a
+third of returns — 5 of 16 across two batches, from independent agents that never
+see each other's work.
+
+It looked cosmetic and is not. `normalize_pattern_observations` already accepted
+the int, so the nested value landed and the return looked fine. But PROMOTE
+resolves `pattern_observations.pattern_score.score`, `dig` returns None on an
+int, and the queryable top-level `pattern_score` **was silently dropped** — the
+exact missing-scalar defect this script was written to fix (1 of 200 talks had
+`slide_count` before it), reintroduced through the input shape.
+
+`canonicalize_pattern_score` now rebuilds the dict before promotion, and
+**recomputes rather than trusting**: a supplied int that disagrees with the
+arrays exits 1 naming both numbers, because that is a real inconsistency, not a
+formatting slip. `True` is not read as a score of 1.
+
+Each coercion is reported as `coerced_pattern_score` in the stdout summary rather
+than fixed silently, so the rate stays visible.
+
+The schema invites the error twice over — the field is NAMED for a number but
+holds a dict, and `antipatterns_detected` means an array of objects one level up
+and an integer count inside `pattern_score`. Restating the requirement in the
+brief did not move the rate across four batches, so the tooling absorbs the
+variant instead. `merge_talk` now returns a third element; its four existing test
+call sites are updated.
+
 ### fix(vault-ingress) — reject raw VTT payloads, stop inventing a transcript source
 
 Two defects in the transcript work shipped in 0.18.72, both found by running it
