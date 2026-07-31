@@ -209,3 +209,41 @@ def test_validator_cli_reports_the_filename_on_failure(tmp_path):
     assert result.returncode == 1
     assert "talk.md" in result.stderr
     assert "status is required" in result.stderr
+
+
+def test_validator_cli_flattens_a_directory_of_single_returns(tmp_path):
+    first = _return(filename="a.md")
+    second = _return(filename="b.md")
+    (tmp_path / "a.json").write_text(json.dumps(first))
+    (tmp_path / "b.json").write_text(json.dumps(second))
+    result = subprocess.run(
+        [sys.executable, VALIDATE_SCRIPT, str(tmp_path)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["returns"] == 2
+    assert report["filenames"] == ["a.md", "b.md"]
+    assert len(report["input_files"]) == 2
+
+
+def test_validator_cli_catches_duplicates_across_input_files(tmp_path):
+    (tmp_path / "a.json").write_text(json.dumps(_return()))
+    (tmp_path / "b.json").write_text(json.dumps([_return()]))
+    result = subprocess.run(
+        [sys.executable, VALIDATE_SCRIPT, str(tmp_path)], capture_output=True, text=True)
+    assert result.returncode == 1
+    assert "duplicate return filename" in result.stderr
+
+
+def test_validator_cli_reports_every_invalid_return(tmp_path):
+    first = _return(filename="a.md")
+    second = _return(filename="b.md")
+    del first["status"]
+    second["structured_data"]["delivery_language"] = "English"
+    (tmp_path / "a.json").write_text(json.dumps(first))
+    (tmp_path / "b.json").write_text(json.dumps(second))
+    result = subprocess.run(
+        [sys.executable, VALIDATE_SCRIPT, str(tmp_path)], capture_output=True, text=True)
+    assert result.returncode == 1
+    assert "a.md" in result.stderr
+    assert "b.md" in result.stderr
+    assert "2 validation error(s) across 2 return(s)" in result.stderr

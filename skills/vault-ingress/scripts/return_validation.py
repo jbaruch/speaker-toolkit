@@ -327,24 +327,39 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
     _validate_catalog_feedback(ret.get("catalog_feedback"))
 
 
-def validate_batch(returns, catalog: PatternCatalog | None = None) -> PatternCatalog:
-    """Validate a full batch, including duplicate filenames, and return catalog metadata."""
+def audit_batch(returns, catalog: PatternCatalog | None = None):
+    """Return (catalog, errors) after checking every entry and duplicate name."""
     if not isinstance(returns, list):
         raise ReturnValidationError(
             f"batch-returns must be a JSON array, got {type(returns).__name__}")
     resolved_catalog = catalog or load_catalog()
     seen: set[str] = set()
+    errors = []
     for index, ret in enumerate(returns):
         try:
             validate_return(ret, resolved_catalog)
         except ReturnValidationError as exc:
             name = ret.get("filename") if isinstance(ret, dict) else None
             label = name or f"entry {index}"
-            raise ReturnValidationError(f"{label}: {exc}") from exc
-        name = ret["filename"]
+            errors.append({"index": index, "filename": name, "error": f"{label}: {exc}"})
+        name = ret.get("filename") if isinstance(ret, dict) else None
+        if not isinstance(name, str) or not name:
+            continue
         if name in seen:
-            raise ReturnValidationError(f"duplicate return filename {name!r}")
+            errors.append({
+                "index": index,
+                "filename": name,
+                "error": f"duplicate return filename {name!r}",
+            })
         seen.add(name)
+    return resolved_catalog, errors
+
+
+def validate_batch(returns, catalog: PatternCatalog | None = None) -> PatternCatalog:
+    """Validate a full batch, including duplicate filenames, and return catalog metadata."""
+    resolved_catalog, errors = audit_batch(returns, catalog)
+    if errors:
+        raise ReturnValidationError(errors[0]["error"])
     return resolved_catalog
 
 
