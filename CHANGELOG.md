@@ -46,6 +46,23 @@ timestamp that disagrees is rejected. The analysis writer renders the stored
 value while checking any supplied `--run-date` against it for every return.
 Skipped outcomes still leave prior analysis and its processing stamp untouched.
 
+### fix(vault-ingress) — bind analysis files to the persisted return generation
+
+Completed queue claims now use schema v2 and carry a canonical SHA-256 receipt
+of the exact return payload merged into the tracking database. The analysis
+writer recomputes that receipt before rendering, so replacing the batch-return
+file after persistence cannot produce a Markdown analysis that disagrees with
+the DB. New claims are v2; active v1 claims remain completable and upgrade on
+closure. The queue owner migrates legacy completed claims with an explicit null
+receipt because their original payload cannot be reconstructed, leaving them
+non-renderable until reprocessed, while unknown future claim versions fail
+closed.
+
+Processed analyses also render only when each talk's persisted catalog
+fingerprint and scoring-schema version equal the catalog generation validated by
+the renderer. A changed taxonomy can no longer silently reinterpret an older
+persisted score while producing a current-looking file.
+
 ### feat(vault-ingress) — inventory native PPTX timing without claiming playback
 
 PPTX extraction schema v2 now emits a fixed `native_timing` record per slide and

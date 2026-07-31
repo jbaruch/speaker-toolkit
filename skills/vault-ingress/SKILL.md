@@ -270,14 +270,19 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   timestamp is treated as an explicit identity assertion and must normalize to
   the same batch stamp or the entire write fails.
   A successful merge closes the matching queue lease as `completed`; it never
-  deletes claim history. An interrupted batch is recovered with
+  deletes claim history. The completed v2 claim stores a canonical SHA-256
+  receipt of the exact return payload. Active v1 leases remain completable and
+  are upgraded on closure; unknown future claim versions fail closed. An
+  interrupted batch is recovered with
   `queue-state.py ... recover --now <ISO> --stale-after-seconds <N>`, not by
   replaying whichever old return files happen to exist.
 - **Write per-talk analysis files — run the script, do NOT hand-write them.** Run
   `python3 skills/vault-ingress/scripts/write-analysis.py batch-returns.json {vault_root}/analyses --talks {vault_root}/tracking-database.json`
   over the SAME `batch-returns.json` the merge consumed, so the DB and the files
-  cannot diverge. The writer requires exact membership across the completed batch
-  before replacing any file and renders the persisted, writer-owned timestamp.
+  cannot diverge. The writer verifies each completed claim's payload receipt and
+  persisted catalog fingerprint/scoring version, requires exact membership
+  across the completed batch before replacing any file, and renders the
+  persisted, writer-owned timestamp.
   It renders `{vault_root}/analyses/{talk_filename}.md` per return —
   14 dimensions, structured data, verbatim examples, "Presentation Patterns Scoring",
   and catalog feedback — creates `analyses/` if missing, prints a JSON summary, and

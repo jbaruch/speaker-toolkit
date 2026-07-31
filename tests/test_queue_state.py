@@ -253,7 +253,7 @@ def test_same_run_and_batch_reclaims_a_stale_recovered_generation(tmp_path):
     assert talk["reprocess_generation"] == 2
     assert talk["_queue_claim"]["reprocess_generation"] == 2
     assert talk["_queue_claim_history"] == [{
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": "reparse",
         "batch_id": "25",
         "claimed_at": "2026-07-31T17:00:00+00:00",
@@ -284,7 +284,7 @@ def test_claim_is_idempotent_for_a_completed_same_run_and_batch(tmp_path):
     talk = _talk("eg6gqvUFh6Q", status="processed")
     talk["reprocess_generation"] = 1
     talk["_queue_claim"] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": "reparse",
         "batch_id": "25",
         "claimed_at": "2026-07-31T17:00:00+00:00",
@@ -294,6 +294,7 @@ def test_claim_is_idempotent_for_a_completed_same_run_and_batch(tmp_path):
         "released_at": "2026-07-31T17:30:00+00:00",
         "release_reason": "return_persisted",
         "result_status": "processed",
+        "result_payload_sha256": "0" * 64,
     }
     path = _write_db(tmp_path, [talk])
     before = path.read_bytes()
@@ -382,9 +383,35 @@ def test_inspect_accepts_a_completed_persistence_claim(tmp_path):
     talk = _talk("eg6gqvUFh6Q", status="processed")
     talk["reprocess_generation"] = 1
     talk["_queue_claim"] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": "reparse",
         "batch_id": "25",
+        "claimed_at": "2026-07-31T17:00:00+00:00",
+        "previous_status": "needs-reprocessing",
+        "reprocess_generation": 1,
+        "state": "completed",
+        "released_at": "2026-07-31T17:30:00+00:00",
+        "release_reason": "return_persisted",
+        "result_status": "processed",
+        "result_payload_sha256": "0" * 64,
+    }
+    path = _write_db(tmp_path, [talk])
+
+    result = _run(path, "inspect", "--run-id", "reparse")
+
+    assert result.returncode == 0, result.stderr
+    claim = json.loads(result.stdout)["claims"][0]
+    assert claim["state"] == "completed"
+    assert claim["result_status"] == "processed"
+
+
+def test_owner_migrates_legacy_completed_claim_with_unavailable_receipt(tmp_path):
+    talk = _talk("eg6gqvUFh6Q", status="processed")
+    talk["reprocess_generation"] = 1
+    talk["_queue_claim"] = {
+        "schema_version": 1,
+        "run_id": "legacy-run",
+        "batch_id": "legacy-batch",
         "claimed_at": "2026-07-31T17:00:00+00:00",
         "previous_status": "needs-reprocessing",
         "reprocess_generation": 1,
@@ -395,12 +422,34 @@ def test_inspect_accepts_a_completed_persistence_claim(tmp_path):
     }
     path = _write_db(tmp_path, [talk])
 
-    result = _run(path, "inspect", "--run-id", "reparse")
+    result = _run(path, "inspect", "--run-id", "legacy-run")
 
     assert result.returncode == 0, result.stderr
-    claim = json.loads(result.stdout)["claims"][0]
-    assert claim["state"] == "completed"
-    assert claim["result_status"] == "processed"
+    migrated = _read_db(path)["talks"][0]["_queue_claim"]
+    assert migrated["schema_version"] == 2
+    assert migrated["result_payload_sha256"] is None
+
+
+def test_unknown_future_claim_schema_fails_without_rewriting(tmp_path):
+    talk = _talk("eg6gqvUFh6Q", status="reprocessing-inflight")
+    talk["reprocess_generation"] = 1
+    talk["_queue_claim"] = {
+        "schema_version": 99,
+        "run_id": "future-run",
+        "batch_id": "future-batch",
+        "claimed_at": NOW,
+        "previous_status": "pending",
+        "reprocess_generation": 1,
+        "state": "claimed",
+    }
+    path = _write_db(tmp_path, [talk])
+    before = path.read_bytes()
+
+    result = _run(path, "inspect", "--run-id", "future-run")
+
+    assert result.returncode == 2
+    assert "newer than supported" in json.loads(result.stdout)["error"]
+    assert path.read_bytes() == before
 
 
 def test_active_claim_with_terminal_status_rejects_every_command_but_recover(

@@ -62,7 +62,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "reprocess_reason": "machine-readable reason for needs-reprocessing, or null",
     "reprocess_generation": 1,
     "_queue_claim": {
-      "schema_version": 1,
+      "schema_version": 2,
       "run_id": "reparse-2026-07",
       "batch_id": "25",
       "claimed_at": "2026-07-31T18:00:00+00:00",
@@ -71,7 +71,8 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
       "state": "claimed|completed|stale_recovered|superseded",
       "released_at": "timezone-aware ISO-8601; present on a closed claim",
       "release_reason": "return_persisted|lease_expired|new_generation_claimed",
-      "result_status": "terminal status; present when state is completed"
+      "result_status": "terminal status; present when state is completed",
+      "result_payload_sha256": "canonical return JSON receipt; present when state is completed"
     },
     "_queue_claim_history": [],
     "rhetoric_notes": "", "areas_for_improvement": "",
@@ -310,6 +311,21 @@ batch in `claimed` state and closes it as `completed`; `write-analysis.py`
 requires that same whole batch in `completed` state. A genuinely one-member
 batch is complete and remains supported. A partially closed or stranded batch
 must be recovered into a fresh queue generation rather than finished piecemeal.
+
+Queue-claim schema v2 adds `result_payload_sha256` to completed claims. The
+receipt hashes the exact return payload after stable JSON key/whitespace
+canonicalization. `persist-results.py` accepts an active v1 or v2 lease, upgrades
+it to v2 when closing it, and stores the receipt; new claims are v2. The analysis
+writer recomputes the receipt and rejects a substituted payload. `queue-state.py`
+owns stored-claim migration: an already completed v1 claim becomes v2 with an
+explicit null receipt because the original payload cannot be reconstructed, and
+therefore cannot authorize an analysis replacement until a fresh generation is
+processed. Unknown future claim versions fail closed.
+
+Before rendering a processed result, `write-analysis.py` also requires the
+talk's `pattern_catalog_fingerprint` and `pattern_scoring_schema_version` to
+equal the catalog and scoring contract it just validated. Skipped results do not
+render or restamp prior analysis-generation metadata.
 
 `slides_local_path` is a top-level analysis provenance scalar. Returns use the
 portable canonical form `slides/<artifact>.pdf`; persistence copies it to the talk

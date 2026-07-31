@@ -7,12 +7,52 @@ orchestrator in prose with no script to run. The DB carried the corrected
 analysis while every analyses/*.md still asserted what the reparse had refuted.
 """
 
+import hashlib
 import json
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
+
+
+def _catalog_fingerprint():
+    root = (
+        Path(__file__).parents[1]
+        / "skills"
+        / "presentation-creator"
+        / "references"
+        / "patterns"
+    )
+    digest = hashlib.sha256()
+
+    def update(relative_path, content):
+        digest.update(relative_path.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(content)
+        digest.update(b"\0")
+
+    update("_index.md", (root / "_index.md").read_bytes())
+    for path in sorted(
+            (item for item in root.rglob("*.md") if item != root / "_index.md"),
+            key=lambda item: item.relative_to(root).as_posix()):
+        update(path.relative_to(root).as_posix(), path.read_bytes())
+    return digest.hexdigest()
+
+
+CATALOG_FINGERPRINT = _catalog_fingerprint()
+
+
+def _return_receipt(ret):
+    canonical = json.dumps(
+        ret,
+        allow_nan=False,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def _return(**overrides):
@@ -77,6 +117,7 @@ def _write_tracking_db(
         talks.append({
             "filename": ret["filename"],
             "title": title,
+            "schema_version": 3,
             "status": ret["status"],
             "processed_date": (
                 persisted_date or ret.get("processed_date") or "2026-07-26"),
@@ -85,8 +126,10 @@ def _write_tracking_db(
             "youtube_id": "AbCdEfGhI_1",
             "pptx_path": "Conference/Talk.pptx",
             "slides_url": "https://drive.google.com/file/d/slides-id/view",
+            "pattern_scoring_schema_version": 2,
+            "pattern_catalog_fingerprint": CATALOG_FINGERPRINT,
             "_queue_claim": {
-                "schema_version": 1,
+                "schema_version": 2,
                 **ret["queue_claim"],
                 "claimed_at": "2026-07-31T18:00:00+00:00",
                 "previous_status": "needs-reprocessing",
@@ -94,6 +137,7 @@ def _write_tracking_db(
                 "released_at": "2026-07-31T18:05:00+00:00",
                 "release_reason": "return_persisted",
                 "result_status": ret["status"],
+                "result_payload_sha256": _return_receipt(ret),
             },
         })
     path = tmp_path / name
@@ -380,7 +424,9 @@ def test_persist_then_write_uses_one_exact_batch_timestamp(
     talk["status"] = "reprocessing-inflight"
     claim = talk["_queue_claim"]
     claim["state"] = "claimed"
-    for field in ("released_at", "release_reason", "result_status"):
+    for field in (
+            "released_at", "release_reason", "result_status",
+            "result_payload_sha256"):
         del claim[field]
     db.write_text(json.dumps(payload))
 
@@ -699,6 +745,60 @@ def test_completed_claim_requires_exact_schema_before_analysis_write(
     assert target.read_text() == "# current generation\n"
 
 
+def test_substituted_return_payload_cannot_overwrite_persisted_analysis(
+        write_analysis, tmp_path):
+    original = _return()
+    db = _write_tracking_db(tmp_path, [original])
+    substituted = _return(rhetoric_notes="substituted after persistence")
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([substituted]))
+    out = tmp_path / "analyses"
+    out.mkdir()
+    target = out / "talk.md"
+    target.write_text("# persisted generation\n")
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "payload SHA-256 does not match" in result.stderr
+    assert target.read_text() == "# persisted generation\n"
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value", "diagnostic"),
+    [
+        ("pattern_scoring_schema_version", 1, "pattern_scoring_schema_version"),
+        ("pattern_catalog_fingerprint", "0" * 64, "pattern_catalog_fingerprint"),
+    ],
+)
+def test_renderer_requires_the_catalog_generation_persisted_for_each_talk(
+        write_analysis, tmp_path, field, bad_value, diagnostic):
+    ret = _return()
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    payload["talks"][0][field] = bad_value
+    db.write_text(json.dumps(payload))
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    out = tmp_path / "analyses"
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert diagnostic in result.stderr
+    assert not out.exists()
+
+
 def test_analysis_writer_requires_persisted_completed_claim(
         write_analysis, tmp_path):
     batch = tmp_path / "batch-returns.json"
@@ -711,7 +811,9 @@ def test_analysis_writer_requires_persisted_completed_claim(
     talk["status"] = "reprocessing-inflight"
     claim = talk["_queue_claim"]
     claim["state"] = "claimed"
-    for field in ("released_at", "release_reason", "result_status"):
+    for field in (
+            "released_at", "release_reason", "result_status",
+            "result_payload_sha256"):
         del claim[field]
     db.write_text(json.dumps(payload))
 

@@ -24,7 +24,7 @@ when state changed.
 
 Claim schema (owned by this script; stored in ``talk._queue_claim``):
     {
-      "schema_version": 1,
+      "schema_version": 2,
       "run_id": "reparse-2026-07",
       "batch_id": "25",
       "claimed_at": "2026-07-31T18:00:00+00:00",
@@ -40,7 +40,8 @@ claim/history record carries its own schema version. ``talk.reprocess_generation
 is the monotonic latest generation. Readers may reconstruct a run from the
 current claim plus history via ``inspect``. ``persist-results.py`` owns the
 successful terminal transition: it changes the matching claim to ``completed``
-and records ``result_status`` without deleting the generation record.
+and records ``result_status`` plus the canonical return-payload SHA-256 receipt
+without deleting the generation record.
 """
 
 import argparse
@@ -54,8 +55,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from return_validation import QUEUE_CLAIM_SCHEMA_VERSION
 
-CLAIM_SCHEMA_VERSION = 1
+
+CLAIM_SCHEMA_VERSION = QUEUE_CLAIM_SCHEMA_VERSION
+LEGACY_CLAIM_SCHEMA_VERSION = 1
 INFLIGHT_STATUS = "reprocessing-inflight"
 CLAIMABLE_STATUSES = frozenset({
     "pending",
@@ -227,6 +231,17 @@ def validate_claim(claim, filename, *, historical=False):
                 "skipped_download_failed", "skipped_duplicate"}:
             raise QueueStateError(
                 f"{filename}: a completed claim must carry a terminal result_status")
+        if "result_payload_sha256" not in claim:
+            raise QueueStateError(
+                f"{filename}: a schema-v2 completed claim must carry "
+                "result_payload_sha256")
+        receipt = claim.get("result_payload_sha256")
+        if (receipt is not None
+                and (not isinstance(receipt, str)
+                     or re.fullmatch(r"[0-9a-f]{64}", receipt) is None)):
+            raise QueueStateError(
+                f"{filename}: completed claim result_payload_sha256 must be null "
+                "for a migrated legacy claim or a lowercase SHA-256 receipt")
     if historical and state == "claimed":
         raise QueueStateError(f"{filename}: historical claims must be closed")
 
@@ -347,6 +362,58 @@ def validate_database(database, *, allow_claim_status_drift=False):
         seen.add(filename)
 
 
+def migrate_claim_schemas(database):
+    """Upgrade v1 claim records after preflighting every stored version.
+
+    v2 adds a result-payload receipt only to completed claims. An already
+    completed v1 claim cannot reconstruct that payload, so its migrated receipt
+    is explicitly null and analysis rendering rejects it until a fresh
+    generation is persisted. Active v1 claims remain completable and receive a
+    real receipt when persist-results.py closes them.
+    """
+    if not isinstance(database, dict):
+        raise QueueStateError("tracking database root must be a JSON object")
+    talks = database.get("talks")
+    if not isinstance(talks, list):
+        raise QueueStateError("tracking database must contain a talks array")
+
+    claims = []
+    for index, talk in enumerate(talks):
+        if not isinstance(talk, dict):
+            raise QueueStateError(f"talks[{index}] must be a JSON object")
+        history = talk.get("_queue_claim_history", [])
+        if not isinstance(history, list):
+            raise QueueStateError(
+                f"talks[{index}]._queue_claim_history must be a JSON array")
+        for claim in [*history, talk.get("_queue_claim")]:
+            if claim is None:
+                continue
+            if not isinstance(claim, dict):
+                raise QueueStateError(
+                    f"talks[{index}] queue claim must be a JSON object")
+            version = claim.get("schema_version")
+            if (isinstance(version, bool) or not isinstance(version, int)
+                    or version < LEGACY_CLAIM_SCHEMA_VERSION):
+                raise QueueStateError(
+                    f"talks[{index}] queue claim schema_version {version!r} is invalid")
+            if version > CLAIM_SCHEMA_VERSION:
+                raise QueueStateError(
+                    f"talks[{index}] queue claim schema_version {version} is newer "
+                    f"than supported version {CLAIM_SCHEMA_VERSION}; upgrade the "
+                    "queue-state reader before continuing")
+            claims.append(claim)
+
+    migrated = 0
+    for claim in claims:
+        if claim["schema_version"] != LEGACY_CLAIM_SCHEMA_VERSION:
+            continue
+        claim["schema_version"] = CLAIM_SCHEMA_VERSION
+        if claim.get("state") == "completed":
+            claim["result_payload_sha256"] = None
+        migrated += 1
+    return migrated
+
+
 def load_database(path, *, allow_claim_status_drift=False):
     try:
         with path.open(encoding="utf-8") as handle:
@@ -363,10 +430,13 @@ def load_database(path, *, allow_claim_status_drift=False):
         ) from exc
     except OSError as exc:
         raise QueueStateError(f"cannot read tracking database at {path}: {exc}") from exc
+    migrated = migrate_claim_schemas(database)
     validate_database(
         database,
         allow_claim_status_drift=allow_claim_status_drift,
     )
+    if migrated:
+        write_database_atomically(path, database)
     return database
 
 

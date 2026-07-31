@@ -66,6 +66,7 @@ from return_validation import (
     normalize_processing_stamp,
     validate_batch_claims_against_talks,
     validate_batch,
+    validate_persisted_catalog_generation,
 )
 
 # structured_data keys rendered as their own table rather than inline, because
@@ -444,6 +445,9 @@ def main():
     try:
         talks_by_name = validate_batch_claims_against_talks(
             db["talks"], returns, required_state="completed")
+        for ret in returns:
+            validate_persisted_catalog_generation(
+                talks_by_name[ret["filename"]], ret, catalog)
     except ReturnValidationError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)

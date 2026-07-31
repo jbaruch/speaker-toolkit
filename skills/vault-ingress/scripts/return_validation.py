@@ -9,6 +9,7 @@ inject another catalog directory for tests.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
@@ -66,7 +67,9 @@ PROSE_FIELDS = (
 LANGUAGE_RE = re.compile(r"^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$")
 VIDEO_SOURCE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 VIDEO_EXTRACTION_SCHEMA_VERSION = 3
-QUEUE_CLAIM_SCHEMA_VERSION = 1
+QUEUE_CLAIM_SCHEMA_VERSION = 2
+LEGACY_QUEUE_CLAIM_SCHEMA_VERSION = 1
+PATTERN_SCORING_SCHEMA_VERSION = 2
 RETURN_QUEUE_CLAIM_FIELDS = frozenset({
     "run_id",
     "batch_id",
@@ -84,8 +87,12 @@ ACTIVE_QUEUE_CLAIM_FIELDS = frozenset({
 COMPLETED_QUEUE_CLAIM_FIELDS = ACTIVE_QUEUE_CLAIM_FIELDS | frozenset({
     "released_at",
     "release_reason",
+    "result_payload_sha256",
     "result_status",
 })
+LEGACY_COMPLETED_QUEUE_CLAIM_FIELDS = (
+    COMPLETED_QUEUE_CLAIM_FIELDS - {"result_payload_sha256"}
+)
 CLAIMABLE_PREVIOUS_STATUSES = frozenset({
     "pending",
     "needs-reprocessing",
@@ -145,6 +152,28 @@ class PatternCatalog:
 class VideoExtractionState:
     source_video_id: str
     trusted_slide_region: bool
+
+
+def canonical_return_sha256(ret: dict) -> str:
+    """Return a stable receipt for the exact JSON return payload.
+
+    Object key order and insignificant JSON whitespace are normalized; array
+    order, strings, numbers, booleans, and null values remain part of the
+    payload identity. Both persistence surfaces call this helper so a return
+    substituted after the DB merge cannot render a divergent analysis file.
+    """
+    try:
+        encoded = json.dumps(
+            ret,
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ReturnValidationError(
+            f"return payload cannot be canonically encoded as JSON: {exc}") from exc
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def normalize_processing_stamp(value: object) -> str:
@@ -893,18 +922,25 @@ def _talk_has_pdf_source(talk: dict) -> bool:
 
 def _validate_stored_claim(expected: dict, filename: str) -> None:
     state = expected.get("state")
-    expected_fields = (
-        ACTIVE_QUEUE_CLAIM_FIELDS
-        if state == "claimed"
-        else COMPLETED_QUEUE_CLAIM_FIELDS
-    )
+    version = expected.get("schema_version")
+    if (isinstance(version, bool) or not isinstance(version, int)
+            or version not in {
+                LEGACY_QUEUE_CLAIM_SCHEMA_VERSION,
+                QUEUE_CLAIM_SCHEMA_VERSION,
+            }):
+        raise ReturnValidationError(
+            f"{filename} queue claim schema_version must be "
+            f"{LEGACY_QUEUE_CLAIM_SCHEMA_VERSION} or {QUEUE_CLAIM_SCHEMA_VERSION}, "
+            f"got {version!r}")
+    if state == "claimed":
+        expected_fields = ACTIVE_QUEUE_CLAIM_FIELDS
+    elif version == LEGACY_QUEUE_CLAIM_SCHEMA_VERSION:
+        expected_fields = LEGACY_COMPLETED_QUEUE_CLAIM_FIELDS
+    else:
+        expected_fields = COMPLETED_QUEUE_CLAIM_FIELDS
     label = f"{filename} queue claim"
     _validate_queue_claim(
         expected, expected_fields=expected_fields, label=label)
-    if expected.get("schema_version") != QUEUE_CLAIM_SCHEMA_VERSION:
-        raise ReturnValidationError(
-            f"{filename} queue claim schema_version must be "
-            f"{QUEUE_CLAIM_SCHEMA_VERSION}, got {expected.get('schema_version')!r}")
     claimed_at = expected.get("claimed_at")
     try:
         normalized_claimed_at = normalize_processing_stamp(claimed_at)
@@ -937,6 +973,13 @@ def _validate_stored_claim(expected: dict, filename: str) -> None:
         raise ReturnValidationError(
             f"{filename} completed queue claim has invalid result_status "
             f"{expected.get('result_status')!r}")
+    if version == QUEUE_CLAIM_SCHEMA_VERSION:
+        receipt = expected.get("result_payload_sha256")
+        if (not isinstance(receipt, str)
+                or re.fullmatch(r"[0-9a-f]{64}", receipt) is None):
+            raise ReturnValidationError(
+                f"{filename} completed queue claim result_payload_sha256 must be "
+                "a lowercase 64-character SHA-256 receipt")
 
 
 def _validate_return_sources_against_talk(talk: dict, ret: dict) -> None:
@@ -1019,6 +1062,11 @@ def validate_claim_against_talk(
             f"{filename} has an active claim but status is {talk.get('status')!r}, "
             "expected 'reprocessing-inflight'")
     if expected.get("state") == "completed":
+        if expected.get("schema_version") != QUEUE_CLAIM_SCHEMA_VERSION:
+            raise ReturnValidationError(
+                f"{filename} completed queue claim schema_version "
+                f"{expected.get('schema_version')!r} predates the return-payload "
+                "receipt; reprocess the talk before writing its analysis")
         if expected.get("result_status") != ret.get("status"):
             raise ReturnValidationError(
                 f"{filename} completed claim result {expected.get('result_status')!r} "
@@ -1027,6 +1075,11 @@ def validate_claim_against_talk(
             raise ReturnValidationError(
                 f"{filename} DB status {talk.get('status')!r} does not match completed "
                 f"return status {ret.get('status')!r}")
+        actual_receipt = canonical_return_sha256(ret)
+        if expected.get("result_payload_sha256") != actual_receipt:
+            raise ReturnValidationError(
+                f"{filename} return payload SHA-256 does not match the receipt "
+                "stored by persist-results.py; refusing a substituted return")
     if (ret.get("status") in ANALYSIS_STATUSES and
             ret.get("slide_source") == "video_extracted"):
         structured = ret.get("structured_data")
@@ -1046,6 +1099,26 @@ def validate_claim_against_talk(
                 "structured_data.video_extraction.source_video_id "
                 f"{returned_id!r} does not match talk youtube_id {expected_id!r}")
     _validate_return_sources_against_talk(talk, ret)
+
+
+def validate_persisted_catalog_generation(
+        talk: dict, ret: dict, catalog: PatternCatalog) -> None:
+    """Require renderable analysis state to match the validated catalog."""
+    if ret.get("status") not in ANALYSIS_STATUSES:
+        return
+    filename = ret.get("filename", "<unknown>")
+    scoring_version = talk.get("pattern_scoring_schema_version")
+    if scoring_version != PATTERN_SCORING_SCHEMA_VERSION:
+        raise ReturnValidationError(
+            f"{filename} persisted pattern_scoring_schema_version "
+            f"{scoring_version!r} does not match renderer version "
+            f"{PATTERN_SCORING_SCHEMA_VERSION}; rerun persist-results.py")
+    fingerprint = talk.get("pattern_catalog_fingerprint")
+    if fingerprint != catalog.fingerprint:
+        raise ReturnValidationError(
+            f"{filename} persisted pattern_catalog_fingerprint {fingerprint!r} "
+            f"does not match the catalog validated for rendering "
+            f"{catalog.fingerprint!r}; rerun persist-results.py")
 
 
 def validate_batch_claims_against_talks(

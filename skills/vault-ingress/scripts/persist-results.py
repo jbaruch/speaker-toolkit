@@ -81,7 +81,10 @@ from datetime import datetime, timezone
 
 from return_validation import (
     ANALYSIS_STATUSES,
+    PATTERN_SCORING_SCHEMA_VERSION,
+    QUEUE_CLAIM_SCHEMA_VERSION,
     ReturnValidationError,
+    canonical_return_sha256,
     normalize_processing_stamp,
     validate_batch_claims_against_talks,
     validate_claim_against_talk,
@@ -124,11 +127,6 @@ def normalize_stamp(value):
 # clear semantics. Existing readers ignore the new metadata; older records stay
 # readable and acquire generation identity on their next validated analysis.
 TALK_SCHEMA_VERSION = 3
-
-# Incremented when score meaning or observation validation changes. The catalog
-# content hash below identifies the exact taxonomy snapshot; this integer names
-# the scoring contract applied to that snapshot.
-PATTERN_SCORING_SCHEMA_VERSION = 2
 
 # Queryable scalars promoted from the subagent return onto the talk's top level.
 # (top_level_field, dotted source path within the return). To add a new queryable
@@ -234,12 +232,14 @@ def completion_timestamp(run_date):
     return run_date
 
 
-def close_queue_claim(talk, status, run_date):
+def close_queue_claim(talk, ret, run_date):
     claim = talk["_queue_claim"]
+    claim["schema_version"] = QUEUE_CLAIM_SCHEMA_VERSION
     claim["state"] = "completed"
     claim["released_at"] = completion_timestamp(run_date)
     claim["release_reason"] = "return_persisted"
-    claim["result_status"] = status
+    claim["result_status"] = ret["status"]
+    claim["result_payload_sha256"] = canonical_return_sha256(ret)
 
 
 def require_mapping(ret, field):
@@ -402,7 +402,7 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
         # clears; only the terminal outcome and its queue-claim history change.
         talk["status"] = ret["status"]
         if enforce_queue_claim:
-            close_queue_claim(talk, ret["status"], normalized_run_date)
+            close_queue_claim(talk, ret, normalized_run_date)
         return [], False, False, []
 
     returned_stamp = ret.get("processed_date")
@@ -474,7 +474,7 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
         if catalog_fingerprint:
             talk["pattern_catalog_fingerprint"] = catalog_fingerprint
     if enforce_queue_claim:
-        close_queue_claim(talk, ret["status"], normalized_run_date)
+        close_queue_claim(talk, ret, normalized_run_date)
     return promoted, stamped, coerced_score, cleared
 
 

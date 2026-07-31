@@ -871,8 +871,12 @@ def test_catalog_generation_is_stamped_and_processing_claim_is_closed(
         persist_results.PATTERN_SCORING_SCHEMA_VERSION
     assert stored["pattern_catalog_fingerprint"] == report["pattern_catalog_fingerprint"]
     assert stored["_queue_claim"]["state"] == "completed"
+    assert stored["_queue_claim"]["schema_version"] == \
+        persist_results.QUEUE_CLAIM_SCHEMA_VERSION
     assert stored["_queue_claim"]["result_status"] == "processed"
     assert stored["_queue_claim"]["release_reason"] == "return_persisted"
+    assert stored["_queue_claim"]["result_payload_sha256"] == \
+        persist_results.canonical_return_sha256(_return())
 
 
 def test_missing_status_rejects_the_whole_batch_without_migrating_db(
