@@ -11,16 +11,16 @@ and the queryable scalars are promoted to the talk's top level.
 
 For each return (matched to a talk by `filename`) it:
   1. Validates the complete batch against the shared return and catalog contract,
-     then matches every return to the talk's active queue generation.
+     requires its filenames to equal every live member of one run/batch claim,
+     then matches every return to that talk's active queue generation.
   2. For an analysis return, sets the scalar result fields (status,
      processed_date, rhetoric_notes, areas_for_improvement,
      adherence_assessment, transcript_source, slide_source,
-     slides_local_path). A return
-     that omits `processed_date` is stamped with the run date, because otherwise
-     the talk keeps whatever date the previous run set and the DB cannot answer
-     "which talks has this reparse actually covered". A skipped return changes
-     only terminal status and queue-claim history; prior analysis, provenance,
-     corrective clears and processed date remain untouched.
+     slides_local_path). The writer-owned run date always supplies
+     `processed_date`; a legacy return-side date cannot weaken a
+     second-resolution batch stamp. A skipped return changes only terminal
+     status and queue-claim history; prior analysis, provenance, corrective
+     clears and processed date remain untouched.
   3. Applies explicit `clear_fields`, then deep-merges the full `structured_data`
      and `verbatim_examples` blocks —
      additive: dicts recurse, new non-empty values win, existing data is never
@@ -58,6 +58,10 @@ Usage:
     rather than silent so the rate stays visible — a return shape that needs
     fixing this often is a schema problem, not a one-off.
 
+    `stamped_processed_date` is true for every analysis return because the
+    writer applied the authoritative batch stamp, and false for skipped returns
+    whose prior analysis stamp is intentionally untouched.
+
     Absent --run-date, the stamp is the current UTC time at second resolution.
     --run-date pins it instead of reading the clock; the whole batch shares one
     stamp so a run that straddles midnight does not split across two. It accepts
@@ -79,6 +83,7 @@ from return_validation import (
     ANALYSIS_STATUSES,
     ReturnValidationError,
     normalize_processing_stamp,
+    validate_batch_claims_against_talks,
     validate_claim_against_talk,
     validate_batch,
 )
@@ -145,9 +150,11 @@ PROMOTE = [
 # resolve_pattern_score, because a dotted-path lookup silently yields nothing
 # when a subagent sends the bare int instead of the declared dict.
 
-# Scalar result fields copied verbatim when present in the return.
+# Scalar result fields copied verbatim when present in the return.  The
+# processing stamp is writer-owned and handled separately below: a subagent's
+# legacy `processed_date` cannot override the batch timestamp.
 SCALARS = [
-    "status", "processed_date", "rhetoric_notes", "areas_for_improvement",
+    "status", "rhetoric_notes", "areas_for_improvement",
     "adherence_assessment", "transcript_source", "slide_source",
     "slides_local_path",
 ]
@@ -376,9 +383,10 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     Returns (promoted, stamped, coerced_score, cleared).
 
     Every block is validated BEFORE anything is written, so a malformed return
-    leaves the talk untouched rather than half-merged. `run_date` stamps
-    `processed_date` when the return omits it; it is never read from the clock
-    inside the merge.
+    leaves the talk untouched rather than half-merged.  When supplied,
+    `run_date` is the authoritative processing stamp for every analysis return;
+    the legacy return-side `processed_date` is advisory only.  The clock is
+    never read inside the merge.
     """
     normalized_run_date = normalize_stamp(run_date) if run_date else None
     if enforce_queue_claim and normalized_run_date is None:
@@ -397,6 +405,16 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
             close_queue_claim(talk, ret["status"], normalized_run_date)
         return [], False, False, []
 
+    returned_stamp = ret.get("processed_date")
+    if normalized_run_date and not is_empty(returned_stamp):
+        normalized_returned_stamp = normalize_stamp(returned_stamp)
+        if (len(normalized_returned_stamp) > 10
+                and normalized_returned_stamp != normalized_run_date):
+            raise ValueError(
+                "return processed_date is an explicit timestamp "
+                f"{normalized_returned_stamp!r} that conflicts with authoritative "
+                f"batch run_date {normalized_run_date!r}")
+
     structured = require_mapping(ret, "structured_data")
     verbatim = require_mapping(ret, "verbatim_examples")
     observations = require_mapping(ret, "pattern_observations") or {}
@@ -410,13 +428,18 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     talk["schema_version"] = TALK_SCHEMA_VERSION
     for f in SCALARS:
         if f in ret and not is_empty(ret[f]):
-            talk[f] = normalize_stamp(ret[f]) if f == "processed_date" else ret[f]
-    # A return that reports a status but no date would otherwise leave the
-    # previous run's date in place, making the talk look untouched by this run.
+            talk[f] = ret[f]
+    # A single owner supplies one exact stamp for every member.  This prevents a
+    # return's day-granular timestamp from defeating a second-resolution batch
+    # stamp and keeps processed_date, queue release, and rendered provenance in
+    # lockstep.  Direct non-writer calls without run_date retain legacy support
+    # for a canonical return-side timestamp.
     stamped = False
-    if normalized_run_date and is_empty(ret.get("processed_date")):
+    if normalized_run_date:
         talk["processed_date"] = normalized_run_date
         stamped = True
+    elif not is_empty(ret.get("processed_date")):
+        talk["processed_date"] = normalize_stamp(ret["processed_date"])
     if structured is not None:
         talk["structured_data"] = deep_merge(talk.get("structured_data") or {}, structured)
         if "video_extraction" in structured:
@@ -576,15 +599,11 @@ def main():
         print(f"ERROR: {db_path} is not a tracking database — expected a JSON "
               "object with a `talks` array", file=sys.stderr)
         sys.exit(1)
-    names = [talk.get("filename") for talk in db["talks"] if isinstance(talk, dict)]
-    duplicates = sorted({name for name in names if name and names.count(name) > 1})
-    if duplicates:
-        print(f"ERROR: tracking database has duplicate filenames: {duplicates}", file=sys.stderr)
-        sys.exit(1)
-    by_name = {talk.get("filename"): talk for talk in db["talks"] if isinstance(talk, dict)}
-    missing = [ret["filename"] for ret in returns if ret["filename"] not in by_name]
-    if missing:
-        print(f"ERROR: no talk in DB matches return filename(s): {missing}", file=sys.stderr)
+    try:
+        by_name = validate_batch_claims_against_talks(
+            db["talks"], returns, required_state="claimed")
+    except ReturnValidationError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
 
     # All input, catalog and identity validation is complete before the in-memory

@@ -31,6 +31,21 @@ gates must be recorded as `not_evaluable`, processed video-derived slide evidenc
 requires the schema-v3 verified-region provenance chain, and stale queue
 generations cannot be persisted.
 
+### fix(vault-ingress) — persist complete queue batches under one timestamp
+
+Both persistence surfaces now fail closed unless return filenames exactly equal
+every member of one live queue run/batch and each member matches its own current
+generation. Partial, extra, mixed-identity, duplicate, partially closed, and
+stranded batches are rejected before the tracking DB or an analysis file is
+changed; genuine one-record batches remain valid.
+
+The persistence writer's normalized batch timestamp is now authoritative for
+every processed talk's `processed_date` and queue release. Legacy return-side
+date-only values cannot replace a second-resolution stamp; an explicit full
+timestamp that disagrees is rejected. The analysis writer renders the stored
+value while checking any supplied `--run-date` against it for every return.
+Skipped outcomes still leave prior analysis and its processing stamp untouched.
+
 ## 0.18.73 — 2026-07-28
 
 ### fix(vault-ingress) — a bare-int `pattern_score` no longer silently drops the scalar

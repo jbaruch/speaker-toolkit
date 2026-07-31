@@ -11,7 +11,8 @@ corrected analysis while every `analyses/*.md` still asserted what the reparse
 had just refuted.
 
 This script is that second half. It reads the same `batch-returns.json` array
-`persist-results.py` consumes, so the two halves cannot drift apart.
+`persist-results.py` consumes and requires that array to match every completed
+member of its queue batch, so the two halves cannot drift apart.
 
 Sections rendered, in order:
   1. Title + provenance (filename, processed date, transcript/slide source)
@@ -36,9 +37,10 @@ Usage:
     --talks supplies talk titles for the H1 and the completed queue generation
     that authorizes each replacement. An active, unpersisted claim is rejected.
     The persisted talk's `processed_date` is the authority for the "Processed"
-    line. `--run-date` is an optional consistency assertion for returns that
-    omit their own stamp; it accepts the same date/timestamp forms as
-    persist-results.py.
+    line. `--run-date` is an optional consistency assertion against that
+    writer-owned stamp for every return; it accepts the same date/timestamp
+    forms as persist-results.py. A legacy date-only return value is ignored; an
+    explicit full timestamp must agree.
 
     Writes one file per PROCESSED return; a return whose required terminal status
     is not in PROCESSED_STATUSES is skipped rather than allowed to overwrite an
@@ -62,7 +64,7 @@ from return_validation import (
     ANALYSIS_STATUSES,
     ReturnValidationError,
     normalize_processing_stamp,
-    validate_claim_against_talk,
+    validate_batch_claims_against_talks,
     validate_batch,
 )
 
@@ -226,7 +228,7 @@ def render_analysis(ret, title=None, run_date=None, *, persisted_date=None):
     """Build the full markdown document for one subagent return."""
     filename = ret.get("filename", "")
     heading = title or ret.get("title") or filename.removesuffix(".md")
-    processed = persisted_date or ret.get("processed_date") or run_date or ""
+    processed = persisted_date or run_date or ret.get("processed_date") or ""
 
     out = [f"# Rhetoric Analysis: {heading}", ""]
     out.append(f"**Filename:** {filename}")
@@ -313,7 +315,7 @@ def output_target_key(filename):
 
 
 def persisted_processed_stamp(ret, talk, requested_stamp=None):
-    """Resolve the exact stamp persistence wrote, rejecting surface drift."""
+    """Resolve the exact writer-owned stamp, rejecting batch-argument drift."""
     stored = talk.get("processed_date")
     if not isinstance(stored, str) or not stored.strip():
         raise ReturnValidationError(
@@ -331,22 +333,24 @@ def persisted_processed_stamp(ret, talk, requested_stamp=None):
             f"is not the canonical stored stamp {normalized_stored!r}; rerun "
             "persist-results.py before writing its analysis")
 
-    returned = ret.get("processed_date")
-    if returned is not None:
+    if requested_stamp is not None and requested_stamp != stored:
+        raise ReturnValidationError(
+            f"{ret.get('filename', '<unknown>')} --run-date {requested_stamp!r} "
+            f"does not match persisted value {stored!r}")
+    returned_stamp = ret.get("processed_date")
+    if returned_stamp is not None:
         try:
-            returned = normalize_processing_stamp(returned)
+            normalized_returned_stamp = normalize_processing_stamp(returned_stamp)
         except ValueError as exc:
             raise ReturnValidationError(
                 f"{ret.get('filename', '<unknown>')} return processed_date is invalid: "
                 f"{exc}") from exc
-        if returned != stored:
+        if (len(normalized_returned_stamp) > 10
+                and normalized_returned_stamp != stored):
             raise ReturnValidationError(
-                f"{ret.get('filename', '<unknown>')} return processed_date {returned!r} "
-                f"does not match persisted value {stored!r}")
-    elif requested_stamp is not None and requested_stamp != stored:
-        raise ReturnValidationError(
-            f"{ret.get('filename', '<unknown>')} --run-date {requested_stamp!r} "
-            f"does not match persisted value {stored!r}")
+                f"{ret.get('filename', '<unknown>')} explicit return processed_date "
+                f"{normalized_returned_stamp!r} conflicts with persisted batch "
+                f"stamp {stored!r}")
     return stored
 
 
@@ -437,19 +441,12 @@ def main():
               f"object with a `talks` array; pass the vault's "
               "tracking-database.json", file=sys.stderr)
         sys.exit(1)
-    talks_by_name = {
-        talk.get("filename"): talk for talk in db["talks"] if isinstance(talk, dict)}
-    for ret in returns:
-        talk = talks_by_name.get(ret["filename"])
-        if talk is None:
-            print(f"ERROR: no talk in DB matches return filename: {ret['filename']!r}",
-                  file=sys.stderr)
-            sys.exit(1)
-        try:
-            validate_claim_against_talk(talk, ret, require_completed=True)
-        except ReturnValidationError as exc:
-            print(f"ERROR: {ret['filename']}: {exc}", file=sys.stderr)
-            sys.exit(1)
+    try:
+        talks_by_name = validate_batch_claims_against_talks(
+            db["talks"], returns, required_state="completed")
+    except ReturnValidationError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
     titles = {name: talk.get("title") for name, talk in talks_by_name.items()}
 
     # Render the entire batch before touching the output directory. A malformed

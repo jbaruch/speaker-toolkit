@@ -1048,6 +1048,113 @@ def validate_claim_against_talk(
     _validate_return_sources_against_talk(talk, ret)
 
 
+def validate_batch_claims_against_talks(
+        talks, returns, *, required_state: str) -> dict[str, dict]:
+    """Bind one complete return batch to one complete queue-claim batch.
+
+    Per-return generation checks are necessary but insufficient: accepting two
+    valid returns from a three-member claim batch closes a partial batch and
+    strands its final member.  Resolve the shared run/batch identity first,
+    require the return filenames to equal every DB member carrying that
+    identity, require one lifecycle state across the whole set, and only then
+    run the existing member-level claim validation.
+
+    ``claimed`` is the pre-persistence boundary; ``completed`` is the
+    post-persistence analysis-write boundary.  A batch split across those
+    states is invalid at both boundaries and must be recovered by a fresh
+    queue generation rather than completed piecemeal.
+    """
+    if required_state not in {"claimed", "completed"}:
+        raise ValueError(
+            "required_state must be 'claimed' or 'completed', got "
+            f"{required_state!r}")
+    if not isinstance(talks, list):
+        raise ReturnValidationError(
+            "tracking database must carry a `talks` array")
+    if not isinstance(returns, list) or not returns:
+        raise ReturnValidationError(
+            "batch-returns must contain at least one return")
+
+    return_names = [ret.get("filename") for ret in returns]
+    duplicate_returns = sorted({
+        name for name in return_names
+        if isinstance(name, str) and return_names.count(name) > 1
+    })
+    if duplicate_returns:
+        raise ReturnValidationError(
+            f"duplicate return filename(s): {duplicate_returns}")
+
+    identities = {
+        (ret["queue_claim"]["run_id"], ret["queue_claim"]["batch_id"])
+        for ret in returns
+    }
+    if len(identities) != 1:
+        raise ReturnValidationError(
+            "all returns must carry one queue run_id/batch_id identity; got "
+            f"{sorted(identities)}")
+    run_id, batch_id = next(iter(identities))
+
+    talks_by_name: dict[str, dict] = {}
+    duplicate_talks = set()
+    for talk in talks:
+        if not isinstance(talk, dict):
+            continue
+        filename = talk.get("filename")
+        if not isinstance(filename, str) or not filename:
+            continue
+        if filename in talks_by_name:
+            duplicate_talks.add(filename)
+        else:
+            talks_by_name[filename] = talk
+    if duplicate_talks:
+        raise ReturnValidationError(
+            f"tracking database has duplicate filenames: {sorted(duplicate_talks)}")
+
+    members = []
+    for talk in talks_by_name.values():
+        claim = talk.get("_queue_claim")
+        if (isinstance(claim, dict)
+                and claim.get("run_id") == run_id
+                and claim.get("batch_id") == batch_id):
+            members.append(talk)
+
+    expected_names = {talk["filename"] for talk in members}
+    supplied_names = set(return_names)
+    missing = sorted(expected_names - supplied_names)
+    unexpected = sorted(supplied_names - expected_names)
+    if not expected_names or missing or unexpected:
+        details = []
+        if not expected_names:
+            details.append("no matching DB members")
+        if missing:
+            details.append(f"missing {missing}")
+        if unexpected:
+            details.append(f"unexpected {unexpected}")
+        raise ReturnValidationError(
+            "return filenames must exactly match every member of queue batch "
+            f"run_id={run_id!r}, batch_id={batch_id!r}; " + "; ".join(details))
+
+    wrong_states = sorted(
+        (talk["filename"], talk.get("_queue_claim", {}).get("state"))
+        for talk in members
+        if talk.get("_queue_claim", {}).get("state") != required_state
+    )
+    if wrong_states:
+        raise ReturnValidationError(
+            "queue batch must be wholly "
+            f"{required_state!r} before this write; closed or stranded member(s): "
+            f"{wrong_states}")
+
+    returns_by_name = {ret["filename"]: ret for ret in returns}
+    for filename in sorted(expected_names):
+        validate_claim_against_talk(
+            talks_by_name[filename],
+            returns_by_name[filename],
+            require_completed=required_state == "completed",
+        )
+    return talks_by_name
+
+
 def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
     """Validate one return completely, raising before either writer mutates state."""
     if not isinstance(ret, dict):

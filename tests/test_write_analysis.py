@@ -238,9 +238,9 @@ def test_run_date_fills_missing_processed_date(write_analysis):
     assert "**Processed:** 2026-07-26" in md
 
 
-def test_return_processed_date_wins_over_run_date(write_analysis):
+def test_writer_run_date_wins_over_legacy_return_date(write_analysis):
     md = write_analysis.render_analysis(_return(), run_date="2026-01-01")
-    assert "**Processed:** 2026-07-26" in md
+    assert "**Processed:** 2026-01-01" in md
 
 
 def test_cli_renders_the_exact_canonical_stamp_persisted_in_db(
@@ -305,7 +305,7 @@ def test_cli_rejects_noncanonical_persisted_stamp_before_write(
     assert not out.exists()
 
 
-def test_cli_rejects_return_stamp_that_differs_from_persisted_value(
+def test_cli_ignores_legacy_return_stamp_and_uses_persisted_value(
         write_analysis, tmp_path):
     batch = tmp_path / "batch-returns.json"
     out = tmp_path / "analyses"
@@ -320,9 +320,90 @@ def test_cli_rejects_return_stamp_that_differs_from_persisted_value(
         capture_output=True, text=True,
     )
 
+    assert result.returncode == 0, result.stderr
+    assert "**Processed:** 2026-07-27T14:03:22+00:00" in \
+        (out / "talk.md").read_text()
+
+
+def test_cli_rejects_explicit_return_timestamp_conflicting_with_persisted_batch(
+        write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return(processed_date="2026-07-27T08:00:00+00:00")
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(
+        tmp_path, [ret], persisted_date="2026-07-27T14:03:22+00:00")
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True, text=True,
+    )
+
     assert result.returncode == 1
+    assert "explicit return processed_date" in result.stderr
+    assert "conflicts with persisted batch stamp" in result.stderr
+    assert not out.exists()
+
+
+def test_cli_checks_requested_batch_stamp_even_when_return_has_a_date(
+        write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return(processed_date="2026-07-26")
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(
+        tmp_path, [ret], persisted_date="2026-07-27T14:03:22+00:00")
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db), "--run-date", "2026-07-27T14:03:23+00:00"],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    assert "--run-date" in result.stderr
     assert "does not match persisted value" in result.stderr
     assert not out.exists()
+
+
+def test_persist_then_write_uses_one_exact_batch_timestamp(
+        persist_results, write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    authoritative = "2026-07-27T14:03:22+00:00"
+    ret = _return(processed_date="2026-07-26")
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret], persisted_date="2026-04-09")
+    payload = json.loads(db.read_text())
+    talk = payload["talks"][0]
+    talk["status"] = "reprocessing-inflight"
+    claim = talk["_queue_claim"]
+    claim["state"] = "claimed"
+    for field in ("released_at", "release_reason", "result_status"):
+        del claim[field]
+    db.write_text(json.dumps(payload))
+
+    persisted = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch),
+         "--run-date", authoritative],
+        capture_output=True, text=True,
+    )
+    assert persisted.returncode == 0, persisted.stderr
+
+    written = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db), "--run-date", authoritative],
+        capture_output=True, text=True,
+    )
+
+    assert written.returncode == 0, written.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    assert stored["processed_date"] == authoritative
+    assert stored["_queue_claim"]["released_at"] == authoritative
+    body = (out / "talk.md").read_text()
+    assert f"**Processed:** {authoritative}" in body
+    assert "**Processed:** 2026-07-26" not in body
 
 
 def test_nested_structured_fields_are_preserved(write_analysis):
@@ -641,8 +722,31 @@ def test_analysis_writer_requires_persisted_completed_claim(
     )
 
     assert result.returncode == 1
-    assert "no completed queue claim" in result.stderr
+    assert "closed or stranded member" in result.stderr
     assert not out.exists()
+
+
+def test_analysis_writer_rejects_partial_completed_batch_before_any_write(
+        write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    existing = out / "a.md"
+    existing.write_text("# current analysis\n")
+    all_returns = [_return(filename=f"{name}.md") for name in ("a", "b", "c")]
+    batch.write_text(json.dumps(all_returns[:2]))
+    db = _write_tracking_db(tmp_path, all_returns)
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    assert "missing ['c.md']" in result.stderr
+    assert existing.read_text() == "# current analysis\n"
+    assert sorted(path.name for path in out.iterdir()) == ["a.md"]
 
 
 def test_kcdc_wrong_transcript_return_cannot_overwrite_analysis(

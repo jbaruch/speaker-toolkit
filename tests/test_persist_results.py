@@ -272,12 +272,12 @@ def test_run_date_stamped_when_return_omits_processed_date(persist_results):
     assert stamped is True
 
 
-def test_return_processed_date_wins_over_run_date(persist_results):
+def test_batch_run_date_wins_over_legacy_return_date(persist_results):
     talk = _talk()
     _, stamped, _, _ = persist_results.merge_talk(
         talk, _return(), run_date="2026-07-26")
-    assert talk["processed_date"] == "2026-06-18"
-    assert stamped is False
+    assert talk["processed_date"] == "2026-07-26"
+    assert stamped is True
 
 
 def test_empty_processed_date_is_stamped(persist_results):
@@ -314,6 +314,60 @@ def test_cli_run_date_pins_the_stamp(persist_results, tmp_path):
     report = json.loads(result.stdout)
     assert report["run_date"] == "2026-07-26"
     assert report["talks"][0]["stamped_processed_date"] is True
+
+
+def test_cli_batch_timestamp_overrides_date_only_return_stamp_everywhere(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    authoritative = "2026-07-27T14:03:22+00:00"
+    db.write_text(json.dumps({"talks": [_talk(processed_date="2026-04-09")]}))
+    batch.write_text(json.dumps([_return(processed_date="2026-07-27")]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch),
+         "--run-date", authoritative],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    assert stored["processed_date"] == authoritative
+    assert stored["_queue_claim"]["released_at"] == authoritative
+    assert json.loads(result.stdout)["talks"][0]["stamped_processed_date"] is True
+
+
+def test_cli_rejects_conflicting_explicit_return_timestamp_before_write(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    original = {"talks": [_talk(processed_date="2026-04-09")]}
+    db.write_text(json.dumps(original))
+    batch.write_text(json.dumps([
+        _return(processed_date="2026-07-27T08:00:00+00:00")]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch),
+         "--run-date", "2026-07-27T14:03:22+00:00"],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    assert "explicit timestamp" in result.stderr
+    assert "conflicts with authoritative batch run_date" in result.stderr
+    assert json.loads(db.read_text()) == original
+
+
+def test_matching_explicit_return_timestamp_is_accepted_and_batch_stamped(
+        persist_results):
+    talk = _talk(processed_date="2026-04-09")
+    _, stamped, _, _ = persist_results.merge_talk(
+        talk,
+        _return(processed_date="2026-07-27T16:03:22.987+02:00"),
+        run_date="2026-07-27T14:03:22+00:00",
+    )
+    assert talk["processed_date"] == "2026-07-27T14:03:22+00:00"
+    assert stamped is True
 
 
 def test_cli_rejects_malformed_run_date(persist_results, tmp_path):
@@ -360,7 +414,8 @@ def test_cli_fails_visibly_on_filename_mismatch(persist_results, tmp_path):
         capture_output=True, text=True,
     )
     assert result.returncode == 1
-    assert "no talk in DB matches" in result.stderr
+    assert "must exactly match" in result.stderr
+    assert "unexpected ['missing.md']" in result.stderr
 
 
 def test_cli_missing_input_file_is_actionable(persist_results, tmp_path):
@@ -706,6 +761,7 @@ def test_migration_stamps_every_record_not_just_merged_ones(persist_results, tmp
     batch = tmp_path / "batch-returns.json"
     merged, untouched = _talk(), _talk()
     untouched["filename"] = "other-talk.md"
+    untouched["_queue_claim"]["batch_id"] = "unrelated-batch"
     db.write_text(json.dumps({"talks": [merged, untouched]}))
     batch.write_text(json.dumps([_return()]))
     result = subprocess.run(
@@ -849,6 +905,54 @@ def test_duplicate_db_filenames_are_rejected_before_write(persist_results, tmp_p
     )
     assert result.returncode == 1
     assert "duplicate filenames" in result.stderr
+    assert json.loads(db.read_text()) == original
+
+
+def test_partial_three_member_batch_is_rejected_before_any_db_write(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    talks = [_talk(filename=f"{name}.md") for name in ("a", "b", "c")]
+    returns = [_return(filename=f"{name}.md") for name in ("a", "b")]
+    original = {"talks": talks}
+    db.write_text(json.dumps(original))
+    batch.write_text(json.dumps(returns))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    assert "missing ['c.md']" in result.stderr
+    assert json.loads(db.read_text()) == original
+
+
+def test_partially_closed_batch_cannot_be_finished_piecemeal(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    talks = [_talk(filename=f"{name}.md") for name in ("a", "b", "c")]
+    for talk in talks[:2]:
+        talk["status"] = "processed"
+        talk["_queue_claim"].update({
+            "state": "completed",
+            "released_at": "2026-07-31T18:05:00+00:00",
+            "release_reason": "return_persisted",
+            "result_status": "processed",
+        })
+    original = {"talks": talks}
+    db.write_text(json.dumps(original))
+    batch.write_text(json.dumps([
+        _return(filename=f"{name}.md") for name in ("a", "b", "c")]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    assert "closed or stranded member" in result.stderr
     assert json.loads(db.read_text()) == original
 
 
@@ -1006,5 +1110,5 @@ def test_completed_generation_cannot_be_replayed(persist_results, tmp_path):
         capture_output=True, text=True,
     )
     assert replay.returncode == 1
-    assert "no active queue claim" in replay.stderr
+    assert "closed or stranded member" in replay.stderr
     assert db.read_bytes() == completed

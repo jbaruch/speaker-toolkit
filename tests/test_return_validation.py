@@ -412,6 +412,66 @@ def test_claim_generation_must_equal_talk_generation(return_validation):
     assert "disagrees with talk generation 2" in str(excinfo.value)
 
 
+def test_complete_claim_batch_rejects_partial_and_superset_membership(
+        return_validation):
+    returns = [_return(filename=f"{name}.md") for name in ("a", "b", "c")]
+    talks = [_claimed_talk(ret) for ret in returns]
+
+    with pytest.raises(return_validation.ReturnValidationError) as excinfo:
+        return_validation.validate_batch_claims_against_talks(
+            talks, returns[:2], required_state="claimed")
+    assert "must exactly match" in str(excinfo.value)
+    assert "missing ['c.md']" in str(excinfo.value)
+
+    with pytest.raises(return_validation.ReturnValidationError) as excinfo:
+        return_validation.validate_batch_claims_against_talks(
+            talks[:2], returns, required_state="claimed")
+    assert "unexpected ['c.md']" in str(excinfo.value)
+
+
+def test_complete_claim_batch_rejects_mixed_run_or_batch_identity(
+        return_validation):
+    first = _return(filename="a.md")
+    second = _return(filename="b.md")
+    second["queue_claim"] = {
+        **second["queue_claim"], "batch_id": "26"}
+
+    with pytest.raises(return_validation.ReturnValidationError) as excinfo:
+        return_validation.validate_batch_claims_against_talks(
+            [_claimed_talk(first), _claimed_talk(second)],
+            [first, second],
+            required_state="claimed",
+        )
+    assert "one queue run_id/batch_id identity" in str(excinfo.value)
+
+
+def test_complete_claim_batch_rejects_closed_or_stranded_member(
+        return_validation):
+    returns = [_return(filename=f"{name}.md") for name in ("a", "b")]
+    talks = [_claimed_talk(ret) for ret in returns]
+    closed = talks[0]
+    closed["status"] = "processed"
+    closed["_queue_claim"].update({
+        "state": "completed",
+        "released_at": "2026-07-31T18:05:00+00:00",
+        "release_reason": "return_persisted",
+        "result_status": "processed",
+    })
+
+    with pytest.raises(return_validation.ReturnValidationError) as excinfo:
+        return_validation.validate_batch_claims_against_talks(
+            talks, returns, required_state="claimed")
+    assert "closed or stranded member" in str(excinfo.value)
+    assert "a.md" in str(excinfo.value)
+
+    # A member can also be stranded while the claim still says `claimed`.
+    closed["_queue_claim"] = _claimed_talk(returns[0])["_queue_claim"]
+    with pytest.raises(return_validation.ReturnValidationError) as excinfo:
+        return_validation.validate_batch_claims_against_talks(
+            talks, returns, required_state="claimed")
+    assert "expected 'reprocessing-inflight'" in str(excinfo.value)
+
+
 def test_current_claim_requires_exact_state_schema(return_validation):
     value = _return()
     talk = _claimed_talk(value)

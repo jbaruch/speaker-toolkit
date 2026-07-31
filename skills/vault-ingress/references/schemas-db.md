@@ -295,9 +295,21 @@ Every processed return carries the complete analysis shape, including empty
 strings/arrays for findings that did not occur. A skipped terminal return may
 contain only `filename`, `queue_claim`, `status`, and any known provenance. Both
 writers reject a missing/unknown status or a return whose queue generation does
-not match the talk's active claim. `persist-results.py` closes the claim as
-`completed`; `write-analysis.py` accepts that same completed generation and
-rejects an older one.
+not match the talk's active claim. Returns should omit `processed_date`: the
+persistence writer's normalized batch `--run-date` (or generated UTC timestamp)
+owns that field. A legacy return-side value remains accepted for compatibility
+but cannot override persistence or rendered provenance. Date-only values are
+advisory; a full timezone-aware return timestamp is an explicit assertion and
+must normalize to the authoritative batch stamp or both writers reject it.
+
+The return filenames must exactly equal every tracking-DB member carrying the
+same `run_id` and `batch_id`, with each member's own generation matching its
+claim. Partial, superset, mixed-identity, duplicate, or lifecycle-split batches
+fail before either artifact changes. `persist-results.py` requires the whole
+batch in `claimed` state and closes it as `completed`; `write-analysis.py`
+requires that same whole batch in `completed` state. A genuinely one-member
+batch is complete and remains supported. A partially closed or stranded batch
+must be recovered into a fresh queue generation rather than finished piecemeal.
 
 `slides_local_path` is a top-level analysis provenance scalar. Returns use the
 portable canonical form `slides/<artifact>.pdf`; persistence copies it to the talk

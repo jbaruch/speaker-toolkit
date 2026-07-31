@@ -256,6 +256,8 @@ object are mandatory. `transcript_source` is conditional provenance: omit it whe
 the fetcher reports `existing` and the DB has no known provenance.
 `slides_local_path` is optional for ordinary returns but mandatory for
 `status: "processed"` with `slide_source: "video_extracted"`.
+Omit `processed_date`; the persistence writer owns one normalized timestamp for
+the complete queue batch and the analysis writer renders that stored value.
 
 Use `clear_fields` when the re-analysis disproves an earlier value. Each entry is
 an analysis-owned dotted path such as `verbatim_examples.jokes` or
