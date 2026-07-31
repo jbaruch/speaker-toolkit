@@ -113,6 +113,13 @@ def fetch_transcript():
 
 
 @pytest.fixture(scope="session")
+def preflight_vault():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "preflight-vault.py"), "preflight_vault"
+    )
+
+
+@pytest.fixture(scope="session")
 def extract_resources():
     return _import_script(
         os.path.join(SCRIPTS_PC, "extract-resources.py"), "extract_resources"

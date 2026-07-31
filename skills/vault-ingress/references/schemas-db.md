@@ -33,6 +33,13 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "slides_url": "Google Drive file URL (optional — slides extracted from video if absent)",
     "video_url": "YouTube watch URL (required — only source needed for processing)",
     "youtube_id": "dQw4w9WgXcQ", "google_drive_id": "1AbCdEfGhIjK",
+    "source_identity": {
+      "schema_version": 1, "provider": "youtube", "video_id": "dQw4w9WgXcQ",
+      "title": "Title recorded at the source", "speakers": ["Speaker Name"],
+      "recorded_date": "2024-04-10", "upload_date": "2024-04-11",
+      "duration_seconds": 2700, "captured_at": "2026-07-31T12:00:00Z"
+    },
+    "source_relation": {"type": "duplicate|borrowed_recording", "target_filename": "canonical-talk.md"},
     "pptx_path": "Conference/Year/Talk Name.pptx  (optional — highest quality slide source when available)",
     "schema_version": 3,
     "transcript_source": "youtube_auto|whisper|manual|none  (how the transcript was obtained; MAY BE ABSENT — see below)",
@@ -99,6 +106,11 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
   "improvement_goals": []
 }
 ```
+
+`source_identity` and `source_relation` are optional. Their owned shape,
+offline comparison rules, duplicate semantics, and compatibility policy are in
+[source-identity-preflight.md](source-identity-preflight.md). Do not fetch live
+metadata during validation; record evidence separately, then run the preflight.
 
 `improvement_goals` is the coaching-loop artifact — speaker-chosen focus areas that
 a later ingress run verifies. vault-clarification owns the record shape; vault-ingress

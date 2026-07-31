@@ -36,6 +36,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | [references/rhetoric-dimensions.md](references/rhetoric-dimensions.md) | 14 analysis dimensions |
 | [references/subagent-instructions.md](references/subagent-instructions.md) | Step 3 per-talk procedure — transcript download, slide acquisition, fallback chains, return-JSON shape |
 | [references/video-slide-extraction.md](references/video-slide-extraction.md) | Video-to-slides pipeline — layout heuristics, tuning, limitations |
+| [references/source-identity-preflight.md](references/source-identity-preflight.md) | Offline identity, duplicate-source, enum, and artifact integrity contracts |
 | [references/processing-rules.md](references/processing-rules.md) | Language policy, pattern migration logic, structured field rules |
 | [references/known-issues.md](references/known-issues.md) | Edge cases — wide-angle recordings, Whisper hallucination, non-speaker talks |
 | `skills/vault-ingress/scripts/persist-results.py` | Deterministically merge batch subagent returns into the tracking DB (Step 4) |
@@ -47,6 +48,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | `skills/vault-ingress/scripts/batch-download-videos.sh` | Parallel video download for batch processing |
 | `skills/vault-ingress/scripts/vtt-cleanup.py` | Clean VTT subtitles into plain transcript text |
 | `skills/vault-ingress/scripts/fetch-transcript.py` | Fetch a transcript, validate it, write only if real (captions → local Whisper) |
+| `skills/vault-ingress/scripts/preflight-vault.py` | Read-only source/identity integrity gate before selection or re-analysis |
 
 A talk is processable when it has `video_url`. Slide sources, in order of preference:
 1. `pptx_path` — richest data (exact colors, fonts, shapes via python-pptx)
@@ -82,7 +84,9 @@ URLs, status `"pending"`). For `remote_url` or `none` source types, skip the
 scan — the vault ingests only the talks the speaker has already registered
 elsewhere. Extract
 `video_url`, `slides_url` from frontmatter/links. Parse IDs from URLs:
-- `youtube_id`: extract the `v=` parameter from the YouTube URL
+- `youtube_id`: accept `youtube.com/watch?v=`, `youtu.be/`,
+  `youtube.com/shorts/`, and `youtube.com/embed/`; require the resulting
+  11-character ID to agree with any stored value
 - `google_drive_id`: extract the file ID from the Google Drive URL
 
 Default status is always `"pending"` for new entries.
@@ -95,6 +99,21 @@ Run `python3 skills/vault-ingress/scripts/pptx-extraction.py` for extraction.
 **Pattern taxonomy migration:** See [references/processing-rules.md](references/processing-rules.md) for migration
 logic. In brief: talks with `status` `"processed"` or `"processed_partial"` that
 lack `pattern_observations` are marked `"needs-reprocessing"`.
+
+**Source/identity preflight:** After bootstrapping and scanning, and before talk
+selection or re-analysis, run the read-only offline gate:
+
+```bash
+python3 skills/vault-ingress/scripts/preflight-vault.py {vault_root}
+```
+
+Exit 1 means one or more blocking integrity errors (identity disagreement,
+unqualified duplicate recording, invalid source claim, or a claimed completed
+artifact that is missing): stop and repair those records/artifacts before
+processing. Exit 0 may still carry warnings for legacy evidence gaps or pending
+artifacts; report them, but they do not make the vault unusable. The stable JSON
+report and evidence shape are defined in
+[references/source-identity-preflight.md](references/source-identity-preflight.md).
 
 Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
 "X processed, Y remaining. PPTX: A cataloged, B matched, C extracted."

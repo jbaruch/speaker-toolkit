@@ -1,0 +1,546 @@
+"""Regression tests for the offline vault identity/source preflight."""
+
+from copy import deepcopy
+import json
+import subprocess
+import sys
+
+import pytest
+
+
+VIDEO_ID = "AbCdEfGhI_1"
+OTHER_VIDEO_ID = "ZyXwVuTsR_2"
+DRIVE_ID = "drive-file-123"
+
+
+@pytest.fixture
+def vault_fixture(tmp_path):
+    vault = tmp_path / "vault"
+    transcripts = vault / "transcripts"
+    slides = vault / "slides"
+    pptx_source = tmp_path / "presentations"
+    transcripts.mkdir(parents=True)
+    slides.mkdir()
+    pptx_source.mkdir()
+    return {
+        "root": vault,
+        "transcripts": transcripts,
+        "slides": slides,
+        "pptx_source": pptx_source,
+        "database": vault / "tracking-database.json",
+    }
+
+
+def base_talk(**updates):
+    talk = {
+        "filename": "2026-07-30-perfect-ingress.md",
+        "title": "Perfect Vault Ingress",
+        "date": "2026-07-30",
+        "video_url": f"https://www.youtube.com/watch?v={VIDEO_ID}",
+        "youtube_id": VIDEO_ID,
+        "transcript_source": "youtube_auto",
+        "slide_source": "none",
+        "status": "processed",
+    }
+    talk.update(updates)
+    return talk
+
+
+def source_identity(**updates):
+    evidence = {
+        "schema_version": 1,
+        "provider": "youtube",
+        "video_id": VIDEO_ID,
+        "title": "Perfect Vault Ingress — Baruch Sadogursky",
+        "speakers": ["Baruch Sadogursky"],
+        "recorded_date": "2026-07-30",
+        "upload_date": "2026-07-31",
+        "duration_seconds": 2700,
+        "captured_at": "2026-07-31T12:00:00Z",
+    }
+    evidence.update(updates)
+    return evidence
+
+
+def write_database(fixture, talks, config=None):
+    database = {
+        "config": config or {
+            "speaker_name": "Baruch Sadogursky",
+            "pptx_source_dir": str(fixture["pptx_source"]),
+        },
+        "talks": talks,
+    }
+    fixture["database"].write_text(
+        json.dumps(database, indent=2), encoding="utf-8"
+    )
+    return fixture["database"]
+
+
+def materialize_transcript(fixture, video_id=VIDEO_ID):
+    path = fixture["transcripts"] / f"{video_id}.txt"
+    path.write_text("a real transcript artifact", encoding="utf-8")
+    return path
+
+
+def finding_codes(report, severity=None):
+    return {
+        finding["code"]
+        for finding in report["findings"]
+        if severity is None or finding["severity"] == severity
+    }
+
+
+@pytest.mark.parametrize(("url", "expected"), [
+    (f"https://www.youtube.com/watch?v={VIDEO_ID}&t=42", VIDEO_ID),
+    (f"https://youtu.be/{VIDEO_ID}?feature=shared", VIDEO_ID),
+    (f"https://www.youtube.com/shorts/{VIDEO_ID}?si=x", VIDEO_ID),
+    (f"https://www.youtube.com/embed/{VIDEO_ID}", VIDEO_ID),
+    (f"https://www.youtube-nocookie.com/embed/{VIDEO_ID}", VIDEO_ID),
+])
+def test_youtube_id_parser_covers_supported_source_forms(preflight_vault, url, expected):
+    assert preflight_vault.parse_youtube_id(url) == expected
+
+
+@pytest.mark.parametrize("url", [
+    "https://www.youtube.com/watch?v=too-short",
+    "https://www.youtube.com/live/AbCdEfGhI_1",
+    "https://videos.example.com/watch?v=AbCdEfGhI_1",
+])
+def test_youtube_id_parser_rejects_unsupported_or_invalid_urls(preflight_vault, url):
+    assert preflight_vault.parse_youtube_id(url) is None
+
+
+def test_clean_record_has_no_findings(preflight_vault, vault_fixture):
+    materialize_transcript(vault_fixture)
+    (vault_fixture["slides"] / f"{DRIVE_ID}.pdf").write_bytes(b"%PDF fixture")
+    pptx = vault_fixture["pptx_source"] / "Conf" / "Perfect.pptx"
+    pptx.parent.mkdir()
+    pptx.write_bytes(b"PPTX fixture")
+    talk = base_talk(
+        slide_source="both",
+        google_drive_id=DRIVE_ID,
+        pptx_path="Conf/Perfect.pptx",
+        duration_seconds=2700,
+        source_identity=source_identity(),
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["ok"] is True
+    assert report["blocking_count"] == 0
+    assert report["warning_count"] == 0
+    assert report["findings"] == []
+
+
+def test_h1b_upload_before_delivery_is_blocking(preflight_vault, vault_fixture):
+    """H1b shape: source evidence predates the event it allegedly records."""
+    materialize_transcript(vault_fixture)
+    talk = base_talk(
+        duration_seconds=2700,
+        source_identity=source_identity(upload_date="2025-12-31"),
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["database"])
+
+    assert "source_identity_upload_predates_talk" in finding_codes(
+        report, "blocking"
+    )
+    assert report["ok"] is False
+
+
+def test_h4_wrong_recording_evidence_is_blocking(preflight_vault, vault_fixture):
+    """H4 shape: valid metadata was captured, but for an unrelated recording."""
+    materialize_transcript(vault_fixture)
+    talk = base_talk(
+        duration_seconds=2700,
+        source_identity=source_identity(
+            video_id=OTHER_VIDEO_ID,
+            title="Kubernetes Security from First Principles",
+            speakers=["Alice Example"],
+            duration_seconds=300,
+        ),
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert {
+        "source_identity_video_id_mismatch",
+        "source_identity_title_mismatch",
+        "source_identity_speaker_mismatch",
+        "source_identity_duration_mismatch",
+    } <= finding_codes(report, "blocking")
+
+
+def test_speaker_match_accepts_surname_but_not_unrelated_given_name(preflight_vault):
+    assert preflight_vault.names_agree("Baruch Sadogursky", "Sadogursky")
+    assert preflight_vault.names_agree(
+        "Baruch Sadogursky", "Sadogursky, Baruch (JFrog)"
+    )
+    assert not preflight_vault.names_agree("Baruch Sadogursky", "Baruch")
+
+
+def test_url_and_stored_youtube_id_must_agree(preflight_vault, vault_fixture):
+    materialize_transcript(vault_fixture, OTHER_VIDEO_ID)
+    talk = base_talk(youtube_id=OTHER_VIDEO_ID)
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(
+        item for item in report["findings"]
+        if item["code"] == "youtube_id_mismatch"
+    )
+    assert finding["expected"] == VIDEO_ID
+    assert finding["actual"] == OTHER_VIDEO_ID
+    assert finding["severity"] == "blocking"
+
+
+def test_duplicate_video_requires_an_explicit_relation(preflight_vault, vault_fixture):
+    materialize_transcript(vault_fixture)
+    first = base_talk()
+    second = deepcopy(first)
+    second["filename"] = "2026-07-31-second-catalog-record.md"
+    write_database(vault_fixture, [first, second])
+
+    unqualified = preflight_vault.run_preflight(vault_fixture["root"])
+    assert "duplicate_youtube_id" in finding_codes(unqualified, "blocking")
+
+    second["source_relation"] = {
+        "type": "borrowed_recording",
+        "target_filename": first["filename"],
+    }
+    write_database(vault_fixture, [first, second])
+    qualified = preflight_vault.run_preflight(vault_fixture["root"])
+    assert "duplicate_youtube_id" not in finding_codes(qualified)
+    assert qualified["blocking_count"] == 0
+
+
+def test_legacy_duplicate_relation_only_waives_the_same_recording(
+    preflight_vault, vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    first = base_talk()
+    second = deepcopy(first)
+    second.update({
+        "filename": "legacy-duplicate.md",
+        "_duplicate_of": first["filename"],
+    })
+    write_database(vault_fixture, [first, second])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "duplicate_youtube_id" not in finding_codes(report)
+    assert report["blocking_count"] == 0
+
+
+@pytest.mark.parametrize("fault_code", [
+    "slide_source_unsupported",
+    "slide_pptx_reference_missing",
+    "slide_pptx_artifact_missing",
+    "slide_pdf_reference_missing",
+    "slide_pdf_artifact_missing",
+    "slide_video_reference_missing",
+    "slide_video_artifact_missing",
+])
+def test_all_seven_slide_contract_fault_classes_are_reported(
+    preflight_vault, vault_fixture, fault_code,
+):
+    materialize_transcript(vault_fixture)
+    talk = base_talk()
+    if fault_code == "slide_source_unsupported":
+        talk["slide_source"] = "transcript_only"
+    elif fault_code == "slide_pptx_reference_missing":
+        talk["slide_source"] = "pptx"
+    elif fault_code == "slide_pptx_artifact_missing":
+        talk.update(slide_source="pptx", pptx_path="missing.pptx")
+    elif fault_code == "slide_pdf_reference_missing":
+        talk["slide_source"] = "pdf"
+    elif fault_code == "slide_pdf_artifact_missing":
+        talk.update(slide_source="pdf", google_drive_id=DRIVE_ID)
+    elif fault_code == "slide_video_reference_missing":
+        talk.update(
+            slide_source="video_extracted", video_url=None, youtube_id=None,
+            transcript_source="none",
+        )
+    elif fault_code == "slide_video_artifact_missing":
+        talk["slide_source"] = "video_extracted"
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert fault_code in finding_codes(report, "blocking")
+    assert fault_code in preflight_vault.SLIDE_CONTRACT_CODES
+
+
+def test_pending_artifact_gaps_are_warnings_not_blockers(
+    preflight_vault, vault_fixture,
+):
+    talk = base_talk(status="pending", slide_source="video_extracted")
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["blocking_count"] == 0
+    assert report["ok"] is True
+    assert {
+        "transcript_artifact_missing",
+        "slide_video_artifact_missing",
+    } <= finding_codes(report, "warning")
+
+
+def test_declared_processed_artifact_gap_is_blocking(
+    preflight_vault, vault_fixture,
+):
+    talk = base_talk(slide_source="pdf", google_drive_id=DRIVE_ID)
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert {
+        "transcript_artifact_missing",
+        "slide_pdf_artifact_missing",
+    } <= finding_codes(report, "blocking")
+
+
+def test_video_pdf_page_count_is_never_treated_as_authored_slide_count(
+    preflight_vault, vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    # It only has to exist: the preflight never imports a PDF parser or counts
+    # pages, and never compares either count with the authored slide_count.
+    (vault_fixture["slides"] / f"{VIDEO_ID}.pdf").write_bytes(
+        b"%PDF-1.4 fake fixture /Count 99"
+    )
+    talk = base_talk(
+        slide_source="video_extracted",
+        slide_count=3,
+        structured_data={
+            "video_extraction": {
+                "unique_slides_count": 99,
+                "output_pdf": f"slides/{VIDEO_ID}.pdf",
+            }
+        },
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["blocking_count"] == 0
+    assert not any("slide_count" in item["code"] for item in report["findings"])
+
+
+def test_absent_legacy_identity_metadata_is_not_a_finding(
+    preflight_vault, vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    write_database(vault_fixture, [base_talk()])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["findings"] == []
+
+
+def test_partial_identity_metadata_gaps_are_warnings(
+    preflight_vault, vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    write_database(
+        vault_fixture,
+        [base_talk(source_identity={"schema_version": 1, "provider": "youtube"})],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["blocking_count"] == 0
+    assert {
+        "source_identity_video_id_missing",
+        "source_identity_title_missing",
+        "source_identity_speakers_missing",
+        "source_identity_date_missing",
+        "source_identity_duration_seconds_missing",
+    } <= finding_codes(report, "warning")
+
+
+@pytest.mark.parametrize(("field", "value", "code"), [
+    ("transcript_source", "captions_maybe", "transcript_source_unsupported"),
+    ("transcript_source", ["youtube_auto"], "transcript_source_unsupported"),
+    ("slide_source", "transcript_only", "slide_source_unsupported"),
+    ("slide_source", ["pdf"], "slide_source_unsupported"),
+])
+def test_source_enums_are_closed(
+    preflight_vault, vault_fixture, field, value, code,
+):
+    materialize_transcript(vault_fixture)
+    write_database(vault_fixture, [base_talk(**{field: value})])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert code in finding_codes(report, "blocking")
+
+
+def test_filenames_must_be_nonempty_and_unique(preflight_vault, vault_fixture):
+    talks = [
+        {"filename": " ", "status": "skipped_no_sources"},
+        {"filename": "same.md", "status": "skipped_no_sources"},
+        {"filename": "same.md", "status": "skipped_no_sources"},
+    ]
+    write_database(vault_fixture, talks)
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert {"filename_missing", "duplicate_filename"} <= finding_codes(
+        report, "blocking"
+    )
+
+
+def test_source_indexes_survive_a_malformed_talk(preflight_vault, vault_fixture):
+    talks = [
+        None,
+        {"filename": "same.md", "status": "skipped_no_sources"},
+        {"filename": "same.md", "status": "skipped_no_sources"},
+    ]
+    write_database(vault_fixture, talks)
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    duplicate = next(
+        item for item in report["findings"] if item["code"] == "duplicate_filename"
+    )
+    assert duplicate["actual"] == [1, 2]
+
+
+def test_unhashable_relation_type_is_reported_not_raised(
+    preflight_vault, vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    talk = base_talk(source_relation={
+        "type": ["duplicate"],
+        "target_filename": "other.md",
+    })
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "source_relation_invalid" in finding_codes(report, "blocking")
+
+
+def test_identity_date_and_duration_types_are_validated(
+    preflight_vault, vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    evidence = source_identity(
+        recorded_date=20260730,
+        upload_date=None,
+        duration_seconds=float("inf"),
+    )
+    write_database(vault_fixture, [base_talk(source_identity=evidence)])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert {
+        "source_identity_date_invalid",
+        "source_identity_duration_invalid",
+    } <= finding_codes(report, "blocking")
+    # The report remains strict JSON even when Python's input decoder accepted
+    # a non-standard Infinity token from a legacy artifact.
+    json.dumps(report, allow_nan=False)
+
+
+def test_identity_date_requires_hyphenated_iso_form(
+    preflight_vault, vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    evidence = source_identity(recorded_date="20260730", upload_date=None)
+    write_database(vault_fixture, [base_talk(source_identity=evidence)])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "source_identity_date_invalid" in finding_codes(report, "blocking")
+
+
+def test_boolean_identity_schema_version_is_not_version_one(
+    preflight_vault, vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    evidence = source_identity(schema_version=True)
+    write_database(vault_fixture, [base_talk(source_identity=evidence)])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "source_identity_schema_unsupported" in finding_codes(report, "warning")
+
+
+def test_report_is_deterministic_and_preflight_is_read_only(
+    preflight_vault, vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    database = write_database(vault_fixture, [base_talk()])
+    before = database.read_bytes()
+
+    first = preflight_vault.run_preflight(database)
+    second = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert first == second
+    assert database.read_bytes() == before
+
+
+def test_cli_emits_json_and_only_blocks_on_integrity_errors(
+    preflight_vault, vault_fixture,
+):
+    pending = base_talk(status="pending", slide_source="video_extracted")
+    write_database(vault_fixture, [pending])
+    warning_run = subprocess.run(
+        [sys.executable, preflight_vault.__file__, str(vault_fixture["root"])],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    warning_report = json.loads(warning_run.stdout)
+    assert warning_run.returncode == 0
+    assert warning_report["warning_count"] > 0
+    assert warning_report["blocking_count"] == 0
+
+    write_database(vault_fixture, [base_talk(youtube_id=OTHER_VIDEO_ID)])
+    blocking_run = subprocess.run(
+        [sys.executable, preflight_vault.__file__, str(vault_fixture["database"])],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    blocking_report = json.loads(blocking_run.stdout)
+    assert blocking_run.returncode == 1
+    assert blocking_report["blocking_count"] > 0
+
+
+def test_unreadable_database_is_a_structured_blocking_report(
+    preflight_vault, vault_fixture,
+):
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["blocking_count"] == 1
+    assert report["findings"][0]["code"] == "database_unreadable"
+
+
+def test_malformed_json_is_a_structured_blocking_report(
+    preflight_vault, vault_fixture,
+):
+    vault_fixture["database"].write_text('{"talks": [}', encoding="utf-8")
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["blocking_count"] == 1
+    assert report["findings"][0]["code"] == "database_json_invalid"
+
+
+def test_non_utf8_database_is_a_structured_blocking_report(
+    preflight_vault, vault_fixture,
+):
+    vault_fixture["database"].write_bytes(b"\xff\xfe\x00")
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["blocking_count"] == 1
+    assert report["findings"][0]["code"] == "database_encoding_invalid"
