@@ -158,9 +158,9 @@ def test_likely_non_delivery_clip_uses_title_and_duration_evidence(
         "DevOps Reframed at Dev2Next 2024",
     ),
     (
-        "Codepocalypse Now: LangChain4j vs. Spring AI at DevFest Toulouse 2025",
-        "DevFest Toulouse 2025",
-        "Codepocalypse Now Lang Chain4j vs Spring Al",
+        "Runtime Rumble: Tool Alpha vs. Tool Beta at ExampleConf 2025",
+        "ExampleConf 2025",
+        "Runtime Rumble Tool Alpha vs Tool Beta",
     ),
     (
         "DevOps for developers (or maybe against them?!)",
@@ -192,12 +192,12 @@ def test_explicit_base_title_accepts_real_provider_subtitle_omissions(
 @pytest.mark.parametrize(
     ("catalog_conference", "provider_conference", "provider_title"), [
         (
-            "KCDC 2024",
+            "Conference Alpha 2024",
             "Devoxx Poland 2024",
             "Coding Fast and Slow at Devoxx Poland 2024",
         ),
         (
-            "BaselOne 2024",
+            "Conference Beta 2024",
             "Dev2Next 2024",
             "Coding Fast and Slow at Dev2Next 2024",
         ),
@@ -246,8 +246,8 @@ def test_shared_base_title_does_not_hide_wrong_delivery_event(
         ),
         (
             "JetConf 2016",
-            "Evgeny Borisov - Spring Puzzlers. The greatest hits",
-            ["Spring"],
+            "Synthetic Speaker - Java Puzzlers. The greatest hits",
+            ["Java"],
         ),
         (
             "NFJS Webinar September 2023",
@@ -261,13 +261,13 @@ def test_shared_base_title_does_not_hide_wrong_delivery_event(
         ),
         (
             "DevoxxFR",
-            "Codepocalypse Now: LangChain4j vs. Spring AI | Devoxx France 2025",
-            ["Devoxx", "Spring"],
+            "Runtime Rumble: Tool Alpha vs. Java APIs | Devoxx France 2025",
+            ["Devoxx", "Java"],
         ),
         (
             "AI Native DevCon 2026, London",
-            "Don't Write Prompts, Write Software at AIDevCon Spring 2026",
-            ["Spring"],
+            "A Synthetic Talk at AIDevCon Java 2026",
+            ["Java"],
         ),
         (
             "DevOpsDays Nashville 2019",

@@ -942,7 +942,7 @@ def test_tracking_database_symlink_is_rejected_before_analysis_write(
     assert not out.exists()
 
 
-def test_kcdc_wrong_transcript_return_cannot_overwrite_analysis(
+def test_wrong_transcript_return_cannot_overwrite_analysis(
         write_analysis, return_validation, tmp_path):
     batch = tmp_path / "batch-returns.json"
     out = tmp_path / "analyses"

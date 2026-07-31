@@ -72,7 +72,7 @@ def _return(**overrides):
 
 
 def _canonical_visual_rows():
-    """Small synthetic equivalent of the canonical Spring-style row shape."""
+    """Return a small, wholly synthetic canonical visual ledger."""
     return [
         {
             "slide_number": 1,
@@ -526,7 +526,7 @@ def test_return_claim_requires_exact_identity_schema(return_validation):
     assert "must use exactly the schema fields" in _error(return_validation, value)
 
 
-def test_kcdc_wrong_transcript_return_cannot_resurrect_repaired_source(
+def test_wrong_transcript_return_cannot_resurrect_repaired_source(
         return_validation):
     value = _return(status="processed_partial", slide_source="pdf")
     value["pattern_observations"]["evidence_sources"] = [
@@ -549,7 +549,7 @@ def test_kcdc_wrong_transcript_return_cannot_resurrect_repaired_source(
     assert "no transcript reference or active video source" in str(excinfo.value)
 
 
-def test_kcdc_corrected_pdf_only_return_is_backed_by_claimed_talk(
+def test_corrected_pdf_only_return_is_backed_by_claimed_talk(
         return_validation):
     value = _return(
         status="processed_partial",
@@ -892,14 +892,14 @@ def test_canonical_per_slide_visual_rows_are_accepted(return_validation):
 
 @pytest.mark.parametrize("legacy_row", [
     {
-        # Synthetic counterexample for the legacy KCDC return shape.
+        # Synthetic counterexample for a legacy four-key row shape.
         "slide_number": 1,
         "content_type": "title",
         "background": "purple_halftone",
         "has_text_footer": True,
     },
     {
-        # Synthetic counterexample for the legacy BaselOne return shape.
+        # Synthetic counterexample for a legacy alias-based row shape.
         "slide": 1,
         "type": "title",
         "devices": [],

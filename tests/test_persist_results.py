@@ -846,7 +846,7 @@ def test_malformed_per_slide_visual_leaves_database_untouched(
     ret = _return()
     ret["structured_data"].update({
         "slide_count": 1,
-        # Synthetic legacy KCDC shape: aliases cannot cross persistence.
+        # Synthetic legacy four-key shape: aliases cannot cross persistence.
         "per_slide_visual": [{
             "slide_number": 1,
             "content_type": "title",
@@ -1341,7 +1341,7 @@ def test_skipped_return_with_analysis_fields_aborts_without_write(
     assert json.loads(db.read_text()) == original
 
 
-def test_kcdc_wrong_transcript_source_cannot_be_resurrected(
+def test_wrong_transcript_source_cannot_be_resurrected(
         persist_results, return_validation, tmp_path):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"

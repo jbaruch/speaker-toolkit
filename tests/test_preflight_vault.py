@@ -284,7 +284,7 @@ def test_short_provider_title_from_wrong_event_is_blocking(
     )
     active = base_talk(
         title=catalog_title,
-        conference="KCDC 2024",
+        conference="Conference Alpha 2024",
         date="2024-06-26",
         source_identity=source_identity(
             title="Coding Fast and Slow at Devoxx Poland 2024",

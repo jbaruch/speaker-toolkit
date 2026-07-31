@@ -98,8 +98,8 @@ Processed returns now deep-validate `structured_data.per_slide_visual` before
 either persistence surface writes. A ledger must contain exactly one canonical
 seven-key row for every slide in order, use the documented closed content and
 composition vocabularies, and carry correctly typed labels and booleans. Extra
-keys and legacy KCDC/BaselOne aliases fail closed. Background sequences and meme
-counts are cross-checked against the rows when supplied.
+keys and legacy four-key/alias row shapes fail closed. Background sequences and
+meme counts are cross-checked against the rows when supplied.
 
 `image_source_distribution` is now a source-label-to-nonnegative-integer map;
 free-form note values and negative or boolean counts are rejected. The contract
