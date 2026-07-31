@@ -179,8 +179,6 @@ def _largest_rectangular_component(mask, min_fill=0.5,
 
     Returns (rmin, rmax, cmin, cmax) or None when nothing qualifies.
     """
-    import numpy as np
-
     total = mask.size
     best, best_area = None, 0
     for rows, cols in _label_components(mask):
