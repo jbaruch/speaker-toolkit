@@ -172,7 +172,8 @@ def _complete_unavailable_source_gates(return_validation, value):
         "reason": "The inspected fixture sources cannot evaluate this pattern.",
     } for pattern_id, entry in sorted(catalog.entries.items())
         if entry.observable and entry.evaluable_from is not None and
-        entry.evaluable_from.isdisjoint(available)]
+        not return_validation.qualifying_evidence_groups(
+            entry.evaluable_from, available)]
     return value
 
 
@@ -276,6 +277,67 @@ def test_context_delivery_video_still_requires_comparison_gates_not_evaluable(
     assert "invisibility" in error
 
 
+def test_slides_only_return_requires_verbal_layer_patterns_not_evaluable(
+        return_validation):
+    value = _return(
+        status="processed_partial",
+        slide_source="pdf",
+        transcript_source="none",
+    )
+    observations = value["pattern_observations"]
+    observations["evidence_sources"] = ["static_slides"]
+    for detection in (
+            observations["patterns_detected"] +
+            observations["antipatterns_detected"]):
+        detection["evidence_source"] = "static_slides"
+    _complete_unavailable_source_gates(return_validation, value)
+    not_evaluable = {
+        item["pattern_id"]: item
+        for item in observations["not_evaluable"]
+    }
+
+    assert not_evaluable["second-look"]["evidence_source"] == "static_slides"
+    assert not_evaluable["vacation-photos"]["evidence_source"] == \
+        "static_slides"
+    return_validation.validate_batch([value])
+
+    observations["not_evaluable"] = [
+        item for pattern_id, item in not_evaluable.items()
+        if pattern_id not in {"second-look", "vacation-photos"}
+    ]
+    error = _error(return_validation, value)
+    assert "second-look" in error
+    assert "vacation-photos" in error
+
+
+def test_transcript_only_return_requires_visual_layer_patterns_not_evaluable(
+        return_validation):
+    value = _return(
+        status="processed_partial",
+        slide_source="none",
+        transcript_source="manual",
+    )
+    observations = value["pattern_observations"]
+    observations["evidence_sources"] = ["transcript"]
+    _complete_unavailable_source_gates(return_validation, value)
+    not_evaluable = {
+        item["pattern_id"]: item
+        for item in observations["not_evaluable"]
+    }
+
+    assert not_evaluable["second-look"]["evidence_source"] == "transcript"
+    assert not_evaluable["vacation-photos"]["evidence_source"] == "transcript"
+    return_validation.validate_batch([value])
+
+    observations["not_evaluable"] = [
+        item for pattern_id, item in not_evaluable.items()
+        if pattern_id not in {"second-look", "vacation-photos"}
+    ]
+    error = _error(return_validation, value)
+    assert "second-look" in error
+    assert "vacation-photos" in error
+
+
 def test_unavailable_source_gates_must_be_explicitly_not_evaluable(return_validation):
     value = _video_return(trusted=False, promoted=False)
     value["pattern_observations"]["evidence_sources"] = ["transcript"]
@@ -289,7 +351,8 @@ def test_unavailable_source_gates_must_be_explicitly_not_evaluable(return_valida
         "reason": "Only transcript and untrusted context frames were available.",
     } for pattern_id, entry in sorted(catalog.entries.items())
         if entry.observable and entry.evaluable_from is not None and
-        entry.evaluable_from.isdisjoint({"transcript"})]
+        not return_validation.qualifying_evidence_groups(
+            entry.evaluable_from, {"transcript"})]
     return_validation.validate_batch([value])
 
 
@@ -547,11 +610,102 @@ def test_native_deck_source_requires_pptx_artifact(return_validation):
     assert "native_deck but slide_source is 'pdf'" in _error(return_validation, value)
 
 
-def test_source_comparison_requires_two_visual_sources(return_validation):
+def test_source_comparison_marker_does_not_count_as_underlying_source(
+        return_validation):
     value = _return()
     value["pattern_observations"]["evidence_sources"] = [
-        "transcript", "static_slides", "source_comparison"]
-    assert "source_comparison requires at least two visual sources" in _error(
+        "static_slides", "source_comparison"]
+    assert "requires at least two underlying sources" in _error(
+        return_validation, value)
+
+
+def test_source_comparison_requires_a_visual_underlying_source(
+        return_validation, monkeypatch):
+    monkeypatch.setattr(
+        return_validation,
+        "EVIDENCE_SOURCES",
+        return_validation.EVIDENCE_SOURCES | {"speaker_notes"},
+    )
+    observations = {
+        "evidence_sources": [
+            "transcript", "speaker_notes", "source_comparison"],
+    }
+
+    with pytest.raises(return_validation.ReturnValidationError) as excinfo:
+        return_validation._validate_available_sources(
+            observations,
+            "pptx",
+            "manual",
+        )
+
+    assert "including at least one visual source" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("pattern_id", ["second-look", "vacation-photos"])
+@pytest.mark.parametrize(
+    ("slide_source", "transcript_source", "sources", "detection_source"),
+    [
+        ("pdf", "none", ["delivery_video"], "delivery_video"),
+        (
+            "pdf",
+            "manual",
+            ["static_slides", "transcript", "source_comparison"],
+            "source_comparison",
+        ),
+        (
+            "pptx",
+            "manual",
+            ["native_deck", "transcript", "source_comparison"],
+            "source_comparison",
+        ),
+    ],
+)
+def test_verbal_layer_gates_accept_singleton_or_conjunctive_evidence(
+    return_validation,
+    pattern_id,
+    slide_source,
+    transcript_source,
+    sources,
+    detection_source,
+):
+    value = _return(
+        slide_source=slide_source,
+        transcript_source=transcript_source,
+    )
+    observations = value["pattern_observations"]
+    observations["evidence_sources"] = sources
+    observations["patterns_detected"][0].update({
+        "pattern_id": pattern_id,
+        "evidence_source": detection_source,
+    })
+    observations["antipatterns_detected"][0]["evidence_source"] = \
+        detection_source
+    _complete_unavailable_source_gates(return_validation, value)
+
+    return_validation.validate_batch([value])
+
+
+def test_conjunctive_gate_requires_source_comparison_marker(return_validation):
+    value = _return(slide_source="pdf", transcript_source="manual")
+    observations = value["pattern_observations"]
+    observations["evidence_sources"] = ["static_slides", "transcript"]
+    _complete_unavailable_source_gates(return_validation, value)
+    not_evaluable_ids = {
+        item["pattern_id"] for item in observations["not_evaluable"]}
+
+    assert {"second-look", "vacation-photos"} <= not_evaluable_ids
+    return_validation.validate_batch([value])
+
+
+def test_conjunctive_detection_must_cite_source_comparison(return_validation):
+    value = _return(slide_source="pdf", transcript_source="manual")
+    observations = value["pattern_observations"]
+    observations["evidence_sources"] = [
+        "static_slides", "transcript", "source_comparison"]
+    observations["patterns_detected"][0]["pattern_id"] = "second-look"
+    _complete_unavailable_source_gates(return_validation, value)
+
+    assert "cannot be evaluated from 'transcript'" in _error(
         return_validation, value)
 
 

@@ -121,7 +121,8 @@ def _complete_unavailable_source_gates(return_validation, ret):
         "reason": "The inspected fixture sources cannot evaluate this pattern.",
     } for pattern_id, entry in sorted(catalog.entries.items())
         if entry.observable and entry.evaluable_from is not None and
-        entry.evaluable_from.isdisjoint(available)]
+        not return_validation.qualifying_evidence_groups(
+            entry.evaluable_from, available)]
     return ret
 
 

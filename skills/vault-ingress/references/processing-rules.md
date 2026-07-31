@@ -45,10 +45,13 @@ absence. Exclude not-evaluable entries from the score. Compute per-talk pattern 
 count(detected patterns) − count(detected antipatterns), then return the detections,
 not-evaluable observations, and score in `pattern_observations`.
 
-This is exhaustive for source gates: every observable catalog entry whose
-`evaluable_from` set has no intersection with the return's inspected
-`evidence_sources` must be represented in `not_evaluable`. Artifact scope still
-controls what counts as a source. In particular, an untrusted video
+This is exhaustive for source gates: every observable catalog entry for which
+no `evaluable_from` alternative is satisfied by the return's inspected sources
+must be represented in `not_evaluable`. A string alternative needs that one
+source. A nested alternative needs every named underlying source plus the
+`source_comparison` marker; the marker is the detection's `evidence_source`, not
+one of the underlying sources. Artifact scope still controls what counts as a
+source. In particular, an untrusted video
 `full_frame_context` may support concrete `delivery_video` observations but never
 creates `static_slides` or `native_deck` evidence.
 

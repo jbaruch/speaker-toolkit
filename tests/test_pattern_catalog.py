@@ -78,13 +78,41 @@ EVIDENCE_GATE_FIELDS = frozenset({
 })
 REQUIRED_EVIDENCE_GATES = {
     "progressive-reveal": frozenset({
-        "static_slides", "native_deck", "delivery_video"}),
-    "composite-animation": frozenset({"native_deck", "delivery_video"}),
-    "invisibility": frozenset({"native_deck", "source_comparison"}),
-    "exuberant-title-top": frozenset({"native_deck", "delivery_video"}),
-    "gradual-consistency": frozenset({"native_deck", "source_comparison"}),
+        frozenset({"static_slides"}),
+        frozenset({"native_deck"}),
+        frozenset({"delivery_video"}),
+    }),
+    "composite-animation": frozenset({
+        frozenset({"native_deck"}),
+        frozenset({"delivery_video"}),
+    }),
+    "invisibility": frozenset({
+        frozenset({"native_deck"}),
+        frozenset({"source_comparison"}),
+    }),
+    "exuberant-title-top": frozenset({
+        frozenset({"native_deck"}),
+        frozenset({"delivery_video"}),
+    }),
+    "gradual-consistency": frozenset({
+        frozenset({"native_deck"}),
+        frozenset({"source_comparison"}),
+    }),
     "traveling-highlights": frozenset({
-        "static_slides", "native_deck", "delivery_video"}),
+        frozenset({"static_slides"}),
+        frozenset({"native_deck"}),
+        frozenset({"delivery_video"}),
+    }),
+    "second-look": frozenset({
+        frozenset({"delivery_video"}),
+        frozenset({"static_slides", "transcript"}),
+        frozenset({"native_deck", "transcript"}),
+    }),
+    "vacation-photos": frozenset({
+        frozenset({"delivery_video"}),
+        frozenset({"static_slides", "transcript"}),
+        frozenset({"native_deck", "transcript"}),
+    }),
 }
 
 
@@ -232,13 +260,26 @@ def test_evidence_gate_frontmatter_is_well_formed(path):
     disqualifiers = metadata["not_evaluable_when"]
     assert isinstance(sources, list) and sources, (
         f"{os.path.basename(path)}: evaluable_from must be a non-empty list")
-    assert all(isinstance(source, str) for source in sources), (
-        f"{os.path.basename(path)}: evidence sources must be strings")
-    assert set(sources) <= EVIDENCE_SOURCE_VALUES, (
-        f"{os.path.basename(path)}: unknown evidence sources "
-        f"{sorted(set(sources) - EVIDENCE_SOURCE_VALUES)}")
-    assert len(sources) == len(set(sources)), (
-        f"{os.path.basename(path)}: duplicate evidence sources")
+    groups = []
+    for option in sources:
+        if isinstance(option, list):
+            assert len(option) >= 2, (
+                f"{os.path.basename(path)}: nested alternatives need two sources")
+        group = [option] if isinstance(option, str) else option
+        assert isinstance(group, list) and group, (
+            f"{os.path.basename(path)}: invalid evidence-source alternative")
+        assert all(isinstance(source, str) for source in group), (
+            f"{os.path.basename(path)}: evidence sources must be strings")
+        assert set(group) <= EVIDENCE_SOURCE_VALUES, (
+            f"{os.path.basename(path)}: unknown evidence sources "
+            f"{sorted(set(group) - EVIDENCE_SOURCE_VALUES)}")
+        assert len(group) == len(set(group)), (
+            f"{os.path.basename(path)}: duplicate evidence sources")
+        assert len(group) == 1 or "source_comparison" not in group, (
+            f"{os.path.basename(path)}: comparison label cannot be an underlying source")
+        groups.append(frozenset(group))
+    assert len(groups) == len(set(groups)), (
+        f"{os.path.basename(path)}: duplicate evidence-source alternatives")
     for field, values in (("evidence_requirements", requirements),
                           ("not_evaluable_when", disqualifiers)):
         assert isinstance(values, list) and values, (
@@ -251,12 +292,16 @@ def test_evidence_gate_frontmatter_is_well_formed(path):
     ("pattern_id", "expected_sources"),
     sorted(REQUIRED_EVIDENCE_GATES.items()),
 )
-def test_animation_dependent_patterns_have_required_evidence_gates(
+def test_source_dependent_patterns_have_required_evidence_gates(
         pattern_id, expected_sources):
-    """The six known source traps must never fall back to visual guesswork."""
+    """Known source traps must never fall back to visual guesswork."""
     path = _path_for_id(pattern_id)
     metadata = _metadata(path)
-    assert set(metadata["evaluable_from"]) == expected_sources
+    actual_sources = frozenset(
+        frozenset([option]) if isinstance(option, str) else frozenset(option)
+        for option in metadata["evaluable_from"]
+    )
+    assert actual_sources == expected_sources
     assert len(metadata["evidence_requirements"]) >= 2
     assert len(metadata["not_evaluable_when"]) >= 2
     assert "## Evidence Gate" in _read(path)

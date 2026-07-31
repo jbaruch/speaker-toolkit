@@ -327,11 +327,13 @@ empty values remain additive no-ops.
 
 `evidence_source` uses the enum defined by the pattern index's Evidence-Source Contract.
 Detected entries must name a qualifying source; `source_comparison` evidence must name
-both compared artifacts. `not_evaluable` is a separate array for source-gated entries
-that cannot be judged from the available evidence. Every observable gated catalog entry
-whose `evaluable_from` set has no intersection with the inspected `evidence_sources`
-must appear there; an entry may also appear when an otherwise eligible source cannot
-establish its stated evidence requirements. Its entries are excluded from
+both compared sources. A nested `evaluable_from` alternative requires all named
+underlying sources plus the `source_comparison` marker, which does not count as an
+underlying source. `not_evaluable` is a separate array for source-gated entries that
+cannot be judged from the available evidence. Every observable gated catalog entry with
+no satisfied singleton or conjunctive alternative must appear there; an entry may also
+appear when an otherwise eligible source cannot establish its stated evidence
+requirements. Its entries are excluded from
 `pattern_ids`, `antipattern_ids`, and every `pattern_score` count. Never put an
 unavailable entry in a detected array or treat it as an absent pattern.
 

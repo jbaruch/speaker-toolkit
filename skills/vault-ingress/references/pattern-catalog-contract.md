@@ -21,6 +21,9 @@ exit `2`.
   evidence gates, graph declarations, and aliases.
 - YAML mapping keys must be unique at every nesting level. The catalog
   consumers reject duplicates instead of accepting PyYAML's last value.
+- `evaluable_from` is an OR list. String items are singleton alternatives;
+  nested lists are conjunctive alternatives whose underlying sources must all
+  be present with `source_comparison` evidence.
 - Entry prose owns definitions, boundaries, examples, and semantic intent.
 - `inverse_of` is symmetric. Either endpoint may originate the assertion, but
   both endpoints must declare it.
@@ -78,6 +81,8 @@ The `errors` lane contains mechanically decidable contract failures:
   duplicated; index related-ID lists may be empty but may not repeat an ID.
 - Filename, ID, directory, lifecycle part, index kind, or polarity disagree.
 - Frontmatter contains invalid YAML or repeats a mapping key at any depth.
+- An evidence-source alternative is empty, duplicated, unknown, or uses
+  `source_comparison` as an underlying member of a conjunctive alternative.
 - Frontmatter lists or creator-phase values violate their declared shape.
 - Observable state and source-gate metadata/prose are incompatible.
 - Related or inverse references are dangling, duplicated, or self-referential.

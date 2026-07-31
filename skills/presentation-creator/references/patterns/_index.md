@@ -38,7 +38,9 @@ Some patterns depend on motion, artifact differences, or ordered visual states t
 transcript or flattened slide cannot expose. Those entries declare three frontmatter
 fields:
 
-- `evaluable_from`: one or more evidence-source values that can support evaluation.
+- `evaluable_from`: one or more OR alternatives that can support evaluation. A
+  string is a singleton alternative; a nested list is an all-of alternative
+  whose sources must all have been inspected.
 - `evidence_requirements`: positive facts the named source must establish before scoring.
 - `not_evaluable_when`: precise source limitations that prohibit a present/absent guess.
 
@@ -51,6 +53,14 @@ The evidence-source enum is deliberately small:
 | `delivery_video` | Recording of the projected presentation. Establishes what the audience saw and the delivered timing. |
 | `transcript` | Spoken-track text or captions. Establishes verbal content only; it cannot prove a visual animation by itself. |
 | `source_comparison` | An explicit comparison between two named sources or artifacts, such as delivery video versus a distributed PDF. The evidence must identify both. |
+
+For a nested `evaluable_from` alternative, list every underlying source plus
+`source_comparison` in the return's inspected sources and cite
+`evidence_source: source_comparison` on the detection. The comparison label does
+not count as an underlying source: at least two named underlying sources must be
+present, including at least one visual source. Alternatives remain OR: for
+example, `delivery_video` can be a self-contained singleton alternative beside
+an all-of `[static_slides, transcript]` alternative.
 
 For a detection, record the qualifying value as `evidence_source` alongside the concrete
 evidence. If no available source is eligible, a requirement is unmet, or a

@@ -12,6 +12,17 @@ detection_signals:
   - "minimal text on image slides"
   - "high-quality photography"
   - "presenter as verbal focus"
+evaluable_from:
+  - delivery_video
+  - [static_slides, transcript]
+  - [native_deck, transcript]
+evidence_requirements:
+  - "Evidence must pair rendered-page inspection with the spoken track to establish that substantive content lives in the presenter layer rather than in baked slide lettering."
+  - "Evidence must establish repeated full-bleed, high-quality photography with minimal words on the rendered pages."
+not_evaluable_when:
+  - "Only static or native slides are available without the spoken track."
+  - "Only a transcript is available without rendered pages that establish the image-led slide treatment."
+  - "Only shape-text extraction is available and baked-in lettering on the rendered pages cannot be ruled out."
 related_patterns: [unifying-visual-theme]
 inverse_of: [photomaniac, bullet-riddled-corpse]
 difficulty: intermediate
@@ -62,6 +73,13 @@ The question is not "does the slide carry text in shapes" but "does the slide ca
 - Strong signal (2 pts): Multiple full-bleed image slides carrying no or minimal words ON THE RENDERED PAGE, high-quality photography, presenter clearly serving as the verbal narrative layer
 - Moderate signal (1 pt): Some image-heavy slides but mixed with text-heavy ones, or images used but not full-bleed, or image quality is inconsistent
 - Absent (0 pts): No full-bleed image slides, text dominates every slide, images used only as small illustrations within text-heavy layouts — or the slides are full-bleed images whose baked-in lettering carries the argument, which is a different pattern and may be `second-look`
+
+## Evidence Gate
+Vacation Photos requires both rendered pages and the spoken track. The visual source
+must establish repeated full-bleed photography with minimal rendered words, while the
+transcript or delivery must establish that the presenter supplies the substantive
+narrative. Slides alone cannot prove verbal primacy, and transcript alone cannot prove
+the full-bleed image treatment.
 
 ## Relationship to Vault Dimensions
 Dimension 8 (Slide Design): Vacation Photos represents a deliberate architectural choice about how slides function — as emotional/visual backdrops rather than information carriers. Dimension 13 (Visual Polish and Craft): The quality and curation of images directly reflects the presenter's investment in visual craft.

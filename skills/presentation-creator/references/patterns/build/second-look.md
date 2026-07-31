@@ -12,6 +12,17 @@ detection_signals:
   - "detail is never narrated and the argument does not depend on it"
   - "buried jokes or payoffs sized below room legibility"
   - "an explicit destination (shownotes/deck link) where the detail is recoverable"
+evaluable_from:
+  - delivery_video
+  - [static_slides, transcript]
+  - [native_deck, transcript]
+evidence_requirements:
+  - "Evidence must pair rendered-slide inspection with the spoken track to establish that the room layer carries the argument while reward detail remains unnarrated."
+  - "Evidence must establish a genuine fine-scale reward layer and an explicit destination where that detail is recoverable."
+not_evaluable_when:
+  - "Only static or native slides are available without the spoken track."
+  - "Only a transcript is available without rendered pages that establish the two legibility layers and destination."
+  - "Shape-text extraction or OCR is available but rendered-page legibility cannot be inspected."
 related_patterns: [unifying-visual-theme, spaced-followup, coda, star-moment, vacation-photos, gradual-consistency, infodeck]
 inverse_of: []
 difficulty: advanced
@@ -65,6 +76,13 @@ The distinguishing test against ant-fonts is a single question: **did the audien
 - Strong signal (2 pts): Consistent two-layer construction across the deck; room layer carries the argument unaided; reward layer contains genuine payoffs at sub-room scale; a destination exists and is integrated into the theme
 - Moderate signal (1 pt): Dense detailed slides with a destination, but the room layer is muddy (the point competes with the detail), or the reward layer is decorative rather than rewarding, or the destination is a bare afterthought URL
 - Absent (0 pts): Slides are single-layer — either clean and sparse (no reward layer) or uniformly dense with no room-legible point. Density with no destination is not this pattern; score it under `_anti_ant-fonts.md`
+
+## Evidence Gate
+Second Look requires both rendered-page legibility and the spoken track. The visual
+source must establish separate room and reward layers plus a recoverable destination;
+the transcript or delivery must establish that the fine detail stays unnarrated and
+does not carry the live argument. Slides alone cannot distinguish this pattern from an
+unreadable slide, and transcript alone cannot establish the visual layers.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 8 (Slide-to-Speech Relationship) as the primary axis, and inverts the usual reading of it. Most of the catalog treats slide-to-speech as a question of whether the slide competes with the speaker; here the slide deliberately carries far *more* than the speech does, and the excess is aimed at a reader who does not exist yet. The speaker narrates the room layer only; the reward layer is addressed to a future audience of one, holding a phone, on a couch.

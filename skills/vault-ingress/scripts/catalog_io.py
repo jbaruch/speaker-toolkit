@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from pathlib import Path
 from typing import Any
 
 import yaml
 from yaml.constructor import ConstructorError
 from yaml.nodes import MappingNode
+
+
+EvidenceSourceGroups = tuple[frozenset[str], ...]
+SOURCE_COMPARISON = "source_comparison"
 
 
 class DuplicateYAMLKeyError(ConstructorError):
@@ -68,6 +72,76 @@ def catalog_entry_paths(root: Path) -> list[Path]:
         ),
         key=lambda path: path.relative_to(root).as_posix(),
     )
+
+
+def parse_evidence_source_groups(
+    value: object,
+    allowed_sources: Collection[str],
+) -> EvidenceSourceGroups:
+    """Parse OR alternatives whose nested lists express conjunctive sources."""
+    if not isinstance(value, list) or not value:
+        raise ValueError("evaluable_from must be a non-empty list")
+
+    allowed = frozenset(allowed_sources)
+    groups: list[frozenset[str]] = []
+    for index, option in enumerate(value):
+        if isinstance(option, str):
+            raw_group = [option]
+        elif isinstance(option, list) and len(option) >= 2:
+            raw_group = option
+        else:
+            raise ValueError(
+                f"evaluable_from[{index}] must be a source string or an "
+                "all-of list containing at least two sources")
+        if any(not isinstance(source, str) for source in raw_group):
+            raise ValueError(
+                f"evaluable_from[{index}] sources must all be strings")
+        if len(raw_group) != len(set(raw_group)):
+            raise ValueError(
+                f"evaluable_from[{index}] contains duplicate sources")
+        unknown = sorted(set(raw_group) - allowed)
+        if unknown:
+            raise ValueError(
+                f"evaluable_from[{index}] contains unknown sources: {unknown}")
+        group = frozenset(raw_group)
+        if len(group) > 1 and SOURCE_COMPARISON in group:
+            raise ValueError(
+                "source_comparison labels a completed comparison and cannot be "
+                "an underlying source in an all-of alternative")
+        if group in groups:
+            raise ValueError(
+                f"evaluable_from contains duplicate alternative {sorted(group)}")
+        groups.append(group)
+    return tuple(groups)
+
+
+def qualifying_evidence_groups(
+    groups: EvidenceSourceGroups,
+    available_sources: Collection[str],
+) -> tuple[frozenset[str], ...]:
+    """Return alternatives satisfied by inspected sources and comparison proof."""
+    available = frozenset(available_sources)
+    return tuple(
+        group
+        for group in groups
+        if group <= available and (
+            len(group) == 1 or SOURCE_COMPARISON in available)
+    )
+
+
+def evidence_source_satisfies_gate(
+    groups: EvidenceSourceGroups,
+    evidence_source: str,
+    available_sources: Collection[str],
+) -> bool:
+    """Return whether one detection label cites a satisfied gate alternative."""
+    qualifying = qualifying_evidence_groups(groups, available_sources)
+    if evidence_source == SOURCE_COMPARISON:
+        return any(
+            len(group) > 1 or group == frozenset({SOURCE_COMPARISON})
+            for group in qualifying
+        )
+    return frozenset({evidence_source}) in qualifying
 
 
 def catalog_fingerprint(

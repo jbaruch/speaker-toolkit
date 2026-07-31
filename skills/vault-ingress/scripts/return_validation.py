@@ -22,9 +22,13 @@ from yaml import YAMLError
 
 from catalog_io import (
     DuplicateYAMLKeyError,
+    EvidenceSourceGroups,
     catalog_entry_paths,
     catalog_fingerprint,
+    evidence_source_satisfies_gate,
     load_catalog_yaml,
+    parse_evidence_source_groups,
+    qualifying_evidence_groups,
 )
 
 
@@ -127,7 +131,7 @@ class CatalogEntry:
     pattern_id: str
     entry_type: str
     observable: bool
-    evaluable_from: frozenset[str] | None
+    evaluable_from: EvidenceSourceGroups | None
     path: str
 
 
@@ -250,11 +254,12 @@ def load_catalog(catalog_dir: str | Path | None = None) -> PatternCatalog:
                     f"catalog entry {path} has a partial evidence gate: "
                     f"{sorted(present_gates)}")
             raw_sources = front["evaluable_from"]
-            if (not isinstance(raw_sources, list) or not raw_sources or
-                    any(source not in EVIDENCE_SOURCES for source in raw_sources)):
+            try:
+                evaluable_from = parse_evidence_source_groups(
+                    raw_sources, EVIDENCE_SOURCES)
+            except ValueError as exc:
                 raise ReturnValidationError(
-                    f"catalog entry {path} has invalid evaluable_from={raw_sources!r}")
-            evaluable_from = frozenset(raw_sources)
+                    f"catalog entry {path} has invalid evaluable_from: {exc}") from exc
         relative = path.relative_to(root).as_posix()
         entries[pattern_id] = CatalogEntry(
             pattern_id=pattern_id,
@@ -612,10 +617,13 @@ def _validate_detection_list(
             raise ReturnValidationError(
                 f"{label}.evidence_source {evidence_source!r} is not listed in "
                 "pattern_observations.evidence_sources")
-        if entry.evaluable_from is not None and evidence_source not in entry.evaluable_from:
+        if (entry.evaluable_from is not None and
+                not evidence_source_satisfies_gate(
+                    entry.evaluable_from, evidence_source, available_sources)):
+            allowed = [sorted(group) for group in entry.evaluable_from]
             raise ReturnValidationError(
                 f"{pattern_id!r} cannot be evaluated from {evidence_source!r}; "
-                f"catalog allows {sorted(entry.evaluable_from)}")
+                f"catalog allows source alternatives {allowed}")
         _require_string(detection, "evidence")
         dimensions = detection.get("dimensions")
         if dimensions is not None:
@@ -655,11 +663,13 @@ def _validate_available_sources(observations: dict, slide_source: str,
         raise ReturnValidationError(
             f"evidence_sources includes native_deck but slide_source is {slide_source!r}")
     if "source_comparison" in available:
-        comparable = available.intersection(
+        underlying = available - {"source_comparison"}
+        visual = underlying.intersection(
             {"static_slides", "native_deck", "delivery_video"})
-        if len(comparable) < 2:
+        if len(underlying) < 2 or not visual:
             raise ReturnValidationError(
-                "source_comparison requires at least two visual sources in "
+                "source_comparison requires at least two underlying sources, "
+                "including at least one visual source, in "
                 "pattern_observations.evidence_sources")
     return available
 
@@ -705,7 +715,8 @@ def _validate_unavailable_catalog_gates(catalog: PatternCatalog,
     required = {
         pattern_id for pattern_id, entry in catalog.entries.items()
         if (entry.observable and entry.evaluable_from is not None and
-            entry.evaluable_from.isdisjoint(available_sources))
+            not qualifying_evidence_groups(
+                entry.evaluable_from, available_sources))
     }
     missing = sorted(required - recorded)
     if missing:

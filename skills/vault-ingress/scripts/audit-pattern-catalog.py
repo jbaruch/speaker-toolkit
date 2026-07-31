@@ -43,6 +43,7 @@ from catalog_io import (
     catalog_entry_paths,
     catalog_fingerprint,
     load_catalog_yaml,
+    parse_evidence_source_groups,
 )
 from catalog_normalization import normalize_catalog_alias
 
@@ -543,22 +544,17 @@ def _validate_observability(entry: CatalogEntry, errors: list[Issue]) -> None:
             "observable",
         ))
 
-    sources = _string_list(
-        entry,
-        "evaluable_from",
-        errors,
-        nonempty=True,
-    )
-    if sources is not None:
-        unknown = sorted(set(sources) - EVIDENCE_SOURCES)
-        if unknown:
-            errors.append(Issue(
-                "evidence_source_invalid",
-                f"evaluable_from contains unknown sources: {unknown}",
-                entry.relative_path,
-                entry.pattern_id or "",
-                "evaluable_from",
-            ))
+    try:
+        parse_evidence_source_groups(
+            entry.metadata.get("evaluable_from"), EVIDENCE_SOURCES)
+    except ValueError as exc:
+        errors.append(Issue(
+            "evidence_source_invalid",
+            str(exc),
+            entry.relative_path,
+            entry.pattern_id or "",
+            "evaluable_from",
+        ))
     _string_list(entry, "evidence_requirements", errors, nonempty=True)
     _string_list(entry, "not_evaluable_when", errors, nonempty=True)
     if not has_evidence_section:

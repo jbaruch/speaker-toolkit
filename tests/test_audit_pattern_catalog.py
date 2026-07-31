@@ -368,6 +368,50 @@ def test_source_gate_rejects_unknown_source(tmp_path, audit_pattern_catalog):
     assert "evidence_source_invalid" in _codes(report)
 
 
+def test_source_gate_accepts_conjunctive_alternatives(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    entries = _base_entries()
+    entries[0].update({
+        "evaluable_from": [
+            "delivery_video",
+            ["static_slides", "transcript"],
+            ["native_deck", "transcript"],
+        ],
+        "evidence_requirements": ["The compared facts are visible."],
+        "not_evaluable_when": ["The required pair is unavailable."],
+    })
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert report["valid"] is True
+
+
+@pytest.mark.parametrize("alternatives", [
+    [["delivery_video"]],
+    [["transcript", "transcript"]],
+    [["source_comparison", "transcript"]],
+    [["static_slides", "speaker_memory"]],
+    ["delivery_video", "delivery_video"],
+])
+def test_source_gate_rejects_invalid_alternatives(
+    tmp_path,
+    audit_pattern_catalog,
+    alternatives,
+):
+    entries = _base_entries()
+    entries[0].update({
+        "evaluable_from": alternatives,
+        "evidence_requirements": ["The compared facts are visible."],
+        "not_evaluable_when": ["The required pair is unavailable."],
+    })
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert "evidence_source_invalid" in _codes(report)
+
+
 def test_unobservable_entry_cannot_have_source_gate(tmp_path, audit_pattern_catalog):
     entries = _base_entries()
     entries[0].update({
