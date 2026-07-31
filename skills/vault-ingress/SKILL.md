@@ -57,7 +57,10 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | `skills/vault-ingress/scripts/apply-source-repairs.py` | Guarded dry-run/apply workflow for evidence-backed source metadata repairs |
 | `skills/vault-ingress/scripts/aggregate-catalog-feedback.py` | Validate and aggregate return feedback without editing the pattern catalog |
 
-A talk is processable when it has `video_url`. Slide sources, in order of preference:
+A talk is processable when preflight confirms at least one usable transcript,
+slide, or video source. A talk may therefore be transcript-only or slides-only and
+finish `processed_partial`; `video_url` is not a queue prerequisite. Slide sources,
+in order of preference:
 1. `pptx_path` — richest data (exact colors, fonts, shapes via python-pptx)
 2. `slides_url` — download PDF from Google Drive
 3. `video_url` — extract slides from the video using ffmpeg + perceptual dedup
@@ -176,17 +179,18 @@ Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
 
 - Run `python3 skills/vault-ingress/scripts/queue-state.py
   {vault_root}/tracking-database.json normalize` once. This migrates legacy
-  `skipped_no_video`/`skipped_no_transcript` states from actual video presence;
-  video-bearing transcript failures re-enter the queue, and no-video records
-  become `skipped_no_sources`.
+  `skipped_no_video`/`skipped_no_transcript` states from the talk's usable source
+  capabilities. A record with a transcript or slide source re-enters the queue even
+  without video; only a record with no transcript, slide, or video source becomes
+  `skipped_no_sources`. The normalization report includes `source_capabilities`
+  (`video`, `slides`, `transcript`) for every changed row so the decision is auditable.
 - Claim each exact batch through `queue-state.py ... claim --run-id <stable-run>
   --batch-id <stable-batch> --now <timezone-aware-ISO>`. The command selects
   `pending`, `needs-reprocessing`, and retryable download failures, writes an
   atomic lease, increments `reprocess_generation`, and returns the claimed talk
   list. Never change a record to `reprocessing-inflight` by hand.
 - Set `slide_source` per the hierarchy above. Mark `"skipped_no_sources"` only if
-  `video_url` is entirely absent — a talk with no `video_url` is **not processable**
-  regardless of whether slides exist.
+  preflight confirms that transcript, slide, and video sources are all unavailable.
 - If `$ARGUMENTS` specifies a talk filename or title, process ONLY that one.
 
 ## Step 3 — Process Talks via Parallel Subagents (Batches of 5)
@@ -228,8 +232,12 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   Stop on a non-zero exit and repair the named return. The validator enforces the
   terminal status, return field types, catalog ID and polarity, observability,
   confidence and evidence, score arithmetic, co-presenter shape, language code,
-  and all catalog-feedback lanes. Both writers import this same validator, so
-  bypassing the standalone command cannot weaken the boundary.
+  all catalog-feedback lanes, source-gated `not_evaluable` coverage, and the
+  schema-v3 video-artifact trust boundary. For `video_extracted`, the enum alone
+  never creates `static_slides`: that source exists only when the complete manifest
+  proves a verified manual `slide_region`. `status: "processed"` additionally
+  requires its promoted `slides_local_path`. Both writers import this same validator,
+  so bypassing the standalone command cannot weaken the boundary.
 - **Update tracking DB — deterministic merge, NOT hand-mapping.** Collect the
   batch's subagent JSON returns into an array file (`batch-returns.json`) and run
   `python3 skills/vault-ingress/scripts/persist-results.py {vault_root}/tracking-database.json batch-returns.json`.
@@ -244,8 +252,12 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   manual mapping.
   A corrective reparse that needs to remove an earlier value must declare its
   analysis-owned dotted paths in `clear_fields`; empty values remain additive
-  no-ops. The script clears matching promoted scalars too, stamps the exact
-  catalog fingerprint and scoring-schema version, and writes the DB atomically.
+  no-ops. Any video return without a promoted artifact must clear
+  `slides_local_path`; an untrusted return is context-only and cannot carry
+  authored-slide evidence. The script
+  persists that path when a trusted artifact is promoted, replaces a complete
+  video-extraction manifest atomically, clears matching promoted scalars, stamps
+  the exact catalog fingerprint and scoring-schema version, and writes the DB atomically.
   A successful merge closes the matching queue lease as `completed`; it never
   deletes claim history. An interrupted batch is recovered with
   `queue-state.py ... recover --now <ISO> --stale-after-seconds <N>`, not by

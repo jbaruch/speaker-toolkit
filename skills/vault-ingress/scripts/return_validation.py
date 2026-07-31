@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import NoReturn
 
 import yaml
 
@@ -51,6 +53,24 @@ PROSE_FIELDS = (
     "summary_updates",
 )
 LANGUAGE_RE = re.compile(r"^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$")
+VIDEO_SOURCE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+VIDEO_EXTRACTION_SCHEMA_VERSION = 3
+AUTHORED_SLIDE_FIELDS = frozenset({
+    "slide_count",
+    "meme_count",
+    "image_only_slide_count",
+    "slide_design_style",
+    "illustration_style",
+    "illustration_coherence",
+    "image_source_distribution",
+    "visual_continuity_devices",
+    "color_coded_backgrounds",
+    "background_color_sequence",
+    "per_slide_visual",
+    "typography_observations",
+    "footer_observations",
+    "shape_observations",
+})
 
 
 class ReturnValidationError(ValueError):
@@ -70,6 +90,12 @@ class CatalogEntry:
 class PatternCatalog:
     entries: dict[str, CatalogEntry]
     fingerprint: str
+
+
+@dataclass(frozen=True)
+class VideoExtractionState:
+    source_video_id: str
+    trusted_slide_region: bool
 
 
 def default_catalog_dir() -> Path:
@@ -162,6 +188,299 @@ def _require_string(obj: dict, field: str, *, allow_empty: bool = False) -> str:
     return value
 
 
+def _is_nonempty(value) -> bool:
+    """Match persistence semantics: false and zero are meaningful values."""
+    return value is not None and value != "" and value != [] and value != {}
+
+
+def _validate_slides_local_path(ret: dict) -> str | None:
+    """Validate the portable vault-relative path written by an ingress return."""
+    if "slides_local_path" not in ret:
+        return None
+    value = _require_string(ret, "slides_local_path")
+    if value != value.strip() or "\\" in value:
+        raise ReturnValidationError(
+            "slides_local_path must be a canonical vault-relative POSIX path")
+    path = PurePosixPath(value)
+    if (path.is_absolute() or path.as_posix() != value or len(path.parts) != 2 or
+            path.parts[0] != "slides" or path.name in {".", ".."} or
+            path.suffix.lower() != ".pdf"):
+        raise ReturnValidationError(
+            "slides_local_path must have the canonical form slides/<artifact>.pdf")
+    return value
+
+
+def _manifest_error(field: str, message: str) -> NoReturn:
+    raise ReturnValidationError(
+        f"structured_data.video_extraction.{field} {message}")
+
+
+def _manifest_bool(manifest: dict, field: str) -> bool:
+    value = manifest.get(field)
+    if not isinstance(value, bool):
+        _manifest_error(field, f"must be a boolean, got {value!r}")
+    return value
+
+
+def _manifest_nonnegative_int(manifest: dict, field: str, *, positive=False) -> int:
+    value = manifest.get(field)
+    if (isinstance(value, bool) or not isinstance(value, int) or value < int(positive)):
+        qualifier = "positive" if positive else "non-negative"
+        _manifest_error(field, f"must be a {qualifier} integer, got {value!r}")
+    return value
+
+
+def _validate_absolute_manifest_path(value, field: str) -> str:
+    if not isinstance(value, str) or not value.strip() or value != value.strip():
+        _manifest_error(field, f"must be a non-empty absolute path, got {value!r}")
+    path = Path(value)
+    if not path.is_absolute() or ".." in path.parts:
+        _manifest_error(field, f"must be an absolute path without traversal, got {value!r}")
+    return value
+
+
+def _validate_slide_region(value) -> tuple[float, float, float, float] | None:
+    if value is None:
+        return None
+    if (not isinstance(value, list) or len(value) != 4 or
+            any(isinstance(item, bool) or not isinstance(item, (int, float))
+                for item in value)):
+        _manifest_error(
+            "slide_region", "must be null or four numeric normalized coordinates")
+    left, top, right, bottom = value
+    if not (0 <= left < right <= 1 and 0 <= top < bottom <= 1):
+        _manifest_error(
+            "slide_region", "must satisfy 0 <= left < right <= 1 and "
+            "0 <= top < bottom <= 1")
+    return left, top, right, bottom
+
+
+def validate_video_extraction_manifest(structured: dict) -> VideoExtractionState:
+    """Validate a complete schema-v3 manifest and derive authored-slide trust.
+
+    Trust is recomputed from mutually consistent top-level crop provenance and
+    the scoped artifact record. A model cannot make context frames look like an
+    authored deck merely by setting one optimistic boolean.
+    """
+    manifest = structured.get("video_extraction")
+    if not isinstance(manifest, dict):
+        raise ReturnValidationError(
+            "slide_source video_extracted requires a complete "
+            "structured_data.video_extraction schema-v3 manifest")
+    if manifest.get("schema_version") != VIDEO_EXTRACTION_SCHEMA_VERSION:
+        _manifest_error(
+            "schema_version", f"must be {VIDEO_EXTRACTION_SCHEMA_VERSION}")
+    if manifest.get("slide_source") != "video_extracted":
+        _manifest_error("slide_source", "must be 'video_extracted'")
+    pipeline_version = manifest.get("pipeline_version")
+    if (not isinstance(pipeline_version, str) or not pipeline_version.strip() or
+            pipeline_version != pipeline_version.strip() or
+            any(char.isspace() for char in pipeline_version)):
+        _manifest_error("pipeline_version", "must be a non-empty version token")
+
+    source_video_id = manifest.get("source_video_id")
+    if (not isinstance(source_video_id, str) or
+            not VIDEO_SOURCE_ID_RE.fullmatch(source_video_id)):
+        _manifest_error(
+            "source_video_id", "must be a non-empty URL-safe identity token")
+    source_video_path = _validate_absolute_manifest_path(
+        manifest.get("source_video_path"), "source_video_path")
+    total_frames = _manifest_nonnegative_int(
+        manifest, "total_frames_extracted", positive=True)
+    unique_count = _manifest_nonnegative_int(
+        manifest, "unique_frame_count", positive=True)
+    if unique_count > total_frames:
+        _manifest_error(
+            "unique_frame_count", "cannot exceed total_frames_extracted")
+    if manifest.get("authored_slide_count", object()) is not None:
+        _manifest_error(
+            "authored_slide_count", "must remain null for sampled video frames")
+    _manifest_nonnegative_int(manifest, "hash_threshold_used")
+    fps = manifest.get("fps_used")
+    if (isinstance(fps, bool) or not isinstance(fps, (int, float)) or fps <= 0):
+        _manifest_error("fps_used", f"must be a positive number, got {fps!r}")
+
+    retained = manifest.get("retained_frames")
+    if not isinstance(retained, list) or len(retained) != unique_count:
+        _manifest_error(
+            "retained_frames", "must be an array whose length equals "
+            "unique_frame_count")
+    prior_frame_index = -1
+    prior_timestamp = -1.0
+    for index, frame in enumerate(retained, start=1):
+        label = f"retained_frames[{index - 1}]"
+        if not isinstance(frame, dict):
+            _manifest_error(label, "must be an object")
+        page_number = frame.get("page_number")
+        if (isinstance(page_number, bool) or not isinstance(page_number, int) or
+                page_number != index):
+            _manifest_error(f"{label}.page_number", f"must be {index}")
+        frame_index = frame.get("frame_index")
+        if (isinstance(frame_index, bool) or not isinstance(frame_index, int) or
+                frame_index < 0 or frame_index >= total_frames or
+                frame_index <= prior_frame_index):
+            _manifest_error(
+                f"{label}.frame_index", "must be a strictly increasing "
+                "zero-based index below total_frames_extracted")
+        timestamp = frame.get("timestamp_seconds")
+        if (isinstance(timestamp, bool) or not isinstance(timestamp, (int, float)) or
+                timestamp < 0 or timestamp < prior_timestamp):
+            _manifest_error(
+                f"{label}.timestamp_seconds", "must be a non-decreasing "
+                "non-negative number")
+        expected_timestamp = frame_index / fps
+        if not math.isclose(
+                float(timestamp), expected_timestamp, rel_tol=1e-9, abs_tol=5e-4):
+            _manifest_error(
+                f"{label}.timestamp_seconds",
+                f"must equal frame_index / fps_used ({expected_timestamp})")
+        prior_frame_index = frame_index
+        prior_timestamp = float(timestamp)
+
+    method = manifest.get("slide_region_method")
+    if method not in {"auto", "manual", "none"}:
+        _manifest_error(
+            "slide_region_method", "must be one of 'auto', 'manual', or 'none'")
+    region = _validate_slide_region(manifest.get("slide_region"))
+    detected = _manifest_bool(manifest, "slide_region_detected")
+    applied = _manifest_bool(manifest, "slide_region_applied")
+    verified = _manifest_bool(manifest, "slide_region_verified")
+    expected_applied = region is not None
+    expected_detected = method == "auto" and expected_applied
+    if applied is not expected_applied:
+        _manifest_error(
+            "slide_region_applied", "must agree with whether slide_region is present")
+    if detected is not expected_detected:
+        _manifest_error(
+            "slide_region_detected", "must be true only for a detected auto region")
+    if method == "none" and region is not None:
+        _manifest_error("slide_region", "must be null when slide_region_method is none")
+    if method == "manual" and region is None:
+        _manifest_error("slide_region", "is required for a manual crop")
+    if method != "manual" and verified:
+        _manifest_error(
+            "slide_region_verified", "can be true only for a manual crop")
+
+    trusted = method == "manual" and verified and applied
+    review_required = _manifest_bool(manifest, "review_required")
+    expected_review_required = not trusted
+    if review_required is not expected_review_required:
+        _manifest_error(
+            "review_required", "must be false exactly when a verified manual "
+            "slide region is trusted")
+    review_reason = manifest.get("review_reason")
+    if review_required:
+        if not isinstance(review_reason, str) or not review_reason.strip():
+            _manifest_error(
+                "review_reason", "must explain why operator review is required")
+    elif review_reason is not None:
+        _manifest_error("review_reason", "must be null after verified review")
+
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        _manifest_error("artifacts", "must be a non-empty array")
+    seen_scopes: set[str] = set()
+    for index, artifact in enumerate(artifacts):
+        label = f"artifacts[{index}]"
+        if not isinstance(artifact, dict):
+            _manifest_error(label, "must be an object")
+        scope = artifact.get("artifact_scope")
+        if scope not in {"slide_region", "full_frame_context"}:
+            _manifest_error(
+                f"{label}.artifact_scope",
+                "must be 'slide_region' or 'full_frame_context'")
+        if scope in seen_scopes:
+            _manifest_error(f"{label}.artifact_scope", f"duplicates {scope!r}")
+        seen_scopes.add(scope)
+        artifact_path = _validate_absolute_manifest_path(
+            artifact.get("path"), f"{label}.path")
+        suffix = ".slide-region.pdf" if scope == "slide_region" else ".context.pdf"
+        if Path(artifact_path).name != f"{source_video_id}{suffix}":
+            _manifest_error(
+                f"{label}.path", f"must end in {source_video_id}{suffix}")
+        page_count = artifact.get("page_count")
+        if (isinstance(page_count, bool) or not isinstance(page_count, int) or
+                page_count != unique_count):
+            _manifest_error(
+                f"{label}.page_count", "must equal unique_frame_count")
+        if artifact.get("source_video_id") != source_video_id:
+            _manifest_error(
+                f"{label}.source_video_id", "must match source_video_id")
+        if artifact.get("source_video_path") != source_video_path:
+            _manifest_error(
+                f"{label}.source_video_path", "must match source_video_path")
+        crop_method = artifact.get("crop_method")
+        crop_verified = artifact.get("crop_verified")
+        artifact_trusted = artifact.get("trusted_for_authored_slide_analysis")
+        if not isinstance(crop_verified, bool):
+            _manifest_error(f"{label}.crop_verified", "must be a boolean")
+        if not isinstance(artifact_trusted, bool):
+            _manifest_error(
+                f"{label}.trusted_for_authored_slide_analysis",
+                "must be a boolean")
+        if scope == "full_frame_context":
+            if crop_method != "none" or crop_verified or artifact_trusted:
+                _manifest_error(
+                    label, "full_frame_context must use crop_method none and "
+                    "can never be verified or trusted as authored slides")
+        elif (crop_method != method or crop_verified is not verified or
+              artifact_trusted is not trusted):
+            _manifest_error(
+                label, "slide_region crop provenance and trust must match the "
+                "top-level manifest")
+
+    if applied and "slide_region" not in seen_scopes:
+        _manifest_error("artifacts", "must contain the applied slide_region artifact")
+    if not applied and "slide_region" in seen_scopes:
+        _manifest_error(
+            "artifacts", "cannot contain slide_region when no region was applied")
+    if review_required and "full_frame_context" not in seen_scopes:
+        _manifest_error(
+            "artifacts", "must retain full_frame_context while review is required")
+    if trusted and "slide_region" not in seen_scopes:
+        _manifest_error("artifacts", "must contain the trusted slide_region artifact")
+    return VideoExtractionState(
+        source_video_id=source_video_id,
+        trusted_slide_region=trusted,
+    )
+
+
+def _validate_video_return(ret: dict, structured: dict,
+                           slides_local_path: str | None) -> bool:
+    """Return whether the manifest carries trusted authored-slide evidence."""
+    state = validate_video_extraction_manifest(structured)
+    expected_path = f"slides/{state.source_video_id}.pdf"
+    if slides_local_path is not None and slides_local_path != expected_path:
+        raise ReturnValidationError(
+            "video-extracted slides_local_path must be the promoted path "
+            f"{expected_path!r}")
+    if slides_local_path is not None and not state.trusted_slide_region:
+        raise ReturnValidationError(
+            "slides_local_path cannot promote an untrusted video extraction artifact")
+
+    trusted_and_promoted = (
+        state.trusted_slide_region and slides_local_path == expected_path)
+    if ret["status"] == "processed" and not trusted_and_promoted:
+        raise ReturnValidationError(
+            "status processed with slide_source video_extracted requires a trusted "
+            "schema-v3 slide_region manifest and promoted slides_local_path")
+    if slides_local_path is None:
+        clear_fields = set(ret.get("clear_fields") or [])
+        if "slides_local_path" not in clear_fields:
+            raise ReturnValidationError(
+                "video_extracted returns without a promoted artifact must clear "
+                "slides_local_path so a stale promoted deck cannot survive")
+    if not state.trusted_slide_region:
+        contaminated = sorted(
+            field for field in AUTHORED_SLIDE_FIELDS
+            if _is_nonempty(structured.get(field)))
+        if contaminated:
+            raise ReturnValidationError(
+                "context-only video extraction cannot return authored-slide evidence "
+                f"in structured_data: {contaminated}")
+    return state.trusted_slide_region
+
+
 def _validate_detection_list(
         observations: dict, field: str, expected_type: str,
         catalog: PatternCatalog, available_sources: set[str]) -> list[dict]:
@@ -219,7 +538,8 @@ def _validate_detection_list(
 
 
 def _validate_available_sources(observations: dict, slide_source: str,
-                                transcript_source: str | None) -> set[str]:
+                                transcript_source: str | None,
+                                *, video_static_slides_available=False) -> set[str]:
     sources = observations.get("evidence_sources")
     if (not isinstance(sources, list) or not sources or
             any(source not in EVIDENCE_SOURCES for source in sources)):
@@ -236,6 +556,11 @@ def _validate_available_sources(observations: dict, slide_source: str,
             {"static_slides", "native_deck", "delivery_video", "source_comparison"}):
         raise ReturnValidationError(
             "slide_source none cannot support visual evidence_sources")
+    if (slide_source == "video_extracted" and "static_slides" in available and
+            not video_static_slides_available):
+        raise ReturnValidationError(
+            "evidence_sources includes static_slides, but the video extraction has "
+            "no trusted schema-v3 slide_region artifact")
     if slide_source not in {"pptx", "both"} and "native_deck" in available:
         raise ReturnValidationError(
             f"evidence_sources includes native_deck but slide_source is {slide_source!r}")
@@ -280,6 +605,23 @@ def _validate_not_evaluable(observations: dict, catalog: PatternCatalog,
                 f"{label}.evidence_source {source!r} is not listed in evidence_sources")
         _require_string(item, "reason")
     return entries
+
+
+def _validate_unavailable_catalog_gates(catalog: PatternCatalog,
+                                        available_sources: set[str],
+                                        not_evaluable: list[dict]) -> None:
+    """Require an explicit outcome for every gate with no qualifying source."""
+    recorded = {item["pattern_id"] for item in not_evaluable}
+    required = {
+        pattern_id for pattern_id, entry in catalog.entries.items()
+        if (entry.observable and entry.evaluable_from is not None and
+            entry.evaluable_from.isdisjoint(available_sources))
+    }
+    missing = sorted(required - recorded)
+    if missing:
+        raise ReturnValidationError(
+            "source-gated catalog entries without a qualifying inspected source "
+            f"must be marked not_evaluable: {missing}")
 
 
 def _validate_score(observations: dict, pattern_count: int, antipattern_count: int) -> None:
@@ -352,7 +694,7 @@ def _validate_clear_fields(value) -> None:
         raise ReturnValidationError("clear_fields contains duplicate paths")
     scalar_roots = {
         "rhetoric_notes", "areas_for_improvement", "adherence_assessment",
-        "transcript_source", "slide_source",
+        "transcript_source", "slide_source", "slides_local_path",
     }
     nested_roots = {"structured_data", "verbatim_examples", "pattern_observations"}
     for path in value:
@@ -393,6 +735,9 @@ def validate_claim_against_talk(talk, ret, *, allow_completed=False) -> None:
     if not isinstance(expected, dict) or expected.get("state") not in allowed_states:
         raise ReturnValidationError(
             f"{filename} has no active queue claim; refusing an unclaimed or replayed return")
+    if not isinstance(supplied, dict):
+        raise ReturnValidationError(
+            f"{filename} return has no validated queue_claim")
     for field in ("run_id", "batch_id", "reprocess_generation"):
         if supplied.get(field) != expected.get(field):
             raise ReturnValidationError(
@@ -411,6 +756,24 @@ def validate_claim_against_talk(talk, ret, *, allow_completed=False) -> None:
             raise ReturnValidationError(
                 f"{filename} DB status {talk.get('status')!r} does not match completed "
                 f"return status {ret.get('status')!r}")
+    if (ret.get("status") in ANALYSIS_STATUSES and
+            ret.get("slide_source") == "video_extracted"):
+        structured = ret.get("structured_data")
+        manifest = (
+            structured.get("video_extraction")
+            if isinstance(structured, dict) else None)
+        if not isinstance(manifest, dict):
+            raise ReturnValidationError(
+                f"{filename} return has no validated video_extraction manifest")
+        returned_id = manifest.get("source_video_id")
+        expected_id = talk.get("youtube_id")
+        if not isinstance(expected_id, str) or not expected_id.strip():
+            raise ReturnValidationError(
+                f"{filename} has no youtube_id to bind the video extraction manifest")
+        if returned_id != expected_id:
+            raise ReturnValidationError(
+                "structured_data.video_extraction.source_video_id "
+                f"{returned_id!r} does not match talk youtube_id {expected_id!r}")
 
 
 def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
@@ -425,6 +788,7 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
             f"status is required and must be one of {sorted(RETURN_STATUSES)}, got {status!r}")
     _validate_queue_claim(ret.get("queue_claim"))
     _validate_clear_fields(ret.get("clear_fields"))
+    slides_local_path = _validate_slides_local_path(ret)
 
     transcript_source = ret.get("transcript_source")
     if transcript_source is not None and transcript_source not in TRANSCRIPT_SOURCES:
@@ -454,6 +818,10 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
     if not isinstance(structured, dict):
         raise ReturnValidationError("structured_data is required and must be an object")
     _validate_structured_data(structured)
+    video_static_slides_available = False
+    if slide_source == "video_extracted":
+        video_static_slides_available = _validate_video_return(
+            ret, structured, slides_local_path)
     verbatim = ret.get("verbatim_examples")
     if not isinstance(verbatim, dict):
         raise ReturnValidationError("verbatim_examples is required and must be an object")
@@ -463,7 +831,8 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
 
     resolved_catalog = catalog or load_catalog()
     available_sources = _validate_available_sources(
-        observations, slide_source, transcript_source)
+        observations, slide_source, transcript_source,
+        video_static_slides_available=video_static_slides_available)
     patterns = _validate_detection_list(
         observations, "patterns_detected", "pattern", resolved_catalog,
         available_sources)
@@ -472,6 +841,8 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
         available_sources)
     not_evaluable = _validate_not_evaluable(
         observations, resolved_catalog, available_sources)
+    _validate_unavailable_catalog_gates(
+        resolved_catalog, available_sources, not_evaluable)
     overlap = ({item["pattern_id"] for item in patterns} &
                {item["pattern_id"] for item in antipatterns})
     if overlap:

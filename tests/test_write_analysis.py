@@ -94,10 +94,12 @@ def _write_tracking_db(tmp_path, returns, *, title=None, name="tracking-db.json"
 
 
 def test_renders_core_sections(write_analysis):
-    md = write_analysis.render_analysis(_return())
+    md = write_analysis.render_analysis(
+        _return(slides_local_path="slides/source.pdf"))
     assert md.startswith("# Rhetoric Analysis: talk")
     assert "**Filename:** talk.md" in md
     assert "**Processed:** 2026-07-26" in md
+    assert "**Slides local path:** slides/source.pdf" in md
     assert "## Rhetoric Notes (Dimensions 1-13)" in md
     assert "## Areas for Improvement (Dimension 14)" in md
     assert "## Adherence Assessment" in md

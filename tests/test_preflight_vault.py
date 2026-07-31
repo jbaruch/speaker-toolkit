@@ -95,12 +95,21 @@ def trusted_video_manifest(fixture, page_count=1):
         for page in range(1, page_count + 1)
     ]
     return {
+        "slide_source": "video_extracted",
         "schema_version": 3,
         "pipeline_version": "0.10.0",
         "source_video_id": VIDEO_ID,
         "source_video_path": str(source_video),
+        "total_frames_extracted": page_count,
         "unique_frame_count": page_count,
         "authored_slide_count": None,
+        "hash_threshold_used": 8,
+        "slide_region_detected": False,
+        "slide_region_applied": True,
+        "slide_region_method": "manual",
+        "slide_region_verified": True,
+        "slide_region": [0.05, 0.02, 0.78, 0.98],
+        "fps_used": 0.5,
         "retained_frames": retained,
         "review_required": False,
         "review_reason": None,
@@ -115,6 +124,34 @@ def trusted_video_manifest(fixture, page_count=1):
             "trusted_for_authored_slide_analysis": True,
         }],
     }
+
+
+def context_video_manifest(fixture, page_count=1):
+    manifest = trusted_video_manifest(fixture, page_count)
+    rebuild = fixture["root"] / "slides-rebuild" / VIDEO_ID
+    context = rebuild / f"{VIDEO_ID}.context.pdf"
+    context.write_bytes(b"%PDF context fixture")
+    source_video = manifest["source_video_path"]
+    manifest.update({
+        "slide_region_detected": False,
+        "slide_region_applied": False,
+        "slide_region_method": "none",
+        "slide_region_verified": False,
+        "slide_region": None,
+        "review_required": True,
+        "review_reason": "No verified slide region is available.",
+        "artifacts": [{
+            "path": str(context),
+            "artifact_scope": "full_frame_context",
+            "page_count": page_count,
+            "source_video_id": VIDEO_ID,
+            "source_video_path": source_video,
+            "crop_method": "none",
+            "crop_verified": False,
+            "trusted_for_authored_slide_analysis": False,
+        }],
+    })
+    return manifest
 
 
 def finding_codes(report, severity=None):
@@ -503,6 +540,52 @@ def test_video_pdf_page_count_is_never_treated_as_authored_slide_count(
     assert not any("slide_count" in item["code"] for item in report["findings"])
 
 
+@pytest.mark.parametrize("manifest_factory", [
+    trusted_video_manifest,
+    context_video_manifest,
+])
+def test_processed_partial_video_manifest_needs_no_promoted_deck(
+    preflight_vault, vault_fixture, manifest_factory,
+):
+    materialize_transcript(vault_fixture)
+    manifest = manifest_factory(vault_fixture)
+    write_database(
+        vault_fixture,
+        [base_talk(
+            status="processed_partial",
+            slide_source="video_extracted",
+            structured_data={"video_extraction": manifest},
+        )],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["blocking_count"] == 0
+    assert not finding_codes(report)
+
+
+def test_context_video_manifest_cannot_back_a_promoted_deck(
+    preflight_vault, vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    promoted = vault_fixture["slides"] / f"{VIDEO_ID}.pdf"
+    promoted.write_bytes(b"%PDF context copied into slides by mistake")
+    manifest = context_video_manifest(vault_fixture)
+    write_database(
+        vault_fixture,
+        [base_talk(
+            status="processed_partial",
+            slide_source="video_extracted",
+            slides_local_path=f"slides/{VIDEO_ID}.pdf",
+            structured_data={"video_extraction": manifest},
+        )],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "video_extraction_untrusted" in finding_codes(report, "blocking")
+
+
 def test_completed_legacy_video_pdf_without_provenance_is_blocking(
     preflight_vault, vault_fixture,
 ):
@@ -544,10 +627,28 @@ def test_unverified_video_crop_cannot_support_completed_deck_analysis(
     materialize_transcript(vault_fixture)
     (vault_fixture["slides"] / f"{VIDEO_ID}.pdf").write_bytes(b"%PDF fixture")
     manifest = trusted_video_manifest(vault_fixture)
-    manifest["review_required"] = True
-    manifest["review_reason"] = "auto crop needs review"
+    rebuild = vault_fixture["root"] / "slides-rebuild" / VIDEO_ID
+    context = rebuild / f"{VIDEO_ID}.context.pdf"
+    context.write_bytes(b"%PDF context fixture")
+    manifest.update({
+        "slide_region_detected": True,
+        "slide_region_method": "auto",
+        "slide_region_verified": False,
+        "review_required": True,
+        "review_reason": "auto crop needs review",
+    })
     manifest["artifacts"][0].update({
         "crop_method": "auto",
+        "crop_verified": False,
+        "trusted_for_authored_slide_analysis": False,
+    })
+    manifest["artifacts"].append({
+        "path": str(context),
+        "artifact_scope": "full_frame_context",
+        "page_count": manifest["unique_frame_count"],
+        "source_video_id": VIDEO_ID,
+        "source_video_path": manifest["source_video_path"],
+        "crop_method": "none",
         "crop_verified": False,
         "trusted_for_authored_slide_analysis": False,
     })

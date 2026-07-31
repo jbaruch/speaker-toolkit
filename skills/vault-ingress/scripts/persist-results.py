@@ -13,14 +13,17 @@ For each return (matched to a talk by `filename`) it:
   1. Validates the complete batch against the shared return and catalog contract,
      then matches every return to the talk's active queue generation.
   2. Sets the scalar result fields (status, processed_date, rhetoric_notes,
-     areas_for_improvement, adherence_assessment, transcript_source). A return
+     areas_for_improvement, adherence_assessment, transcript_source,
+     slide_source, slides_local_path). A return
      that omits `processed_date` is stamped with the run date, because otherwise
      the talk keeps whatever date the previous run set and the DB cannot answer
      "which talks has this reparse actually covered".
   3. Applies explicit `clear_fields`, then deep-merges the full `structured_data`
      and `verbatim_examples` blocks —
      additive: dicts recurse, new non-empty values win, existing data is never
-     clobbered by missing/empty values (re-runs refine, never wipe).
+     clobbered by missing/empty values (re-runs refine, never wipe). The complete,
+     version-owned `structured_data.video_extraction` manifest is replaced
+     atomically so legacy artifact keys cannot survive inside a schema-v3 record.
   4. Normalizes `pattern_observations` from the subagent's
      {patterns_detected, antipatterns_detected, pattern_score:{score}} shape into
      the DB's {pattern_ids, antipattern_ids, pattern_score:int} shape, keeping the
@@ -62,6 +65,7 @@ Example:
     persist-results.py ~/.claude/rhetoric-knowledge-vault/tracking-database.json batch-returns.json
 """
 
+import copy
 import json
 import os
 import sys
@@ -151,6 +155,7 @@ PROMOTE = [
 SCALARS = [
     "status", "processed_date", "rhetoric_notes", "areas_for_improvement",
     "adherence_assessment", "transcript_source", "slide_source",
+    "slides_local_path",
 ]
 
 PROMOTED_BY_STRUCTURED_KEY = {
@@ -405,6 +410,12 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
         stamped = True
     if structured is not None:
         talk["structured_data"] = deep_merge(talk.get("structured_data") or {}, structured)
+        if "video_extraction" in structured:
+            # This owner-generated schema is a complete manifest, not a bag of
+            # independently additive observations. Replacement prevents v1/v2
+            # keys such as `output_pdf` from contaminating a validated v3 record.
+            talk["structured_data"]["video_extraction"] = copy.deepcopy(
+                structured["video_extraction"])
     if verbatim is not None:
         talk["verbatim_examples"] = deep_merge(talk.get("verbatim_examples") or {}, verbatim)
     if observations:
@@ -573,7 +584,9 @@ def main():
     summary = []
     for ret in returns:
         name = ret.get("filename")
-        talk = by_name.get(name)
+        # Missing names were rejected as a complete batch above; indexing keeps
+        # that invariant explicit for both readers and static analysis.
+        talk = by_name[name]
         try:
             promoted, stamped, coerced, cleared = merge_talk(
                 talk, ret, run_date, catalog.fingerprint,

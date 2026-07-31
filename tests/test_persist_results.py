@@ -115,13 +115,34 @@ def test_full_structured_data_persisted(persist_results):
 
 
 def test_deep_merge_is_additive(persist_results):
-    talk = _talk(structured_data={"video_extraction": {"unique_slides_count": 80}})
+    talk = _talk(structured_data={"act_structure": {"act_count": 4}})
     ret = _return()
-    ret["structured_data"]["video_extraction"] = {"hash_threshold_used": 14}
+    ret["structured_data"]["act_structure"] = {"named_acts": True}
     persist_results.merge_talk(talk, ret)
-    ve = talk["structured_data"]["video_extraction"]
-    assert ve["unique_slides_count"] == 80  # earlier-run data preserved
-    assert ve["hash_threshold_used"] == 14  # new data merged in
+    acts = talk["structured_data"]["act_structure"]
+    assert acts["act_count"] == 4  # earlier-run data preserved
+    assert acts["named_acts"] is True  # new data merged in
+
+
+def test_video_extraction_manifest_replaces_legacy_manifest_atomically(
+        persist_results):
+    talk = _talk(structured_data={
+        "video_extraction": {
+            "schema_version": 2,
+            "output_pdf": "/legacy/full-frame.pdf",
+            "unique_slides_count": 80,
+        },
+    })
+    ret = _return()
+    ret["structured_data"]["video_extraction"] = {
+        "schema_version": 3,
+        "artifacts": [{"artifact_scope": "slide_region"}],
+    }
+    persist_results.merge_talk(talk, ret)
+    assert talk["structured_data"]["video_extraction"] == {
+        "schema_version": 3,
+        "artifacts": [{"artifact_scope": "slide_region"}],
+    }
 
 
 def test_empty_values_never_clobber(persist_results):
@@ -170,11 +191,13 @@ def test_not_evaluable_patterns_are_persisted_but_never_scored(
 
 def test_scalar_result_fields_copied(persist_results):
     talk = _talk()
-    persist_results.merge_talk(talk, _return())
+    persist_results.merge_talk(
+        talk, _return(slides_local_path="slides/source.pdf"))
     assert talk["status"] == "processed"
     assert talk["processed_date"] == "2026-06-18"
     assert talk["rhetoric_notes"] == "notes"
     assert talk["transcript_source"] == "youtube_auto"
+    assert talk["slides_local_path"] == "slides/source.pdf"
 
 
 def test_run_date_stamped_when_return_omits_processed_date(persist_results):
@@ -649,10 +672,12 @@ def test_clear_fields_removes_contaminated_values_and_promoted_scalars(
     batch = tmp_path / "batch-returns.json"
     talk = _talk(
         slide_count=999,
+        slides_local_path="slides/stale.pdf",
         structured_data={"slide_count": 999, "stale_claim": "borrowed deck"},
         verbatim_examples={"jokes": ["quote from a sibling delivery"]},
     )
     ret = _return(clear_fields=[
+        "slides_local_path",
         "structured_data.slide_count",
         "structured_data.stale_claim",
         "verbatim_examples.jokes",
@@ -668,6 +693,7 @@ def test_clear_fields_removes_contaminated_values_and_promoted_scalars(
     assert result.returncode == 0, result.stderr
     stored = json.loads(db.read_text())["talks"][0]
     assert "slide_count" not in stored
+    assert "slides_local_path" not in stored
     assert "slide_count" not in stored["structured_data"]
     assert "stale_claim" not in stored["structured_data"]
     assert "jokes" not in stored["verbatim_examples"]

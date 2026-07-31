@@ -121,6 +121,16 @@ Always store the full script result in `structured_data.video_extraction` and ke
 `slides_local_path: "slides/{youtube_id}.pdf"` only after promoting a trusted
 `slide_region` artifact. Keep the source MP4 and context artifact in
 `slides-rebuild/{youtube_id}/`; they are provenance, not disposable scratch.
+The per-talk return validator recomputes trust from the complete schema-v3 manifest
+and binds `source_video_id` to the claimed talk. `status: "processed"` requires both
+that trusted manifest and the promoted path. Without promotion, return
+`processed_partial`, omit `slides_local_path`, and include it in `clear_fields`; a
+verified manual `slide_region` may still supply `static_slides` evidence. Without
+manifest trust, the result is context-only: also omit authored-slide structured claims
+and do not list `static_slides` as inspected.
+`full_frame_context` remains scoped `delivery_video` evidence only for the room,
+speaker, PiP, and delivery phenomena it actually establishes; apply each pattern's
+catalog evidence gate and mark it `not_evaluable` when no inspected source qualifies.
 
 ## What This Produces
 

@@ -4,6 +4,9 @@
 The tracking database is the queue authority. This script never reads or replays
 subagent returns: an old return may predate a transcript or artifact repair and
 must not be allowed to turn an intentional requeue back into ``processed``.
+Eligibility is source-capability based: a preflighted transcript, slide, or video
+reference can support a claim. Video is not mandatory, and only a legacy record
+with none of those capabilities normalizes to ``skipped_no_sources``.
 
 Usage:
     queue-state.py <tracking-database.json> normalize
@@ -72,6 +75,15 @@ KNOWN_STATUSES = frozenset({
 CLAIM_STATES = frozenset({"claimed", "completed", "stale_recovered", "superseded"})
 YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 PLAYLIST_FILENAME = re.compile(r"^playlist-([A-Za-z0-9_-]{11})\.md$")
+KNOWN_TRANSCRIPT_SOURCES = frozenset({"youtube_auto", "whisper", "manual"})
+SLIDE_REFERENCE_FIELDS = (
+    "pptx_path",
+    "slides_url",
+    "google_drive_id",
+    "slides_local_path",
+    "slides_pdf_path",
+    "pdf_path",
+)
 
 
 class QueueStateError(ValueError):
@@ -144,6 +156,33 @@ def youtube_id_from_url(value):
 def has_video(talk):
     value = talk.get("video_url")
     return isinstance(value, str) and bool(value.strip())
+
+
+def _has_nonempty_field(talk, field):
+    value = talk.get(field)
+    return isinstance(value, str) and bool(value.strip())
+
+
+def source_capabilities(talk):
+    """Return the usable source kinds declared by one preflighted talk record.
+
+    Queue state does not reimplement artifact integrity checks; Step 1 preflight
+    owns those. Its job is to avoid discarding a valid non-video input merely
+    because the video acquisition lane is absent.
+    """
+    capabilities = []
+    if has_video(talk):
+        capabilities.append("video")
+    if (any(_has_nonempty_field(talk, field) for field in SLIDE_REFERENCE_FIELDS)):
+        capabilities.append("slides")
+    if (_has_nonempty_field(talk, "transcript_path") or
+            talk.get("transcript_source") in KNOWN_TRANSCRIPT_SOURCES):
+        capabilities.append("transcript")
+    return capabilities
+
+
+def has_processable_source(talk):
+    return bool(source_capabilities(talk))
 
 
 def validate_claim(claim, filename, *, historical=False):
@@ -341,13 +380,15 @@ def normalize_legacy_statuses(database):
         previous = talk["status"]
         if previous not in LEGACY_STATUSES:
             continue
-        current = "pending" if has_video(talk) else "skipped_no_sources"
+        capabilities = source_capabilities(talk)
+        current = "pending" if capabilities else "skipped_no_sources"
         talk["status"] = current
         changes.append({
             "filename": talk["filename"],
             "previous_status": previous,
             "status": current,
             "video_present": has_video(talk),
+            "source_capabilities": capabilities,
         })
     return changes
 
@@ -408,9 +449,10 @@ def claim_talk(talk, run_id, batch_id, now_text):
         raise QueueStateError(
             f"{talk['filename']}: cannot transition {previous!r} to {INFLIGHT_STATUS}"
         )
-    if not has_video(talk):
+    if not has_processable_source(talk):
         raise QueueStateError(
-            f"{talk['filename']}: cannot claim a talk without video_url"
+            f"{talk['filename']}: cannot claim a talk without a usable transcript, "
+            "slide, or video source"
         )
     archive_current_claim(talk, now_text)
     generation = talk.get("reprocess_generation", 0) + 1
@@ -489,20 +531,21 @@ def command_claim(database, path, args):
                 raise QueueStateError(
                     f"{talk['filename']}: cannot claim status {talk['status']!r}"
                 )
-            if not has_video(talk):
+            if not has_processable_source(talk):
                 raise QueueStateError(
-                    f"{talk['filename']}: cannot claim a talk without video_url"
+                    f"{talk['filename']}: cannot claim a talk without a usable "
+                    "transcript, slide, or video source"
                 )
     else:
         eligible = [
             talk for talk in database["talks"]
-            if talk["status"] in CLAIMABLE_STATUSES and has_video(talk)
+            if talk["status"] in CLAIMABLE_STATUSES and has_processable_source(talk)
         ]
         selected = sorted(eligible, key=lambda talk: talk["filename"])[:args.limit]
 
     claimed = [claim_talk(talk, run_id, batch_id, now_text) for talk in selected]
     remaining = sum(
-        talk["status"] in CLAIMABLE_STATUSES and has_video(talk)
+        talk["status"] in CLAIMABLE_STATUSES and has_processable_source(talk)
         for talk in database["talks"]
     )
     if normalizations or claimed:

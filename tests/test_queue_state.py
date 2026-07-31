@@ -129,8 +129,62 @@ def test_legacy_no_video_status_with_video_is_normalized_and_claimed(tmp_path):
         "previous_status": "skipped_no_video",
         "status": "pending",
         "video_present": True,
+        "source_capabilities": ["video"],
     }]
     assert payload["claimed"][0]["previous_status"] == "pending"
+
+
+@pytest.mark.parametrize("source_fields,expected_capability", [
+    ({"slides_url": "https://drive.google.com/open?id=deck"}, "slides"),
+    ({"pptx_path": "decks/talk.pptx"}, "slides"),
+    ({"slides_local_path": "slides/talk.pdf"}, "slides"),
+    ({"transcript_path": "transcripts/talk.txt"}, "transcript"),
+    ({"transcript_source": "manual"}, "transcript"),
+])
+def test_legacy_no_video_talk_with_nonvideo_source_is_claimable(
+        tmp_path, source_fields, expected_capability):
+    talk = _talk(
+        "abcdefghijk", status="skipped_no_video", video=False,
+        filename="source-only.md",
+    )
+    talk.update(source_fields)
+    path = _write_db(tmp_path, [talk])
+
+    result = _claim(path)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["normalizations"] == [{
+        "filename": "source-only.md",
+        "previous_status": "skipped_no_video",
+        "status": "pending",
+        "video_present": False,
+        "source_capabilities": [expected_capability],
+    }]
+    assert payload["claimed"][0]["filename"] == "source-only.md"
+    assert payload["claimed"][0]["previous_status"] == "pending"
+
+
+def test_legacy_true_no_source_talk_is_the_only_one_skipped(tmp_path):
+    no_source = _talk(
+        "abcdefghijk", status="skipped_no_transcript", video=False,
+        filename="no-source.md",
+    )
+    slides_only = _talk(
+        "lmnopqrstuv", status="skipped_no_transcript", video=False,
+        filename="slides-only.md",
+    )
+    slides_only["google_drive_id"] = "drive-artifact"
+    path = _write_db(tmp_path, [no_source, slides_only])
+
+    result = _claim(path, limit=10)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert [item["filename"] for item in payload["claimed"]] == ["slides-only.md"]
+    records = {talk["filename"]: talk for talk in _read_db(path)["talks"]}
+    assert records["no-source.md"]["status"] == "skipped_no_sources"
+    assert records["slides-only.md"]["status"] == "reprocessing-inflight"
 
 
 def test_video_bearing_download_failure_is_retryable(tmp_path):

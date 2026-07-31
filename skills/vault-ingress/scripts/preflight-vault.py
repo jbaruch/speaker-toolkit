@@ -26,11 +26,15 @@ import sys
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from return_validation import (
+    ReturnValidationError,
+    VIDEO_EXTRACTION_SCHEMA_VERSION,
+    validate_video_extraction_manifest,
+)
+
 
 REPORT_SCHEMA_VERSION = 1
 SOURCE_IDENTITY_SCHEMA_VERSION = 1
-VIDEO_EXTRACTION_SCHEMA_VERSION = 3
-
 TRANSCRIPT_SOURCES = frozenset({"youtube_auto", "whisper", "manual", "none"})
 SLIDE_SOURCES = frozenset({"pptx", "pdf", "both", "video_extracted", "none"})
 COMPLETED_STATUSES = frozenset({"processed", "processed_partial"})
@@ -603,7 +607,7 @@ class VaultPreflight:
                     )
                 else:
                     self._validate_video_extraction_provenance(
-                        index, explicit_pdf, severity,
+                        index, explicit_pdf, severity, require_trusted=True,
                     )
                 return
             youtube_id = self.youtube_ids.get(index)
@@ -616,16 +620,24 @@ class VaultPreflight:
                 )
             else:
                 pdf_path = self.vault_root / "slides" / f"{youtube_id}.pdf"
-                if not pdf_path.is_file():
+                if pdf_path.is_file():
+                    self._validate_video_extraction_provenance(
+                        index, pdf_path, severity, require_trusted=True,
+                    )
+                elif talk.get("status") == "processed_partial":
+                    # A partial result may intentionally retain only a trusted
+                    # unpromoted crop candidate or full-frame context. Validate
+                    # its complete manifest and preserved artifacts, but do not
+                    # invent a promoted authored deck.
+                    self._validate_video_extraction_provenance(
+                        index, None, severity, require_trusted=False,
+                    )
+                else:
                     self.talk_add(
                         index, severity, "slide_video_artifact_missing",
                         "declared video-extracted PDF artifact does not exist",
                         field="slide_source", actual="video_extracted",
                         artifact_path=pdf_path,
-                    )
-                else:
-                    self._validate_video_extraction_provenance(
-                        index, pdf_path, severity,
                     )
 
     def _transcript_path(self, talk: dict[str, Any]) -> Path | None:
@@ -674,9 +686,10 @@ class VaultPreflight:
         return path if path.is_absolute() else self.vault_root / path
 
     def _validate_video_extraction_provenance(
-        self, index: int, promoted_pdf: Path, severity: str,
+        self, index: int, promoted_pdf: Path | None, severity: str,
+        *, require_trusted: bool,
     ) -> None:
-        """Require trustworthy v3 provenance before treating frames as a deck."""
+        """Validate schema-v3 provenance and any claimed authored-deck trust."""
         talk = self.talks[index]
         structured = talk.get("structured_data")
         extraction = (
@@ -693,53 +706,34 @@ class VaultPreflight:
             )
             return
 
-        errors: list[str] = []
-        if extraction.get("schema_version") != VIDEO_EXTRACTION_SCHEMA_VERSION:
-            errors.append(
-                f"schema_version must be {VIDEO_EXTRACTION_SCHEMA_VERSION}"
+        try:
+            state = validate_video_extraction_manifest({"video_extraction": extraction})
+        except ReturnValidationError as exc:
+            self.talk_add(
+                index, severity, "video_extraction_provenance_invalid",
+                "video extraction manifest violates the schema-v3 artifact contract",
+                field="structured_data.video_extraction",
+                expected="complete, internally consistent schema-v3 manifest",
+                actual=str(exc), artifact_path=promoted_pdf,
             )
+            return
+
+        errors: list[str] = []
         expected_id = self.youtube_ids.get(index)
-        if extraction.get("source_video_id") != expected_id:
+        if state.source_video_id != expected_id:
             errors.append("source_video_id must match the talk's YouTube identity")
-        if extraction.get("authored_slide_count") is not None:
-            errors.append("authored_slide_count must remain null for video frames")
-        unique_count = extraction.get("unique_frame_count")
-        if type(unique_count) is not int or unique_count <= 0:
-            errors.append("unique_frame_count must be a positive integer")
-        retained = extraction.get("retained_frames")
-        if not isinstance(retained, list) or (
-            type(unique_count) is int and len(retained) != unique_count
-        ):
-            errors.append("retained_frames length must equal unique_frame_count")
         source_video = _nonempty_string(extraction.get("source_video_path"))
         if source_video is None or not Path(source_video).expanduser().is_file():
             errors.append("source_video_path must name the preserved source video")
 
         artifacts = extraction.get("artifacts")
-        trusted_artifacts: list[dict[str, Any]] = []
-        if not isinstance(artifacts, list):
-            errors.append("artifacts must be an array")
-            artifacts = []
+        # Shared schema validation proved this is a list of artifact objects.
+        assert isinstance(artifacts, list)
         for artifact in artifacts:
-            if not isinstance(artifact, dict):
-                errors.append("every artifact must be an object")
-                continue
+            assert isinstance(artifact, dict)
             artifact_path = _nonempty_string(artifact.get("path"))
             if artifact_path is None or not Path(artifact_path).expanduser().is_file():
                 errors.append("every artifact path must exist")
-            if artifact.get("source_video_id") != expected_id:
-                errors.append("every artifact source_video_id must match the talk")
-            if artifact.get("source_video_path") != source_video:
-                errors.append("every artifact source_video_path must match the manifest")
-            if artifact.get("page_count") != unique_count:
-                errors.append("every artifact page_count must equal unique_frame_count")
-            if (
-                artifact.get("artifact_scope") == "slide_region"
-                and artifact.get("crop_method") == "manual"
-                and artifact.get("crop_verified") is True
-                and artifact.get("trusted_for_authored_slide_analysis") is True
-            ):
-                trusted_artifacts.append(artifact)
         if errors:
             self.talk_add(
                 index, severity, "video_extraction_provenance_invalid",
@@ -749,7 +743,7 @@ class VaultPreflight:
                 actual=errors, artifact_path=promoted_pdf,
             )
             return
-        if extraction.get("review_required") is not False or not trusted_artifacts:
+        if require_trusted and not state.trusted_slide_region:
             self.talk_add(
                 index, severity, "video_extraction_untrusted",
                 "video frames have not passed verified manual crop review",

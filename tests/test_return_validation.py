@@ -71,6 +71,91 @@ def _return(**overrides):
     return value
 
 
+def _video_manifest(*, trusted=True, source_video_id="abcDEF12345"):
+    root = f"/vault/slides-rebuild/{source_video_id}"
+    source_path = f"{root}/{source_video_id}.mp4"
+    shared = {
+        "page_count": 2,
+        "source_video_id": source_video_id,
+        "source_video_path": source_path,
+    }
+    if trusted:
+        region = [0.05, 0.02, 0.78, 0.98]
+        method = "manual"
+        verified = True
+        artifacts = [{
+            "path": f"{root}/{source_video_id}.slide-region.pdf",
+            "artifact_scope": "slide_region",
+            "crop_method": "manual",
+            "crop_verified": True,
+            "trusted_for_authored_slide_analysis": True,
+            **shared,
+        }]
+        review_required = False
+        review_reason = None
+    else:
+        region = None
+        method = "none"
+        verified = False
+        artifacts = [{
+            "path": f"{root}/{source_video_id}.context.pdf",
+            "artifact_scope": "full_frame_context",
+            "crop_method": "none",
+            "crop_verified": False,
+            "trusted_for_authored_slide_analysis": False,
+            **shared,
+        }]
+        review_required = True
+        review_reason = "No verified slide region is available."
+    return {
+        "slide_source": "video_extracted",
+        "schema_version": 3,
+        "pipeline_version": "0.10.0",
+        "source_video_id": source_video_id,
+        "source_video_path": source_path,
+        "total_frames_extracted": 4,
+        "unique_frame_count": 2,
+        "authored_slide_count": None,
+        "hash_threshold_used": 8,
+        "slide_region_detected": False,
+        "slide_region_applied": region is not None,
+        "slide_region_method": method,
+        "slide_region_verified": verified,
+        "slide_region": region,
+        "fps_used": 0.5,
+        "retained_frames": [
+            {"page_number": 1, "frame_index": 0, "timestamp_seconds": 0.0},
+            {"page_number": 2, "frame_index": 3, "timestamp_seconds": 6.0},
+        ],
+        "artifacts": artifacts,
+        "review_required": review_required,
+        "review_reason": review_reason,
+    }
+
+
+def _video_return(*, trusted=True, promoted=True, **overrides):
+    source_video_id = "abcDEF12345"
+    value = _return(
+        status="processed" if trusted and promoted else "processed_partial",
+        slide_source="video_extracted",
+        structured_data={
+            "delivery_language": "en",
+            "co_presenter": False,
+            "video_extraction": _video_manifest(
+                trusted=trusted, source_video_id=source_video_id),
+        },
+        clear_fields=[] if trusted and promoted else ["slides_local_path"],
+    )
+    value["pattern_observations"]["evidence_sources"] = [
+        "transcript", "delivery_video",
+    ]
+    if trusted and promoted:
+        value["slides_local_path"] = f"slides/{source_video_id}.pdf"
+        value["pattern_observations"]["evidence_sources"].append("static_slides")
+    value.update(overrides)
+    return value
+
+
 def _error(return_validation, value):
     with pytest.raises(return_validation.ReturnValidationError) as excinfo:
         return_validation.validate_batch([value])
@@ -81,6 +166,116 @@ def test_valid_return_resolves_the_catalog_fingerprint(return_validation):
     catalog = return_validation.validate_batch([_return()])
     assert len(catalog.entries) == 111
     assert len(catalog.fingerprint) == 64
+
+
+def test_trusted_video_return_requires_complete_manifest_and_promoted_path(
+        return_validation):
+    return_validation.validate_batch([_video_return()])
+
+    missing_path = _video_return()
+    del missing_path["slides_local_path"]
+    assert "requires a trusted schema-v3" in _error(return_validation, missing_path)
+
+
+def test_video_enum_alone_does_not_make_static_slides_available(return_validation):
+    value = _video_return(trusted=False, promoted=False)
+    del value["structured_data"]["video_extraction"]
+    assert "complete structured_data.video_extraction" in _error(
+        return_validation, value)
+
+
+def test_context_video_cannot_promote_or_cite_static_slides(return_validation):
+    promoted = _video_return(trusted=False, promoted=False)
+    promoted["slides_local_path"] = "slides/abcDEF12345.pdf"
+    assert "cannot promote an untrusted" in _error(return_validation, promoted)
+
+    cited = _video_return(trusted=False, promoted=False)
+    cited["pattern_observations"]["evidence_sources"].append("static_slides")
+    assert "no trusted schema-v3 slide_region" in _error(return_validation, cited)
+
+
+def test_trusted_unpromoted_video_can_support_partial_static_analysis(
+        return_validation):
+    value = _video_return(trusted=True, promoted=False)
+    value["pattern_observations"]["evidence_sources"].append("static_slides")
+    value["structured_data"]["slide_design_style"] = "comic_book"
+    return_validation.validate_batch([value])
+
+
+def test_context_video_rejects_authored_slide_structured_evidence(return_validation):
+    value = _video_return(trusted=False, promoted=False)
+    value["structured_data"]["slide_design_style"] = "comic_book"
+    assert "cannot return authored-slide evidence" in _error(return_validation, value)
+
+
+def test_context_video_must_clear_a_stale_promoted_path(return_validation):
+    value = _video_return(trusted=False, promoted=False)
+    value["clear_fields"] = []
+    assert "must clear slides_local_path" in _error(return_validation, value)
+
+
+def test_unavailable_source_gates_must_be_explicitly_not_evaluable(return_validation):
+    value = _video_return(trusted=False, promoted=False)
+    value["pattern_observations"]["evidence_sources"] = ["transcript"]
+    error = _error(return_validation, value)
+    assert "must be marked not_evaluable" in error
+
+    catalog = return_validation.load_catalog()
+    value["pattern_observations"]["not_evaluable"] = [{
+        "pattern_id": pattern_id,
+        "evidence_source": "transcript",
+        "reason": "Only transcript and untrusted context frames were available.",
+    } for pattern_id, entry in sorted(catalog.entries.items())
+        if entry.observable and entry.evaluable_from is not None and
+        entry.evaluable_from.isdisjoint({"transcript"})]
+    return_validation.validate_batch([value])
+
+
+@pytest.mark.parametrize("mutation,expected", [
+    (lambda manifest: manifest.update(schema_version=2), "schema_version"),
+    (lambda manifest: manifest.update(review_required=False), "review_required"),
+    (lambda manifest: manifest["artifacts"][0].update(
+        trusted_for_authored_slide_analysis=True), "full_frame_context"),
+    (lambda manifest: manifest["artifacts"][0].update(
+        source_video_path="/vault/another.mp4"), "must match source_video_path"),
+    (lambda manifest: manifest["artifacts"][0].update(page_count=99),
+     "must equal unique_frame_count"),
+    (lambda manifest: manifest["artifacts"][0].update(page_count=True),
+     "must equal unique_frame_count"),
+    (lambda manifest: manifest["retained_frames"][1].update(frame_index=4),
+     "below total_frames_extracted"),
+    (lambda manifest: manifest["retained_frames"][1].update(timestamp_seconds=5.0),
+     "must equal frame_index / fps_used"),
+])
+def test_video_manifest_rejects_spoofed_or_inconsistent_provenance(
+        return_validation, mutation, expected):
+    value = _video_return(trusted=False, promoted=False)
+    mutation(value["structured_data"]["video_extraction"])
+    assert expected in _error(return_validation, value)
+
+
+def test_video_manifest_accepts_extractor_timestamp_rounding(return_validation):
+    value = _video_return()
+    manifest = value["structured_data"]["video_extraction"]
+    manifest["fps_used"] = 0.3
+    manifest["retained_frames"][1].update({
+        "frame_index": 1,
+        "timestamp_seconds": 3.333,
+    })
+    return_validation.validate_batch([value])
+
+
+def test_video_manifest_identity_is_bound_to_the_claimed_talk(return_validation):
+    value = _video_return()
+    talk = {
+        "filename": "talk.md",
+        "youtube_id": "otherID1234",
+        "status": "reprocessing-inflight",
+        "_queue_claim": {"state": "claimed", **value["queue_claim"]},
+    }
+    with pytest.raises(return_validation.ReturnValidationError) as excinfo:
+        return_validation.validate_claim_against_talk(talk, value)
+    assert "does not match talk youtube_id" in str(excinfo.value)
 
 
 @pytest.mark.parametrize("status", [None, "reprocessing-inflight", "skipped_no_video"])

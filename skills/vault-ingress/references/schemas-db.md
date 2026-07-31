@@ -31,7 +31,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "filename": "2024-04-10-talk-slug.md",
     "title": "Talk Title", "conference": "Name", "date": "2024-04-10",
     "slides_url": "Google Drive file URL (optional — slides extracted from video if absent)",
-    "video_url": "YouTube watch URL (required — only source needed for processing)",
+    "video_url": "YouTube watch URL (optional when a usable transcript or slide source exists)",
     "youtube_id": "dQw4w9WgXcQ", "google_drive_id": "1AbCdEfGhIjK",
     "source_identity": {
       "schema_version": 1, "provider": "youtube", "video_id": "dQw4w9WgXcQ",
@@ -52,6 +52,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
       "verified_at": "timezone-aware ISO-8601 timestamp"
     }],
     "pptx_path": "Conference/Year/Talk Name.pptx  (optional — highest quality slide source when available)",
+    "transcript_path": "transcripts/<artifact>.txt  (optional explicit local transcript)",
     "schema_version": 3,
     "transcript_source": "youtube_auto|whisper|manual|none  (how the transcript was obtained; MAY BE ABSENT — see below)",
     "slide_source": "pptx|pdf|both|video_extracted|none  (set in Step 2 per slide source hierarchy)",
@@ -127,6 +128,11 @@ read-only flow in [source-identity-audit.md](source-identity-audit.md), review i
 then run the preflight. Uploader/upload date never establish speaker/recorded
 date, and a captured webpage URL is never an automatic active-source repair.
 
+Queue eligibility is not encoded by `video_url` alone. `queue-state.py` derives
+auditable `source_capabilities` from declared video, transcript, and slide references;
+any one can support a claim after preflight. Legacy no-video/no-transcript statuses
+normalize to `skipped_no_sources` only when that capability list is empty.
+
 `improvement_goals` is the coaching-loop artifact — speaker-chosen focus areas that
 a later ingress run verifies. vault-clarification owns the record shape; vault-ingress
 writes only the verification fields. Record schema, lifecycle, and owner/reader
@@ -149,6 +155,7 @@ Each subagent returns this JSON after processing one talk:
   },
   "status": "processed|processed_partial|skipped_no_sources|skipped_download_failed|skipped_duplicate",
   "slide_source": "pptx|pdf|both|video_extracted|none",
+  "slides_local_path": "slides/<artifact>.pdf  (optional; required for processed video_extracted)",
   "clear_fields": [
     "analysis-owned dotted paths disproved by this re-analysis; omit when none"
   ],
@@ -292,6 +299,25 @@ not match the talk's active claim. `persist-results.py` closes the claim as
 `completed`; `write-analysis.py` accepts that same completed generation and
 rejects an older one.
 
+`slides_local_path` is a top-level analysis provenance scalar. Returns use the
+portable canonical form `slides/<artifact>.pdf`; persistence copies it to the talk
+record and the analysis writer renders it in the provenance header. For
+`slide_source: "video_extracted"`, the filename must be
+`slides/{structured_data.video_extraction.source_video_id}.pdf`. `status: "processed"`
+requires that path plus a complete schema-v3 manifest whose top-level crop provenance
+and `slide_region` artifact independently agree on a verified manual crop. The return's
+manifest identity is also matched against the claimed talk's `youtube_id` before either
+writer changes state.
+
+Any video-extracted return without a promoted artifact must omit
+`slides_local_path`, include it in `clear_fields`, and cannot finish `processed`. A
+trusted but unpromoted verified `slide_region` may still supply `static_slides` evidence
+to a `processed_partial` return. An untrusted manifest is context-only: do not list
+`static_slides` and do not return authored-slide structured evidence. A
+`full_frame_context` artifact may still qualify as `delivery_video` evidence for room,
+speaker, PiP, and delivery/timing phenomena that it actually establishes; its scope can
+never be promoted into authored-slide evidence.
+
 `clear_fields` is the only mechanism that deletes prior analysis. Allowed paths
 are top-level analysis prose/provenance scalars or leaves under
 `structured_data`, `verbatim_examples`, and `pattern_observations`. It cannot
@@ -302,7 +328,10 @@ empty values remain additive no-ops.
 `evidence_source` uses the enum defined by the pattern index's Evidence-Source Contract.
 Detected entries must name a qualifying source; `source_comparison` evidence must name
 both compared artifacts. `not_evaluable` is a separate array for source-gated entries
-that cannot be judged from the available evidence. Its entries are excluded from
+that cannot be judged from the available evidence. Every observable gated catalog entry
+whose `evaluable_from` set has no intersection with the inspected `evidence_sources`
+must appear there; an entry may also appear when an otherwise eligible source cannot
+establish its stated evidence requirements. Its entries are excluded from
 `pattern_ids`, `antipattern_ids`, and every `pattern_score` count. Never put an
 unavailable entry in a detected array or treat it as an absent pattern.
 
@@ -404,6 +433,16 @@ Version 3 separates derived artifacts by provenance and scope. `artifacts[].path
 - `full_frame_context` — uncropped broadcast frames for room, stage, speaker, or PiP
   analysis. This is never an authored deck and is never a source for slide design,
   authored slide count, or slide-pattern claims.
+
+Ingress validates the manifest as one referential unit before trusting it: schema and
+pipeline versions are present; source and artifact identities agree; normalized region
+geometry agrees with `slide_region_method`, `slide_region_applied`,
+`slide_region_detected`, and `slide_region_verified`; retained-frame and artifact page
+counts agree with `unique_frame_count`; and artifact scope, crop method, verification,
+and trust flags are mutually consistent. `review_required: false` is accepted only for
+a verified manual `slide_region`; setting one optimistic flag cannot turn a context PDF
+into a deck. Persistence replaces this complete owner-versioned manifest rather than
+deep-merging it, so obsolete v1/v2 fields cannot survive inside a schema-v3 record.
 
 `retained_frames` maps each PDF page to the zero-based index in the sampled frame
 sequence and its approximate video timestamp (`frame_index / fps_used`). Both artifacts

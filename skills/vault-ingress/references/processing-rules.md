@@ -45,6 +45,13 @@ absence. Exclude not-evaluable entries from the score. Compute per-talk pattern 
 count(detected patterns) − count(detected antipatterns), then return the detections,
 not-evaluable observations, and score in `pattern_observations`.
 
+This is exhaustive for source gates: every observable catalog entry whose
+`evaluable_from` set has no intersection with the return's inspected
+`evidence_sources` must be represented in `not_evaluable`. Artifact scope still
+controls what counts as a source. In particular, an untrusted video
+`full_frame_context` may support concrete `delivery_video` observations but never
+creates `static_slides` or `native_deck` evidence.
+
 ## Structured Field Extraction
 
 The subagent's job is to **return** every structured field it identifies (co-presenter,

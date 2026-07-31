@@ -188,8 +188,8 @@ content, but it cannot waive a duplicate-ID fault.
 
 ## Artifact contracts
 
-Checks apply to a record with `video_url` (processable) or status `processed` /
-`processed_partial` (completed):
+Checks apply to a record with a declared transcript, slide, or video capability
+(processable) or status `processed` / `processed_partial` (completed):
 
 - Transcript source enum: `youtube_auto`, `whisper`, `manual`, `none`. Absence
   remains valid “unknown provenance.” Unless the value is `none`, the expected
@@ -207,16 +207,21 @@ Checks apply to a record with `video_url` (processable) or status `processed` /
 - Without an explicit local path, `pdf`/`both` requires `google_drive_id` and
   `slides/{google_drive_id}.pdf`.
 - Without an explicit local path, `video_extracted` requires a valid YouTube
-  identity and `slides/{youtube_id}.pdf`.
+  identity. `processed` also requires `slides/{youtube_id}.pdf`;
+  `processed_partial` may intentionally retain only manifest-declared source and
+  derivative artifacts.
 - A present video-extracted PDF is not sufficient deck evidence by itself. A
-  completed record also requires a schema-v3
+  completed record also requires a complete schema-v3
   `structured_data.video_extraction` manifest, preserved source video and
-  artifact paths, consistent frame/page provenance, `review_required: false`,
-  and a manually cropped, visually verified `slide_region` artifact marked
-  `trusted_for_authored_slide_analysis: true`. Missing, legacy, invalid, or
-  untrusted provenance is blocking for completed records and a warning for
-  requeued/pending work. Full-frame context can still support room/stage
-  observations, but never authored-slide catalog evidence.
+  artifact paths, and internally consistent frame/page, scope, crop, and trust
+  provenance. A promoted PDF additionally requires `review_required: false` and
+  a manually cropped, visually verified `slide_region` artifact marked
+  `trusted_for_authored_slide_analysis: true`. A valid unpromoted
+  `processed_partial` manifest may be trusted or context-only; full-frame context
+  can support room/stage and qualifying delivery-video observations, but never
+  authored-slide evidence. Missing, legacy, invalid, or falsely promoted
+  provenance is blocking for completed records and a warning for requeued/pending
+  work.
 
 The seven stable slide-contract fault classes are:
 
@@ -228,16 +233,16 @@ The seven stable slide-contract fault classes are:
 | `slide_pdf_reference_missing` | `pdf`/`both` has no Drive ID |
 | `slide_pdf_artifact_missing` | Drive-ID PDF does not exist |
 | `slide_video_reference_missing` | Video extraction has no valid YouTube identity |
-| `slide_video_artifact_missing` | YouTube-ID PDF does not exist |
+| `slide_video_artifact_missing` | Required explicit/processed YouTube-ID PDF does not exist |
 
 `status_source_reachability_conflict` is a separate queue-state integrity
 fault. It is blocking when `skipped_no_sources` or legacy `skipped_no_video`
 coexists with a concrete PDF or PPTX reference. The preflight reports the
 reachable source and leaves status repair to the queue workflow.
 
-A claimed source missing from a completed record is blocking. The same absence
-on a pending/processable record is a warning because acquisition has not yet
-run.
+A claimed source missing from a completed record is blocking, except for a valid
+manifest-backed unpromoted `processed_partial` video result. The same absence on
+a pending/processable record is a warning because acquisition has not yet run.
 
 The preflight checks only artifact identity and existence. It never opens a PDF,
 never counts PDF pages, and never derives or validates authored `slide_count`

@@ -235,6 +235,8 @@ def render_analysis(ret, title=None, run_date=None):
         out.append(f"**Transcript source:** {ret['transcript_source']}")
     if ret.get("slide_source"):
         out.append(f"**Slide source:** {ret['slide_source']}")
+    if ret.get("slides_local_path"):
+        out.append(f"**Slides local path:** {ret['slides_local_path']}")
     out += ["", "---", ""]
 
     if ret.get("rhetoric_notes"):

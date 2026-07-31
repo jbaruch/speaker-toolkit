@@ -109,6 +109,23 @@ when no audio is obtainable at all.
      copied to `slides/{youtube_id}.pdf`, recorded as `slides_local_path`, and analyzed
      like an authored PDF deck.
 
+  The return validator recomputes that trust from the complete schema-v3 manifest; it
+  does not trust `slide_source: "video_extracted"` or an isolated artifact boolean.
+  `status: "processed"` requires both the trusted manifest and the promoted top-level
+  `slides_local_path: "slides/{youtube_id}.pdf"`. A trusted artifact may still finish
+  `processed_partial` when another channel fails, and its verified `slide_region` may
+  supply `static_slides` evidence even before promotion. Any return without a promoted
+  artifact must omit `slides_local_path` and put `slides_local_path` in `clear_fields`.
+  If the manifest itself is untrusted, the result is context-only: return
+  `processed_partial` and omit authored-slide structured claims such as `slide_count`,
+  slide design, typography, per-slide visuals, and image counts.
+
+  A `full_frame_context` artifact may support `delivery_video` observations about the
+  room, speaker, PiP, or visible delivery phenomena when it was actually inspected. It
+  never makes `static_slides` available. Apply each catalog entry's `evaluable_from`
+  gate to the sources actually inspected. If none qualifies—or the source cannot
+  establish that entry's evidence requirements—record the entry in `not_evaluable`.
+
   Keep the source MP4 and full-frame context artifact under
   `slides-rebuild/{youtube_id}/` for provenance and future re-extraction. The script
   deletes only its intermediate JPEG frames. `unique_frame_count` and artifact
@@ -235,13 +252,18 @@ See [processing-rules.md](processing-rules.md) for full tagging rules.
 
 Return exactly the shape in [schemas-db.md](schemas-db.md). `status`,
 `slide_source`, all five catalog-feedback lanes, and the complete pattern score
-object are mandatory. `transcript_source` is the sole conditional field: omit it
-when the fetcher reports `existing` and the DB has no known provenance.
+object are mandatory. `transcript_source` is conditional provenance: omit it when
+the fetcher reports `existing` and the DB has no known provenance.
+`slides_local_path` is optional for ordinary returns but mandatory for
+`status: "processed"` with `slide_source: "video_extracted"`.
 
 Use `clear_fields` when the re-analysis disproves an earlier value. Each entry is
 an analysis-owned dotted path such as `verbatim_examples.jokes` or
 `structured_data.slide_count`; an empty replacement alone does not clear stale
-DB data because ordinary merges are additive.
+DB data because ordinary merges are additive. An untrusted or unpromoted
+video-extraction result must include `slides_local_path` here so an older trusted
+deck path cannot survive the corrective merge; also clear any stale authored-slide
+structured fields disproved by the new evidence.
 
 Minimal processed structure:
 
@@ -256,6 +278,7 @@ Minimal processed structure:
   "status": "processed",
   "transcript_source": "youtube_auto",
   "slide_source": "pdf",
+  "slides_local_path": "slides/example.pdf",
   "rhetoric_notes": "Dimensions 1-13 analysis...",
   "areas_for_improvement": "Dimension 14 analysis...",
   "adherence_assessment": "Compared with the current baseline...",
@@ -267,7 +290,7 @@ Minimal processed structure:
   },
   "verbatim_examples": {},
   "pattern_observations": {
-    "evidence_sources": ["transcript", "static_slides"],
+    "evidence_sources": ["transcript", "static_slides", "delivery_video"],
     "patterns_detected": [
       {
         "pattern_id": "narrative-arc",
@@ -278,13 +301,7 @@ Minimal processed structure:
       }
     ],
     "antipatterns_detected": [],
-    "not_evaluable": [
-      {
-        "pattern_id": "composite-animation",
-        "evidence_source": "static_slides",
-        "reason": "A flattened PDF contains no animation timing."
-      }
-    ],
+    "not_evaluable": [],
     "pattern_score": {
       "patterns_used": 1,
       "antipatterns_detected": 0,
