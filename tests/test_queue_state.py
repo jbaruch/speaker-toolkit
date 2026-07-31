@@ -403,6 +403,52 @@ def test_inspect_accepts_a_completed_persistence_claim(tmp_path):
     assert claim["result_status"] == "processed"
 
 
+def test_active_claim_with_terminal_status_rejects_every_command_but_recover(
+        tmp_path):
+    talk = _talk("eg6gqvUFh6Q", status="processed")
+    talk["reprocess_generation"] = 1
+    talk["_queue_claim"] = {
+        "schema_version": 1,
+        "run_id": "reparse",
+        "batch_id": "25",
+        "claimed_at": NOW,
+        "previous_status": "needs-reprocessing",
+        "reprocess_generation": 1,
+        "state": "claimed",
+    }
+    path = _write_db(tmp_path, [talk])
+    before = path.read_bytes()
+
+    rejected = _run(path, "inspect", "--run-id", "reparse")
+
+    assert rejected.returncode == 2
+    assert "stranded lease" in json.loads(rejected.stdout)["error"]
+    assert path.read_bytes() == before
+
+    recovered = _run(
+        path,
+        "recover",
+        "--now", NOW,
+        "--stale-after-seconds", "999",
+    )
+
+    assert recovered.returncode == 0, recovered.stderr
+    assert json.loads(recovered.stdout)["recovered"] == [{
+        "filename": "playlist-eg6gqvUFh6Q.md",
+        "run_id": "reparse",
+        "batch_id": "25",
+        "reprocess_generation": 1,
+        "status": "needs-reprocessing",
+        "age_seconds": 0,
+        "status_before": "processed",
+        "release_reason": "state_status_drift",
+    }]
+    repaired = _read_db(path)["talks"][0]
+    assert repaired["status"] == "needs-reprocessing"
+    assert repaired["_queue_claim"]["state"] == "stale_recovered"
+    assert repaired["_queue_claim"]["release_reason"] == "state_status_drift"
+
+
 def test_duplicate_filenames_reject_without_rewriting(tmp_path):
     talk = _talk("eg6gqvUFh6Q")
     path = _write_db(tmp_path, [talk, dict(talk)])

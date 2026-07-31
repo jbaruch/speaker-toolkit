@@ -231,7 +231,7 @@ def validate_claim(claim, filename, *, historical=False):
         raise QueueStateError(f"{filename}: historical claims must be closed")
 
 
-def validate_talk(talk, index):
+def validate_talk(talk, index, *, allow_claim_status_drift=False):
     if not isinstance(talk, dict):
         raise QueueStateError(f"talks[{index}] must be a JSON object")
     filename = talk.get("filename")
@@ -311,9 +311,22 @@ def validate_talk(talk, index):
             raise QueueStateError(
                 f"{filename}: {INFLIGHT_STATUS} requires claim.state='claimed'"
             )
+    if (current is not None and current["state"] == "claimed" and
+            status != INFLIGHT_STATUS and not allow_claim_status_drift):
+        raise QueueStateError(
+            f"{filename}: claim.state='claimed' requires status "
+            f"{INFLIGHT_STATUS!r}, got {status!r}; run recover to repair the "
+            "stranded lease"
+        )
+    if (current is not None and current["state"] == "completed" and
+            status != current.get("result_status")):
+        raise QueueStateError(
+            f"{filename}: completed claim result_status "
+            f"{current.get('result_status')!r} disagrees with talk status {status!r}"
+        )
 
 
-def validate_database(database):
+def validate_database(database, *, allow_claim_status_drift=False):
     if not isinstance(database, dict):
         raise QueueStateError("tracking database root must be a JSON object")
     talks = database.get("talks")
@@ -321,7 +334,11 @@ def validate_database(database):
         raise QueueStateError("tracking database must contain a talks array")
     seen = set()
     for index, talk in enumerate(talks):
-        validate_talk(talk, index)
+        validate_talk(
+            talk,
+            index,
+            allow_claim_status_drift=allow_claim_status_drift,
+        )
         filename = talk["filename"]
         if filename in seen:
             raise QueueStateError(
@@ -330,7 +347,7 @@ def validate_database(database):
         seen.add(filename)
 
 
-def load_database(path):
+def load_database(path, *, allow_claim_status_drift=False):
     try:
         with path.open(encoding="utf-8") as handle:
             database = json.load(handle)
@@ -346,7 +363,10 @@ def load_database(path):
         ) from exc
     except OSError as exc:
         raise QueueStateError(f"cannot read tracking database at {path}: {exc}") from exc
-    validate_database(database)
+    validate_database(
+        database,
+        allow_claim_status_drift=allow_claim_status_drift,
+    )
     return database
 
 
@@ -596,9 +616,9 @@ def command_recover(database, path, args):
     run_id = require_identifier(args.run_id, "run_id") if args.run_id else None
     recovered = []
     for talk in sorted(database["talks"], key=lambda item: item["filename"]):
-        if talk["status"] != INFLIGHT_STATUS:
+        claim = talk.get("_queue_claim")
+        if not isinstance(claim, dict) or claim.get("state") != "claimed":
             continue
-        claim = talk["_queue_claim"]
         if run_id is not None and claim["run_id"] != run_id:
             continue
         claimed_at = parse_timestamp(
@@ -609,20 +629,30 @@ def command_recover(database, path, args):
             raise QueueStateError(
                 f"{talk['filename']}: claim.claimed_at is later than --now"
             )
-        if age_seconds < args.stale_after_seconds:
+        status_before = talk["status"]
+        status_drift = status_before != INFLIGHT_STATUS
+        if not status_drift and age_seconds < args.stale_after_seconds:
             continue
         talk["status"] = claim["previous_status"]
         claim["state"] = "stale_recovered"
         claim["released_at"] = now_text
-        claim["release_reason"] = "lease_expired"
-        recovered.append({
+        claim["release_reason"] = (
+            "state_status_drift" if status_drift else "lease_expired"
+        )
+        recovered_item = {
             "filename": talk["filename"],
             "run_id": claim["run_id"],
             "batch_id": claim["batch_id"],
             "reprocess_generation": claim["reprocess_generation"],
             "status": talk["status"],
             "age_seconds": age_seconds,
-        })
+        }
+        if status_drift:
+            recovered_item.update({
+                "status_before": status_before,
+                "release_reason": "state_status_drift",
+            })
+        recovered.append(recovered_item)
     if recovered:
         validate_database(database)
         write_database_atomically(path, database)
@@ -688,7 +718,10 @@ def main(argv=None):
     try:
         args = parser.parse_args(argv)
         path = Path(args.database).expanduser().resolve()
-        database = load_database(path)
+        database = load_database(
+            path,
+            allow_claim_status_drift=args.action == "recover",
+        )
         commands = {
             "normalize": command_normalize,
             "claim": command_claim,
