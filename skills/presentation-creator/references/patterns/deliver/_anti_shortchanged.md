@@ -12,7 +12,7 @@ detection_signals:
   - "skipped content"
   - "compressed delivery"
 related_patterns: [preparation, expansion-joints, weatherman]
-inverse_of: [expansion-joints]
+inverse_of: [expansion-joints, three-part-close]
 difficulty: foundational
 ---
 

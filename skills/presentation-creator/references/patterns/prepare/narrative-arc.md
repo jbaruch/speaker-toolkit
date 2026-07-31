@@ -14,7 +14,7 @@ detection_signals:
   - "throughline maintained"
   - "rising tension toward resolution"
 related_patterns: [triad, bookends, intermezzi, unifying-visual-theme, context-keeper]
-inverse_of: []
+inverse_of: [lipstick-on-a-pig, celery]
 difficulty: foundational
 ---
 

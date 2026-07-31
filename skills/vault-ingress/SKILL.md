@@ -39,6 +39,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | [references/source-identity-preflight.md](references/source-identity-preflight.md) | Offline identity, duplicate-source, enum, and artifact integrity contracts |
 | [references/source-identity-audit.md](references/source-identity-audit.md) | Networked, read-only capture of live provider identity evidence and review findings |
 | [references/catalog-feedback-intake.md](references/catalog-feedback-intake.md) | Five-lane catalog-feedback schema, polarity, recurrence, and review contract |
+| [references/pattern-catalog-contract.md](references/pattern-catalog-contract.md) | Read-only catalog graph, polarity, source-gate, and semantic-debt contract |
 | [references/processing-rules.md](references/processing-rules.md) | Language policy, pattern migration logic, structured field rules |
 | [references/known-issues.md](references/known-issues.md) | Edge cases — wide-angle recordings, Whisper hallucination, non-speaker talks |
 | `skills/vault-ingress/scripts/persist-results.py` | Deterministically merge batch subagent returns into the tracking DB (Step 4) |
@@ -52,6 +53,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | `skills/vault-ingress/scripts/fetch-transcript.py` | Fetch a transcript, validate it, write only if real (captions → local Whisper) |
 | `skills/vault-ingress/scripts/preflight-vault.py` | Read-only source/identity integrity gate before selection or re-analysis |
 | `skills/vault-ingress/scripts/audit-source-identities.py` | Read-only `yt-dlp` evidence capture, deduplicated by active YouTube ID |
+| `skills/vault-ingress/scripts/audit-pattern-catalog.py` | Read-only pattern catalog graph and contract gate before analysis |
 | `skills/vault-ingress/scripts/apply-source-repairs.py` | Guarded dry-run/apply workflow for evidence-backed source metadata repairs |
 | `skills/vault-ingress/scripts/aggregate-catalog-feedback.py` | Validate and aggregate return feedback without editing the pattern catalog |
 
@@ -110,6 +112,18 @@ Run `python3 skills/vault-ingress/scripts/pptx-extraction.py` for extraction.
 **Pattern taxonomy migration:** See [references/processing-rules.md](references/processing-rules.md) for migration
 logic. In brief: talks with `status` `"processed"` or `"processed_partial"` that
 lack `pattern_observations` are marked `"needs-reprocessing"`.
+
+**Pattern catalog preflight:** Before source selection or re-analysis, run:
+
+```bash
+python3 skills/vault-ingress/scripts/audit-pattern-catalog.py
+```
+
+Stdout is stable JSON. Exit 1 means structural catalog errors: stop before
+scoring. Exit 0 may include `semantic_debts`; present those for human review and
+do not auto-edit names, aliases, definitions, or graph relationships. The input,
+report, and no-write contracts are defined in
+[references/pattern-catalog-contract.md](references/pattern-catalog-contract.md).
 
 **Source/identity preflight:** After bootstrapping and scanning, and before talk
 selection or re-analysis, run the read-only offline gate:

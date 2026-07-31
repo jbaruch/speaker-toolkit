@@ -4,8 +4,7 @@ name: Delayed Self-Introduction
 type: pattern
 part: deliver
 phase_relevance:
-  - delivery
-  - rehearsal
+  - content
 vault_dimensions: [2, 11]
 detection_signals:
   - "speaker opens with hook/content rather than name and role"

@@ -13,7 +13,7 @@ detection_signals:
   - "slides as speaker notes"
   - "auto-shrunk fonts"
 related_patterns: [charred-trail, infodeck]
-inverse_of: [vacation-photos, takahashi]
+inverse_of: [vacation-photos, takahashi, progressive-reveal]
 difficulty: foundational
 ---
 

@@ -11,7 +11,7 @@ detection_signals:
   - "abstract doesn't match delivery"
   - "significant deviation from published description"
 related_patterns: [preroll, narrative-arc, fourthought, triad, crucible, carnegie-hall]
-inverse_of: []
+inverse_of: [preroll]
 difficulty: foundational
 ---
 

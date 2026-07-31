@@ -12,7 +12,7 @@ detection_signals:
   - "images disconnected from narrative"
   - "decorative photos without purpose"
 related_patterns: [unifying-visual-theme, vacation-photos]
-inverse_of: [unifying-visual-theme]
+inverse_of: [unifying-visual-theme, vacation-photos]
 difficulty: foundational
 ---
 

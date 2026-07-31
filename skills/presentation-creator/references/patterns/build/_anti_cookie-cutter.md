@@ -12,7 +12,7 @@ detection_signals:
   - "information cramming"
   - "unnatural content breaks at slide boundaries"
 related_patterns: [soft-transitions, fourthought]
-inverse_of: [soft-transitions]
+inverse_of: [soft-transitions, fourthought]
 difficulty: foundational
 ---
 

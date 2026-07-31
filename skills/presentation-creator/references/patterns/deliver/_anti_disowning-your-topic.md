@@ -11,7 +11,7 @@ detection_signals:
   - "skipping prepared material"
   - "visible loss of confidence"
 related_patterns: [know-your-audience, crucible]
-inverse_of: []
+inverse_of: [anti-sell]
 difficulty: foundational
 ---
 

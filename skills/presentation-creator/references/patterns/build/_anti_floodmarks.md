@@ -12,7 +12,7 @@ detection_signals:
   - "excessive corporate template elements"
   - "reduced canvas space"
 related_patterns: [bookends, defy-defaults, unifying-visual-theme]
-inverse_of: [defy-defaults]
+inverse_of: [defy-defaults, bookends]
 difficulty: foundational
 ---
 

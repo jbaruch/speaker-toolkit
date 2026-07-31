@@ -11,7 +11,7 @@ detection_signals:
   - "calibrated vocabulary level"
   - "referenced prior event context"
 related_patterns: [emotional-state, seeding-satisfaction]
-inverse_of: []
+inverse_of: [flyover]
 difficulty: foundational
 ---
 

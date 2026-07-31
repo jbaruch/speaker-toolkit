@@ -12,7 +12,7 @@ detection_signals:
   - "ideas not constrained to slide boundaries"
   - "organic concept grouping"
 related_patterns: [unifying-visual-theme, backtracking, narrative-arc]
-inverse_of: [cookie-cutter]
+inverse_of: [cookie-cutter, injured-outlines]
 difficulty: foundational
 ---
 

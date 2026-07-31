@@ -230,6 +230,11 @@ The seven stable slide-contract fault classes are:
 | `slide_video_reference_missing` | Video extraction has no valid YouTube identity |
 | `slide_video_artifact_missing` | YouTube-ID PDF does not exist |
 
+`status_source_reachability_conflict` is a separate queue-state integrity
+fault. It is blocking when `skipped_no_sources` or legacy `skipped_no_video`
+coexists with a concrete PDF or PPTX reference. The preflight reports the
+reachable source and leaves status repair to the queue workflow.
+
 A claimed source missing from a completed record is blocking. The same absence
 on a pending/processable record is a warning because acquisition has not yet
 run.

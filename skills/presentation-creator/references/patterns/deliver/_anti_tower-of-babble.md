@@ -11,7 +11,7 @@ detection_signals:
   - "audience confusion from jargon"
   - "vocabulary too specialized for audience level"
 related_patterns: [know-your-audience, leet-grammars]
-inverse_of: [leet-grammars]
+inverse_of: [leet-grammars, peer-review]
 difficulty: foundational
 ---
 

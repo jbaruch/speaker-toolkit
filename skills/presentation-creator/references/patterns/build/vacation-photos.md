@@ -13,7 +13,7 @@ detection_signals:
   - "high-quality photography"
   - "presenter as verbal focus"
 related_patterns: [unifying-visual-theme]
-inverse_of: [photomaniac]
+inverse_of: [photomaniac, bullet-riddled-corpse]
 difficulty: intermediate
 ---
 

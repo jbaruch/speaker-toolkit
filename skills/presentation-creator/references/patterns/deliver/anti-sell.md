@@ -4,8 +4,7 @@ name: Anti-Sell
 type: pattern
 part: deliver
 phase_relevance:
-  - delivery
-  - rehearsal
+  - content
 vault_dimensions: [11, 6]
 detection_signals:
   - "speaker downplays own product, employer, or work"

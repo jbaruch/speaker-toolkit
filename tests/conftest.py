@@ -3,12 +3,9 @@
 import importlib.util
 import os
 import sys
-import types
 
 import pytest
-from lxml import etree
 from pptx import Presentation
-from pptx.util import Inches
 
 # ── Script import helper ──────────────────────────────────────────────
 
@@ -140,6 +137,14 @@ def audit_source_identities():
     return _import_script(
         os.path.join(SCRIPTS_VI, "audit-source-identities.py"),
         "audit_source_identities",
+    )
+
+
+@pytest.fixture(scope="session")
+def audit_pattern_catalog():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "audit-pattern-catalog.py"),
+        "audit_pattern_catalog",
     )
 
 

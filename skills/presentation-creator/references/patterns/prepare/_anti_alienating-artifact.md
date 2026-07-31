@@ -11,7 +11,7 @@ detection_signals:
   - "exclusionary references"
   - "culturally insensitive material"
 related_patterns: [know-your-audience, brain-breaks]
-inverse_of: [brain-breaks]
+inverse_of: [brain-breaks, entertainment]
 difficulty: foundational
 ---
 

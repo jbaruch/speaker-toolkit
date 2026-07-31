@@ -12,7 +12,7 @@ detection_signals:
   - "reliance on pointer for navigation"
   - "slides requiring external highlighting"
 related_patterns: [traveling-highlights, lightsaber]
-inverse_of: [traveling-highlights]
+inverse_of: [traveling-highlights, lightsaber]
 difficulty: foundational
 observable: false
 ---

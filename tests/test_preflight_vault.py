@@ -613,6 +613,71 @@ def test_source_enums_are_closed(
     assert code in finding_codes(report, "blocking")
 
 
+@pytest.mark.parametrize("status", ["skipped_no_sources", "skipped_no_video"])
+def test_source_less_skip_status_cannot_hide_pdf_source(
+    preflight_vault, vault_fixture, status,
+):
+    talk = base_talk(
+        status=status,
+        video_url=None,
+        youtube_id=None,
+        transcript_source="none",
+        slide_source="pdf",
+        slides_url=f"https://drive.google.com/file/d/{DRIVE_ID}/view",
+        google_drive_id=DRIVE_ID,
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(
+        item for item in report["findings"]
+        if item["code"] == "status_source_reachability_conflict"
+    )
+    assert finding["severity"] == "blocking"
+    assert finding["actual"] == {
+        "status": status,
+        "independent_sources": ["pdf"],
+    }
+
+
+def test_source_less_skip_status_cannot_hide_pptx_source(
+    preflight_vault, vault_fixture,
+):
+    talk = base_talk(
+        status="skipped_no_video",
+        video_url=None,
+        youtube_id=None,
+        transcript_source="none",
+        slide_source="pptx",
+        pptx_path="Conference/Talk.pptx",
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "status_source_reachability_conflict" in finding_codes(
+        report, "blocking"
+    )
+
+
+def test_video_extraction_without_independent_slides_is_not_reachable(
+    preflight_vault, vault_fixture,
+):
+    talk = base_talk(
+        status="skipped_no_sources",
+        video_url=None,
+        youtube_id=None,
+        transcript_source="none",
+        slide_source="video_extracted",
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "status_source_reachability_conflict" not in finding_codes(report)
+
+
 def test_filenames_must_be_nonempty_and_unique(preflight_vault, vault_fixture):
     talks = [
         {"filename": " ", "status": "skipped_no_sources"},

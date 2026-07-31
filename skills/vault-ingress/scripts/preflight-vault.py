@@ -36,6 +36,7 @@ SLIDE_SOURCES = frozenset({"pptx", "pdf", "both", "video_extracted", "none"})
 COMPLETED_STATUSES = frozenset({"processed", "processed_partial"})
 RELATION_TYPES = frozenset({"duplicate", "borrowed_recording"})
 REJECTABLE_SOURCE_TYPES = frozenset({"video", "slides"})
+SOURCELESS_STATUSES = frozenset({"skipped_no_sources", "skipped_no_video"})
 
 # These are intentionally a closed, documented set.  Tests exercise every
 # class so callers can route fixes without parsing prose.
@@ -259,6 +260,7 @@ class VaultPreflight:
         self._validate_filenames()
         for index in range(len(self.talks)):
             self._validate_sources(index)
+            self._validate_source_status_reachability(index)
             self._validate_source_rejections(index)
             self._validate_artifacts(index)
             self._validate_source_identity(index)
@@ -375,6 +377,40 @@ class VaultPreflight:
     def _needs_artifact_checks(self, talk: dict[str, Any]) -> bool:
         return bool(_nonempty_string(talk.get("video_url"))) or (
             talk.get("status") in COMPLETED_STATUSES
+        )
+
+    def _validate_source_status_reachability(self, index: int) -> None:
+        """Reject skipped-source states that hide independent slide inputs."""
+        talk = self.talks[index]
+        status = talk.get("status")
+        if status not in SOURCELESS_STATUSES:
+            return
+
+        sources = []
+        if _nonempty_string(talk.get("pptx_path")):
+            sources.append("pptx")
+        if any(
+            _nonempty_string(talk.get(field))
+            for field in (
+                "slides_url",
+                "google_drive_id",
+                "slides_local_path",
+                "slides_pdf_path",
+                "pdf_path",
+            )
+        ):
+            sources.append("pdf")
+        if not sources:
+            return
+
+        self.talk_add(
+            index,
+            "blocking",
+            "status_source_reachability_conflict",
+            "source-less skip status conflicts with an independent slide source",
+            field="status",
+            expected="a status that permits slide-only processing",
+            actual={"status": status, "independent_sources": sorted(sources)},
         )
 
     def _validate_source_rejections(self, index: int) -> None:
