@@ -37,6 +37,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | [references/subagent-instructions.md](references/subagent-instructions.md) | Step 3 per-talk procedure — transcript download, slide acquisition, fallback chains, return-JSON shape |
 | [references/video-slide-extraction.md](references/video-slide-extraction.md) | Video-to-slides pipeline — layout heuristics, tuning, limitations |
 | [references/source-identity-preflight.md](references/source-identity-preflight.md) | Offline identity, duplicate-source, enum, and artifact integrity contracts |
+| [references/catalog-feedback-intake.md](references/catalog-feedback-intake.md) | Five-lane catalog-feedback schema, polarity, recurrence, and review contract |
 | [references/processing-rules.md](references/processing-rules.md) | Language policy, pattern migration logic, structured field rules |
 | [references/known-issues.md](references/known-issues.md) | Edge cases — wide-angle recordings, Whisper hallucination, non-speaker talks |
 | `skills/vault-ingress/scripts/persist-results.py` | Deterministically merge batch subagent returns into the tracking DB (Step 4) |
@@ -50,6 +51,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | `skills/vault-ingress/scripts/fetch-transcript.py` | Fetch a transcript, validate it, write only if real (captions → local Whisper) |
 | `skills/vault-ingress/scripts/preflight-vault.py` | Read-only source/identity integrity gate before selection or re-analysis |
 | `skills/vault-ingress/scripts/apply-source-repairs.py` | Guarded dry-run/apply workflow for evidence-backed source metadata repairs |
+| `skills/vault-ingress/scripts/aggregate-catalog-feedback.py` | Validate and aggregate return feedback without editing the pattern catalog |
 
 A talk is processable when it has `video_url`. Slide sources, in order of preference:
 1. `pptx_path` — richest data (exact colors, fonts, shapes via python-pptx)
@@ -226,6 +228,15 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   and catalog feedback — creates `analyses/` if missing, prints a JSON summary, and
   exits non-zero on a return with no `filename`. Section list and field handling live
   in `skills/vault-ingress/scripts/write-analysis.py` (top-of-file docstring).
+- **Aggregate catalog feedback — after the final batch, do not hand-harvest or
+  auto-edit the catalog.** Run the read-only intake over every return file or
+  return directory:
+  `python3 skills/vault-ingress/scripts/aggregate-catalog-feedback.py {return_paths}`.
+  Review the stable JSON's invalid entries, exact-ID recurrence, normalized
+  suggestions, and polarity warnings with the speaker. Recurrence is evidence
+  for review, never authorization to change a catalog file. The five lanes and
+  report contract live in
+  [references/catalog-feedback-intake.md](references/catalog-feedback-intake.md).
 
 Proceed immediately to Step 5.
 

@@ -128,6 +128,14 @@ def apply_source_repairs():
 
 
 @pytest.fixture(scope="session")
+def aggregate_catalog_feedback():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "aggregate-catalog-feedback.py"),
+        "aggregate_catalog_feedback",
+    )
+
+
+@pytest.fixture(scope="session")
 def extract_resources():
     return _import_script(
         os.path.join(SCRIPTS_PC, "extract-resources.py"), "extract_resources"

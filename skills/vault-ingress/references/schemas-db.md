@@ -248,11 +248,30 @@ Each subagent returns this JSON after processing one talk:
     }
   },
   "catalog_feedback": {
-    "unmatched_observations": [],
-    "confusable_pairs": [],
-    "definition_problems": [],
-    "scoring_problems": [],
-    "tensions": []
+    "unmatched_observations": [{
+      "observation": "Observed move with no exact catalog fit",
+      "why_no_pattern_fits": "Boundaries checked and why each fails",
+      "proposed_name": "new-pattern-name",
+      "proposed_polarity": "pattern|antipattern"
+    }],
+    "tensions": [{
+      "pattern_ids": ["exact-pattern-id", "exact-antipattern-id"],
+      "nature": "How the entries trade against one another",
+      "evidence": "Talk-specific evidence"
+    }],
+    "definition_problems": [{
+      "pattern_id": "exact-catalog-id",
+      "problem": "ambiguous|undetectable|unfalsifiable|miscategorized|overlapping",
+      "detail": "Why the documented boundary cannot be applied"
+    }],
+    "scoring_problems": [{
+      "issue": "Model-level scoring defect",
+      "detail": "Evidence and consequence"
+    }],
+    "confusable_pairs": [{
+      "pattern_ids": ["first-exact-id", "second-exact-id"],
+      "detail": "The missing discriminator"
+    }]
   }
 }
 ```
@@ -278,6 +297,15 @@ both compared artifacts. `not_evaluable` is a separate array for source-gated en
 that cannot be judged from the available evidence. Its entries are excluded from
 `pattern_ids`, `antipattern_ids`, and every `pattern_score` count. Never put an
 unavailable entry in a detected array or treat it as an absent pattern.
+
+`catalog_feedback` is mandatory on current processed returns and uses only the
+five lanes shown above (empty arrays are valid). Exact IDs and
+pattern/antipattern polarity are validated against catalog YAML; new suggested
+names occupy a separate namespace and carry `proposed_polarity`. The read-only
+aggregator also audits historical returns, reports legacy compatibility issues
+without silently repairing them, and preserves per-entry provenance. Its owned
+schema and aggregation contract are in
+[catalog-feedback-intake.md](catalog-feedback-intake.md).
 
 ## Video Extraction Output Schema
 
