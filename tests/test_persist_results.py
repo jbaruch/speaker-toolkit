@@ -15,6 +15,11 @@ import pytest
 def _return(**overrides):
     ret = {
         "filename": "talk.md",
+        "queue_claim": {
+            "run_id": "reparse",
+            "batch_id": "25",
+            "reprocess_generation": 1,
+        },
         "status": "processed",
         "processed_date": "2026-06-18",
         "transcript_source": "youtube_auto",
@@ -70,7 +75,17 @@ def _return(**overrides):
 def _talk(**overrides):
     talk = {
         "filename": "talk.md",
-        "status": "pending",
+        "status": "reprocessing-inflight",
+        "reprocess_generation": 1,
+        "_queue_claim": {
+            "schema_version": 1,
+            "run_id": "reparse",
+            "batch_id": "25",
+            "claimed_at": "2026-07-31T18:00:00+00:00",
+            "previous_status": "needs-reprocessing",
+            "reprocess_generation": 1,
+            "state": "claimed",
+        },
         "structured_data": {},
         "verbatim_examples": {},
         "pattern_observations": {"pattern_ids": [], "antipattern_ids": [], "pattern_score": 0},
@@ -688,7 +703,7 @@ def test_catalog_generation_is_stamped_and_processing_claim_is_closed(
         persist_results, tmp_path):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    talk = _talk(processing_claim={"run_id": "repair", "claimed_at": "2026-07-31"})
+    talk = _talk()
     db.write_text(json.dumps({"talks": [talk]}))
     batch.write_text(json.dumps([_return()]))
     result = subprocess.run(
@@ -701,7 +716,9 @@ def test_catalog_generation_is_stamped_and_processing_claim_is_closed(
     assert stored["pattern_scoring_schema_version"] == \
         persist_results.PATTERN_SCORING_SCHEMA_VERSION
     assert stored["pattern_catalog_fingerprint"] == report["pattern_catalog_fingerprint"]
-    assert "processing_claim" not in stored
+    assert stored["_queue_claim"]["state"] == "completed"
+    assert stored["_queue_claim"]["result_status"] == "processed"
+    assert stored["_queue_claim"]["release_reason"] == "return_persisted"
 
 
 def test_missing_status_rejects_the_whole_batch_without_migrating_db(
@@ -735,3 +752,41 @@ def test_duplicate_db_filenames_are_rejected_before_write(persist_results, tmp_p
     assert result.returncode == 1
     assert "duplicate filenames" in result.stderr
     assert json.loads(db.read_text()) == original
+
+
+def test_stale_return_generation_cannot_roll_back_a_requeue(persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    talk = _talk(reprocess_generation=2)
+    talk["_queue_claim"]["reprocess_generation"] = 2
+    original = {"talks": [talk]}
+    stale = _return()  # generation 1
+    db.write_text(json.dumps(original))
+    batch.write_text(json.dumps([stale]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert "does not match active claim value 2" in result.stderr
+    assert json.loads(db.read_text()) == original
+
+
+def test_completed_generation_cannot_be_replayed(persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(json.dumps({"talks": [_talk()]}))
+    batch.write_text(json.dumps([_return()]))
+    first = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert first.returncode == 0, first.stderr
+    completed = db.read_bytes()
+    replay = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert replay.returncode == 1
+    assert "no active queue claim" in replay.stderr
+    assert db.read_bytes() == completed

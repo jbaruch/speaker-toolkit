@@ -10,7 +10,8 @@ from the merge loop — every schema-declared field a subagent returns is persis
 and the queryable scalars are promoted to the talk's top level.
 
 For each return (matched to a talk by `filename`) it:
-  1. Validates the complete batch against the shared return and catalog contract.
+  1. Validates the complete batch against the shared return and catalog contract,
+     then matches every return to the talk's active queue generation.
   2. Sets the scalar result fields (status, processed_date, rhetoric_notes,
      areas_for_improvement, adherence_assessment, transcript_source). A return
      that omits `processed_date` is stamped with the run date, because otherwise
@@ -26,6 +27,8 @@ For each return (matched to a talk by `filename`) it:
      detailed arrays too (Section 15 aggregation reads antipatterns_detected).
   5. Promotes the declared queryable scalars (PROMOTE) to the talk's top level so
      they are directly queryable, not buried in structured_data or rhetoric_notes.
+  6. Closes the matched queue lease as completed and preserves its generation
+     record, so an older return cannot roll an intentional requeue backward.
 
 It does NOT touch rhetoric-style-summary.md or the analysis files — those are
 written elsewhere in Step 4/Step 5. It owns only the tracking-DB merge.
@@ -68,6 +71,7 @@ from datetime import datetime, timezone
 from return_validation import (
     ANALYSIS_STATUSES,
     ReturnValidationError,
+    validate_claim_against_talk,
     validate_batch,
 )
 
@@ -217,6 +221,21 @@ def apply_clear_fields(talk, paths):
     return cleared
 
 
+def completion_timestamp(run_date):
+    """Return a queue-compatible timestamp from a date or timestamp run stamp."""
+    if len(run_date) == 10:
+        return f"{run_date}T00:00:00+00:00"
+    return run_date
+
+
+def close_queue_claim(talk, status, run_date):
+    claim = talk["_queue_claim"]
+    claim["state"] = "completed"
+    claim["released_at"] = completion_timestamp(run_date)
+    claim["release_reason"] = "return_persisted"
+    claim["result_status"] = status
+
+
 def require_mapping(ret, field):
     """Return `ret[field]` as a dict, or None when absent. Raise on any other type.
 
@@ -351,7 +370,8 @@ def normalize_pattern_observations(existing, patterns, antipatterns,
     return obs
 
 
-def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None):
+def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
+               *, enforce_queue_claim=False):
     """Merge one return into its talk.
 
     Returns (promoted, stamped, coerced_score, cleared).
@@ -361,6 +381,8 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None):
     `processed_date` when the return omits it; it is never read from the clock
     inside the merge.
     """
+    if enforce_queue_claim:
+        validate_claim_against_talk(talk, ret)
     structured = require_mapping(ret, "structured_data")
     verbatim = require_mapping(ret, "verbatim_examples")
     observations = require_mapping(ret, "pattern_observations") or {}
@@ -408,7 +430,8 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None):
         talk["pattern_scoring_schema_version"] = PATTERN_SCORING_SCHEMA_VERSION
         if catalog_fingerprint:
             talk["pattern_catalog_fingerprint"] = catalog_fingerprint
-        talk.pop("processing_claim", None)
+    if enforce_queue_claim:
+        close_queue_claim(talk, ret["status"], run_date)
     return promoted, stamped, coerced_score, cleared
 
 
@@ -553,7 +576,8 @@ def main():
         talk = by_name.get(name)
         try:
             promoted, stamped, coerced, cleared = merge_talk(
-                talk, ret, run_date, catalog.fingerprint)
+                talk, ret, run_date, catalog.fingerprint,
+                enforce_queue_claim=True)
         except ValueError as exc:
             print(f"ERROR: {name}: {exc}", file=sys.stderr)
             sys.exit(1)

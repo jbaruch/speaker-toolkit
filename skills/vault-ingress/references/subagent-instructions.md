@@ -221,6 +221,11 @@ Minimal processed structure:
 ```json
 {
   "filename": "2026-01-01-example.md",
+  "queue_claim": {
+    "run_id": "reparse-2026-07",
+    "batch_id": "25",
+    "reprocess_generation": 1
+  },
   "status": "processed",
   "transcript_source": "youtube_auto",
   "slide_source": "pdf",

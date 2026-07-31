@@ -18,6 +18,11 @@ import pytest
 def _return(**overrides):
     ret = {
         "filename": "talk.md",
+        "queue_claim": {
+            "run_id": "reparse",
+            "batch_id": "25",
+            "reprocess_generation": 1,
+        },
         "status": "processed",
         "processed_date": "2026-07-26",
         "transcript_source": "youtube_auto",
@@ -62,6 +67,30 @@ def _return(**overrides):
     }
     ret.update(overrides)
     return ret
+
+
+def _write_tracking_db(tmp_path, returns, *, title=None, name="tracking-db.json"):
+    talks = []
+    for ret in returns:
+        talks.append({
+            "filename": ret["filename"],
+            "title": title,
+            "status": ret["status"],
+            "reprocess_generation": ret["queue_claim"]["reprocess_generation"],
+            "_queue_claim": {
+                "schema_version": 1,
+                **ret["queue_claim"],
+                "claimed_at": "2026-07-31T18:00:00+00:00",
+                "previous_status": "needs-reprocessing",
+                "state": "completed",
+                "released_at": "2026-07-31T18:05:00+00:00",
+                "release_reason": "return_persisted",
+                "result_status": ret["status"],
+            },
+        })
+    path = tmp_path / name
+    path.write_text(json.dumps({"talks": talks}))
+    return path
 
 
 def test_renders_core_sections(write_analysis):
@@ -185,10 +214,12 @@ def test_nested_structured_fields_are_preserved(write_analysis):
 def test_cli_writes_files_and_reports(write_analysis, tmp_path):
     batch = tmp_path / "batch-returns.json"
     out = tmp_path / "analyses"
-    batch.write_text(json.dumps([_return(), _return(filename="other.md")]))
+    returns = [_return(), _return(filename="other.md")]
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns)
     result = subprocess.run(
         [sys.executable, write_analysis.__file__, str(batch), str(out),
-         "--run-date", "2026-07-26"],
+         "--run-date", "2026-07-26", "--talks", str(db)],
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
@@ -201,10 +232,10 @@ def test_cli_writes_files_and_reports(write_analysis, tmp_path):
 
 def test_cli_uses_titles_from_tracking_db(write_analysis, tmp_path):
     batch = tmp_path / "batch-returns.json"
-    db = tmp_path / "tracking-database.json"
     out = tmp_path / "analyses"
-    batch.write_text(json.dumps([_return()]))
-    db.write_text(json.dumps({"talks": [{"filename": "talk.md", "title": "Real Title"}]}))
+    returns = [_return()]
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns, title="Real Title")
     result = subprocess.run(
         [sys.executable, write_analysis.__file__, str(batch), str(out),
          "--talks", str(db)],
@@ -253,9 +284,12 @@ def test_cli_does_not_write_outside_the_output_dir(write_analysis, tmp_path):
     out = tmp_path / "analyses"
     victim = tmp_path / "tracking-database.json"
     victim.write_text('{"talks": []}')
-    batch.write_text(json.dumps([_return(filename="../tracking-database.json")]))
+    returns = [_return(filename="../tracking-database.json")]
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns, name="queue-db.json")
     result = subprocess.run(
-        [sys.executable, write_analysis.__file__, str(batch), str(out)],
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
@@ -265,9 +299,12 @@ def test_cli_does_not_write_outside_the_output_dir(write_analysis, tmp_path):
 
 def test_cli_rejects_filename_that_names_no_file(write_analysis, tmp_path):
     batch = tmp_path / "batch-returns.json"
-    batch.write_text(json.dumps([_return(filename="../")]))
+    returns = [_return(filename="../")]
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns)
     result = subprocess.run(
-        [sys.executable, write_analysis.__file__, str(batch), str(tmp_path / "a")],
+        [sys.executable, write_analysis.__file__, str(batch), str(tmp_path / "a"),
+         "--talks", str(db)],
         capture_output=True, text=True,
     )
     assert result.returncode != 0
@@ -290,12 +327,15 @@ def test_cli_rejects_malformed_tracking_db(write_analysis, tmp_path):
 
 def test_cli_unwritable_output_dir_is_actionable(write_analysis, tmp_path):
     batch = tmp_path / "batch-returns.json"
-    batch.write_text(json.dumps([_return()]))
+    returns = [_return()]
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns)
     # A regular file where the output directory should be: makedirs raises OSError.
     blocker = tmp_path / "blocked"
     blocker.write_text("i am a file, not a directory")
     result = subprocess.run(
-        [sys.executable, write_analysis.__file__, str(batch), str(blocker)],
+        [sys.executable, write_analysis.__file__, str(batch), str(blocker),
+         "--talks", str(db)],
         capture_output=True, text=True,
     )
     assert result.returncode != 0
@@ -325,9 +365,12 @@ def test_skipped_status_never_overwrites_an_existing_analysis(write_analysis, tm
     out.mkdir()
     good = out / "talk.md"
     good.write_text("# real analysis from a successful run\n")
-    batch.write_text(json.dumps([_return(status="skipped_no_sources")]))
+    returns = [_return(status="skipped_no_sources")]
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns)
     result = subprocess.run(
-        [sys.executable, write_analysis.__file__, str(batch), str(out)],
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
@@ -340,9 +383,12 @@ def test_skipped_status_never_overwrites_an_existing_analysis(write_analysis, tm
 def test_processed_partial_still_writes(write_analysis, tmp_path):
     batch = tmp_path / "batch-returns.json"
     out = tmp_path / "analyses"
-    batch.write_text(json.dumps([_return(status="processed_partial")]))
+    returns = [_return(status="processed_partial")]
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns)
     result = subprocess.run(
-        [sys.executable, write_analysis.__file__, str(batch), str(out)],
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
@@ -364,6 +410,41 @@ def test_return_without_status_is_rejected_before_writing(write_analysis, tmp_pa
     assert result.returncode == 1
     assert "status is required" in result.stderr
     assert not out.exists()
+
+
+def test_cli_requires_tracking_db_for_generation_check(write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([_return()]))
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(tmp_path / "a")],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert "--talks" in result.stderr
+    assert not (tmp_path / "a").exists()
+
+
+def test_stale_generation_cannot_overwrite_analysis(write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    target = out / "talk.md"
+    target.write_text("# current generation\n")
+    ret = _return()
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    payload["talks"][0]["reprocess_generation"] = 2
+    payload["talks"][0]["_queue_claim"]["reprocess_generation"] = 2
+    db.write_text(json.dumps(payload))
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert "does not match" in result.stderr
+    assert target.read_text() == "# current generation\n"
 
 
 def test_carriage_returns_do_not_break_table_rows(write_analysis):

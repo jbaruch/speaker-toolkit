@@ -367,6 +367,52 @@ def _validate_clear_fields(value) -> None:
             f"clear_fields path {path!r} is outside the analysis-owned allowlist")
 
 
+def _validate_queue_claim(value) -> None:
+    if not isinstance(value, dict):
+        raise ReturnValidationError(
+            "queue_claim is required and must copy run_id, batch_id, and "
+            "reprocess_generation from the claimed talk")
+    for field in ("run_id", "batch_id"):
+        item = value.get(field)
+        if (not isinstance(item, str) or not item or item.strip() != item or
+                any(char.isspace() for char in item)):
+            raise ReturnValidationError(
+                f"queue_claim.{field} must be a non-empty token without whitespace")
+    generation = value.get("reprocess_generation")
+    if isinstance(generation, bool) or not isinstance(generation, int) or generation < 1:
+        raise ReturnValidationError(
+            "queue_claim.reprocess_generation must be a positive integer")
+
+
+def validate_claim_against_talk(talk, ret, *, allow_completed=False) -> None:
+    """Match a validated return to the talk's active generation lease."""
+    expected = talk.get("_queue_claim") if isinstance(talk, dict) else None
+    supplied = ret.get("queue_claim") if isinstance(ret, dict) else None
+    filename = talk.get("filename", "<unknown>") if isinstance(talk, dict) else "<unknown>"
+    allowed_states = {"claimed", "completed"} if allow_completed else {"claimed"}
+    if not isinstance(expected, dict) or expected.get("state") not in allowed_states:
+        raise ReturnValidationError(
+            f"{filename} has no active queue claim; refusing an unclaimed or replayed return")
+    for field in ("run_id", "batch_id", "reprocess_generation"):
+        if supplied.get(field) != expected.get(field):
+            raise ReturnValidationError(
+                f"queue_claim.{field} {supplied.get(field)!r} does not match active "
+                f"claim value {expected.get(field)!r}")
+    if expected.get("state") == "claimed" and talk.get("status") != "reprocessing-inflight":
+        raise ReturnValidationError(
+            f"{filename} has an active claim but status is {talk.get('status')!r}, "
+            "expected 'reprocessing-inflight'")
+    if expected.get("state") == "completed":
+        if expected.get("result_status") != ret.get("status"):
+            raise ReturnValidationError(
+                f"{filename} completed claim result {expected.get('result_status')!r} "
+                f"does not match return status {ret.get('status')!r}")
+        if talk.get("status") != ret.get("status"):
+            raise ReturnValidationError(
+                f"{filename} DB status {talk.get('status')!r} does not match completed "
+                f"return status {ret.get('status')!r}")
+
+
 def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
     """Validate one return completely, raising before either writer mutates state."""
     if not isinstance(ret, dict):
@@ -377,6 +423,7 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
     if status not in RETURN_STATUSES:
         raise ReturnValidationError(
             f"status is required and must be one of {sorted(RETURN_STATUSES)}, got {status!r}")
+    _validate_queue_claim(ret.get("queue_claim"))
     _validate_clear_fields(ret.get("clear_fields"))
 
     transcript_source = ret.get("transcript_source")

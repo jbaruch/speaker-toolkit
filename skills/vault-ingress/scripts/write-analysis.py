@@ -30,11 +30,11 @@ rather than emitting an empty heading, so a thin return produces a short file
 instead of a scaffold of blanks.
 
 Usage:
-    write-analysis.py <batch-returns.json> <analyses-dir> [--run-date YYYY-MM-DD]
-                      [--talks <tracking-database.json>]
+    write-analysis.py <batch-returns.json> <analyses-dir>
+                      --talks <tracking-database.json> [--run-date YYYY-MM-DD]
 
-    --talks supplies talk titles for the H1; without it the H1 falls back to the
-    return's own `title`, then to the filename stem.
+    --talks supplies talk titles for the H1 and the completed/active queue
+    generation that authorizes each replacement.
     --run-date sets the "Processed" line when a return omits `processed_date`,
     matching persist-results.py's stamping so the DB and the file agree.
 
@@ -59,6 +59,7 @@ from datetime import date
 from return_validation import (
     ANALYSIS_STATUSES,
     ReturnValidationError,
+    validate_claim_against_talk,
     validate_batch,
 )
 
@@ -354,7 +355,7 @@ def parse_args(argv):
         i += 1
     if len(args) != 2:
         print(f"Usage: {sys.argv[0]} <batch-returns.json> <analyses-dir> "
-              f"[--run-date YYYY-MM-DD] [--talks <tracking-database.json>]",
+              f"--talks <tracking-database.json> [--run-date YYYY-MM-DD]",
               file=sys.stderr)
         sys.exit(1)
     if run_date is None:
@@ -378,16 +379,31 @@ def main():
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    titles = {}
-    if talks_path:
-        db = load_json(talks_path, "tracking database")
-        if not isinstance(db, dict) or not isinstance(db.get("talks"), list):
-            print(f"ERROR: {talks_path} is not a tracking database — expected a JSON "
-                  f"object with a `talks` array; pass the vault's "
-                  f"tracking-database.json or drop --talks", file=sys.stderr)
+    if not talks_path:
+        print("ERROR: --talks <tracking-database.json> is required so queue "
+              "generation can be verified before an analysis file is replaced",
+              file=sys.stderr)
+        sys.exit(1)
+    db = load_json(talks_path, "tracking database")
+    if not isinstance(db, dict) or not isinstance(db.get("talks"), list):
+        print(f"ERROR: {talks_path} is not a tracking database — expected a JSON "
+              f"object with a `talks` array; pass the vault's "
+              "tracking-database.json", file=sys.stderr)
+        sys.exit(1)
+    talks_by_name = {
+        talk.get("filename"): talk for talk in db["talks"] if isinstance(talk, dict)}
+    for ret in returns:
+        talk = talks_by_name.get(ret["filename"])
+        if talk is None:
+            print(f"ERROR: no talk in DB matches return filename: {ret['filename']!r}",
+                  file=sys.stderr)
             sys.exit(1)
-        titles = {t.get("filename"): t.get("title")
-                  for t in db["talks"] if isinstance(t, dict)}
+        try:
+            validate_claim_against_talk(talk, ret, allow_completed=True)
+        except ReturnValidationError as exc:
+            print(f"ERROR: {ret['filename']}: {exc}", file=sys.stderr)
+            sys.exit(1)
+    titles = {name: talk.get("title") for name, talk in talks_by_name.items()}
 
     try:
         os.makedirs(out_dir, exist_ok=True)

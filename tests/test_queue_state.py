@@ -225,6 +225,31 @@ def test_inspect_reconstructs_claims_after_stale_recovery(tmp_path):
     assert payload["claims"][0]["state"] == "stale_recovered"
 
 
+def test_inspect_accepts_a_completed_persistence_claim(tmp_path):
+    talk = _talk("eg6gqvUFh6Q", status="processed")
+    talk["reprocess_generation"] = 1
+    talk["_queue_claim"] = {
+        "schema_version": 1,
+        "run_id": "reparse",
+        "batch_id": "25",
+        "claimed_at": "2026-07-31T17:00:00+00:00",
+        "previous_status": "needs-reprocessing",
+        "reprocess_generation": 1,
+        "state": "completed",
+        "released_at": "2026-07-31T17:30:00+00:00",
+        "release_reason": "return_persisted",
+        "result_status": "processed",
+    }
+    path = _write_db(tmp_path, [talk])
+
+    result = _run(path, "inspect", "--run-id", "reparse")
+
+    assert result.returncode == 0, result.stderr
+    claim = json.loads(result.stdout)["claims"][0]
+    assert claim["state"] == "completed"
+    assert claim["result_status"] == "processed"
+
+
 def test_duplicate_filenames_reject_without_rewriting(tmp_path):
     talk = _talk("eg6gqvUFh6Q")
     path = _write_db(tmp_path, [talk, dict(talk)])

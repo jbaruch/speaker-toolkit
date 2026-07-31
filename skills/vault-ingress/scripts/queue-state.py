@@ -35,7 +35,9 @@ to ``stale_recovered``. A later generation moves the prior claim to
 ``talk._queue_claim_history`` and marks an unclosed claim ``superseded``. Each
 claim/history record carries its own schema version. ``talk.reprocess_generation``
 is the monotonic latest generation. Readers may reconstruct a run from the
-current claim plus history via ``inspect``.
+current claim plus history via ``inspect``. ``persist-results.py`` owns the
+successful terminal transition: it changes the matching claim to ``completed``
+and records ``result_status`` without deleting the generation record.
 """
 
 import argparse
@@ -67,7 +69,7 @@ KNOWN_STATUSES = frozenset({
     "skipped_no_sources",
     "skipped_duplicate",
 })
-CLAIM_STATES = frozenset({"claimed", "stale_recovered", "superseded"})
+CLAIM_STATES = frozenset({"claimed", "completed", "stale_recovered", "superseded"})
 YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 PLAYLIST_FILENAME = re.compile(r"^playlist-([A-Za-z0-9_-]{11})\.md$")
 
@@ -180,6 +182,12 @@ def validate_claim(claim, filename, *, historical=False):
         raise QueueStateError(f"{filename}: a closed claim must carry released_at")
     if state != "claimed" and not isinstance(claim.get("release_reason"), str):
         raise QueueStateError(f"{filename}: a closed claim must carry release_reason")
+    if state == "completed":
+        if claim.get("result_status") not in {
+                "processed", "processed_partial", "skipped_no_sources",
+                "skipped_download_failed", "skipped_duplicate"}:
+            raise QueueStateError(
+                f"{filename}: a completed claim must carry a terminal result_status")
     if historical and state == "claimed":
         raise QueueStateError(f"{filename}: historical claims must be closed")
 

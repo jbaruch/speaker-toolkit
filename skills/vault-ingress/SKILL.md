@@ -41,6 +41,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | `skills/vault-ingress/scripts/persist-results.py` | Deterministically merge batch subagent returns into the tracking DB (Step 4) |
 | `skills/vault-ingress/scripts/write-analysis.py` | Render per-talk `analyses/*.md` from the same batch returns (Step 4) |
 | `skills/vault-ingress/scripts/validate-returns.py` | Reject malformed schemas, statuses, scores, and catalog observations before either Step 4 writer runs |
+| `skills/vault-ingress/scripts/queue-state.py` | Normalize legacy statuses; claim versioned batches; inspect or recover queue leases without replaying returns |
 | `skills/vault-ingress/scripts/pptx-extraction.py` | Extract visual design data from .pptx files |
 | `skills/vault-ingress/scripts/video-slide-extraction.py` | Extract slides from video via ffmpeg + perceptual dedup |
 | `skills/vault-ingress/scripts/batch-download-videos.sh` | Parallel video download for batch processing |
@@ -100,7 +101,16 @@ Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
 
 ## Step 2 — Select Talks to Process
 
-- Select talks with status `pending` or `needs-reprocessing`.
+- Run `python3 skills/vault-ingress/scripts/queue-state.py
+  {vault_root}/tracking-database.json normalize` once. This migrates legacy
+  `skipped_no_video`/`skipped_no_transcript` states from actual video presence;
+  video-bearing transcript failures re-enter the queue, and no-video records
+  become `skipped_no_sources`.
+- Claim each exact batch through `queue-state.py ... claim --run-id <stable-run>
+  --batch-id <stable-batch> --now <timezone-aware-ISO>`. The command selects
+  `pending`, `needs-reprocessing`, and retryable download failures, writes an
+  atomic lease, increments `reprocess_generation`, and returns the claimed talk
+  list. Never change a record to `reprocessing-inflight` by hand.
 - Set `slide_source` per the hierarchy above. Mark `"skipped_no_sources"` only if
   `video_url` is entirely absent — a talk with no `video_url` is **not processable**
   regardless of whether slides exist.
@@ -114,6 +124,8 @@ batch. When all batches have finished, proceed to Step 6.
 
 Each subagent receives the talk's DB entry and current
 `rhetoric-style-summary.md`, runs A → B → B2 → C, and returns a JSON payload.
+Its return copies `run_id`, `batch_id`, and `reprocess_generation` from the
+talk's active `_queue_claim`; persistence rejects a stale or unclaimed return.
 Full procedure — slide acquisition per `slide_source`, rhetoric/style analysis,
 pattern-taxonomy tagging, and the return-JSON shape — lives in
 [references/subagent-instructions.md](references/subagent-instructions.md).
@@ -161,6 +173,10 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   analysis-owned dotted paths in `clear_fields`; empty values remain additive
   no-ops. The script clears matching promoted scalars too, stamps the exact
   catalog fingerprint and scoring-schema version, and writes the DB atomically.
+  A successful merge closes the matching queue lease as `completed`; it never
+  deletes claim history. An interrupted batch is recovered with
+  `queue-state.py ... recover --now <ISO> --stale-after-seconds <N>`, not by
+  replaying whichever old return files happen to exist.
 - **Write per-talk analysis files — run the script, do NOT hand-write them.** Run
   `python3 skills/vault-ingress/scripts/write-analysis.py batch-returns.json {vault_root}/analyses --talks {vault_root}/tracking-database.json`
   over the SAME `batch-returns.json` the merge consumed, so the DB and the files

@@ -17,6 +17,11 @@ VALIDATE_SCRIPT = os.path.join(
 def _return(**overrides):
     value = {
         "filename": "talk.md",
+        "queue_claim": {
+            "run_id": "reparse",
+            "batch_id": "25",
+            "reprocess_generation": 1,
+        },
         "status": "processed",
         "slide_source": "pptx",
         "transcript_source": "youtube_auto",
@@ -86,6 +91,20 @@ def test_status_must_be_a_terminal_return_state(return_validation, status):
     else:
         value["status"] = status
     assert "status is required" in _error(return_validation, value)
+
+
+@pytest.mark.parametrize("claim", [
+    None,
+    {"run_id": "reparse", "batch_id": "25", "reprocess_generation": 0},
+    {"run_id": "bad run", "batch_id": "25", "reprocess_generation": 1},
+])
+def test_return_must_carry_a_valid_queue_generation(return_validation, claim):
+    value = _return()
+    if claim is None:
+        del value["queue_claim"]
+    else:
+        value["queue_claim"] = claim
+    assert "queue_claim" in _error(return_validation, value)
 
 
 def test_unknown_pattern_id_is_rejected(return_validation):
