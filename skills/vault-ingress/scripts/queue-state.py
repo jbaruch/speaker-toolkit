@@ -497,23 +497,48 @@ def command_claim(database, path, args):
     if len(requested) != len(set(requested)):
         raise QueueStateError("--filename contains duplicates")
     if existing:
-        existing_names = {item["filename"] for item in existing}
+        latest_by_filename = {}
+        for item in existing:
+            filename = item["filename"]
+            prior = latest_by_filename.get(filename)
+            if (prior is None or item["reprocess_generation"] >
+                    prior["reprocess_generation"]):
+                latest_by_filename[filename] = item
+        latest = sorted(
+            latest_by_filename.values(), key=lambda item: item["filename"])
+        existing_names = set(latest_by_filename)
         if requested and set(requested) != existing_names:
             raise QueueStateError(
                 f"run {run_id!r} batch {batch_id!r} already exists for "
                 f"{sorted(existing_names)}; requested {sorted(requested)}"
             )
-        return {
-            "ok": True,
-            "action": "claim",
-            "db_path": str(path),
-            "run_id": run_id,
-            "batch_id": batch_id,
-            "idempotent_replay": True,
-            "normalizations": [],
-            "claimed": existing,
-            "remaining_eligible": None,
-        }
+        latest_states = {item["state"] for item in latest}
+        if latest_states <= {"claimed", "completed"}:
+            return {
+                "ok": True,
+                "action": "claim",
+                "db_path": str(path),
+                "run_id": run_id,
+                "batch_id": batch_id,
+                "idempotent_replay": True,
+                "normalizations": [],
+                "claimed": latest,
+                "remaining_eligible": None,
+            }
+        if latest_states == {"stale_recovered"}:
+            # Recovery restores the talks to their prior claimable statuses.
+            # Reusing the stable batch identity must create a new generation,
+            # not replay a closed lease and leave the batch silently idle.
+            requested = sorted(existing_names)
+        else:
+            states_by_filename = {
+                item["filename"]: item["state"] for item in latest
+            }
+            raise QueueStateError(
+                f"run {run_id!r} batch {batch_id!r} has non-replayable mixed "
+                f"claim states {states_by_filename}; retry only recovered talks "
+                "under a new batch_id"
+            )
 
     normalizations = normalize_legacy_statuses(database)
     by_filename = {talk["filename"]: talk for talk in database["talks"]}

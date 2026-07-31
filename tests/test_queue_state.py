@@ -214,6 +214,105 @@ def test_claim_is_idempotent_for_an_existing_run_and_batch(tmp_path):
     assert path.read_bytes() == first_bytes
 
 
+def test_same_run_and_batch_reclaims_a_stale_recovered_generation(tmp_path):
+    path = _write_db(
+        tmp_path,
+        [_talk("eg6gqvUFh6Q", status="needs-reprocessing")],
+    )
+    first = _run(
+        path,
+        "claim",
+        "--run-id", "reparse",
+        "--batch-id", "25",
+        "--now", "2026-07-31T17:00:00+00:00",
+    )
+    assert first.returncode == 0, first.stderr
+    recovered = _run(
+        path,
+        "recover",
+        "--now", "2026-07-31T18:00:00+00:00",
+        "--stale-after-seconds", "3600",
+    )
+    assert recovered.returncode == 0, recovered.stderr
+
+    retried = _run(
+        path,
+        "claim",
+        "--run-id", "reparse",
+        "--batch-id", "25",
+        "--now", "2026-07-31T18:01:00+00:00",
+    )
+
+    assert retried.returncode == 0, retried.stderr
+    payload = json.loads(retried.stdout)
+    assert payload["idempotent_replay"] is False
+    assert payload["claimed"][0]["reprocess_generation"] == 2
+    assert payload["claimed"][0]["state"] == "claimed"
+    talk = _read_db(path)["talks"][0]
+    assert talk["status"] == "reprocessing-inflight"
+    assert talk["reprocess_generation"] == 2
+    assert talk["_queue_claim"]["reprocess_generation"] == 2
+    assert talk["_queue_claim_history"] == [{
+        "schema_version": 1,
+        "run_id": "reparse",
+        "batch_id": "25",
+        "claimed_at": "2026-07-31T17:00:00+00:00",
+        "previous_status": "needs-reprocessing",
+        "reprocess_generation": 1,
+        "state": "stale_recovered",
+        "released_at": "2026-07-31T18:00:00+00:00",
+        "release_reason": "lease_expired",
+    }]
+
+    retried_bytes = path.read_bytes()
+    replay = _run(
+        path,
+        "claim",
+        "--run-id", "reparse",
+        "--batch-id", "25",
+        "--now", "2026-07-31T18:02:00+00:00",
+    )
+    assert replay.returncode == 0, replay.stderr
+    replay_payload = json.loads(replay.stdout)
+    assert replay_payload["idempotent_replay"] is True
+    assert len(replay_payload["claimed"]) == 1
+    assert replay_payload["claimed"][0]["reprocess_generation"] == 2
+    assert path.read_bytes() == retried_bytes
+
+
+def test_claim_is_idempotent_for_a_completed_same_run_and_batch(tmp_path):
+    talk = _talk("eg6gqvUFh6Q", status="processed")
+    talk["reprocess_generation"] = 1
+    talk["_queue_claim"] = {
+        "schema_version": 1,
+        "run_id": "reparse",
+        "batch_id": "25",
+        "claimed_at": "2026-07-31T17:00:00+00:00",
+        "previous_status": "needs-reprocessing",
+        "reprocess_generation": 1,
+        "state": "completed",
+        "released_at": "2026-07-31T17:30:00+00:00",
+        "release_reason": "return_persisted",
+        "result_status": "processed",
+    }
+    path = _write_db(tmp_path, [talk])
+    before = path.read_bytes()
+
+    replay = _claim(
+        path,
+        run_id="reparse",
+        batch_id="25",
+        filenames=(talk["filename"],),
+    )
+
+    assert replay.returncode == 0, replay.stderr
+    payload = json.loads(replay.stdout)
+    assert payload["idempotent_replay"] is True
+    assert payload["claimed"][0]["state"] == "completed"
+    assert payload["claimed"][0]["result_status"] == "processed"
+    assert path.read_bytes() == before
+
+
 def test_recover_uses_injected_time_and_exact_stale_threshold(tmp_path):
     path = _write_db(
         tmp_path,
