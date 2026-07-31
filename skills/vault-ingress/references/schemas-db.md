@@ -40,6 +40,12 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
       "duration_seconds": 2700, "captured_at": "2026-07-31T12:00:00Z"
     },
     "source_relation": {"type": "duplicate|borrowed_recording", "target_filename": "canonical-talk.md"},
+    "source_rejections": [{
+      "source_type": "video", "url": "known-bad upstream URL",
+      "reason": "non_delivery_clip|wrong_delivery|unrelated_recording",
+      "evidence": "how the rejection was verified",
+      "verified_at": "timezone-aware ISO-8601 timestamp"
+    }],
     "pptx_path": "Conference/Year/Talk Name.pptx  (optional — highest quality slide source when available)",
     "schema_version": 3,
     "transcript_source": "youtube_auto|whisper|manual|none  (how the transcript was obtained; MAY BE ABSENT — see below)",

@@ -218,6 +218,71 @@ def test_duplicate_video_requires_an_explicit_relation(preflight_vault, vault_fi
     assert qualified["blocking_count"] == 0
 
 
+def test_known_bad_source_cannot_be_reactivated_in_another_url_form(
+    preflight_vault, vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    talk = base_talk(source_rejections=[{
+        "source_type": "video",
+        "url": f"https://youtu.be/{VIDEO_ID}",
+        "reason": "wrong_delivery",
+        "evidence": "provider metadata names a different conference",
+        "verified_at": "2026-07-31T14:00:00-05:00",
+    }])
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "rejected_source_reactivated" in finding_codes(report, "blocking")
+
+
+def test_inactive_well_formed_source_rejection_is_valid(
+    preflight_vault, vault_fixture,
+):
+    talk = base_talk(
+        video_url=None,
+        youtube_id=None,
+        transcript_source="none",
+        source_rejections=[{
+            "source_type": "video",
+            "url": f"https://youtu.be/{VIDEO_ID}",
+            "reason": "non_delivery_clip",
+            "evidence": "duration is only 226 seconds",
+            "verified_at": "2026-07-31T14:00:00-05:00",
+        }],
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["blocking_count"] == 0
+    assert not finding_codes(report)
+
+
+@pytest.mark.parametrize("bad_rejections", [
+    {},
+    ["not an object"],
+    [{"source_type": "video", "url": "https://example.com"}],
+    [{
+        "source_type": "video", "url": "https://example.com",
+        "reason": "wrong", "evidence": "verified",
+        "verified_at": "2026-07-31T14:00:00",
+    }],
+])
+def test_malformed_source_rejection_is_blocking(
+    preflight_vault, vault_fixture, bad_rejections,
+):
+    materialize_transcript(vault_fixture)
+    talk = base_talk(source_rejections=bad_rejections)
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert finding_codes(report, "blocking") & {
+        "source_rejections_shape_invalid", "source_rejection_invalid",
+    }
+
+
 def test_legacy_duplicate_relation_only_waives_the_same_recording(
     preflight_vault, vault_fixture,
 ):

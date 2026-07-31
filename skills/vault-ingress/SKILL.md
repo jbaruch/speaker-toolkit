@@ -89,6 +89,12 @@ elsewhere. Extract
   11-character ID to agree with any stored value
 - `google_drive_id`: extract the file ID from the Google Drive URL
 
+Before accepting a scanned source, compare it with the talk's
+`source_rejections`. Never reactivate a URL (or the same YouTube ID in another
+URL form) that was previously verified as a non-delivery clip, wrong delivery,
+or unrelated recording. Report the upstream drift and leave the rejected source
+inactive until a human supplies replacement evidence.
+
 Default status is always `"pending"` for new entries.
 
 **Scan for .pptx files:** Recursively glob `**/*.pptx` in `pptx_source_dir`; fuzzy-match

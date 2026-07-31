@@ -109,6 +109,29 @@ An unsupported future `source_identity.schema_version` is a warning and known
 fields are still checked. This lets old readers remain conservative without
 silently accepting contradictions.
 
+## Rejected upstream sources
+
+When a shownotes or catalog URL is verified as a demo clip, a sibling delivery,
+or an unrelated recording, remove it from the active source fields and preserve
+the decision on the talk so a later scan cannot reintroduce it:
+
+```json
+{
+  "source_rejections": [{
+    "source_type": "video",
+    "url": "https://youtu.be/AbCdEfGhI_1",
+    "reason": "non_delivery_clip",
+    "evidence": "Provider title and 226-second duration identify the embedded demo",
+    "verified_at": "2026-07-31T14:00:00-05:00"
+  }]
+}
+```
+
+Every entry requires a nonempty URL, reason, evidence, and timezone-aware
+timestamp. The preflight blocks malformed entries and blocks any active
+`video_url` that names the same rejected URL or YouTube ID. Scanners compare
+against this ledger before importing an upstream link.
+
 ## YouTube identity and duplicate relation
 
 The parser accepts these URL identities:

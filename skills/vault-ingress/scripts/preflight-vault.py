@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter, defaultdict
-from datetime import date
+from datetime import date, datetime
 import json
 import math
 from pathlib import Path
@@ -237,6 +237,7 @@ class VaultPreflight:
         self._validate_filenames()
         for index in range(len(self.talks)):
             self._validate_sources(index)
+            self._validate_source_rejections(index)
             self._validate_artifacts(index)
             self._validate_source_identity(index)
         self._validate_relations()
@@ -353,6 +354,77 @@ class VaultPreflight:
         return bool(_nonempty_string(talk.get("video_url"))) or (
             talk.get("status") in COMPLETED_STATUSES
         )
+
+    def _validate_source_rejections(self, index: int) -> None:
+        """Keep known-bad upstream links from returning during later scans."""
+        talk = self.talks[index]
+        if "source_rejections" not in talk:
+            return
+        rejections = talk.get("source_rejections")
+        if not isinstance(rejections, list):
+            self.talk_add(
+                index, "blocking", "source_rejections_shape_invalid",
+                "source_rejections must be an array",
+                field="source_rejections", expected="array",
+                actual=type(rejections).__name__,
+            )
+            return
+
+        active_url = _nonempty_string(talk.get("video_url"))
+        active_id = parse_youtube_id(active_url) if active_url else None
+        for position, rejection in enumerate(rejections):
+            field = f"source_rejections[{position}]"
+            if not isinstance(rejection, dict):
+                self.talk_add(
+                    index, "blocking", "source_rejection_invalid",
+                    "each source rejection must be an object",
+                    field=field, expected="object",
+                    actual=type(rejection).__name__,
+                )
+                continue
+            source_type = rejection.get("source_type")
+            url = _nonempty_string(rejection.get("url"))
+            reason = _nonempty_string(rejection.get("reason"))
+            evidence = _nonempty_string(rejection.get("evidence"))
+            verified_at = _nonempty_string(rejection.get("verified_at"))
+            valid_timestamp = False
+            if verified_at:
+                try:
+                    parsed = datetime.fromisoformat(verified_at.replace("Z", "+00:00"))
+                    valid_timestamp = parsed.tzinfo is not None
+                except ValueError:
+                    pass
+            if (
+                source_type != "video"
+                or url is None
+                or reason is None
+                or evidence is None
+                or not valid_timestamp
+            ):
+                self.talk_add(
+                    index, "blocking", "source_rejection_invalid",
+                    "source rejection requires video type, URL, reason, evidence, "
+                    "and a timezone-aware verified_at timestamp",
+                    field=field,
+                    expected={
+                        "source_type": "video", "url": "...", "reason": "...",
+                        "evidence": "...", "verified_at": "ISO-8601 with timezone",
+                    },
+                    actual=rejection,
+                )
+                continue
+
+            rejected_id = parse_youtube_id(url)
+            same_source = active_url == url or (
+                active_id is not None and rejected_id == active_id
+            )
+            if same_source:
+                self.talk_add(
+                    index, "blocking", "rejected_source_reactivated",
+                    "an active video_url is recorded as a known-bad source",
+                    field="video_url", expected="a source not in source_rejections",
+                    actual=active_url,
+                )
 
     def _artifact_severity(self, talk: dict[str, Any], *, declared: bool) -> str:
         # A completed record that explicitly declares an acquisition source has
