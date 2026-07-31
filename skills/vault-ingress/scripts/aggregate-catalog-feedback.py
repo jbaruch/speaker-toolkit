@@ -22,8 +22,9 @@ import sys
 from typing import Any
 import unicodedata
 
-import yaml
+from yaml import YAMLError
 
+from catalog_io import DuplicateYAMLKeyError, catalog_entry_paths, load_catalog_yaml
 from catalog_normalization import normalize_catalog_alias
 
 
@@ -81,7 +82,7 @@ def _frontmatter(raw: str) -> dict[str, Any] | None:
     end = raw.find("\n---", 4)
     if end < 0:
         return None
-    loaded = yaml.safe_load(raw[4:end])
+    loaded = load_catalog_yaml(raw[4:end])
     return loaded if isinstance(loaded, dict) else None
 
 
@@ -104,9 +105,7 @@ def load_catalog(catalog_path: str | Path) -> dict[str, Any]:
             "errors": errors,
         }
 
-    for path in sorted(root.rglob("*.md"), key=lambda item: str(item)):
-        if path.name == "_index.md":
-            continue
+    for path in catalog_entry_paths(root):
         try:
             raw = path.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as exc:
@@ -117,7 +116,14 @@ def load_catalog(catalog_path: str | Path) -> dict[str, Any]:
             continue
         try:
             metadata = _frontmatter(raw)
-        except yaml.YAMLError as exc:
+        except DuplicateYAMLKeyError as exc:
+            errors.append(_issue(
+                "catalog_frontmatter_duplicate_key",
+                f"duplicate YAML frontmatter key: {exc}",
+                path=str(path.resolve(strict=False)),
+            ))
+            continue
+        except YAMLError as exc:
             errors.append(_issue(
                 "catalog_frontmatter_invalid", f"invalid YAML frontmatter: {exc}",
                 path=str(path.resolve(strict=False)),

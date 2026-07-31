@@ -251,6 +251,31 @@ def test_context_video_must_clear_a_stale_promoted_path(return_validation):
     assert "must clear slides_local_path" in _error(return_validation, value)
 
 
+def test_context_delivery_video_still_requires_comparison_gates_not_evaluable(
+        return_validation):
+    value = _complete_unavailable_source_gates(
+        return_validation,
+        _video_return(trusted=False, promoted=False),
+    )
+    not_evaluable = {
+        item["pattern_id"]: item
+        for item in value["pattern_observations"]["not_evaluable"]
+    }
+
+    assert not_evaluable["gradual-consistency"]["evidence_source"] == \
+        "delivery_video"
+    assert not_evaluable["invisibility"]["evidence_source"] == "delivery_video"
+    return_validation.validate_batch([value])
+
+    value["pattern_observations"]["not_evaluable"] = [
+        item for pattern_id, item in not_evaluable.items()
+        if pattern_id not in {"gradual-consistency", "invisibility"}
+    ]
+    error = _error(return_validation, value)
+    assert "gradual-consistency" in error
+    assert "invisibility" in error
+
+
 def test_unavailable_source_gates_must_be_explicitly_not_evaluable(return_validation):
     value = _video_return(trusted=False, promoted=False)
     value["pattern_observations"]["evidence_sources"] = ["transcript"]

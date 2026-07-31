@@ -9,7 +9,6 @@ inject another catalog directory for tests.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import re
@@ -19,7 +18,14 @@ from functools import lru_cache
 from pathlib import Path, PurePosixPath
 from typing import NoReturn
 
-import yaml
+from yaml import YAMLError
+
+from catalog_io import (
+    DuplicateYAMLKeyError,
+    catalog_entry_paths,
+    catalog_fingerprint,
+    load_catalog_yaml,
+)
 
 
 ANALYSIS_STATUSES = frozenset({"processed", "processed_partial"})
@@ -169,19 +175,23 @@ def default_catalog_dir() -> Path:
             "references" / "patterns")
 
 
-def _frontmatter(path: Path) -> dict:
+def _frontmatter(path: Path, content: bytes) -> dict:
     try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise ReturnValidationError(f"cannot read catalog entry {path}: {exc}") from exc
+        text = content.decode("utf-8")
+    except UnicodeError as exc:
+        raise ReturnValidationError(
+            f"catalog entry {path} cannot be decoded as UTF-8: {exc}") from exc
     if not text.startswith("---\n"):
         raise ReturnValidationError(f"catalog entry {path} has no YAML frontmatter")
     end = text.find("\n---\n", 4)
     if end < 0:
         raise ReturnValidationError(f"catalog entry {path} has unterminated frontmatter")
     try:
-        front = yaml.safe_load(text[4:end]) or {}
-    except yaml.YAMLError as exc:
+        front = load_catalog_yaml(text[4:end]) or {}
+    except DuplicateYAMLKeyError as exc:
+        raise ReturnValidationError(
+            f"catalog entry {path} has duplicate YAML frontmatter keys: {exc}") from exc
+    except YAMLError as exc:
         raise ReturnValidationError(
             f"catalog entry {path} has invalid YAML frontmatter: {exc}") from exc
     if not isinstance(front, dict):
@@ -193,14 +203,29 @@ def _frontmatter(path: Path) -> dict:
 def load_catalog(catalog_dir: str | Path | None = None) -> PatternCatalog:
     """Load catalog identity, polarity and observability plus a content hash."""
     root = Path(catalog_dir) if catalog_dir is not None else default_catalog_dir()
-    paths = sorted(path for path in root.glob("*/*.md") if path.is_file())
+    index_path = root / "_index.md"
+    try:
+        index_content = index_path.read_bytes()
+    except OSError as exc:
+        raise ReturnValidationError(f"cannot read catalog index {index_path}: {exc}") from exc
+    try:
+        index_content.decode("utf-8")
+    except UnicodeError as exc:
+        raise ReturnValidationError(
+            f"catalog index {index_path} cannot be decoded as UTF-8: {exc}") from exc
+
+    paths = catalog_entry_paths(root)
     if not paths:
         raise ReturnValidationError(f"no pattern entries found under {root}")
 
     entries: dict[str, CatalogEntry] = {}
-    digest = hashlib.sha256()
+    fingerprint_contents: list[tuple[str, bytes]] = []
     for path in paths:
-        front = _frontmatter(path)
+        try:
+            content = path.read_bytes()
+        except OSError as exc:
+            raise ReturnValidationError(f"cannot read catalog entry {path}: {exc}") from exc
+        front = _frontmatter(path, content)
         pattern_id = front.get("id")
         entry_type = front.get("type")
         if not isinstance(pattern_id, str) or not pattern_id:
@@ -238,11 +263,11 @@ def load_catalog(catalog_dir: str | Path | None = None) -> PatternCatalog:
             evaluable_from=evaluable_from,
             path=relative,
         )
-        digest.update(relative.encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(path.read_bytes())
-        digest.update(b"\0")
-    return PatternCatalog(entries=entries, fingerprint=digest.hexdigest())
+        fingerprint_contents.append((relative, content))
+    return PatternCatalog(
+        entries=entries,
+        fingerprint=catalog_fingerprint(index_content, fingerprint_contents),
+    )
 
 
 def _require_string(obj: dict, field: str, *, allow_empty: bool = False) -> str:

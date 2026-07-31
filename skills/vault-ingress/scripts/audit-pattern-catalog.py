@@ -28,7 +28,6 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import sys
@@ -37,8 +36,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import yaml
+from yaml import YAMLError
 
+from catalog_io import (
+    DuplicateYAMLKeyError,
+    catalog_entry_paths,
+    catalog_fingerprint,
+    load_catalog_yaml,
+)
 from catalog_normalization import normalize_catalog_alias
 
 
@@ -113,6 +118,7 @@ class CatalogEntry:
 
     path: Path
     relative_path: str
+    content: bytes
     text: str
     metadata: dict[str, Any]
     pattern_id: str | None
@@ -233,8 +239,15 @@ def _parse_frontmatter(
         ))
         return {}
     try:
-        value = yaml.safe_load(text[4:end]) or {}
-    except yaml.YAMLError as exc:
+        value = load_catalog_yaml(text[4:end]) or {}
+    except DuplicateYAMLKeyError as exc:
+        errors.append(Issue(
+            "frontmatter_duplicate_key",
+            f"catalog entry frontmatter repeats a YAML mapping key: {exc}",
+            relative_path,
+        ))
+        return {}
+    except YAMLError as exc:
         errors.append(Issue(
             "frontmatter_invalid_yaml",
             f"catalog entry frontmatter is invalid YAML: {exc}",
@@ -254,14 +267,25 @@ def _parse_frontmatter(
 def _read_entry(path: Path, root: Path, errors: list[Issue]) -> CatalogEntry:
     relative_path = path.relative_to(root).as_posix()
     try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as exc:
+        content = path.read_bytes()
+    except OSError as exc:
         errors.append(Issue(
             "entry_unreadable",
             f"catalog entry cannot be read as UTF-8: {exc}",
             relative_path,
         ))
-        return CatalogEntry(path, relative_path, "", {}, None, None, None, None, None)
+        return CatalogEntry(
+            path, relative_path, b"", "", {}, None, None, None, None, None)
+    try:
+        text = content.decode("utf-8")
+    except UnicodeError as exc:
+        errors.append(Issue(
+            "entry_unreadable",
+            f"catalog entry cannot be read as UTF-8: {exc}",
+            relative_path,
+        ))
+        return CatalogEntry(
+            path, relative_path, content, "", {}, None, None, None, None, None)
 
     metadata = _parse_frontmatter(path, relative_path, text, errors)
     raw_id = metadata.get("id")
@@ -277,6 +301,7 @@ def _read_entry(path: Path, root: Path, errors: list[Issue]) -> CatalogEntry:
     return CatalogEntry(
         path,
         relative_path,
+        content,
         text,
         metadata,
         pattern_id,
@@ -628,24 +653,33 @@ def _parse_csv(value: str) -> tuple[str, ...]:
 def _parse_index(
     root: Path,
     errors: list[Issue],
-) -> tuple[str, dict[str, IndexEntry], set[str]]:
+) -> tuple[str, bytes, dict[str, IndexEntry], set[str]]:
     path = root / "_index.md"
     try:
-        text = path.read_text(encoding="utf-8")
+        content = path.read_bytes()
     except FileNotFoundError:
         errors.append(Issue(
             "index_missing",
             "catalog root must contain _index.md",
             "_index.md",
         ))
-        return "", {}, set()
-    except (OSError, UnicodeError) as exc:
+        return "", b"", {}, set()
+    except OSError as exc:
         errors.append(Issue(
             "index_unreadable",
             f"catalog index cannot be read as UTF-8: {exc}",
             "_index.md",
         ))
-        return "", {}, set()
+        return "", b"", {}, set()
+    try:
+        text = content.decode("utf-8")
+    except UnicodeError as exc:
+        errors.append(Issue(
+            "index_unreadable",
+            f"catalog index cannot be read as UTF-8: {exc}",
+            "_index.md",
+        ))
+        return "", content, {}, set()
 
     rows: dict[str, IndexEntry] = {}
     in_catalog = False
@@ -809,7 +843,7 @@ def _parse_index(
             "catalog index must contain the Unobservable Patterns section",
             "_index.md",
         ))
-    return text, rows, unobservable
+    return text, content, rows, unobservable
 
 
 def _entry_references(
@@ -1068,19 +1102,6 @@ def _validate_unobservable_index(
         ))
 
 
-def _catalog_fingerprint(index_text: str, parsed_entries: list[CatalogEntry]) -> str:
-    digest = hashlib.sha256()
-    digest.update(b"_index.md\0")
-    digest.update(index_text.encode("utf-8"))
-    digest.update(b"\0")
-    for entry in sorted(parsed_entries, key=lambda item: item.relative_path):
-        digest.update(entry.relative_path.encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(entry.text.encode("utf-8"))
-        digest.update(b"\0")
-    return digest.hexdigest()
-
-
 def audit_catalog(catalog_dir: str | Path | None = None) -> dict[str, Any]:
     """Return a stable read-only catalog audit report."""
     root = Path(catalog_dir) if catalog_dir is not None else default_catalog_dir()
@@ -1091,14 +1112,11 @@ def audit_catalog(catalog_dir: str | Path | None = None) -> dict[str, Any]:
             "catalog_directory_missing",
             f"catalog directory does not exist: {root}",
         ))
-        return _build_report(root, "", [], {}, {}, {}, {}, {}, [], errors, debts)
+        return _build_report(
+            root, b"", [], {}, {}, {}, {}, {}, [], errors, debts)
 
-    index_text, index_rows, unobservable_listed = _parse_index(root, errors)
-    root_index = root / "_index.md"
-    entry_paths = sorted(
-        path for path in root.rglob("*.md")
-        if path.is_file() and path != root_index
-    )
+    _, index_content, index_rows, unobservable_listed = _parse_index(root, errors)
+    entry_paths = catalog_entry_paths(root)
     if not entry_paths:
         errors.append(Issue(
             "catalog_empty",
@@ -1173,7 +1191,7 @@ def audit_catalog(catalog_dir: str | Path | None = None) -> dict[str, Any]:
 
     return _build_report(
         root,
-        index_text,
+        index_content,
         parsed_entries,
         entries,
         index_rows,
@@ -1188,7 +1206,7 @@ def audit_catalog(catalog_dir: str | Path | None = None) -> dict[str, Any]:
 
 def _build_report(
     root: Path,
-    index_text: str,
+    index_content: bytes,
     parsed_entries: list[CatalogEntry],
     entries: dict[str, CatalogEntry],
     index_rows: dict[str, IndexEntry],
@@ -1223,7 +1241,13 @@ def _build_report(
     explicit_alias_count = sum(len(values) for values in aliases.values())
     return {
         "catalog": {
-            "fingerprint": _catalog_fingerprint(index_text, parsed_entries),
+            "fingerprint": catalog_fingerprint(
+                index_content,
+                (
+                    (entry.relative_path, entry.content)
+                    for entry in parsed_entries
+                ),
+            ),
             "index": "_index.md",
             "path": root.as_posix(),
         },

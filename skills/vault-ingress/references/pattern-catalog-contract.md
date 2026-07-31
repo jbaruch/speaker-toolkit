@@ -19,6 +19,8 @@ exit `2`.
   under the catalog tree is audited and fingerprinted as an entry.
 - Entry frontmatter owns machine-readable identity, polarity, observability,
   evidence gates, graph declarations, and aliases.
+- YAML mapping keys must be unique at every nesting level. The catalog
+  consumers reject duplicates instead of accepting PyYAML's last value.
 - Entry prose owns definitions, boundaries, examples, and semantic intent.
 - `inverse_of` is symmetric. Either endpoint may originate the assertion, but
   both endpoints must declare it.
@@ -60,8 +62,12 @@ The top-level shape is:
 
 All issue objects carry the same keys: `code`, `entry_id`, `field`, `message`,
 `path`, and `related_id`. Arrays, graph edges, issue codes, and summary maps are
-sorted. The fingerprint covers the index and every entry file. The report has
-no timestamp or run-specific identifier.
+sorted. The fingerprint is shared with ingress return validation and covers
+the exact bytes of the catalog-root `_index.md` plus every recursive Markdown
+entry in relative-path order. The root index is not an entry; a nested
+`_index.md` is both fingerprinted and audited as an invalid entry file. An
+index-only edit therefore changes the fingerprint persisted for an ingress
+return. The report has no timestamp or run-specific identifier.
 
 ## Structural errors
 
@@ -71,6 +77,7 @@ The `errors` lane contains mechanically decidable contract failures:
 - Index dimensions or creator phases are empty, out of range/namespace, or
   duplicated; index related-ID lists may be empty but may not repeat an ID.
 - Filename, ID, directory, lifecycle part, index kind, or polarity disagree.
+- Frontmatter contains invalid YAML or repeats a mapping key at any depth.
 - Frontmatter lists or creator-phase values violate their declared shape.
 - Observable state and source-gate metadata/prose are incompatible.
 - Related or inverse references are dangling, duplicated, or self-referential.
