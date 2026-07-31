@@ -15,6 +15,13 @@ blocking. Invocation errors use argparse's exit `2` and still emit a blocking
 JSON report. A missing, unreadable, malformed, or structurally invalid tracking
 database is itself a blocking integrity finding.
 
+Use `scripts/apply-source-repairs.py` for catalog metadata fixes. Its plan
+requires an exact `expect` map for every record, permits only source/queue
+repair fields, supports explicit `set` and `clear` operations, and is dry-run by
+default. `--apply` refuses active claims, creates an exact backup in `.backups`,
+then replaces the database atomically. Use `{"$missing": true}` in `expect`
+when absence rather than JSON null is the required precondition.
+
 ## Severity contract
 
 - `blocking` means stored claims disagree, identities collide, or a completed

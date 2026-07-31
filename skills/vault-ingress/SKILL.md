@@ -49,6 +49,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | `skills/vault-ingress/scripts/vtt-cleanup.py` | Clean VTT subtitles into plain transcript text |
 | `skills/vault-ingress/scripts/fetch-transcript.py` | Fetch a transcript, validate it, write only if real (captions → local Whisper) |
 | `skills/vault-ingress/scripts/preflight-vault.py` | Read-only source/identity integrity gate before selection or re-analysis |
+| `skills/vault-ingress/scripts/apply-source-repairs.py` | Guarded dry-run/apply workflow for evidence-backed source metadata repairs |
 
 A talk is processable when it has `video_url`. Slide sources, in order of preference:
 1. `pptx_path` — richest data (exact colors, fonts, shapes via python-pptx)
@@ -120,6 +121,21 @@ processing. Exit 0 may still carry warnings for legacy evidence gaps or pending
 artifacts; report them, but they do not make the vault unusable. The stable JSON
 report and evidence shape are defined in
 [references/source-identity-preflight.md](references/source-identity-preflight.md).
+
+For metadata repairs, write a reviewed source-repair plan with exact old-value
+preconditions, then dry-run it before applying:
+
+```bash
+python3 skills/vault-ingress/scripts/apply-source-repairs.py \
+  {vault_root}/tracking-database.json source-repair-plan.json
+python3 skills/vault-ingress/scripts/apply-source-repairs.py \
+  {vault_root}/tracking-database.json source-repair-plan.json --apply
+```
+
+The apply command validates the whole plan before mutation, refuses active queue
+claims, writes a byte-for-byte backup under `{vault_root}/.backups/`, and replaces
+the DB atomically. Re-run the preflight after applying; do not claim work until
+blocking findings reach zero.
 
 Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
 "X processed, Y remaining. PPTX: A cataloged, B matched, C extracted."
