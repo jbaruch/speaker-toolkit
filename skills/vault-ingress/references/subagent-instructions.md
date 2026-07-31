@@ -149,32 +149,38 @@ an English translation preceding it.
 `skills/vault-ingress/scripts/pptx-extraction.py` reads text out of PPTX
 *shapes*. Text rendered inside a picture — the norm for AI-generated illustration decks, where titles, callout
 labels, stamps, and annotations are all baked into the image — is invisible to
-the shape walk. On those slides the extractor emits
+native text channels. On those slides the extractor emits
 `text_extraction_confidence: "low"`, keeps `text_content_preview` as
-shape-only (often empty), and — when PICTURE blobs exist — fills `ocr_text`
-via tesseract (`text_extraction_method: "shapes+ocr"`).
+native shape/table text (often empty), and — when PICTURE or background-image
+blobs exist — fills distinct provenance-bearing OCR channels plus the
+backward-compatible `ocr_text` aggregate via tesseract
+(`text_extraction_method: "shapes+ocr"`).
 
 **An empty `text_content_preview` on a low-confidence slide is not evidence of
 a wordless slide.** It means shapes could not read the text. Prefer `ocr_text`
-for the word inventory; if that is also empty (engine missing, image
-background with no picture blob, or genuinely blank art), still do not treat
+for the word inventory; inspect `text_channels` to learn which source was read.
+If OCR is also empty (engine missing, unavailable/corrupt image blob, unsupported
+SmartArt/chart/graphic frame, or genuinely blank art), still do not treat
 absence as proof — look at the rendered page. Reading shape emptiness as
 "wordless" inverts Dimension 8 — see
 [known-issues.md](known-issues.md) § "Shape Extraction Is Blind to Text Baked
 Into Images".
 
-**Use the two channels for different jobs:**
+**Use the source classes for different jobs:**
 
 | Job | Source |
 |---|---|
-| Word inventory, transcript cross-check, slide-text language policy, citational pattern evidence (`second-look` labels, buried jokes) | `ocr_text` (and shape `text_content_preview` when present) |
+| Word inventory, transcript cross-check, slide-text language policy, citational pattern evidence (`second-look` labels, buried jokes) | `text_channels` first; `ocr_text` and `text_content_preview` are compatibility aggregates |
 | Density / two-layer legibility / composition / Dim 8–13 design judgment | **Rendered page images** (OCR is not a layout oracle) |
 
 When any slide in a deck reports `text_extraction_confidence: "low"`:
 
-1. Read `ocr_text` and `text_extraction_method` from the extraction JSON first.
-   Non-empty `ocr_text` is the citeable inventory. `shapes+ocr_unavailable`
-   means install tesseract next time; do not invent words.
+1. Read `text_channels`, `unsupported_content`, and
+   `render_required_reasons` from the extraction JSON first. Each channel names
+   its source, confidence, and status. `ocr_text` remains a convenient combined
+   inventory. `shapes+ocr_unavailable` means install tesseract next time; an
+   `unsupported` or `unavailable` channel needs rendering or a specialized
+   parser. Do not invent words.
 
 2. Get a PDF to render for design judgment. Which one depends on `slide_source`
    — the `pptx` path never downloads one, so it has to be produced:

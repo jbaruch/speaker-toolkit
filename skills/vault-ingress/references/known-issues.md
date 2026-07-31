@@ -36,13 +36,14 @@ scored as wordless backdrops (#116).
   `text_extraction_confidence` per slide. What trips it to `"low"` is the
   script's to decide — see `skills/vault-ingress/scripts/pptx-extraction.py`,
   the `_TEXT_BEARING_IMAGE_AREA_RATIO` constant comment.
-- **OCR inventory (#129).** On low-confidence slides that have PICTURE shapes,
-  the same script OCRs the picture blobs into `ocr_text` and sets
-  `text_extraction_method` to `shapes+ocr` (or `shapes+ocr_unavailable` if
-  tesseract is missing). Use `ocr_text` for word lists, transcript cross-checks,
-  language policy on slide text, and citational pattern evidence (`second-look`,
-  etc.). Empty `text_content_preview` still means *shapes could not read it*,
-  not *the slide is blank*.
+- **OCR inventory (#129).** On low-confidence slides with usable PICTURE or
+  background-image blobs, the same script emits provenance-bearing
+  `picture_ocr` / `background_image_ocr` channels, aggregates their text into
+  `ocr_text`, and sets `text_extraction_method` to `shapes+ocr` (or
+  `shapes+ocr_unavailable` if tesseract is missing). Use `text_channels` for
+  source/confidence and `ocr_text` for a combined word list. Empty
+  `text_content_preview` still means *native channels could not read it*, not
+  *the slide is blank*.
 - **Read the confidence, never `image_area_ratio`.** The two are independent: a
   slide can be `"low"` with a ratio of `0.0`. Deriving your own trigger from the
   ratio reproduces the bug this entry exists to prevent.
@@ -50,8 +51,20 @@ scored as wordless backdrops (#116).
   two-layer structure, composition) from the **rendered image** — OCR is not a
   layout oracle. See `subagent-instructions.md` § "Slides with
   `text_extraction_confidence: low`".
-- Image *backgrounds* without a PICTURE shape are still low-confidence but have
-  no blob to OCR in this path — fall back to the rendered-page pass.
+- Image *backgrounds* without a PICTURE shape are still low-confidence. When
+  their background relationship resolves, the extractor OCRs the actual blob
+  into a distinct `background_image_ocr` channel; missing relationships/blobs
+  are explicit `status: unavailable`. In both cases, use the rendered-page pass
+  for design judgment.
+- Grouped shapes and native table cells are now traversed, but remain
+  low-confidence because nested transforms, merged cells, and embedded visuals
+  can change what is visibly readable. SmartArt, charts, OLE/media, and unknown
+  graphic frames are listed under `unsupported_content`; they always require a
+  rendered-page or specialized-parser pass.
+- Bad-CRC members under `ppt/media/` are replaced in memory with a transparent
+  placeholder so healthy slides and text survive extraction. Read
+  `corrupt_assets` and `render_required_reasons`; the source PPTX is never
+  rewritten, and corrupt structural members remain hard errors.
 - `has_text_frame_shapes` (formerly `has_text_placeholder`) names what it
   measures: shapes with text frames. It is not a claim about on-screen text.
 

@@ -400,6 +400,8 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
 | 6. Bubbles/Starbursts | Auto-shape type enum, fill/line colors | `auto_shape_type`, `fill_color`, `line_color` |
 | 7. Layout Taxonomy | PowerPoint layout name per slide | `layout_name` |
 | 10. Color Sequencing | Full sequence of hex values | `color_sequence` |
+| Text-channel provenance | Recursive shape text, table cells, picture OCR, background OCR | `text_channels[]` |
+| Unsupported visual containers | SmartArt, charts, OLE/media, unknown graphic frames, damaged assets | `unsupported_content[]`, `render_required_reasons[]` |
 
 ### What the Script Does NOT Extract (still needs PDF visual analysis)
 
@@ -417,54 +419,110 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
 
 ```json
 {
+  "schema_version": 1,
+  "pipeline_version": "1.0.0",
+  "input_fingerprint": {
+    "algorithm": "sha256",
+    "digest": "64 lowercase hex characters",
+    "size_bytes": 123456
+  },
   "pptx_path": "Conference/Year/Talk.pptx",
   "slide_count": 60,
   "aspect_ratio": "16:9",
+  "slide_width_inches": 13.33,
+  "slide_height_inches": 7.5,
+  "corrupt_assets": [
+    {
+      "part_name": "ppt/media/image7.png",
+      "error_type": "crc_mismatch",
+      "status": "recovered_with_placeholder"
+    }
+  ],
   "per_slide_visual": [
     {
       "slide_number": 1,
       "background_color_hex": "#5B2C6F",
-      "background_type": "solid|pattern|image|gradient|solid_from_layout|unknown",
+      "background_type": "solid|pattern|image|gradient|solid_from_layout|solid_from_master|unknown",
       "layout_name": "Title Slide  (free text from slide.slide_layout.name — not an enum)",
       "shape_count": 3,
+      "shape_count_recursive": 5,
       "has_text_frame_shapes": true,
+      "has_extracted_text": true,
       "has_image": false,
       "image_area_ratio": 0.0,
       "text_extraction_confidence": "high|low",
       "text_content_preview": "Talk Title",
       "ocr_text": "",
       "text_extraction_method": "shapes|shapes+ocr|shapes+ocr_unavailable",
+      "text_channels": [
+        {
+          "channel": "shape_text|table_cell_text|picture_ocr|background_image_ocr|<unsupported-kind>_text|group_container_text",
+          "text": "Talk Title",
+          "confidence": "high|medium|low",
+          "status": "extracted|empty|skipped|unavailable|unsupported|requires_render",
+          "provenance": {
+            "source": "pptx_shape_text_frame",
+            "shape_path": ["Group 1", "Title 2"]
+          }
+        }
+      ],
+      "unsupported_content": [
+        {
+          "content_type": "smartart|chart|graphic_frame|embedded_ole_object|linked_ole_object|media|unreadable_picture|corrupt_embedded_asset",
+          "shape_name": "Diagram 4",
+          "shape_path": ["Diagram 4"],
+          "graphic_data_uri": "http://schemas.openxmlformats.org/drawingml/2006/diagram",
+          "reason": "visible text or labels may not be represented in PPTX text frames",
+          "render_required": true
+        }
+      ],
+      "has_unsupported_content": true,
+      "render_required": true,
+      "render_required_reasons": ["smartart"],
       "footer_text": "@handle | #conf | #topic | website",
       "has_speaker_notes": true,
       "shapes_summary": [
-        {"type": "placeholder", "name": "Title 1", "font": "Bangers", "font_size": 36, "font_color": "#FFFFFF", "bold": true},
-        {"type": "autoshape", "shape_type": "CLOUD_CALLOUT", "fill_color": "#FFFFFF", "line_color": "#000000"}
+        {"name": "Title 1", "shape_type": "PLACEHOLDER (14)", "shape_path": ["Title 1"], "group_depth": 0, "font_name": "Bangers", "font_size": 36, "font_color": "#FFFFFF", "bold": true},
+        {"name": "Cloud 2", "shape_type": "AUTO_SHAPE (1)", "shape_path": ["Cloud 2"], "group_depth": 0, "auto_shape_type": "CLOUD_CALLOUT (108)", "fill_color": "#FFFFFF", "line_color": "#000000"}
       ]
     }
   ],
   "global_design": {
     "fonts_used": {"Bangers": 45, "Arial": 10},
     "background_colors": {"#5B2C6F": 12, "#C0392B": 8},
-    "footer_pattern": {
-      "position_left": 0.5, "position_bottom": 0.1,
-      "font": "Arial", "font_size": 8, "font_color": "#FFFFFF", "separator": " | "
-    },
-    "shape_types_used": {"CLOUD_CALLOUT": 15, "EXPLOSION1": 8},
+    "shape_types_used": {"CLOUD_CALLOUT (108)": 15, "EXPLOSION1 (89)": 8},
     "color_sequence": ["#5B2C6F", "#FFFFFF", "#C0392B", "..."]
   }
 }
 ```
 
-**`text_extraction_confidence` gates how the text fields may be read.**
-`text_content_preview` comes from PPTX *shapes*; text rendered inside a picture
-is invisible to the shape walk. On a `"low"` slide:
+`schema_version` tracks this JSON field shape. Missing means legacy shape `0`;
+current is `1`. `pipeline_version` tracks extraction behavior and changes when
+the walk, classification, confidence, OCR, or recovery behavior changes.
+`input_fingerprint` hashes the exact source PPTX bytes before any in-memory
+media recovery; identical bytes have the same fingerprint regardless of path.
 
-- empty `text_content_preview` means *unreadable by shapes*, never wordless
-- `ocr_text` holds the script-owned OCR inventory from picture blobs when the
-  engine ran (`text_extraction_method: "shapes+ocr"`). Use it for cites,
+`corrupt_assets` is empty on a healthy package. A bad-CRC member under
+`ppt/media/` is replaced only in an in-memory package with a transparent
+placeholder, allowing healthy text and slides to survive. Structural members
+(XML, relationships, content types) are never discarded; their corruption is
+a hard extraction error.
+
+**`text_extraction_confidence` gates how the text fields may be read.**
+`text_content_preview` aggregates native shape-frame and table-cell text for
+backward compatibility. `text_channels` is authoritative for provenance:
+recursive shape text, table cells, picture OCR, and background-image OCR remain
+distinct. Text rendered inside pictures, SmartArt, charts, or other unsupported
+containers can remain invisible. On a `"low"` slide:
+
+- empty `text_content_preview` means *unreadable by native shape/table
+  channels*, never wordless
+- `ocr_text` holds the backward-compatible aggregate of picture and background
+  image OCR channels when the engine ran (`text_extraction_method:
+  "shapes+ocr"`). Use it for cites,
   transcript cross-checks, language policy on slide text, and pattern evidence
 - `text_extraction_method` is `"shapes"` when OCR was not attempted (high
-  confidence, `--no-ocr`, or no picture blob), `"shapes+ocr"` when it ran,
+  confidence, `--no-ocr`, or no usable image blob), `"shapes+ocr"` when it ran,
   `"shapes+ocr_unavailable"` when the engine was missing
 - Dimensions 8/13 **design** judgment (density, two-layer legibility, composition)
   still requires the rendered image — OCR is inventory, not layout (see
@@ -472,7 +530,15 @@ is invisible to the shape walk. On a `"low"` slide:
   Into Images" and [subagent-instructions.md](subagent-instructions.md))
 
 `has_text_frame_shapes` reports shapes carrying text frames — not whether the
-slide shows text.
+slide shows text. `has_extracted_text` covers every emitted text channel,
+including table cells and OCR.
+
+Groups and tables are traversed, but they still force `low`: nested transforms,
+merged cells, and embedded visual content can affect visible reading order.
+SmartArt, charts, OLE/media objects, unknown graphic frames, unreadable images,
+and recovered corrupt assets are listed in `unsupported_content`. Never infer
+completeness when `render_required` is true; use
+`render_required_reasons` to choose the fallback.
 
 `image_area_ratio` is the **largest** PICTURE shape's area as a fraction of the
 slide, rounded to 3 decimals; always present. `0.0` means no picture, unreadable
@@ -484,5 +550,8 @@ threshold is not proof of which way the slide was classified.
 It measures picture **shapes** only. A slide whose image is a *background*
 reports `background_type: "image"` and `text_extraction_confidence: "low"`
 while `image_area_ratio` stays `0.0` — the background covers the canvas by
-definition and has no picture geometry to measure. Read the confidence, never
-the ratio, to decide whether a slide needs a visual pass.
+definition and has no picture geometry to measure. When its relationship and
+blob are valid, OCR appears in a distinct `background_image_ocr` channel; a
+missing blob is recorded as `status: "unavailable"`. Either way, rendering is
+still required for design judgment. Read the confidence, never the ratio, to
+decide whether a slide needs a visual pass.
