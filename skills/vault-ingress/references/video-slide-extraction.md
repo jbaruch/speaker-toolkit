@@ -175,28 +175,38 @@ Common conference video layouts and how the script handles them:
 | Split screen 50/50 | Co-presented live coding | 50% left or right |
 
 The `detect_slide_region()` function handles the first three automatically via
-variance analysis. For split-screen formats, manual `slide_region` override may
-be needed — pass it as a parameter.
+variance analysis. For split-screen formats, provide a normalized manual crop:
+`--region LEFT,TOP,RIGHT,BOTTOM`. Add `--region-verified` only after checking the
+crop against rendered frames. Use `--region none` to disable cropping when the
+auto-detector selects the wrong subject. An auto-detected crop remains unverified;
+after checking it, rerun with its printed coordinates as a manual region plus
+`--region-verified` to record that judgment.
 
 ## Tuning the Hash Threshold
 
-The `hash_threshold` parameter controls deduplication aggressiveness:
+The `hash_threshold` parameter is the largest perceptual-hash distance still
+treated as the same slide. The implementation keeps a frame only when its
+distance from the last kept frame is **greater than** the threshold. Therefore,
+raising the threshold merges more aggressively and keeps fewer variants:
 
 | Value | Behavior | Best For |
 |-------|----------|----------|
-| 4-6 | Aggressive: merges similar slides | Dense meme-heavy talks where each slide is visually distinct |
-| 8-10 | Moderate: good default | Most conference talks (fullscreen slide recordings) |
-| 12-16 | Loose: keeps more variation | Progressive-reveal-heavy talks (table rows appearing one-by-one) |
-| 14-18 | Very loose | Wide-angle room recordings where speaker movement dominates |
+| 4-6 | Conservative merge: keeps more visual variants | Progressive reveals or visually similar authored slides; expect more animation noise |
+| 8-10 | Moderate merge | Most conference talks (fullscreen slide recordings) |
+| 12-16 | Aggressive merge: keeps fewer variants | Moving overlays or room motion; verify that real slides were not merged |
+| 14-18 | Very aggressive merge | Last-resort wide-angle cleanup after a manual crop is unavailable; high under-count risk |
 
 For talks in the speaker's mode (a) polemic style with progressive reveals,
-use threshold 12. For demo-heavy or minimal-slide talks, use 8.
+start at threshold 4–6 so reveal steps remain distinct. For demo-heavy or
+minimal-slide talks, start at 8 and inspect the retained frames.
 
 **Wide-angle room recordings** (meetups, DevOpsDays, early-era conference recordings)
 where the camera captures the full stage — speaker walking + slides projected behind —
 defeat the default dedup. Every frame looks different because the speaker moved. Options:
-1. Increase threshold to 14-18
-2. Manually specify `slide_region` to crop out the speaker and isolate the screen
+1. Manually specify `--region LEFT,TOP,RIGHT,BOTTOM --region-verified` to crop
+   out the speaker and isolate the screen
+2. Increase the threshold to 14–18 to merge more motion variants, then verify
+   that distinct slides and progressive reveals were not under-counted
 3. Accept the bloated PDF (800-1500 pages) and have the analysis subagent SAMPLE
    frames at intervals rather than reading every page
 
@@ -232,14 +242,16 @@ but only ~1-2 GB of PDFs remain after cleanup.
 
 - **Speaker overlay**: If the speaker's face overlaps slides (green-screen overlay
   style), frame extraction still works but the perceptual hash may treat the same
-  slide with different speaker positions as different slides. Increase threshold.
+  slide with different speaker positions as different slides. A higher threshold
+  merges more of those variants but also raises under-count risk; prefer a manual
+  crop when the slide area can be isolated.
 - **Animated slides**: Animations within a single slide produce multiple frames.
   The dedup catches most of these, but fast animations at exactly the 2-second
   boundary may produce duplicates. Not a significant issue in practice.
 - **Progressive reveals**: The speaker's talks frequently use progressive reveals
   (table rows appearing one-by-one). These ARE different slides rhetorically and
-  SHOULD be kept as separate pages. The default threshold of 8-12 handles this
-  correctly — each reveal step looks sufficiently different.
+  SHOULD be kept as separate pages. Lower thresholds keep more variants; start at
+  4–6 when preserving reveal steps matters, then inspect for animation noise.
 - **Low-quality uploads**: Some older conference videos are 360p or lower. Frame
   extraction still works but slide text may be unreadable. Flag these with
   `video_quality: "low"` in structured_data.

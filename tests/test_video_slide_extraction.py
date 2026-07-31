@@ -1,5 +1,6 @@
 """Tests for video-slide-extraction.py — frame extraction, dedup, PDF output."""
 
+import argparse
 import json
 import os
 import shutil
@@ -30,6 +31,25 @@ def test_crop_frame_with_region(video_slide_extraction):
     assert result.size == (500, 250)
 
 
+def test_region_argument_accepts_modes_and_normalized_coordinates(
+        video_slide_extraction):
+    assert video_slide_extraction.parse_slide_region("auto") == "auto"
+    assert video_slide_extraction.parse_slide_region("NONE") == "none"
+    assert video_slide_extraction.parse_slide_region(
+        "0.1,0.2,0.9,0.8") == (0.1, 0.2, 0.9, 0.8)
+
+
+@pytest.mark.parametrize("value", [
+    "0.1,0.2,0.9",
+    "left,0.2,0.9,0.8",
+    "0.9,0.2,0.1,0.8",
+    "-0.1,0.2,0.9,0.8",
+])
+def test_region_argument_rejects_invalid_geometry(video_slide_extraction, value):
+    with pytest.raises(argparse.ArgumentTypeError):
+        video_slide_extraction.parse_slide_region(value)
+
+
 def test_deduplicate_identical_frames(video_slide_extraction, tmp_path):
     """Identical frames should collapse to one."""
     frames = []
@@ -56,6 +76,39 @@ def test_deduplicate_distinct_frames(video_slide_extraction, tmp_path):
         frames.append(path)
     unique = video_slide_extraction.deduplicate_frames(frames, hash_threshold=8)
     assert len(unique) == 3
+
+
+def test_higher_hash_threshold_monotonically_keeps_fewer_variants(
+        video_slide_extraction, tmp_path, monkeypatch):
+    """A frame is kept only when distance > threshold.
+
+    Fixed distances make the direction deterministic: raising the threshold must
+    merge more aggressively, never keep more visual variants. This guards the
+    contract that the old docstring and reference described backwards.
+    """
+    frames = []
+    for i in range(3):
+        path = tmp_path / f"fixed_{i}.png"
+        Image.new("RGB", (32, 18), (i * 40, 0, 0)).save(path)
+        frames.append(str(path))
+
+    class FakeHash:
+        def __init__(self, value):
+            self.value = value
+
+        def __sub__(self, other):
+            return self.value - other.value
+
+    def retained(threshold):
+        values = iter((0, 6, 12))
+        monkeypatch.setattr(
+            video_slide_extraction.imagehash, "phash",
+            lambda image, hash_size: FakeHash(next(values)),
+        )
+        return len(video_slide_extraction.deduplicate_frames(
+            frames, hash_threshold=threshold))
+
+    assert [retained(4), retained(8), retained(16)] == [3, 2, 1]
 
 
 def test_combine_to_pdf(video_slide_extraction, tmp_path):
@@ -172,7 +225,48 @@ def test_full_pipeline(video_slide_extraction, tmp_path):
     assert result["slide_source"] == "video_extracted"
     assert result["pipeline_version"] == video_slide_extraction.PIPELINE_VERSION
     assert result["schema_version"] == video_slide_extraction.SCHEMA_VERSION
+    assert result["slide_region_method"] == "auto"
+    assert result["slide_region_applied"] is False
+    assert result["slide_region_verified"] is False
     assert os.path.isfile(result["output_pdf"])
+
+
+def test_manual_region_bypasses_detection_and_records_verified_provenance(
+        video_slide_extraction, tmp_path, monkeypatch):
+    frame = tmp_path / "manual-region-frame.png"
+    Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
+    outdir = tmp_path / "output"
+    outdir.mkdir()
+
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames",
+        lambda video, frames_dir, fps: [str(frame)],
+    )
+    monkeypatch.setattr(
+        video_slide_extraction, "detect_slide_region",
+        lambda frames: pytest.fail("manual region must bypass auto-detection"),
+    )
+
+    region = (0.2, 0.1, 0.9, 0.8)
+    result = video_slide_extraction.extract_slides_from_video(
+        "video.mp4", str(outdir), "manual_id",
+        slide_region=region, slide_region_verified=True,
+    )
+
+    assert result["slide_region"] == region
+    assert result["slide_region_method"] == "manual"
+    assert result["slide_region_detected"] is False
+    assert result["slide_region_applied"] is True
+    assert result["slide_region_verified"] is True
+    assert os.path.isfile(result["output_pdf"])
+
+
+def test_only_a_manual_region_can_be_marked_verified(video_slide_extraction):
+    with pytest.raises(ValueError, match="manual region"):
+        video_slide_extraction.select_slide_region([], "auto", verified=True)
+    with pytest.raises(ValueError, match="manual region"):
+        video_slide_extraction.select_slide_region([], "none", verified=True)
+
 
 def _composite_frames(tmp_path, n=24, with_pip=True):
     """Synthesize a broadcast composite: a slide rectangle that changes wholesale,

@@ -5,13 +5,21 @@ Downloads frames via ffmpeg, auto-detects the slide region, deduplicates
 using perceptual hashing, and combines unique slides into a PDF.
 
 Usage:
-    video-slide-extraction.py <video> <outdir> <youtube_id> [--fps 0.5] [--threshold 8]
+    video-slide-extraction.py <video> <outdir> <youtube_id> [--fps 0.5]
+                              [--threshold 8]
+                              [--region auto|none|LEFT,TOP,RIGHT,BOTTOM]
+                              [--region-verified]
 
     <video>       Path to downloaded MP4 video
     <outdir>      Directory for intermediate files and output PDF
     <youtube_id>  YouTube video ID (used for naming the output PDF)
     --fps         Frames per second to extract (default: 0.5 = 1 frame per 2s)
-    --threshold   Perceptual hash distance threshold for dedup (default: 8)
+    --threshold   Largest perceptual-hash distance treated as the same slide
+                  (default: 8). Higher values merge more and keep fewer frames.
+    --region      Crop used for hashing: auto-detect, none, or four normalized
+                  coordinates (default: auto)
+    --region-verified
+                  Assert that a manually supplied crop was visually verified
 
 Examples:
     video-slide-extraction.py video.mp4 output/ aBcDeFg
@@ -30,14 +38,14 @@ import sys
 # the download tier, region-detection logic, dedup hashing, or PDF assembly.
 # See skills/vault-ingress/references/video-slide-extraction.md ("Pipeline
 # Versioning") for the policy.
-PIPELINE_VERSION = "0.8.1"
+PIPELINE_VERSION = "0.9.0"
 
 # Shape version of the structured_data.video_extraction record (distinct from
 # PIPELINE_VERSION, which tracks extractor behavior — this tracks the record's
 # field shape). Bump on any field add/remove/rename. Records written before this
 # field existed have no schema_version and are read as the legacy shape (0).
 # See skills/vault-ingress/references/schemas-db.md ("Video Extraction Output Schema").
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Heavy deps are only needed for the extraction pipeline itself. Import them
 # without exiting on failure so the module stays importable (and --version /
@@ -51,6 +59,44 @@ except ImportError as exc:
     imagehash = None
     Image = None
     _DEPS_ERROR = exc
+
+
+def validate_slide_region(region):
+    """Return a normalized manual crop or raise ValueError.
+
+    Coordinates are fractions of the source frame in Pillow crop order:
+    (left, upper, right, lower). Keeping this validation pure makes the CLI and
+    direct Python entry point enforce the same geometry contract.
+    """
+    if not isinstance(region, (tuple, list)) or len(region) != 4:
+        raise ValueError(
+            "manual slide region must contain four coordinates: "
+            "LEFT,TOP,RIGHT,BOTTOM")
+    if any(isinstance(value, bool) or not isinstance(value, (int, float))
+           for value in region):
+        raise ValueError("manual slide-region coordinates must be numbers")
+    left, upper, right, lower = (float(value) for value in region)
+    if not (0.0 <= left < right <= 1.0 and 0.0 <= upper < lower <= 1.0):
+        raise ValueError(
+            "manual slide region must satisfy "
+            "0 <= LEFT < RIGHT <= 1 and 0 <= TOP < BOTTOM <= 1")
+    return left, upper, right, lower
+
+
+def parse_slide_region(value):
+    """Parse --region as auto, none, or normalized crop coordinates."""
+    normalized = value.strip().lower()
+    if normalized in ("auto", "none"):
+        return normalized
+    parts = [part.strip() for part in value.split(",")]
+    if len(parts) != 4:
+        raise argparse.ArgumentTypeError(
+            "--region must be auto, none, or LEFT,TOP,RIGHT,BOTTOM")
+    try:
+        region = tuple(float(part) for part in parts)
+        return validate_slide_region(region)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def extract_frames(video_path, frames_dir, fps=0.5):
@@ -253,10 +299,13 @@ def deduplicate_frames(frames, slide_region=None, hash_threshold=8):
     """Deduplicate consecutive similar frames using perceptual hashing.
 
     Returns list of (frame_path, frame_index) for unique slides.
-    hash_threshold: lower = stricter dedup (fewer slides).
-      - 4-6: aggressive, may merge progressive reveals
-      - 8-12: moderate, good default for most talks
-      - 14+: loose, keeps more variation (use for progressive-reveal-heavy talks)
+    hash_threshold is the largest distance still treated as the same slide.
+    Because a frame is kept only when distance > threshold, higher values merge
+    more aggressively and keep fewer variants:
+      - 4-6: conservative merging; preserves reveals but keeps more motion noise
+      - 8-12: moderate; 8 is the default for most talks
+      - 14+: aggressive merging; reduces moving-overlay duplicates but risks
+        merging progressive reveals or visually similar authored slides
     """
     unique_slides = []
     prev_hash = None
@@ -273,6 +322,46 @@ def deduplicate_frames(frames, slide_region=None, hash_threshold=8):
 
     print(f"  Deduplicated: {len(frames)} frames -> {len(unique_slides)} unique slides")
     return unique_slides
+
+
+def select_slide_region(frames, requested="auto", verified=False):
+    """Resolve the hashing crop and return it with explicit provenance.
+
+    Auto-detection is always unverified: the heuristic can select a presenter's
+    torso on a room recording. A manual crop is marked verified only when the
+    caller explicitly says it was checked. `none` disables cropping.
+    """
+    if requested == "auto":
+        if verified:
+            raise ValueError(
+                "slide_region_verified requires a manual region; an auto-detected "
+                "crop is a hint until someone checks it")
+        region = detect_slide_region(frames)
+        return region, {
+            "slide_region_method": "auto",
+            "slide_region_detected": region is not None,
+            "slide_region_applied": region is not None,
+            "slide_region_verified": False,
+        }
+    if requested == "none":
+        if verified:
+            raise ValueError(
+                "slide_region_verified requires a manual region; --region none "
+                "applies no crop")
+        return None, {
+            "slide_region_method": "none",
+            "slide_region_detected": False,
+            "slide_region_applied": False,
+            "slide_region_verified": False,
+        }
+
+    region = validate_slide_region(requested)
+    return region, {
+        "slide_region_method": "manual",
+        "slide_region_detected": False,
+        "slide_region_applied": True,
+        "slide_region_verified": bool(verified),
+    }
 
 
 def combine_to_pdf(unique_slides, output_pdf, slide_region=None):
@@ -305,7 +394,8 @@ def combine_to_pdf(unique_slides, output_pdf, slide_region=None):
 
 
 def extract_slides_from_video(video_path, output_dir, youtube_id,
-                               fps=0.5, hash_threshold=8):
+                               fps=0.5, hash_threshold=8,
+                               slide_region="auto", slide_region_verified=False):
     """Full pipeline: frames -> detect region -> dedup -> PDF.
 
     Args:
@@ -313,7 +403,11 @@ def extract_slides_from_video(video_path, output_dir, youtube_id,
         output_dir: Directory for intermediate files and output PDF
         youtube_id: YouTube video ID (used for naming)
         fps: Frames per second to extract (0.5 = 1 frame per 2 seconds)
-        hash_threshold: Perceptual hash distance threshold for dedup (8-12 recommended)
+        hash_threshold: Largest hash distance treated as the same slide. Higher
+                        values merge more and keep fewer frames.
+        slide_region: "auto", "none", or normalized (left, upper, right, lower)
+                      coordinates used for hashing.
+        slide_region_verified: True only when a manual crop was visually checked.
 
     Returns:
         dict with extraction results for structured_data
@@ -328,8 +422,10 @@ def extract_slides_from_video(video_path, output_dir, youtube_id,
     if not frames:
         return {"error": "No frames extracted", "slide_count": 0}
 
-    # Step 3: Detect slide region
-    slide_region = detect_slide_region(frames)
+    # Step 3: Resolve the slide region. Auto-detection is a hint, while a manual
+    # crop carries explicit verification provenance.
+    slide_region, region_provenance = select_slide_region(
+        frames, slide_region, slide_region_verified)
 
     # Step 4: Deduplicate
     unique_slides = deduplicate_frames(frames, slide_region, hash_threshold)
@@ -352,10 +448,10 @@ def extract_slides_from_video(video_path, output_dir, youtube_id,
         "total_frames_extracted": len(frames),
         "unique_slides_count": len(unique_slides),
         "hash_threshold_used": hash_threshold,
-        "slide_region_detected": slide_region is not None,
         "slide_region": slide_region,
         "output_pdf": pdf_path,
         "fps_used": fps,
+        **region_provenance,
     }
 
     print(f"  Done: {len(unique_slides)} unique slides extracted")
@@ -376,7 +472,17 @@ def main():
     parser.add_argument("--fps", type=float, default=0.5,
                         help="Frames per second to extract (default: 0.5)")
     parser.add_argument("--threshold", type=int, default=8,
-                        help="Perceptual hash distance threshold (default: 8)")
+                        help="largest hash distance treated as the same slide; "
+                             "higher merges more and keeps fewer frames (default: 8)")
+    parser.add_argument(
+        "--region", type=parse_slide_region, default="auto",
+        metavar="auto|none|LEFT,TOP,RIGHT,BOTTOM",
+        help="crop used for hashing: auto-detect, none, or normalized coordinates",
+    )
+    parser.add_argument(
+        "--region-verified", action="store_true",
+        help="mark a manually supplied --region as visually verified",
+    )
     args = parser.parse_args()
 
     # Structured version query — JSON, not prose, per script-delegation. Handled
@@ -387,6 +493,8 @@ def main():
 
     if None in (args.video, args.outdir, args.youtube_id):
         parser.error("video, outdir, and youtube_id are required")
+    if args.region_verified and not isinstance(args.region, tuple):
+        parser.error("--region-verified requires manual LEFT,TOP,RIGHT,BOTTOM coordinates")
 
     if _DEPS_ERROR is not None:
         print(json.dumps(
@@ -397,7 +505,8 @@ def main():
     os.makedirs(args.outdir, exist_ok=True)
     result = extract_slides_from_video(
         args.video, args.outdir, args.youtube_id,
-        fps=args.fps, hash_threshold=args.threshold
+        fps=args.fps, hash_threshold=args.threshold,
+        slide_region=args.region, slide_region_verified=args.region_verified,
     )
     print(json.dumps(result, indent=2))
 

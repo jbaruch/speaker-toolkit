@@ -67,9 +67,11 @@ producing one "unique" slide per frame.
 
 **Mitigations:**
 
-- Increase `--threshold` to 14–16 (looser similarity tolerance).
-- Manually specify `slide_region` crop coordinates so the deduper hashes
-  only the slide area, not the whole frame.
+- Increase `--threshold` to 14–16 to merge more aggressively and keep fewer
+  motion variants. Higher thresholds can also merge real reveals or distinct
+  slides, so inspect the result for under-counting.
+- Prefer a visually checked manual crop so the deduper hashes only the slide
+  area, not the whole frame: `--region LEFT,TOP,RIGHT,BOTTOM --region-verified`.
 - Accept the bloated PDF and have the analysis subagent sample frames at
   intervals.
 

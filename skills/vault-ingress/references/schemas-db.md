@@ -197,12 +197,15 @@ Stored in `structured_data.video_extraction` on the talk entry:
 ```json
 {
   "slide_source": "video_extracted",
-  "schema_version": 1,
-  "pipeline_version": "0.7.0",
+  "schema_version": 2,
+  "pipeline_version": "0.9.0",
   "total_frames_extracted": 1500,
   "unique_slides_count": 85,
   "hash_threshold_used": 8,
   "slide_region_detected": true,
+  "slide_region_applied": true,
+  "slide_region_method": "auto|manual|none",
+  "slide_region_verified": false,
   "slide_region": [0.05, 0.02, 0.78, 0.98],
   "output_pdf": "slides/{youtube_id}.pdf",
   "fps_used": 0.5
@@ -212,7 +215,7 @@ Stored in `structured_data.video_extraction` on the talk entry:
 The owner of this record's shape is `skills/vault-ingress/scripts/video-slide-extraction.py`.
 Two version fields track two independent axes:
 
-- `schema_version` (integer) — the record's **field shape**. Current value: `1`. The
+- `schema_version` (integer) — the record's **field shape**. Current value: `2`. The
   script bumps it on any field add/remove/rename. **Reader contract:** a record with no
   `schema_version` is the legacy pre-versioning shape — treat it as `schema_version 0`
   and read the fields that are present; a record with a `schema_version` higher than the
@@ -227,6 +230,15 @@ Two version fields track two independent axes:
 
 The resulting PDF is named `{youtube_id}.pdf` in the `slides/` directory and analyzed
 the same as a Google Drive PDF for dimension 13 (slide design patterns).
+
+Version 2 adds crop provenance. `slide_region_detected` is true only when the
+auto-detector returned a region; it is false for a manual region.
+`slide_region_applied` says whether any crop was used for hashing,
+`slide_region_method` records `auto`, `manual`, or `none`, and
+`slide_region_verified` is true only when the operator explicitly marked a manual
+crop as visually checked. For a version-1 record, readers may infer method `auto`,
+applied from whether `slide_region` is present, and verified `false`; re-extraction
+is still required before treating an old crop as verified.
 
 ## PPTX Extraction Output Schema
 
