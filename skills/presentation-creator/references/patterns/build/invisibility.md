@@ -12,7 +12,6 @@ detection_signals:
   - "handout vs live differences"
 evaluable_from:
   - native_deck
-  - delivery_video
   - source_comparison
 evidence_requirements:
   - "Evidence must show a live reveal of an element absent from the static or distributed state."

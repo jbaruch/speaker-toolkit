@@ -80,11 +80,9 @@ REQUIRED_EVIDENCE_GATES = {
     "progressive-reveal": frozenset({
         "static_slides", "native_deck", "delivery_video"}),
     "composite-animation": frozenset({"native_deck", "delivery_video"}),
-    "invisibility": frozenset({
-        "native_deck", "delivery_video", "source_comparison"}),
+    "invisibility": frozenset({"native_deck", "source_comparison"}),
     "exuberant-title-top": frozenset({"native_deck", "delivery_video"}),
-    "gradual-consistency": frozenset({
-        "native_deck", "delivery_video", "source_comparison"}),
+    "gradual-consistency": frozenset({"native_deck", "source_comparison"}),
     "traveling-highlights": frozenset({
         "static_slides", "native_deck", "delivery_video"}),
 }
