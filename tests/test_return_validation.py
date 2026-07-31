@@ -281,6 +281,14 @@ def test_context_video_rejects_authored_slide_structured_evidence(return_validat
     assert "cannot return authored-slide evidence" in _error(return_validation, value)
 
 
+def test_context_video_rejects_image_source_distribution_basis(return_validation):
+    value = _video_return(trusted=False, promoted=False)
+    value["structured_data"]["image_source_distribution_basis"] = (
+        "Unit: slide; classify the dominant source per slide from asset manifests; "
+        "unverified origins count as unknown.")
+    assert "cannot return authored-slide evidence" in _error(return_validation, value)
+
+
 def test_context_video_must_clear_a_stale_promoted_path(return_validation):
     value = _video_return(trusted=False, promoted=False)
     value["clear_fields"] = []
@@ -1012,7 +1020,29 @@ def test_image_source_distribution_accepts_provenance_counts(return_validation):
         "unknown": 2,
         "none": 1,
     }
+    value["structured_data"]["image_source_distribution_basis"] = (
+        "Unit: slide; classify each slide by its dominant image source using "
+        "asset manifests; origins without provenance count as unknown.")
     return_validation.validate_batch([value])
+
+
+def test_image_source_distribution_requires_a_basis(return_validation):
+    value = _return()
+    value["structured_data"]["image_source_distribution"] = {"unknown": 2}
+    assert "image_source_distribution_basis is required" in _error(
+        return_validation, value)
+
+
+@pytest.mark.parametrize("basis", [None, "", "   ", 7, True, ["per slide"]])
+def test_image_source_distribution_basis_must_be_a_non_empty_string(
+        return_validation, basis):
+    value = _return()
+    value["structured_data"].update({
+        "image_source_distribution": {"unknown": 2},
+        "image_source_distribution_basis": basis,
+    })
+    assert "image_source_distribution_basis must be a non-empty string" in _error(
+        return_validation, value)
 
 
 @pytest.mark.parametrize("distribution", [
@@ -1026,7 +1056,12 @@ def test_image_source_distribution_accepts_provenance_counts(return_validation):
 def test_image_source_distribution_rejects_non_count_metadata(
         return_validation, distribution):
     value = _return()
-    value["structured_data"]["image_source_distribution"] = distribution
+    value["structured_data"].update({
+        "image_source_distribution": distribution,
+        "image_source_distribution_basis": (
+            "Unit: asset; classify each asset from embedded provenance metadata; "
+            "unverified origins count as unknown."),
+    })
     assert "image_source_distribution" in _error(return_validation, value)
 
 

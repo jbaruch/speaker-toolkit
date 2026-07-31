@@ -202,6 +202,10 @@ Count and categorize these for the `structured_data` output:
   style alone. Use `unknown` without provenance. “Meme” and “screenshot” are
   observable content/format categories, not authorship sources; keep any such
   classification outside this count map, and never insert note strings into it.
+- **image_source_distribution_basis**: Required non-empty sibling string whenever
+  `image_source_distribution` is present. State whether counts are per slide,
+  page, or asset; the classification rule and how a dominant class wins; the
+  provenance evidence used; and how unverified origins enter `unknown`.
 - **visual_continuity_devices**: List any recurring visual motifs (e.g., ["FIG_numbering", "progressive_form", "recurring_mascot"]) or empty list
 - **opening_sequence**: List the type of each of the first ~5 slides (e.g., ["title", "provocative_hook", "bio", "shownotes_url", "first_argument"])
 - **closing_sequence**: List the type of each of the last ~5 slides

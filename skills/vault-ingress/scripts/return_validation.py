@@ -122,6 +122,7 @@ AUTHORED_SLIDE_FIELDS = frozenset({
     "illustration_style",
     "illustration_coherence",
     "image_source_distribution",
+    "image_source_distribution_basis",
     "visual_continuity_devices",
     "color_coded_backgrounds",
     "background_color_sequence",
@@ -919,6 +920,13 @@ def _validate_per_slide_visual(structured: dict) -> None:
 
 
 def _validate_image_source_distribution(structured: dict) -> None:
+    basis_field = "image_source_distribution_basis"
+    if basis_field in structured:
+        basis = structured[basis_field]
+        if not isinstance(basis, str) or not basis.strip():
+            raise ReturnValidationError(
+                f"structured_data.{basis_field} must be a non-empty string")
+
     if "image_source_distribution" not in structured:
         return
     distribution = structured["image_source_distribution"]
@@ -935,6 +943,10 @@ def _validate_image_source_distribution(structured: dict) -> None:
             raise ReturnValidationError(
                 "structured_data.image_source_distribution"
                 f"[{source!r}] must be a non-negative integer count")
+    if basis_field not in structured:
+        raise ReturnValidationError(
+            f"structured_data.{basis_field} is required whenever "
+            "image_source_distribution is present")
 
 
 def _validate_structured_data(structured: dict) -> None:

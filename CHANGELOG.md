@@ -105,7 +105,10 @@ meme counts are cross-checked against the rows when supplied.
 free-form note values and negative or boolean counts are rejected. The contract
 also distinguishes observable appearance from source provenance: unverified
 authorship belongs in the `unknown` count, not in an inferred AI/stock label or
-an embedded classification note.
+an embedded classification note. Every returned distribution now requires a
+non-empty `image_source_distribution_basis` that declares the counting unit,
+dominance rule, provenance evidence, and treatment of unknown origins. Both
+fields are barred from untrusted video-only context.
 
 ### feat(vault-ingress) — inventory native PPTX timing without claiming playback
 

@@ -870,6 +870,31 @@ def test_malformed_per_slide_visual_leaves_database_untouched(
     assert db.read_bytes() == before
 
 
+def test_missing_image_source_distribution_basis_leaves_database_untouched(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    ret = _return()
+    ret["structured_data"]["image_source_distribution"] = {
+        "speaker_created": 3,
+        "unknown": 2,
+    }
+    original = {"talks": [_talk()]}
+    db.write_text(json.dumps(original))
+    before = db.read_bytes()
+    batch.write_text(json.dumps([ret]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "image_source_distribution_basis is required" in result.stderr
+    assert db.read_bytes() == before
+
+
 def test_migration_stamps_every_record_not_just_merged_ones(persist_results, tmp_path):
     """Stamping only touched talks leaves the artifact permanently mixed-version,
     so a reader cannot tell an unversioned record from an untouched one."""

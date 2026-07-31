@@ -182,6 +182,7 @@ Each subagent returns this JSON after processing one talk:
     "illustration_style": "name of dominant illustration aesthetic, or 'none'",
     "illustration_coherence": "unified|mixed|none",
     "image_source_distribution": {"ai_generated": 0, "speaker_created": 7, "stock_photo": 0, "unknown": 28, "none": 12},
+    "image_source_distribution_basis": "Unit: slide; classify each slide by its dominant image source using asset manifests; origins without provenance count as unknown.",
     "visual_continuity_devices": ["FIG_numbering", "progressive_form", "recurring_mascot"],
     "opening_sequence": ["title", "provocative_hook", "bio", "shownotes_url", "first_argument"],
     "closing_sequence": ["summary_bullets", "cta_with_qr", "thanks_with_humor"],
@@ -316,7 +317,12 @@ appearance does not establish authorship. Do not infer `ai_generated`,
 authorship provenance, and free-form entries such as `classification_note` do
 not belong in this map. If observable visual categories need their own map,
 introduce a distinct schema field rather than mixing notes or category metadata
-into source counts.
+into source counts. Whenever the map is present, its sibling
+`image_source_distribution_basis` is required and must be a non-empty string.
+The basis states the counting unit (`slide`, `page`, or `asset`), the
+classification rule including how a dominant class is selected, the provenance
+evidence used, and how unverified origins are counted as `unknown`. Both fields
+are authored-slide evidence and cannot be supplied from untrusted video context.
 
 Every processed return carries the complete analysis shape, including empty
 strings/arrays for findings that did not occur. A skipped terminal return may

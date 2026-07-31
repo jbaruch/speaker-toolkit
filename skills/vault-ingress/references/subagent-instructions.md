@@ -289,7 +289,12 @@ cover slides 1 through `slide_count` once in order; legacy aliases and row-local
 notes are invalid. `content_type` and `image_composition` use the closed schema
 vocabularies. Keep `image_source_distribution` provenance-only and integer-valued:
 visual resemblance does not prove AI, stock, or speaker authorship, so use an
-`unknown` count where origin is unverified rather than adding a note string.
+`unknown` count where origin is unverified rather than adding a note string. Whenever
+you return that map, also return a non-empty sibling
+`image_source_distribution_basis` string. State whether the counting unit is a
+slide, page, or asset; how one class wins when multiple images or sources occur;
+which provenance evidence supports the classes; and how unverified origins enter
+the `unknown` count.
 
 Use `clear_fields` when the re-analysis disproves an earlier value. Each entry is
 an analysis-owned dotted path such as `verbatim_examples.jokes` or
