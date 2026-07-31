@@ -110,7 +110,9 @@ an upload date identifies publication, never recording. The live audit may
 therefore propose a partial provider-fact block without `speakers` or
 `recorded_date`. A human adds those delivery claims only from separate direct
 evidence. The captured webpage URL is provenance and is never an automatic
-`video_url` repair.
+`video_url` repair. When present, provider strings must be nonempty, webpage
+IDs must agree with `video_id`, and `captured_at` must be a timezone-aware
+ISO-8601 timestamp. Invalid or contradictory provider provenance is blocking.
 
 Offline comparison rules are intentionally deterministic:
 

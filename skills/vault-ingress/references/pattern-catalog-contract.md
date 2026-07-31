@@ -15,6 +15,8 @@ exit `2`.
 ## Authority boundaries
 
 - `_index.md` owns the complete public inventory and lifecycle placement.
+- Only the catalog-root `_index.md` is reserved; every other Markdown file
+  under the catalog tree is audited and fingerprinted as an entry.
 - Entry frontmatter owns machine-readable identity, polarity, observability,
   evidence gates, graph declarations, and aliases.
 - Entry prose owns definitions, boundaries, examples, and semantic intent.
@@ -65,7 +67,9 @@ no timestamp or run-specific identifier.
 
 The `errors` lane contains mechanically decidable contract failures:
 
-- Index and file inventories disagree or repeat an ID.
+- Index and file inventories disagree or repeat an ID or checklist entry.
+- Index dimensions or creator phases are empty, out of range/namespace, or
+  duplicated; index related-ID lists may be empty but may not repeat an ID.
 - Filename, ID, directory, lifecycle part, index kind, or polarity disagree.
 - Frontmatter lists or creator-phase values violate their declared shape.
 - Observable state and source-gate metadata/prose are incompatible.

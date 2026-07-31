@@ -53,10 +53,14 @@ def source_identity(**updates):
         "provider": "youtube",
         "video_id": VIDEO_ID,
         "title": "Perfect Vault Ingress — Baruch Sadogursky",
+        "uploader": "Conference Channel",
+        "uploader_id": "@conference",
         "speakers": ["Baruch Sadogursky"],
         "recorded_date": "2026-07-30",
         "upload_date": "2026-07-31",
         "duration_seconds": 2700,
+        "webpage_url": f"https://www.youtube.com/watch?v={VIDEO_ID}",
+        "webpage_video_id": VIDEO_ID,
         "captured_at": "2026-07-31T12:00:00Z",
     }
     evidence.update(updates)
@@ -919,6 +923,84 @@ def test_identity_date_requires_hyphenated_iso_form(
     report = preflight_vault.run_preflight(vault_fixture["root"])
 
     assert "source_identity_date_invalid" in finding_codes(report, "blocking")
+
+
+@pytest.mark.parametrize(("field", "value", "code"), [
+    ("uploader", [], "source_identity_provider_fact_invalid"),
+    ("uploader_id", " ", "source_identity_provider_fact_invalid"),
+    ("webpage_url", "https://videos.example.com/watch?v=AbCdEfGhI_1",
+     "source_identity_webpage_url_invalid"),
+    ("webpage_url", f"https://www.youtube.com/watch?v={OTHER_VIDEO_ID}",
+     "source_identity_webpage_identity_mismatch"),
+    ("webpage_video_id", "too-short", "source_identity_webpage_video_id_invalid"),
+    ("webpage_video_id", OTHER_VIDEO_ID,
+     "source_identity_webpage_identity_mismatch"),
+    ("captured_at", "2026-07-31T12:00:00",
+     "source_identity_captured_at_invalid"),
+])
+def test_identity_provider_facts_are_validated_when_present(
+    preflight_vault,
+    vault_fixture,
+    field,
+    value,
+    code,
+):
+    materialize_transcript(vault_fixture)
+    evidence = source_identity(**{field: value})
+    write_database(vault_fixture, [base_talk(
+        duration_seconds=2700,
+        source_identity=evidence,
+    )])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(item for item in report["findings"] if item["code"] == code)
+    assert finding["severity"] == "blocking"
+    assert finding["field"] == f"source_identity.{field}"
+
+
+def test_live_audit_provider_proposal_satisfies_preflight_contract(
+    preflight_vault,
+    audit_source_identities,
+    vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    metadata = {
+        "id": VIDEO_ID,
+        "title": "Perfect Vault Ingress",
+        "uploader": "Conference Channel",
+        "uploader_id": "@conference",
+        "upload_date": "20260731",
+        "duration": 2700,
+        "webpage_url": f"https://www.youtube.com/watch?v={VIDEO_ID}",
+    }
+    evidence, faults = audit_source_identities.provider_evidence(
+        VIDEO_ID,
+        metadata,
+        "2026-07-31T12:00:00Z",
+    )
+    proposal = audit_source_identities.proposed_source_identity(evidence)
+    assert faults == []
+
+    talk = base_talk(duration_seconds=2700, source_identity=proposal)
+    write_database(vault_fixture, [talk])
+    clean = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert clean["blocking_count"] == 0
+    assert finding_codes(clean, "warning") == {"source_identity_speakers_missing"}
+
+    corrupt = deepcopy(proposal)
+    corrupt["webpage_video_id"] = OTHER_VIDEO_ID
+    write_database(vault_fixture, [base_talk(
+        duration_seconds=2700,
+        source_identity=corrupt,
+    )])
+    rejected = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "source_identity_webpage_identity_mismatch" in finding_codes(
+        rejected,
+        "blocking",
+    )
 
 
 def test_boolean_identity_schema_version_is_not_version_one(

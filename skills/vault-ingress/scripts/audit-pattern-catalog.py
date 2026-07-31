@@ -438,7 +438,11 @@ def _validate_observability(entry: CatalogEntry, errors: list[Issue]) -> None:
         ))
 
     present = EVIDENCE_GATE_FIELDS.intersection(entry.metadata)
-    has_evidence_section = "## Evidence Gate" in entry.text
+    has_evidence_section = bool(re.search(
+        r"^## Evidence Gate[ \t]*$",
+        entry.text,
+        re.MULTILINE,
+    ))
     if present and present != EVIDENCE_GATE_FIELDS:
         errors.append(Issue(
             "source_gate_partial",
@@ -498,11 +502,14 @@ def _validate_observability(entry: CatalogEntry, errors: list[Issue]) -> None:
 
 
 def _scoring_section(text: str) -> str | None:
-    marker = "## Scoring Criteria"
-    start = text.find(marker)
-    if start < 0:
+    heading = re.search(
+        r"^## Scoring Criteria[ \t]*$",
+        text,
+        re.MULTILINE,
+    )
+    if heading is None:
         return None
-    tail = text[start + len(marker):]
+    tail = text[heading.end():]
     next_heading = re.search(r"^## ", tail, re.MULTILINE)
     return tail[:next_heading.start()] if next_heading else tail
 
@@ -659,14 +666,59 @@ def _parse_index(
                 pattern_id,
                 "vault_dimensions",
             ))
+        else:
+            if not dimensions or any(value < 1 or value > 14 for value in dimensions):
+                errors.append(Issue(
+                    "index_dimensions_invalid",
+                    "index dimensions must be a non-empty list of integers from 1 through 14",
+                    "_index.md",
+                    pattern_id,
+                    "vault_dimensions",
+                ))
+            if len(dimensions) != len(set(dimensions)):
+                errors.append(Issue(
+                    "index_dimensions_duplicate",
+                    "index dimensions contain duplicate values",
+                    "_index.md",
+                    pattern_id,
+                    "vault_dimensions",
+                ))
+
+        creator_phases = _parse_csv(raw_phases)
+        if not creator_phases or set(creator_phases) - CREATOR_PHASES:
+            errors.append(Issue(
+                "index_creator_phases_invalid",
+                "index creator phases must be a non-empty list from the creator phase namespace",
+                "_index.md",
+                pattern_id,
+                "phase_relevance",
+            ))
+        if len(creator_phases) != len(set(creator_phases)):
+            errors.append(Issue(
+                "index_creator_phases_duplicate",
+                "index creator phases contain duplicate values",
+                "_index.md",
+                pattern_id,
+                "phase_relevance",
+            ))
+
+        related_patterns = _parse_csv(raw_related)
+        if len(related_patterns) != len(set(related_patterns)):
+            errors.append(Issue(
+                "index_related_duplicate",
+                "index related IDs contain duplicate values",
+                "_index.md",
+                pattern_id,
+                "related_patterns",
+            ))
         row = IndexEntry(
             pattern_id,
             name,
             entry_type,
             part,
             dimensions,
-            _parse_csv(raw_phases),
-            _parse_csv(raw_related),
+            creator_phases,
+            related_patterns,
             line_number,
         )
         if pattern_id in rows:
@@ -692,6 +744,14 @@ def _parse_index(
                 continue
             cells = tuple(cell.strip() for cell in line.strip().strip("|").split("|"))
             if len(cells) == 3 and ID_RE.fullmatch(cells[0]):
+                if cells[0] in unobservable:
+                    errors.append(Issue(
+                        "index_unobservable_duplicate",
+                        "unobservable checklist ID appears more than once",
+                        "_index.md",
+                        cells[0],
+                        "observable",
+                    ))
                 unobservable.add(cells[0])
     else:
         errors.append(Issue(
@@ -804,6 +864,7 @@ def _validate_graph(
     debts: list[Issue],
 ) -> None:
     ids = set(entries)
+    same_polarity_pairs: set[tuple[str, str]] = set()
     for pattern_id in sorted(entries):
         entry = entries[pattern_id]
         for field, targets in (
@@ -843,7 +904,12 @@ def _validate_graph(
                     target,
                 ))
             target_entry = entries[target]
-            if entry.entry_type == target_entry.entry_type:
+            pair = tuple(sorted((pattern_id, target)))
+            if (
+                entry.entry_type == target_entry.entry_type
+                and pair not in same_polarity_pairs
+            ):
+                same_polarity_pairs.add(pair)
                 debts.append(Issue(
                     "inverse_same_polarity",
                     "inverse relationship joins entries with the same catalog polarity",
@@ -974,9 +1040,10 @@ def audit_catalog(catalog_dir: str | Path | None = None) -> dict[str, Any]:
         return _build_report(root, "", [], {}, {}, {}, {}, {}, [], errors, debts)
 
     index_text, index_rows, unobservable_listed = _parse_index(root, errors)
+    root_index = root / "_index.md"
     entry_paths = sorted(
         path for path in root.rglob("*.md")
-        if path.is_file() and path.name != "_index.md"
+        if path.is_file() and path != root_index
     )
     if not entry_paths:
         errors.append(Issue(

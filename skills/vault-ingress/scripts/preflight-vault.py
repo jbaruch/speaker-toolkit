@@ -146,6 +146,16 @@ def _nonempty_string(value: Any) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
+def _is_timezone_aware_timestamp(value: Any) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None and parsed.utcoffset() is not None
+
+
 def _json_value(value: Any) -> Any:
     """Keep finding details JSON-safe without stringifying normal scalars."""
     if value is None or isinstance(value, (str, bool, int)):
@@ -819,10 +829,106 @@ class VaultPreflight:
                 actual=evidence_id,
             )
 
+        self._validate_identity_provider_facts(
+            index,
+            evidence,
+            evidence_id,
+            expected_id,
+        )
         self._validate_identity_title(index, evidence)
         self._validate_identity_speakers(index, evidence)
         self._validate_identity_dates(index, evidence)
         self._validate_identity_duration(index, evidence)
+
+    def _validate_identity_provider_facts(
+        self,
+        index: int,
+        evidence: dict[str, Any],
+        evidence_id: Any,
+        expected_id: str | None,
+    ) -> None:
+        for field in ("uploader", "uploader_id"):
+            value = evidence.get(field)
+            if value is not None and _nonempty_string(value) is None:
+                self.talk_add(
+                    index,
+                    "blocking",
+                    "source_identity_provider_fact_invalid",
+                    f"source_identity {field} must be a nonempty string when present",
+                    field=f"source_identity.{field}",
+                    expected="nonempty string",
+                    actual=value,
+                )
+
+        anchor_id = (
+            evidence_id
+            if isinstance(evidence_id, str) and YOUTUBE_ID_RE.fullmatch(evidence_id)
+            else expected_id
+        )
+        webpage_url = evidence.get("webpage_url")
+        webpage_url_id: str | None = None
+        if webpage_url is not None:
+            webpage_url_id = parse_youtube_id(webpage_url)
+            if webpage_url_id is None:
+                self.talk_add(
+                    index,
+                    "blocking",
+                    "source_identity_webpage_url_invalid",
+                    "source_identity webpage_url must be a supported YouTube URL",
+                    field="source_identity.webpage_url",
+                    expected="YouTube URL with an 11-character video ID",
+                    actual=webpage_url,
+                )
+            elif anchor_id is not None and webpage_url_id != anchor_id:
+                self.talk_add(
+                    index,
+                    "blocking",
+                    "source_identity_webpage_identity_mismatch",
+                    "captured webpage URL identifies a different video",
+                    field="source_identity.webpage_url",
+                    expected=anchor_id,
+                    actual=webpage_url_id,
+                )
+
+        webpage_video_id = evidence.get("webpage_video_id")
+        if webpage_video_id is not None:
+            if (
+                not isinstance(webpage_video_id, str)
+                or not YOUTUBE_ID_RE.fullmatch(webpage_video_id)
+            ):
+                self.talk_add(
+                    index,
+                    "blocking",
+                    "source_identity_webpage_video_id_invalid",
+                    "source_identity webpage_video_id must be an 11-character YouTube ID",
+                    field="source_identity.webpage_video_id",
+                    expected="11-character YouTube ID",
+                    actual=webpage_video_id,
+                )
+            else:
+                comparison_id = anchor_id or webpage_url_id
+                if comparison_id is not None and webpage_video_id != comparison_id:
+                    self.talk_add(
+                        index,
+                        "blocking",
+                        "source_identity_webpage_identity_mismatch",
+                        "captured webpage ID identifies a different video",
+                        field="source_identity.webpage_video_id",
+                        expected=comparison_id,
+                        actual=webpage_video_id,
+                    )
+
+        captured_at = evidence.get("captured_at")
+        if captured_at is not None and not _is_timezone_aware_timestamp(captured_at):
+            self.talk_add(
+                index,
+                "blocking",
+                "source_identity_captured_at_invalid",
+                "source_identity captured_at must be a timezone-aware ISO-8601 timestamp",
+                field="source_identity.captured_at",
+                expected="ISO-8601 timestamp with timezone",
+                actual=captured_at,
+            )
 
     def _identity_gap(self, index: int, field: str) -> None:
         self.talk_add(

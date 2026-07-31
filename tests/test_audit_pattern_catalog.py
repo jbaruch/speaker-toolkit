@@ -8,6 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 
@@ -183,6 +184,17 @@ def test_bundled_catalog_passes_structural_contract(audit_pattern_catalog):
     assert report["summary"]["unobservable"] == 12
 
 
+def test_bundled_catalog_has_no_phase_or_inverse_polarity_debt(
+    audit_pattern_catalog,
+):
+    report = audit_pattern_catalog.audit_catalog()
+
+    assert {
+        "index_phases_drift",
+        "inverse_same_polarity",
+    }.isdisjoint(_codes(report, "semantic_debts"))
+
+
 def test_audit_does_not_modify_catalog(tmp_path, audit_pattern_catalog):
     root = _write_catalog(tmp_path)
     before = {
@@ -199,6 +211,25 @@ def test_audit_does_not_modify_catalog(tmp_path, audit_pattern_catalog):
         if path.is_file()
     }
     assert after == before
+
+
+def test_nested_reserved_index_file_cannot_evade_audit_or_fingerprint(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    root = _write_catalog(tmp_path)
+    before = audit_pattern_catalog.audit_catalog(root)
+    (root / "build" / "_index.md").write_text(
+        "# A nested file that is not the catalog index\n",
+        encoding="utf-8",
+    )
+
+    after = audit_pattern_catalog.audit_catalog(root)
+
+    assert after["valid"] is False
+    assert "frontmatter_missing" in _codes(after)
+    assert after["summary"]["entry_files"] == 3
+    assert after["catalog"]["fingerprint"] != before["catalog"]["fingerprint"]
 
 
 def test_missing_catalog_directory_is_json_report(audit_pattern_catalog, tmp_path):
@@ -374,6 +405,25 @@ def test_source_gate_prose_requires_matching_metadata(tmp_path, audit_pattern_ca
     assert "source_gate_metadata_missing" in _codes(report)
 
 
+def test_inline_evidence_gate_phrase_is_not_a_section(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    entries = _base_entries()
+    entries[0].update({
+        "evaluable_from": ["delivery_video"],
+        "evidence_requirements": ["The event is visible."],
+        "not_evaluable_when": ["The event is hidden."],
+        "_evidence_section": False,
+        "_scoring": _scoring("pattern")
+        + "\nProse may mention ## Evidence Gate without creating one.\n",
+    })
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert "source_gate_prose_missing" in _codes(report)
+
+
 def test_unobservable_index_and_frontmatter_must_match(tmp_path, audit_pattern_catalog):
     entries = _base_entries()
     entries[0]["observable"] = False
@@ -433,6 +483,14 @@ def test_same_polarity_inverse_is_semantic_debt(tmp_path, audit_pattern_catalog)
 
     assert report["valid"] is True
     assert _codes(report, "semantic_debts") == {"inverse_same_polarity"}
+    debts = [
+        issue for issue in report["semantic_debts"]
+        if issue["code"] == "inverse_same_polarity"
+    ]
+    assert len(debts) == 1
+    assert {
+        debts[0]["entry_id"], debts[0]["related_id"]
+    } == {"blocked-path", "clear-path"}
 
 
 def test_antipattern_scoring_uses_direct_polarity(tmp_path, audit_pattern_catalog):
@@ -458,6 +516,19 @@ def test_scoring_scale_must_have_all_three_labels(tmp_path, audit_pattern_catalo
     report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
 
     assert "scoring_label_count_invalid" in _codes(report)
+
+
+def test_inline_scoring_phrase_is_not_a_section(tmp_path, audit_pattern_catalog):
+    entries = _base_entries()
+    entries[0]["_scoring"] = """This names ## Scoring Criteria without a heading.
+- Strong signal (2 pts): effective
+- Moderate signal (1 pt): mixed
+- Absent (0 pts): absent
+"""
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert "scoring_section_missing" in _codes(report)
 
 
 def test_normalized_alias_collision_is_rejected(tmp_path, audit_pattern_catalog):
@@ -517,6 +588,46 @@ def test_index_type_and_part_disagreement_are_structural(
     report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
 
     assert {"index_type_mismatch", "index_part_mismatch"} <= _codes(report)
+
+
+@pytest.mark.parametrize(("field", "value", "code"), [
+    ("_index_dimensions", [2, 2], "index_dimensions_duplicate"),
+    ("_index_dimensions", [0], "index_dimensions_invalid"),
+    ("_index_phases", ["content", "content"], "index_creator_phases_duplicate"),
+    ("_index_phases", ["rehearsal"], "index_creator_phases_invalid"),
+    ("_index_related", ["blocked-path", "blocked-path"], "index_related_duplicate"),
+])
+def test_index_list_shape_is_validated_independently_of_set_drift(
+    tmp_path,
+    audit_pattern_catalog,
+    field,
+    value,
+    code,
+):
+    entries = _base_entries()
+    entries[0][field] = value
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert code in _codes(report)
+    assert report["valid"] is False
+
+
+def test_unobservable_checklist_rejects_duplicate_ids(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    entries = _base_entries()
+    entries[0]["observable"] = False
+    root = _write_catalog(tmp_path, entries)
+    index = root / "_index.md"
+    text = index.read_text(encoding="utf-8")
+    row = "| clear-path | Clear Path | Review |"
+    index.write_text(text.replace(row, f"{row}\n{row}"), encoding="utf-8")
+
+    report = audit_pattern_catalog.audit_catalog(root)
+
+    assert "index_unobservable_duplicate" in _codes(report)
 
 
 def test_invalid_yaml_is_reported_without_crashing(tmp_path, audit_pattern_catalog):
