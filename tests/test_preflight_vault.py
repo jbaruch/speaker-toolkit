@@ -294,6 +294,27 @@ def test_inactive_well_formed_source_rejection_is_valid(
     assert not finding_codes(report)
 
 
+def test_known_bad_slide_source_cannot_return_in_another_drive_url_form(
+    preflight_vault, vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    talk = base_talk(
+        slides_url=f"https://drive.google.com/open?id={DRIVE_ID}",
+        source_rejections=[{
+            "source_type": "slides",
+            "url": f"https://drive.google.com/file/d/{DRIVE_ID}/view",
+            "reason": "wrong_delivery",
+            "evidence": "the footer names a different conference",
+            "verified_at": "2026-07-31T14:00:00-05:00",
+        }],
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "rejected_source_reactivated" in finding_codes(report, "blocking")
+
+
 @pytest.mark.parametrize("bad_rejections", [
     {},
     ["not an object"],

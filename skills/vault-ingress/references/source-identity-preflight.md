@@ -134,10 +134,11 @@ the decision on the talk so a later scan cannot reintroduce it:
 }
 ```
 
-Every entry requires a nonempty URL, reason, evidence, and timezone-aware
-timestamp. The preflight blocks malformed entries and blocks any active
-`video_url` that names the same rejected URL or YouTube ID. Scanners compare
-against this ledger before importing an upstream link.
+`source_type` is `video` or `slides`. Every entry requires a nonempty URL,
+reason, evidence, and timezone-aware timestamp. The preflight blocks malformed
+entries and blocks an active `video_url` or `slides_url` that names the same
+rejected URL or provider identity (YouTube ID, Drive file/deck ID). Scanners
+compare against this ledger before importing an upstream link.
 
 ## YouTube identity and duplicate relation
 

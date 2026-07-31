@@ -41,7 +41,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     },
     "source_relation": {"type": "duplicate|borrowed_recording", "target_filename": "canonical-talk.md"},
     "source_rejections": [{
-      "source_type": "video", "url": "known-bad upstream URL",
+      "source_type": "video|slides", "url": "known-bad upstream URL",
       "reason": "non_delivery_clip|wrong_delivery|unrelated_recording",
       "evidence": "how the rejection was verified",
       "verified_at": "timezone-aware ISO-8601 timestamp"

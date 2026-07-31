@@ -93,8 +93,8 @@ elsewhere. Extract
 Before accepting a scanned source, compare it with the talk's
 `source_rejections`. Never reactivate a URL (or the same YouTube ID in another
 URL form) that was previously verified as a non-delivery clip, wrong delivery,
-or unrelated recording. Report the upstream drift and leave the rejected source
-inactive until a human supplies replacement evidence.
+unrelated recording, or wrong event's deck. Report the upstream drift and leave
+the rejected source inactive until a human supplies replacement evidence.
 
 Default status is always `"pending"` for new entries.
 

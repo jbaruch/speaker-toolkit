@@ -35,6 +35,7 @@ TRANSCRIPT_SOURCES = frozenset({"youtube_auto", "whisper", "manual", "none"})
 SLIDE_SOURCES = frozenset({"pptx", "pdf", "both", "video_extracted", "none"})
 COMPLETED_STATUSES = frozenset({"processed", "processed_partial"})
 RELATION_TYPES = frozenset({"duplicate", "borrowed_recording"})
+REJECTABLE_SOURCE_TYPES = frozenset({"video", "slides"})
 
 # These are intentionally a closed, documented set.  Tests exercise every
 # class so callers can route fixes without parsing prose.
@@ -112,6 +113,26 @@ def is_youtube_url(url: Any) -> bool:
         "youtu.be", "www.youtu.be", "youtube-nocookie.com",
         "www.youtube-nocookie.com",
     }
+
+
+def parse_google_drive_id(url: Any) -> str | None:
+    """Return a stable file/deck ID from common Google Drive URL forms."""
+    if not isinstance(url, str) or not url.strip():
+        return None
+    candidate = url.strip()
+    if "://" not in candidate:
+        candidate = "https://" + candidate
+    parsed = urlparse(candidate)
+    host = (parsed.hostname or "").casefold().rstrip(".")
+    if host not in {"drive.google.com", "docs.google.com"}:
+        return None
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) >= 3 and parts[0] in {"file", "presentation"} and parts[1] == "d":
+        # Published Docs URLs use /d/e/<publication-id>. The publication ID is
+        # stable for rejection matching even though it is not a Drive file ID.
+        return parts[3] if len(parts) >= 4 and parts[2] == "e" else parts[2]
+    values = parse_qs(parsed.query).get("id", [])
+    return values[0] if values and values[0] else None
 
 
 def _nonempty_string(value: Any) -> str | None:
@@ -371,8 +392,6 @@ class VaultPreflight:
             )
             return
 
-        active_url = _nonempty_string(talk.get("video_url"))
-        active_id = parse_youtube_id(active_url) if active_url else None
         for position, rejection in enumerate(rejections):
             field = f"source_rejections[{position}]"
             if not isinstance(rejection, dict):
@@ -396,7 +415,7 @@ class VaultPreflight:
                 except ValueError:
                     pass
             if (
-                source_type != "video"
+                source_type not in REJECTABLE_SOURCE_TYPES
                 or url is None
                 or reason is None
                 or evidence is None
@@ -408,22 +427,27 @@ class VaultPreflight:
                     "and a timezone-aware verified_at timestamp",
                     field=field,
                     expected={
-                        "source_type": "video", "url": "...", "reason": "...",
+                        "source_type": sorted(REJECTABLE_SOURCE_TYPES),
+                        "url": "...", "reason": "...",
                         "evidence": "...", "verified_at": "ISO-8601 with timezone",
                     },
                     actual=rejection,
                 )
                 continue
 
-            rejected_id = parse_youtube_id(url)
+            active_field = "video_url" if source_type == "video" else "slides_url"
+            active_url = _nonempty_string(talk.get(active_field))
+            parser = parse_youtube_id if source_type == "video" else parse_google_drive_id
+            active_id = parser(active_url) if active_url else None
+            rejected_id = parser(url)
             same_source = active_url == url or (
                 active_id is not None and rejected_id == active_id
             )
             if same_source:
                 self.talk_add(
                     index, "blocking", "rejected_source_reactivated",
-                    "an active video_url is recorded as a known-bad source",
-                    field="video_url", expected="a source not in source_rejections",
+                    f"an active {active_field} is recorded as a known-bad source",
+                    field=active_field, expected="a source not in source_rejections",
                     actual=active_url,
                 )
 
