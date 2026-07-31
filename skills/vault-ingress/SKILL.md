@@ -37,6 +37,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | [references/subagent-instructions.md](references/subagent-instructions.md) | Step 3 per-talk procedure — transcript download, slide acquisition, fallback chains, return-JSON shape |
 | [references/video-slide-extraction.md](references/video-slide-extraction.md) | Video-to-slides pipeline — layout heuristics, tuning, limitations |
 | [references/source-identity-preflight.md](references/source-identity-preflight.md) | Offline identity, duplicate-source, enum, and artifact integrity contracts |
+| [references/source-identity-audit.md](references/source-identity-audit.md) | Networked, read-only capture of live provider identity evidence and review findings |
 | [references/catalog-feedback-intake.md](references/catalog-feedback-intake.md) | Five-lane catalog-feedback schema, polarity, recurrence, and review contract |
 | [references/processing-rules.md](references/processing-rules.md) | Language policy, pattern migration logic, structured field rules |
 | [references/known-issues.md](references/known-issues.md) | Edge cases — wide-angle recordings, Whisper hallucination, non-speaker talks |
@@ -50,6 +51,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | `skills/vault-ingress/scripts/vtt-cleanup.py` | Clean VTT subtitles into plain transcript text |
 | `skills/vault-ingress/scripts/fetch-transcript.py` | Fetch a transcript, validate it, write only if real (captions → local Whisper) |
 | `skills/vault-ingress/scripts/preflight-vault.py` | Read-only source/identity integrity gate before selection or re-analysis |
+| `skills/vault-ingress/scripts/audit-source-identities.py` | Read-only `yt-dlp` evidence capture, deduplicated by active YouTube ID |
 | `skills/vault-ingress/scripts/apply-source-repairs.py` | Guarded dry-run/apply workflow for evidence-backed source metadata repairs |
 | `skills/vault-ingress/scripts/aggregate-catalog-feedback.py` | Validate and aggregate return feedback without editing the pattern catalog |
 
@@ -124,8 +126,22 @@ artifacts; report them, but they do not make the vault unusable. The stable JSON
 report and evidence shape are defined in
 [references/source-identity-preflight.md](references/source-identity-preflight.md).
 
-For metadata repairs, write a reviewed source-repair plan with exact old-value
-preconditions, then dry-run it before applying:
+After the offline gate, capture and compare live YouTube provider evidence:
+
+```bash
+python3 skills/vault-ingress/scripts/audit-source-identities.py {vault_root}
+```
+
+This networked audit invokes `yt-dlp` once per distinct active YouTube ID and
+prints deterministic JSON without changing the vault. Review every proposed
+`source_identity` block and finding, especially `likely_non_delivery_clip` and
+`same_id_cross_talk_collision`. Provider uploader is not speaker evidence,
+upload date is not recorded date, and the provider webpage URL must never be
+auto-applied as an active source. See
+[references/source-identity-audit.md](references/source-identity-audit.md).
+
+Only after that human review, write a source-repair plan containing supported
+facts and exact old-value preconditions, then dry-run it before applying:
 
 ```bash
 python3 skills/vault-ingress/scripts/apply-source-repairs.py \

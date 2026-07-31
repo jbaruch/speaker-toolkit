@@ -35,9 +35,14 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "youtube_id": "dQw4w9WgXcQ", "google_drive_id": "1AbCdEfGhIjK",
     "source_identity": {
       "schema_version": 1, "provider": "youtube", "video_id": "dQw4w9WgXcQ",
-      "title": "Title recorded at the source", "speakers": ["Speaker Name"],
+      "title": "Title recorded at the source",
+      "uploader": "Conference Channel", "uploader_id": "@conference",
+      "speakers": ["Speaker Name"],
       "recorded_date": "2024-04-10", "upload_date": "2024-04-11",
-      "duration_seconds": 2700, "captured_at": "2026-07-31T12:00:00Z"
+      "duration_seconds": 2700,
+      "webpage_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "webpage_video_id": "dQw4w9WgXcQ",
+      "captured_at": "2026-07-31T12:00:00Z"
     },
     "source_relation": {"type": "duplicate|borrowed_recording", "target_filename": "canonical-talk.md"},
     "source_rejections": [{
@@ -117,7 +122,10 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
 `source_identity` and `source_relation` are optional. Their owned shape,
 offline comparison rules, duplicate semantics, and compatibility policy are in
 [source-identity-preflight.md](source-identity-preflight.md). Do not fetch live
-metadata during validation; record evidence separately, then run the preflight.
+metadata during validation. Capture provider evidence separately with the
+read-only flow in [source-identity-audit.md](source-identity-audit.md), review it,
+then run the preflight. Uploader/upload date never establish speaker/recorded
+date, and a captured webpage URL is never an automatic active-source repair.
 
 `improvement_goals` is the coaching-loop artifact — speaker-chosen focus areas that
 a later ingress run verifies. vault-clarification owns the record shape; vault-ingress

@@ -22,6 +22,11 @@ default. `--apply` refuses active claims, creates an exact backup in `.backups`,
 then replaces the database atomically. Use `{"$missing": true}` in `expect`
 when absence rather than JSON null is the required precondition.
 
+When fresh provider facts are needed, run the networked, read-only
+`scripts/audit-source-identities.py` after this offline gate and before writing
+the repair plan. Its provider metadata proposal is deliberately not an apply
+plan; see [source-identity-audit.md](source-identity-audit.md).
+
 ## Severity contract
 
 - `blocking` means stored claims disagree, identities collide, or a completed
@@ -81,10 +86,14 @@ live metadata. The optional talk-level field has this shape:
     "provider": "youtube",
     "video_id": "AbCdEfGhI_1",
     "title": "The title recorded at the source",
+    "uploader": "Conference Channel",
+    "uploader_id": "@conference",
     "speakers": ["Speaker One", "Speaker Two"],
     "recorded_date": "2026-07-30",
     "upload_date": "2026-07-31",
     "duration_seconds": 2700,
+    "webpage_url": "https://www.youtube.com/watch?v=AbCdEfGhI_1",
+    "webpage_video_id": "AbCdEfGhI_1",
     "captured_at": "2026-07-31T12:00:00Z"
   }
 }
@@ -94,6 +103,14 @@ live metadata. The optional talk-level field has this shape:
 `recorded_date`/`upload_date` are the v1 evidence fields. `captured_at` records
 provenance for humans but is not used as source identity. Dates are ISO
 `YYYY-MM-DD`; `duration_seconds` is positive numeric data.
+
+`uploader`, `uploader_id`, `webpage_url`, and `webpage_video_id` are optional
+provider facts. An uploader identifies the publishing account, never a speaker;
+an upload date identifies publication, never recording. The live audit may
+therefore propose a partial provider-fact block without `speakers` or
+`recorded_date`. A human adds those delivery claims only from separate direct
+evidence. The captured webpage URL is provenance and is never an automatic
+`video_url` repair.
 
 Offline comparison rules are intentionally deterministic:
 

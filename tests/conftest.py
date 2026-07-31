@@ -136,6 +136,14 @@ def aggregate_catalog_feedback():
 
 
 @pytest.fixture(scope="session")
+def audit_source_identities():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "audit-source-identities.py"),
+        "audit_source_identities",
+    )
+
+
+@pytest.fixture(scope="session")
 def extract_resources():
     return _import_script(
         os.path.join(SCRIPTS_PC, "extract-resources.py"), "extract_resources"
