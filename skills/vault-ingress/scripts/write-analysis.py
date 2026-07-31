@@ -33,10 +33,12 @@ Usage:
     write-analysis.py <batch-returns.json> <analyses-dir>
                       --talks <tracking-database.json> [--run-date YYYY-MM-DD]
 
-    --talks supplies talk titles for the H1 and the completed/active queue
-    generation that authorizes each replacement.
-    --run-date sets the "Processed" line when a return omits `processed_date`,
-    matching persist-results.py's stamping so the DB and the file agree.
+    --talks supplies talk titles for the H1 and the completed queue generation
+    that authorizes each replacement. An active, unpersisted claim is rejected.
+    The persisted talk's `processed_date` is the authority for the "Processed"
+    line. `--run-date` is an optional consistency assertion for returns that
+    omit their own stamp; it accepts the same date/timestamp forms as
+    persist-results.py.
 
     Writes one file per PROCESSED return; a return whose required terminal status
     is not in PROCESSED_STATUSES is skipped rather than allowed to overwrite an
@@ -54,11 +56,12 @@ import json
 import os
 import sys
 import tempfile
-from datetime import date
+import unicodedata
 
 from return_validation import (
     ANALYSIS_STATUSES,
     ReturnValidationError,
+    normalize_processing_stamp,
     validate_claim_against_talk,
     validate_batch,
 )
@@ -219,11 +222,11 @@ def render_catalog_feedback(feedback):
     return out
 
 
-def render_analysis(ret, title=None, run_date=None):
+def render_analysis(ret, title=None, run_date=None, *, persisted_date=None):
     """Build the full markdown document for one subagent return."""
     filename = ret.get("filename", "")
     heading = title or ret.get("title") or filename.removesuffix(".md")
-    processed = ret.get("processed_date") or run_date or ""
+    processed = persisted_date or ret.get("processed_date") or run_date or ""
 
     out = [f"# Rhetoric Analysis: {heading}", ""]
     out.append(f"**Filename:** {filename}")
@@ -304,6 +307,49 @@ def safe_output_name(filename):
     return base if base.lower().endswith(".md") else base + ".md"
 
 
+def output_target_key(filename):
+    """Return a filesystem-conservative identity for one sanitized target."""
+    return unicodedata.normalize("NFC", safe_output_name(filename).casefold())
+
+
+def persisted_processed_stamp(ret, talk, requested_stamp=None):
+    """Resolve the exact stamp persistence wrote, rejecting surface drift."""
+    stored = talk.get("processed_date")
+    if not isinstance(stored, str) or not stored.strip():
+        raise ReturnValidationError(
+            f"{ret.get('filename', '<unknown>')} persisted talk has no processed_date; "
+            "run persist-results.py successfully before writing its analysis")
+    try:
+        normalized_stored = normalize_processing_stamp(stored)
+    except ValueError as exc:
+        raise ReturnValidationError(
+            f"{ret.get('filename', '<unknown>')} persisted processed_date is invalid: "
+            f"{exc}") from exc
+    if normalized_stored != stored:
+        raise ReturnValidationError(
+            f"{ret.get('filename', '<unknown>')} persisted processed_date {stored!r} "
+            f"is not the canonical stored stamp {normalized_stored!r}; rerun "
+            "persist-results.py before writing its analysis")
+
+    returned = ret.get("processed_date")
+    if returned is not None:
+        try:
+            returned = normalize_processing_stamp(returned)
+        except ValueError as exc:
+            raise ReturnValidationError(
+                f"{ret.get('filename', '<unknown>')} return processed_date is invalid: "
+                f"{exc}") from exc
+        if returned != stored:
+            raise ReturnValidationError(
+                f"{ret.get('filename', '<unknown>')} return processed_date {returned!r} "
+                f"does not match persisted value {stored!r}")
+    elif requested_stamp is not None and requested_stamp != stored:
+        raise ReturnValidationError(
+            f"{ret.get('filename', '<unknown>')} --run-date {requested_stamp!r} "
+            f"does not match persisted value {stored!r}")
+    return stored
+
+
 def atomic_write_text(path, body):
     """Replace one analysis only after its complete body is on disk."""
     directory = os.path.dirname(os.path.abspath(path)) or "."
@@ -360,13 +406,12 @@ def parse_args(argv):
               f"--talks <tracking-database.json> [--run-date YYYY-MM-DD]",
               file=sys.stderr)
         sys.exit(1)
-    if run_date is None:
-        run_date = date.today().isoformat()
-    else:
+    if run_date is not None:
         try:
-            date.fromisoformat(run_date)
-        except ValueError:
-            print(f"ERROR: --run-date must be YYYY-MM-DD, got {run_date!r}", file=sys.stderr)
+            run_date = normalize_processing_stamp(run_date)
+        except ValueError as exc:
+            print("ERROR: --run-date must be YYYY-MM-DD or a timezone-aware "
+                  f"ISO-8601 timestamp: {exc}", file=sys.stderr)
             sys.exit(1)
     return args[0], args[1], run_date, talks_path
 
@@ -401,11 +446,44 @@ def main():
                   file=sys.stderr)
             sys.exit(1)
         try:
-            validate_claim_against_talk(talk, ret, allow_completed=True)
+            validate_claim_against_talk(talk, ret, require_completed=True)
         except ReturnValidationError as exc:
             print(f"ERROR: {ret['filename']}: {exc}", file=sys.stderr)
             sys.exit(1)
     titles = {name: talk.get("title") for name, talk in talks_by_name.items()}
+
+    # Render the entire batch before touching the output directory. A malformed
+    # late entry cannot leave earlier analysis files replaced.
+    staged, skipped = [], []
+    target_owners = {}
+    for ret in returns:
+        name = ret.get("filename")
+        status = ret.get("status")
+        if status not in PROCESSED_STATUSES:
+            skipped.append({"filename": name, "status": status})
+            continue
+        safe_name = safe_output_name(name)
+        target_key = output_target_key(name)
+        prior = target_owners.get(target_key)
+        if prior is not None:
+            print(
+                f"ERROR: return filenames {prior!r} and {name!r} resolve to the "
+                f"same analysis target {safe_name!r}; refusing to overwrite one talk "
+                "with another",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        target_owners[target_key] = name
+        path = os.path.join(out_dir, safe_name)
+        try:
+            processed_stamp = persisted_processed_stamp(
+                ret, talks_by_name[name], requested_stamp=run_date)
+        except ReturnValidationError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
+        body = render_analysis(
+            ret, title=titles.get(name), persisted_date=processed_stamp)
+        staged.append((name, path, body))
 
     try:
         os.makedirs(out_dir, exist_ok=True)
@@ -413,20 +491,6 @@ def main():
         print(f"ERROR: cannot create output directory {out_dir}: {e} — check the "
               f"path exists as a directory and is writable", file=sys.stderr)
         sys.exit(1)
-
-    # Render the entire batch before touching the output directory. A malformed
-    # late entry cannot leave earlier analysis files replaced.
-    staged, skipped = [], []
-    for i, ret in enumerate(returns):
-        name = ret.get("filename")
-        status = ret.get("status")
-        if status not in PROCESSED_STATUSES:
-            skipped.append({"filename": name, "status": status})
-            continue
-        safe_name = safe_output_name(name)
-        path = os.path.join(out_dir, safe_name)
-        body = render_analysis(ret, title=titles.get(name), run_date=run_date)
-        staged.append((name, path, body))
 
     written = []
     for name, path, body in staged:

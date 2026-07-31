@@ -69,14 +69,22 @@ def _return(**overrides):
     return ret
 
 
-def _write_tracking_db(tmp_path, returns, *, title=None, name="tracking-db.json"):
+def _write_tracking_db(
+        tmp_path, returns, *, title=None, name="tracking-db.json",
+        persisted_date=None):
     talks = []
     for ret in returns:
         talks.append({
             "filename": ret["filename"],
             "title": title,
             "status": ret["status"],
+            "processed_date": (
+                persisted_date or ret.get("processed_date") or "2026-07-26"),
             "reprocess_generation": ret["queue_claim"]["reprocess_generation"],
+            "video_url": "https://youtu.be/AbCdEfGhI_1",
+            "youtube_id": "AbCdEfGhI_1",
+            "pptx_path": "Conference/Talk.pptx",
+            "slides_url": "https://drive.google.com/file/d/slides-id/view",
             "_queue_claim": {
                 "schema_version": 1,
                 **ret["queue_claim"],
@@ -91,6 +99,33 @@ def _write_tracking_db(tmp_path, returns, *, title=None, name="tracking-db.json"
     path = tmp_path / name
     path.write_text(json.dumps({"talks": talks}))
     return path
+
+
+def _skipped_return(**overrides):
+    ret = {
+        "filename": "talk.md",
+        "queue_claim": {
+            "run_id": "reparse",
+            "batch_id": "25",
+            "reprocess_generation": 1,
+        },
+        "status": "skipped_no_sources",
+    }
+    ret.update(overrides)
+    return ret
+
+
+def _complete_unavailable_source_gates(return_validation, ret):
+    available = set(ret["pattern_observations"]["evidence_sources"])
+    catalog = return_validation.load_catalog()
+    ret["pattern_observations"]["not_evaluable"] = [{
+        "pattern_id": pattern_id,
+        "evidence_source": sorted(available)[0],
+        "reason": "The inspected fixture sources cannot evaluate this pattern.",
+    } for pattern_id, entry in sorted(catalog.entries.items())
+        if entry.observable and entry.evaluable_from is not None and
+        entry.evaluable_from.isdisjoint(available)]
+    return ret
 
 
 def test_renders_core_sections(write_analysis):
@@ -205,6 +240,88 @@ def test_run_date_fills_missing_processed_date(write_analysis):
 def test_return_processed_date_wins_over_run_date(write_analysis):
     md = write_analysis.render_analysis(_return(), run_date="2026-01-01")
     assert "**Processed:** 2026-07-26" in md
+
+
+def test_cli_renders_the_exact_canonical_stamp_persisted_in_db(
+        write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return(processed_date="2026-07-27T16:03:22.987654+02:00")
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(
+        tmp_path, [ret], persisted_date="2026-07-27T14:03:22+00:00")
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    body = (out / "talk.md").read_text()
+    assert "**Processed:** 2026-07-27T14:03:22+00:00" in body
+    assert "16:03:22" not in body
+
+
+def test_cli_uses_persisted_stamp_when_return_omits_processed_date(
+        write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return()
+    del ret["processed_date"]
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(
+        tmp_path, [ret], persisted_date="2026-07-27T14:03:22+00:00")
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "**Processed:** 2026-07-27T14:03:22+00:00" in \
+        (out / "talk.md").read_text()
+
+
+def test_cli_rejects_noncanonical_persisted_stamp_before_write(
+        write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return(processed_date="2026-07-27T16:03:22+02:00")
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(
+        tmp_path, [ret], persisted_date="2026-07-27T16:03:22+02:00")
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    assert "is not the canonical stored stamp" in result.stderr
+    assert not out.exists()
+
+
+def test_cli_rejects_return_stamp_that_differs_from_persisted_value(
+        write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return(processed_date="2026-07-26")
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(
+        tmp_path, [ret], persisted_date="2026-07-27T14:03:22+00:00")
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    assert "does not match persisted value" in result.stderr
+    assert not out.exists()
 
 
 def test_nested_structured_fields_are_preserved(write_analysis):
@@ -367,7 +484,7 @@ def test_skipped_status_never_overwrites_an_existing_analysis(write_analysis, tm
     out.mkdir()
     good = out / "talk.md"
     good.write_text("# real analysis from a successful run\n")
-    returns = [_return(status="skipped_no_sources")]
+    returns = [_skipped_return()]
     batch.write_text(json.dumps(returns))
     db = _write_tracking_db(tmp_path, returns)
     result = subprocess.run(
@@ -449,6 +566,120 @@ def test_stale_generation_cannot_overwrite_analysis(write_analysis, tmp_path):
     assert target.read_text() == "# current generation\n"
 
 
+def test_top_level_generation_mismatch_cannot_overwrite_analysis(
+        write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    target = out / "talk.md"
+    target.write_text("# current generation\n")
+    ret = _return()
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    payload["talks"][0]["reprocess_generation"] = 2
+    db.write_text(json.dumps(payload))
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    assert "active claim generation 1 disagrees with talk generation 2" in result.stderr
+    assert target.read_text() == "# current generation\n"
+
+
+def test_completed_claim_requires_exact_schema_before_analysis_write(
+        write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    target = out / "talk.md"
+    target.write_text("# current generation\n")
+    ret = _return()
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    payload["talks"][0]["_queue_claim"]["unexpected"] = "field"
+    db.write_text(json.dumps(payload))
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    assert "must use exactly the schema fields" in result.stderr
+    assert "unexpected" in result.stderr
+    assert target.read_text() == "# current generation\n"
+
+
+def test_analysis_writer_requires_persisted_completed_claim(
+        write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return()
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    talk = payload["talks"][0]
+    talk["status"] = "reprocessing-inflight"
+    claim = talk["_queue_claim"]
+    claim["state"] = "claimed"
+    for field in ("released_at", "release_reason", "result_status"):
+        del claim[field]
+    db.write_text(json.dumps(payload))
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    assert "no completed queue claim" in result.stderr
+    assert not out.exists()
+
+
+def test_kcdc_wrong_transcript_return_cannot_overwrite_analysis(
+        write_analysis, return_validation, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    target = out / "talk.md"
+    target.write_text("# slide-only corrected analysis\n")
+    ret = _return(status="processed_partial", slide_source="pdf")
+    ret["pattern_observations"]["evidence_sources"] = [
+        "transcript", "static_slides"]
+    _complete_unavailable_source_gates(return_validation, ret)
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    talk = payload["talks"][0]
+    talk.update({
+        "video_url": None,
+        "youtube_id": None,
+        "pptx_path": None,
+        "google_drive_id": "slides-id",
+        "transcript_source": "none",
+        "slide_source": "pdf",
+    })
+    db.write_text(json.dumps(payload))
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    assert "no transcript reference or active video source" in result.stderr
+    assert target.read_text() == "# slide-only corrected analysis\n"
+
+
 def test_carriage_returns_do_not_break_table_rows(write_analysis):
     ret = _return()
     ret["pattern_observations"]["patterns_detected"] = [
@@ -478,6 +709,39 @@ def test_output_name_strips_whitespace_and_respects_case(write_analysis):
     assert write_analysis.safe_output_name("TALK.MD") == "TALK.MD"
     assert write_analysis.safe_output_name("Talk.Md") == "Talk.Md"
     assert write_analysis.safe_output_name(" talk ") == "talk.md"
+
+
+def test_target_key_normalizes_basename_case_and_unicode(write_analysis):
+    assert write_analysis.output_target_key("first/TALK.MD") == \
+        write_analysis.output_target_key("second/talk.md")
+    assert write_analysis.output_target_key("first/Cafe\N{COMBINING ACUTE ACCENT}.md") == \
+        write_analysis.output_target_key("second/Caf\N{LATIN SMALL LETTER E WITH ACUTE}.MD")
+
+
+def test_cli_rejects_normalized_target_collision_before_any_write(
+        write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    existing = out / "TALK.MD"
+    existing.write_text("# existing analysis\n")
+    returns = [
+        _return(filename="first/TALK.MD"),
+        _return(filename="second/talk.md"),
+    ]
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns)
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    assert "resolve to the same analysis target" in result.stderr
+    assert existing.read_text() == "# existing analysis\n"
+    assert [path.name for path in out.iterdir()] == ["TALK.MD"]
 
 
 def test_none_valued_structured_fields_are_omitted(write_analysis):

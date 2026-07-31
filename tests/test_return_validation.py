@@ -162,6 +162,41 @@ def _error(return_validation, value):
     return str(excinfo.value)
 
 
+def _complete_unavailable_source_gates(return_validation, value):
+    """Record every catalog gate the fixture's inspected sources cannot score."""
+    available = set(value["pattern_observations"]["evidence_sources"])
+    catalog = return_validation.load_catalog()
+    value["pattern_observations"]["not_evaluable"] = [{
+        "pattern_id": pattern_id,
+        "evidence_source": sorted(available)[0],
+        "reason": "The inspected fixture sources cannot evaluate this pattern.",
+    } for pattern_id, entry in sorted(catalog.entries.items())
+        if entry.observable and entry.evaluable_from is not None and
+        entry.evaluable_from.isdisjoint(available)]
+    return value
+
+
+def _claimed_talk(ret, **overrides):
+    talk = {
+        "filename": ret["filename"],
+        "status": "reprocessing-inflight",
+        "reprocess_generation": ret["queue_claim"]["reprocess_generation"],
+        "video_url": "https://youtu.be/AbCdEfGhI_1",
+        "youtube_id": "AbCdEfGhI_1",
+        "pptx_path": "Conference/Talk.pptx",
+        "slides_url": "https://drive.google.com/file/d/slides-id/view",
+        "_queue_claim": {
+            "schema_version": 1,
+            **ret["queue_claim"],
+            "claimed_at": "2026-07-31T18:00:00+00:00",
+            "previous_status": "needs-reprocessing",
+            "state": "claimed",
+        },
+    }
+    talk.update(overrides)
+    return talk
+
+
 def test_valid_return_resolves_the_catalog_fingerprint(return_validation):
     catalog = return_validation.validate_batch([_return()])
     assert len(catalog.entries) == 111
@@ -170,7 +205,8 @@ def test_valid_return_resolves_the_catalog_fingerprint(return_validation):
 
 def test_trusted_video_return_requires_complete_manifest_and_promoted_path(
         return_validation):
-    return_validation.validate_batch([_video_return()])
+    return_validation.validate_batch([
+        _complete_unavailable_source_gates(return_validation, _video_return())])
 
     missing_path = _video_return()
     del missing_path["slides_local_path"]
@@ -199,6 +235,7 @@ def test_trusted_unpromoted_video_can_support_partial_static_analysis(
     value = _video_return(trusted=True, promoted=False)
     value["pattern_observations"]["evidence_sources"].append("static_slides")
     value["structured_data"]["slide_design_style"] = "comic_book"
+    _complete_unavailable_source_gates(return_validation, value)
     return_validation.validate_batch([value])
 
 
@@ -262,20 +299,122 @@ def test_video_manifest_accepts_extractor_timestamp_rounding(return_validation):
         "frame_index": 1,
         "timestamp_seconds": 3.333,
     })
+    _complete_unavailable_source_gates(return_validation, value)
     return_validation.validate_batch([value])
 
 
 def test_video_manifest_identity_is_bound_to_the_claimed_talk(return_validation):
     value = _video_return()
-    talk = {
-        "filename": "talk.md",
-        "youtube_id": "otherID1234",
-        "status": "reprocessing-inflight",
-        "_queue_claim": {"state": "claimed", **value["queue_claim"]},
-    }
+    talk = _claimed_talk(value,
+        video_url="https://youtu.be/otherID1234",
+        youtube_id="otherID1234",
+    )
     with pytest.raises(return_validation.ReturnValidationError) as excinfo:
         return_validation.validate_claim_against_talk(talk, value)
     assert "does not match talk youtube_id" in str(excinfo.value)
+
+
+def test_claim_generation_must_equal_talk_generation(return_validation):
+    value = _return()
+    talk = _claimed_talk(value, reprocess_generation=2)
+
+    with pytest.raises(return_validation.ReturnValidationError) as excinfo:
+        return_validation.validate_claim_against_talk(talk, value)
+
+    assert "disagrees with talk generation 2" in str(excinfo.value)
+
+
+def test_current_claim_requires_exact_state_schema(return_validation):
+    value = _return()
+    talk = _claimed_talk(value)
+    talk["_queue_claim"]["released_at"] = None
+
+    with pytest.raises(return_validation.ReturnValidationError) as excinfo:
+        return_validation.validate_claim_against_talk(talk, value)
+
+    assert "must use exactly the schema fields" in str(excinfo.value)
+    assert "released_at" in str(excinfo.value)
+
+
+def test_return_claim_requires_exact_identity_schema(return_validation):
+    value = _return()
+    value["queue_claim"]["state"] = "claimed"
+
+    assert "must use exactly the schema fields" in _error(return_validation, value)
+
+
+def test_kcdc_wrong_transcript_return_cannot_resurrect_repaired_source(
+        return_validation):
+    value = _return(status="processed_partial", slide_source="pdf")
+    value["pattern_observations"]["evidence_sources"] = [
+        "transcript", "static_slides"]
+    _complete_unavailable_source_gates(return_validation, value)
+    return_validation.validate_batch([value])
+    talk = _claimed_talk(
+        value,
+        video_url=None,
+        youtube_id=None,
+        pptx_path=None,
+        google_drive_id="slides-id",
+        transcript_source="none",
+        slide_source="pdf",
+    )
+
+    with pytest.raises(return_validation.ReturnValidationError) as excinfo:
+        return_validation.validate_claim_against_talk(talk, value)
+
+    assert "no transcript reference or active video source" in str(excinfo.value)
+
+
+def test_kcdc_corrected_pdf_only_return_is_backed_by_claimed_talk(
+        return_validation):
+    value = _return(
+        status="processed_partial",
+        slide_source="pdf",
+        transcript_source="none",
+    )
+    observations = value["pattern_observations"]
+    observations["evidence_sources"] = ["static_slides"]
+    for detection in (
+            observations["patterns_detected"] +
+            observations["antipatterns_detected"]):
+        detection["evidence_source"] = "static_slides"
+    _complete_unavailable_source_gates(return_validation, value)
+    return_validation.validate_batch([value])
+    talk = _claimed_talk(
+        value,
+        video_url=None,
+        youtube_id=None,
+        pptx_path=None,
+        google_drive_id="slides-id",
+        transcript_source="none",
+        slide_source="pdf",
+    )
+
+    return_validation.validate_claim_against_talk(talk, value)
+
+
+def test_active_video_allows_newly_fetched_transcript(return_validation):
+    value = _return()
+    talk = _claimed_talk(value)
+    return_validation.validate_claim_against_talk(talk, value)
+
+
+@pytest.mark.parametrize(("slide_source", "expected"), [
+    ("pptx", "no pptx_path"),
+    ("pdf", "no independent PDF source"),
+])
+def test_return_slide_source_must_be_backed_by_claimed_talk(
+        return_validation, slide_source, expected):
+    value = _return(slide_source=slide_source)
+    talk = _claimed_talk(value)
+    talk.pop("pptx_path")
+    talk.pop("slides_url")
+
+    with pytest.raises(return_validation.ReturnValidationError) as excinfo:
+        return_validation.validate_claim_against_talk(talk, value)
+
+    assert expected in str(excinfo.value)
 
 
 @pytest.mark.parametrize("status", [None, "reprocessing-inflight", "skipped_no_video"])
@@ -300,6 +439,46 @@ def test_return_must_carry_a_valid_queue_generation(return_validation, claim):
     else:
         value["queue_claim"] = claim
     assert "queue_claim" in _error(return_validation, value)
+
+
+def test_skipped_return_accepts_only_terminal_claim_metadata(return_validation):
+    value = {
+        "filename": "talk.md",
+        "queue_claim": {
+            "run_id": "reparse",
+            "batch_id": "25",
+            "reprocess_generation": 1,
+        },
+        "status": "skipped_no_sources",
+    }
+    return_validation.validate_batch([value])
+
+    value["rhetoric_notes"] = "must not replace the prior analysis"
+    assert "cannot mutate or clear prior analysis fields" in _error(
+        return_validation, value)
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("processed_date", "2026-07-31T18:05:00+00:00"),
+    ("transcript_source", "none"),
+    ("slide_source", "none"),
+    ("clear_fields", []),
+])
+def test_skipped_return_rejects_analysis_metadata(
+        return_validation, field, value):
+    value = {
+        "filename": "talk.md",
+        "queue_claim": {
+            "run_id": "reparse",
+            "batch_id": "25",
+            "reprocess_generation": 1,
+        },
+        "status": "skipped_no_sources",
+        field: value,
+    }
+
+    assert "cannot mutate or clear prior analysis fields" in _error(
+        return_validation, value)
 
 
 def test_unknown_pattern_id_is_rejected(return_validation):

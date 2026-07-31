@@ -12,12 +12,15 @@ and the queryable scalars are promoted to the talk's top level.
 For each return (matched to a talk by `filename`) it:
   1. Validates the complete batch against the shared return and catalog contract,
      then matches every return to the talk's active queue generation.
-  2. Sets the scalar result fields (status, processed_date, rhetoric_notes,
-     areas_for_improvement, adherence_assessment, transcript_source,
-     slide_source, slides_local_path). A return
+  2. For an analysis return, sets the scalar result fields (status,
+     processed_date, rhetoric_notes, areas_for_improvement,
+     adherence_assessment, transcript_source, slide_source,
+     slides_local_path). A return
      that omits `processed_date` is stamped with the run date, because otherwise
      the talk keeps whatever date the previous run set and the DB cannot answer
-     "which talks has this reparse actually covered".
+     "which talks has this reparse actually covered". A skipped return changes
+     only terminal status and queue-claim history; prior analysis, provenance,
+     corrective clears and processed date remain untouched.
   3. Applies explicit `clear_fields`, then deep-merges the full `structured_data`
      and `verbatim_examples` blocks —
      additive: dicts recurse, new non-empty values win, existing data is never
@@ -75,6 +78,7 @@ from datetime import datetime, timezone
 from return_validation import (
     ANALYSIS_STATUSES,
     ReturnValidationError,
+    normalize_processing_stamp,
     validate_claim_against_talk,
     validate_batch,
 )
@@ -101,17 +105,7 @@ def normalize_stamp(value):
     of the stamp, and a naive timestamp from another machine cannot be ordered
     against one from this one — and is normalized to UTC at second resolution.
     """
-    try:
-        datetime.strptime(value, "%Y-%m-%d")
-        return value
-    except ValueError:
-        pass
-    moment = datetime.fromisoformat(value)  # raises ValueError on anything else
-    if moment.tzinfo is None:
-        raise ValueError(
-            f"timestamp {value!r} has no timezone — append an offset "
-            f"(e.g. {value}+00:00) so stamps from different machines order")
-    return default_stamp(moment)
+    return normalize_processing_stamp(value)
 
 # Tracking-DB talk-record schema version, stamped by this writer on every merge.
 #
@@ -386,8 +380,23 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     `processed_date` when the return omits it; it is never read from the clock
     inside the merge.
     """
+    normalized_run_date = normalize_stamp(run_date) if run_date else None
+    if enforce_queue_claim and normalized_run_date is None:
+        raise ValueError(
+            "run_date is required when closing a queue claim so released_at is "
+            "deterministic")
     if enforce_queue_claim:
         validate_claim_against_talk(talk, ret)
+
+    if ret.get("status") not in ANALYSIS_STATUSES:
+        # A skipped attempt carries no new analysis. Preserve the prior
+        # processed stamp, source provenance, content blocks and corrective
+        # clears; only the terminal outcome and its queue-claim history change.
+        talk["status"] = ret["status"]
+        if enforce_queue_claim:
+            close_queue_claim(talk, ret["status"], normalized_run_date)
+        return [], False, False, []
+
     structured = require_mapping(ret, "structured_data")
     verbatim = require_mapping(ret, "verbatim_examples")
     observations = require_mapping(ret, "pattern_observations") or {}
@@ -401,12 +410,12 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     talk["schema_version"] = TALK_SCHEMA_VERSION
     for f in SCALARS:
         if f in ret and not is_empty(ret[f]):
-            talk[f] = ret[f]
+            talk[f] = normalize_stamp(ret[f]) if f == "processed_date" else ret[f]
     # A return that reports a status but no date would otherwise leave the
     # previous run's date in place, making the talk look untouched by this run.
     stamped = False
-    if run_date and is_empty(ret.get("processed_date")):
-        talk["processed_date"] = run_date
+    if normalized_run_date and is_empty(ret.get("processed_date")):
+        talk["processed_date"] = normalized_run_date
         stamped = True
     if structured is not None:
         talk["structured_data"] = deep_merge(talk.get("structured_data") or {}, structured)
@@ -442,7 +451,7 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
         if catalog_fingerprint:
             talk["pattern_catalog_fingerprint"] = catalog_fingerprint
     if enforce_queue_claim:
-        close_queue_claim(talk, ret["status"], run_date)
+        close_queue_claim(talk, ret["status"], normalized_run_date)
     return promoted, stamped, coerced_score, cleared
 
 

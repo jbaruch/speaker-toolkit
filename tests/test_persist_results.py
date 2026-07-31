@@ -77,6 +77,10 @@ def _talk(**overrides):
         "filename": "talk.md",
         "status": "reprocessing-inflight",
         "reprocess_generation": 1,
+        "video_url": "https://youtu.be/AbCdEfGhI_1",
+        "youtube_id": "AbCdEfGhI_1",
+        "pptx_path": "Conference/Talk.pptx",
+        "slides_url": "https://drive.google.com/file/d/slides-id/view",
         "_queue_claim": {
             "schema_version": 1,
             "run_id": "reparse",
@@ -92,6 +96,33 @@ def _talk(**overrides):
     }
     talk.update(overrides)
     return talk
+
+
+def _skipped_return(**overrides):
+    ret = {
+        "filename": "talk.md",
+        "queue_claim": {
+            "run_id": "reparse",
+            "batch_id": "25",
+            "reprocess_generation": 1,
+        },
+        "status": "skipped_no_sources",
+    }
+    ret.update(overrides)
+    return ret
+
+
+def _complete_unavailable_source_gates(return_validation, ret):
+    available = set(ret["pattern_observations"]["evidence_sources"])
+    catalog = return_validation.load_catalog()
+    ret["pattern_observations"]["not_evaluable"] = [{
+        "pattern_id": pattern_id,
+        "evidence_source": sorted(available)[0],
+        "reason": "The inspected fixture sources cannot evaluate this pattern.",
+    } for pattern_id, entry in sorted(catalog.entries.items())
+        if entry.observable and entry.evaluable_from is not None and
+        entry.evaluable_from.isdisjoint(available)]
+    return ret
 
 
 def test_promotes_queryable_scalars(persist_results):
@@ -112,6 +143,35 @@ def test_full_structured_data_persisted(persist_results):
     # The whole block lands, not just the promoted scalars.
     assert talk["structured_data"]["narrative_arc_type"] == "problem_diagnosis_solution"
     assert talk["structured_data"]["slide_design_style"] == "comic_book"
+
+
+def test_skipped_merge_cannot_mutate_prior_analysis_even_without_validator(
+        persist_results):
+    talk = _talk(
+        processed_date="2026-06-18",
+        transcript_source="youtube_auto",
+        slide_source="pptx",
+        rhetoric_notes="trusted prior analysis",
+        structured_data={"slide_count": 42},
+        verbatim_examples={"jokes": ["kept"]},
+    )
+    malicious = _return(
+        status="skipped_no_sources",
+        rhetoric_notes=["wrong type"],
+        slide_source="not-an-enum",
+        structured_data={"video_extraction": {"schema_version": "invalid"}},
+        clear_fields=["structured_data.slide_count"],
+    )
+
+    persist_results.merge_talk(talk, malicious, run_date="2026-07-31")
+
+    assert talk["status"] == "skipped_no_sources"
+    assert talk["rhetoric_notes"] == "trusted prior analysis"
+    assert talk["structured_data"] == {"slide_count": 42}
+    assert talk["verbatim_examples"] == {"jokes": ["kept"]}
+    assert talk["processed_date"] == "2026-06-18"
+    assert talk["transcript_source"] == "youtube_auto"
+    assert talk["slide_source"] == "pptx"
 
 
 def test_deep_merge_is_additive(persist_results):
@@ -361,6 +421,17 @@ def test_default_stamp_normalizes_to_utc(persist_results):
 def test_explicit_offset_timestamp_is_normalized_to_utc(persist_results):
     assert persist_results.normalize_stamp(
         "2026-07-27T16:03:22.987654+02:00") == "2026-07-27T14:03:22+00:00"
+
+
+def test_return_processed_timestamp_is_persisted_in_canonical_utc(persist_results):
+    talk = _talk()
+
+    persist_results.merge_talk(
+        talk,
+        _return(processed_date="2026-07-27T16:03:22.987654+02:00"),
+    )
+
+    assert talk["processed_date"] == "2026-07-27T14:03:22+00:00"
 
 
 def test_naive_timestamp_is_rejected_with_an_actionable_message(persist_results):
@@ -795,6 +866,126 @@ def test_stale_return_generation_cannot_roll_back_a_requeue(persist_results, tmp
     )
     assert result.returncode == 1
     assert "does not match active claim value 2" in result.stderr
+    assert json.loads(db.read_text()) == original
+
+
+def test_claim_generation_cannot_lag_top_level_generation(persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    talk = _talk(reprocess_generation=2)
+    original = {"talks": [talk]}
+    db.write_text(json.dumps(original))
+    batch.write_text(json.dumps([_return()]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    assert "active claim generation 1 disagrees with talk generation 2" in result.stderr
+    assert json.loads(db.read_text()) == original
+
+
+def test_active_claim_with_undeclared_fields_is_rejected_before_write(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    talk = _talk()
+    talk["_queue_claim"]["released_at"] = None
+    original = {"talks": [talk]}
+    db.write_text(json.dumps(original))
+    batch.write_text(json.dumps([_return()]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    assert "must use exactly the schema fields" in result.stderr
+    assert "released_at" in result.stderr
+    assert json.loads(db.read_text()) == original
+
+
+def test_skipped_return_preserves_prior_analysis_and_persists_terminal_metadata(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    talk = _talk(
+        processed_date="2026-06-18",
+        transcript_source="youtube_auto",
+        slide_source="pptx",
+        rhetoric_notes="trusted prior analysis",
+        structured_data={"slide_count": 42},
+        verbatim_examples={"jokes": ["kept"]},
+    )
+    db.write_text(json.dumps({"talks": [talk]}))
+    batch.write_text(json.dumps([_skipped_return()]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    assert stored["status"] == "skipped_no_sources"
+    assert stored["processed_date"] == "2026-06-18"
+    assert stored["transcript_source"] == "youtube_auto"
+    assert stored["slide_source"] == "pptx"
+    assert stored["rhetoric_notes"] == "trusted prior analysis"
+    assert stored["structured_data"] == {"slide_count": 42}
+    assert stored["verbatim_examples"] == {"jokes": ["kept"]}
+    assert stored["_queue_claim"]["state"] == "completed"
+
+
+def test_skipped_return_with_analysis_fields_aborts_without_write(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    original = {"talks": [_talk(rhetoric_notes="trusted prior analysis")]}
+    invalid = _skipped_return(rhetoric_notes="stale rejected analysis")
+    db.write_text(json.dumps(original))
+    batch.write_text(json.dumps([invalid]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    assert "cannot mutate or clear prior analysis fields" in result.stderr
+    assert json.loads(db.read_text()) == original
+
+
+def test_kcdc_wrong_transcript_source_cannot_be_resurrected(
+        persist_results, return_validation, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    talk = _talk(
+        video_url=None,
+        youtube_id=None,
+        pptx_path=None,
+        transcript_source="none",
+        slide_source="pdf",
+        google_drive_id="slides-id",
+    )
+    ret = _return(status="processed_partial", slide_source="pdf")
+    ret["pattern_observations"]["evidence_sources"] = [
+        "transcript", "static_slides"]
+    _complete_unavailable_source_gates(return_validation, ret)
+    original = {"talks": [talk]}
+    db.write_text(json.dumps(original))
+    batch.write_text(json.dumps([ret]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    assert "no transcript reference or active video source" in result.stderr
     assert json.loads(db.read_text()) == original
 
 

@@ -14,6 +14,7 @@ import json
 import math
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
 from typing import NoReturn
@@ -55,6 +56,44 @@ PROSE_FIELDS = (
 LANGUAGE_RE = re.compile(r"^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$")
 VIDEO_SOURCE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 VIDEO_EXTRACTION_SCHEMA_VERSION = 3
+QUEUE_CLAIM_SCHEMA_VERSION = 1
+RETURN_QUEUE_CLAIM_FIELDS = frozenset({
+    "run_id",
+    "batch_id",
+    "reprocess_generation",
+})
+ACTIVE_QUEUE_CLAIM_FIELDS = frozenset({
+    "schema_version",
+    "run_id",
+    "batch_id",
+    "claimed_at",
+    "previous_status",
+    "reprocess_generation",
+    "state",
+})
+COMPLETED_QUEUE_CLAIM_FIELDS = ACTIVE_QUEUE_CLAIM_FIELDS | frozenset({
+    "released_at",
+    "release_reason",
+    "result_status",
+})
+CLAIMABLE_PREVIOUS_STATUSES = frozenset({
+    "pending",
+    "needs-reprocessing",
+    "skipped_download_failed",
+})
+SKIPPED_RETURN_FIELDS = frozenset({
+    "filename",
+    "queue_claim",
+    "status",
+})
+TRANSCRIPT_REFERENCE_FIELDS = ("transcript_path",)
+PDF_REFERENCE_FIELDS = (
+    "slides_url",
+    "google_drive_id",
+    "slides_local_path",
+    "slides_pdf_path",
+    "pdf_path",
+)
 AUTHORED_SLIDE_FIELDS = frozenset({
     "slide_count",
     "meme_count",
@@ -96,6 +135,32 @@ class PatternCatalog:
 class VideoExtractionState:
     source_video_id: str
     trusted_slide_region: bool
+
+
+def normalize_processing_stamp(value: object) -> str:
+    """Validate and normalize a persistence timestamp.
+
+    Bare dates remain valid for legacy and explicitly day-pinned runs. A full
+    timestamp must be timezone-aware and is normalized to UTC at second
+    resolution so both persistence surfaces can compare the same value.
+    """
+    if not isinstance(value, str) or not value.strip() or value != value.strip():
+        raise ValueError("processing stamp must be a non-empty string without edge whitespace")
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        try:
+            datetime.strptime(value, "%Y-%m-%d")
+        except ValueError as exc:
+            raise ValueError(f"invalid calendar date {value!r}") from exc
+        return value
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"invalid ISO-8601 timestamp {value!r}") from exc
+    if moment.tzinfo is None or moment.utcoffset() is None:
+        raise ValueError(
+            f"timestamp {value!r} has no timezone — append an explicit offset "
+            "such as +00:00")
+    return moment.astimezone(timezone.utc).replace(microsecond=0).isoformat()
 
 
 def default_catalog_dir() -> Path:
@@ -709,32 +774,202 @@ def _validate_clear_fields(value) -> None:
             f"clear_fields path {path!r} is outside the analysis-owned allowlist")
 
 
-def _validate_queue_claim(value) -> None:
+def _validate_processed_date(value) -> None:
+    if value is None:
+        return
+    try:
+        normalize_processing_stamp(value)
+    except (TypeError, ValueError) as exc:
+        raise ReturnValidationError(
+            "processed_date must be YYYY-MM-DD or a timezone-aware ISO-8601 "
+            f"timestamp: {exc}") from exc
+
+
+def _validate_skipped_return_fields(ret: dict) -> None:
+    disallowed = sorted(set(ret) - SKIPPED_RETURN_FIELDS)
+    if disallowed:
+        raise ReturnValidationError(
+            "skipped terminal returns may only close the queue claim; they cannot "
+            "mutate or clear prior analysis fields. Remove "
+            f"{disallowed}")
+
+
+def _validate_exact_fields(value: dict, expected: frozenset[str], label: str) -> None:
+    actual = set(value)
+    if actual == expected:
+        return
+    missing = sorted(expected - actual)
+    unexpected = sorted(actual - expected)
+    details = []
+    if missing:
+        details.append(f"missing {missing}")
+    if unexpected:
+        details.append(f"unexpected {unexpected}")
+    raise ReturnValidationError(
+        f"{label} must use exactly the schema fields {sorted(expected)}; "
+        + "; ".join(details))
+
+
+def _validate_queue_claim(
+        value, *, expected_fields=RETURN_QUEUE_CLAIM_FIELDS,
+        label="queue_claim") -> None:
     if not isinstance(value, dict):
         raise ReturnValidationError(
             "queue_claim is required and must copy run_id, batch_id, and "
             "reprocess_generation from the claimed talk")
+    _validate_exact_fields(value, expected_fields, label)
     for field in ("run_id", "batch_id"):
         item = value.get(field)
         if (not isinstance(item, str) or not item or item.strip() != item or
                 any(char.isspace() for char in item)):
             raise ReturnValidationError(
-                f"queue_claim.{field} must be a non-empty token without whitespace")
+                f"{label}.{field} must be a non-empty token without whitespace")
     generation = value.get("reprocess_generation")
     if isinstance(generation, bool) or not isinstance(generation, int) or generation < 1:
         raise ReturnValidationError(
-            "queue_claim.reprocess_generation must be a positive integer")
+            f"{label}.reprocess_generation must be a positive integer")
 
 
-def validate_claim_against_talk(talk, ret, *, allow_completed=False) -> None:
-    """Match a validated return to the talk's active generation lease."""
+def _nonempty_talk_string(talk: dict, field: str) -> bool:
+    value = talk.get(field)
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _talk_has_video_source(talk: dict) -> bool:
+    return _nonempty_talk_string(talk, "video_url")
+
+
+def _talk_has_transcript_source(talk: dict) -> bool:
+    return (
+        any(_nonempty_talk_string(talk, field)
+            for field in TRANSCRIPT_REFERENCE_FIELDS)
+        or _talk_has_video_source(talk)
+    )
+
+
+def _talk_has_pptx_source(talk: dict) -> bool:
+    return _nonempty_talk_string(talk, "pptx_path")
+
+
+def _talk_has_pdf_source(talk: dict) -> bool:
+    return any(_nonempty_talk_string(talk, field) for field in PDF_REFERENCE_FIELDS)
+
+
+def _validate_stored_claim(expected: dict, filename: str) -> None:
+    state = expected.get("state")
+    expected_fields = (
+        ACTIVE_QUEUE_CLAIM_FIELDS
+        if state == "claimed"
+        else COMPLETED_QUEUE_CLAIM_FIELDS
+    )
+    label = f"{filename} queue claim"
+    _validate_queue_claim(
+        expected, expected_fields=expected_fields, label=label)
+    if expected.get("schema_version") != QUEUE_CLAIM_SCHEMA_VERSION:
+        raise ReturnValidationError(
+            f"{filename} queue claim schema_version must be "
+            f"{QUEUE_CLAIM_SCHEMA_VERSION}, got {expected.get('schema_version')!r}")
+    claimed_at = expected.get("claimed_at")
+    try:
+        normalized_claimed_at = normalize_processing_stamp(claimed_at)
+    except (TypeError, ValueError) as exc:
+        raise ReturnValidationError(
+            f"{filename} queue claim claimed_at must be timezone-aware: {exc}") from exc
+    if len(normalized_claimed_at) == 10:
+        raise ReturnValidationError(
+            f"{filename} queue claim claimed_at must be a timezone-aware timestamp, "
+            "not a bare date")
+    previous = expected.get("previous_status")
+    if previous not in CLAIMABLE_PREVIOUS_STATUSES:
+        raise ReturnValidationError(
+            f"{filename} queue claim previous_status {previous!r} is not claimable")
+    if state == "claimed":
+        return
+    try:
+        normalized_released_at = normalize_processing_stamp(expected.get("released_at"))
+    except (TypeError, ValueError) as exc:
+        raise ReturnValidationError(
+            f"{filename} completed queue claim released_at must be timezone-aware: {exc}") from exc
+    if len(normalized_released_at) == 10:
+        raise ReturnValidationError(
+            f"{filename} completed queue claim released_at must be a timezone-aware "
+            "timestamp, not a bare date")
+    if not _nonempty_talk_string(expected, "release_reason"):
+        raise ReturnValidationError(
+            f"{filename} completed queue claim must carry release_reason")
+    if expected.get("result_status") not in RETURN_STATUSES:
+        raise ReturnValidationError(
+            f"{filename} completed queue claim has invalid result_status "
+            f"{expected.get('result_status')!r}")
+
+
+def _validate_return_sources_against_talk(talk: dict, ret: dict) -> None:
+    """Bind returned provenance/evidence to sources reachable from the talk."""
+    transcript_source = ret.get("transcript_source")
+    observations = ret.get("pattern_observations")
+    evidence_sources = (
+        set(observations.get("evidence_sources") or [])
+        if isinstance(observations, dict) else set()
+    )
+    if ((transcript_source in TRANSCRIPT_SOURCES - {"none"}
+         or "transcript" in evidence_sources)
+            and not _talk_has_transcript_source(talk)):
+        raise ReturnValidationError(
+            f"{talk.get('filename', '<unknown>')} return claims transcript provenance/evidence, "
+            "but the claimed talk has no transcript reference or active video source")
+
+    slide_source = ret.get("slide_source")
+    has_pptx = _talk_has_pptx_source(talk)
+    has_pdf = _talk_has_pdf_source(talk)
+    if slide_source in {"pptx", "both"} and not has_pptx:
+        raise ReturnValidationError(
+            f"{talk.get('filename', '<unknown>')} return claims slide_source "
+            f"{slide_source!r}, but the claimed talk has no pptx_path")
+    if slide_source in {"pdf", "both"} and not has_pdf:
+        raise ReturnValidationError(
+            f"{talk.get('filename', '<unknown>')} return claims slide_source "
+            f"{slide_source!r}, but the claimed talk has no independent PDF source")
+    if slide_source == "video_extracted" and not _talk_has_video_source(talk):
+        raise ReturnValidationError(
+            f"{talk.get('filename', '<unknown>')} return claims video-extracted "
+            "slides, but the claimed talk has no active video source")
+    if "native_deck" in evidence_sources and not has_pptx:
+        raise ReturnValidationError(
+            f"{talk.get('filename', '<unknown>')} return claims native_deck evidence, "
+            "but the claimed talk has no pptx_path")
+    if "delivery_video" in evidence_sources and not _talk_has_video_source(talk):
+        raise ReturnValidationError(
+            f"{talk.get('filename', '<unknown>')} return claims delivery_video evidence, "
+            "but the claimed talk has no active video source")
+
+
+def validate_claim_against_talk(
+        talk, ret, *, allow_completed=False, require_completed=False) -> None:
+    """Match a validated return to the talk's current generation claim."""
     expected = talk.get("_queue_claim") if isinstance(talk, dict) else None
     supplied = ret.get("queue_claim") if isinstance(ret, dict) else None
     filename = talk.get("filename", "<unknown>") if isinstance(talk, dict) else "<unknown>"
-    allowed_states = {"claimed", "completed"} if allow_completed else {"claimed"}
+    if require_completed:
+        allowed_states = {"completed"}
+    elif allow_completed:
+        allowed_states = {"claimed", "completed"}
+    else:
+        allowed_states = {"claimed"}
     if not isinstance(expected, dict) or expected.get("state") not in allowed_states:
+        required = "completed queue claim" if require_completed else "active queue claim"
         raise ReturnValidationError(
-            f"{filename} has no active queue claim; refusing an unclaimed or replayed return")
+            f"{filename} has no {required}; refusing an unclaimed or replayed return")
+    _validate_stored_claim(expected, filename)
+    talk_generation = talk.get("reprocess_generation")
+    if (isinstance(talk_generation, bool) or not isinstance(talk_generation, int)
+            or talk_generation < 1):
+        raise ReturnValidationError(
+            f"{filename} talk reprocess_generation must be a positive integer")
+    if expected.get("reprocess_generation") != talk_generation:
+        raise ReturnValidationError(
+            f"{filename} active claim generation "
+            f"{expected.get('reprocess_generation')!r} disagrees with talk generation "
+            f"{talk_generation!r}")
     if not isinstance(supplied, dict):
         raise ReturnValidationError(
             f"{filename} return has no validated queue_claim")
@@ -774,6 +1009,7 @@ def validate_claim_against_talk(talk, ret, *, allow_completed=False) -> None:
             raise ReturnValidationError(
                 "structured_data.video_extraction.source_video_id "
                 f"{returned_id!r} does not match talk youtube_id {expected_id!r}")
+    _validate_return_sources_against_talk(talk, ret)
 
 
 def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
@@ -788,6 +1024,7 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
             f"status is required and must be one of {sorted(RETURN_STATUSES)}, got {status!r}")
     _validate_queue_claim(ret.get("queue_claim"))
     _validate_clear_fields(ret.get("clear_fields"))
+    _validate_processed_date(ret.get("processed_date"))
     slides_local_path = _validate_slides_local_path(ret)
 
     transcript_source = ret.get("transcript_source")
@@ -796,10 +1033,15 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
             f"transcript_source must be one of {sorted(TRANSCRIPT_SOURCES)}, "
             f"got {transcript_source!r}")
 
+    slide_source = ret.get("slide_source")
+    if slide_source is not None and slide_source not in SLIDE_SOURCES:
+        raise ReturnValidationError(
+            f"slide_source must be one of {sorted(SLIDE_SOURCES)}, got {slide_source!r}")
+
     if status not in ANALYSIS_STATUSES:
+        _validate_skipped_return_fields(ret)
         return
 
-    slide_source = ret.get("slide_source")
     if slide_source not in SLIDE_SOURCES:
         raise ReturnValidationError(
             f"slide_source is required for {status} and must be one of "
