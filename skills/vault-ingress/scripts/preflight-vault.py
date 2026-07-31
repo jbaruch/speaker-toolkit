@@ -29,6 +29,7 @@ from urllib.parse import parse_qs, urlparse
 
 REPORT_SCHEMA_VERSION = 1
 SOURCE_IDENTITY_SCHEMA_VERSION = 1
+VIDEO_EXTRACTION_SCHEMA_VERSION = 3
 
 TRANSCRIPT_SOURCES = frozenset({"youtube_auto", "whisper", "manual", "none"})
 SLIDE_SOURCES = frozenset({"pptx", "pdf", "both", "video_extracted", "none"})
@@ -540,6 +541,10 @@ class VaultPreflight:
                         actual=talk.get(self._slide_pdf_path_field(talk)),
                         artifact_path=explicit_pdf,
                     )
+                else:
+                    self._validate_video_extraction_provenance(
+                        index, explicit_pdf, severity,
+                    )
                 return
             youtube_id = self.youtube_ids.get(index)
             if youtube_id is None:
@@ -557,6 +562,10 @@ class VaultPreflight:
                         "declared video-extracted PDF artifact does not exist",
                         field="slide_source", actual="video_extracted",
                         artifact_path=pdf_path,
+                    )
+                else:
+                    self._validate_video_extraction_provenance(
+                        index, pdf_path, severity,
                     )
 
     def _transcript_path(self, talk: dict[str, Any]) -> Path | None:
@@ -603,6 +612,92 @@ class VaultPreflight:
             return None
         path = Path(value).expanduser()
         return path if path.is_absolute() else self.vault_root / path
+
+    def _validate_video_extraction_provenance(
+        self, index: int, promoted_pdf: Path, severity: str,
+    ) -> None:
+        """Require trustworthy v3 provenance before treating frames as a deck."""
+        talk = self.talks[index]
+        structured = talk.get("structured_data")
+        extraction = (
+            structured.get("video_extraction")
+            if isinstance(structured, dict) else None
+        )
+        if not isinstance(extraction, dict):
+            self.talk_add(
+                index, severity, "video_extraction_provenance_missing",
+                "video-extracted slides have no structured extraction manifest",
+                field="structured_data.video_extraction",
+                expected=f"schema {VIDEO_EXTRACTION_SCHEMA_VERSION} manifest",
+                actual=extraction, artifact_path=promoted_pdf,
+            )
+            return
+
+        errors: list[str] = []
+        if extraction.get("schema_version") != VIDEO_EXTRACTION_SCHEMA_VERSION:
+            errors.append(
+                f"schema_version must be {VIDEO_EXTRACTION_SCHEMA_VERSION}"
+            )
+        expected_id = self.youtube_ids.get(index)
+        if extraction.get("source_video_id") != expected_id:
+            errors.append("source_video_id must match the talk's YouTube identity")
+        if extraction.get("authored_slide_count") is not None:
+            errors.append("authored_slide_count must remain null for video frames")
+        unique_count = extraction.get("unique_frame_count")
+        if type(unique_count) is not int or unique_count <= 0:
+            errors.append("unique_frame_count must be a positive integer")
+        retained = extraction.get("retained_frames")
+        if not isinstance(retained, list) or (
+            type(unique_count) is int and len(retained) != unique_count
+        ):
+            errors.append("retained_frames length must equal unique_frame_count")
+        source_video = _nonempty_string(extraction.get("source_video_path"))
+        if source_video is None or not Path(source_video).expanduser().is_file():
+            errors.append("source_video_path must name the preserved source video")
+
+        artifacts = extraction.get("artifacts")
+        trusted_artifacts: list[dict[str, Any]] = []
+        if not isinstance(artifacts, list):
+            errors.append("artifacts must be an array")
+            artifacts = []
+        for artifact in artifacts:
+            if not isinstance(artifact, dict):
+                errors.append("every artifact must be an object")
+                continue
+            artifact_path = _nonempty_string(artifact.get("path"))
+            if artifact_path is None or not Path(artifact_path).expanduser().is_file():
+                errors.append("every artifact path must exist")
+            if artifact.get("source_video_id") != expected_id:
+                errors.append("every artifact source_video_id must match the talk")
+            if artifact.get("source_video_path") != source_video:
+                errors.append("every artifact source_video_path must match the manifest")
+            if artifact.get("page_count") != unique_count:
+                errors.append("every artifact page_count must equal unique_frame_count")
+            if (
+                artifact.get("artifact_scope") == "slide_region"
+                and artifact.get("crop_method") == "manual"
+                and artifact.get("crop_verified") is True
+                and artifact.get("trusted_for_authored_slide_analysis") is True
+            ):
+                trusted_artifacts.append(artifact)
+        if errors:
+            self.talk_add(
+                index, severity, "video_extraction_provenance_invalid",
+                "video extraction manifest is structurally or referentially invalid",
+                field="structured_data.video_extraction",
+                expected="complete schema-v3 manifest with existing source/artifacts",
+                actual=errors, artifact_path=promoted_pdf,
+            )
+            return
+        if extraction.get("review_required") is not False or not trusted_artifacts:
+            self.talk_add(
+                index, severity, "video_extraction_untrusted",
+                "video frames have not passed verified manual crop review",
+                field="structured_data.video_extraction.review_required",
+                expected=False,
+                actual=extraction.get("review_required"),
+                artifact_path=promoted_pdf,
+            )
 
     def _validate_source_identity(self, index: int) -> None:
         talk = self.talks[index]

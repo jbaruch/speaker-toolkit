@@ -82,6 +82,41 @@ def materialize_transcript(fixture, video_id=VIDEO_ID):
     return path
 
 
+def trusted_video_manifest(fixture, page_count=1):
+    rebuild = fixture["root"] / "slides-rebuild" / VIDEO_ID
+    rebuild.mkdir(parents=True, exist_ok=True)
+    source_video = rebuild / f"{VIDEO_ID}.mp4"
+    source_video.write_bytes(b"video fixture")
+    candidate = rebuild / f"{VIDEO_ID}.slide-region.pdf"
+    candidate.write_bytes(b"%PDF cropped fixture")
+    retained = [
+        {"page_number": page, "frame_index": page - 1,
+         "timestamp_seconds": float((page - 1) * 2)}
+        for page in range(1, page_count + 1)
+    ]
+    return {
+        "schema_version": 3,
+        "pipeline_version": "0.10.0",
+        "source_video_id": VIDEO_ID,
+        "source_video_path": str(source_video),
+        "unique_frame_count": page_count,
+        "authored_slide_count": None,
+        "retained_frames": retained,
+        "review_required": False,
+        "review_reason": None,
+        "artifacts": [{
+            "path": str(candidate),
+            "artifact_scope": "slide_region",
+            "page_count": page_count,
+            "source_video_id": VIDEO_ID,
+            "source_video_path": str(source_video),
+            "crop_method": "manual",
+            "crop_verified": True,
+            "trusted_for_authored_slide_analysis": True,
+        }],
+    }
+
+
 def finding_codes(report, severity=None):
     return {
         finding["code"]
@@ -381,6 +416,7 @@ def test_explicit_local_pdf_path_satisfies_legacy_artifact_contract(
     artifact = vault_fixture["slides"] / "descriptive-legacy-name.pdf"
     artifact.write_bytes(b"%PDF fixture")
     talk = base_talk(
+        status=("needs-reprocessing" if slide_source == "video_extracted" else "processed"),
         slide_source=slide_source,
         google_drive_id=None,
         **{field: "slides/descriptive-legacy-name.pdf"},
@@ -390,7 +426,12 @@ def test_explicit_local_pdf_path_satisfies_legacy_artifact_contract(
     report = preflight_vault.run_preflight(vault_fixture["root"])
 
     assert report["blocking_count"] == 0
-    assert not finding_codes(report)
+    if slide_source == "video_extracted":
+        assert finding_codes(report, "warning") == {
+            "video_extraction_provenance_missing"
+        }
+    else:
+        assert not finding_codes(report)
 
 
 @pytest.mark.parametrize(
@@ -430,10 +471,7 @@ def test_video_pdf_page_count_is_never_treated_as_authored_slide_count(
         slide_source="video_extracted",
         slide_count=3,
         structured_data={
-            "video_extraction": {
-                "unique_slides_count": 99,
-                "output_pdf": f"slides/{VIDEO_ID}.pdf",
-            }
+            "video_extraction": trusted_video_manifest(vault_fixture, 99),
         },
     )
     write_database(vault_fixture, [talk])
@@ -442,6 +480,67 @@ def test_video_pdf_page_count_is_never_treated_as_authored_slide_count(
 
     assert report["blocking_count"] == 0
     assert not any("slide_count" in item["code"] for item in report["findings"])
+
+
+def test_completed_legacy_video_pdf_without_provenance_is_blocking(
+    preflight_vault, vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    (vault_fixture["slides"] / f"{VIDEO_ID}.pdf").write_bytes(b"%PDF fixture")
+    write_database(
+        vault_fixture,
+        [base_talk(slide_source="video_extracted")],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "video_extraction_provenance_missing" in finding_codes(
+        report, "blocking"
+    )
+
+
+def test_requeued_legacy_video_pdf_without_provenance_is_a_warning(
+    preflight_vault, vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    (vault_fixture["slides"] / f"{VIDEO_ID}.pdf").write_bytes(b"%PDF fixture")
+    write_database(
+        vault_fixture,
+        [base_talk(status="needs-reprocessing", slide_source="video_extracted")],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["blocking_count"] == 0
+    assert "video_extraction_provenance_missing" in finding_codes(
+        report, "warning"
+    )
+
+
+def test_unverified_video_crop_cannot_support_completed_deck_analysis(
+    preflight_vault, vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    (vault_fixture["slides"] / f"{VIDEO_ID}.pdf").write_bytes(b"%PDF fixture")
+    manifest = trusted_video_manifest(vault_fixture)
+    manifest["review_required"] = True
+    manifest["review_reason"] = "auto crop needs review"
+    manifest["artifacts"][0].update({
+        "crop_method": "auto",
+        "crop_verified": False,
+        "trusted_for_authored_slide_analysis": False,
+    })
+    write_database(
+        vault_fixture,
+        [base_talk(
+            slide_source="video_extracted",
+            structured_data={"video_extraction": manifest},
+        )],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "video_extraction_untrusted" in finding_codes(report, "blocking")
 
 
 def test_absent_legacy_identity_metadata_is_not_a_finding(

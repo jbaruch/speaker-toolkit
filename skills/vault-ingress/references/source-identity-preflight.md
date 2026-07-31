@@ -190,6 +190,15 @@ Checks apply to a record with `video_url` (processable) or status `processed` /
   `slides/{google_drive_id}.pdf`.
 - Without an explicit local path, `video_extracted` requires a valid YouTube
   identity and `slides/{youtube_id}.pdf`.
+- A present video-extracted PDF is not sufficient deck evidence by itself. A
+  completed record also requires a schema-v3
+  `structured_data.video_extraction` manifest, preserved source video and
+  artifact paths, consistent frame/page provenance, `review_required: false`,
+  and a manually cropped, visually verified `slide_region` artifact marked
+  `trusted_for_authored_slide_analysis: true`. Missing, legacy, invalid, or
+  untrusted provenance is blocking for completed records and a warning for
+  requeued/pending work. Full-frame context can still support room/stage
+  observations, but never authored-slide catalog evidence.
 
 The seven stable slide-contract fault classes are:
 
