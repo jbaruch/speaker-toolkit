@@ -19,6 +19,7 @@ import os
 import re
 
 import pytest
+import yaml
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PATTERNS = os.path.join(
@@ -31,6 +32,37 @@ ABSENT_RE = re.compile(r"^- Absent \(0 pts([^)]*)\):", re.M)
 
 ENTRY_FILES = sorted(f for f in glob.glob(os.path.join(PATTERNS, "*", "*.md")))
 ANTI_FILES = [f for f in ENTRY_FILES if os.path.basename(f).startswith("_anti_")]
+ENTRY_BY_ID = {
+    os.path.basename(path)[:-3].removeprefix("_anti_"): path
+    for path in ENTRY_FILES
+}
+
+NAME_TRAP_GUARDS = {
+    "make-it-rain": (
+        "physical object in the room",
+        "screen-based demonstration does not qualify",
+    ),
+    "dead-demo": (
+        '"dead" means narratively lifeless, not technically failed',
+        "Judge the demo's narrative purpose",
+    ),
+    "cave-painting": (
+        "not a synonym for pictorial or wordless slides",
+        "one spatial canvas",
+    ),
+    "exuberant-title-top": (
+        "not a static title layout",
+        "flattened final-state slide alone is not evidence",
+    ),
+    "flyover": (
+        "not a high-level or abbreviated treatment of a topic",
+        "status or belonging comparison",
+    ),
+    "bookends": (
+        "repeated section-boundary slides",
+        "not for symmetry between the opening and closing",
+    ),
+}
 
 
 def _ids(files):
@@ -45,6 +77,15 @@ def _read(path):
 def _front(path, key):
     m = re.search(rf"^{key}:\s*(\S+)\s*$", _read(path), re.M)
     return m.group(1) if m else None
+
+
+def _metadata(path):
+    parts = _read(path).split("---", 2)
+    assert len(parts) == 3, f"{os.path.basename(path)}: malformed frontmatter"
+    metadata = yaml.safe_load(parts[1])
+    assert isinstance(metadata, dict), (
+        f"{os.path.basename(path)}: frontmatter is not a mapping")
+    return metadata
 
 
 def test_catalog_is_present():
@@ -102,6 +143,37 @@ def test_ids_are_unique():
         pid = _front(f, "id")
         assert pid not in seen, f"duplicate id {pid!r}: {seen.get(pid)} and {f}"
         seen[pid] = f
+
+
+@pytest.mark.parametrize(
+    "pattern_id,required_phrases",
+    NAME_TRAP_GUARDS.items(),
+    ids=NAME_TRAP_GUARDS,
+)
+def test_name_traps_have_explicit_disqualifiers(pattern_id, required_phrases):
+    """Known false friends must tell a fast scanner what does not qualify."""
+    text = _read(ENTRY_BY_ID[pattern_id])
+    assert "**NAME TRAP" in text, f"{pattern_id}: missing explicit name-trap guard"
+    missing = [phrase for phrase in required_phrases if phrase not in text]
+    assert not missing, f"{pattern_id}: missing disambiguators {missing}"
+
+
+def test_catalog_references_resolve():
+    """Every related/inverse reference must name a real catalog entry."""
+    ids = set(ENTRY_BY_ID)
+    dangling = []
+    for path in ENTRY_FILES:
+        metadata = _metadata(path)
+        for field in ("related_patterns", "inverse_of"):
+            references = metadata.get(field)
+            assert isinstance(references, list), (
+                f"{metadata.get('id')}: {field} must be a list")
+            dangling.extend(
+                (metadata.get("id"), field, target)
+                for target in references
+                if target not in ids
+            )
+    assert not dangling, f"dangling catalog references: {dangling}"
 
 
 @pytest.mark.parametrize("path", ENTRY_FILES, ids=_ids(ENTRY_FILES))

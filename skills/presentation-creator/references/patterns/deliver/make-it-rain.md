@@ -34,6 +34,8 @@ The key risk with Make It Rain is logistical failure. Physical props require pla
 ## When to Use / When to Avoid
 Use this pattern when you have the logistical capacity to support it and when the physical element genuinely enhances the content rather than serving as pure spectacle. It works best in smaller venues (under 200 people) where physical interaction is practical, in workshop settings where participation is expected, and in longer sessions where sustained engagement is challenging. Avoid it in large auditoriums where logistics become unwieldy, in formal settings where physical interaction would be inappropriate, or when the connection between prop and content is forced.
 
+**NAME TRAP — this requires a physical object in the room.** A large catalogue of examples, plentiful evidence, high energy, swag that is merely mentioned, or a screen-based demonstration does not qualify. Score the pattern only when a prop, physical token, furniture, or another tangible object is used or distributed during the delivery.
+
 ## Detection Heuristics
 - Physical objects are incorporated into the presentation
 - Audience members physically interact with props or each other

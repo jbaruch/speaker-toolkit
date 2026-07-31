@@ -37,6 +37,8 @@ The root cause is a failure to Know Your Audience — not in the research sense 
 ## When to Use / When to Avoid
 This is an antipattern and should always be avoided. Share your home-region or high-scale experience freely, but never by positioning the present audience as the lesser term in a comparison. The guardrail is a simple substitution test: if a sentence's structure is "you here probably don't X, but where I'm from we do," rewrite it so the audience is not the foil. There is no scenario where diminishing the room in front of you advances the goals of the talk.
 
+**NAME TRAP — this is not a high-level or abbreviated treatment of a topic.** Skimming material, omitting detail, or moving quickly across content does not qualify. The antipattern requires a status or belonging comparison that positions the present room, region, employer, or community as inferior.
+
 ## Detection Heuristics
 - Speaker repeatedly contrasts the local audience/region unfavorably with their own home region, employer, or scene
 - Phrasing that presumes the audience is behind, unaware, or not the "real" audience ("you might not have noticed it here, but...")

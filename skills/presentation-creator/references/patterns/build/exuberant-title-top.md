@@ -36,6 +36,8 @@ Use Exuberant Title Top for slides where the title itself is the primary message
 
 Avoid using it on every slide, which dilutes the emphasis effect. Also avoid it on slides where the title is merely a label (e.g., "Agenda" or "Q&A") rather than a substantive statement. The pattern works best when the title is a claim, question, or insight that benefits from a moment of isolated contemplation.
 
+**NAME TRAP — this is not a static title layout.** A large or expressive title already positioned at the top of a slide does not qualify. The title must first appear centered and isolated, then move to the top before the body appears; a flattened final-state slide alone is not evidence of the pattern.
+
 ## Detection Heuristics
 When scoring talks, look for titles that appear centered on screen before migrating to the top position as body content builds in. The key signal is the temporal isolation of the title — it gets its own moment before other content appears. Compare the live presentation to printed handouts to confirm the effect is achieved through animation rather than static layout.
 

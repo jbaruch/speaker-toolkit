@@ -36,6 +36,8 @@ Creating a Cave Painting presentation requires thinking about spatial relationsh
 ## When to Use / When to Avoid
 Use Cave Painting for topics with inherent spatial or hierarchical structure: system architectures, process flows, geographic data, organizational structures, or any subject where seeing the whole while examining parts adds value. Avoid for strictly linear narratives that do not benefit from spatial context, for audiences known to be sensitive to motion, or when the presentation will be viewed primarily as exported slides (the spatial relationship is lost in a PDF export).
 
+**NAME TRAP — this is not a synonym for pictorial or wordless slides.** The pattern requires one spatial canvas plus zoom or pan navigation that repeatedly exposes the relationship between the whole and its parts. A linear deck of illustrations, full-bleed images, or slides with little text does not qualify.
+
 ## Detection Heuristics
 The vault should look for evidence of canvas-based spatial organization: zoom transitions between sections, a visible overall structure that contextualizes individual sections, and the characteristic "pull back to see the whole, zoom in for detail" rhythm.
 

@@ -36,6 +36,8 @@ This is an antipattern and should always be avoided. Never use a demonstration a
 
 If you find yourself reaching for a demo because you have time to fill, stop and prepare more expositional content instead. If you genuinely want to include a demo, integrate it into your narrative from the beginning rather than appending it as an afterthought.
 
+**NAME TRAP — "dead" means narratively lifeless, not technically failed.** A purposeful demo that crashes, times out, or produces a wrong result is not this antipattern when the attempt still advances the argument or supplies evidence. Judge the demo's narrative purpose, not whether the software completed successfully.
+
 ## Detection Heuristics
 When scoring talks, evaluate whether each demonstration is preceded by a problem statement and followed by a synthesis. Demos that begin with "let me show you the tool" without narrative framing are strong Dead Demo signals. Also note the demo's position in the talk — demos placed at the end as apparent time fillers are suspicious. Watch the audience during the demo: if engagement drops visibly, the demo is likely serving as padding rather than content.
 
