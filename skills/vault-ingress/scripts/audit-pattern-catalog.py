@@ -904,7 +904,11 @@ def _validate_graph(
                     target,
                 ))
             target_entry = entries[target]
-            pair = tuple(sorted((pattern_id, target)))
+            pair = (
+                (pattern_id, target)
+                if pattern_id <= target
+                else (target, pattern_id)
+            )
             if (
                 entry.entry_type == target_entry.entry_type
                 and pair not in same_polarity_pairs

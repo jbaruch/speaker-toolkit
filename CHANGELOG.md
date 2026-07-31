@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.19.0 — 2026-07-31
+
+### feat(vault-ingress) — make source identity and evidence scope enforceable
+
+The ingress pipeline now treats provenance as a contract instead of descriptive
+metadata. A shared validator binds every return to its queue generation, verifies
+source capability and evidence scope, and rejects stale, malformed, or
+cross-source claims before persistence. Queue leases are recoverable, claims can
+be driven by usable video, slide, or transcript evidence, and guarded repair
+plans can correct source metadata without changing unrelated talk fields.
+
+Video extraction now separates full-frame context from a manually verified slide
+region. Only a schema-v3 provenance manifest tied to the source video and the
+verified crop can promote a video-derived deck into the canonical slide path;
+context-only analysis may still describe the delivered talk but cannot invent
+authored-slide counts or design claims. Native PPTX extraction also recovers
+grouped shapes, tables, graphic frames, backgrounds, and damaged ZIP members
+while recording the input digest and pipeline version.
+
+Source audits now cover YouTube identity, duplicates, rejection ledgers, artifact
+paths, provider facts, live reachability, and title/event correspondence. The
+catalog has deterministic structural and semantic audits, explicit source gates,
+mirrored inverse relationships, unambiguous names for confusable patterns, and a
+feedback aggregator that separates accepted observations from malformed legacy
+returns and proposed additions.
+
+This release intentionally tightens the ingress contract: unavailable catalog
+gates must be recorded as `not_evaluable`, processed video-derived slide evidence
+requires the schema-v3 verified-region provenance chain, and stale queue
+generations cannot be persisted.
+
 ## 0.18.73 — 2026-07-28
 
 ### fix(vault-ingress) — a bare-int `pattern_score` no longer silently drops the scalar

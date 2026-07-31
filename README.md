@@ -132,7 +132,7 @@ The toolkit is built on six skills connected by a shared **rhetoric vault** — 
 ```
 
 **Vault skills (analysis):**
-- **vault-ingress** parses your recorded talks (YouTube transcripts + slides from PPTX files or Google Drive PDFs) and extracts rhetoric patterns across 14 dimensions — opening hooks, humor style, audience interaction, slide design, pacing, transitions, verbal signatures, and more. It also scores each talk against the Presentation Patterns taxonomy.
+- **vault-ingress** parses recorded talks from transcripts, native decks, PDFs, or video and extracts rhetoric patterns across 14 dimensions — opening hooks, humor style, audience interaction, slide design, pacing, transitions, verbal signatures, and more. Before scoring, deterministic catalog and source-identity gates verify the evidence; video-derived slide claims require a provenance-bound, manually verified slide-region artifact. Recoverable queue leases and validated returns keep interrupted or stale batches from corrupting the vault.
 - **vault-clarification** runs interactive sessions to validate findings and capture deliberate intent.
 - **vault-profile** generates a structured speaker profile, including a pattern profile with mastery levels and signature combinations, after enough talks are analyzed.
 
