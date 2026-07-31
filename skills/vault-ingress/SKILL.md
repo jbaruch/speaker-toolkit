@@ -40,6 +40,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | [references/known-issues.md](references/known-issues.md) | Edge cases — wide-angle recordings, Whisper hallucination, non-speaker talks |
 | `skills/vault-ingress/scripts/persist-results.py` | Deterministically merge batch subagent returns into the tracking DB (Step 4) |
 | `skills/vault-ingress/scripts/write-analysis.py` | Render per-talk `analyses/*.md` from the same batch returns (Step 4) |
+| `skills/vault-ingress/scripts/validate-returns.py` | Reject malformed schemas, statuses, scores, and catalog observations before either Step 4 writer runs |
 | `skills/vault-ingress/scripts/pptx-extraction.py` | Extract visual design data from .pptx files |
 | `skills/vault-ingress/scripts/video-slide-extraction.py` | Extract slides from video via ffmpeg + perceptual dedup |
 | `skills/vault-ingress/scripts/batch-download-videos.sh` | Parallel video download for batch processing |
@@ -137,6 +138,13 @@ its module docstring and the constants above `validate_transcript`.
 Runs after each batch inside Step 3's loop (not as a separate post-loop
 phase). Mechanical persistence of the batch's subagent JSON returns:
 
+- **Validate the whole batch before any write.** Run
+  `python3 skills/vault-ingress/scripts/validate-returns.py batch-returns.json`.
+  Stop on a non-zero exit and repair the named return. The validator enforces the
+  terminal status, return field types, catalog ID and polarity, observability,
+  confidence and evidence, score arithmetic, co-presenter shape, language code,
+  and all catalog-feedback lanes. Both writers import this same validator, so
+  bypassing the standalone command cannot weaken the boundary.
 - **Update tracking DB — deterministic merge, NOT hand-mapping.** Collect the
   batch's subagent JSON returns into an array file (`batch-returns.json`) and run
   `python3 skills/vault-ingress/scripts/persist-results.py {vault_root}/tracking-database.json batch-returns.json`.
@@ -149,6 +157,10 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   `skills/vault-ingress/scripts/persist-results.py` (top-of-file docstring and the `PROMOTE` list) — to make
   a new field queryable, extend the return schema and that list; never reintroduce
   manual mapping.
+  A corrective reparse that needs to remove an earlier value must declare its
+  analysis-owned dotted paths in `clear_fields`; empty values remain additive
+  no-ops. The script clears matching promoted scalars too, stamps the exact
+  catalog fingerprint and scoring-schema version, and writes the DB atomically.
 - **Write per-talk analysis files — run the script, do NOT hand-write them.** Run
   `python3 skills/vault-ingress/scripts/write-analysis.py batch-returns.json {vault_root}/analyses --talks {vault_root}/tracking-database.json`
   over the SAME `batch-returns.json` the merge consumed, so the DB and the files

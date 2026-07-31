@@ -38,8 +38,8 @@ Usage:
     --run-date sets the "Processed" line when a return omits `processed_date`,
     matching persist-results.py's stamping so the DB and the file agree.
 
-    Writes one file per PROCESSED return; a return whose status is present and
-    not in PROCESSED_STATUSES is skipped rather than allowed to overwrite an
+    Writes one file per PROCESSED return; a return whose required terminal status
+    is not in PROCESSED_STATUSES is skipped rather than allowed to overwrite an
     earlier run's good file with a stub. Prints a JSON summary to stdout:
         {"written": <int>, "dir": "<path>",
          "files": [{"filename": "...", "path": "...", "bytes": <int>}],
@@ -53,7 +53,14 @@ Example:
 import json
 import os
 import sys
+import tempfile
 from datetime import date
+
+from return_validation import (
+    ANALYSIS_STATUSES,
+    ReturnValidationError,
+    validate_batch,
+)
 
 # structured_data keys rendered as their own table rather than inline, because
 # they are per-slide row collections and read as noise in a bullet list.
@@ -66,9 +73,7 @@ SCALARS = (str, int, float, bool)
 # a skipped status has no analysis to render, and writing one anyway would
 # replace a good file from an earlier run with a near-empty stub — the file is
 # keyed on the talk, so a later skip silently destroys an earlier success.
-# A return with NO status is written: status is optional in the return schema
-# and its absence is not evidence of a skip.
-PROCESSED_STATUSES = frozenset({"processed", "processed_partial"})
+PROCESSED_STATUSES = ANALYSIS_STATUSES
 
 
 def as_prose(value):
@@ -290,6 +295,25 @@ def safe_output_name(filename):
     return base if base.lower().endswith(".md") else base + ".md"
 
 
+def atomic_write_text(path, body):
+    """Replace one analysis only after its complete body is on disk."""
+    directory = os.path.dirname(os.path.abspath(path)) or "."
+    basename = os.path.basename(path)
+    fd, temp_path = tempfile.mkstemp(prefix=f".{basename}.", suffix=".tmp", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(body)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+    except BaseException:
+        try:
+            os.unlink(temp_path)
+        except FileNotFoundError:
+            pass
+        raise
+
+
 def load_json(path, label):
     """Read and parse a JSON file, failing visibly with operator guidance."""
     try:
@@ -342,9 +366,10 @@ def main():
     batch_path, out_dir, run_date, talks_path = parse_args(sys.argv[1:])
 
     returns = load_json(batch_path, "batch-returns")
-    if not isinstance(returns, list):
-        print(f"ERROR: {batch_path} must be a JSON array of subagent returns, "
-              f"got {type(returns).__name__}", file=sys.stderr)
+    try:
+        catalog = validate_batch(returns)
+    except ReturnValidationError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
 
     titles = {}
@@ -365,28 +390,24 @@ def main():
               f"path exists as a directory and is writable", file=sys.stderr)
         sys.exit(1)
 
-    written, skipped = [], []
+    # Render the entire batch before touching the output directory. A malformed
+    # late entry cannot leave earlier analysis files replaced.
+    staged, skipped = [], []
     for i, ret in enumerate(returns):
-        if not isinstance(ret, dict):
-            print(f"ERROR: batch-returns entry {i} is a {type(ret).__name__}, not a "
-                  f"subagent return object; check that {batch_path} is an array of "
-                  f"returns and not an array of filenames or paths", file=sys.stderr)
-            sys.exit(1)
         name = ret.get("filename")
-        if not name:
-            print("ERROR: a return has no `filename` field; cannot place its "
-                  "analysis file", file=sys.stderr)
-            sys.exit(1)
         status = ret.get("status")
-        if status and status not in PROCESSED_STATUSES:
+        if status not in PROCESSED_STATUSES:
             skipped.append({"filename": name, "status": status})
             continue
         safe_name = safe_output_name(name)
         path = os.path.join(out_dir, safe_name)
         body = render_analysis(ret, title=titles.get(name), run_date=run_date)
+        staged.append((name, path, body))
+
+    written = []
+    for name, path, body in staged:
         try:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(body)
+            atomic_write_text(path, body)
         except OSError as e:
             print(f"ERROR: cannot write analysis file {path}: {e} — check the "
                   f"output directory is writable and has free space", file=sys.stderr)
@@ -394,7 +415,8 @@ def main():
         written.append({"filename": name, "path": path, "bytes": len(body.encode())})
 
     json.dump({"written": len(written), "dir": out_dir, "files": written,
-               "skipped": skipped}, sys.stdout, ensure_ascii=False)
+               "skipped": skipped, "pattern_catalog_fingerprint": catalog.fingerprint},
+              sys.stdout, ensure_ascii=False)
     sys.stdout.write("\n")
 
 

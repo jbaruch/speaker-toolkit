@@ -97,6 +97,12 @@ def persist_results():
 
 
 @pytest.fixture(scope="session")
+def return_validation():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "return_validation.py"), "return_validation")
+
+
+@pytest.fixture(scope="session")
 def write_analysis():
     return _import_script(os.path.join(SCRIPTS_VI, "write-analysis.py"), "write_analysis")
 

@@ -10,19 +10,21 @@ from the merge loop — every schema-declared field a subagent returns is persis
 and the queryable scalars are promoted to the talk's top level.
 
 For each return (matched to a talk by `filename`) it:
-  1. Sets the scalar result fields (status, processed_date, rhetoric_notes,
+  1. Validates the complete batch against the shared return and catalog contract.
+  2. Sets the scalar result fields (status, processed_date, rhetoric_notes,
      areas_for_improvement, adherence_assessment, transcript_source). A return
      that omits `processed_date` is stamped with the run date, because otherwise
      the talk keeps whatever date the previous run set and the DB cannot answer
      "which talks has this reparse actually covered".
-  2. Deep-merges the full `structured_data` and `verbatim_examples` blocks —
+  3. Applies explicit `clear_fields`, then deep-merges the full `structured_data`
+     and `verbatim_examples` blocks —
      additive: dicts recurse, new non-empty values win, existing data is never
      clobbered by missing/empty values (re-runs refine, never wipe).
-  3. Normalizes `pattern_observations` from the subagent's
+  4. Normalizes `pattern_observations` from the subagent's
      {patterns_detected, antipatterns_detected, pattern_score:{score}} shape into
      the DB's {pattern_ids, antipattern_ids, pattern_score:int} shape, keeping the
      detailed arrays too (Section 15 aggregation reads antipatterns_detected).
-  4. Promotes the declared queryable scalars (PROMOTE) to the talk's top level so
+  5. Promotes the declared queryable scalars (PROMOTE) to the talk's top level so
      they are directly queryable, not buried in structured_data or rhetoric_notes.
 
 It does NOT touch rhetoric-style-summary.md or the analysis files — those are
@@ -34,7 +36,7 @@ Usage:
 
     batch-returns.json is a JSON array of subagent return objects (the shape in
     references/schemas-db.md -> "Per-Talk Subagent Return Schema"). The DB is
-    rewritten in place; a structured JSON summary is printed to stdout:
+    replaced atomically; a structured JSON summary is printed to stdout:
         {"persisted": <int>, "db_path": "<path>",
          "run_date": "<YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS+00:00>",
          "talks": [{"filename": "...", "status": "...", "promoted": ["..."],
@@ -58,8 +60,16 @@ Example:
 """
 
 import json
+import os
 import sys
+import tempfile
 from datetime import datetime, timezone
+
+from return_validation import (
+    ANALYSIS_STATUSES,
+    ReturnValidationError,
+    validate_batch,
+)
 
 
 def default_stamp(now=None):
@@ -103,12 +113,15 @@ def normalize_stamp(value):
 # v2 documents `transcript_source` as optional and gives ABSENT a meaning —
 # provenance unknown, distinct from the explicit value `none` (no transcript).
 #
-# The bump is ADDITIVE, which `rules/stateful-artifacts.md` Cross-Pipeline Schema
-# Bumps permits without a staged rollout: a v1 reader reads a v2 record
-# unchanged, because v2 removes a guarantee rather than adding a field. Readers
-# do not gate on this value yet — that contract is #147, deliberately sequenced
-# after the in-flight reparse so writer and readers do not skew mid-run.
-TALK_SCHEMA_VERSION = 2
+# v3 adds optional scoring-generation identity fields and explicit corrective
+# clear semantics. Existing readers ignore the new metadata; older records stay
+# readable and acquire generation identity on their next validated analysis.
+TALK_SCHEMA_VERSION = 3
+
+# Incremented when score meaning or observation validation changes. The catalog
+# content hash below identifies the exact taxonomy snapshot; this integer names
+# the scoring contract applied to that snapshot.
+PATTERN_SCORING_SCHEMA_VERSION = 2
 
 # Queryable scalars promoted from the subagent return onto the talk's top level.
 # (top_level_field, dotted source path within the return). To add a new queryable
@@ -122,6 +135,7 @@ PROMOTE = [
     ("narrative_arc_type",         "structured_data.narrative_arc_type"),
     ("audience_interaction_count", "structured_data.audience_interaction_count"),
     ("co_presenter",               "structured_data.co_presenter"),
+    ("co_presenters",              "structured_data.co_presenters"),
     ("delivery_language",          "structured_data.delivery_language"),
 ]
 
@@ -132,8 +146,14 @@ PROMOTE = [
 # Scalar result fields copied verbatim when present in the return.
 SCALARS = [
     "status", "processed_date", "rhetoric_notes", "areas_for_improvement",
-    "adherence_assessment", "transcript_source",
+    "adherence_assessment", "transcript_source", "slide_source",
 ]
+
+PROMOTED_BY_STRUCTURED_KEY = {
+    path.removeprefix("structured_data."): field
+    for field, path in PROMOTE
+    if path.startswith("structured_data.") and "." not in path.removeprefix("structured_data.")
+}
 
 
 def is_empty(v):
@@ -166,6 +186,35 @@ def deep_merge(dst, src):
         else:
             dst[key] = val
     return dst
+
+
+def _delete_path(obj, parts):
+    """Delete an existing dotted path. Missing paths are valid idempotent clears."""
+    current = obj
+    for part in parts[:-1]:
+        if not isinstance(current, dict) or part not in current:
+            return False
+        current = current[part]
+    if not isinstance(current, dict):
+        return False
+    return current.pop(parts[-1], None) is not None
+
+
+def apply_clear_fields(talk, paths):
+    """Apply validated corrective clears and keep promoted scalars consistent."""
+    cleared = []
+    for path in paths or []:
+        parts = path.split(".")
+        if _delete_path(talk, parts):
+            cleared.append(path)
+        if len(parts) == 2 and parts[0] == "structured_data":
+            promoted = PROMOTED_BY_STRUCTURED_KEY.get(parts[1])
+            if promoted and talk.pop(promoted, None) is not None:
+                cleared.append(promoted)
+        if (len(parts) == 2 and parts[0] == "pattern_observations" and
+                parts[1] == "pattern_score" and talk.pop("pattern_score", None) is not None):
+            cleared.append("pattern_score")
+    return cleared
 
 
 def require_mapping(ret, field):
@@ -295,8 +344,10 @@ def normalize_pattern_observations(existing, patterns, antipatterns, score):
     return obs
 
 
-def merge_talk(talk, ret, run_date=None):
-    """Merge one return into its talk. Returns (promoted, stamped, coerced_score).
+def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None):
+    """Merge one return into its talk.
+
+    Returns (promoted, stamped, coerced_score, cleared).
 
     Every block is validated BEFORE anything is written, so a malformed return
     leaves the talk untouched rather than half-merged. `run_date` stamps
@@ -310,6 +361,7 @@ def merge_talk(talk, ret, run_date=None):
     antipatterns = require_detections(observations, "antipatterns_detected")
     score, coerced_score = resolve_pattern_score(observations, patterns, antipatterns)
 
+    cleared = apply_clear_fields(talk, ret.get("clear_fields"))
     talk["schema_version"] = TALK_SCHEMA_VERSION
     for f in SCALARS:
         if f in ret and not is_empty(ret[f]):
@@ -342,7 +394,12 @@ def merge_talk(talk, ret, run_date=None):
     if score is not None:
         talk["pattern_score"] = score
         promoted.append("pattern_score")
-    return promoted, stamped, coerced_score
+    if ret.get("status") in ANALYSIS_STATUSES:
+        talk["pattern_scoring_schema_version"] = PATTERN_SCORING_SCHEMA_VERSION
+        if catalog_fingerprint:
+            talk["pattern_catalog_fingerprint"] = catalog_fingerprint
+        talk.pop("processing_claim", None)
+    return promoted, stamped, coerced_score, cleared
 
 
 def migrate_records(db):
@@ -354,9 +411,9 @@ def migrate_records(db):
     tell an unversioned record from one this writer had never seen, which is the
     ambiguity the version exists to remove.
 
-    The migration is a stamp, not a transform: v1 to v2 removes a documented
-    guarantee about `transcript_source` rather than changing any stored value,
-    so no record needs rewriting to satisfy v2.
+    The migration is a stamp, not a transform: v2 to v3 adds optional generation
+    metadata written only when a validated analysis is merged. No existing field
+    changes representation, so records need no content rewrite.
     """
     migrated = 0
     for talk in db.get("talks", []):
@@ -364,6 +421,29 @@ def migrate_records(db):
             talk["schema_version"] = TALK_SCHEMA_VERSION
             migrated += 1
     return migrated
+
+
+def atomic_write_json(path, payload):
+    """Replace a JSON artifact atomically after flushing the complete temp file."""
+    directory = os.path.dirname(os.path.abspath(path)) or "."
+    basename = os.path.basename(path)
+    try:
+        fd, temp_path = tempfile.mkstemp(prefix=f".{basename}.", suffix=".tmp", dir=directory)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2, ensure_ascii=False)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_path, path)
+        except BaseException:
+            try:
+                os.unlink(temp_path)
+            except FileNotFoundError:
+                pass
+            raise
+    except OSError as exc:
+        raise ValueError(f"cannot atomically write tracking database {path}: {exc}") from exc
 
 
 def load_json(path, label):
@@ -433,38 +513,54 @@ def main():
 
     db = load_json(db_path, "tracking database")
     returns = load_json(batch_path, "batch-returns")
-    if not isinstance(returns, list):
-        print(f"ERROR: {batch_path} must be a JSON array of subagent returns, "
-              f"got {type(returns).__name__}", file=sys.stderr)
+    try:
+        catalog = validate_batch(returns)
+    except ReturnValidationError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    # Migrate the whole artifact, not just the talks this batch touches.
-    migrated = migrate_records(db)
+    if not isinstance(db, dict) or not isinstance(db.get("talks"), list):
+        print(f"ERROR: {db_path} is not a tracking database — expected a JSON "
+              "object with a `talks` array", file=sys.stderr)
+        sys.exit(1)
+    names = [talk.get("filename") for talk in db["talks"] if isinstance(talk, dict)]
+    duplicates = sorted({name for name in names if name and names.count(name) > 1})
+    if duplicates:
+        print(f"ERROR: tracking database has duplicate filenames: {duplicates}", file=sys.stderr)
+        sys.exit(1)
+    by_name = {talk.get("filename"): talk for talk in db["talks"] if isinstance(talk, dict)}
+    missing = [ret["filename"] for ret in returns if ret["filename"] not in by_name]
+    if missing:
+        print(f"ERROR: no talk in DB matches return filename(s): {missing}", file=sys.stderr)
+        sys.exit(1)
 
-    by_name = {t.get("filename"): t for t in db.get("talks", [])}
+    # All input, catalog and identity validation is complete before the in-memory
+    # artifact changes. A bad final return cannot leave an earlier return applied.
+    migrated = migrate_records(db)
     summary = []
     for ret in returns:
         name = ret.get("filename")
         talk = by_name.get(name)
-        if talk is None:
-            # Fail visibly — a return with no matching talk means an upstream
-            # mismatch, not something to silently skip.
-            print(f"ERROR: no talk in DB matches return filename: {name!r}", file=sys.stderr)
-            sys.exit(1)
         try:
-            promoted, stamped, coerced = merge_talk(talk, ret, run_date)
+            promoted, stamped, coerced, cleared = merge_talk(
+                talk, ret, run_date, catalog.fingerprint)
         except ValueError as exc:
             print(f"ERROR: {name}: {exc}", file=sys.stderr)
             sys.exit(1)
         summary.append({"filename": name, "status": talk.get("status"),
                         "promoted": promoted, "stamped_processed_date": stamped,
-                        "coerced_pattern_score": coerced})
+                        "coerced_pattern_score": coerced, "cleared": cleared})
 
-    with open(db_path, "w", encoding="utf-8") as f:
-        json.dump(db, f, indent=2, ensure_ascii=False)
+    try:
+        atomic_write_json(db_path, db)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     json.dump({"persisted": len(summary), "db_path": db_path, "run_date": run_date,
                "schema_version": TALK_SCHEMA_VERSION, "migrated_records": migrated,
+               "pattern_scoring_schema_version": PATTERN_SCORING_SCHEMA_VERSION,
+               "pattern_catalog_fingerprint": catalog.fingerprint,
                "talks": summary}, sys.stdout, ensure_ascii=False)
     sys.stdout.write("\n")
 

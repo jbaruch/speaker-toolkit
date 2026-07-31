@@ -18,8 +18,12 @@ def _return(**overrides):
         "status": "processed",
         "processed_date": "2026-06-18",
         "transcript_source": "youtube_auto",
+        "slide_source": "pptx",
         "rhetoric_notes": "notes",
         "areas_for_improvement": "improve",
+        "adherence_assessment": "above baseline",
+        "new_patterns": "",
+        "summary_updates": "",
         "structured_data": {
             "delivery_language": "en",
             "co_presenter": False,
@@ -34,11 +38,23 @@ def _return(**overrides):
         "verbatim_examples": {"jokes": ["j1"]},
         "pattern_observations": {
             "patterns_detected": [
-                {"pattern_id": "narrative-arc", "confidence": "strong"},
-                {"pattern_id": "bookends", "confidence": "moderate"},
+                {"pattern_id": "narrative-arc", "confidence": "strong",
+                 "evidence": "The talk follows a four-act argument."},
+                {"pattern_id": "bookends", "confidence": "moderate",
+                 "evidence": "Repeated dividers mark section boundaries."},
             ],
-            "antipatterns_detected": [{"pattern_id": "shortchanged", "confidence": "weak"}],
-            "pattern_score": {"patterns_used": 8, "antipatterns_detected": 1, "score": 7},
+            "antipatterns_detected": [
+                {"pattern_id": "shortchanged", "confidence": "weak",
+                 "evidence": "The close is compressed."},
+            ],
+            "pattern_score": {"patterns_used": 2, "antipatterns_detected": 1, "score": 1},
+        },
+        "catalog_feedback": {
+            "unmatched_observations": [],
+            "confusable_pairs": [],
+            "definition_problems": [],
+            "scoring_problems": [],
+            "tensions": [],
         },
     }
     ret.update(overrides)
@@ -65,7 +81,7 @@ def test_promotes_queryable_scalars(persist_results):
     assert talk["co_presenter"] is False  # boolean false is meaningful, not "empty"
     assert talk["opening_type"] == "demo_cold_open"
     assert talk["illustration_style"] == "comic_book"
-    assert talk["pattern_score"] == 7
+    assert talk["pattern_score"] == 1
     assert talk["audience_interaction_count"] == 3
 
 
@@ -101,7 +117,7 @@ def test_pattern_observations_normalized(persist_results):
     obs = talk["pattern_observations"]
     assert obs["pattern_ids"] == ["narrative-arc", "bookends"]
     assert obs["antipattern_ids"] == ["shortchanged"]
-    assert obs["pattern_score"] == 7  # flattened from {"score": 7}
+    assert obs["pattern_score"] == 1  # flattened from {"score": 1}
     assert len(obs["patterns_detected"]) == 2  # detailed arrays kept for Section 15
 
 
@@ -120,22 +136,23 @@ def test_run_date_stamped_when_return_omits_processed_date(persist_results):
     ret = _return()
     del ret["processed_date"]
     talk = _talk(processed_date="2026-04-09")
-    _, stamped, _ = persist_results.merge_talk(talk, ret, run_date="2026-07-26")
+    _, stamped, _, _ = persist_results.merge_talk(talk, ret, run_date="2026-07-26")
     assert talk["processed_date"] == "2026-07-26"
     assert stamped is True
 
 
 def test_return_processed_date_wins_over_run_date(persist_results):
     talk = _talk()
-    _, stamped, _ = persist_results.merge_talk(talk, _return(), run_date="2026-07-26")
+    _, stamped, _, _ = persist_results.merge_talk(
+        talk, _return(), run_date="2026-07-26")
     assert talk["processed_date"] == "2026-06-18"
     assert stamped is False
 
 
 def test_empty_processed_date_is_stamped(persist_results):
     talk = _talk(processed_date="2026-04-09")
-    _, stamped, _ = persist_results.merge_talk(talk, _return(processed_date=""),
-                                            run_date="2026-07-26")
+    _, stamped, _, _ = persist_results.merge_talk(
+        talk, _return(processed_date=""), run_date="2026-07-26")
     assert talk["processed_date"] == "2026-07-26"
     assert stamped is True
 
@@ -144,7 +161,7 @@ def test_no_run_date_leaves_processed_date_untouched(persist_results):
     ret = _return()
     del ret["processed_date"]
     talk = _talk(processed_date="2026-04-09")
-    _, stamped, _ = persist_results.merge_talk(talk, ret)
+    _, stamped, _, _ = persist_results.merge_talk(talk, ret)
     assert talk["processed_date"] == "2026-04-09"
     assert stamped is False
 
@@ -390,7 +407,7 @@ def test_bare_int_contradicting_the_arrays_fails_loudly(persist_results, tmp_pat
         capture_output=True, text=True,
     )
     assert result.returncode == 1
-    assert "Refusing to guess" in result.stderr
+    assert "2 patterns minus 1 antipatterns is 1" in result.stderr
     assert "42" in result.stderr
 
 
@@ -473,7 +490,8 @@ def test_schema_version_is_stamped_over_an_older_value(persist_results, tmp_path
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
-    assert json.loads(db.read_text())["talks"][0]["schema_version"] == 2
+    assert (json.loads(db.read_text())["talks"][0]["schema_version"] ==
+            persist_results.TALK_SCHEMA_VERSION)
 
 
 @pytest.mark.parametrize("block", ["structured_data", "verbatim_examples",
@@ -573,5 +591,115 @@ def test_score_object_without_a_score_key_fails_loudly(persist_results, tmp_path
         capture_output=True, text=True,
     )
     assert result.returncode == 1
-    assert "no `score` key" in result.stderr
+    assert "pattern_score.score must be an integer" in result.stderr
     assert "pattern_score" not in json.loads(db.read_text())["talks"][0]
+
+
+def test_clear_fields_removes_contaminated_values_and_promoted_scalars(
+        persist_results, tmp_path):
+    """A corrective reparse can explicitly remove claims disproved by artifacts."""
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    talk = _talk(
+        slide_count=999,
+        structured_data={"slide_count": 999, "stale_claim": "borrowed deck"},
+        verbatim_examples={"jokes": ["quote from a sibling delivery"]},
+    )
+    ret = _return(clear_fields=[
+        "structured_data.slide_count",
+        "structured_data.stale_claim",
+        "verbatim_examples.jokes",
+    ])
+    del ret["structured_data"]["slide_count"]
+    ret["verbatim_examples"]["jokes"] = []
+    db.write_text(json.dumps({"talks": [talk]}))
+    batch.write_text(json.dumps([ret]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    assert "slide_count" not in stored
+    assert "slide_count" not in stored["structured_data"]
+    assert "stale_claim" not in stored["structured_data"]
+    assert "jokes" not in stored["verbatim_examples"]
+    report = json.loads(result.stdout)
+    assert "structured_data.slide_count" in report["talks"][0]["cleared"]
+    assert "slide_count" in report["talks"][0]["cleared"]
+
+
+def test_pattern_score_clear_removes_both_nested_and_promoted_value(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    talk = _talk(
+        pattern_score=99,
+        pattern_observations={"pattern_score": 99, "pattern_ids": ["narrative-arc"]},
+    )
+    ret = _return(clear_fields=["pattern_observations.pattern_score"])
+    # The valid replacement score is written after the clear; the important
+    # invariant is that no old 99 survives on either surface.
+    db.write_text(json.dumps({"talks": [talk]}))
+    batch.write_text(json.dumps([ret]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    assert stored["pattern_score"] == 1
+    assert stored["pattern_observations"]["pattern_score"] == 1
+
+
+def test_catalog_generation_is_stamped_and_processing_claim_is_closed(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    talk = _talk(processing_claim={"run_id": "repair", "claimed_at": "2026-07-31"})
+    db.write_text(json.dumps({"talks": [talk]}))
+    batch.write_text(json.dumps([_return()]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    stored = json.loads(db.read_text())["talks"][0]
+    assert stored["pattern_scoring_schema_version"] == \
+        persist_results.PATTERN_SCORING_SCHEMA_VERSION
+    assert stored["pattern_catalog_fingerprint"] == report["pattern_catalog_fingerprint"]
+    assert "processing_claim" not in stored
+
+
+def test_missing_status_rejects_the_whole_batch_without_migrating_db(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    original = {"talks": [_talk()]}
+    invalid = _return()
+    del invalid["status"]
+    db.write_text(json.dumps(original))
+    batch.write_text(json.dumps([_return(filename="talk.md"), invalid]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert "status is required" in result.stderr
+    assert json.loads(db.read_text()) == original
+
+
+def test_duplicate_db_filenames_are_rejected_before_write(persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    original = {"talks": [_talk(), _talk()]}
+    db.write_text(json.dumps(original))
+    batch.write_text(json.dumps([_return()]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert "duplicate filenames" in result.stderr
+    assert json.loads(db.read_text()) == original

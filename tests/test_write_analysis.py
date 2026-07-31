@@ -25,6 +25,8 @@ def _return(**overrides):
         "rhetoric_notes": "DIMENSION 1 -- OPENING: cold open.",
         "areas_for_improvement": "1) Tighten the close.",
         "adherence_assessment": "Above the mode baseline.",
+        "new_patterns": "",
+        "summary_updates": "",
         "structured_data": {
             "slide_count": 31,
             "co_presenter": False,
@@ -45,10 +47,13 @@ def _return(**overrides):
                 {"pattern_id": "ant-fonts", "confidence": "moderate",
                  "evidence": "7.5pt body text."},
             ],
-            "pattern_score": {"patterns_used": 25, "antipatterns_detected": 3, "score": 22},
+            "pattern_score": {"patterns_used": 1, "antipatterns_detected": 1, "score": 0},
         },
         "catalog_feedback": {
             "unmatched_observations": [{"observation": "controlling metaphor"}],
+            "confusable_pairs": [],
+            "definition_problems": [],
+            "scoring_problems": [],
             "tensions": [],
         },
     }
@@ -75,7 +80,7 @@ def test_title_from_db_wins_over_filename(write_analysis):
 
 def test_scoring_tables_carry_evidence(write_analysis):
     md = write_analysis.render_analysis(_return())
-    assert "**Pattern score:** 22 (25 patterns − 3 antipatterns)" in md
+    assert "**Pattern score:** 0 (1 patterns − 1 antipatterns)" in md
     assert "| `narrative-arc` | strong | Four-act catalog. |" in md
     assert "| `ant-fonts` | moderate | 7.5pt body text. |" in md
 
@@ -292,7 +297,7 @@ def test_cli_non_object_return_entry_is_actionable(write_analysis, tmp_path):
         capture_output=True, text=True,
     )
     assert result.returncode != 0
-    assert "not a subagent return object" in result.stderr
+    assert "subagent return must be an object" in result.stderr
     assert "Traceback" not in result.stderr
 
 
@@ -304,7 +309,7 @@ def test_skipped_status_never_overwrites_an_existing_analysis(write_analysis, tm
     out.mkdir()
     good = out / "talk.md"
     good.write_text("# real analysis from a successful run\n")
-    batch.write_text(json.dumps([_return(status="skipped_no_video")]))
+    batch.write_text(json.dumps([_return(status="skipped_no_sources")]))
     result = subprocess.run(
         [sys.executable, write_analysis.__file__, str(batch), str(out)],
         capture_output=True, text=True,
@@ -313,7 +318,7 @@ def test_skipped_status_never_overwrites_an_existing_analysis(write_analysis, tm
     assert good.read_text() == "# real analysis from a successful run\n"
     report = json.loads(result.stdout)
     assert report["written"] == 0
-    assert report["skipped"] == [{"filename": "talk.md", "status": "skipped_no_video"}]
+    assert report["skipped"] == [{"filename": "talk.md", "status": "skipped_no_sources"}]
 
 
 def test_processed_partial_still_writes(write_analysis, tmp_path):
@@ -329,8 +334,8 @@ def test_processed_partial_still_writes(write_analysis, tmp_path):
     assert json.loads(result.stdout)["written"] == 1
 
 
-def test_return_without_status_still_writes(write_analysis, tmp_path):
-    """`status` is optional in the return schema; absence is not a skip."""
+def test_return_without_status_is_rejected_before_writing(write_analysis, tmp_path):
+    """Missing status cannot strand a talk in its in-flight queue state."""
     ret = _return()
     del ret["status"]
     batch = tmp_path / "batch-returns.json"
@@ -340,8 +345,9 @@ def test_return_without_status_still_writes(write_analysis, tmp_path):
         [sys.executable, write_analysis.__file__, str(batch), str(out)],
         capture_output=True, text=True,
     )
-    assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)["written"] == 1
+    assert result.returncode == 1
+    assert "status is required" in result.stderr
+    assert not out.exists()
 
 
 def test_carriage_returns_do_not_break_table_rows(write_analysis):

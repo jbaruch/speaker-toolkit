@@ -99,7 +99,7 @@ when no audio is obtainable at all.
 - **Fallback** — if primary slides fail but `video_url` exists, fall back to
   video extraction. A talk can still reach `processed` status this way.
 
-### `transcript_source` is required
+### `transcript_source` records known provenance
 
 Set `transcript_source` on the talk entry: `youtube_auto` (caption track),
 `whisper` (local transcription), or `manual`. Downstream tools use it to gauge
@@ -206,20 +206,65 @@ See [processing-rules.md](processing-rules.md) for full tagging rules.
 
 ## C. Return JSON
 
-Per the subagent return schema in [schemas-db.md](schemas-db.md). Minimal
-structure:
+Return exactly the shape in [schemas-db.md](schemas-db.md). `status`,
+`slide_source`, all five catalog-feedback lanes, and the complete pattern score
+object are mandatory. `transcript_source` is the sole conditional field: omit it
+when the fetcher reports `existing` and the DB has no known provenance.
+
+Use `clear_fields` when the re-analysis disproves an earlier value. Each entry is
+an analysis-owned dotted path such as `verbatim_examples.jokes` or
+`structured_data.slide_count`; an empty replacement alone does not clear stale
+DB data because ordinary merges are additive.
+
+Minimal processed structure:
 
 ```json
 {
-  "talk_id": "...",
+  "filename": "2026-01-01-example.md",
   "status": "processed",
-  "transcript_source": "youtube",
+  "transcript_source": "youtube_auto",
   "slide_source": "pdf",
-  "pattern_observations": [
-    {"pattern_id": "...", "confidence": "strong", "evidence": "..."}
-  ],
-  "new_patterns": ["..."],
-  "summary_updates": [{"section": 1, "content": "..."}],
-  "structured_data": {"delivery_language": "en", "co_presenter": false}
+  "rhetoric_notes": "Dimensions 1-13 analysis...",
+  "areas_for_improvement": "Dimension 14 analysis...",
+  "adherence_assessment": "Compared with the current baseline...",
+  "new_patterns": "",
+  "summary_updates": "",
+  "structured_data": {
+    "delivery_language": "en",
+    "co_presenter": false
+  },
+  "verbatim_examples": {},
+  "pattern_observations": {
+    "patterns_detected": [
+      {
+        "pattern_id": "narrative-arc",
+        "confidence": "strong",
+        "evidence": "Four named acts build one argument.",
+        "dimensions": [2, 5]
+      }
+    ],
+    "antipatterns_detected": [],
+    "pattern_score": {
+      "patterns_used": 1,
+      "antipatterns_detected": 0,
+      "score": 1
+    }
+  },
+  "catalog_feedback": {
+    "unmatched_observations": [],
+    "confusable_pairs": [],
+    "definition_problems": [],
+    "scoring_problems": [],
+    "tensions": []
+  }
 }
 ```
+
+Before returning, run the deterministic gate:
+
+```bash
+python3 skills/vault-ingress/scripts/validate-returns.py batch-returns.json
+```
+
+Fix every reported error. Do not weaken a catalog ID, polarity, observability,
+evidence, confidence, score, or status error into a prose caveat.
