@@ -79,6 +79,19 @@ DB-persistence, and analysis tools also reject a tracking-database symlink befor
 opening it; callers must pass the canonical file path so atomic replacement
 cannot split the link entry from its unchanged target.
 
+### fix(vault-ingress) — commit analysis replacements as one batch
+
+`write-analysis.py` now inspects every existing target before staging, including
+directories, special files, and output entries that collide only after Unicode
+normalization or case folding. It stages the complete batch, moves existing
+targets to same-directory recovery backups, and restores them in reverse order
+if any later replacement fails. A two-file batch can no longer leave the first
+analysis updated when the second target fails.
+
+Exact analysis-target symlinks retain the safe prior behavior: replacement moves
+the symlink entry itself and installs a regular analysis file without following
+or changing the external target.
+
 ### feat(vault-ingress) — inventory native PPTX timing without claiming playback
 
 PPTX extraction schema v2 now emits a fixed `native_timing` record per slide and

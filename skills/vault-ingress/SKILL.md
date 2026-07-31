@@ -287,7 +287,12 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   cannot diverge. The writer verifies each completed claim's payload receipt and
   persisted catalog fingerprint/scoring version, requires exact membership
   across the completed batch before replacing any file, and renders the
-  persisted, writer-owned timestamp.
+  persisted, writer-owned timestamp. It checks return targets against both one
+  another and existing directory entries under normalized/case-folded identity,
+  rejects directory/special-file targets, stages every body, and commits with
+  reverse rollback so a late failure cannot leave a partial batch. An exact
+  analysis-target symlink is replaced as a directory entry; its external target
+  is never followed or modified.
   It renders `{vault_root}/analyses/{talk_filename}.md` per return —
   14 dimensions, structured data, verbatim examples, "Presentation Patterns Scoring",
   and catalog feedback — creates `analyses/` if missing, prints a JSON summary, and

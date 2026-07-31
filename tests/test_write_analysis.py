@@ -1026,6 +1026,145 @@ def test_cli_rejects_normalized_target_collision_before_any_write(
     assert [path.name for path in out.iterdir()] == ["TALK.MD"]
 
 
+def test_existing_casefold_target_collision_rejects_before_any_write(
+        write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    existing = out / "TALK.MD"
+    existing.write_text("# existing analysis\n")
+    ret = _return(filename="talk.md")
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "collides with existing output entry" in result.stderr
+    assert existing.read_text() == "# existing analysis\n"
+    assert [path.name for path in out.iterdir()] == ["TALK.MD"]
+
+
+def test_directory_target_preflight_blocks_the_entire_batch(
+        write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    first = out / "a.md"
+    first.write_text("# existing a\n")
+    directory_target = out / "b.md"
+    directory_target.mkdir()
+    returns = [_return(filename=f"{name}.md") for name in ("a", "b")]
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns)
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "is an existing directory" in result.stderr
+    assert first.read_text() == "# existing a\n"
+    assert directory_target.is_dir()
+    assert sorted(path.name for path in out.iterdir()) == ["a.md", "b.md"]
+
+
+def test_late_batch_commit_failure_restores_every_earlier_target(
+        write_analysis, tmp_path, monkeypatch):
+    out = tmp_path / "analyses"
+    out.mkdir()
+    first = out / "a.md"
+    second = out / "b.md"
+    first.write_text("old a\n")
+    second.write_text("old b\n")
+    rendered = [
+        ("a.md", str(first), "new a\n"),
+        ("b.md", str(second), "new b\n"),
+    ]
+    real_replace = write_analysis.os.replace
+
+    def fail_second_install(source, target):
+        if str(source).endswith(".stage") and str(target) == str(second):
+            raise OSError("injected second-target failure")
+        return real_replace(source, target)
+
+    monkeypatch.setattr(write_analysis.os, "replace", fail_second_install)
+
+    with pytest.raises(
+            write_analysis.AnalysisBatchWriteError,
+            match="every prior target was restored"):
+        write_analysis.atomic_write_batch(rendered)
+
+    assert first.read_text() == "old a\n"
+    assert second.read_text() == "old b\n"
+    assert sorted(path.name for path in out.iterdir()) == ["a.md", "b.md"]
+
+
+def test_stage_failure_never_starts_target_replacement(
+        write_analysis, tmp_path, monkeypatch):
+    out = tmp_path / "analyses"
+    out.mkdir()
+    first = out / "a.md"
+    second = out / "b.md"
+    first.write_text("old a\n")
+    second.write_text("old b\n")
+    rendered = [
+        ("a.md", str(first), "new a\n"),
+        ("b.md", str(second), "new b\n"),
+    ]
+    real_stage = write_analysis._stage_text
+
+    def fail_second_stage(path, body):
+        if str(path) == str(second):
+            raise OSError("injected staging failure")
+        return real_stage(path, body)
+
+    monkeypatch.setattr(write_analysis, "_stage_text", fail_second_stage)
+
+    with pytest.raises(
+            write_analysis.AnalysisBatchWriteError,
+            match="cannot stage complete analysis batch"):
+        write_analysis.atomic_write_batch(rendered)
+
+    assert first.read_text() == "old a\n"
+    assert second.read_text() == "old b\n"
+    assert sorted(path.name for path in out.iterdir()) == ["a.md", "b.md"]
+
+
+def test_analysis_target_symlink_is_replaced_without_following_target(
+        write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    external = tmp_path / "external-analysis.md"
+    external.write_text("# external must remain unchanged\n")
+    target = out / "talk.md"
+    target.symlink_to(external)
+    ret = _return()
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not target.is_symlink()
+    assert target.read_text().startswith("# Rhetoric Analysis: talk")
+    assert external.read_text() == "# external must remain unchanged\n"
+
+
 def test_none_valued_structured_fields_are_omitted(write_analysis):
     """A None means 'could not determine'; rendering the literal 'None' reads as
     a finding rather than an absence."""

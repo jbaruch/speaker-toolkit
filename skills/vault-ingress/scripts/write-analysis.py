@@ -42,9 +42,11 @@ Usage:
     forms as persist-results.py. A legacy date-only return value is ignored; an
     explicit full timestamp must agree.
 
-    Writes one file per PROCESSED return; a return whose required terminal status
-    is not in PROCESSED_STATUSES is skipped rather than allowed to overwrite an
-    earlier run's good file with a stub. Prints a JSON summary to stdout:
+    Writes one file per PROCESSED return as one transaction: every existing
+    target is preflighted, every body is staged, and replacements roll back if a
+    later target fails. A return whose required terminal status is not in
+    PROCESSED_STATUSES is skipped rather than allowed to overwrite an earlier
+    run's good file with a stub. Prints a JSON summary to stdout:
         {"written": <int>, "dir": "<path>",
          "files": [{"filename": "...", "path": "...", "bytes": <int>}],
          "skipped": [{"filename": "...", "status": "..."}]}
@@ -56,6 +58,7 @@ Example:
 
 import json
 import os
+import stat
 import sys
 import tempfile
 import unicodedata
@@ -82,6 +85,10 @@ SCALARS = (str, int, float, bool)
 # replace a good file from an earlier run with a near-empty stub — the file is
 # keyed on the talk, so a later skip silently destroys an earlier success.
 PROCESSED_STATUSES = ANALYSIS_STATUSES
+
+
+class AnalysisBatchWriteError(OSError):
+    """A staged analysis batch could not commit or recover atomically."""
 
 
 def as_prose(value):
@@ -356,23 +363,172 @@ def persisted_processed_stamp(ret, talk, requested_stamp=None):
     return stored
 
 
-def atomic_write_text(path, body):
-    """Replace one analysis only after its complete body is on disk."""
+def _target_key_from_basename(filename):
+    return unicodedata.normalize("NFC", filename.casefold())
+
+
+def preflight_output_targets(out_dir, rendered):
+    """Reject existing normalized collisions and unsafe target entry types."""
+    try:
+        entries = list(os.scandir(out_dir))
+    except OSError as exc:
+        raise AnalysisBatchWriteError(
+            f"cannot inspect output directory {out_dir}: {exc}") from exc
+    existing_by_key = {}
+    for entry in entries:
+        key = _target_key_from_basename(entry.name)
+        existing_by_key.setdefault(key, []).append(entry)
+
+    for name, path, _body in rendered:
+        basename = os.path.basename(path)
+        matches = existing_by_key.get(_target_key_from_basename(basename), [])
+        collisions = sorted(entry.name for entry in matches if entry.name != basename)
+        if collisions:
+            raise AnalysisBatchWriteError(
+                f"analysis target {basename!r} for {name!r} collides with existing "
+                f"output entry or entries {collisions} under normalized/case-folded "
+                "filesystem identity")
+        exact = [entry for entry in matches if entry.name == basename]
+        if not exact:
+            continue
+        try:
+            mode = os.lstat(exact[0].path).st_mode
+        except OSError as exc:
+            raise AnalysisBatchWriteError(
+                f"cannot inspect existing analysis target {exact[0].path}: {exc}") from exc
+        if stat.S_ISDIR(mode):
+            raise AnalysisBatchWriteError(
+                f"analysis target {exact[0].path} is an existing directory")
+        if not (stat.S_ISREG(mode) or stat.S_ISLNK(mode)):
+            raise AnalysisBatchWriteError(
+                f"analysis target {exact[0].path} is neither a regular file nor "
+                "a symbolic link and cannot be replaced safely")
+
+
+def _stage_text(path, body):
+    """Flush one complete body beside its target without changing the target."""
     directory = os.path.dirname(os.path.abspath(path)) or "."
     basename = os.path.basename(path)
-    fd, temp_path = tempfile.mkstemp(prefix=f".{basename}.", suffix=".tmp", dir=directory)
+    fd, temp_path = tempfile.mkstemp(
+        prefix=f".{basename}.", suffix=".stage", dir=directory)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(body)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temp_path, path)
+        return temp_path
     except BaseException:
         try:
             os.unlink(temp_path)
         except FileNotFoundError:
             pass
         raise
+
+
+def _safe_unlink(path):
+    if not path:
+        return
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+
+
+def _rollback_analysis_batch(items):
+    """Restore originals in reverse order, retaining backups if recovery fails."""
+    errors = []
+    for item in reversed(items):
+        target = item["path"]
+        if item["installed"]:
+            try:
+                os.unlink(target)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                errors.append(f"cannot remove partial target {target}: {exc}")
+                continue
+        backup = item["backup"]
+        if backup:
+            try:
+                os.replace(backup, target)
+                item["backup"] = None
+            except OSError as exc:
+                errors.append(
+                    f"cannot restore {target} from recovery backup {backup}: {exc}")
+    return errors
+
+
+def atomic_write_batch(rendered):
+    """Stage every analysis, then commit all targets with reverse rollback."""
+    if not rendered:
+        return
+    out_dir = os.path.dirname(os.path.abspath(rendered[0][1])) or "."
+    preflight_output_targets(out_dir, rendered)
+
+    items = []
+    try:
+        for name, path, body in rendered:
+            items.append({
+                "name": name,
+                "path": path,
+                "stage": _stage_text(path, body),
+                "backup": None,
+                "installed": False,
+            })
+    except OSError as exc:
+        for item in items:
+            _safe_unlink(item["stage"])
+        raise AnalysisBatchWriteError(
+            f"cannot stage complete analysis batch: {exc}") from exc
+
+    try:
+        # Recheck after staging so an external entry created during the staging
+        # window cannot bypass the normalized collision/type preflight.
+        preflight_output_targets(out_dir, rendered)
+        for item in items:
+            target = item["path"]
+            if os.path.lexists(target):
+                mode = os.lstat(target).st_mode
+                if stat.S_ISDIR(mode):
+                    raise AnalysisBatchWriteError(
+                        f"analysis target {target} became a directory before commit")
+                directory = os.path.dirname(os.path.abspath(target)) or "."
+                basename = os.path.basename(target)
+                fd, backup = tempfile.mkstemp(
+                    prefix=f".{basename}.", suffix=".backup", dir=directory)
+                os.close(fd)
+                try:
+                    os.replace(target, backup)
+                except BaseException:
+                    _safe_unlink(backup)
+                    raise
+                item["backup"] = backup
+            os.replace(item["stage"], target)
+            item["installed"] = True
+    except BaseException as exc:
+        rollback_errors = _rollback_analysis_batch(items)
+        for item in items:
+            _safe_unlink(item["stage"])
+        if rollback_errors:
+            backups = [item["backup"] for item in items if item["backup"]]
+            raise AnalysisBatchWriteError(
+                f"analysis batch commit failed ({exc}); rollback also failed: "
+                f"{'; '.join(rollback_errors)}; recovery backups retained: {backups}"
+            ) from exc
+        raise AnalysisBatchWriteError(
+            f"analysis batch commit failed ({exc}); every prior target was restored"
+        ) from exc
+    for item in items:
+        try:
+            _safe_unlink(item["backup"])
+            item["backup"] = None
+        except OSError:
+            # Every target is already committed. A retained hidden backup is a
+            # recoverable cleanup artifact, not grounds to roll back a complete
+            # batch after other backups may already have been discarded.
+            pass
+    for item in items:
+        _safe_unlink(item["stage"])
 
 
 def load_json(path, label):
@@ -461,7 +617,7 @@ def main():
 
     # Render the entire batch before touching the output directory. A malformed
     # late entry cannot leave earlier analysis files replaced.
-    staged, skipped = [], []
+    rendered, skipped = [], []
     target_owners = {}
     for ret in returns:
         name = ret.get("filename")
@@ -490,7 +646,7 @@ def main():
             sys.exit(1)
         body = render_analysis(
             ret, title=titles.get(name), persisted_date=processed_stamp)
-        staged.append((name, path, body))
+        rendered.append((name, path, body))
 
     try:
         os.makedirs(out_dir, exist_ok=True)
@@ -499,14 +655,15 @@ def main():
               f"path exists as a directory and is writable", file=sys.stderr)
         sys.exit(1)
 
+    try:
+        atomic_write_batch(rendered)
+    except OSError as e:
+        print(f"ERROR: cannot commit analysis batch: {e} — check the output "
+              "directory is writable and has free space", file=sys.stderr)
+        sys.exit(1)
+
     written = []
-    for name, path, body in staged:
-        try:
-            atomic_write_text(path, body)
-        except OSError as e:
-            print(f"ERROR: cannot write analysis file {path}: {e} — check the "
-                  f"output directory is writable and has free space", file=sys.stderr)
-            sys.exit(1)
+    for name, path, body in rendered:
         written.append({"filename": name, "path": path, "bytes": len(body.encode())})
 
     json.dump({"written": len(written), "dir": out_dir, "files": written,

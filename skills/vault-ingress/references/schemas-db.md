@@ -337,6 +337,14 @@ talk's `pattern_catalog_fingerprint` and `pattern_scoring_schema_version` to
 equal the catalog and scoring contract it just validated. Skipped results do not
 render or restamp prior analysis-generation metadata.
 
+Analysis replacement is batch-transactional. The writer preflights every target,
+including normalized/case-fold collisions with existing output-directory
+entries and exact directory/special-file targets, then stages every body before
+the first replacement. Existing targets move to same-directory recovery backups
+during commit; a later failure restores them in reverse order. Exact target
+symlinks are moved/replaced as directory entries, so their external targets are
+never followed.
+
 `slides_local_path` is a top-level analysis provenance scalar. Returns use the
 portable canonical form `slides/<artifact>.pdf`; persistence copies it to the talk
 record and the analysis writer renders it in the provenance header. For
