@@ -424,6 +424,21 @@ class VaultPreflight:
                 )
 
         if slide_source in {"pdf", "both"}:
+            explicit_pdf = self._slide_pdf_path(talk)
+            if explicit_pdf is not None:
+                if not explicit_pdf.is_file():
+                    self.talk_add(
+                        index, severity, "slide_pdf_artifact_missing",
+                        "declared slide PDF artifact does not exist",
+                        field=self._slide_pdf_path_field(talk),
+                        actual=talk.get(self._slide_pdf_path_field(talk)),
+                        artifact_path=explicit_pdf,
+                    )
+                # An explicit local artifact is a complete offline reference.
+                # Legacy imports often predate Drive IDs and use descriptive
+                # filenames; requiring a made-up Drive ID would corrupt their
+                # provenance rather than improve it.
+                return
             drive_id = _nonempty_string(talk.get("google_drive_id"))
             if drive_id is None:
                 self.talk_add(
@@ -443,6 +458,17 @@ class VaultPreflight:
                     )
 
         if slide_source == "video_extracted":
+            explicit_pdf = self._slide_pdf_path(talk)
+            if explicit_pdf is not None:
+                if not explicit_pdf.is_file():
+                    self.talk_add(
+                        index, severity, "slide_video_artifact_missing",
+                        "declared video-extracted PDF artifact does not exist",
+                        field=self._slide_pdf_path_field(talk),
+                        actual=talk.get(self._slide_pdf_path_field(talk)),
+                        artifact_path=explicit_pdf,
+                    )
+                return
             youtube_id = self.youtube_ids.get(index)
             if youtube_id is None:
                 self.talk_add(
@@ -482,6 +508,29 @@ class VaultPreflight:
         if source_dir:
             return Path(source_dir).expanduser() / path
         return self.vault_root / path
+
+    @staticmethod
+    def _slide_pdf_path_field(talk: dict[str, Any]) -> str:
+        """Return the first populated canonical-or-legacy local PDF field."""
+        for field in ("slides_local_path", "slides_pdf_path", "pdf_path"):
+            if _nonempty_string(talk.get(field)):
+                return field
+        return "slides_local_path"
+
+    def _slide_pdf_path(self, talk: dict[str, Any]) -> Path | None:
+        """Resolve a recorded local slide PDF without inventing provenance.
+
+        ``slides_local_path`` is the current field. ``slides_pdf_path`` and
+        ``pdf_path`` are accepted read-only aliases because historical ingress
+        wrote both forms and those artifacts can be perfectly valid even when
+        no Google Drive identifier was ever recorded.
+        """
+        field = self._slide_pdf_path_field(talk)
+        value = _nonempty_string(talk.get(field))
+        if value is None:
+            return None
+        path = Path(value).expanduser()
+        return path if path.is_absolute() else self.vault_root / path
 
     def _validate_source_identity(self, index: int) -> None:
         talk = self.talks[index]

@@ -151,10 +151,15 @@ Checks apply to a record with `video_url` (processable) or status `processed` /
   `transcript_only` is unsupported; represent that state as `none`.
 - Relative `pptx_path` is resolved from `config.pptx_source_dir`, falling back
   to the vault root.
-- `pdf`/`both` requires `google_drive_id` and
+- A recorded local PDF path is authoritative for offline artifact existence.
+  The current field is `slides_local_path`; the legacy `slides_pdf_path` and
+  `pdf_path` aliases remain readable so old, descriptively named artifacts do
+  not acquire invented Drive provenance merely to pass the gate. Relative
+  values resolve from the vault root.
+- Without an explicit local path, `pdf`/`both` requires `google_drive_id` and
   `slides/{google_drive_id}.pdf`.
-- `video_extracted` requires a valid YouTube identity and
-  `slides/{youtube_id}.pdf`.
+- Without an explicit local path, `video_extracted` requires a valid YouTube
+  identity and `slides/{youtube_id}.pdf`.
 
 The seven stable slide-contract fault classes are:
 

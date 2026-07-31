@@ -305,6 +305,53 @@ def test_declared_processed_artifact_gap_is_blocking(
     } <= finding_codes(report, "blocking")
 
 
+@pytest.mark.parametrize(
+    "field", ["slides_local_path", "slides_pdf_path", "pdf_path"]
+)
+@pytest.mark.parametrize("slide_source", ["pdf", "video_extracted"])
+def test_explicit_local_pdf_path_satisfies_legacy_artifact_contract(
+    preflight_vault, vault_fixture, field, slide_source,
+):
+    materialize_transcript(vault_fixture)
+    artifact = vault_fixture["slides"] / "descriptive-legacy-name.pdf"
+    artifact.write_bytes(b"%PDF fixture")
+    talk = base_talk(
+        slide_source=slide_source,
+        google_drive_id=None,
+        **{field: "slides/descriptive-legacy-name.pdf"},
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["blocking_count"] == 0
+    assert not finding_codes(report)
+
+
+@pytest.mark.parametrize(
+    ("slide_source", "expected_code"), [
+        ("pdf", "slide_pdf_artifact_missing"),
+        ("video_extracted", "slide_video_artifact_missing"),
+    ]
+)
+def test_missing_explicit_local_pdf_does_not_fall_back_to_another_identity(
+    preflight_vault, vault_fixture, slide_source, expected_code,
+):
+    materialize_transcript(vault_fixture)
+    (vault_fixture["slides"] / f"{VIDEO_ID}.pdf").write_bytes(b"%PDF fixture")
+    (vault_fixture["slides"] / f"{DRIVE_ID}.pdf").write_bytes(b"%PDF fixture")
+    talk = base_talk(
+        slide_source=slide_source,
+        google_drive_id=DRIVE_ID,
+        slides_local_path="slides/missing-explicit.pdf",
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert expected_code in finding_codes(report, "blocking")
+
+
 def test_video_pdf_page_count_is_never_treated_as_authored_slide_count(
     preflight_vault, vault_fixture,
 ):

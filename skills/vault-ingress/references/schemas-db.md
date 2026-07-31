@@ -44,6 +44,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "schema_version": 3,
     "transcript_source": "youtube_auto|whisper|manual|none  (how the transcript was obtained; MAY BE ABSENT — see below)",
     "slide_source": "pptx|pdf|both|video_extracted|none  (set in Step 2 per slide source hierarchy)",
+    "slides_local_path": "slides/<artifact>.pdf  (optional explicit local PDF; legacy readers also accept slides_pdf_path/pdf_path)",
     "pptx_visual_status": "pending|extracted|no_pptx",
     "status": "pending|needs-reprocessing|reprocessing-inflight|processed|processed_partial|skipped_no_sources|skipped_download_failed|skipped_duplicate",
     "reprocess_reason": "machine-readable reason for needs-reprocessing, or null",
