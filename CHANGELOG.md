@@ -92,6 +92,21 @@ Exact analysis-target symlinks retain the safe prior behavior: replacement moves
 the symlink entry itself and installs a regular analysis file without following
 or changing the external target.
 
+### fix(vault-ingress) — enforce canonical per-slide and image-source records
+
+Processed returns now deep-validate `structured_data.per_slide_visual` before
+either persistence surface writes. A ledger must contain exactly one canonical
+seven-key row for every slide in order, use the documented closed content and
+composition vocabularies, and carry correctly typed labels and booleans. Extra
+keys and legacy KCDC/BaselOne aliases fail closed. Background sequences and meme
+counts are cross-checked against the rows when supplied.
+
+`image_source_distribution` is now a source-label-to-nonnegative-integer map;
+free-form note values and negative or boolean counts are rejected. The contract
+also distinguishes observable appearance from source provenance: unverified
+authorship belongs in the `unknown` count, not in an inferred AI/stock label or
+an embedded classification note.
+
 ### feat(vault-ingress) — inventory native PPTX timing without claiming playback
 
 PPTX extraction schema v2 now emits a fixed `native_timing` record per slide and

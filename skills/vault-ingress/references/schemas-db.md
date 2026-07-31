@@ -181,7 +181,7 @@ Each subagent returns this JSON after processing one talk:
     "slide_design_style": "comic_book|minimal_dark|demo_scaffolding|mixed",
     "illustration_style": "name of dominant illustration aesthetic, or 'none'",
     "illustration_coherence": "unified|mixed|none",
-    "image_source_distribution": {"ai_generated": 0, "meme": 5, "screenshot": 3, "stock_photo": 0, "none": 12},
+    "image_source_distribution": {"ai_generated": 0, "speaker_created": 7, "stock_photo": 0, "unknown": 28, "none": 12},
     "visual_continuity_devices": ["FIG_numbering", "progressive_form", "recurring_mascot"],
     "opening_sequence": ["title", "provocative_hook", "bio", "shownotes_url", "first_argument"],
     "closing_sequence": ["summary_bullets", "cta_with_qr", "thanks_with_humor"],
@@ -294,6 +294,29 @@ Each subagent returns this JSON after processing one talk:
   }
 }
 ```
+
+`per_slide_visual`, when present, is a closed, complete slide ledger. It requires
+a positive integer `slide_count` and exactly that many rows in ascending order,
+with `slide_number` covering every integer from 1 through `slide_count` once.
+Every row has exactly the seven keys shown above; aliases and extra keys are
+rejected. `background_color_name` is an open non-empty label so a newly observed
+palette can be named. `content_type` and `image_composition` use the closed
+vocabularies shown above, and the three `has_*` values are booleans.
+`background_color_sequence`, when supplied, must reproduce the row background
+labels in order. `meme_count`, when supplied with the ledger, must equal the
+number of `meme_only` plus `meme_with_text` rows. No equivalent row-derived
+check exists for `image_only_slide_count`: visible text baked into an image
+distinguishes that measure from image composition and meme classification.
+
+`image_source_distribution` is strictly a count map: each non-empty string key
+names a source/provenance class and each value is a non-negative integer. Visual
+appearance does not establish authorship. Do not infer `ai_generated`,
+`stock_photo`, or another origin from style alone; count unverified origins as
+`unknown`. Content/format labels such as “meme” and “screenshot” are not
+authorship provenance, and free-form entries such as `classification_note` do
+not belong in this map. If observable visual categories need their own map,
+introduce a distinct schema field rather than mixing notes or category metadata
+into source counts.
 
 Every processed return carries the complete analysis shape, including empty
 strings/arrays for findings that did not occur. A skipped terminal return may

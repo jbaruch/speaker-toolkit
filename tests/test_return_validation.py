@@ -71,6 +71,41 @@ def _return(**overrides):
     return value
 
 
+def _canonical_visual_rows():
+    """Small synthetic equivalent of the canonical Spring-style row shape."""
+    return [
+        {
+            "slide_number": 1,
+            "background_color_name": "purple_halftone",
+            "content_type": "title",
+            "image_composition": "full_bleed_with_text",
+            "has_speech_bubble": False,
+            "has_starburst": False,
+            "has_footer": True,
+        },
+        {
+            "slide_number": 2,
+            "background_color_name": "white_clean",
+            "content_type": "meme_with_text",
+            "image_composition": "meme_with_caption",
+            "has_speech_bubble": True,
+            "has_starburst": False,
+            "has_footer": False,
+        },
+    ]
+
+
+def _return_with_canonical_visuals():
+    value = _return()
+    value["structured_data"].update({
+        "slide_count": 2,
+        "meme_count": 1,
+        "background_color_sequence": ["purple_halftone", "white_clean"],
+        "per_slide_visual": _canonical_visual_rows(),
+    })
+    return value
+
+
 def _video_manifest(*, trusted=True, source_video_id="abcDEF12345"):
     root = f"/vault/slides-rebuild/{source_video_id}"
     source_path = f"{root}/{source_video_id}.mp4"
@@ -849,6 +884,150 @@ def test_delivery_language_requires_a_code(return_validation):
     value = _return()
     value["structured_data"]["delivery_language"] = "English"
     assert "lowercase language code" in _error(return_validation, value)
+
+
+def test_canonical_per_slide_visual_rows_are_accepted(return_validation):
+    return_validation.validate_batch([_return_with_canonical_visuals()])
+
+
+@pytest.mark.parametrize("legacy_row", [
+    {
+        # Synthetic counterexample for the legacy KCDC return shape.
+        "slide_number": 1,
+        "content_type": "title",
+        "background": "purple_halftone",
+        "has_text_footer": True,
+    },
+    {
+        # Synthetic counterexample for the legacy BaselOne return shape.
+        "slide": 1,
+        "type": "title",
+        "devices": [],
+    },
+])
+def test_legacy_per_slide_visual_shapes_are_rejected(
+        return_validation, legacy_row):
+    value = _return()
+    value["structured_data"].update({
+        "slide_count": 1,
+        "per_slide_visual": [legacy_row],
+    })
+    message = _error(return_validation, value)
+    assert "must contain exactly the canonical fields" in message
+    assert "missing" in message
+    assert "unexpected" in message
+
+
+def test_per_slide_visual_rows_reject_extra_fields(return_validation):
+    value = _return_with_canonical_visuals()
+    value["structured_data"]["per_slide_visual"][0]["devices"] = ["footer"]
+    message = _error(return_validation, value)
+    assert "must contain exactly the canonical fields" in message
+    assert "unexpected ['devices']" in message
+
+
+def test_per_slide_visual_rows_require_every_canonical_field(return_validation):
+    value = _return_with_canonical_visuals()
+    del value["structured_data"]["per_slide_visual"][0]["has_footer"]
+    message = _error(return_validation, value)
+    assert "must contain exactly the canonical fields" in message
+    assert "missing ['has_footer']" in message
+
+
+@pytest.mark.parametrize("field,bad,expected", [
+    ("slide_number", True, "slide_number must be 1"),
+    ("background_color_name", "", "must be a non-empty string"),
+    ("background_color_name", 7, "must be a non-empty string"),
+    ("content_type", "custom_diagram", "content_type must be one of"),
+    ("content_type", ["title"], "content_type must be one of"),
+    ("image_composition", "unknown_layout", "image_composition must be one of"),
+    ("image_composition", None, "image_composition must be one of"),
+    ("has_speech_bubble", 0, "has_speech_bubble must be a boolean"),
+    ("has_starburst", "false", "has_starburst must be a boolean"),
+    ("has_footer", None, "has_footer must be a boolean"),
+])
+def test_per_slide_visual_field_types_and_vocabularies_are_enforced(
+        return_validation, field, bad, expected):
+    value = _return_with_canonical_visuals()
+    value["structured_data"]["per_slide_visual"][0][field] = bad
+    assert expected in _error(return_validation, value)
+
+
+@pytest.mark.parametrize("slide_numbers", [
+    [1, 1],
+    [1, 3],
+    [2, 1],
+])
+def test_per_slide_visual_must_cover_slides_once_in_order(
+        return_validation, slide_numbers):
+    value = _return_with_canonical_visuals()
+    for row, slide_number in zip(
+            value["structured_data"]["per_slide_visual"], slide_numbers):
+        row["slide_number"] = slide_number
+    assert "uniquely and contiguously cover" in _error(return_validation, value)
+
+
+@pytest.mark.parametrize("slide_count", [None, True, 0, "2", 2.0, 1, 3])
+def test_per_slide_visual_requires_matching_positive_slide_count(
+        return_validation, slide_count):
+    value = _return_with_canonical_visuals()
+    if slide_count is None:
+        del value["structured_data"]["slide_count"]
+    else:
+        value["structured_data"]["slide_count"] = slide_count
+    message = _error(return_validation, value)
+    assert ("positive integer" in message or
+            "must contain exactly slide_count" in message)
+
+
+def test_per_slide_visual_requires_an_array_of_objects(return_validation):
+    value = _return_with_canonical_visuals()
+    value["structured_data"]["per_slide_visual"] = "slides"
+    assert "per_slide_visual must be an array" in _error(return_validation, value)
+
+    value = _return_with_canonical_visuals()
+    value["structured_data"]["per_slide_visual"][0] = ["slide"]
+    assert "per_slide_visual[0] must be an object" in _error(
+        return_validation, value)
+
+
+def test_per_slide_visual_cross_checks_backgrounds_and_meme_count(
+        return_validation):
+    value = _return_with_canonical_visuals()
+    value["structured_data"]["background_color_sequence"][1] = "red_halftone"
+    assert "background_color_sequence must exactly match" in _error(
+        return_validation, value)
+
+    value = _return_with_canonical_visuals()
+    value["structured_data"]["meme_count"] = 0
+    assert "per_slide_visual contains 1 meme slides" in _error(
+        return_validation, value)
+
+
+def test_image_source_distribution_accepts_provenance_counts(return_validation):
+    value = _return()
+    value["structured_data"]["image_source_distribution"] = {
+        "ai_generated": 0,
+        "speaker_created": 4,
+        "unknown": 2,
+        "none": 1,
+    }
+    return_validation.validate_batch([value])
+
+
+@pytest.mark.parametrize("distribution", [
+    {"ai_generated": 0, "classification_note": "unverified"},
+    {"unknown": -1},
+    {"unknown": True},
+    {"": 1},
+    {1: 1},
+    ["unknown"],
+])
+def test_image_source_distribution_rejects_non_count_metadata(
+        return_validation, distribution):
+    value = _return()
+    value["structured_data"]["image_source_distribution"] = distribution
+    assert "image_source_distribution" in _error(return_validation, value)
 
 
 def test_catalog_feedback_requires_every_audit_lane(return_validation):

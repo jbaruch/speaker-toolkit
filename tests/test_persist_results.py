@@ -839,6 +839,37 @@ def test_a_malformed_return_leaves_the_talk_untouched(persist_results, tmp_path)
     assert json.loads(db.read_text())["talks"][0] == original
 
 
+def test_malformed_per_slide_visual_leaves_database_untouched(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    ret = _return()
+    ret["structured_data"].update({
+        "slide_count": 1,
+        # Synthetic legacy KCDC shape: aliases cannot cross persistence.
+        "per_slide_visual": [{
+            "slide_number": 1,
+            "content_type": "title",
+            "background": "purple_halftone",
+            "has_text_footer": True,
+        }],
+    })
+    original = {"talks": [_talk()]}
+    db.write_text(json.dumps(original))
+    before = db.read_bytes()
+    batch.write_text(json.dumps([ret]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "per_slide_visual[0] must contain exactly the canonical fields" in result.stderr
+    assert db.read_bytes() == before
+
+
 def test_migration_stamps_every_record_not_just_merged_ones(persist_results, tmp_path):
     """Stamping only touched talks leaves the artifact permanently mixed-version,
     so a reader cannot tell an unversioned record from an untouched one."""

@@ -284,6 +284,13 @@ the fetcher reports `existing` and the DB has no known provenance.
 Omit `processed_date`; the persistence writer owns one normalized timestamp for
 the complete queue batch and the analysis writer renders that stored value.
 
+When returning `per_slide_visual`, use the exact seven-key row contract and
+cover slides 1 through `slide_count` once in order; legacy aliases and row-local
+notes are invalid. `content_type` and `image_composition` use the closed schema
+vocabularies. Keep `image_source_distribution` provenance-only and integer-valued:
+visual resemblance does not prove AI, stock, or speaker authorship, so use an
+`unknown` count where origin is unverified rather than adding a note string.
+
 Use `clear_fields` when the re-analysis disproves an earlier value. Each entry is
 an analysis-owned dotted path such as `verbatim_examples.jokes` or
 `structured_data.slide_count`; an empty replacement alone does not clear stale

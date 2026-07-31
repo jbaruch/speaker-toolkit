@@ -195,7 +195,13 @@ Count and categorize these for the `structured_data` output:
 - **slide_design_style**: comic_book, minimal_dark, demo_scaffolding, mixed
 - **illustration_style**: Name the dominant illustration aesthetic if present (e.g., "retro_tech_manual", "comic_book_halftone", "patent_drawing", "none"). Use "none" if the talk has no deliberate illustration style.
 - **illustration_coherence**: unified, mixed, none — whether illustrations share a single style anchor
-- **image_source_distribution**: Object mapping source types to counts, e.g., {"ai_generated": 20, "meme": 5, "screenshot": 8, "none": 12}
+- **image_source_distribution**: Object mapping provenance/source labels to
+  non-negative integer counts, e.g., {"ai_generated": 0, "speaker_created": 7,
+  "stock_photo": 0, "unknown": 28, "none": 12}. Appearance is not provenance:
+  do not infer AI generation, stock authorship, or another origin from visual
+  style alone. Use `unknown` without provenance. “Meme” and “screenshot” are
+  observable content/format categories, not authorship sources; keep any such
+  classification outside this count map, and never insert note strings into it.
 - **visual_continuity_devices**: List any recurring visual motifs (e.g., ["FIG_numbering", "progressive_form", "recurring_mascot"]) or empty list
 - **opening_sequence**: List the type of each of the first ~5 slides (e.g., ["title", "provocative_hook", "bio", "shownotes_url", "first_argument"])
 - **closing_sequence**: List the type of each of the last ~5 slides

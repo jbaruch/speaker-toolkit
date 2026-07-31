@@ -73,12 +73,28 @@ def _return(**overrides):
         "new_patterns": "",
         "summary_updates": "",
         "structured_data": {
-            "slide_count": 31,
+            "slide_count": 2,
             "co_presenter": False,
             "image_only_slide_count": 0,
             "per_slide_visual": [
-                {"slide": 1, "background": "salmon", "content_type": "title"},
-                {"slide": 2, "background": "black", "content_type": "bullets"},
+                {
+                    "slide_number": 1,
+                    "background_color_name": "salmon",
+                    "content_type": "title",
+                    "image_composition": "none",
+                    "has_speech_bubble": False,
+                    "has_starburst": False,
+                    "has_footer": False,
+                },
+                {
+                    "slide_number": 2,
+                    "background_color_name": "black",
+                    "content_type": "content_bullets",
+                    "image_composition": "none",
+                    "has_speech_bubble": False,
+                    "has_starburst": False,
+                    "has_footer": True,
+                },
             ],
             "act_structure": {"acts": 4},
         },
@@ -205,8 +221,8 @@ def test_scoring_tables_carry_evidence(write_analysis):
 def test_per_slide_visual_becomes_a_table(write_analysis):
     md = write_analysis.render_analysis(_return())
     assert "### per_slide_visual" in md
-    assert "| slide | background | content_type |" in md
-    assert "| 1 | salmon | title |" in md
+    assert "| slide_number | background_color_name | content_type |" in md
+    assert "| 1 | salmon | title | none | False | False | False |" in md
 
 
 def test_pipes_and_newlines_do_not_break_table_rows(write_analysis):

@@ -130,6 +130,49 @@ AUTHORED_SLIDE_FIELDS = frozenset({
     "footer_observations",
     "shape_observations",
 })
+PER_SLIDE_VISUAL_FIELDS = frozenset({
+    "slide_number",
+    "background_color_name",
+    "content_type",
+    "image_composition",
+    "has_speech_bubble",
+    "has_starburst",
+    "has_footer",
+})
+PER_SLIDE_VISUAL_BOOLEAN_FIELDS = (
+    "has_speech_bubble",
+    "has_starburst",
+    "has_footer",
+)
+PER_SLIDE_CONTENT_TYPES = frozenset({
+    "title",
+    "bio",
+    "shownotes",
+    "content_bullets",
+    "data_chart",
+    "quote",
+    "meme_only",
+    "meme_with_text",
+    "section_divider",
+    "progressive_reveal",
+    "comparison_table",
+    "hot_take",
+    "cta",
+    "thanks",
+})
+PER_SLIDE_IMAGE_COMPOSITIONS = frozenset({
+    "full_bleed",
+    "full_bleed_with_text",
+    "image_left_text_right",
+    "image_right_text_left",
+    "centered_image_with_title",
+    "inset_image",
+    "progressive_reveal",
+    "screenshot",
+    "meme_with_caption",
+    "none",
+})
+MEME_CONTENT_TYPES = frozenset({"meme_only", "meme_with_text"})
 
 
 class ReturnValidationError(ValueError):
@@ -788,6 +831,112 @@ def _validate_score(observations: dict, pattern_count: int, antipattern_count: i
                 f"pattern_score.{field} is {value}, but the detection arrays require {wanted}")
 
 
+def _validate_per_slide_visual(structured: dict) -> None:
+    if "per_slide_visual" not in structured:
+        return
+
+    rows = structured["per_slide_visual"]
+    if not isinstance(rows, list):
+        raise ReturnValidationError(
+            "structured_data.per_slide_visual must be an array")
+
+    slide_count = structured.get("slide_count")
+    if (isinstance(slide_count, bool) or not isinstance(slide_count, int) or
+            slide_count < 1):
+        raise ReturnValidationError(
+            "structured_data.slide_count must be a positive integer when "
+            "per_slide_visual is present")
+    if len(rows) != slide_count:
+        raise ReturnValidationError(
+            "structured_data.per_slide_visual must contain exactly "
+            f"slide_count ({slide_count}) rows, got {len(rows)}")
+
+    for index, row in enumerate(rows, start=1):
+        label = f"structured_data.per_slide_visual[{index - 1}]"
+        if not isinstance(row, dict):
+            raise ReturnValidationError(f"{label} must be an object")
+        row_fields = set(row)
+        if row_fields != PER_SLIDE_VISUAL_FIELDS:
+            missing = sorted(PER_SLIDE_VISUAL_FIELDS - row_fields)
+            unexpected = sorted(
+                row_fields - PER_SLIDE_VISUAL_FIELDS, key=repr)
+            details = []
+            if missing:
+                details.append(f"missing {missing}")
+            if unexpected:
+                details.append(f"unexpected {unexpected}")
+            raise ReturnValidationError(
+                f"{label} must contain exactly the canonical fields; " +
+                "; ".join(details))
+
+        slide_number = row["slide_number"]
+        if (isinstance(slide_number, bool) or not isinstance(slide_number, int) or
+                slide_number != index):
+            raise ReturnValidationError(
+                f"{label}.slide_number must be {index}; rows must uniquely and "
+                "contiguously cover 1 through slide_count in order")
+        background = row["background_color_name"]
+        if not isinstance(background, str) or not background.strip():
+            raise ReturnValidationError(
+                f"{label}.background_color_name must be a non-empty string")
+        content_type = row["content_type"]
+        if (not isinstance(content_type, str) or
+                content_type not in PER_SLIDE_CONTENT_TYPES):
+            raise ReturnValidationError(
+                f"{label}.content_type must be one of "
+                f"{sorted(PER_SLIDE_CONTENT_TYPES)}, got {content_type!r}")
+        image_composition = row["image_composition"]
+        if (not isinstance(image_composition, str) or
+                image_composition not in PER_SLIDE_IMAGE_COMPOSITIONS):
+            raise ReturnValidationError(
+                f"{label}.image_composition must be one of "
+                f"{sorted(PER_SLIDE_IMAGE_COMPOSITIONS)}, "
+                f"got {image_composition!r}")
+        for field in PER_SLIDE_VISUAL_BOOLEAN_FIELDS:
+            if not isinstance(row[field], bool):
+                raise ReturnValidationError(f"{label}.{field} must be a boolean")
+
+    background_sequence = structured.get("background_color_sequence")
+    if background_sequence is not None:
+        expected_backgrounds = [row["background_color_name"] for row in rows]
+        if background_sequence != expected_backgrounds:
+            raise ReturnValidationError(
+                "structured_data.background_color_sequence must exactly match "
+                "per_slide_visual background_color_name values in slide order")
+
+    if "meme_count" in structured:
+        meme_count = structured["meme_count"]
+        if (isinstance(meme_count, bool) or not isinstance(meme_count, int) or
+                meme_count < 0):
+            raise ReturnValidationError(
+                "structured_data.meme_count must be a non-negative integer")
+        expected_memes = sum(
+            row["content_type"] in MEME_CONTENT_TYPES for row in rows)
+        if meme_count != expected_memes:
+            raise ReturnValidationError(
+                f"structured_data.meme_count is {meme_count}, but "
+                f"per_slide_visual contains {expected_memes} meme slides")
+
+
+def _validate_image_source_distribution(structured: dict) -> None:
+    if "image_source_distribution" not in structured:
+        return
+    distribution = structured["image_source_distribution"]
+    if not isinstance(distribution, dict):
+        raise ReturnValidationError(
+            "structured_data.image_source_distribution must be an object "
+            "mapping source labels to counts")
+    for source, count in distribution.items():
+        if not isinstance(source, str) or not source.strip():
+            raise ReturnValidationError(
+                "structured_data.image_source_distribution keys must be "
+                "non-empty source-label strings")
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            raise ReturnValidationError(
+                "structured_data.image_source_distribution"
+                f"[{source!r}] must be a non-negative integer count")
+
+
 def _validate_structured_data(structured: dict) -> None:
     if "co_presenter" in structured and not isinstance(structured["co_presenter"], bool):
         raise ReturnValidationError("structured_data.co_presenter must be a boolean")
@@ -806,6 +955,8 @@ def _validate_structured_data(structured: dict) -> None:
         raise ReturnValidationError(
             "structured_data.delivery_language must be a lowercase language code "
             f"such as 'en' or 'pt-br', got {language!r}")
+    _validate_per_slide_visual(structured)
+    _validate_image_source_distribution(structured)
 
 
 def _validate_catalog_feedback(feedback) -> None:
