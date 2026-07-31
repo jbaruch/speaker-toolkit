@@ -424,6 +424,25 @@ def test_inline_evidence_gate_phrase_is_not_a_section(
     assert "source_gate_prose_missing" in _codes(report)
 
 
+def test_fenced_evidence_gate_is_not_a_section(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    entries = _base_entries()
+    entries[0].update({
+        "evaluable_from": ["delivery_video"],
+        "evidence_requirements": ["The event is visible."],
+        "not_evaluable_when": ["The event is hidden."],
+        "_evidence_section": False,
+        "_scoring": _scoring("pattern")
+        + "\n```markdown\n## Evidence Gate\nOnly a code example.\n```\n",
+    })
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert "source_gate_prose_missing" in _codes(report)
+
+
 def test_unobservable_index_and_frontmatter_must_match(tmp_path, audit_pattern_catalog):
     entries = _base_entries()
     entries[0]["observable"] = False
@@ -531,6 +550,40 @@ def test_inline_scoring_phrase_is_not_a_section(tmp_path, audit_pattern_catalog)
     assert "scoring_section_missing" in _codes(report)
 
 
+def test_fenced_scoring_criteria_are_not_a_section(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    entries = _base_entries()
+    entries[0]["_scoring"] = (
+        "```markdown\n"
+        + _scoring("pattern")
+        + "```\n"
+    )
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert "scoring_section_missing" in _codes(report)
+
+
+def test_fenced_scoring_labels_do_not_duplicate_visible_scale(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    entries = _base_entries()
+    entries[0]["_scoring"] = (
+        _scoring("pattern")
+        + "\n~~~markdown\n"
+        + _scoring("pattern")
+        + "~~~\n"
+    )
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert "scoring_label_count_invalid" not in _codes(report)
+    assert report["valid"] is True
+
+
 def test_normalized_alias_collision_is_rejected(tmp_path, audit_pattern_catalog):
     entries = _base_entries()
     entries[0]["aliases"] = ["BLOCKED_path!"]
@@ -588,6 +641,124 @@ def test_index_type_and_part_disagreement_are_structural(
     report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
 
     assert {"index_type_mismatch", "index_part_mismatch"} <= _codes(report)
+
+
+def test_index_name_must_be_nonempty(tmp_path, audit_pattern_catalog):
+    entries = _base_entries()
+    entries[0]["_index_name"] = ""
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert "index_name_invalid" in _codes(report)
+    assert report["valid"] is False
+
+
+def test_index_related_cell_cannot_reference_its_own_id(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    entries = _base_entries()
+    entries[0]["_index_related"] = ["clear-path"]
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert "index_reference_self" in _codes(report)
+    assert report["valid"] is False
+
+
+def test_fenced_catalog_table_does_not_supply_index_inventory(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    root = _write_catalog(tmp_path)
+    index = root / "_index.md"
+    text = index.read_text(encoding="utf-8")
+    text = text.replace(
+        "## Pattern Catalog",
+        "```markdown\n## Pattern Catalog",
+        1,
+    ).replace(
+        "## Phase-Grouped Lookup Table",
+        "```\n\n## Phase-Grouped Lookup Table",
+        1,
+    )
+    index.write_text(text, encoding="utf-8")
+
+    report = audit_pattern_catalog.audit_catalog(root)
+
+    assert "index_entry_missing" in _codes(report)
+    assert report["valid"] is False
+
+
+def test_fenced_catalog_row_does_not_create_an_orphaned_index_entry(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    root = _write_catalog(tmp_path)
+    index = root / "_index.md"
+    text = index.read_text(encoding="utf-8")
+    fenced_row = (
+        "~~~markdown\n"
+        "| ghost-path | Ghost Path | pattern | 2 | content | — |\n"
+        "~~~\n\n"
+    )
+    text = text.replace("### Build Phase", fenced_row + "### Build Phase", 1)
+    index.write_text(text, encoding="utf-8")
+
+    report = audit_pattern_catalog.audit_catalog(root)
+
+    assert "index_entry_orphaned" not in _codes(report)
+    assert report["valid"] is True
+
+
+def test_fenced_unobservable_table_does_not_supply_checklist(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    entries = _base_entries()
+    entries[0]["observable"] = False
+    root = _write_catalog(tmp_path, entries)
+    index = root / "_index.md"
+    text = index.read_text(encoding="utf-8")
+    text = text.replace(
+        "## Unobservable Patterns — Go-Live Checklist",
+        "```markdown\n## Unobservable Patterns — Go-Live Checklist",
+        1,
+    ).replace(
+        "## Summary Statistics",
+        "```\n\n## Summary Statistics",
+        1,
+    )
+    index.write_text(text, encoding="utf-8")
+
+    report = audit_pattern_catalog.audit_catalog(root)
+
+    assert {
+        "index_unobservable_missing",
+        "index_unobservable_section_missing",
+    } <= _codes(report)
+    assert report["valid"] is False
+
+
+def test_fenced_unobservable_row_does_not_create_a_checklist_entry(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    root = _write_catalog(tmp_path)
+    index = root / "_index.md"
+    text = index.read_text(encoding="utf-8")
+    fenced_row = (
+        "~~~markdown\n"
+        "| clear-path | Clear Path | Review |\n"
+        "~~~\n"
+    )
+    text = text.replace("## Summary Statistics", fenced_row + "\n## Summary Statistics", 1)
+    index.write_text(text, encoding="utf-8")
+
+    report = audit_pattern_catalog.audit_catalog(root)
+
+    assert "index_unobservable_mismatch" not in _codes(report)
+    assert report["valid"] is True
 
 
 @pytest.mark.parametrize(("field", "value", "code"), [

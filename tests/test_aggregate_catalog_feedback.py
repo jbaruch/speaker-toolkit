@@ -7,12 +7,18 @@ import sys
 import pytest
 
 
-def _catalog_file(path, catalog_id, polarity):
+def _catalog_file(path, catalog_id, polarity, *, name=None, aliases=None):
     path.parent.mkdir(parents=True, exist_ok=True)
+    name_field = f"name: {name}\n" if name is not None else ""
+    aliases_field = (
+        f"aliases: {json.dumps(aliases)}\n" if aliases is not None else ""
+    )
     path.write_text(
         "---\n"
         f"id: {catalog_id}\n"
+        f"{name_field}"
         f"type: {polarity}\n"
+        f"{aliases_field}"
         "---\n\n"
         f"# {catalog_id}\n",
         encoding="utf-8",
@@ -22,7 +28,13 @@ def _catalog_file(path, catalog_id, polarity):
 @pytest.fixture
 def catalog_fixture(tmp_path):
     root = tmp_path / "patterns"
-    _catalog_file(root / "prepare" / "alpha.md", "alpha", "pattern")
+    _catalog_file(
+        root / "prepare" / "alpha.md",
+        "alpha",
+        "pattern",
+        name="Alpha Signal",
+        aliases=["First Move"],
+    )
     _catalog_file(root / "build" / "_anti_beta.md", "beta", "antipattern")
     _catalog_file(root / "deliver" / "gamma.md", "gamma", "pattern")
     return root
@@ -174,6 +186,34 @@ def test_exact_catalog_ids_are_not_folded_into_suggestions(
         for item in report["normalized_suggestions"]
     )
     assert any(item["catalog_id"] == "alpha" for item in report["exact_catalog_ids"])
+
+
+@pytest.mark.parametrize("proposed_name", [
+    "Alpha Signal",
+    "Alpha—Signal!",
+    "First_Move",
+])
+def test_existing_catalog_names_and_aliases_are_not_novel_suggestions(
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
+    proposed_name,
+):
+    feedback = _feedback()
+    feedback["unmatched_observations"][0]["proposed_name"] = proposed_name
+    source = _write(tmp_path / "return.json", _return(feedback=feedback))
+
+    report = aggregate_catalog_feedback.aggregate_feedback(
+        [source], catalog_path=catalog_fixture
+    )
+
+    assert report["ok"] is False
+    assert "suggestion_matches_catalog_alias" in _issues(report)
+    invalid = [
+        item for item in report["entries"]["invalid"]
+        if item["provenance"]["feedback_lane"] == "unmatched_observations"
+    ]
+    assert invalid[0]["issues"][0]["catalog_id"] == "alpha"
 
 
 def test_missing_legacy_suggestion_polarity_is_warning_not_rejection(
@@ -340,6 +380,55 @@ def test_nonstandard_json_constant_is_invalid(
 
     assert report["input_summary"]["invalid"] == 1
     assert "input_json_invalid" in _issues(report)
+
+
+def test_duplicate_json_object_keys_are_invalid_before_feedback_is_lost(
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
+):
+    source = tmp_path / "duplicate-key.json"
+    source.write_text(
+        '{"filename":"talk.md","catalog_feedback":{'
+        '"definition_problems":[{"pattern_id":"alpha",'
+        '"problem":"ambiguous","detail":"must survive"}],'
+        '"definition_problems":[]}}',
+        encoding="utf-8",
+    )
+
+    report = aggregate_catalog_feedback.aggregate_feedback(
+        [source], catalog_path=catalog_fixture
+    )
+
+    assert report["ok"] is False
+    assert report["input_summary"] == {
+        "accepted": 0, "rejected": 0, "invalid": 1,
+    }
+    assert "input_json_duplicate_key" in _issues(report)
+
+
+def test_current_and_legacy_feedback_fields_cannot_coexist(
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
+):
+    value = _return()
+    value["feedback"] = {
+        "definition_problems": [{
+            "pattern_id": "alpha",
+            "problem": "would be discarded",
+            "detail": "dual representations are ambiguous",
+        }],
+    }
+    source = _write(tmp_path / "dual-feedback.json", value)
+
+    report = aggregate_catalog_feedback.aggregate_feedback(
+        [source], catalog_path=catalog_fixture
+    )
+
+    assert report["ok"] is False
+    assert "catalog_feedback_fields_conflict" in _issues(report)
+    assert report["entry_summary"]["accepted"] == 0
 
 
 def test_programmatic_api_rejects_no_inputs(

@@ -24,6 +24,8 @@ import unicodedata
 
 import yaml
 
+from catalog_normalization import normalize_catalog_alias
+
 
 REPORT_SCHEMA_VERSION = 1
 POLARITIES = frozenset({"pattern", "antipattern"})
@@ -39,6 +41,14 @@ RETURN_MARKERS = frozenset({
     "status", "rhetoric_notes", "pattern_observations", "structured_data",
     "areas_for_improvement", "summary_updates", "verbatim_examples",
 })
+
+
+class DuplicateJSONKeyError(ValueError):
+    """Raised when an input object repeats a JSON member name."""
+
+    def __init__(self, key: str):
+        super().__init__(f"duplicate JSON object key {key!r}")
+        self.key = key
 
 
 def _nonempty_string(value: Any) -> str | None:
@@ -79,6 +89,7 @@ def load_catalog(catalog_path: str | Path) -> dict[str, Any]:
     """Load exact IDs and their polarity from catalog-file frontmatter."""
     root = Path(catalog_path).expanduser().resolve(strict=False)
     registry: dict[str, dict[str, str]] = {}
+    claims_by_id: dict[str, list[str]] = {}
     errors: list[dict[str, Any]] = []
     if not root.is_dir():
         errors.append(_issue(
@@ -86,7 +97,12 @@ def load_catalog(catalog_path: str | Path) -> dict[str, Any]:
             "catalog path is not a readable directory",
             path=str(root),
         ))
-        return {"path": str(root), "registry": registry, "errors": errors}
+        return {
+            "path": str(root),
+            "registry": registry,
+            "alias_registry": {},
+            "errors": errors,
+        }
 
     for path in sorted(root.rglob("*.md"), key=lambda item: str(item)):
         if path.name == "_index.md":
@@ -149,13 +165,47 @@ def load_catalog(catalog_path: str | Path) -> dict[str, Any]:
             ))
             continue
         registry[catalog_id] = {"polarity": polarity, "path": relative_path}
+        claims = [catalog_id]
+        name = _nonempty_string(metadata.get("name"))
+        if name is not None:
+            claims.append(name)
+        raw_aliases = metadata.get("aliases")
+        if isinstance(raw_aliases, list):
+            claims.extend(
+                alias
+                for alias in raw_aliases
+                if isinstance(alias, str) and alias.strip()
+            )
+        claims_by_id[catalog_id] = claims
 
     if not registry:
         errors.append(_issue(
             "catalog_empty", "catalog directory contains no valid pattern entries",
             path=str(root),
         ))
-    return {"path": str(root), "registry": registry, "errors": errors}
+    alias_claims: defaultdict[str, set[str]] = defaultdict(set)
+    for catalog_id, claims in claims_by_id.items():
+        for claim in claims:
+            normalized = normalize_catalog_alias(claim)
+            if normalized:
+                alias_claims[normalized].add(catalog_id)
+    alias_registry: dict[str, str] = {}
+    for normalized, owners in sorted(alias_claims.items()):
+        if len(owners) > 1:
+            errors.append(_issue(
+                "catalog_alias_collision",
+                "catalog IDs, names, or aliases share one normalized claim",
+                normalized_alias=normalized,
+                catalog_ids=sorted(owners),
+            ))
+            continue
+        alias_registry[normalized] = next(iter(owners))
+    return {
+        "path": str(root),
+        "registry": registry,
+        "alias_registry": alias_registry,
+        "errors": errors,
+    }
 
 
 def _provenance(
@@ -314,6 +364,7 @@ def validate_entry(
     lane: str,
     entry: Any,
     registry: dict[str, dict[str, str]],
+    alias_registry: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Validate one canonical-lane entry and return derived grouping data."""
     errors: list[dict[str, Any]] = []
@@ -364,6 +415,18 @@ def validate_entry(
                     field="proposed_name", actual=proposed_name,
                     catalog_id=normalized,
                 ))
+            elif alias_registry is not None:
+                matched_id = alias_registry.get(
+                    normalize_catalog_alias(proposed_name)
+                )
+                if matched_id is not None:
+                    errors.append(_issue(
+                        "suggestion_matches_catalog_alias",
+                        "unmatched suggestion matches an existing catalog name or alias",
+                        field="proposed_name",
+                        actual=proposed_name,
+                        catalog_id=matched_id,
+                    ))
             if proposed_polarity is None:
                 warnings.append(_issue(
                     "suggestion_polarity_missing",
@@ -473,7 +536,17 @@ def _read_json(path: Path) -> tuple[Any | None, dict[str, Any] | None]:
     except OSError as exc:
         return None, _issue("input_unreadable", f"cannot read input: {exc}")
     try:
-        return json.loads(raw, parse_constant=_reject_json_constant), None
+        return json.loads(
+            raw,
+            parse_constant=_reject_json_constant,
+            object_pairs_hook=_reject_duplicate_json_keys,
+        ), None
+    except DuplicateJSONKeyError as exc:
+        return None, _issue(
+            "input_json_duplicate_key",
+            "input JSON objects must not repeat member names",
+            key=exc.key,
+        )
     except json.JSONDecodeError as exc:
         return None, _issue(
             "input_json_invalid",
@@ -485,6 +558,17 @@ def _read_json(path: Path) -> tuple[Any | None, dict[str, Any] | None]:
 
 def _reject_json_constant(value: str) -> None:
     raise ValueError(f"non-standard numeric constant {value}")
+
+
+def _reject_duplicate_json_keys(
+    pairs: list[tuple[str, Any]],
+) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise DuplicateJSONKeyError(key)
+        result[key] = value
+    return result
 
 
 def _return_container(document: Any) -> tuple[list[Any] | None, str | None, str | None]:
@@ -605,23 +689,29 @@ class FeedbackAggregator:
         talk_filename = _nonempty_string(item.get("filename"))
         talk_id = _nonempty_string(item.get("talk_id"))
         provenance = _provenance(path, return_index, talk_filename, talk_id)
-        feedback_key = (
-            "catalog_feedback" if "catalog_feedback" in item
-            else "feedback" if "feedback" in item else None
-        )
-        if feedback_key is None:
+        feedback_keys = [
+            key for key in ("catalog_feedback", "feedback")
+            if key in item
+        ]
+        if not feedback_keys:
             self.returns["rejected"].append({
                 "provenance": provenance,
                 "reason": "return has no catalog_feedback",
             })
             return
         issues = []
+        if len(feedback_keys) > 1:
+            issues.append(_issue(
+                "catalog_feedback_fields_conflict",
+                "return cannot contain both catalog_feedback and legacy feedback",
+                actual=feedback_keys,
+            ))
         if talk_filename is None and talk_id is None:
             issues.append(_issue(
                 "talk_identity_missing",
                 "feedback return needs a nonempty filename or talk_id",
             ))
-        feedback = item.get(feedback_key)
+        feedback = item.get(feedback_keys[0])
         if not isinstance(feedback, dict):
             issues.append(_issue(
                 "catalog_feedback_not_object",
@@ -701,7 +791,12 @@ class FeedbackAggregator:
             path, return_index, talk_filename, talk_id,
             lane=lane, entry_index=entry_index,
         )
-        validation = validate_entry(lane, entry, self.registry)
+        validation = validate_entry(
+            lane,
+            entry,
+            self.registry,
+            self.catalog.get("alias_registry", {}),
+        )
         if validation["errors"]:
             self.entries["invalid"].append({
                 "provenance": provenance,

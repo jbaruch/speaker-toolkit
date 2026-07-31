@@ -32,13 +32,14 @@ import hashlib
 import json
 import re
 import sys
-import unicodedata
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+from catalog_normalization import normalize_catalog_alias
 
 
 SCHEMA_VERSION = 1
@@ -80,6 +81,7 @@ SCORING_ABSENT_RE = re.compile(
     r"^- Absent \(0 pts(?P<qualifier>[^)]*)\):[ \t]*(?P<body>.*)$",
     re.MULTILINE,
 )
+FENCE_RE = re.compile(r"^[ ]{0,3}(?P<marker>`{3,}|~{3,})(?P<rest>.*)$")
 
 
 @dataclass(frozen=True)
@@ -146,8 +148,52 @@ def default_catalog_dir() -> Path:
 
 def normalize_alias(value: str) -> str:
     """Map an ID, name, or explicit alias into the collision namespace."""
-    folded = unicodedata.normalize("NFKC", value).casefold()
-    return "-".join(re.findall(r"[a-z0-9]+", folded))
+    return normalize_catalog_alias(value)
+
+
+def _visible_markdown_lines(text: str) -> list[tuple[int, str]]:
+    """Return source lines outside fenced code blocks, with line numbers."""
+    visible: list[tuple[int, str]] = []
+    fence_character: str | None = None
+    fence_length = 0
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        fence = FENCE_RE.match(line)
+        if fence_character is not None:
+            if fence is not None:
+                marker = fence.group("marker")
+                if (
+                    marker[0] == fence_character
+                    and len(marker) >= fence_length
+                    and not fence.group("rest").strip()
+                ):
+                    fence_character = None
+                    fence_length = 0
+            continue
+        if fence is not None:
+            marker = fence.group("marker")
+            fence_character = marker[0]
+            fence_length = len(marker)
+            continue
+        visible.append((line_number, line))
+    return visible
+
+
+def _markdown_h2_section(text: str, heading: str) -> str | None:
+    """Return one visible H2 section, excluding fenced examples."""
+    lines = _visible_markdown_lines(text)
+    start: int | None = None
+    for offset, (_, line) in enumerate(lines):
+        if line.rstrip(" \t") == f"## {heading}":
+            start = offset + 1
+            break
+    if start is None:
+        return None
+    section: list[str] = []
+    for _, line in lines[start:]:
+        if line.startswith("## "):
+            break
+        section.append(line)
+    return "\n".join(section)
 
 
 def _issue_sort_key(issue: Issue) -> tuple[str, str, str, str, str, str]:
@@ -438,11 +484,10 @@ def _validate_observability(entry: CatalogEntry, errors: list[Issue]) -> None:
         ))
 
     present = EVIDENCE_GATE_FIELDS.intersection(entry.metadata)
-    has_evidence_section = bool(re.search(
-        r"^## Evidence Gate[ \t]*$",
+    has_evidence_section = _markdown_h2_section(
         entry.text,
-        re.MULTILINE,
-    ))
+        "Evidence Gate",
+    ) is not None
     if present and present != EVIDENCE_GATE_FIELDS:
         errors.append(Issue(
             "source_gate_partial",
@@ -502,16 +547,7 @@ def _validate_observability(entry: CatalogEntry, errors: list[Issue]) -> None:
 
 
 def _scoring_section(text: str) -> str | None:
-    heading = re.search(
-        r"^## Scoring Criteria[ \t]*$",
-        text,
-        re.MULTILINE,
-    )
-    if heading is None:
-        return None
-    tail = text[heading.end():]
-    next_heading = re.search(r"^## ", tail, re.MULTILINE)
-    return tail[:next_heading.start()] if next_heading else tail
+    return _markdown_h2_section(text, "Scoring Criteria")
 
 
 def _validate_scoring(entry: CatalogEntry, errors: list[Issue]) -> None:
@@ -614,7 +650,8 @@ def _parse_index(
     rows: dict[str, IndexEntry] = {}
     in_catalog = False
     part: str | None = None
-    for line_number, line in enumerate(text.splitlines(), start=1):
+    visible_lines = _visible_markdown_lines(text)
+    for line_number, line in visible_lines:
         if line == "## Pattern Catalog":
             in_catalog = True
             continue
@@ -654,6 +691,14 @@ def _parse_index(
                 "_index.md",
                 pattern_id,
                 "id",
+            ))
+        if not name:
+            errors.append(Issue(
+                "index_name_invalid",
+                "index name must be non-empty",
+                "_index.md",
+                pattern_id,
+                "name",
             ))
         try:
             dimensions = tuple(int(value) for value in _parse_csv(raw_dimensions))
@@ -733,13 +778,18 @@ def _parse_index(
             rows[pattern_id] = row
 
     unobservable: set[str] = set()
-    marker = "## Unobservable Patterns"
-    start = text.find(marker)
-    if start >= 0:
-        tail = text[start + len(marker):]
-        end_heading = re.search(r"^## ", tail, re.MULTILINE)
-        section = tail[:end_heading.start()] if end_heading else tail
-        for line in section.splitlines():
+    unobservable_start = next(
+        (
+            offset + 1
+            for offset, (_, line) in enumerate(visible_lines)
+            if line.startswith("## Unobservable Patterns")
+        ),
+        None,
+    )
+    if unobservable_start is not None:
+        for _, line in visible_lines[unobservable_start:]:
+            if line.startswith("## "):
+                break
             if not line.startswith("|"):
                 continue
             cells = tuple(cell.strip() for cell in line.strip().strip("|").split("|"))
@@ -1102,7 +1152,16 @@ def audit_catalog(catalog_dir: str | Path | None = None) -> dict[str, Any]:
 
     for row in index_rows.values():
         for target in row.related_patterns:
-            if target not in entries:
+            if target == row.pattern_id:
+                errors.append(Issue(
+                    "index_reference_self",
+                    "index Related cell cannot reference its own catalog id",
+                    "_index.md",
+                    row.pattern_id,
+                    "related_patterns",
+                    target,
+                ))
+            elif target not in entries:
                 errors.append(Issue(
                     "index_reference_dangling",
                     f"index Related cell references unknown catalog id {target!r}",
