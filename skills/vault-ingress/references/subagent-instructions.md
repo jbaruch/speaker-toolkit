@@ -92,8 +92,29 @@ when no audio is obtainable at all.
     "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
     "{vault_root}/slides-rebuild/{youtube_id}" "{youtube_id}"
   ```
-  Copy the resulting PDF to `slides/{youtube_id}.pdf`. Delete the video after
-  extraction. For batch downloads, use
+  Store the complete JSON result in `structured_data.video_extraction`, then obey its
+  artifact gate:
+
+  1. An artifact with `artifact_scope: "full_frame_context"` is evidence about the
+     room, stage, speaker, and PiP only. Never treat it as the authored deck, derive
+     slide design from it, or copy it to `slides/{youtube_id}.pdf`.
+  2. A `slide_region` artifact from a result with top-level `review_required: true`, or
+     whose own `trusted_for_authored_slide_analysis` is false, is only a crop candidate.
+     Inspect it against the context PDF and source video, then rerun with the checked
+     coordinates as `--region LEFT,TOP,RIGHT,BOTTOM --region-verified`. An auto crop is
+     always unverified. If the source is truly a full-frame screencast, use the verified
+     manual region `0,0,1,1`.
+  3. Only a `slide_region` artifact with
+     `trusted_for_authored_slide_analysis: true` and `review_required: false` may be
+     copied to `slides/{youtube_id}.pdf`, recorded as `slides_local_path`, and analyzed
+     like an authored PDF deck.
+
+  Keep the source MP4 and full-frame context artifact under
+  `slides-rebuild/{youtube_id}/` for provenance and future re-extraction. The script
+  deletes only its intermediate JPEG frames. `unique_frame_count` and artifact
+  `page_count` are retained video samples, not authored `slide_count`; populate
+  `structured_data.slide_count` only from corroborated deck numbering or an authored
+  source. For batch downloads, use
   `skills/vault-ingress/scripts/batch-download-videos.sh <vault_root> ID1 ID2 ...`.
 - **`none`** — transcript-only, status `processed_partial`.
 - **Fallback** — if primary slides fail but `video_url` exists, fall back to
@@ -161,7 +182,7 @@ When any slide in a deck reports `text_extraction_confidence: "low"`:
    | `slide_source` | PDF |
    |---|---|
    | `pdf`, `both` | already at `{vault_root}/slides/{google_drive_id}.pdf` |
-   | `video_extracted` | already at `{vault_root}/slides/{youtube_id}.pdf` |
+   | `video_extracted` | trusted `slide_region` artifact promoted to `{vault_root}/slides/{youtube_id}.pdf`; if no trusted artifact exists, deck-layout judgment is not evaluable |
    | `pptx` | none exists — export it from the deck (below) |
 
    For `pptx`, export first (PowerPoint via AppleScript, LibreOffice fallback).

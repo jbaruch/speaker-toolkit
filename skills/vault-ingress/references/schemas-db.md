@@ -287,25 +287,55 @@ Stored in `structured_data.video_extraction` on the talk entry:
 ```json
 {
   "slide_source": "video_extracted",
-  "schema_version": 2,
-  "pipeline_version": "0.9.0",
+  "schema_version": 3,
+  "pipeline_version": "0.10.0",
+  "source_video_id": "aBcDeFg",
+  "source_video_path": "/vault/slides-rebuild/aBcDeFg/aBcDeFg.mp4",
   "total_frames_extracted": 1500,
-  "unique_slides_count": 85,
+  "unique_frame_count": 85,
+  "authored_slide_count": null,
   "hash_threshold_used": 8,
   "slide_region_detected": true,
   "slide_region_applied": true,
-  "slide_region_method": "auto|manual|none",
-  "slide_region_verified": false,
+  "slide_region_method": "manual",
+  "slide_region_verified": true,
   "slide_region": [0.05, 0.02, 0.78, 0.98],
-  "output_pdf": "slides/{youtube_id}.pdf",
-  "fps_used": 0.5
+  "fps_used": 0.5,
+  "retained_frames": [
+    {"page_number": 1, "frame_index": 0, "timestamp_seconds": 0.0},
+    {"page_number": 2, "frame_index": 6, "timestamp_seconds": 12.0}
+  ],
+  "artifacts": [
+    {
+      "path": "/vault/slides-rebuild/aBcDeFg/aBcDeFg.slide-region.pdf",
+      "artifact_scope": "slide_region",
+      "page_count": 85,
+      "source_video_id": "aBcDeFg",
+      "source_video_path": "/vault/slides-rebuild/aBcDeFg/aBcDeFg.mp4",
+      "crop_method": "manual",
+      "crop_verified": true,
+      "trusted_for_authored_slide_analysis": true
+    },
+    {
+      "path": "/vault/slides-rebuild/aBcDeFg/aBcDeFg.context.pdf",
+      "artifact_scope": "full_frame_context",
+      "page_count": 85,
+      "source_video_id": "aBcDeFg",
+      "source_video_path": "/vault/slides-rebuild/aBcDeFg/aBcDeFg.mp4",
+      "crop_method": "none",
+      "crop_verified": false,
+      "trusted_for_authored_slide_analysis": false
+    }
+  ],
+  "review_required": false,
+  "review_reason": null
 }
 ```
 
 The owner of this record's shape is `skills/vault-ingress/scripts/video-slide-extraction.py`.
 Two version fields track two independent axes:
 
-- `schema_version` (integer) — the record's **field shape**. Current value: `2`. The
+- `schema_version` (integer) — the record's **field shape**. Current value: `3`. The
   script bumps it on any field add/remove/rename. **Reader contract:** a record with no
   `schema_version` is the legacy pre-versioning shape — treat it as `schema_version 0`
   and read the fields that are present; a record with a `schema_version` higher than the
@@ -318,10 +348,7 @@ Two version fields track two independent axes:
   mirrored in the output PDF's producer/creator metadata. A pre-versioning entry has no
   `pipeline_version`.
 
-The resulting PDF is named `{youtube_id}.pdf` in the `slides/` directory and analyzed
-the same as a Google Drive PDF for dimension 13 (slide design patterns).
-
-Version 2 adds crop provenance. `slide_region_detected` is true only when the
+Version 2 added crop provenance. `slide_region_detected` is true only when the
 auto-detector returned a region; it is false for a manual region.
 `slide_region_applied` says whether any crop was used for hashing,
 `slide_region_method` records `auto`, `manual`, or `none`, and
@@ -329,6 +356,34 @@ auto-detector returned a region; it is false for a manual region.
 crop as visually checked. For a version-1 record, readers may infer method `auto`,
 applied from whether `slide_region` is present, and verified `false`; re-extraction
 is still required before treating an old crop as verified.
+
+Version 3 separates derived artifacts by provenance and scope. `artifacts[].path` and
+`source_video_path` are absolute, symlink-resolved paths at extraction time.
+`artifact_scope` is one of:
+
+- `slide_region` — pages are physically cropped to the selected region. This is trusted
+  for authored-slide analysis only when `crop_method` is `manual`, `crop_verified` is
+  true, `trusted_for_authored_slide_analysis` is true, and top-level
+  `review_required` is false.
+- `full_frame_context` — uncropped broadcast frames for room, stage, speaker, or PiP
+  analysis. This is never an authored deck and is never a source for slide design,
+  authored slide count, or slide-pattern claims.
+
+`retained_frames` maps each PDF page to the zero-based index in the sampled frame
+sequence and its approximate video timestamp (`frame_index / fps_used`). Both artifacts
+use the same page order. `unique_frame_count` is the number of retained samples and each
+artifact's `page_count`; it is not an authored slide count. The extractor deliberately
+leaves `authored_slide_count` null. Populate the talk's queryable `slide_count` only from
+corroborated deck numbering, a native deck, or another authored source.
+
+An unverified auto or manual crop may still produce a `slide_region` candidate, but it
+must carry `trusted_for_authored_slide_analysis: false` and
+`review_required: true`. Visually inspect it against the source/context, then rerun with
+the checked coordinates and `--region-verified`; do not promote the candidate to
+`slides/{youtube_id}.pdf` or `slides_local_path`. A version-2 `output_pdf` may contain
+uncropped broadcast frames even when a crop was applied, and its
+`unique_slides_count` was actually a retained-frame count. Treat both fields as legacy,
+untrusted evidence and re-extract rather than inferring version-3 artifact scope.
 
 ## PPTX Extraction Output Schema
 

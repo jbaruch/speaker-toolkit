@@ -14,6 +14,21 @@ SCRIPT_PATH = os.path.join(
     os.path.dirname(__file__), os.pardir,
     "skills", "vault-ingress", "scripts", "video-slide-extraction.py",
 )
+SCHEMA_PATH = os.path.join(
+    os.path.dirname(__file__), os.pardir,
+    "skills", "vault-ingress", "references", "schemas-db.md",
+)
+
+
+def _artifact(result, scope):
+    matches = [artifact for artifact in result["artifacts"]
+               if artifact["artifact_scope"] == scope]
+    assert len(matches) == 1, f"expected one {scope!r} artifact"
+    return matches[0]
+
+
+def _pdf_contains(raw, text):
+    return text.encode() in raw or text.encode("utf-16-be") in raw
 
 
 def test_crop_frame_none_region(video_slide_extraction):
@@ -127,11 +142,52 @@ def test_combine_to_pdf(video_slide_extraction, tmp_path):
     assert os.path.getsize(output) > 100
 
 
+def test_combine_to_pdf_applies_crop_to_saved_pages(
+        video_slide_extraction, tmp_path):
+    """The slide crop must affect the durable PDF, not only the dedup hash."""
+    frame = tmp_path / "broadcast-frame.png"
+    Image.new("RGB", (1000, 500), (80, 40, 20)).save(frame)
+    output = tmp_path / "slide-region.pdf"
+
+    video_slide_extraction.combine_to_pdf(
+        [(str(frame), 0)], str(output),
+        slide_region=(0.25, 0.25, 0.75, 0.75),
+        artifact_scope="slide_region",
+        source_video_id="video-id",
+        crop_method="manual",
+        crop_verified=True,
+    )
+
+    raw = output.read_bytes()
+    assert b"/MediaBox [ 0 0 500.0 250.0 ]" in raw
+
+
 def test_combine_to_pdf_empty(video_slide_extraction, tmp_path):
     """Empty slide list returns None."""
     output = str(tmp_path / "empty.pdf")
     result = video_slide_extraction.combine_to_pdf([], output)
     assert result is None
+
+
+def test_pdf_scope_cannot_mislabel_full_frames_as_slide_region(
+        video_slide_extraction, tmp_path):
+    frame = tmp_path / "frame.png"
+    Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
+    with pytest.raises(ValueError, match="physical crop"):
+        video_slide_extraction.combine_to_pdf(
+            [(str(frame), 0)], str(tmp_path / "wrong.pdf"),
+            artifact_scope="slide_region",
+        )
+
+
+def test_artifact_manifest_rejects_unverified_authored_slide_trust(
+        video_slide_extraction, tmp_path):
+    with pytest.raises(ValueError, match="verified manual crop"):
+        video_slide_extraction.artifact_record(
+            tmp_path / "candidate.pdf", "slide_region", 1, "video-id",
+            tmp_path / "source.mp4", crop_method="auto", crop_verified=False,
+            trusted_for_authored_slide_analysis=True,
+        )
 
 
 def test_pipeline_version_is_semver(video_slide_extraction):
@@ -147,6 +203,13 @@ def test_schema_version_is_positive_int(video_slide_extraction):
     sv = video_slide_extraction.SCHEMA_VERSION
     assert isinstance(sv, int)
     assert sv >= 1
+
+
+def test_schema_reference_tracks_extractor_versions(video_slide_extraction):
+    with open(SCHEMA_PATH, encoding="utf-8") as schema_file:
+        schema = schema_file.read()
+    assert f'"schema_version": {video_slide_extraction.SCHEMA_VERSION}' in schema
+    assert f'"pipeline_version": "{video_slide_extraction.PIPELINE_VERSION}"' in schema
 
 
 def test_version_flag_emits_json(video_slide_extraction):
@@ -175,10 +238,9 @@ def test_combine_to_pdf_stamps_version_metadata(video_slide_extraction, tmp_path
         raw = f.read()
     version = video_slide_extraction.PIPELINE_VERSION
     # Pillow serializes PDF metadata strings as UTF-16BE; match either encoding.
-    def present(s):
-        return s.encode() in raw or s.encode("utf-16-be") in raw
-    assert present("video-slide-extraction")
-    assert present(version)
+    assert _pdf_contains(raw, "video-slide-extraction")
+    assert _pdf_contains(raw, version)
+    assert _pdf_contains(raw, "not authored slides")
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
@@ -221,14 +283,97 @@ def test_full_pipeline(video_slide_extraction, tmp_path):
     result = video_slide_extraction.extract_slides_from_video(
         video, outdir, "test_id", fps=1, hash_threshold=8
     )
-    assert result["unique_slides_count"] >= 1
+    assert result["unique_frame_count"] >= 1
+    assert result["authored_slide_count"] is None
+    assert "unique_slides_count" not in result
+    assert "slide_count" not in result
+    assert "output_pdf" not in result
     assert result["slide_source"] == "video_extracted"
     assert result["pipeline_version"] == video_slide_extraction.PIPELINE_VERSION
     assert result["schema_version"] == video_slide_extraction.SCHEMA_VERSION
     assert result["slide_region_method"] == "auto"
     assert result["slide_region_applied"] is False
     assert result["slide_region_verified"] is False
-    assert os.path.isfile(result["output_pdf"])
+    assert result["review_required"] is True
+    assert not any(artifact["artifact_scope"] == "slide_region"
+                   for artifact in result["artifacts"])
+    context = _artifact(result, "full_frame_context")
+    assert context["trusted_for_authored_slide_analysis"] is False
+    assert os.path.isfile(context["path"])
+    assert context["path"].endswith("test_id.context.pdf")
+    assert result["source_video_path"] == os.path.realpath(video)
+    assert os.path.isfile(video), "the extractor must preserve its source video"
+
+
+def test_no_region_emits_context_only_even_when_extra_context_is_disabled(
+        video_slide_extraction, tmp_path, monkeypatch):
+    frame = tmp_path / "full-frame.png"
+    Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"source-video")
+    outdir = tmp_path / "output" / ".." / "output"
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames",
+        lambda video_path, frames_dir, fps: [str(frame)],
+    )
+
+    result = video_slide_extraction.extract_slides_from_video(
+        str(video), str(outdir), "no_region",
+        slide_region="none", include_context_pdf=False,
+    )
+
+    assert result["review_required"] is True
+    assert result["artifacts"] == [_artifact(result, "full_frame_context")]
+    context = result["artifacts"][0]
+    assert context["path"] == os.path.realpath(
+        tmp_path / "output" / "no_region.context.pdf")
+    assert context["source_video_id"] == "no_region"
+    assert context["source_video_path"] == os.path.realpath(video)
+    assert context["crop_method"] == "none"
+    assert context["crop_verified"] is False
+    assert context["trusted_for_authored_slide_analysis"] is False
+    assert video.exists()
+
+
+def test_unverified_auto_crop_is_a_review_required_candidate(
+        video_slide_extraction, tmp_path, monkeypatch):
+    frame = tmp_path / "broadcast-frame.png"
+    Image.new("RGB", (1000, 500), (80, 40, 20)).save(frame)
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"source-video")
+    outdir = tmp_path / "output"
+    region = (0.25, 0.25, 0.75, 0.75)
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames",
+        lambda video_path, frames_dir, fps: [str(frame)],
+    )
+    monkeypatch.setattr(
+        video_slide_extraction, "detect_slide_region",
+        lambda frames: region,
+    )
+
+    result = video_slide_extraction.extract_slides_from_video(
+        str(video), str(outdir), "auto_id", fps=0.5,
+        include_context_pdf=False,
+    )
+
+    slide = _artifact(result, "slide_region")
+    context = _artifact(result, "full_frame_context")
+    assert result["review_required"] is True
+    assert "auto-detected crop is unverified" in result["review_reason"]
+    assert slide["crop_method"] == "auto"
+    assert slide["crop_verified"] is False
+    assert slide["trusted_for_authored_slide_analysis"] is False
+    assert context["trusted_for_authored_slide_analysis"] is False
+    assert slide["path"] == os.path.realpath(
+        outdir / "auto_id.slide-region.pdf")
+    assert context["path"] == os.path.realpath(
+        outdir / "auto_id.context.pdf")
+    with open(slide["path"], "rb") as slide_file:
+        assert b"/MediaBox [ 0 0 500.0 250.0 ]" in slide_file.read()
+    assert result["retained_frames"] == [
+        {"page_number": 1, "frame_index": 0, "timestamp_seconds": 0.0}]
+    assert video.exists()
 
 
 def test_manual_region_bypasses_detection_and_records_verified_provenance(
@@ -258,7 +403,54 @@ def test_manual_region_bypasses_detection_and_records_verified_provenance(
     assert result["slide_region_detected"] is False
     assert result["slide_region_applied"] is True
     assert result["slide_region_verified"] is True
-    assert os.path.isfile(result["output_pdf"])
+    assert result["review_required"] is False
+    assert result["review_reason"] is None
+    slide = _artifact(result, "slide_region")
+    context = _artifact(result, "full_frame_context")
+    assert slide["crop_method"] == "manual"
+    assert slide["crop_verified"] is True
+    assert slide["trusted_for_authored_slide_analysis"] is True
+    assert context["trusted_for_authored_slide_analysis"] is False
+    assert os.path.isfile(slide["path"])
+    assert os.path.isfile(context["path"])
+
+
+def test_verified_crop_can_omit_extra_context_without_deleting_source(
+        video_slide_extraction, tmp_path, monkeypatch):
+    frame = tmp_path / "manual-region-frame.png"
+    Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"source-video")
+    outdir = tmp_path / "output"
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames",
+        lambda video_path, frames_dir, fps: [str(frame)],
+    )
+
+    result = video_slide_extraction.extract_slides_from_video(
+        str(video), str(outdir), "manual_no_context",
+        slide_region=(0.2, 0.1, 0.9, 0.8),
+        slide_region_verified=True,
+        include_context_pdf=False,
+    )
+
+    assert result["review_required"] is False
+    assert [artifact["artifact_scope"] for artifact in result["artifacts"]] == [
+        "slide_region"]
+    assert _artifact(result, "slide_region")["path"].endswith(
+        "manual_no_context.slide-region.pdf")
+    assert not (outdir / "manual_no_context.context.pdf").exists()
+    assert video.exists()
+
+
+def test_retained_frame_provenance_records_page_indices_and_timestamps(
+        video_slide_extraction):
+    assert video_slide_extraction.retained_frame_provenance(
+        [("first.jpg", 0), ("later.jpg", 3)], fps=0.5,
+    ) == [
+        {"page_number": 1, "frame_index": 0, "timestamp_seconds": 0.0},
+        {"page_number": 2, "frame_index": 3, "timestamp_seconds": 6.0},
+    ]
 
 
 def test_only_a_manual_region_can_be_marked_verified(video_slide_extraction):

@@ -72,8 +72,13 @@ producing one "unique" slide per frame.
   slides, so inspect the result for under-counting.
 - Prefer a visually checked manual crop so the deduper hashes only the slide
   area, not the whole frame: `--region LEFT,TOP,RIGHT,BOTTOM --region-verified`.
-- Accept the bloated PDF and have the analysis subagent sample frames at
-  intervals.
+- Treat any auto-cropped `slide_region` artifact as a review candidate only. It
+  remains `review_required` and cannot support authored-slide evidence until the
+  checked coordinates are rerun as a verified manual crop.
+- Use the `full_frame_context` PDF to inspect the room/PiP and sample frames at
+  intervals, but never describe that broadcast artifact as the authored deck.
+- Preserve the source video and context PDF so a failed crop can be reviewed and
+  re-extracted rather than silently replacing the only visual evidence.
 
 **Best results:** fullscreen slide recordings (Devoxx, JFokus).
 **Worst results:** meetup / DevOpsDays audience-camera recordings.
