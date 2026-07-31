@@ -115,9 +115,12 @@ evidence. The captured webpage URL is provenance and is never an automatic
 Offline comparison rules are intentionally deterministic:
 
 - `video_id` must equal the ID parsed from the catalog URL/stored ID.
-- The source title must contain the normalized catalog title, or share at least
-  half its significant words (minimum two for multi-word titles). Common title
-  furniture such as “keynote”, “talk”, and “conference” is ignored.
+- The source title must materially agree with the catalog title. A provider may
+  omit an explicitly delimited subtitle when its distinctive base title remains
+  intact. This never establishes delivery identity: when the provider title
+  explicitly names a known event, that event must agree with the catalog
+  conference. The deterministic matching contract is owned by
+  `skills/vault-ingress/scripts/source_identity_matching.py`.
 - At least one recorded speaker must match a talk-level `speakers`/`speaker`
   value, falling back to `config.speaker_name`. A full name and that same
   surname-only form agree; unrelated names do not.

@@ -110,15 +110,19 @@ Stable finding codes:
 | `provider_video_id_mismatch` | Returned provider ID differs from the requested ID; no proposal is emitted |
 | `provider_webpage_identity_mismatch` | Returned webpage names another ID; no proposal is emitted |
 | `provider_metadata_incomplete` | A stable capture field is absent/invalid |
-| `provider_title_mismatch` | Provider title fails the offline preflight's title-overlap rule |
-| `provider_duration_mismatch` | Provider duration exceeds the catalog tolerance (60 seconds or 5%) |
+| `provider_title_mismatch` | Provider title lacks material full-title or explicit base-title agreement |
+| `provider_event_mismatch` | Provider title explicitly names a known event different from the catalog conference |
+| `provider_duration_mismatch` | Provider duration exceeds the audit's deterministic catalog tolerance |
 | `provider_upload_predates_catalog` | Upload date predates the cataloged delivery date |
 | `stored_source_identity_differs` | Fresh stable facts differ from an existing evidence block |
 | `likely_non_delivery_clip` | Conservative title/duration signals suggest a demo, teaser, excerpt, or other non-delivery artifact |
 | `same_id_cross_talk_collision` | One ID is active on records with materially different titles or delivery dates |
 
-The non-delivery finding is a review signal, never an automatic rejection. The
-conservative signal combination is owned by
+Title and explicit-event comparison are separate: an abbreviated title cannot
+waive a delivery's event identity. Their matching contract is owned by
+`skills/vault-ingress/scripts/source_identity_matching.py`. The non-delivery
+finding is a review signal, never an automatic rejection. Its conservative
+signal combination is owned by
 `skills/vault-ingress/scripts/audit-source-identities.py` in
 `_non_delivery_signals`. Cross-talk collision findings include existing
 `source_relation` values for human review.

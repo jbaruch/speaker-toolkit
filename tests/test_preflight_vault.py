@@ -4,6 +4,7 @@ from copy import deepcopy
 import json
 import subprocess
 import sys
+from typing import Any
 
 import pytest
 
@@ -31,7 +32,7 @@ def vault_fixture(tmp_path):
     }
 
 
-def base_talk(**updates):
+def base_talk(**updates: Any) -> dict[str, Any]:
     talk = {
         "filename": "2026-07-30-perfect-ingress.md",
         "title": "Perfect Vault Ingress",
@@ -244,6 +245,67 @@ def test_h4_wrong_recording_evidence_is_blocking(preflight_vault, vault_fixture)
         "source_identity_speaker_mismatch",
         "source_identity_duration_mismatch",
     } <= finding_codes(report, "blocking")
+
+
+def test_short_provider_title_with_matching_event_passes_identity_preflight(
+    preflight_vault, vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    catalog_title = (
+        "Coding Fast and Slow: Applying Kahneman's Insights to Improve "
+        "Development Practices and Efficiency"
+    )
+    talk = base_talk(
+        title=catalog_title,
+        conference="Dev2Next 2026",
+        source_identity=source_identity(
+            title="Coding Fast and Slow at Dev2Next 2026",
+        ),
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "source_identity_title_mismatch" not in finding_codes(report)
+    assert "source_identity_event_mismatch" not in finding_codes(report)
+
+
+def test_short_provider_title_from_wrong_event_is_blocking(
+    preflight_vault, vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    catalog_title = (
+        "Coding Fast and Slow: Applying Kahneman's Insights to Improve "
+        "Development Practices and Efficiency"
+    )
+    active = base_talk(
+        title=catalog_title,
+        conference="KCDC 2024",
+        date="2024-06-26",
+        source_identity=source_identity(
+            title="Coding Fast and Slow at Devoxx Poland 2024",
+            recorded_date="2024-06-26",
+            upload_date="2024-07-01",
+        ),
+    )
+    known_other_event = base_talk(
+        filename="2024-06-19-devoxx-poland-catalog-only.md",
+        title=catalog_title,
+        conference="Devoxx Poland 2024",
+        date="2024-06-19",
+        video_url=None,
+        youtube_id=None,
+        transcript_source="none",
+        status="skipped_no_sources",
+    )
+    write_database(vault_fixture, [active, known_other_event])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "source_identity_title_mismatch" not in finding_codes(report)
+    assert "source_identity_event_mismatch" in finding_codes(
+        report, "blocking",
+    )
 
 
 def test_speaker_match_accepts_surname_but_not_unrelated_given_name(preflight_vault):

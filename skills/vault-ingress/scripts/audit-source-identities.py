@@ -22,16 +22,18 @@ import sys
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
 
+from source_identity_matching import (
+    event_agreement,
+    known_event_aliases,
+    normalized_words,
+    titles_agree,
+)
+
 
 REPORT_SCHEMA_VERSION = 1
 SOURCE_IDENTITY_SCHEMA_VERSION = 1
 YT_DLP_TIMEOUT_SECONDS = 60
 YOUTUBE_ID_RE = re.compile(r"[A-Za-z0-9_-]{11}")
-WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
-TITLE_STOP_WORDS = frozenset({
-    "a", "an", "and", "at", "by", "conference", "for", "from", "in",
-    "keynote", "of", "on", "or", "session", "talk", "the", "to", "with",
-})
 CLIP_MARKERS = frozenset({
     "clip", "demo", "excerpt", "highlight", "highlights", "preview", "promo",
     "short", "teaser", "trailer",
@@ -96,29 +98,6 @@ def is_youtube_url(value: Any) -> bool:
         "youtu.be", "www.youtu.be", "youtube-nocookie.com",
         "www.youtube-nocookie.com",
     }
-
-
-def _normalized_words(value: str) -> set[str]:
-    return {
-        word for word in WORD_RE.findall(value.casefold())
-        if word not in TITLE_STOP_WORDS and len(word) > 1
-    }
-
-
-def titles_agree(expected: str, observed: str) -> bool:
-    """Mirror the offline preflight's conservative title-overlap rule."""
-    expected_flat = " ".join(WORD_RE.findall(expected.casefold()))
-    observed_flat = " ".join(WORD_RE.findall(observed.casefold()))
-    if expected_flat and f" {expected_flat} " in f" {observed_flat} ":
-        return True
-    expected_words = _normalized_words(expected)
-    observed_words = _normalized_words(observed)
-    if not expected_words or not observed_words:
-        return False
-    overlap = len(expected_words & observed_words)
-    minimum = 1 if len(expected_words) == 1 else max(
-        2, (len(expected_words) + 1) // 2)
-    return overlap >= minimum
 
 
 def expected_duration_seconds(talk: dict[str, Any]) -> float | None:
@@ -332,7 +311,7 @@ def _non_delivery_signals(
     duration = evidence.get("duration_seconds")
     expected = expected_duration_seconds(talk)
     markers = sorted(
-        _normalized_words(provider_title or "") & CLIP_MARKERS)
+        normalized_words(provider_title or "") & CLIP_MARKERS)
     signals: list[str] = []
     if markers:
         signals.append("provider_title_has_clip_marker:" + ",".join(markers))
@@ -340,7 +319,7 @@ def _non_delivery_signals(
         if expected >= 600 and duration / expected < 0.55:
             signals.append("provider_duration_under_55_percent_of_catalog")
     if isinstance(duration, (int, float)) and duration < 120:
-        catalog_words = _normalized_words(_nonempty(talk.get("title")) or "")
+        catalog_words = normalized_words(_nonempty(talk.get("title")) or "")
         if "lightning" not in catalog_words:
             signals.append("provider_duration_under_two_minutes")
     if title_agrees is False and isinstance(duration, (int, float)) and duration < 600:
@@ -405,6 +384,8 @@ def audit_database(
             talks = []
         else:
             talks = raw_talks
+
+    event_aliases = known_event_aliases(talks)
 
     active_count = 0
     audits_by_index: dict[int, dict[str, Any]] = {}
@@ -552,8 +533,12 @@ def audit_database(
                 if catalog_date is not None and upload_date is not None else None
             )
             differences = _stored_identity_differences(talk, proposal)
+            event_agrees, catalog_event, provider_events = event_agreement(
+                talk.get("conference"), provider_title or "", event_aliases,
+            )
             audit["comparison"] = {
                 "catalog_title_agrees": title_agrees,
+                "catalog_event_agrees": event_agrees,
                 "duration_within_tolerance": duration_within_tolerance,
                 "upload_predates_catalog_date": upload_predates,
                 "stored_source_identity_differences": differences,
@@ -567,6 +552,20 @@ def audit_database(
                     "provider_title_mismatch", video_id, [index], [filename],
                     "provider title does not materially overlap the catalog title",
                     {"catalog_title": catalog_title, "provider_title": provider_title},
+                ))
+            if event_agrees is False:
+                findings.append(_finding(
+                    "provider_event_mismatch", video_id, [index], [filename],
+                    "provider title explicitly names a different catalog event",
+                    {
+                        "catalog_conference": talk.get("conference"),
+                        "catalog_event_alias": " ".join(catalog_event or ()),
+                        "provider_event_aliases": [
+                            " ".join(alias) for alias in provider_events
+                        ],
+                        "provider_title": provider_title,
+                    },
+                    "high",
                 ))
             if duration_within_tolerance is False:
                 findings.append(_finding(

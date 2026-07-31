@@ -31,6 +31,12 @@ from return_validation import (
     VIDEO_EXTRACTION_SCHEMA_VERSION,
     validate_video_extraction_manifest,
 )
+from source_identity_matching import (
+    EventAlias,
+    event_agreement,
+    known_event_aliases,
+    titles_agree,
+)
 
 
 REPORT_SCHEMA_VERSION = 1
@@ -56,10 +62,6 @@ SLIDE_CONTRACT_CODES = frozenset({
 
 YOUTUBE_ID_RE = re.compile(r"[A-Za-z0-9_-]{11}")
 WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
-TITLE_STOP_WORDS = frozenset({
-    "a", "an", "and", "at", "by", "conference", "for", "from", "in",
-    "keynote", "of", "on", "or", "session", "talk", "the", "to", "with",
-})
 
 
 def parse_youtube_id(url: Any) -> str | None:
@@ -171,6 +173,7 @@ class VaultPreflight:
         self.filenames: dict[str, int] = {}
         self.youtube_ids: dict[int, str] = {}
         self.valid_relations: dict[int, tuple[str, str]] = {}
+        self.event_aliases: set[EventAlias] = set()
 
     def add(
         self,
@@ -258,6 +261,8 @@ class VaultPreflight:
                 continue
             self.talks.append(talk)
             self.source_indexes.append(index)
+
+        self.event_aliases = known_event_aliases(self.talks)
 
         # Valid-entry checks use compact internal indexes.  Findings map those
         # back to the original source-array indexes, even around malformed rows.
@@ -856,6 +861,26 @@ class VaultPreflight:
                 field="source_identity.title", expected=expected_title,
                 actual=observed_title,
             )
+        event_agrees, catalog_event, provider_events = event_agreement(
+            self.talks[index].get("conference"), observed_title,
+            self.event_aliases,
+        )
+        if event_agrees is False:
+            self.talk_add(
+                index, "blocking", "source_identity_event_mismatch",
+                "recorded video title explicitly names a different catalog event",
+                field="source_identity.title",
+                expected={
+                    "conference": self.talks[index].get("conference"),
+                    "event_alias": " ".join(catalog_event or ()),
+                },
+                actual={
+                    "title": observed_title,
+                    "event_aliases": [
+                        " ".join(alias) for alias in provider_events
+                    ],
+                },
+            )
 
     def _validate_identity_speakers(self, index: int, evidence: dict[str, Any]) -> None:
         observed = evidence.get("speakers")
@@ -1098,33 +1123,6 @@ class VaultPreflight:
             },
             "findings": self.findings,
         }
-
-
-def _normalized_words(value: str) -> set[str]:
-    return {
-        word for word in WORD_RE.findall(value.casefold())
-        if word not in TITLE_STOP_WORDS and len(word) > 1
-    }
-
-
-def titles_agree(expected: str, observed: str) -> bool:
-    """Conservative, deterministic title-overlap check.
-
-    At least half the catalog's significant words must appear in the recorded
-    source title, with a two-word floor when the catalog title has two or more
-    significant words.  Exact normalized containment is accepted first.
-    """
-    expected_flat = " ".join(WORD_RE.findall(expected.casefold()))
-    observed_flat = " ".join(WORD_RE.findall(observed.casefold()))
-    if expected_flat and f" {expected_flat} " in f" {observed_flat} ":
-        return True
-    expected_words = _normalized_words(expected)
-    observed_words = _normalized_words(observed)
-    if not expected_words or not observed_words:
-        return False
-    overlap = len(expected_words & observed_words)
-    minimum = 1 if len(expected_words) == 1 else max(2, (len(expected_words) + 1) // 2)
-    return overlap >= minimum
 
 
 def _name_words(value: str) -> set[str]:
