@@ -129,10 +129,13 @@ read-only flow in [source-identity-audit.md](source-identity-audit.md), review i
 then run the preflight. Uploader/upload date never establish speaker/recorded
 date, and a captured webpage URL is never an automatic active-source repair.
 
-Queue eligibility is not encoded by `video_url` alone. `queue-state.py` derives
-auditable `source_capabilities` from declared video, transcript, and slide references;
-any one can support a claim after preflight. Legacy no-video/no-transcript statuses
-normalize to `skipped_no_sources` only when that capability list is empty.
+Queue eligibility is not encoded by `video_url` alone. One shared resolver derives
+auditable `source_capabilities` for queueing, return provenance, and terminal
+status checks. A transcript capability requires `transcript_path` or an active
+video acquisition path; `transcript_source: manual` is provenance only and does
+not prove an artifact exists. Slide capability requires a PPTX/PDF reference.
+Legacy no-video/no-transcript statuses normalize to `skipped_no_sources` only
+when the shared capability list is empty.
 
 `improvement_goals` is the coaching-loop artifact — speaker-chosen focus areas that
 a later ingress run verifies. vault-clarification owns the record shape; vault-ingress
@@ -317,10 +320,17 @@ receipt hashes the exact return payload after stable JSON key/whitespace
 canonicalization. `persist-results.py` accepts an active v1 or v2 lease, upgrades
 it to v2 when closing it, and stores the receipt; new claims are v2. The analysis
 writer recomputes the receipt and rejects a substituted payload. `queue-state.py`
-owns stored-claim migration: an already completed v1 claim becomes v2 with an
-explicit null receipt because the original payload cannot be reconstructed, and
-therefore cannot authorize an analysis replacement until a fresh generation is
-processed. Unknown future claim versions fail closed.
+dual-reads v1/v2 without mutating `inspect` or idempotent replay; a v1 claim is
+upgraded only as part of an actual queue transition that is written. An already
+completed v1 claim has no reconstructable receipt and therefore cannot authorize
+an analysis replacement until a fresh generation is processed. Unknown future
+claim versions fail closed.
+
+Terminal skip reasons are state-bound too. `skipped_no_sources` requires an
+empty capability list. `skipped_download_failed` requires a remote video/slide
+acquisition path and no remaining local transcript, PPTX, or PDF artifact.
+`skipped_duplicate` requires `source_relation.type: duplicate` plus a non-empty
+`target_filename`.
 
 Before rendering a processed result, `write-analysis.py` also requires the
 talk's `pattern_catalog_fingerprint` and `pattern_scoring_schema_version` to

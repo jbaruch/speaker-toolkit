@@ -114,7 +114,7 @@ def _write_tracking_db(
         persisted_date=None):
     talks = []
     for ret in returns:
-        talks.append({
+        talk = {
             "filename": ret["filename"],
             "title": title,
             "schema_version": 3,
@@ -139,7 +139,10 @@ def _write_tracking_db(
                 "result_status": ret["status"],
                 "result_payload_sha256": _return_receipt(ret),
             },
-        })
+        }
+        if ret["status"] == "skipped_no_sources":
+            talk.update({"video_url": None, "pptx_path": None, "slides_url": None})
+        talks.append(talk)
     path = tmp_path / name
     path.write_text(json.dumps({"talks": talks}))
     return path
@@ -849,6 +852,78 @@ def test_analysis_writer_rejects_partial_completed_batch_before_any_write(
     assert "missing ['c.md']" in result.stderr
     assert existing.read_text() == "# current analysis\n"
     assert sorted(path.name for path in out.iterdir()) == ["a.md"]
+
+
+def test_non_object_db_member_is_actionable_before_analysis_write(
+        write_analysis, tmp_path):
+    ret = _return()
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    payload["talks"].append("not-a-talk")
+    db.write_text(json.dumps(payload))
+    out = tmp_path / "analyses"
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "talks[1] must be a JSON object" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not out.exists()
+
+
+def test_future_talk_schema_cannot_authorize_analysis_write(
+        write_analysis, tmp_path):
+    ret = _return()
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    payload["talks"][0]["schema_version"] = 99
+    db.write_text(json.dumps(payload))
+    out = tmp_path / "analyses"
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "future talk schema_version 99" in result.stderr
+    assert not out.exists()
+
+
+def test_tracking_database_symlink_is_rejected_before_analysis_write(
+        write_analysis, tmp_path):
+    ret = _return()
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    target = _write_tracking_db(tmp_path, [ret])
+    before = target.read_bytes()
+    link = tmp_path / "tracking-link.json"
+    link.symlink_to(target.name)
+    out = tmp_path / "analyses"
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(link)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "symbolic link" in result.stderr
+    assert link.is_symlink()
+    assert target.read_bytes() == before
+    assert not out.exists()
 
 
 def test_kcdc_wrong_transcript_return_cannot_overwrite_analysis(

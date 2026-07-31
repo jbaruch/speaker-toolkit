@@ -31,6 +31,17 @@ from catalog_io import (
     parse_evidence_source_groups,
     qualifying_evidence_groups,
 )
+from ingress_contract import (
+    IngressContractError,
+    has_local_source_artifact,
+    has_pdf_source,
+    has_pptx_source,
+    has_remote_acquisition_source,
+    has_transcript_source,
+    has_video_source,
+    source_capabilities,
+    validate_talk_record_schemas,
+)
 
 
 ANALYSIS_STATUSES = frozenset({"processed", "processed_partial"})
@@ -103,14 +114,6 @@ SKIPPED_RETURN_FIELDS = frozenset({
     "queue_claim",
     "status",
 })
-TRANSCRIPT_REFERENCE_FIELDS = ("transcript_path",)
-PDF_REFERENCE_FIELDS = (
-    "slides_url",
-    "google_drive_id",
-    "slides_local_path",
-    "slides_pdf_path",
-    "pdf_path",
-)
 AUTHORED_SLIDE_FIELDS = frozenset({
     "slide_count",
     "meme_count",
@@ -900,26 +903,6 @@ def _nonempty_talk_string(talk: dict, field: str) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def _talk_has_video_source(talk: dict) -> bool:
-    return _nonempty_talk_string(talk, "video_url")
-
-
-def _talk_has_transcript_source(talk: dict) -> bool:
-    return (
-        any(_nonempty_talk_string(talk, field)
-            for field in TRANSCRIPT_REFERENCE_FIELDS)
-        or _talk_has_video_source(talk)
-    )
-
-
-def _talk_has_pptx_source(talk: dict) -> bool:
-    return _nonempty_talk_string(talk, "pptx_path")
-
-
-def _talk_has_pdf_source(talk: dict) -> bool:
-    return any(_nonempty_talk_string(talk, field) for field in PDF_REFERENCE_FIELDS)
-
-
 def _validate_stored_claim(expected: dict, filename: str) -> None:
     state = expected.get("state")
     version = expected.get("schema_version")
@@ -992,14 +975,14 @@ def _validate_return_sources_against_talk(talk: dict, ret: dict) -> None:
     )
     if ((transcript_source in TRANSCRIPT_SOURCES - {"none"}
          or "transcript" in evidence_sources)
-            and not _talk_has_transcript_source(talk)):
+            and not has_transcript_source(talk)):
         raise ReturnValidationError(
             f"{talk.get('filename', '<unknown>')} return claims transcript provenance/evidence, "
             "but the claimed talk has no transcript reference or active video source")
 
     slide_source = ret.get("slide_source")
-    has_pptx = _talk_has_pptx_source(talk)
-    has_pdf = _talk_has_pdf_source(talk)
+    has_pptx = has_pptx_source(talk)
+    has_pdf = has_pdf_source(talk)
     if slide_source in {"pptx", "both"} and not has_pptx:
         raise ReturnValidationError(
             f"{talk.get('filename', '<unknown>')} return claims slide_source "
@@ -1008,7 +991,7 @@ def _validate_return_sources_against_talk(talk: dict, ret: dict) -> None:
         raise ReturnValidationError(
             f"{talk.get('filename', '<unknown>')} return claims slide_source "
             f"{slide_source!r}, but the claimed talk has no independent PDF source")
-    if slide_source == "video_extracted" and not _talk_has_video_source(talk):
+    if slide_source == "video_extracted" and not has_video_source(talk):
         raise ReturnValidationError(
             f"{talk.get('filename', '<unknown>')} return claims video-extracted "
             "slides, but the claimed talk has no active video source")
@@ -1016,10 +999,43 @@ def _validate_return_sources_against_talk(talk: dict, ret: dict) -> None:
         raise ReturnValidationError(
             f"{talk.get('filename', '<unknown>')} return claims native_deck evidence, "
             "but the claimed talk has no pptx_path")
-    if "delivery_video" in evidence_sources and not _talk_has_video_source(talk):
+    if "delivery_video" in evidence_sources and not has_video_source(talk):
         raise ReturnValidationError(
             f"{talk.get('filename', '<unknown>')} return claims delivery_video evidence, "
             "but the claimed talk has no active video source")
+
+
+def _validate_terminal_status_against_talk(talk: dict, ret: dict) -> None:
+    """Bind mechanically decidable terminal skip reasons to live talk state."""
+    filename = talk.get("filename", "<unknown>")
+    status = ret.get("status")
+    if status == "skipped_no_sources":
+        capabilities = source_capabilities(talk)
+        if capabilities:
+            raise ReturnValidationError(
+                f"{filename} cannot finish skipped_no_sources while usable source "
+                f"capabilities remain: {capabilities}")
+        return
+    if status == "skipped_download_failed":
+        if not has_remote_acquisition_source(talk):
+            raise ReturnValidationError(
+                f"{filename} cannot finish skipped_download_failed without a "
+                "declared video or remote slide acquisition path")
+        if has_local_source_artifact(talk):
+            raise ReturnValidationError(
+                f"{filename} cannot finish skipped_download_failed while a local "
+                "transcript, PPTX, or PDF artifact remains declared")
+        return
+    if status != "skipped_duplicate":
+        return
+    relation = talk.get("source_relation")
+    target = relation.get("target_filename") if isinstance(relation, dict) else None
+    if (not isinstance(relation, dict) or relation.get("type") != "duplicate"
+            or not isinstance(target, str) or not target.strip()
+            or target == filename):
+        raise ReturnValidationError(
+            f"{filename} cannot finish skipped_duplicate without "
+            "source_relation.type='duplicate' and a target_filename")
 
 
 def validate_claim_against_talk(
@@ -1098,6 +1114,7 @@ def validate_claim_against_talk(
             raise ReturnValidationError(
                 "structured_data.video_extraction.source_video_id "
                 f"{returned_id!r} does not match talk youtube_id {expected_id!r}")
+    _validate_terminal_status_against_talk(talk, ret)
     _validate_return_sources_against_talk(talk, ret)
 
 
@@ -1148,6 +1165,11 @@ def validate_batch_claims_against_talks(
         raise ReturnValidationError(
             "batch-returns must contain at least one return")
 
+    try:
+        validated_talks = validate_talk_record_schemas(talks)
+    except IngressContractError as exc:
+        raise ReturnValidationError(str(exc)) from exc
+
     return_names = [ret.get("filename") for ret in returns]
     duplicate_returns = sorted({
         name for name in return_names
@@ -1169,9 +1191,7 @@ def validate_batch_claims_against_talks(
 
     talks_by_name: dict[str, dict] = {}
     duplicate_talks = set()
-    for talk in talks:
-        if not isinstance(talk, dict):
-            continue
+    for talk in validated_talks:
         filename = talk.get("filename")
         if not isinstance(filename, str) or not filename:
             continue

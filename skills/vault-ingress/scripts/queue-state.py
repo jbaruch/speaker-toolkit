@@ -55,6 +55,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from ingress_contract import (
+    IngressContractError,
+    has_video_source,
+    reject_tracking_database_symlink,
+    source_capabilities,
+)
 from return_validation import QUEUE_CLAIM_SCHEMA_VERSION
 
 
@@ -79,15 +85,6 @@ KNOWN_STATUSES = frozenset({
 CLAIM_STATES = frozenset({"claimed", "completed", "stale_recovered", "superseded"})
 YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 PLAYLIST_FILENAME = re.compile(r"^playlist-([A-Za-z0-9_-]{11})\.md$")
-KNOWN_TRANSCRIPT_SOURCES = frozenset({"youtube_auto", "whisper", "manual"})
-SLIDE_REFERENCE_FIELDS = (
-    "pptx_path",
-    "slides_url",
-    "google_drive_id",
-    "slides_local_path",
-    "slides_pdf_path",
-    "pdf_path",
-)
 
 
 class QueueStateError(ValueError):
@@ -158,31 +155,7 @@ def youtube_id_from_url(value):
 
 
 def has_video(talk):
-    value = talk.get("video_url")
-    return isinstance(value, str) and bool(value.strip())
-
-
-def _has_nonempty_field(talk, field):
-    value = talk.get(field)
-    return isinstance(value, str) and bool(value.strip())
-
-
-def source_capabilities(talk):
-    """Return the usable source kinds declared by one preflighted talk record.
-
-    Queue state does not reimplement artifact integrity checks; Step 1 preflight
-    owns those. Its job is to avoid discarding a valid non-video input merely
-    because the video acquisition lane is absent.
-    """
-    capabilities = []
-    if has_video(talk):
-        capabilities.append("video")
-    if (any(_has_nonempty_field(talk, field) for field in SLIDE_REFERENCE_FIELDS)):
-        capabilities.append("slides")
-    if (_has_nonempty_field(talk, "transcript_path") or
-            talk.get("transcript_source") in KNOWN_TRANSCRIPT_SOURCES):
-        capabilities.append("transcript")
-    return capabilities
+    return has_video_source(talk)
 
 
 def has_processable_source(talk):
@@ -192,10 +165,19 @@ def has_processable_source(talk):
 def validate_claim(claim, filename, *, historical=False):
     if not isinstance(claim, dict):
         raise QueueStateError(f"{filename}: queue claim must be a JSON object")
-    if claim.get("schema_version") != CLAIM_SCHEMA_VERSION:
+    version = claim.get("schema_version")
+    if (isinstance(version, int) and not isinstance(version, bool)
+            and version > CLAIM_SCHEMA_VERSION):
+        raise QueueStateError(
+            f"{filename}: queue claim schema_version {version} is newer than "
+            f"supported version {CLAIM_SCHEMA_VERSION}; upgrade queue-state "
+            "before continuing")
+    if (isinstance(version, bool) or not isinstance(version, int)
+            or version < LEGACY_CLAIM_SCHEMA_VERSION):
         raise QueueStateError(
             f"{filename}: queue claim schema_version is "
-            f"{claim.get('schema_version')!r}; expected {CLAIM_SCHEMA_VERSION}"
+            f"{version!r}; expected {LEGACY_CLAIM_SCHEMA_VERSION} or "
+            f"{CLAIM_SCHEMA_VERSION}"
         )
     require_identifier(claim.get("run_id"), f"{filename}: claim.run_id")
     require_identifier(claim.get("batch_id"), f"{filename}: claim.batch_id")
@@ -231,11 +213,16 @@ def validate_claim(claim, filename, *, historical=False):
                 "skipped_download_failed", "skipped_duplicate"}:
             raise QueueStateError(
                 f"{filename}: a completed claim must carry a terminal result_status")
-        if "result_payload_sha256" not in claim:
+        if (version == CLAIM_SCHEMA_VERSION
+                and "result_payload_sha256" not in claim):
             raise QueueStateError(
                 f"{filename}: a schema-v2 completed claim must carry "
                 "result_payload_sha256")
         receipt = claim.get("result_payload_sha256")
+        if (receipt is None and version == CLAIM_SCHEMA_VERSION and not historical):
+            raise QueueStateError(
+                f"{filename}: a current schema-v2 completed claim must carry a "
+                "return-payload SHA-256 receipt")
         if (receipt is not None
                 and (not isinstance(receipt, str)
                      or re.fullmatch(r"[0-9a-f]{64}", receipt) is None)):
@@ -362,59 +349,20 @@ def validate_database(database, *, allow_claim_status_drift=False):
         seen.add(filename)
 
 
-def migrate_claim_schemas(database):
-    """Upgrade v1 claim records after preflighting every stored version.
-
-    v2 adds a result-payload receipt only to completed claims. An already
-    completed v1 claim cannot reconstruct that payload, so its migrated receipt
-    is explicitly null and analysis rendering rejects it until a fresh
-    generation is persisted. Active v1 claims remain completable and receive a
-    real receipt when persist-results.py closes them.
-    """
-    if not isinstance(database, dict):
-        raise QueueStateError("tracking database root must be a JSON object")
-    talks = database.get("talks")
-    if not isinstance(talks, list):
-        raise QueueStateError("tracking database must contain a talks array")
-
-    claims = []
-    for index, talk in enumerate(talks):
-        if not isinstance(talk, dict):
-            raise QueueStateError(f"talks[{index}] must be a JSON object")
-        history = talk.get("_queue_claim_history", [])
-        if not isinstance(history, list):
-            raise QueueStateError(
-                f"talks[{index}]._queue_claim_history must be a JSON array")
-        for claim in [*history, talk.get("_queue_claim")]:
-            if claim is None:
-                continue
-            if not isinstance(claim, dict):
-                raise QueueStateError(
-                    f"talks[{index}] queue claim must be a JSON object")
-            version = claim.get("schema_version")
-            if (isinstance(version, bool) or not isinstance(version, int)
-                    or version < LEGACY_CLAIM_SCHEMA_VERSION):
-                raise QueueStateError(
-                    f"talks[{index}] queue claim schema_version {version!r} is invalid")
-            if version > CLAIM_SCHEMA_VERSION:
-                raise QueueStateError(
-                    f"talks[{index}] queue claim schema_version {version} is newer "
-                    f"than supported version {CLAIM_SCHEMA_VERSION}; upgrade the "
-                    "queue-state reader before continuing")
-            claims.append(claim)
-
-    migrated = 0
-    for claim in claims:
-        if claim["schema_version"] != LEGACY_CLAIM_SCHEMA_VERSION:
-            continue
-        claim["schema_version"] = CLAIM_SCHEMA_VERSION
-        if claim.get("state") == "completed":
-            claim["result_payload_sha256"] = None
-        migrated += 1
-    return migrated
+def upgrade_claim_for_write(claim):
+    """Upgrade one v1 claim only when its owning queue transition is persisted."""
+    if claim.get("schema_version") != LEGACY_CLAIM_SCHEMA_VERSION:
+        return
+    claim["schema_version"] = CLAIM_SCHEMA_VERSION
+    if claim.get("state") == "completed":
+        claim["result_payload_sha256"] = None
 
 
 def load_database(path, *, allow_claim_status_drift=False):
+    try:
+        reject_tracking_database_symlink(path)
+    except IngressContractError as exc:
+        raise QueueStateError(str(exc)) from exc
     try:
         with path.open(encoding="utf-8") as handle:
             database = json.load(handle)
@@ -430,13 +378,10 @@ def load_database(path, *, allow_claim_status_drift=False):
         ) from exc
     except OSError as exc:
         raise QueueStateError(f"cannot read tracking database at {path}: {exc}") from exc
-    migrated = migrate_claim_schemas(database)
     validate_database(
         database,
         allow_claim_status_drift=allow_claim_status_drift,
     )
-    if migrated:
-        write_database_atomically(path, database)
     return database
 
 
@@ -526,6 +471,7 @@ def archive_current_claim(talk, now_text):
     if current is None:
         return
     archived = copy.deepcopy(current)
+    upgrade_claim_for_write(archived)
     if archived["state"] == "claimed":
         archived["state"] = "superseded"
         archived["released_at"] = now_text
@@ -704,6 +650,7 @@ def command_recover(database, path, args):
         if not status_drift and age_seconds < args.stale_after_seconds:
             continue
         talk["status"] = claim["previous_status"]
+        upgrade_claim_for_write(claim)
         claim["state"] = "stale_recovered"
         claim["released_at"] = now_text
         claim["release_reason"] = (
@@ -787,7 +734,7 @@ def main(argv=None):
     parser = build_parser()
     try:
         args = parser.parse_args(argv)
-        path = Path(args.database).expanduser().resolve()
+        path = Path(os.path.abspath(Path(args.database).expanduser()))
         database = load_database(
             path,
             allow_claim_status_drift=args.action == "recover",

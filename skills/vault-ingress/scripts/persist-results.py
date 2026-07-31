@@ -79,6 +79,12 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 
+from ingress_contract import (
+    IngressContractError,
+    TALK_SCHEMA_VERSION,
+    reject_tracking_database_symlink,
+    validate_talk_record_schemas,
+)
 from return_validation import (
     ANALYSIS_STATUSES,
     PATTERN_SCORING_SCHEMA_VERSION,
@@ -125,8 +131,9 @@ def normalize_stamp(value):
 #
 # v3 adds optional scoring-generation identity fields and explicit corrective
 # clear semantics. Existing readers ignore the new metadata; older records stay
-# readable and acquire generation identity on their next validated analysis.
-TALK_SCHEMA_VERSION = 3
+# readable and acquire generation identity on their next validated analysis. The
+# shared constant lives in ingress_contract.py so readers reject future records
+# against the same boundary this owner migrates.
 
 # Queryable scalars promoted from the subagent return onto the talk's top level.
 # (top_level_field, dotted source path within the return). To add a new queryable
@@ -388,6 +395,7 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     the legacy return-side `processed_date` is advisory only.  The clock is
     never read inside the merge.
     """
+    validate_talk_record_schemas([talk])
     normalized_run_date = normalize_stamp(run_date) if run_date else None
     if enforce_queue_claim and normalized_run_date is None:
         raise ValueError(
@@ -491,8 +499,9 @@ def migrate_records(db):
     metadata written only when a validated analysis is merged. No existing field
     changes representation, so records need no content rewrite.
     """
+    talks = validate_talk_record_schemas(db.get("talks"))
     migrated = 0
-    for talk in db.get("talks", []):
+    for talk in talks:
         if talk.get("schema_version") != TALK_SCHEMA_VERSION:
             talk["schema_version"] = TALK_SCHEMA_VERSION
             migrated += 1
@@ -587,6 +596,11 @@ def parse_args(argv):
 def main():
     db_path, batch_path, run_date = parse_args(sys.argv[1:])
 
+    try:
+        reject_tracking_database_symlink(db_path)
+    except IngressContractError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
     db = load_json(db_path, "tracking database")
     returns = load_json(batch_path, "batch-returns")
     try:

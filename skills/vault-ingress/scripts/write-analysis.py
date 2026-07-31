@@ -60,6 +60,7 @@ import sys
 import tempfile
 import unicodedata
 
+from ingress_contract import IngressContractError, reject_tracking_database_symlink
 from return_validation import (
     ANALYSIS_STATUSES,
     ReturnValidationError,
@@ -435,6 +436,11 @@ def main():
         print("ERROR: --talks <tracking-database.json> is required so queue "
               "generation can be verified before an analysis file is replaced",
               file=sys.stderr)
+        sys.exit(1)
+    try:
+        reject_tracking_database_symlink(talks_path)
+    except IngressContractError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
     db = load_json(talks_path, "tracking database")
     if not isinstance(db, dict) or not isinstance(db.get("talks"), list):

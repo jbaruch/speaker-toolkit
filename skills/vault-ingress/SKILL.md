@@ -184,9 +184,10 @@ Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
 - Run `python3 skills/vault-ingress/scripts/queue-state.py
   {vault_root}/tracking-database.json normalize` once. This migrates legacy
   `skipped_no_video`/`skipped_no_transcript` states from the talk's usable source
-  capabilities. A record with a transcript or slide source re-enters the queue even
-  without video; only a record with no transcript, slide, or video source becomes
-  `skipped_no_sources`. The normalization report includes `source_capabilities`
+  capabilities. A record with a transcript artifact or slide source re-enters the
+  queue even without video; a `transcript_source` provenance label alone is not
+  capability. Only a record with no transcript artifact/acquisition path, slide,
+  or video source becomes `skipped_no_sources`. The normalization report includes `source_capabilities`
   (`video`, `slides`, `transcript`) for every changed row so the decision is auditable.
 - Claim each exact batch through `queue-state.py ... claim --run-id <stable-run>
   --batch-id <stable-batch> --now <timezone-aware-ISO>`. The command selects
@@ -276,6 +277,10 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   interrupted batch is recovered with
   `queue-state.py ... recover --now <ISO> --stale-after-seconds <N>`, not by
   replaying whichever old return files happen to exist.
+  Future talk-record schemas are rejected before migration so this writer never
+  stamps a newer record down to its current version. Pass the canonical tracking
+  DB path: queue and persistence tools reject a final-component symlink before
+  opening it, preventing atomic replacement from splitting the link and target.
 - **Write per-talk analysis files — run the script, do NOT hand-write them.** Run
   `python3 skills/vault-ingress/scripts/write-analysis.py batch-returns.json {vault_root}/analyses --talks {vault_root}/tracking-database.json`
   over the SAME `batch-returns.json` the merge consumed, so the DB and the files
@@ -413,6 +418,11 @@ auto-invoke.
 | FAIL | OK | — | `processed_partial` | Slides only |
 | FAIL | FAIL | OK | `processed_partial` | Extract slides from video, visual only |
 | FAIL | FAIL | FAIL | `skipped_download_failed` | Skip, move on |
+
+Persistence mechanically rechecks terminal reasons against the claimed talk.
+`skipped_no_sources` requires no live capability; `skipped_download_failed`
+requires a remote acquisition path and no local transcript/PPTX/PDF reference;
+`skipped_duplicate` requires a bound duplicate `source_relation` target.
 
 ## Important Notes
 

@@ -129,7 +129,7 @@ def test_legacy_no_video_status_with_video_is_normalized_and_claimed(tmp_path):
         "previous_status": "skipped_no_video",
         "status": "pending",
         "video_present": True,
-        "source_capabilities": ["video"],
+        "source_capabilities": ["video", "transcript"],
     }]
     assert payload["claimed"][0]["previous_status"] == "pending"
 
@@ -139,7 +139,6 @@ def test_legacy_no_video_status_with_video_is_normalized_and_claimed(tmp_path):
     ({"pptx_path": "decks/talk.pptx"}, "slides"),
     ({"slides_local_path": "slides/talk.pdf"}, "slides"),
     ({"transcript_path": "transcripts/talk.txt"}, "transcript"),
-    ({"transcript_source": "manual"}, "transcript"),
 ])
 def test_legacy_no_video_talk_with_nonvideo_source_is_claimable(
         tmp_path, source_fields, expected_capability):
@@ -163,6 +162,30 @@ def test_legacy_no_video_talk_with_nonvideo_source_is_claimable(
     }]
     assert payload["claimed"][0]["filename"] == "source-only.md"
     assert payload["claimed"][0]["previous_status"] == "pending"
+
+
+def test_manual_provenance_label_without_artifact_is_not_a_capability(tmp_path):
+    talk = _talk(
+        "abcdefghijk",
+        status="skipped_no_video",
+        video=False,
+        filename="label-only.md",
+    )
+    talk["transcript_source"] = "manual"
+    path = _write_db(tmp_path, [talk])
+
+    result = _claim(path)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["normalizations"] == [{
+        "filename": "label-only.md",
+        "previous_status": "skipped_no_video",
+        "status": "skipped_no_sources",
+        "video_present": False,
+        "source_capabilities": [],
+    }]
+    assert payload["claimed"] == []
 
 
 def test_legacy_true_no_source_talk_is_the_only_one_skipped(tmp_path):
@@ -314,6 +337,38 @@ def test_claim_is_idempotent_for_a_completed_same_run_and_batch(tmp_path):
     assert path.read_bytes() == before
 
 
+def test_completed_v1_replay_keeps_stdout_and_disk_at_v1(tmp_path):
+    talk = _talk("eg6gqvUFh6Q", status="processed")
+    talk["reprocess_generation"] = 1
+    talk["_queue_claim"] = {
+        "schema_version": 1,
+        "run_id": "legacy-run",
+        "batch_id": "legacy-batch",
+        "claimed_at": "2026-07-31T17:00:00+00:00",
+        "previous_status": "needs-reprocessing",
+        "reprocess_generation": 1,
+        "state": "completed",
+        "released_at": "2026-07-31T17:30:00+00:00",
+        "release_reason": "return_persisted",
+        "result_status": "processed",
+    }
+    path = _write_db(tmp_path, [talk])
+    before = path.read_bytes()
+
+    result = _claim(
+        path,
+        run_id="legacy-run",
+        batch_id="legacy-batch",
+        filenames=(talk["filename"],),
+    )
+
+    assert result.returncode == 0, result.stderr
+    claim = json.loads(result.stdout)["claimed"][0]
+    assert claim["schema_version"] == 1
+    assert "result_payload_sha256" not in claim
+    assert path.read_bytes() == before
+
+
 def test_recover_uses_injected_time_and_exact_stale_threshold(tmp_path):
     path = _write_db(
         tmp_path,
@@ -405,7 +460,7 @@ def test_inspect_accepts_a_completed_persistence_claim(tmp_path):
     assert claim["result_status"] == "processed"
 
 
-def test_owner_migrates_legacy_completed_claim_with_unavailable_receipt(tmp_path):
+def test_inspect_dual_reads_legacy_completed_claim_without_mutating(tmp_path):
     talk = _talk("eg6gqvUFh6Q", status="processed")
     talk["reprocess_generation"] = 1
     talk["_queue_claim"] = {
@@ -421,13 +476,15 @@ def test_owner_migrates_legacy_completed_claim_with_unavailable_receipt(tmp_path
         "result_status": "processed",
     }
     path = _write_db(tmp_path, [talk])
+    before = path.read_bytes()
 
     result = _run(path, "inspect", "--run-id", "legacy-run")
 
     assert result.returncode == 0, result.stderr
-    migrated = _read_db(path)["talks"][0]["_queue_claim"]
-    assert migrated["schema_version"] == 2
-    assert migrated["result_payload_sha256"] is None
+    claim = json.loads(result.stdout)["claims"][0]
+    assert claim["schema_version"] == 1
+    assert "result_payload_sha256" not in claim
+    assert path.read_bytes() == before
 
 
 def test_unknown_future_claim_schema_fails_without_rewriting(tmp_path):
@@ -508,6 +565,20 @@ def test_duplicate_filenames_reject_without_rewriting(tmp_path):
     assert result.returncode == 2
     assert "duplicate talk filename" in json.loads(result.stdout)["error"]
     assert path.read_bytes() == before
+
+
+def test_tracking_database_symlink_is_rejected_before_read_or_write(tmp_path):
+    target = _write_db(tmp_path, [_talk("eg6gqvUFh6Q")])
+    before = target.read_bytes()
+    link = tmp_path / "tracking-link.json"
+    link.symlink_to(target.name)
+
+    result = _claim(link)
+
+    assert result.returncode == 2
+    assert "symbolic link" in json.loads(result.stdout)["error"]
+    assert link.is_symlink()
+    assert target.read_bytes() == before
 
 
 @pytest.mark.parametrize(

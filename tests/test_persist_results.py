@@ -4,6 +4,7 @@ Regression coverage for #97: structured_data computed by subagents must land in
 the tracking DB, with the declared queryable scalars promoted to the talk top level.
 """
 
+import copy
 import json
 import subprocess
 import sys
@@ -155,6 +156,9 @@ def test_skipped_merge_cannot_mutate_prior_analysis_even_without_validator(
         rhetoric_notes="trusted prior analysis",
         structured_data={"slide_count": 42},
         verbatim_examples={"jokes": ["kept"]},
+        video_url=None,
+        pptx_path=None,
+        slides_url=None,
     )
     malicious = _return(
         status="skipped_no_sources",
@@ -691,6 +695,87 @@ def test_schema_version_is_stamped_over_an_older_value(persist_results, tmp_path
             persist_results.TALK_SCHEMA_VERSION)
 
 
+def test_future_talk_schema_rejects_before_any_record_is_migrated(persist_results):
+    database = {
+        "talks": [
+            {"filename": "legacy.md", "schema_version": 1},
+            {
+                "filename": "future.md",
+                "schema_version": persist_results.TALK_SCHEMA_VERSION + 1,
+            },
+        ],
+    }
+    before = copy.deepcopy(database)
+
+    with pytest.raises(ValueError, match="will not downgrade"):
+        persist_results.migrate_records(database)
+
+    assert database == before
+
+
+def test_cli_rejects_future_talk_schema_without_rewriting(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    original = {"talks": [_talk(schema_version=99)]}
+    db.write_text(json.dumps(original))
+    batch.write_text(json.dumps([_return()]))
+    before = db.read_bytes()
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "future talk schema_version 99" in result.stderr
+    assert "will not downgrade" in result.stderr
+    assert db.read_bytes() == before
+
+
+def test_non_object_talk_member_is_actionable_and_does_not_rewrite(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(json.dumps({"talks": [_talk(), "not-a-talk"]}))
+    batch.write_text(json.dumps([_return()]))
+    before = db.read_bytes()
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "talks[1] must be a JSON object" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert db.read_bytes() == before
+
+
+def test_tracking_database_symlink_is_rejected_without_splitting_state(
+        persist_results, tmp_path):
+    target = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    target.write_text(json.dumps({"talks": [_talk()]}))
+    batch.write_text(json.dumps([_return()]))
+    before = target.read_bytes()
+    link = tmp_path / "tracking-link.json"
+    link.symlink_to(target.name)
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(link), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "symbolic link" in result.stderr
+    assert link.is_symlink()
+    assert target.read_bytes() == before
+
+
 @pytest.mark.parametrize("block", ["structured_data", "verbatim_examples",
                                    "pattern_observations"])
 def test_a_malformed_content_block_fails_loudly(persist_results, tmp_path, block):
@@ -1028,6 +1113,9 @@ def test_skipped_return_preserves_prior_analysis_and_persists_terminal_metadata(
         rhetoric_notes="trusted prior analysis",
         structured_data={"slide_count": 42},
         verbatim_examples={"jokes": ["kept"]},
+        video_url=None,
+        pptx_path=None,
+        slides_url=None,
     )
     db.write_text(json.dumps({"talks": [talk]}))
     batch.write_text(json.dumps([_skipped_return()]))
@@ -1047,6 +1135,160 @@ def test_skipped_return_preserves_prior_analysis_and_persists_terminal_metadata(
     assert stored["structured_data"] == {"slide_count": 42}
     assert stored["verbatim_examples"] == {"jokes": ["kept"]}
     assert stored["_queue_claim"]["state"] == "completed"
+
+
+@pytest.mark.parametrize(
+    "source_fields",
+    [
+        {"video_url": "https://youtu.be/AbCdEfGhI_1"},
+        {"transcript_path": "transcripts/talk.txt"},
+        {"pptx_path": "decks/talk.pptx"},
+        {"slides_local_path": "slides/talk.pdf"},
+    ],
+)
+def test_skipped_no_sources_rejects_each_live_capability(
+        persist_results, tmp_path, source_fields):
+    base = {
+        "video_url": None,
+        "pptx_path": None,
+        "slides_url": None,
+        "google_drive_id": None,
+        "transcript_path": None,
+        "slides_local_path": None,
+    }
+    talk = _talk(**{**base, **source_fields})
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(json.dumps({"talks": [talk]}))
+    batch.write_text(json.dumps([_skipped_return()]))
+    before = db.read_bytes()
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "cannot finish skipped_no_sources" in result.stderr
+    assert db.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "local_source",
+    [
+        {"transcript_path": "transcripts/talk.txt"},
+        {"pptx_path": "decks/talk.pptx"},
+        {"slides_local_path": "slides/talk.pdf"},
+    ],
+)
+def test_download_failure_rejects_when_a_local_artifact_remains(
+        persist_results, tmp_path, local_source):
+    talk = _talk(**{
+        "pptx_path": None,
+        "slides_url": None,
+        "transcript_path": None,
+        "slides_local_path": None,
+        **local_source,
+    })
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(json.dumps({"talks": [talk]}))
+    batch.write_text(json.dumps([
+        _skipped_return(status="skipped_download_failed")]))
+    before = db.read_bytes()
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "while a local transcript, PPTX, or PDF artifact remains" in result.stderr
+    assert db.read_bytes() == before
+
+
+def test_download_failure_requires_a_remote_acquisition_path(
+        persist_results, tmp_path):
+    talk = _talk(video_url=None, pptx_path=None, slides_url=None)
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(json.dumps({"talks": [talk]}))
+    batch.write_text(json.dumps([
+        _skipped_return(status="skipped_download_failed")]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "without a declared video or remote slide acquisition path" in result.stderr
+
+
+def test_duplicate_skip_requires_a_bound_canonical_talk(
+        persist_results, tmp_path):
+    talk = _talk(video_url=None, pptx_path=None, slides_url=None)
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(json.dumps({"talks": [talk]}))
+    batch.write_text(json.dumps([_skipped_return(status="skipped_duplicate")]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "source_relation.type='duplicate'" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("status", "talk_overrides"),
+    [
+        (
+            "skipped_download_failed",
+            {"video_url": "https://youtu.be/AbCdEfGhI_1"},
+        ),
+        (
+            "skipped_duplicate",
+            {
+                "source_relation": {
+                    "type": "duplicate",
+                    "target_filename": "canonical.md",
+                },
+            },
+        ),
+    ],
+)
+def test_mechanically_bound_skip_status_can_close_claim(
+        persist_results, tmp_path, status, talk_overrides):
+    talk = _talk(**{
+        "video_url": None,
+        "pptx_path": None,
+        "slides_url": None,
+        "transcript_path": None,
+        "slides_local_path": None,
+        **talk_overrides,
+    })
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(json.dumps({"talks": [talk]}))
+    batch.write_text(json.dumps([_skipped_return(status=status)]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    assert stored["status"] == status
+    assert stored["_queue_claim"]["result_status"] == status
 
 
 def test_skipped_return_with_analysis_fields_aborts_without_write(

@@ -53,15 +53,31 @@ of the exact return payload merged into the tracking database. The analysis
 writer recomputes that receipt before rendering, so replacing the batch-return
 file after persistence cannot produce a Markdown analysis that disagrees with
 the DB. New claims are v2; active v1 claims remain completable and upgrade on
-closure. The queue owner migrates legacy completed claims with an explicit null
-receipt because their original payload cannot be reconstructed, leaving them
-non-renderable until reprocessed, while unknown future claim versions fail
-closed.
+closure. Queue inspection and idempotent replay dual-read v1/v2 without silently
+rewriting state. Legacy completed claims remain non-renderable because their
+original payload cannot be reconstructed, while unknown future claim versions
+fail closed.
 
 Processed analyses also render only when each talk's persisted catalog
 fingerprint and scoring-schema version equal the catalog generation validated by
 the renderer. A changed taxonomy can no longer silently reinterpret an older
 persisted score while producing a current-looking file.
+
+### fix(vault-ingress) — share live source and state-file boundaries
+
+Queue selection and persistence now use one capability resolver. A
+`transcript_source: manual` provenance label no longer makes a talk claimable
+without a transcript artifact or active video acquisition path. Terminal skips
+are bound to mechanically checkable state: no-sources requires no live
+capability, download-failed requires a remote path and no local transcript/deck,
+and duplicate requires a canonical `source_relation` target.
+
+The talk-schema migrator preflights every record and rejects unknown future
+versions before touching older records, so it cannot stamp a newer shape down to
+v3. Non-object talk members now produce an actionable no-write error. Queue,
+DB-persistence, and analysis tools also reject a tracking-database symlink before
+opening it; callers must pass the canonical file path so atomic replacement
+cannot split the link entry from its unchanged target.
 
 ### feat(vault-ingress) — inventory native PPTX timing without claiming playback
 
