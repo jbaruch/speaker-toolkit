@@ -235,15 +235,24 @@ Minimal processed structure:
   },
   "verbatim_examples": {},
   "pattern_observations": {
+    "evidence_sources": ["transcript", "static_slides"],
     "patterns_detected": [
       {
         "pattern_id": "narrative-arc",
         "confidence": "strong",
+        "evidence_source": "transcript",
         "evidence": "Four named acts build one argument.",
         "dimensions": [2, 5]
       }
     ],
     "antipatterns_detected": [],
+    "not_evaluable": [
+      {
+        "pattern_id": "composite-animation",
+        "evidence_source": "static_slides",
+        "reason": "A flattened PDF contains no animation timing."
+      }
+    ],
     "pattern_score": {
       "patterns_used": 1,
       "antipatterns_detected": 0,

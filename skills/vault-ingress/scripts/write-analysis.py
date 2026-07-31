@@ -144,15 +144,17 @@ def render_pattern_table(entries):
     """Render patterns_detected / antipatterns_detected as an evidence table."""
     if not entries:
         return ["_None recorded._"]
-    out = ["| Pattern ID | Confidence | Evidence |", "|---|---|---|"]
+    out = ["| Pattern ID | Confidence | Evidence Source | Evidence |",
+           "|---|---|---|---|"]
     for e in entries:
         if not isinstance(e, dict):
-            out.append(f"| {md_escape_cell(e)} | | |")
+            out.append(f"| {md_escape_cell(e)} | | | |")
             continue
         pid = e.get("pattern_id", "")
-        out.append("| `{}` | {} | {} |".format(
+        out.append("| `{}` | {} | {} | {} |".format(
             md_escape_cell(pid),
             md_escape_cell(e.get("confidence", "")),
+            md_escape_cell(e.get("evidence_source", "")),
             md_escape_cell(e.get("evidence", "")),
         ))
     return out
@@ -264,10 +266,14 @@ def render_analysis(ret, title=None, run_date=None):
                 *render_pattern_table(obs.get("patterns_detected")), "",
                 "### Antipatterns Detected", "",
                 *render_pattern_table(obs.get("antipatterns_detected")), ""]
-        unevaluable = obs.get("unevaluable_from_pdf")
+        evidence_sources = obs.get("evidence_sources")
+        if evidence_sources:
+            out += ["### Evidence Sources Inspected", "",
+                    ", ".join(f"`{source}`" for source in evidence_sources), ""]
+        unevaluable = obs.get("not_evaluable") or obs.get("unevaluable_from_pdf")
         if unevaluable:
-            out += ["### Unevaluable From Available Artifacts", "", "```json",
-                    json.dumps(unevaluable, indent=2, ensure_ascii=False), "```", ""]
+            out += ["### Not Evaluable From Available Evidence", "",
+                    *render_table(unevaluable), ""]
 
     out += render_catalog_feedback(ret.get("catalog_feedback"))
     return "\n".join(out).rstrip() + "\n"

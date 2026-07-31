@@ -326,7 +326,8 @@ def resolve_pattern_score(observations, patterns, antipatterns):
     return nested, coerced
 
 
-def normalize_pattern_observations(existing, patterns, antipatterns, score):
+def normalize_pattern_observations(existing, patterns, antipatterns,
+                                   not_evaluable, evidence_sources, score):
     """Map the subagent return shape onto the DB shape, keeping both views.
 
     Takes already-validated inputs and decides nothing about their shape, so it
@@ -339,6 +340,12 @@ def normalize_pattern_observations(existing, patterns, antipatterns, score):
     if antipatterns is not None:
         obs["antipatterns_detected"] = antipatterns
         obs["antipattern_ids"] = [p.get("pattern_id") for p in antipatterns if p.get("pattern_id")]
+    if not_evaluable is not None:
+        obs["not_evaluable"] = not_evaluable
+        obs["not_evaluable_ids"] = [
+            item.get("pattern_id") for item in not_evaluable if item.get("pattern_id")]
+    if evidence_sources is not None:
+        obs["evidence_sources"] = evidence_sources
     if score is not None:
         obs["pattern_score"] = score
     return obs
@@ -359,6 +366,8 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None):
     observations = require_mapping(ret, "pattern_observations") or {}
     patterns = require_detections(observations, "patterns_detected")
     antipatterns = require_detections(observations, "antipatterns_detected")
+    not_evaluable = require_detections(observations, "not_evaluable")
+    evidence_sources = observations.get("evidence_sources")
     score, coerced_score = resolve_pattern_score(observations, patterns, antipatterns)
 
     cleared = apply_clear_fields(talk, ret.get("clear_fields"))
@@ -378,7 +387,8 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None):
         talk["verbatim_examples"] = deep_merge(talk.get("verbatim_examples") or {}, verbatim)
     if observations:
         talk["pattern_observations"] = normalize_pattern_observations(
-            talk.get("pattern_observations"), patterns, antipatterns, score)
+            talk.get("pattern_observations"), patterns, antipatterns,
+            not_evaluable, evidence_sources, score)
 
     promoted = []
     for field, path in PROMOTE:

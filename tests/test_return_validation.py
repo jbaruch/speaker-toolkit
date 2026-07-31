@@ -34,15 +34,20 @@ def _return(**overrides):
             "patterns_detected": [{
                 "pattern_id": "narrative-arc",
                 "confidence": "strong",
+                "evidence_source": "transcript",
                 "evidence": "The argument moves through four named acts.",
                 "dimensions": [2, 5],
             }],
             "antipatterns_detected": [{
                 "pattern_id": "shortchanged",
                 "confidence": "weak",
+                "evidence_source": "transcript",
                 "evidence": "The final summary is compressed.",
                 "dimensions": [12, 14],
             }],
+            "evidence_sources": ["transcript", "native_deck", "static_slides",
+                                 "source_comparison"],
+            "not_evaluable": [],
             "pattern_score": {
                 "patterns_used": 1,
                 "antipatterns_detected": 1,
@@ -102,6 +107,68 @@ def test_unobservable_pattern_is_rejected(return_validation):
     value["pattern_observations"]["patterns_detected"][0]["pattern_id"] = \
         "red-yellow-green"
     assert "observable:false" in _error(return_validation, value)
+
+
+def test_source_gated_pattern_rejects_nonqualifying_evidence(return_validation):
+    value = _return()
+    value["pattern_observations"]["patterns_detected"][0]["pattern_id"] = \
+        "composite-animation"
+    assert "cannot be evaluated from 'transcript'" in _error(return_validation, value)
+
+
+def test_detection_source_must_have_been_inspected(return_validation):
+    value = _return()
+    value["pattern_observations"]["patterns_detected"][0]["evidence_source"] = \
+        "delivery_video"
+    assert "is not listed in pattern_observations.evidence_sources" in _error(
+        return_validation, value)
+
+
+def test_native_deck_source_requires_pptx_artifact(return_validation):
+    value = _return(slide_source="pdf")
+    assert "native_deck but slide_source is 'pdf'" in _error(return_validation, value)
+
+
+def test_source_comparison_requires_two_visual_sources(return_validation):
+    value = _return()
+    value["pattern_observations"]["evidence_sources"] = [
+        "transcript", "static_slides", "source_comparison"]
+    assert "source_comparison requires at least two visual sources" in _error(
+        return_validation, value)
+
+
+def test_source_gated_pattern_can_be_recorded_as_not_evaluable(return_validation):
+    value = _return()
+    value["pattern_observations"]["not_evaluable"] = [{
+        "pattern_id": "composite-animation",
+        "evidence_source": "static_slides",
+        "reason": "The static export contains no animation timing.",
+    }]
+    return_validation.validate_batch([value])
+
+
+def test_ungated_pattern_cannot_be_recorded_as_not_evaluable(return_validation):
+    value = _return()
+    value["pattern_observations"]["not_evaluable"] = [{
+        "pattern_id": "narrative-arc",
+        "evidence_source": "transcript",
+        "reason": "No reason can override available transcript evidence.",
+    }]
+    assert "has no source-aware evidence gate" in _error(return_validation, value)
+
+
+def test_detected_pattern_cannot_also_be_not_evaluable(return_validation):
+    value = _return()
+    value["pattern_observations"]["patterns_detected"][0].update({
+        "pattern_id": "progressive-reveal",
+        "evidence_source": "static_slides",
+    })
+    value["pattern_observations"]["not_evaluable"] = [{
+        "pattern_id": "progressive-reveal",
+        "evidence_source": "static_slides",
+        "reason": "Contradictory state.",
+    }]
+    assert "both detected and not_evaluable" in _error(return_validation, value)
 
 
 def test_duplicate_detection_is_rejected(return_validation):

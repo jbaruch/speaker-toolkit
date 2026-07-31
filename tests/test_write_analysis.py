@@ -41,12 +41,15 @@ def _return(**overrides):
         "pattern_observations": {
             "patterns_detected": [
                 {"pattern_id": "narrative-arc", "confidence": "strong",
-                 "evidence": "Four-act catalog."},
+                 "evidence_source": "transcript", "evidence": "Four-act catalog."},
             ],
             "antipatterns_detected": [
                 {"pattern_id": "ant-fonts", "confidence": "moderate",
-                 "evidence": "7.5pt body text."},
+                 "evidence_source": "static_slides", "evidence": "7.5pt body text."},
             ],
+            "evidence_sources": ["transcript", "native_deck", "static_slides",
+                                 "source_comparison"],
+            "not_evaluable": [],
             "pattern_score": {"patterns_used": 1, "antipatterns_detected": 1, "score": 0},
         },
         "catalog_feedback": {
@@ -81,8 +84,8 @@ def test_title_from_db_wins_over_filename(write_analysis):
 def test_scoring_tables_carry_evidence(write_analysis):
     md = write_analysis.render_analysis(_return())
     assert "**Pattern score:** 0 (1 patterns − 1 antipatterns)" in md
-    assert "| `narrative-arc` | strong | Four-act catalog. |" in md
-    assert "| `ant-fonts` | moderate | 7.5pt body text. |" in md
+    assert "| `narrative-arc` | strong | transcript | Four-act catalog. |" in md
+    assert "| `ant-fonts` | moderate | static_slides | 7.5pt body text. |" in md
 
 
 def test_per_slide_visual_becomes_a_table(write_analysis):
@@ -96,6 +99,7 @@ def test_pipes_and_newlines_do_not_break_table_rows(write_analysis):
     ret = _return()
     ret["pattern_observations"]["patterns_detected"] = [
         {"pattern_id": "triad", "confidence": "strong",
+         "evidence_source": "transcript",
          "evidence": "He said a | b | c\nthen paused."}
     ]
     md = write_analysis.render_analysis(ret)
@@ -105,8 +109,8 @@ def test_pipes_and_newlines_do_not_break_table_rows(write_analysis):
     # Splitting on UNESCAPED pipes is what a markdown renderer does; escaped
     # ones stay inside the cell.
     cells = [c for c in re.split(r"(?<!\\)\|", row)[1:-1]]
-    assert len(cells) == 3
-    assert "\\|" in cells[2]
+    assert len(cells) == 4
+    assert "\\|" in cells[3]
 
 
 def test_absent_sections_are_skipped_not_stubbed(write_analysis):
@@ -146,6 +150,18 @@ def test_empty_catalog_feedback_omits_the_section(write_analysis):
     md = write_analysis.render_analysis(
         _return(catalog_feedback={"tensions": [], "definition_problems": []}))
     assert "## Catalog Feedback" not in md
+
+
+def test_not_evaluable_patterns_render_with_source_and_reason(write_analysis):
+    ret = _return()
+    ret["pattern_observations"]["not_evaluable"] = [{
+        "pattern_id": "composite-animation",
+        "evidence_source": "static_slides",
+        "reason": "Animation timing is absent from the PDF.",
+    }]
+    md = write_analysis.render_analysis(ret)
+    assert "### Not Evaluable From Available Evidence" in md
+    assert "| composite-animation | static_slides | Animation timing is absent" in md
 
 
 def test_run_date_fills_missing_processed_date(write_analysis):
@@ -354,6 +370,7 @@ def test_carriage_returns_do_not_break_table_rows(write_analysis):
     ret = _return()
     ret["pattern_observations"]["patterns_detected"] = [
         {"pattern_id": "triad", "confidence": "strong",
+         "evidence_source": "transcript",
          "evidence": "line one\r\nline two\rline three"}
     ]
     md = write_analysis.render_analysis(ret)

@@ -39,14 +39,20 @@ def _return(**overrides):
         "pattern_observations": {
             "patterns_detected": [
                 {"pattern_id": "narrative-arc", "confidence": "strong",
+                 "evidence_source": "transcript",
                  "evidence": "The talk follows a four-act argument."},
                 {"pattern_id": "bookends", "confidence": "moderate",
+                 "evidence_source": "static_slides",
                  "evidence": "Repeated dividers mark section boundaries."},
             ],
             "antipatterns_detected": [
                 {"pattern_id": "shortchanged", "confidence": "weak",
+                 "evidence_source": "transcript",
                  "evidence": "The close is compressed."},
             ],
+            "evidence_sources": ["transcript", "native_deck", "static_slides",
+                                 "source_comparison"],
+            "not_evaluable": [],
             "pattern_score": {"patterns_used": 2, "antipatterns_detected": 1, "score": 1},
         },
         "catalog_feedback": {
@@ -119,6 +125,32 @@ def test_pattern_observations_normalized(persist_results):
     assert obs["antipattern_ids"] == ["shortchanged"]
     assert obs["pattern_score"] == 1  # flattened from {"score": 1}
     assert len(obs["patterns_detected"]) == 2  # detailed arrays kept for Section 15
+    assert obs["evidence_sources"] == [
+        "transcript", "native_deck", "static_slides", "source_comparison"]
+    assert obs["not_evaluable"] == []
+    assert obs["not_evaluable_ids"] == []
+
+
+def test_not_evaluable_patterns_are_persisted_but_never_scored(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    ret = _return()
+    ret["pattern_observations"]["not_evaluable"] = [{
+        "pattern_id": "composite-animation",
+        "evidence_source": "static_slides",
+        "reason": "No animation timing survives in the rendered pages.",
+    }]
+    db.write_text(json.dumps({"talks": [_talk()]}))
+    batch.write_text(json.dumps([ret]))
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    obs = json.loads(db.read_text())["talks"][0]["pattern_observations"]
+    assert obs["not_evaluable_ids"] == ["composite-animation"]
+    assert obs["pattern_score"] == 1
 
 
 def test_scalar_result_fields_copied(persist_results):

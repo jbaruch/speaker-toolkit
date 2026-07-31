@@ -29,6 +29,13 @@ RETURN_STATUSES = ANALYSIS_STATUSES | SKIPPED_STATUSES
 SLIDE_SOURCES = frozenset({"pptx", "pdf", "both", "video_extracted", "none"})
 TRANSCRIPT_SOURCES = frozenset({"youtube_auto", "whisper", "manual", "none"})
 CONFIDENCE_LEVELS = frozenset({"strong", "moderate", "weak"})
+EVIDENCE_SOURCES = frozenset({
+    "static_slides",
+    "native_deck",
+    "delivery_video",
+    "transcript",
+    "source_comparison",
+})
 CATALOG_FEEDBACK_LISTS = frozenset({
     "unmatched_observations",
     "confusable_pairs",
@@ -55,6 +62,7 @@ class CatalogEntry:
     pattern_id: str
     entry_type: str
     observable: bool
+    evaluable_from: frozenset[str] | None
     path: str
 
 
@@ -116,11 +124,27 @@ def load_catalog(catalog_dir: str | Path | None = None) -> PatternCatalog:
         if not isinstance(observable, bool):
             raise ReturnValidationError(
                 f"catalog entry {path} has non-boolean observable={observable!r}")
+        gate_fields = {
+            "evaluable_from", "evidence_requirements", "not_evaluable_when"}
+        present_gates = gate_fields.intersection(front)
+        evaluable_from = None
+        if present_gates:
+            if present_gates != gate_fields:
+                raise ReturnValidationError(
+                    f"catalog entry {path} has a partial evidence gate: "
+                    f"{sorted(present_gates)}")
+            raw_sources = front["evaluable_from"]
+            if (not isinstance(raw_sources, list) or not raw_sources or
+                    any(source not in EVIDENCE_SOURCES for source in raw_sources)):
+                raise ReturnValidationError(
+                    f"catalog entry {path} has invalid evaluable_from={raw_sources!r}")
+            evaluable_from = frozenset(raw_sources)
         relative = path.relative_to(root).as_posix()
         entries[pattern_id] = CatalogEntry(
             pattern_id=pattern_id,
             entry_type=entry_type,
             observable=observable,
+            evaluable_from=evaluable_from,
             path=relative,
         )
         digest.update(relative.encode("utf-8"))
@@ -140,7 +164,7 @@ def _require_string(obj: dict, field: str, *, allow_empty: bool = False) -> str:
 
 def _validate_detection_list(
         observations: dict, field: str, expected_type: str,
-        catalog: PatternCatalog) -> list[dict]:
+        catalog: PatternCatalog, available_sources: set[str]) -> list[dict]:
     value = observations.get(field)
     if not isinstance(value, list):
         raise ReturnValidationError(
@@ -170,6 +194,19 @@ def _validate_detection_list(
             raise ReturnValidationError(
                 f"{label}.confidence must be one of {sorted(CONFIDENCE_LEVELS)}, "
                 f"got {confidence!r}")
+        evidence_source = detection.get("evidence_source")
+        if evidence_source not in EVIDENCE_SOURCES:
+            raise ReturnValidationError(
+                f"{label}.evidence_source must be one of {sorted(EVIDENCE_SOURCES)}, "
+                f"got {evidence_source!r}")
+        if evidence_source not in available_sources:
+            raise ReturnValidationError(
+                f"{label}.evidence_source {evidence_source!r} is not listed in "
+                "pattern_observations.evidence_sources")
+        if entry.evaluable_from is not None and evidence_source not in entry.evaluable_from:
+            raise ReturnValidationError(
+                f"{pattern_id!r} cannot be evaluated from {evidence_source!r}; "
+                f"catalog allows {sorted(entry.evaluable_from)}")
         _require_string(detection, "evidence")
         dimensions = detection.get("dimensions")
         if dimensions is not None:
@@ -179,6 +216,70 @@ def _validate_detection_list(
                 raise ReturnValidationError(
                     f"{label}.dimensions must be an array of integers from 1 through 14")
     return value
+
+
+def _validate_available_sources(observations: dict, slide_source: str,
+                                transcript_source: str | None) -> set[str]:
+    sources = observations.get("evidence_sources")
+    if (not isinstance(sources, list) or not sources or
+            any(source not in EVIDENCE_SOURCES for source in sources)):
+        raise ReturnValidationError(
+            "pattern_observations.evidence_sources is required and must be a "
+            f"non-empty array drawn from {sorted(EVIDENCE_SOURCES)}")
+    if len(sources) != len(set(sources)):
+        raise ReturnValidationError("pattern_observations.evidence_sources contains duplicates")
+    available = set(sources)
+    if transcript_source == "none" and "transcript" in available:
+        raise ReturnValidationError(
+            "evidence_sources includes transcript but transcript_source is none")
+    if slide_source == "none" and available.intersection(
+            {"static_slides", "native_deck", "delivery_video", "source_comparison"}):
+        raise ReturnValidationError(
+            "slide_source none cannot support visual evidence_sources")
+    if slide_source not in {"pptx", "both"} and "native_deck" in available:
+        raise ReturnValidationError(
+            f"evidence_sources includes native_deck but slide_source is {slide_source!r}")
+    if "source_comparison" in available:
+        comparable = available.intersection(
+            {"static_slides", "native_deck", "delivery_video"})
+        if len(comparable) < 2:
+            raise ReturnValidationError(
+                "source_comparison requires at least two visual sources in "
+                "pattern_observations.evidence_sources")
+    return available
+
+
+def _validate_not_evaluable(observations: dict, catalog: PatternCatalog,
+                            available_sources: set[str]) -> list[dict]:
+    entries = observations.get("not_evaluable")
+    if not isinstance(entries, list):
+        raise ReturnValidationError(
+            "pattern_observations.not_evaluable is required and must be an array")
+    seen = set()
+    for index, item in enumerate(entries):
+        label = f"pattern_observations.not_evaluable[{index}]"
+        if not isinstance(item, dict):
+            raise ReturnValidationError(f"{label} must be an object")
+        pattern_id = _require_string(item, "pattern_id")
+        if pattern_id in seen:
+            raise ReturnValidationError(f"not_evaluable contains duplicate id {pattern_id!r}")
+        seen.add(pattern_id)
+        entry = catalog.entries.get(pattern_id)
+        if entry is None:
+            raise ReturnValidationError(f"{label}.pattern_id {pattern_id!r} is not in the catalog")
+        if entry.evaluable_from is None:
+            raise ReturnValidationError(
+                f"{pattern_id!r} has no source-aware evidence gate and cannot be "
+                "classified as not_evaluable")
+        source = item.get("evidence_source")
+        if source not in EVIDENCE_SOURCES:
+            raise ReturnValidationError(
+                f"{label}.evidence_source must be one of {sorted(EVIDENCE_SOURCES)}")
+        if source not in available_sources:
+            raise ReturnValidationError(
+                f"{label}.evidence_source {source!r} is not listed in evidence_sources")
+        _require_string(item, "reason")
+    return entries
 
 
 def _validate_score(observations: dict, pattern_count: int, antipattern_count: int) -> None:
@@ -314,15 +415,28 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
         raise ReturnValidationError("pattern_observations is required and must be an object")
 
     resolved_catalog = catalog or load_catalog()
+    available_sources = _validate_available_sources(
+        observations, slide_source, transcript_source)
     patterns = _validate_detection_list(
-        observations, "patterns_detected", "pattern", resolved_catalog)
+        observations, "patterns_detected", "pattern", resolved_catalog,
+        available_sources)
     antipatterns = _validate_detection_list(
-        observations, "antipatterns_detected", "antipattern", resolved_catalog)
+        observations, "antipatterns_detected", "antipattern", resolved_catalog,
+        available_sources)
+    not_evaluable = _validate_not_evaluable(
+        observations, resolved_catalog, available_sources)
     overlap = ({item["pattern_id"] for item in patterns} &
                {item["pattern_id"] for item in antipatterns})
     if overlap:
         raise ReturnValidationError(
             f"pattern ids cannot appear in both detection lanes: {sorted(overlap)}")
+    evaluated = ({item["pattern_id"] for item in patterns} |
+                 {item["pattern_id"] for item in antipatterns})
+    unavailable_overlap = evaluated & {item["pattern_id"] for item in not_evaluable}
+    if unavailable_overlap:
+        raise ReturnValidationError(
+            "pattern ids cannot be both detected and not_evaluable: "
+            f"{sorted(unavailable_overlap)}")
     _validate_score(observations, len(patterns), len(antipatterns))
     _validate_catalog_feedback(ret.get("catalog_feedback"))
 
