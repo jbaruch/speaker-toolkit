@@ -22,13 +22,43 @@ combinatorics are needed.
 2. **During vault Step 3 (Analysis):** Scan against observable patterns only — skip
    patterns marked `observable: false` (pre-event logistics, physical stage behaviors,
    post-event follow-up, and external systems that leave no trace in transcripts or
-   slides).
+   slides). For entries with an evidence-source contract, score only when an available
+   source satisfies that contract; otherwise record the entry as `not_evaluable` rather
+   than guessing or treating it as absent.
 3. **During creator Phase 4 (Guardrails):** Read all antipatterns and compare against
    the outline. Flag matches as `[RECURRING]` (from speaker profile) or `[CONTEXTUAL]`
    (new detection). Skip unobservable antipatterns.
 4. **During creator Phase 6 (Publishing / Go-Live):** Surface unobservable patterns as
    a go-live preparation checklist — these are actions to take before, during, and after
    delivery that the vault cannot score retroactively.
+
+## Evidence-Source Contract
+
+Some patterns depend on motion, artifact differences, or ordered visual states that a
+transcript or flattened slide cannot expose. Those entries declare three frontmatter
+fields:
+
+- `evaluable_from`: one or more evidence-source values that can support evaluation.
+- `evidence_requirements`: positive facts the named source must establish before scoring.
+- `not_evaluable_when`: precise source limitations that prohibit a present/absent guess.
+
+The evidence-source enum is deliberately small:
+
+| Value | Meaning and evidentiary limit |
+|-------|-------------------------------|
+| `static_slides` | Ordered rendered slides, PDF pages, or page images. Establishes visible states and order, but not hidden animation metadata, motion quality, or timing. |
+| `native_deck` | Editable presentation source with inspectable builds, transitions, opacity, or animation metadata. |
+| `delivery_video` | Recording of the projected presentation. Establishes what the audience saw and the delivered timing. |
+| `transcript` | Spoken-track text or captions. Establishes verbal content only; it cannot prove a visual animation by itself. |
+| `source_comparison` | An explicit comparison between two named sources or artifacts, such as delivery video versus a distributed PDF. The evidence must identify both. |
+
+For a detection, record the qualifying value as `evidence_source` alongside the concrete
+evidence. If no available source is eligible, a requirement is unmet, or a
+`not_evaluable_when` condition applies, append the pattern ID, best available source, and
+reason to `pattern_observations.not_evaluable`. Do not add it to either detected array,
+do not infer absence, and exclude it from `pattern_score`. `observable: false` remains a
+separate catalog-wide rule: those entries are skipped and surfaced as go-live actions,
+not emitted as per-talk `not_evaluable` observations.
 
 ---
 

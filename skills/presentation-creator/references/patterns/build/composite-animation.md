@@ -10,6 +10,15 @@ detection_signals:
   - "layered animations"
   - "simultaneous animation effects"
   - "custom visual emphasis"
+evaluable_from:
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "Evidence must show two or more effects running concurrently on one element or on aligned copies perceived as one element."
+  - "The timing and compositing must be observable at the claimed pivotal moment."
+not_evaluable_when:
+  - "Only static slides, PDF pages, or flattened images are available."
+  - "The source shows sequential states but cannot establish simultaneous layered effects."
 related_patterns: [emergence, gradual-consistency]
 inverse_of: []
 difficulty: advanced
@@ -43,6 +52,12 @@ When scoring talks, look for animation effects that appear custom or unusual —
 - Strong signal (2 pts): One or two instances of clearly composite animation effects at pivotal moments, executed smoothly with precise timing
 - Moderate signal (1 pt): Attempted layered animations that are slightly mistimed or used on non-critical content
 - Absent (0 pts): Only standard, single-layer animations used throughout the presentation
+
+## Evidence Gate
+Static slides are not evidence of Composite Animation, even when a still looks custom or
+adjacent pages show successive states. Score only when native animation metadata or the
+delivered motion shows concurrent effects on the same perceived element. Ordinary
+progressive reveals and separate sequential transitions do not qualify.
 
 ## Relationship to Vault Dimensions
 Dimension 13 (Visual Polish and Craft): Composite Animation is a direct expression of visual craft.

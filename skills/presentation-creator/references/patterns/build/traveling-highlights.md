@@ -10,6 +10,16 @@ detection_signals:
   - "animated focus indicators"
   - "zoom-to-detail on code"
   - "highlighted regions on diagrams"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "Evidence must show the same dense visual across ordered states with a focus marker moving between regions, or show the authored motion directly."
+  - "A strong score requires native or delivery evidence of smooth, intentional motion and timing."
+not_evaluable_when:
+  - "Only one static highlight, box, crop, or annotated slide is available."
+  - "The frames do not preserve enough of the same visual to establish that focus travels across it."
 related_patterns: [crawling-code, emergence]
 inverse_of: [laser-weapons]
 difficulty: intermediate
@@ -43,6 +53,13 @@ When scoring talks, look for animated emphasis on complex slides: boxes appearin
 - Strong signal (2 pts): Consistent use of built-in animated highlights on complex slides — code, diagrams, and dense visuals — with smooth animations that guide attention effectively without distraction
 - Moderate signal (1 pt): Some animated highlighting present but inconsistent, or highlights that are visually rough (jerky animations, poorly positioned boxes, distracting transitions)
 - Absent (0 pts): Dense slides presented without any visual guidance, or reliance on a laser pointer to indicate regions of interest
+
+## Evidence Gate
+An ordered static sequence can establish a moderate Traveling Highlights signal when it
+shows the same dense visual and a built-in focus marker moving between regions. It cannot
+establish smooth animation or timing, so a strong score requires native-deck or delivery
+video evidence. A single static highlight, a laser dot, unrelated crops, or annotations
+that never move across a shared visual are not enough to evaluate the pattern.
 
 ## Relationship to Vault Dimensions
 Dimension 11 (Demonstrations and Tools): Traveling Highlights enhance the clarity of tool demonstrations by focusing attention on specific interface elements, outputs, or code regions during the explanation. Dimension 13 (Slide Aesthetics): Well-executed Traveling Highlights significantly elevate the visual professionalism of a presentation, turning dense information slides into guided visual experiences.

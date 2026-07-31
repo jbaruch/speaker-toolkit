@@ -28,10 +28,22 @@ but any talks with status `"processed"` or `"processed_partial"` have no
 Scan observations against the pattern taxonomy index at
 `skills/presentation-creator/references/patterns/_index.md` (path relative to plugin root).
 Skip patterns marked `observable: false` — these are pre-event logistics and physical
-stage behaviors that cannot be detected from transcripts or slides. For each observable
-pattern/antipattern, determine if the talk exhibits it (strong/moderate/weak confidence),
-record evidence, and compute per-talk pattern score:
-count(patterns) − count(antipatterns). Return in the `pattern_observations` field.
+stage behaviors that cannot be detected from transcripts or slides.
+
+For every other entry, inspect `evaluable_from`, `evidence_requirements`, and
+`not_evaluable_when` when present. The allowed evidence-source values and their limits
+are defined in the index's Evidence-Source Contract. Only score an entry when an
+available eligible source establishes its requirements. Every detected pattern or
+antipattern must record both concrete `evidence` and the qualifying `evidence_source`.
+When `evidence_source` is `source_comparison`, name both compared sources in `evidence`.
+
+If no eligible source is available, a requirement cannot be established, or a stated
+disqualifier applies, add an item to `pattern_observations.not_evaluable` with the
+`pattern_id`, best available `evidence_source`, and a precise `reason`. Do not guess, do
+not place that entry in either detected array, and do not interpret `not_evaluable` as
+absence. Exclude not-evaluable entries from the score. Compute per-talk pattern score as
+count(detected patterns) − count(detected antipatterns), then return the detections,
+not-evaluable observations, and score in `pattern_observations`.
 
 ## Structured Field Extraction
 

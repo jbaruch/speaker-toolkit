@@ -10,6 +10,16 @@ detection_signals:
   - "build animations revealing final state"
   - "incremental content reveal"
   - "printed vs presented difference"
+evaluable_from:
+  - native_deck
+  - delivery_video
+  - source_comparison
+evidence_requirements:
+  - "Evidence must establish an incremental live build and a coherent complete state in the distributed or printed artifact."
+  - "The observation must identify the live/build source and the final-state artifact being compared."
+not_evaluable_when:
+  - "Only a static final-state artifact is available."
+  - "Duplicated build pages exist but there is no evidence that the distributed artifact collapses them into one coherent final state."
 related_patterns: [exuberant-title-top, composite-animation, analog-noise]
 inverse_of: []
 difficulty: intermediate
@@ -43,6 +53,13 @@ When scoring talks, look for slides that build incrementally through animations 
 - Strong signal (2 pts): Clear incremental build animations where each step adds meaningful content, and the final state of each slide is a complete, well-designed document page suitable for printing
 - Moderate signal (1 pt): Some build animations used but the final state is cluttered or poorly organized, or builds are used inconsistently across the deck
 - Absent (0 pts): No build animations (all content appears at once) or animations that do not converge on a coherent final state
+
+## Evidence Gate
+A static final-state artifact alone is not evidence for Gradual Consistency. Evaluation
+requires both an observed live or native incremental build and the coherent final state
+that survives in the distributed artifact; name both sources in the evidence. Duplicated
+PDF pages that merely preserve build stages do not prove the pattern's live-versus-print
+consistency contract.
 
 ## Relationship to Vault Dimensions
 Dimension 8 (Slide Design): Gradual Consistency designs for two consumption contexts simultaneously. Dimension 13 (Visual Polish and Craft): The technique requires careful spatial planning and animation design.

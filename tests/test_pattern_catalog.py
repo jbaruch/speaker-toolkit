@@ -64,6 +64,31 @@ NAME_TRAP_GUARDS = {
     ),
 }
 
+EVIDENCE_SOURCE_VALUES = frozenset({
+    "static_slides",
+    "native_deck",
+    "delivery_video",
+    "transcript",
+    "source_comparison",
+})
+EVIDENCE_GATE_FIELDS = frozenset({
+    "evaluable_from",
+    "evidence_requirements",
+    "not_evaluable_when",
+})
+REQUIRED_EVIDENCE_GATES = {
+    "progressive-reveal": frozenset({
+        "static_slides", "native_deck", "delivery_video"}),
+    "composite-animation": frozenset({"native_deck", "delivery_video"}),
+    "invisibility": frozenset({
+        "native_deck", "delivery_video", "source_comparison"}),
+    "exuberant-title-top": frozenset({"native_deck", "delivery_video"}),
+    "gradual-consistency": frozenset({
+        "native_deck", "delivery_video", "source_comparison"}),
+    "traveling-highlights": frozenset({
+        "static_slides", "native_deck", "delivery_video"}),
+}
+
 
 def _ids(files):
     return [os.path.basename(f)[:-3] for f in files]
@@ -86,6 +111,13 @@ def _metadata(path):
     assert isinstance(metadata, dict), (
         f"{os.path.basename(path)}: frontmatter is not a mapping")
     return metadata
+
+
+def _path_for_id(pattern_id):
+    matches = [path for path in ENTRY_FILES
+               if _front(path, "id") == pattern_id]
+    assert len(matches) == 1, f"expected one catalog entry for {pattern_id!r}"
+    return matches[0]
 
 
 def test_catalog_is_present():
@@ -184,6 +216,60 @@ def test_type_matches_anti_prefix(path):
     is_anti = os.path.basename(path).startswith("_anti_")
     assert declared == ("antipattern" if is_anti else "pattern"), (
         f"{os.path.basename(path)}: type is {declared!r}")
+
+
+@pytest.mark.parametrize("path", ENTRY_FILES, ids=_ids(ENTRY_FILES))
+def test_evidence_gate_frontmatter_is_well_formed(path):
+    """An evidence gate must be complete and use the documented source enum."""
+    metadata = _metadata(path)
+    present = EVIDENCE_GATE_FIELDS.intersection(metadata)
+    if not present:
+        return
+
+    assert present == EVIDENCE_GATE_FIELDS, (
+        f"{os.path.basename(path)}: partial evidence gate; present={sorted(present)}")
+
+    sources = metadata["evaluable_from"]
+    requirements = metadata["evidence_requirements"]
+    disqualifiers = metadata["not_evaluable_when"]
+    assert isinstance(sources, list) and sources, (
+        f"{os.path.basename(path)}: evaluable_from must be a non-empty list")
+    assert all(isinstance(source, str) for source in sources), (
+        f"{os.path.basename(path)}: evidence sources must be strings")
+    assert set(sources) <= EVIDENCE_SOURCE_VALUES, (
+        f"{os.path.basename(path)}: unknown evidence sources "
+        f"{sorted(set(sources) - EVIDENCE_SOURCE_VALUES)}")
+    assert len(sources) == len(set(sources)), (
+        f"{os.path.basename(path)}: duplicate evidence sources")
+    for field, values in (("evidence_requirements", requirements),
+                          ("not_evaluable_when", disqualifiers)):
+        assert isinstance(values, list) and values, (
+            f"{os.path.basename(path)}: {field} must be a non-empty list")
+        assert all(isinstance(value, str) and value.strip() for value in values), (
+            f"{os.path.basename(path)}: {field} values must be non-empty strings")
+
+
+@pytest.mark.parametrize(
+    ("pattern_id", "expected_sources"),
+    sorted(REQUIRED_EVIDENCE_GATES.items()),
+)
+def test_animation_dependent_patterns_have_required_evidence_gates(
+        pattern_id, expected_sources):
+    """The six known source traps must never fall back to visual guesswork."""
+    path = _path_for_id(pattern_id)
+    metadata = _metadata(path)
+    assert set(metadata["evaluable_from"]) == expected_sources
+    assert len(metadata["evidence_requirements"]) >= 2
+    assert len(metadata["not_evaluable_when"]) >= 2
+    assert "## Evidence Gate" in _read(path)
+
+
+def test_evidence_source_enum_is_documented_in_index():
+    index = _read(INDEX)
+    section = index[index.index("## Evidence-Source Contract"):
+                    index.index("## Pattern Catalog")]
+    for source in EVIDENCE_SOURCE_VALUES:
+        assert f"`{source}`" in section, f"index does not document {source!r}"
 
 
 def test_unobservable_files_match_the_index():

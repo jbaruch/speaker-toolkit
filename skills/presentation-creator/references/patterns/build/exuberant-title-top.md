@@ -10,6 +10,15 @@ detection_signals:
   - "animated title positioning"
   - "emphasis through motion"
   - "time-based reveal"
+evaluable_from:
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "The title must be observed centered and isolated before moving to the top as body content appears."
+  - "The temporal ordering and title motion must be visible, not reconstructed from a final layout."
+not_evaluable_when:
+  - "Only the final-state static slide or PDF page is available."
+  - "The source shows a large, centered, or top-positioned title but not its movement between those states."
 related_patterns: [charred-trail, gradual-consistency]
 inverse_of: []
 difficulty: intermediate
@@ -45,6 +54,12 @@ When scoring talks, look for titles that appear centered on screen before migrat
 - Strong signal (2 pts): Selective use of animated title positioning at key moments, smooth animation execution, clear emphasis benefit from the temporal isolation
 - Moderate signal (1 pt): Title animation present but overused (every slide) or poorly executed (jerky motion, too slow)
 - Absent (0 pts): All titles appear in their final position simultaneously with body content, no temporal emphasis used
+
+## Evidence Gate
+A final-state slide alone is not evidence for Exuberant Title Top. Native animation data
+or delivery video must show the title centered in isolation and then moving to the top
+before the body arrives. A merely large centered title, a normal top title, or two layouts
+whose movement and ordering cannot be established does not qualify.
 
 ## Relationship to Vault Dimensions
 Dimension 13 (Visual Polish and Craft): Exuberant Title Top demonstrates sophisticated animation craft, using motion and timing to create emphasis that goes beyond what static design can achieve.

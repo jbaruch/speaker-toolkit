@@ -11,6 +11,16 @@ detection_signals:
   - "single base image annotated across multiple slides"
   - "elements added one per slide to build a cumulative argument"
   - "visual buildup with verbal narration of each addition"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "An ordered sequence must preserve the same base visual while annotations or elements accumulate."
+  - "A strong score additionally requires a visible payoff that resolves the buildup."
+not_evaluable_when:
+  - "Only one flattened final state is available."
+  - "The available frames do not establish an ordered cumulative sequence on the same base visual."
 related_patterns: [composite-animation, foreshadowing, traveling-highlights, sparkline]
 inverse_of: [bullet-riddled-corpse]
 difficulty: intermediate
@@ -40,6 +50,13 @@ Look for adjacent slide sequences where the same base image appears with progres
 - Strong signal (2 pts): clear progressive reveal sequence of 4+ slides with cumulative annotations and an explicit payoff slide
 - Moderate signal (1 pt): partial reveal sequence (2–3 slides) or a reveal without a clear payoff
 - Absent (0 pts): complex visuals presented all at once with no incremental buildup
+
+## Evidence Gate
+Static duplicate slides are valid evidence: animation metadata is not required when an
+ordered PDF or rendered-slide sequence shows the same base visual accumulating changes.
+A single flattened final slide, unrelated sequential images, or a complex visual with no
+observable buildup is not enough to evaluate this pattern. Do not infer intermediate
+states from the finished slide.
 
 ## Relationship to Vault Dimensions
 Dimension 4 (Humor and Surprise Techniques): Progressive Reveal is a primary mechanism for landing visual punchlines. Dimension 7 (Slide Design): The technique requires deliberate slide-construction discipline; the same image must reappear with controlled diff across slides.

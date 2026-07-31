@@ -53,7 +53,8 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
       "antipattern_ids": [],
       "pattern_score": 0,
       "patterns_detected": [],
-      "antipatterns_detected": []
+      "antipatterns_detected": [],
+      "not_evaluable": []
     }
   }],
   "_comment_schema_version": "Talk-record schema version, stamped by persist-results.py (TALK_SCHEMA_VERSION) on every merge. v1 is the implicit unversioned shape every pre-2026-07-28 record carries, in which transcript_source was documented as always present. v2 documents it as optional and gives ABSENT a meaning. The bump is additive — a v1 reader reads a v2 record unchanged, since v2 removes a guarantee rather than adding a field — so no staged rollout is required (stateful-artifacts Cross-Pipeline Schema Bumps). Readers do not gate on this value yet; that contract is issue #147, sequenced after the in-flight reparse so writer and readers cannot skew mid-run.",
@@ -168,6 +169,7 @@ Each subagent returns this JSON after processing one talk:
       {
         "pattern_id": "narrative-arc",
         "confidence": "strong|moderate|weak",
+        "evidence_source": "static_slides|native_deck|delivery_video|transcript|source_comparison",
         "evidence": "brief description of what was observed",
         "dimensions": [2, 5]
       }
@@ -176,8 +178,16 @@ Each subagent returns this JSON after processing one talk:
       {
         "pattern_id": "shortchanged",
         "confidence": "strong|moderate|weak",
+        "evidence_source": "static_slides|native_deck|delivery_video|transcript|source_comparison",
         "evidence": "brief description of what was observed",
         "dimensions": [12, 14]
+      }
+    ],
+    "not_evaluable": [
+      {
+        "pattern_id": "composite-animation",
+        "evidence_source": "static_slides",
+        "reason": "Only a flattened PDF was available, so simultaneous layered animation and timing could not be established."
       }
     ],
     "pattern_score": {
@@ -188,6 +198,13 @@ Each subagent returns this JSON after processing one talk:
   }
 }
 ```
+
+`evidence_source` uses the enum defined by the pattern index's Evidence-Source Contract.
+Detected entries must name a qualifying source; `source_comparison` evidence must name
+both compared artifacts. `not_evaluable` is a separate array for source-gated entries
+that cannot be judged from the available evidence. Its entries are excluded from
+`pattern_ids`, `antipattern_ids`, and every `pattern_score` count. Never put an
+unavailable entry in a detected array or treat it as an absent pattern.
 
 ## Video Extraction Output Schema
 

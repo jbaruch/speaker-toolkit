@@ -10,6 +10,16 @@ detection_signals:
   - "hidden elements revealed during presentation"
   - "surprise reveals"
   - "handout vs live differences"
+evaluable_from:
+  - native_deck
+  - delivery_video
+  - source_comparison
+evidence_requirements:
+  - "Evidence must show a live reveal of an element absent from the static or distributed state."
+  - "Use either inspectable zero-opacity animation metadata or an explicit comparison naming the live and static sources."
+not_evaluable_when:
+  - "Only a static slide, PDF, or final-state image is available."
+  - "An entrance effect is visible but the source cannot establish that the element was deliberately absent from the distributed state."
 related_patterns: [gradual-consistency]
 inverse_of: []
 difficulty: advanced
@@ -43,6 +53,13 @@ When scoring live presentations, look for elements that appear to materialize on
 - Strong signal (2 pts): Strategic use of hidden elements revealed during live presentation to create surprise or emphasis, particularly when handouts were distributed in advance; clear difference between live and printed versions
 - Moderate signal (1 pt): Some elements appear through animation that could have been hidden for strategic purposes, but the intent is unclear
 - Absent (0 pts): All elements visible in both printed and live versions, no strategic use of opacity or hidden elements
+
+## Evidence Gate
+A static artifact alone is not evidence for or against Invisibility. Establish both the
+element's absence from the distributed/static state and its live reveal, either from
+inspectable native opacity/build metadata or from an explicit source comparison. A blank
+slide, a complete final slide, or an ordinary entrance animation without proof of the
+static-state difference is not enough.
 
 ## Relationship to Vault Dimensions
 Dimension 13 (Visual Polish and Craft): Invisibility demonstrates advanced technical knowledge of presentation tool capabilities and sophisticated thinking about the relationship between live and printed artifacts.
