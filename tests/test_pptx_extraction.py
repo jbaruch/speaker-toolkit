@@ -787,6 +787,7 @@ def test_bad_crc_media_is_recovered_without_losing_the_deck(
         _png(tmp_path / "asset.png"),
         Inches(1), Inches(2), Inches(2), Inches(2),
     )
+    _append_timing_xml(slide, "<p:animEffect/>")
     path = tmp_path / "corrupt-media.pptx"
     prs.save(path)
     damaged_name = _damage_first_media_member(path)
@@ -801,12 +802,163 @@ def test_bad_crc_media_is_recovered_without_losing_the_deck(
         "status": "recovered_with_placeholder",
     }]
     assert "Healthy native text" in data["text_content_preview"]
+    assert data["native_timing"]["animation_behavior_counts"]["effect"] == 1
     assert data["text_extraction_confidence"] == "low"
     assert "corrupt_embedded_asset" in data["render_required_reasons"]
     assert any(
         item["content_type"] == "corrupt_embedded_asset"
         for item in data["unsupported_content"]
     )
+
+
+# ── native timing/build structure (issue #151) ──────────────────────
+
+
+def _append_timing_xml(slide, behavior_xml):
+    """Append a synthetic but package-native PresentationML timing tree."""
+    timing = parse_xml(
+        f'<p:timing {nsdecls("p")}>'
+        '<p:tnLst><p:par><p:cTn id="1"><p:childTnLst>'
+        f'{behavior_xml}'
+        '</p:childTnLst></p:cTn></p:par></p:tnLst>'
+        '</p:timing>'
+    )
+    slide.element.append(timing)
+
+
+def _append_transition_xml(slide):
+    slide.element.append(parse_xml(
+        f'<p:transition {nsdecls("p")}><p:fade/></p:transition>'
+    ))
+
+
+def test_native_timing_categories_and_deck_totals_stay_distinct(
+        pptx_extraction, tmp_path):
+    prs = Presentation()
+    animated = prs.slides.add_slide(prs.slide_layouts[6])
+    _append_transition_xml(animated)
+    _append_timing_xml(animated, (
+        '<p:set><p:cBhvr><p:cTn id="2"/><p:attrNameLst>'
+        '<p:attrName>style.visibility</p:attrName>'
+        '</p:attrNameLst></p:cBhvr><p:to><p:strVal val="visible"/></p:to></p:set>'
+        '<p:set><p:cBhvr><p:cTn id="3"/><p:attrNameLst>'
+        '<p:attrName>style.opacity</p:attrName>'
+        '</p:attrNameLst></p:cBhvr><p:to><p:fltVal val="1"/></p:to></p:set>'
+        '<p:anim/><p:animClr/><p:animEffect/><p:animEffect/>'
+        '<p:animMotion/><p:animRot/><p:animScale/>'
+        '<p:audio><p:cMediaNode><p:cTn id="4"/></p:cMediaNode></p:audio>'
+        '<p:video><p:cMediaNode><p:cTn id="5"/></p:cMediaNode></p:video>'
+    ))
+
+    media_only = prs.slides.add_slide(prs.slide_layouts[6])
+    _append_timing_xml(media_only, (
+        '<p:audio><p:cMediaNode><p:cTn id="6"/></p:cMediaNode></p:audio>'
+    ))
+
+    transition_only = prs.slides.add_slide(prs.slide_layouts[6])
+    _append_transition_xml(transition_only)
+
+    path = tmp_path / "timing-structure.pptx"
+    prs.save(path)
+    result = pptx_extraction.extract_pptx(str(path), ocr=False)
+    slides = result["per_slide_visual"]
+
+    first = slides[0]["native_timing"]
+    assert first["timing_element_present"] is True
+    assert first["timing_element_count"] == 1
+    assert first["transition_count"] == 1
+    assert first["set_action_count"] == 2
+    assert first["visibility_set_action_count"] == 1
+    assert first["animation_behavior_counts"] == {
+        "general": 1,
+        "color": 1,
+        "effect": 2,
+        "motion": 1,
+        "rotation": 1,
+        "scale": 1,
+        "total": 7,
+    }
+    assert first["media_timing_counts"] == {
+        "audio": 1, "video": 1, "total": 2}
+    assert first["has_animation_behaviors"] is True
+    assert first["has_media_timing"] is True
+    assert first["provenance"] == {
+        "source": "pptx_package_xml",
+        "measurement": "raw_ooxml_element_counts",
+        "observed_playback": False,
+        "part_name": "ppt/slides/slide1.xml",
+    }
+
+    # A timing container carrying only embedded-media timing is not generic
+    # animation and especially not a motion observation.
+    second = slides[1]["native_timing"]
+    assert second["timing_element_present"] is True
+    assert second["has_animation_behaviors"] is False
+    assert second["animation_behavior_counts"]["motion"] == 0
+    assert second["animation_behavior_counts"]["total"] == 0
+    assert second["has_media_timing"] is True
+    assert second["media_timing_counts"] == {
+        "audio": 1, "video": 0, "total": 1}
+
+    third = slides[2]["native_timing"]
+    assert third["timing_element_present"] is False
+    assert third["transition_count"] == 1
+    assert third["has_animation_behaviors"] is False
+    assert third["has_media_timing"] is False
+
+    assert result["native_timing_summary"] == {
+        "slides_with_timing_elements": 2,
+        "slides_with_transitions": 2,
+        "slides_with_animation_behaviors": 1,
+        "slides_with_media_timing": 2,
+        "timing_element_count": 2,
+        "transition_count": 2,
+        "set_action_count": 2,
+        "visibility_set_action_count": 1,
+        "animation_behavior_counts": {
+            "general": 1,
+            "color": 1,
+            "effect": 2,
+            "motion": 1,
+            "rotation": 1,
+            "scale": 1,
+            "total": 7,
+        },
+        "media_timing_counts": {"audio": 2, "video": 1, "total": 3},
+        "provenance": {
+            "source": "pptx_package_xml",
+            "measurement": "raw_ooxml_element_counts",
+            "observed_playback": False,
+        },
+    }
+
+
+def test_adjacent_static_progressive_builds_do_not_invent_native_timing(
+        pptx_extraction, tmp_path):
+    """Duplicate-slide builds stay visible states, not inferred animation."""
+    prs = Presentation()
+    first = prs.slides.add_slide(prs.slide_layouts[6])
+    first.shapes.add_textbox(
+        Inches(1), Inches(1), Inches(5), Inches(1)).text_frame.text = "Base diagram"
+    second = prs.slides.add_slide(prs.slide_layouts[6])
+    second.shapes.add_textbox(
+        Inches(1), Inches(1), Inches(5), Inches(1)).text_frame.text = "Base diagram"
+    second.shapes.add_textbox(
+        Inches(1), Inches(2), Inches(5), Inches(1)).text_frame.text = "Step 2 annotation"
+    path = tmp_path / "static-progressive-build.pptx"
+    prs.save(path)
+
+    result = pptx_extraction.extract_pptx(str(path), ocr=False)
+
+    assert "Base diagram" in result["per_slide_visual"][0]["text_content_preview"]
+    assert "Step 2 annotation" in \
+        result["per_slide_visual"][1]["text_content_preview"]
+    assert all(
+        not slide["native_timing"]["timing_element_present"]
+        for slide in result["per_slide_visual"]
+    )
+    assert result["native_timing_summary"]["animation_behavior_counts"]["total"] == 0
+    assert result["native_timing_summary"]["media_timing_counts"]["total"] == 0
 
 
 def test_versions_and_input_fingerprint_are_stable_and_content_addressed(
@@ -825,6 +977,8 @@ def test_versions_and_input_fingerprint_are_stable_and_content_addressed(
     copied = pptx_extraction.extract_pptx(str(copy), ocr=False)
     changed = pptx_extraction.extract_pptx(str(modified), ocr=False)
 
+    assert pptx_extraction.SCHEMA_VERSION == 2
+    assert pptx_extraction.PIPELINE_VERSION == "1.1.0"
     assert first["schema_version"] == pptx_extraction.SCHEMA_VERSION
     assert first["pipeline_version"] == pptx_extraction.PIPELINE_VERSION
     assert first["input_fingerprint"] == second["input_fingerprint"]

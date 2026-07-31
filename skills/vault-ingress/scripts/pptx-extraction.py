@@ -10,6 +10,11 @@ blobs are OCR'd for a word inventory; groups, tables, SmartArt, charts, and
 other unsupported containers explicitly require a rendered pass. OCR remains
 inventory only, not a substitute for visual design judgment.
 
+Native slide XML is also inventoried for timing containers, exact animation
+behavior elements, visibility set actions, transitions, and audio/video timing.
+Those are raw package counts with explicit non-playback provenance, not claims
+about observed motion, concurrency, or delivered behavior.
+
 Usage:
     pptx-extraction.py <path> [--skip template] [--no-ocr]
     pptx-extraction.py --version
@@ -44,8 +49,32 @@ from pptx.oxml.ns import qn
 
 # Field-shape and behavior versions are deliberately separate. A missing
 # schema_version/pipeline_version identifies the legacy extractor output.
-SCHEMA_VERSION = 1
-PIPELINE_VERSION = "1.0.0"
+# v2 adds the fixed-shape native_timing record on every slide plus stable deck
+# totals. The additive shape does not change v1 fields, but a v1 record cannot
+# answer timing questions and must not turn missing metadata into a zero count.
+SCHEMA_VERSION = 2
+PIPELINE_VERSION = "1.1.0"
+
+# PresentationML timing elements are counted by exact qualified name and kept
+# in separate semantic lanes. In particular, a <p:timing> container or a media
+# node is not a generic animation/motion observation.
+_ANIMATION_BEHAVIOR_ELEMENTS = {
+    "general": "p:anim",
+    "color": "p:animClr",
+    "effect": "p:animEffect",
+    "motion": "p:animMotion",
+    "rotation": "p:animRot",
+    "scale": "p:animScale",
+}
+_MEDIA_TIMING_ELEMENTS = {
+    "audio": "p:audio",
+    "video": "p:video",
+}
+_TIMING_PROVENANCE = {
+    "source": "pptx_package_xml",
+    "measurement": "raw_ooxml_element_counts",
+    "observed_playback": False,
+}
 
 # DrawingML graphic-frame URIs. python-pptx exposes chart/table helpers, but
 # returns shape_type=None for SmartArt and other graphic frames, so the URI is
@@ -92,6 +121,116 @@ _tesseract_available = None
 
 class OcrUnavailableError(Exception):
     """Tesseract (or its Python binding) is not available on this machine."""
+
+
+def _count_in_timing(timing_elements, qualified_name):
+    """Count exact descendants across presentation timing containers."""
+    tag = qn(qualified_name)
+    return sum(
+        1
+        for timing in timing_elements
+        for _element in timing.iter(tag)
+    )
+
+
+def _is_visibility_set_action(set_element):
+    """Return whether a <p:set> explicitly targets a visibility attribute."""
+    for attribute_name in set_element.iter(qn("p:attrName")):
+        value = (attribute_name.text or "").strip().lower()
+        if value == "visibility" or value.endswith(".visibility"):
+            return True
+    return False
+
+
+def extract_native_timing(slide):
+    """Inventory raw timing/transition XML without claiming observed motion.
+
+    Counts are structural package evidence only. Markup-compatibility Choice and
+    Fallback branches are both retained and therefore both counted; resolving
+    which branch a particular presenter executes requires a playback engine.
+    """
+    root = slide.element
+    timing_elements = list(root.iter(qn("p:timing")))
+    set_actions = [
+        element
+        for timing in timing_elements
+        for element in timing.iter(qn("p:set"))
+    ]
+    animation_counts = {
+        name: _count_in_timing(timing_elements, qualified_name)
+        for name, qualified_name in _ANIMATION_BEHAVIOR_ELEMENTS.items()
+    }
+    animation_counts["total"] = sum(animation_counts.values())
+    media_counts = {
+        name: _count_in_timing(timing_elements, qualified_name)
+        for name, qualified_name in _MEDIA_TIMING_ELEMENTS.items()
+    }
+    media_counts["total"] = sum(media_counts.values())
+    part_name = str(slide.part.partname).lstrip("/")
+    return {
+        "timing_element_present": bool(timing_elements),
+        "timing_element_count": len(timing_elements),
+        "transition_count": sum(1 for _ in root.iter(qn("p:transition"))),
+        "set_action_count": len(set_actions),
+        "visibility_set_action_count": sum(
+            1 for element in set_actions if _is_visibility_set_action(element)
+        ),
+        "animation_behavior_counts": animation_counts,
+        "media_timing_counts": media_counts,
+        "has_animation_behaviors": animation_counts["total"] > 0,
+        "has_media_timing": media_counts["total"] > 0,
+        "provenance": {
+            **_TIMING_PROVENANCE,
+            "part_name": part_name,
+        },
+    }
+
+
+def summarize_native_timing(per_slide_visual):
+    """Aggregate fixed-key deck totals from per-slide structural metadata."""
+    animation_counts = {
+        name: 0 for name in _ANIMATION_BEHAVIOR_ELEMENTS
+    }
+    media_counts = {name: 0 for name in _MEDIA_TIMING_ELEMENTS}
+    summary = {
+        "slides_with_timing_elements": 0,
+        "slides_with_transitions": 0,
+        "slides_with_animation_behaviors": 0,
+        "slides_with_media_timing": 0,
+        "timing_element_count": 0,
+        "transition_count": 0,
+        "set_action_count": 0,
+        "visibility_set_action_count": 0,
+    }
+    for slide_data in per_slide_visual:
+        timing = slide_data["native_timing"]
+        summary["slides_with_timing_elements"] += int(
+            timing["timing_element_present"])
+        summary["slides_with_transitions"] += int(
+            timing["transition_count"] > 0)
+        summary["slides_with_animation_behaviors"] += int(
+            timing["has_animation_behaviors"])
+        summary["slides_with_media_timing"] += int(
+            timing["has_media_timing"])
+        for field in (
+            "timing_element_count",
+            "transition_count",
+            "set_action_count",
+            "visibility_set_action_count",
+        ):
+            summary[field] += timing[field]
+        for name in animation_counts:
+            animation_counts[name] += timing["animation_behavior_counts"][name]
+        for name in media_counts:
+            media_counts[name] += timing["media_timing_counts"][name]
+    animation_counts["total"] = sum(animation_counts.values())
+    media_counts["total"] = sum(media_counts.values())
+    return {
+        **summary,
+        "animation_behavior_counts": animation_counts,
+        "media_timing_counts": media_counts,
+        "provenance": dict(_TIMING_PROVENANCE),
+    }
 
 
 def _input_fingerprint(blob):
@@ -833,6 +972,9 @@ def extract_pptx(pptx_path, *, ocr=True, ocr_fn=None):
             "render_required": False,
             "render_required_reasons": [],
             "has_speaker_notes": _has_speaker_notes(slide),
+            # Raw package structure only: separate behavior/media/transition
+            # lanes deliberately make no claim about playback or delivery.
+            "native_timing": extract_native_timing(slide),
             # Shape-frame text only. Baked-in picture text lands in ocr_text.
             "text_content_preview": "",
             # OCR inventory when confidence is low and picture blobs exist.
@@ -1037,6 +1179,8 @@ def extract_pptx(pptx_path, *, ocr=True, ocr_fn=None):
     result["global_design"]["fonts_used"] = dict(result["global_design"]["fonts_used"])
     result["global_design"]["background_colors"] = dict(result["global_design"]["background_colors"])
     result["global_design"]["shape_types_used"] = dict(result["global_design"]["shape_types_used"])
+    result["native_timing_summary"] = summarize_native_timing(
+        result["per_slide_visual"])
 
     return result
 

@@ -79,6 +79,12 @@ python3 skills/vault-ingress/scripts/pptx-extraction.py "$TEMPLATE_PPTX_PATH" > 
 - Stdout (JSON): per-slide visual data, shape types, global design stats, and the master layouts list under the top-level `template_layouts` key. Each layout entry has `{index, master_index, name, placeholders: [{idx, type}]}`.
 - Exit non-zero with stderr message if the file is missing, unreadable, or not a valid `.pptx`.
 
+Check the extraction root's `schema_version` before reading layouts. This
+layout-only consumer accepts v1 and v2 because the v2 timing additions do not
+change `template_layouts`. Missing/legacy v0 or an unknown future version is not
+usable prior output: rerun the current extractor and read that result. Do not
+interpret a v1 record as carrying zero timing; it carries no timing contract.
+
 Merge the resulting layouts list into `infrastructure.template_layouts` in the profile being constructed. The script emits structural fields (`index`, `master_index`, `name`, `placeholders`); the `use_for` field is speaker-curated and is **not** emitted. When merging, key by the `(master_index, name)` pair — PowerPoint allows the same layout name to appear under different slide masters, so name alone is insufficient. For each fresh layout, copy any existing `use_for` value from the prior profile's matching `(master_index, name)` entry. Layouts present in the prior profile but absent from the fresh extraction are dropped — the script is the source of truth for layout existence. If `template_pptx_path` is not set, leave `template_layouts` as an empty list and continue.
 
 Proceed immediately to Step 4.

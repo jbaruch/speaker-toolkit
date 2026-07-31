@@ -76,6 +76,9 @@ when no audio is obtainable at all.
 
 - **`pptx` / `both`** — run
   `python3 skills/vault-ingress/scripts/pptx-extraction.py <path.pptx>`.
+  Require extraction schema v2 before using native timing/build evidence. A
+  missing/v0/v1 schema means timing is unknown and the deck must be re-extracted;
+  an unknown future version is unusable until the reader contract is updated.
 - **`pdf`** — download via gdown (pass the bare Google Drive file id; gdown
   accepts a `url_or_id` argument, so no full download URL is needed):
   ```bash
@@ -238,6 +241,28 @@ When any slide in a deck reports `text_extraction_confidence: "low"`:
 Structural fields stay authoritative for what they actually measure —
 `shape_count`, `background_color_hex`, `layout_name`, fonts, and
 `has_text_frame_shapes` (which reports text-frame shapes, not on-screen text).
+
+### Native timing is structure, not observed playback
+
+Schema-v2 PPTX extraction keeps four evidence lanes distinct on every slide:
+exact animation behavior elements, visibility-targeting `<p:set>` actions,
+slide transitions, and audio/video timing nodes. Read the per-slide
+`native_timing` record and the fixed-key `native_timing_summary`; do not derive
+an `animated` verdict merely from `<p:timing>` presence.
+
+The provenance says `observed_playback: false` deliberately. A motion element
+establishes that a `<p:animMotion>` behavior exists in package XML, not that it
+executed, looked smooth, or targeted the perceived object. Audio/video timing is
+not shape motion. Raw counts also do not establish concurrency or effect order,
+so multiple effect/scale/rotation elements alone cannot score
+`composite-animation`; inspect target/timing relationships or delivery video.
+Markup-compatibility Choice/Fallback branches are counted as stored, not resolved
+for the presenter that delivered the talk.
+
+Conversely, zero native timing does not rule out progressive builds implemented
+as adjacent duplicate slides. Ordered rendered states with controlled cumulative
+changes are valid `progressive-reveal` evidence; they are not native animation
+evidence and must not be relabeled as observed motion.
 
 ## B2. Tag Presentation Patterns
 

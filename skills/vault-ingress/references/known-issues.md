@@ -19,6 +19,26 @@ Before treating any vault file as an input, confirm a step reads it. A
 plausible filename in the vault root is not a contract, and building against
 one produces code that runs clean against data nothing consumes.
 
+## Native Timing Metadata Is Not Playback Evidence
+
+PPTX schema v2 exposes timing containers, exact animation behavior elements,
+visibility set actions, transitions, and audio/video timing nodes directly from
+slide-part XML. The lanes are separate because `<p:timing>` can contain media
+playback or other time nodes without any shape motion, and a stored behavior can
+exist without executing in the delivered talk.
+
+Read `native_timing.provenance`: `measurement: raw_ooxml_element_counts` and
+`observed_playback: false` are interpretation constraints. Counts do not resolve
+Markup Compatibility branches, targets, ordering, concurrency, smoothness, or
+what an audience saw. Use delivery video or deeper target/timing-tree inspection
+when a pattern requires those facts. Adjacent duplicate slides can establish a
+static progressive reveal after rendered inspection even when every native count
+is zero.
+
+Missing/v0/v1 extraction output has **unknown** timing, not zero timing. Regenerate
+it with the current extractor. Unknown future schemas are unusable until the
+reader contract is updated; do not guess from field presence.
+
 ## Shape Extraction Is Blind to Text Baked Into Images
 
 `skills/vault-ingress/scripts/pptx-extraction.py` reads text out of PPTX

@@ -111,6 +111,10 @@ Default status is always `"pending"` for new entries.
 to `talks[]` entries. Report counts. See [references/schemas-db.md](references/schemas-db.md)
 for the PPTX extraction output schema (per-slide visual data, shape types, global design stats).
 Run `python3 skills/vault-ingress/scripts/pptx-extraction.py` for extraction.
+Consume current schema v2 for timing/build evidence. A v0/v1 record has unknown
+timing, not zero timing, and must be regenerated; an unknown future schema is
+unusable until this reader is updated. The vault-profile layout-only consumer is
+the documented v1/v2 exception because `template_layouts` did not change.
 
 **Pattern taxonomy migration:** See [references/processing-rules.md](references/processing-rules.md) for migration
 logic. In brief: talks with `status` `"processed"` or `"processed_partial"` that
@@ -325,6 +329,8 @@ Process PPTX files not yet extracted during Step 3: unmatched catalog entries, t
 that used PDF as primary but have a PPTX available, or entries with
 `pptx_visual_status: "pending"`. Skip if already `"extracted"`.
 Run `python3 skills/vault-ingress/scripts/pptx-extraction.py <path.pptx>` for each file.
+Require schema v2 before using native timing fields. Regenerate v0/v1 output and
+stop on an unknown future schema rather than interpreting missing fields as zero.
 
 **PPTX matching rules:** The .pptx files are in `Conference/Year/TalkName.pptx` and
 shownotes entries have `conference` and `title` fields. Fuzzy-match by: normalize

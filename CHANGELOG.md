@@ -46,6 +46,22 @@ timestamp that disagrees is rejected. The analysis writer renders the stored
 value while checking any supplied `--run-date` against it for every return.
 Skipped outcomes still leave prior analysis and its processing stamp untouched.
 
+### feat(vault-ingress) — inventory native PPTX timing without claiming playback
+
+PPTX extraction schema v2 now emits a fixed `native_timing` record per slide and
+stable deck totals. Exact animation behaviors, visibility set actions, slide
+transitions, and audio/video timing nodes remain separate, with package-part
+provenance and `observed_playback: false`. A timing container or media node can
+therefore never become an inferred generic-motion or delivered-behavior claim.
+
+The extractor schema moves from 1 to 2 and its behavior pipeline from 1.0.0 to
+1.1.0. Old v0/v1 output must be regenerated for timing questions—missing means
+unknown, not zero—and unknown future versions fail closed. The layout-only
+vault-profile consumer explicitly dual-reads v1/v2 because its
+`template_layouts` field is unchanged. Synthetic coverage includes visibility,
+effect, scale, rotation, motion, general/color behavior, media-only timing,
+transitions, and adjacent static progressive builds.
+
 ## 0.18.73 — 2026-07-28
 
 ### fix(vault-ingress) — a bare-int `pattern_score` no longer silently drops the scalar

@@ -491,6 +491,7 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
 | 10. Color Sequencing | Full sequence of hex values | `color_sequence` |
 | Text-channel provenance | Recursive shape text, table cells, picture OCR, background OCR | `text_channels[]` |
 | Unsupported visual containers | SmartArt, charts, OLE/media, unknown graphic frames, damaged assets | `unsupported_content[]`, `render_required_reasons[]` |
+| Native timing structure | Raw timing containers, behavior elements, visibility sets, transitions, and media timing | `native_timing`, `native_timing_summary` |
 
 ### What the Script Does NOT Extract (still needs PDF visual analysis)
 
@@ -503,13 +504,16 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
 - **Background color NAME** (the semantic register label like "purple_halftone") —
   python-pptx gives hex values; mapping hex to register names requires building the
   lookup table from the first few extractions
+- **Observed playback, concurrency, perceived target, or delivery quality** — raw
+  timing elements establish package structure only. Counts do not show which markup
+  branch or build ran, whether effects were simultaneous, or what the audience saw
 
 ### Schema:
 
 ```json
 {
-  "schema_version": 1,
-  "pipeline_version": "1.0.0",
+  "schema_version": 2,
+  "pipeline_version": "1.1.0",
   "input_fingerprint": {
     "algorithm": "sha256",
     "digest": "64 lowercase hex characters",
@@ -570,12 +574,62 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
       "render_required_reasons": ["smartart"],
       "footer_text": "@handle | #conf | #topic | website",
       "has_speaker_notes": true,
+      "native_timing": {
+        "timing_element_present": true,
+        "timing_element_count": 1,
+        "transition_count": 1,
+        "set_action_count": 2,
+        "visibility_set_action_count": 1,
+        "animation_behavior_counts": {
+          "general": 1,
+          "color": 0,
+          "effect": 2,
+          "motion": 1,
+          "rotation": 1,
+          "scale": 1,
+          "total": 6
+        },
+        "media_timing_counts": {"audio": 1, "video": 0, "total": 1},
+        "has_animation_behaviors": true,
+        "has_media_timing": true,
+        "provenance": {
+          "source": "pptx_package_xml",
+          "measurement": "raw_ooxml_element_counts",
+          "observed_playback": false,
+          "part_name": "ppt/slides/slide1.xml"
+        }
+      },
       "shapes_summary": [
         {"name": "Title 1", "shape_type": "PLACEHOLDER (14)", "shape_path": ["Title 1"], "group_depth": 0, "font_name": "Bangers", "font_size": 36, "font_color": "#FFFFFF", "bold": true},
         {"name": "Cloud 2", "shape_type": "AUTO_SHAPE (1)", "shape_path": ["Cloud 2"], "group_depth": 0, "auto_shape_type": "CLOUD_CALLOUT (108)", "fill_color": "#FFFFFF", "line_color": "#000000"}
       ]
     }
   ],
+  "native_timing_summary": {
+    "slides_with_timing_elements": 12,
+    "slides_with_transitions": 40,
+    "slides_with_animation_behaviors": 10,
+    "slides_with_media_timing": 2,
+    "timing_element_count": 12,
+    "transition_count": 40,
+    "set_action_count": 18,
+    "visibility_set_action_count": 9,
+    "animation_behavior_counts": {
+      "general": 7,
+      "color": 3,
+      "effect": 15,
+      "motion": 4,
+      "rotation": 2,
+      "scale": 5,
+      "total": 36
+    },
+    "media_timing_counts": {"audio": 2, "video": 1, "total": 3},
+    "provenance": {
+      "source": "pptx_package_xml",
+      "measurement": "raw_ooxml_element_counts",
+      "observed_playback": false
+    }
+  },
   "global_design": {
     "fonts_used": {"Bangers": 45, "Arial": 10},
     "background_colors": {"#5B2C6F": 12, "#C0392B": 8},
@@ -586,8 +640,18 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
 ```
 
 `schema_version` tracks this JSON field shape. Missing means legacy shape `0`;
-current is `1`. `pipeline_version` tracks extraction behavior and changes when
-the walk, classification, confidence, OCR, or recovery behavior changes.
+v1 added the version/fingerprint and current v2 adds `native_timing` to every
+slide plus `native_timing_summary`. `pipeline_version` tracks extraction behavior
+and changes when the walk, classification, confidence, OCR, recovery, or timing
+behavior changes; current is `1.1.0`.
+
+These records are transient per-invocation output, not a persisted artifact with
+an in-place migration. Regenerate old output with the current extractor. A timing
+reader must treat v0/v1 as **timing unknown**, never as all-zero, and rerun; an
+unknown future schema version is no usable prior output. The vault-profile layout
+reader may dual-read v1/v2 because `template_layouts` is unchanged, but it also
+rejects missing/unknown versions and reruns instead of guessing. This is the only
+declared cross-pipeline compatibility exception.
 `input_fingerprint` hashes the exact source PPTX bytes before any in-memory
 media recovery; identical bytes have the same fingerprint regardless of path.
 
@@ -596,6 +660,23 @@ media recovery; identical bytes have the same fingerprint regardless of path.
 placeholder, allowing healthy text and slides to survive. Structural members
 (XML, relationships, content types) are never discarded; their corruption is
 a hard extraction error.
+
+`native_timing` inventories exact PresentationML element names under each slide's
+`<p:timing>` tree. `general` means the exact `<p:anim>` behavior, not a total;
+`effect`, `motion`, `rotation`, `scale`, and `color` likewise count only their
+specific behavior elements. `visibility_set_action_count` is the subset of
+`<p:set>` actions whose attribute name is `visibility` or ends in
+`.visibility`. Audio/video time nodes have a separate `media_timing_counts` lane,
+and slide transitions are counted separately whether or not a timing tree exists.
+
+All counts are raw OOXML structure. Markup Compatibility `Choice` and `Fallback`
+branches are both present in the package and both counted. The provenance field's
+`observed_playback: false` is load-bearing: timing-container presence, media timing,
+or a motion behavior element does not prove execution, concurrency, smoothness,
+the perceived target, or delivered audience behavior. Adjacent static duplicate
+slides can still be progressive-reveal evidence after rendered-state inspection;
+they correctly carry zero native timing when the author implemented the build as
+separate slides.
 
 **`text_extraction_confidence` gates how the text fields may be read.**
 `text_content_preview` aggregates native shape-frame and table-cell text for
