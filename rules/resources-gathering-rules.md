@@ -1,3 +1,8 @@
+---
+alwaysApply: false
+applyTo: "skills/presentation-creator/** — when extracting or curating presentation resources"
+---
+
 # Resources Gathering Rules
 
 Steering rules for Phase 6 Step 6.0 — extracting and curating resource links

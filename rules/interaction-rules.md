@@ -1,3 +1,7 @@
+---
+alwaysApply: true
+---
+
 # Interaction Rules
 
 ## One Question Per Turn

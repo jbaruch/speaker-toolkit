@@ -1,3 +1,8 @@
+---
+alwaysApply: false
+applyTo: "skills/presentation-creator/** — when generating or checking a presentation outline"
+---
+
 # Guardrail Rules
 
 ## Guardrail Check Script

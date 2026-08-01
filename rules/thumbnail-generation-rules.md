@@ -1,3 +1,8 @@
+---
+alwaysApply: false
+applyTo: "skills/illustrations/**, skills/presentation-creator/** — when generating a presentation thumbnail"
+---
+
 # Thumbnail Generation Rules
 
 Steering rules for Phase 7 Step 7.1 — YouTube thumbnail generation.

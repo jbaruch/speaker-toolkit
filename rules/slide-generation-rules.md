@@ -1,3 +1,8 @@
+---
+alwaysApply: false
+applyTo: "skills/presentation-creator/** — when generating or editing presentation slide structure"
+---
+
 # Slide Generation Rules
 
 ## Build the Deck With BuildDeck — Not python-pptx, Not MCP

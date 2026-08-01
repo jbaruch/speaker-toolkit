@@ -172,6 +172,33 @@ def test_rule_prose_and_skill_cross_references_use_repo_relative_paths() -> None
     assert not failures, "\n" + "\n".join(failures)
 
 
+def test_every_shipped_rule_declares_an_explicit_scope() -> None:
+    failures: list[str] = []
+    for path in _rule_paths():
+        text = path.read_text(encoding="utf-8")
+        if not text.startswith("---\n") or "\n---\n" not in text[4:]:
+            failures.append(f"{path.relative_to(REPO_ROOT)}: missing YAML frontmatter")
+            continue
+        frontmatter = text.split("\n---\n", 1)[0][4:]
+        always_apply = re.search(r"(?m)^alwaysApply: (true|false)$", frontmatter)
+        if always_apply is None:
+            failures.append(
+                f"{path.relative_to(REPO_ROOT)}: missing boolean alwaysApply"
+            )
+            continue
+        has_apply_to = re.search(r"(?m)^applyTo: .+$", frontmatter) is not None
+        if always_apply.group(1) == "true" and has_apply_to:
+            failures.append(
+                f"{path.relative_to(REPO_ROOT)}: always-on rule must omit applyTo"
+            )
+        if always_apply.group(1) == "false" and not has_apply_to:
+            failures.append(
+                f"{path.relative_to(REPO_ROOT)}: conditional rule must declare applyTo"
+            )
+
+    assert not failures, "\n" + "\n".join(failures)
+
+
 def test_vault_workflows_use_the_configured_interpreter() -> None:
     failures: list[str] = []
     for path in _vault_workflow_doc_paths():
