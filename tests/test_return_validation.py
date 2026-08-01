@@ -1244,6 +1244,63 @@ def test_prose_fields_reject_shape_drift(return_validation):
     assert "summary_updates must be a string" in _error(return_validation, value)
 
 
+@pytest.mark.parametrize("field", ["rhetoric_notes", "areas_for_improvement"])
+@pytest.mark.parametrize("empty", ["", " \n\t"])
+def test_substantive_analysis_prose_cannot_be_empty(
+        return_validation, field, empty):
+    value = _return()
+    value[field] = empty
+
+    assert f"{field} must be a non-whitespace string" in _error(
+        return_validation, value)
+
+
+@pytest.mark.parametrize(
+    "field", ["adherence_assessment", "new_patterns", "summary_updates"])
+def test_optional_analysis_prose_may_be_empty(return_validation, field):
+    value = _return()
+    value[field] = ""
+
+    return_validation.validate_batch([value])
+
+
+def test_legacy_empty_substantive_prose_remains_replayable(return_validation):
+    value = _return(
+        return_schema_version=1,
+        rhetoric_notes="",
+        areas_for_improvement="",
+    )
+
+    return_validation.validate_batch([value])
+
+
+def test_v2_adherence_rejects_whitespace_but_accepts_exact_empty_sentinel(
+        return_validation):
+    whitespace = _return(adherence_assessment=" \n\t")
+    exact_empty = _return(adherence_assessment="")
+    legacy_whitespace = _return(
+        return_schema_version=1, adherence_assessment=" \n\t")
+
+    assert "exact empty string sentinel" in _error(return_validation, whitespace)
+    return_validation.validate_batch([exact_empty])
+    return_validation.validate_batch([legacy_whitespace])
+
+
+def test_v2_present_null_transcript_source_is_rejected(return_validation):
+    value = _return(transcript_source=None)
+
+    error = _error(return_validation, value)
+
+    assert "transcript_source must be omitted when provenance is unknown" in error
+
+
+def test_legacy_present_null_transcript_source_remains_compatible(
+        return_validation):
+    value = _return(return_schema_version=1, transcript_source=None)
+
+    return_validation.validate_batch([value])
+
+
 def test_duplicate_batch_filename_is_rejected(return_validation):
     assert "duplicate return filename" in _error_batch(
         return_validation, [_return(), _return()])

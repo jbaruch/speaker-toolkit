@@ -11,12 +11,15 @@ corrected analysis while every `analyses/*.md` still asserted what the reparse
 had just refuted.
 
 This script is that second half. It reads the same `batch-returns.json` array
-`persist-results.py` consumes and requires that array to match every completed
-member of its queue batch, so the two halves cannot drift apart.
+`persist-results.py` consumes, verifies each exact return against its completed
+claim receipt, then renders analysis-owned fields from the persisted effective
+talk. Version-2 omissions therefore preserve the same values in both the DB and
+Markdown instead of disappearing from the file. Receipt-bound catalog feedback,
+which is intentionally not stored on the talk, still comes from the exact return.
 
 Sections rendered, in order:
   1. Title + provenance (filename, processed date, transcript/slide source)
-  2. Rhetoric Notes (Dimensions 1-13) — verbatim from the return
+  2. Rhetoric Notes (Dimensions 1-13) — from persisted effective state
   3. Areas for Improvement (Dimension 14)
   4. Adherence Assessment
   5. Structured Data — scalars as a list, `per_slide_visual` as a table,
@@ -25,17 +28,16 @@ Sections rendered, in order:
   7. Presentation Patterns Scoring — score line plus pattern/antipattern tables
   8. Catalog Feedback — only when the return carried findings
 
-Returns vary in shape across batches (32 distinct top-level keys were observed
-across 82 returns). Every section is skipped when its source field is absent
-rather than emitting an empty heading, so a thin return produces a short file
-instead of a scaffold of blanks.
+Persisted analyses vary in shape across generations. Every section is skipped
+when its effective source field is absent rather than emitting an empty heading.
 
 Usage:
     write-analysis.py <batch-returns.json> <analyses-dir>
                       --talks <tracking-database.json> [--run-date YYYY-MM-DD]
 
-    --talks supplies talk titles for the H1 and the completed queue generation
-    that authorizes each replacement. An active, unpersisted claim is rejected.
+    --talks supplies the canonical effective analysis, talk titles for the H1,
+    and the completed queue generation that authorizes each replacement. An
+    active, unpersisted claim is rejected.
     The persisted talk's `processed_date` is the authority for the "Processed"
     line. `--run-date` is an optional consistency assertion against that
     writer-owned stamp for every return; it accepts the same date/timestamp
@@ -56,6 +58,7 @@ Example:
     write-analysis.py batch-returns.json ~/.claude/rhetoric-knowledge-vault/analyses
 """
 
+import copy
 import json
 import os
 import stat
@@ -66,10 +69,13 @@ import unicodedata
 from ingress_contract import IngressContractError, reject_tracking_database_symlink
 from return_validation import (
     ANALYSIS_STATUSES,
+    RETURN_SCHEMA_VERSION,
     ReturnValidationError,
     normalize_processing_stamp,
+    resolve_return_schema_version,
     validate_batch_claims_against_talks,
     validate_batch,
+    validate_persisted_v2_analysis_state,
     validate_persisted_catalog_generation,
 )
 
@@ -86,9 +92,42 @@ SCALARS = (str, int, float, bool)
 # keyed on the talk, so a later skip silently destroys an earlier success.
 PROCESSED_STATUSES = ANALYSIS_STATUSES
 
+# Every field render_analysis reads from the canonical talk. Catalog feedback is
+# deliberately absent: it is a receipt-bound review side channel, not DB state.
+PERSISTED_RENDER_FIELDS = (
+    "status",
+    "transcript_source",
+    "slide_source",
+    "slides_local_path",
+    "rhetoric_notes",
+    "areas_for_improvement",
+    "adherence_assessment",
+    "structured_data",
+    "verbatim_examples",
+    "pattern_observations",
+)
+
 
 class AnalysisBatchWriteError(OSError):
     """A staged analysis batch could not commit or recover atomically."""
+
+
+def effective_render_payload(ret, talk):
+    """Build the single canonical payload rendered after persistence.
+
+    The completed claim binds `ret` byte-for-byte, while the talk contains the
+    result of applying that return's versioned omission/replacement semantics.
+    Only the non-persisted catalog-feedback side channel comes from the return.
+    """
+    if resolve_return_schema_version(ret) == RETURN_SCHEMA_VERSION:
+        validate_persisted_v2_analysis_state(talk)
+    payload = {"filename": ret["filename"]}
+    for field in PERSISTED_RENDER_FIELDS:
+        if field in talk:
+            payload[field] = copy.deepcopy(talk[field])
+    if "catalog_feedback" in ret:
+        payload["catalog_feedback"] = copy.deepcopy(ret["catalog_feedback"])
+    return payload
 
 
 def as_prose(value):
@@ -234,7 +273,7 @@ def render_catalog_feedback(feedback):
 
 
 def render_analysis(ret, title=None, run_date=None, *, persisted_date=None):
-    """Build the full markdown document for one subagent return."""
+    """Build the full markdown document for one canonical analysis payload."""
     filename = ret.get("filename", "")
     heading = title or ret.get("title") or filename.removesuffix(".md")
     processed = persisted_date or run_date or ret.get("processed_date") or ""
@@ -278,7 +317,11 @@ def render_analysis(ret, title=None, run_date=None, *, persisted_date=None):
                           len(obs.get("antipatterns_detected") or [])),
             ))
         elif score is not None:
-            out.append(f"**Pattern score:** {score}")
+            out.append("**Pattern score:** {} ({} patterns − {} antipatterns)".format(
+                score,
+                len(obs.get("patterns_detected") or []),
+                len(obs.get("antipatterns_detected") or []),
+            ))
         out += ["", "### Patterns Detected", "",
                 *render_pattern_table(obs.get("patterns_detected")), "",
                 "### Antipatterns Detected", "",
@@ -644,8 +687,16 @@ def main():
         except ReturnValidationError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             sys.exit(1)
+        try:
+            render_payload = effective_render_payload(ret, talks_by_name[name])
+        except ReturnValidationError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
         body = render_analysis(
-            ret, title=titles.get(name), persisted_date=processed_stamp)
+            render_payload,
+            title=titles.get(name),
+            persisted_date=processed_stamp,
+        )
         rendered.append((name, path, body))
 
     try:

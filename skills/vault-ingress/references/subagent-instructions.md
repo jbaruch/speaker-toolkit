@@ -278,8 +278,13 @@ See [processing-rules.md](processing-rules.md) for full tagging rules.
 Return exactly the shape in [schemas-db.md](schemas-db.md). `status`,
 `slide_source`, all five catalog-feedback lanes, and the complete pattern score
 object are mandatory. Set `return_schema_version` to integer `2`; missing/version-1
-returns are accepted only to replay historical saved artifacts. `transcript_source` is conditional provenance: omit it when
-the fetcher reports `existing` and the DB has no known provenance.
+returns are accepted only to replay historical saved artifacts. Version-2
+`rhetoric_notes` and `areas_for_improvement` must contain substantive non-whitespace
+analysis. Empty strings remain valid for `adherence_assessment`, `new_patterns`, and
+`summary_updates` where documented; the adherence no-assessment sentinel must be
+exactly `""`, never whitespace. `transcript_source` is conditional provenance:
+omit the key when the fetcher reports `existing` and the DB has no known provenance;
+never emit JSON `null`.
 `slides_local_path` is optional for ordinary returns but mandatory for
 `status: "processed"` with `slide_source: "video_extracted"`.
 Omit `processed_date`; the persistence writer owns one normalized timestamp for
@@ -298,7 +303,8 @@ which provenance evidence supports the classes; and how unverified origins enter
 the `unknown` count.
 
 Version-2 supplied fields are snapshots: an empty string, array, or declared map
-replaces an older value, while an omitted field preserves it. Use `clear_fields`
+replaces an older value when that field permits emptiness, while an omitted field
+preserves it. Use `clear_fields`
 when the re-analysis must delete a field rather than replace it. Each entry is
 an analysis-owned dotted path such as `verbatim_examples.jokes` or
 `structured_data.slide_count`. An untrusted or unpromoted

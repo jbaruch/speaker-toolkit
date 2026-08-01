@@ -101,8 +101,7 @@ from return_validation import (
     validate_batch_claims_against_talks,
     validate_claim_against_talk,
     validate_batch,
-    validate_structured_data,
-    validate_structured_policy_value,
+    validate_persisted_v2_analysis_state,
     validate_v2_structured_policy_shapes,
     validate_verbatim_examples,
 )
@@ -292,18 +291,12 @@ def validate_effective_v2_state(
         talk, incoming_structured, *, pattern_snapshot_replaced):
     """Validate the post-merge candidate before claim closure or publication."""
     validate_talk_record_schemas([talk])
-    structured = require_stored_mapping(talk, "structured_data")
-    verbatim = require_stored_mapping(talk, "verbatim_examples")
-    observations = require_stored_mapping(talk, "pattern_observations")
-
-    for field, policy in STRUCTURED_FIELD_POLICIES.items():
-        if field in structured:
-            validate_structured_policy_value(field, structured[field], policy)
     try:
-        validate_structured_data(structured, require_complete_groups=True)
-        validate_verbatim_examples(verbatim, reject_unknown=True)
+        validate_persisted_v2_analysis_state(talk)
     except ReturnValidationError as exc:
         raise ValueError(f"effective merged analysis is invalid: {exc}") from exc
+
+    structured = require_stored_mapping(talk, "structured_data")
 
     for field, path in PROMOTE:
         structured_field = path.removeprefix("structured_data.")
@@ -314,47 +307,8 @@ def validate_effective_v2_state(
                     f"effective merged analysis has divergent promoted field {field}")
 
     if not pattern_snapshot_replaced:
-        return
-    expected_fields = {
-        "patterns_detected",
-        "pattern_ids",
-        "antipatterns_detected",
-        "antipattern_ids",
-        "not_evaluable",
-        "not_evaluable_ids",
-        "evidence_sources",
-        "pattern_score",
-    }
-    if set(observations) != expected_fields:
         raise ValueError(
-            "effective v2 pattern snapshot has noncanonical fields; expected "
-            f"{sorted(expected_fields)}, got {sorted(observations)}")
-    for lane, ids_lane in (
-            ("patterns_detected", "pattern_ids"),
-            ("antipatterns_detected", "antipattern_ids"),
-            ("not_evaluable", "not_evaluable_ids")):
-        entries = observations[lane]
-        ids = observations[ids_lane]
-        if not isinstance(entries, list) or not isinstance(ids, list):
-            raise ValueError(
-                f"effective v2 pattern snapshot {lane}/{ids_lane} must be arrays")
-        expected_ids = [
-            entry.get("pattern_id") for entry in entries
-            if isinstance(entry, dict) and entry.get("pattern_id")]
-        if ids != expected_ids:
-            raise ValueError(
-                f"effective v2 pattern snapshot {ids_lane} does not match {lane}")
-    evidence_sources = observations["evidence_sources"]
-    if not isinstance(evidence_sources, list):
-        raise ValueError(
-            "effective v2 pattern snapshot evidence_sources must be an array")
-    score = observations["pattern_score"]
-    if isinstance(score, bool) or not isinstance(score, int):
-        raise ValueError(
-            "effective v2 pattern snapshot pattern_score must be an integer")
-    if talk.get("pattern_score") != score:
-        raise ValueError(
-            "effective v2 pattern snapshot diverges from promoted pattern_score")
+            "return-schema v2 analysis did not replace pattern_observations")
 
 
 def _delete_path(obj, parts):

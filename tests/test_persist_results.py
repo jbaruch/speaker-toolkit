@@ -529,6 +529,23 @@ def test_legacy_empty_values_never_clobber(persist_results):
     assert talk["structured_data"]["slide_count"] == 62
 
 
+def test_legacy_empty_substantive_prose_remains_a_noop(persist_results):
+    talk = _talk(
+        rhetoric_notes="trusted prior notes",
+        areas_for_improvement="trusted prior improvements",
+    )
+    ret = _return(
+        return_schema_version=1,
+        rhetoric_notes="",
+        areas_for_improvement="",
+    )
+
+    persist_results.merge_talk(talk, ret)
+
+    assert talk["rhetoric_notes"] == "trusted prior notes"
+    assert talk["areas_for_improvement"] == "trusted prior improvements"
+
+
 def test_pattern_observations_normalized(persist_results):
     talk = _talk()
     persist_results.merge_talk(talk, _return())
@@ -1149,6 +1166,40 @@ def test_a_malformed_return_leaves_the_talk_untouched(persist_results, tmp_path)
     )
     assert result.returncode == 1
     assert json.loads(db.read_text())["talks"][0] == original
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("rhetoric_notes", "", "must be a non-whitespace string"),
+        ("areas_for_improvement", " \n\t", "must be a non-whitespace string"),
+        ("adherence_assessment", " \n", "exact empty string sentinel"),
+        ("transcript_source", None, "must be omitted when provenance is unknown"),
+    ],
+)
+def test_v2_destructive_empty_scalars_leave_database_byte_stable(
+        persist_results, tmp_path, field, value, message):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    original = {"talks": [_talk(
+        rhetoric_notes="trusted prior analysis",
+        areas_for_improvement="trusted prior improvement notes",
+        transcript_source="manual",
+    )]}
+    ret = _return(**{field: value})
+    db.write_text(json.dumps(original))
+    before = db.read_bytes()
+    batch.write_text(json.dumps([ret]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert message in result.stderr
+    assert db.read_bytes() == before
 
 
 def test_malformed_per_slide_visual_leaves_database_untouched(

@@ -49,6 +49,22 @@ The standalone return validator and persistence now import one structured-field
 policy registry, so a wrong-typed or undeclared v2 snapshot object is rejected at
 preflight instead of first failing inside the database writer.
 
+### fix(vault-ingress) — render the persisted effective analysis
+
+`write-analysis.py` now uses the completed, validated talk as the canonical source
+for every analysis-owned section while retaining the exact return receipt as its
+authorization and source for non-persisted catalog feedback. A version-2 return may
+omit a structured field or verbatim lane and preserve it in the database; that same
+preserved value now remains in Markdown. Persisted integer scores retain their
+pattern/antipattern count detail by deriving the counts from the canonical detection
+arrays. Invalid effective state aborts before any analysis target is replaced.
+
+Version-2 returns also reject empty/whitespace `rhetoric_notes` and
+`areas_for_improvement`, plus an explicitly present null `transcript_source`, before
+snapshot replacement can erase trusted prose or provenance. Empty adherence and
+summary proposal fields remain valid, omission still represents unknown transcript
+provenance, and missing/version-1 returns retain their historical replay behavior.
+
 ### fix(vault-ingress) — persist complete queue batches under one timestamp
 
 Both persistence surfaces now fail closed unless return filenames exactly equal

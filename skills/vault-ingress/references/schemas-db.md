@@ -339,7 +339,8 @@ are authored-slide evidence and cannot be supplied from untrusted video context.
 
 Every newly produced return declares `return_schema_version: 2`. Version 2 is the
 complete-snapshot merge contract: supplied declared scalar and list fields replace
-prior values even when empty; complete structured maps and each verbatim lane replace
+prior values even when empty where the field permits emptiness; complete structured
+maps and each verbatim lane replace
 their prior snapshots; omitted fields remain untouched. The image-source distribution
 and its basis form one dependent group. Unregistered incoming structured objects fail
 closed instead of acquiring accidental recursive-merge semantics. Historical returns
@@ -366,8 +367,15 @@ complete required `pattern_observations` fields. Individual `structured_data`
 fields and `verbatim_examples` lanes remain optional for partial-return and legacy
 compatibility: omission preserves the prior field, while a supplied empty value
 records that the current analysis found none. Required prose fields use an empty
-string when the contract explicitly permits no assessment. A skipped terminal
-return may contain only `filename`, `return_schema_version`, `queue_claim`, and `status`. Both
+string only for `adherence_assessment`, `new_patterns`, and `summary_updates`.
+For `adherence_assessment`, the no-assessment sentinel is exactly `""`; whitespace-only
+text is invalid.
+Version-2 `rhetoric_notes` and `areas_for_improvement` must contain non-whitespace
+substantive analysis. An unknown `transcript_source` is omitted; a present value
+must be one of the declared enums and must never be JSON `null`. Missing/version-1
+returns retain their historical type-only and empty-value no-op behavior. A skipped
+terminal return may contain only `filename`, `return_schema_version`, `queue_claim`,
+and `status`. Both
 writers reject a missing/unknown status or a return whose queue generation does
 not match the talk's active claim. Returns should omit `processed_date`: the
 persistence writer's normalized batch `--run-date` (or generated UTC timestamp)
@@ -406,6 +414,13 @@ Before rendering a processed result, `write-analysis.py` also requires the
 talk's `pattern_catalog_fingerprint` and `pattern_scoring_schema_version` to
 equal the catalog and scoring contract it just validated. Skipped results do not
 render or restamp prior analysis-generation metadata.
+
+The completed return receipt authorizes rendering, but version-2 analysis-owned
+content comes from the validated persisted effective talk, not the partial raw
+return. This is the single canonical merged payload: a structured field or verbatim
+lane omitted by the return and preserved by persistence remains present in Markdown.
+`catalog_feedback` is the sole receipt-bound rendering side channel read directly
+from the return because it is intentionally not stored on the talk.
 
 Analysis replacement is batch-transactional. The writer preflights every target,
 including normalized/case-fold collisions with existing output-directory

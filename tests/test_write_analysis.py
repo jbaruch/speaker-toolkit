@@ -7,6 +7,7 @@ orchestrator in prose with no script to run. The DB carried the corrected
 analysis while every analyses/*.md still asserted what the reparse had refuted.
 """
 
+import copy
 import hashlib
 import json
 import re
@@ -42,6 +43,17 @@ def _catalog_fingerprint():
 
 
 CATALOG_FINGERPRINT = _catalog_fingerprint()
+
+PERSISTED_ANALYSIS_FIELDS = (
+    "transcript_source",
+    "slide_source",
+    "slides_local_path",
+    "rhetoric_notes",
+    "areas_for_improvement",
+    "adherence_assessment",
+    "structured_data",
+    "verbatim_examples",
+)
 
 
 def _return_receipt(ret):
@@ -159,6 +171,37 @@ def _write_tracking_db(
         }
         if ret["status"] == "skipped_no_sources":
             talk.update({"video_url": None, "pptx_path": None, "slides_url": None})
+        else:
+            for field in PERSISTED_ANALYSIS_FIELDS:
+                if field in ret:
+                    talk[field] = copy.deepcopy(ret[field])
+            returned_observations = ret["pattern_observations"]
+            observations = {
+                "patterns_detected": copy.deepcopy(
+                    returned_observations["patterns_detected"]),
+                "pattern_ids": [
+                    item["pattern_id"]
+                    for item in returned_observations["patterns_detected"]],
+                "antipatterns_detected": copy.deepcopy(
+                    returned_observations["antipatterns_detected"]),
+                "antipattern_ids": [
+                    item["pattern_id"]
+                    for item in returned_observations["antipatterns_detected"]],
+                "not_evaluable": copy.deepcopy(
+                    returned_observations["not_evaluable"]),
+                "not_evaluable_ids": [
+                    item["pattern_id"]
+                    for item in returned_observations["not_evaluable"]],
+                "evidence_sources": copy.deepcopy(
+                    returned_observations["evidence_sources"]),
+            }
+            returned_score = returned_observations["pattern_score"]
+            score = (
+                returned_score["score"]
+                if isinstance(returned_score, dict) else returned_score)
+            observations["pattern_score"] = score
+            talk["pattern_observations"] = observations
+            talk["pattern_score"] = score
         talks.append(talk)
     path = tmp_path / name
     path.write_text(json.dumps({"talks": talks}))
@@ -471,6 +514,87 @@ def test_persist_then_write_uses_one_exact_batch_timestamp(
     body = (out / "talk.md").read_text()
     assert f"**Processed:** {authoritative}" in body
     assert "**Processed:** 2026-07-26" not in body
+
+
+def test_v2_omitted_persisted_fields_remain_in_rendered_analysis(
+        persist_results, write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return(verbatim_examples={})
+    assert "typography_observations" not in ret["structured_data"]
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret], persisted_date="2026-06-01")
+    payload = json.loads(db.read_text())
+    talk = payload["talks"][0]
+    talk["structured_data"]["typography_observations"] = {
+        "family": "Synthetic Sans",
+        "weight": "bold",
+    }
+    talk["verbatim_examples"] = {
+        "jokes": ["A synthetic retained line."],
+    }
+    talk["status"] = "reprocessing-inflight"
+    claim = talk["_queue_claim"]
+    claim["state"] = "claimed"
+    for field in (
+            "released_at", "release_reason", "result_status",
+            "result_payload_sha256"):
+        del claim[field]
+    db.write_text(json.dumps(payload))
+
+    persisted = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch),
+         "--run-date", "2026-07-31T20:00:00+00:00"],
+        capture_output=True,
+        text=True,
+    )
+    assert persisted.returncode == 0, persisted.stderr
+    written = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert written.returncode == 0, written.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    assert stored["structured_data"]["typography_observations"] == {
+        "family": "Synthetic Sans",
+        "weight": "bold",
+    }
+    assert stored["verbatim_examples"]["jokes"] == [
+        "A synthetic retained line."]
+    body = (out / "talk.md").read_text()
+    assert '"typography_observations"' in body
+    assert "Synthetic Sans" in body
+    assert "A synthetic retained line." in body
+    assert "**Pattern score:** 0 (1 patterns − 1 antipatterns)" in body
+
+
+def test_invalid_persisted_v2_effective_state_does_not_replace_analysis(
+        write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    target = out / "talk.md"
+    target.write_text("# trusted prior analysis\n")
+    ret = _return()
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    payload["talks"][0]["structured_data"]["typography_observations"] = True
+    db.write_text(json.dumps(payload))
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "typography_observations must be an object" in result.stderr
+    assert target.read_text() == "# trusted prior analysis\n"
 
 
 def test_nested_structured_fields_are_preserved(write_analysis):

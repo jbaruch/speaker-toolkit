@@ -83,6 +83,16 @@ PATTERN_OBSERVATION_RETURN_FIELDS = frozenset({
     "not_evaluable",
     "pattern_score",
 })
+PERSISTED_PATTERN_OBSERVATION_FIELDS = frozenset({
+    "patterns_detected",
+    "pattern_ids",
+    "antipatterns_detected",
+    "antipattern_ids",
+    "not_evaluable",
+    "not_evaluable_ids",
+    "evidence_sources",
+    "pattern_score",
+})
 REPLACE_SCALAR = "replace_scalar"
 REPLACE_LIST = "replace_list"
 ATOMIC_MAP = "atomic_map"
@@ -152,6 +162,10 @@ PROSE_FIELDS = (
     "new_patterns",
     "summary_updates",
 )
+SUBSTANTIVE_PROSE_FIELDS = frozenset({
+    "rhetoric_notes",
+    "areas_for_improvement",
+})
 LANGUAGE_RE = re.compile(r"^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$")
 VIDEO_SOURCE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 VIDEO_EXTRACTION_SCHEMA_VERSION = 3
@@ -1128,6 +1142,67 @@ def validate_verbatim_examples(
                 f"verbatim_examples.{field} must be an array of strings")
 
 
+def _require_persisted_analysis_mapping(talk: dict, field: str) -> dict:
+    value = talk.get(field)
+    if not isinstance(value, dict):
+        filename = talk.get("filename", "<unknown>")
+        raise ReturnValidationError(
+            f"{filename} persisted {field} must be an object, got "
+            f"{type(value).__name__}")
+    return value
+
+
+def validate_persisted_v2_analysis_state(talk: dict) -> None:
+    """Validate the canonical effective analysis consumed after v2 persistence."""
+    structured = _require_persisted_analysis_mapping(talk, "structured_data")
+    verbatim = _require_persisted_analysis_mapping(talk, "verbatim_examples")
+    observations = _require_persisted_analysis_mapping(talk, "pattern_observations")
+
+    for field, policy in STRUCTURED_FIELD_POLICIES.items():
+        if field in structured:
+            validate_structured_policy_value(field, structured[field], policy)
+    validate_structured_data(structured, require_complete_groups=True)
+    validate_verbatim_examples(verbatim, reject_unknown=True)
+
+    actual_fields = set(observations)
+    if actual_fields != PERSISTED_PATTERN_OBSERVATION_FIELDS:
+        raise ReturnValidationError(
+            "persisted v2 pattern snapshot has noncanonical fields; expected "
+            f"{sorted(PERSISTED_PATTERN_OBSERVATION_FIELDS)}, got "
+            f"{sorted(actual_fields)}")
+    for lane, ids_lane in (
+            ("patterns_detected", "pattern_ids"),
+            ("antipatterns_detected", "antipattern_ids"),
+            ("not_evaluable", "not_evaluable_ids")):
+        entries = observations[lane]
+        ids = observations[ids_lane]
+        if (not isinstance(entries, list) or
+                any(not isinstance(entry, dict) for entry in entries) or
+                not isinstance(ids, list)):
+            raise ReturnValidationError(
+                f"persisted v2 pattern snapshot {lane}/{ids_lane} has an "
+                "invalid container shape")
+        expected_ids = [
+            entry.get("pattern_id") for entry in entries
+            if entry.get("pattern_id")]
+        if ids != expected_ids:
+            raise ReturnValidationError(
+                f"persisted v2 pattern snapshot {ids_lane} does not match {lane}")
+    evidence_sources = observations["evidence_sources"]
+    if (not isinstance(evidence_sources, list) or
+            any(not isinstance(source, str) for source in evidence_sources)):
+        raise ReturnValidationError(
+            "persisted v2 pattern snapshot evidence_sources must be an array "
+            "of strings")
+    score = observations["pattern_score"]
+    if isinstance(score, bool) or not isinstance(score, int):
+        raise ReturnValidationError(
+            "persisted v2 pattern snapshot pattern_score must be an integer")
+    if talk.get("pattern_score") != score:
+        raise ReturnValidationError(
+            "persisted v2 pattern snapshot diverges from promoted pattern_score")
+
+
 def _validate_catalog_feedback(feedback) -> None:
     if not isinstance(feedback, dict):
         raise ReturnValidationError("catalog_feedback is required and must be an object")
@@ -1585,7 +1660,16 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
     slides_local_path = _validate_slides_local_path(ret)
 
     transcript_source = ret.get("transcript_source")
-    if transcript_source is not None and transcript_source not in TRANSCRIPT_SOURCES:
+    if (return_schema_version == RETURN_SCHEMA_VERSION and
+            "transcript_source" in ret and
+            transcript_source not in TRANSCRIPT_SOURCES):
+        raise ReturnValidationError(
+            "return-schema v2 transcript_source must be omitted when provenance "
+            f"is unknown or be one of {sorted(TRANSCRIPT_SOURCES)}, got "
+            f"{transcript_source!r}")
+    if (return_schema_version != RETURN_SCHEMA_VERSION and
+            transcript_source is not None and
+            transcript_source not in TRANSCRIPT_SOURCES):
         raise ReturnValidationError(
             f"transcript_source must be one of {sorted(TRANSCRIPT_SOURCES)}, "
             f"got {transcript_source!r}")
@@ -1612,6 +1696,17 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
             raise ReturnValidationError(f"{field} is required and must be a string")
         if not isinstance(ret[field], str):
             raise ReturnValidationError(f"{field} must be a string, got {type(ret[field]).__name__}")
+        if (return_schema_version == RETURN_SCHEMA_VERSION and
+                field in SUBSTANTIVE_PROSE_FIELDS and
+                not ret[field].strip()):
+            raise ReturnValidationError(
+                f"{field} must be a non-whitespace string for {status}")
+        if (return_schema_version == RETURN_SCHEMA_VERSION and
+                field == "adherence_assessment" and ret[field] != "" and
+                not ret[field].strip()):
+            raise ReturnValidationError(
+                "adherence_assessment must be substantive or the exact empty "
+                "string sentinel")
 
     structured = ret.get("structured_data")
     if not isinstance(structured, dict):

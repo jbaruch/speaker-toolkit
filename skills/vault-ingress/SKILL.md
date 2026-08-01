@@ -43,7 +43,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | [references/processing-rules.md](references/processing-rules.md) | Language policy, pattern migration logic, structured field rules |
 | [references/known-issues.md](references/known-issues.md) | Edge cases — wide-angle recordings, Whisper hallucination, non-speaker talks |
 | `skills/vault-ingress/scripts/persist-results.py` | Deterministically merge batch subagent returns into the tracking DB (Step 4) |
-| `skills/vault-ingress/scripts/write-analysis.py` | Render per-talk `analyses/*.md` from the same batch returns (Step 4) |
+| `skills/vault-ingress/scripts/write-analysis.py` | Render per-talk `analyses/*.md` from persisted effective state authorized by the same batch returns (Step 4) |
 | `skills/vault-ingress/scripts/validate-returns.py` | Reject malformed schemas, statuses, scores, and catalog observations before either Step 4 writer runs |
 | `skills/vault-ingress/scripts/queue-state.py` | Normalize legacy statuses; claim versioned batches; inspect or recover queue leases without replaying returns |
 | `skills/vault-ingress/scripts/pptx-extraction.py` | Extract visual design data from .pptx files |
@@ -293,14 +293,18 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   over the SAME `batch-returns.json` the merge consumed, so the DB and the files
   cannot diverge. The writer verifies each completed claim's payload receipt and
   persisted catalog fingerprint/scoring version, requires exact membership
-  across the completed batch before replacing any file, and renders the
-  persisted, writer-owned timestamp. It checks return targets against both one
+  across the completed batch, validates the persisted effective v2 analysis, and
+  renders analysis-owned fields from that canonical talk state. Thus fields
+  omitted and preserved during persistence remain in Markdown. Only the
+  receipt-bound, non-persisted catalog-feedback side channel comes from the
+  return. The writer also renders the persisted, writer-owned timestamp. It
+  checks return targets against both one
   another and existing directory entries under normalized/case-folded identity,
   rejects directory/special-file targets, stages every body, and commits with
   reverse rollback so a late failure cannot leave a partial batch. An exact
   analysis-target symlink is replaced as a directory entry; its external target
   is never followed or modified.
-  It renders `{vault_root}/analyses/{talk_filename}.md` per return —
+  It renders `{vault_root}/analyses/{talk_filename}.md` per effective talk —
   14 dimensions, structured data, verbatim examples, "Presentation Patterns Scoring",
   and catalog feedback — creates `analyses/` if missing, prints a JSON summary, and
   exits non-zero on a return with no `filename`. Section list and field handling live
