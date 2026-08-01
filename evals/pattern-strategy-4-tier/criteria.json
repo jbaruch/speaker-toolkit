@@ -1,21 +1,26 @@
 {
-  "context": "Tests whether the agent produces a 4-tier pattern strategy from the speaker's pattern profile, with antipatterns tagged as [RECURRING] or [CONTEXTUAL] based on the speaker's history.",
+  "context": "Tests whether the agent first honors matching schema-v3 current-generation provenance, then produces a 4-tier pattern strategy with historical [RECURRING] and current-outline [CONTEXTUAL] antipattern labels.",
   "type": "weighted_checklist",
   "checklist": [
     {
+      "name": "Current provenance authorizes history",
+      "max_score": 10,
+      "description": "The report treats the supplied schema-v3 profile as history-enabled because its explicit synthetic fingerprint (64 a characters), scoring schema 3, current/empty-reasons baseline, exact 22-file cohort, count, sum, and average are internally consistent; it does not discard the history as legacy or unprovenanced"
+    },
+    {
       "name": "4-tier structure present",
-      "max_score": 20,
-      "description": "The report organizes pattern recommendations into exactly four labeled tiers: Signature (or YOUR TOOLKIT), Contextual (or WORTH CONSIDERING), New to You (or NEW TO YOU), and Shake It Up (or WILD CARD) — four distinct sections, not three or five"
+      "max_score": 15,
+      "description": "The report organizes authorized pattern-history recommendations into exactly four labeled tiers: Signature (or YOUR TOOLKIT), Contextual History (or WORTH CONSIDERING), New to You (or NEW TO YOU), and Shake It Up (or WILD CARD) — four distinct sections, not three or five"
     },
     {
       "name": "Signature tier from profile",
       "max_score": 12,
-      "description": "The Signature tier contains patterns from the speaker's signature_patterns (narrative-arc, foreshadowing, brain-breaks, bookends) — not invented patterns"
+      "description": "The Signature tier contains patterns from the current-cohort mastery_levels.signature / pattern_usage entries (narrative-arc, foreshadowing, brain-breaks, bookends) — not invented or legacy patterns"
     },
     {
-      "name": "Contextual tier from profile",
+      "name": "Contextual-history tier from profile",
       "max_score": 10,
-      "description": "The Contextual tier contains at least one pattern from the speaker's contextual_patterns (expansion-joints, a-la-carte-content, talklet)"
+      "description": "The Contextual-history tier contains at least one current-cohort occasional pattern from mastery_levels/pattern_usage (expansion-joints, a-la-carte-content, talklet)"
     },
     {
       "name": "Shake It Up has 1-2 items",
@@ -24,13 +29,13 @@
     },
     {
       "name": "[RECURRING] tag used",
-      "max_score": 15,
-      "description": "At least one antipattern detection is labeled [RECURRING] (matching shortchanged or bullet-riddled-corpse from the speaker's antipattern_frequency history)"
+      "max_score": 13,
+      "description": "At least one antipattern detection is labeled [RECURRING] from the authorized current-cohort antipattern_frequency history (shortchanged is severity recurring; bullet-riddled-corpse is only occasional)"
     },
     {
       "name": "[CONTEXTUAL] tag used",
-      "max_score": 15,
-      "description": "At least one antipattern detection is labeled [CONTEXTUAL] — a risk detected in the current outline that is NOT in the speaker's historical antipattern_frequency (e.g., meme accretion in the opening sequence)"
+      "max_score": 13,
+      "description": "At least one antipattern detection is labeled [CONTEXTUAL] — a current-outline risk found by the current taxonomy rather than a historical claim (e.g., the meme-heavy opening sequence)"
     },
     {
       "name": "New to You from never_used",
@@ -39,7 +44,7 @@
     },
     {
       "name": "Actionable recommendations",
-      "max_score": 8,
+      "max_score": 7,
       "description": "At least 2 pattern recommendations include specific advice for how to apply them to THIS talk — not generic definitions of what the pattern is"
     }
   ]

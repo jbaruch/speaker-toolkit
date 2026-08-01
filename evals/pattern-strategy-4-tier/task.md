@@ -4,6 +4,9 @@
 
 Morgan Lee is preparing a 45-minute talk for DevRelCon 2025 about "Developer Relations in the Age of AI Assistants." Morgan has a documented history of 22 talks with tracked presentation patterns — some they use consistently, some occasionally, and some they've never tried. There are also known antipatterns from their history.
 
+For this fixed synthetic case, the active Presentation Pattern catalog fingerprint is
+64 lowercase `a` characters and the active pattern-scoring schema is `3`.
+
 Given Morgan's pattern profile and the draft outline below, produce a pattern strategy recommendation that organizes techniques into tiers based on Morgan's history and this talk's context.
 
 ## Output Specification
@@ -22,29 +25,82 @@ The following files are provided as inputs. Extract them before beginning.
 
 =============== FILE: inputs/speaker-profile.json ===============
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "generated_date": "2025-02-15",
   "speaker": {
     "name": "Morgan Lee",
     "handle": "@mlee_devrel"
   },
   "pattern_profile": {
-    "signature_patterns": [
-      {"pattern_id": "narrative-arc", "usage_count": 20, "total_talks": 22, "mastery_level": "signature"},
-      {"pattern_id": "foreshadowing", "usage_count": 18, "total_talks": 22, "mastery_level": "signature"},
-      {"pattern_id": "brain-breaks", "usage_count": 19, "total_talks": 22, "mastery_level": "signature"},
-      {"pattern_id": "bookends", "usage_count": 17, "total_talks": 22, "mastery_level": "signature"}
+    "pattern_baseline": {
+      "schema_version": 1,
+      "as_of": "2025-02-15T12:00:00+00:00",
+      "scope": "global",
+      "active_batch_excluded": false,
+      "excluded_filenames": [],
+      "eligible_statuses": ["processed", "processed_partial"],
+      "pattern_scoring_generation_status": "current",
+      "pattern_scoring_generation_reasons": [],
+      "pattern_catalog_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "pattern_scoring_schema_version": 3,
+      "scored_talk_count": 22,
+      "pattern_score_sum": 154,
+      "average_pattern_score": 7.0
+    },
+    "baseline_talk_filenames": [
+      "talk-01.md", "talk-02.md", "talk-03.md", "talk-04.md", "talk-05.md",
+      "talk-06.md", "talk-07.md", "talk-08.md", "talk-09.md", "talk-10.md",
+      "talk-11.md", "talk-12.md", "talk-13.md", "talk-14.md", "talk-15.md",
+      "talk-16.md", "talk-17.md", "talk-18.md", "talk-19.md", "talk-20.md",
+      "talk-21.md", "talk-22.md"
     ],
-    "contextual_patterns": [
-      {"pattern_id": "expansion-joints", "usage_count": 8, "total_talks": 22},
-      {"pattern_id": "a-la-carte-content", "usage_count": 5, "total_talks": 22},
-      {"pattern_id": "talklet", "usage_count": 4, "total_talks": 22}
+    "talks_scored": 22,
+    "average_pattern_score": 7.0,
+    "score_trend": "stable",
+    "pattern_breadth": {
+      "avg_distinct_patterns_per_talk": 6.4,
+      "trend": "stable",
+      "note": "Computed from the exact current pattern cohort."
+    },
+    "underused_patterns": [
+      {"pattern_id": "takahashi", "mastery_level": "never_tried", "fits_modes": ["practitioner"], "note": "A high-fit experiment."}
+    ],
+    "score_drivers": {
+      "direction": "stable",
+      "antipattern_drivers": [],
+      "pattern_drivers": [],
+      "note": "No directional movement in the exact current cohort."
+    },
+    "by_mode": [
+      {"mode_id": "practitioner", "talks_in_mode": 22, "stable": true, "average_pattern_score": 7.0, "top_antipatterns": ["shortchanged"]}
+    ],
+    "strengths": [
+      {"pattern_id": "narrative-arc", "kind": "signature_pattern", "mastery_level": "signature", "evidence": "20 of 22 current-cohort talks", "lean_in": "Use it as the structural backbone."}
+    ],
+    "strengths_note": "Current-generation strengths only.",
+    "note": "Only observable patterns from the current catalog are included.",
+    "pattern_usage": [
+      {"pattern_id": "narrative-arc", "times_used": 20, "out_of": 22, "usage_rate": 0.91, "trend": "consistent", "mastery_level": "signature"},
+      {"pattern_id": "foreshadowing", "times_used": 18, "out_of": 22, "usage_rate": 0.82, "trend": "consistent", "mastery_level": "signature"},
+      {"pattern_id": "brain-breaks", "times_used": 19, "out_of": 22, "usage_rate": 0.86, "trend": "consistent", "mastery_level": "signature"},
+      {"pattern_id": "bookends", "times_used": 17, "out_of": 22, "usage_rate": 0.77, "trend": "consistent", "mastery_level": "signature"},
+      {"pattern_id": "expansion-joints", "times_used": 8, "out_of": 22, "usage_rate": 0.36, "trend": "stable", "mastery_level": "occasional"},
+      {"pattern_id": "a-la-carte-content", "times_used": 5, "out_of": 22, "usage_rate": 0.23, "trend": "stable", "mastery_level": "occasional"},
+      {"pattern_id": "talklet", "times_used": 4, "out_of": 22, "usage_rate": 0.18, "trend": "stable", "mastery_level": "occasional"}
     ],
     "antipattern_frequency": [
-      {"pattern_id": "shortchanged", "occurrences": 6, "total_talks": 22, "severity": "recurring"},
-      {"pattern_id": "bullet-riddled-corpse", "occurrences": 3, "total_talks": 22, "severity": "occasional"}
+      {"pattern_id": "shortchanged", "times_detected": 6, "out_of": 22, "frequency_rate": 0.27, "trend": "stable", "severity": "recurring"},
+      {"pattern_id": "bullet-riddled-corpse", "times_detected": 3, "out_of": 22, "frequency_rate": 0.14, "trend": "stable", "severity": "occasional"}
     ],
-    "never_used_patterns": ["takahashi", "cave-painting", "preroll", "greek-chorus", "lipsync", "live-on-tape", "seeding-the-first-question", "crawling-credits"]
+    "never_used_patterns": ["takahashi", "cave-painting", "preroll", "greek-chorus", "lipsync", "live-on-tape", "seeding-the-first-question", "crawling-credits"],
+    "signature_combinations": [],
+    "mastery_levels": {
+      "signature": ["narrative-arc", "foreshadowing", "brain-breaks", "bookends"],
+      "regular": [],
+      "occasional": ["expansion-joints", "a-la-carte-content", "talklet"],
+      "rare": [],
+      "never_tried": ["takahashi", "cave-painting", "preroll", "greek-chorus", "lipsync", "live-on-tape", "seeding-the-first-question", "crawling-credits"]
+    }
   }
 }
 =============== END OF FILE ===============

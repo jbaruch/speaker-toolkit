@@ -33,6 +33,36 @@ counts, or rules — read the profile.
 > "The vault summary was updated {date} but the speaker profile was generated {date}.
 > Run 'update speaker profile' to sync, or proceed with the current profile?"
 
+**Pattern-history authorization:** run
+`skills/presentation-creator/scripts/pattern_history_status.py` against the loaded
+profile before reading any catalog-derived history. Its JSON `history_enabled` value
+is the sole creator gate; surface a disabled result's exact `warning`. A disabled
+history lane does not invalidate the whole profile. Keep using independent pacing,
+visual, infrastructure, publishing, presentation-mode, instrument-catalog, and
+confirmed-intent fields.
+
+Until history is enabled, do not read or repeat signature/contextual-history/
+New-to-You tiers, strengths, underuse, by-mode pattern history, recurring antipattern
+labels, or pattern-derived recurring issues and badges. The current pattern taxonomy
+remains available for analyzing the new outline. A profile schema v1/v2 is therefore
+a non-pattern compatibility input, not evidence of speaker pattern history.
+Schema-v3 top-level `guardrail_sources.recurring_issues[]` and `badges[]` are separate:
+use an entry only when it explicitly carries `source_lane: "non_pattern"`. Catalog
+warnings and reinforcement come from authorized `pattern_profile` history, never from
+an unmarked duplicate in a top-level lane.
+
+If the profile is absent, malformed, or history-disabled, Section 15 does not restore
+history by implication. Use Section 15 history only when its current block carries
+explicit provenance matching the bundled catalog/scoring generation and a complete
+structured contract accepted by the shared provenance assessor. A date, a recent
+heading, an unlabeled count, or ordinary prose is insufficient; use taxonomy-only
+fallback when the proof is absent.
+
+When an older profile is available for comparison, compare catalog fingerprint and
+pattern-scoring schema before catalog-derived values. Different identities mean a
+generation reset. Report the reset, but do not describe the score, frequency, mastery,
+strength, or underuse differences as improvement or regression.
+
 ### Step 0.2: Gather User Context
 
 Extract from the conversation what the user has already shared. Common starting points:

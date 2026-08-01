@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
@@ -32,6 +33,11 @@ import yaml  # noqa: E402
 from pydantic import ValidationError  # noqa: E402
 
 import outline_schema as _os  # noqa: E402
+from pattern_history_status import (  # noqa: E402
+    CreatorPatternHistoryStatus,
+    assess_creator_pattern_history,
+    disabled_history_warning,
+)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -373,6 +379,56 @@ def check_branding(outline: _os.Outline, profile: dict) -> tuple[str, str]:
     return "PASS", f"all required footer elements present ({len(elements)})"
 
 
+def check_pattern_history(
+    status: CreatorPatternHistoryStatus,
+) -> tuple[str, str]:
+    """Report the independent authorization state for catalog history."""
+    if status.history_enabled:
+        return (
+            "PASS",
+            "enabled for the exact current catalog/scoring generation "
+            f"({status.scored_talk_count} talks)",
+        )
+    return "WARN", disabled_history_warning(status)
+
+
+def recurring_pattern_history_lines(
+    profile: Mapping[str, object],
+    status: CreatorPatternHistoryStatus,
+) -> list[str]:
+    """Render recurring labels only from authorized current-generation history."""
+    if not status.history_enabled:
+        return []
+
+    pattern_profile = profile.get("pattern_profile")
+    assert isinstance(pattern_profile, Mapping)  # shared assessment postcondition
+    raw_frequency = pattern_profile.get("antipattern_frequency")
+    assert isinstance(raw_frequency, list)  # shared assessment postcondition
+
+    lines: list[str] = []
+    for item in raw_frequency:
+        if not isinstance(item, Mapping) or item.get("severity") != "recurring":
+            continue
+        pattern_id = item.get("pattern_id")
+        if not isinstance(pattern_id, str) or not pattern_id:
+            continue
+        count = item.get("times_detected")
+        out_of = item.get("out_of")
+        if (
+            not isinstance(count, int)
+            or isinstance(count, bool)
+            or not isinstance(out_of, int)
+            or isinstance(out_of, bool)
+        ):
+            continue
+        trend = item.get("trend")
+        detail = f"{count}/{out_of}"
+        if isinstance(trend, str) and trend:
+            detail += f", {trend}"
+        lines.append(f"[RECURRING] {pattern_id}: {detail}")
+    return lines
+
+
 # ── Main ─────────────────────────────────────────────────────────────
 
 
@@ -401,7 +457,9 @@ def main(argv: list[str]) -> int:
     print(f"GUARDRAIL CHECK — {outline.talk.title}")
     print("=" * 60)
 
+    history_status = assess_creator_pattern_history(profile)
     checks = [
+        ("Pattern history", check_pattern_history(history_status)),
         ("Slide budget", check_slide_budget(outline, profile)),
         ("Act 1 ratio", check_act1_ratio(outline, profile)),
         ("Branding", check_branding(outline, profile)),
@@ -413,6 +471,19 @@ def main(argv: list[str]) -> int:
 
     for name, (label, detail) in checks:
         print(f"[{label}] {name}: {detail}")
+
+    for line in recurring_pattern_history_lines(profile, history_status):
+        print(line)
+    if not history_status.history_enabled:
+        print(
+            "[INFO] Historical pattern tiers, labels, strengths, underuse, "
+            "by-mode data, and legacy/ambiguous pattern-derived guardrails or "
+            "badges: suppressed",
+        )
+    print(
+        "[INFO] Contextual taxonomy scan: enabled for the current outline "
+        "independently of speaker history",
+    )
 
     print("=" * 60)
     print(

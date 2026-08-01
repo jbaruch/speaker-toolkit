@@ -50,13 +50,35 @@ Then load local references per phase:
 [references/patterns/_index.md](references/patterns/_index.md).
 
 **Checks:** Warn if `profile.generated_date < summary."Last updated"` (stale profile).
-Accept `schema_version` 1 and 2 (dual-accept reader): the v2 coaching fields
-(`pattern_profile.score_drivers`, `pattern_breadth`, `underused_patterns`, `by_mode`,
-`strengths`; `pacing.adherence`) are optional — use them when present, fall back when a
-v1 profile omits them. Warn only if `schema_version > 2` (a profile newer than this
-reader). If profile doesn't exist (<10 talks), run in
-**summary-only mode** — read instruments from summary prose, use default guardrail
-thresholds (1.5 slides/min, 45% Act 1 cap), ask for template/publishing interactively.
+Then run:
+
+```bash
+python3 skills/presentation-creator/scripts/pattern_history_status.py \
+  path/to/speaker-profile.json
+```
+
+The command emits `{history_enabled, profile_schema_version, scored_talk_count,
+reason_codes, reasons, warning}`. Pattern history is authorized only when
+`history_enabled` is true. Otherwise surface `warning` verbatim and recommend profile
+regeneration; continue using independent non-pattern fields such as pacing, visual
+rules, presentation modes, infrastructure, publishing config, and confirmed intents.
+Stored profile schemas v1/v2 remain readable for those non-pattern fields only.
+
+When pattern history is disabled, suppress every catalog-derived historical claim:
+signature and contextual-history tiers, New-to-You claims, strengths, underuse,
+by-mode history, recurring antipattern labels, and pattern-derived recurring issues
+or badges. Schema-v3 top-level recurring issues and badges remain usable only when
+their entries explicitly declare `source_lane: "non_pattern"`; legacy or ambiguous
+entries do not authorize history. Current-taxonomy scans of the new outline remain enabled. If no profile
+exists, run in **summary-only mode**: use default guardrail thresholds (1.5
+slides/min, 45% Act 1 cap) and ask for template/publishing data interactively. Section
+15 history is usable only when it embeds explicit current provenance that passes the
+same strict pattern-profile assessment; ordinary or stale Section 15 prose authorizes
+taxonomy-only recommendations, never speaker-history claims.
+
+When comparing two profiles, compare their pattern catalog fingerprints and scoring
+schemas first. A mismatch is a generation reset; do not call cross-generation pattern
+differences improvements or regressions.
 
 ## Workflow Overview
 
@@ -213,7 +235,11 @@ summary section. Decision #2 (Engine & Theme Sourcing) picks the deck tooling
 (pptx vs presenterm) and theme via the idea-sourcing wizard; it reads `profile →
 presentation_engines` and the chosen mode's `typical_engine` and writes
 `talk.engine` / `talk.deck_theme` / `talk.engine_source`. Decision #11 uses the
-4-tier Pattern Strategy from [references/patterns/_index.md](references/patterns/_index.md) + `profile → pattern_profile`.
+Pattern Strategy from
+[references/patterns/_index.md](references/patterns/_index.md). Use the full 4-tier
+history view only when the Phase 0 pattern-history status is enabled; otherwise use a
+flat current-taxonomy menu without usage, novelty, strength, underuse, or mode-history
+claims.
 Decision #12 (Illustration Strategy) is optional — only when the author wants
 AI-generated illustrations. Delegate to `Skill(skill: "illustrations")` for the full
 collaboration (style proposals grounded in vault `visual_style_history`, format
@@ -356,17 +382,19 @@ accounting). Output is the `rhetorical-review.md` artifact — PASS / FLAG / N/A
 per check.
 
 `guardrail-check.py` enforces **speaker-profile-aware rules** that depend on
-runtime profile data — currently: slide budget, Act 1 ratio limits, branding,
-profanity register, data attribution, closing completeness, cut-line
-availability (conditional on `modular_design`). Anti-pattern frequency and
-illustration coverage are *not yet wired into the script* — those still live
-in `phase4-guardrails.md` as additional manual checks the agent should
-surface alongside the script's output. See
+runtime profile data: pattern-history authorization, slide budget, Act 1 ratio
+limits, branding, profanity register, data attribution, closing completeness, and
+cut-line availability (conditional on `modular_design`). It emits historical
+`[RECURRING]` antipattern labels only when the exact-generation history gate passes,
+and always leaves the current-outline contextual taxonomy scan enabled. Illustration
+coverage and the contextual scan still live in `phase4-guardrails.md` as additional
+manual checks the agent should surface alongside the script's output. See
 [references/phase4-guardrails.md](references/phase4-guardrails.md) for the
 full check list and report format.
 
-The script currently reports the 7 automated checks; the agent adds the
-remaining categories manually:
+The script reports the 7 independent non-pattern checks plus pattern-history status
+and any authorized recurring-history lines; the agent adds the remaining categories
+manually:
 
 ```
 GUARDRAIL CHECK — {talk title}
@@ -382,8 +410,13 @@ GUARDRAIL CHECK — {talk title}
 ```
 
 Agent-added (not in script yet):
-- Anti-pattern frequency from `profile.pattern_profile.antipattern_frequency`
-- Speaker-specific recurring issues from `profile.guardrail_sources.recurring_issues[]` — the script does not run these checks; the agent reads each entry and applies the `guardrail` field's check manually
+- Current-taxonomy contextual antipattern scan of the new outline; this runs even when
+  history is disabled and uses `[CONTEXTUAL]`, never `[RECURRING]`
+- Speaker-specific recurring issues from
+  `profile.guardrail_sources.recurring_issues[]` — schema-v3 entries with
+  `source_lane: "non_pattern"` remain usable independently; legacy or ambiguous
+  entries are suppressed, while catalog warnings come from authorized
+  `pattern_profile` history
 - Illustration coverage when `style_anchor` is present
 - Time-sensitive content scan
 - Murder-Your-Darlings filter pass

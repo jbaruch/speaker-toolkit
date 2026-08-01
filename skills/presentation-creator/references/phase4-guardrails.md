@@ -5,12 +5,13 @@ Phase 4 runs two complementary checkers against `outline.yaml`:
 | Script | Surface | Output |
 |--------|---------|--------|
 | `scripts/check-rhetorical.py outline.yaml` | Closed pattern taxonomy — opening PUNCH, big-idea singleton, thesis preview/payoff, sparkline elements, register coverage or match, master-story threading, callback ledger, inoculation count, progressive-list contiguity, running gags, duration accounting | `rhetorical-review.md` |
-| `scripts/guardrail-check.py outline.yaml <speaker-profile.json>` | Profile-aware rules — slide budget, Act 1 ratio, branding, profanity, data attribution, closing completeness, cut-line availability (conditional on `modular_design`) | stdout report |
+| `scripts/guardrail-check.py outline.yaml <speaker-profile.json>` | Profile-aware rules — pattern-history authorization, slide budget, Act 1 ratio, branding, profanity, data attribution, closing completeness, cut-line availability (conditional on `modular_design`) | stdout report |
 
-Anti-pattern frequency from `profile.pattern_profile.antipattern_frequency` and
-illustration coverage (checks 9 and 10 below) are not currently wired into
-`guardrail-check.py` — the agent should surface them as additional manual
-checks alongside the script output during the Phase 4 audit.
+`guardrail-check.py` imports the vault-profile provenance assessor through
+`scripts/pattern_history_status.py`. It prints current-cohort recurring antipattern
+labels only while that gate is enabled and prints an exact warning plus suppression
+notice otherwise. Current-outline contextual taxonomy scanning and illustration
+coverage (checks 9B and 10 below) remain agent-run checks alongside the script output.
 
 The two scripts are independent — run both. `check-rhetorical.py` needs no
 profile and emits a deterministic report regardless of the speaker. `guardrail-check.py`
@@ -27,8 +28,11 @@ how it's wired to schema fields, and how results are reported.
 - Profanity rules → `speaker-profile.json` → `rhetoric_defaults`
 - Confirmed intents → `speaker-profile.json` → `confirmed_intents[]`
 
-If the speaker profile is not available, fall back to the rhetoric vault summary
-Sections 15 (Areas for Improvement) and 16 (Speaker-Confirmed Intent) for prose rules.
+If the speaker profile is not available, Section 16 remains usable for confirmed
+intent. Section 15 history is usable only when its current block carries an explicit
+provenance contract matching the bundled catalog/scoring generation and accepted by
+the shared assessor. Otherwise use Section 15 only as untrusted narrative context and
+run the current taxonomy scan without historical labels.
 
 Run these checks after Phase 3 delivery and after each Phase 4 revision.
 
@@ -205,7 +209,11 @@ taxonomy-based antipattern scanning from the Presentation Patterns reference.
 Read `guardrail_sources.recurring_issues[]` from the speaker profile. Each entry
 describes a known weakness and its specific guardrail check.
 
-For each `recurring_issues` entry, run the check described in its `guardrail` field
+Schema-v3 top-level entries are an independent lane: use an entry only when it carries
+exact `source_lane: "non_pattern"`. Suppress a legacy or ambiguous entry instead of
+guessing its provenance. Catalog-derived recurring warnings live only in the guarded
+`pattern_profile.antipattern_frequency` lane below; do not duplicate them here. For
+each authorized non-pattern entry, run the check described in its `guardrail` field
 and report at the severity level in its `severity` field.
 
 Common anti-patterns (may or may not apply to a given speaker):
@@ -217,15 +225,20 @@ Common anti-patterns (may or may not apply to a given speaker):
 ### 9B. Presentation Patterns Taxonomy Scan
 
 Read [references/patterns/_index.md](patterns/_index.md) (Phase 4 section of the phase-grouped lookup table)
-and `profile → pattern_profile.antipattern_frequency` if available.
+and `profile → pattern_profile.antipattern_frequency` only when the Phase 0
+pattern-history status is enabled.
 
 **Speaker-specific antipatterns** — scan `pattern_profile.antipattern_frequency` for
 patterns with `severity: "recurring"`. These are flagged as `[RECURRING]` with the
-speaker's historical frequency and trend.
+speaker's historical frequency and trend. The script emits these lines only after the
+shared exact-generation contract passes. Missing, legacy, malformed, mismatched, or
+empty-current-cohort history produces no `[RECURRING]` label.
 
 **Contextual antipatterns** — scan the outline against ALL antipatterns from the taxonomy.
 For each match, read the individual pattern file for detection heuristics and scoring
-criteria. These are flagged as `[CONTEXTUAL]` (new detection, not historically tracked).
+criteria. These are flagged as `[CONTEXTUAL]` (a current-outline detection, not a
+historical claim). The current-outline scan always runs, including when pattern
+history is disabled.
 
 Contextual detection rules:
 - **Bullet-Riddled Corpse** — flag slides with 5+ bullet points or complete sentences
@@ -246,6 +259,10 @@ Report format:
 [CONTEXTUAL] Bullet-Riddled Corpse — slides 14, 22 have 6+ bullet points
 [CONTEXTUAL] Dual-Headed Monster — co-presented talk, handoff points not defined
 ```
+
+When history is disabled, the report contains only contextual lines and the exact
+status warning. Do not relabel a contextual detection as recurring because Section 15
+mentions a similar phrase.
 
 ---
 
@@ -388,6 +405,7 @@ Use this template after each check:
 ```
 GUARDRAIL CHECK — {talk title} — {date}
 ================================================
+[PASS/WARN] Pattern history: {enabled for exact generation / disabled with exact reasons}
 [PASS] Slide budget: {actual}/{max} for {duration}-min slot
 [PASS/WARN/FAIL] Act 1 ratio: {%} (limit: {max}%)
 [PASS/FAIL] Branding: {status}
@@ -396,8 +414,9 @@ GUARDRAIL CHECK — {talk title} — {date}
 [PASS/FAIL] Time-sensitive: {count} items
 [PASS/FAIL] Closing: summary={y/n} CTA={y/n} social={y/n}
 [PASS/FAIL] Cut lines: {present/missing}
-[INFO] Anti-patterns: {any flags from recurring_issues}
-[RECURRING/CONTEXTUAL] Presentation Patterns: {taxonomy-based antipattern flags}
+[INFO/SKIP] Historical anti-patterns: {authorized recurring issues or suppressed}
+[RECURRING] Presentation Patterns: {authorized historical flags; omit when disabled}
+[CONTEXTUAL] Presentation Patterns: {current-outline taxonomy flags; always enabled}
 [PASS/FAIL/SKIP] Illustrations: {coverage ratio} | {format tags} | {prompt quality}
 [PASS/SKIP] Builds: {N} defined, {M} images generated
 [WARN] Prompt anti-patterns: {N} issues found
