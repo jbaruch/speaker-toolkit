@@ -7,6 +7,7 @@ phase_relevance:
   - architecture
   - content
 vault_dimensions: [11]
+evidence_channels: [video]
 detection_signals:
   - "live software demonstration"
   - "real-time tool interaction"

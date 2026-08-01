@@ -7,6 +7,7 @@ phase_relevance:
   - architecture
   - slides
 vault_dimensions: [8, 12, 13]
+evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "one element per slide"
   - "very high slide count"

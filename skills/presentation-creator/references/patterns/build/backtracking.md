@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - content
 vault_dimensions: [2, 5]
+evidence_channels: [transcript, timed_transcript, slides, slide_sequence, video]
 detection_signals:
   - "explicit callbacks to earlier content"
   - "context reset moments"

@@ -7,6 +7,7 @@ phase_relevance:
   - delivery
   - rehearsal
 vault_dimensions: [11, 6]
+evidence_channels: [transcript, video]
 detection_signals:
   - "speaker downplays own product, employer, or work"
   - "self-deprecating framing of own credentials"

@@ -7,6 +7,7 @@ phase_relevance:
   - architecture
   - content
 vault_dimensions: [2, 12]
+evidence_channels: [timed_transcript, slides, video]
 detection_signals:
   - "self-contained 20-minute modules"
   - "modular structure"

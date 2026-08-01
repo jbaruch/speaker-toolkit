@@ -7,6 +7,7 @@ phase_relevance:
   - guardrails
   - slides
 vault_dimensions: [13, 14]
+evidence_channels: [slides, video]
 detection_signals:
   - "small font sizes"
   - "cramped text"

@@ -7,6 +7,7 @@ phase_relevance:
   - content
   - publishing
 vault_dimensions: [4, 6, 9]
+evidence_channels: [timed_transcript, video]
 detection_signals:
   - "explicit imperative ask in the closing zone"
   - "asks are specific and immediately executable, not generic"

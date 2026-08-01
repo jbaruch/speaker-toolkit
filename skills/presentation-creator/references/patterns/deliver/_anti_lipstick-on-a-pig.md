@@ -6,6 +6,7 @@ part: deliver
 phase_relevance:
   - guardrails
 vault_dimensions: [8, 9, 14]
+evidence_channels: [video]
 detection_signals:
   - "beautiful slides but shallow content"
   - "style over substance"

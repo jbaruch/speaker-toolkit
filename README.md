@@ -169,7 +169,8 @@ The vault skill will:
 2. Scan for talks and .pptx files
 3. Process talks in parallel batches of 5
 4. Extract rhetoric patterns across 14 dimensions
-5. Score each talk against the 99 observable Presentation Patterns entries
+5. Score each talk against the 89 observable Presentation Patterns entries using
+   source-located, channel-permitted evidence
 6. Build a running narrative summary and slide design spec
 7. Run an interactive clarification session to validate findings and capture your intent
 8. Generate a structured speaker profile with pattern mastery data (after 10+ talks)
@@ -314,9 +315,11 @@ notes which named patterns and antipatterns are detected per talk.
 ### Processing Pipeline
 
 - Talks are processed in **parallel batches of 5** subagents
-- Transcripts are downloaded via `yt-dlp` (with `youtube-transcript-api` fallback)
+- Transcripts use YouTube captions first, with local Whisper audio transcription as fallback;
+  source timing is retained in a hash-bound sidecar when available
 - Slides are acquired from PPTX files (preferred, richer data) or downloaded as PDFs via `gdown`
-- Each talk is scored against the taxonomy's 99 observable entries (74 patterns + 25 antipatterns)
+- Each talk is scored against the taxonomy's 89 observable entries (66 patterns + 23 antipatterns),
+  with source-located evidence restricted to the artifact channels each entry permits
 - Each batch updates the summary, per-talk analysis files, and triggers profile regeneration
 - An interactive clarification session resolves ambiguities and captures confirmed intent
 
@@ -389,13 +392,14 @@ across the corpus (`delayed-self-introduction`, `three-part-close`, `progressive
 - **Build** (51): Foreshadowing, Bookends, Defy Defaults, Vacation Photos, Traveling Highlights, Emergence, Sparkline, Call to Adventure, Call to Action, New Bliss, S.T.A.R. Moment, Three-Part Close, Progressive Reveal, Meme as Argument, Guess First, Retrieval Beat, Second Look, and more
 - **Deliver** (36): Carnegie Hall, Breathing Room, Echo Chamber, Seeding the First Question, Screen Blackout, Delayed Self-Introduction, Anti-Sell, Flyover, Spaced Follow-Up, The Nodding Room, and more
 
-Of the 111 entries, **99 are observable** (detectable from transcripts and slides) and
-**12 are unobservable** (pre-event logistics, physical stage behaviors, post-event
-follow-up, and external systems that leave no trace in recordings).
+Of the 111 entries, **89 are observable** (directly detectable through their declared
+transcript, slide, video, or metadata evidence channels) and **22 are unobservable**
+(pre-event logistics, hidden authoring/provenance processes, physical stage behaviors,
+post-event follow-up, and external systems the current artifacts cannot prove).
 
 **How it integrates:**
 
-| Integration point | Observable patterns (99) | Unobservable patterns (12) |
+| Integration point | Observable patterns (89) | Unobservable patterns (22) |
 |---|---|---|
 | **Vault scoring** (Step 3 B2) | Scored per talk, aggregated into `pattern_profile` | Excluded from scoring |
 | **Creator Phase 2** | 4-tier Pattern Strategy (Signature / Contextual / New to You / Shake It Up) | Included in recommendations |

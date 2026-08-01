@@ -7,6 +7,7 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [2, 5, 13]
+evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "section opener/closer slides"
   - "distinct visual style for section boundaries"

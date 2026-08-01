@@ -7,6 +7,7 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [12, 13]
+evidence_channels: [video]
 detection_signals:
   - "deliberate blank or black slide between sections"
   - "B-key blackout during digression or audience question"

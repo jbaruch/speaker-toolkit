@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - slides
 vault_dimensions: [13]
+evidence_channels: [slides, video]
 detection_signals:
   - "custom color palette"
   - "non-default fonts"

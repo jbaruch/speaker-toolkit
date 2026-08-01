@@ -8,6 +8,7 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [2, 5, 13]
+evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "visible progress indicator"
   - "structural navigation cues"

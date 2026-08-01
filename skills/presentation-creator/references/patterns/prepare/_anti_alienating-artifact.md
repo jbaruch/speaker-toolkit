@@ -6,6 +6,7 @@ part: prepare
 phase_relevance:
   - guardrails
 vault_dimensions: [3, 10, 14]
+evidence_channels: [transcript, slides, video]
 detection_signals:
   - "offensive humor attempts"
   - "exclusionary references"

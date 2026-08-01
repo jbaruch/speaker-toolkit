@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - architecture
 vault_dimensions: [8]
+evidence_channels: [slides, video]
 detection_signals:
   - "self-contained document format"
   - "dense information without animations"

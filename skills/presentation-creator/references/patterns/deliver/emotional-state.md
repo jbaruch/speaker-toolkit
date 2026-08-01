@@ -7,6 +7,7 @@ phase_relevance:
   - intake
   - content
 vault_dimensions: [4, 9]
+evidence_channels: [video]
 detection_signals:
   - "tone calibrated to audience mood"
   - "contextual references to current events"

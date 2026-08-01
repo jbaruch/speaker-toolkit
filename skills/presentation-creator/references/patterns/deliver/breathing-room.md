@@ -6,6 +6,7 @@ part: deliver
 phase_relevance:
   - content
 vault_dimensions: [7, 12]
+evidence_channels: [timed_transcript, video]
 detection_signals:
   - "strategic pauses"
   - "comfortable silences"

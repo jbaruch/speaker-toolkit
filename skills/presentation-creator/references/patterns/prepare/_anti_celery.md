@@ -6,6 +6,7 @@ part: prepare
 phase_relevance:
   - guardrails
 vault_dimensions: [2, 14]
+evidence_channels: [video]
 detection_signals:
   - "low content-to-time ratio"
   - "audience disengagement visible"

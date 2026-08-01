@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - slides
 vault_dimensions: [8, 13]
+evidence_channels: [slide_sequence, video]
 detection_signals:
   - "sequential item reveal"
   - "dimming of previous items"

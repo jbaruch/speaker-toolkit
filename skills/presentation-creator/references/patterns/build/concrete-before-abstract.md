@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - content
 vault_dimensions: [11, 9, 2]
+evidence_channels: [timed_transcript, slide_sequence, video]
 detection_signals:
   - "a tangible example, object, story, or live demo precedes the named concept it illustrates"
   - "the framework/term is introduced only after the audience has experienced an instance of it"

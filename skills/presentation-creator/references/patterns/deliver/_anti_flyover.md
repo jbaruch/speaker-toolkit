@@ -6,6 +6,7 @@ part: deliver
 phase_relevance:
   - guardrails
 vault_dimensions: [4, 14]
+evidence_channels: [transcript, video]
 detection_signals:
   - "speaker disparages or diminishes the local audience or region"
   - "speaker valorizes their home region/employer as the place where things really happen"

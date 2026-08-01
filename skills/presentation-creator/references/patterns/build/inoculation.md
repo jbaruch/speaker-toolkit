@@ -7,6 +7,7 @@ phase_relevance:
   - content
   - guardrails
 vault_dimensions: [4, 9]
+evidence_channels: [transcript, timed_transcript, slides, video]
 detection_signals:
   - "speaker preemptively voices an objection the audience would otherwise raise"
   - "transition language signaling self-counterargument ('You might be thinking…', 'I know what you're going to say…', 'The natural objection is…')"

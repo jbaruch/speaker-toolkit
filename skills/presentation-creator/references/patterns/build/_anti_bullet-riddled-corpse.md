@@ -7,6 +7,7 @@ phase_relevance:
   - guardrails
   - slides
 vault_dimensions: [8, 13, 14]
+evidence_channels: [slides, video]
 detection_signals:
   - "text-heavy bullet slides"
   - "audience reading ahead"

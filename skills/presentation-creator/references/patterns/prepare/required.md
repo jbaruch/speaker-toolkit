@@ -8,11 +8,12 @@ phase_relevance:
   - intent
 vault_dimensions: [9]
 detection_signals:
-  - "corporate context mentioned"
-  - "mandatory presentation scenario"
+  - "organizer or employer record identifies the presentation as required"
+  - "speaker confirms the mandatory context"
 related_patterns: [proposed, posse, concurrent-creation, crucible]
 inverse_of: []
 difficulty: foundational
+observable: false
 ---
 
 # Required
@@ -35,12 +36,15 @@ Remember that presentations change under the pressure of delivery. A required ta
 This pattern applies whenever a presentation is mandated rather than voluntary. It reframes the obligation as an opportunity. Avoid the bare-minimum trap. The audience deserves your best effort regardless of how the talk originated.
 
 ## Detection Heuristics
-The vault should look for contextual clues that suggest a corporate or mandatory presentation scenario. References to internal tools, team structures, project timelines, or organizational processes are indicators.
+Corporate subject matter does not prove that presenting was mandatory. Verify
+Required only from organizer/employer context or speaker confirmation that the
+talk was assigned as part of the job. Otherwise treat the scenario as unknown.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Speaker treats mandatory context as an opportunity; content is polished beyond minimum requirements; collaborative preparation evident
-- Moderate signal (1 pt): Adequate preparation for a required talk but no evidence of going beyond the minimum
-- Absent (0 pts): Presentation feels like a checkbox exercise with minimal effort or engagement
+- Strong signal (2 pts): Organizer/employer evidence confirms the talk was required and preparation records show the obligation was used deliberately as practice
+- Moderate signal (1 pt): Mandatory context is confirmed, with adequate but minimally documented deliberate preparation
+- Absent (0 pts): Context confirms the talk was voluntary, so this pattern does not apply
+- Unevaluable: No organizer/employer record or speaker confirmation establishes whether the talk was required
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 9 (Speaker Credibility/Ethos).

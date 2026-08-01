@@ -7,6 +7,7 @@ phase_relevance:
   - architecture
   - slides
 vault_dimensions: [5, 13]
+evidence_channels: [slide_sequence, video]
 detection_signals:
   - "canvas-based layout"
   - "zoom transitions"

@@ -7,6 +7,7 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [6, 8]
+evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "reference slides at end"
   - "bibliography or resource list"

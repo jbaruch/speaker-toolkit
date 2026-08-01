@@ -34,8 +34,9 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "video_url": "YouTube watch URL (required — only source needed for processing)",
     "youtube_id": "aBcDeFg", "google_drive_id": "1AbCdEfGhIjK",
     "pptx_path": "Conference/Year/Talk Name.pptx  (optional — highest quality slide source when available)",
-    "schema_version": 2,
+    "schema_version": 3,
     "transcript_source": "youtube_auto|whisper|manual|none  (how the transcript was obtained; MAY BE ABSENT — see below)",
+    "transcript_path": "transcripts/{id}.txt  (optional vault-relative path; required for non-YouTube transcript evidence)",
     "slide_source": "pptx|pdf|both|video_extracted|none  (set in Step 2 per slide source hierarchy)",
     "pptx_visual_status": "pending|extracted|no_pptx",
     "status": "pending|processed|processed_partial|needs-reprocessing|skipped_no_sources|skipped_download_failed",
@@ -49,6 +50,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "opening_type": null, "closing_type": null, "narrative_arc_type": null,
     "audience_interaction_count": 0, "pattern_score": 0,
     "pattern_observations": {
+      "evidence_schema_version": 1,
       "pattern_ids": [],
       "antipattern_ids": [],
       "pattern_score": 0,
@@ -56,7 +58,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
       "antipatterns_detected": []
     }
   }],
-  "_comment_schema_version": "Talk-record schema version, stamped by persist-results.py (TALK_SCHEMA_VERSION) on every merge. v1 is the implicit unversioned shape every pre-2026-07-28 record carries, in which transcript_source was documented as always present. v2 documents it as optional and gives ABSENT a meaning. The bump is additive — a v1 reader reads a v2 record unchanged, since v2 removes a guarantee rather than adding a field — so no staged rollout is required (stateful-artifacts Cross-Pipeline Schema Bumps). Readers do not gate on this value yet; that contract is issue #147, sequenced after the in-flight reparse so writer and readers cannot skew mid-run.",
+  "_comment_schema_version": "Talk-record schema version, stamped by persist-results.py (TALK_SCHEMA_VERSION) on every merge. v1 is the implicit unversioned shape every pre-2026-07-28 record carries. v2 documents transcript_source as optional and gives ABSENT a meaning. v3 adds optional transcript_path, pattern_observations.evidence_schema_version, and additive evidence_citations arrays on detections. Migration gives legacy detections an empty evidence_citations array: that explicitly means unlocated legacy evidence, not verified evidence. New detections must carry at least one source-located citation. Older readers may ignore the additive fields; current readers must tolerate empty arrays on migrated records.",
   "_comment_absent_transcript_source": "Absent transcript_source: the key may be MISSING on a talk, and missing is meaningful — it means provenance is unknown, not that no transcript exists (that is the explicit value `none`). It arises on one path: fetch-transcript.py returning method `existing`, where a valid transcript was already on disk and no fetch ran, so nothing was learned about where it came from. Writers MUST NOT backfill a guess; `manual` in particular asserts a human produced it. Readers gauging transcript reliability MUST treat absent as unknown and MUST NOT default it to any value.",
   "pptx_catalog": [{
     "pptx_path": "Conference/Year/Talk Name.pptx",
@@ -99,6 +101,7 @@ Each subagent returns this JSON after processing one talk:
   "rhetoric_notes": "500-1000 words: qualitative observations across dimensions 1-13",
   "areas_for_improvement": "100-300 words: honest critical reflection (Dimension 14); name the related antipattern ID + severity per issue where a Dimension 14 antipattern applies",
   "transcript_source": "youtube_auto|whisper|manual  (how the transcript was obtained; OMIT the key entirely when provenance is unknown — see Absent transcript_source in the DB schema above)",
+  "transcript_path": "transcripts/{id}.txt  (vault-relative; return for non-YouTube talks)",
   "structured_data": {
     "delivery_language": "en|de|ru|etc  (primary language of the talk)",
     "co_presenter": false,
@@ -166,17 +169,23 @@ Each subagent returns this JSON after processing one talk:
   "pattern_observations": {
     "patterns_detected": [
       {
-        "pattern_id": "narrative-arc",
+        "pattern_id": "progressive-reveal",
         "confidence": "strong|moderate|weak",
-        "evidence": "brief description of what was observed",
-        "dimensions": [2, 5]
+        "evidence": "Three consecutive slides add one element at a time.",
+        "evidence_citations": [
+          {"channel": "slide_sequence", "slide_numbers": [21, 22, 23]}
+        ],
+        "dimensions": [8, 13]
       }
     ],
     "antipatterns_detected": [
       {
         "pattern_id": "shortchanged",
         "confidence": "strong|moderate|weak",
-        "evidence": "brief description of what was observed",
+        "evidence": "The talk announces the close before beginning a new topic.",
+        "evidence_citations": [
+          {"channel": "timed_transcript", "quote": "Before I finish, there is one more architecture topic."}
+        ],
         "dimensions": [12, 14]
       }
     ],
@@ -188,6 +197,79 @@ Each subagent returns this JSON after processing one talk:
   }
 }
 ```
+
+### Pattern Evidence Citation Schema
+
+`evidence` remains the concise human explanation. `evidence_citations` is the
+auditable proof. Every newly returned detection requires one or more citations;
+`persist-results.py` rejects missing citations, unknown or duplicate pattern IDs,
+pattern/antipattern bucket swaps, `observable: false` patterns, and citation
+channels not permitted by that pattern's required `evidence_channels`
+frontmatter. An observable catalog entry without that field is itself invalid
+and stops persistence.
+
+Allowed citation shapes:
+
+```json
+{"channel": "transcript", "quote": "A unique source-language span of at least four words", "translation": "Optional English translation"}
+{"channel": "timed_transcript", "quote": "A unique source-language span of at least four words", "translation": "Optional English translation"}
+{"channel": "slides", "slide_numbers": [4, 17]}
+{"channel": "slide_sequence", "slide_numbers": [21, 22, 23]}
+{"channel": "video", "start_seconds": 42.5, "end_seconds": 48.0}
+{"channel": "talk_metadata", "field": "slide_count"}
+```
+
+For transcript citations, `quote` is always the exact source-language text needed
+for matching; on a non-English talk, put the English rendering in optional
+`translation` so readers still see English first. The model never supplies a
+translated composite string as `quote`, because that string does not occur in the
+source transcript.
+`persist-results.py` verifies that the normalized quote occurs exactly once in
+the local transcript and stamps `line_start`/`line_end`; for
+`timed_transcript`, it also stamps `start_seconds`/`end_seconds` from a verified
+timing sidecar. Model-supplied locations are discarded. A `slide_sequence` must
+contain at least two consecutive ascending slide numbers. Slide numbers are
+checked against the talk's slide source/count. A video citation is valid only
+when the video was directly reviewed at that interval; the writer checks its
+range and that the talk has a video URL. `talk_metadata.value` is likewise
+writer-owned and copied from the actual record. Citation objects use these
+closed field sets; unknown model-supplied fields are rejected.
+`talk_metadata.field` is restricted to source/provenance fields declared by `persist-results.py`'s
+`TALK_METADATA_FIELDS` and then to the pattern's narrower
+`evidence_metadata_fields`; generated prose such as `rhetoric_notes` cannot cite
+itself, and an irrelevant metadata field cannot stand in for pattern evidence.
+
+Migrated v1/v2 records may contain `evidence_citations: []`. That is a deliberate
+legacy marker: readers may render the old `evidence` prose, but must not present
+it as source-verified. The v3 writer never accepts an empty array for a new
+detection.
+
+## Timed Transcript Sidecar Schema
+
+`fetch-transcript.py` and `vtt-cleanup.py` keep the readable transcript at
+`transcripts/{id}.txt` and replace `transcripts/{id}.segments.json` with every
+fresh transcript bundle:
+
+```json
+{
+  "schema_version": 1,
+  "transcript_sha256": "SHA-256 of the exact UTF-8 transcript text",
+  "source": "captions|whisper|vtt",
+  "segments": [
+    {"text": "Timed source text", "start_seconds": 1.2, "end_seconds": 3.4}
+  ]
+}
+```
+
+The owner is `skills/vault-ingress/scripts/transcript_timing.py`; its current
+sidecar schema version is `1`. `persist-results.py` is the reader. It accepts a
+sidecar only when the schema is supported and `transcript_sha256` matches the
+exact `.txt` content. Missing, malformed, empty, or hash-stale sidecars leave the
+plain transcript usable but make `timed_transcript` evidence unavailable. Never
+copy timestamps from a stale sidecar or silently downgrade a pattern whose
+semantics require timing. Writers deliberately emit an empty sidecar when an
+upstream source supplies no usable segments; this invalidates any older timing
+rather than letting it appear current. `timed_path` remains `null` in that case.
 
 ## Video Extraction Output Schema
 

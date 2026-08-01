@@ -6,6 +6,7 @@ part: deliver
 phase_relevance:
   - content
 vault_dimensions: [3, 10]
+evidence_channels: [transcript, slides, video]
 detection_signals:
   - "humor used for engagement"
   - "stories woven into content"

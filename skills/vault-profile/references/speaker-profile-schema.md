@@ -319,7 +319,7 @@ Current `schema_version`: **2**. The validator (`scripts/validate-profile.py`,
       }
     ],
     "strengths_note": "The positive counterpart to recurring_issues and underused_patterns: what the speaker already does well, framed as 'lean in / double down', so coaching is not purely deficit-oriented. Sourced from mastery_levels.signature and signature_combinations. Distinct from badges (which are fun/celebratory) — strengths are actionable reinforcement the creator skill can amplify. For kind='signature_combination', pattern_id holds the combination label.",
-    "note": "Only observable patterns are included. Patterns marked observable: false in the taxonomy (pre-event logistics, physical stage behaviors, external systems) are excluded from scoring and surfaced as a go-live checklist in creator Phase 6 instead.",
+    "note": "Only observable patterns are included. Patterns marked observable: false in the taxonomy (pre-event logistics, hidden authoring/provenance processes, physical stage behaviors, post-event follow-up, and external systems the current artifacts cannot prove) are excluded from scoring and surfaced as a go-live checklist in creator Phase 6 instead.",
     "pattern_usage": [
       {
         "pattern_id": "narrative-arc",

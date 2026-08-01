@@ -33,8 +33,10 @@ Usage:
     write-analysis.py <batch-returns.json> <analyses-dir> [--run-date YYYY-MM-DD]
                       [--talks <tracking-database.json>]
 
-    --talks supplies talk titles for the H1; without it the H1 falls back to the
-    return's own `title`, then to the filename stem.
+    --talks supplies talk titles for the H1 and the source-validated pattern
+    citations written by persist-results.py. Without it the H1 falls back to the
+    return's own `title`, then to the filename stem, and citation locations are
+    rendered explicitly as unverified.
     --run-date sets the "Processed" line when a return omits `processed_date`,
     matching persist-results.py's stamping so the DB and the file agree.
 
@@ -135,22 +137,76 @@ def render_table(rows):
     return out
 
 
-def render_pattern_table(entries):
+def render_pattern_table(entries, *, evidence_verified=False):
     """Render patterns_detected / antipatterns_detected as an evidence table."""
     if not entries:
         return ["_None recorded._"]
-    out = ["| Pattern ID | Confidence | Evidence |", "|---|---|---|"]
+    out = [
+        "| Pattern ID | Confidence | Evidence | Source citations |",
+        "|---|---|---|---|",
+    ]
     for e in entries:
         if not isinstance(e, dict):
-            out.append(f"| {md_escape_cell(e)} | | |")
+            out.append(f"| {md_escape_cell(e)} | | | |")
             continue
         pid = e.get("pattern_id", "")
-        out.append("| `{}` | {} | {} |".format(
-            md_escape_cell(pid),
-            md_escape_cell(e.get("confidence", "")),
-            md_escape_cell(e.get("evidence", "")),
-        ))
+        citations = e.get("evidence_citations")
+        if not isinstance(citations, list) or not citations:
+            rendered_citations = "legacy/unverified"
+        else:
+            rendered_citations = "; ".join(
+                render_evidence_citation(
+                    citation,
+                    evidence_verified=evidence_verified,
+                )
+                for citation in citations
+            )
+        out.append(
+            "| `{}` | {} | {} | {} |".format(
+                md_escape_cell(pid),
+                md_escape_cell(e.get("confidence", "")),
+                md_escape_cell(e.get("evidence", "")),
+                md_escape_cell(rendered_citations),
+            )
+        )
     return out
+
+
+def render_evidence_citation(citation, *, evidence_verified=False):
+    """Render one citation compactly; label locations not sourced from the DB."""
+    if not isinstance(citation, dict):
+        rendered = str(citation)
+        return rendered if evidence_verified else f"unverified: {rendered}"
+    channel = citation.get("channel")
+    if channel in {"transcript", "timed_transcript"}:
+        line_start = citation.get("line_start")
+        line_end = citation.get("line_end")
+        location = "transcript"
+        if line_start is not None:
+            location += f" lines {line_start}–{line_end or line_start}"
+        if citation.get("start_seconds") is not None:
+            location += (
+                f" ({citation['start_seconds']}s–{citation.get('end_seconds')}s)"
+            )
+        quote = citation.get("quote")
+        translation = citation.get("translation")
+        if quote and translation:
+            rendered = f'{location}: “{translation}” (original: “{quote}”)'
+        else:
+            rendered = f'{location}: “{quote}”' if quote else location
+    elif channel in {"slides", "slide_sequence"}:
+        label = "slide sequence" if channel == "slide_sequence" else "slides"
+        numbers = citation.get("slide_numbers") or []
+        rendered = f"{label} {', '.join(str(number) for number in numbers)}"
+    elif channel == "video":
+        rendered = (
+            f"video {citation.get('start_seconds')}s–{citation.get('end_seconds')}s"
+        )
+    elif channel == "talk_metadata":
+        rendered = f"metadata {citation.get('field')}={citation.get('value')!r}"
+    else:
+        rendered = json.dumps(citation, ensure_ascii=False)
+    return rendered if evidence_verified else f"unverified: {rendered}"
 
 
 def render_structured_data(sd):
@@ -211,7 +267,7 @@ def render_catalog_feedback(feedback):
     return out
 
 
-def render_analysis(ret, title=None, run_date=None):
+def render_analysis(ret, title=None, run_date=None, *, evidence_verified=False):
     """Build the full markdown document for one subagent return."""
     filename = ret.get("filename", "")
     heading = title or ret.get("title") or filename.removesuffix(".md")
@@ -256,9 +312,15 @@ def render_analysis(ret, title=None, run_date=None):
         elif score is not None:
             out.append(f"**Pattern score:** {score}")
         out += ["", "### Patterns Detected", "",
-                *render_pattern_table(obs.get("patterns_detected")), "",
+                *render_pattern_table(
+                    obs.get("patterns_detected"),
+                    evidence_verified=evidence_verified,
+                ), "",
                 "### Antipatterns Detected", "",
-                *render_pattern_table(obs.get("antipatterns_detected")), ""]
+                *render_pattern_table(
+                    obs.get("antipatterns_detected"),
+                    evidence_verified=evidence_verified,
+                ), ""]
         unevaluable = obs.get("unevaluable_from_pdf")
         if unevaluable:
             out += ["### Unevaluable From Available Artifacts", "", "```json",
@@ -288,6 +350,80 @@ def safe_output_name(filename):
     # Match the extension case-insensitively so `TALK.MD` does not become
     # `TALK.MD.md`.
     return base if base.lower().endswith(".md") else base + ".md"
+
+
+def citation_claim(citation):
+    """Return the model-owned portion used to bind raw and persisted evidence."""
+    if not isinstance(citation, dict):
+        return citation
+    channel = citation.get("channel")
+    engine_owned = {
+        "transcript": {"line_start", "line_end", "start_seconds", "end_seconds"},
+        "timed_transcript": {"line_start", "line_end", "start_seconds", "end_seconds"},
+        "talk_metadata": {"value"},
+    }.get(channel, set())
+    return {key: value for key, value in citation.items() if key not in engine_owned}
+
+
+def detection_claim(detection):
+    """Return a detection without persistence-owned citation locations."""
+    if not isinstance(detection, dict):
+        return detection
+    claim = {
+        key: value
+        for key, value in detection.items()
+        if key != "evidence_citations"
+    }
+    citations = detection.get("evidence_citations")
+    claim["evidence_citations"] = (
+        [citation_claim(citation) for citation in citations]
+        if isinstance(citations, list)
+        else citations
+    )
+    return claim
+
+
+def detection_arrays_match(raw, persisted):
+    """True when persisted detections validate this batch, not an older one."""
+    return (
+        isinstance(raw, list)
+        and isinstance(persisted, list)
+        and [detection_claim(item) for item in raw]
+        == [detection_claim(item) for item in persisted]
+    )
+
+
+def overlay_persisted_evidence(ret, talk):
+    """Overlay source-validated detections from the just-persisted talk record.
+
+    The batch file intentionally remains the immutable handoff between scripts,
+    so deterministic line/time/value stamps exist only in the tracking DB. Keep
+    the return's rich score object, but source both detailed detection arrays from
+    the DB before rendering. Returns ``(effective_return, evidence_verified)``.
+    """
+    raw = ret.get("pattern_observations")
+    persisted = talk.get("pattern_observations") if isinstance(talk, dict) else None
+    if not isinstance(raw, dict) or not isinstance(persisted, dict):
+        return ret, False
+    fields = [
+        field
+        for field in ("patterns_detected", "antipatterns_detected")
+        if field in raw
+    ]
+    if not fields or any(
+        field not in persisted
+        or not detection_arrays_match(raw[field], persisted[field])
+        for field in fields
+    ):
+        return ret, False
+    observations = dict(raw)
+    for field in fields:
+        observations[field] = persisted[field]
+    if "evidence_schema_version" in persisted:
+        observations["evidence_schema_version"] = persisted["evidence_schema_version"]
+    effective = dict(ret)
+    effective["pattern_observations"] = observations
+    return effective, True
 
 
 def load_json(path, label):
@@ -347,7 +483,7 @@ def main():
               f"got {type(returns).__name__}", file=sys.stderr)
         sys.exit(1)
 
-    titles = {}
+    talks = {}
     if talks_path:
         db = load_json(talks_path, "tracking database")
         if not isinstance(db, dict) or not isinstance(db.get("talks"), list):
@@ -355,8 +491,11 @@ def main():
                   f"object with a `talks` array; pass the vault's "
                   f"tracking-database.json or drop --talks", file=sys.stderr)
             sys.exit(1)
-        titles = {t.get("filename"): t.get("title")
-                  for t in db["talks"] if isinstance(t, dict)}
+        talks = {
+            talk.get("filename"): talk
+            for talk in db["talks"]
+            if isinstance(talk, dict)
+        }
 
     try:
         os.makedirs(out_dir, exist_ok=True)
@@ -383,7 +522,14 @@ def main():
             continue
         safe_name = safe_output_name(name)
         path = os.path.join(out_dir, safe_name)
-        body = render_analysis(ret, title=titles.get(name), run_date=run_date)
+        talk = talks.get(name)
+        effective, evidence_verified = overlay_persisted_evidence(ret, talk)
+        body = render_analysis(
+            effective,
+            title=talk.get("title") if isinstance(talk, dict) else None,
+            run_date=run_date,
+            evidence_verified=evidence_verified,
+        )
         try:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(body)

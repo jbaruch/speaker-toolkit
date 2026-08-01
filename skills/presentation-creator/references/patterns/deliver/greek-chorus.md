@@ -7,6 +7,7 @@ phase_relevance:
   - architecture
   - content
 vault_dimensions: [4, 9]
+evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "supporting character on slides"
   - "ally-assisted delivery"

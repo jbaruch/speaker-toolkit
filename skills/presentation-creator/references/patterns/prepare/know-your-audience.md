@@ -7,12 +7,12 @@ phase_relevance:
   - intake
 vault_dimensions: [4, 9]
 detection_signals:
-  - "audience-specific references"
-  - "calibrated vocabulary level"
-  - "referenced prior event context"
+  - "audience research notes or organizer brief are available"
+  - "speaker documents how research changed the talk"
 related_patterns: [emotional-state, seeding-satisfaction]
 inverse_of: []
 difficulty: foundational
+observable: false
 ---
 
 # Know Your Audience
@@ -48,12 +48,16 @@ The corollary matters for anyone teaching from the stage: the difficulty an audi
 Use this pattern always — there is no scenario where understanding your audience is detrimental. Even for impromptu talks, spend whatever time you have gathering intelligence. The only caution is over-researching to the point of paralysis; at some point you must commit to a direction and trust your preparation.
 
 ## Detection Heuristics
-The vault should look for evidence that the speaker has tailored content to a specific audience rather than delivering a generic, one-size-fits-all talk. Audience-specific references, correctly calibrated vocabulary, and acknowledgment of the event context or community norms are strong signals.
+Audience-specific references prove tailoring in the delivered talk; they do not
+prove the research process this pattern names. Verify Know Your Audience only
+from audience research notes, an organizer brief, or speaker confirmation that
+identifies what was learned and how it changed the talk.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Multiple audience-specific references; vocabulary precisely calibrated to audience level; explicit acknowledgment of event context or community
-- Moderate signal (1 pt): Some audience awareness evident but inconsistent; occasional generic sections that could apply to any audience
-- Absent (0 pts): Entirely generic content with no evidence of audience research or adaptation
+- Strong signal (2 pts): Audience/organizer research is available and the speaker documents multiple talk choices it changed
+- Moderate signal (1 pt): Research is available and linked to at least one concrete adaptation
+- Absent (0 pts): Available preparation records show no audience research or no resulting adaptation
+- Unevaluable: Audience research records and speaker confirmation are unavailable
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 4 (Audience Engagement). Relates to Dimension 9 (Speaker Credibility/Ethos).

@@ -7,6 +7,7 @@ phase_relevance:
   - delivery
   - rehearsal
 vault_dimensions: [2, 11]
+evidence_channels: [timed_transcript, slides, video]
 detection_signals:
   - "speaker opens with hook/content rather than name and role"
   - "self-introduction appears after an initial slide or two"

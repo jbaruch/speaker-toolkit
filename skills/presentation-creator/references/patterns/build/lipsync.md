@@ -7,6 +7,7 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [11, 13]
+evidence_channels: [video]
 detection_signals:
   - "recorded demo playback"
   - "embedded video of tool interaction"

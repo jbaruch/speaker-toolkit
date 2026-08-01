@@ -7,6 +7,7 @@ phase_relevance:
   - guardrails
   - slides
 vault_dimensions: [8, 13]
+evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "ideas forced into single slides"
   - "information cramming"

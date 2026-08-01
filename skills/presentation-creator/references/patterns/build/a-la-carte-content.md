@@ -7,6 +7,7 @@ phase_relevance:
   - architecture
   - content
 vault_dimensions: [2, 4]
+evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "audience choice mechanism"
   - "hyperlinked menu slide"

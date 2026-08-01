@@ -107,6 +107,13 @@ def fetch_transcript():
 
 
 @pytest.fixture(scope="session")
+def transcript_timing():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "transcript_timing.py"), "transcript_timing"
+    )
+
+
+@pytest.fixture(scope="session")
 def extract_resources():
     return _import_script(
         os.path.join(SCRIPTS_PC, "extract-resources.py"), "extract_resources"

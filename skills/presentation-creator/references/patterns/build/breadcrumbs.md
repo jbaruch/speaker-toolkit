@@ -7,6 +7,7 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [2, 13]
+evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "agenda slides with highlighting"
   - "progress indicators"

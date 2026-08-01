@@ -8,13 +8,12 @@ phase_relevance:
   - guardrails
 vault_dimensions: [7, 8]
 detection_signals:
-  - "clean grammar"
-  - "consistent style"
-  - "polished text"
-  - "no typos on slides"
+  - "review comments or copyediting artifact are available"
+  - "speaker identifies the colleague or editor who reviewed the text"
 related_patterns: [leet-grammars]
 inverse_of: [tower-of-babble]
 difficulty: foundational
+observable: false
 ---
 
 # Peer Review
@@ -65,12 +64,16 @@ Use Peer Review for any presentation you care about. At minimum, always complete
 Avoid skipping Peer Review on the claim that you "know the material." Expertise in a subject does not guarantee clear communication of that subject. In fact, domain experts are often the worst at spotting their own unclear writing.
 
 ## Detection Heuristics
-When scoring talks, look for the absence of errors rather than the presence of editing marks. Clean grammar, consistent capitalization, uniform punctuation style, and the absence of typos on slides are all strong indicators that Peer Review was applied. Inconsistent formatting — some slides with periods at the end of bullets, others without — suggests the pattern was not followed.
+Do not infer a review process from clean output. Error-free text may be
+self-edited, while reviewed text may still contain mistakes. Verify Peer Review
+only from review comments, a copyediting artifact, or speaker confirmation that
+identifies the reviewer and the material they reviewed.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Zero visible typos or grammatical errors on slides, consistent style throughout, polished and professional text quality
-- Moderate signal (1 pt): Mostly clean text with one or two minor errors, generally consistent style with occasional lapses
-- Absent (0 pts): Multiple typos, grammatical errors, inconsistent capitalization or punctuation, or unclear phrasing on slides
+- Strong signal (2 pts): Review comments or copyediting artifacts identify a reviewer and show substantive issues addressed
+- Moderate signal (1 pt): A reviewer and reviewed material are confirmed, but the change record is incomplete
+- Absent (0 pts): Available creation history shows no external review before delivery
+- Unevaluable: Review artifacts and speaker confirmation are unavailable
 
 ## Relationship to Vault Dimensions
 Dimension 7 (Language and Communication): Peer Review covers language quality across the presentation. Dimension 8 (Slide Design): clean, error-free text is part of professional slide design.

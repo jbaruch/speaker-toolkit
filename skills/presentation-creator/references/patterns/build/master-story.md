@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - content
 vault_dimensions: [2, 5, 7]
+evidence_channels: [transcript, timed_transcript, slides, slide_sequence, video]
 detection_signals:
   - "single anecdote introduced early and referenced 3+ times across the talk"
   - "each return to the story deepens or reframes its meaning"

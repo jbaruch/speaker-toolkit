@@ -7,6 +7,7 @@ phase_relevance:
   - architecture
   - content
 vault_dimensions: [3, 12]
+evidence_channels: [timed_transcript, video]
 detection_signals:
   - "humor/story every 10-20 minutes"
   - "attention pattern breaks"

@@ -6,6 +6,7 @@ part: prepare
 phase_relevance:
   - guardrails
 vault_dimensions: [4, 9, 14]
+evidence_channels: [transcript, slides, video]
 detection_signals:
   - "every claim defended in the speaker's single preferred register"
   - "talk mirrors the speaker's own thinking style rather than the room's spread"

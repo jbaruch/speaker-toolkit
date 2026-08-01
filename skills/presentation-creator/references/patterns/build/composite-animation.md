@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - slides
 vault_dimensions: [13]
+evidence_channels: [video]
 detection_signals:
   - "layered animations"
   - "simultaneous animation effects"

@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - guardrails
 vault_dimensions: [8, 14]
+evidence_channels: [slides, video]
 detection_signals:
   - "single sub-bullet under headers"
   - "orphaned outline items"

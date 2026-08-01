@@ -6,6 +6,7 @@ part: deliver
 phase_relevance:
   - publishing
 vault_dimensions: [12]
+evidence_channels: [video]
 detection_signals:
   - "speaker faces audience"
   - "uses presenter display"
