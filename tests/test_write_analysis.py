@@ -58,6 +58,7 @@ def _return_receipt(ret):
 def _return(**overrides):
     ret = {
         "filename": "talk.md",
+        "return_schema_version": 2,
         "queue_claim": {
             "run_id": "reparse",
             "batch_id": "25",
@@ -96,7 +97,7 @@ def _return(**overrides):
                     "has_footer": True,
                 },
             ],
-            "act_structure": {"acts": 4},
+            "extensions": {"act_structure": {"acts": 4}},
         },
         "verbatim_examples": {"jokes": ["the monkeys wrecked the server room"]},
         "pattern_observations": {
@@ -167,6 +168,7 @@ def _write_tracking_db(
 def _skipped_return(**overrides):
     ret = {
         "filename": "talk.md",
+        "return_schema_version": 2,
         "queue_claim": {
             "run_id": "reparse",
             "batch_id": "25",

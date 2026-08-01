@@ -255,7 +255,10 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   dropped structured data before (it was computed and reached the analysis files
   but never landed in the DB).
   Contract, the promoted-scalar allowlist, and merge semantics live in
-  `skills/vault-ingress/scripts/persist-results.py` (top-of-file docstring and the `PROMOTE` list) — to make
+  `skills/vault-ingress/scripts/persist-results.py` (top-of-file docstring and the
+  `PROMOTE` list); the shared v2 structured policy registry lives in
+  `skills/vault-ingress/scripts/return_validation.py` so standalone validation and
+  persistence enforce the same container shapes. To make
   a new field queryable, extend the return schema and that list; never reintroduce
   manual mapping.
   Current version-2 returns snapshot-replace every supplied declared field,

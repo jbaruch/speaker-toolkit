@@ -306,6 +306,11 @@ video-extraction result must include `slides_local_path` here so an older truste
 deck path cannot survive the corrective merge; also clear any stale authored-slide
 structured fields disproved by the new evidence.
 
+Treat every documented structured object as one complete snapshot. Do not rely on
+nested dictionary union. Put genuinely additive experimental data under
+`structured_data.extensions.<producer_namespace>`; an undeclared top-level object
+is rejected until its replacement policy is documented and registered.
+
 Minimal processed structure:
 
 ```json

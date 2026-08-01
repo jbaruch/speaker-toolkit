@@ -220,6 +220,18 @@ Each subagent returns this JSON after processing one talk:
       "starburst_slides": [8, 23, 55],
       "speech_bubble_description": "white fill, black outline, tail pointing down-left",
       "starburst_description": "red fill, white text, explosion/irregular star shape"
+    },
+    "key_data_points": {},
+    "named_authorities": {},
+    "time_bound_promotion": {},
+    "native_deck_audit": {},
+    "native_timing_audit": {},
+    "source_comparison": {},
+    "source_identity": {},
+    "animation_observations": {},
+    "pptx_pdf_reconciliation": {},
+    "extensions": {
+      "producer_namespace": {"additive extension data": true}
     }
   },
   "verbatim_examples": {
@@ -334,9 +346,28 @@ closed instead of acquiring accidental recursive-merge semantics. Historical ret
 with no version field, or with explicit version 1, retain the legacy additive merge
 contract so saved artifacts remain replayable. Unknown future versions are rejected.
 
-Every processed return carries the complete analysis shape, including empty
-strings/arrays for findings that did not occur. A skipped terminal return may
-contain only `filename`, `return_schema_version`, `queue_claim`, and `status`. Both
+The structured snapshot objects currently registered for atomic replacement are
+`image_source_distribution`, `color_coded_backgrounds`,
+`typography_observations`, `footer_observations`, `shape_observations`,
+`video_extraction`, `key_data_points`, `named_authorities`,
+`time_bound_promotion`, `native_deck_audit`, `native_timing_audit`,
+`source_comparison`, `source_identity`, `animation_observations`, and
+`pptx_pdf_reconciliation`; `per_slide_visual` is the corresponding atomic array.
+Their complete nested contents come from the current analysis, so no child from an
+older run survives. Experimental recursively additive data must live under the
+explicit `structured_data.extensions` object. A new top-level object needs a named
+policy here and in `STRUCTURED_FIELD_POLICIES` before a version-2 return may use it.
+The six documented `verbatim_examples` lanes are exact: a stale undeclared lane makes
+the effective v2 candidate invalid until `clear_fields` removes it. A valid v2
+verbatim object may still repair a legacy non-object container atomically.
+
+Every processed return carries the required top-level analysis blocks and the
+complete required `pattern_observations` fields. Individual `structured_data`
+fields and `verbatim_examples` lanes remain optional for partial-return and legacy
+compatibility: omission preserves the prior field, while a supplied empty value
+records that the current analysis found none. Required prose fields use an empty
+string when the contract explicitly permits no assessment. A skipped terminal
+return may contain only `filename`, `return_schema_version`, `queue_claim`, and `status`. Both
 writers reject a missing/unknown status or a return whose queue generation does
 not match the talk's active claim. Returns should omit `processed_date`: the
 persistence writer's normalized batch `--run-date` (or generated UTC timestamp)

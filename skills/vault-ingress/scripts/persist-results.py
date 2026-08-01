@@ -21,12 +21,12 @@ For each return (matched to a talk by `filename`) it:
      second-resolution batch stamp. A skipped return changes only terminal
      status and queue-claim history; prior analysis, provenance, corrective
      clears and processed date remain untouched.
-  3. Applies explicit `clear_fields`, then deep-merges the full `structured_data`
-     and `verbatim_examples` blocks —
-     additive: dicts recurse, new non-empty values win, existing data is never
-     clobbered by missing/empty values (re-runs refine, never wipe). The complete,
-     version-owned `structured_data.video_extraction` manifest is replaced
-     atomically so legacy artifact keys cannot survive inside a schema-v3 record.
+  3. Applies explicit `clear_fields`, then selects merge semantics from the
+     return's version. Missing/version-1 returns retain the historical additive
+     deep merge. Version 2 snapshot-replaces supplied declared scalars, arrays,
+     complete structured maps and verbatim lanes (including empty values), while
+     preserving omitted fields. Only the registered `structured_data.extensions`
+     namespace remains additive; unknown incoming dictionaries fail closed.
   4. Normalizes `pattern_observations` from the subagent's
      {patterns_detected, antipatterns_detected, pattern_score:{score}} shape into
      the DB's {pattern_ids, antipattern_ids, pattern_score:int} shape, keeping the
@@ -86,15 +86,25 @@ from ingress_contract import (
     validate_talk_record_schemas,
 )
 from return_validation import (
+    ADDITIVE_MAP,
     ANALYSIS_STATUSES,
+    IMAGE_SOURCE_GROUP,
+    LEGACY_RETURN_SCHEMA_VERSION,
     PATTERN_SCORING_SCHEMA_VERSION,
     QUEUE_CLAIM_SCHEMA_VERSION,
+    RETURN_SCHEMA_VERSION,
+    STRUCTURED_FIELD_POLICIES,
     ReturnValidationError,
     canonical_return_sha256,
     normalize_processing_stamp,
+    resolve_return_schema_version,
     validate_batch_claims_against_talks,
     validate_claim_against_talk,
     validate_batch,
+    validate_structured_data,
+    validate_structured_policy_value,
+    validate_v2_structured_policy_shapes,
+    validate_verbatim_examples,
 )
 
 
@@ -201,6 +211,150 @@ def deep_merge(dst, src):
         else:
             dst[key] = val
     return dst
+
+
+def require_stored_mapping(talk, field):
+    """Return a persisted analysis block, rejecting wrong-typed prior state."""
+    if field not in talk or talk[field] is None:
+        return {}
+    value = talk[field]
+    if not isinstance(value, dict):
+        raise ValueError(
+            f"stored {field} is a {type(value).__name__}; refusing to merge a "
+            "new analysis into malformed prior state")
+    return value
+
+
+def merge_structured_v2(existing, incoming):
+    """Apply the declared v2 structured-data policies to supplied fields only."""
+    present_group = IMAGE_SOURCE_GROUP.intersection(incoming)
+    if present_group and present_group != IMAGE_SOURCE_GROUP:
+        missing = sorted(IMAGE_SOURCE_GROUP - present_group)
+        raise ValueError(
+            "return-schema v2 image-source snapshot is incomplete; missing "
+            f"{missing}")
+
+    validate_v2_structured_policy_shapes(incoming)
+    merged = copy.deepcopy(existing)
+    for field, value in incoming.items():
+        policy = STRUCTURED_FIELD_POLICIES.get(field)
+        if policy is None:
+            # Future scalar/array fields cannot retain stale dictionary children,
+            # so replacing them is safe while their formal policy is reviewed.
+            merged[field] = copy.deepcopy(value)
+            continue
+        if policy == ADDITIVE_MAP:
+            current = merged.get(field, {})
+            if not isinstance(current, dict):
+                raise ValueError(
+                    f"stored structured_data.{field} is a "
+                    f"{type(current).__name__}; additive namespaces must be objects")
+            merged[field] = deep_merge(copy.deepcopy(current), copy.deepcopy(value))
+        else:
+            merged[field] = copy.deepcopy(value)
+    return merged
+
+
+def merge_verbatim_v2(existing, incoming):
+    """Snapshot-replace each supplied declared verbatim lane, including []."""
+    validate_verbatim_examples(incoming, reject_unknown=True)
+    merged = copy.deepcopy(existing)
+    for field, value in incoming.items():
+        merged[field] = copy.deepcopy(value)
+    return merged
+
+
+def _normalized_pattern_fields(patterns, antipatterns, not_evaluable,
+                               evidence_sources, score):
+    return normalize_pattern_observations(
+        {},
+        copy.deepcopy(patterns),
+        copy.deepcopy(antipatterns),
+        copy.deepcopy(not_evaluable),
+        copy.deepcopy(evidence_sources),
+        score,
+    )
+
+
+def _sync_v2_promotions(talk, incoming_structured):
+    """Make every supplied promoted field exactly match its nested snapshot."""
+    promoted = []
+    for field, path in PROMOTE:
+        structured_field = path.removeprefix("structured_data.")
+        if structured_field in incoming_structured:
+            talk[field] = copy.deepcopy(
+                talk["structured_data"][structured_field])
+            promoted.append(field)
+    return promoted
+
+
+def validate_effective_v2_state(
+        talk, incoming_structured, *, pattern_snapshot_replaced):
+    """Validate the post-merge candidate before claim closure or publication."""
+    validate_talk_record_schemas([talk])
+    structured = require_stored_mapping(talk, "structured_data")
+    verbatim = require_stored_mapping(talk, "verbatim_examples")
+    observations = require_stored_mapping(talk, "pattern_observations")
+
+    for field, policy in STRUCTURED_FIELD_POLICIES.items():
+        if field in structured:
+            validate_structured_policy_value(field, structured[field], policy)
+    try:
+        validate_structured_data(structured, require_complete_groups=True)
+        validate_verbatim_examples(verbatim, reject_unknown=True)
+    except ReturnValidationError as exc:
+        raise ValueError(f"effective merged analysis is invalid: {exc}") from exc
+
+    for field, path in PROMOTE:
+        structured_field = path.removeprefix("structured_data.")
+        if structured_field in incoming_structured:
+            nested = structured[structured_field]
+            if field not in talk or talk[field] != nested:
+                raise ValueError(
+                    f"effective merged analysis has divergent promoted field {field}")
+
+    if not pattern_snapshot_replaced:
+        return
+    expected_fields = {
+        "patterns_detected",
+        "pattern_ids",
+        "antipatterns_detected",
+        "antipattern_ids",
+        "not_evaluable",
+        "not_evaluable_ids",
+        "evidence_sources",
+        "pattern_score",
+    }
+    if set(observations) != expected_fields:
+        raise ValueError(
+            "effective v2 pattern snapshot has noncanonical fields; expected "
+            f"{sorted(expected_fields)}, got {sorted(observations)}")
+    for lane, ids_lane in (
+            ("patterns_detected", "pattern_ids"),
+            ("antipatterns_detected", "antipattern_ids"),
+            ("not_evaluable", "not_evaluable_ids")):
+        entries = observations[lane]
+        ids = observations[ids_lane]
+        if not isinstance(entries, list) or not isinstance(ids, list):
+            raise ValueError(
+                f"effective v2 pattern snapshot {lane}/{ids_lane} must be arrays")
+        expected_ids = [
+            entry.get("pattern_id") for entry in entries
+            if isinstance(entry, dict) and entry.get("pattern_id")]
+        if ids != expected_ids:
+            raise ValueError(
+                f"effective v2 pattern snapshot {ids_lane} does not match {lane}")
+    evidence_sources = observations["evidence_sources"]
+    if not isinstance(evidence_sources, list):
+        raise ValueError(
+            "effective v2 pattern snapshot evidence_sources must be an array")
+    score = observations["pattern_score"]
+    if isinstance(score, bool) or not isinstance(score, int):
+        raise ValueError(
+            "effective v2 pattern snapshot pattern_score must be an integer")
+    if talk.get("pattern_score") != score:
+        raise ValueError(
+            "effective v2 pattern snapshot diverges from promoted pattern_score")
 
 
 def _delete_path(obj, parts):
@@ -396,6 +550,7 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     never read inside the merge.
     """
     validate_talk_record_schemas([talk])
+    return_schema_version = resolve_return_schema_version(ret)
     normalized_run_date = normalize_stamp(run_date) if run_date else None
     if enforce_queue_claim and normalized_run_date is None:
         raise ValueError(
@@ -404,13 +559,16 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     if enforce_queue_claim:
         validate_claim_against_talk(talk, ret)
 
+    candidate = copy.deepcopy(talk)
     if ret.get("status") not in ANALYSIS_STATUSES:
         # A skipped attempt carries no new analysis. Preserve the prior
         # processed stamp, source provenance, content blocks and corrective
         # clears; only the terminal outcome and its queue-claim history change.
-        talk["status"] = ret["status"]
+        candidate["status"] = ret["status"]
         if enforce_queue_claim:
-            close_queue_claim(talk, ret, normalized_run_date)
+            close_queue_claim(candidate, ret, normalized_run_date)
+        talk.clear()
+        talk.update(candidate)
         return [], False, False, []
 
     returned_stamp = ret.get("processed_date")
@@ -425,18 +583,29 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
 
     structured = require_mapping(ret, "structured_data")
     verbatim = require_mapping(ret, "verbatim_examples")
-    observations = require_mapping(ret, "pattern_observations") or {}
-    patterns = require_detections(observations, "patterns_detected")
-    antipatterns = require_detections(observations, "antipatterns_detected")
-    not_evaluable = require_detections(observations, "not_evaluable")
-    evidence_sources = observations.get("evidence_sources")
-    score, coerced_score = resolve_pattern_score(observations, patterns, antipatterns)
+    observations = require_mapping(ret, "pattern_observations")
+    observation_values = observations or {}
+    patterns = require_detections(observation_values, "patterns_detected")
+    antipatterns = require_detections(observation_values, "antipatterns_detected")
+    not_evaluable = require_detections(observation_values, "not_evaluable")
+    evidence_sources = observation_values.get("evidence_sources")
+    score, coerced_score = resolve_pattern_score(
+        observation_values, patterns, antipatterns)
 
-    cleared = apply_clear_fields(talk, ret.get("clear_fields"))
-    talk["schema_version"] = TALK_SCHEMA_VERSION
+    if return_schema_version == RETURN_SCHEMA_VERSION:
+        # Validate persisted block types before a clear could conceal malformed
+        # structured state, then apply every operation to the isolated candidate.
+        # Verbatim and pattern blocks are supplied snapshots in every valid v2
+        # analysis, so they may repair legacy array containers atomically.
+        require_stored_mapping(candidate, "structured_data")
+
+    cleared = apply_clear_fields(candidate, ret.get("clear_fields"))
+    candidate["schema_version"] = TALK_SCHEMA_VERSION
     for f in SCALARS:
-        if f in ret and not is_empty(ret[f]):
-            talk[f] = ret[f]
+        if (f in ret and
+                (return_schema_version == RETURN_SCHEMA_VERSION or
+                 not is_empty(ret[f]))):
+            candidate[f] = copy.deepcopy(ret[f])
     # A single owner supplies one exact stamp for every member.  This prevents a
     # return's day-granular timestamp from defeating a second-resolution batch
     # stamp and keeps processed_date, queue release, and rendered provenance in
@@ -444,45 +613,77 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     # for a canonical return-side timestamp.
     stamped = False
     if normalized_run_date:
-        talk["processed_date"] = normalized_run_date
+        candidate["processed_date"] = normalized_run_date
         stamped = True
     elif not is_empty(ret.get("processed_date")):
-        talk["processed_date"] = normalize_stamp(ret["processed_date"])
+        candidate["processed_date"] = normalize_stamp(ret["processed_date"])
     if structured is not None:
-        talk["structured_data"] = deep_merge(talk.get("structured_data") or {}, structured)
-        if "video_extraction" in structured:
+        if return_schema_version == RETURN_SCHEMA_VERSION:
+            candidate["structured_data"] = merge_structured_v2(
+                require_stored_mapping(candidate, "structured_data"), structured)
+        else:
+            candidate["structured_data"] = deep_merge(
+                candidate.get("structured_data") or {}, structured)
+        if (return_schema_version == LEGACY_RETURN_SCHEMA_VERSION and
+                "video_extraction" in structured):
             # This owner-generated schema is a complete manifest, not a bag of
             # independently additive observations. Replacement prevents v1/v2
             # keys such as `output_pdf` from contaminating a validated v3 record.
-            talk["structured_data"]["video_extraction"] = copy.deepcopy(
+            candidate["structured_data"]["video_extraction"] = copy.deepcopy(
                 structured["video_extraction"])
     if verbatim is not None:
-        talk["verbatim_examples"] = deep_merge(talk.get("verbatim_examples") or {}, verbatim)
-    if observations:
-        talk["pattern_observations"] = normalize_pattern_observations(
-            talk.get("pattern_observations"), patterns, antipatterns,
-            not_evaluable, evidence_sources, score)
+        if return_schema_version == RETURN_SCHEMA_VERSION:
+            existing_verbatim = candidate.get("verbatim_examples")
+            candidate["verbatim_examples"] = merge_verbatim_v2(
+                existing_verbatim if isinstance(existing_verbatim, dict) else {},
+                verbatim,
+            )
+        else:
+            candidate["verbatim_examples"] = deep_merge(
+                candidate.get("verbatim_examples") or {}, verbatim)
+    if observations is not None:
+        if return_schema_version == RETURN_SCHEMA_VERSION:
+            candidate["pattern_observations"] = _normalized_pattern_fields(
+                patterns, antipatterns, not_evaluable, evidence_sources, score)
+        elif observations:
+            candidate["pattern_observations"] = normalize_pattern_observations(
+                candidate.get("pattern_observations"), patterns, antipatterns,
+                not_evaluable, evidence_sources, score)
 
-    promoted = []
-    for field, path in PROMOTE:
-        val = dig(ret, path)
-        if not is_empty(val):
-            talk[field] = val
-            promoted.append(field)
+    if return_schema_version == RETURN_SCHEMA_VERSION:
+        promoted = _sync_v2_promotions(candidate, structured or {})
+    else:
+        promoted = []
+        for field, path in PROMOTE:
+            val = dig(ret, path)
+            if not is_empty(val):
+                candidate[field] = val
+                promoted.append(field)
     # `pattern_score` is set from the resolved value rather than dug out of the
     # return. The dotted path `pattern_observations.pattern_score.score` is what
     # silently dropped the scalar whenever a subagent sent the bare int, because
     # `dig` returns None on an int — the promoted scalar and the nested value
     # must come from one decision, not two lookups.
     if score is not None:
-        talk["pattern_score"] = score
+        candidate["pattern_score"] = score
         promoted.append("pattern_score")
+    elif (return_schema_version == RETURN_SCHEMA_VERSION and
+          observations is not None):
+        candidate.pop("pattern_score", None)
     if ret.get("status") in ANALYSIS_STATUSES:
-        talk["pattern_scoring_schema_version"] = PATTERN_SCORING_SCHEMA_VERSION
+        candidate["pattern_scoring_schema_version"] = PATTERN_SCORING_SCHEMA_VERSION
         if catalog_fingerprint:
-            talk["pattern_catalog_fingerprint"] = catalog_fingerprint
+            candidate["pattern_catalog_fingerprint"] = catalog_fingerprint
+    if return_schema_version == RETURN_SCHEMA_VERSION:
+        validate_effective_v2_state(
+            candidate,
+            structured or {},
+            pattern_snapshot_replaced=observations is not None,
+        )
     if enforce_queue_claim:
-        close_queue_claim(talk, ret, normalized_run_date)
+        close_queue_claim(candidate, ret, normalized_run_date)
+    talk.clear()
+    talk.update(candidate)
     return promoted, stamped, coerced_score, cleared
 
 

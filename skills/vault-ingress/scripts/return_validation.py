@@ -68,6 +68,83 @@ CATALOG_FEEDBACK_LISTS = frozenset({
     "scoring_problems",
     "tensions",
 })
+VERBATIM_EXAMPLE_FIELDS = frozenset({
+    "signature_phrases",
+    "jokes",
+    "transitions",
+    "audience_addresses",
+    "opening_lines",
+    "closing_lines",
+})
+PATTERN_OBSERVATION_RETURN_FIELDS = frozenset({
+    "evidence_sources",
+    "patterns_detected",
+    "antipatterns_detected",
+    "not_evaluable",
+    "pattern_score",
+})
+REPLACE_SCALAR = "replace_scalar"
+REPLACE_LIST = "replace_list"
+ATOMIC_MAP = "atomic_map"
+ATOMIC_LIST = "atomic_list"
+ADDITIVE_MAP = "additive_map"
+STRUCTURED_FIELD_POLICIES = {
+    **{
+        field: REPLACE_SCALAR
+        for field in (
+            "delivery_language",
+            "co_presenter",
+            "slide_count",
+            "talk_duration_estimate",
+            "meme_count",
+            "image_only_slide_count",
+            "audience_interaction_count",
+            "opening_type",
+            "closing_type",
+            "narrative_arc_type",
+            "slide_design_style",
+            "illustration_style",
+            "illustration_coherence",
+            "image_source_distribution_basis",
+        )
+    },
+    **{
+        field: REPLACE_LIST
+        for field in (
+            "co_presenters",
+            "visual_continuity_devices",
+            "opening_sequence",
+            "closing_sequence",
+            "background_color_sequence",
+        )
+    },
+    "per_slide_visual": ATOMIC_LIST,
+    **{
+        field: ATOMIC_MAP
+        for field in (
+            "image_source_distribution",
+            "color_coded_backgrounds",
+            "typography_observations",
+            "footer_observations",
+            "shape_observations",
+            "video_extraction",
+            "key_data_points",
+            "named_authorities",
+            "time_bound_promotion",
+            "native_deck_audit",
+            "native_timing_audit",
+            "source_comparison",
+            "source_identity",
+            "animation_observations",
+            "pptx_pdf_reconciliation",
+        )
+    },
+    "extensions": ADDITIVE_MAP,
+}
+IMAGE_SOURCE_GROUP = frozenset({
+    "image_source_distribution",
+    "image_source_distribution_basis",
+})
 PROSE_FIELDS = (
     "rhetoric_notes",
     "areas_for_improvement",
@@ -971,7 +1048,9 @@ def _validate_image_source_distribution(structured: dict) -> None:
             "image_source_distribution is present")
 
 
-def _validate_structured_data(structured: dict) -> None:
+def validate_structured_data(
+        structured: dict, *, require_complete_groups: bool = False) -> None:
+    """Validate structured findings, optionally enforcing v2 snapshot groups."""
     if "co_presenter" in structured and not isinstance(structured["co_presenter"], bool):
         raise ReturnValidationError("structured_data.co_presenter must be a boolean")
     if "co_presenters" in structured:
@@ -983,6 +1062,11 @@ def _validate_structured_data(structured: dict) -> None:
     if structured.get("co_presenter") is True and not structured.get("co_presenters"):
         raise ReturnValidationError(
             "structured_data.co_presenter is true, so co_presenters must name the speakers")
+    if (require_complete_groups and structured.get("co_presenter") is False and
+            structured.get("co_presenters")):
+        raise ReturnValidationError(
+            "return-schema v2 structured_data.co_presenter is false, so "
+            "co_presenters must be empty or omitted")
     language = structured.get("delivery_language")
     if language is not None and (not isinstance(language, str) or
                                  not LANGUAGE_RE.fullmatch(language)):
@@ -991,6 +1075,57 @@ def _validate_structured_data(structured: dict) -> None:
             f"such as 'en' or 'pt-br', got {language!r}")
     _validate_per_slide_visual(structured)
     _validate_image_source_distribution(structured)
+    if (require_complete_groups and
+            ("image_source_distribution" in structured) !=
+            ("image_source_distribution_basis" in structured)):
+        raise ReturnValidationError(
+            "return-schema v2 requires structured_data.image_source_distribution "
+            "and image_source_distribution_basis to be supplied together")
+
+
+def validate_structured_policy_value(field, value, policy) -> None:
+    """Validate one declared v2 field against its persistence policy shape."""
+    if policy in {ATOMIC_MAP, ADDITIVE_MAP} and not isinstance(value, dict):
+        raise ReturnValidationError(
+            f"structured_data.{field} must be an object under its {policy} policy")
+    if policy in {REPLACE_LIST, ATOMIC_LIST} and not isinstance(value, list):
+        raise ReturnValidationError(
+            f"structured_data.{field} must be an array under its {policy} policy")
+    if policy == REPLACE_SCALAR and isinstance(value, (dict, list)):
+        raise ReturnValidationError(
+            f"structured_data.{field} must be a scalar under its {policy} policy")
+
+
+def validate_v2_structured_policy_shapes(structured: dict) -> None:
+    """Apply the writer's v2 shape registry at standalone-return preflight."""
+    for field, value in structured.items():
+        policy = STRUCTURED_FIELD_POLICIES.get(field)
+        if policy is None:
+            if isinstance(value, dict):
+                raise ReturnValidationError(
+                    f"structured_data.{field} is an unregistered object; declare "
+                    "an atomic policy or place additive data under "
+                    "structured_data.extensions")
+            # Unregistered scalar/array fields replace atomically and cannot
+            # preserve stale nested dictionary children.
+            continue
+        validate_structured_policy_value(field, value, policy)
+
+
+def validate_verbatim_examples(
+        verbatim: dict, *, reject_unknown: bool = False) -> None:
+    """Validate declared verbatim snapshot lanes without requiring every lane."""
+    if reject_unknown:
+        unknown = sorted(set(verbatim) - VERBATIM_EXAMPLE_FIELDS)
+        if unknown:
+            raise ReturnValidationError(
+                f"return-schema v2 has unknown verbatim_examples lanes: {unknown}")
+    for field in VERBATIM_EXAMPLE_FIELDS.intersection(verbatim):
+        values = verbatim[field]
+        if (not isinstance(values, list) or
+                any(not isinstance(value, str) for value in values)):
+            raise ReturnValidationError(
+                f"verbatim_examples.{field} must be an array of strings")
 
 
 def _validate_catalog_feedback(feedback) -> None:
@@ -1438,7 +1573,7 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
     if not isinstance(ret, dict):
         raise ReturnValidationError(
             f"subagent return must be an object, got {type(ret).__name__}")
-    resolve_return_schema_version(ret)
+    return_schema_version = resolve_return_schema_version(ret)
     _require_string(ret, "filename")
     status = ret.get("status")
     if status not in RETURN_STATUSES:
@@ -1481,17 +1616,31 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
     structured = ret.get("structured_data")
     if not isinstance(structured, dict):
         raise ReturnValidationError("structured_data is required and must be an object")
-    _validate_structured_data(structured)
+    validate_structured_data(structured)
     video_static_slides_available = False
     if slide_source == "video_extracted":
         video_static_slides_available = _validate_video_return(
             ret, structured, slides_local_path)
+    if return_schema_version == RETURN_SCHEMA_VERSION:
+        # Source trust errors are more actionable than dependent-group errors,
+        # so enforce the v2 snapshot pair only after video scope is checked.
+        validate_v2_structured_policy_shapes(structured)
+        validate_structured_data(structured, require_complete_groups=True)
     verbatim = ret.get("verbatim_examples")
     if not isinstance(verbatim, dict):
         raise ReturnValidationError("verbatim_examples is required and must be an object")
+    if return_schema_version == RETURN_SCHEMA_VERSION:
+        validate_verbatim_examples(verbatim, reject_unknown=True)
     observations = ret.get("pattern_observations")
     if not isinstance(observations, dict):
         raise ReturnValidationError("pattern_observations is required and must be an object")
+    if return_schema_version == RETURN_SCHEMA_VERSION:
+        unknown_observations = sorted(
+            set(observations) - PATTERN_OBSERVATION_RETURN_FIELDS)
+        if unknown_observations:
+            raise ReturnValidationError(
+                "return-schema v2 has unknown pattern_observations fields: "
+                f"{unknown_observations}")
 
     resolved_catalog = catalog or load_catalog()
     available_sources = _validate_available_sources(

@@ -1018,6 +1018,48 @@ def test_delivery_language_requires_a_code(return_validation):
     assert "lowercase language code" in _error(return_validation, value)
 
 
+@pytest.mark.parametrize("field", [
+    "color_coded_backgrounds",
+    "typography_observations",
+    "footer_observations",
+    "shape_observations",
+    "key_data_points",
+    "named_authorities",
+    "time_bound_promotion",
+    "native_deck_audit",
+    "native_timing_audit",
+    "source_comparison",
+    "source_identity",
+    "animation_observations",
+    "pptx_pdf_reconciliation",
+    "extensions",
+])
+def test_v2_registered_snapshot_maps_require_objects(return_validation, field):
+    value = _return()
+    value["structured_data"][field] = True
+
+    error = _error(return_validation, value)
+
+    assert f"structured_data.{field} must be an object" in error
+
+
+def test_v2_unknown_structured_object_fails_at_standalone_preflight(
+        return_validation):
+    value = _return()
+    value["structured_data"]["undeclared_snapshot"] = {"value": 1}
+
+    assert "unregistered object" in _error(return_validation, value)
+
+
+def test_legacy_return_keeps_pre_registry_structured_shape_compatibility(
+        return_validation):
+    value = _return(return_schema_version=1)
+    value["structured_data"]["color_coded_backgrounds"] = True
+    value["structured_data"]["undeclared_snapshot"] = {"value": 1}
+
+    return_validation.validate_batch([value])
+
+
 def test_canonical_per_slide_visual_rows_are_accepted(return_validation):
     return_validation.validate_batch([_return_with_canonical_visuals()])
 

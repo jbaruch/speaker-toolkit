@@ -39,7 +39,15 @@ shape. Missing/version-1 returns remain readable under the historical additive
 contract, while wrong-typed and unknown future versions fail closed. The version-2
 contract treats supplied empty findings as real replacements, keeps omitted fields
 for partial-return compatibility, and reserves additive merging for explicitly
-registered extension namespaces.
+registered extension namespaces. Persistence applies the version-2 policy to a
+copy-on-write candidate, validates dependent image-source, slide-ledger,
+co-presenter, pattern, verbatim, and promoted-field state, and closes the queue
+claim only after that candidate is valid. Complete verbatim and pattern snapshots
+can repair legacy array containers; malformed structured containers remain a
+no-write error because omitted structured fields must be preserved safely.
+The standalone return validator and persistence now import one structured-field
+policy registry, so a wrong-typed or undeclared v2 snapshot object is rejected at
+preflight instead of first failing inside the database writer.
 
 ### fix(vault-ingress) — persist complete queue batches under one timestamp
 

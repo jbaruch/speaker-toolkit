@@ -129,6 +129,18 @@ def _complete_unavailable_source_gates(return_validation, ret):
     return ret
 
 
+def _visual_row(*, background="current", content_type="title"):
+    return {
+        "slide_number": 1,
+        "background_color_name": background,
+        "content_type": content_type,
+        "image_composition": "full_bleed_with_text",
+        "has_speech_bubble": False,
+        "has_starburst": False,
+        "has_footer": True,
+    }
+
+
 def test_promotes_queryable_scalars(persist_results):
     talk = _talk()
     persist_results.merge_talk(talk, _return())
@@ -181,14 +193,310 @@ def test_skipped_merge_cannot_mutate_prior_analysis_even_without_validator(
     assert talk["slide_source"] == "pptx"
 
 
-def test_deep_merge_is_additive(persist_results):
+def test_legacy_deep_merge_is_additive(persist_results):
     talk = _talk(structured_data={"act_structure": {"act_count": 4}})
     ret = _return()
+    ret["return_schema_version"] = 1
     ret["structured_data"]["act_structure"] = {"named_acts": True}
     persist_results.merge_talk(talk, ret)
     acts = talk["structured_data"]["act_structure"]
     assert acts["act_count"] == 4  # earlier-run data preserved
     assert acts["named_acts"] is True  # new data merged in
+
+
+def test_v2_adds_only_inside_registered_extension_namespace(persist_results):
+    talk = _talk(structured_data={
+        "extensions": {"argument_map": {"act_count": 4}},
+    })
+    ret = _return()
+    ret["structured_data"]["extensions"] = {
+        "argument_map": {"named_acts": True},
+    }
+
+    persist_results.merge_talk(talk, ret)
+
+    assert talk["structured_data"]["extensions"] == {
+        "argument_map": {"act_count": 4, "named_acts": True},
+    }
+
+
+@pytest.mark.parametrize("field", [
+    "color_coded_backgrounds",
+    "typography_observations",
+    "footer_observations",
+    "shape_observations",
+    "video_extraction",
+    "key_data_points",
+    "named_authorities",
+    "time_bound_promotion",
+    "native_deck_audit",
+    "native_timing_audit",
+    "source_comparison",
+    "source_identity",
+    "animation_observations",
+    "pptx_pdf_reconciliation",
+])
+def test_v2_registered_maps_are_atomic_snapshots(persist_results, field):
+    talk = _talk(structured_data={
+        field: {"current": {"value": 1}, "stale_child": True},
+    })
+    ret = _return()
+    ret["structured_data"][field] = {"current": {"value": 2}}
+
+    persist_results.merge_talk(talk, ret)
+
+    assert talk["structured_data"][field] == {"current": {"value": 2}}
+
+
+def test_v2_atomic_snapshot_matches_rendered_analysis(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    analyses = tmp_path / "analyses"
+    talk = _talk(structured_data={
+        "typography_observations": {
+            "current_marker": "legacy",
+            "stale_child": "must disappear",
+        },
+    })
+    ret = _return()
+    ret["structured_data"]["typography_observations"] = {
+        "current_marker": "current",
+    }
+    db.write_text(json.dumps({"talks": [talk]}))
+    batch.write_text(json.dumps([ret]))
+
+    persisted = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+    assert persisted.returncode == 0, persisted.stderr
+    analysis_script = persist_results.__file__.replace(
+        "persist-results.py", "write-analysis.py")
+    rendered = subprocess.run(
+        [sys.executable, analysis_script, str(batch), str(analyses),
+         "--talks", str(db)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert rendered.returncode == 0, rendered.stderr
+    stored_map = json.loads(db.read_text())["talks"][0]["structured_data"][
+        "typography_observations"]
+    markdown = (analyses / "talk.md").read_text()
+    assert stored_map == ret["structured_data"]["typography_observations"]
+    assert "current_marker" in markdown
+    assert "current" in markdown
+    assert "stale_child" not in markdown
+
+
+def test_v2_image_distribution_and_basis_replace_as_one_snapshot(persist_results):
+    talk = _talk(structured_data={
+        "image_source_distribution": {"legacy": 9, "unknown": 1},
+        "image_source_distribution_basis": "Unit: legacy asset.",
+    })
+    ret = _return()
+    ret["structured_data"].update({
+        "image_source_distribution": {"unknown": 2},
+        "image_source_distribution_basis": "Unit: slide; unknown origins stay unknown.",
+    })
+
+    persist_results.merge_talk(talk, ret)
+
+    assert talk["structured_data"]["image_source_distribution"] == {"unknown": 2}
+    assert talk["structured_data"]["image_source_distribution_basis"] == (
+        "Unit: slide; unknown origins stay unknown.")
+
+
+def test_v2_per_slide_ledger_replaces_atomically(persist_results):
+    old_row = _visual_row(background="legacy")
+    old_row["legacy_note"] = "must disappear"
+    talk = _talk(structured_data={"per_slide_visual": [old_row]})
+    ret = _return()
+    ret["structured_data"].update({
+        "slide_count": 1,
+        "per_slide_visual": [_visual_row()],
+    })
+
+    persist_results.merge_talk(talk, ret)
+
+    assert talk["structured_data"]["per_slide_visual"] == [_visual_row()]
+
+
+def test_v2_empty_verbatim_and_structured_lists_replace_prior_findings(
+        persist_results):
+    talk = _talk(
+        structured_data={"visual_continuity_devices": ["legacy_device"]},
+        verbatim_examples={"jokes": ["legacy line"]},
+    )
+    ret = _return(verbatim_examples={"jokes": []})
+    ret["structured_data"]["visual_continuity_devices"] = []
+
+    persist_results.merge_talk(talk, ret)
+
+    assert talk["structured_data"]["visual_continuity_devices"] == []
+    assert talk["verbatim_examples"]["jokes"] == []
+
+
+def test_v2_empty_scalar_replaces_prior_assessment(persist_results):
+    talk = _talk(adherence_assessment="legacy assessment")
+
+    persist_results.merge_talk(talk, _return(adherence_assessment=""))
+
+    assert talk["adherence_assessment"] == ""
+
+
+def test_v2_empty_promoted_list_stays_synchronized(persist_results):
+    talk = _talk(
+        co_presenter=True,
+        co_presenters=["Legacy Name"],
+        structured_data={
+            "co_presenter": True,
+            "co_presenters": ["Legacy Name"],
+        },
+    )
+    ret = _return()
+    ret["structured_data"].update({
+        "co_presenter": False,
+        "co_presenters": [],
+    })
+
+    persist_results.merge_talk(talk, ret)
+
+    assert talk["structured_data"]["co_presenter"] is False
+    assert talk["structured_data"]["co_presenters"] == []
+    assert talk["co_presenter"] is False
+    assert talk["co_presenters"] == []
+
+
+def test_v2_unknown_object_fails_without_mutating_talk(persist_results):
+    talk = _talk(structured_data={"slide_count": 4})
+    original = copy.deepcopy(talk)
+    ret = _return()
+    ret["structured_data"]["undeclared_snapshot"] = {"value": 1}
+
+    with pytest.raises(ValueError, match="unregistered object"):
+        persist_results.merge_talk(talk, ret)
+
+    assert talk == original
+
+
+@pytest.mark.parametrize(
+    ("field", "old_value", "new_value"),
+    [
+        ("typography_observations", ["legacy"], {"current": True}),
+        ("visual_continuity_devices", {"legacy": True}, []),
+    ],
+)
+def test_v2_nonempty_type_changes_replace_exactly(
+        persist_results, field, old_value, new_value):
+    talk = _talk(structured_data={field: old_value})
+    ret = _return()
+    ret["structured_data"][field] = new_value
+
+    persist_results.merge_talk(talk, ret)
+
+    assert talk["structured_data"][field] == new_value
+
+
+def test_v2_wrong_type_never_preserves_old_value_or_mutates_talk(persist_results):
+    talk = _talk(structured_data={"typography_observations": {"legacy": True}})
+    original = copy.deepcopy(talk)
+    ret = _return()
+    ret["structured_data"]["typography_observations"] = []
+
+    with pytest.raises(ValueError, match="must be an object"):
+        persist_results.merge_talk(talk, ret)
+
+    assert talk == original
+
+
+def test_v2_repairs_legacy_verbatim_and_pattern_array_containers(persist_results):
+    talk = _talk(
+        verbatim_examples=["legacy"],
+        pattern_observations=["legacy"],
+    )
+
+    persist_results.merge_talk(talk, _return(verbatim_examples={}))
+
+    assert talk["verbatim_examples"] == {}
+    assert isinstance(talk["pattern_observations"], dict)
+    assert talk["pattern_observations"]["pattern_ids"] == [
+        "narrative-arc", "bookends"]
+
+
+def test_v2_clear_can_remove_an_undeclared_legacy_verbatim_lane(persist_results):
+    talk = _talk(verbatim_examples={
+        "jokes": ["legacy line"],
+        "legacy_lane": ["undeclared"],
+    })
+    ret = _return(
+        clear_fields=["verbatim_examples.legacy_lane"],
+        verbatim_examples={"jokes": []},
+    )
+
+    persist_results.merge_talk(talk, ret)
+
+    assert talk["verbatim_examples"] == {"jokes": []}
+
+
+def test_v2_malformed_structured_container_fails_before_mutation(persist_results):
+    talk = _talk(structured_data=["legacy"])
+    original = copy.deepcopy(talk)
+
+    with pytest.raises(ValueError, match="stored structured_data"):
+        persist_results.merge_talk(talk, _return())
+
+    assert talk == original
+
+
+def test_v2_pattern_snapshot_removes_stale_children_and_accepts_zero_score(
+        persist_results):
+    talk = _talk(
+        pattern_score=7,
+        pattern_observations={
+            "pattern_score": 7,
+            "pattern_ids": ["legacy"],
+            "legacy_note": "must disappear",
+        },
+    )
+    ret = _return()
+    ret["pattern_observations"].update({
+        "patterns_detected": [],
+        "antipatterns_detected": [],
+        "not_evaluable": [],
+        "pattern_score": {
+            "patterns_used": 0,
+            "antipatterns_detected": 0,
+            "score": 0,
+        },
+    })
+
+    persist_results.merge_talk(talk, ret)
+
+    assert talk["pattern_score"] == 0
+    assert talk["pattern_observations"] == {
+        "patterns_detected": [],
+        "pattern_ids": [],
+        "antipatterns_detected": [],
+        "antipattern_ids": [],
+        "not_evaluable": [],
+        "not_evaluable_ids": [],
+        "evidence_sources": [
+            "transcript", "native_deck", "static_slides", "delivery_video",
+            "source_comparison"],
+        "pattern_score": 0,
+    }
+
+
+def test_legacy_omitted_verbatim_lane_preserves_prior_value(persist_results):
+    talk = _talk(verbatim_examples={"jokes": ["legacy line"]})
+    ret = _return(return_schema_version=1, verbatim_examples={})
+
+    persist_results.merge_talk(talk, ret)
+
+    assert talk["verbatim_examples"]["jokes"] == ["legacy line"]
 
 
 def test_video_extraction_manifest_replaces_legacy_manifest_atomically(
@@ -212,9 +520,10 @@ def test_video_extraction_manifest_replaces_legacy_manifest_atomically(
     }
 
 
-def test_empty_values_never_clobber(persist_results):
+def test_legacy_empty_values_never_clobber(persist_results):
     talk = _talk(structured_data={"slide_count": 62})
     ret = _return()
+    ret["return_schema_version"] = 1
     ret["structured_data"]["slide_count"] = None  # empty must not overwrite
     persist_results.merge_talk(talk, ret)
     assert talk["structured_data"]["slide_count"] == 62
@@ -873,6 +1182,111 @@ def test_malformed_per_slide_visual_leaves_database_untouched(
     assert db.read_bytes() == before
 
 
+def test_effective_per_slide_dependencies_fail_before_database_write(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    talk = _talk(structured_data={
+        "slide_count": 1,
+        "background_color_sequence": ["legacy"],
+        "meme_count": 1,
+    })
+    ret = _return()
+    ret["structured_data"].update({
+        "slide_count": 1,
+        "per_slide_visual": [_visual_row()],
+    })
+    db.write_text(json.dumps({"talks": [talk]}))
+    before = db.read_bytes()
+    batch.write_text(json.dumps([ret]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "effective merged analysis is invalid" in result.stderr
+    assert "background_color_sequence" in result.stderr
+    assert db.read_bytes() == before
+
+
+def test_late_effective_failure_keeps_complete_database_byte_stable(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    first_talk = _talk(filename="first.md")
+    second_talk = _talk(
+        filename="second.md",
+        structured_data={
+            "slide_count": 1,
+            "background_color_sequence": ["legacy"],
+        },
+    )
+    first_return = _return(filename="first.md")
+    second_return = _return(filename="second.md")
+    second_return["structured_data"].update({
+        "slide_count": 1,
+        "per_slide_visual": [_visual_row()],
+    })
+    db.write_text(json.dumps({"talks": [first_talk, second_talk]}))
+    before = db.read_bytes()
+    batch.write_text(json.dumps([first_return, second_return]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "second.md" in result.stderr
+    assert db.read_bytes() == before
+
+
+def test_malformed_stored_structured_container_keeps_database_byte_stable(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(json.dumps({"talks": [_talk(structured_data=["legacy"])]}))
+    before = db.read_bytes()
+    batch.write_text(json.dumps([_return()]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "stored structured_data" in result.stderr
+    assert db.read_bytes() == before
+
+
+def test_undeclared_legacy_verbatim_lane_keeps_database_byte_stable(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    talk = _talk(verbatim_examples={
+        "jokes": ["legacy line"],
+        "legacy_lane": ["undeclared"],
+    })
+    db.write_text(json.dumps({"talks": [talk]}))
+    before = db.read_bytes()
+    batch.write_text(json.dumps([_return(verbatim_examples={"jokes": []})]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "unknown verbatim_examples lanes" in result.stderr
+    assert db.read_bytes() == before
+
+
 def test_missing_image_source_distribution_basis_leaves_database_untouched(
         persist_results, tmp_path):
     db = tmp_path / "tracking-database.json"
@@ -895,6 +1309,28 @@ def test_missing_image_source_distribution_basis_leaves_database_untouched(
 
     assert result.returncode == 1
     assert "image_source_distribution_basis is required" in result.stderr
+    assert db.read_bytes() == before
+
+
+def test_v2_image_source_basis_without_map_leaves_database_untouched(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    ret = _return()
+    ret["structured_data"]["image_source_distribution_basis"] = (
+        "Unit: slide; unknown origins stay unknown.")
+    db.write_text(json.dumps({"talks": [_talk()]}))
+    before = db.read_bytes()
+    batch.write_text(json.dumps([ret]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "to be supplied together" in result.stderr
     assert db.read_bytes() == before
 
 
@@ -968,7 +1404,8 @@ def test_clear_fields_removes_contaminated_values_and_promoted_scalars(
     assert "slides_local_path" not in stored
     assert "slide_count" not in stored["structured_data"]
     assert "stale_claim" not in stored["structured_data"]
-    assert "jokes" not in stored["verbatim_examples"]
+    # A v2 replacement follows the clear and is authoritative, even when empty.
+    assert stored["verbatim_examples"]["jokes"] == []
     report = json.loads(result.stdout)
     assert "structured_data.slide_count" in report["talks"][0]["cleared"]
     assert "slide_count" in report["talks"][0]["cleared"]
