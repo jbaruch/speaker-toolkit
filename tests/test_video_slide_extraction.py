@@ -162,11 +162,14 @@ def test_combine_to_pdf_applies_crop_to_saved_pages(
     assert b"/MediaBox [ 0 0 500.0 250.0 ]" in raw
 
 
-def test_combine_to_pdf_empty(video_slide_extraction, tmp_path):
+def test_combine_to_pdf_empty(video_slide_extraction, tmp_path, capsys):
     """Empty slide list returns None."""
     output = str(tmp_path / "empty.pdf")
     result = video_slide_extraction.combine_to_pdf([], output)
+    captured = capsys.readouterr()
     assert result is None
+    assert captured.out == ""
+    assert "WARNING: No unique frames found" in captured.err
 
 
 def test_pdf_scope_cannot_mislabel_full_frames_as_slide_region(
@@ -222,6 +225,35 @@ def test_version_flag_emits_json(video_slide_extraction):
     assert payload == {"pipeline_version": video_slide_extraction.PIPELINE_VERSION}
 
 
+def test_success_cli_emits_only_result_json_on_stdout(
+        video_slide_extraction, tmp_path, monkeypatch, capsys):
+    """Progress stays on stderr so stdout remains one parseable payload."""
+    frame = tmp_path / "frame.png"
+    Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"synthetic source")
+    outdir = tmp_path / "output"
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames",
+        lambda video_path, frames_dir, fps: [str(frame)],
+    )
+    monkeypatch.setattr(sys, "argv", [
+        video_slide_extraction.__file__, str(video), str(outdir), "video-id",
+        "--region", "none",
+    ])
+
+    video_slide_extraction.main()
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["source_video_id"] == "video-id"
+    assert payload["artifacts"][0]["artifact_scope"] == "full_frame_context"
+    assert "Extracting video artifacts" in captured.err
+    assert "Deduplicated: 1 frames -> 1 unique frames" in captured.err
+    assert "Saved full_frame_context PDF" in captured.err
+    assert "Done: 1 unique frames retained" in captured.err
+
+
 def test_combine_to_pdf_stamps_version_metadata(video_slide_extraction, tmp_path):
     """The output PDF records PIPELINE_VERSION in its producer/creator metadata."""
     frames = []
@@ -265,7 +297,7 @@ def test_extract_frames_from_synthetic_video(video_slide_extraction, tmp_path):
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
-def test_full_pipeline(video_slide_extraction, tmp_path):
+def test_full_pipeline(video_slide_extraction, tmp_path, capsys):
     """End-to-end: synthetic video → frames → dedup → PDF."""
     video = str(tmp_path / "test.mp4")
     # 3-second video: red for 1s, green for 1s, blue for 1s
@@ -283,6 +315,11 @@ def test_full_pipeline(video_slide_extraction, tmp_path):
     result = video_slide_extraction.extract_slides_from_video(
         video, outdir, "test_id", fps=1, hash_threshold=8
     )
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Extracted" in captured.err
+    assert "Deduplicated" in captured.err
+    assert "Done:" in captured.err
     assert result["unique_frame_count"] >= 1
     assert result["authored_slide_count"] is None
     assert "unique_slides_count" not in result
@@ -489,7 +526,8 @@ def _composite_frames(tmp_path, n=24, with_pip=True):
     return frames
 
 
-def test_detects_the_slide_and_excludes_the_speaker_pip(video_slide_extraction, tmp_path):
+def test_detects_the_slide_and_excludes_the_speaker_pip(
+        video_slide_extraction, tmp_path, capsys):
     """The regression, asserted on the public entry point.
 
     A broadcast composite has two disjoint moving regions — the slide and a live
@@ -502,6 +540,9 @@ def test_detects_the_slide_and_excludes_the_speaker_pip(video_slide_extraction, 
     """
     frames = _composite_frames(tmp_path)
     region = video_slide_extraction.detect_slide_region(frames, sample_size=8)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Detected slide region" in captured.err
     assert region is not None, "composite went undetected — the 963-page failure"
     left, upper, right, lower = region
     # The slide occupies x[0.3125, 0.969], y[0.111, 0.889] by construction; the

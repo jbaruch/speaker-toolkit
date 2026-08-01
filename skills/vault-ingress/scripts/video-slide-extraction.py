@@ -125,7 +125,7 @@ def extract_frames(video_path, frames_dir, fps=0.5):
     if ret != 0:
         raise RuntimeError(f"ffmpeg failed with code {ret}")
     frames = sorted(glob.glob(f"{frames_dir}/frame_*.jpg"))
-    print(f"  Extracted {len(frames)} frames")
+    print(f"  Extracted {len(frames)} frames", file=sys.stderr)
     return frames
 
 
@@ -293,7 +293,8 @@ def detect_slide_region(
         return None
 
     print(f"  Detected slide region: {region[0]:.0%}-{region[2]:.0%} horizontal, "
-          f"{region[1]:.0%}-{region[3]:.0%} vertical ({area:.0%} of frame)")
+          f"{region[1]:.0%}-{region[3]:.0%} vertical ({area:.0%} of frame)",
+          file=sys.stderr)
     return region
 
 
@@ -331,7 +332,7 @@ def deduplicate_frames(frames, slide_region=None, hash_threshold=8):
     unique_frames = []
     prev_hash = None
     if not frames:
-        print("  Deduplicated: 0 frames -> 0 unique frames")
+        print("  Deduplicated: 0 frames -> 0 unique frames", file=sys.stderr)
         return unique_frames
     pil_image, perceptual_hash = _require_image_dependencies()
 
@@ -346,7 +347,7 @@ def deduplicate_frames(frames, slide_region=None, hash_threshold=8):
             prev_hash = h
 
     print(f"  Deduplicated: {len(frames)} frames -> "
-          f"{len(unique_frames)} unique frames")
+          f"{len(unique_frames)} unique frames", file=sys.stderr)
     return unique_frames
 
 
@@ -433,7 +434,7 @@ def combine_to_pdf(unique_frames, output_pdf, slide_region=None,
 
     images = []
     if not unique_frames:
-        print("  WARNING: No unique frames found")
+        print("  WARNING: No unique frames found", file=sys.stderr)
         return None
     pil_image, _ = _require_image_dependencies()
     for frame_path, _ in unique_frames:
@@ -441,7 +442,7 @@ def combine_to_pdf(unique_frames, output_pdf, slide_region=None,
             images.append(crop_frame(source, slide_region).convert('RGB'))
 
     if not images:
-        print("  WARNING: No unique frames found")
+        print("  WARNING: No unique frames found", file=sys.stderr)
         return None
 
     output_pdf = canonical_path(output_pdf)
@@ -462,7 +463,7 @@ def combine_to_pdf(unique_frames, output_pdf, slide_region=None,
     )
     size_mb = os.path.getsize(output_pdf) / (1024 * 1024)
     print(f"  Saved {artifact_scope} PDF: {output_pdf} "
-          f"({len(images)} pages, {size_mb:.1f} MB)")
+          f"({len(images)} pages, {size_mb:.1f} MB)", file=sys.stderr)
     return output_pdf
 
 
@@ -541,7 +542,7 @@ def extract_slides_from_video(video_path, output_dir, youtube_id,
     slide_pdf = os.path.join(output_dir, f"{youtube_id}.slide-region.pdf")
     context_pdf = os.path.join(output_dir, f"{youtube_id}.context.pdf")
 
-    print(f"Extracting video artifacts from {youtube_id}...")
+    print(f"Extracting video artifacts from {youtube_id}...", file=sys.stderr)
 
     # Step 2: Extract frames
     frames = extract_frames(video_path, frames_dir, fps=fps)
@@ -641,7 +642,7 @@ def extract_slides_from_video(video_path, output_dir, youtube_id,
         **region_provenance,
     }
 
-    print(f"  Done: {len(unique_frames)} unique frames retained")
+    print(f"  Done: {len(unique_frames)} unique frames retained", file=sys.stderr)
     return result
 
 
