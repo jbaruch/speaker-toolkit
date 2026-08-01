@@ -24,16 +24,22 @@ from pathlib import Path
 from transcript_timing import write_transcript_bundle
 
 _TIMING_LINE = re.compile(
-    r"(?P<start>\d{2}:\d{2}:\d{2}\.\d{3})\s+-->\s+"
-    r"(?P<end>\d{2}:\d{2}:\d{2}\.\d{3})"
+    r"(?P<start>(?:\d{2,}:)?\d{2}:\d{2}\.\d{3})\s+-->\s+"
+    r"(?P<end>(?:\d{2,}:)?\d{2}:\d{2}\.\d{3})"
 )
 
 
 def _seconds(timestamp):
-    hours, minutes, remainder = timestamp.split(":")
+    parts = timestamp.split(":")
+    if len(parts) == 2:
+        hours = 0
+        minutes, remainder = parts
+    else:
+        hours_text, minutes, remainder = parts
+        hours = int(hours_text)
     seconds, milliseconds = remainder.split(".")
     return (
-        int(hours) * 3600
+        hours * 3600
         + int(minutes) * 60
         + int(seconds)
         + int(milliseconds) / 1000

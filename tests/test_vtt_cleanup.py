@@ -124,6 +124,21 @@ continues here
     ]
 
 
+def test_parse_vtt_accepts_timestamps_without_hours(vtt_cleanup):
+    raw = "WEBVTT\n\n01:02.250 --> 01:04.500\nShort-form timestamp\n"
+
+    text, segments = vtt_cleanup.parse_vtt(raw)
+
+    assert text == "Short-form timestamp"
+    assert segments == [
+        {
+            "text": "Short-form timestamp",
+            "start_seconds": 62.25,
+            "end_seconds": 64.5,
+        }
+    ]
+
+
 def test_cli_writes_plain_text_and_timed_sidecar(vtt_cleanup, tmp_path):
     source = tmp_path / "talk.en.vtt"
     output = tmp_path / "talk.txt"
