@@ -51,8 +51,11 @@ def _shipped_skill_paths() -> tuple[Path, ...]:
 
 def _command_doc_paths() -> tuple[Path, ...]:
     references = SKILLS_ROOT.glob("*/references/**/*.md")
-    rules = (REPO_ROOT / "rules").glob("*.md")
-    return tuple(sorted({*_shipped_skill_paths(), *references, *rules}))
+    return tuple(sorted({*_shipped_skill_paths(), *references}))
+
+
+def _rule_paths() -> tuple[Path, ...]:
+    return tuple(sorted((REPO_ROOT / "rules").glob("*.md")))
 
 
 def _vault_workflow_doc_paths() -> tuple[Path, ...]:
@@ -145,6 +148,28 @@ def test_rooted_toolkit_paths_exist_in_the_package_source() -> None:
 
     assert seen > 0
     assert not missing, "\n" + "\n".join(missing)
+
+
+def test_rule_prose_and_skill_cross_references_use_repo_relative_paths() -> None:
+    failures: list[str] = []
+    for path in _rule_paths():
+        text = path.read_text(encoding="utf-8")
+        for match in ROOTED_TOOLKIT_PATH_RE.finditer(text):
+            failures.append(
+                f"{path.relative_to(REPO_ROOT)}: rooted rule path "
+                f"{match.group('path')!r}"
+            )
+
+    for path in _shipped_skill_paths():
+        text = path.read_text(encoding="utf-8")
+        for match in ROOTED_TOOLKIT_PATH_RE.finditer(text):
+            if match.group("path").endswith(".md"):
+                failures.append(
+                    f"{path.relative_to(REPO_ROOT)}: rooted cross-reference "
+                    f"{match.group('path')!r}"
+                )
+
+    assert not failures, "\n" + "\n".join(failures)
 
 
 def test_vault_workflows_use_the_configured_interpreter() -> None:

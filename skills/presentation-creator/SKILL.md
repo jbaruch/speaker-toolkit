@@ -492,11 +492,11 @@ If any slide has progressive-reveal builds, expand them FIRST with
 `build-expansion-manifest.py`): it replaces each parent slide with its build
 frames as full-bleed slides. Pass the speaker-notes JSON to
 `build-expansion-manifest.py --notes` so each build parent's note rides onto its
-FINAL frame during expansion (per `{speaker_toolkit_root}/skills/illustrations/references/builds.md`);
+FINAL frame during expansion (per `skills/illustrations/references/builds.md`);
 do not re-target those parent indices in any later notes pass. Run expansion
 BEFORE the by-index passes below — it renumbers later slides, so notes,
 backgrounds, and QR must key on the POST-expansion deck. See
-`{speaker_toolkit_root}/rules/deck-editing-rules.md`.
+`rules/deck-editing-rules.md`.
 
 Inject the remaining speaker notes from `script.md` after the illustrations skill
 returns, via real PowerPoint — `"{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.sh"`
@@ -508,7 +508,7 @@ indices apply directly. PowerPoint writes valid notes OOXML, so the
 the final write, set the FULL-slide backgrounds via
 `"{speaker_toolkit_root}/skills/presentation-creator/scripts/apply-backgrounds.sh"` using the manifest from
 the apply pass — it must run last; any later python-pptx save would re-drop the
-per-slide background fills. See `{speaker_toolkit_root}/rules/deck-editing-rules.md`.
+per-slide background fills. See `rules/deck-editing-rules.md`.
 
 **For presenterm talks (terminal markdown):**
 
@@ -552,7 +552,7 @@ Phase 0-6 flow. The talk has been given and recorded.
 
 Read [references/phase7-post-event.md](references/phase7-post-event.md) for
 the pre-flight checklist and Step 7.2 (Video to Shownotes). Step 7.1 detail
-lives in `{speaker_toolkit_root}/skills/illustrations/references/thumbnails.md`.
+lives in `skills/illustrations/references/thumbnails.md`.
 
 ---
 
@@ -568,7 +568,7 @@ lives in `{speaker_toolkit_root}/skills/illustrations/references/thumbnails.md`.
    global text replace), edit through real PowerPoint via
    `"{speaker_toolkit_root}/skills/presentation-creator/scripts/run-deck-ops.sh"`. python-pptx editing is
    not used — it strips per-slide background fills, flattening illustrated decks.
-   See `{speaker_toolkit_root}/rules/deck-editing-rules.md` (macOS + Microsoft PowerPoint only). On first
+   See `rules/deck-editing-rules.md` (macOS + Microsoft PowerPoint only). On first
    use, walk the user through `references/deck-editing-setup.md` (enable macros,
    import the macro, grant Automation consent) before invoking the script.
 

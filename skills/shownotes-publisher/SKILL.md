@@ -358,7 +358,7 @@ bash "{speaker_toolkit_root}/skills/shownotes-publisher/scripts/content-only-gat
   return 0.
 
 The allowed content prefixes are the named `ALLOWED_PREFIXES` at the top
-of `{speaker_toolkit_root}/skills/shownotes-publisher/scripts/content-only-gate.sh`.
+of `skills/shownotes-publisher/scripts/content-only-gate.sh`.
 
 **Direct-push flow:**
 

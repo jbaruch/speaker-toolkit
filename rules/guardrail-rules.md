@@ -2,8 +2,8 @@
 
 ## Guardrail Check Script
 
-Run `python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/guardrail-check.py" <outline.yaml>
-<speaker-profile.json>` to compute guardrail checks. The script handles the
+Run `python3 skills/presentation-creator/scripts/guardrail-check.py <outline.yaml> <speaker-profile.json>`
+to compute guardrail checks. The script handles the
 three-outcome PASS/WARN/FAIL logic:
 
 - `[FAIL]` — value exceeds the limit

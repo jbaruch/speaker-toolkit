@@ -101,7 +101,7 @@ description: Authority of record for the Whisper transcription layer's Platform-
 Run against a talk whose caption track is disabled, on Apple Silicon with the
 `whisper` extra installed:
 
-1. `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/fetch-transcript.py" {youtube_id} --out /tmp/{youtube_id}.txt --method whisper --existing-source unknown`
+1. `"{python_path}" skills/vault-ingress/scripts/fetch-transcript.py {youtube_id} --out /tmp/{youtube_id}.txt --method whisper --existing-source unknown`
 2. Observe: exit 0, one JSON object on stdout with `"method": "whisper"`,
    `"timed_path": "/tmp/{youtube_id}.segments.json"`,
    `"quality_path": "/tmp/{youtube_id}.quality.json"`, and a `words` count plausible for
@@ -111,7 +111,7 @@ Run against a talk whose caption track is disabled, on Apple Silicon with the
 5. `jq -e '.schema_version == 1 and (.transcript_sha256 | length == 64) and .policy.schema_version == 1 and (.policy.min_words >= 1) and ((.policy.duration_seconds == null and .provenance == {"kind":"fixed_default"}) or (.policy.duration_seconds == .provenance.duration_seconds))' /tmp/{youtube_id}.quality.json` exits 0, and its `transcript_sha256` equals `shasum -a 256 /tmp/{youtube_id}.txt`.
 6. Confirm `/tmp/{youtube_id}.txt` holds prose, not `[Music]` markers or a traceback.
 7. Re-run with `yt-dlp` removed from `PATH` and a fresh output path. Expect exit 1, a stderr line naming the install command, one JSON object with `"ok": false`, and no transcript or receipt at that output path.
-8. `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/fetch-transcript.py" local-talk-label --audio <local-file> --out /tmp/a.txt --existing-source unknown` on a non-YouTube recording: exit 0, `"method": "whisper"`, `"timed_path": "/tmp/a.segments.json"`, `"quality_path": "/tmp/a.quality.json"`, prose at the output path, timing schema v2 with `local_media_whisper` provenance, and timing plus quality provenance whose `media_sha256` equals the exact input-media digest.
+8. `"{python_path}" skills/vault-ingress/scripts/fetch-transcript.py local-talk-label --audio <local-file> --out /tmp/a.txt --existing-source unknown` on a non-YouTube recording: exit 0, `"method": "whisper"`, `"timed_path": "/tmp/a.segments.json"`, `"quality_path": "/tmp/a.quality.json"`, prose at the output path, timing schema v2 with `local_media_whisper` provenance, and timing plus quality provenance whose `media_sha256` equals the exact input-media digest.
 
 A pass requires all eight checks.
 
