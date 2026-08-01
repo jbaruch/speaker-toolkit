@@ -43,9 +43,7 @@ def base_data():
 
 
 def test_main_emits_one_structured_json_report(guardrail_check, capsys):
-    return_code = guardrail_check.main(
-        ["guardrail-check.py", str(FIXTURE), "-"]
-    )
+    return_code = guardrail_check.main(["guardrail-check.py", str(FIXTURE), "-"])
     captured = capsys.readouterr()
 
     assert return_code == 0
@@ -74,8 +72,7 @@ def test_main_emits_one_structured_json_report(guardrail_check, capsys):
     assert report["required_companion_check"].endswith("check-rhetorical.py")
 
 
-def test_main_rejects_invalid_input_without_stdout(
-        guardrail_check, tmp_path, capsys):
+def test_main_rejects_invalid_input_without_stdout(guardrail_check, tmp_path, capsys):
     missing_outline = tmp_path / "missing-outline.yaml"
 
     return_code = guardrail_check.main(

@@ -58,6 +58,7 @@ SCHEMA_VERSION = 3
 try:
     import imagehash
     from PIL import Image
+
     _DEPS_ERROR = None
 except ImportError as exc:
     imagehash = None
@@ -72,7 +73,8 @@ def _require_image_dependencies():
     """Return imported image modules or fail clearly for direct callers."""
     if Image is None or imagehash is None:
         raise RuntimeError(
-            "Install dependencies: pip install imagehash Pillow") from _DEPS_ERROR
+            "Install dependencies: pip install imagehash Pillow"
+        ) from _DEPS_ERROR
     return Image, imagehash
 
 
@@ -85,16 +87,19 @@ def validate_slide_region(region) -> NormalizedSlideRegion:
     """
     if not isinstance(region, (tuple, list)) or len(region) != 4:
         raise ValueError(
-            "manual slide region must contain four coordinates: "
-            "LEFT,TOP,RIGHT,BOTTOM")
-    if any(isinstance(value, bool) or not isinstance(value, (int, float))
-           for value in region):
+            "manual slide region must contain four coordinates: LEFT,TOP,RIGHT,BOTTOM"
+        )
+    if any(
+        isinstance(value, bool) or not isinstance(value, (int, float))
+        for value in region
+    ):
         raise ValueError("manual slide-region coordinates must be numbers")
     left, upper, right, lower = (float(value) for value in region)
     if not (0.0 <= left < right <= 1.0 and 0.0 <= upper < lower <= 1.0):
         raise ValueError(
             "manual slide region must satisfy "
-            "0 <= LEFT < RIGHT <= 1 and 0 <= TOP < BOTTOM <= 1")
+            "0 <= LEFT < RIGHT <= 1 and 0 <= TOP < BOTTOM <= 1"
+        )
     return left, upper, right, lower
 
 
@@ -106,7 +111,8 @@ def parse_slide_region(value: str) -> str | NormalizedSlideRegion:
     parts = [part.strip() for part in value.split(",")]
     if len(parts) != 4:
         raise argparse.ArgumentTypeError(
-            "--region must be auto, none, or LEFT,TOP,RIGHT,BOTTOM")
+            "--region must be auto, none, or LEFT,TOP,RIGHT,BOTTOM"
+        )
     try:
         region = tuple(float(part) for part in parts)
         return validate_slide_region(region)
@@ -154,7 +160,12 @@ def _label_components(mask):
                 cols.append(c)
                 for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                     rr, cc = r + dr, c + dc
-                    if 0 <= rr < h and 0 <= cc < w and mask[rr, cc] and not seen[rr, cc]:
+                    if (
+                        0 <= rr < h
+                        and 0 <= cc < w
+                        and mask[rr, cc]
+                        and not seen[rr, cc]
+                    ):
                         seen[rr, cc] = True
                         stack.append((rr, cc))
             yield np.array(rows), np.array(cols)
@@ -167,15 +178,18 @@ def _label_components(mask):
 # unconstrained selection produced boxes with aspect ratios from 0.32 to 9.45;
 # the gate leaves 26. A missed crop leaves an over-count visible; a
 # wrong crop destroys content, so these are deliberately strict.
-_MIN_REGION_AREA_FRAC = 0.15   # smaller than this is a slide element, not a slide
-_MIN_REGION_ASPECT = 1.0       # 4:3 is 1.33, 16:9 is 1.78; allow margin either way
+_MIN_REGION_AREA_FRAC = 0.15  # smaller than this is a slide element, not a slide
+_MIN_REGION_ASPECT = 1.0  # 4:3 is 1.33, 16:9 is 1.78; allow margin either way
 _MAX_REGION_ASPECT = 2.4
 
 
-def _largest_rectangular_component(mask, min_fill=0.5,
-                                   min_area_frac=_MIN_REGION_AREA_FRAC,
-                                   min_aspect=_MIN_REGION_ASPECT,
-                                   max_aspect=_MAX_REGION_ASPECT):
+def _largest_rectangular_component(
+    mask,
+    min_fill=0.5,
+    min_area_frac=_MIN_REGION_AREA_FRAC,
+    min_aspect=_MIN_REGION_ASPECT,
+    max_aspect=_MAX_REGION_ASPECT,
+):
     """Pick the component most likely to be the projected slide.
 
     A slide region is a solid rectangle that changes wholesale between slides, so
@@ -210,8 +224,7 @@ def _largest_rectangular_component(mask, min_fill=0.5,
     return best
 
 
-def detect_slide_region(
-        frames, sample_size=10) -> NormalizedSlideRegion | None:
+def detect_slide_region(frames, sample_size=10) -> NormalizedSlideRegion | None:
     """Auto-detect the slide region by analyzing variance across sample frames.
 
     Conference videos typically have a static border (conference branding,
@@ -248,9 +261,10 @@ def detect_slide_region(
     diffs = []
 
     for i in range(0, len(frames) - step, step):
-        img1 = np.array(pil_image.open(frames[i]).convert('L').resize((320, 180)))
+        img1 = np.array(pil_image.open(frames[i]).convert("L").resize((320, 180)))
         img2 = np.array(
-            pil_image.open(frames[i + step]).convert('L').resize((320, 180)))
+            pil_image.open(frames[i + step]).convert("L").resize((320, 180))
+        )
         diff = np.abs(img1.astype(float) - img2.astype(float))
         diffs.append(diff)
 
@@ -292,9 +306,11 @@ def detect_slide_region(
     if area > 0.9:
         return None
 
-    print(f"  Detected slide region: {region[0]:.0%}-{region[2]:.0%} horizontal, "
-          f"{region[1]:.0%}-{region[3]:.0%} vertical ({area:.0%} of frame)",
-          file=sys.stderr)
+    print(
+        f"  Detected slide region: {region[0]:.0%}-{region[2]:.0%} horizontal, "
+        f"{region[1]:.0%}-{region[3]:.0%} vertical ({area:.0%} of frame)",
+        file=sys.stderr,
+    )
     return region
 
 
@@ -346,14 +362,16 @@ def deduplicate_frames(frames, slide_region=None, hash_threshold=8):
             unique_frames.append((frame_path, i))
             prev_hash = h
 
-    print(f"  Deduplicated: {len(frames)} frames -> "
-          f"{len(unique_frames)} unique frames", file=sys.stderr)
+    print(
+        f"  Deduplicated: {len(frames)} frames -> {len(unique_frames)} unique frames",
+        file=sys.stderr,
+    )
     return unique_frames
 
 
 def select_slide_region(
-        frames, requested: str | NormalizedSlideRegion = "auto",
-        verified=False) -> tuple[NormalizedSlideRegion | None, dict]:
+    frames, requested: str | NormalizedSlideRegion = "auto", verified=False
+) -> tuple[NormalizedSlideRegion | None, dict]:
     """Resolve the hashing crop and return it with explicit provenance.
 
     Auto-detection is always unverified: the heuristic can select a presenter's
@@ -364,7 +382,8 @@ def select_slide_region(
         if verified:
             raise ValueError(
                 "slide_region_verified requires a manual region; an auto-detected "
-                "crop is a hint until someone checks it")
+                "crop is a hint until someone checks it"
+            )
         region = detect_slide_region(frames)
         return region, {
             "slide_region_method": "auto",
@@ -376,7 +395,8 @@ def select_slide_region(
         if verified:
             raise ValueError(
                 "slide_region_verified requires a manual region; --region none "
-                "applies no crop")
+                "applies no crop"
+            )
         return None, {
             "slide_region_method": "none",
             "slide_region_detected": False,
@@ -402,19 +422,28 @@ def review_reason_for_region(region, provenance):
     if region is None:
         return (
             "No verified slide region is available; the PDF is full-frame context "
-            "only until an operator verifies a manual region.")
+            "only until an operator verifies a manual region."
+        )
     if method == "auto":
         return (
             "The auto-detected crop is unverified; inspect it against the source "
-            "and context, then rerun with a verified manual region.")
+            "and context, then rerun with a verified manual region."
+        )
     return (
         "The manual crop was not marked visually verified; review it and rerun "
-        "with --region-verified before promotion.")
+        "with --region-verified before promotion."
+    )
 
 
-def combine_to_pdf(unique_frames, output_pdf, slide_region=None,
-                   artifact_scope=None, source_video_id=None,
-                   crop_method="none", crop_verified=False):
+def combine_to_pdf(
+    unique_frames,
+    output_pdf,
+    slide_region=None,
+    artifact_scope=None,
+    source_video_id=None,
+    crop_method="none",
+    crop_verified=False,
+):
     """Write retained video frames as one explicitly scoped PDF artifact.
 
     ``slide_region`` is applied to the saved pages, not only to the hashes.
@@ -424,7 +453,8 @@ def combine_to_pdf(unique_frames, output_pdf, slide_region=None,
     """
     if artifact_scope is None:
         artifact_scope = (
-            "slide_region" if slide_region is not None else "full_frame_context")
+            "slide_region" if slide_region is not None else "full_frame_context"
+        )
     if artifact_scope not in ("slide_region", "full_frame_context"):
         raise ValueError(f"unknown artifact scope: {artifact_scope!r}")
     if artifact_scope == "slide_region" and slide_region is None:
@@ -439,7 +469,7 @@ def combine_to_pdf(unique_frames, output_pdf, slide_region=None,
     pil_image, _ = _require_image_dependencies()
     for frame_path, _ in unique_frames:
         with pil_image.open(frame_path) as source:
-            images.append(crop_frame(source, slide_region).convert('RGB'))
+            images.append(crop_frame(source, slide_region).convert("RGB"))
 
     if not images:
         print("  WARNING: No unique frames found", file=sys.stderr)
@@ -456,14 +486,23 @@ def combine_to_pdf(unique_frames, output_pdf, slide_region=None,
         trust = "verified" if crop_verified else "unverified; review required"
         subject = (
             f"Cropped slide-region frames from video; crop method={crop_method}; "
-            f"{trust}")
+            f"{trust}"
+        )
     images[0].save(
-        output_pdf, save_all=True, append_images=images[1:],
-        producer=producer, creator=producer, title=title, subject=subject,
+        output_pdf,
+        save_all=True,
+        append_images=images[1:],
+        producer=producer,
+        creator=producer,
+        title=title,
+        subject=subject,
     )
     size_mb = os.path.getsize(output_pdf) / (1024 * 1024)
-    print(f"  Saved {artifact_scope} PDF: {output_pdf} "
-          f"({len(images)} pages, {size_mb:.1f} MB)", file=sys.stderr)
+    print(
+        f"  Saved {artifact_scope} PDF: {output_pdf} "
+        f"({len(images)} pages, {size_mb:.1f} MB)",
+        file=sys.stderr,
+    )
     return output_pdf
 
 
@@ -481,22 +520,29 @@ def retained_frame_provenance(unique_frames, fps):
     ]
 
 
-def artifact_record(path, artifact_scope, page_count, source_video_id,
-                    source_video_path, crop_method="none", crop_verified=False,
-                    trusted_for_authored_slide_analysis=False):
+def artifact_record(
+    path,
+    artifact_scope,
+    page_count,
+    source_video_id,
+    source_video_path,
+    crop_method="none",
+    crop_verified=False,
+    trusted_for_authored_slide_analysis=False,
+):
     """Build a self-describing PDF artifact record for the extraction result."""
     if artifact_scope not in ("slide_region", "full_frame_context"):
         raise ValueError(f"unknown artifact scope: {artifact_scope!r}")
     if artifact_scope == "full_frame_context" and (
-            crop_method != "none" or crop_verified
-            or trusted_for_authored_slide_analysis):
+        crop_method != "none" or crop_verified or trusted_for_authored_slide_analysis
+    ):
         raise ValueError("full-frame context cannot be cropped or trusted as slides")
     if artifact_scope == "slide_region" and crop_method not in ("auto", "manual"):
         raise ValueError("slide-region artifacts require an auto or manual crop")
     if trusted_for_authored_slide_analysis and not (
-            crop_method == "manual" and crop_verified):
-        raise ValueError(
-            "authored-slide trust requires a verified manual crop")
+        crop_method == "manual" and crop_verified
+    ):
+        raise ValueError("authored-slide trust requires a verified manual crop")
     return {
         "path": canonical_path(path),
         "artifact_scope": artifact_scope,
@@ -506,15 +552,21 @@ def artifact_record(path, artifact_scope, page_count, source_video_id,
         "crop_method": crop_method,
         "crop_verified": bool(crop_verified),
         "trusted_for_authored_slide_analysis": bool(
-            trusted_for_authored_slide_analysis),
+            trusted_for_authored_slide_analysis
+        ),
     }
 
 
-def extract_slides_from_video(video_path, output_dir, youtube_id,
-                               fps=0.5, hash_threshold=8,
-                               slide_region: str | NormalizedSlideRegion = "auto",
-                               slide_region_verified=False,
-                               include_context_pdf=True):
+def extract_slides_from_video(
+    video_path,
+    output_dir,
+    youtube_id,
+    fps=0.5,
+    hash_threshold=8,
+    slide_region: str | NormalizedSlideRegion = "auto",
+    slide_region_verified=False,
+    include_context_pdf=True,
+):
     """Full pipeline: frames -> detect region -> dedup -> scoped PDF artifacts.
 
     Args:
@@ -566,7 +618,8 @@ def extract_slides_from_video(video_path, output_dir, youtube_id,
     # Step 3: Resolve the slide region. Auto-detection is a hint, while a manual
     # crop carries explicit verification provenance.
     resolved_region, region_provenance = select_slide_region(
-        frames, slide_region, slide_region_verified)
+        frames, slide_region, slide_region_verified
+    )
 
     # Step 4: Deduplicate
     unique_frames = deduplicate_frames(frames, resolved_region, hash_threshold)
@@ -583,35 +636,48 @@ def extract_slides_from_video(video_path, output_dir, youtube_id,
     artifacts = []
     if resolved_region is not None:
         slide_pdf_path = combine_to_pdf(
-            unique_frames, slide_pdf, resolved_region,
+            unique_frames,
+            slide_pdf,
+            resolved_region,
             artifact_scope="slide_region",
             source_video_id=youtube_id,
             crop_method=region_provenance["slide_region_method"],
             crop_verified=region_provenance["slide_region_verified"],
         )
         if slide_pdf_path:
-            artifacts.append(artifact_record(
-                slide_pdf_path, "slide_region", len(unique_frames), youtube_id,
-                source_video_path,
-                crop_method=region_provenance["slide_region_method"],
-                crop_verified=region_provenance["slide_region_verified"],
-                trusted_for_authored_slide_analysis=trusted_slide_evidence,
-            ))
+            artifacts.append(
+                artifact_record(
+                    slide_pdf_path,
+                    "slide_region",
+                    len(unique_frames),
+                    youtube_id,
+                    source_video_path,
+                    crop_method=region_provenance["slide_region_method"],
+                    crop_verified=region_provenance["slide_region_verified"],
+                    trusted_for_authored_slide_analysis=trusted_slide_evidence,
+                )
+            )
 
     # With no region, the full frame is the only visual evidence and must be
     # preserved as context. With a region, callers may explicitly omit this
     # additional derivative; the source video itself is never deleted here.
     if include_context_pdf or not trusted_slide_evidence:
         context_pdf_path = combine_to_pdf(
-            unique_frames, context_pdf,
+            unique_frames,
+            context_pdf,
             artifact_scope="full_frame_context",
             source_video_id=youtube_id,
         )
         if context_pdf_path:
-            artifacts.append(artifact_record(
-                context_pdf_path, "full_frame_context", len(unique_frames),
-                youtube_id, source_video_path,
-            ))
+            artifacts.append(
+                artifact_record(
+                    context_pdf_path,
+                    "full_frame_context",
+                    len(unique_frames),
+                    youtube_id,
+                    source_video_path,
+                )
+            )
 
     # Cleanup: remove frame JPEGs to save space (keep PDF)
     for f in frames:
@@ -650,29 +716,47 @@ def main():
     parser = argparse.ArgumentParser(
         description="Extract slide images from conference talk videos."
     )
-    parser.add_argument("--version", action="store_true",
-                        help="Print the pipeline version as JSON and exit")
-    parser.add_argument("video", nargs="?", help="Path to downloaded MP4 video")
-    parser.add_argument("outdir", nargs="?",
-                        help="Directory for intermediate files and output PDF")
-    parser.add_argument("youtube_id", nargs="?",
-                        help="YouTube video ID (used for naming)")
-    parser.add_argument("--fps", type=float, default=0.5,
-                        help="Frames per second to extract (default: 0.5)")
-    parser.add_argument("--threshold", type=int, default=8,
-                        help="largest hash distance treated as the same slide; "
-                             "higher merges more and keeps fewer frames (default: 8)")
     parser.add_argument(
-        "--region", type=parse_slide_region, default="auto",
+        "--version",
+        action="store_true",
+        help="Print the pipeline version as JSON and exit",
+    )
+    parser.add_argument("video", nargs="?", help="Path to downloaded MP4 video")
+    parser.add_argument(
+        "outdir", nargs="?", help="Directory for intermediate files and output PDF"
+    )
+    parser.add_argument(
+        "youtube_id", nargs="?", help="YouTube video ID (used for naming)"
+    )
+    parser.add_argument(
+        "--fps",
+        type=float,
+        default=0.5,
+        help="Frames per second to extract (default: 0.5)",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=int,
+        default=8,
+        help="largest hash distance treated as the same slide; "
+        "higher merges more and keeps fewer frames (default: 8)",
+    )
+    parser.add_argument(
+        "--region",
+        type=parse_slide_region,
+        default="auto",
         metavar="auto|none|LEFT,TOP,RIGHT,BOTTOM",
         help="crop used for hashing: auto-detect, none, or normalized coordinates",
     )
     parser.add_argument(
-        "--region-verified", action="store_true",
+        "--region-verified",
+        action="store_true",
         help="mark a manually supplied --region as visually verified",
     )
     parser.add_argument(
-        "--no-context-pdf", action="store_false", dest="include_context_pdf",
+        "--no-context-pdf",
+        action="store_false",
+        dest="include_context_pdf",
         help="omit extra full-frame context after a verified manual crop",
     )
     args = parser.parse_args()
@@ -686,19 +770,26 @@ def main():
     if None in (args.video, args.outdir, args.youtube_id):
         parser.error("video, outdir, and youtube_id are required")
     if args.region_verified and not isinstance(args.region, tuple):
-        parser.error("--region-verified requires manual LEFT,TOP,RIGHT,BOTTOM coordinates")
+        parser.error(
+            "--region-verified requires manual LEFT,TOP,RIGHT,BOTTOM coordinates"
+        )
 
     if _DEPS_ERROR is not None:
-        print(json.dumps(
-            {"error": "Install dependencies: pip install imagehash Pillow"}),
-            file=sys.stderr)
+        print(
+            json.dumps({"error": "Install dependencies: pip install imagehash Pillow"}),
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     os.makedirs(args.outdir, exist_ok=True)
     result = extract_slides_from_video(
-        args.video, args.outdir, args.youtube_id,
-        fps=args.fps, hash_threshold=args.threshold,
-        slide_region=args.region, slide_region_verified=args.region_verified,
+        args.video,
+        args.outdir,
+        args.youtube_id,
+        fps=args.fps,
+        hash_threshold=args.threshold,
+        slide_region=args.region,
+        slide_region_verified=args.region_verified,
         include_context_pdf=args.include_context_pdf,
     )
     print(json.dumps(result, indent=2))
