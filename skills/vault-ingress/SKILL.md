@@ -181,12 +181,14 @@ Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
 
 ## Step 2 — Select Talks to Process
 
-> **Claim-issuance pause (#157):** do not create a new queue claim while the
-> claim-v3 integration is pending. Existing active v1/v2 claims remain valid but
-> workers must emit return-schema v2 for them; return v1 is replay-only. Do not
-> attach a v3 return or migrate claim ownership. After #157, a claim-v3 record
-> with `required_return_schema_version: 3` authorizes return v3. Resume new
-> claims only after that integration lands.
+Fresh queue work uses claim schema v3. Before changing any talk status,
+`queue-state.py claim` snapshots one immutable `adherence_baseline` for the
+entire selected batch, stamps `required_return_schema_version: 3`, and copies
+that exact snapshot into every member claim. The snapshot uses the current
+catalog fingerprint and pattern-scoring schema, includes only current
+`processed`/`processed_partial` talks, and excludes every active-batch filename
+before inspecting its prior score. Its `as_of` equals the claim's canonical
+`claimed_at`; do not edit or recompute it after the claim is written.
 
 - Run `python3 skills/vault-ingress/scripts/queue-state.py
   {vault_root}/tracking-database.json normalize` once. This migrates legacy
@@ -196,12 +198,18 @@ Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
   capability. Only a record with no transcript artifact/acquisition path, slide,
   or video source becomes `skipped_no_sources`. The normalization report includes `source_capabilities`
   (`video`, `slides`, `transcript`) for every changed row so the decision is auditable.
-- After #157 lifts the issuance pause, claim each exact batch through
-  `queue-state.py ... claim --run-id <stable-run>
+- Claim each exact batch through `queue-state.py ... claim --run-id <stable-run>
   --batch-id <stable-batch> --now <timezone-aware-ISO>`. The command selects
   `pending`, `needs-reprocessing`, and retryable download failures, writes an
   atomic lease, increments `reprocess_generation`, and returns the claimed talk
-  list. Never change a record to `reprocessing-inflight` by hand.
+  list. Every fresh claim is schema v3 and requires return schema v3. Never
+  change a record to `reprocessing-inflight` by hand.
+- Repeating the same live/completed run and batch is an idempotent replay: use
+  the exact stored claims and baseline, and do not rewrite the DB. Recover an
+  expired or stranded lease with `queue-state.py ... recover`; recovery keeps
+  the v3 snapshot in claim history. A later claim creates a new generation and
+  takes a fresh pre-mutation snapshot rather than editing or reusing the old
+  generation's baseline.
 - Set `slide_source` per the hierarchy above. Mark `"skipped_no_sources"` only if
   preflight confirms that transcript, slide, and video sources are all unavailable.
 - If `$ARGUMENTS` specifies a talk filename or title, process ONLY that one.
@@ -214,9 +222,21 @@ batch. When all batches have finished, proceed to Step 6.
 
 Each subagent receives the talk's DB entry and current
 `rhetoric-style-summary.md`, runs A → B → B2 → C, and returns a JSON payload.
-Its return version matches the active claim contract: claim schema v1/v2 emits
-`return_schema_version: 2`; after #157, claim schema v3 with
-`required_return_schema_version: 3` emits return v3. Return v1 is replay-only.
+The summary supports qualitative rhetoric analysis, but the worker MUST NOT
+parse Section 15 for numeric adherence. The immutable
+`talk._queue_claim.adherence_baseline` is the sole numeric authority.
+
+The return version matches the active claim contract. A fresh schema-v3 claim
+with `required_return_schema_version: 3` requires return v3. Compatibility work
+under a legacy claim schema v1/v2 may use only return v1/v2; use v2 for newly
+authored compatibility work, while v1 remains saved-artifact replay support.
+Never attach return v3 to a legacy claim.
+
+For a v3 claim whose baseline has fewer than 10 scored talks, return the exact
+empty `adherence_assessment` string and omit `adherence_comparison`. At 10 or
+more, copy the claim baseline exactly into the structured comparison, bind the
+validated talk score, and write 2–4 punctuation-terminated assessment
+sentences. Never regenerate the baseline after analyzing the talk.
 The return copies `run_id`, `batch_id`, and `reprocess_generation` from the
 talk's active `_queue_claim`; persistence rejects a stale, mismatched, or
 unclaimed return.
@@ -259,6 +279,9 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   processed entry in `pattern_scoring_generations` must report
   `status: current`. `legacy_unbaselineable` exists only so saved v1/v2 artifacts remain
   replayable and must be repaired before accepting new analysis.
+  A v3 analysis additionally obeys its claim-bound adherence gate: below 10
+  baseline talks means exact empty prose and no comparison; at 10+ it means one
+  exact structured comparison against the immutable claim snapshot.
 - **Update tracking DB — deterministic merge, NOT hand-mapping.** Collect the
   batch's subagent JSON returns into an array file (`batch-returns.json`) and run
   `python3 skills/vault-ingress/scripts/persist-results.py {vault_root}/tracking-database.json batch-returns.json`.
@@ -292,15 +315,23 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   prove it are retained with
   `pattern_scoring_generation_status: legacy_unbaselineable`, exact machine reasons, and no current fingerprint or
   scoring version. The DB write remains atomic.
+  Only after every member has merged successfully, stdout exposes
+  `current_adherence_baseline`: an all-inclusive post-batch snapshot with
+  `active_batch_excluded: false` and `excluded_filenames: []`. Downstream
+  Section 15/profile consumers use this complete-candidate payload; they never
+  recompute a cohort after an individual member merge or mutate the immutable
+  preclaim snapshot.
   Its normalized `--run-date` (or generated UTC timestamp) is authoritative for
   every processed member's `processed_date` and claim release; return-side dates
   are legacy advisory metadata and cannot override it. A return-side full
   timestamp is treated as an explicit identity assertion and must normalize to
   the same batch stamp or the entire write fails.
   A successful merge closes the matching queue lease as `completed`; it never
-  deletes claim history. The completed v2 claim stores a canonical SHA-256
-  receipt of the exact return payload. Active v1 leases remain completable and
-  are upgraded on closure; unknown future claim versions fail closed. An
+  deletes claim history. Claim v3 closes as v3, claim v2 closes as v2, and an
+  active v1 lease upgrades to v2. Every completed v2/v3 claim stores a canonical
+  SHA-256 receipt of the exact return payload; a receiptless completed v1 claim
+  cannot authorize analysis replacement. Unknown future claim versions fail
+  closed. An
   interrupted batch is recovered with
   `queue-state.py ... recover --now <ISO> --stale-after-seconds <N>`, not by
   replaying whichever old return files happen to exist.
@@ -329,6 +360,9 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   and catalog feedback — creates `analyses/` if missing, prints a JSON summary, and
   exits non-zero on a return with no `filename`. Section list and field handling live
   in `skills/vault-ingress/scripts/write-analysis.py` (top-of-file docstring).
+  Non-empty adherence prose from a legacy v1/v2 return is preserved only as
+  archival text under an unmistakable `legacy-unverified` label. It is never a
+  current numeric comparison, Section 15 aggregate, or profile input.
 - **Aggregate catalog feedback — after the final batch, do not hand-harvest or
   auto-edit the catalog.** Run the read-only intake over every return file or
   return directory:
@@ -357,10 +391,15 @@ ground-truth narrative and must not be applied silently.
 2. **Apply approved changes.** Integrate confirmed `new_patterns` and
    `summary_updates` into `rhetoric-style-summary.md`. Sections 1–14 map to
    the 14 dimensions; Sections 15–16 are the cross-talk improvement & adherence
-   baseline and speaker-confirmed intent — structure defined in
+   narrative and speaker-confirmed intent — structure defined in
    [references/processing-rules.md](references/processing-rules.md) Rhetoric
-   Summary — Improvement & Adherence Sections. **Recount status from the DB every
-   time** — never increment manually.
+   Summary — Improvement & Adherence Sections. Rebuild Section 15 only after the
+   whole batch has persisted, using `persist-results.py` stdout's
+   `current_adherence_baseline` plus talks from the exact current catalog
+   fingerprint/scoring-schema cohort. Never use a processing-date cohort and
+   never rebuild after member 1 of a multi-member batch. Section 15 remains
+   human-readable narrative; workers do not parse it as numeric authority.
+   **Recount status from the DB every time** — never increment manually.
 3. **Report.** Output: talks processed, new patterns, current state, skipped
    talks. Flag structural changes prominently (new presentation mode, new
    workflow pattern).
@@ -465,8 +504,9 @@ requires a remote acquisition path and no local transcript/PPTX/PDF reference;
 - Create `transcripts/`, `slides/`, `analyses/` dirs if missing.
 - Re-read tracking DB before writing (single source of truth).
 - Preserve all summary content — add/refine, never delete.
-- After 10+ scored talks, produce per-talk adherence assessments against the
-  Section 15 baseline — definition in
+- After 10+ talks in the claim's immutable scored cohort, a v3 worker produces
+  a structured comparison and 2–4 sentence assessment against that claim
+  baseline — never against a reparsed Section 15 narrative. Definition in
   [references/processing-rules.md](references/processing-rules.md) Adherence Assessment.
 
 For input-quality edge cases that require non-default handling — wide-angle

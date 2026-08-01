@@ -2,7 +2,10 @@
 
 The Step 3 procedure each parallel subagent runs. The orchestrator passes the
 talk's DB entry plus the current `rhetoric-style-summary.md`; the subagent
-returns the JSON shape in [schemas-db.md](schemas-db.md).
+returns the JSON shape in [schemas-db.md](schemas-db.md). The summary supports
+qualitative rhetoric analysis, but Section 15 is human narrative and MUST NOT be
+parsed for numeric adherence. The active claim's immutable
+`adherence_baseline` is the sole numeric authority.
 
 ## A. Acquire Transcript and Slides
 
@@ -286,8 +289,10 @@ other detection.
 Return exactly the shape in [schemas-db.md](schemas-db.md). `status`,
 `slide_source`, all five catalog-feedback lanes, and the complete pattern score
 object are mandatory. Match `return_schema_version` to the active claim:
-claim-schema v1/v2 emits return v2; after #157, claim-schema v3 with
-`required_return_schema_version: 3` emits return v3. Return v1 is replay-only.
+fresh claim-schema v3 with `required_return_schema_version: 3` emits return v3.
+Compatibility work under claim schema v1/v2 may emit return v1/v2 only; use v2
+for newly authored compatibility work, while v1 remains saved-artifact replay
+support. Never attach return v3 to a legacy claim.
 Both snapshot versions require `rhetoric_notes` and `areas_for_improvement` to
 contain substantive non-whitespace analysis. Empty strings remain valid for
 `adherence_assessment`, `new_patterns`, and
@@ -299,6 +304,23 @@ never emit JSON `null`.
 `status: "processed"` with `slide_source: "video_extracted"`.
 Omit `processed_date`; the persistence writer owns one normalized timestamp for
 the complete queue batch and the analysis writer renders that stored value.
+
+For return v3, read `talk._queue_claim.adherence_baseline` without modifying it:
+
+- When `scored_talk_count < 10`, return
+  `"adherence_assessment": ""` exactly and omit `adherence_comparison`.
+- When `scored_talk_count >= 10`, return `adherence_comparison` with exactly
+  `schema_version`, `baseline`, and `talk_pattern_score`. Copy the complete
+  baseline exactly from the claim and bind the integer talk score to the
+  validated `pattern_observations.pattern_score`. Write 2–4
+  punctuation-terminated assessment sentences that interpret those structured
+  numbers. Every `.`, `?`, or `!` cluster before whitespace/end counts as a
+  boundary—including abbreviation periods—and the last sentence needs terminal
+  punctuation.
+
+Never recalculate after inspecting the talk, substitute the post-batch cohort,
+parse Section 15, or infer a cohort from processing dates. Legacy v1/v2
+adherence prose is archival `legacy-unverified`, not a current numeric input.
 
 When returning `per_slide_visual`, use the exact seven-key row contract and
 cover slides 1 through `slide_count` once in order; legacy aliases and row-local
@@ -328,12 +350,12 @@ nested dictionary union. Put genuinely additive experimental data under
 `structured_data.extensions.<producer_namespace>`; an undeclared top-level object
 is rejected until its replacement policy is documented and registered.
 
-Minimal processed structure:
+Minimal processed structure for a fresh v3 claim below the 10-talk threshold:
 
 ```json
 {
   "filename": "2026-01-01-example.md",
-  "return_schema_version": 2,
+  "return_schema_version": 3,
   "queue_claim": {
     "run_id": "reparse-2026-07",
     "batch_id": "25",
@@ -345,7 +367,7 @@ Minimal processed structure:
   "slides_local_path": "slides/example.pdf",
   "rhetoric_notes": "Dimensions 1-13 analysis...",
   "areas_for_improvement": "Dimension 14 analysis...",
-  "adherence_assessment": "Compared with the current baseline...",
+  "adherence_assessment": "",
   "new_patterns": "",
   "summary_updates": "",
   "structured_data": {
@@ -382,16 +404,46 @@ Minimal processed structure:
 }
 ```
 
+At the 10-talk threshold, replace the empty sentinel with 2–4 sentences and add
+the exact structured comparison:
+
+```json
+{
+  "adherence_assessment": "This talk remains close to the established pattern baseline. Its detected antipattern explains the gap without changing the claim snapshot.",
+  "adherence_comparison": {
+    "schema_version": 1,
+    "baseline": {
+      "schema_version": 1,
+      "as_of": "2026-07-31T18:00:00+00:00",
+      "scope": "global",
+      "active_batch_excluded": true,
+      "excluded_filenames": ["2026-01-01-example.md"],
+      "eligible_statuses": ["processed", "processed_partial"],
+      "pattern_scoring_generation_status": "current",
+      "pattern_scoring_generation_reasons": [],
+      "pattern_catalog_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "pattern_scoring_schema_version": 3,
+      "scored_talk_count": 25,
+      "pattern_score_sum": 170,
+      "average_pattern_score": 6.8
+    },
+    "talk_pattern_score": 1
+  }
+}
+```
+
+The concrete values above are illustrative; the actual `baseline` object MUST
+be copied completely and exactly from the active claim, not reconstructed or
+partially projected.
+
 For a comparison detection, the detection object additionally carries, for
 example, `"evidence_sources_used": ["static_slides", "native_deck"]`.
 The array is duplicate-free, excludes the `source_comparison` marker, and must
 exactly match one qualifying catalog group.
 
-Do not issue a new queue claim while #157 (claim v3 and downstream generation
-integration) remains open. A worker finishing an existing active v1/v2 claim
-emits a v2 return; do not attach v3, alter the claim payload, or invent a new
-claim schema. Once #157 lands, only a claim-v3 payload that explicitly requires
-return v3 authorizes that version.
+Fresh work arrives only under a claim-v3 payload that explicitly requires return
+v3. A worker finishing an existing v1/v2 claim stays within return v1/v2 and
+must not alter the claim payload, invent a new schema, or attach v3.
 
 Before returning, run the deterministic gate:
 

@@ -85,67 +85,101 @@ that logic here.
 abstract. Adherence is consistency with this speaker's own validated style, which
 is why it can only be computed once a baseline exists.
 
-**Gate:** produce an assessment only when 10+ **scored** talks exist — talks with
-status `processed`/`processed_partial` that carry a `pattern_score`. The assessment
-anchors to `pattern_score` vs. the baseline. An unscored talk cannot be assessed.
-Below that, return `""`. The subagent reads the baseline from
-Section 15 of `rhetoric-style-summary.md` (signature patterns, recurring
-antipatterns, running average pattern score) — see Rhetoric Summary — Improvement
-& Adherence Sections below.
+**Authority:** for return schema v3, the only numeric authority is the immutable
+`talk._queue_claim.adherence_baseline` captured before the active batch changed
+state. Workers MUST NOT parse Section 15, infer a date cohort, or recompute an
+average from the live DB. Every member of one batch carries the same snapshot;
+`active_batch_excluded: true` means every selected filename was removed before
+its old score could enter the population.
+
+**Gate:** inspect `adherence_baseline.scored_talk_count` exactly.
+
+- Fewer than 10 talks: `adherence_assessment` MUST be the exact empty string
+  `""`, and `adherence_comparison` MUST be absent.
+- 10 or more talks: `adherence_comparison` is required and contains exactly
+  schema version 1, a value-for-value copy of the claim's complete baseline, and
+  `talk_pattern_score` equal to the validated return score. The prose assessment
+  is also required.
+
+This is a global, generation-bound comparison. The baseline includes only
+`processed`/`processed_partial` talks stamped `current` with the exact catalog
+fingerprint and pattern-scoring schema captured by the claim. An unscored talk
+cannot be assessed, and a stale catalog/scoring generation requires recovery
+and a fresh claim rather than reinterpretation.
 
 **Three checks, in order:**
-1. **Pattern adherence** — did the talk deploy the speaker's signature patterns
-   and avoid their recurring antipatterns? Underuse counts here too: skipping
-   signature patterns or a narrow range (few distinct patterns) is non-adherence
-   even with zero antipatterns. Anchor to this talk's `pattern_score` and distinct
-   pattern count versus the baseline — use the talk's **mode** baseline when Section
-   15 has a stable one (≥3 talks in that mode), otherwise the global baseline. A
-   lightning talk measured against a keynote baseline produces false "underuse"
-   findings; match like to like.
-2. **Intent adherence** — does the talk honor confirmed intents and design rules,
-   or violate one? A violated confirmed intent is the strongest non-adherence
-   signal.
-3. **Departure classification** — classify each divergence as a deliberate
-   mode-driven choice (different presentation mode, co-presenter, venue) or
-   unintentional backsliding (a recurring antipattern resurfacing). Only
-   backsliding counts against adherence; deliberate departures are noted, not
-   penalized.
+1. **Numeric anchor** — interpret the validated `pattern_score` against the
+   claim baseline's `average_pattern_score` and `scored_talk_count`. The
+   renderer generates this anchor mechanically from `adherence_comparison`; the
+   worker's prose need not restate the numbers.
+2. **Current-talk evidence** — interpret that difference using the patterns and
+   antipatterns detected in this return. Name a detected antipattern when one
+   materially explains the score; do not invent population frequency that the
+   baseline schema does not carry.
+3. **Departure classification** — use claim/talk context and confirmed intent,
+   when present, to distinguish a deliberate mode, co-presenter, or venue choice
+   from likely backsliding. Context may explain the number but cannot replace or
+   modify the claim snapshot.
 
-**Required anchors** — the assessment MUST:
-- State this talk's `pattern_score` relative to the running average (e.g., "4 vs.
-  6.8 average").
-- Name any recurring antipattern already tracked in Section 15 that reappeared in
-  this talk.
+**Required interpretation:** the assessment explains the mechanically generated
+anchor using current-talk evidence. Validators deliberately do not parse prose
+for numeric agreement. If the prose happens to repeat a number, that number is
+untrusted narrative; the structured comparison and renderer-generated anchor
+remain authoritative.
 
-**Bound:** 2–4 sentences of prose, not a score — the numeric signal already lives
-in `pattern_observations.pattern_score`; the assessment interprets it against the
-baseline.
+**Bound:** 2–4 punctuation-terminated sentences of prose, not a second score. Enforcement is
+deterministic: every `.`, `?`, or `!` punctuation cluster followed by whitespace
+or end of text is one sentence boundary, including a period in an abbreviation;
+the final sentence must be terminated. Spell out abbreviations that would create
+a false boundary.
+
+Non-empty adherence prose from a return v1/v2 artifact remains replayable only
+as archival `legacy-unverified` text. It is never a verified numeric comparison,
+never enters a current baseline or Section 15 aggregate, and is never profile
+input.
 
 ## Rhetoric Summary — Improvement & Adherence Sections (15–16)
 
 `rhetoric-style-summary.md` Sections 1–14 mirror the 14 analysis dimensions.
-Sections 15–16 are cross-talk aggregates, updated in Step 5 each batch.
+Sections 15–16 are cross-talk narratives. Rebuild Section 15 in Step 5 only
+after the entire batch has persisted successfully; never update it after an
+individual member merge.
 
 ### Section 15 — Improvement & Adherence Baseline
 
-The running baseline that per-talk `adherence_assessment` measures against. Five
-required subsections:
+Section 15 is a human-readable account of the verified current cohort, not the
+numeric authority for a worker. `persist-results.py` stdout supplies the
+post-batch `current_adherence_baseline` only after every merge succeeds. That
+schema-v1 payload is all-inclusive (`active_batch_excluded: false`,
+`excluded_filenames: []`) and provides the canonical scored count, sum, and
+ROUND_HALF_EVEN average for the complete candidate.
+
+For all other Section 15 counts, read only talks with status
+`processed`/`processed_partial`, `pattern_scoring_generation_status: current`,
+empty generation reasons, the exact current catalog fingerprint, and the exact
+current pattern-scoring schema version. Never approximate this cohort by
+`processed_date`. Exclude skipped, legacy-unbaselineable, stale-fingerprint,
+stale-schema, and archival `legacy-unverified` adherence prose. Five required
+subsections:
 
 1. **Recurring improvement themes** — issues appearing in 2+ talks. One entry per
    theme: the issue, the related antipattern ID where one applies (Dimension 14
    lists the candidates), `severity` (`hard_limit|warning|info`), the count of
    talks exhibiting it, and the first/last talk filenames where it appeared.
    Source: aggregate `pattern_observations.antipatterns_detected` and
-   `areas_for_improvement` across processed talks.
-2. **Pattern-score & breadth baseline** — running `average_pattern_score` across
-   scored talks with its trajectory (`improving|stable|declining`), plus pattern
+   `areas_for_improvement` across the exact current-generation cohort defined
+   above.
+2. **Pattern-score & breadth baseline** — copy the global scored count, sum, and
+   `average_pattern_score` from the post-batch payload, with its human-readable
+   trajectory (`improving|stable|declining`), plus pattern
    breadth (average distinct patterns per talk) with its trend
    (`widening|stable|narrowing`). Track both: a score can decline from antipatterns
    rising OR from breadth narrowing (using fewer patterns), and these are different
    coaching messages. Maintain the same figures **per presentation mode** once a
-   mode has ≥3 scored talks (mirrors the profile's `pattern_profile.by_mode`); these
-   per-mode figures are what mode-aware adherence compares against. This is the
-   baseline per-talk adherence cites.
+   mode has ≥3 scored talks (mirrors the profile's `pattern_profile.by_mode`) by
+   filtering that same exact current generation. These mode figures are a
+   human-readable mirror of profile output; they do not replace the immutable
+   global claim baseline for a per-talk v3 comparison.
 3. **Signature patterns & strengths** — the speaker's high-usage patterns (the
    adherence reference set). A talk that drops them is a departure to classify;
    chronic dropping is underuse, not just a one-off. Also surface these as
@@ -160,10 +194,12 @@ required subsections:
    the last 3+ talks. Move an entry here from "recurring themes" once it stops;
    never delete it — the trajectory is itself signal.
 
-Section 15 is the human-readable source for the profile's `pattern_profile` and
+Section 15 is the human-readable mirror of the profile's `pattern_profile` and
 `guardrail_sources.recurring_issues` (see
 [../../vault-profile/references/speaker-profile-schema.md](../../vault-profile/references/speaker-profile-schema.md));
-keep the two consistent when both update.
+keep the two consistent when both update. Profile generation must independently
+apply the same exact current-generation filter; Section 15 prose and legacy
+adherence text are not machine-readable numeric inputs.
 
 ### Section 16 — Speaker-Confirmed Intent
 

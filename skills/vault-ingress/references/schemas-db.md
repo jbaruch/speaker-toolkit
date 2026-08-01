@@ -62,17 +62,29 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "reprocess_reason": "machine-readable reason for needs-reprocessing, or null",
     "reprocess_generation": 1,
     "_queue_claim": {
-      "schema_version": 2,
+      "schema_version": 3,
       "run_id": "reparse-2026-07",
       "batch_id": "25",
       "claimed_at": "2026-07-31T18:00:00+00:00",
       "previous_status": "needs-reprocessing",
       "reprocess_generation": 1,
-      "state": "claimed|completed|stale_recovered|superseded",
-      "released_at": "timezone-aware ISO-8601; present on a closed claim",
-      "release_reason": "return_persisted|lease_expired|new_generation_claimed",
-      "result_status": "terminal status; present when state is completed",
-      "result_payload_sha256": "canonical return JSON receipt; present when state is completed"
+      "required_return_schema_version": 3,
+      "adherence_baseline": {
+        "schema_version": 1,
+        "as_of": "2026-07-31T18:00:00+00:00",
+        "scope": "global",
+        "active_batch_excluded": true,
+        "excluded_filenames": ["2024-04-10-talk-slug.md"],
+        "eligible_statuses": ["processed", "processed_partial"],
+        "pattern_scoring_generation_status": "current",
+        "pattern_scoring_generation_reasons": [],
+        "pattern_catalog_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pattern_scoring_schema_version": 3,
+        "scored_talk_count": 25,
+        "pattern_score_sum": 170,
+        "average_pattern_score": 6.8
+      },
+      "state": "claimed"
     },
     "_queue_claim_history": [],
     "rhetoric_notes": "", "areas_for_improvement": "",
@@ -137,6 +149,12 @@ mutually exclusive shape and omits both `pattern_scoring_schema_version` and
 }
 ```
 
+A successfully persisted, above-threshold return v3 also stores its exact
+three-field `adherence_comparison` beside `adherence_assessment`; its shape is
+the return schema below. Below threshold the field is absent. A v2 snapshot
+replay clears a stale comparison so legacy prose cannot retain authenticated
+v3 numeric context.
+
 `source_identity` and `source_relation` are optional. Their owned shape,
 offline comparison rules, duplicate semantics, and compatibility policy are in
 [source-identity-preflight.md](source-identity-preflight.md). Do not fetch live
@@ -153,6 +171,29 @@ not prove an artifact exists. Slide capability requires a PPTX/PDF reference.
 Legacy no-video/no-transcript statuses normalize to `skipped_no_sources` only
 when the shared capability list is empty.
 
+Every fresh queue claim is schema v3 and carries exactly the
+`required_return_schema_version` and `adherence_baseline` fields shown above.
+The queue owner builds one baseline before mutating any selected talk, copies it
+unchanged to every batch member, and requires `adherence_baseline.as_of` to equal
+the canonical `claimed_at`. `excluded_filenames` is the sorted exact batch;
+exclusion happens before generation identity or score inspection so a talk's
+prior result cannot compare with itself. Only eligible talks stamped `current`
+with empty reasons and the baseline's exact catalog fingerprint/scoring schema
+contribute. Promoted and nested pattern scores must agree. Count and sum are
+integers; the average uses decimal `ROUND_HALF_EVEN` to two places and is null
+only for a zero population.
+
+A closed claim adds `released_at` and `release_reason`; a completed claim also
+adds terminal `result_status` and the canonical `result_payload_sha256` receipt.
+Those suffix fields are forbidden while `state` is `claimed`.
+
+Claim records are immutable generation evidence. Idempotent replay returns the
+stored claim and leaves DB bytes unchanged. Recovery closes but preserves the
+same v3 snapshot; a later claim increments `reprocess_generation` and captures a
+fresh snapshot. Historical retry epochs may span `_queue_claim_history` and
+current `_queue_claim` locations, but their combined members must still match
+the baseline's exact excluded filenames and share one snapshot.
+
 `improvement_goals` is the coaching-loop artifact — speaker-chosen focus areas that
 a later ingress run verifies. vault-clarification owns the record shape; vault-ingress
 writes only the verification fields. Record schema, lifecycle, and owner/reader
@@ -168,7 +209,7 @@ Each subagent returns this JSON after processing one talk:
 ```json
 {
   "filename": "the .md filename",
-  "return_schema_version": 2,
+  "return_schema_version": 3,
   "queue_claim": {
     "run_id": "copied from talk._queue_claim.run_id",
     "batch_id": "copied from talk._queue_claim.batch_id",
@@ -258,7 +299,26 @@ Each subagent returns this JSON after processing one talk:
     "opening_lines": ["first 2-3 sentences of the talk, verbatim"],
     "closing_lines": ["last 2-3 sentences of the talk, verbatim"]
   },
-  "adherence_assessment": "2-4 sentences vs. the Section 15 baseline — cite pattern_score vs running average + any recurring antipattern that reappeared; '' if <10 talks scored. See processing-rules.md Adherence Assessment",
+  "adherence_assessment": "This talk remains close to the established pattern baseline. Its detected antipattern explains the modest gap without changing the claim snapshot.",
+  "adherence_comparison": {
+    "schema_version": 1,
+    "baseline": {
+      "schema_version": 1,
+      "as_of": "2026-07-31T18:00:00+00:00",
+      "scope": "global",
+      "active_batch_excluded": true,
+      "excluded_filenames": ["the .md filename"],
+      "eligible_statuses": ["processed", "processed_partial"],
+      "pattern_scoring_generation_status": "current",
+      "pattern_scoring_generation_reasons": [],
+      "pattern_catalog_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "pattern_scoring_schema_version": 3,
+      "scored_talk_count": 25,
+      "pattern_score_sum": 170,
+      "average_pattern_score": 6.8
+    },
+    "talk_pattern_score": 6
+  },
   "new_patterns": "100-300 words on NEW patterns not in summary, or ''",
   "summary_updates": "50-200 words: additions for rhetoric-style-summary.md by section #, or ''",
   "pattern_observations": {
@@ -360,16 +420,15 @@ classification rule including how a dominant class is selected, the provenance
 evidence used, and how unverified origins are counted as `unknown`. Both fields
 are authored-slide evidence and cannot be supplied from untrusted video context.
 
-The worker matches the active claim contract. During the #157 issuance pause,
-the only processable work is an existing claim-schema v1/v2 lease, and newly
-emitted work for that lease declares `return_schema_version: 2`. Return v1 is
-replay-only. After #157, claim schema v3 will carry
-`required_return_schema_version: 3`; only that explicit contract authorizes a
-new v3 return. Do not issue new claims or attach v3 to a legacy claim before the
-integration lands.
+The worker matches the active claim contract. Every fresh claim is schema v3
+with `required_return_schema_version: 3`, and only that exact claim authorizes a
+v3 return. Claim schemas v1/v2 authorize return schemas v1/v2 only; use v2 for
+newly authored compatibility work, while v1 remains saved-artifact replay
+support. Never attach a v3 return to a legacy claim or mutate the claim to make
+the version appear compatible.
 
-For newly emitted v2 work during the pause, `validate-returns.py` must report
-the processed talk's scoring-generation status as `current`; a valid but
+For newly emitted work, `validate-returns.py` must report the processed talk's
+scoring-generation status as `current`; a valid but
 `legacy_unbaselineable` result is replay-only and must be repaired.
 
 Versions 2 and 3 share the complete-snapshot merge contract: supplied declared
@@ -406,6 +465,17 @@ records that the current analysis found none. Required prose fields use an empty
 string only for `adherence_assessment`, `new_patterns`, and `summary_updates`.
 For `adherence_assessment`, the no-assessment sentinel is exactly `""`; whitespace-only
 text is invalid.
+Return v3 binds adherence to the active claim. When the claim baseline's
+`scored_talk_count` is below 10, the exact empty sentinel is required and
+`adherence_comparison` is forbidden. At 10+, `adherence_comparison` is required
+and has exactly three fields: integer `schema_version: 1`, the complete
+`baseline` exactly equal to `talk._queue_claim.adherence_baseline`, and integer
+`talk_pattern_score` exactly equal to the validated pattern score. Its
+`adherence_assessment` contains 2–4 punctuation-terminated sentences. The
+deterministic sentence convention counts every `.`, `?`, or `!` cluster before
+whitespace/end—including abbreviation periods—and requires final punctuation.
+Return v1/v2 cannot carry `adherence_comparison`; any non-empty legacy adherence
+prose is archival `legacy-unverified`, never verified numeric evidence.
 Versions 2 and 3 require `rhetoric_notes` and `areas_for_improvement` to contain
 substantive non-whitespace analysis. An unknown `transcript_source` is omitted; a present value
 must be one of the declared enums and must never be JSON `null`. Missing/version-1
@@ -428,18 +498,28 @@ batch in `claimed` state and closes it as `completed`; `write-analysis.py`
 requires that same whole batch in `completed` state. A genuinely one-member
 batch is complete and remains supported. A partially closed or stranded batch
 must be recovered into a fresh queue generation rather than finished piecemeal.
+For claim v3, every live batch member must also share one canonical
+`claimed_at`, one identical baseline, and an `excluded_filenames` array equal to
+the exact sorted batch. Persistence validates all of those conditions before
+the first candidate merge; one mismatch leaves both DB and analysis artifacts
+unchanged.
 
-Queue-claim schema v2 adds `result_payload_sha256` to completed claims. The
+Queue-claim schema v2 adds `result_payload_sha256` to completed claims; schema
+v3 adds the required-return version and immutable adherence snapshot. The
 receipt hashes the exact return payload after stable JSON key/whitespace
-canonicalization. `persist-results.py` accepts an active v1 or v2 lease, upgrades
-it to v2 when closing it, and stores the receipt. New claim issuance is paused
-until #157 introduces the claim-v3 required-return contract. The analysis
-writer recomputes the receipt and rejects a substituted payload. `queue-state.py`
-dual-reads v1/v2 without mutating `inspect` or idempotent replay; a v1 claim is
-upgraded only as part of an actual queue transition that is written. An already
-completed v1 claim has no reconstructable receipt and therefore cannot authorize
-an analysis replacement until a fresh generation is processed. Unknown future
-claim versions fail closed.
+canonicalization. `persist-results.py` closes v1 as v2, v2 as v2, and v3 as v3,
+storing the receipt for every completed v2/v3 claim. The analysis writer
+recomputes it and rejects a substituted payload. `queue-state.py` reads v1/v2/v3
+without mutating `inspect` or idempotent replay. An already completed v1 claim
+has no reconstructable receipt and therefore cannot authorize an analysis
+replacement until a fresh generation is processed. Unknown future claim
+versions fail closed.
+
+Recovery never rewrites a claim snapshot. It marks the generation closed and
+restores its prior claimable status; reclaiming creates a new generation with a
+fresh pre-mutation baseline. A historical v3 batch may therefore be split across
+current and history storage locations, but the combined `(run_id, batch_id,
+claimed_at)` epoch must still have exact membership and one baseline.
 
 Terminal skip reasons are state-bound too. `skipped_no_sources` requires an
 empty capability list. `skipped_download_failed` requires a remote video/slide
@@ -453,14 +533,22 @@ must carry `pattern_scoring_generation_status: current`, an empty reasons array,
 scoring schema 3, and the exact catalog fingerprint. A replayable v1/v2 result
 that cannot prove the current evidence contract carries
 `legacy_unbaselineable` plus exact sorted machine reasons and must not retain a
-current scoring version or fingerprint. Its Markdown visibly labels the
-baseline exclusion. Skipped results are `not_applicable` in validator and
+current scoring version or fingerprint. Its Markdown visibly labels adherence
+prose `legacy-unverified` and states that it is excluded from current numeric
+baselines, Section 15 aggregates, and speaker profiles. A v2 snapshot replay
+also clears any stale authenticated `adherence_comparison` from a prior v3
+generation. Skipped results are `not_applicable` in validator and
 persistence reports and do not render or restamp prior analysis-generation
 metadata.
 
-The current vault-profile/load-vault baseline readers do not yet consume these
-generation fields; #157 owns that integration. Do not issue new claims or treat
-those readers as generation-aware before it lands.
+After all members merge successfully, `persist-results.py` emits
+`current_adherence_baseline` on stdout. It uses the same schema version 1 but is
+explicitly all-inclusive: `active_batch_excluded: false` and
+`excluded_filenames: []`. Its `as_of` is the authoritative completion stamp, and
+its count/sum/ROUND_HALF_EVEN average describe the complete post-batch candidate.
+Section 15 and profile generation consume exact current-generation talk data and
+this post-batch aggregate; they must not recompute after member 1, use a
+processing-date cohort, or mutate a preclaim baseline.
 
 The completed return receipt authorizes rendering, but snapshot analysis-owned
 content comes from the validated persisted effective talk, not the partial raw

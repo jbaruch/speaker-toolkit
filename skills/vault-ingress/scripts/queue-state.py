@@ -35,6 +35,12 @@ Claim schema (owned by this script; stored in ``talk._queue_claim``):
       "adherence_baseline": {"schema_version": 1, "...": "..."}
     }
 
+Fresh claims always use schema v3 and require return v3. The queue snapshots one
+baseline before mutating the selected talks, excludes the exact active batch,
+and copies the same immutable payload to every member. Schema-v1/v2 claims are
+accepted only for compatibility and authorize return v1/v2, never v3; they are
+not newly issued.
+
 Stale recovery adds ``released_at`` and ``release_reason`` and changes ``state``
 to ``stale_recovered``. A later generation moves the prior claim to
 ``talk._queue_claim_history`` and marks an unclosed claim ``superseded``. Each
