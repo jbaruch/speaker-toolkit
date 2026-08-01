@@ -28,16 +28,26 @@ from __future__ import annotations
 
 import argparse
 import copy
-from datetime import datetime, timezone
+import hashlib
 import json
-import os
 from pathlib import Path
 import sys
-import tempfile
 from typing import Any
+
+from tracking_database_io import (
+    BackupRequest,
+    TrackingDatabaseIOError,
+    TrackingDatabaseSnapshot,
+    commit_tracking_database,
+    decode_json_object,
+    json_values_equal,
+    render_json_object,
+    snapshot_tracking_database,
+)
 
 
 PLAN_SCHEMA_VERSION = 1
+REPORT_SCHEMA_VERSION = 2
 MISSING_MARKER = {"$missing": True}
 ALLOWED_FIELDS = frozenset({
     "video_url",
@@ -68,11 +78,36 @@ class SourceRepairError(ValueError):
 
 def load_object(path: Path, label: str) -> tuple[dict[str, Any], str]:
     try:
-        raw = path.read_text(encoding="utf-8")
+        raw_bytes = path.read_bytes()
     except OSError as exc:
         raise SourceRepairError(f"cannot read {label} {path}: {exc}") from exc
+
+    def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise SourceRepairError(
+                    f"{label} {path} contains duplicate object key {key!r}"
+                )
+            result[key] = value
+        return result
+
+    def reject_non_finite(value: str) -> None:
+        raise SourceRepairError(
+            f"{label} {path} contains non-standard JSON number {value}"
+        )
+
     try:
-        value = json.loads(raw)
+        raw = raw_bytes.decode("utf-8")
+        value = json.loads(
+            raw,
+            object_pairs_hook=reject_duplicate_keys,
+            parse_constant=reject_non_finite,
+        )
+    except SourceRepairError:
+        raise
+    except UnicodeDecodeError as exc:
+        raise SourceRepairError(f"{label} {path} is not valid UTF-8: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise SourceRepairError(
             f"{label} {path} is invalid JSON at line {exc.lineno}, column {exc.colno}"
@@ -82,6 +117,17 @@ def load_object(path: Path, label: str) -> tuple[dict[str, Any], str]:
     return value, raw
 
 
+def load_database(
+    path: Path,
+) -> tuple[dict[str, Any], TrackingDatabaseSnapshot]:
+    """Load strict JSON and retain the exact generation used for validation."""
+    try:
+        snapshot = snapshot_tracking_database(path)
+        return decode_json_object(snapshot), snapshot
+    except TrackingDatabaseIOError as exc:
+        raise SourceRepairError(str(exc)) from exc
+
+
 def require_nonempty(value: Any, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise SourceRepairError(f"{label} must be a nonempty string")
@@ -89,7 +135,7 @@ def require_nonempty(value: Any, label: str) -> str:
 
 
 def validate_plan(plan: dict[str, Any]) -> list[dict[str, Any]]:
-    if plan.get("schema_version") != PLAN_SCHEMA_VERSION:
+    if not json_values_equal(plan.get("schema_version"), PLAN_SCHEMA_VERSION):
         raise SourceRepairError(
             f"plan schema_version must be {PLAN_SCHEMA_VERSION}"
         )
@@ -152,9 +198,9 @@ def validate_plan(plan: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _matches_expected(talk: dict[str, Any], field: str, expected: Any) -> bool:
-    if expected == MISSING_MARKER:
+    if json_values_equal(expected, MISSING_MARKER):
         return field not in talk
-    return field in talk and talk[field] == expected
+    return field in talk and json_values_equal(talk[field], expected)
 
 
 def build_repaired_database(
@@ -209,74 +255,93 @@ def build_repaired_database(
                 talk.pop(field)
                 after[field] = MISSING_MARKER
         for field, value in repair.get("set", {}).items():
+            if field in talk and json_values_equal(talk[field], value):
+                continue
             before[field] = talk[field] if field in talk else MISSING_MARKER
             talk[field] = copy.deepcopy(value)
             after[field] = value
-        changes.append({
-            "filename": filename,
-            "reason": repair["reason"],
-            "before": before,
-            "after": after,
-        })
+        if before:
+            changes.append({
+                "filename": filename,
+                "reason": repair["reason"],
+                "before": before,
+                "after": after,
+            })
     return result, changes
 
 
-def atomic_write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temp_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent,
-    )
-    installed = False
+def atomic_write(
+    path: Path,
+    text: str | bytes,
+    *,
+    expected_snapshot: TrackingDatabaseSnapshot | None = None,
+    backup: BackupRequest | None = None,
+):
+    """Commit text against the exact generation captured before validation."""
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp_name, path)
-        installed = True
-    finally:
-        if not installed:
-            try:
-                os.unlink(temp_name)
-            except FileNotFoundError:
-                pass
-
-
-def backup_original(database_path: Path, raw: str, backup_dir: Path) -> Path:
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    candidate = backup_dir / f"{database_path.stem}.source-repair-{stamp}.json"
-    counter = 1
-    while candidate.exists():
-        candidate = backup_dir / (
-            f"{database_path.stem}.source-repair-{stamp}-{counter}.json"
+        snapshot = expected_snapshot or snapshot_tracking_database(path)
+        return commit_tracking_database(
+            snapshot,
+            text.encode("utf-8") if isinstance(text, str) else text,
+            backup=backup,
         )
-        counter += 1
-    candidate.write_text(raw, encoding="utf-8")
-    return candidate
+    except TrackingDatabaseIOError as exc:
+        raise SourceRepairError(str(exc)) from exc
 
 
 def execute(
     database_path: Path, plan_path: Path, *, apply: bool,
     backup_dir: Path | None = None,
 ) -> dict[str, Any]:
-    database, raw = load_object(database_path, "database")
+    database, database_snapshot = load_database(database_path)
     plan, _ = load_object(plan_path, "repair plan")
     repairs = validate_plan(plan)
     repaired, changes = build_repaired_database(database, repairs)
-    backup_path = None
+    if changes:
+        try:
+            rendered = render_json_object(repaired)
+        except TrackingDatabaseIOError as exc:
+            raise SourceRepairError(str(exc)) from exc
+    else:
+        rendered = database_snapshot.raw
+    output_sha256 = hashlib.sha256(rendered).hexdigest()
+    backup_path: str | None = None
+    database_written = False
+    durability_state = "dry_run"
+    warnings: list[str] = []
     if apply:
         target_backup_dir = backup_dir or database_path.parent / ".backups"
-        backup_path = backup_original(database_path, raw, target_backup_dir)
-        rendered = json.dumps(repaired, indent=2, ensure_ascii=False) + "\n"
-        atomic_write(database_path, rendered)
+        backup_request = BackupRequest(
+            path=(
+                target_backup_dir
+                / f"{database_path.name}.source-repair-"
+                f"{database_snapshot.sha256}.bak"
+            ),
+            input_sha256=database_snapshot.sha256,
+        )
+        result = atomic_write(
+            database_path,
+            rendered,
+            expected_snapshot=database_snapshot,
+            backup=backup_request,
+        )
+        backup_path = result.backup
+        output_sha256 = result.output_sha256
+        database_written = result.installed
+        durability_state = result.durability_state
+        warnings = list(result.warnings)
     return {
-        "schema_version": PLAN_SCHEMA_VERSION,
+        "schema_version": REPORT_SCHEMA_VERSION,
         "mode": "apply" if apply else "dry-run",
         "database": str(database_path.resolve(strict=False)),
         "plan": str(plan_path.resolve(strict=False)),
         "repair_count": len(changes),
-        "backup": str(backup_path.resolve()) if backup_path else None,
+        "backup": backup_path,
+        "input_sha256": database_snapshot.sha256,
+        "output_sha256": output_sha256,
+        "database_written": database_written,
+        "durability_state": durability_state,
+        "warnings": warnings,
         "changes": changes,
     }
 
@@ -293,7 +358,16 @@ def main(argv: list[str] | None = None) -> int:
             args.database, args.plan, apply=args.apply, backup_dir=args.backup_dir,
         )
     except (SourceRepairError, OSError) as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, sort_keys=True))
+        print(
+            json.dumps(
+                {
+                    "schema_version": REPORT_SCHEMA_VERSION,
+                    "ok": False,
+                    "error": str(exc),
+                },
+                sort_keys=True,
+            )
+        )
         print(f"source repair failed: {exc}", file=sys.stderr)
         return 2
     print(json.dumps({"ok": True, **report}, indent=2, sort_keys=True))

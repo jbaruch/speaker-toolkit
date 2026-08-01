@@ -40,6 +40,9 @@ from typing import Any
 _PROFILE_SCRIPTS = pathlib.Path(__file__).resolve().parent
 if str(_PROFILE_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_PROFILE_SCRIPTS))
+_INGRESS_SCRIPTS = pathlib.Path(__file__).resolve().parents[2] / "vault-ingress" / "scripts"
+if str(_INGRESS_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_INGRESS_SCRIPTS))
 
 from profile_pattern_provenance import (  # noqa: E402
     active_pattern_generation_identity as _active_pattern_generation_identity,
@@ -49,6 +52,11 @@ from pattern_cohort_snapshot import (  # noqa: E402
     PatternCohortSnapshot,
     build_current_pattern_snapshot,
     configured_evidence_freshness_assessor,
+)
+from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+    TrackingDatabaseIOError,
+    decode_json_object,
+    snapshot_tracking_database,
 )
 
 
@@ -157,9 +165,11 @@ def _load_live_pattern_snapshot(
 ) -> PatternCohortSnapshot:
     """Recompute the source-exact payload used by ``load-vault.py``."""
     database_path = vault_root / "tracking-database.json"
-    database = json.loads(database_path.read_text(encoding="utf-8"))
-    if not isinstance(database, Mapping):
-        raise ValueError("tracking-database.json root must be an object")
+    try:
+        database_snapshot = snapshot_tracking_database(database_path)
+        database = decode_json_object(database_snapshot)
+    except TrackingDatabaseIOError as exc:
+        raise ValueError(f"tracking-database.json is invalid: {exc}") from exc
     talks = database.get("talks")
     if not isinstance(talks, list) or any(
         not isinstance(talk, Mapping) for talk in talks

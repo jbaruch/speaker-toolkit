@@ -63,18 +63,29 @@ adds resources manually, check for duplicates before appending.
 
 ## 7. Tracking Database
 
-After resources are approved, update `tracking-database.json` with a
-`resources[]` entry:
+After resources are approved, prepare this complete `resources[]` record:
 
 ```json
 {
   "talk_slug": "...",
-  "resources_json_path": "...",
   "item_count": 12,
-  "categories": {"urls": 5, "repos": 1, "tools": 3, "books": 2, "rfcs": 1},
-  "created_at": "..."
+  "category_breakdown": {
+    "urls": 5,
+    "repos": 1,
+    "tools": 3,
+    "books": 2,
+    "rfcs": 1
+  }
 }
 ```
+
+`item_count` must equal the sum of the non-negative integer category counts.
+Persist the record only with the ingress owner's `upsert_resource` mutation,
+expecting the exact existing record for the slug or `{"$missing": true}`. In
+the same typed plan, use `update_talk_publishing` for any talk publishing flags,
+with exact field expectations. Dry-run the whole plan, review its changes, apply
+against the reported input SHA, and re-read through the owner contract. Never
+open or rewrite `tracking-database.json` directly.
 
 ## 8. Shownotes Publishing Destination
 

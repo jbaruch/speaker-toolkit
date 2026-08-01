@@ -1,7 +1,6 @@
 """Tests for generate-qr.py — QR generation (no network calls)."""
 
 import os
-import json
 
 from PIL import Image
 from pptx import Presentation
@@ -130,6 +129,28 @@ def test_tracking_db_crud_update(generate_qr):
     assert db["qr_codes"][0]["qr_png_rel_path"] == "new.png"
     # created_at preserved from original
     assert db["qr_codes"][0]["created_at"] == "2024-01-01"
+
+
+def test_tracking_db_semantic_noop_preserves_raw_bytes_and_inode(
+    generate_qr,
+    tmp_path,
+):
+    path = tmp_path / "tracking-database.json"
+    raw = b'{"qr_codes":[],"config":{"enabled":true},"talks":[]}\n'
+    path.write_bytes(raw)
+    snapshot = generate_qr.snapshot_tracking_database(path)
+    equivalent = {
+        "talks": [],
+        "config": {"enabled": True},
+        "qr_codes": [],
+    }
+
+    result = generate_qr.write_tracking_db(snapshot, equivalent)
+
+    assert result.changed is False
+    assert result.installed is False
+    assert path.read_bytes() == raw
+    assert path.stat().st_ino == snapshot.generation.inode
 
 
 def test_resolve_slide_bg_rgb_none_for_plain_deck(generate_qr, tmp_path):

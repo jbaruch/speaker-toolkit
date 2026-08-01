@@ -1123,10 +1123,8 @@ def test_identity_date_and_duration_types_are_validated(
 
     report = preflight_vault.run_preflight(vault_fixture["root"])
 
-    assert {
-        "source_identity_date_invalid",
-        "source_identity_duration_invalid",
-    } <= finding_codes(report, "blocking")
+    assert finding_codes(report, "blocking") == {"database_json_invalid"}
+    assert "non-standard JSON number Infinity" in report["findings"][0]["message"]
     # The report remains strict JSON even when Python's input decoder accepted
     # a non-standard Infinity token from a legacy artifact.
     json.dumps(report, allow_nan=False)

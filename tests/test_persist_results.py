@@ -31,7 +31,10 @@ def test_atomic_json_write_cleans_stage_and_propagates_interrupt(
         persist_results.atomic_write_json(target, {"new": True})
 
     assert json.loads(target.read_text(encoding="utf-8")) == {"old": True}
-    assert [path.name for path in tmp_path.iterdir()] == [target.name]
+    assert {path.name for path in tmp_path.iterdir()} == {
+        target.name,
+        ".tracking-database.json.lock",
+    }
 
 
 def _return(**overrides):

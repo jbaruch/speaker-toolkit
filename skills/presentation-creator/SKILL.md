@@ -38,7 +38,12 @@ joint effort — the skill brings rhetoric knowledge, the author brings topic ex
 ## Before You Start: Load the Vault
 
 The vault lives at `~/.claude/rhetoric-knowledge-vault/` (may be a symlink to a custom
-location). Read `tracking-database.json` from there to get `config.vault_root`.
+location). Load `tracking-database.json` with the strict owner reader at
+`{speaker_toolkit_root}/skills/vault-ingress/scripts/read-tracking-database.py` to
+get `config.vault_root`; never parse it directly. The reader is stdlib-only, so the
+host interpreter may bootstrap this first read. Afterward, use only the exact
+non-empty `config.python_path` for every toolkit command. Missing or unusable
+configuration stops this flow and invokes `Skill(skill: "vault-ingress")` at Step 1.
 
 Load from vault root: `rhetoric-style-summary.md` (constitution — all patterns),
 `slide-design-spec.md` (visual rules), `speaker-profile.json` (structured data).

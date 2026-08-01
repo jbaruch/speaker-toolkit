@@ -1,6 +1,8 @@
 """Tests for guarded, auditable vault source repairs."""
 
+import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
@@ -58,9 +60,15 @@ def test_dry_run_reports_changes_without_writing(
         database_path, plan_path, apply=False,
     )
 
+    assert report["schema_version"] == 2
     assert report["mode"] == "dry-run"
     assert report["repair_count"] == 1
     assert report["backup"] is None
+    assert report["input_sha256"] == hashlib.sha256(before).hexdigest()
+    assert report["output_sha256"] != report["input_sha256"]
+    assert report["database_written"] is False
+    assert report["durability_state"] == "dry_run"
+    assert report["warnings"] == []
     assert database_path.read_bytes() == before
 
 
@@ -87,25 +95,76 @@ def test_apply_writes_atomically_and_creates_exact_backup(
     assert report["mode"] == "apply"
     assert report["repair_count"] == 1
     assert report["backup"] is not None
+    assert report["schema_version"] == 2
+    assert report["input_sha256"] == hashlib.sha256(before).hexdigest()
+    assert report["output_sha256"] == hashlib.sha256(
+        database_path.read_bytes()
+    ).hexdigest()
+    assert report["database_written"] is True
+    assert report["durability_state"] == "durable"
+    assert report["input_sha256"] in Path(report["backup"]).name
     assert next(backup_dir.iterdir()).read_bytes() == before
 
 
+def test_idempotent_apply_preserves_exact_bytes_inode_and_skips_backup(
+    apply_source_repairs,
+    tmp_path,
+):
+    database_path = tmp_path / "tracking-database.json"
+    plan_path = tmp_path / "plan.json"
+    backup_dir = tmp_path / "backups"
+    raw = json.dumps(base_database(), separators=(",", ":")).encode("utf-8") + b"\n"
+    database_path.write_bytes(raw)
+    inode = database_path.stat().st_ino
+    write_json(
+        plan_path,
+        {
+            "schema_version": 1,
+            "repairs": [{
+                "filename": "talk.md",
+                "reason": "idempotent replay",
+                "expect": {"transcript_source": "youtube_auto"},
+                "set": {"transcript_source": "youtube_auto"},
+            }],
+        },
+    )
+
+    report = apply_source_repairs.execute(
+        database_path,
+        plan_path,
+        apply=True,
+        backup_dir=backup_dir,
+    )
+
+    assert report["repair_count"] == 0
+    assert report["database_written"] is False
+    assert report["durability_state"] == "unchanged"
+    assert report["input_sha256"] == report["output_sha256"]
+    assert report["backup"] is None
+    assert database_path.read_bytes() == raw
+    assert database_path.stat().st_ino == inode
+    assert not backup_dir.exists()
+
+
 def test_atomic_write_cleans_stage_and_propagates_interrupt(
-    apply_source_repairs, tmp_path, monkeypatch,
+    apply_source_repairs, tracking_database_io, tmp_path, monkeypatch,
 ):
     target = tmp_path / "tracking-database.json"
-    target.write_text("old\n", encoding="utf-8")
+    target.write_text('{"value": "old"}\n', encoding="utf-8")
 
     def interrupt(_source, _target):
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(apply_source_repairs.os, "replace", interrupt)
+    monkeypatch.setattr(tracking_database_io.os, "replace", interrupt)
 
     with pytest.raises(KeyboardInterrupt):
-        apply_source_repairs.atomic_write(target, "new\n")
+        apply_source_repairs.atomic_write(target, '{"value": "new"}\n')
 
-    assert target.read_text(encoding="utf-8") == "old\n"
-    assert [path.name for path in tmp_path.iterdir()] == [target.name]
+    assert target.read_text(encoding="utf-8") == '{"value": "old"}\n'
+    assert {path.name for path in tmp_path.iterdir()} == {
+        target.name,
+        ".tracking-database.json.lock",
+    }
 
 
 def test_expectation_mismatch_aborts_whole_plan_without_backup(
@@ -181,3 +240,66 @@ def test_plan_rejects_out_of_scope_mutations(apply_source_repairs, mutation):
 
     with pytest.raises(apply_source_repairs.SourceRepairError):
         apply_source_repairs.validate_plan(plan)
+
+
+def test_source_repair_schema_and_expectations_are_type_sensitive(
+    apply_source_repairs,
+) -> None:
+    with pytest.raises(
+        apply_source_repairs.SourceRepairError,
+        match="schema_version must be 1",
+    ):
+        apply_source_repairs.validate_plan(
+            {"schema_version": True, "repairs": [repair_plan()["repairs"][0]]}
+        )
+
+    database = base_database()
+    database["talks"][0]["source_identity"] = {"verified": True}
+    repair = {
+        "filename": "talk.md",
+        "reason": "type-sensitive expectation",
+        "expect": {"source_identity": {"verified": 1}},
+        "set": {"source_identity": {"verified": False}},
+    }
+    with pytest.raises(
+        apply_source_repairs.SourceRepairError,
+        match="preconditions failed",
+    ):
+        apply_source_repairs.build_repaired_database(database, [repair])
+
+
+def test_source_repair_type_change_is_not_a_noop(apply_source_repairs) -> None:
+    database = base_database()
+    database["talks"][0]["source_identity"] = {"verified": True}
+    repaired, changes = apply_source_repairs.build_repaired_database(
+        database,
+        [
+            {
+                "filename": "talk.md",
+                "reason": "replace boolean with numeric evidence",
+                "expect": {"source_identity": {"verified": True}},
+                "set": {"source_identity": {"verified": 1}},
+            }
+        ],
+    )
+
+    assert changes
+    assert type(repaired["talks"][0]["source_identity"]["verified"]) is int
+
+
+def test_malformed_missing_marker_is_an_exact_object_not_absence(
+    apply_source_repairs,
+) -> None:
+    database = base_database()
+    repair = {
+        "filename": "talk.md",
+        "reason": "malformed marker must not bypass absence check",
+        "expect": {"source_identity": {"$missing": 1}},
+        "set": {"source_identity": {}},
+    }
+
+    with pytest.raises(
+        apply_source_repairs.SourceRepairError,
+        match="preconditions failed",
+    ):
+        apply_source_repairs.build_repaired_database(database, [repair])

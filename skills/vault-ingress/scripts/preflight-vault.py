@@ -49,6 +49,11 @@ from source_identity_matching import (
     known_event_aliases,
     titles_agree,
 )
+from tracking_database_io import (
+    TrackingDatabaseIOError,
+    decode_json_object,
+    snapshot_tracking_database,
+)
 
 
 REPORT_SCHEMA_VERSION = 1
@@ -1393,23 +1398,23 @@ def run_preflight(value: str | Path) -> dict[str, Any]:
     """Load and validate a vault, returning a report without mutating it."""
     vault_root, database_path = resolve_input(value)
     try:
-        raw = database_path.read_text(encoding="utf-8")
-    except UnicodeError as exc:
+        snapshot = snapshot_tracking_database(database_path)
+        database = decode_json_object(snapshot)
+    except TrackingDatabaseIOError as exc:
+        message = str(exc)
+        if "not valid UTF-8" in message:
+            code = "database_encoding_invalid"
+        elif "not valid JSON" in message or "duplicate object key" in message or (
+            "non-standard JSON number" in message
+        ) or "root must be a JSON object" in message:
+            code = "database_json_invalid"
+        else:
+            code = "database_unreadable"
         return error_report(
-            vault_root, database_path, "database_encoding_invalid",
-            f"tracking database is not valid UTF-8: {exc}",
-        )
-    except OSError as exc:
-        return error_report(
-            vault_root, database_path, "database_unreadable",
-            f"cannot read tracking database: {exc}",
-        )
-    try:
-        database = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        return error_report(
-            vault_root, database_path, "database_json_invalid",
-            f"tracking database is not valid JSON at line {exc.lineno}, column {exc.colno}",
+            vault_root,
+            database_path,
+            code,
+            message,
         )
     return VaultPreflight(database, vault_root, database_path).run()
 

@@ -66,7 +66,6 @@ import sys
 import tempfile
 import unicodedata
 
-from ingress_contract import IngressContractError, reject_tracking_database_symlink
 from pattern_evidence import (
     LEGACY_PATTERN_EVIDENCE_SCHEMA_VERSION,
     PATTERN_EVIDENCE_SCHEMA_VERSION,
@@ -88,6 +87,11 @@ from return_validation import (
     validate_batch,
     validate_persisted_v2_analysis_state,
     validate_persisted_catalog_generation,
+)
+from tracking_database_io import (
+    TrackingDatabaseIOError,
+    decode_json_object,
+    snapshot_tracking_database,
 )
 
 # structured_data keys rendered as their own table rather than inline, because
@@ -1001,11 +1005,24 @@ def load_json(path, label):
     except FileNotFoundError:
         print(f"ERROR: {label} file not found: {path}", file=sys.stderr)
         sys.exit(1)
-    except OSError as e:
-        print(f"ERROR: cannot read {label} file {path}: {e}", file=sys.stderr)
+    except OSError as exc:
+        print(f"ERROR: cannot read {label} file {path}: {exc}", file=sys.stderr)
         sys.exit(1)
-    except json.JSONDecodeError as e:
-        print(f"ERROR: {label} file {path} is not valid JSON: {e}", file=sys.stderr)
+    except json.JSONDecodeError as exc:
+        print(f"ERROR: {label} file {path} is not valid JSON: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def load_tracking_database(path):
+    """Load the owner artifact through its strict shared decoder."""
+    try:
+        snapshot = snapshot_tracking_database(path)
+        return decode_json_object(snapshot)
+    except TrackingDatabaseIOError as exc:
+        message = str(exc)
+        if "root must be a JSON object" in message:
+            message += "; expected an object with a `talks` array"
+        print(f"ERROR: {message}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -1062,12 +1079,7 @@ def main():
             file=sys.stderr,
         )
         sys.exit(1)
-    try:
-        reject_tracking_database_symlink(talks_path)
-    except IngressContractError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        sys.exit(1)
-    db = load_json(talks_path, "tracking database")
+    db = load_tracking_database(talks_path)
     if not isinstance(db, dict) or not isinstance(db.get("talks"), list):
         print(
             f"ERROR: {talks_path} is not a tracking database — expected a JSON "

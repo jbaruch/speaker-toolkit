@@ -15,6 +15,25 @@ Before any thumbnail work, confirm the inputs:
 4. **`outline.yaml`** — slide references; the
    `style_anchor` block (if present) feeds `--portrait-style`.
 5. **YouTube video URL** — provided by the speaker at trigger time.
+6. **Tracking database** — load through the ingress owner's strict reader and
+   retain its SHA-256. Use the exact non-empty `config.python_path` for the
+   mutation in Sub-step 10. Missing or invalid config stops this flow and invokes
+   `Skill(skill: "vault-ingress")` at Step 1.
+
+Set `host_python` to the current host's explicit absolute interpreter path (not
+a PATH lookup). The sole interpreter-bootstrap exception is one stdlib-only
+owner read:
+
+```bash
+"{host_python}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/read-tracking-database.py" \
+  "~/.claude/rhetoric-knowledge-vault/tracking-database.json"
+```
+
+Resolve `vault_root` and `python_path` from that report, then immediately repeat
+the read with `"{python_path}"` against the resolved database and require the
+same database bytes/SHA-256. The unconfigured `host_python` is authorized only for the first
+owner-reader invocation. Every command below uses the configured interpreter;
+never fall back to a PATH interpreter.
 
 If shownotes are needed too (Step 7.2 in presentation-creator) and don't
 exist yet, STOP and ask before generating the thumbnail.
@@ -42,7 +61,7 @@ Resolution chain:
    `slide-{NN}.*` matching the chosen slide.
 2. **PPTX extraction** — use the helper mode:
    ```bash
-   python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" \
+   "{python_path}" "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" \
      --extract-slide deck.pptx 15 --output slide-15.png
    ```
    Uses LibreOffice headless or PowerPoint AppleScript on macOS.
@@ -107,7 +126,7 @@ If Phase 2 didn't produce a style anchor (stock-image-only deck), omit
 
 ```bash
 # Single recommended candidate (the precedence-chain winner)
-python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" \
+"{python_path}" "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" \
   --slide-image illustrations/slide-15.png \
   --speaker-photo ~/photos/headshot.jpg \
   --title "JUDGMENT DAY" \
@@ -120,7 +139,7 @@ python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.
   --output thumbnail.png
 
 # Anchor-matched (when the deck has a style_anchor block)
-python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" \
+"{python_path}" "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" \
   --slide-image illustrations/slide-15.png \
   --speaker-photo ~/photos/headshot.jpg \
   --title "JUDGMENT DAY" \
@@ -184,7 +203,7 @@ redesign to re-derive the path convention. Don't reinvent it from folklore.
 
 ## Sub-step 10: Tracking Database Update
 
-Add to `thumbnails[]` in `tracking-database.json`:
+Prepare this complete `thumbnails[]` record:
 
 ```json
 {
@@ -201,4 +220,10 @@ Add to `thumbnails[]` in `tracking-database.json`:
 }
 ```
 
-Also set `thumbnail_generated: true` on the talk's entry in `talks[]`.
+Persist it with the ingress owner's `upsert_thumbnail` mutation, expecting the
+exact existing record for the slug or `{"$missing": true}`. In the same plan, use
+`update_talk_publishing` to set `thumbnail_generated: true` on the exact talk
+filename, expecting its current value. Dry-run the whole plan, review it, apply
+against the reported input SHA, and re-read as specified by the
+[owner mutation contract](../../vault-ingress/references/schemas-db.md#owner-read-and-mutation-contract).
+Never rewrite `tracking-database.json` directly.

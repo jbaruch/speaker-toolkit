@@ -44,8 +44,12 @@ and Coda slides are easy to miss — this step catches them systematically.
    and edits entries. Save the approved list back to `resources.json` with
    `approved: true` on accepted items.
 
-5. Update `tracking-database.json` with a `resources[]` entry recording the
-   talk slug, item count, and category breakdown.
+5. Persist a complete `resources[]` entry recording the talk slug, item count,
+   and category breakdown with the ingress owner's `upsert_resource` mutation.
+   Expect the exact existing record for the slug, or `{"$missing": true}` for a
+   first entry. Dry-run, review, apply against the reported input SHA, and re-read
+   as specified by the
+   [owner mutation contract](../../vault-ingress/references/schemas-db.md#owner-read-and-mutation-contract).
 
 If the speaker declines resource gathering, skip this step — Step 6.1 will
 omit the resource links section from shownotes.
@@ -96,6 +100,13 @@ be null.
 Before passing the URL downstream (QR code, bit.ly target, post-event video
 description), verify the URL is reachable — a 404 on the deployed site
 breaks printed QR codes with no recovery path.
+
+After the page is live and verified, persist `shownotes_url` and
+`shownotes_published: true` on the matching talk with one
+`update_talk_publishing` mutation. Its `expect` object must cover those same
+fields with their exact values from the latest strict read. Apply it through the
+[owner mutation contract](../../vault-ingress/references/schemas-db.md#owner-read-and-mutation-contract),
+never by rewriting the database.
 
 If not enabled, skip.
 
@@ -171,7 +182,8 @@ path make the check before resolving the link.
    - Auto-select foreground color (black on light backgrounds, white on dark) using
      WCAG relative luminance
    - Insert the QR as a 2" square in the bottom-right corner
-   - Update `tracking-database.json` with the QR metadata in the `qr_codes[]` array
+   - Persist QR metadata in `qr_codes[]` through the shared tracking-database
+     transaction used by `generate-qr.py`
 
 5. Re-running for the same `talk_slug` with a different target URL will PATCH the
    existing short link (keeping QR codes already printed valid) rather than creating

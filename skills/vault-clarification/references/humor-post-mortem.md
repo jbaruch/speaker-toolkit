@@ -23,4 +23,9 @@ This is particularly important for recent talks where memory is fresh. For older
 (2+ years), compress to: "Any jokes you remember landing particularly well or badly?"
 
 Store results in `humor_postmortem` on the talk's DB entry and update the rhetoric
-summary Section 3 (Humor & Wit) with confirmed effectiveness data.
+summary Section 3 (Humor & Wit) with confirmed effectiveness data. Persist the DB
+value only through the ingress owner's `update_talk_clarification` mutation: name
+the exact talk filename, set `humor_postmortem` to one complete JSON object or array,
+and expect that field's exact current object/array or `{"$missing": true}`. Dry-run,
+review, hash-bind apply, and re-read through the owner contract; never edit the
+tracking database directly.

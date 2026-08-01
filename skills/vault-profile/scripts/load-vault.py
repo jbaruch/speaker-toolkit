@@ -71,6 +71,11 @@ from return_validation import (  # noqa: E402
     ReturnValidationError,
     load_catalog,
 )
+from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+    TrackingDatabaseIOError,
+    decode_json_object,
+    snapshot_tracking_database,
+)
 
 
 DEFAULT_VAULT = "~/.claude/rhetoric-knowledge-vault"
@@ -156,12 +161,10 @@ def main(argv: list[str]) -> int:
         )
         return 1
     try:
-        db = json.loads(db_path.read_text())
-    except (json.JSONDecodeError, OSError) as exc:
+        database_snapshot = snapshot_tracking_database(db_path)
+        db = decode_json_object(database_snapshot)
+    except TrackingDatabaseIOError as exc:
         print(f"ERROR: tracking-database.json is malformed: {exc}", file=sys.stderr)
-        return 1
-    if not isinstance(db, dict):
-        print("ERROR: tracking-database.json root must be an object", file=sys.stderr)
         return 1
 
     summary_path = vault_root / "rhetoric-style-summary.md"

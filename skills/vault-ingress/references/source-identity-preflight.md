@@ -18,9 +18,17 @@ database is itself a blocking integrity finding.
 Use `scripts/apply-source-repairs.py` for catalog metadata fixes. Its plan
 requires an exact `expect` map for every record, permits only source/queue
 repair fields, supports explicit `set` and `clear` operations, and is dry-run by
-default. `--apply` refuses active claims, creates an exact backup in `.backups`,
-then replaces the database atomically. Use `{"$missing": true}` in `expect`
-when absence rather than JSON null is the required precondition.
+default. `--apply` refuses active claims, then uses the shared owner transaction
+to create an exact backup in `.backups` and replace the database. The never-
+overwritten backup name includes the exact input SHA-256 and the transaction
+verifies that binding under its lock. Use `{"$missing": true}` in `expect` when
+absence rather than JSON null is the required precondition.
+
+Its report schema is v2. In addition to the reviewed `changes`, it returns
+`input_sha256`, `output_sha256`, `database_written`, `backup`,
+`durability_state`, and `warnings`. `installed_directory_fsync_failed` and
+`installed_verification_failed` mean the install syscall succeeded; inspect the
+live database and exact output hash before retrying.
 
 When fresh provider facts are needed, run the networked, read-only
 `scripts/audit-source-identities.py` after this offline gate and before writing

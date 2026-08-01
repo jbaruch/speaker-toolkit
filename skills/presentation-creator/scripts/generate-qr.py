@@ -32,6 +32,7 @@ Requires:
 
 import argparse
 import datetime
+import io
 import json
 import os
 import shutil
@@ -39,6 +40,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 try:
     import qrcode
@@ -53,11 +55,23 @@ except ImportError:
     print("ERROR: 'Pillow' package not installed. Run: pip install Pillow")
     sys.exit(1)
 
-import io
-
 from pptx import Presentation  # read-only: background-color match + slide-finding
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.util import Inches
+
+VAULT_INGRESS_SCRIPTS = (
+    Path(__file__).resolve().parents[2] / "vault-ingress" / "scripts"
+)
+if str(VAULT_INGRESS_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(VAULT_INGRESS_SCRIPTS))
+
+from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+    TrackingDatabaseIOError,
+    TrackingDatabaseSnapshot,
+    decode_json_object,
+    snapshot_tracking_database,
+    write_json_object,
+)
 
 # --- Constants ---
 
@@ -94,12 +108,13 @@ def load_vault_config(vault_path, profile_path=None):
     """Load speaker profile, secrets, and tracking database from the vault.
 
     Returns:
-        tuple (speaker_profile, secrets, tracking_db)
+        tuple (speaker_profile, secrets, tracking_db, tracking_db_snapshot)
         Any of these may be empty dicts if the file doesn't exist.
     """
     speaker_profile = {}
     secrets = {}
     tracking_db = {}
+    tracking_db_snapshot = None
 
     # Speaker profile
     sp_path = profile_path or os.path.join(vault_path, "speaker-profile.json")
@@ -116,10 +131,26 @@ def load_vault_config(vault_path, profile_path=None):
     # Tracking database
     tdb_path = os.path.join(vault_path, "tracking-database.json")
     if os.path.isfile(tdb_path):
-        with open(tdb_path, "r", encoding="utf-8") as f:
-            tracking_db = json.load(f)
+        try:
+            tracking_db_snapshot = snapshot_tracking_database(tdb_path)
+            tracking_db = decode_json_object(tracking_db_snapshot)
+        except TrackingDatabaseIOError as exc:
+            raise SystemExit(f"ERROR: cannot load tracking database: {exc}") from exc
 
-    return speaker_profile, secrets, tracking_db
+    return speaker_profile, secrets, tracking_db, tracking_db_snapshot
+
+
+def write_tracking_db(tracking_db_snapshot, tracking_db):
+    """Commit QR metadata against the generation loaded before QR work."""
+    if not isinstance(tracking_db_snapshot, TrackingDatabaseSnapshot):
+        raise ValueError(
+            "tracking-database.json is missing; initialize it through "
+            "vault-ingress mutate-tracking-database.py before generating a QR"
+        )
+    try:
+        return write_json_object(tracking_db_snapshot, tracking_db)
+    except TrackingDatabaseIOError as exc:
+        raise ValueError(f"cannot safely update tracking database: {exc}") from exc
 
 
 # --- URL Shortening ---
@@ -175,7 +206,7 @@ def create_bitly_link(long_url, api_token, custom_back_half=None, domain=None):
     if custom_back_half:
         try:
             _http_request(
-                f"https://api-ssl.bitly.com/v4/custom_bitlinks",
+                "https://api-ssl.bitly.com/v4/custom_bitlinks",
                 data={
                     "bitlink_id": link_id,
                     "custom_bitlink": f"{bitly_domain}/{custom_back_half}",
@@ -262,7 +293,7 @@ def _print_missing_key_help(service, key_name, vault_path):
     secrets_path = os.path.join(vault_path, "secrets.json") if vault_path else "secrets.json"
     if vault_path and not os.path.isfile(secrets_path):
         print(f"  WARNING: No {service}.{key_name} found — secrets.json does not exist. Falling back to raw URL.")
-        print(f"  Create it:")
+        print("  Create it:")
         print(f'    echo \'{{\"{service}\": {{\"{key_name}\": \"YOUR_KEY\"}}}}\' > {secrets_path}')
         print(f"    chmod 600 {secrets_path}")
     else:
@@ -284,7 +315,7 @@ def _require_domain_decision(config, shortener, vault_path):
     profile = os.path.join(vault_path, "speaker-profile.json") if vault_path else "the speaker profile"
     print(f"ERROR: No custom-domain decision recorded for shortener '{shortener}'.")
     print("  Before creating the first short link, ask the user whether they have a")
-    print(f"  custom domain (e.g. jbaru.ch), then save the answer under")
+    print("  custom domain (e.g. jbaru.ch), then save the answer under")
     print(f"  publishing_process.qr_code.{key} in {profile}:")
     print(f'    a domain string (e.g. "jbaru.ch"), or null for no custom domain ({default_domain}).')
     sys.exit(1)
@@ -792,7 +823,12 @@ def main():
         vault_path = os.path.expanduser("~/.claude/rhetoric-knowledge-vault")
 
     # Load config
-    speaker_profile, secrets, tracking_db = load_vault_config(vault_path, args.profile)
+    (
+        speaker_profile,
+        secrets,
+        tracking_db,
+        tracking_db_snapshot,
+    ) = load_vault_config(vault_path, args.profile)
     qr_config = speaker_profile.get("publishing_process", {}).get("qr_code", {})
 
     # Determine the URL to encode in the QR
@@ -929,9 +965,22 @@ def main():
     if not args.dry_run:
         tdb_path = os.path.join(vault_path, "tracking-database.json")
         if os.path.isdir(vault_path):
-            with open(tdb_path, "w", encoding="utf-8") as f:
-                json.dump(tracking_db, f, indent=2, ensure_ascii=False)
+            try:
+                write_result = write_tracking_db(
+                    tracking_db_snapshot,
+                    tracking_db,
+                )
+            except ValueError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                sys.exit(1)
             print(f"Tracking DB updated: {tdb_path}")
+            print(
+                "Tracking DB SHA-256: "
+                f"{write_result.input_sha256} -> {write_result.output_sha256} "
+                f"({write_result.durability_state})"
+            )
+            for warning in write_result.warnings:
+                print(f"WARNING: {warning}", file=sys.stderr)
         else:
             print(f"  NOTE: Vault path {vault_path} not found, tracking DB not persisted")
 

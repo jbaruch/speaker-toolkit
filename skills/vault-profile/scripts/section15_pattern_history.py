@@ -57,6 +57,11 @@ from pattern_opportunities import PatternOpportunityError  # noqa: E402
 from return_validation import (  # noqa: E402
     ReturnValidationError,
 )
+from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+    TrackingDatabaseIOError,
+    decode_json_object,
+    snapshot_tracking_database,
+)
 
 
 BLOCK_SCHEMA_VERSION = 2
@@ -569,6 +574,16 @@ def _load_json(path: Path) -> object:
         ) from exc
 
 
+def _load_tracking_database(path: Path) -> dict[str, Any]:
+    try:
+        snapshot = snapshot_tracking_database(path)
+        return decode_json_object(snapshot)
+    except TrackingDatabaseIOError as exc:
+        raise Section15PatternHistoryError(
+            f"cannot load strict tracking database from {path}: {exc}"
+        ) from exc
+
+
 def _pattern_profile_candidate(value: object) -> object:
     if isinstance(value, Mapping) and "pattern_profile" in value:
         return value["pattern_profile"]
@@ -669,7 +684,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0 if assessment.current_contract else 1
 
         candidate = _pattern_profile_candidate(_load_json(args.pattern_profile))
-        tracking_database = _load_json(args.tracking_database)
+        tracking_database = _load_tracking_database(args.tracking_database)
         result = replace_section15_current_block(
             args.summary,
             candidate,

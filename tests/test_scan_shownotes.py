@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -97,9 +98,14 @@ def test_dry_run_parses_jekyll_links_and_derives_exact_source_ids(
 
     report = scan_shownotes.execute(database_path, apply_requested=False)
 
+    assert report["schema_version"] == 2
     assert report["ok"] is True
     assert report["mode"] == "dry-run"
     assert report["database_written"] is False
+    assert report["input_sha256"] == hashlib.sha256(before).hexdigest()
+    assert report["output_sha256"] == report["input_sha256"]
+    assert report["durability_state"] == "dry_run"
+    assert report["warnings"] == []
     assert report["mutation_count"] == 1
     assert report["counts"] == {
         "add": 1,
@@ -144,6 +150,12 @@ def test_apply_adds_only_complete_proposal_and_preserves_file_mode(
         }
     ]
     assert report["database_written"] is True
+    assert report["schema_version"] == 2
+    assert report["input_sha256"] != report["output_sha256"]
+    assert report["output_sha256"] == hashlib.sha256(
+        database_path.read_bytes()
+    ).hexdigest()
+    assert report["durability_state"] == "durable"
     assert report["entries"][0]["applied"] is True
     assert database_path.stat().st_mode & 0o777 == 0o640
     assert not list(tmp_path.glob(".*.shownotes.tmp"))

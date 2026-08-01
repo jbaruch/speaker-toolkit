@@ -17,7 +17,6 @@ import os
 import re
 import stat
 import sys
-import tempfile
 import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -30,14 +29,21 @@ import yaml
 from catalog_io import load_catalog_yaml
 from ingress_contract import (
     GOOGLE_DRIVE_ID_RE,
-    IngressContractError,
     TALK_SCHEMA_VERSION,
     YOUTUBE_ID_RE,
     is_youtube_url,
     parse_google_drive_id,
     parse_youtube_id,
-    reject_tracking_database_symlink,
     validate_talk_record_schemas,
+)
+from tracking_database_io import (
+    TrackingDatabaseConflictError,
+    TrackingDatabaseIOError,
+    TrackingDatabaseSnapshot,
+    decode_json_object,
+    snapshot_tracking_database,
+    unchanged_write_result,
+    write_json_object,
 )
 
 try:  # Python 3.11+.
@@ -49,7 +55,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10 only
         tomllib = None
 
 
-REPORT_SCHEMA_VERSION = 1
+REPORT_SCHEMA_VERSION = 2
 LOCAL_SOURCE_TYPES = frozenset(
     {"local_jekyll", "local_hugo", "local_eleventy", "local_astro"}
 )
@@ -97,13 +103,6 @@ FileGeneration = tuple[int, int, int, int, int]
 
 class ShownotesScanError(ValueError):
     """Input or state prevents a deterministic shownotes scan."""
-
-
-def _reject_database_symlink(path: Path) -> None:
-    try:
-        reject_tracking_database_symlink(path)
-    except IngressContractError as exc:
-        raise ShownotesScanError(str(exc)) from exc
 
 
 class _ArgumentParser(argparse.ArgumentParser):
@@ -165,85 +164,14 @@ def _file_generation(metadata: os.stat_result) -> FileGeneration:
     )
 
 
-def _database_path_metadata(path: Path) -> os.stat_result:
+def _load_database(
+    path: Path,
+) -> tuple[dict[str, Any], TrackingDatabaseSnapshot]:
     try:
-        metadata = path.lstat()
-    except FileNotFoundError as exc:
-        raise ShownotesScanError(
-            f"tracking database is missing at {path}; pass its canonical file path"
-        ) from exc
-    except OSError as exc:
-        raise ShownotesScanError(
-            f"cannot inspect tracking database {path}: {exc}; repair access and retry"
-        ) from exc
-    if stat.S_ISLNK(metadata.st_mode):
-        _reject_database_symlink(path)
-    if not stat.S_ISREG(metadata.st_mode):
-        raise ShownotesScanError(
-            f"tracking database {path} is not a regular file; pass the canonical file"
-        )
-    return metadata
-
-
-def _regular_database_bytes(path: Path) -> tuple[bytes, os.stat_result]:
-    path_metadata = _database_path_metadata(path)
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-    try:
-        descriptor = os.open(path, flags)
-    except OSError as exc:
-        raise ShownotesScanError(
-            f"cannot open tracking database {path} without following symlinks: {exc}; "
-            "pass its canonical regular-file path and retry"
-        ) from exc
-    try:
-        with os.fdopen(descriptor, "rb") as handle:
-            opened_metadata = os.fstat(handle.fileno())
-            if not stat.S_ISREG(opened_metadata.st_mode):
-                raise ShownotesScanError(
-                    f"tracking database {path} changed to a non-regular file; retry"
-                )
-            if _file_generation(opened_metadata) != _file_generation(path_metadata):
-                raise ShownotesScanError(
-                    "tracking database changed while it was opened; rerun the scan"
-                )
-            raw = handle.read()
-            read_metadata = os.fstat(handle.fileno())
-    except OSError as exc:
-        raise ShownotesScanError(
-            f"cannot read tracking database {path}: {exc}; repair access and retry"
-        ) from exc
-    if _file_generation(read_metadata) != _file_generation(opened_metadata):
-        raise ShownotesScanError(
-            "tracking database changed while it was read; rerun the scan"
-        )
-    final_metadata = _database_path_metadata(path)
-    if _file_generation(final_metadata) != _file_generation(read_metadata):
-        raise ShownotesScanError(
-            "tracking database path changed while it was read; rerun the scan"
-        )
-    return raw, read_metadata
-
-
-def _require_database_generation(path: Path, expected: FileGeneration) -> None:
-    current = _database_path_metadata(path)
-    if _file_generation(current) != expected:
-        raise ShownotesScanError(
-            "tracking database generation changed after the scan; rerun before applying"
-        )
-
-
-def _load_database(path: Path) -> tuple[dict[str, Any], bytes, os.stat_result]:
-    raw, metadata = _regular_database_bytes(path)
-    try:
-        payload = json.loads(raw)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ShownotesScanError(
-            f"tracking database {path} is not valid UTF-8 JSON: {exc}; repair it and retry"
-        ) from exc
-    if not isinstance(payload, dict):
-        raise ShownotesScanError(
-            "tracking database root must be a JSON object; repair it before scanning"
-        )
+        snapshot = snapshot_tracking_database(path)
+        payload = decode_json_object(snapshot)
+    except TrackingDatabaseIOError as exc:
+        raise ShownotesScanError(str(exc)) from exc
     try:
         validate_talk_record_schemas(payload.get("talks"))
     except ValueError as exc:
@@ -254,7 +182,7 @@ def _load_database(path: Path) -> tuple[dict[str, Any], bytes, os.stat_result]:
         raise ShownotesScanError(
             "tracking database config must be a JSON object; run vault-ingress Step 1"
         )
-    return payload, raw, metadata
+    return payload, snapshot
 
 
 def _safe_local_location(
@@ -993,70 +921,24 @@ def _atomic_write_database(
     path: Path,
     database: dict[str, Any],
     *,
-    expected_raw: bytes,
-    original_metadata: os.stat_result,
-) -> None:
-    expected_generation = _file_generation(original_metadata)
-    current_raw, current_metadata = _regular_database_bytes(path)
-    if (
-        current_raw != expected_raw
-        or _file_generation(current_metadata) != expected_generation
-    ):
+    expected_snapshot: TrackingDatabaseSnapshot,
+):
+    """Commit against the exact generation captured before shownotes scanning."""
+    try:
+        return write_json_object(expected_snapshot, database)
+    except TrackingDatabaseConflictError as exc:
         raise ShownotesScanError(
             "tracking database content or generation changed after the scan; "
             "rerun before applying"
-        )
-    rendered = (json.dumps(database, indent=2, ensure_ascii=False) + "\n").encode(
-        "utf-8"
-    )
-    descriptor, temp_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".shownotes.tmp", dir=path.parent
-    )
-    installed = False
-    try:
-        os.fchmod(descriptor, stat.S_IMODE(original_metadata.st_mode))
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(rendered)
-            handle.flush()
-            os.fsync(handle.fileno())
-        final_raw, final_metadata = _regular_database_bytes(path)
-        if (
-            final_raw != expected_raw
-            or _file_generation(final_metadata) != expected_generation
-        ):
-            raise ShownotesScanError(
-                "tracking database content or generation changed during apply; "
-                "rerun the shownotes scan"
-            )
-        _require_database_generation(path, expected_generation)
-        os.replace(temp_name, path)
-        installed = True
-        try:
-            directory_descriptor = os.open(path.parent, os.O_RDONLY)
-            try:
-                os.fsync(directory_descriptor)
-            finally:
-                os.close(directory_descriptor)
-        except OSError as exc:
-            print(
-                f"warning: database replaced, but directory sync failed: {exc}",
-                file=sys.stderr,
-            )
-    except OSError as exc:
-        raise ShownotesScanError(
-            f"cannot atomically update tracking database {path}: {exc}; "
-            "repair destination access and retry"
         ) from exc
-    finally:
-        if not installed:
-            try:
-                os.unlink(temp_name)
-            except FileNotFoundError:
-                pass
+    except TrackingDatabaseIOError as exc:
+        raise ShownotesScanError(
+            f"cannot atomically update tracking database {path}: {exc}"
+        ) from exc
 
 
 def execute(database_path: Path, *, apply_requested: bool) -> dict[str, Any]:
-    database, raw, metadata = _load_database(database_path)
+    database, database_snapshot = _load_database(database_path)
     location = resolve_shownotes_location(database["config"])
     report, candidate = build_scan_report(
         database_path,
@@ -1064,14 +946,31 @@ def execute(database_path: Path, *, apply_requested: bool) -> dict[str, Any]:
         location,
         apply_requested=apply_requested,
     )
-    if apply_requested and report["mutation_count"]:
-        _atomic_write_database(
-            database_path,
-            candidate,
-            expected_raw=raw,
-            original_metadata=metadata,
-        )
-        report["database_written"] = True
+    if apply_requested:
+        if report["mutation_count"]:
+            write_result = _atomic_write_database(
+                database_path,
+                candidate,
+                expected_snapshot=database_snapshot,
+            )
+        else:
+            write_result = unchanged_write_result(database_snapshot)
+        write_fields = {
+            "input_sha256": write_result.input_sha256,
+            "output_sha256": write_result.output_sha256,
+            "database_written": write_result.installed,
+            "durability_state": write_result.durability_state,
+            "warnings": list(write_result.warnings),
+        }
+    else:
+        write_fields = {
+            "input_sha256": database_snapshot.sha256,
+            "output_sha256": database_snapshot.sha256,
+            "database_written": False,
+            "durability_state": "dry_run",
+            "warnings": [],
+        }
+    report.update(write_fields)
     return report
 
 
