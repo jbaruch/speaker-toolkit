@@ -15,13 +15,30 @@ MUST be written in English regardless of the talk's delivery language. For non-E
 - **Humor/wordplay**: note when a joke is language-dependent and untranslatable
 - Tag the talk entry with `delivery_language` in the tracking DB
 
-## Pattern Taxonomy Migration
+## Pattern Taxonomy and Generation Recovery
 
-If the pattern taxonomy exists (`skills/presentation-creator/references/patterns/_index.md`)
-but any talks with status `"processed"` or `"processed_partial"` have no
-`pattern_observations` (or `pattern_observations.pattern_ids` is empty), mark them
-`"needs-reprocessing"` with `reprocess_reason: "pattern_scoring_added"`. Report:
-"N talks need reprocessing for pattern scoring."
+Run `skills/vault-ingress/scripts/queue-state.py <tracking-database.json>
+normalize` before claiming work. The command owns both legacy source-status
+migration and pattern-generation recovery as one copy-on-write transaction. It
+uses `partition_pattern_scoring_cohort` from
+`skills/vault-ingress/scripts/adherence_baseline.py`; do not duplicate that
+selection logic or approximate it with `processed_date`.
+
+Every valid `processed`/`processed_partial` result excluded from the active
+generation is moved to `needs-reprocessing`. The stored machine reason is
+`pattern_scoring_generation:<reason-code>[+<reason-code>...]`, preserving the
+selector's ordered codes, and the same codes and observed/expected generation
+identity appear in the command's `normalizations` JSON. That gives every clean
+consumer exclusion a deterministic queue path instead of leaving the current
+cohort permanently empty.
+
+Malformed or unknown generation identity, a current result with non-empty
+generation reasons, incomplete current identity, and invalid or divergent
+current score lanes reject the whole command with no DB write. Inflight,
+pending, already-queued, and skipped records remain outside generation recovery.
+Repeating normalization after a successful recovery is byte-stable. Existing
+completed claim and history evidence is preserved; the next ordinary queue claim
+archives the prior current claim under the normal generation transition.
 
 ## Pattern Tagging Rules
 
@@ -215,14 +232,33 @@ speaker's active `improvement_goals` (set during clarification — record schema
 This closes the loop: the system stops merely diagnosing and checks whether the
 issue the speaker chose to work on actually moved.
 
-For each goal with `status` not in (`achieved`, `retired`):
+Before calculating any metric, run
+`skills/vault-clarification/scripts/goal_generation_provenance.py` with the complete
+active-goal array and the structured post-batch full-cohort pattern baseline. The
+script emits one assessment with a stable `decision` and `reason_codes` per goal;
+exit 1 blocks all goal writes. It is the sole authority for generation
+comparability—do not reproduce its fingerprint/schema predicate and never parse
+Section 15 prose as its baseline.
+
+- A `comparable` assessment authorizes the metric and outcome rubric below.
+- For `needs_rebaseline` or `unverifiable`, copy the assessment decision to
+  `verification_state` and its codes to `verification_reasons`. In either case,
+  preserve `current_value` and must not set `status` to
+  `achieved`, `improving`, `stalled`, or `regressed`. A speaker-confirmed
+  rebaseline is owned by vault-clarification; ingress never restamps the fixed
+  baseline.
+- Pacing and independent goals continue through their own provenance lanes and
+  are not invalidated by a pattern-catalog generation change.
+
+For each comparable goal with `status` not in (`achieved`, `retired`):
 - Compute `current_value` for the goal's `metric` from the current Section 15
-  baseline — and, for `pacing` and mode-specific goals, from the freshly regenerated
+  cohort data — and, for `pacing` and mode-specific goals, from the freshly regenerated
   speaker profile (this step runs after Step 7, so `pacing.adherence` and
   `pattern_profile.by_mode` are current). Examples by `kind`: `antipattern` → the
   antipattern's frequency over recent talks; `underuse` → the pattern's recent usage
   or distinct-pattern breadth; `pacing` → `pacing.adherence.over_budget_rate`. Write
-  `current_value`, `last_checked` (today), `checked_by: "vault-ingress"`.
+  `current_value`, `last_checked` (today), `checked_by: "vault-ingress"`,
+  `verification_state: "current"`, and empty `verification_reasons`.
 - Set `status` by comparing `current_value` against `baseline_value` and `target`:
   - `achieved` — `current_value` meets or beats `target`.
   - `improving` — moved toward `target` versus `baseline_value` but not there yet.

@@ -1744,7 +1744,7 @@ def test_catalog_generation_is_stamped_and_processing_claim_is_closed(
         persist_results, tmp_path):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    talk = _talk()
+    talk = _talk(reprocess_reason="pattern_scoring_generation:legacy_generation")
     db.write_text(json.dumps({"talks": [talk]}))
     batch.write_text(json.dumps([_return()]))
     result = subprocess.run(
@@ -1764,6 +1764,26 @@ def test_catalog_generation_is_stamped_and_processing_claim_is_closed(
     assert stored["_queue_claim"]["release_reason"] == "return_persisted"
     assert stored["_queue_claim"]["result_payload_sha256"] == \
         persist_results.canonical_return_sha256(_return())
+    assert "reprocess_reason" not in stored
+
+
+@pytest.mark.parametrize("status", ["processed", "processed_partial"])
+def test_analysis_terminal_outcome_clears_live_reprocess_reason(
+        persist_results, status):
+    talk = _talk(
+        reprocess_reason="pattern_scoring_generation:missing_generation_status")
+    ret = _return(status=status)
+
+    persist_results.merge_talk(
+        talk,
+        ret,
+        run_date="2026-07-31T18:30:00+00:00",
+        enforce_queue_claim=True,
+    )
+
+    assert talk["status"] == status
+    assert "reprocess_reason" not in talk
+    assert talk["_queue_claim"]["state"] == "completed"
 
 
 def test_v3_member_baseline_mismatch_rejects_whole_batch_without_write(
@@ -2007,6 +2027,7 @@ def test_skipped_return_preserves_prior_analysis_and_persists_terminal_metadata(
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
     talk = _talk(
+        reprocess_reason="source_identity_correction",
         processed_date="2026-06-18",
         transcript_source="youtube_auto",
         slide_source="pptx",
@@ -2042,6 +2063,7 @@ def test_skipped_return_preserves_prior_analysis_and_persists_terminal_metadata(
     assert stored["pattern_scoring_schema_version"] == 2
     assert stored["pattern_catalog_fingerprint"] == "0" * 64
     assert stored["_queue_claim"]["state"] == "completed"
+    assert "reprocess_reason" not in stored
     report = json.loads(result.stdout)
     assert report["talks"][0]["pattern_scoring_generation_status"] == \
         "not_applicable"
@@ -2178,6 +2200,7 @@ def test_duplicate_skip_requires_a_bound_canonical_talk(
 def test_mechanically_bound_skip_status_can_close_claim(
         persist_results, tmp_path, status, talk_overrides):
     talk = _talk(**{
+        "reprocess_reason": "source_identity_correction",
         "video_url": None,
         "pptx_path": None,
         "slides_url": None,
@@ -2200,6 +2223,7 @@ def test_mechanically_bound_skip_status_can_close_claim(
     stored = json.loads(db.read_text())["talks"][0]
     assert stored["status"] == status
     assert stored["_queue_claim"]["result_status"] == status
+    assert "reprocess_reason" not in stored
 
 
 def test_skipped_return_with_analysis_fields_aborts_without_write(

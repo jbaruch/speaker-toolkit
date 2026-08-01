@@ -37,6 +37,32 @@ def _talk(video_id, *, status="pending", filename=None, video=True) -> dict[str,
     }
 
 
+def _scored_talk(
+    video_id,
+    *,
+    filename,
+    fingerprint,
+    scoring_schema,
+    status="processed",
+    score=2,
+    generation_status="current",
+    generation_reasons=None,
+):
+    if generation_reasons is None:
+        generation_reasons = []
+    talk = _talk(video_id, status=status, filename=filename)
+    talk.update({
+        "processed_date": "2001-01-01T00:00:00+00:00",
+        "pattern_scoring_generation_status": generation_status,
+        "pattern_scoring_generation_reasons": generation_reasons,
+        "pattern_catalog_fingerprint": fingerprint,
+        "pattern_scoring_schema_version": scoring_schema,
+        "pattern_score": score,
+        "pattern_observations": {"pattern_score": score},
+    })
+    return talk
+
+
 def _write_db(tmp_path, talks):
     path = tmp_path / "tracking-database.json"
     path.write_text(
@@ -176,6 +202,279 @@ def test_manual_provenance_label_without_artifact_is_not_a_capability(tmp_path):
         "source_capabilities": [],
     }]
     assert payload["claimed"] == []
+
+
+def test_normalize_requeues_every_noncurrent_pattern_generation_atomically(
+        tmp_path, return_validation):
+    fingerprint = return_validation.load_catalog().fingerprint
+    scoring_schema = return_validation.PATTERN_SCORING_SCHEMA_VERSION
+    other_fingerprint = "0" * 64 if fingerprint != "0" * 64 else "1" * 64
+    current = _scored_talk(
+        "AAAAAAAAAAA", filename="current-old-date.md",
+        fingerprint=fingerprint, scoring_schema=scoring_schema,
+    )
+    legacy = _scored_talk(
+        "BBBBBBBBBBB", filename="legacy-recent.md",
+        fingerprint=fingerprint, scoring_schema=scoring_schema, score=100,
+        generation_status="legacy_unbaselineable",
+    )
+    legacy.pop("pattern_catalog_fingerprint")
+    legacy.pop("pattern_scoring_schema_version")
+    old_catalog = _scored_talk(
+        "CCCCCCCCCCC", filename="old-catalog-recent.md",
+        fingerprint=other_fingerprint, scoring_schema=scoring_schema,
+    )
+    old_schema = _scored_talk(
+        "DDDDDDDDDDD", filename="old-schema-recent.md",
+        fingerprint=fingerprint, scoring_schema=scoring_schema - 1,
+        status="processed_partial",
+    )
+    missing = _scored_talk(
+        "EEEEEEEEEEE", filename="missing-generation.md",
+        fingerprint=fingerprint, scoring_schema=scoring_schema,
+    )
+    missing.pop("pattern_scoring_generation_status")
+    legacy_source = _talk(
+        "FFFFFFFFFFF", filename="legacy-source-status.md",
+        status="skipped_no_video",
+    )
+    path = _write_db(
+        tmp_path,
+        [current, legacy, old_catalog, old_schema, missing, legacy_source],
+    )
+
+    result = _run(path, "normalize")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["changed"] == 5
+    generation_changes = {
+        item["filename"]: item
+        for item in payload["normalizations"]
+        if "reason_codes" in item
+    }
+    assert {
+        filename: item["reason_codes"]
+        for filename, item in generation_changes.items()
+    } == {
+        "legacy-recent.md": ["legacy_generation"],
+        "old-catalog-recent.md": ["catalog_fingerprint_mismatch"],
+        "old-schema-recent.md": ["scoring_schema_version_mismatch"],
+        "missing-generation.md": ["missing_generation_status"],
+    }
+    assert {
+        filename: item["reprocess_reason"]
+        for filename, item in generation_changes.items()
+    } == {
+        filename: "pattern_scoring_generation:" + "+".join(item["reason_codes"])
+        for filename, item in generation_changes.items()
+    }
+    records = {talk["filename"]: talk for talk in _read_db(path)["talks"]}
+    assert records["current-old-date.md"]["status"] == "processed"
+    assert "reprocess_reason" not in records["current-old-date.md"]
+    for filename in generation_changes:
+        assert records[filename]["status"] == "needs-reprocessing"
+        assert records[filename]["reprocess_reason"] == \
+            generation_changes[filename]["reprocess_reason"]
+    assert records["legacy-source-status.md"]["status"] == "pending"
+
+    first_bytes = path.read_bytes()
+    repeated = _run(path, "normalize")
+
+    assert repeated.returncode == 0, repeated.stderr
+    assert json.loads(repeated.stdout)["normalizations"] == []
+    assert path.read_bytes() == first_bytes
+
+
+def test_normalize_preserves_ordered_generation_reasons(tmp_path, return_validation):
+    fingerprint = return_validation.load_catalog().fingerprint
+    scoring_schema = return_validation.PATTERN_SCORING_SCHEMA_VERSION
+    other_fingerprint = "0" * 64 if fingerprint != "0" * 64 else "1" * 64
+    talk = _scored_talk(
+        "GGGGGGGGGGG", filename="both-generations-stale.md",
+        fingerprint=other_fingerprint, scoring_schema=scoring_schema - 1,
+    )
+    path = _write_db(tmp_path, [talk])
+
+    result = _run(path, "normalize")
+
+    assert result.returncode == 0, result.stderr
+    change = json.loads(result.stdout)["normalizations"][0]
+    assert change["reason_codes"] == [
+        "catalog_fingerprint_mismatch",
+        "scoring_schema_version_mismatch",
+    ]
+    assert change["reprocess_reason"] == (
+        "pattern_scoring_generation:catalog_fingerprint_mismatch+"
+        "scoring_schema_version_mismatch"
+    )
+
+
+@pytest.mark.parametrize(
+    "case,message",
+    [
+        ("unknown_status", "pattern_scoring_generation_status must be one of"),
+        ("malformed_status", "pattern_scoring_generation_status must be one of"),
+        ("current_reasons", "pattern_scoring_generation_reasons must be exactly"),
+        ("incomplete_identity", "missing required identity fields"),
+        ("malformed_fingerprint", "must be a lowercase 64-character"),
+        ("malformed_schema", "pattern_scoring_schema_version must be an integer"),
+        ("divergent_score", "promoted pattern_score 2 diverges"),
+    ],
+)
+def test_normalize_rejects_malformed_generation_without_any_write(
+        tmp_path, return_validation, case, message):
+    fingerprint = return_validation.load_catalog().fingerprint
+    scoring_schema = return_validation.PATTERN_SCORING_SCHEMA_VERSION
+    malformed = _scored_talk(
+        "HHHHHHHHHHH", filename="malformed-generation.md",
+        fingerprint=fingerprint, scoring_schema=scoring_schema,
+    )
+    if case == "unknown_status":
+        malformed["pattern_scoring_generation_status"] = "future"
+    elif case == "malformed_status":
+        malformed["pattern_scoring_generation_status"] = True
+    elif case == "current_reasons":
+        malformed["pattern_scoring_generation_reasons"] = ["contradiction"]
+    elif case == "incomplete_identity":
+        malformed.pop("pattern_catalog_fingerprint")
+    elif case == "malformed_fingerprint":
+        malformed["pattern_catalog_fingerprint"] = "not-a-sha"
+    elif case == "malformed_schema":
+        malformed["pattern_scoring_schema_version"] = True
+    elif case == "divergent_score":
+        malformed["pattern_observations"]["pattern_score"] = 1
+    legacy_source = _talk(
+        "IIIIIIIIIII", filename="would-normalize.md",
+        status="skipped_no_video",
+    )
+    path = _write_db(tmp_path, [legacy_source, malformed])
+    before = path.read_bytes()
+
+    result = _run(path, "normalize")
+
+    assert result.returncode == 2
+    assert message in json.loads(result.stdout)["error"]
+    assert path.read_bytes() == before
+    assert not [item for item in tmp_path.iterdir() if item.name.endswith(".partial")]
+
+
+def test_normalize_does_not_inspect_generation_for_ineligible_statuses(tmp_path):
+    inflight = _talk(
+        "JJJJJJJJJJJ", filename="inflight.md",
+        status="reprocessing-inflight",
+    )
+    inflight.update({
+        "reprocess_generation": 1,
+        "_queue_claim": {
+            "schema_version": 1,
+            "run_id": "active-run",
+            "batch_id": "active-batch",
+            "claimed_at": NOW,
+            "previous_status": "pending",
+            "reprocess_generation": 1,
+            "state": "claimed",
+        },
+        "pattern_scoring_generation_status": "future",
+        "pattern_score": 4,
+        "pattern_observations": {"pattern_score": 5},
+    })
+    pending = _talk("KKKKKKKKKKK", filename="pending.md")
+    pending["pattern_scoring_generation_status"] = "future"
+    skipped = _talk(
+        "LLLLLLLLLLL", filename="skipped.md", status="skipped_duplicate",
+    )
+    skipped["pattern_scoring_generation_status"] = True
+    path = _write_db(tmp_path, [inflight, pending, skipped])
+    before = path.read_bytes()
+
+    result = _run(path, "normalize")
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["normalizations"] == []
+    assert path.read_bytes() == before
+
+
+def test_generation_requeue_preserves_completed_claim_until_next_claim(
+        tmp_path, return_validation):
+    fingerprint = return_validation.load_catalog().fingerprint
+    scoring_schema = return_validation.PATTERN_SCORING_SCHEMA_VERSION
+    talk = _scored_talk(
+        "MMMMMMMMMMM", filename="completed-legacy.md",
+        fingerprint=fingerprint, scoring_schema=scoring_schema,
+        generation_status="legacy_unbaselineable",
+    )
+    talk.pop("pattern_catalog_fingerprint")
+    talk.pop("pattern_scoring_schema_version")
+    talk["reprocess_generation"] = 1
+    completed_claim = {
+        "schema_version": 2,
+        "run_id": "completed-run",
+        "batch_id": "completed-batch",
+        "claimed_at": "2026-07-31T17:00:00+00:00",
+        "previous_status": "needs-reprocessing",
+        "reprocess_generation": 1,
+        "state": "completed",
+        "released_at": "2026-07-31T17:30:00+00:00",
+        "release_reason": "return_persisted",
+        "result_status": "processed",
+        "result_payload_sha256": "0" * 64,
+    }
+    talk["_queue_claim"] = copy.deepcopy(completed_claim)
+    path = _write_db(tmp_path, [talk])
+
+    normalized = _run(path, "normalize")
+
+    assert normalized.returncode == 0, normalized.stderr
+    requeued = _read_db(path)["talks"][0]
+    assert requeued["status"] == "needs-reprocessing"
+    assert requeued["_queue_claim"] == completed_claim
+    assert requeued.get("_queue_claim_history", []) == []
+
+    claimed = _claim(
+        path, run_id="replacement-run", batch_id="replacement-batch",
+        filenames=(talk["filename"],),
+    )
+
+    assert claimed.returncode == 0, claimed.stderr
+    replacement = _read_db(path)["talks"][0]
+    assert replacement["status"] == "reprocessing-inflight"
+    assert replacement["_queue_claim"]["reprocess_generation"] == 2
+    assert replacement["_queue_claim_history"] == [completed_claim]
+
+
+@pytest.mark.parametrize("reason", ["please_run_this_again", ["not", "a", "reason"]])
+def test_completed_claim_status_drift_rejects_unowned_reprocess_reason(
+        tmp_path, reason):
+    talk = _talk(
+        "NNNNNNNNNNN", filename="unowned-requeue.md",
+        status="needs-reprocessing",
+    )
+    talk.update({
+        "reprocess_reason": reason,
+        "reprocess_generation": 1,
+        "_queue_claim": {
+            "schema_version": 2,
+            "run_id": "completed-run",
+            "batch_id": "completed-batch",
+            "claimed_at": "2026-07-31T17:00:00+00:00",
+            "previous_status": "pending",
+            "reprocess_generation": 1,
+            "state": "completed",
+            "released_at": "2026-07-31T17:30:00+00:00",
+            "release_reason": "return_persisted",
+            "result_status": "processed",
+            "result_payload_sha256": "0" * 64,
+        },
+    })
+    path = _write_db(tmp_path, [talk])
+    before = path.read_bytes()
+
+    result = _run(path, "normalize")
+
+    assert result.returncode == 2
+    assert "completed claim result_status" in result.stderr
+    assert path.read_bytes() == before
 
 
 def test_legacy_true_no_source_talk_is_the_only_one_skipped(tmp_path):

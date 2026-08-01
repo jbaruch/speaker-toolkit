@@ -116,9 +116,10 @@ timing, not zero timing, and must be regenerated; an unknown future schema is
 unusable until this reader is updated. The vault-profile layout-only consumer is
 the documented v1/v2 exception because `template_layouts` did not change.
 
-**Pattern taxonomy migration:** See [references/processing-rules.md](references/processing-rules.md) for migration
-logic. In brief: talks with `status` `"processed"` or `"processed_partial"` that
-lack `pattern_observations` are marked `"needs-reprocessing"`.
+**Pattern taxonomy recovery:** See [references/processing-rules.md](references/processing-rules.md) for the queue-owned
+contract. Step 2 normalization deterministically routes processed results outside
+the active pattern-scoring generation back to `needs-reprocessing`; do not infer
+generation currency from processing date or hand-edit those statuses.
 
 **Pattern catalog preflight:** Before source selection or re-analysis, run:
 
@@ -191,13 +192,21 @@ before inspecting its prior score. Its `as_of` equals the claim's canonical
 `claimed_at`; do not edit or recompute it after the claim is written.
 
 - Run `python3 skills/vault-ingress/scripts/queue-state.py
-  {vault_root}/tracking-database.json normalize` once. This migrates legacy
+  {vault_root}/tracking-database.json normalize` once. This one copy-on-write
+  command migrates legacy
   `skipped_no_video`/`skipped_no_transcript` states from the talk's usable source
   capabilities. A record with a transcript artifact or slide source re-enters the
   queue even without video; a `transcript_source` provenance label alone is not
   capability. Only a record with no transcript artifact/acquisition path, slide,
-  or video source becomes `skipped_no_sources`. The normalization report includes `source_capabilities`
-  (`video`, `slides`, `transcript`) for every changed row so the decision is auditable.
+  or video source becomes `skipped_no_sources`. The same command uses the shared
+  exact-generation selector to requeue valid `processed`/`processed_partial`
+  results that cannot enter the active pattern cohort. Its `normalizations` report
+  carries ordered reason codes and the stored `reprocess_reason` for each changed
+  row. Malformed current-generation identity or score lanes reject the complete
+  command without writing; inflight, pending, already-queued, and skipped records
+  are not generation-normalized. A repeated successful normalization with no new
+  drift leaves the DB bytes unchanged. Completed claims remain immutable evidence
+  on the requeued talk and move to history normally when a later claim is created.
 - Claim each exact batch through `queue-state.py ... claim --run-id <stable-run>
   --batch-id <stable-batch> --now <timezone-aware-ISO>`. The command selects
   `pending`, `needs-reprocessing`, and retryable download failures, writes an
@@ -443,12 +452,24 @@ Proceed immediately to Step 8.
 
 If the tracking DB has no `improvement_goals` in a verifiable state (none whose
 `status` is outside `achieved`/`retired`), skip this step silently. Otherwise, with the
-final Section 15 baseline now current, verify each such goal: compute its
-`current_value`, set `status`
-(`achieved|improving|stalled|regressed`), and write the verification fields back —
-full rubric in [references/processing-rules.md](references/processing-rules.md)
-Improvement Goal Verification. Report each goal's status in the run summary;
-`regressed` or `stalled` goals are the speaker's own priorities — surface them first.
+post-batch full-cohort pattern baseline current, pass the complete active-goal array
+and that structured baseline to:
+
+```bash
+python3 skills/vault-clarification/scripts/goal_generation_provenance.py \
+  < goal-generation-input.json
+```
+
+The input object contains `goals` and `current_pattern_baseline`; stdout is one
+schema-v1 assessment per goal. Exit 1 is a malformed owner record or baseline:
+stop without changing any goal. Only a `comparable` assessment authorizes metric
+calculation. Record `needs_rebaseline` for a pattern-generation mismatch and
+`unverifiable` for a missing current baseline or legacy pattern goal; preserve its
+`current_value` and do not assign an outcome status. Pacing and independent goals
+remain comparable through their separate provenance lanes. The full write rubric
+is in [references/processing-rules.md](references/processing-rules.md) Improvement
+Goal Verification. Report current comparable outcomes first, then every goal that
+needs rebaselining or is unverifiable.
 
 Proceed immediately to Step 9.
 

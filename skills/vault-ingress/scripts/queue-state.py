@@ -7,6 +7,10 @@ must not be allowed to turn an intentional requeue back into ``processed``.
 Eligibility is source-capability based: a preflighted transcript, slide, or video
 reference can support a claim. Video is not mandatory, and only a legacy record
 with none of those capabilities normalizes to ``skipped_no_sources``.
+Normalization also routes every valid processed result outside the active
+pattern-scoring generation back to ``needs-reprocessing``. It delegates the
+generation decision to ``partition_pattern_scoring_cohort``; malformed current
+metadata is a whole-command no-write error, never a migration guess.
 
 Usage:
     queue-state.py <tracking-database.json> normalize
@@ -61,6 +65,7 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import cast
 from urllib.parse import parse_qs, urlparse
 
 from ingress_contract import (
@@ -71,7 +76,12 @@ from ingress_contract import (
 )
 from adherence_baseline import (
     AdherenceBaselineError,
+    CATALOG_FINGERPRINT_MISMATCH_REASON,
+    LEGACY_GENERATION_REASON,
+    MISSING_GENERATION_STATUS_REASON,
+    SCORING_SCHEMA_VERSION_MISMATCH_REASON,
     build_adherence_baseline,
+    partition_pattern_scoring_cohort,
     validate_adherence_baseline,
 )
 from return_validation import (
@@ -110,6 +120,20 @@ KNOWN_STATUSES = frozenset({
 CLAIM_STATES = frozenset({"claimed", "completed", "stale_recovered", "superseded"})
 YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 PLAYLIST_FILENAME = re.compile(r"^playlist-([A-Za-z0-9_-]{11})\.md$")
+PATTERN_SCORING_REPROCESS_REASON_PREFIX = "pattern_scoring_generation:"
+PATTERN_SCORING_REPROCESS_REASON_SEQUENCES = frozenset({
+    (MISSING_GENERATION_STATUS_REASON,),
+    (LEGACY_GENERATION_REASON,),
+    (CATALOG_FINGERPRINT_MISMATCH_REASON,),
+    (SCORING_SCHEMA_VERSION_MISMATCH_REASON,),
+    (
+        CATALOG_FINGERPRINT_MISMATCH_REASON,
+        SCORING_SCHEMA_VERSION_MISMATCH_REASON,
+    ),
+})
+LEGACY_REPROCESS_REASONS = frozenset({
+    "pattern_scoring_added", "source_identity_correction",
+})
 
 
 class QueueStateError(ValueError):
@@ -185,6 +209,29 @@ def has_video(talk):
 
 def has_processable_source(talk):
     return bool(source_capabilities(talk))
+
+
+def pattern_scoring_reprocess_reason(reason_codes):
+    """Encode one selector-owned, ordered reason sequence."""
+    exact_codes = tuple(reason_codes)
+    if exact_codes not in PATTERN_SCORING_REPROCESS_REASON_SEQUENCES:
+        raise QueueStateError(
+            "pattern-scoring cohort selector returned unsupported ordered "
+            f"reprocess reasons {list(exact_codes)!r}"
+        )
+    return PATTERN_SCORING_REPROCESS_REASON_PREFIX + "+".join(exact_codes)
+
+
+def is_deliberate_reprocess_reason(value):
+    if not isinstance(value, str):
+        return False
+    if value in LEGACY_REPROCESS_REASONS:
+        return True
+    if not value.startswith(PATTERN_SCORING_REPROCESS_REASON_PREFIX):
+        return False
+    encoded_codes = value.removeprefix(
+        PATTERN_SCORING_REPROCESS_REASON_PREFIX).split("+")
+    return tuple(encoded_codes) in PATTERN_SCORING_REPROCESS_REASON_SEQUENCES
 
 
 def validate_claim(claim, filename, *, historical=False):
@@ -387,8 +434,12 @@ def validate_talk(talk, index, *, allow_claim_status_drift=False):
             f"{INFLIGHT_STATUS!r}, got {status!r}; run recover to repair the "
             "stranded lease"
         )
+    deliberate_requeue = (
+        status == "needs-reprocessing" and
+        is_deliberate_reprocess_reason(talk.get("reprocess_reason"))
+    )
     if (current is not None and current["state"] == "completed" and
-            status != current.get("result_status")):
+            status != current.get("result_status") and not deliberate_requeue):
         raise QueueStateError(
             f"{filename}: completed claim result_status "
             f"{current.get('result_status')!r} disagrees with talk status {status!r}"
@@ -550,6 +601,41 @@ def normalize_legacy_statuses(database):
     return changes
 
 
+def normalize_pattern_scoring_generations(database):
+    """Requeue every valid processed talk outside the active score generation."""
+    try:
+        catalog = load_catalog()
+        _, _, exclusion_details = partition_pattern_scoring_cohort(
+            database["talks"],
+            excluded_filenames=[],
+            pattern_catalog_fingerprint=catalog.fingerprint,
+            pattern_scoring_schema_version=PATTERN_SCORING_SCHEMA_VERSION,
+        )
+    except (AdherenceBaselineError, ReturnValidationError, OSError) as exc:
+        raise QueueStateError(
+            "cannot normalize pattern-scoring generations: "
+            f"{exc} — repair the named processed talk before retrying normalize"
+        ) from exc
+
+    by_filename = {talk["filename"]: talk for talk in database["talks"]}
+    changes = []
+    for detail in exclusion_details:
+        talk = by_filename[detail["filename"]]
+        previous = talk["status"]
+        reason_codes = cast(list[str], detail["reason_codes"])
+        reprocess_reason = pattern_scoring_reprocess_reason(reason_codes)
+        talk["status"] = "needs-reprocessing"
+        talk["reprocess_reason"] = reprocess_reason
+        changes.append({
+            "filename": talk["filename"],
+            "previous_status": previous,
+            "status": talk["status"],
+            "reprocess_reason": reprocess_reason,
+            **detail,
+        })
+    return changes
+
+
 def all_claims(talk):
     claims = list(talk.get("_queue_claim_history", []))
     current = talk.get("_queue_claim")
@@ -635,10 +721,12 @@ def claim_talk(talk, run_id, batch_id, now_text, adherence_baseline):
 
 
 def command_normalize(database, path, _args):
-    normalizations = normalize_legacy_statuses(database)
+    candidate = copy.deepcopy(database)
+    normalizations = normalize_legacy_statuses(candidate)
+    normalizations.extend(normalize_pattern_scoring_generations(candidate))
     if normalizations:
-        validate_database(database)
-        write_database_atomically(path, database)
+        validate_database(candidate)
+        write_database_atomically(path, candidate)
     return {
         "ok": True,
         "action": "normalize",
@@ -850,7 +938,10 @@ def build_parser():
     parser.add_argument("database", help="tracking-database.json path")
     actions = parser.add_subparsers(dest="action", required=True,
                                     parser_class=JsonArgumentParser)
-    actions.add_parser("normalize", help="normalize legacy queue statuses")
+    actions.add_parser(
+        "normalize",
+        help="normalize legacy source statuses and stale scoring generations",
+    )
 
     claim = actions.add_parser("claim", help="claim a deterministic batch")
     claim.add_argument("--run-id", required=True)

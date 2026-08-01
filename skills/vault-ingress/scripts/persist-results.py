@@ -18,9 +18,11 @@ For each return (matched to a talk by `filename`) it:
      adherence_assessment, transcript_source, slide_source,
      slides_local_path). The writer-owned run date always supplies
      `processed_date`; a legacy return-side date cannot weaken a
-     second-resolution batch stamp. A skipped return changes only terminal
-     status and queue-claim history; prior analysis, provenance, corrective
-     clears and processed date remain untouched.
+     second-resolution batch stamp. Every terminal result clears the live
+     `reprocess_reason` because that field describes only queued work. A skipped
+     return otherwise changes only terminal status and queue-claim history;
+     prior analysis, provenance, corrective clears and processed date remain
+     untouched.
   3. Applies explicit `clear_fields`, then selects merge semantics from the
      return's version. Missing/version-1 returns retain the historical additive
      deep merge. Version 2 snapshot-replaces supplied declared scalars, arrays,
@@ -527,6 +529,10 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
         validate_claim_against_talk(talk, ret)
 
     candidate = copy.deepcopy(talk)
+    # A terminal result closes the reason that put this talk in the queue. The
+    # claim keeps the prior status as immutable generation evidence; leaving the
+    # reason on a processed/skipped record would violate the live talk schema.
+    candidate.pop("reprocess_reason", None)
     if ret.get("status") not in ANALYSIS_STATUSES:
         # A skipped attempt carries no new analysis. Preserve the prior
         # processed stamp, source provenance, content blocks and corrective
