@@ -105,6 +105,18 @@ RAW_URL_RE = re.compile(r"https?://[^\s<>]+")
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 FileGeneration = tuple[int, int, int, int, int]
 
+# These transforms are deliberately narrower than general punctuation folding.
+# They exist only for comparison: reports and stored values keep their original
+# typography and capitalization.
+_TITLE_QUOTE_EQUIVALENTS = str.maketrans(
+    {
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+    }
+)
+
 
 class ShownotesScanError(ValueError):
     """Input or state prevents a deterministic shownotes scan."""
@@ -133,6 +145,31 @@ def _nonempty(value: object) -> str | None:
 
 def _normalized_filename(value: str) -> str:
     return unicodedata.normalize("NFC", value).casefold()
+
+
+def _normalized_title_for_comparison(value: str) -> str:
+    """Normalize title presentation glyphs without changing title wording/case."""
+    return unicodedata.normalize("NFC", value).translate(_TITLE_QUOTE_EQUIVALENTS)
+
+
+def _normalized_conference_for_comparison(value: str) -> str:
+    """Normalize conference Unicode and case only; whitespace stays significant."""
+    return unicodedata.normalize("NFC", value).casefold()
+
+
+def _same_presentation_value(field: str, left: object, right: object) -> bool:
+    """Return whether a title/conference pair differs only in presentation."""
+    if not isinstance(left, str) or not isinstance(right, str):
+        return False
+    if field == "title":
+        return _normalized_title_for_comparison(
+            left
+        ) == _normalized_title_for_comparison(right)
+    if field == "conference":
+        return _normalized_conference_for_comparison(
+            left
+        ) == _normalized_conference_for_comparison(right)
+    return False
 
 
 def _reject_symlink_components(path: Path, *, subject: str) -> None:
@@ -754,6 +791,8 @@ def _existing_entry(
             patch[field] = candidate
             continue
         if current == candidate:
+            continue
+        if _same_presentation_value(field, current, candidate):
             continue
         if (
             field in {"video_url", "slides_url"}

@@ -266,6 +266,149 @@ def test_existing_metadata_conflict_stays_a_non_mutating_review_proposal(
 
 
 @pytest.mark.parametrize(
+    ("field", "stored_value", "shownotes_value"),
+    [
+        ("title", "Kahneman\u2019s Shortcut", "Kahneman's Shortcut"),
+        (
+            "title",
+            'The "DevOps engineer" Test',
+            "The \u201cDevOps engineer\u201d Test",
+        ),
+        ("conference", "TESTCONF", "testconf"),
+        ("title", "Caf\u00e9", "Cafe\u0301"),
+        ("conference", "Caf\u00e9Conf", "Cafe\u0301Conf"),
+    ],
+)
+def test_presentation_only_metadata_differences_are_comparison_only(
+    tmp_path: Path,
+    field: str,
+    stored_value: str,
+    shownotes_value: str,
+) -> None:
+    site, talks_directory = _shownotes_site(tmp_path)
+    shownotes_arguments = {field: shownotes_value}
+    _write_jekyll_talk(talks_directory, **shownotes_arguments)
+    existing = {
+        "filename": "2026-08-01-deterministic-ingress.md",
+        "title": "Deterministic Ingress",
+        "conference": "TestConf",
+        "date": "2026-08-01",
+        "schema_version": 5,
+        "status": "processed",
+    }
+    existing[field] = stored_value
+    database_path = _database_path(
+        tmp_path,
+        _local_config(site),
+        talks=[existing],
+    )
+    before = database_path.read_bytes()
+
+    report = scan_shownotes.execute(database_path, apply_requested=True)
+
+    entry = report["entries"][0]
+    assert entry["disposition"] == "unchanged"
+    assert entry["proposal"][field] == shownotes_value
+    assert entry["changes"] == {}
+    assert entry["issues"] == []
+    assert report["counts"] == {
+        "add": 0,
+        "update": 0,
+        "unchanged": 1,
+        "review_required": 0,
+    }
+    assert report["database_written"] is False
+    assert database_path.read_bytes() == before
+    assert json.loads(before)["talks"][0][field] == stored_value
+
+
+def test_comparison_equivalence_does_not_rewrite_during_an_unrelated_update(
+    tmp_path: Path,
+) -> None:
+    site, talks_directory = _shownotes_site(tmp_path)
+    video_url = f"https://youtu.be/{YOUTUBE_ID}"
+    stored_title = "Kahneman\u2019s Shortcut"
+    _write_jekyll_talk(
+        talks_directory,
+        title="Kahneman's Shortcut",
+        video_url=video_url,
+    )
+    existing = {
+        "filename": "2026-08-01-deterministic-ingress.md",
+        "title": stored_title,
+        "conference": "TestConf",
+        "date": "2026-08-01",
+        "schema_version": 5,
+        "status": "processed",
+    }
+    database_path = _database_path(
+        tmp_path,
+        _local_config(site),
+        talks=[existing],
+    )
+
+    report = scan_shownotes.execute(database_path, apply_requested=True)
+
+    talk = json.loads(database_path.read_text(encoding="utf-8"))["talks"][0]
+    assert report["entries"][0]["disposition"] == "update"
+    assert report["entries"][0]["changes"] == {
+        "video_url": video_url,
+        "youtube_id": YOUTUBE_ID,
+    }
+    assert talk["title"] == stored_title
+    assert talk["video_url"] == video_url
+
+
+def test_conference_added_word_remains_a_conflict(tmp_path: Path) -> None:
+    site, talks_directory = _shownotes_site(tmp_path)
+    _write_jekyll_talk(talks_directory, conference="TESTCONF Global")
+    existing = {
+        "filename": "2026-08-01-deterministic-ingress.md",
+        "title": "Deterministic Ingress",
+        "conference": "testconf",
+        "date": "2026-08-01",
+        "schema_version": 5,
+        "status": "processed",
+    }
+    database_path = _database_path(
+        tmp_path,
+        _local_config(site),
+        talks=[existing],
+    )
+    before = database_path.read_bytes()
+
+    report = scan_shownotes.execute(database_path, apply_requested=True)
+
+    entry = report["entries"][0]
+    assert entry["disposition"] == "review_required"
+    assert entry["changes"] == {}
+    assert entry["issues"][0]["code"] == "existing_conference_conflict"
+    assert report["database_written"] is False
+    assert database_path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    ("field", "stored_value", "shownotes_value"),
+    [
+        ("title", "Case Matters", "case matters"),
+        ("title", "Quoted: Title", "Quoted Title"),
+        ("conference", "Test Conf", "Test  Conf"),
+        ("conference", "TestConf", "TestConf Global"),
+    ],
+)
+def test_presentation_comparison_stays_narrow(
+    field: str,
+    stored_value: str,
+    shownotes_value: str,
+) -> None:
+    assert not scan_shownotes._same_presentation_value(
+        field,
+        stored_value,
+        shownotes_value,
+    )
+
+
+@pytest.mark.parametrize(
     ("source_type", "field", "rejected_url", "proposed_url"),
     [
         (
