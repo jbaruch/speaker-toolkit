@@ -130,8 +130,8 @@ Proceed immediately to Step 5.
 
 ## Step 5 — Speaker Infrastructure (first session only)
 
-If `config.clarification_sessions_completed` is already ≥ 1, skip this step.
-Proceed immediately to Step 6.
+If `config.clarification_sessions_completed` is already ≥ 1, skip this step and
+proceed immediately to Step 6.
 
 Otherwise, ask for any empty config fields (`speaker_name` through `publishing_process.*`).
 See [references/schemas-config.md](references/schemas-config.md) for the full field list and questions to ask.
