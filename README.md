@@ -367,7 +367,8 @@ vault-ingress skill are the runtime authority. After `python_path` is
 bootstrapped, run its stdlib-only `check-runtime.py` probe. Optional lane
 dependency absence is isolated: missing pypdf cannot erase transcript/PPTX
 capability, and missing python-pptx cannot erase transcript/PDF capability.
-Unexpected dependency initializer faults stop the probe visibly.
+Dependency initializer exceptions, native crashes, timeouts, and invalid child
+results remain lane-local and carry machine-readable failure reasons.
 
 ## Generation & Publishing Skills Details
 

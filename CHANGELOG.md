@@ -1,5 +1,14 @@
 # Changelog
 
+### fix(vault-ingress) — contain native dependency probe crashes
+
+Runtime module imports now run in bounded child processes launched by the exact
+configured interpreter. A missing dependency, Python initializer exception,
+native crash, timeout, or malformed child result degrades only an optional lane
+and blocks that lane when required. The parent retains its one-JSON stdout
+contract, reports a machine-readable failure reason per module, and emits an
+actionable recovery step without forwarding native crash output.
+
 ## 0.20.1 — 2026-08-01
 
 ### fix(vault-ingress) — give the tracking database one versioned owner
