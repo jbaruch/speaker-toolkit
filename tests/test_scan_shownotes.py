@@ -359,17 +359,33 @@ def test_comparison_equivalence_does_not_rewrite_during_an_unrelated_update(
     assert talk["video_url"] == video_url
 
 
-def test_conference_added_word_remains_a_conflict(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("field", "stored_value", "shownotes_value"),
+    [
+        ("title", "Case Matters", "case matters"),
+        ("title", "Quoted: Title", "Quoted Title"),
+        ("conference", "Test Conf", "Test  Conf"),
+        ("conference", "TestConf", "TestConf Global"),
+    ],
+)
+def test_presentation_comparison_stays_narrow(
+    tmp_path: Path,
+    field: str,
+    stored_value: str,
+    shownotes_value: str,
+) -> None:
     site, talks_directory = _shownotes_site(tmp_path)
-    _write_jekyll_talk(talks_directory, conference="TESTCONF Global")
+    shownotes_arguments = {field: shownotes_value}
+    _write_jekyll_talk(talks_directory, **shownotes_arguments)
     existing = {
         "filename": "2026-08-01-deterministic-ingress.md",
         "title": "Deterministic Ingress",
-        "conference": "testconf",
+        "conference": "TestConf",
         "date": "2026-08-01",
         "schema_version": 5,
         "status": "processed",
     }
+    existing[field] = stored_value
     database_path = _database_path(
         tmp_path,
         _local_config(site),
@@ -382,30 +398,18 @@ def test_conference_added_word_remains_a_conflict(tmp_path: Path) -> None:
     entry = report["entries"][0]
     assert entry["disposition"] == "review_required"
     assert entry["changes"] == {}
-    assert entry["issues"][0]["code"] == "existing_conference_conflict"
+    assert entry["issues"] == [
+        {
+            "code": f"existing_{field}_conflict",
+            "field": field,
+            "message": (
+                f"tracking DB {field} {stored_value!r} conflicts with shownotes "
+                f"{shownotes_value!r}; choose the authoritative value"
+            ),
+        }
+    ]
     assert report["database_written"] is False
     assert database_path.read_bytes() == before
-
-
-@pytest.mark.parametrize(
-    ("field", "stored_value", "shownotes_value"),
-    [
-        ("title", "Case Matters", "case matters"),
-        ("title", "Quoted: Title", "Quoted Title"),
-        ("conference", "Test Conf", "Test  Conf"),
-        ("conference", "TestConf", "TestConf Global"),
-    ],
-)
-def test_presentation_comparison_stays_narrow(
-    field: str,
-    stored_value: str,
-    shownotes_value: str,
-) -> None:
-    assert not scan_shownotes._same_presentation_value(
-        field,
-        stored_value,
-        shownotes_value,
-    )
 
 
 @pytest.mark.parametrize(
