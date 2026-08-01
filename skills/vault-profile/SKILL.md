@@ -24,13 +24,26 @@ Generate or update `speaker-profile.json` from vault data. This profile is the
 structured bridge between the vault and the presentation-creator skill.
 
 The vault lives at `~/.claude/rhetoric-knowledge-vault/` (may be a symlink).
-Read `tracking-database.json` from there to get `vault_root`.
+Set `host_python` to the current host's explicit absolute interpreter path (not
+a PATH lookup). The sole interpreter-bootstrap exception is one stdlib-only
+strict-owner read:
 
-Before running any toolkit script, read `config.python_path` from that tracking
+```bash
+"{host_python}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/read-tracking-database.py" \
+  "~/.claude/rhetoric-knowledge-vault/tracking-database.json"
+```
+
+Use its JSON report to resolve `vault_root` and the exact non-empty
+`database.config.python_path`. Set `python_path` to that value, then immediately
+repeat the same owner-read command with `"{python_path}"` and the resolved
+`{vault_root}/tracking-database.json`; require its database and SHA-256 to match
+the bootstrap report. The unconfigured `host_python` above is authorized for
+that one owner-reader invocation only, never for another toolkit script.
+If vault-ingress Step 7 invoked this skill, accept its resolved `{vault_root}`
+and `{python_path}` as handoff context, then re-read the database and require the stored value to match.
+Before running any other toolkit script, read `config.python_path` from that tracking
 database and set `python_path` to that exact value. It is the interpreter
-authority for every operational command in this skill. If vault-ingress Step 7
-invoked this skill, accept its resolved `{vault_root}` and `{python_path}` as
-handoff context, then re-read the database and require the stored value to match.
+authority for every operational command in this skill.
 If `python_path` is absent, empty, mismatched, or cannot execute the core runtime
 probe below, stop and direct the speaker to vault-ingress Step 1 to repair the
 configuration. Never fall back to whichever `python3` happens to be on `PATH`.

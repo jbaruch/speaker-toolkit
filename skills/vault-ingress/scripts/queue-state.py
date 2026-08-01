@@ -64,16 +64,13 @@ import json
 import os
 import re
 import sys
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
 from urllib.parse import parse_qs, urlparse
 
 from ingress_contract import (
-    IngressContractError,
     has_video_source,
-    reject_tracking_database_symlink,
 )
 from adherence_baseline import (
     ADHERENCE_BASELINE_SCHEMA_VERSION,
@@ -98,6 +95,15 @@ from return_validation import (
     ReturnValidationError,
     assess_current_persisted_pattern_evidence_freshness,
     load_catalog,
+)
+from tracking_database_io import (
+    TrackingDatabaseIOError,
+    TrackingDatabaseSnapshot,
+    TrackingDatabaseWriteResult,
+    decode_json_object,
+    snapshot_tracking_database,
+    unchanged_write_result,
+    write_json_object,
 )
 
 
@@ -655,55 +661,56 @@ def upgrade_claim_for_write(claim):
         claim["result_payload_sha256"] = None
 
 
-def load_database(path, *, allow_claim_status_drift=False):
+def load_database_snapshot(path, *, allow_claim_status_drift=False):
+    """Load strict JSON together with the exact generation validation observed."""
     try:
-        reject_tracking_database_symlink(path)
-    except IngressContractError as exc:
+        snapshot = snapshot_tracking_database(path)
+        database = decode_json_object(snapshot)
+    except TrackingDatabaseIOError as exc:
         raise QueueStateError(str(exc)) from exc
-    try:
-        with path.open(encoding="utf-8") as handle:
-            database = json.load(handle)
-    except FileNotFoundError as exc:
-        raise QueueStateError(
-            f"tracking database not found at {path} — pass the vault's "
-            "tracking-database.json"
-        ) from exc
-    except json.JSONDecodeError as exc:
-        raise QueueStateError(
-            f"tracking database at {path} is invalid JSON at line {exc.lineno}, "
-            f"column {exc.colno}"
-        ) from exc
-    except OSError as exc:
-        raise QueueStateError(f"cannot read tracking database at {path}: {exc}") from exc
     validate_database(
         database,
+        allow_claim_status_drift=allow_claim_status_drift,
+    )
+    return database, snapshot
+
+
+def load_database(path, *, allow_claim_status_drift=False):
+    """Compatibility wrapper returning only the decoded database."""
+    database, _ = load_database_snapshot(
+        path,
         allow_claim_status_drift=allow_claim_status_drift,
     )
     return database
 
 
-def write_database_atomically(path, database):
-    """Replace the database only after a complete same-directory write."""
+def write_database_atomically(
+    path,
+    database,
+    *,
+    expected_snapshot: TrackingDatabaseSnapshot | None = None,
+) -> TrackingDatabaseWriteResult:
+    """Commit against the exact generation captured before validation."""
     try:
-        mode = path.stat().st_mode & 0o777
-        handle, temporary = tempfile.mkstemp(
-            dir=str(path.parent), prefix=f".{path.name}.", suffix=".partial"
-        )
-        try:
-            os.chmod(temporary, mode)
-            with os.fdopen(handle, "w", encoding="utf-8") as output:
-                json.dump(database, output, indent=2, ensure_ascii=False)
-                output.write("\n")
-                output.flush()
-                os.fsync(output.fileno())
-            os.replace(temporary, path)
-        finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
-    except OSError as exc:
+        snapshot = expected_snapshot or snapshot_tracking_database(path)
+        return write_json_object(snapshot, database)
+    except TrackingDatabaseIOError as exc:
         raise QueueStateError(
-            f"cannot atomically write tracking database at {path}: {exc}"
+            f"cannot safely write tracking database at {path}: {exc}"
         ) from exc
+
+
+def write_result_fields(
+    result: TrackingDatabaseWriteResult,
+) -> dict[str, object]:
+    """Expose generation identities without changing queue's `changed` count."""
+    return {
+        "input_sha256": result.input_sha256,
+        "output_sha256": result.output_sha256,
+        "database_written": result.installed,
+        "durability_state": result.durability_state,
+        "warnings": list(result.warnings),
+    }
 
 
 def normalize_legacy_statuses(database, *, capability_assessor):
@@ -861,7 +868,7 @@ def claim_talk(
     return item
 
 
-def command_normalize(database, path, _args):
+def command_normalize(database, path, _args, *, expected_snapshot):
     candidate = copy.deepcopy(database)
     capability_assessor = artifact_capability_assessor(candidate, path)
     normalizations = normalize_legacy_statuses(
@@ -878,17 +885,24 @@ def command_normalize(database, path, _args):
     )
     if normalizations:
         validate_database(candidate)
-        write_database_atomically(path, candidate)
+        write_result = write_database_atomically(
+            path,
+            candidate,
+            expected_snapshot=expected_snapshot,
+        )
+    else:
+        write_result = unchanged_write_result(expected_snapshot)
     return {
         "ok": True,
         "action": "normalize",
         "db_path": str(path),
         "changed": len(normalizations),
         "normalizations": normalizations,
+        **write_result_fields(write_result),
     }
 
 
-def command_claim(database, path, args):
+def command_claim(database, path, args, *, expected_snapshot):
     run_id = require_identifier(args.run_id, "run_id")
     batch_id = require_identifier(args.batch_id, "batch_id")
     now_text = timestamp_text(parse_timestamp(args.now, "--now"))
@@ -914,6 +928,7 @@ def command_claim(database, path, args):
             )
         latest_states = {item["state"] for item in latest}
         if latest_states <= {"claimed", "completed"}:
+            write_result = unchanged_write_result(expected_snapshot)
             return {
                 "ok": True,
                 "action": "claim",
@@ -924,6 +939,7 @@ def command_claim(database, path, args):
                 "normalizations": [],
                 "claimed": latest,
                 "remaining_eligible": None,
+                **write_result_fields(write_result),
             }
         if latest_states == {"stale_recovered"}:
             # Recovery restores the talks to their prior claimable statuses.
@@ -1018,7 +1034,13 @@ def command_claim(database, path, args):
     )
     if normalizations or claimed:
         validate_database(candidate)
-        write_database_atomically(path, candidate)
+        write_result = write_database_atomically(
+            path,
+            candidate,
+            expected_snapshot=expected_snapshot,
+        )
+    else:
+        write_result = unchanged_write_result(expected_snapshot)
     return {
         "ok": True,
         "action": "claim",
@@ -1030,10 +1052,11 @@ def command_claim(database, path, args):
         "normalizations": normalizations,
         "claimed": claimed,
         "remaining_eligible": remaining,
+        **write_result_fields(write_result),
     }
 
 
-def command_recover(database, path, args):
+def command_recover(database, path, args, *, expected_snapshot):
     now = parse_timestamp(args.now, "--now")
     now_text = timestamp_text(now)
     run_id = require_identifier(args.run_id, "run_id") if args.run_id else None
@@ -1079,7 +1102,13 @@ def command_recover(database, path, args):
         recovered.append(recovered_item)
     if recovered:
         validate_database(database)
-        write_database_atomically(path, database)
+        write_result = write_database_atomically(
+            path,
+            database,
+            expected_snapshot=expected_snapshot,
+        )
+    else:
+        write_result = unchanged_write_result(expected_snapshot)
     return {
         "ok": True,
         "action": "recover",
@@ -1087,16 +1116,19 @@ def command_recover(database, path, args):
         "now": now_text,
         "stale_after_seconds": args.stale_after_seconds,
         "recovered": recovered,
+        **write_result_fields(write_result),
     }
 
 
-def command_inspect(database, path, args):
+def command_inspect(database, path, args, *, expected_snapshot):
+    write_result = unchanged_write_result(expected_snapshot)
     run_id = require_identifier(args.run_id, "run_id")
     return {
         "ok": True,
         "action": "inspect",
         "db_path": str(path),
         **reconstruct_run(database, run_id),
+        **write_result_fields(write_result),
     }
 
 
@@ -1145,7 +1177,7 @@ def main(argv=None):
     try:
         args = parser.parse_args(argv)
         path = Path(os.path.abspath(Path(args.database).expanduser()))
-        database = load_database(
+        database, snapshot = load_database_snapshot(
             path,
             allow_claim_status_drift=args.action == "recover",
         )
@@ -1155,7 +1187,12 @@ def main(argv=None):
             "recover": command_recover,
             "inspect": command_inspect,
         }
-        payload = commands[args.action](database, path, args)
+        payload = commands[args.action](
+            database,
+            path,
+            args,
+            expected_snapshot=snapshot,
+        )
     except QueueStateError as exc:
         payload = {"ok": False, "error": str(exc)}
         print(str(exc), file=sys.stderr)

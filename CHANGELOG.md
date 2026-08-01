@@ -1,5 +1,35 @@
 # Changelog
 
+### fix(vault-ingress) — serialize tracking-database access and close owner schemas
+
+All toolkit tracking-database writers now share one persistent sibling lock and one
+strict exact-generation transaction. Reads reject duplicate keys, non-standard JSON
+numbers, non-object roots, symlinks, and generation swaps before network or mutation
+work. Writes retain no-follow file and directory descriptors through staged `fsync`,
+revalidate bytes and identity at the install boundary, atomically replace, and sync the
+parent directory. Staged-name substitution fails closed; immediate post-install checks
+detect observable non-cooperative edits. Installed-but-not-fully-synced outcomes are
+reported truthfully, semantic no-ops preserve bytes and inode, and source-repair
+backups are never-overwritten copies bound to the exact input hash.
+
+Owner-plan and source-repair equality is now recursive and JSON-type-sensitive:
+object order is irrelevant, array order is significant, and `true`, `1`, and `1.0`
+are distinct. Semantic no-ops, including QR metadata writes, preserve the original
+bytes and inode. Mutation records are closed and type-validated for PPTX, confirmed
+intent, improvement goal, resource, thumbnail, and publishing metadata. New PPTX,
+QR, confirmed-intent, resource, and thumbnail records carry required schema-v1
+identities. Backups are deferred until the staged candidate passes its final integrity
+checks, followed by one more live-generation and stage verification before install.
+Clarification can persist complete blind-spot/humor structures, and exact
+record retirement changes only a goal's status while preserving legacy provenance.
+
+Clarification, profile, thumbnail, and resource instructions now bootstrap through
+the strict owner reader, use the configured interpreter after that single bootstrap,
+and route every tracking change through the dry-run/hash-bound owner mutation. The
+resource rule uses the canonical `category_breakdown` shape, and the transaction
+reference documents post-install outcomes plus the residual non-cooperating-writer
+last-instruction race.
+
 ## 0.19.0 — 2026-08-01
 
 ### feat(vault-ingress) — make reparses exhaustive, source-bound, and freshness-bound

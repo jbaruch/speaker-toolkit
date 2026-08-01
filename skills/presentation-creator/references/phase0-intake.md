@@ -34,7 +34,7 @@ counts, or rules — read the profile.
 > Run 'update speaker profile' to sync, or proceed with the current profile?"
 
 **Pattern-history authorization:** run
-`python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/pattern_history_status.py"` against the loaded
+`"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/pattern_history_status.py"` against the loaded
 profile and summary before reading any catalog-derived history. Use `-` as its profile
 argument when no profile exists. Its JSON `history_enabled` value is the sole creator
 classification gate; surface a disabled result's exact `warning`.
@@ -58,7 +58,7 @@ If the profile is absent, malformed, or history-disabled, Section 15 does not re
 history by implication. Use Section 15 history only when its current block carries
 explicit provenance matching the bundled catalog/scoring generation and a complete
 structured contract accepted by
-`python3 "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py"`. That parser delegates the
+`"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py"`. That parser delegates the
 payload to the shared profile provenance assessor, and classifications still require
 `classification_fields_available: true`. A date, a recent heading, an
 unlabeled count, or ordinary prose is insufficient; use taxonomy-only fallback when

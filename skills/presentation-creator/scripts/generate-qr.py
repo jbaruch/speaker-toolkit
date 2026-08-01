@@ -32,6 +32,7 @@ Requires:
 
 import argparse
 import datetime
+import io
 import json
 import os
 import shutil
@@ -39,6 +40,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 try:
     import qrcode
@@ -53,11 +55,24 @@ except ImportError:
     print("ERROR: 'Pillow' package not installed. Run: pip install Pillow")
     sys.exit(1)
 
-import io
-
 from pptx import Presentation  # read-only: background-color match + slide-finding
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.util import Inches
+
+VAULT_INGRESS_SCRIPTS = (
+    Path(__file__).resolve().parents[2] / "vault-ingress" / "scripts"
+)
+if str(VAULT_INGRESS_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(VAULT_INGRESS_SCRIPTS))
+
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
+from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+    TrackingDatabaseIOError,
+    TrackingDatabaseSnapshot,
+    decode_json_object,
+    snapshot_tracking_database,
+    write_json_object,
+)
 
 # --- Constants ---
 
@@ -68,6 +83,7 @@ QR_ERROR_CORRECTION = ERROR_CORRECT_M
 # QR placement: bottom-right, 2 inches wide, 0.3 inch margin from edges
 QR_WIDTH_INCHES = 2.0
 QR_MARGIN_INCHES = 0.3
+QR_CODE_RECORD_SCHEMA_VERSION = 1
 
 # Existing-QR detection (content-based, size-independent). A QR is a SQUARE
 # picture that is BOTH essentially two colors AND roughly balanced between them:
@@ -94,12 +110,13 @@ def load_vault_config(vault_path, profile_path=None):
     """Load speaker profile, secrets, and tracking database from the vault.
 
     Returns:
-        tuple (speaker_profile, secrets, tracking_db)
+        tuple (speaker_profile, secrets, tracking_db, tracking_db_snapshot)
         Any of these may be empty dicts if the file doesn't exist.
     """
     speaker_profile = {}
     secrets = {}
     tracking_db = {}
+    tracking_db_snapshot = None
 
     # Speaker profile
     sp_path = profile_path or os.path.join(vault_path, "speaker-profile.json")
@@ -116,10 +133,34 @@ def load_vault_config(vault_path, profile_path=None):
     # Tracking database
     tdb_path = os.path.join(vault_path, "tracking-database.json")
     if os.path.isfile(tdb_path):
-        with open(tdb_path, "r", encoding="utf-8") as f:
-            tracking_db = json.load(f)
+        try:
+            tracking_db_snapshot = snapshot_tracking_database(tdb_path)
+            tracking_db = decode_json_object(tracking_db_snapshot)
+        except TrackingDatabaseIOError as exc:
+            raise SystemExit(f"ERROR: cannot load tracking database: {exc}") from exc
 
-    return speaker_profile, secrets, tracking_db
+    return speaker_profile, secrets, tracking_db, tracking_db_snapshot
+
+
+def _require_tracking_db_snapshot(
+    tracking_db_snapshot: object,
+) -> TrackingDatabaseSnapshot:
+    """Return the loaded snapshot or reject a vault that cannot be persisted."""
+    if not isinstance(tracking_db_snapshot, TrackingDatabaseSnapshot):
+        raise ValueError(
+            "tracking-database.json is missing; initialize it through "
+            "vault-ingress mutate-tracking-database.py before generating a QR"
+        )
+    return tracking_db_snapshot
+
+
+def write_tracking_db(tracking_db_snapshot, tracking_db):
+    """Commit QR metadata against the generation loaded before QR work."""
+    snapshot = _require_tracking_db_snapshot(tracking_db_snapshot)
+    try:
+        return write_json_object(snapshot, tracking_db)
+    except TrackingDatabaseIOError as exc:
+        raise ValueError(f"cannot safely update tracking database: {exc}") from exc
 
 
 # --- URL Shortening ---
@@ -175,7 +216,7 @@ def create_bitly_link(long_url, api_token, custom_back_half=None, domain=None):
     if custom_back_half:
         try:
             _http_request(
-                f"https://api-ssl.bitly.com/v4/custom_bitlinks",
+                "https://api-ssl.bitly.com/v4/custom_bitlinks",
                 data={
                     "bitlink_id": link_id,
                     "custom_bitlink": f"{bitly_domain}/{custom_back_half}",
@@ -262,7 +303,7 @@ def _print_missing_key_help(service, key_name, vault_path):
     secrets_path = os.path.join(vault_path, "secrets.json") if vault_path else "secrets.json"
     if vault_path and not os.path.isfile(secrets_path):
         print(f"  WARNING: No {service}.{key_name} found — secrets.json does not exist. Falling back to raw URL.")
-        print(f"  Create it:")
+        print("  Create it:")
         print(f'    echo \'{{\"{service}\": {{\"{key_name}\": \"YOUR_KEY\"}}}}\' > {secrets_path}')
         print(f"    chmod 600 {secrets_path}")
     else:
@@ -284,7 +325,7 @@ def _require_domain_decision(config, shortener, vault_path):
     profile = os.path.join(vault_path, "speaker-profile.json") if vault_path else "the speaker profile"
     print(f"ERROR: No custom-domain decision recorded for shortener '{shortener}'.")
     print("  Before creating the first short link, ask the user whether they have a")
-    print(f"  custom domain (e.g. jbaru.ch), then save the answer under")
+    print("  custom domain (e.g. jbaru.ch), then save the answer under")
     print(f"  publishing_process.qr_code.{key} in {profile}:")
     print(f'    a domain string (e.g. "jbaru.ch"), or null for no custom domain ({default_domain}).')
     sys.exit(1)
@@ -723,6 +764,7 @@ def update_tracking_db(tracking_db, entry, qr_png_rel_path):
     talk_slug = entry["talk_slug"]
 
     new_entry = {
+        "schema_version": QR_CODE_RECORD_SCHEMA_VERSION,
         "talk_slug": talk_slug,
         "target_url": entry["target_url"],
         "shortener": entry["shortener"],
@@ -786,14 +828,41 @@ def main():
         print(f"ERROR: Deck file not found: {args.deck}")
         sys.exit(1)
 
+    # Validate local inputs before URL shortening can create or retarget a link.
+    explicit_bg = None
+    if args.bg_color:
+        try:
+            parts = [int(x.strip()) for x in args.bg_color.split(",")]
+            if len(parts) != 3 or not all(0 <= x <= 255 for x in parts):
+                raise ValueError
+            explicit_bg = tuple(parts)
+        except ValueError:
+            print(
+                "ERROR: --bg-color must be R,G,B with values 0-255 "
+                f"(got: {args.bg_color})"
+            )
+            sys.exit(1)
+
     # Determine vault path
     vault_path = args.vault
     if not vault_path:
         vault_path = os.path.expanduser("~/.claude/rhetoric-knowledge-vault")
+    vault_present_at_start = os.path.isdir(vault_path)
 
     # Load config
-    speaker_profile, secrets, tracking_db = load_vault_config(vault_path, args.profile)
+    (
+        speaker_profile,
+        secrets,
+        tracking_db,
+        tracking_db_snapshot,
+    ) = load_vault_config(vault_path, args.profile)
     qr_config = speaker_profile.get("publishing_process", {}).get("qr_code", {})
+    if not args.dry_run and vault_present_at_start:
+        try:
+            _require_tracking_db_snapshot(tracking_db_snapshot)
+        except ValueError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
 
     # Determine the URL to encode in the QR
     if args.short_url:
@@ -819,18 +888,6 @@ def main():
         )
 
     print(f"QR will encode: {qr_url}")
-
-    # Parse --bg-color if provided
-    explicit_bg = None
-    if args.bg_color:
-        try:
-            parts = [int(x.strip()) for x in args.bg_color.split(",")]
-            if len(parts) != 3 or not all(0 <= x <= 255 for x in parts):
-                raise ValueError
-            explicit_bg = tuple(parts)
-        except ValueError:
-            print(f"ERROR: --bg-color must be R,G,B with values 0-255 (got: {args.bg_color})")
-            sys.exit(1)
 
     # --- PNG-only mode: no deck needed ---
     if args.png_only:
@@ -928,10 +985,27 @@ def main():
 
     if not args.dry_run:
         tdb_path = os.path.join(vault_path, "tracking-database.json")
-        if os.path.isdir(vault_path):
-            with open(tdb_path, "w", encoding="utf-8") as f:
-                json.dump(tracking_db, f, indent=2, ensure_ascii=False)
-            print(f"Tracking DB updated: {tdb_path}")
+        if vault_present_at_start:
+            try:
+                write_result = write_tracking_db(
+                    tracking_db_snapshot,
+                    tracking_db,
+                )
+            except ValueError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                sys.exit(1)
+            if write_result.installed:
+                print(f"Tracking DB updated: {tdb_path}")
+            else:
+                print(f"Tracking DB unchanged: {tdb_path}")
+            print(
+                "Tracking DB SHA-256: "
+                f"{write_result.input_sha256} -> {write_result.output_sha256} "
+                f"({write_result.durability_state})",
+                file=sys.stderr,
+            )
+            for warning in write_result.warnings:
+                print(f"WARNING: {warning}", file=sys.stderr)
         else:
             print(f"  NOTE: Vault path {vault_path} not found, tracking DB not persisted")
 

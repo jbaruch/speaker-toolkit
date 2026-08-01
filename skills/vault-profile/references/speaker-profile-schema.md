@@ -161,8 +161,9 @@ Current `schema_version`: **4**. The validator (`scripts/validate-profile.py`,
 
   "confirmed_intents": [
     {
+      "schema_version": 1,
       "pattern": "name of the pattern",
-      "intent": "deliberate|accidental|context_dependent",
+      "intent": "deliberate",
       "rule": "what the presentation-creator should do about it",
       "note": "additional context from the speaker"
     }
@@ -280,7 +281,7 @@ Current `schema_version`: **4**. The validator (`scripts/validate-profile.py`,
     "confirmed_visual_intents": [
       {
         "pattern": "name of the visual pattern",
-        "intent": "deliberate|accidental|context_dependent",
+        "intent": "deliberate",
         "rule": "what the presentation-creator should do about it",
         "note": "additional context from the speaker"
       }
@@ -472,6 +473,11 @@ Current `schema_version`: **4**. The validator (`scripts/validate-profile.py`,
   }
 }
 ```
+
+Confirmed-intent `intent` values are non-empty speaker-owned classification labels,
+not a closed three-value enum. `deliberate`, `accidental`, and
+`context_dependent` are recommended defaults, while established labels such as
+`accepted_tradeoff`, `fact`, or `deliberate_signature` remain authoritative.
 
 ### Pattern Cohort Provenance
 

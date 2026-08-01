@@ -24,10 +24,31 @@ Run after vault-ingress has processed talks. Purpose: resolve ambiguities, valid
 findings, capture intent, and fill in speaker infrastructure config.
 
 The vault lives at `~/.claude/rhetoric-knowledge-vault/` (may be a symlink).
-Read `tracking-database.json` from there to get `vault_root`.
-Before invoking a toolkit script, set `python_path` to the exact non-empty
-`config.python_path` value in that database. Stop and route missing or unusable
-configuration through vault-ingress Step 1; never fall back to `python3` on `PATH`.
+Set `host_python` to the current host's explicit absolute interpreter path (not
+a PATH lookup). The sole interpreter-bootstrap exception is this one stdlib-only
+strict-owner read; never parse the database directly:
+
+```bash
+"{host_python}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/read-tracking-database.py" \
+  "~/.claude/rhetoric-knowledge-vault/tracking-database.json"
+```
+
+Use the report's database and SHA-256 to resolve `vault_root` and the exact
+non-empty `config.python_path`. Set `python_path` to that value, immediately
+repeat the owner read with `"{python_path}"` against the resolved
+`{vault_root}/tracking-database.json`, and require the database and SHA-256 to
+match the bootstrap report. The unconfigured `host_python` is authorized only
+for that first owner-reader invocation. For missing, changed, or unusable
+configuration, stop and invoke `Skill(skill: "vault-ingress")` at Step 1; never
+fall back to `python3` on `PATH` for another toolkit script.
+
+For every tracking-database change, compose a schema-v1 typed plan and run
+`mutate-tracking-database.py` in its default dry-run mode. Review `changes`, then
+run the same plan with `--apply --expected-sha256 <input_sha256>` and re-read the
+database. Every mutation carries an exact value/record expectation; use
+`{"$missing": true}` only when absence is expected. A failed precondition applies
+nothing. The canonical command and operation contract is in
+[../vault-ingress/references/schemas-db.md](../vault-ingress/references/schemas-db.md#owner-read-and-mutation-contract).
 
 ## Key Files & References
 
@@ -45,6 +66,8 @@ configuration through vault-ingress Step 1; never fall back to `python3` on `PAT
 For each surprising, contradictory, or ambiguous observation, ask one topic at a time
 via `AskUserQuestion`: intentional vs accidental patterns, invisible context,
 conflicting signals, and flagged improvement areas. Update summary and DB after each answer.
+Use the typed mutation protocol above for the DB portion; do not batch answers into
+one unreviewed write at the end.
 
 Example clarification question:
 ```
@@ -81,15 +104,19 @@ If `config.clarification_sessions_completed` is already ≥ 1, skip this step �
 
 Otherwise, ask for any empty config fields (`speaker_name` through `publishing_process.*`).
 See [references/schemas-config.md](references/schemas-config.md) for the full field list and questions to ask.
+Persist each confirmed answer with `set_config`, expecting the exact value observed
+by the latest strict read.
 
 Proceed immediately to Step 5.
 
 ## Step 5 — Structured Intent Capture
 
-Store confirmed intents in the `confirmed_intents` array of the tracking DB.
+Persist each confirmed intent with `upsert_confirmed_intent`, expecting either the
+exact existing record for that pattern or `{"$missing": true}`.
 Example:
 ```json
 {
+  "schema_version": 1,
   "pattern": "delayed_self_introduction",
   "intent": "deliberate",
   "rule": "Use two-phase intro: brief bio at slide 3, full re-intro mid-talk",
@@ -108,10 +135,12 @@ the speaker (via `AskUserQuestion`, one topic at a time) which
 **1–2** they want to focus on before the next batch of talks. Coaching only works when
 the speaker owns the target, so never auto-pick more than they choose.
 
-For each chosen focus area, write a **complete** schema-v2 `improvement_goals` record
-to the tracking DB — every field, not a subset. A partial record cannot be verified:
+For each chosen focus area, persist a **complete** schema-v2 `improvement_goals`
+record with `upsert_improvement_goal`, expecting either the exact existing record
+or `{"$missing": true}` — every field, not a subset. A partial record cannot be verified:
 vault-ingress needs `metric` to compute `current_value`, and `id`/`issue`/`kind` to
 identify and route the goal. Set `id` (kebab-case), `issue`, `kind`, `metric`,
+`antipattern_id` (the exact ID only for an `antipattern` goal, otherwise `null`),
 `baseline_value`, the speaker's stated `target`, `status: "active"`, `set_date` to
 today, `set_by: "vault-clarification"`, `current_value: ""`, `last_checked: null`,
 `checked_by: null`, `verification_state: "pending"`, `verification_reasons: []`,
@@ -142,10 +171,13 @@ Malformed JSON or a contract violation exits 1, writes no stdout, and writes
 owns generation comparability; do not reproduce its fingerprint/schema comparison
 in prose.
 
-Retire goals the speaker no longer wants (`status: "retired"`); leave `achieved`
-goals in place as history. A schema-v1 pattern goal is historical and unverifiable,
-not a baseline to restamp. If the speaker explicitly chooses to rebaseline one,
-retire the old record and create a new schema-v2 record whose
+Retire goals the speaker no longer wants with `retire_improvement_goal`, naming
+its exact `id` and expecting the complete current record. That operation changes
+only `status` to `retired`, so legacy fields and fixed provenance survive unchanged;
+leave `achieved` goals in place as history.
+A schema-v1 pattern goal is historical and unverifiable, never a baseline to restamp.
+If the speaker explicitly chooses to
+rebaseline one, retire the old record and create a new schema-v2 record whose
 `supersedes_goal_id` points to it. This preserves the old fixed yardstick rather than
 silently overwriting it.
 Full field list and `kind` values:
@@ -164,14 +196,17 @@ Proceed immediately to Step 7.
 
 ## Step 7 — Mark Session Complete
 
-Increment `config.clarification_sessions_completed` in the tracking DB. This counter
-gates profile generation (vault-profile skill requires >= 1).
+Using the latest strict read, persist
+`config.clarification_sessions_completed + 1` with `set_config`, expecting the
+exact prior integer. This counter gates profile generation (vault-profile skill
+requires >= 1).
 
 Finish here.
 
 ## Important Notes
 
 - One topic at a time — don't dump all questions at once.
-- Update the summary and DB after each answer, not in a batch at the end.
+- Update the summary and apply one reviewed typed DB plan after each answer, not in
+  a batch at the end.
 - After completing a session, suggest running the **vault-profile** skill if 10+ talks
   are processed and the profile hasn't been generated yet.

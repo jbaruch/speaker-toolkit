@@ -67,6 +67,14 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | `skills/vault-ingress/scripts/audit-pattern-catalog.py` | Read-only pattern catalog graph and contract gate before analysis |
 | `skills/vault-ingress/scripts/apply-source-repairs.py` | Guarded dry-run/apply workflow for evidence-backed source metadata repairs |
 | `skills/vault-ingress/scripts/aggregate-catalog-feedback.py` | Validate and aggregate return feedback without editing the pattern catalog |
+| `skills/vault-ingress/scripts/read-tracking-database.py` | Strict, hash-reporting owner read for agent workflows |
+| `skills/vault-ingress/scripts/mutate-tracking-database.py` | Typed, expectation-bound owner mutations for config and catalog metadata |
+
+Every agent-driven read of `tracking-database.json` must go through
+`read-tracking-database.py`. Every agent-driven write not already owned by a
+specialized toolkit script must go through `mutate-tracking-database.py`; never
+parse or rewrite the file directly. Both commands and the mutation-plan contract
+are documented in [references/schemas-db.md](references/schemas-db.md#owner-read-and-mutation-contract).
 
 A talk is processable when preflight confirms at least one usable transcript,
 slide, or video source. A talk may be transcript-only or slides-only and
@@ -85,13 +93,17 @@ files to shownotes entries.
 
 **Vault discovery** — canonical path is always `~/.claude/rhetoric-knowledge-vault/`.
 
-1. **Path exists** — use as `vault_root`, read `tracking-database.json`.
+1. **Path exists** — use as `vault_root`, then load the database with the strict
+   owner read command in
+   [references/schemas-db.md](references/schemas-db.md#owner-read-and-mutation-contract).
 2. **Path missing** — first-time setup: ask preferred location via `AskUserQuestion`,
-   create directory (and symlink if custom path chosen), initialize empty
-   `tracking-database.json` with empty `config`, `talks`, `pptx_catalog`.
+   create the directory (and symlink if a custom path was chosen), then use a sole
+   `initialize_database` mutation. Review its dry-run and apply it with
+   `--expected-sha256 missing`; never create the JSON file directly.
 
 **Config bootstrapping** — ask once per missing field and persist to the tracking
-database. Core fields: `shownotes` (enabled, source.type, source.path_or_url,
+database with expectation-bound `set_config` mutations. Re-read after every
+successful apply and use the new hash for the next plan. Core fields: `shownotes` (enabled, source.type, source.path_or_url,
 source.talks_subdir, url.base, url.template, thumbnail_path_template,
 slug_convention), `pptx_source_dir`, `python_path`, `template_skip_patterns`.
 See [references/schemas-db.md](references/schemas-db.md) for the full schema
@@ -147,7 +159,9 @@ atomic and rejects a tracking-database symlink. See
 for the complete report and mutation contract.
 
 **Scan for .pptx files:** Recursively glob `**/*.pptx` in `pptx_source_dir`; fuzzy-match
-to `talks[]` entries. Report counts. See [references/schemas-db.md](references/schemas-db.md)
+to `talks[]` entries. Report counts, then persist each reviewed result with a
+`record_pptx` mutation and `schema_version: 1`, including the exact prior catalog record and, for a match,
+the talk's exact prior `pptx_path` expectation. See [references/schemas-db.md](references/schemas-db.md)
 for the PPTX extraction output schema (per-slide visual data, shape types, global design stats).
 Run `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py"` for extraction.
 Consume current schema v2 for timing/build evidence. A v0/v1 record has unknown
@@ -615,7 +629,10 @@ stop without changing any goal. Only a `comparable` assessment authorizes metric
 calculation. Record `needs_rebaseline` for a pattern-generation mismatch and
 `unverifiable` for a missing current baseline or legacy pattern goal; preserve its
 `current_value` and do not assign an outcome status. Pacing and independent goals
-remain comparable through their separate provenance lanes. The full write rubric
+remain comparable through their separate provenance lanes. Persist each assessment
+with a `patch_improvement_goal_verification` mutation whose `expect` object exactly
+matches every verification field being set. Dry-run the complete plan, review it,
+apply it against the reported input SHA, then re-read the database. The full write rubric
 is in [references/processing-rules.md](references/processing-rules.md) Improvement
 Goal Verification. Report current comparable outcomes first, then every goal that
 needs rebaselining or is unverifiable.

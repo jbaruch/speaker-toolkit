@@ -40,18 +40,32 @@ unified `shownotes` block.
 ## Confirmed Intents Schema
 
 Stored in the `confirmed_intents` array of the tracking database. Populated during
-clarification sessions when the speaker confirms a pattern is intentional.
+clarification sessions when the speaker confirms a pattern is intentional. Persist
+records only with the ingress owner's `upsert_confirmed_intent` mutation; see the
+[owner mutation contract](../../vault-ingress/references/schemas-db.md#owner-read-and-mutation-contract).
 
 ```json
 {
   "confirmed_intents": [{
+    "schema_version": 1,
     "pattern": "delayed_self_introduction",
-    "intent": "deliberate|accidental|context_dependent",
+    "intent": "deliberate",
     "rule": "Use two-phase intro: brief bio at slide 3, full re-intro mid-talk",
-    "note": "Speaker confirmed this is an intentional rhetorical device"
+    "note": "Speaker confirmed this is an intentional rhetorical device",
+    "confirmed_date": "2026-08-01",
+    "source_talk": "2026-08-01-example.md"
   }]
 }
 ```
+
+The complete record has required exact integer `schema_version: 1` and string
+fields `pattern`, `intent`, `rule`, and `note`, plus optional
+speaker-confirmation provenance. Provenance may use one of singular `source_talk`
+or legacy alias `talk`, or the non-empty unique string array `source_talks`;
+`confirmed_date` is canonical `YYYY-MM-DD`, and `retrofit_targets` is an optional
+non-empty unique string array. Existing speaker-owned intent labels outside the
+three recommended labels remain valid non-empty classifications and must not be
+discarded during an exact-record update. Unknown fields are rejected.
 
 ## Improvement Goals Schema
 
@@ -61,10 +75,13 @@ later ingress run checks whether the targeted issue actually moved. Without it t
 system diagnoses but never verifies that the speaker acted.
 
 **Owner:** vault-clarification owns the record shape and migrations (it creates and
-retires goals during a session). **Reader/updater:** vault-ingress reads active
-goals and writes only the verification fields (`status`, `current_value`,
+retires goals during a session through `upsert_improvement_goal`). **Reader/updater:**
+vault-ingress reads active goals and changes only the verification fields through
+`patch_improvement_goal_verification` (`status`, `current_value`,
 `last_checked`, `checked_by`, `verification_state`, `verification_reasons`) — never
-the owner shape or fixed baseline. On a record whose `schema_version` it does not
+the owner shape or fixed baseline. Both operations use the
+[owner mutation contract](../../vault-ingress/references/schemas-db.md#owner-read-and-mutation-contract).
+On a record whose `schema_version` it does not
 recognize, vault-ingress treats it as read-only and skips verification.
 
 Schema v2 binds every catalog-derived goal to the exact pattern-scoring generation

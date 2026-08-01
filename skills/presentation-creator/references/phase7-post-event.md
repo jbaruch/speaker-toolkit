@@ -42,7 +42,7 @@ Update the existing shownotes page with the video recording link.
 #### 1. Verify Shownotes Exist
 
 Check that shownotes were published in Phase 6 Step 6.1. Look for:
-- The shownotes URL in `tracking-database.json` for this talk
+- The shownotes URL in the strict owner-reader result for this talk
 - Or construct from `publishing_process.shownotes.url.base` +
   `publishing_process.shownotes.url.template` (substitute `{slug}` and any
   date variables) — see phase6-publishing.md for the full template semantics
@@ -84,9 +84,12 @@ Use the same publishing method as Phase 6 Step 6.1:
 
 #### 5. Tracking Database Update
 
-Set `video_added_to_shownotes: true` on the talk's entry in `talks[]`.
-
-Add the YouTube URL to the talk entry if not already present.
+Persist `video_added_to_shownotes: true` and the YouTube `video_url` (plus the
+derived `youtube_id` when absent) with one `update_talk_publishing` mutation.
+The `expect` object must cover exactly the fields being set with values from the
+latest strict read. Dry-run, review, apply against the reported input SHA, and
+re-read through the
+[owner mutation contract](../../vault-ingress/references/schemas-db.md#owner-read-and-mutation-contract).
 
 ---
 

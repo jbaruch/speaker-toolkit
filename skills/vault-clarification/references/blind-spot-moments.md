@@ -19,4 +19,9 @@ cannot measure — then ask the speaker about each one. Examples:
 
 These blind spots are inherent to transcript+slides analysis. Asking about them captures
 data that no amount of parsing can recover. Store responses as `blind_spot_observations`
-in the talk's tracking DB entry and integrate into the rhetoric summary.
+in the talk's tracking DB entry and integrate into the rhetoric summary. Persist the
+DB value only through the ingress owner's `update_talk_clarification` mutation: name
+the exact talk filename, set `blind_spot_observations` to one complete JSON object or
+array, and expect that field's exact current object/array or `{"$missing": true}`.
+Dry-run, review, hash-bind apply, and re-read through the owner contract; never edit
+the tracking database directly.

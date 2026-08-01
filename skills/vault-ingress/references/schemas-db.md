@@ -7,7 +7,9 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
 
 ```json
 {
+  "schema_version": 1,
   "config": {
+    "schema_version": 1,
     "vault_root": "~/.claude/rhetoric-knowledge-vault",
     "vault_storage_path": "/actual/path/if/custom (null when using default location)",
     "pptx_source_dir": "/path/to/Presentations",
@@ -133,6 +135,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
   "_comment_schema_version": "Talk-record schema version, stamped by persist-results.py. v1 is the implicit unversioned shape. v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, evidence ledger v2, and current scoring schema v5. Migration preserves v1-v4 evidence and never synthesizes v5 outcomes.",
   "_comment_absent_transcript_source": "Absent transcript_source: the key may be MISSING on a talk, and missing is meaningful — it means provenance is unknown, not that no transcript exists (that is the explicit value `none`). It arises on one path: fetch-transcript.py returning method `existing`, where a valid transcript was already on disk and no fetch ran, so nothing was learned about where it came from. Writers MUST NOT backfill a guess; `manual` in particular asserts a human produced it. Readers gauging transcript reliability MUST treat absent as unknown and MUST NOT default it to any value.",
   "pptx_catalog": [{
+    "schema_version": 1,
     "pptx_path": "Conference/Year/Talk Name.pptx",
     "talk_filename": "2024-04-10-talk-slug.md or null",
     "matched": true,
@@ -140,6 +143,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "visual_extracted": false
   }],
   "qr_codes": [{
+    "schema_version": 1,
     "talk_slug": "arc-of-ai",
     "target_url": "canonical talk URL",
     "shortener": "bitly|rebrandly|none",
@@ -155,6 +159,112 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
 }
 ```
 
+## Owner Read and Mutation Contract
+
+Agent workflows never open or rewrite the tracking database directly. Read it
+through the owner command:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/read-tracking-database.py" \
+  "{vault_root}/tracking-database.json"
+```
+
+The command accepts only a no-follow regular file and strictly decodes one UTF-8
+JSON object. Duplicate keys at any depth, non-finite numbers, invalid JSON, and
+non-object roots fail closed. Success returns report schema v1 with
+`database_path`, the exact-byte `sha256`, and `database`; failure exits `2` with
+`ok: false` and no database value. During first-time initialization or while
+setting an absent `config.python_path`, the host Python may run the stdlib-only
+owner read/mutation commands. Re-read immediately after setting it. All later
+commands use that exact configured interpreter.
+
+Agent-owned config and catalog changes use a typed plan:
+
+```json
+{
+  "schema_version": 1,
+  "mutations": [{
+    "kind": "set_config",
+    "path": ["shownotes", "enabled"],
+    "expect": {"$missing": true},
+    "value": true
+  }]
+}
+```
+
+Every plan is strict JSON with exactly `schema_version` and a non-empty
+`mutations` array. Every expectation is either the exact decoded value/record
+seen by the owner reader or the exact missing marker `{"$missing": true}`. JSON
+`null` is a present value and is never interchangeable with that marker.
+Equality is recursive JSON equality: object key order is irrelevant, array order
+is significant, and booleans, integers, and decimals are distinct types. Thus
+`true`, `1`, and `1.0` never satisfy one another, and `{"$missing": 1}` is an
+ordinary object rather than the missing marker. Schema versions use the same
+exact-type rule. The supported mutation kinds are:
+
+| Kind | Typed purpose |
+|---|---|
+| `initialize_database` | Sole mutation for a missing database; carries initial `config` |
+| `set_config` | Set or delete one nested config path against its exact prior value |
+| `record_pptx` | Replace/add one complete schema-v1 PPTX catalog record and, when matched, bind the talk's expected `pptx_path` |
+| `upsert_confirmed_intent` | Replace/add one complete schema-v1 record identified by `pattern` |
+| `upsert_improvement_goal` | Replace/add one complete record identified by `id` |
+| `patch_improvement_goal_verification` | Set only verification fields, with `expect` covering exactly the same fields |
+| `retire_improvement_goal` | Expect one complete current goal record and change only its `status` to `retired`, preserving legacy fields |
+| `upsert_resource` | Replace/add one complete schema-v1 record identified by `talk_slug` |
+| `upsert_thumbnail` | Replace/add one complete schema-v1 record identified by `talk_slug` |
+| `update_talk_publishing` | Set supported publishing fields on one exact talk filename, with `expect` covering exactly the same fields |
+| `update_talk_clarification` | Set complete object/array `blind_spot_observations` or `humor_postmortem` values on one exact talk, with matching field expectations |
+
+The command owns each operation's closed fields and record validation; do not
+reimplement those allowlists in skill prose. PPTX, resource, thumbnail, and
+confirmed-intent records require exact integer `schema_version: 1`; a boolean or future version is
+not equivalent. Complete resource category counts must sum to `item_count`, and
+publishing scalar/identifier types are checked before patching. Run the plan without `--apply`,
+review its `changes`, then bind apply to that report's exact input hash:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/mutate-tracking-database.py" \
+  "{vault_root}/tracking-database.json" mutation-plan.json
+
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/mutate-tracking-database.py" \
+  "{vault_root}/tracking-database.json" mutation-plan.json \
+  --apply --expected-sha256 <input-sha256-from-dry-run>
+```
+
+Initialization uses a sole `initialize_database` mutation, stamps database and
+config schema version 1, defaults to dry-run, and applies with the literal
+`--expected-sha256 missing`. All other applies
+require the dry-run SHA. The complete plan is one transaction: one failed type,
+record, semantic expectation, or file-generation precondition installs nothing.
+Re-read after apply rather than assuming the candidate is still current.
+
+All toolkit writers share a persistent sibling lock, stage and `fsync` complete
+bytes through a retained no-follow descriptor, and retain the opened parent
+directory. Immediately before installation they recheck exact input bytes/file
+generation plus the staged descriptor's bytes, hash, generation, type, link count,
+and directory-relative visible identity. Replacement/link and cleanup use names
+anchored to that same directory descriptor. A substituted staged name fails closed
+and is deliberately left untouched rather than unlinking an attacker's path.
+Cooperative writers therefore serialize; a same-bytes inode replacement still
+conflicts.
+
+Filesystem editors that ignore the sibling lock are outside that exclusion
+guarantee. The final pre-install check is defense in depth, and an immediate
+post-install inode/byte verification reports an observed last-moment edit as
+`installed_verification_failed`. There remains an irreducible last-instruction race:
+a non-cooperating process can change the path during the install instruction or
+immediately after verification. No userspace lock protocol can make that actor
+cooperate, so every caller must re-read the live database after an installed result.
+No-op transactions preserve the original bytes and inode. Reports distinguish
+`durable`, `unchanged`, `installed_directory_fsync_failed`, and
+`installed_verification_failed`. Once the install syscall succeeds, verification,
+directory-fsync, staged-name cleanup, directory close, and lock unlock/close
+failures return `database_written: true` with warnings; they never masquerade as
+a pre-install exception. Inspect the live database and reported output SHA before
+any retry. Backup-using writers bind a never-overwritten backup to the exact input
+SHA under the same transaction.
+
 ## Shownotes Scan/Import Report
 
 Run `scan-shownotes.py` against the canonical tracking database. The scanner
@@ -164,16 +274,20 @@ reads `config.shownotes.source` for local sources and resolves
 migration. `remote_url`, `none`, and disabled sources return a structured no-op
 without reading Markdown or writing the database.
 
-The command emits report schema v1:
+The command emits report schema v2:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "ok": true,
   "mode": "dry-run|apply",
   "operation": "scan|skipped_disabled|skipped_nonlocal",
   "apply_requested": false,
   "database_written": false,
+  "input_sha256": "64 lowercase hex characters",
+  "output_sha256": "64 lowercase hex characters",
+  "durability_state": "dry_run|unchanged|durable|installed_directory_fsync_failed|installed_verification_failed",
+  "warnings": [],
   "mutation_count": 1,
   "scanned_file_count": 1,
   "existing_talk_count": 10,
@@ -207,7 +321,11 @@ with current talk schema and status `pending`, or fills empty fields on an exact
 filename match. Established values are not overwritten. Conflicting,
 incomplete, and normalized-collision entries stay `review_required` and never
 mutate. `mutation_count` counts deterministic `add` and `update` candidates;
-`database_written` records whether an atomic replacement occurred.
+`database_written` records whether an atomic replacement occurred. Input and
+output SHA-256 values bind the report to exact database generations. An
+`installed_directory_fsync_failed` or `installed_verification_failed` result
+means the install syscall succeeded; inspect the live database and reported
+output hash before retrying.
 
 Supported Markdown metadata includes YAML, TOML, and JSON frontmatter plus a
 body H1 and labeled `Conference`, `Event`, `Venue`, `Date`, `Video`, `Recording`,

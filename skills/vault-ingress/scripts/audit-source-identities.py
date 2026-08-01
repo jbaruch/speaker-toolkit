@@ -28,6 +28,11 @@ from source_identity_matching import (
     normalized_words,
     titles_agree,
 )
+from tracking_database_io import (
+    TrackingDatabaseIOError,
+    decode_json_object,
+    snapshot_tracking_database,
+)
 
 
 REPORT_SCHEMA_VERSION = 1
@@ -682,10 +687,11 @@ def audit_path(
     captured_at: str | datetime | None = None,
 ) -> dict[str, Any]:
     """Read and audit a vault/database path without writing any file."""
-    database_path = resolve_input(value).resolve(strict=False)
+    database_path = resolve_input(value).absolute()
     try:
-        database = json.loads(database_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        snapshot = snapshot_tracking_database(database_path)
+        database = decode_json_object(snapshot)
+    except TrackingDatabaseIOError as exc:
         report = audit_database(
             {}, database_path=database_path,
             metadata_fetcher=metadata_fetcher, captured_at=captured_at,

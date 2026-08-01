@@ -38,7 +38,12 @@ joint effort — the skill brings rhetoric knowledge, the author brings topic ex
 ## Before You Start: Load the Vault
 
 The vault lives at `~/.claude/rhetoric-knowledge-vault/` (may be a symlink to a custom
-location). Read `tracking-database.json` from there to get `config.vault_root`.
+location). Load `tracking-database.json` with the strict owner reader at
+`{speaker_toolkit_root}/skills/vault-ingress/scripts/read-tracking-database.py` to
+get `config.vault_root`; never parse it directly. The reader is stdlib-only, so the
+host interpreter may bootstrap this first read. Afterward, use only the exact
+non-empty `config.python_path` for every toolkit command. Missing or unusable
+configuration stops this flow and invokes `Skill(skill: "vault-ingress")` at Step 1.
 
 Load from vault root: `rhetoric-style-summary.md` (constitution — all patterns),
 `slide-design-spec.md` (visual rules), `speaker-profile.json` (structured data).
@@ -59,7 +64,7 @@ Then load local references per phase:
 Then run:
 
 ```bash
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/pattern_history_status.py" \
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/pattern_history_status.py" \
   path/to/speaker-profile.json path/to/rhetoric-style-summary.md
 ```
 
@@ -86,7 +91,7 @@ entries do not authorize history. Current-taxonomy scans of the new outline rema
 exists, run in **summary-only mode**: use default guardrail thresholds (1.5
 slides/min, 45% Act 1 cap) and ask for template/publishing data interactively. Section
 15 classifications are usable only when its uniquely delimited current block passes
-`python3 "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py"` and the same strict
+`"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py"` and the same strict
 pattern-profile assessment with `classification_fields_available: true`; ordinary,
 stale, or occurrence-only Section 15 data authorizes taxonomy-only recommendations,
 never speaker-history claims.
@@ -128,20 +133,20 @@ By end of Phase 3, the talk directory contains:
 Regenerate the four derived artifacts after every edit to `outline.yaml`:
 
 ```bash
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-narrative.py" outline.yaml > narrative.md
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-script.py"    outline.yaml > script.md
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-slides.py"    outline.yaml > slides.md
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/check-rhetorical.py"  outline.yaml > rhetorical-review.md
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-narrative.py" outline.yaml > narrative.md
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-script.py"    outline.yaml > script.md
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-slides.py"    outline.yaml > slides.md
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/check-rhetorical.py"  outline.yaml > rhetorical-review.md
 ```
 
-Validate the YAML with `python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" outline.yaml` — exits non-zero with a typed error if any validator fails.
+Validate the YAML with `"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" outline.yaml` — exits non-zero with a typed error if any validator fails.
 
 `narrative.md` is the exception to "by end of Phase 3" — it is generated earlier
 in partial form during Phases 1–2 so the author can review and approve the
 narrative before slide content development:
 
 ```bash
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-narrative.py" --partial outline.yaml > narrative.md
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-narrative.py" --partial outline.yaml > narrative.md
 ```
 
 `--partial` validates `talk` + `chapters` without requiring `slides[]`. The
@@ -157,7 +162,7 @@ action:
 - `speaker-profile.json` — publishing config, shortener, URL patterns
 - `secrets.json` — API keys for shorteners and Gemini
 - `outline.yaml` — source of truth for talk slug, metadata, slides, and shownotes URL.
-  Read it via `python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py"` (the pydantic model exposes `talk.slug`,
+  Read it via `"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py"` (the pydantic model exposes `talk.slug`,
   `talk.title`, `talk.shownotes_url_base`, etc.) — never re-parse the YAML by hand.
 
 If the file is missing or fails to validate, STOP and ask. Do not guess values that
@@ -225,7 +230,7 @@ Save the partial outline to: `{presentations-dir}/{conference}/{year}/{talk-slug
 Then generate the narrative stub so the author can read the TL;DR early:
 
 ```bash
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-narrative.py" --partial outline.yaml > narrative.md
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-narrative.py" --partial outline.yaml > narrative.md
 ```
 
 At this phase `narrative.md` carries the TL;DR only — the chapter body fills in
@@ -270,7 +275,7 @@ Once the architecture is set, author `chapters[]` (section headings, `target_min
 its chapter body — for human review:
 
 ```bash
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-narrative.py" --partial outline.yaml > narrative.md
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-narrative.py" --partial outline.yaml > narrative.md
 ```
 
 Present `narrative.md` to the author. This is the narrative-approval point: the
@@ -371,11 +376,11 @@ placeholder definitions and meme-brief format.
 After saving `outline.yaml`, validate and regenerate the derived artifacts:
 
 ```bash
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" outline.yaml      # validates; non-zero on error
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-narrative.py" outline.yaml > narrative.md
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-script.py"    outline.yaml > script.md
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-slides.py"    outline.yaml > slides.md
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/check-rhetorical.py"  outline.yaml > rhetorical-review.md
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" outline.yaml      # validates; non-zero on error
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-narrative.py" outline.yaml > narrative.md
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-script.py"    outline.yaml > script.md
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-slides.py"    outline.yaml > slides.md
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/check-rhetorical.py"  outline.yaml > rhetorical-review.md
 ```
 
 The four `.md` files are read-only — never edit them directly; they regenerate
@@ -386,8 +391,8 @@ deterministically from `outline.yaml`.
 Run two checkers — they cover different surfaces:
 
 ```bash
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/check-rhetorical.py" outline.yaml > rhetorical-review.md
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/guardrail-check.py"   outline.yaml path/to/speaker-profile.json
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/check-rhetorical.py" outline.yaml > rhetorical-review.md
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/guardrail-check.py"   outline.yaml path/to/speaker-profile.json
 ```
 
 `check-rhetorical.py` enforces the **closed pattern taxonomy** (opening PUNCH,
@@ -456,7 +461,7 @@ template's demo slides and creates every slide from the ops. See
 [references/deckops-spec.md](references/deckops-spec.md).
 
 ```bash
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/validate-deckops.py" ops.txt
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/validate-deckops.py" ops.txt
 bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/build-deck.sh" "{template_copy_pptx_path}" "{output_path}" ops.txt
 ```
 

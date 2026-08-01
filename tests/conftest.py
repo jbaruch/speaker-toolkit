@@ -94,6 +94,46 @@ def persist_results():
 
 
 @pytest.fixture(scope="session")
+def tracking_database_io():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "tracking_database_io.py"),
+        "tracking_database_io",
+    )
+
+
+@pytest.fixture(scope="session")
+def mutate_tracking_database():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "mutate-tracking-database.py"),
+        "mutate_tracking_database",
+    )
+
+
+@pytest.fixture(scope="session")
+def read_tracking_database():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "read-tracking-database.py"),
+        "read_tracking_database",
+    )
+
+
+@pytest.fixture(scope="session")
+def queue_state():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "queue-state.py"),
+        "queue_state",
+    )
+
+
+@pytest.fixture(scope="session")
+def scan_shownotes_module():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "scan-shownotes.py"),
+        "scan_shownotes_module",
+    )
+
+
+@pytest.fixture(scope="session")
 def return_validation():
     return _import_script(
         os.path.join(SCRIPTS_VI, "return_validation.py"), "return_validation")
@@ -343,3 +383,11 @@ def make_deck(slide_count):
 @pytest.fixture(scope="session")
 def load_vault():
     return _import_script(os.path.join(SCRIPTS_VP, "load-vault.py"), "load_vault")
+
+
+@pytest.fixture(scope="session")
+def section15_pattern_history():
+    return _import_script(
+        os.path.join(SCRIPTS_VP, "section15_pattern_history.py"),
+        "section15_pattern_history",
+    )

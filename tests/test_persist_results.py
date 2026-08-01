@@ -17,7 +17,7 @@ from pptx import Presentation
 
 
 def test_atomic_json_write_cleans_stage_and_propagates_interrupt(
-    persist_results, tmp_path, monkeypatch,
+    persist_results, tracking_database_io, tmp_path, monkeypatch,
 ):
     target = tmp_path / "tracking-database.json"
     target.write_text('{"old": true}\n', encoding="utf-8")
@@ -25,13 +25,16 @@ def test_atomic_json_write_cleans_stage_and_propagates_interrupt(
     def interrupt(_source, _target):
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(persist_results.os, "replace", interrupt)
+    monkeypatch.setattr(tracking_database_io.os, "replace", interrupt)
 
     with pytest.raises(KeyboardInterrupt):
         persist_results.atomic_write_json(target, {"new": True})
 
     assert json.loads(target.read_text(encoding="utf-8")) == {"old": True}
-    assert [path.name for path in tmp_path.iterdir()] == [target.name]
+    assert {path.name for path in tmp_path.iterdir()} == {
+        target.name,
+        ".tracking-database.json.lock",
+    }
 
 
 def _return(**overrides):

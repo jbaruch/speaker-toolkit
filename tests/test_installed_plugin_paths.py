@@ -58,9 +58,14 @@ def _rule_paths() -> tuple[Path, ...]:
     return tuple(sorted((REPO_ROOT / "rules").glob("*.md")))
 
 
-def _vault_workflow_doc_paths() -> tuple[Path, ...]:
+def _configured_interpreter_workflow_doc_paths() -> tuple[Path, ...]:
     paths: set[Path] = set()
-    for skill_name in ("vault-clarification", "vault-ingress", "vault-profile"):
+    for skill_name in (
+        "presentation-creator",
+        "vault-clarification",
+        "vault-ingress",
+        "vault-profile",
+    ):
         skill_root = SKILLS_ROOT / skill_name
         paths.add(skill_root / "SKILL.md")
         paths.update((skill_root / "references").rglob("*.md"))
@@ -199,9 +204,9 @@ def test_every_shipped_rule_declares_an_explicit_scope() -> None:
     assert not failures, "\n" + "\n".join(failures)
 
 
-def test_vault_workflows_use_the_configured_interpreter() -> None:
+def test_interpreter_bound_workflows_use_the_configured_interpreter() -> None:
     failures: list[str] = []
-    for path in _vault_workflow_doc_paths():
+    for path in _configured_interpreter_workflow_doc_paths():
         text = path.read_text(encoding="utf-8")
         command_surfaces = [
             *_shell_command_lines(text),

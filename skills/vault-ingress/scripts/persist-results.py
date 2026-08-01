@@ -79,7 +79,6 @@ import copy
 import json
 import os
 import sys
-import tempfile
 from datetime import datetime, timezone
 
 from adherence_baseline import (
@@ -87,9 +86,7 @@ from adherence_baseline import (
     build_current_cohort_baseline,
 )
 from ingress_contract import (
-    IngressContractError,
     TALK_SCHEMA_VERSION,
-    reject_tracking_database_symlink,
     validate_talk_record_schemas,
 )
 from pattern_evidence import (
@@ -130,6 +127,13 @@ from return_validation import (
     validate_v2_structured_policy_shapes,
     validate_verbatim_examples,
     validate_v5_adherence_opportunity,
+)
+from tracking_database_io import (
+    TrackingDatabaseIOError,
+    TrackingDatabaseSnapshot,
+    decode_json_object,
+    snapshot_tracking_database,
+    write_json_object,
 )
 
 
@@ -790,29 +794,31 @@ def migrate_records(db):
     return migrated
 
 
-def atomic_write_json(path, payload):
-    """Replace a JSON artifact atomically after flushing the complete temp file."""
-    directory = os.path.dirname(os.path.abspath(path)) or "."
-    basename = os.path.basename(path)
+def atomic_write_json(
+    path,
+    payload,
+    *,
+    expected_snapshot: TrackingDatabaseSnapshot | None = None,
+):
+    """Commit JSON against the exact generation captured before validation."""
     try:
-        fd, temp_path = tempfile.mkstemp(prefix=f".{basename}.", suffix=".tmp", dir=directory)
-        installed = False
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, indent=2, ensure_ascii=False)
-                handle.write("\n")
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temp_path, path)
-            installed = True
-        finally:
-            if not installed:
-                try:
-                    os.unlink(temp_path)
-                except FileNotFoundError:
-                    pass
-    except OSError as exc:
-        raise ValueError(f"cannot atomically write tracking database {path}: {exc}") from exc
+        snapshot = expected_snapshot or snapshot_tracking_database(path)
+        return write_json_object(snapshot, payload)
+    except TrackingDatabaseIOError as exc:
+        raise ValueError(f"cannot safely write tracking database {path}: {exc}") from exc
+
+
+def load_tracking_database(path):
+    """Load strict JSON and retain the exact generation used for validation."""
+    try:
+        snapshot = snapshot_tracking_database(path)
+        return decode_json_object(snapshot), snapshot
+    except TrackingDatabaseIOError as exc:
+        message = str(exc)
+        if "tracking database is missing at" in message:
+            message = f"tracking database file not found: {path} — {message}"
+        print(f"ERROR: {message}", file=sys.stderr)
+        sys.exit(1)
 
 
 def load_json(path, label):
@@ -880,12 +886,7 @@ def parse_args(argv):
 def main():
     db_path, batch_path, run_date = parse_args(sys.argv[1:])
 
-    try:
-        reject_tracking_database_symlink(db_path)
-    except IngressContractError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        sys.exit(1)
-    db = load_json(db_path, "tracking database")
+    db, database_snapshot = load_tracking_database(db_path)
     returns = load_json(batch_path, "batch-returns")
     try:
         catalog = validate_batch(returns)
@@ -1006,7 +1007,11 @@ def main():
         sys.exit(1)
 
     try:
-        atomic_write_json(db_path, db)
+        write_result = atomic_write_json(
+            db_path,
+            db,
+            expected_snapshot=database_snapshot,
+        )
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -1016,6 +1021,11 @@ def main():
                "pattern_scoring_schema_version": PATTERN_SCORING_SCHEMA_VERSION,
                "pattern_catalog_fingerprint": catalog.fingerprint,
                "current_adherence_baseline": current_adherence_baseline,
+               "input_sha256": write_result.input_sha256,
+               "output_sha256": write_result.output_sha256,
+               "database_written": write_result.installed,
+               "durability_state": write_result.durability_state,
+               "warnings": list(write_result.warnings),
                "talks": summary}, sys.stdout, ensure_ascii=False)
     sys.stdout.write("\n")
 

@@ -9,7 +9,7 @@ You (the agent) emit the op sequence from `slides.md` + the profile layout map â
 layout, placeholder, and content choices are your judgment. Then:
 
 ```bash
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/validate-deckops.py" ops.txt          # exit 0 + {"slides":N,"ops":M}, or exit 1 + errors
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/validate-deckops.py" ops.txt # exit 0 + {"slides":N,"ops":M}, or exit 1 + errors
 bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/build-deck.sh" <template-copy.pptx> <out.pptx> ops.txt
 ```
 
