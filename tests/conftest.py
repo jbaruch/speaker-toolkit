@@ -3,12 +3,9 @@
 import importlib.util
 import os
 import sys
-import types
 
 import pytest
-from lxml import etree
 from pptx import Presentation
-from pptx.util import Inches
 
 # ── Script import helper ──────────────────────────────────────────────
 
@@ -97,6 +94,12 @@ def persist_results():
 
 
 @pytest.fixture(scope="session")
+def return_validation():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "return_validation.py"), "return_validation")
+
+
+@pytest.fixture(scope="session")
 def write_analysis():
     return _import_script(os.path.join(SCRIPTS_VI, "write-analysis.py"), "write_analysis")
 
@@ -107,9 +110,49 @@ def fetch_transcript():
 
 
 @pytest.fixture(scope="session")
+def preflight_vault():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "preflight-vault.py"), "preflight_vault"
+    )
+
+
+@pytest.fixture(scope="session")
+def apply_source_repairs():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "apply-source-repairs.py"),
+        "apply_source_repairs",
+    )
+
+
+@pytest.fixture(scope="session")
+def aggregate_catalog_feedback():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "aggregate-catalog-feedback.py"),
+        "aggregate_catalog_feedback",
+    )
+
+
+@pytest.fixture(scope="session")
+def audit_source_identities():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "audit-source-identities.py"),
+        "audit_source_identities",
+    )
+
+
+@pytest.fixture(scope="session")
+def audit_pattern_catalog():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "audit-pattern-catalog.py"),
+        "audit_pattern_catalog",
+    )
+
+
+@pytest.fixture(scope="session")
 def transcript_timing():
     return _import_script(
-        os.path.join(SCRIPTS_VI, "transcript_timing.py"), "transcript_timing"
+        os.path.join(SCRIPTS_VI, "transcript_timing.py"),
+        "transcript_timing",
     )
 
 

@@ -11,6 +11,20 @@ detection_signals:
   - "speaker discusses preparation process"
   - "equipment apologies"
   - "meta-commentary about the talk itself"
+evaluable_from:
+  - transcript
+  - delivery_video
+strong_evaluable_from:
+  - transcript
+  - delivery_video
+absence_evaluable_from:
+  - transcript
+evidence_requirements:
+  - "Evidence must locate speaker-authored commentary about preparation, equipment, timing, slot placement, or talk structure in its conversational context."
+  - "A strong score requires multiple qualifying instances; absence is authorized only from a complete transcript covering the talk."
+not_evaluable_when:
+  - "Only an isolated notice is available and context cannot distinguish an accessibility or safety instruction from excuse-making."
+  - "The spoken source is incomplete for recurring-commentary evidence, or the transcript is incomplete for an absence finding."
 related_patterns: [breathing-room, carnegie-hall, crucible]
 inverse_of: [display-of-high-value]
 difficulty: foundational
@@ -42,9 +56,13 @@ This is an antipattern to avoid in every presentation. There are no scenarios wh
 - Speaker references problems the audience would not have noticed otherwise
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Multiple instances of going meta — speaker repeatedly comments on preparation, equipment, timing, or other behind-the-scenes concerns
-- Moderate signal (1 pt): One or two minor meta-comments that are quickly moved past without dwelling
-- Absent (0 pts — antipattern not present): Speaker never goes meta — no apologies, no preparation commentary, no equipment excuses, all problems handled invisibly
+- Strong signal (antipattern present): Multiple instances of going meta — speaker repeatedly comments on preparation, equipment, timing, or other behind-the-scenes concerns
+- Moderate signal: One or two minor meta-comments that are quickly moved past without dwelling
+- Absent (antipattern not present): Speaker never goes meta — no apologies, no preparation commentary, no equipment excuses, all problems handled invisibly
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+An absence finding is authorized only from a complete transcript (`transcript`) covering the required spoken scope; delivery video, rendered/static slides, native decks, and comparison artifacts do not authorize absence.
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 9 (Speaker Authority / Credibility) and to Vault Dimension 14 (Speaker Craft / Professionalism).

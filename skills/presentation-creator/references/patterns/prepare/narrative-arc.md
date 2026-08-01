@@ -14,8 +14,23 @@ detection_signals:
   - "problem-solution arc"
   - "throughline maintained"
   - "rising tension toward resolution"
+evaluable_from:
+  - transcript
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - transcript
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "A positive finding must use complete ordered talk structure and locate the throughline, tension, and resolution across sections rather than mistaking one local anecdote for the presentation's arc."
+  - "A strong finding requires the complete spoken delivery; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "Only an excerpt, outline fragment, or selected slide sequence is available without the opening-to-close order."
+  - "The transcript or recording is incomplete, or a transcript/deck pair cannot be aligned well enough to determine whether the talk resolves its central tension."
 related_patterns: [triad, bookends, intermezzi, unifying-visual-theme, context-keeper]
-inverse_of: []
+inverse_of: [lipstick-on-a-pig, celery]
 difficulty: foundational
 ---
 
@@ -42,9 +57,13 @@ Use this pattern for virtually every presentation. Even talks that seem purely i
 The vault should look for evidence of intentional narrative structure. A clear throughline from problem to resolution, rising tension through the middle sections, and a satisfying conclusion are strong indicators. Random-seeming topic jumps and abrupt endings suggest the absence of a narrative arc.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Clear three-act structure; throughline maintained from opening to close; rising tension with satisfying resolution; every section serves the arc
-- Moderate signal (1 pt): Some narrative structure present but inconsistent; beginning and end exist but middle meanders; throughline partially maintained
-- Absent (0 pts): No discernible narrative structure; slides feel like a random collection; no resolution or payoff
+- Strong signal: Clear three-act structure; throughline maintained from opening to close; rising tension with satisfying resolution; every section serves the arc
+- Moderate signal: Some narrative structure present but inconsistent; beginning and end exist but middle meanders; throughline partially maintained
+- Absent: No discernible narrative structure; slides feel like a random collection; no resolution or payoff
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 2 (Structure/Organization) as the primary structural pattern for presentations. Relates to Dimension 5 (Storytelling/Narrative) directly — this pattern IS the narrative dimension.

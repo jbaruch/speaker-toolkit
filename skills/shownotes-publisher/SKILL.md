@@ -28,6 +28,12 @@ target site) extracts structured fields by pattern matching on the
 body. The format is strict — small mistakes silently flatten
 content or break conditional rendering.
 
+Resolve the absolute path of this loaded `SKILL.md`, then set
+`speaker_toolkit_root` to the plugin root two directories above the directory
+containing this file. Never derive it from the consumer working directory.
+Treat `{speaker_toolkit_root}` as absolute in every toolkit-owned command;
+talk and shownotes-site paths remain consumer-owned.
+
 Reference files in this skill:
 [references/parser-contract.md](references/parser-contract.md) —
 extraction grammar per `extracted_*` field;
@@ -49,7 +55,7 @@ re-supply anything that is derivable. Read automatically:
 the schema script's JSON emit mode:
 
 ```bash
-python3 skills/presentation-creator/scripts/outline_schema.py \
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" \
     --emit-json <path-to-outline.yaml>
 ```
 
@@ -340,7 +346,7 @@ repo — it enumerates every path the push would land on `main`
 untracked changes) and reports whether they all touch content paths:
 
 ```bash
-bash skills/shownotes-publisher/scripts/content-only-gate.sh ~/Projects/shownotes
+bash "{speaker_toolkit_root}/skills/shownotes-publisher/scripts/content-only-gate.sh" ~/Projects/shownotes
 ```
 
 - **Exit 0** (content-only) → take the **direct-push** flow. This

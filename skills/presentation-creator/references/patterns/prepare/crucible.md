@@ -59,9 +59,9 @@ Without that history, the workflow is unevaluable even when the talk appears
 highly practiced.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Versioned deliveries and linked feedback show multiple concrete revisions after live performance
-- Moderate signal (1 pt): At least one post-delivery revision is directly documented, but the feedback-to-change trail is incomplete
-- Absent (0 pts): Version history shows no revision after prior delivery despite captured feedback
+- Strong signal: Versioned deliveries and linked feedback show multiple concrete revisions after live performance
+- Moderate signal: At least one post-delivery revision is directly documented, but the feedback-to-change trail is incomplete
+- Absent: Version history shows no revision after prior delivery despite captured feedback
 - Unevaluable: Prior versions, feedback records, or speaker confirmation are unavailable
 
 ## Relationship to Vault Dimensions

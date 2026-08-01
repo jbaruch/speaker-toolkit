@@ -4,6 +4,28 @@
 
 A six-skill presentation system for conference speakers: analyze your existing talks to extract your rhetoric patterns, create new presentations that match your documented style, produce the deck illustrations + thumbnail visual layer, and publish talk pages to a Jekyll shownotes site.
 
+## What's New (0.19.0)
+
+**Evidence-exact reparsing** — fresh ingress work now uses schema-v5 claims,
+returns, talk records, and scoring. Every processed talk records an exhaustive
+outcome for each of the 81 observable catalog entries, bound to the exact live
+catalog and to owner-validated transcript, slide, video, or metadata evidence.
+Older generations remain readable history but cannot enter the current scoring
+cohort by implication.
+
+**Defensible absence and opportunity-aware profiles** — all observable entries
+declare explicit evidence gates, but only 16 permit an absence conclusion from a
+complete transcript or separately declared rendered PDF. Speaker profiles retain
+each pattern's exact evaluable denominator and fail closed on mastery, novelty,
+recurring severity, combinations, and trends until a speaker-owned classification
+policy exists.
+
+**Safer installed operation** — toolkit commands resolve from the installed
+plugin root and use the vault's configured Python interpreter. A stdlib-only
+runtime probe reports each source lane independently, while atomic, source-bound
+transcript quality and timing receipts keep optional enrichment failures from
+replacing trusted text.
+
 ## What's New (0.18.27)
 
 **Real PowerPoint deck engine** — decks are now created and edited through the
@@ -111,8 +133,8 @@ from `publishing_process.shownotes_site` in the speaker profile instead of
 searching the web. Resources-gathering rules document the read path.
 Fixed eval scenarios 12 and 13 with deterministic test data.
 
-**Test suite and CI** — 119 pytest tests across 15 files cover every script, running
-on every push and PR via GitHub Actions with ffmpeg and LibreOffice.
+**Test suite and CI** — comprehensive pytest coverage runs on every push and PR
+via GitHub Actions with ffmpeg, LibreOffice, and Tesseract-backed source lanes.
 
 See [CHANGELOG.md](CHANGELOG.md) for full history.
 
@@ -132,12 +154,12 @@ The toolkit is built on six skills connected by a shared **rhetoric vault** — 
 ```
 
 **Vault skills (analysis):**
-- **vault-ingress** parses your recorded talks (YouTube transcripts + slides from PPTX files or Google Drive PDFs) and extracts rhetoric patterns across 14 dimensions — opening hooks, humor style, audience interaction, slide design, pacing, transitions, verbal signatures, and more. It also scores each talk against the Presentation Patterns taxonomy.
+- **vault-ingress** parses recorded talks from transcripts, native decks, PDFs, or video and extracts rhetoric patterns across 14 dimensions — opening hooks, humor style, audience interaction, slide design, pacing, transitions, verbal signatures, and more. Before scoring, deterministic catalog and source-identity gates verify the evidence; video-derived slide claims require a provenance-bound, manually verified slide-region artifact. Recoverable queue leases and validated returns keep interrupted or stale batches from corrupting the vault.
 - **vault-clarification** runs interactive sessions to validate findings and capture deliberate intent.
-- **vault-profile** generates a structured speaker profile, including a pattern profile with mastery levels and signature combinations, after enough talks are analyzed.
+- **vault-profile** generates a structured speaker profile with source-exact per-pattern opportunity rows and explicit classification availability after enough talks are analyzed.
 
 **Creator skills (generation):**
-- **presentation-creator** reads the vault at runtime and uses your documented patterns as a constitutional style guide to build new presentations. It follows a 7-phase process from intent distillation through slide generation, with a 4-tier Pattern Strategy for selecting presentation techniques, and a go-live checklist before delivery. Delegates the visual layer to the illustrations skill.
+- **presentation-creator** reads the vault at runtime and uses your documented rhetoric as a constitutional style guide to build new presentations. It follows a 7-phase process from intent distillation through slide generation, with a current-taxonomy Pattern Strategy and a go-live checklist before delivery. The four historical tiers and recurring labels appear only when the profile explicitly authorizes classification fields; otherwise the creator stays on a flat taxonomy path. Delegates the visual layer to the illustrations skill.
 - **illustrations** owns the deck illustration strategy, generation, build chains, and YouTube thumbnails. Invoked by presentation-creator at the relevant phases (Phase 2 strategy, Phase 5 application, Phase 7 thumbnail).
 - **shownotes-publisher** writes talk pages into a Jekyll-based shownotes site (e.g., `speaking.jbaru.ch`). Encodes the custom parser's format contract so authored content actually renders: abstract is one paragraph, video field absent = "coming soon" badge, slides/video URLs must be markdown links, no frontmatter title, etc. Invoked after the talk is delivered (or pre-talk for slides-only publish).
 
@@ -153,11 +175,15 @@ tessl install jbaruch/speaker-toolkit
 
 ### Phase 1: Build Your Vault
 
-You need recorded talks with:
-- YouTube videos (for transcripts)
-- Slides in at least one of: `.pptx` source files (preferred — exact design data) or Google Drive PDF exports
+Each talk needs at least one usable source:
+- a local transcript, or a video from which ingress can acquire one;
+- authored slides as a `.pptx` (preferred), local PDF, or Google Drive PDF; or
+- a delivery video for observations that genuinely require delivered context.
 
-Organize your talk metadata as `.md` shownotes files in a directory, each containing a video URL and optionally a slides URL or PPTX path (or both).
+Organize talk metadata as `.md` shownotes files in a directory and declare every
+source that actually exists. Video is useful but is not a universal eligibility
+requirement; ingress records source-limited outcomes as `not_evaluable` instead of
+inventing evidence from an unavailable channel.
 
 Then run:
 ```
@@ -169,11 +195,11 @@ The vault skill will:
 2. Scan for talks and .pptx files
 3. Process talks in parallel batches of 5
 4. Extract rhetoric patterns across 14 dimensions
-5. Score each talk against the 89 observable Presentation Patterns entries using
+5. Score each talk against the 81 observable Presentation Patterns entries using
    source-located, channel-permitted evidence
 6. Build a running narrative summary and slide design spec
 7. Run an interactive clarification session to validate findings and capture your intent
-8. Generate a structured speaker profile with pattern mastery data (after 10+ talks)
+8. Generate a structured speaker profile with auditable pattern opportunities and explicit classification availability (after 10+ talks)
 
 ### Phase 2: Create Presentations
 
@@ -185,7 +211,7 @@ create a presentation about [topic] for [conference]
 The creator will:
 1. Load your vault (summary, design spec, profile) and the pattern taxonomy
 2. Walk you through intent distillation (purpose, audience, constraints)
-3. Jointly select rhetorical instruments, including a 4-tier Pattern Strategy
+3. Jointly select rhetorical instruments, using a flat current-taxonomy Pattern Strategy unless validated classification history explicitly enables the four historical tiers
 4. Write a section-by-section outline with speaker notes in your voice
 5. Run guardrail checks (slide budget, Act 1 ratio, profanity, branding, pattern-based antipattern scan)
 6. Generate a .pptx deck from your template
@@ -224,7 +250,7 @@ rhetoric-knowledge-vault/
 
 **rhetoric-style-summary.md** is the constitution — rich prose covering presentation modes, opening patterns, humor techniques, audience interaction styles, closing patterns, verbal signatures, persuasion techniques, and more. It grows every time you parse new talks.
 
-**speaker-profile.json** is the specification — structured data that the creator reads at runtime: presentation modes with quantitative thresholds, instrument catalogs, guardrail rules, pacing data, design rules, the publishing workflow, and a `pattern_profile` with per-pattern mastery levels, antipattern frequency, signature combinations, and never-used patterns.
+**speaker-profile.json** is the specification — structured data that the creator reads at runtime: presentation modes with quantitative thresholds, instrument catalogs, guardrail rules, pacing data, design rules, the publishing workflow, and a `pattern_profile` with exact positive/negative occurrence rows, per-pattern opportunity denominators, source cohort provenance, and explicit classification availability. Current schema-v4 profiles fail closed on mastery, novelty, recurring severity, combinations, and trends until the speaker owns a versioned classification policy.
 
 **slide-design-spec.md** captures visual design rules extracted from both PDF inspection and programmatic .pptx analysis: background colors, typography, footer specs, shape vocabulary, and template layout catalog.
 
@@ -317,17 +343,31 @@ notes which named patterns and antipatterns are detected per talk.
 - Talks are processed in **parallel batches of 5** subagents
 - Transcripts use YouTube captions first, with local Whisper audio transcription as fallback;
   source timing is retained in a hash-bound sidecar when available
-- Slides are acquired from PPTX files (preferred, richer data) or downloaded as PDFs via `gdown`
-- Each talk is scored against the taxonomy's 89 observable entries (66 patterns + 23 antipatterns),
+- Slides come from native PPTX files, local or Drive-acquired static PDFs, or
+  provenance-gated video-derived artifacts; each source keeps its own evidence
+  capabilities instead of aliasing one format to another
+- Each talk is scored against the taxonomy's 81 observable entries (62 patterns + 19 antipatterns),
   with source-located evidence restricted to the artifact channels each entry permits
 - Each batch updates the summary, per-talk analysis files, and triggers profile regeneration
 - An interactive clarification session resolves ambiguities and captures confirmed intent
 
 ### Prerequisites
 
-- Python 3 with `gdown`, `youtube-transcript-api`, and `python-pptx`
-- `yt-dlp` for transcript downloading
-- Talks with YouTube video + slides (PPTX files and/or Google Drive PDF exports)
+- Python 3.10+ at the vault's configured `python_path`, with core `PyYAML`;
+  `pypdf` for PDF evidence; and `python-pptx` for native-deck evidence
+- Lane-specific runtime: importable `gdown` for Google Drive acquisition,
+  `youtube-transcript-api` for captions, `yt-dlp` for provider probing/audio
+  download, `pdftoppm` for rendered-PDF inspection, Pillow + `imagehash` +
+  `ffmpeg`/`ffprobe` for video extraction, and optional `mlx-whisper` for local
+  Whisper fallback
+- Talks with at least one reachable transcript, slide, or video source
+
+Installed plugin bundles do not include `pyproject.toml`; README and the
+vault-ingress skill are the runtime authority. After `python_path` is
+bootstrapped, run its stdlib-only `check-runtime.py` probe. Optional lane
+dependency absence is isolated: missing pypdf cannot erase transcript/PPTX
+capability, and missing python-pptx cannot erase transcript/PDF capability.
+Unexpected dependency initializer faults stop the probe visibly.
 
 ## Generation & Publishing Skills Details
 
@@ -373,9 +413,9 @@ two are invoked via typed `Skill(...)` handoffs.
 6. **Time-sensitive content** — expired dates, version numbers
 7. **Closing completeness** — summary + CTA + social
 8. **Modular cut lines** — present for shorter/longer adaptation
-9. **Anti-pattern flags** — speaker-specific recurring issues from the vault
-   - **9A:** Profile-based recurring issues
-   - **9B:** Taxonomy-based antipattern scan — `[RECURRING]` from speaker history, `[CONTEXTUAL]` from outline analysis
+9. **Anti-pattern flags** — current-outline taxonomy findings plus independently sourced non-pattern guardrails
+   - **9A:** Profile-based non-pattern recurring issues (`source_lane: "non_pattern"`)
+   - **9B:** Taxonomy-based antipattern scan — `[CONTEXTUAL]` always; `[RECURRING]` only when the shared profile gate explicitly authorizes classification history
 10. **Illustration coverage** — format tags, EXCEPTION justifications, style anchor references, prompt quality (when illustration strategy is defined; `[SKIP]` otherwise)
 
 ### Presentation Patterns Taxonomy
@@ -392,20 +432,30 @@ across the corpus (`delayed-self-introduction`, `three-part-close`, `progressive
 - **Build** (51): Foreshadowing, Bookends, Defy Defaults, Vacation Photos, Traveling Highlights, Emergence, Sparkline, Call to Adventure, Call to Action, New Bliss, S.T.A.R. Moment, Three-Part Close, Progressive Reveal, Meme as Argument, Guess First, Retrieval Beat, Second Look, and more
 - **Deliver** (36): Carnegie Hall, Breathing Room, Echo Chamber, Seeding the First Question, Screen Blackout, Delayed Self-Introduction, Anti-Sell, Flyover, Spaced Follow-Up, The Nodding Room, and more
 
-Of the 111 entries, **89 are observable** (directly detectable through their declared
-transcript, slide, video, or metadata evidence channels) and **22 are unobservable**
-(pre-event logistics, hidden authoring/provenance processes, physical stage behaviors,
-post-event follow-up, and external systems the current artifacts cannot prove).
+Of the 111 entries, **81 are observable** (62 patterns + 19 antipatterns): directly
+detectable through their declared transcript, slide, or video locator channels, with
+allowlisted source metadata only as corroboration. The other **30 are unobservable**
+(21 patterns + 9 antipatterns): pre-event logistics, hidden authoring/provenance processes,
+physical stage behaviors, post-event follow-up, and external systems the current artifacts
+cannot prove.
+
+All 81 observable entries explicitly declare positive, strong, and absence source gates.
+Only **16** currently permit an undetected/absence outcome: 11 from a fully inspected,
+separately declared rendered PDF and 5 from a fully inspected transcript. The other **65**
+are positive-only and fail closed to `not_evaluable` on non-detection. Sampled,
+deduplicated video-extracted slide PDFs remain valid positive evidence but are never
+absence-complete; native decks, generic delivery-video roles, and comparison groups also
+remain outside absence denominators until versioned capability/alignment receipts exist.
 
 **How it integrates:**
 
-| Integration point | Observable patterns (89) | Unobservable patterns (22) |
+| Integration point | Observable entries (81: 62 patterns + 19 antipatterns) | Unobservable entries (30: 21 patterns + 9 antipatterns) |
 |---|---|---|
-| **Vault scoring** (Step 3 B2) | Scored per talk, aggregated into `pattern_profile` | Excluded from scoring |
-| **Creator Phase 2** | 4-tier Pattern Strategy (Signature / Contextual / New to You / Shake It Up) | Included in recommendations |
-| **Creator Phase 4** | `[RECURRING]` + `[CONTEXTUAL]` antipattern flags | Excluded from scan |
+| **Vault scoring** (Step 3 B2) | Exhaustive per-talk outcomes aggregate into source-exact `pattern_profile` occurrence rows | Excluded from scoring |
+| **Creator Phase 2** | Flat current-taxonomy strategy by default; four historical tiers only when classification history is explicitly authorized | Included in recommendations |
+| **Creator Phase 4** | `[CONTEXTUAL]` flags always; `[RECURRING]` only from explicitly authorized classification history | Excluded from scan |
 | **Creator Phase 6** | — | Go-live preparation checklist |
-| **Speaker profile** | `pattern_profile` with mastery levels, trends, combos | Not in profile |
+| **Speaker profile** | `pattern_profile` with opportunity-aware occurrence rows and explicit classification availability | Not in profile |
 | **Summary-only mode** | Flat relevant-patterns list from reference files | Go-live checklist still applies |
 
 ### Special Workflows
@@ -416,14 +466,17 @@ post-event follow-up, and external systems the current artifacts cannot prove).
 
 ### Summary-Only Mode
 
-If the speaker profile doesn't exist yet (fewer than 10 talks parsed), the creator runs in **summary-only mode** — drawing instruments from the rhetoric summary prose, using default guardrail thresholds, and asking for template/publishing details interactively. The pattern taxonomy still works (all patterns shown as "new"), and the go-live checklist still applies.
+If the speaker profile doesn't exist yet (fewer than 10 talks parsed), the creator runs in **summary-only mode** — drawing instruments from the rhetoric summary prose, using default guardrail thresholds, and asking for template/publishing details interactively. The pattern taxonomy still works as a flat relevant list without usage or novelty claims, and the go-live checklist still applies.
 
 ## Prerequisites
 
 ### For the Vault Skills (vault-ingress, vault-clarification, vault-profile)
-- Python 3 environment with `gdown`, `youtube-transcript-api`, `python-pptx`
-- `yt-dlp` command-line tool
-- Talks with YouTube recordings and slides (PPTX files and/or Google Drive exports)
+- Configured Python 3.10+ environment with PyYAML; add pypdf, python-pptx,
+  gdown, and youtube-transcript-api for the source lanes actually used
+- `yt-dlp`, `pdftoppm`, `ffmpeg`, and `ffprobe` for the provider/download,
+  rendered-PDF, and video lanes that require them; optional `mlx-whisper` for
+  local Whisper fallback
+- Talks with at least one usable transcript, slide, or delivery-video source
 
 ### For the Presentation Creator & Illustrations Skills
 - Microsoft PowerPoint with VBA macros — the deck engine: slide generation, structural edits, speaker notes, backgrounds, and QR all drive the real app (macOS only). One-time `DeckOps.pptm` macro setup: `skills/presentation-creator/references/deck-editing-setup.md`
@@ -448,15 +501,15 @@ speaker-toolkit/
 +-- README.md
 +-- CHANGELOG.md
 +-- pyproject.toml                            # Dependencies + pytest config
-+-- tests/                                    # 119 tests across 15 files
++-- tests/                                    # Deterministic pytest unit and integration coverage
 |   +-- conftest.py                           # Script import helpers + PPTX fixtures
-|   +-- test_*.py                             # One test file per script
+|   +-- test_*.py                             # Runtime, contract, docs, and packaging regressions
 +-- .github/workflows/
 |   +-- tests.yml                             # pytest on push/PR (ffmpeg + LibreOffice)
 |   +-- publish.yml                    # Tessl skill review + publish
 +-- skills/
     +-- vault-ingress/
-    |   +-- SKILL.md                          # Main vault workflow (6 steps)
+    |   +-- SKILL.md                          # Main vault workflow (9 steps)
     |   +-- scripts/
     |   |   +-- pptx-extraction.py            # python-pptx visual extraction
     |   |   +-- video-slide-extraction.py     # Video-to-slides via ffmpeg + perceptual dedup
@@ -498,7 +551,7 @@ speaker-toolkit/
     |           +-- _index.md                 # Master index, phase mapping, dimension lookup
     |           +-- prepare/                  # 20 patterns + 4 antipatterns
     |           +-- build/                    # 41 patterns + 10 antipatterns
-    |           +-- deliver/                  # 22 patterns + 14 antipatterns (12 unobservable)
+    |           +-- deliver/                  # 22 patterns + 14 antipatterns (14 unobservable)
     +-- illustrations/
     |   +-- SKILL.md                          # Visual layer workflow (7 mode-routed steps)
     |   +-- scripts/

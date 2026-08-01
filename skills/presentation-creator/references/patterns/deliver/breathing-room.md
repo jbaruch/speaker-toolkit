@@ -11,6 +11,17 @@ detection_signals:
   - "strategic pauses"
   - "comfortable silences"
   - "pacing variation with deliberate slow moments"
+evaluable_from:
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
+  - "Evidence must expose the existing scoring cues: actual silence, timing, and delivery pacing."
+not_evaluable_when:
+  - "No delivery video covers the relevant event or interval."
+  - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
 related_patterns: [narrative-arc, brain-breaks, know-your-audience]
 inverse_of: [hiccup-words]
 difficulty: intermediate
@@ -49,9 +60,13 @@ Use this pattern in every presentation, with the frequency and duration of pause
 - Speaker does not rush through transitions between sections
 
 ## Scoring Criteria
-- Strong signal (2 pts): Strategic pauses are evident throughout, silences are confident and well-timed, pacing varies deliberately, audience has time to absorb key points
-- Moderate signal (1 pt): Some pauses present but inconsistent — speaker occasionally rushes through important moments
-- Absent (0 pts): No strategic pauses, speaker fills every moment with words, rapid-fire delivery throughout
+- Strong signal: Strategic pauses are evident throughout, silences are confident and well-timed, pacing varies deliberately, audience has time to absorb key points
+- Moderate signal: Some pauses present but inconsistent — speaker occasionally rushes through important moments
+- Absent: No strategic pauses, speaker fills every moment with words, rapid-fire delivery throughout
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 7 (Clarity / Communication) and to Vault Dimension 12 (Delivery Mechanics). The ability to hold silence is both a communication technique and a marker of delivery mastery.

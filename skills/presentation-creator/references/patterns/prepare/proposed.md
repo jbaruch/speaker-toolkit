@@ -41,9 +41,9 @@ Verify Proposed from the actual submitted CFP artifact and compare its promised
 scope with the delivered talk. Without that artifact, the pattern is unevaluable.
 
 ## Scoring Criteria
-- Strong signal (2 pts): The submitted/accepted CFP artifact is available and the delivered talk fulfills its scope and promised takeaways
-- Moderate signal (1 pt): The proposal is available and the talk fulfills most promises with limited, explainable drift
-- Absent (0 pts): Records show no proposal was submitted for this talk or the submitted scope was not treated as a commitment
+- Strong signal: The submitted/accepted CFP artifact is available and the delivered talk fulfills its scope and promised takeaways
+- Moderate signal: The proposal is available and the talk fulfills most promises with limited, explainable drift
+- Absent: Records show no proposal was submitted for this talk or the submitted scope was not treated as a commitment
 - Unevaluable: The submitted CFP artifact is unavailable
 
 ## Relationship to Vault Dimensions

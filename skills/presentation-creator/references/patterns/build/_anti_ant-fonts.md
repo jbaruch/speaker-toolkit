@@ -13,6 +13,22 @@ detection_signals:
   - "cramped text"
   - "readability issues from back of room"
   - "auto-shrunk content"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+absence_evaluable_from:
+  - static_slides
+evidence_requirements:
+  - "Inspect rendered pages or delivered frames across the deck for visible glyph size, crowding, consistency, and audience readability; shape text alone is not evidence."
+  - "A strong score requires located unreadable or auto-shrunk text on multiple slides or a direct delivery acknowledgment; absence is authorized only from a complete, separately declared rendered PDF."
+not_evaluable_when:
+  - "Only extracted shape text, layout metadata, or unrendered slide content is available, because lettering may be baked into images."
+  - "The rendered or delivered deck is not covered completely enough for the claimed positive tier, or the separately declared rendered PDF is incomplete for an absence finding."
 related_patterns: [bullet-riddled-corpse, infodeck]
 inverse_of: []
 difficulty: foundational
@@ -43,9 +59,13 @@ The solution is never to make the text smaller. The solution is one of: reduce t
 When scoring talks, evaluate text readability from the audience perspective. Any text below 18-point font for code or 24-point font for regular text is a warning sign. The presenter saying "you probably can't read this" is an automatic detection trigger. Inconsistent text sizes across slides (indicating auto-shrinking) is another strong signal. Also watch for audience members squinting, leaning forward, or pulling out their phones to photograph a slide — all behavioral indicators of Ant Fonts.
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Multiple slides with small text, presenter acknowledges readability issues ("you probably can't read this"), auto-shrunk fonts visible, code in small font sizes
-- Moderate signal (1 pt): Most text is readable, with one or two slides that push the readability boundary, no verbal acknowledgment of illegibility
-- Absent (0 pts — antipattern not present): All text is clearly readable from the back of the room, consistent font sizes across slides, no auto-shrunk content, code at 18pt or larger
+- Strong signal (antipattern present): Multiple slides with small text, presenter acknowledges readability issues ("you probably can't read this"), auto-shrunk fonts visible, code in small font sizes
+- Moderate signal: Most text is readable, with one or two slides that push the readability boundary, no verbal acknowledgment of illegibility
+- Absent (antipattern not present): All text is clearly readable from the back of the room, consistent font sizes across slides, no auto-shrunk content, code at 18pt or larger
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+An absence finding is authorized only from a complete, separately declared rendered PDF (`static_slides`); a native deck, delivery video, transcript, or comparison artifact does not authorize absence.
 
 ## Relationship to Vault Dimensions
 Dimension 13 (Slide Aesthetics): Ant Fonts directly degrade the visual quality of slides, producing cramped, cluttered layouts that are aesthetically unpleasant and functionally illegible. Dimension 14 (Overall Quality Indicators): The presence of unreadable text is one of the most immediately visible negative quality signals in any presentation, suggesting insufficient preparation and poor audience awareness.

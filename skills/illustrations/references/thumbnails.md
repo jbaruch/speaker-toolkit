@@ -42,7 +42,7 @@ Resolution chain:
    `slide-{NN}.*` matching the chosen slide.
 2. **PPTX extraction** — use the helper mode:
    ```bash
-   python3 skills/illustrations/scripts/generate-thumbnail.py \
+   python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" \
      --extract-slide deck.pptx 15 --output slide-15.png
    ```
    Uses LibreOffice headless or PowerPoint AppleScript on macOS.
@@ -107,7 +107,7 @@ If Phase 2 didn't produce a style anchor (stock-image-only deck), omit
 
 ```bash
 # Single recommended candidate (the precedence-chain winner)
-python3 skills/illustrations/scripts/generate-thumbnail.py \
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" \
   --slide-image illustrations/slide-15.png \
   --speaker-photo ~/photos/headshot.jpg \
   --title "JUDGMENT DAY" \
@@ -120,7 +120,7 @@ python3 skills/illustrations/scripts/generate-thumbnail.py \
   --output thumbnail.png
 
 # Anchor-matched (when the deck has a style_anchor block)
-python3 skills/illustrations/scripts/generate-thumbnail.py \
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" \
   --slide-image illustrations/slide-15.png \
   --speaker-photo ~/photos/headshot.jpg \
   --title "JUDGMENT DAY" \

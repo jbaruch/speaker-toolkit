@@ -12,6 +12,22 @@ detection_signals:
   - "excessive font variety"
   - "inconsistent typography"
   - "more than 2-3 fonts used"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+absence_evaluable_from:
+  - static_slides
+evidence_requirements:
+  - "Evidence must expose the visible construction across enough of the talk to apply a positive criterion; an absent outcome requires a complete, separately declared rendered PDF."
+  - "Evidence must expose the existing scoring cues: strong: five or more font families; moderate: four or fewer; absent: consistent two-to-three-family palette."
+not_evaluable_when:
+  - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
+  - "Only a transcript or spoken account is available, the visual source is too partial for the asserted positive tier, or the separately declared rendered PDF is incomplete for absence."
 related_patterns: [floodmarks]
 inverse_of: []
 difficulty: foundational
@@ -42,9 +58,13 @@ The only context where deliberate font variety might be acceptable is when the v
 When scoring talks, count the number of distinct font families used across the slide deck. Two or three fonts is normal. Four is suspicious. Five or more is a clear Fontaholic signal. Also look for inconsistency within slides — a title in one font, a subtitle in another, body text in a third, and a callout in a fourth is a classic pattern. Pay special attention to decorative or display fonts used for single elements, which are often the first sign of Fontaholic behavior.
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Five or more font families used across the deck, inconsistent typography within individual slides, ransom-note visual effect
-- Moderate signal (1 pt): Generally consistent typography with one or two additional fonts used for specific purposes (code, quotes), total of four or fewer font families
-- Absent (0 pts — antipattern not present): Consistent typographic palette of two to three font families throughout the entire deck, with variety achieved through size, weight, and style rather than new typefaces
+- Strong signal (antipattern present): Five or more font families used across the deck, inconsistent typography within individual slides, ransom-note visual effect
+- Moderate signal: Generally consistent typography with one or two additional fonts used for specific purposes (code, quotes), total of four or fewer font families
+- Absent (antipattern not present): Consistent typographic palette of two to three font families throughout the entire deck, with variety achieved through size, weight, and style rather than new typefaces
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+An absence finding is authorized only from a complete, separately declared rendered PDF (`static_slides`); a native deck, delivery video, transcript, or comparison artifact does not authorize absence.
 
 ## Relationship to Vault Dimensions
 Dimension 13 (Slide Aesthetics): Typography is one of the most fundamental elements of visual design, and Fontaholic behavior directly degrades the aesthetic quality of slides by introducing visual chaos where consistency is needed. Dimension 14 (Overall Quality Indicators): Typographic inconsistency is a reliable signal of inexperience or inattention to design details, impacting the perceived professionalism of the entire presentation.

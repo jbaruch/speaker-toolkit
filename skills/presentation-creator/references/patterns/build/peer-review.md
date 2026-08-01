@@ -70,9 +70,9 @@ only from review comments, a copyediting artifact, or speaker confirmation that
 identifies the reviewer and the material they reviewed.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Review comments or copyediting artifacts identify a reviewer and show substantive issues addressed
-- Moderate signal (1 pt): A reviewer and reviewed material are confirmed, but the change record is incomplete
-- Absent (0 pts): Available creation history shows no external review before delivery
+- Strong signal: Review comments or copyediting artifacts identify a reviewer and show substantive issues addressed
+- Moderate signal: A reviewer and reviewed material are confirmed, but the change record is incomplete
+- Absent: Available creation history shows no external review before delivery
 - Unevaluable: Review artifacts and speaker confirmation are unavailable
 
 ## Relationship to Vault Dimensions

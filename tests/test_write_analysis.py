@@ -7,17 +7,96 @@ orchestrator in prose with no script to run. The DB carried the corrected
 analysis while every analyses/*.md still asserted what the reparse had refuted.
 """
 
+import copy
+import hashlib
 import json
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
+
+
+def _catalog_fingerprint():
+    root = (
+        Path(__file__).parents[1]
+        / "skills"
+        / "presentation-creator"
+        / "references"
+        / "patterns"
+    )
+    digest = hashlib.sha256()
+
+    def update(relative_path, content):
+        digest.update(relative_path.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(content)
+        digest.update(b"\0")
+
+    update("_index.md", (root / "_index.md").read_bytes())
+    for path in sorted(
+        (item for item in root.rglob("*.md") if item != root / "_index.md"),
+        key=lambda item: item.relative_to(root).as_posix(),
+    ):
+        update(path.relative_to(root).as_posix(), path.read_bytes())
+    return digest.hexdigest()
+
+
+CATALOG_FINGERPRINT = _catalog_fingerprint()
+
+PERSISTED_ANALYSIS_FIELDS = (
+    "transcript_source",
+    "slide_source",
+    "slides_local_path",
+    "rhetoric_notes",
+    "areas_for_improvement",
+    "adherence_assessment",
+    "adherence_comparison",
+    "structured_data",
+    "verbatim_examples",
+)
+
+
+def _adherence_baseline(filenames, *, scored_talk_count=10):
+    score_sum = scored_talk_count * 2
+    return {
+        "schema_version": 1,
+        "as_of": "2026-07-31T18:00:00+00:00",
+        "scope": "global",
+        "active_batch_excluded": True,
+        "excluded_filenames": sorted(filenames),
+        "eligible_statuses": ["processed", "processed_partial"],
+        "pattern_scoring_generation_status": "current",
+        "pattern_scoring_generation_reasons": [],
+        "pattern_catalog_fingerprint": CATALOG_FINGERPRINT,
+        "pattern_scoring_schema_version": 3,
+        "scored_talk_count": scored_talk_count,
+        "pattern_score_sum": score_sum,
+        "average_pattern_score": (2.0 if scored_talk_count else None),
+    }
+
+
+def _return_receipt(ret):
+    canonical = json.dumps(
+        ret,
+        allow_nan=False,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def _return(**overrides):
     ret = {
         "filename": "talk.md",
+        "return_schema_version": 2,
+        "queue_claim": {
+            "run_id": "reparse",
+            "batch_id": "25",
+            "reprocess_generation": 1,
+        },
         "status": "processed",
         "processed_date": "2026-07-26",
         "transcript_source": "youtube_auto",
@@ -25,36 +104,71 @@ def _return(**overrides):
         "rhetoric_notes": "DIMENSION 1 -- OPENING: cold open.",
         "areas_for_improvement": "1) Tighten the close.",
         "adherence_assessment": "Above the mode baseline.",
+        "new_patterns": "",
+        "summary_updates": "",
         "structured_data": {
-            "slide_count": 31,
+            "slide_count": 2,
             "co_presenter": False,
             "image_only_slide_count": 0,
             "per_slide_visual": [
-                {"slide": 1, "background": "salmon", "content_type": "title"},
-                {"slide": 2, "background": "black", "content_type": "bullets"},
+                {
+                    "slide_number": 1,
+                    "background_color_name": "salmon",
+                    "content_type": "title",
+                    "image_composition": "none",
+                    "has_speech_bubble": False,
+                    "has_starburst": False,
+                    "has_footer": False,
+                },
+                {
+                    "slide_number": 2,
+                    "background_color_name": "black",
+                    "content_type": "content_bullets",
+                    "image_composition": "none",
+                    "has_speech_bubble": False,
+                    "has_starburst": False,
+                    "has_footer": True,
+                },
             ],
-            "act_structure": {"acts": 4},
+            "extensions": {"act_structure": {"acts": 4}},
         },
         "verbatim_examples": {"jokes": ["the monkeys wrecked the server room"]},
         "pattern_observations": {
             "patterns_detected": [
-                {"pattern_id": "narrative-arc", "confidence": "strong",
-                 "evidence": "Four-act catalog.",
-                 "evidence_citations": [
-                     {"channel": "slides", "slide_numbers": [1, 8, 20, 31]}
-                 ]},
+                {
+                    "pattern_id": "narrative-arc",
+                    "confidence": "strong",
+                    "evidence_source": "transcript",
+                    "evidence": "Four-act catalog.",
+                },
             ],
             "antipatterns_detected": [
-                {"pattern_id": "ant-fonts", "confidence": "moderate",
-                 "evidence": "7.5pt body text.",
-                 "evidence_citations": [
-                     {"channel": "slides", "slide_numbers": [17]}
-                 ]},
+                {
+                    "pattern_id": "ant-fonts",
+                    "confidence": "moderate",
+                    "evidence_source": "static_slides",
+                    "evidence": "7.5pt body text.",
+                },
             ],
-            "pattern_score": {"patterns_used": 25, "antipatterns_detected": 3, "score": 22},
+            "evidence_sources": [
+                "transcript",
+                "native_deck",
+                "static_slides",
+                "delivery_video",
+                "source_comparison",
+            ],
+            "not_evaluable": [],
+            "pattern_score": {
+                "patterns_used": 1,
+                "antipatterns_detected": 1,
+                "score": 0,
+            },
         },
         "catalog_feedback": {
             "unmatched_observations": [{"observation": "controlling metaphor"}],
+            "confusable_pairs": [],
+            "definition_problems": [],
+            "scoring_problems": [],
             "tensions": [],
         },
     }
@@ -62,16 +176,296 @@ def _return(**overrides):
     return ret
 
 
+def _v3_return(*, baseline=None, **overrides):
+    filename = overrides.get("filename", "talk.md")
+    if baseline is None:
+        baseline = _adherence_baseline([filename])
+    assessment = overrides.pop(
+        "adherence_assessment",
+        "The talk is below the established average but retains the "
+        "speaker's core narrative pattern. Its deliberate structure keeps "
+        "the departure from becoming backsliding.",
+    )
+    ret = _return(
+        return_schema_version=3,
+        adherence_assessment=assessment,
+        **overrides,
+    )
+    score = ret["pattern_observations"]["pattern_score"]
+    if isinstance(score, dict):
+        score = score["score"]
+    ret["adherence_comparison"] = {
+        "schema_version": 1,
+        "baseline": copy.deepcopy(baseline),
+        "talk_pattern_score": score,
+    }
+    return ret
+
+
+def _write_tracking_db(
+    tmp_path, returns, *, title=None, name="tracking-db.json", persisted_date=None
+):
+    talks = []
+    batch_filenames = sorted(ret["filename"] for ret in returns)
+    for ret in returns:
+        return_schema_version = ret.get("return_schema_version", 1)
+        claim = {
+            "schema_version": 2,
+            **ret["queue_claim"],
+            "claimed_at": "2026-07-31T18:00:00+00:00",
+            "previous_status": "needs-reprocessing",
+            "state": "completed",
+            "released_at": "2026-07-31T18:05:00+00:00",
+            "release_reason": "return_persisted",
+            "result_status": ret["status"],
+            "result_payload_sha256": _return_receipt(ret),
+        }
+        if return_schema_version == 3:
+            comparison = ret.get("adherence_comparison")
+            baseline = (
+                comparison.get("baseline")
+                if isinstance(comparison, dict)
+                else _adherence_baseline(batch_filenames, scored_talk_count=0)
+            )
+            claim.update(
+                {
+                    "schema_version": 3,
+                    "required_return_schema_version": 3,
+                    "adherence_baseline": copy.deepcopy(baseline),
+                }
+            )
+        talk = {
+            "filename": ret["filename"],
+            "title": title,
+            "schema_version": 3,
+            "status": ret["status"],
+            "processed_date": (
+                persisted_date or ret.get("processed_date") or "2026-07-26"
+            ),
+            "reprocess_generation": ret["queue_claim"]["reprocess_generation"],
+            "video_url": "https://youtu.be/AbCdEfGhI_1",
+            "youtube_id": "AbCdEfGhI_1",
+            "pptx_path": "Conference/Talk.pptx",
+            "slides_url": "https://drive.google.com/file/d/slides-id/view",
+            "_queue_claim": claim,
+        }
+        if return_schema_version == 3:
+            # Preserve the exact pre-v4 baseline-bound generation so the
+            # renderer can replay its historical receipt without treating it as
+            # new source-located evidence.
+            talk.update(
+                {
+                    "pattern_scoring_schema_version": 3,
+                    "pattern_catalog_fingerprint": CATALOG_FINGERPRINT,
+                    "pattern_scoring_generation_status": "current",
+                    "pattern_scoring_generation_reasons": [],
+                }
+            )
+        else:
+            talk.update(
+                {
+                    "pattern_scoring_generation_status": "legacy_unbaselineable",
+                    "pattern_scoring_generation_reasons": [
+                        "return_schema_precedes_source_locations"
+                    ],
+                }
+            )
+        if ret["status"] == "skipped_no_sources":
+            talk.update(
+                {
+                    "video_url": None,
+                    "youtube_id": None,
+                    "pptx_path": None,
+                    "slides_url": None,
+                }
+            )
+        else:
+            for field in PERSISTED_ANALYSIS_FIELDS:
+                if field in ret:
+                    talk[field] = copy.deepcopy(ret[field])
+            returned_observations = ret["pattern_observations"]
+            patterns_detected = copy.deepcopy(
+                returned_observations["patterns_detected"]
+            )
+            antipatterns_detected = copy.deepcopy(
+                returned_observations["antipatterns_detected"]
+            )
+            for detection in patterns_detected + antipatterns_detected:
+                detection["evidence_citations"] = []
+            observations = {
+                "patterns_detected": patterns_detected,
+                "pattern_ids": [
+                    item["pattern_id"]
+                    for item in returned_observations["patterns_detected"]
+                ],
+                "antipatterns_detected": antipatterns_detected,
+                "antipattern_ids": [
+                    item["pattern_id"]
+                    for item in returned_observations["antipatterns_detected"]
+                ],
+                "not_evaluable": copy.deepcopy(returned_observations["not_evaluable"]),
+                "not_evaluable_ids": [
+                    item["pattern_id"]
+                    for item in returned_observations["not_evaluable"]
+                ],
+                "evidence_sources": copy.deepcopy(
+                    returned_observations["evidence_sources"]
+                ),
+            }
+            returned_score = returned_observations["pattern_score"]
+            score = (
+                returned_score["score"]
+                if isinstance(returned_score, dict)
+                else returned_score
+            )
+            observations["pattern_score"] = score
+            talk["pattern_observations"] = observations
+            talk["pattern_score"] = score
+        talks.append(talk)
+    path = tmp_path / name
+    path.write_text(json.dumps({"talks": talks}))
+    return path
+
+
+def _skipped_return(**overrides):
+    ret = {
+        "filename": "talk.md",
+        "return_schema_version": 2,
+        "queue_claim": {
+            "run_id": "reparse",
+            "batch_id": "25",
+            "reprocess_generation": 1,
+        },
+        "status": "skipped_no_sources",
+    }
+    ret.update(overrides)
+    return ret
+
+
+def _complete_unavailable_source_gates(return_validation, ret):
+    available = set(ret["pattern_observations"]["evidence_sources"])
+    catalog = return_validation.load_catalog()
+    ret["pattern_observations"]["not_evaluable"] = [
+        {
+            "pattern_id": pattern_id,
+            "evidence_source": sorted(available)[0],
+            "reason": "The inspected fixture sources cannot evaluate this pattern.",
+        }
+        for pattern_id, entry in sorted(catalog.entries.items())
+        if entry.observable
+        and entry.evaluable_from is not None
+        and not return_validation.qualifying_evidence_groups(
+            entry.evaluable_from, available
+        )
+    ]
+    return ret
+
+
+def _gradual_legacy_return(return_validation, *, include_delivery=False):
+    sources = ["transcript", "static_slides", "native_deck"]
+    if include_delivery:
+        sources.append("delivery_video")
+    sources.append("source_comparison")
+    ret = _return(return_schema_version=2)
+    ret["pattern_observations"].update(
+        {
+            "patterns_detected": [
+                {
+                    "pattern_id": "gradual-consistency",
+                    "confidence": "moderate",
+                    "evidence_source": "source_comparison",
+                    "evidence": "The rendered and native deck views agree.",
+                }
+            ],
+            "antipatterns_detected": [],
+            "evidence_sources": sources,
+            "pattern_score": {
+                "patterns_used": 1,
+                "antipatterns_detected": 0,
+                "score": 1,
+            },
+        }
+    )
+    return _complete_unavailable_source_gates(return_validation, ret)
+
+
+def _reopen_tracking_claim(path):
+    payload = json.loads(path.read_text())
+    talk = payload["talks"][0]
+    talk["status"] = "reprocessing-inflight"
+    claim = talk["_queue_claim"]
+    claim["state"] = "claimed"
+    for field in (
+        "released_at",
+        "release_reason",
+        "result_status",
+        "result_payload_sha256",
+    ):
+        claim.pop(field, None)
+    path.write_text(json.dumps(payload))
+
+
 def test_renders_core_sections(write_analysis):
-    md = write_analysis.render_analysis(_return())
+    md = write_analysis.render_analysis(_return(slides_local_path="slides/source.pdf"))
     assert md.startswith("# Rhetoric Analysis: talk")
     assert "**Filename:** talk.md" in md
     assert "**Processed:** 2026-07-26" in md
+    assert "**Slides local path:** slides/source.pdf" in md
     assert "## Rhetoric Notes (Dimensions 1-13)" in md
     assert "## Areas for Improvement (Dimension 14)" in md
     assert "## Adherence Assessment" in md
     assert "## Structured Data" in md
     assert "## Presentation Patterns Scoring" in md
+
+
+@pytest.mark.parametrize("return_schema_version", [1, 2])
+def test_legacy_adherence_is_visibly_archival_and_unverified(
+    write_analysis, return_schema_version
+):
+    ret = _return(return_schema_version=return_schema_version)
+
+    md = write_analysis.render_analysis(ret)
+
+    assert "## Adherence Assessment (Legacy, Unverified)" in md
+    assert "**`legacy-unverified`:**" in md
+    assert f"return schema v{return_schema_version}" in md
+    assert "excluded from current numeric baselines, speaker profiles" in md
+    assert "Above the mode baseline." in md
+    assert "**Validated numeric anchor:**" not in md
+
+
+@pytest.mark.parametrize("return_schema_version", [1, 2, 3])
+def test_empty_adherence_assessment_is_omitted(write_analysis, return_schema_version):
+    ret = _return(
+        return_schema_version=return_schema_version,
+        adherence_assessment="",
+    )
+
+    md = write_analysis.render_analysis(ret)
+
+    assert "## Adherence Assessment" not in md
+    assert "legacy-unverified" not in md
+    assert "Validated numeric anchor" not in md
+
+
+def test_v3_adherence_is_archival_despite_structured_historical_comparison(
+    write_analysis,
+):
+    baseline = _adherence_baseline(["talk.md"], scored_talk_count=10)
+    ret = _v3_return(
+        baseline=baseline,
+        adherence_assessment=(
+            "Model-authored prose claims 999 versus a 999 average. "
+            "The structured comparison remains authoritative."
+        ),
+    )
+
+    md = write_analysis.render_analysis(ret)
+
+    assert "## Adherence Assessment (Legacy, Unverified)" in md
+    assert "**Validated numeric anchor:**" not in md
+    assert "Model-authored prose claims 999" in md
+    assert "legacy-unverified" in md
 
 
 def test_title_from_db_wins_over_filename(write_analysis):
@@ -80,24 +474,305 @@ def test_title_from_db_wins_over_filename(write_analysis):
 
 
 def test_scoring_tables_carry_evidence(write_analysis):
-    md = write_analysis.render_analysis(_return(), evidence_verified=True)
-    assert "**Pattern score:** 22 (25 patterns − 3 antipatterns)" in md
-    assert "| `narrative-arc` | strong | Four-act catalog. | slides 1, 8, 20, 31 |" in md
-    assert "| `ant-fonts` | moderate | 7.5pt body text. | slides 17 |" in md
+    md = write_analysis.render_analysis(_return())
+    assert "**Pattern score:** 0 (1 patterns − 1 antipatterns)" in md
+    assert (
+        "| Pattern ID | Confidence | Evidence Source | Sources Used | Evidence |" in md
+    )
+    assert "| `narrative-arc` | strong | transcript |  | Four-act catalog. |" in md
+    assert "| `ant-fonts` | moderate | static_slides |  | 7.5pt body text. |" in md
+
+
+def test_scoring_table_renders_exact_comparison_sources_with_markdown_escaping(
+    write_analysis,
+):
+    ret = _return(return_schema_version=3, adherence_assessment="")
+    ret["pattern_observations"]["patterns_detected"] = [
+        {
+            "pattern_id": "gradual-consistency",
+            "confidence": "moderate",
+            "evidence_source": "source_comparison",
+            "evidence_sources_used": ["static_slides", "native_deck"],
+            "evidence": "The rendered and native decks agree | exactly.",
+        }
+    ]
+    md = write_analysis.render_analysis(ret)
+    row = next(
+        line for line in md.splitlines() if line.startswith("| `gradual-consistency`")
+    )
+    assert (
+        "| `gradual-consistency` | moderate | source_comparison | "
+        "static_slides, native_deck | " in row
+    )
+    assert "agree \\| exactly" in row
+
+
+def test_timed_transcript_citation_renders_engine_locations(write_analysis):
+    rendered = write_analysis.render_evidence_citation(
+        {
+            "source": "transcript",
+            "channel": "timed_transcript",
+            "quote": "The deploy failed on Friday night.",
+            "line_start": 1,
+            "line_end": 1,
+            "start_seconds": 2.0,
+            "end_seconds": 5.5,
+            "artifact_root": "vault",
+            "artifact_path": "transcripts/talk.txt",
+            "artifact_sha256": "a" * 64,
+            "timing_artifact_root": "vault",
+            "timing_artifact_path": "transcripts/talk.segments.json",
+            "timing_artifact_sha256": "b" * 64,
+            "quality_artifact_root": "vault",
+            "quality_artifact_path": "transcripts/talk.quality.json",
+            "quality_artifact_sha256": "c" * 64,
+        }
+    )
+
+    assert "transcript/timed_transcript line 1 @ 2.0–5.5s" in rendered
+    assert "The deploy failed on Friday night." in rendered
+    assert "sha256:aaaaaaaaaaaa" in rendered
+    assert "timing vault:transcripts/talk.segments.json" in rendered
+    assert "quality vault:transcripts/talk.quality.json" in rendered
+
+
+@pytest.mark.parametrize(
+    ("citation", "expected"),
+    [
+        (
+            {
+                "source": "transcript",
+                "channel": "transcript",
+                "quote": "Only the first bound survived.",
+                "line_start": 3,
+            },
+            "from line 3",
+        ),
+        (
+            {
+                "source": "transcript",
+                "channel": "transcript",
+                "quote": "Only the final bound survived.",
+                "line_end": 5,
+            },
+            "through line 5",
+        ),
+        (
+            {
+                "source": "transcript",
+                "channel": "timed_transcript",
+                "quote": "The segment starts here.",
+                "start_seconds": 2.0,
+            },
+            "@ from 2.0s",
+        ),
+        (
+            {
+                "source": "transcript",
+                "channel": "timed_transcript",
+                "quote": "The segment ends here.",
+                "end_seconds": 5.5,
+            },
+            "@ through 5.5s",
+        ),
+        (
+            {
+                "source": "delivery_video",
+                "channel": "video",
+                "start_seconds": 7.0,
+            },
+            "from 7.0s",
+        ),
+        (
+            {
+                "source": "delivery_video",
+                "channel": "video",
+                "end_seconds": 9.0,
+            },
+            "through 9.0s",
+        ),
+        (
+            {"source": "delivery_video", "channel": "video"},
+            "location unavailable",
+        ),
+    ],
+)
+def test_partial_citation_bounds_render_without_internal_none(
+    write_analysis, citation, expected
+):
+    rendered = write_analysis.render_evidence_citation(citation)
+
+    assert expected in rendered
+    assert "None" not in rendered
+
+
+def test_non_english_citation_renders_translation_before_original(write_analysis):
+    rendered = write_analysis.render_evidence_citation(
+        {
+            "source": "transcript",
+            "channel": "transcript",
+            "quote": "Этот сбой изменил весь наш процесс.",
+            "translation": "That failure changed our entire process.",
+            "line_start": 4,
+            "line_end": 4,
+        }
+    )
+
+    assert rendered.index("That failure changed") < rendered.index("Этот сбой")
+    assert "original:" in rendered
+
+
+def test_raw_return_locations_are_labeled_unverified(write_analysis):
+    ret = _return()
+    ret["pattern_observations"]["patterns_detected"][0]["evidence_citations"] = [
+        {
+            "source": "transcript",
+            "channel": "transcript",
+            "quote": "A model-supplied source claim remains unverified.",
+            "line_start": 999,
+            "line_end": 999,
+        }
+    ]
+
+    md = write_analysis.render_analysis(ret)
+
+    assert "Unverified model-supplied location:" in md
+    assert "line 999" in md
+    assert "Verified canonical evidence" not in md
+
+
+def test_missing_citations_are_explicitly_legacy_unverified(write_analysis):
+    md = write_analysis.render_analysis(_return())
+
+    assert "Legacy/unverified" in md
+    assert "Unverified legacy evidence (no canonical source location)" in md
+
+
+def _canonical_render_talk(raw):
+    talk = copy.deepcopy(raw)
+    # Keep this helper focused on evidence rendering. Current adherence prose is
+    # only renderable with its separately validated batch comparison receipt.
+    talk["adherence_assessment"] = ""
+    citation = {
+        "source": "transcript",
+        "channel": "transcript",
+        "quote": "The deploy failed on Friday night.",
+        "line_start": 1,
+        "line_end": 1,
+        "artifact_root": "vault",
+        "artifact_path": "transcripts/talk.txt",
+        "artifact_sha256": "a" * 64,
+    }
+    talk["pattern_observations"] = {
+        "evidence_schema_version": 1,
+        "patterns_detected": [
+            {
+                "pattern_id": "echo-chamber",
+                "confidence": "moderate",
+                "evidence_source": "transcript",
+                "evidence": "The opening phrase is repeated throughout the talk.",
+                "dimensions": [4, 7],
+                "evidence_citations": [citation],
+            }
+        ],
+        "pattern_ids": ["echo-chamber"],
+        "antipatterns_detected": [],
+        "antipattern_ids": [],
+        "not_evaluable": [],
+        "not_evaluable_ids": [],
+        "evidence_sources": ["transcript"],
+        "source_inspection": [
+            {
+                "source": "transcript",
+                "line_ranges": [[1, 1]],
+                "line_count": 1,
+                "artifact_root": "vault",
+                "artifact_path": "transcripts/talk.txt",
+                "artifact_sha256": "a" * 64,
+                "coverage_complete": True,
+            }
+        ],
+        "pattern_score": 1,
+    }
+    talk["pattern_score"] = 1
+    talk["pattern_scoring_generation_status"] = "current"
+    talk["pattern_scoring_generation_reasons"] = []
+    talk["pattern_scoring_schema_version"] = 4
+    talk["pattern_catalog_fingerprint"] = CATALOG_FINGERPRINT
+    return talk
+
+
+def test_cli_renders_persisted_locations_not_model_locations(write_analysis):
+    raw = _return(return_schema_version=4)
+    raw["pattern_observations"]["patterns_detected"][0]["evidence_citations"] = [
+        {
+            "source": "transcript",
+            "channel": "transcript",
+            "quote": "The deploy failed on Friday night.",
+            "line_start": 999,
+            "line_end": 999,
+        }
+    ]
+    payload = write_analysis.effective_render_payload(raw, _canonical_render_talk(raw))
+
+    rendered = write_analysis.render_analysis(payload)
+
+    assert "transcript/transcript line 1" in rendered
+
+
+def test_source_inspection_renders_range_and_absence_authority_separately(
+    write_analysis,
+):
+    rows = write_analysis.render_source_inspection(
+        [
+            {
+                "source": "delivery_video",
+                "time_ranges": [[0, 60.0]],
+                "duration_seconds": 60.0,
+                "coverage_complete": True,
+                "absence_capability_complete": False,
+                "absence_capability_reason": "bare_delivery_video",
+                "artifact_root": "vault",
+                "artifact_path": "video/talk.mp4",
+                "artifact_sha256": "a" * 64,
+            }
+        ]
+    )
+    rendered = "\n".join(rows)
+
+    assert "Range complete" in rendered
+    assert "Absence capable" in rendered
+    assert "bare_delivery_video" in rendered
+    assert "| True | False |" in rendered
+    assert "line 999" not in rendered
+
+
+def test_stale_persisted_detections_are_not_labeled_verified(write_analysis):
+    stale = _canonical_render_talk(_return(return_schema_version=3))
+
+    rendered = write_analysis.render_analysis(stale)
+
+    assert "Legacy/unverified" in rendered
+    assert "Verified canonical evidence" not in rendered
+    assert "Unverified model-supplied location:" in rendered
 
 
 def test_per_slide_visual_becomes_a_table(write_analysis):
     md = write_analysis.render_analysis(_return())
     assert "### per_slide_visual" in md
-    assert "| slide | background | content_type |" in md
-    assert "| 1 | salmon | title |" in md
+    assert "| slide_number | background_color_name | content_type |" in md
+    assert "| 1 | salmon | title | none | False | False | False |" in md
 
 
 def test_pipes_and_newlines_do_not_break_table_rows(write_analysis):
     ret = _return()
     ret["pattern_observations"]["patterns_detected"] = [
-        {"pattern_id": "triad", "confidence": "strong",
-         "evidence": "He said a | b | c\nthen paused."}
+        {
+            "pattern_id": "triad",
+            "confidence": "strong",
+            "evidence_source": "transcript",
+            "evidence": "He said a | b | c\nthen paused.",
+        }
     ]
     md = write_analysis.render_analysis(ret)
     rows = [ln for ln in md.splitlines() if ln.startswith("| `triad`")]
@@ -106,65 +781,18 @@ def test_pipes_and_newlines_do_not_break_table_rows(write_analysis):
     # Splitting on UNESCAPED pipes is what a markdown renderer does; escaped
     # ones stay inside the cell.
     cells = [c for c in re.split(r"(?<!\\)\|", row)[1:-1]]
-    assert len(cells) == 4
-    assert "\\|" in cells[2]
-
-
-def test_timed_transcript_citation_renders_engine_locations(write_analysis):
-    ret = _return()
-    ret["pattern_observations"]["patterns_detected"] = [
-        {
-            "pattern_id": "opening-punch",
-            "confidence": "strong",
-            "evidence": "A concrete failure story opens the talk.",
-            "evidence_citations": [
-                {
-                    "channel": "timed_transcript",
-                    "quote": "The deploy failed on Friday night.",
-                    "line_start": 1,
-                    "line_end": 1,
-                    "start_seconds": 2.0,
-                    "end_seconds": 5.5,
-                }
-            ],
-        }
-    ]
-    md = write_analysis.render_analysis(ret, evidence_verified=True)
-    assert "transcript lines 1–1 (2.0s–5.5s)" in md
-    assert "The deploy failed on Friday night." in md
-
-
-def test_non_english_citation_renders_translation_before_original(write_analysis):
-    rendered = write_analysis.render_evidence_citation(
-        {
-            "channel": "transcript",
-            "quote": "Этот сбой изменил весь наш процесс.",
-            "translation": "That failure changed our entire process.",
-            "line_start": 4,
-            "line_end": 4,
-        },
-        evidence_verified=True,
-    )
-    assert rendered.index("That failure changed") < rendered.index("Этот сбой")
-    assert "original:" in rendered
-
-
-def test_raw_return_locations_are_labeled_unverified(write_analysis):
-    md = write_analysis.render_analysis(_return())
-    assert "unverified: slides 1, 8, 20, 31" in md
-
-
-def test_missing_citations_are_explicitly_legacy_unverified(write_analysis):
-    ret = _return()
-    del ret["pattern_observations"]["patterns_detected"][0]["evidence_citations"]
-    md = write_analysis.render_analysis(ret)
-    assert "legacy/unverified" in md
+    assert len(cells) == 6
+    assert "\\|" in cells[4]
 
 
 def test_absent_sections_are_skipped_not_stubbed(write_analysis):
     ret = _return()
-    for key in ("adherence_assessment", "verbatim_examples", "catalog_feedback",
-                "areas_for_improvement"):
+    for key in (
+        "adherence_assessment",
+        "verbatim_examples",
+        "catalog_feedback",
+        "areas_for_improvement",
+    ):
         del ret[key]
     md = write_analysis.render_analysis(ret)
     assert "## Adherence Assessment" not in md
@@ -177,10 +805,14 @@ def test_absent_sections_are_skipped_not_stubbed(write_analysis):
 def test_list_shaped_prose_field_renders_as_bullets(write_analysis):
     """One 2026-07-26 return sent `areas_for_improvement` as a list of finding
     objects instead of the schema's string, which crashed the whole batch."""
-    md = write_analysis.render_analysis(_return(areas_for_improvement=[
-        {"issue": "Zero audience production", "fix": "Ask the room."},
-        {"issue": "Rhetorical questions self-answered"},
-    ]))
+    md = write_analysis.render_analysis(
+        _return(
+            areas_for_improvement=[
+                {"issue": "Zero audience production", "fix": "Ask the room."},
+                {"issue": "Rhetorical questions self-answered"},
+            ]
+        )
+    )
     assert "## Areas for Improvement (Dimension 14)" in md
     assert "**issue:** Zero audience production" in md
     assert "**fix:** Ask the room." in md
@@ -196,8 +828,23 @@ def test_prose_coercion_handles_plain_lists_and_dicts(write_analysis):
 
 def test_empty_catalog_feedback_omits_the_section(write_analysis):
     md = write_analysis.render_analysis(
-        _return(catalog_feedback={"tensions": [], "definition_problems": []}))
+        _return(catalog_feedback={"tensions": [], "definition_problems": []})
+    )
     assert "## Catalog Feedback" not in md
+
+
+def test_not_evaluable_patterns_render_with_source_and_reason(write_analysis):
+    ret = _return()
+    ret["pattern_observations"]["not_evaluable"] = [
+        {
+            "pattern_id": "composite-animation",
+            "evidence_source": "static_slides",
+            "reason": "Animation timing is absent from the PDF.",
+        }
+    ]
+    md = write_analysis.render_analysis(ret)
+    assert "### Not Evaluable From Available Evidence" in md
+    assert "| composite-animation | static_slides | Animation timing is absent" in md
 
 
 def test_run_date_fills_missing_processed_date(write_analysis):
@@ -207,95 +854,19 @@ def test_run_date_fills_missing_processed_date(write_analysis):
     assert "**Processed:** 2026-07-26" in md
 
 
-def test_return_processed_date_wins_over_run_date(write_analysis):
+def test_writer_run_date_wins_over_legacy_return_date(write_analysis):
     md = write_analysis.render_analysis(_return(), run_date="2026-01-01")
-    assert "**Processed:** 2026-07-26" in md
+    assert "**Processed:** 2026-01-01" in md
 
 
-def test_nested_structured_fields_are_preserved(write_analysis):
-    md = write_analysis.render_analysis(_return())
-    assert "### Additional structured fields" in md
-    assert '"act_structure"' in md
-
-
-def test_cli_writes_files_and_reports(write_analysis, tmp_path):
+def test_cli_renders_the_exact_canonical_stamp_persisted_in_db(
+    write_analysis, tmp_path
+):
     batch = tmp_path / "batch-returns.json"
     out = tmp_path / "analyses"
-    batch.write_text(json.dumps([_return(), _return(filename="other.md")]))
-    result = subprocess.run(
-        [sys.executable, write_analysis.__file__, str(batch), str(out),
-         "--run-date", "2026-07-26"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    assert (out / "talk.md").exists()
-    assert (out / "other.md").exists()
-    report = json.loads(result.stdout)
-    assert report["written"] == 2
-    assert report["files"][0]["bytes"] > 0
-
-
-def test_cli_uses_titles_from_tracking_db(write_analysis, tmp_path):
-    batch = tmp_path / "batch-returns.json"
-    db = tmp_path / "tracking-database.json"
-    out = tmp_path / "analyses"
-    batch.write_text(json.dumps([_return()]))
-    db.write_text(json.dumps({"talks": [{"filename": "talk.md", "title": "Real Title"}]}))
-    result = subprocess.run(
-        [sys.executable, write_analysis.__file__, str(batch), str(out),
-         "--talks", str(db)],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    assert (out / "talk.md").read_text().startswith("# Rhetoric Analysis: Real Title")
-
-
-def test_cli_renders_persisted_locations_not_model_locations(write_analysis, tmp_path):
-    batch = tmp_path / "batch-returns.json"
-    db = tmp_path / "tracking-database.json"
-    out = tmp_path / "analyses"
-    ret = _return()
-    ret["pattern_observations"]["patterns_detected"] = [
-        {
-            "pattern_id": "opening-punch",
-            "confidence": "strong",
-            "evidence": "The talk opens on a failure.",
-            "evidence_citations": [
-                {
-                    "channel": "timed_transcript",
-                    "quote": "The deploy failed on Friday night.",
-                    "line_start": 999,
-                    "line_end": 999,
-                    "start_seconds": 999.0,
-                    "end_seconds": 1000.0,
-                }
-            ],
-        }
-    ]
-    persisted = json.loads(json.dumps(ret["pattern_observations"]))
-    persisted["evidence_schema_version"] = 1
-    persisted["patterns_detected"][0]["evidence_citations"][0].update(
-        {
-            "line_start": 1,
-            "line_end": 1,
-            "start_seconds": 2.0,
-            "end_seconds": 5.5,
-        }
-    )
+    ret = _return(processed_date="2026-07-27T16:03:22.987654+02:00")
     batch.write_text(json.dumps([ret]))
-    db.write_text(
-        json.dumps(
-            {
-                "talks": [
-                    {
-                        "filename": "talk.md",
-                        "title": "Real Title",
-                        "pattern_observations": persisted,
-                    }
-                ]
-            }
-        )
-    )
+    db = _write_tracking_db(tmp_path, [ret], persisted_date="2026-07-27T14:03:22+00:00")
 
     result = subprocess.run(
         [
@@ -311,37 +882,463 @@ def test_cli_renders_persisted_locations_not_model_locations(write_analysis, tmp
     )
 
     assert result.returncode == 0, result.stderr
-    rendered = (out / "talk.md").read_text()
-    assert "transcript lines 1–1 (2.0s–5.5s)" in rendered
-    assert "999" not in rendered
-    assert "unverified:" not in rendered
+    body = (out / "talk.md").read_text()
+    assert "**Processed:** 2026-07-27T14:03:22+00:00" in body
+    assert "16:03:22" not in body
 
 
-def test_stale_persisted_detections_are_not_labeled_verified(write_analysis):
+def test_cli_uses_persisted_stamp_when_return_omits_processed_date(
+    write_analysis, tmp_path
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
     ret = _return()
-    talk = {
-        "pattern_observations": {
-            "patterns_detected": [
-                {
-                    "pattern_id": "bookends",
-                    "confidence": "strong",
-                    "evidence": "Old evidence from a previous batch.",
-                    "evidence_citations": [
-                        {"channel": "slides", "slide_numbers": [1, 31]}
-                    ],
-                }
-            ],
-            "antipatterns_detected": [],
-        }
+    del ret["processed_date"]
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret], persisted_date="2026-07-27T14:03:22+00:00")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "**Processed:** 2026-07-27T14:03:22+00:00" in (out / "talk.md").read_text()
+
+
+def test_cli_rejects_noncanonical_persisted_stamp_before_write(
+    write_analysis, tmp_path
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return(processed_date="2026-07-27T16:03:22+02:00")
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret], persisted_date="2026-07-27T16:03:22+02:00")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "is not the canonical stored stamp" in result.stderr
+    assert not out.exists()
+
+
+def test_cli_ignores_legacy_return_stamp_and_uses_persisted_value(
+    write_analysis, tmp_path
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return(processed_date="2026-07-26")
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret], persisted_date="2026-07-27T14:03:22+00:00")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "**Processed:** 2026-07-27T14:03:22+00:00" in (out / "talk.md").read_text()
+
+
+def test_cli_rejects_explicit_return_timestamp_conflicting_with_persisted_batch(
+    write_analysis, tmp_path
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return(processed_date="2026-07-27T08:00:00+00:00")
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret], persisted_date="2026-07-27T14:03:22+00:00")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "explicit return processed_date" in result.stderr
+    assert "conflicts with persisted batch stamp" in result.stderr
+    assert not out.exists()
+
+
+def test_cli_checks_requested_batch_stamp_even_when_return_has_a_date(
+    write_analysis, tmp_path
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return(processed_date="2026-07-26")
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret], persisted_date="2026-07-27T14:03:22+00:00")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+            "--run-date",
+            "2026-07-27T14:03:23+00:00",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "--run-date" in result.stderr
+    assert "does not match persisted value" in result.stderr
+    assert not out.exists()
+
+
+def test_persist_then_write_uses_one_exact_batch_timestamp(
+    persist_results, write_analysis, tmp_path
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    authoritative = "2026-07-27T14:03:22+00:00"
+    ret = _return(processed_date="2026-07-26")
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret], persisted_date="2026-04-09")
+    payload = json.loads(db.read_text())
+    talk = payload["talks"][0]
+    talk["status"] = "reprocessing-inflight"
+    claim = talk["_queue_claim"]
+    claim["state"] = "claimed"
+    for field in (
+        "released_at",
+        "release_reason",
+        "result_status",
+        "result_payload_sha256",
+    ):
+        del claim[field]
+    db.write_text(json.dumps(payload))
+
+    persisted = subprocess.run(
+        [
+            sys.executable,
+            persist_results.__file__,
+            str(db),
+            str(batch),
+            "--run-date",
+            authoritative,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert persisted.returncode == 0, persisted.stderr
+
+    written = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+            "--run-date",
+            authoritative,
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert written.returncode == 0, written.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    assert stored["processed_date"] == authoritative
+    assert stored["_queue_claim"]["released_at"] == authoritative
+    body = (out / "talk.md").read_text()
+    assert f"**Processed:** {authoritative}" in body
+    assert "**Processed:** 2026-07-26" not in body
+
+
+def test_legacy_single_pair_is_inferred_persisted_and_rendered(
+    persist_results, write_analysis, return_validation, tmp_path
+):
+    ret = _gradual_legacy_return(return_validation)
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    _reopen_tracking_claim(db)
+    out = tmp_path / "analyses"
+
+    persisted = subprocess.run(
+        [
+            sys.executable,
+            persist_results.__file__,
+            str(db),
+            str(batch),
+            "--run-date",
+            "2026-07-31T20:00:00+00:00",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert persisted.returncode == 0, persisted.stderr
+    written = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert written.returncode == 0, written.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    detection = stored["pattern_observations"]["patterns_detected"][0]
+    assert detection["evidence_sources_used"] == ["static_slides", "native_deck"]
+    assert stored["pattern_scoring_generation_status"] == "legacy_unbaselineable"
+    body = (out / "talk.md").read_text()
+    assert (
+        "| `gradual-consistency` | moderate | source_comparison | "
+        "static_slides, native_deck | " in body
+    )
+    assert "Excluded from current pattern baselines" in body
+
+
+def test_legacy_ambiguous_comparison_is_visibly_excluded_when_rendered(
+    persist_results, write_analysis, return_validation, tmp_path
+):
+    ret = _gradual_legacy_return(return_validation, include_delivery=True)
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    _reopen_tracking_claim(db)
+    out = tmp_path / "analyses"
+
+    persisted = subprocess.run(
+        [
+            sys.executable,
+            persist_results.__file__,
+            str(db),
+            str(batch),
+            "--run-date",
+            "2026-07-31T20:00:00+00:00",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert persisted.returncode == 0, persisted.stderr
+    written = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert written.returncode == 0, written.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    assert stored["pattern_scoring_generation_status"] == "legacy_unbaselineable"
+    assert "pattern_scoring_schema_version" not in stored
+    assert "pattern_catalog_fingerprint" not in stored
+    body = (out / "talk.md").read_text()
+    assert "Excluded from current pattern baselines" in body
+    assert "comparison_group_ambiguous:gradual-consistency" in body
+    assert "| `gradual-consistency` | moderate | source_comparison |  | " in body
+
+
+def test_v2_omitted_persisted_fields_remain_in_rendered_analysis(
+    persist_results, write_analysis, tmp_path
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return(verbatim_examples={})
+    assert "typography_observations" not in ret["structured_data"]
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret], persisted_date="2026-06-01")
+    payload = json.loads(db.read_text())
+    talk = payload["talks"][0]
+    talk["structured_data"]["typography_observations"] = {
+        "family": "Synthetic Sans",
+        "weight": "bold",
     }
+    talk["verbatim_examples"] = {
+        "jokes": ["A synthetic retained line."],
+    }
+    talk["status"] = "reprocessing-inflight"
+    claim = talk["_queue_claim"]
+    claim["state"] = "claimed"
+    for field in (
+        "released_at",
+        "release_reason",
+        "result_status",
+        "result_payload_sha256",
+    ):
+        del claim[field]
+    db.write_text(json.dumps(payload))
 
-    effective, verified = write_analysis.overlay_persisted_evidence(ret, talk)
+    persisted = subprocess.run(
+        [
+            sys.executable,
+            persist_results.__file__,
+            str(db),
+            str(batch),
+            "--run-date",
+            "2026-07-31T20:00:00+00:00",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert persisted.returncode == 0, persisted.stderr
+    written = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
 
-    assert effective is ret
-    assert verified is False
-    rendered = write_analysis.render_analysis(effective, evidence_verified=verified)
-    assert "unverified: slides 1, 8, 20, 31" in rendered
-    assert "Old evidence from a previous batch" not in rendered
+    assert written.returncode == 0, written.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    assert stored["structured_data"]["typography_observations"] == {
+        "family": "Synthetic Sans",
+        "weight": "bold",
+    }
+    assert stored["verbatim_examples"]["jokes"] == ["A synthetic retained line."]
+    body = (out / "talk.md").read_text()
+    assert '"typography_observations"' in body
+    assert "Synthetic Sans" in body
+    assert "A synthetic retained line." in body
+    assert "**Pattern score:** 0 (1 patterns − 1 antipatterns)" in body
+
+
+def test_invalid_persisted_v2_effective_state_does_not_replace_analysis(
+    write_analysis, tmp_path
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    target = out / "talk.md"
+    target.write_text("# trusted prior analysis\n")
+    ret = _return()
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    payload["talks"][0]["structured_data"]["typography_observations"] = True
+    db.write_text(json.dumps(payload))
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "typography_observations must be an object" in result.stderr
+    assert target.read_text() == "# trusted prior analysis\n"
+
+
+def test_nested_structured_fields_are_preserved(write_analysis):
+    md = write_analysis.render_analysis(_return())
+    assert "### Additional structured fields" in md
+    assert '"act_structure"' in md
+
+
+def test_cli_writes_files_and_reports(write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    returns = [_return(), _return(filename="other.md")]
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns)
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--run-date",
+            "2026-07-26",
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (out / "talk.md").exists()
+    assert (out / "other.md").exists()
+    report = json.loads(result.stdout)
+    assert report["written"] == 2
+    assert report["files"][0]["bytes"] > 0
+
+
+def test_cli_uses_titles_from_tracking_db(write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    returns = [_return()]
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns, title="Real Title")
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (out / "talk.md").read_text().startswith("# Rhetoric Analysis: Real Title")
 
 
 def test_cli_fails_visibly_on_return_without_filename(write_analysis, tmp_path):
@@ -351,7 +1348,8 @@ def test_cli_fails_visibly_on_return_without_filename(write_analysis, tmp_path):
     batch.write_text(json.dumps([ret]))
     result = subprocess.run(
         [sys.executable, write_analysis.__file__, str(batch), str(tmp_path / "a")],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode != 0
     assert "filename" in result.stderr
@@ -362,7 +1360,8 @@ def test_cli_non_array_batch_is_actionable(write_analysis, tmp_path):
     batch.write_text(json.dumps({"filename": "talk.md"}))
     result = subprocess.run(
         [sys.executable, write_analysis.__file__, str(batch), str(tmp_path / "a")],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode != 0
     assert "must be a JSON array" in result.stderr
@@ -371,8 +1370,10 @@ def test_cli_non_array_batch_is_actionable(write_analysis, tmp_path):
 def test_output_name_is_confined_to_the_output_dir(write_analysis):
     """`filename` comes from a model-generated return, so it is untrusted for
     path purposes — tracking-database.json sits one level above analyses/."""
-    assert write_analysis.safe_output_name("../tracking-database.json") == \
-        "tracking-database.json.md"
+    assert (
+        write_analysis.safe_output_name("../tracking-database.json")
+        == "tracking-database.json.md"
+    )
     assert write_analysis.safe_output_name("/etc/passwd") == "passwd.md"
     assert write_analysis.safe_output_name("a/b/talk.md") == "talk.md"
     assert write_analysis.safe_output_name("talk.md") == "talk.md"
@@ -383,10 +1384,20 @@ def test_cli_does_not_write_outside_the_output_dir(write_analysis, tmp_path):
     out = tmp_path / "analyses"
     victim = tmp_path / "tracking-database.json"
     victim.write_text('{"talks": []}')
-    batch.write_text(json.dumps([_return(filename="../tracking-database.json")]))
+    returns = [_return(filename="../tracking-database.json")]
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns, name="queue-db.json")
     result = subprocess.run(
-        [sys.executable, write_analysis.__file__, str(batch), str(out)],
-        capture_output=True, text=True,
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0, result.stderr
     assert victim.read_text() == '{"talks": []}', "the sibling file was overwritten"
@@ -395,10 +1406,20 @@ def test_cli_does_not_write_outside_the_output_dir(write_analysis, tmp_path):
 
 def test_cli_rejects_filename_that_names_no_file(write_analysis, tmp_path):
     batch = tmp_path / "batch-returns.json"
-    batch.write_text(json.dumps([_return(filename="../")]))
+    returns = [_return(filename="../")]
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns)
     result = subprocess.run(
-        [sys.executable, write_analysis.__file__, str(batch), str(tmp_path / "a")],
-        capture_output=True, text=True,
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(tmp_path / "a"),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
     )
     assert result.returncode != 0
     assert "does not name a file" in result.stderr
@@ -410,9 +1431,16 @@ def test_cli_rejects_malformed_tracking_db(write_analysis, tmp_path):
     batch.write_text(json.dumps([_return()]))
     db.write_text(json.dumps(["not", "a", "db"]))
     result = subprocess.run(
-        [sys.executable, write_analysis.__file__, str(batch), str(tmp_path / "a"),
-         "--talks", str(db)],
-        capture_output=True, text=True,
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(tmp_path / "a"),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
     )
     assert result.returncode != 0
     assert "talks" in result.stderr
@@ -420,13 +1448,23 @@ def test_cli_rejects_malformed_tracking_db(write_analysis, tmp_path):
 
 def test_cli_unwritable_output_dir_is_actionable(write_analysis, tmp_path):
     batch = tmp_path / "batch-returns.json"
-    batch.write_text(json.dumps([_return()]))
+    returns = [_return()]
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns)
     # A regular file where the output directory should be: makedirs raises OSError.
     blocker = tmp_path / "blocked"
     blocker.write_text("i am a file, not a directory")
     result = subprocess.run(
-        [sys.executable, write_analysis.__file__, str(batch), str(blocker)],
-        capture_output=True, text=True,
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(blocker),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
     )
     assert result.returncode != 0
     assert "cannot create output directory" in result.stderr
@@ -440,10 +1478,11 @@ def test_cli_non_object_return_entry_is_actionable(write_analysis, tmp_path):
     batch.write_text(json.dumps(["talk.md", "other.md"]))
     result = subprocess.run(
         [sys.executable, write_analysis.__file__, str(batch), str(tmp_path / "a")],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode != 0
-    assert "not a subagent return object" in result.stderr
+    assert "subagent return must be an object" in result.stderr
     assert "Traceback" not in result.stderr
 
 
@@ -455,33 +1494,55 @@ def test_skipped_status_never_overwrites_an_existing_analysis(write_analysis, tm
     out.mkdir()
     good = out / "talk.md"
     good.write_text("# real analysis from a successful run\n")
-    batch.write_text(json.dumps([_return(status="skipped_no_video")]))
+    returns = [_skipped_return()]
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns)
     result = subprocess.run(
-        [sys.executable, write_analysis.__file__, str(batch), str(out)],
-        capture_output=True, text=True,
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0, result.stderr
     assert good.read_text() == "# real analysis from a successful run\n"
     report = json.loads(result.stdout)
     assert report["written"] == 0
-    assert report["skipped"] == [{"filename": "talk.md", "status": "skipped_no_video"}]
+    assert report["skipped"] == [
+        {"filename": "talk.md", "status": "skipped_no_sources"}
+    ]
 
 
 def test_processed_partial_still_writes(write_analysis, tmp_path):
     batch = tmp_path / "batch-returns.json"
     out = tmp_path / "analyses"
-    batch.write_text(json.dumps([_return(status="processed_partial")]))
+    returns = [_return(status="processed_partial")]
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns)
     result = subprocess.run(
-        [sys.executable, write_analysis.__file__, str(batch), str(out)],
-        capture_output=True, text=True,
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0, result.stderr
     assert (out / "talk.md").exists()
     assert json.loads(result.stdout)["written"] == 1
 
 
-def test_return_without_status_still_writes(write_analysis, tmp_path):
-    """`status` is optional in the return schema; absence is not a skip."""
+def test_return_without_status_is_rejected_before_writing(write_analysis, tmp_path):
+    """Missing status cannot strand a talk in its in-flight queue state."""
     ret = _return()
     del ret["status"]
     batch = tmp_path / "batch-returns.json"
@@ -489,17 +1550,669 @@ def test_return_without_status_still_writes(write_analysis, tmp_path):
     batch.write_text(json.dumps([ret]))
     result = subprocess.run(
         [sys.executable, write_analysis.__file__, str(batch), str(out)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
+    assert result.returncode == 1
+    assert "status is required" in result.stderr
+    assert not out.exists()
+
+
+def test_cli_requires_tracking_db_for_generation_check(write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([_return()]))
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(tmp_path / "a")],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "--talks" in result.stderr
+    assert not (tmp_path / "a").exists()
+
+
+def test_stale_generation_cannot_overwrite_analysis(write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    target = out / "talk.md"
+    target.write_text("# current generation\n")
+    ret = _return()
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    payload["talks"][0]["reprocess_generation"] = 2
+    payload["talks"][0]["_queue_claim"]["reprocess_generation"] = 2
+    db.write_text(json.dumps(payload))
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "does not match" in result.stderr
+    assert target.read_text() == "# current generation\n"
+
+
+def test_top_level_generation_mismatch_cannot_overwrite_analysis(
+    write_analysis, tmp_path
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    target = out / "talk.md"
+    target.write_text("# current generation\n")
+    ret = _return()
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    payload["talks"][0]["reprocess_generation"] = 2
+    db.write_text(json.dumps(payload))
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "active claim generation 1 disagrees with talk generation 2" in result.stderr
+    assert target.read_text() == "# current generation\n"
+
+
+def test_completed_claim_requires_exact_schema_before_analysis_write(
+    write_analysis, tmp_path
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    target = out / "talk.md"
+    target.write_text("# current generation\n")
+    ret = _return()
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    payload["talks"][0]["_queue_claim"]["unexpected"] = "field"
+    db.write_text(json.dumps(payload))
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "must use exactly the schema fields" in result.stderr
+    assert "unexpected" in result.stderr
+    assert target.read_text() == "# current generation\n"
+
+
+@pytest.mark.parametrize("return_schema_version", [2, 3])
+def test_analysis_writer_accepts_completed_receipt_bearing_claim_v2_and_v3(
+    write_analysis, tmp_path, return_schema_version
+):
+    ret = _return() if return_schema_version == 2 else _v3_return()
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    out = tmp_path / "analyses"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)["written"] == 1
+    body = (out / "talk.md").read_text()
+    if return_schema_version == 2:
+        assert "**`legacy-unverified`:**" in body
+        assert "Validated numeric anchor" not in body
+    else:
+        assert "**`legacy-unverified`:**" in body
+        assert "Validated numeric anchor" not in body
+
+
+def test_analysis_writer_rejects_completed_claim_v1_without_receipt(
+    write_analysis, tmp_path
+):
+    ret = _return()
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    claim = payload["talks"][0]["_queue_claim"]
+    claim["schema_version"] = 1
+    claim.pop("result_payload_sha256")
+    db.write_text(json.dumps(payload))
+    out = tmp_path / "analyses"
+    out.mkdir()
+    target = out / "talk.md"
+    target.write_text("# trusted prior analysis\n")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "predates the return-payload receipt" in result.stderr
+    assert target.read_text() == "# trusted prior analysis\n"
+
+
+@pytest.mark.parametrize("mutation", ["assessment", "comparison"])
+def test_analysis_writer_rejects_tampered_v3_adherence_before_any_batch_write(
+    write_analysis, tmp_path, mutation
+):
+    filenames = ["a.md", "b.md"]
+    baseline = _adherence_baseline(filenames)
+    returns = [
+        _v3_return(filename=filename, baseline=baseline) for filename in filenames
+    ]
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns)
+    payload = json.loads(db.read_text())
+    tampered = payload["talks"][1]
+    if mutation == "assessment":
+        tampered["adherence_assessment"] = (
+            "Forged persisted assessment. It was not in the receipt."
+        )
+    else:
+        tampered["adherence_comparison"]["baseline"]["average_pattern_score"] = 99.0
+    db.write_text(json.dumps(payload))
+    out = tmp_path / "analyses"
+    out.mkdir()
+    prior = {filename: f"# trusted {filename}\n" for filename in filenames}
+    for filename, body in prior.items():
+        (out / filename).write_text(body)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert f"persisted adherence_{mutation}" in result.stderr
+    for filename, body in prior.items():
+        assert (out / filename).read_text() == body
+    assert sorted(path.name for path in out.iterdir()) == filenames
+
+
+def test_substituted_return_payload_cannot_overwrite_persisted_analysis(
+    write_analysis, tmp_path
+):
+    original = _return()
+    db = _write_tracking_db(tmp_path, [original])
+    substituted = _return(rhetoric_notes="substituted after persistence")
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([substituted]))
+    out = tmp_path / "analyses"
+    out.mkdir()
+    target = out / "talk.md"
+    target.write_text("# persisted generation\n")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "payload SHA-256 does not match" in result.stderr
+    assert target.read_text() == "# persisted generation\n"
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value", "diagnostic"),
+    [
+        ("pattern_scoring_schema_version", 1, "pattern_scoring_schema_version"),
+        ("pattern_catalog_fingerprint", "0" * 64, "pattern_catalog_fingerprint"),
+    ],
+)
+def test_renderer_requires_the_catalog_generation_persisted_for_each_talk(
+    write_analysis, tmp_path, field, bad_value, diagnostic
+):
+    ret = _return()
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    payload["talks"][0][field] = bad_value
+    db.write_text(json.dumps(payload))
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    out = tmp_path / "analyses"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert diagnostic in result.stderr
+    assert not out.exists()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "confidence",
+        "evidence_source",
+        "evidence",
+        "evidence_sources_used",
+        "pattern_score",
+        "not_evaluable",
+        "evidence_sources",
+    ],
+)
+def test_renderer_rejects_any_mutated_canonical_pattern_field_before_write(
+    write_analysis, tmp_path, mutation
+):
+    ret = _return()
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    observations = payload["talks"][0]["pattern_observations"]
+    detection = observations["patterns_detected"][0]
+    if mutation == "confidence":
+        detection["confidence"] = "weak"
+    elif mutation == "evidence_source":
+        detection["evidence_source"] = "native_deck"
+    elif mutation == "evidence":
+        detection["evidence"] = "forged persisted evidence"
+    elif mutation == "evidence_sources_used":
+        detection["evidence_sources_used"] = ["static_slides", "native_deck"]
+    elif mutation == "pattern_score":
+        observations["pattern_score"] = 99
+        payload["talks"][0]["pattern_score"] = 99
+    elif mutation == "not_evaluable":
+        observations["not_evaluable"] = [
+            {
+                "pattern_id": "composite-animation",
+                "evidence_source": "static_slides",
+                "reason": "forged exclusion",
+            }
+        ]
+        observations["not_evaluable_ids"] = ["composite-animation"]
+    elif mutation == "evidence_sources":
+        observations["evidence_sources"] = ["transcript"]
+    db.write_text(json.dumps(payload))
+    out = tmp_path / "analyses"
+    out.mkdir()
+    target = out / "talk.md"
+    target.write_text("# trusted analysis\n")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "receipt-bound canonical return fields" in result.stderr
+    assert target.read_text() == "# trusted analysis\n"
+
+
+def test_renderer_recomputes_status_and_rejects_a_forged_exclusion(
+    write_analysis, tmp_path
+):
+    ret = _return()
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    talk = payload["talks"][0]
+    talk["pattern_scoring_generation_status"] = "legacy_unbaselineable"
+    talk["pattern_scoring_generation_reasons"] = [
+        "comparison_group_ambiguous:gradual-consistency"
+    ]
+    db.write_text(json.dumps(payload))
+    out = tmp_path / "analyses"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "pattern_scoring_generation_reasons" in result.stderr
+    assert not out.exists()
+
+
+def test_renderer_rejects_stale_current_metadata_on_legacy_exclusion(
+    persist_results, write_analysis, return_validation, tmp_path
+):
+    ret = _gradual_legacy_return(return_validation, include_delivery=True)
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    _reopen_tracking_claim(db)
+    persisted = subprocess.run(
+        [
+            sys.executable,
+            persist_results.__file__,
+            str(db),
+            str(batch),
+            "--run-date",
+            "2026-07-31T20:00:00+00:00",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert persisted.returncode == 0, persisted.stderr
+    payload = json.loads(db.read_text())
+    talk = payload["talks"][0]
+    talk["pattern_scoring_schema_version"] = 3
+    talk["pattern_catalog_fingerprint"] = CATALOG_FINGERPRINT
+    db.write_text(json.dumps(payload))
+    out = tmp_path / "analyses"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "retains stale current scoring metadata" in result.stderr
+    assert not out.exists()
+
+
+def test_analysis_writer_requires_persisted_completed_claim(write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return()
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    talk = payload["talks"][0]
+    talk["status"] = "reprocessing-inflight"
+    claim = talk["_queue_claim"]
+    claim["state"] = "claimed"
+    for field in (
+        "released_at",
+        "release_reason",
+        "result_status",
+        "result_payload_sha256",
+    ):
+        del claim[field]
+    db.write_text(json.dumps(payload))
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "closed or stranded member" in result.stderr
+    assert not out.exists()
+
+
+def test_analysis_writer_rejects_partial_completed_batch_before_any_write(
+    write_analysis, tmp_path
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    existing = out / "a.md"
+    existing.write_text("# current analysis\n")
+    all_returns = [_return(filename=f"{name}.md") for name in ("a", "b", "c")]
+    batch.write_text(json.dumps(all_returns[:2]))
+    db = _write_tracking_db(tmp_path, all_returns)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "missing ['c.md']" in result.stderr
+    assert existing.read_text() == "# current analysis\n"
+    assert sorted(path.name for path in out.iterdir()) == ["a.md"]
+
+
+def test_non_object_db_member_is_actionable_before_analysis_write(
+    write_analysis, tmp_path
+):
+    ret = _return()
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    payload["talks"].append("not-a-talk")
+    db.write_text(json.dumps(payload))
+    out = tmp_path / "analyses"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "talks[1] must be a JSON object" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not out.exists()
+
+
+def test_future_talk_schema_cannot_authorize_analysis_write(write_analysis, tmp_path):
+    ret = _return()
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    payload["talks"][0]["schema_version"] = 99
+    db.write_text(json.dumps(payload))
+    out = tmp_path / "analyses"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "future talk schema_version 99" in result.stderr
+    assert not out.exists()
+
+
+def test_tracking_database_symlink_is_rejected_before_analysis_write(
+    write_analysis, tmp_path
+):
+    ret = _return()
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    target = _write_tracking_db(tmp_path, [ret])
+    before = target.read_bytes()
+    link = tmp_path / "tracking-link.json"
+    link.symlink_to(target.name)
+    out = tmp_path / "analyses"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(link),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "symbolic link" in result.stderr
+    assert link.is_symlink()
+    assert target.read_bytes() == before
+    assert not out.exists()
+
+
+def test_wrong_transcript_return_cannot_overwrite_analysis(
+    write_analysis, return_validation, tmp_path
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    target = out / "talk.md"
+    target.write_text("# slide-only corrected analysis\n")
+    ret = _return(status="processed_partial", slide_source="pdf")
+    ret["pattern_observations"]["evidence_sources"] = ["transcript", "static_slides"]
+    _complete_unavailable_source_gates(return_validation, ret)
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    talk = payload["talks"][0]
+    talk.update(
+        {
+            "video_url": None,
+            "youtube_id": None,
+            "pptx_path": None,
+            "google_drive_id": "slides-id",
+            "transcript_source": "none",
+            "slide_source": "pdf",
+        }
+    )
+    db.write_text(json.dumps(payload))
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "no transcript reference or active video source" in result.stderr
+    assert target.read_text() == "# slide-only corrected analysis\n"
 
 
 def test_carriage_returns_do_not_break_table_rows(write_analysis):
     ret = _return()
     ret["pattern_observations"]["patterns_detected"] = [
-        {"pattern_id": "triad", "confidence": "strong",
-         "evidence": "line one\r\nline two\rline three"}
+        {
+            "pattern_id": "triad",
+            "confidence": "strong",
+            "evidence_source": "transcript",
+            "evidence": "line one\r\nline two\rline three",
+        }
     ]
     md = write_analysis.render_analysis(ret)
     rows = [ln for ln in md.splitlines() if ln.startswith("| `triad`")]
@@ -507,8 +2220,9 @@ def test_carriage_returns_do_not_break_table_rows(write_analysis):
     assert "\r" not in rows[0]
 
 
-@pytest.mark.parametrize("bad", ["", ".", "..", "...", "....", "/", "../",
-                                 "   ", "\n", " . "])
+@pytest.mark.parametrize(
+    "bad", ["", ".", "..", "...", "....", "/", "../", "   ", "\n", " . "]
+)
 def test_names_that_resolve_to_no_file_are_rejected(write_analysis, bad):
     """The docstring promised dots-only names are rejected; an equality check
     against ("", ".", "..") let "..." through and produced a "....md" file."""
@@ -525,14 +2239,254 @@ def test_output_name_strips_whitespace_and_respects_case(write_analysis):
     assert write_analysis.safe_output_name(" talk ") == "talk.md"
 
 
+def test_target_key_normalizes_basename_case_and_unicode(write_analysis):
+    assert write_analysis.output_target_key(
+        "first/TALK.MD"
+    ) == write_analysis.output_target_key("second/talk.md")
+    assert write_analysis.output_target_key(
+        "first/Cafe\N{COMBINING ACUTE ACCENT}.md"
+    ) == write_analysis.output_target_key(
+        "second/Caf\N{LATIN SMALL LETTER E WITH ACUTE}.MD"
+    )
+
+
+def test_cli_rejects_normalized_target_collision_before_any_write(
+    write_analysis, tmp_path
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    existing = out / "TALK.MD"
+    existing.write_text("# existing analysis\n")
+    returns = [
+        _return(filename="first/TALK.MD"),
+        _return(filename="second/talk.md"),
+    ]
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "resolve to the same analysis target" in result.stderr
+    assert existing.read_text() == "# existing analysis\n"
+    assert [path.name for path in out.iterdir()] == ["TALK.MD"]
+
+
+def test_existing_casefold_target_collision_rejects_before_any_write(
+    write_analysis, tmp_path
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    existing = out / "TALK.MD"
+    existing.write_text("# existing analysis\n")
+    ret = _return(filename="talk.md")
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "collides with existing output entry" in result.stderr
+    assert existing.read_text() == "# existing analysis\n"
+    assert [path.name for path in out.iterdir()] == ["TALK.MD"]
+
+
+def test_directory_target_preflight_blocks_the_entire_batch(write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    first = out / "a.md"
+    first.write_text("# existing a\n")
+    directory_target = out / "b.md"
+    directory_target.mkdir()
+    returns = [_return(filename=f"{name}.md") for name in ("a", "b")]
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "is an existing directory" in result.stderr
+    assert first.read_text() == "# existing a\n"
+    assert directory_target.is_dir()
+    assert sorted(path.name for path in out.iterdir()) == ["a.md", "b.md"]
+
+
+def test_late_batch_commit_failure_restores_every_earlier_target(
+    write_analysis, tmp_path, monkeypatch
+):
+    out = tmp_path / "analyses"
+    out.mkdir()
+    first = out / "a.md"
+    second = out / "b.md"
+    first.write_text("old a\n")
+    second.write_text("old b\n")
+    rendered = [
+        ("a.md", str(first), "new a\n"),
+        ("b.md", str(second), "new b\n"),
+    ]
+    real_replace = write_analysis.os.replace
+
+    def fail_second_install(source, target):
+        if str(source).endswith(".stage") and str(target) == str(second):
+            raise OSError("injected second-target failure")
+        return real_replace(source, target)
+
+    monkeypatch.setattr(write_analysis.os, "replace", fail_second_install)
+
+    with pytest.raises(
+        write_analysis.AnalysisBatchWriteError, match="every prior target was restored"
+    ):
+        write_analysis.atomic_write_batch(rendered)
+
+    assert first.read_text() == "old a\n"
+    assert second.read_text() == "old b\n"
+    assert sorted(path.name for path in out.iterdir()) == ["a.md", "b.md"]
+
+
+def test_interrupted_batch_commit_restores_targets_and_propagates(
+    write_analysis, tmp_path, monkeypatch
+):
+    out = tmp_path / "analyses"
+    out.mkdir()
+    first = out / "a.md"
+    second = out / "b.md"
+    first.write_text("old a\n")
+    second.write_text("old b\n")
+    rendered = [
+        ("a.md", str(first), "new a\n"),
+        ("b.md", str(second), "new b\n"),
+    ]
+    real_replace = write_analysis.os.replace
+
+    def interrupt_second_install(source, target):
+        if str(source).endswith(".stage") and str(target) == str(second):
+            raise KeyboardInterrupt
+        return real_replace(source, target)
+
+    monkeypatch.setattr(write_analysis.os, "replace", interrupt_second_install)
+
+    with pytest.raises(KeyboardInterrupt):
+        write_analysis.atomic_write_batch(rendered)
+
+    assert first.read_text() == "old a\n"
+    assert second.read_text() == "old b\n"
+    assert sorted(path.name for path in out.iterdir()) == ["a.md", "b.md"]
+
+
+def test_stage_failure_never_starts_target_replacement(
+    write_analysis, tmp_path, monkeypatch
+):
+    out = tmp_path / "analyses"
+    out.mkdir()
+    first = out / "a.md"
+    second = out / "b.md"
+    first.write_text("old a\n")
+    second.write_text("old b\n")
+    rendered = [
+        ("a.md", str(first), "new a\n"),
+        ("b.md", str(second), "new b\n"),
+    ]
+    real_stage = write_analysis._stage_text
+
+    def fail_second_stage(path, body):
+        if str(path) == str(second):
+            raise OSError("injected staging failure")
+        return real_stage(path, body)
+
+    monkeypatch.setattr(write_analysis, "_stage_text", fail_second_stage)
+
+    with pytest.raises(
+        write_analysis.AnalysisBatchWriteError,
+        match="cannot stage complete analysis batch",
+    ):
+        write_analysis.atomic_write_batch(rendered)
+
+    assert first.read_text() == "old a\n"
+    assert second.read_text() == "old b\n"
+    assert sorted(path.name for path in out.iterdir()) == ["a.md", "b.md"]
+
+
+def test_analysis_target_symlink_is_replaced_without_following_target(
+    write_analysis, tmp_path
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    out.mkdir()
+    external = tmp_path / "external-analysis.md"
+    external.write_text("# external must remain unchanged\n")
+    target = out / "talk.md"
+    target.symlink_to(external)
+    ret = _return()
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not target.is_symlink()
+    assert target.read_text().startswith("# Rhetoric Analysis: talk")
+    assert external.read_text() == "# external must remain unchanged\n"
+
+
 def test_none_valued_structured_fields_are_omitted(write_analysis):
     """A None means 'could not determine'; rendering the literal 'None' reads as
     a finding rather than an absence."""
-    md = write_analysis.render_analysis(_return(structured_data={
-        "slide_count": 31,
-        "delivery_language": None,
-        "meme_count": 0,
-    }))
+    md = write_analysis.render_analysis(
+        _return(
+            structured_data={
+                "slide_count": 31,
+                "delivery_language": None,
+                "meme_count": 0,
+            }
+        )
+    )
     assert "- **slide_count:** 31" in md
     assert "- **meme_count:** 0" in md, "0 is a determined value, not an absence"
     assert "delivery_language" not in md
@@ -540,9 +2494,14 @@ def test_none_valued_structured_fields_are_omitted(write_analysis):
 
 def test_cli_missing_input_file_is_actionable(write_analysis, tmp_path):
     result = subprocess.run(
-        [sys.executable, write_analysis.__file__,
-         str(tmp_path / "nope.json"), str(tmp_path / "a")],
-        capture_output=True, text=True,
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(tmp_path / "nope.json"),
+            str(tmp_path / "a"),
+        ],
+        capture_output=True,
+        text=True,
     )
     assert result.returncode != 0
     assert "not found" in result.stderr

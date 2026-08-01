@@ -90,10 +90,14 @@ This is an architecture-phase concern (not a content-phase one) because the asks
 
 ### Decision #11: Pattern Strategy
 
-Read [patterns/_index.md](patterns/_index.md) for the full taxonomy and
-`profile → pattern_profile` for the speaker's pattern history.
+Read [patterns/_index.md](patterns/_index.md) for the current taxonomy. Read
+`profile → pattern_profile` only when Phase 0's
+`pattern_history_status.py` result has `history_enabled: true`. Never infer an
+enabled state from profile recency, schema tolerance, Section 15 prose, or
+`opportunity_rows_available: true`. Current schema-v4 profiles explicitly report
+classification policy unavailable, so use the flat taxonomy path below.
 
-Present patterns in **4 tiers:**
+With authorized history, present patterns in **4 tiers:**
 
 ```
 PATTERN STRATEGY for "{talk title}"
@@ -122,21 +126,33 @@ WARNINGS:
 ```
 
 **Tier logic:**
-1. **Signature** — `mastery_level: signature` patterns (80%+ usage), always shown
-2. **Contextual** — patterns matching spec context that speaker uses occasionally (10-80%)
-3. **New to You** — from `never_used_patterns`, filtered by spec relevance, marked `[NEW]`
-4. **Shake It Up** — 1-2 random picks from `never_used_patterns`, NOT filtered by relevance.
-   Provocations, not prescriptions.
+1. **Signature** — current-cohort `mastery_levels.signature` entries, always shown.
+2. **Contextual history** — current-cohort `mastery_levels.regular` or
+   `mastery_levels.occasional` entries matching the talk context.
+3. **New to You** — current-cohort `never_used_patterns` /
+   `mastery_levels.never_tried`, filtered by relevance and marked `[NEW]`.
+4. **Shake It Up** — exactly 1–2 current-cohort never-tried options used as
+   provocations, not prescriptions.
+
+Current-cohort `strengths`, `underused_patterns`, and `by_mode` may refine the
+recommendation only under that same enabled status. They never independently authorize
+history and never cross a catalog/scoring generation boundary.
 
 **Antipattern warnings** — merge speaker's recurring antipatterns (from
 `pattern_profile.antipattern_frequency`) + contextual warnings derived from the spec
 (co-presented → Dual-Headed Monster, dense content → Bullet-Riddled Corpse,
-new format → Shortchanged, etc.)
+new format → Shortchanged, etc.). Historical matches receive `[RECURRING]` only while
+history is enabled. Current-outline detections always receive `[CONTEXTUAL]` and remain
+available without history.
 
-**Summary-only mode** (no profile yet): Pattern taxonomy still works — patterns come
-from the reference files alone (no usage stats). All patterns presented as "new" (no
-tier separation, just a flat relevant-patterns list). Contextual antipattern warnings
-still apply.
+**History-disabled / summary-only mode:** Pattern taxonomy still works — patterns come
+from the reference files alone. Present a flat relevant-patterns list without the four
+history tiers, usage statistics, novelty claims, strengths, underuse, or by-mode
+claims. Do not call taxonomy entries "new to you" merely because history is
+unavailable. Contextual antipattern warnings still apply. Section 15 can restore the
+history view only when its current block carries a complete explicit provenance
+contract and the shared assessor reports `classification_fields_available: true`;
+an occurrence-only block is narrative/audit context, not tier authorization.
 
 Enhance decisions 3-10 with pattern cross-references as shared vocabulary: when recommending
 an opening pattern, reference the taxonomy ID; when selecting a narrative structure, note

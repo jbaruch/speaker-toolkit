@@ -13,6 +13,29 @@ detection_signals:
   - "modular structure"
   - "sections can stand alone"
   - "flexible time management"
+evaluable_from:
+  - transcript
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - transcript
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: short-talk-at-most-30-minutes
+    description: "Complete delivery video establishes that the presentation lasts no more than 30 minutes, where the catalog says Talklet module overhead exceeds the benefit."
+  - condition_id: cumulative-prerequisite-chain
+    description: "Complete delivery video establishes that the subject matter is a cumulative procedure or prerequisite chain in which each section consumes concepts or results introduced immediately before it, so sections cannot be independently removed or reordered."
+applicability_evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "A positive finding must locate module boundaries and show that each cited section has its own contextual opening, body, and close; three titled sections alone do not establish Talklets."
+  - "A strong finding requires a complete timed spoken record showing approximately 20-minute modules with limited cross-module dependencies, so structural reorderability follows from observable self-containment rather than an imagined alternate delivery."
+not_evaluable_when:
+  - "The source is untimed, incomplete, or does not preserve section order and dependencies."
+  - "Only slide titles or visual dividers are available without the spoken arcs needed to establish that modules stand alone."
+  - "The complete delivery is unavailable, so duration and cumulative-prerequisite applicability conditions cannot both be assessed."
 related_patterns: [narrative-arc, foreshadowing, backtracking, a-la-carte-content, expansion-joints]
 inverse_of: []
 difficulty: intermediate
@@ -41,9 +64,13 @@ Use the Talklet pattern for any presentation over 30 minutes, especially if you 
 The vault should look for evidence of modular construction: self-contained sections of approximately 20 minutes each, clear module boundaries with explicit transitions, and sections that appear to function independently rather than depending on sequential consumption.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Clearly modular structure with ~20-minute self-contained units; each module has its own arc; modules could be reordered or dropped without breaking the presentation
-- Moderate signal (1 pt): Some modularity evident but modules are not fully self-contained; dependencies between sections limit flexibility
-- Absent (0 pts): No modular structure; content is monolithic and cannot be shortened without uniform compression
+- Strong signal: Clearly modular structure with ~20-minute self-contained units; each module has its own arc; modules could be reordered or dropped without breaking the presentation
+- Moderate signal: Some modularity evident but modules are not fully self-contained; dependencies between sections limit flexibility
+- Absent: No modular structure; content is monolithic and cannot be shortened without uniform compression
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 2 (Structure/Organization). Relates to Dimension 12 (Time/Pacing).

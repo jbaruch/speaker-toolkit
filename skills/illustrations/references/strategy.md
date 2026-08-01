@@ -115,7 +115,7 @@ Filter the roster by the Step 4 priorities before rendering anything. This stage
 the cost — data-driven narrowing first, pixels later:
 
 ```bash
-python3 skills/illustrations/scripts/model_registry.py --shortlist <priorities>
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/model_registry.py" --shortlist <priorities>
 ```
 
 Pass the priorities comma-separated (e.g. `quality,build-editability`). The script
@@ -128,7 +128,7 @@ in it — or Step 2 surfaced a new flagship — WebSearch its cost, speed, quali
 and edit support, then rank it alongside the cached set without editing the table:
 
 ```bash
-python3 skills/illustrations/scripts/model_registry.py \
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/model_registry.py" \
   --shortlist <priorities> --add '[{"id":"...","family":"...","cost":"...","speed":"...","quality":"...","edit":"..."}]'
 ```
 
@@ -199,7 +199,7 @@ and model are picked together.
    [style-explore-candidates-schema.md](style-explore-candidates-schema.md).
 2. **Render the grid:**
    ```bash
-   python3 skills/illustrations/scripts/generate-illustrations.py \
+   python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-illustrations.py" \
      <outline> --style-explore style-explore/candidates.json
    ```
    Output lands in `style-explore/<style-slug>/<format>/<model>.<ext>` with a
@@ -248,7 +248,7 @@ style convention. See *Style-Anchor Discipline* in `rules/illustration-rules.md`
 Then run the render-before-bake gate and report its one-line verdict:
 
 ```bash
-python3 skills/illustrations/scripts/generate-illustrations.py \
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-illustrations.py" \
   <outline> --check-style-explore
 ```
 

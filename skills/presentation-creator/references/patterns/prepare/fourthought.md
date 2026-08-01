@@ -11,7 +11,7 @@ detection_signals:
   - "ideation, capture, and organization artifacts predate slide authoring"
   - "speaker confirms the four-phase preparation workflow"
 related_patterns: [unifying-visual-theme, backtracking, narrative-arc]
-inverse_of: [cookie-cutter]
+inverse_of: [cookie-cutter, injured-outlines]
 difficulty: foundational
 observable: false
 ---
@@ -42,9 +42,9 @@ from speaker confirmation of the four-phase workflow. A coherent talk without
 those sources is unevaluable, not evidence that the process occurred.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Dated ideation, capture, and organization artifacts all predate slide authoring and show the four-phase workflow
-- Moderate signal (1 pt): Some pre-slide ideation/organization artifacts exist, but one phase is undocumented
-- Absent (0 pts): Creation history shows slide authoring began before any captured ideation or organization
+- Strong signal: Dated ideation, capture, and organization artifacts all predate slide authoring and show the four-phase workflow
+- Moderate signal: Some pre-slide ideation/organization artifacts exist, but one phase is undocumented
+- Absent: Creation history shows slide authoring began before any captured ideation or organization
 - Unevaluable: Preparation artifacts or speaker confirmation are unavailable
 
 ## Relationship to Vault Dimensions

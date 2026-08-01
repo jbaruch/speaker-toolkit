@@ -6,7 +6,6 @@ part: prepare
 phase_relevance:
   - guardrails
 vault_dimensions: [4, 9, 14]
-evidence_channels: [transcript, slides, video]
 detection_signals:
   - "every claim defended in the speaker's single preferred register"
   - "talk mirrors the speaker's own thinking style rather than the room's spread"
@@ -15,6 +14,7 @@ detection_signals:
 related_patterns: [walk-around, know-your-audience, leet-grammars, crucible]
 inverse_of: [walk-around]
 difficulty: intermediate
+observable: false
 ---
 
 # The Golden Rule
@@ -67,9 +67,16 @@ The vault detects this by register uniformity across the talk's defended claims:
 Do not flag a short talk for thin coverage — a lightning talk has room for one register and choosing it is correct. The flag needs a talk long enough that the missing archetypes are an omission rather than a budget.
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Every load-bearing claim in a full-length talk defended in a single register; at least one archetype wholly absent; ideally corroborated by Q&A clustering on the gap or by projecting language
-- Moderate signal (1 pt): Two registers present but heavily lopsided, with a conspicuous archetype missing on the talk's central claim
-- Absent (0 pts — antipattern not present): Claims defended across multiple registers, or a homogeneous room matched with evident deliberation
+- Strong signal (antipattern present): Every load-bearing claim in a full-length talk defended in a single register; at least one archetype wholly absent; ideally corroborated by Q&A clustering on the gap or by projecting language
+- Moderate signal: Two registers present but heavily lopsided, with a conspicuous archetype missing on the talk's central claim
+- Absent (antipattern not present): Claims defended across multiple registers, or a homogeneous room matched with evident deliberation
+
+## Vault Observability
+The artifact can show which evidence registers appear, but the antipattern's defining
+distinction is whether a single register reflects the speaker's own default or a deliberate
+match to a verified homogeneous room. Talk artifacts establish neither the speaker's private
+preference and deliberation nor the audience's evidence-register spread. Do not convert a
+single-register delivery into an inferred motive.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 4 (Audience Interaction) — the antipattern is a failure of audience modeling, with the speaker's own preferences substituted for the room's. Relates to Dimension 9 (Persuasion Techniques), since it determines what the talk offers as proof and to whom that proof is legible. Relates to Dimension 14 (Areas for Improvement), where it belongs with `_anti_nodding-room.md` in the category of failures that draw good feedback: both are talks a subset of the room genuinely enjoys, which is exactly why neither gets corrected.

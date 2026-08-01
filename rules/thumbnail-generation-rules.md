@@ -1,3 +1,8 @@
+---
+alwaysApply: false
+applyTo: "skills/illustrations/**, skills/presentation-creator/** — when generating a presentation thumbnail"
+---
+
 # Thumbnail Generation Rules
 
 Steering rules for Phase 7 Step 7.1 — YouTube thumbnail generation.
@@ -160,7 +165,7 @@ them in agent-rolled prompts):
 
 **Why `--aesthetic` defaults to `photo` in the CLI:** speakers without
 a documented illustrated brand are the safer fallback for the script's
-default flag. The agent's recommendation, however, follows the profile's
+default flag. The agent's recommendation follows the profile's
 `visual_style_history` — see "Choosing per speaker" above — and should
 override the CLI default whenever the profile signals a clear illustrated
 brand.

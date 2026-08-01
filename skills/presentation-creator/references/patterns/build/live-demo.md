@@ -12,6 +12,23 @@ detection_signals:
   - "live software demonstration"
   - "real-time tool interaction"
   - "unscripted product showcase"
+evaluable_from:
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: no-executable-subject
+    description: "Complete delivery video establishes that the talk explains or claims no executable tool, system, product, or workflow that could be demonstrated."
+applicability_evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
+  - "Evidence must expose the existing scoring cues: actual interaction with a live system, rehearsal quality, narrative framing, and recovery."
+not_evaluable_when:
+  - "No delivery video covers the relevant event or interval."
+  - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
+  - "The complete delivery is unavailable, so the no-executable-subject applicability condition cannot be assessed."
 related_patterns: [lipsync, traveling-highlights]
 inverse_of: [dead-demo]
 difficulty: advanced
@@ -42,9 +59,13 @@ Avoid Live Demo when the risk outweighs the benefit — for example, when your n
 When scoring talks, watch for moments where the presenter leaves the slide deck and interacts with a live system. Note whether the demo is framed with context (why are we watching this?) and whether the presenter returns to slides afterward to synthesize what was shown. Also observe whether the presenter appears confident and rehearsed or anxious and improvising during the demo.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Well-rehearsed live demonstration that serves the narrative, is appropriately scoped, and includes visible backup preparedness (e.g., seamless recovery from a glitch, or mention of recorded fallback)
-- Moderate signal (1 pt): Live demonstration present but either too long, not well-integrated with the narrative, or showing signs of insufficient rehearsal
-- Absent (0 pts): No live demonstration when one would have strengthened the talk, or a demonstration that fails without recovery, or a Dead Demo used as time filler
+- Strong signal: Well-rehearsed live demonstration that serves the narrative, is appropriately scoped, and includes visible backup preparedness (e.g., seamless recovery from a glitch, or mention of recorded fallback)
+- Moderate signal: Live demonstration present but either too long, not well-integrated with the narrative, or showing signs of insufficient rehearsal
+- Absent: No live demonstration when one would have strengthened the talk, or a demonstration that fails without recovery, or a Dead Demo used as time filler
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 11 (Demonstrations and Tools): Live Demo is the primary pattern for this dimension, representing the highest-risk, highest-reward approach to showing tools and systems in action during a presentation.

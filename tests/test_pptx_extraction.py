@@ -1,9 +1,16 @@
 """Tests for pptx-extraction.py — PPTX visual data extraction."""
 
+import json
+import struct
+import subprocess
+import sys
+import zipfile
+
 import pytest
 from pptx import Presentation
+from pptx.oxml import parse_xml
+from pptx.oxml.ns import nsdecls
 from pptx.util import Inches, Pt
-from pptx.dml.color import RGBColor
 
 from conftest import make_deck
 
@@ -297,9 +304,9 @@ def test_image_background_slide_is_low_confidence(
     """An image *background* covers the slide and can carry baked-in text.
 
     It is not a PICTURE shape, so the shape walk never sees it — the same
-    blindness as issue #116, one layer down. python-pptx cannot author an
-    image background, so the classifier is stubbed to report one and the
-    assertion is on the emitted contract, not on the stub.
+    blindness as issue #116, one layer down. python-pptx has no public authoring
+    API for image backgrounds, so this test stubs only the classifier. XML/blob
+    extraction is covered by the synthetic background fixture below.
     """
     monkeypatch.setattr(
         pptx_extraction, "get_background_color", lambda slide: (None, "image"),
@@ -484,10 +491,10 @@ def test_ocr_unavailable_records_method_not_crash(pptx_extraction, tmp_path):
     assert data["text_extraction_confidence"] == "low"
 
 
-def test_image_background_without_picture_does_not_claim_ocr(
+def test_reported_image_background_without_blob_does_not_claim_ocr(
     pptx_extraction, tmp_path, monkeypatch,
 ):
-    """Image background is low-confidence but has no PICTURE blob to OCR."""
+    """A reported background without actual XML/blob never claims OCR ran."""
     monkeypatch.setattr(
         pptx_extraction, "get_background_color", lambda slide: (None, "image"),
     )
@@ -553,3 +560,443 @@ def test_full_bleed_with_baked_text_end_to_end(pptx_extraction, tmp_path):
     assert data["text_extraction_method"] == "shapes+ocr"
     assert "VENUE" in data["ocr_text"].upper()
     assert "PREPARATION" in data["ocr_text"].upper()
+
+
+# ── recursive/container fidelity and provenance ──────────────────────
+
+
+def test_grouped_shapes_are_walked_recursively_and_lower_confidence(
+    pptx_extraction, tmp_path,
+):
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    outer = slide.shapes.add_group_shape()
+    outer_text = outer.shapes.add_textbox(
+        Inches(1), Inches(1), Inches(4), Inches(1),
+    )
+    outer_text.text_frame.text = "Text inside outer group"
+    inner = outer.shapes.add_group_shape()
+    inner_text = inner.shapes.add_textbox(
+        Inches(2), Inches(2), Inches(4), Inches(1),
+    )
+    inner_text.text_frame.text = "Text inside nested group"
+
+    data = _first_slide(pptx_extraction, prs, tmp_path)
+
+    assert "Text inside outer group" in data["text_content_preview"]
+    assert "Text inside nested group" in data["text_content_preview"]
+    assert data["shape_count"] == 1
+    assert data["shape_count_recursive"] == 4
+    assert data["text_extraction_confidence"] == "low"
+    assert data["render_required"] is True
+    assert "grouped_shapes" in data["render_required_reasons"]
+
+    nested = next(
+        channel for channel in data["text_channels"]
+        if channel["text"] == "Text inside nested group"
+    )
+    assert nested["confidence"] == "medium"
+    assert nested["provenance"]["source"] == "pptx_shape_text_frame"
+    assert len(nested["provenance"]["shape_path"]) == 3
+
+
+def test_table_cell_text_has_its_own_provenance_channel(
+    pptx_extraction, tmp_path,
+):
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    table_shape = slide.shapes.add_table(
+        2, 2, Inches(1), Inches(1), Inches(6), Inches(2),
+    )
+    table_shape.table.cell(0, 0).text = "Name"
+    table_shape.table.cell(0, 1).text = "Count"
+    table_shape.table.cell(1, 0).text = "Hooks"
+    table_shape.table.cell(1, 1).text = "12"
+
+    data = _first_slide(pptx_extraction, prs, tmp_path)
+
+    assert "Hooks" in data["text_content_preview"]
+    channel = next(
+        item for item in data["text_channels"]
+        if item["channel"] == "table_cell_text"
+    )
+    assert channel["confidence"] == "medium"
+    assert channel["status"] == "extracted"
+    assert channel["provenance"]["source"] == "pptx_table_cells"
+    assert channel["provenance"]["cells"] == ["R1C1", "R1C2", "R2C1", "R2C2"]
+    assert data["text_extraction_confidence"] == "low"
+    assert "table" in data["render_required_reasons"]
+    summary = next(
+        item for item in data["shapes_summary"]
+        if item.get("graphic_frame_type") == "table"
+    )
+    assert summary["table_rows"] == 2
+    assert summary["table_columns"] == 2
+
+
+def test_smartart_and_unknown_graphic_frames_are_explicitly_unsupported(
+    pptx_extraction, tmp_path,
+):
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    smartart = slide.shapes.add_table(
+        1, 1, Inches(1), Inches(1), Inches(3), Inches(1),
+    )
+    smartart.element.graphic.graphicData.uri = (
+        "http://schemas.openxmlformats.org/drawingml/2006/diagram"
+    )
+    other = slide.shapes.add_table(
+        1, 1, Inches(1), Inches(3), Inches(3), Inches(1),
+    )
+    other.element.graphic.graphicData.uri = "urn:example:unsupported-graphic"
+
+    data = _first_slide(pptx_extraction, prs, tmp_path)
+
+    assert data["has_unsupported_content"] is True
+    assert data["text_extraction_confidence"] == "low"
+    assert data["render_required"] is True
+    kinds = {item["content_type"] for item in data["unsupported_content"]}
+    assert kinds == {"smartart", "graphic_frame"}
+    assert {
+        item["channel"] for item in data["text_channels"]
+        if item["status"] == "unsupported"
+    } == {"smartart_text", "graphic_frame_text"}
+    assert all(
+        item["graphic_data_uri"]
+        for item in data["unsupported_content"]
+    )
+
+
+def _set_background_image(slide, image_path):
+    """Author an image background directly in DrawingML for fixture coverage."""
+    _, r_id = slide.part.get_or_add_image_part(str(image_path))
+    bg_pr = slide.element.cSld.get_or_add_bgPr()
+    existing_fill = bg_pr.eg_fillProperties
+    if existing_fill is not None:
+        bg_pr.remove(existing_fill)
+    blip_fill = parse_xml(
+        f'<a:blipFill {nsdecls("a", "r")}>'
+        f'<a:blip r:embed="{r_id}"/>'
+        '<a:stretch><a:fillRect/></a:stretch>'
+        '</a:blipFill>'
+    )
+    bg_pr.insert(0, blip_fill)
+    return r_id
+
+
+def test_background_image_blob_is_ocrd_with_distinct_provenance(
+    pptx_extraction, tmp_path,
+):
+    image_path = tmp_path / "background.png"
+    _png_with_text(image_path, text="BACKGROUND LABEL")
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_background_image(slide, image_path)
+    path = str(tmp_path / "deck.pptx")
+    prs.save(path)
+
+    seen = []
+    data = pptx_extraction.extract_pptx(
+        path,
+        ocr_fn=lambda blobs: seen.append(blobs) or "BACKGROUND LABEL",
+    )["per_slide_visual"][0]
+
+    assert data["background_type"] == "image"
+    assert data["has_image"] is False
+    assert data["text_extraction_confidence"] == "low"
+    assert data["render_required"] is True
+    assert "background_image" in data["render_required_reasons"]
+    assert len(seen) == 1 and seen[0][0].startswith(b"\x89PNG")
+    channel = next(
+        item for item in data["text_channels"]
+        if item["channel"] == "background_image_ocr"
+    )
+    assert channel["status"] == "extracted"
+    assert channel["text"] == "BACKGROUND LABEL"
+    assert channel["confidence"] == "low"
+    assert channel["provenance"]["source"] == "pptx_background_image"
+    assert channel["provenance"]["part_name"].startswith("ppt/media/")
+    assert data["ocr_text"] == "BACKGROUND LABEL"
+
+
+def test_background_inspection_does_not_break_inheritance(pptx_extraction):
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    assert slide.element.cSld.bg is None
+
+    assert pptx_extraction.get_background_color(slide) == (None, "unknown")
+
+    # Access through python-pptx's public fill property would author a noFill
+    # node here and sever inheritance. Extraction must stay read-only.
+    assert slide.element.cSld.bg is None
+
+
+def test_missing_background_blob_requires_render_without_claiming_ocr(
+    pptx_extraction, tmp_path,
+):
+    image_path = tmp_path / "background.png"
+    _png(image_path)
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_background_image(slide, image_path)
+    blip = next(iter(
+        slide.element.cSld.bg.bgPr.eg_fillProperties.iter(
+            pptx_extraction.qn("a:blip")
+        )
+    ))
+    blip.set(pptx_extraction.qn("r:embed"), "rIdMissing")
+
+    data = _first_slide(pptx_extraction, prs, tmp_path)
+
+    channel = next(
+        item for item in data["text_channels"]
+        if item["channel"] == "background_image_ocr"
+    )
+    assert channel["status"] == "unavailable"
+    assert channel["text"] == ""
+    assert data["text_extraction_method"] == "shapes"
+    assert data["text_extraction_confidence"] == "low"
+    assert data["render_required"] is True
+
+
+def _damage_first_media_member(path):
+    """Flip a compressed payload byte without updating its recorded CRC."""
+    with zipfile.ZipFile(path) as archive:
+        member = next(
+            item for item in archive.infolist()
+            if item.filename.startswith("ppt/media/") and item.file_size
+        )
+    package = bytearray(path.read_bytes())
+    name_size, extra_size = struct.unpack_from(
+        "<HH", package, member.header_offset + 26,
+    )
+    payload_offset = member.header_offset + 30 + name_size + extra_size
+    package[payload_offset + (member.compress_size // 2)] ^= 0xFF
+    path.write_bytes(package)
+    return member.filename
+
+
+def test_bad_crc_media_is_recovered_without_losing_the_deck(
+    pptx_extraction, tmp_path,
+):
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    box = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1))
+    box.text_frame.text = "Healthy native text"
+    slide.shapes.add_picture(
+        _png(tmp_path / "asset.png"),
+        Inches(1), Inches(2), Inches(2), Inches(2),
+    )
+    _append_timing_xml(slide, "<p:animEffect/>")
+    path = tmp_path / "corrupt-media.pptx"
+    prs.save(path)
+    damaged_name = _damage_first_media_member(path)
+
+    result = pptx_extraction.extract_pptx(str(path), ocr=False)
+    data = result["per_slide_visual"][0]
+
+    assert result["slide_count"] == 1
+    assert result["corrupt_assets"] == [{
+        "part_name": damaged_name,
+        "error_type": "crc_mismatch",
+        "status": "recovered_with_placeholder",
+    }]
+    assert "Healthy native text" in data["text_content_preview"]
+    assert data["native_timing"]["animation_behavior_counts"]["effect"] == 1
+    assert data["text_extraction_confidence"] == "low"
+    assert "corrupt_embedded_asset" in data["render_required_reasons"]
+    assert any(
+        item["content_type"] == "corrupt_embedded_asset"
+        for item in data["unsupported_content"]
+    )
+
+
+# ── native timing/build structure (issue #151) ──────────────────────
+
+
+def _append_timing_xml(slide, behavior_xml):
+    """Append a synthetic but package-native PresentationML timing tree."""
+    timing = parse_xml(
+        f'<p:timing {nsdecls("p")}>'
+        '<p:tnLst><p:par><p:cTn id="1"><p:childTnLst>'
+        f'{behavior_xml}'
+        '</p:childTnLst></p:cTn></p:par></p:tnLst>'
+        '</p:timing>'
+    )
+    slide.element.append(timing)
+
+
+def _append_transition_xml(slide):
+    slide.element.append(parse_xml(
+        f'<p:transition {nsdecls("p")}><p:fade/></p:transition>'
+    ))
+
+
+def test_native_timing_categories_and_deck_totals_stay_distinct(
+        pptx_extraction, tmp_path):
+    prs = Presentation()
+    animated = prs.slides.add_slide(prs.slide_layouts[6])
+    _append_transition_xml(animated)
+    _append_timing_xml(animated, (
+        '<p:set><p:cBhvr><p:cTn id="2"/><p:attrNameLst>'
+        '<p:attrName>style.visibility</p:attrName>'
+        '</p:attrNameLst></p:cBhvr><p:to><p:strVal val="visible"/></p:to></p:set>'
+        '<p:set><p:cBhvr><p:cTn id="3"/><p:attrNameLst>'
+        '<p:attrName>style.opacity</p:attrName>'
+        '</p:attrNameLst></p:cBhvr><p:to><p:fltVal val="1"/></p:to></p:set>'
+        '<p:anim/><p:animClr/><p:animEffect/><p:animEffect/>'
+        '<p:animMotion/><p:animRot/><p:animScale/>'
+        '<p:audio><p:cMediaNode><p:cTn id="4"/></p:cMediaNode></p:audio>'
+        '<p:video><p:cMediaNode><p:cTn id="5"/></p:cMediaNode></p:video>'
+    ))
+
+    media_only = prs.slides.add_slide(prs.slide_layouts[6])
+    _append_timing_xml(media_only, (
+        '<p:audio><p:cMediaNode><p:cTn id="6"/></p:cMediaNode></p:audio>'
+    ))
+
+    transition_only = prs.slides.add_slide(prs.slide_layouts[6])
+    _append_transition_xml(transition_only)
+
+    path = tmp_path / "timing-structure.pptx"
+    prs.save(path)
+    result = pptx_extraction.extract_pptx(str(path), ocr=False)
+    slides = result["per_slide_visual"]
+
+    first = slides[0]["native_timing"]
+    assert first["timing_element_present"] is True
+    assert first["timing_element_count"] == 1
+    assert first["transition_count"] == 1
+    assert first["set_action_count"] == 2
+    assert first["visibility_set_action_count"] == 1
+    assert first["animation_behavior_counts"] == {
+        "general": 1,
+        "color": 1,
+        "effect": 2,
+        "motion": 1,
+        "rotation": 1,
+        "scale": 1,
+        "total": 7,
+    }
+    assert first["media_timing_counts"] == {
+        "audio": 1, "video": 1, "total": 2}
+    assert first["has_animation_behaviors"] is True
+    assert first["has_media_timing"] is True
+    assert first["provenance"] == {
+        "source": "pptx_package_xml",
+        "measurement": "raw_ooxml_element_counts",
+        "observed_playback": False,
+        "part_name": "ppt/slides/slide1.xml",
+    }
+
+    # A timing container carrying only embedded-media timing is not generic
+    # animation and especially not a motion observation.
+    second = slides[1]["native_timing"]
+    assert second["timing_element_present"] is True
+    assert second["has_animation_behaviors"] is False
+    assert second["animation_behavior_counts"]["motion"] == 0
+    assert second["animation_behavior_counts"]["total"] == 0
+    assert second["has_media_timing"] is True
+    assert second["media_timing_counts"] == {
+        "audio": 1, "video": 0, "total": 1}
+
+    third = slides[2]["native_timing"]
+    assert third["timing_element_present"] is False
+    assert third["transition_count"] == 1
+    assert third["has_animation_behaviors"] is False
+    assert third["has_media_timing"] is False
+
+    assert result["native_timing_summary"] == {
+        "slides_with_timing_elements": 2,
+        "slides_with_transitions": 2,
+        "slides_with_animation_behaviors": 1,
+        "slides_with_media_timing": 2,
+        "timing_element_count": 2,
+        "transition_count": 2,
+        "set_action_count": 2,
+        "visibility_set_action_count": 1,
+        "animation_behavior_counts": {
+            "general": 1,
+            "color": 1,
+            "effect": 2,
+            "motion": 1,
+            "rotation": 1,
+            "scale": 1,
+            "total": 7,
+        },
+        "media_timing_counts": {"audio": 2, "video": 1, "total": 3},
+        "provenance": {
+            "source": "pptx_package_xml",
+            "measurement": "raw_ooxml_element_counts",
+            "observed_playback": False,
+        },
+    }
+
+
+def test_adjacent_static_progressive_builds_do_not_invent_native_timing(
+        pptx_extraction, tmp_path):
+    """Duplicate-slide builds stay visible states, not inferred animation."""
+    prs = Presentation()
+    first = prs.slides.add_slide(prs.slide_layouts[6])
+    first.shapes.add_textbox(
+        Inches(1), Inches(1), Inches(5), Inches(1)).text_frame.text = "Base diagram"
+    second = prs.slides.add_slide(prs.slide_layouts[6])
+    second.shapes.add_textbox(
+        Inches(1), Inches(1), Inches(5), Inches(1)).text_frame.text = "Base diagram"
+    second.shapes.add_textbox(
+        Inches(1), Inches(2), Inches(5), Inches(1)).text_frame.text = "Step 2 annotation"
+    path = tmp_path / "static-progressive-build.pptx"
+    prs.save(path)
+
+    result = pptx_extraction.extract_pptx(str(path), ocr=False)
+
+    assert "Base diagram" in result["per_slide_visual"][0]["text_content_preview"]
+    assert "Step 2 annotation" in \
+        result["per_slide_visual"][1]["text_content_preview"]
+    assert all(
+        not slide["native_timing"]["timing_element_present"]
+        for slide in result["per_slide_visual"]
+    )
+    assert result["native_timing_summary"]["animation_behavior_counts"]["total"] == 0
+    assert result["native_timing_summary"]["media_timing_counts"]["total"] == 0
+
+
+def test_versions_and_input_fingerprint_are_stable_and_content_addressed(
+    pptx_extraction, tmp_path,
+):
+    prs = make_deck(1)
+    source = tmp_path / "source.pptx"
+    prs.save(source)
+    copy = tmp_path / "copy.pptx"
+    copy.write_bytes(source.read_bytes())
+    modified = tmp_path / "modified.pptx"
+    modified.write_bytes(source.read_bytes() + b"\x00")
+
+    first = pptx_extraction.extract_pptx(str(source), ocr=False)
+    second = pptx_extraction.extract_pptx(str(source), ocr=False)
+    copied = pptx_extraction.extract_pptx(str(copy), ocr=False)
+    changed = pptx_extraction.extract_pptx(str(modified), ocr=False)
+
+    assert pptx_extraction.SCHEMA_VERSION == 2
+    assert pptx_extraction.PIPELINE_VERSION == "1.1.0"
+    assert first["schema_version"] == pptx_extraction.SCHEMA_VERSION
+    assert first["pipeline_version"] == pptx_extraction.PIPELINE_VERSION
+    assert first["input_fingerprint"] == second["input_fingerprint"]
+    assert first["input_fingerprint"] == copied["input_fingerprint"]
+    assert first["input_fingerprint"] != changed["input_fingerprint"]
+    assert first["input_fingerprint"]["algorithm"] == "sha256"
+    assert len(first["input_fingerprint"]["digest"]) == 64
+    assert first["input_fingerprint"]["size_bytes"] == source.stat().st_size
+
+
+def test_version_flag_is_machine_readable(pptx_extraction):
+    proc = subprocess.run(
+        [sys.executable, pptx_extraction.__file__, "--version"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert json.loads(proc.stdout) == {
+        "schema_version": pptx_extraction.SCHEMA_VERSION,
+        "pipeline_version": pptx_extraction.PIPELINE_VERSION,
+    }

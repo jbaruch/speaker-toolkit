@@ -11,6 +11,28 @@ detection_signals:
   - "animated focus indicators"
   - "zoom-to-detail on code"
   - "highlighted regions on diagrams"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - native_deck
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: no-dense-visual
+    description: "A complete deck or delivery video establishes that no dense code, diagram, chart, data visualization, or screenshot requires guided reading."
+applicability_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "Evidence must show the same dense visual across ordered states with a focus marker moving between regions, or show the authored motion directly."
+  - "A strong score requires native or delivery evidence of smooth, intentional motion and timing."
+not_evaluable_when:
+  - "Only one static highlight, box, crop, or annotated slide is available."
+  - "The frames do not preserve enough of the same visual to establish that focus travels across it."
+  - "The complete visual inventory is unavailable, so the no-dense-visual applicability condition cannot be assessed."
 related_patterns: [crawling-code, emergence]
 inverse_of: [laser-weapons]
 difficulty: intermediate
@@ -41,9 +63,13 @@ Avoid overusing Traveling Highlights on simple slides where the content is self-
 When scoring talks, look for animated emphasis on complex slides: boxes appearing around code, arrows pointing to diagram components, opacity changes that dim irrelevant content, or zoom effects that magnify specific regions. Note whether the presenter uses a laser pointer (negative signal) or built-in animations (positive signal) to direct attention on dense slides.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Consistent use of built-in animated highlights on complex slides — code, diagrams, and dense visuals — with smooth animations that guide attention effectively without distraction
-- Moderate signal (1 pt): Some animated highlighting present but inconsistent, or highlights that are visually rough (jerky animations, poorly positioned boxes, distracting transitions)
-- Absent (0 pts): Dense slides presented without any visual guidance, or reliance on a laser pointer to indicate regions of interest
+- Strong signal: Consistent use of built-in animated highlights on complex slides — code, diagrams, and dense visuals — with smooth animations that guide attention effectively without distraction
+- Moderate signal: Some animated highlighting present but inconsistent, or highlights that are visually rough (jerky animations, poorly positioned boxes, distracting transitions)
+- Absent: Dense slides presented without any visual guidance, or reliance on a laser pointer to indicate regions of interest
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 11 (Demonstrations and Tools): Traveling Highlights enhance the clarity of tool demonstrations by focusing attention on specific interface elements, outputs, or code regions during the explanation. Dimension 13 (Slide Aesthetics): Well-executed Traveling Highlights significantly elevate the visual professionalism of a presentation, turning dense information slides into guided visual experiences.

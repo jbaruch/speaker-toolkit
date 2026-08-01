@@ -1,3 +1,7 @@
+---
+alwaysApply: true
+---
+
 # Vault Language Policy
 
 The rhetoric knowledge vault is English-only. All output — analyses, summaries,

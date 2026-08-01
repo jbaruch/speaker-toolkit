@@ -12,6 +12,29 @@ detection_signals:
   - "single base image annotated across multiple slides"
   - "elements added one per slide to build a cumulative argument"
   - "visual buildup with verbal narration of each addition"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: no-complex-reveal-opportunity
+    description: "A complete deck or delivery video establishes that the source content contains no complex base visual or multi-part argument whose parts need staged discovery."
+applicability_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "An ordered sequence must preserve the same base visual while annotations or elements accumulate."
+  - "A strong score additionally requires a visible payoff that resolves the buildup."
+not_evaluable_when:
+  - "Only one flattened final state is available."
+  - "The available frames do not establish an ordered cumulative sequence on the same base visual."
+  - "The complete visual inventory is unavailable, so the no-complex-reveal-opportunity applicability condition cannot be assessed."
 related_patterns: [composite-animation, foreshadowing, traveling-highlights, sparkline]
 inverse_of: [bullet-riddled-corpse]
 difficulty: intermediate
@@ -38,9 +61,13 @@ Use Progressive Reveal when the base image contains a non-obvious pattern that t
 Look for adjacent slide sequences where the same base image appears with progressively more annotations. Five or more sequential slides with cumulative additions is a strong signal. The presence of a clear payoff slide that resolves the buildup distinguishes successful Progressive Reveal from drifting through a static visual.
 
 ## Scoring Criteria
-- Strong signal (2 pts): clear progressive reveal sequence of 4+ slides with cumulative annotations and an explicit payoff slide
-- Moderate signal (1 pt): partial reveal sequence (2–3 slides) or a reveal without a clear payoff
-- Absent (0 pts): complex visuals presented all at once with no incremental buildup
+- Strong signal: clear progressive reveal sequence of 4+ slides with cumulative annotations and an explicit payoff slide
+- Moderate signal: partial reveal sequence (2–3 slides) or a reveal without a clear payoff
+- Absent: complex visuals presented all at once with no incremental buildup
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 4 (Humor and Surprise Techniques): Progressive Reveal is a primary mechanism for landing visual punchlines. Dimension 7 (Slide Design): The technique requires deliberate slide-construction discipline; the same image must reappear with controlled diff across slides.

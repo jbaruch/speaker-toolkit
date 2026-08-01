@@ -11,6 +11,28 @@ detection_signals:
   - "scrolling code display"
   - "highlighted active lines"
   - "shaded context lines"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - native_deck
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: no-long-code-listing
+    description: "A complete deck or delivery video establishes that no code listing longer than approximately ten lines is presented for detailed audience comprehension."
+applicability_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "Static positives require consecutive rendered states of the same code listing with highlighted context preserved as the visible region changes."
+  - "A strong score requires native motion or delivery evidence of smooth scrolling, highlighting, context, and pacing; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "Only a single full code listing or disconnected code slides are available without continuity between states."
+  - "Native build behavior or delivered video is unavailable or incomplete for a strong outcome."
+  - "The complete visual inventory is unavailable, so the no-long-code-listing applicability condition cannot be assessed."
 related_patterns: [traveling-highlights, emergence]
 inverse_of: []
 difficulty: advanced
@@ -43,9 +65,13 @@ Avoid Crawling Code for very short code snippets (under ten lines) where a singl
 When scoring talks, look for code that scrolls or transitions through visible regions, with clear visual differentiation between highlighted (active) lines and shaded (contextual) lines. Note whether the presenter maintains visible context around the highlighted code or shows lines in complete isolation. Smooth scrolling with consistent pacing is a strong positive signal.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Code displayed with smooth scrolling, clear highlighting of active lines, visible but dimmed context lines, appropriate pacing, and syntax coloring on the focus area
-- Moderate signal (1 pt): Some attempt at progressive code display — sequential reveal or partial highlighting — but without the full context-preserving, scrolling implementation
-- Absent (0 pts): Full code listings displayed statically with no visual guidance, or code split across disconnected slides with no visual continuity
+- Strong signal: Code displayed with smooth scrolling, clear highlighting of active lines, visible but dimmed context lines, appropriate pacing, and syntax coloring on the focus area
+- Moderate signal: Some attempt at progressive code display — sequential reveal or partial highlighting — but without the full context-preserving, scrolling implementation
+- Absent: Full code listings displayed statically with no visual guidance, or code split across disconnected slides with no visual continuity
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 11 (Demonstrations and Tools): Crawling Code is a primary technique for presenting code — the most common tool artifact in technical presentations — in a way that prioritizes comprehension over completeness. Dimension 13 (Slide Aesthetics): The layered construction of Crawling Code, with its careful use of opacity, highlight colors, and smooth animation, represents sophisticated slide design that elevates the visual quality of technical content.

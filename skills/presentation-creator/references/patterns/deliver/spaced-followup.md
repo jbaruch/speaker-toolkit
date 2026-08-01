@@ -51,9 +51,9 @@ The execution — whether the message was ever actually sent, and whether it ask
 
 ## Scoring Criteria
 Score the in-room prerequisite only; never infer the follow-up itself from the talk.
-- Strong signal (2 pts): A named opt-in channel on the closing slides, explicitly framed as a later re-exposure with a stated shape and timeframe
-- Moderate signal (1 pt): An opt-in channel exists but is framed generically (newsletter, "follow me"), with no stated follow-up intent
-- Absent (0 pts): No opt-in channel, or post-talk provision is availability only — slides, recording, links
+- Strong signal: A named opt-in channel on the closing slides, explicitly framed as a later re-exposure with a stated shape and timeframe
+- Moderate signal: An opt-in channel exists but is framed generically (newsletter, "follow me"), with no stated follow-up intent
+- Absent: No opt-in channel, or post-talk provision is availability only — slides, recording, links
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 6 (Closing Pattern), the only dimension it can touch, and only through the in-room prerequisite that rides on the closing slides.

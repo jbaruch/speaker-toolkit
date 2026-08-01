@@ -11,6 +11,19 @@ detection_signals:
   - "animated title positioning"
   - "emphasis through motion"
   - "time-based reveal"
+evaluable_from:
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - native_deck
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "The title must be observed centered and isolated before moving to the top as body content appears."
+  - "The temporal ordering and title motion must be visible, not reconstructed from a final layout."
+not_evaluable_when:
+  - "Only the final-state static slide or PDF page is available."
+  - "The source shows a large, centered, or top-positioned title but not its movement between those states."
 related_patterns: [charred-trail, gradual-consistency]
 inverse_of: []
 difficulty: intermediate
@@ -37,13 +50,19 @@ Use Exuberant Title Top for slides where the title itself is the primary message
 
 Avoid using it on every slide, which dilutes the emphasis effect. Also avoid it on slides where the title is merely a label (e.g., "Agenda" or "Q&A") rather than a substantive statement. The pattern works best when the title is a claim, question, or insight that benefits from a moment of isolated contemplation.
 
+**NAME TRAP — this is not a static title layout.** A large or expressive title already positioned at the top of a slide does not qualify. The title must first appear centered and isolated, then move to the top before the body appears; a flattened final-state slide alone is not evidence of the pattern.
+
 ## Detection Heuristics
 When scoring talks, look for titles that appear centered on screen before migrating to the top position as body content builds in. The key signal is the temporal isolation of the title — it gets its own moment before other content appears. Compare the live presentation to printed handouts to confirm the effect is achieved through animation rather than static layout.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Selective use of animated title positioning at key moments, smooth animation execution, clear emphasis benefit from the temporal isolation
-- Moderate signal (1 pt): Title animation present but overused (every slide) or poorly executed (jerky motion, too slow)
-- Absent (0 pts): All titles appear in their final position simultaneously with body content, no temporal emphasis used
+- Strong signal: Selective use of animated title positioning at key moments, smooth animation execution, clear emphasis benefit from the temporal isolation
+- Moderate signal: Title animation present but overused (every slide) or poorly executed (jerky motion, too slow)
+- Absent: All titles appear in their final position simultaneously with body content, no temporal emphasis used
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 13 (Visual Polish and Craft): Exuberant Title Top demonstrates sophisticated animation craft, using motion and timing to create emphasis that goes beyond what static design can achieve.

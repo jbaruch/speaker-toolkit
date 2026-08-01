@@ -10,7 +10,7 @@ detection_signals:
   - "audience research notes or organizer brief are available"
   - "speaker documents how research changed the talk"
 related_patterns: [emotional-state, seeding-satisfaction]
-inverse_of: []
+inverse_of: [flyover]
 difficulty: foundational
 observable: false
 ---
@@ -54,9 +54,9 @@ from audience research notes, an organizer brief, or speaker confirmation that
 identifies what was learned and how it changed the talk.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Audience/organizer research is available and the speaker documents multiple talk choices it changed
-- Moderate signal (1 pt): Research is available and linked to at least one concrete adaptation
-- Absent (0 pts): Available preparation records show no audience research or no resulting adaptation
+- Strong signal: Audience/organizer research is available and the speaker documents multiple talk choices it changed
+- Moderate signal: Research is available and linked to at least one concrete adaptation
+- Absent: Available preparation records show no audience research or no resulting adaptation
 - Unevaluable: Audience research records and speaker confirmation are unavailable
 
 ## Relationship to Vault Dimensions

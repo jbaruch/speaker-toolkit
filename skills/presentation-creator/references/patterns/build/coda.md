@@ -7,11 +7,31 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [6, 8]
-evidence_channels: [slides, slide_sequence, video]
+evidence_channels: [transcript, slides, slide_sequence, video]
 detection_signals:
   - "reference slides at end"
   - "bibliography or resource list"
   - "further reading section"
+evaluable_from:
+  - [static_slides, transcript]
+  - [native_deck, transcript]
+strong_evaluable_from:
+  - [static_slides, transcript]
+  - [native_deck, transcript]
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: no-external-resources-cited
+    description: "A complete transcript paired with the complete rendered or native deck establishes that the spoken and body material independently uses or cites no external resources, research, tools, or further reading that a Coda could collect."
+applicability_evaluable_from:
+  - [static_slides, transcript]
+  - [native_deck, transcript]
+evidence_requirements:
+  - "Evidence must show supplementary deck material after, and separate from, the spoken conclusion."
+  - "Evidence must expose the existing scoring cues: reference material appears after, and remains separate from, the spoken conclusion."
+not_evaluable_when:
+  - "Only a deck is available without a transcript that locates the spoken conclusion."
+  - "Only delivery video or transcript is available without an inspectable authored deck showing the post-spoken material."
+  - "The complete speech-and-deck inventory is unavailable, so the no-external-resources applicability condition cannot be assessed."
 related_patterns: [infodeck, vacation-photos]
 inverse_of: []
 difficulty: foundational
@@ -42,9 +62,13 @@ Avoid relying on the Coda as a dumping ground for slides you cut from the main t
 When scoring talks, look for a clear demarcation point between the spoken conclusion and supplementary material. Reference slides should appear after the final narrative slide. The presence of a "Further Reading," "Resources," or "References" section at the end of a deck is a strong positive signal. Conversely, URLs and citations scattered throughout the body of the talk indicate the absence of this pattern.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Clear reference/bibliography section at end of deck, separated from spoken content, with organized further reading materials
-- Moderate signal (1 pt): Some references collected at end but mixed with spoken content, or references present but unorganized
-- Absent (0 pts): No reference section, or references scattered inline throughout the presentation
+- Strong signal: Clear reference/bibliography section at end of deck, separated from spoken content, with organized further reading materials
+- Moderate signal: Some references collected at end but mixed with spoken content, or references present but unorganized
+- Absent: No reference section, or references scattered inline throughout the presentation
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 6 (Information Density): manages information density across the spoken portion and the reference section. Dimension 8 (Slide Design): a deck-structure decision about what belongs in the spoken flow versus reference material.

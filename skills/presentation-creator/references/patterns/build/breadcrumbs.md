@@ -12,6 +12,30 @@ detection_signals:
   - "agenda slides with highlighting"
   - "progress indicators"
   - "topic map showing current position"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+absence_evaluable_from:
+  - static_slides
+not_applicable_when:
+  - condition_id: fewer-than-three-major-sections
+    description: "A complete rendered deck, native deck, or delivery video establishes fewer than three major sections, where the catalog says Breadcrumb overhead exceeds its value."
+applicability_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "Evidence must expose the visible construction across enough of the talk to apply a positive criterion; an absent outcome requires a complete, separately declared rendered PDF."
+  - "Evidence must expose the existing scoring cues: strong: recurring three-state progress display; moderate: initial agenda or inconsistent highlighting; absent: no agenda or progress indicator."
+not_evaluable_when:
+  - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
+  - "Only a transcript or spoken account is available, the visual source is too partial for the asserted positive tier, or the separately declared rendered PDF is incomplete for absence."
+  - "The source does not cover the complete section inventory needed to assess the fewer-than-three-sections applicability condition."
 related_patterns: [context-keeper, bookends]
 inverse_of: []
 difficulty: foundational
@@ -42,9 +66,13 @@ Avoid Breadcrumbs in narrative-driven presentations where the structure should f
 When scoring talks, look for recurring agenda or progress indicators that show the audience their position within the presentation structure. This can be dedicated agenda slides that reappear between sections, persistent visual elements on every slide, or any recurring mechanism that highlights the current section relative to the whole.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Clear, recurring Breadcrumbs mechanism with three-state visualization (completed, current, upcoming), used consistently throughout the presentation at section transitions
-- Moderate signal (1 pt): An agenda slide shown at the beginning but not revisited, or inconsistent highlighting of current position
-- Absent (0 pts): No agenda, progress indicator, or structural navigation cues visible to the audience
+- Strong signal: Clear, recurring Breadcrumbs mechanism with three-state visualization (completed, current, upcoming), used consistently throughout the presentation at section transitions
+- Moderate signal: An agenda slide shown at the beginning but not revisited, or inconsistent highlighting of current position
+- Absent: No agenda, progress indicator, or structural navigation cues visible to the audience
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+An absence finding is authorized only from a complete, separately declared rendered PDF (`static_slides`); a native deck, delivery video, transcript, or comparison artifact does not authorize absence.
 
 ## Relationship to Vault Dimensions
 Dimension 2 (Structure and Flow): Breadcrumbs are a direct, explicit revelation of the presentation's structure, making the flow visible and navigable for the audience. Dimension 13 (Visual Polish and Craft): Well-designed Breadcrumbs require thoughtful visual design — color coding, spatial arrangement, and consistent styling — that reflects overall visual craft.

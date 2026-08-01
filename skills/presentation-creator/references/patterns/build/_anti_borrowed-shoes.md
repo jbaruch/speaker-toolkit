@@ -43,9 +43,9 @@ and version history shows the presenter did not substantially adapt it. Without
 both facts, treat the cause of the mismatch as unknown.
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Deck provenance identifies another author and version history shows no substantive adaptation by the presenter
-- Moderate signal (1 pt): Provenance identifies borrowed material and version history shows only superficial adaptation
-- Absent (0 pts — antipattern not present): Provenance/version history shows original authorship or substantial adaptation into the presenter's own material
+- Strong signal (antipattern present): Deck provenance identifies another author and version history shows no substantive adaptation by the presenter
+- Moderate signal: Provenance identifies borrowed material and version history shows only superficial adaptation
+- Absent (antipattern not present): Provenance/version history shows original authorship or substantial adaptation into the presenter's own material
 - Unevaluable: Authorship or version history is unavailable
 
 ## Relationship to Vault Dimensions

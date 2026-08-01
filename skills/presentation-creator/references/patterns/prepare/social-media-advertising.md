@@ -40,9 +40,9 @@ promotion. Verify this pattern from dated promotional posts or campaign/referral
 records that link to the talk. Without those external artifacts it is unevaluable.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Multiple dated pre-event promotional posts link to the talk and show deliberate campaign/community building
-- Moderate signal (1 pt): One dated promotional post links to the talk before the event
-- Absent (0 pts): Available account/campaign history shows no pre-event promotion
+- Strong signal: Multiple dated pre-event promotional posts link to the talk and show deliberate campaign/community building
+- Moderate signal: One dated promotional post links to the talk before the event
+- Absent: Available account/campaign history shows no pre-event promotion
 - Unevaluable: Relevant account or campaign history is unavailable
 
 ## Relationship to Vault Dimensions

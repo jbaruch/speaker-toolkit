@@ -11,6 +11,17 @@ detection_signals:
   - "physical props used"
   - "audience interaction through objects"
   - "tangible demonstrations"
+evaluable_from:
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
+  - "Evidence must expose the existing scoring cues: physical props, room interaction, and live logistics."
+not_evaluable_when:
+  - "No delivery video covers the relevant event or interval."
+  - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
 related_patterns: [entertainment, weatherman]
 inverse_of: []
 difficulty: advanced
@@ -35,6 +46,8 @@ The key risk with Make It Rain is logistical failure. Physical props require pla
 ## When to Use / When to Avoid
 Use this pattern when you have the logistical capacity to support it and when the physical element genuinely enhances the content rather than serving as pure spectacle. It works best in smaller venues (under 200 people) where physical interaction is practical, in workshop settings where participation is expected, and in longer sessions where sustained engagement is challenging. Avoid it in large auditoriums where logistics become unwieldy, in formal settings where physical interaction would be inappropriate, or when the connection between prop and content is forced.
 
+**NAME TRAP — this requires a physical object in the room.** A large catalogue of examples, plentiful evidence, high energy, swag that is merely mentioned, or a screen-based demonstration does not qualify. Score the pattern only when a prop, physical token, furniture, or another tangible object is used or distributed during the delivery.
+
 ## Detection Heuristics
 - Physical objects are incorporated into the presentation
 - Audience members physically interact with props or each other
@@ -42,9 +55,13 @@ Use this pattern when you have the logistical capacity to support it and when th
 - Reward systems encourage participation through physical tokens
 
 ## Scoring Criteria
-- Strong signal (2 pts): Physical props are used effectively to enhance understanding and engagement, with clear connection between physical element and content, logistics handled smoothly
-- Moderate signal (1 pt): Some physical elements present but connection to content is weak or logistics are rough
-- Absent (0 pts): Presentation is entirely screen-based with no physical interaction elements
+- Strong signal: Physical props are used effectively to enhance understanding and engagement, with clear connection between physical element and content, logistics handled smoothly
+- Moderate signal: Some physical elements present but connection to content is weak or logistics are rough
+- Absent: Presentation is entirely screen-based with no physical interaction elements
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 4 (Audience Engagement). Physical interaction creates a qualitatively different type of engagement than visual or auditory stimulation alone. It breaks the passive viewing pattern and transforms attendees from audience members into participants.

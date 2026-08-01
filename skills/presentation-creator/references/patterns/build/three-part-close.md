@@ -12,6 +12,29 @@ detection_signals:
   - "closing sequence has summary slide, CTA slide, and thanks slide"
   - "three distinct closing slides in sequence"
   - "explicit recap, action, gratitude structure"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: short-talk-under-25-minutes
+    description: "Complete delivery video establishes a talk shorter than 25 minutes, below the catalog's stated Three-Part Close use case."
+  - condition_id: non-action-oriented-talk
+    description: "Complete delivery video establishes a purely informative or ceremonial presentation contract for which asking the audience to act would be inappropriate."
+applicability_evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Evidence must expose the visible construction across enough of the talk to apply a positive criterion; current artifacts do not authorize an absent outcome."
+  - "Evidence must expose the existing scoring cues: strong: three or more separate closing-job slides; moderate: two jobs separated; absent: one combined slide or no close."
+not_evaluable_when:
+  - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
+  - "Only a transcript or spoken account is available, or the visual source is too partial for the asserted positive tier; non-detection remains not_evaluable."
+  - "The complete delivery is unavailable, so duration and presentation-purpose applicability cannot be assessed."
 related_patterns: [bookends, call-to-action, coda, new-bliss]
 inverse_of: [shortchanged]
 difficulty: foundational
@@ -36,9 +59,13 @@ Use Three-Part Close in conference talks of 25+ minutes where a structured endin
 Check the last 3–5 slides of the deck. Are there at least three distinct slides at the end, each doing one closing job (recap, CTA, thanks)? A summary slide followed by a CTA slide followed by a thanks slide is a positive signal. A single all-in-one final slide is the inverse.
 
 ## Scoring Criteria
-- Strong signal (2 pts): three or more distinct closing slides with clearly separated jobs (recap → CTA → thanks); consistent visual treatment marks them as a closing group
-- Moderate signal (1 pt): two of the three jobs are present on separate slides; closing structure is partial
-- Absent (0 pts): single closing slide combining recap, CTA, and thanks; or no closing slide at all
+- Strong signal: three or more distinct closing slides with clearly separated jobs (recap → CTA → thanks); consistent visual treatment marks them as a closing group
+- Moderate signal: two of the three jobs are present on separate slides; closing structure is partial
+- Absent: single closing slide combining recap, CTA, and thanks; or no closing slide at all
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 2 (Structure and Flow): Three-Part Close is a structural commitment to giving the ending the same care as the opening. Dimension 10 (Closing Strategy): The pattern is the most explicit expression of a designed closing.

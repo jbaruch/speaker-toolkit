@@ -13,8 +13,21 @@ detection_signals:
   - "audience reading ahead"
   - "slides as speaker notes"
   - "auto-shrunk fonts"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "Rendered slides may establish repeated bullet-heavy construction; delivery video is required when the claim depends on speaker-note duplication, reading ahead, or cognitive competition."
+  - "Current artifacts support positive detection only; no source or coverage claim authorizes an absent outcome."
+not_evaluable_when:
+  - "Only an authored deck is available and it is unknown which dense appendix or reference slides were actually shown."
+  - "Delivery video does not cover the cited bullet-heavy passages needed for the claimed positive tier."
 related_patterns: [charred-trail, infodeck]
-inverse_of: [vacation-photos, takahashi]
+inverse_of: [vacation-photos, takahashi, progressive-reveal]
 difficulty: foundational
 ---
 
@@ -43,9 +56,13 @@ The one exception is when you are deliberately creating an Infodeck — a slide 
 When scoring talks, count the proportion of slides that consist primarily of bullet points (three or more text bullets occupying the majority of the slide). Note whether the audience appears to be reading ahead of the speaker. Look for auto-shrunk fonts (inconsistent text sizes that indicate PowerPoint has compressed the text to fit). Also note if the presenter is reading bullet points verbatim from the slide.
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Majority of slides are bullet-point lists of four or more items, presenter reads bullets from slides, fonts are auto-shrunk to accommodate text volume
-- Moderate signal (1 pt): Mix of bullet-heavy slides and visual slides, or bullets present but kept to three or fewer short items per slide
-- Absent (0 pts — antipattern not present): Slides use visual communication — images, diagrams, single phrases, key words — rather than bullet points, with spoken narration providing the detail that would otherwise be in bullets
+- Strong signal (antipattern present): Majority of slides are bullet-point lists of four or more items, presenter reads bullets from slides, fonts are auto-shrunk to accommodate text volume
+- Moderate signal: Repeated bullet-heavy slides, or bullets that duplicate the speaker's narration and create reading-ahead or cognitive competition, without reaching the strong criterion; a compact list of three or fewer short items by itself is not a signal
+- Absent (antipattern not present): Slides use visual communication — images, diagrams, single phrases, key words — rather than bullet points, with spoken narration providing the detail that would otherwise be in bullets
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 8 (Slide Design): Bullet-Riddled Corpse is a fundamental failure of slide design that misunderstands the purpose of projected visuals in a live presentation. Dimension 13 (Slide Aesthetics): Text-heavy bullet slides are among the least aesthetically pleasing slide formats, producing dense, uniform visual patterns that numb the audience. Dimension 14 (Overall Quality Indicators): The prevalence of bullet-point slides is one of the most reliable negative indicators of overall presentation quality.

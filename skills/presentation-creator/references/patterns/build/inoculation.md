@@ -13,6 +13,22 @@ detection_signals:
   - "transition language signaling self-counterargument ('You might be thinking…', 'I know what you're going to say…', 'The natural objection is…')"
   - "objections are addressed in the same section as the related claim, not deferred to Q&A"
   - "the strongest counter-position is steel-manned, not strawmanned"
+evaluable_from:
+  - transcript
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - transcript
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "Evidence must show a genuine counter-position and a response in the same content section; transition phrasing alone is insufficient."
+  - "Slide-only positives remain moderate unless the complete objection-and-response is rendered; strong scores require complete spoken coverage, while current artifacts do not authorize absence."
+not_evaluable_when:
+  - "Only an objection phrase or slide heading is available without the counter-position, immediate response, and related claim."
+  - "The transcript or video is incomplete across the persuasive sections needed to assess steel-manning or same-section response."
+  - "Talk artifacts do not establish that the audience holds a specific objection worth inoculating against, so a non-detection cannot be treated as absence."
 related_patterns: [know-your-audience, mentor, peer-review, sparkline, the-big-why]
 inverse_of: []
 difficulty: intermediate
@@ -61,9 +77,13 @@ The vault should look for the pattern's structural signature — speaker-voiced 
 Detection is harder for skilled speakers who use inoculation seamlessly without explicit transition phrasing. The deeper signal: does the talk anticipate and address the objections an attentive opposition would raise, or does it proceed as if the audience were uniformly aligned?
 
 ## Scoring Criteria
-- Strong signal (2 pts): At least one inoculation move clearly visible in transcript; counter-position is steel-manned (would survive an opponent's reading); response is in the same content section as the claim; transition language signals the move explicitly
-- Moderate signal (1 pt): Inoculation attempted but counter-position is weakened or strawmanned, OR objection is raised but addressed only briefly, OR objection is acknowledged but the response is deferred to Q&A
-- Absent (0 pts): Talk proceeds as if the audience were uniformly aligned; no anticipated objections raised by the speaker; potential resistance addressed only reactively if at all
+- Strong signal: At least one inoculation move clearly visible in transcript; counter-position is steel-manned (would survive an opponent's reading); response is in the same content section as the claim; transition language signals the move explicitly
+- Moderate signal: Inoculation attempted but counter-position is weakened or strawmanned, OR objection is raised but addressed only briefly, OR objection is acknowledged but the response is deferred to Q&A
+- Absent: Talk proceeds as if the audience were uniformly aligned; no anticipated objections raised by the speaker; potential resistance addressed only reactively if at all
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 4 (Audience Interaction). Relates to Dimension 9 (Persuasion Techniques) as one of the most powerful tools for moving an audience that starts with active resistance.

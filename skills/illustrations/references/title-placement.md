@@ -55,14 +55,14 @@ All three live in `skills/illustrations/scripts/`.
 # 1. Author outline.yaml with `safe_zone` fields
 
 # 2. Generate illustrations — directive appended automatically
-python3 skills/illustrations/scripts/generate-illustrations.py outline.yaml all
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-illustrations.py" outline.yaml all
 
 # 3. (Optional) Sample a scrim color tuned to the deck's style
-python3 skills/illustrations/scripts/suggest-scrim-color.py illustrations/
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/suggest-scrim-color.py" illustrations/
 # -> prints: scrim base #RRGGBB, recommended alpha NNNNN
 
 # 4. Apply to deck
-python3 skills/illustrations/scripts/apply-illustrations-to-deck.py \
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/apply-illustrations-to-deck.py" \
     deck.pptx illustrations/ outline.yaml \
     --out deck-with-titles.pptx \
     --scrim-color 100903 --scrim-alpha 47553   # omit for plain 45% black

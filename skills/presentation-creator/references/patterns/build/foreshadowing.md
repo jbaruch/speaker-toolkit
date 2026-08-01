@@ -11,6 +11,28 @@ detection_signals:
   - "early planted clues"
   - "later callbacks to planted elements"
   - "unexplained recurring theme resolved later"
+evaluable_from:
+  - transcript
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: short-talk-at-most-15-minutes
+    description: "Complete delivery video establishes a talk of at most 15 minutes, where the catalog says there is insufficient runway between a plant and payoff."
+  - condition_id: strictly-sequential-instructional-contract
+    description: "Complete delivery video establishes a step-by-step instructional contract in which each element must be explained when introduced and delaying its meaning would impair comprehension."
+applicability_evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "A positive finding must locate an early unresolved plant and its later payoff in source order; a callback without an earlier plant, or an unresolved recurring motif, does not qualify."
+  - "A strong finding requires delivery evidence of the complete plant-to-payoff chain and the visible audience recognition named by the criterion; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "The source begins after the proposed plant, ends before the proposed payoff, or does not preserve talk order."
+  - "Audience recognition is not visible in the recording for a strong claim; no transcript/deck combination authorizes absence."
+  - "The complete delivery is unavailable, so duration and instructional-contract applicability conditions cannot both be assessed."
 related_patterns: [narrative-arc, talklet, backtracking, intermezzi]
 inverse_of: []
 difficulty: intermediate
@@ -41,9 +63,13 @@ Avoid foreshadowing in short talks (lightning talks, 15-minute sessions) where t
 When scoring talks, look for elements that appear early without full explanation and are later revisited with new meaning. Recurring visual motifs, repeated phrases, or unexplained themes that are resolved by the end of the talk are strong indicators. The key distinction is between foreshadowing (intentional, resolved) and loose threads (unintentional, unresolved).
 
 ## Scoring Criteria
-- Strong signal (2 pts): Clear foreshadowing elements planted early, maintained through the talk, and resolved with impact in the conclusion; audience experiences a visible "aha" moment
-- Moderate signal (1 pt): Some callbacks to earlier content, but the foreshadowing is either too obvious or the payoff is underwhelming
-- Absent (0 pts): No planted clues, no callbacks, content proceeds linearly without narrative tension
+- Strong signal: Clear foreshadowing elements planted early, maintained through the talk, and resolved with impact in the conclusion; audience experiences a visible "aha" moment
+- Moderate signal: Some callbacks to earlier content, but the foreshadowing is either too obvious or the payoff is underwhelming
+- Absent: No planted clues, no callbacks, content proceeds linearly without narrative tension
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 2 (Structure and Flow): Foreshadowing creates a non-linear structural layer on top of the presentation's sequential flow, connecting distant parts of the talk through thematic threads. Dimension 5 (Storytelling and Narrative): Foreshadowing is a storytelling technique woven into the narrative.

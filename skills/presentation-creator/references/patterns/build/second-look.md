@@ -7,12 +7,28 @@ phase_relevance:
   - slides
   - publishing
 vault_dimensions: [8, 13]
-evidence_channels: [slides, video]
+evidence_channels: [transcript, slides, video]
 detection_signals:
   - "slide carries a room-legible layer and a deliberately unreadable reward layer"
   - "detail is never narrated and the argument does not depend on it"
   - "buried jokes or payoffs sized below room legibility"
   - "an explicit destination (shownotes/deck link) where the detail is recoverable"
+evaluable_from:
+  - delivery_video
+  - [static_slides, transcript]
+  - [native_deck, transcript]
+strong_evaluable_from:
+  - delivery_video
+  - [static_slides, transcript]
+  - [native_deck, transcript]
+absence_evaluable_from: null
+evidence_requirements:
+  - "Evidence must pair rendered-slide inspection with the spoken track to establish that the room layer carries the argument while reward detail remains unnarrated."
+  - "Evidence must establish a genuine fine-scale reward layer and an explicit destination where that detail is recoverable."
+not_evaluable_when:
+  - "Only static or native slides are available without the spoken track."
+  - "Only a transcript is available without rendered pages that establish the two legibility layers and destination."
+  - "Shape-text extraction or OCR is available but rendered-page legibility cannot be inspected."
 related_patterns: [unifying-visual-theme, spaced-followup, coda, star-moment, vacation-photos, gradual-consistency, infodeck]
 inverse_of: []
 difficulty: advanced
@@ -63,9 +79,13 @@ Given rendered images (and `ocr_text` where present), look for:
 The distinguishing test against ant-fonts is a single question: **did the audience need to read it?** If yes, and they could not, that is the antipattern regardless of how attractive the slide is. If no — if the argument is fully carried by the room layer and the detail is bonus — it is Second Look.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Consistent two-layer construction across the deck; room layer carries the argument unaided; reward layer contains genuine payoffs at sub-room scale; a destination exists and is integrated into the theme
-- Moderate signal (1 pt): Dense detailed slides with a destination, but the room layer is muddy (the point competes with the detail), or the reward layer is decorative rather than rewarding, or the destination is a bare afterthought URL
-- Absent (0 pts): Slides are single-layer — either clean and sparse (no reward layer) or uniformly dense with no room-legible point. Density with no destination is not this pattern; score it under `_anti_ant-fonts.md`
+- Strong signal: Consistent two-layer construction across the deck; room layer carries the argument unaided; reward layer contains genuine payoffs at sub-room scale; a destination exists and is integrated into the theme
+- Moderate signal: Dense detailed slides with a destination, but the room layer is muddy (the point competes with the detail), or the reward layer is decorative rather than rewarding, or the destination is a bare afterthought URL
+- Absent: Slides are single-layer — either clean and sparse (no reward layer) or uniformly dense with no room-legible point. Density with no destination is not this pattern; score it under `_anti_ant-fonts.md`
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 8 (Slide-to-Speech Relationship) as the primary axis, and inverts the usual reading of it. Most of the catalog treats slide-to-speech as a question of whether the slide competes with the speaker; here the slide deliberately carries far *more* than the speech does, and the excess is aimed at a reader who does not exist yet. The speaker narrates the room layer only; the reward layer is addressed to a future audience of one, holding a phone, on a couch.

@@ -11,6 +11,17 @@ detection_signals:
   - "confident delivery"
   - "no unnecessary apologies"
   - "authority projected without arrogance"
+evaluable_from:
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "Delivery video must expose vocal tone, body language, apology behavior, and the handling of any disruption or Q&A used as evidence."
+  - "A strong score requires representative coverage across the delivery, not a short confident excerpt; a calm factual correction is not an undermining apology."
+not_evaluable_when:
+  - "Only transcript, slides, audio-free footage, or a brief highlight clip is available without observable delivery behavior."
+  - "A cited disruption or Q&A response falls outside the inspected video, or the video is not representative enough to score throughout behavior."
 related_patterns: [know-your-audience, mentor]
 inverse_of: [going-meta]
 difficulty: intermediate
@@ -42,9 +53,13 @@ Use this pattern in every presentation. It is especially critical for first-time
 - Authority is present without condescension
 
 ## Scoring Criteria
-- Strong signal (2 pts): Speaker projects confident authority throughout, handles disruptions with poise, never undermines own credibility with unnecessary apologies
-- Moderate signal (1 pt): Generally confident but one or two instances of self-deprecation or unnecessary apologizing
-- Absent (0 pts): Speaker repeatedly undermines own credibility through apologies, disclaimers, or visible lack of confidence
+- Strong signal: Speaker projects confident authority throughout, handles disruptions with poise, never undermines own credibility with unnecessary apologies
+- Moderate signal: Generally confident but one or two instances of self-deprecation or unnecessary apologizing
+- Absent: Speaker repeatedly undermines own credibility through apologies, disclaimers, or visible lack of confidence
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 9 (Speaker Authority / Credibility). The core of this dimension is the audience's perception of the speaker as a trustworthy source of knowledge. Display of High Value directly manages that perception by ensuring the speaker does not inadvertently erode the trust the audience is prepared to extend.

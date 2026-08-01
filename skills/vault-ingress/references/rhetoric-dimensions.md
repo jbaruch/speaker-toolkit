@@ -172,9 +172,9 @@ For each talk, determine:
 
 Critically assess what could be improved in this talk's delivery and rhetoric. Look for: uneven pacing (rushing through the last third because of time pressure), weak transitions, jokes that don't land, audience engagement that falls flat, slides that are too dense or too sparse, arguments that lack support, sections that drag, abrupt endings, time management issues (visible "5 minutes left" panic), filler words overuse, unclear structure, missed callback opportunities, underused audience interaction. Be honest and constructive — the goal is to identify patterns to avoid, not just patterns to replicate.
 
-Structure the output so Section 15 of the summary can aggregate it: for each distinct issue, name the related antipattern ID where one of the Dimension 14 antipatterns above applies (the same match also belongs in `pattern_observations.antipatterns_detected`) and rate its `severity` (`hard_limit|warning|info`). Issues with no matching antipattern are still reported as prose. This per-issue tagging is what lets the speaker profile attribute a declining pattern-score trend to specific antipatterns.
+Structure the output so Section 15 of the summary can aggregate it: for each distinct issue, name the related antipattern ID where one of the Dimension 14 antipatterns above applies (the same source-proven match also belongs in `pattern_observations.antipatterns_detected`). Issues with no matching antipattern are still reported as prose. This is narrative coaching context; it does not authorize recurring severity, trend, or mastery classifications in the speaker profile.
 
-Underuse is a first-class improvement area, not only antipatterns: skipping the speaker's own signature patterns, or a narrow pattern range (few distinct patterns deployed), is worth flagging even though it maps to no antipattern ID — a "clean" talk with no antipatterns can still leave the toolkit underused. Report it as prose, distinct from "use more patterns for their own sake" — the point is range and fit, not count.
+Do not infer underuse or signature status from a single talk or from zero detections. You may report a concrete missed rhetorical opportunity as prose when the talk context supports it, but frame it as a talk-local suggestion rather than a corpus classification. The point is fit, not pattern count.
 
 Pacing here is the **qualitative** read — transcript-evident rushing, visible "5 minutes left" panic, sections that drag. The **quantitative** counterpart (slides-per-minute vs the speaker's slide budgets across the corpus) is computed in the speaker profile as `pacing.adherence`; don't try to compute budget overages from a single transcript here.
 
@@ -195,7 +195,17 @@ Count and categorize these for the `structured_data` output:
 - **slide_design_style**: comic_book, minimal_dark, demo_scaffolding, mixed
 - **illustration_style**: Name the dominant illustration aesthetic if present (e.g., "retro_tech_manual", "comic_book_halftone", "patent_drawing", "none"). Use "none" if the talk has no deliberate illustration style.
 - **illustration_coherence**: unified, mixed, none — whether illustrations share a single style anchor
-- **image_source_distribution**: Object mapping source types to counts, e.g., {"ai_generated": 20, "meme": 5, "screenshot": 8, "none": 12}
+- **image_source_distribution**: Object mapping provenance/source labels to
+  non-negative integer counts, e.g., {"ai_generated": 0, "speaker_created": 7,
+  "stock_photo": 0, "unknown": 28, "none": 12}. Appearance is not provenance:
+  do not infer AI generation, stock authorship, or another origin from visual
+  style alone. Use `unknown` without provenance. “Meme” and “screenshot” are
+  observable content/format categories, not authorship sources; keep any such
+  classification outside this count map, and never insert note strings into it.
+- **image_source_distribution_basis**: Required non-empty sibling string whenever
+  `image_source_distribution` is present. State whether counts are per slide,
+  page, or asset; the classification rule and how a dominant class wins; the
+  provenance evidence used; and how unverified origins enter `unknown`.
 - **visual_continuity_devices**: List any recurring visual motifs (e.g., ["FIG_numbering", "progressive_form", "recurring_mascot"]) or empty list
 - **opening_sequence**: List the type of each of the first ~5 slides (e.g., ["title", "provocative_hook", "bio", "shownotes_url", "first_argument"])
 - **closing_sequence**: List the type of each of the last ~5 slides

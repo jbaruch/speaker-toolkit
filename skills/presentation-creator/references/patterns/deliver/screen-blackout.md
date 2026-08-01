@@ -12,6 +12,25 @@ detection_signals:
   - "deliberate blank or black slide between sections"
   - "B-key blackout during digression or audience question"
   - "speaker holds attention without screen support"
+evaluable_from:
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: screen-only-remote-presentation
+    description: "Complete delivery video establishes a webinar or other screen-only remote format where blanking the screen would remove the audience's primary visual channel."
+  - condition_id: no-projected-screen
+    description: "Complete delivery video establishes that the talk uses no projected or shared screen that the speaker could deliberately blank."
+applicability_evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Delivery video must show the screen together with the surrounding speaker action and talk context so intentional blackouts can be distinguished from capture failures."
+  - "A strong score must locate deliberate blackouts at meaningful moments; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "The screen is cropped, replaced by edited slides, or missing while the speaker remains visible."
+  - "Black frames lack surrounding delivery context, or the relevant video is incomplete for a positive intentionality claim."
+  - "The complete delivery format is unavailable, so remote-screen and projected-screen applicability cannot be assessed."
 related_patterns: [breathing-room, intermezzi, brain-breaks, mentor]
 inverse_of: []
 difficulty: intermediate
@@ -42,9 +61,13 @@ Avoid blackouts during demo-driven sections where the screen *is* the content (`
 The vault should look for: (a) explicit black or blank slides in the deck file, especially between major sections or before known personal-story moments; (b) video evidence of the speaker holding the room while the screen behind them is dark; (c) the B-key behavior on platforms where remote keystrokes are observable. The clearest signal is a deck with intentional black slides at section boundaries — this is unmistakably deliberate, not a missing-slide bug.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Deliberate blackouts (planned black slides or visible B-key use) at meaningful moments — section boundaries, personal stories, audience-question handling — used as a tool for attention redirection
-- Moderate signal (1 pt): Occasional blackouts present but inconsistent — speaker uses the technique once or twice but does not integrate it as a regular part of the delivery toolkit
-- Absent (0 pts): Every moment of the talk has a slide behind the speaker; no blackouts, no rests; the screen is on continuously regardless of whether it is relevant
+- Strong signal: Deliberate blackouts (planned black slides or visible B-key use) at meaningful moments — section boundaries, personal stories, audience-question handling — used as a tool for attention redirection
+- Moderate signal: Occasional blackouts present but inconsistent — speaker uses the technique once or twice but does not integrate it as a regular part of the delivery toolkit
+- Absent: Every moment of the talk has a slide behind the speaker; no blackouts, no rests; the screen is on continuously regardless of whether it is relevant
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 12 (Pacing Clues). Relates to Dimension 13 (Slide Design Patterns).

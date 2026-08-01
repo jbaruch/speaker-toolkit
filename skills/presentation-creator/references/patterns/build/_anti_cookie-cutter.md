@@ -12,8 +12,24 @@ detection_signals:
   - "ideas forced into single slides"
   - "information cramming"
   - "unnatural content breaks at slide boundaries"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+absence_evaluable_from:
+  - static_slides
+evidence_requirements:
+  - "Evidence must expose the visible construction across enough of the talk to apply a positive criterion; an absent outcome requires a complete, separately declared rendered PDF."
+  - "Evidence must expose the existing scoring cues: strong: cramming, auto-shrink, truncated ideas; moderate: occasional cramming; absent: ideas use the slides they need."
+not_evaluable_when:
+  - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
+  - "Only a transcript or spoken account is available, the visual source is too partial for the asserted positive tier, or the separately declared rendered PDF is incomplete for absence."
 related_patterns: [soft-transitions, fourthought]
-inverse_of: [soft-transitions]
+inverse_of: [soft-transitions, fourthought]
 difficulty: foundational
 ---
 
@@ -42,9 +58,13 @@ The instinct toward Cookie Cutter thinking may be strongest when a presenter is 
 When scoring talks, look for slides that feel overstuffed — text that is clearly compressed to fit, diagrams with overlapping labels, bullet lists that extend to the bottom of the slide. Also look for ideas that feel artificially truncated at slide boundaries, as if the explanation was cut short because the slide ran out of space. Auto-shrunk fonts (inconsistent text sizes across slides) are a telltale indicator of the software accommodating Cookie Cutter behavior.
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Consistent pattern of one-idea-per-slide regardless of idea complexity, with visible cramming, auto-shrunk fonts, and ideas that feel truncated at slide boundaries
-- Moderate signal (1 pt): Occasional cramming on some slides, but most ideas are given appropriate space; some variation in text size suggesting occasional forced fitting
-- Absent (0 pts — antipattern not present): No evidence of cookie-cutter thinking — ideas span as many slides as they need, content is appropriately sized, and slide boundaries are invisible to the audience
+- Strong signal (antipattern present): Consistent pattern of one-idea-per-slide regardless of idea complexity, with visible cramming, auto-shrunk fonts, and ideas that feel truncated at slide boundaries
+- Moderate signal: Occasional cramming on some slides, but most ideas are given appropriate space; some variation in text size suggesting occasional forced fitting
+- Absent (antipattern not present): No evidence of cookie-cutter thinking — ideas span as many slides as they need, content is appropriately sized, and slide boundaries are invisible to the audience
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+An absence finding is authorized only from a complete, separately declared rendered PDF (`static_slides`); a native deck, delivery video, transcript, or comparison artifact does not authorize absence.
 
 ## Relationship to Vault Dimensions
 Dimension 8 (Slide Design): Cookie Cutter fundamentally compromises slide design by subordinating design decisions to arbitrary size constraints rather than content requirements. Dimension 13 (Slide Aesthetics): The visual cramming that results from Cookie Cutter thinking produces aesthetically poor slides with inconsistent text sizes, cluttered layouts, and no visual breathing room.

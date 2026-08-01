@@ -7,14 +7,30 @@ phase_relevance:
   - architecture
   - slides
 vault_dimensions: [8, 13]
-evidence_channels: [slides, video]
+evidence_channels: [transcript, slides, video]
 detection_signals:
   - "full-bleed image slides"
   - "minimal text on image slides"
   - "high-quality photography"
   - "presenter as verbal focus"
+evaluable_from:
+  - delivery_video
+  - [static_slides, transcript]
+  - [native_deck, transcript]
+strong_evaluable_from:
+  - delivery_video
+  - [static_slides, transcript]
+  - [native_deck, transcript]
+absence_evaluable_from: null
+evidence_requirements:
+  - "Evidence must pair rendered-page inspection with the spoken track to establish that substantive content lives in the presenter layer rather than in baked slide lettering."
+  - "Evidence must establish repeated full-bleed, high-quality photography with minimal words on the rendered pages."
+not_evaluable_when:
+  - "Only static or native slides are available without the spoken track."
+  - "Only a transcript is available without rendered pages that establish the image-led slide treatment."
+  - "Only shape-text extraction is available and baked-in lettering on the rendered pages cannot be ruled out."
 related_patterns: [unifying-visual-theme]
-inverse_of: [photomaniac]
+inverse_of: [photomaniac, bullet-riddled-corpse]
 difficulty: intermediate
 ---
 
@@ -60,9 +76,13 @@ When scoring talks, look for slides where images fill the entire slide canvas wi
 The question is not "does the slide carry text in shapes" but "does the slide carry the argument". A full-bleed image under a baked-in title stating the claim is not Vacation Photos — the audience reads the claim. Vacation Photos requires the words to live in the speaker's mouth.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Multiple full-bleed image slides carrying no or minimal words ON THE RENDERED PAGE, high-quality photography, presenter clearly serving as the verbal narrative layer
-- Moderate signal (1 pt): Some image-heavy slides but mixed with text-heavy ones, or images used but not full-bleed, or image quality is inconsistent
-- Absent (0 pts): No full-bleed image slides, text dominates every slide, images used only as small illustrations within text-heavy layouts — or the slides are full-bleed images whose baked-in lettering carries the argument, which is a different pattern and may be `second-look`
+- Strong signal: Multiple full-bleed image slides carrying no or minimal words ON THE RENDERED PAGE, high-quality photography, presenter clearly serving as the verbal narrative layer
+- Moderate signal: Some image-heavy slides but mixed with text-heavy ones, or images used but not full-bleed, or image quality is inconsistent
+- Absent: No full-bleed image slides, text dominates every slide, images used only as small illustrations within text-heavy layouts — or the slides are full-bleed images whose baked-in lettering carries the argument, which is a different pattern and may be `second-look`
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 8 (Slide Design): Vacation Photos represents a deliberate architectural choice about how slides function — as emotional/visual backdrops rather than information carriers. Dimension 13 (Visual Polish and Craft): The quality and curation of images directly reflects the presenter's investment in visual craft.

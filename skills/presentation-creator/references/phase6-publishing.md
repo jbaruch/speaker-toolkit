@@ -29,7 +29,7 @@ and Coda slides are easy to miss — this step catches them systematically.
 
 1. Run the extraction script against `outline.yaml`:
    ```bash
-   python3 skills/presentation-creator/scripts/extract-resources.py outline.yaml
+   python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-resources.py" outline.yaml
    ```
 
 2. The script produces `resources.json` in the talk working directory with
@@ -147,20 +147,20 @@ path make the check before resolving the link.
 3. Run the QR generation script:
    ```bash
    # MCP-preresolved mode:
-   python3 skills/presentation-creator/scripts/generate-qr.py deck.pptx \
+   python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/generate-qr.py" deck.pptx \
      --talk-slug SLUG --short-url SHORT_URL
 
    # Direct API mode:
-   python3 skills/presentation-creator/scripts/generate-qr.py deck.pptx \
+   python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/generate-qr.py" deck.pptx \
      --talk-slug SLUG --shownotes-url SHOWNOTES_URL \
      --vault /path/to/vault
 
    # No shortening:
-   python3 skills/presentation-creator/scripts/generate-qr.py deck.pptx \
+   python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/generate-qr.py" deck.pptx \
      --talk-slug SLUG --shownotes-url SHOWNOTES_URL
 
    # PNG-only (no deck — for presenterm, PDF, or standalone use):
-   python3 skills/presentation-creator/scripts/generate-qr.py --png-only \
+   python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/generate-qr.py" --png-only \
      --talk-slug SLUG --shownotes-url SHOWNOTES_URL \
      --output /path/to/qr.png --bg-color 128,0,128
    ```
@@ -206,11 +206,11 @@ Generate a plain-text timing file for [timemytalk.app](https://timemytalk.app)
 by running:
 
 ```bash
-python3 skills/presentation-creator/scripts/generate-talk-timings.py \
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/generate-talk-timings.py" \
   outline.yaml --output talk-timings.txt
 
 # If the talk slot includes Q&A time:
-python3 skills/presentation-creator/scripts/generate-talk-timings.py \
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/generate-talk-timings.py" \
   outline.yaml --qa 5 --output talk-timings.txt
 ```
 

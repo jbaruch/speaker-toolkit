@@ -11,6 +11,20 @@ detection_signals:
   - "humor used for engagement"
   - "stories woven into content"
   - "analogies for complex concepts"
+evaluable_from:
+  - transcript
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "A positive finding must locate a joke, story, or analogy and show how it carries or clarifies substantive content rather than merely sharing an amusing topic or decorative image."
+  - "A strong finding requires delivery evidence of both execution and audience engagement; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "Only a decontextualized joke, anecdote, image, or audience-reaction clip is available without the substantive point it supposedly serves."
+  - "The recording omits audience response or material sections needed for the claimed positive tier; no transcript/deck pair authorizes an absence decision."
 related_patterns: [know-your-audience, brain-breaks, make-it-rain]
 inverse_of: [alienating-artifact]
 difficulty: intermediate
@@ -42,9 +56,13 @@ Use entertainment elements in every presentation, calibrated to the audience and
 - Entertainment is balanced with substantive content
 
 ## Scoring Criteria
-- Strong signal (2 pts): Humor, stories, and analogies are woven naturally into content, enhancing both engagement and comprehension without overwhelming the educational substance
-- Moderate signal (1 pt): Some entertainment elements present but inconsistently applied — jokes fall flat, stories wander, or analogies confuse
-- Absent (0 pts): Presentation is purely informational with no entertainment elements, or entertainment overwhelms substance
+- Strong signal: Humor, stories, and analogies are woven naturally into content, enhancing both engagement and comprehension without overwhelming the educational substance
+- Moderate signal: Some entertainment elements present but inconsistently applied — jokes fall flat, stories wander, or analogies confuse
+- Absent: Presentation is purely informational with no entertainment elements, or entertainment overwhelms substance
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 3 (Engagement / Entertainment Value) directly, and to Vault Dimension 10 (Memorability).

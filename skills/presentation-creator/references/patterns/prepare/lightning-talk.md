@@ -13,6 +13,23 @@ detection_signals:
   - "fixed slide count"
   - "memorized delivery"
   - "rapid-fire pacing"
+evaluable_from:
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: not-lightning-format
+    description: "Complete delivery video establishes that the session is not a fixed, very-short lightning format with the severe timing and slide-synchronization constraints this pattern scores."
+applicability_evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
+  - "Evidence must expose the existing scoring cues: second-level speech-slide synchronization, auto-advance behavior, and delivered timing."
+not_evaluable_when:
+  - "No delivery video covers the relevant event or interval."
+  - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
+  - "The complete format, auto-advance behavior, and duration are unavailable, so lightning-format applicability cannot be assessed."
 related_patterns: [talklet, carnegie-hall, fourthought, defy-defaults, narrative-arc]
 inverse_of: []
 difficulty: advanced
@@ -41,9 +58,13 @@ Use the Lightning Talk format when the event calls for it, when you want to shar
 The vault should look for evidence of extreme compression and precision: fixed slide counts, very rapid pacing, highly polished delivery with no wasted words, and the kind of synchronization between speaker and slides that only comes from extensive rehearsal.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Perfectly timed delivery; slides and speech synchronized to the second; clear narrative arc within extreme time constraints; memorable conclusion
-- Moderate signal (1 pt): Reasonable timing but occasional desynchronization; content mostly fits the format but some slides feel rushed or wasted
-- Absent (0 pts): Delivery clearly under-rehearsed; speaker fights the auto-advance; narrative arc absent or broken; timing significantly off
+- Strong signal: Perfectly timed delivery; slides and speech synchronized to the second; clear narrative arc within extreme time constraints; memorable conclusion
+- Moderate signal: Reasonable timing but occasional desynchronization; content mostly fits the format but some slides feel rushed or wasted
+- Absent: Delivery clearly under-rehearsed; speaker fights the auto-advance; narrative arc absent or broken; timing significantly off
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 2 (Structure/Organization). Relates to Dimension 12 (Time/Pacing).

@@ -12,6 +12,26 @@ detection_signals:
   - "talk ends on a higher emotional plane than it started"
   - "concrete imagery of the world after audience adopts the proposed change"
   - "follows a Call to Action — does not replace it"
+evaluable_from:
+  - transcript
+  - delivery_video
+strong_evaluable_from:
+  - transcript
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: non-persuasive-talk
+    description: "A complete transcript or delivery video establishes a primarily informative or ceremonial presentation contract with no behavior-change objective."
+applicability_evaluable_from:
+  - transcript
+  - delivery_video
+evidence_requirements:
+  - "The spoken source must cover the complete closing sequence through the literal end and place a future-state vision after the Call to Action."
+  - "A strong score must show concrete scene-level imagery and a higher closing emotional plane; an aspirational slogan before the ask does not qualify."
+not_evaluable_when:
+  - "The transcript or video omits the Call to Action, the post-action closing, or the talk's literal end."
+  - "The transcript lacks verified ordering or timing needed to place the candidate future state after the ask."
+  - "The complete presentation purpose is unavailable, so the non-persuasive-talk applicability condition cannot be assessed."
 related_patterns: [sparkline, call-to-action, coda, bookends, the-big-why]
 inverse_of: []
 difficulty: foundational
@@ -61,9 +81,13 @@ The vault should look for content immediately after the Call to Action and befor
 The clearest absence-signal is a talk that ends on the Call to Action itself, on a credentials slide, on a Q&A invitation, or on a generic "thank you for your time" — none of which serve the New Bliss function.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Vivid, concrete future-state vision present in the closing zone after the Call to Action; specific scene-level imagery; appropriate scope sizing; closing emotional plane clearly higher than opening
-- Moderate signal (1 pt): Future-state vision present but abstract or generic ("a better future"); appropriate placement after Call to Action; closing emotional plane somewhat higher than opening but underdeveloped
-- Absent (0 pts): Talk ends on the Call to Action itself, on Q&A, on credentials, or on a generic thank-you; no future-state imagery in the closing zone
+- Strong signal: Vivid, concrete future-state vision present in the closing zone after the Call to Action; specific scene-level imagery; appropriate scope sizing; closing emotional plane clearly higher than opening
+- Moderate signal: Future-state vision present but abstract or generic ("a better future"); appropriate placement after Call to Action; closing emotional plane somewhat higher than opening but underdeveloped
+- Absent: Talk ends on the Call to Action itself, on Q&A, on credentials, or on a generic thank-you; no future-state imagery in the closing zone
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 5 (Storytelling/Narrative). Relates to Dimension 6 (Closing Pattern) as one of three named closing-zone elements (alongside `call-to-action` and `coda`). Relates to Dimension 9 (Persuasion Techniques).

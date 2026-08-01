@@ -11,6 +11,23 @@ detection_signals:
   - "purposeless demo"
   - "demo as time filler"
   - "no narrative connection to demonstration"
+evaluable_from:
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: no-demonstration-occurs
+    description: "Complete delivery video establishes that the talk contains no demonstration segment to evaluate for narrative purpose."
+applicability_evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
+  - "Evidence must expose the existing scoring cues: live demo framing, synthesis, placement, and audience engagement."
+not_evaluable_when:
+  - "No delivery video covers the relevant event or interval."
+  - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
+  - "The complete delivery is unavailable, so the no-demonstration applicability condition cannot be assessed."
 related_patterns: [live-demo, a-la-carte-content]
 inverse_of: [live-demo]
 difficulty: foundational
@@ -37,13 +54,19 @@ This is an antipattern and should always be avoided. Never use a demonstration a
 
 If you find yourself reaching for a demo because you have time to fill, stop and prepare more expositional content instead. If you genuinely want to include a demo, integrate it into your narrative from the beginning rather than appending it as an afterthought.
 
+**NAME TRAP — "dead" means narratively lifeless, not technically failed.** A purposeful demo that crashes, times out, or produces a wrong result is not this antipattern when the attempt still advances the argument or supplies evidence. Judge the demo's narrative purpose, not whether the software completed successfully.
+
 ## Detection Heuristics
 When scoring talks, evaluate whether each demonstration is preceded by a problem statement and followed by a synthesis. Demos that begin with "let me show you the tool" without narrative framing are strong Dead Demo signals. Also note the demo's position in the talk — demos placed at the end as apparent time fillers are suspicious. Watch the audience during the demo: if engagement drops visibly, the demo is likely serving as padding rather than content.
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Demonstrations used as time fillers with no narrative connection, feature touring without context, audience engagement visibly declining during demo sections
-- Moderate signal (1 pt): Demonstrations are partially integrated with the narrative — some framing present but incomplete, or demo content occasionally drifts into feature touring without clear purpose
-- Absent (0 pts — antipattern not present): All demonstrations are narratively motivated — preceded by a problem or question, accompanied by purposeful commentary, and followed by synthesis that connects the demo to the larger message
+- Strong signal (antipattern present): Demonstrations used as time fillers with no narrative connection, feature touring without context, audience engagement visibly declining during demo sections
+- Moderate signal: Demonstrations are partially integrated with the narrative — some framing present but incomplete, or demo content occasionally drifts into feature touring without clear purpose
+- Absent (antipattern not present): All demonstrations are narratively motivated — preceded by a problem or question, accompanied by purposeful commentary, and followed by synthesis that connects the demo to the larger message
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 11 (Demonstrations and Tools): Dead Demo is the anti-form of demonstration — tool interaction that fails to serve any communicative purpose, degrading rather than enhancing the presentation's engagement with tools and technology. Dimension 14 (Overall Quality Indicators): A purposeless demonstration is one of the most visible quality failures in a technical presentation, signaling insufficient preparation and weak narrative design.

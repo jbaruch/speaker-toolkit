@@ -14,7 +14,30 @@ detection_signals:
   - "middle oscillates between current reality and proposed future"
   - "explicit call-to-action with concrete asks"
   - "closes on a 'new bliss' future-state vision higher than the opening"
-related_patterns: [narrative-arc, bookends, mentor, the-big-why, call-to-adventure, call-to-action, new-bliss, foreshadowing]
+evaluable_from:
+  - transcript
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+  - [transcript, static_slides]
+  - [transcript, native_deck]
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: non-persuasive-talk
+    description: "A complete transcript or delivery video establishes a primarily informative talk with no requested change in audience position or behavior."
+applicability_evaluable_from:
+  - transcript
+  - delivery_video
+evidence_requirements:
+  - "Evaluation must use the complete ordered talk and locate the baseline, gap reveal, middle contrasts, concrete call to action, and new-bliss close as presentation-level roles rather than disconnected phrases."
+  - "A strong finding must cite all five observable elements and their order; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "Only an excerpt, outline, or selected slide sequence is available, or the source does not cover both opening and close."
+  - "The transcript and deck cannot be aligned well enough to establish the five roles, or the recording omits a material part of the delivered structure."
+  - "The complete presentation purpose is unavailable, so the non-persuasive applicability condition cannot be assessed."
+related_patterns: [narrative-arc, bookends, mentor, know-your-audience, the-big-why, call-to-adventure, call-to-action, new-bliss, foreshadowing, star-moment]
 inverse_of: []
 difficulty: intermediate
 ---
@@ -72,9 +95,13 @@ Look for the named structural elements:
 The strongest signal is the explicit call-to-adventure moment. Its presence indicates the speaker thought structurally about the persuasion arc.
 
 ## Scoring Criteria
-- Strong signal (2 pts): All five elements present and intentional — "what is" baseline, named call-to-adventure gap reveal, oscillating middle with multiple contrast peaks, concrete call-to-action with specific asks, new-bliss closing vision higher than opening
-- Moderate signal (1 pt): 3–4 of the five elements present; structure is recognizably persuasion-shaped but missing one or two elements (often the new-bliss close, which is the most-skipped element)
-- Absent (0 pts): Generic three-act or topical structure; no identifiable gap-reveal moment; closing is a to-do list or "thanks"; no future-state vision
+- Strong signal: All five elements are observably present in order — "what is" baseline, named call-to-adventure gap reveal, oscillating middle with multiple contrast peaks, concrete call-to-action with specific asks, new-bliss closing vision higher than opening
+- Moderate signal: 3–4 of the five elements present; structure is recognizably persuasion-shaped but missing one or two elements (often the new-bliss close, which is the most-skipped element)
+- Absent: Generic three-act or topical structure; no identifiable gap-reveal moment; closing is a to-do list or "thanks"; no future-state vision
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 2 (Narrative Structure) as a top-level structural choice alongside `narrative-arc`. Relates to Dimension 5 (Storytelling/Narrative). Relates to Dimension 9 (Persuasion Techniques).

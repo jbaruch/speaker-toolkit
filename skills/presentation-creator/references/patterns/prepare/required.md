@@ -41,9 +41,9 @@ Required only from organizer/employer context or speaker confirmation that the
 talk was assigned as part of the job. Otherwise treat the scenario as unknown.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Organizer/employer evidence confirms the talk was required and preparation records show the obligation was used deliberately as practice
-- Moderate signal (1 pt): Mandatory context is confirmed, with adequate but minimally documented deliberate preparation
-- Absent (0 pts): Context confirms the talk was voluntary, so this pattern does not apply
+- Strong signal: Organizer/employer evidence confirms the talk was required and preparation records show the obligation was used deliberately as practice
+- Moderate signal: Mandatory context is confirmed, with adequate but minimally documented deliberate preparation
+- Absent: Context confirms the talk was voluntary, so this pattern does not apply
 - Unevaluable: No organizer/employer record or speaker confirmation establishes whether the talk was required
 
 ## Relationship to Vault Dimensions

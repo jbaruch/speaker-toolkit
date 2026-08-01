@@ -13,6 +13,24 @@ detection_signals:
   - "cut lines present"
   - "expandable digressions marked"
   - "graceful skip points"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: short-talk-at-most-20-minutes
+    description: "Complete delivery video establishes that the presentation lasts no more than 20 minutes, where the catalog says Expansion Joints should be avoided."
+applicability_evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "A visual positive finding must locate a genuine modular boundary or cut line whose removal preserves the surrounding narrative; a titled section or optional-looking appendix alone does not prove flexibility."
+  - "A strong finding requires delivery video showing an actual expansion or contraction under an observable timing change and a complete narrative after that adaptation."
+not_evaluable_when:
+  - "Only a modular-looking deck is available without evidence that a section can be skipped or expanded without breaking dependencies."
+  - "For a talk longer than 20 minutes, the recording does not expose a timing perturbation or the relevant transition and therefore cannot establish strong adaptation or a negative outcome."
 related_patterns: [talklet, narrative-arc]
 inverse_of: [shortchanged]
 difficulty: intermediate
@@ -41,9 +59,13 @@ Use Expansion Joints in any presentation over 20 minutes, especially when the ti
 The vault should look for evidence of modular content design: sections that can be included or excluded without disrupting flow, clear cut lines between segments, and the kind of flexible time management that suggests the speaker prepared more material than strictly necessary.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Presentation handles time fluctuations gracefully; speaker can expand or contract sections without visible disruption; content feels complete at any length
-- Moderate signal (1 pt): Some flexibility evident but transitions are occasionally rough when material is skipped; time management is adequate but not elegant
-- Absent (0 pts): Presentation is rigidly sequential with no apparent flexibility; speaker is visibly rushed or has obvious filler when time estimates miss
+- Strong signal: Presentation handles time fluctuations gracefully; speaker can expand or contract sections without visible disruption; content feels complete at any length
+- Moderate signal: Some flexibility evident but transitions are occasionally rough when material is skipped; time management is adequate but not elegant
+- Absent: Presentation is rigidly sequential with no apparent flexibility; speaker is visibly rushed or has obvious filler when time estimates miss
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 2 (Structure/Organization). Relates to Dimension 12 (Time/Pacing).

@@ -11,6 +11,22 @@ detection_signals:
   - "build animations revealing final state"
   - "incremental content reveal"
   - "printed vs presented difference"
+evaluable_from:
+  - native_deck
+  - [native_deck, static_slides]
+  - [delivery_video, static_slides]
+strong_evaluable_from:
+  - native_deck
+  - [native_deck, static_slides]
+  - [delivery_video, static_slides]
+absence_evaluable_from: null
+evidence_requirements:
+  - "Evidence must establish an incremental live build and a coherent complete state in the distributed or printed artifact."
+  - "The observation must identify the live/build source and the final-state artifact being compared."
+not_evaluable_when:
+  - "Only a static final-state artifact is available."
+  - "Duplicated build pages exist but there is no evidence that the distributed artifact collapses them into one coherent final state."
+  - "The sources do not identify a genuinely distributed or printed artifact, so a non-detection cannot prove the pattern was applicable and absent."
 related_patterns: [exuberant-title-top, composite-animation, analog-noise]
 inverse_of: []
 difficulty: intermediate
@@ -41,9 +57,13 @@ Avoid Gradual Consistency when your presentation is purely ephemeral — a one-t
 When scoring talks, look for slides that build incrementally through animations but whose final state is a complete, well-designed page. Compare the live presentation to any distributed handouts or PDF exports — if the printed version looks like a coherent document while the live version featured dynamic builds, Gradual Consistency is in play.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Clear incremental build animations where each step adds meaningful content, and the final state of each slide is a complete, well-designed document page suitable for printing
-- Moderate signal (1 pt): Some build animations used but the final state is cluttered or poorly organized, or builds are used inconsistently across the deck
-- Absent (0 pts): No build animations (all content appears at once) or animations that do not converge on a coherent final state
+- Strong signal: Clear incremental build animations where each step adds meaningful content, and the final state of each slide is a complete, well-designed document page suitable for printing
+- Moderate signal: Some build animations used but the final state is cluttered or poorly organized, or builds are used inconsistently across the deck
+- Absent: No build animations (all content appears at once) or animations that do not converge on a coherent final state
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 8 (Slide Design): Gradual Consistency designs for two consumption contexts simultaneously. Dimension 13 (Visual Polish and Craft): The technique requires careful spatial planning and animation design.

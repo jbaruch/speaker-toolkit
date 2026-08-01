@@ -4,17 +4,19 @@
 Reads `outline.yaml` (validated by `outline_schema.py`) and a speaker profile.
 Computes profile-thresholded checks (slide budget, Act 1 ratio, branding,
 profanity, closing completeness, cut-line availability, data-attribution
-heuristics). Outputs a structured report with [PASS], [WARN], or [FAIL]
-labels.
+heuristics). Outputs a structured JSON report with PASS, WARN, or FAIL
+statuses.
 
 Structural pattern checks (opening PUNCH, big-idea singleton, sparkline
 elements, callback ledger, master-story threading, etc.) are handled by
 `check-rhetorical.py` — those need no profile. Run both scripts in Phase 4.
 
 Usage:
-    guardrail-check.py <outline.yaml> <speaker-profile.json>
+    guardrail-check.py <outline.yaml> <speaker-profile.json|-> \
+        [rhetoric-style-summary.md]
 
-Output: report to stdout; exits 0 even if FAIL — the report is informational.
+Output: one schema-v1 JSON report to stdout. Exits 0 even if a check has FAIL
+status; malformed inputs exit non-zero with diagnostics on stderr.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
@@ -32,6 +35,11 @@ import yaml  # noqa: E402
 from pydantic import ValidationError  # noqa: E402
 
 import outline_schema as _os  # noqa: E402
+from pattern_history_status import (  # noqa: E402
+    CreatorPatternHistoryStatus,
+    disabled_history_warning,
+    resolve_creator_pattern_history,
+)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -196,23 +204,42 @@ def check_closing(outline: _os.Outline) -> tuple[str, str]:
     closing_slides = [s for s in outline.slides if s.n in closing_slide_ns]
 
     blob = " ".join(
-        _slide_text_blob(s) + " " + " ".join(
-            item.line or "" for item in s.script if item.line
-        )
+        _slide_text_blob(s)
+        + " "
+        + " ".join(item.line or "" for item in s.script if item.line)
         for s in closing_slides
     ).lower()
 
-    has_summary = any(t in blob for t in ("summary", "takeaway", "recap", "cheat sheet"))
-    has_cta = any(t in blob for t in (
-        "call to action", "cta", "action item", "this week",
-        "doer", "monday", "next step",
-    ))
+    has_summary = any(
+        t in blob for t in ("summary", "takeaway", "recap", "cheat sheet")
+    )
+    has_cta = any(
+        t in blob
+        for t in (
+            "call to action",
+            "cta",
+            "action item",
+            "this week",
+            "doer",
+            "monday",
+            "next step",
+        )
+    )
     # "thank" alone is insufficient — the documented minimum close requires
     # a real social/link signal (handle, shownotes URL, QR). Tokens chosen
     # so a bare "Thanks!" doesn't pass the social check.
-    has_social = any(t in blob for t in (
-        "shownotes", "social", "qr", "@",
-    )) or ("thank" in blob and any(t in blob for t in ("@", "http", ".com", ".dev", ".io", "/")))
+    has_social = any(
+        t in blob
+        for t in (
+            "shownotes",
+            "social",
+            "qr",
+            "@",
+        )
+    ) or (
+        "thank" in blob
+        and any(t in blob for t in ("@", "http", ".com", ".dev", ".io", "/"))
+    )
 
     parts = [
         ("summary", has_summary),
@@ -220,7 +247,9 @@ def check_closing(outline: _os.Outline) -> tuple[str, str]:
         ("social", has_social),
     ]
     missing = [name for name, present in parts if not present]
-    summary_str = " ".join(f"{name}={'y' if present else 'n'}" for name, present in parts)
+    summary_str = " ".join(
+        f"{name}={'y' if present else 'n'}" for name, present in parts
+    )
     if missing:
         return "FAIL", f"{summary_str} — missing: {', '.join(missing)}"
     return "PASS", summary_str
@@ -233,9 +262,7 @@ def check_cut_lines(outline: _os.Outline, profile: dict) -> tuple[str, str]:
     profile's `rhetoric_defaults.modular_design` flag. Speakers who opt
     out of modular_design don't get penalized for inflexible decks.
     """
-    modular = (
-        profile.get("rhetoric_defaults", {}).get("modular_design") is True
-    )
+    modular = profile.get("rhetoric_defaults", {}).get("modular_design") is True
     cuttable_chapters = [c for c in outline.chapters if c.cuttable]
     cuttable_slides = [s for s in outline.slides if s.cuttable]
     cuttable_min = sum(c.target_min for c in cuttable_chapters)
@@ -331,7 +358,10 @@ def check_profanity(outline: _os.Outline, profile: dict) -> tuple[str, str]:
             f"register '{register}' — {len(on_slide_hits)} on-slide instances "
             f"(limits deck reuse): {on_slide_hits[:5]}"
         )
-    return "PASS", f"register '{register}' applied; {len(spoken_hits)} spoken, 0 on-slide"
+    return (
+        "PASS",
+        f"register '{register}' applied; {len(spoken_hits)} spoken, 0 on-slide",
+    )
 
 
 def check_branding(outline: _os.Outline, profile: dict) -> tuple[str, str]:
@@ -350,8 +380,7 @@ def check_branding(outline: _os.Outline, profile: dict) -> tuple[str, str]:
     # Build one big text-blob from all slide overlays/visuals and search
     # for each footer element as a literal substring (case-insensitive).
     blob = " ".join(
-        ((s.text_overlay or "") + " " + (s.visual or ""))
-        for s in outline.slides
+        ((s.text_overlay or "") + " " + (s.visual or "")) for s in outline.slides
     ).lower()
 
     missing: list[str] = []
@@ -367,19 +396,72 @@ def check_branding(outline: _os.Outline, profile: dict) -> tuple[str, str]:
             missing.append(elem)
     if missing:
         return "FAIL", (
-            f"required footer elements not detected in any slide overlay: "
-            f"{missing}"
+            f"required footer elements not detected in any slide overlay: {missing}"
         )
     return "PASS", f"all required footer elements present ({len(elements)})"
+
+
+def check_pattern_history(
+    status: CreatorPatternHistoryStatus,
+) -> tuple[str, str]:
+    """Report the independent authorization state for catalog history."""
+    if status.history_enabled:
+        return (
+            "PASS",
+            "enabled for the exact current catalog/scoring generation "
+            f"({status.scored_talk_count} talks; source={status.history_source})",
+        )
+    return "WARN", disabled_history_warning(status)
+
+
+def recurring_pattern_history_items(
+    pattern_profile: Mapping[str, object] | None,
+    status: CreatorPatternHistoryStatus,
+) -> list[dict[str, object]]:
+    """Return recurring records only from authorized current-generation history."""
+    if not status.history_enabled:
+        return []
+
+    assert isinstance(pattern_profile, Mapping)  # shared assessment postcondition
+    raw_frequency = pattern_profile.get("antipattern_frequency")
+    assert isinstance(raw_frequency, list)  # shared assessment postcondition
+
+    items: list[dict[str, object]] = []
+    for item in raw_frequency:
+        if not isinstance(item, Mapping) or item.get("severity") != "recurring":
+            continue
+        pattern_id = item.get("pattern_id")
+        if not isinstance(pattern_id, str) or not pattern_id:
+            continue
+        count = item.get("times_detected")
+        out_of = item.get("out_of")
+        if (
+            not isinstance(count, int)
+            or isinstance(count, bool)
+            or not isinstance(out_of, int)
+            or isinstance(out_of, bool)
+        ):
+            continue
+        trend = item.get("trend")
+        record: dict[str, object] = {
+            "pattern_id": pattern_id,
+            "times_detected": count,
+            "out_of": out_of,
+        }
+        if isinstance(trend, str) and trend:
+            record["trend"] = trend
+        items.append(record)
+    return items
 
 
 # ── Main ─────────────────────────────────────────────────────────────
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 3:
+    if len(argv) not in {3, 4}:
         print(
-            f"Usage: {argv[0]} <outline.yaml> <speaker-profile.json>",
+            f"Usage: {argv[0]} <outline.yaml> <speaker-profile.json|-> "
+            "[rhetoric-style-summary.md]",
             file=sys.stderr,
         )
         return 2
@@ -391,17 +473,41 @@ def main(argv: list[str]) -> int:
         print(f"failed to load {outline_path}: {exc}", file=sys.stderr)
         return 1
 
-    try:
-        with open(profile_path) as f:
-            profile = json.load(f)
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"failed to load {profile_path}: {exc}", file=sys.stderr)
+    profile_load_error: str | None = None
+    if profile_path == "-":
+        profile: dict[str, object] = {}
+    else:
+        try:
+            with open(profile_path) as f:
+                raw_profile = json.load(f)
+        except (OSError, json.JSONDecodeError) as exc:
+            raw_profile = {}
+            profile_load_error = f"failed to load {profile_path}: {exc}"
+        if isinstance(raw_profile, dict):
+            profile = raw_profile
+        else:
+            profile = {}
+            profile_load_error = (
+                f"failed to load {profile_path}: profile must be an object"
+            )
+
+    profile_only_resolution = resolve_creator_pattern_history(profile)
+    summary_text: str | None = None
+    if not profile_only_resolution.status.history_enabled and len(argv) == 4:
+        summary_path = Path(argv[3])
+        try:
+            summary_text = summary_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            print(f"failed to load {summary_path}: {exc}", file=sys.stderr)
+            return 1
+    elif profile_load_error is not None:
+        print(profile_load_error, file=sys.stderr)
         return 1
 
-    print(f"GUARDRAIL CHECK — {outline.talk.title}")
-    print("=" * 60)
-
+    history_resolution = resolve_creator_pattern_history(profile, summary_text)
+    history_status = history_resolution.status
     checks = [
+        ("Pattern history", check_pattern_history(history_status)),
         ("Slide budget", check_slide_budget(outline, profile)),
         ("Act 1 ratio", check_act1_ratio(outline, profile)),
         ("Branding", check_branding(outline, profile)),
@@ -411,14 +517,42 @@ def main(argv: list[str]) -> int:
         ("Cut lines", check_cut_lines(outline, profile)),
     ]
 
-    for name, (label, detail) in checks:
-        print(f"[{label}] {name}: {detail}")
-
-    print("=" * 60)
-    print(
-        "Structural taxonomy checks (PUNCH, big-idea, sparkline, master-story, "
-        "callbacks, etc.) → run scripts/check-rhetorical.py",
-    )
+    suppressed_fields = []
+    if not history_status.history_enabled:
+        suppressed_fields = [
+            "tiers",
+            "labels",
+            "strengths",
+            "underuse",
+            "by_mode",
+            "legacy_pattern_guardrails",
+            "legacy_pattern_badges",
+        ]
+    report = {
+        "schema_version": 1,
+        "talk_title": outline.talk.title,
+        "checks": [
+            {"name": name, "status": label, "detail": detail}
+            for name, (label, detail) in checks
+        ],
+        "pattern_history": {
+            **history_status.as_dict(),
+            "suppressed_fields": suppressed_fields,
+        },
+        "recurring_antipatterns": recurring_pattern_history_items(
+            history_resolution.pattern_profile,
+            history_status,
+        ),
+        "contextual_taxonomy_scan": {
+            "enabled": True,
+            "scope": "current_outline",
+            "history_independent": True,
+        },
+        "required_companion_check": (
+            "skills/presentation-creator/scripts/check-rhetorical.py"
+        ),
+    }
+    print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 
 

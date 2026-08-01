@@ -1,6 +1,7 @@
 """Tests for guardrail-check.py — profile-aware checks against outline.yaml."""
 
 import copy
+import json
 from pathlib import Path
 
 import pytest
@@ -39,6 +40,49 @@ def outline(outline_schema):
 @pytest.fixture(scope="session")
 def base_data():
     return yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
+
+
+def test_main_emits_one_structured_json_report(guardrail_check, capsys):
+    return_code = guardrail_check.main(["guardrail-check.py", str(FIXTURE), "-"])
+    captured = capsys.readouterr()
+
+    assert return_code == 0
+    assert captured.err == ""
+    report = json.loads(captured.out)
+    assert report["schema_version"] == 1
+    assert report["talk_title"]
+    assert [check["name"] for check in report["checks"]] == [
+        "Pattern history",
+        "Slide budget",
+        "Act 1 ratio",
+        "Branding",
+        "Profanity",
+        "Data attribution",
+        "Closing",
+        "Cut lines",
+    ]
+    assert report["pattern_history"]["history_enabled"] is False
+    assert report["pattern_history"]["suppressed_fields"]
+    assert report["recurring_antipatterns"] == []
+    assert report["contextual_taxonomy_scan"] == {
+        "enabled": True,
+        "history_independent": True,
+        "scope": "current_outline",
+    }
+    assert report["required_companion_check"].endswith("check-rhetorical.py")
+
+
+def test_main_rejects_invalid_input_without_stdout(guardrail_check, tmp_path, capsys):
+    missing_outline = tmp_path / "missing-outline.yaml"
+
+    return_code = guardrail_check.main(
+        ["guardrail-check.py", str(missing_outline), "-"]
+    )
+    captured = capsys.readouterr()
+
+    assert return_code == 1
+    assert captured.out == ""
+    assert f"failed to load {missing_outline}" in captured.err
 
 
 # ── Slide budget ─────────────────────────────────────────────────────
@@ -122,7 +166,9 @@ def test_closing_fail_when_signals_missing(guardrail_check, outline_schema, base
 # ── Cut lines ────────────────────────────────────────────────────────
 
 
-def test_cut_lines_pass_when_chapter_cuttable(guardrail_check, outline_schema, base_data):
+def test_cut_lines_pass_when_chapter_cuttable(
+    guardrail_check, outline_schema, base_data
+):
     data = copy.deepcopy(base_data)
     data["chapters"][1]["cuttable"] = True
     o = outline_schema.Outline.model_validate(data)
@@ -142,7 +188,9 @@ def test_cut_lines_pass_when_slide_cuttable(guardrail_check, outline_schema, bas
     assert label == "PASS"
 
 
-def test_cut_lines_fail_when_none_cuttable_and_modular_enabled(guardrail_check, outline):
+def test_cut_lines_fail_when_none_cuttable_and_modular_enabled(
+    guardrail_check, outline
+):
     """Base fixture has no cuttable markers — FAIL when profile expects modularity."""
     profile = copy.deepcopy(PROFILE)
     profile.setdefault("rhetoric_defaults", {})["modular_design"] = True
@@ -178,7 +226,9 @@ def test_profanity_warn_on_slide(guardrail_check, outline_schema, base_data):
 
 
 def test_profanity_fail_on_slide_when_forbidden(
-    guardrail_check, outline_schema, base_data,
+    guardrail_check,
+    outline_schema,
+    base_data,
 ):
     data = copy.deepcopy(base_data)
     data["talk"]["profanity_register"] = "verbal-only — never on slide"
@@ -207,7 +257,9 @@ def test_data_attribution_pass_clean(guardrail_check, outline):
     assert label == "PASS"
 
 
-def test_data_attribution_fail_when_orphan_pct(guardrail_check, outline_schema, base_data):
+def test_data_attribution_fail_when_orphan_pct(
+    guardrail_check, outline_schema, base_data
+):
     data = copy.deepcopy(base_data)
     data["slides"][0]["text_overlay"] = "84% of developers are tired."
     o = outline_schema.Outline.model_validate(data)
@@ -215,9 +267,13 @@ def test_data_attribution_fail_when_orphan_pct(guardrail_check, outline_schema, 
     assert label == "FAIL"
 
 
-def test_data_attribution_pass_when_source_present(guardrail_check, outline_schema, base_data):
+def test_data_attribution_pass_when_source_present(
+    guardrail_check, outline_schema, base_data
+):
     data = copy.deepcopy(base_data)
-    data["slides"][0]["text_overlay"] = "84% of developers (source: Stack Overflow 2024)"
+    data["slides"][0]["text_overlay"] = (
+        "84% of developers (source: Stack Overflow 2024)"
+    )
     o = outline_schema.Outline.model_validate(data)
     label, _ = guardrail_check.check_data_attribution(o)
     assert label == "PASS"

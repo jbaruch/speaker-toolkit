@@ -42,9 +42,9 @@ Use this pattern for every single presentation, without exception. The depth of 
 - Speaker appears relaxed and confident at the start, not flustered or rushed
 
 ## Scoring Criteria
-- Strong signal (2 pts): Speaker demonstrates clear evidence of thorough preparation — backup equipment visible, smooth setup, venue familiarity, no last-minute scrambling
-- Moderate signal (1 pt): Some preparation evident but gaps remain — speaker handles most logistics but encounters one or two avoidable surprises
-- Absent (0 pts): Speaker arrives unprepared, struggles with equipment, appears visibly stressed by logistics
+- Strong signal: Speaker demonstrates clear evidence of thorough preparation — backup equipment visible, smooth setup, venue familiarity, no last-minute scrambling
+- Moderate signal: Some preparation evident but gaps remain — speaker handles most logistics but encounters one or two avoidable surprises
+- Absent: Speaker arrives unprepared, struggles with equipment, appears visibly stressed by logistics
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 14 (Speaker Craft / Professionalism). Thorough preparation is the invisible foundation of professional delivery. Audiences rarely notice excellent preparation — they notice its absence. A speaker who handles logistics seamlessly projects competence and respect for the audience's time.

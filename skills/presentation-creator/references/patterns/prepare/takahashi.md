@@ -13,6 +13,20 @@ detection_signals:
   - "very high slide count"
   - "rapid transitions"
   - "minimal text per slide"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from:
+  - static_slides
+evidence_requirements:
+  - "A complete visual source must expose slide density and count across the deck; one minimal slide or a small conventional deck is not Takahashi."
+  - "A strong score requires full delivered timing showing rapid transitions tightly synchronized with the speaker while the voice carries the informational load."
+not_evaluable_when:
+  - "Only selected slides, thumbnails, or excerpts are available without the complete deck's density and count."
+  - "Delivery timing is missing or partial for a strong claim, or the separately declared rendered PDF is incomplete for an absence claim."
 related_patterns: [brain-breaks]
 inverse_of: [bullet-riddled-corpse]
 difficulty: advanced
@@ -41,9 +55,13 @@ Use Takahashi when you want to create a highly engaging, visually distinctive pr
 The vault should look for the characteristic Takahashi signature: very high slide count, minimal content per slide (one word, phrase, or image), rapid transitions, and a speaker who carries the full informational load verbally.
 
 ## Scoring Criteria
-- Strong signal (2 pts): One element per slide consistently; very high slide count relative to talk length; rapid, well-timed transitions; speaker and slides in tight sync; the format enhances rather than distracts
-- Moderate signal (1 pt): Mostly minimal slides but with occasional text-heavy exceptions; transitions generally smooth but inconsistent rhythm
-- Absent (0 pts): Standard slide density; no evidence of Takahashi method; slides carry content rather than punctuating it
+- Strong signal: One element per slide consistently; very high slide count relative to talk length; rapid, well-timed transitions; speaker and slides in tight sync; the format enhances rather than distracts
+- Moderate signal: Mostly minimal slides but with occasional text-heavy exceptions; transitions generally smooth but inconsistent rhythm
+- Absent: Standard slide density; no evidence of Takahashi method; slides carry content rather than punctuating it
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+An absence finding is authorized only from a complete, separately declared rendered PDF (`static_slides`); a native deck, delivery video, transcript, or comparison artifact does not authorize absence.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 8 (Slide Design/Visual Quality). Relates to Dimension 12 (Time/Pacing). Relates to Dimension 13 (Visual Aids Effectiveness).

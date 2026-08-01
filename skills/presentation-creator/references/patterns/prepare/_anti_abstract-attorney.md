@@ -11,7 +11,7 @@ detection_signals:
   - "submitted abstract and final delivery are both available for direct comparison"
   - "promised scope or takeaways are absent from the delivered talk"
 related_patterns: [preroll, narrative-arc, fourthought, triad, crucible, carnegie-hall]
-inverse_of: []
+inverse_of: [preroll]
 difficulty: foundational
 observable: false
 ---
@@ -42,9 +42,9 @@ scope and takeaways. Without the submission, the pattern is unevaluable rather
 than absent.
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Direct comparison with the accepted abstract shows promised scope or takeaways missing from the delivery
-- Moderate signal (1 pt): Direct comparison shows smaller unexplained drift from the accepted abstract
-- Absent (0 pts — antipattern not present): Direct comparison shows the delivered scope matches the accepted abstract, or deviations are explicitly acknowledged and justified
+- Strong signal (antipattern present): Direct comparison with the accepted abstract shows promised scope or takeaways missing from the delivery
+- Moderate signal: Direct comparison shows smaller unexplained drift from the accepted abstract
+- Absent (antipattern not present): Direct comparison shows the delivered scope matches the accepted abstract, or deviations are explicitly acknowledged and justified
 - Unevaluable: The exact accepted abstract is unavailable
 
 ## Relationship to Vault Dimensions

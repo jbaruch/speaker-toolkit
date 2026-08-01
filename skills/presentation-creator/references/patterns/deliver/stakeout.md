@@ -42,9 +42,9 @@ Use this pattern for every talk at an unfamiliar venue, and strongly consider it
 - Speaker demonstrates familiarity with the room and venue
 
 ## Scoring Criteria
-- Strong signal (2 pts): Speaker arrived early, tested equipment, familiarized themselves with the venue, and appears calm and prepared at the start
-- Moderate signal (1 pt): Speaker arrived with reasonable time but some setup scrambling is visible
-- Absent (0 pts): Speaker arrives just in time or late, scrambles with equipment, appears flustered at the start
+- Strong signal: Speaker arrived early, tested equipment, familiarized themselves with the venue, and appears calm and prepared at the start
+- Moderate signal: Speaker arrived with reasonable time but some setup scrambling is visible
+- Absent: Speaker arrives just in time or late, scrambles with equipment, appears flustered at the start
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 14 (Speaker Craft / Professionalism). Early arrival and calm preparation are hallmarks of professional speakers. The audience may never know you arrived an hour early, but they will notice the confidence and calm that results from it.

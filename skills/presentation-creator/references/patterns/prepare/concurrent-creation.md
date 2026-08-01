@@ -49,9 +49,9 @@ only from creation history, collaboration records, or speaker confirmation that
 the work was authored out of order or coordinated through one Slide Wrangler.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Creation history or collaboration records show non-linear/shared authoring coordinated through one Slide Wrangler
-- Moderate signal (1 pt): Records show shared or non-linear authoring, but ownership/coordination was inconsistent
-- Absent (0 pts): Records show a strictly sequential workflow or uncoordinated shared editing
+- Strong signal: Creation history or collaboration records show non-linear/shared authoring coordinated through one Slide Wrangler
+- Moderate signal: Records show shared or non-linear authoring, but ownership/coordination was inconsistent
+- Absent: Records show a strictly sequential workflow or uncoordinated shared editing
 - Unevaluable: No creation history, collaboration record, or speaker confirmation is available
 
 ## Relationship to Vault Dimensions

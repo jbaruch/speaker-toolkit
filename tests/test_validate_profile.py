@@ -5,31 +5,184 @@ predates `presentation_engines` must still validate, since the field is
 optional/additive and not part of REQUIRED_KEYS.
 """
 
+import hashlib
+import importlib
 import json
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
+import pytest
+from pptx import Presentation
 
 
-# Built programmatically per testing-standards (no fixture file). The validator
-# checks key presence + schema_version only, so placeholder values are fine.
-def _minimal_profile():
-    return {k: [] for k in (
-        "generated_date", "talks_analyzed", "speaker", "infrastructure",
-        "presentation_modes", "instrument_catalog", "rhetoric_defaults",
-        "confirmed_intents", "guardrail_sources", "pacing", "pattern_profile",
-        "visual_style_history", "publishing_process", "design_rules", "badges",
-    )} | {"schema_version": 2}
+CATALOG = "c" * 64
+OTHER_CATALOG = "d" * 64
+AS_OF = "2026-07-31T13:30:45.987654-05:00"
+
+
+def _catalog_projection(source: str | None = "transcript"):
+    """Return exhaustive outcomes for one absence-capable singleton source."""
+    catalog = importlib.import_module("pattern_opportunities").load_catalog()
+    complete_source = (
+        frozenset({source})
+        if source in {"transcript", "static_slides"}
+        else None
+    )
+    outcomes = []
+    not_evaluable = []
+    assessments = []
+    for pattern_id, entry in sorted(catalog.entries.items()):
+        if not entry.observable:
+            continue
+        if entry.applicability_evaluable_from is not None:
+            if (
+                complete_source is None
+                or complete_source not in entry.applicability_evaluable_from
+            ):
+                outcomes.append({"pattern_id": pattern_id, "outcome": "not_evaluable"})
+                not_evaluable.append({"pattern_id": pattern_id})
+                continue
+            assessments.append({"pattern_id": pattern_id, "result": "applicable"})
+        outcome = (
+            "undetected"
+            if complete_source is not None
+            and entry.absence_evaluable_from is not None
+            and complete_source in entry.absence_evaluable_from
+            else "not_evaluable"
+        )
+        outcomes.append({"pattern_id": pattern_id, "outcome": outcome})
+        if outcome == "not_evaluable":
+            not_evaluable.append({"pattern_id": pattern_id})
+    return catalog, outcomes, not_evaluable, assessments
+
+
+def _set_projection(talk, source: str | None) -> None:
+    _, outcomes, not_evaluable, assessments = _catalog_projection(source)
+    observations = talk["pattern_observations"]
+    observations.update({
+        "pattern_outcomes": outcomes,
+        "not_evaluable": not_evaluable,
+        "applicability_assessments": assessments,
+        "opportunity_coverage_identity": (
+            importlib.import_module("pattern_evidence").opportunity_coverage_identity(
+                outcomes,
+                pattern_catalog_fingerprint=talk["pattern_catalog_fingerprint"],
+                pattern_scoring_schema_version=talk[
+                    "pattern_scoring_schema_version"
+                ],
+            )
+        ),
+    })
+
+
+# Built programmatically per testing-standards (no fixture file). A current
+# profile carries explicit zero-cohort pattern provenance rather than borrowing
+# historical pattern values.
+def _minimal_profile(validate_profile):
+    catalog_fingerprint, scoring_schema = (
+        validate_profile.active_pattern_generation_identity()
+    )
+    opportunities = importlib.import_module("pattern_opportunities")
+    provenance = importlib.import_module("profile_pattern_provenance")
+    rows = opportunities.build_pattern_opportunity_rows([])
+    profile = {
+        k: []
+        for k in (
+            "generated_date",
+            "talks_analyzed",
+            "speaker",
+            "infrastructure",
+            "presentation_modes",
+            "instrument_catalog",
+            "rhetoric_defaults",
+            "confirmed_intents",
+            "guardrail_sources",
+            "pacing",
+            "pattern_profile",
+            "visual_style_history",
+            "publishing_process",
+            "design_rules",
+            "badges",
+        )
+    } | {"schema_version": 4}
+    profile["pattern_profile"] = {
+        "pattern_baseline": {
+            "schema_version": 2,
+            "as_of": "2025-01-02T03:04:05+00:00",
+            "scope": "global",
+            "active_batch_excluded": False,
+            "excluded_filenames": [],
+            "eligible_statuses": ["processed", "processed_partial"],
+            "pattern_scoring_generation_status": "current",
+            "pattern_scoring_generation_reasons": [],
+            "pattern_catalog_fingerprint": catalog_fingerprint,
+            "pattern_scoring_schema_version": scoring_schema,
+            "scored_talk_count": 0,
+            "pattern_score_sum": 0,
+            "average_pattern_score": None,
+            "eligible_talk_count": 0,
+            "opportunity_coverage_identity": None,
+            "raw_score_comparison_status": "unavailable",
+            "raw_score_comparison_reason": "empty_current_cohort",
+        },
+        "baseline_talk_filenames": [],
+        "eligible_talk_count": 0,
+        "talks_scored": 0,
+        "average_pattern_score": None,
+        "score_trend": "unavailable",
+        "pattern_breadth": {
+            "avg_distinct_patterns_per_talk": None,
+            "trend": "unavailable",
+            "note": "No current pattern cohort.",
+        },
+        "underused_patterns": [],
+        "score_drivers": {
+            "direction": "unavailable",
+            "antipattern_drivers": [],
+            "pattern_drivers": [],
+            "note": "No current pattern cohort.",
+        },
+        "by_mode": [],
+        "strengths": [],
+        "strengths_note": "No current pattern cohort.",
+        "note": "Only current observable patterns are included.",
+        "pattern_usage": rows["pattern_usage"],
+        "antipattern_frequency": rows["antipattern_frequency"],
+        "never_used_patterns": [],
+        "signature_combinations": [],
+        "mastery_levels": {
+            "signature": [],
+            "regular": [],
+            "occasional": [],
+            "rare": [],
+            "never_tried": [],
+        },
+        "classification_availability": (
+            provenance.unavailable_classification_availability()
+        ),
+    }
+    profile["rhetoric_defaults"] = {}
+    profile["guardrail_sources"] = {"recurring_issues": []}
+    return profile
 
 
 def _run(validate_profile, profile, tmp_path):
+    (tmp_path / "tracking-database.json").write_text(
+        json.dumps({"config": {}, "talks": []}),
+        encoding="utf-8",
+    )
     path = tmp_path / "profile.json"
     path.write_text(json.dumps(profile))
-    rc = validate_profile.main(["validate-profile.py", str(path)])
+    rc = validate_profile.main(
+        ["validate-profile.py", str(path), "--vault-root", str(tmp_path)]
+    )
     return rc
 
 
 def test_profile_without_engines_still_validates(validate_profile, tmp_path, capsys):
     # The whole point: presentation_engines is optional/additive — a profile that
     # never heard of it is still valid.
-    profile = _minimal_profile()
+    profile = _minimal_profile(validate_profile)
     assert "presentation_engines" not in profile
     rc = _run(validate_profile, profile, tmp_path)
     out = json.loads(capsys.readouterr().out)
@@ -39,7 +192,7 @@ def test_profile_without_engines_still_validates(validate_profile, tmp_path, cap
 
 
 def test_profile_with_engines_validates(validate_profile, tmp_path, capsys):
-    profile = _minimal_profile()
+    profile = _minimal_profile(validate_profile)
     profile["presentation_engines"] = [
         {"id": "pptx", "renderer": "pptx", "usage_count": 18, "out_of": 24}
     ]
@@ -50,7 +203,7 @@ def test_profile_with_engines_validates(validate_profile, tmp_path, capsys):
 
 
 def test_profile_missing_required_key_is_invalid(validate_profile, tmp_path, capsys):
-    profile = _minimal_profile()
+    profile = _minimal_profile(validate_profile)
     del profile["design_rules"]
     rc = _run(validate_profile, profile, tmp_path)
     out = json.loads(capsys.readouterr().out)
@@ -59,10 +212,12 @@ def test_profile_missing_required_key_is_invalid(validate_profile, tmp_path, cap
     assert "design_rules" in out["missing_keys"]
 
 
-def test_profile_with_outdated_schema_version_is_invalid(validate_profile, tmp_path, capsys):
-    # The v1→v2 bump (coaching-outcome fields) must be enforced: a v1 profile
-    # is rejected so a stale write can't pass validation.
-    profile = _minimal_profile() | {"schema_version": 1}
+def test_profile_with_outdated_schema_version_is_invalid(
+    validate_profile, tmp_path, capsys
+):
+    # Profiles before v4 have no exact per-pattern opportunity provenance and cannot
+    # pass the owner writer's current-generation gate.
+    profile = _minimal_profile(validate_profile) | {"schema_version": 1}
     rc = _run(validate_profile, profile, tmp_path)
     out = json.loads(capsys.readouterr().out)
     assert rc == 1
@@ -72,14 +227,18 @@ def test_profile_with_outdated_schema_version_is_invalid(validate_profile, tmp_p
 
 # --- load-vault instrumentation partitioning -------------------------------
 
+
 def _talks(*dates):
-    return [{"filename": f"t{i}.md", "status": "processed", "processed_date": d}
-            for i, d in enumerate(dates)]
+    return [
+        {"filename": f"t{i}.md", "status": "processed", "processed_date": d}
+        for i, d in enumerate(dates)
+    ]
 
 
 def test_partition_splits_on_the_epoch(load_vault):
     current, stale = load_vault.partition_by_instrumentation(
-        _talks("2026-07-27", "2026-07-26", "2026-07-25", "2026-05-01"))
+        _talks("2026-07-27", "2026-07-26", "2026-07-25", "2026-05-01")
+    )
     assert [t["processed_date"] for t in current] == ["2026-07-27", "2026-07-26"]
     assert [t["processed_date"] for t in stale] == ["2026-07-25", "2026-05-01"]
 
@@ -97,5 +256,561 @@ def test_undated_talks_are_treated_as_stale(load_vault):
 
 def test_epoch_is_injectable_for_callers(load_vault):
     current, stale = load_vault.partition_by_instrumentation(
-        _talks("2020-01-01"), epoch="2019-01-01")
+        _talks("2020-01-01"), epoch="2019-01-01"
+    )
     assert len(current) == 1 and not stale
+
+
+# --- load-vault exact pattern-scoring cohort -------------------------------
+
+
+def _scored_talk(
+    filename,
+    score,
+    *,
+    processed_date="2026-07-27",
+    status="processed",
+    catalog=CATALOG,
+    scoring_schema=3,
+    generation_status="current",
+    generation_reasons=None,
+):
+    if generation_reasons is None:
+        generation_reasons = []
+    pattern_evidence = importlib.import_module("pattern_evidence")
+    _, outcome_rows, not_evaluable, assessments = _catalog_projection("transcript")
+    observations = {
+        "pattern_score": score,
+        "patterns_detected": [],
+        "antipatterns_detected": [],
+        "not_evaluable": not_evaluable,
+        "applicability_assessments": assessments,
+        "pattern_outcomes": outcome_rows,
+    }
+    if scoring_schema >= 5:
+        observations["opportunity_coverage_identity"] = (
+            pattern_evidence.opportunity_coverage_identity(
+                outcome_rows,
+                pattern_catalog_fingerprint=catalog,
+                pattern_scoring_schema_version=scoring_schema,
+            )
+        )
+    return {
+        "filename": filename,
+        "status": status,
+        "processed_date": processed_date,
+        "pattern_scoring_generation_status": generation_status,
+        "pattern_scoring_generation_reasons": generation_reasons,
+        "pattern_catalog_fingerprint": catalog,
+        "pattern_scoring_schema_version": scoring_schema,
+        "pattern_score": score,
+        "pattern_observations": observations,
+    }
+
+
+def _write_vault(vault_root, talks, *, config=None):
+    transcript_timing = importlib.import_module("transcript_timing")
+    transcripts = vault_root / "transcripts"
+    transcripts.mkdir(exist_ok=True)
+    for talk in talks:
+        scoring_version = talk.get("pattern_scoring_schema_version")
+        if not isinstance(scoring_version, int) or scoring_version < 4:
+            continue
+        observations = talk.get("pattern_observations")
+        if not isinstance(observations, dict):
+            continue
+        if observations.get("source_inspection"):
+            # A test that supplies a canonical source receipt owns its matching
+            # talk metadata. Do not contaminate native-deck or configured-root
+            # fixtures with an unrelated synthetic YouTube transcript owner.
+            continue
+        video_id = hashlib.sha256(talk["filename"].encode("utf-8")).hexdigest()[:11]
+        source_duration = 60.0
+        artifact = transcripts / f"{video_id}.txt"
+        content = ("synthetic evidence " * 225).strip() + "\n"
+        transcript_timing.write_transcript_bundle(
+            artifact,
+            content,
+            [{"text": content, "start": 0.0, "end": 10.0}],
+            source="captions",
+            timing_provenance=transcript_timing.youtube_timing_provenance(
+                "captions", video_id, source_duration
+            ),
+            quality_policy=transcript_timing.build_quality_policy(400),
+            quality_policy_provenance={"kind": "fixed_default"},
+        )
+        quality_artifact = artifact.with_suffix(".quality.json")
+        timing_artifact = artifact.with_suffix(".segments.json")
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        timing_digest = hashlib.sha256(timing_artifact.read_bytes()).hexdigest()
+        quality_digest = hashlib.sha256(quality_artifact.read_bytes()).hexdigest()
+        talk.setdefault("transcript_path", artifact.relative_to(vault_root).as_posix())
+        talk["transcript_source"] = "youtube_auto"
+        talk["youtube_id"] = video_id
+        talk["source_identity"] = {
+            "schema_version": 1,
+            "provider": "youtube",
+            "video_id": video_id,
+            "duration_seconds": source_duration,
+        }
+        observations.setdefault(
+            "evidence_schema_version", 2 if scoring_version >= 5 else 1
+        )
+        observations.setdefault("evidence_sources", ["transcript"])
+        observations.setdefault(
+            "source_inspection",
+            [
+                {
+                    "source": "transcript",
+                    "line_ranges": [[1, 1]],
+                    "line_count": 1,
+                    "coverage_complete": True,
+                    "absence_capability_complete": True,
+                    "absence_capability_reason": "authorized_transcript",
+                    "artifact_root": "vault",
+                    "artifact_path": artifact.relative_to(vault_root).as_posix(),
+                    "artifact_sha256": digest,
+                    "timing_artifact_root": "vault",
+                    "timing_artifact_path": timing_artifact.relative_to(
+                        vault_root
+                    ).as_posix(),
+                    "timing_artifact_sha256": timing_digest,
+                    "quality_artifact_root": "vault",
+                    "quality_artifact_path": quality_artifact.relative_to(
+                        vault_root
+                    ).as_posix(),
+                    "quality_artifact_sha256": quality_digest,
+                }
+            ],
+        )
+        observations.setdefault("patterns_detected", [])
+        observations.setdefault("antipatterns_detected", [])
+        if scoring_version >= 5:
+            observations.setdefault("applicability_assessments", [])
+            inspection = observations.get("source_inspection")
+            record = (
+                inspection[0]
+                if isinstance(inspection, list)
+                and len(inspection) == 1
+                and isinstance(inspection[0], dict)
+                and inspection[0].get("source") == "transcript"
+                else None
+            )
+            raw_assessments = observations.get("applicability_assessments")
+            if record is not None and isinstance(raw_assessments, list):
+                catalog = importlib.import_module("pattern_opportunities").load_catalog()
+                located = []
+                for assessment in raw_assessments:
+                    if not isinstance(assessment, dict):
+                        continue
+                    entry = catalog.entries[assessment["pattern_id"]]
+                    channel = (
+                        "transcript"
+                        if "transcript" in entry.evidence_channels
+                        else "timed_transcript"
+                    )
+                    citation = {
+                        "source": "transcript",
+                        "channel": channel,
+                        "quote": "synthetic evidence synthetic evidence",
+                        "line_start": 1,
+                        "line_end": 1,
+                    }
+                    for identity_field in (
+                        "artifact_root", "artifact_path", "artifact_sha256",
+                        "timing_artifact_root", "timing_artifact_path",
+                        "timing_artifact_sha256", "quality_artifact_root",
+                        "quality_artifact_path", "quality_artifact_sha256",
+                    ):
+                        if identity_field in record:
+                            citation[identity_field] = record[identity_field]
+                    if channel == "timed_transcript":
+                        citation.update({
+                            "start_seconds": 0.0,
+                            "end_seconds": 10.0,
+                        })
+                    located.append({
+                        **assessment,
+                        "evidence_source": "transcript",
+                        "evidence": (
+                            "The complete transcript establishes applicability."
+                        ),
+                        "evidence_citations": [citation],
+                    })
+                observations["applicability_assessments"] = located
+    (vault_root / "tracking-database.json").write_text(
+        json.dumps(
+            {
+                "config": config or {"synthetic": True},
+                "confirmed_intents": [],
+                "talks": talks,
+            }
+        )
+    )
+    (vault_root / "rhetoric-style-summary.md").write_text("Synthetic summary\n")
+
+
+def _run_load_vault(load_vault, vault_root, monkeypatch, capsys):
+    active_catalog = load_vault.load_catalog()
+    monkeypatch.setattr(
+        load_vault,
+        "load_catalog",
+        lambda: SimpleNamespace(
+            fingerprint=CATALOG,
+            entries=active_catalog.entries,
+        ),
+    )
+    rc = load_vault.main(["load-vault.py", str(vault_root), "--as-of", AS_OF])
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out) if captured.out else None
+    return rc, payload, captured.err
+
+
+def test_load_vault_separates_pattern_generation_from_instrumentation(
+    load_vault,
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    exact_old = _scored_talk(
+        "current-old-date.md",
+        0,
+        processed_date="2026-01-01",
+        scoring_schema=load_vault.PATTERN_SCORING_SCHEMA_VERSION,
+    )
+    legacy_recent = _scored_talk(
+        "legacy-recent.md",
+        100,
+        generation_status="legacy_unbaselineable",
+    )
+    old_catalog_recent = _scored_talk(
+        "old-catalog-recent.md",
+        90,
+        catalog=OTHER_CATALOG,
+        scoring_schema=load_vault.PATTERN_SCORING_SCHEMA_VERSION,
+    )
+    old_schema_recent = _scored_talk(
+        "old-schema-recent.md",
+        80,
+        scoring_schema=load_vault.PATTERN_SCORING_SCHEMA_VERSION - 1,
+    )
+    missing_generation = _scored_talk(
+        "missing-generation.md",
+        70,
+        scoring_schema=load_vault.PATTERN_SCORING_SCHEMA_VERSION,
+    )
+    missing_generation.pop("pattern_scoring_generation_status")
+    pending_duplicate = _scored_talk(
+        "current-old-date.md",
+        60,
+        status="pending",
+        generation_status="future",
+    )
+    _write_vault(
+        tmp_path,
+        [
+            exact_old,
+            legacy_recent,
+            old_catalog_recent,
+            old_schema_recent,
+            missing_generation,
+            pending_duplicate,
+        ],
+    )
+    rc, payload, error = _run_load_vault(load_vault, tmp_path, monkeypatch, capsys)
+
+    assert rc == 0
+    assert error == ""
+    assert [talk["filename"] for talk in payload["baseline_talks"]] == [
+        "current-old-date.md"
+    ], json.dumps(payload["pattern_scoring_exclusions"], indent=2)
+    assert [talk["filename"] for talk in payload["excluded_pattern_scoring_talks"]] == [
+        "legacy-recent.md",
+        "old-catalog-recent.md",
+        "old-schema-recent.md",
+        "missing-generation.md",
+    ]
+    assert {
+        detail["filename"]: detail["reason_codes"]
+        for detail in payload["pattern_scoring_exclusions"]
+    } == {
+        "legacy-recent.md": ["legacy_generation"],
+        "old-catalog-recent.md": ["catalog_fingerprint_mismatch"],
+        "old-schema-recent.md": ["scoring_schema_version_mismatch"],
+        "missing-generation.md": ["missing_generation_status"],
+    }
+    assert [talk["filename"] for talk in payload["current_instrumentation_talks"]] == [
+        "legacy-recent.md",
+        "old-catalog-recent.md",
+        "old-schema-recent.md",
+        "missing-generation.md",
+    ]
+    assert [talk["filename"] for talk in payload["stale_instrumentation_talks"]] == [
+        "current-old-date.md"
+    ]
+    assert payload["pattern_baseline"] == {
+        "schema_version": 2,
+        "as_of": "2026-07-31T18:30:45+00:00",
+        "scope": "global",
+        "active_batch_excluded": False,
+        "excluded_filenames": [],
+        "eligible_statuses": ["processed", "processed_partial"],
+        "pattern_scoring_generation_status": "current",
+        "pattern_scoring_generation_reasons": [],
+        "pattern_catalog_fingerprint": CATALOG,
+        "pattern_scoring_schema_version": (load_vault.PATTERN_SCORING_SCHEMA_VERSION),
+        "scored_talk_count": 1,
+        "pattern_score_sum": 0,
+        "average_pattern_score": 0.0,
+        "eligible_talk_count": 1,
+        "opportunity_coverage_identity": exact_old["pattern_observations"][
+            "opportunity_coverage_identity"
+        ],
+        "raw_score_comparison_status": "available",
+        "raw_score_comparison_reason": None,
+    }
+    assert "snapshot observation time" in payload["baseline_note"]
+    assert "processed_date" in payload["baseline_note"]
+    assert "does not confer pattern-scoring" in payload["instrumentation_note"]
+
+
+@pytest.mark.parametrize(
+    ("case", "message"),
+    [
+        ("unknown_status", "pattern_scoring_generation_status must be one of"),
+        ("current_reasons", "pattern_scoring_generation_reasons must be exactly"),
+        ("missing_fingerprint", "missing required identity fields"),
+        ("malformed_fingerprint", "must be a lowercase 64-character"),
+        ("divergent_score", "promoted pattern_score 5 diverges"),
+    ],
+)
+def test_load_vault_rejects_malformed_current_generation_records(
+    load_vault,
+    tmp_path,
+    monkeypatch,
+    capsys,
+    case,
+    message,
+):
+    talk = _scored_talk(
+        "malformed.md",
+        5,
+        scoring_schema=load_vault.PATTERN_SCORING_SCHEMA_VERSION,
+    )
+    if case == "unknown_status":
+        talk["pattern_scoring_generation_status"] = "future"
+    elif case == "current_reasons":
+        talk["pattern_scoring_generation_reasons"] = ["contradiction"]
+    elif case == "missing_fingerprint":
+        talk.pop("pattern_catalog_fingerprint")
+    elif case == "malformed_fingerprint":
+        talk["pattern_catalog_fingerprint"] = "not-a-sha"
+    elif case == "divergent_score":
+        talk["pattern_observations"]["pattern_score"] = 4
+    _write_vault(tmp_path, [talk])
+
+    rc, payload, error = _run_load_vault(load_vault, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert payload is None
+    assert message in error
+
+
+def test_load_vault_does_not_fallback_when_current_pattern_cohort_is_empty(
+    load_vault,
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    legacy = _scored_talk(
+        "legacy.md",
+        100,
+        generation_status="legacy_unbaselineable",
+    )
+    _write_vault(tmp_path, [legacy])
+
+    rc, payload, error = _run_load_vault(load_vault, tmp_path, monkeypatch, capsys)
+
+    assert rc == 0
+    assert error == ""
+    assert payload["baseline_talks"] == []
+    assert [talk["filename"] for talk in payload["excluded_pattern_scoring_talks"]] == [
+        "legacy.md"
+    ]
+    assert payload["pattern_baseline"]["scored_talk_count"] == 0
+    assert payload["pattern_baseline"]["pattern_score_sum"] == 0
+    assert payload["pattern_baseline"]["average_pattern_score"] is None
+
+
+@pytest.mark.parametrize("drift", ["missing", "digest_mismatch"])
+def test_load_vault_excludes_current_generation_with_stale_evidence(
+    load_vault,
+    tmp_path,
+    monkeypatch,
+    capsys,
+    drift,
+):
+    talk = _scored_talk(
+        "artifact-drift.md",
+        3,
+        scoring_schema=load_vault.PATTERN_SCORING_SCHEMA_VERSION,
+    )
+    _write_vault(tmp_path, [talk])
+    relative = talk["pattern_observations"]["source_inspection"][0]["artifact_path"]
+    artifact = tmp_path / relative
+    if drift == "missing":
+        artifact.unlink()
+    else:
+        artifact.write_text("Replacement with a different digest.\n", encoding="utf-8")
+
+    rc, payload, error = _run_load_vault(load_vault, tmp_path, monkeypatch, capsys)
+
+    assert rc == 0
+    assert error == ""
+    assert payload["baseline_talks"] == []
+    assert [talk["filename"] for talk in payload["excluded_pattern_scoring_talks"]] == [
+        "artifact-drift.md"
+    ]
+    detail = payload["pattern_scoring_exclusions"][0]
+    assert detail["reason_codes"] == ["persisted_evidence_stale"]
+    assert any(drift in reason for reason in detail["evidence_freshness_details"])
+
+
+def test_load_vault_passes_configured_source_roots_to_freshness_assessor(
+    load_vault,
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    source_root = tmp_path / "configured-pptx"
+    source_root.mkdir()
+    deck = source_root / "synthetic-deck.pptx"
+    presentation = Presentation()
+    presentation.slides.add_slide(presentation.slide_layouts[6])
+    presentation.save(deck)
+    digest = hashlib.sha256(deck.read_bytes()).hexdigest()
+    talk = _scored_talk(
+        "configured-root.md",
+        0,
+        scoring_schema=load_vault.PATTERN_SCORING_SCHEMA_VERSION,
+    )
+    talk["pptx_path"] = deck.name
+    talk["pattern_observations"].update(
+        {
+            "evidence_schema_version": 2,
+            "evidence_sources": ["native_deck"],
+            "source_inspection": [
+                {
+                    "source": "native_deck",
+                    "page_ranges": [[1, 1]],
+                    "page_count": 1,
+                    "coverage_complete": True,
+                    "absence_capability_complete": False,
+                    "absence_capability_reason": "bare_native_deck",
+                    "artifact_root": "pptx_source",
+                    "artifact_path": deck.name,
+                    "artifact_sha256": digest,
+                }
+            ],
+            "patterns_detected": [],
+            "antipatterns_detected": [],
+        }
+    )
+    _set_projection(talk, None)
+    _write_vault(
+        tmp_path,
+        [talk],
+        config={"pptx_source_dir": str(source_root)},
+    )
+
+    rc, payload, error = _run_load_vault(load_vault, tmp_path, monkeypatch, capsys)
+
+    assert rc == 0
+    assert error == ""
+    assert [talk["filename"] for talk in payload["baseline_talks"]] == [
+        "configured-root.md"
+    ], json.dumps(payload["pattern_scoring_exclusions"], indent=2)
+    assert payload["pattern_scoring_exclusions"] == []
+
+
+def test_load_vault_uses_configured_vault_storage_root_for_freshness(
+    load_vault,
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    database_root = tmp_path / "database-root"
+    database_root.mkdir()
+    evidence_root = tmp_path / "evidence-root"
+    transcript = evidence_root / "transcripts" / "configured.txt"
+    transcript.parent.mkdir(parents=True)
+    content = (
+        ("synthetic evidence " * 225).strip()
+        + "\n"
+        + ("additional uninspected evidence " * 20).strip()
+        + "\n"
+    )
+    transcript.write_text(content, encoding="utf-8")
+    transcript_timing = importlib.import_module("transcript_timing")
+    transcript_timing.write_quality_receipt(
+        transcript,
+        content,
+        transcript_timing.build_quality_policy(400),
+        {"kind": "fixed_default"},
+    )
+    quality_artifact = transcript.with_suffix(".quality.json")
+    talk = _scored_talk(
+        "configured-vault.md",
+        0,
+        scoring_schema=load_vault.PATTERN_SCORING_SCHEMA_VERSION,
+    )
+    talk["transcript_path"] = "transcripts/configured.txt"
+    talk["transcript_source"] = "manual"
+    talk["pattern_observations"].update(
+        {
+            "evidence_schema_version": 2,
+            "evidence_sources": ["transcript"],
+            "source_inspection": [
+                {
+                    "source": "transcript",
+                    "line_ranges": [[1, 1]],
+                    "line_count": 2,
+                    "coverage_complete": False,
+                    "absence_capability_complete": False,
+                    "absence_capability_reason": "incomplete_range_coverage",
+                    "artifact_root": "vault",
+                    "artifact_path": "transcripts/configured.txt",
+                    "artifact_sha256": hashlib.sha256(
+                        content.encode("utf-8")
+                    ).hexdigest(),
+                    "quality_artifact_root": "vault",
+                    "quality_artifact_path": "transcripts/configured.quality.json",
+                    "quality_artifact_sha256": hashlib.sha256(
+                        quality_artifact.read_bytes()
+                    ).hexdigest(),
+                }
+            ],
+            "patterns_detected": [],
+            "antipatterns_detected": [],
+        }
+    )
+    _set_projection(talk, None)
+    _write_vault(
+        database_root,
+        [talk],
+        config={"vault_storage_path": str(evidence_root)},
+    )
+
+    rc, payload, error = _run_load_vault(load_vault, database_root, monkeypatch, capsys)
+
+    assert rc == 0
+    assert error == ""
+    assert [talk["filename"] for talk in payload["baseline_talks"]] == [
+        "configured-vault.md"
+    ], json.dumps(payload["pattern_scoring_exclusions"], indent=2)
+
+
+def test_default_as_of_uses_injected_time_and_canonical_whole_seconds(load_vault):
+    now = datetime(2026, 7, 31, 18, 30, 45, 987654, tzinfo=timezone.utc)
+
+    assert load_vault.default_as_of(now) == "2026-07-31T18:30:45+00:00"

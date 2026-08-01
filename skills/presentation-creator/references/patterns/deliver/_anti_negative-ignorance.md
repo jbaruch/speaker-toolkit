@@ -11,6 +11,20 @@ detection_signals:
   - "negative polling questions"
   - "audience asked to admit ignorance"
   - "embarrassing knowledge checks"
+evaluable_from:
+  - transcript
+  - delivery_video
+strong_evaluable_from:
+  - transcript
+  - delivery_video
+absence_evaluable_from:
+  - transcript
+evidence_requirements:
+  - "Evidence must preserve conversational context showing that the speaker directs a negatively framed knowledge poll at the room."
+  - "Absence is authorized only from a complete transcript covering audience-polling moments so quoted examples and positive polling can be distinguished from the antipattern."
+not_evaluable_when:
+  - "The wording appears only in an isolated quotation or excerpt and it is unclear whether the speaker is demonstrating an example or polling the room."
+  - "The transcript or video is incomplete across the talk's audience-interaction moments."
 related_patterns: [know-your-audience, seeding-satisfaction]
 inverse_of: []
 difficulty: foundational
@@ -44,9 +58,13 @@ This is an antipattern to avoid in every presentation. Never ask the audience to
 - Speaker proceeds based on misleading polling data
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Speaker asks negative ignorance questions, putting audience members in uncomfortable positions
-- Moderate signal (1 pt): Speaker uses mixed polling approaches, occasionally slipping into negative framing but mostly positive
-- Absent (0 pts — antipattern not present): Speaker calibrates content level through research, positive polling, or brief definitions — never asks the audience to admit ignorance
+- Strong signal (antipattern present): Speaker asks negative ignorance questions, putting audience members in uncomfortable positions
+- Moderate signal: Speaker uses mixed polling approaches, occasionally slipping into negative framing but mostly positive
+- Absent (antipattern not present): Speaker calibrates content level through research, positive polling, or brief definitions — never asks the audience to admit ignorance
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+An absence finding is authorized only from a complete transcript (`transcript`) covering the required spoken scope; delivery video, rendered/static slides, native decks, and comparison artifacts do not authorize absence.
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 14 (Speaker Craft / Professionalism).

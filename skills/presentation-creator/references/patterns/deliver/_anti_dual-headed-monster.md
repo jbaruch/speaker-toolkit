@@ -11,6 +11,23 @@ detection_signals:
   - "split attention between audiences"
   - "hybrid format compromises"
   - "technology management overhead"
+evaluable_from:
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: no-simultaneous-hybrid-audience
+    description: "Complete delivery video establishes that the speaker is serving only one synchronous audience, with no simultaneous in-room and remote audience."
+applicability_evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
+  - "Evidence must expose the existing scoring cues: hybrid-delivery context switching, technology friction, and audience compromise."
+not_evaluable_when:
+  - "No delivery video covers the relevant event or interval."
+  - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
+  - "The complete delivery does not establish whether a simultaneous remote audience exists, so hybrid applicability remains unknown."
 related_patterns: [live-on-tape, weatherman]
 inverse_of: []
 difficulty: intermediate
@@ -46,9 +63,13 @@ This is an antipattern to avoid when possible and to manage carefully when unavo
 - Q&A is awkward, with separate live and remote question queues
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Speaker tries to serve both audiences equally, resulting in a fragmented experience for everyone — visible context-switching, technology struggles, and disjointed delivery
-- Moderate signal (1 pt): Speaker attempts hybrid delivery with some success but visible compromises and occasional technology-related disruptions
-- Absent (0 pts — antipattern not present): Speaker clearly optimizes for one audience, with appropriate accommodation for the other — technology is managed by a dedicated person, delivery is coherent and focused
+- Strong signal (antipattern present): Speaker tries to serve both audiences equally, resulting in a fragmented experience for everyone — visible context-switching, technology struggles, and disjointed delivery
+- Moderate signal: Speaker attempts hybrid delivery with some success but visible compromises and occasional technology-related disruptions
+- Absent (antipattern not present): Speaker clearly optimizes for one audience, with appropriate accommodation for the other — technology is managed by a dedicated person, delivery is coherent and focused
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 14 (Speaker Craft / Professionalism).

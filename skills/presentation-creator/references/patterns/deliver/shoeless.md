@@ -42,9 +42,9 @@ Use this pattern whenever you experience presentation anxiety, which for most sp
 - Speaker's calm demeanor seems natural rather than forced
 
 ## Scoring Criteria
-- Strong signal (2 pts): Speaker appears genuinely relaxed and comfortable, with subtle evidence of personal comfort practices that support calm delivery
-- Moderate signal (1 pt): Speaker is mostly comfortable but shows occasional signs of physical tension or nervousness
-- Absent (0 pts): Speaker appears physically uncomfortable, rigid, or visibly anxious throughout
+- Strong signal: Speaker appears genuinely relaxed and comfortable, with subtle evidence of personal comfort practices that support calm delivery
+- Moderate signal: Speaker is mostly comfortable but shows occasional signs of physical tension or nervousness
+- Absent: Speaker appears physically uncomfortable, rigid, or visibly anxious throughout
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 14 (Speaker Craft / Professionalism). Managing your physical state is a core aspect of speaker craft.

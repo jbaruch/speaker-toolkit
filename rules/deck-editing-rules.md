@@ -28,7 +28,8 @@ generating slide structure (see `rules/slide-generation-rules.md`).
   formatting — NOT clipboard paste). Invoke it through
   `skills/presentation-creator/scripts/run-deck-ops.sh`:
   ```bash
-  run-deck-ops.sh <basePath> <outPath> <importSpec> <orderStr> <replaceStr>
+  bash skills/presentation-creator/scripts/run-deck-ops.sh \
+    <basePath> <outPath> <importSpec> <orderStr> <replaceStr>
   # orderStr: "BASE:1 BASE:2 voxxed:13 BASE:49"  (alias:1-based-slide-#)
   ```
 - One-time setup is a manual, GUI-bound sequence (enable VBA macros, create the
@@ -46,8 +47,10 @@ generating slide structure (see `rules/slide-generation-rules.md`).
 - `RunDeckOps.bas`'s `MakeBgImageSlide` clones a comic template slide, sets
   `Slide.Background.Fill.UserPicture`, retitles, and saves a 1-slide deck. Pick a
   template whose title sits in the image's clear safe zone. Invoke via
-  `skills/presentation-creator/scripts/make-bg-slide.sh`, then import with
-  `run-deck-ops.sh` (order token `<alias>:1`).
+  `bash skills/presentation-creator/scripts/make-bg-slide.sh`,
+  then import with
+  `bash skills/presentation-creator/scripts/run-deck-ops.sh`
+  (order token `<alias>:1`).
 - Generate the illustration first with the `illustrations` skill, then make it a
   background slide here.
 
@@ -62,7 +65,7 @@ generating slide structure (see `rules/slide-generation-rules.md`).
   insert FULL-slide pictures. IMG+TXT slides keep a left-column picture shape.
 - `RunDeckOps.bas`'s `ApplyBackgrounds` then sets all FULL backgrounds via
   `Slide.Background.Fill.UserPicture` in one pass. Invoke via
-  `skills/presentation-creator/scripts/apply-backgrounds.sh <baseCopy> <out> <manifest.json>`.
+  `bash skills/presentation-creator/scripts/apply-backgrounds.sh <baseCopy> <out> <manifest.json>`.
 - Run this as the FINAL write of the build — after the structural walk, scrim/
   title, and speaker-note injection — so no later python-pptx save drops the fills.
 
@@ -71,7 +74,7 @@ generating slide structure (see `rules/slide-generation-rules.md`).
 - `RunDeckOps.bas`'s `ExpandBuilds` replaces each progressive-reveal parent slide
   with its build frames as full-bleed background-fill slides (notes on the final
   frame only), via real PowerPoint slide insertion — never python-pptx. Invoke via
-  `skills/presentation-creator/scripts/expand-builds.sh <baseCopy> <out> <builds-manifest.json>`
+  `bash skills/presentation-creator/scripts/expand-builds.sh <baseCopy> <out> <builds-manifest.json>`
   (manifest from `build-expansion-manifest.py`).
 - Run `ExpandBuilds` BEFORE the by-index passes (notes, backgrounds, QR): it
   renumbers every slide after a build parent, so those passes must key on the

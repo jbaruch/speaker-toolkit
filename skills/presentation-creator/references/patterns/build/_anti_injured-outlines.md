@@ -11,6 +11,22 @@ detection_signals:
   - "single sub-bullet under headers"
   - "orphaned outline items"
   - "incomplete list hierarchies"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+absence_evaluable_from:
+  - static_slides
+evidence_requirements:
+  - "Evidence must expose the visible construction across enough of the talk to apply a positive criterion; an absent outcome requires a complete, separately declared rendered PDF."
+  - "Evidence must expose the existing scoring cues: strong: multiple single-child hierarchy instances; moderate: one or two; absent: at least two items at every level."
+not_evaluable_when:
+  - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
+  - "Only a transcript or spoken account is available, the visual source is too partial for the asserted positive tier, or the separately declared rendered PDF is incomplete for absence."
 related_patterns: [fourthought]
 inverse_of: [fourthought]
 difficulty: foundational
@@ -39,9 +55,13 @@ This is an antipattern and should always be avoided. Every level of every outlin
 When scoring talks, examine every bulleted list and hierarchical outline for single-child levels. A heading with exactly one sub-bullet is the canonical signal. Also look for outlines that have inconsistent depth — one section with three levels of nesting while another has only one level — which may indicate Injured Outlines that were partially addressed but not fully resolved.
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Multiple instances of single sub-bullets under headings, orphaned outline items, or hierarchies that add structural complexity without adding meaning
-- Moderate signal (1 pt): Most outlines are well-formed, with one or two instances of single-child hierarchies that do not significantly impact comprehension
-- Absent (0 pts — antipattern not present): All outlines and bulleted lists have at least two items at every level, indicating thorough and complete hierarchical thinking
+- Strong signal (antipattern present): Multiple instances of single sub-bullets under headings, orphaned outline items, or hierarchies that add structural complexity without adding meaning
+- Moderate signal: Most outlines are well-formed, with one or two instances of single-child hierarchies that do not significantly impact comprehension
+- Absent (antipattern not present): All outlines and bulleted lists have at least two items at every level, indicating thorough and complete hierarchical thinking
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+An absence finding is authorized only from a complete, separately declared rendered PDF (`static_slides`); a native deck, delivery video, transcript, or comparison artifact does not authorize absence.
 
 ## Relationship to Vault Dimensions
 Dimension 8 (Slide Design): Injured Outlines represent a structural flaw in slide content organization. Dimension 14 (Overall Quality Indicators): The presence of Injured Outlines is a signal of insufficient preparation and incomplete analytical thinking.

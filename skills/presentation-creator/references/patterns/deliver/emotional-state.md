@@ -12,6 +12,18 @@ detection_signals:
   - "tone calibrated to audience mood"
   - "contextual references to current events"
   - "adaptive delivery"
+evaluable_from:
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "Delivery video must expose visible or audible audience mood together with the speaker's tone, energy, content emphasis, and response to that context."
+  - "A positive score must locate an adaptive change or contextual acknowledgment; matching energy alone does not prove adaptation."
+not_evaluable_when:
+  - "The audience and room context are not visible or audible enough to establish the emotional baseline."
+  - "The video is too brief or discontinuous to connect audience state to a subsequent delivery adjustment; current artifacts do not authorize absence."
+  - "A single recording does not establish that a meaningful audience-state mismatch or change occurred, so non-adaptation cannot be converted into absence."
 related_patterns: [social-media-advertising, know-your-audience]
 inverse_of: []
 difficulty: intermediate
@@ -43,9 +55,13 @@ Use this pattern for every presentation, with the depth of adaptation scaled to 
 - Speaker explicitly acknowledges the context ("I know it has been a long day")
 
 ## Scoring Criteria
-- Strong signal (2 pts): Speaker clearly reads and adapts to audience mood — tone, content emphasis, and energy calibrated to context, with explicit or implicit acknowledgment of the room's emotional state
-- Moderate signal (1 pt): Some awareness of audience mood but limited adaptation — delivery remains largely unchanged regardless of context
-- Absent (0 pts): Speaker delivers identically regardless of audience mood, context, or energy level
+- Strong signal: Speaker clearly reads and adapts to audience mood — tone, content emphasis, and energy calibrated to context, with explicit or implicit acknowledgment of the room's emotional state
+- Moderate signal: Some awareness of audience mood but limited adaptation — delivery remains largely unchanged regardless of context
+- Absent: Speaker delivers identically regardless of audience mood, context, or energy level
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 9 (Speaker Authority / Credibility).
