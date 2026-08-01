@@ -792,12 +792,13 @@ def test_opportunity_identity_binds_scoring_generation_independently(
     assert return_validation.RETURN_SCHEMA_VERSION == 5
 
 
-def test_v4_source_locations_survive_talk_schema_migration_without_v5_outcomes(
-    persist_results,
+def test_v4_source_locations_survive_root_migration_without_v5_outcomes(
+    tracking_database,
 ):
     talk = {
         "schema_version": 4,
         "filename": "archive.md",
+        "status": "processed",
         "pattern_observations": {
             "evidence_schema_version": 1,
             "patterns_detected": [
@@ -812,8 +813,9 @@ def test_v4_source_locations_survive_talk_schema_migration_without_v5_outcomes(
     }
     database = {"talks": [talk]}
 
-    assert persist_results.migrate_records(database) == 1
-    assert talk["schema_version"] == 5
+    migrated = tracking_database.migrate_tracking_database(database).database
+    talk = migrated["talks"][0]
+    assert talk["schema_version"] == 4
     assert talk["pattern_observations"]["evidence_schema_version"] == 1
     assert talk["pattern_observations"]["patterns_detected"][0]["evidence_citations"]
     assert "pattern_outcomes" not in talk["pattern_observations"]

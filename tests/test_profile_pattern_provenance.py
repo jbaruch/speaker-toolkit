@@ -331,7 +331,7 @@ def test_current_profile_binds_every_pattern_denominator_to_one_cohort(
     }
 
 
-def test_live_validation_ignores_duplicate_filenames_in_ineligible_rows(
+def test_live_validation_rejects_duplicate_filenames_in_ineligible_rows(
     validate_profile,
     tmp_path,
     capsys,
@@ -350,8 +350,9 @@ def test_live_validation_ignores_duplicate_filenames_in_ineligible_rows(
         extra_talks=[pending_duplicate],
     )
 
-    assert return_code == 0, "\n".join(report["errors"])
-    assert report["valid"] is True
+    assert return_code == 1
+    assert report["valid"] is False
+    assert any("duplicate talk filename" in error for error in report["errors"])
 
 
 def test_reusable_assessment_distinguishes_current_empty_and_stale_history(

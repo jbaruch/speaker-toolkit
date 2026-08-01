@@ -1,5 +1,39 @@
 # Changelog
 
+### fix(vault-ingress) — give the tracking database one versioned owner
+
+Vault-ingress now owns tracking-database shape changes and migration (#147).
+The database root, config, talks, PPTX catalog entries, QR records, resource
+records, thumbnails, confirmed intents, improvement goals, and source-rejection
+entries carry explicit schema versions. A deterministic schema-0 migration
+refuses active queue writers, binds apply to the dry-run SHA-256, saves the exact
+original bytes, and replaces only the validated generation atomically. Historical
+talk records remain in their original schema generation; migration adds only the
+missing implicit-v1 version and never fabricates current pattern evidence.
+
+Legacy queue inspection and recovery can close leases before migration without
+schema stamping. Mutating tools require current state; non-owner readers accept
+legacy and current state without rewriting either. Migration rejects duplicate
+JSON keys, non-finite numbers, malformed owner records, and unknown owner schema
+generations before backup or mutation. Profile generation projects semantic
+confirmed-intent fields without leaking database schema metadata.
+
+Owner assessment now classifies root, record, queue-claim, and adherence-baseline
+versions before interpreting older identities or nested shapes. One shared pure
+queue contract validates complete claim/history lifecycles, generation/status
+coherence, receipts, and immutable batch baselines before migration or queue use,
+while preserving the status-drift recovery lane. The strict decoder rejects a
+finite JSON number when it cannot round-trip through the toolkit without changing
+its mathematical value, before backup or write; harmless lexical variants remain
+accepted. It also bounds JSON nesting at 200 containers and rejects unpaired
+UTF-16 surrogates before recursive consumers, rendering, backup, or write.
+Section 15 pattern-history replacement now applies the owner schema gate before
+interpreting configured storage paths or constructing freshness assessors.
+Publishing and clarification patches require talk schema v5. Legacy
+pattern goals remain report-only, legacy pacing/independent goals can patch only
+their historical status/check fields, and schema-v2 goals retain the full
+verification contract.
+
 ### fix(vault-ingress) — serialize tracking-database access and close owner schemas
 
 All toolkit tracking-database writers now share one persistent sibling lock and one

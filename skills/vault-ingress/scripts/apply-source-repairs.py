@@ -34,6 +34,10 @@ from pathlib import Path
 import sys
 from typing import Any
 
+from tracking_database import (
+    TrackingDatabaseError,
+    require_current_tracking_database,
+)
 from tracking_database_io import (
     BackupRequest,
     TrackingDatabaseIOError,
@@ -294,6 +298,10 @@ def execute(
     backup_dir: Path | None = None,
 ) -> dict[str, Any]:
     database, database_snapshot = load_database(database_path)
+    try:
+        require_current_tracking_database(database)
+    except TrackingDatabaseError as exc:
+        raise SourceRepairError(str(exc)) from exc
     plan, _ = load_object(plan_path, "repair plan")
     repairs = validate_plan(plan)
     repaired, changes = build_repaired_database(database, repairs)
@@ -309,6 +317,12 @@ def execute(
     database_written = False
     durability_state = "dry_run"
     warnings: list[str] = []
+    try:
+        require_current_tracking_database(repaired)
+    except TrackingDatabaseError as exc:
+        raise SourceRepairError(
+            f"repair would violate the current tracking schema: {exc}"
+        ) from exc
     if apply:
         target_backup_dir = backup_dir or database_path.parent / ".backups"
         backup_request = BackupRequest(

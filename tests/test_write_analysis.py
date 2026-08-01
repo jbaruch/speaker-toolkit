@@ -237,7 +237,7 @@ def _write_tracking_db(
         talk = {
             "filename": ret["filename"],
             "title": title,
-            "schema_version": 3,
+            "schema_version": 5,
             "status": ret["status"],
             "processed_date": (
                 persisted_date or ret.get("processed_date") or "2026-07-26"
@@ -323,7 +323,17 @@ def _write_tracking_db(
             talk["pattern_score"] = score
         talks.append(talk)
     path = tmp_path / name
-    path.write_text(json.dumps({"talks": talks}))
+    path.write_text(json.dumps({
+        "schema_version": 1,
+        "config": {"schema_version": 1},
+        "talks": talks,
+        "pptx_catalog": [],
+        "qr_codes": [],
+        "resources": [],
+        "thumbnails": [],
+        "confirmed_intents": [],
+        "improvement_goals": [],
+    }))
     return path
 
 
@@ -1399,9 +1409,10 @@ def test_cli_does_not_write_outside_the_output_dir(write_analysis, tmp_path):
         capture_output=True,
         text=True,
     )
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 1
+    assert "filename must be a non-empty basename" in result.stderr
     assert victim.read_text() == '{"talks": []}', "the sibling file was overwritten"
-    assert (out / "tracking-database.json.md").exists()
+    assert not out.exists()
 
 
 def test_cli_rejects_filename_that_names_no_file(write_analysis, tmp_path):
@@ -1422,7 +1433,7 @@ def test_cli_rejects_filename_that_names_no_file(write_analysis, tmp_path):
         text=True,
     )
     assert result.returncode != 0
-    assert "does not name a file" in result.stderr
+    assert "filename must be a non-empty basename" in result.stderr
 
 
 def test_cli_rejects_malformed_tracking_db(write_analysis, tmp_path):
@@ -1630,7 +1641,7 @@ def test_top_level_generation_mismatch_cannot_overwrite_analysis(
     )
 
     assert result.returncode == 1
-    assert "active claim generation 1 disagrees with talk generation 2" in result.stderr
+    assert "current claim generation 1 disagrees with talk generation 2" in result.stderr
     assert target.read_text() == "# current generation\n"
 
 
@@ -2123,8 +2134,72 @@ def test_future_talk_schema_cannot_authorize_analysis_write(write_analysis, tmp_
     )
 
     assert result.returncode == 1
-    assert "future talk schema_version 99" in result.stderr
+    assert "talks_schema_version_unsupported" in result.stderr
     assert not out.exists()
+
+
+def test_future_root_is_assessed_before_old_talks_shape(write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([_return()]))
+    db = tmp_path / "tracking-database.json"
+    original = {
+        "schema_version": 99,
+        "future_inventory": {"records": "opaque"},
+    }
+    db.write_text(json.dumps(original))
+    before = db.read_bytes()
+    out = tmp_path / "analyses"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "tracking_database_schema_version_unsupported" in result.stderr
+    assert "expected a JSON object with a `talks` array" not in result.stderr
+    assert db.read_bytes() == before
+    assert not out.exists()
+
+
+def test_legacy_database_can_render_analysis_without_database_write(
+    write_analysis, tmp_path
+):
+    ret = _return()
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    payload.pop("schema_version")
+    payload["config"].pop("schema_version")
+    db.write_text(json.dumps(payload))
+    before = db.read_bytes()
+    out = tmp_path / "analyses"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (out / "talk.md").is_file()
+    assert db.read_bytes() == before
 
 
 def test_tracking_database_symlink_is_rejected_before_analysis_write(
@@ -2256,11 +2331,11 @@ def test_cli_rejects_normalized_target_collision_before_any_write(
     batch = tmp_path / "batch-returns.json"
     out = tmp_path / "analyses"
     out.mkdir()
-    existing = out / "TALK.MD"
+    existing = out / "CAFÉ.md"
     existing.write_text("# existing analysis\n")
     returns = [
-        _return(filename="first/TALK.MD"),
-        _return(filename="second/talk.md"),
+        _return(filename="Cafe\N{COMBINING ACUTE ACCENT}.md"),
+        _return(filename="Caf\N{LATIN SMALL LETTER E WITH ACUTE}.md"),
     ]
     batch.write_text(json.dumps(returns))
     db = _write_tracking_db(tmp_path, returns)
@@ -2281,7 +2356,7 @@ def test_cli_rejects_normalized_target_collision_before_any_write(
     assert result.returncode == 1
     assert "resolve to the same analysis target" in result.stderr
     assert existing.read_text() == "# existing analysis\n"
-    assert [path.name for path in out.iterdir()] == ["TALK.MD"]
+    assert [path.name for path in out.iterdir()] == ["CAFÉ.md"]
 
 
 def test_existing_casefold_target_collision_rejects_before_any_write(

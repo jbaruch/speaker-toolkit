@@ -66,6 +66,10 @@ import sys
 import tempfile
 import unicodedata
 
+from tracking_database import (
+    TrackingDatabaseError,
+    assess_tracking_database,
+)
 from pattern_evidence import (
     LEGACY_PATTERN_EVIDENCE_SCHEMA_VERSION,
     PATTERN_EVIDENCE_SCHEMA_VERSION,
@@ -1017,13 +1021,29 @@ def load_tracking_database(path):
     """Load the owner artifact through its strict shared decoder."""
     try:
         snapshot = snapshot_tracking_database(path)
-        return decode_json_object(snapshot)
+        database = decode_json_object(snapshot)
     except TrackingDatabaseIOError as exc:
         message = str(exc)
         if "root must be a JSON object" in message:
             message += "; expected an object with a `talks` array"
         print(f"ERROR: {message}", file=sys.stderr)
         sys.exit(1)
+    try:
+        assessment = assess_tracking_database(database)
+    except TrackingDatabaseError as exc:
+        print(
+            f"ERROR: tracking database schema is invalid: {exc}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if not assessment.usable:
+        print(
+            "ERROR: tracking database is not usable by this reader: "
+            + ", ".join(assessment.reason_codes),
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return database
 
 
 def parse_args(argv):
@@ -1080,7 +1100,7 @@ def main():
         )
         sys.exit(1)
     db = load_tracking_database(talks_path)
-    if not isinstance(db, dict) or not isinstance(db.get("talks"), list):
+    if not isinstance(db.get("talks"), list):
         print(
             f"ERROR: {talks_path} is not a tracking database — expected a JSON "
             f"object with a `talks` array; pass the vault's "

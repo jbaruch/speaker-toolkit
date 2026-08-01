@@ -89,9 +89,8 @@ from ingress_contract import (
     TALK_SCHEMA_VERSION,
     validate_talk_record_schemas,
 )
+from tracking_database import TrackingDatabaseError, require_current_tracking_database
 from pattern_evidence import (
-    LEGACY_PATTERN_EVIDENCE_SCHEMA_VERSION,
-    PATTERN_EVIDENCE_SCHEMA_VERSION,
     PatternEvidenceError,
     assess_batch_artifact_capabilities,
     canonicalize_return_evidence,
@@ -744,56 +743,6 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     return promoted, stamped, coerced_score, cleared
 
 
-def migrate_records(db):
-    """Bring every talk record to the current schema version. Returns the count.
-
-    `stateful-artifacts` puts migration on the OWNER skill, and this script is
-    the tracking DB's only writer. Stamping just the talks a batch happened to
-    touch would leave the file permanently mixed-version — a reader could not
-    tell an unversioned record from one this writer had never seen, which is the
-    ambiguity the version exists to remove.
-
-    Talk schema v4 unifies the queue/catalog lineage with source-located
-    evidence. Talk schema v5 adds exhaustive applicability/outcome state and an
-    opportunity-coverage identity. Historical detections receive the explicit
-    empty-citation sentinel, but migration never fabricates v5 assessments,
-    outcomes, identity, or current evidence: an unverified location cannot
-    become current proof.
-    """
-    talks = validate_talk_record_schemas(db.get("talks"))
-    migrated = 0
-    for talk in talks:
-        changed = False
-        observations = talk.get("pattern_observations")
-        located_evidence = (
-            isinstance(observations, dict)
-            and observations.get("evidence_schema_version") in {
-                LEGACY_PATTERN_EVIDENCE_SCHEMA_VERSION,
-                PATTERN_EVIDENCE_SCHEMA_VERSION,
-            }
-        )
-        if isinstance(observations, dict) and not located_evidence:
-            if observations.pop("evidence_schema_version", None) is not None:
-                changed = True
-            if observations.pop("source_inspection", None) is not None:
-                changed = True
-            for lane in ("patterns_detected", "antipatterns_detected"):
-                detections = observations.get(lane)
-                if not isinstance(detections, list):
-                    continue
-                for detection in detections:
-                    if (isinstance(detection, dict) and
-                            detection.get("evidence_citations") != []):
-                        detection["evidence_citations"] = []
-                        changed = True
-        if talk.get("schema_version") != TALK_SCHEMA_VERSION:
-            talk["schema_version"] = TALK_SCHEMA_VERSION
-            changed = True
-        if changed:
-            migrated += 1
-    return migrated
-
-
 def atomic_write_json(
     path,
     payload,
@@ -812,13 +761,19 @@ def load_tracking_database(path):
     """Load strict JSON and retain the exact generation used for validation."""
     try:
         snapshot = snapshot_tracking_database(path)
-        return decode_json_object(snapshot), snapshot
+        database = decode_json_object(snapshot)
     except TrackingDatabaseIOError as exc:
         message = str(exc)
         if "tracking database is missing at" in message:
             message = f"tracking database file not found: {path} — {message}"
         print(f"ERROR: {message}", file=sys.stderr)
         sys.exit(1)
+    try:
+        require_current_tracking_database(database)
+    except TrackingDatabaseError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+    return database, snapshot
 
 
 def load_json(path, label):
@@ -894,10 +849,6 @@ def main():
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    if not isinstance(db, dict) or not isinstance(db.get("talks"), list):
-        print(f"ERROR: {db_path} is not a tracking database — expected a JSON "
-              "object with a `talks` array", file=sys.stderr)
-        sys.exit(1)
     raw_config = db.get("config")
     source_roots: dict[str, object] = (
         copy.deepcopy(raw_config) if isinstance(raw_config, dict) else {})
@@ -954,7 +905,6 @@ def main():
 
     # All input, catalog and identity validation is complete before the in-memory
     # artifact changes. A bad final return cannot leave an earlier return applied.
-    migrated = migrate_records(db)
     summary = []
     for ret, canonical_ret in zip(returns, canonical_returns):
         name = ret.get("filename")
@@ -1017,7 +967,8 @@ def main():
         sys.exit(1)
 
     json.dump({"persisted": len(summary), "db_path": db_path, "run_date": run_date,
-               "schema_version": TALK_SCHEMA_VERSION, "migrated_records": migrated,
+               "schema_version": TALK_SCHEMA_VERSION,
+               "migrated_records": 0,
                "pattern_scoring_schema_version": PATTERN_SCORING_SCHEMA_VERSION,
                "pattern_catalog_fingerprint": catalog.fingerprint,
                "current_adherence_baseline": current_adherence_baseline,

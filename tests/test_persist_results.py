@@ -104,6 +104,7 @@ def _return(**overrides):
 
 def _talk(**overrides):
     talk = {
+        "schema_version": 5,
         "filename": "talk.md",
         "status": "reprocessing-inflight",
         "reprocess_generation": 1,
@@ -126,6 +127,21 @@ def _talk(**overrides):
     }
     talk.update(overrides)
     return talk
+
+
+def _db_json(database):
+    """Render a current tracking database around one test's talk fixtures."""
+    database["schema_version"] = 1
+    config = database.setdefault("config", {})
+    if isinstance(config, dict):
+        config["schema_version"] = 1
+    database.setdefault("pptx_catalog", [])
+    database.setdefault("qr_codes", [])
+    database.setdefault("resources", [])
+    database.setdefault("thumbnails", [])
+    database.setdefault("confirmed_intents", [])
+    database.setdefault("improvement_goals", [])
+    return json.dumps(database)
 
 
 def _adherence_baseline(persist_results, *, count=0, filenames=("talk.md",)):
@@ -536,7 +552,7 @@ def test_v2_atomic_snapshot_matches_rendered_analysis(
     ret["structured_data"]["typography_observations"] = {
         "current_marker": "current",
     }
-    db.write_text(json.dumps({"talks": [talk]}))
+    db.write_text(_db_json({"talks": [talk]}))
     batch.write_text(json.dumps([ret]))
 
     persisted = subprocess.run(
@@ -837,9 +853,10 @@ def test_pattern_observations_normalized(persist_results):
 def test_transcript_quote_is_verified_and_locations_are_engine_owned(
         persist_results, return_validation, tmp_path):
     talk, ret = _v4_transcript_batch(return_validation, tmp_path)
+    talk["schema_version"] = persist_results.TALK_SCHEMA_VERSION
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [talk]}))
+    db.write_text(_db_json({"talks": [talk]}))
     batch.write_text(json.dumps([ret]))
 
     result = subprocess.run(
@@ -1030,7 +1047,7 @@ def test_not_evaluable_patterns_are_persisted_but_never_scored(
         "evidence_source": "static_slides",
         "reason": "No animation timing survives in the rendered pages.",
     }]
-    db.write_text(json.dumps({"talks": [_talk()]}))
+    db.write_text(_db_json({"talks": [_talk()]}))
     batch.write_text(json.dumps([ret]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
@@ -1094,7 +1111,7 @@ def test_cli_run_date_pins_the_stamp(persist_results, tmp_path):
     batch = tmp_path / "batch-returns.json"
     ret = _return()
     del ret["processed_date"]
-    db.write_text(json.dumps({"talks": [_talk(processed_date="2026-04-09")]}))
+    db.write_text(_db_json({"talks": [_talk(processed_date="2026-04-09")]}))
     batch.write_text(json.dumps([ret]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch),
@@ -1113,7 +1130,7 @@ def test_cli_batch_timestamp_overrides_date_only_return_stamp_everywhere(
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
     authoritative = "2026-07-27T14:03:22+00:00"
-    db.write_text(json.dumps({"talks": [_talk(processed_date="2026-04-09")]}))
+    db.write_text(_db_json({"talks": [_talk(processed_date="2026-04-09")]}))
     batch.write_text(json.dumps([_return(processed_date="2026-07-27")]))
 
     result = subprocess.run(
@@ -1134,7 +1151,7 @@ def test_cli_rejects_conflicting_explicit_return_timestamp_before_write(
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
     original = {"talks": [_talk(processed_date="2026-04-09")]}
-    db.write_text(json.dumps(original))
+    db.write_text(_db_json(original))
     batch.write_text(json.dumps([
         _return(processed_date="2026-07-27T08:00:00+00:00")]))
 
@@ -1165,7 +1182,7 @@ def test_matching_explicit_return_timestamp_is_accepted_and_batch_stamped(
 def test_cli_rejects_malformed_run_date(persist_results, tmp_path):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [_talk()]}))
+    db.write_text(_db_json({"talks": [_talk()]}))
     batch.write_text(json.dumps([_return()]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch),
@@ -1179,7 +1196,7 @@ def test_cli_rejects_malformed_run_date(persist_results, tmp_path):
 def test_cli_writes_db_and_reports(persist_results, tmp_path):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [_talk()]}))
+    db.write_text(_db_json({"talks": [_talk()]}))
     batch.write_text(json.dumps([_return()]))
     script = persist_results.__file__
     result = subprocess.run(
@@ -1199,7 +1216,7 @@ def test_cli_writes_db_and_reports(persist_results, tmp_path):
 def test_cli_fails_visibly_on_filename_mismatch(persist_results, tmp_path):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [_talk(filename="a.md")]}))
+    db.write_text(_db_json({"talks": [_talk(filename="a.md")]}))
     batch.write_text(json.dumps([_return(filename="missing.md")]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
@@ -1239,7 +1256,7 @@ def test_cli_malformed_json_is_actionable(persist_results, tmp_path):
 def test_cli_non_array_batch_is_actionable(persist_results, tmp_path):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [_talk()]}))
+    db.write_text(_db_json({"talks": [_talk()]}))
     batch.write_text(json.dumps({"filename": "talk.md"}))  # object, not array
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
@@ -1292,7 +1309,7 @@ def test_naive_timestamp_is_rejected_with_an_actionable_message(persist_results)
 def test_cli_rejects_a_naive_timestamp(persist_results, tmp_path):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [_talk()]}))
+    db.write_text(_db_json({"talks": [_talk()]}))
     batch.write_text(json.dumps([_return()]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch),
@@ -1310,7 +1327,7 @@ def test_explicit_date_only_stamp_is_still_accepted(persist_results, tmp_path):
     batch = tmp_path / "batch-returns.json"
     ret = _return()
     del ret["processed_date"]
-    db.write_text(json.dumps({"talks": [_talk()]}))
+    db.write_text(_db_json({"talks": [_talk()]}))
     batch.write_text(json.dumps([ret]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch),
@@ -1326,7 +1343,7 @@ def test_explicit_timestamp_is_accepted(persist_results, tmp_path):
     batch = tmp_path / "batch-returns.json"
     ret = _return()
     del ret["processed_date"]
-    db.write_text(json.dumps({"talks": [_talk()]}))
+    db.write_text(_db_json({"talks": [_talk()]}))
     batch.write_text(json.dumps([ret]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch),
@@ -1349,7 +1366,7 @@ def test_bare_int_pattern_score_is_coerced_and_promoted(persist_results, tmp_pat
     batch = tmp_path / "batch-returns.json"
     ret = _return()
     ret["pattern_observations"]["pattern_score"] = 1  # 2 patterns - 1 antipattern
-    db.write_text(json.dumps({"talks": [_talk()]}))
+    db.write_text(_db_json({"talks": [_talk()]}))
     batch.write_text(json.dumps([ret]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
@@ -1367,7 +1384,7 @@ def test_dict_pattern_score_is_not_reported_as_coerced(persist_results, tmp_path
     """Guard the guard: the flag must distinguish the two shapes."""
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [_talk()]}))
+    db.write_text(_db_json({"talks": [_talk()]}))
     batch.write_text(json.dumps([_return()]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
@@ -1389,7 +1406,7 @@ def test_bare_int_contradicting_the_arrays_fails_loudly(persist_results, tmp_pat
     batch = tmp_path / "batch-returns.json"
     ret = _return()
     ret["pattern_observations"]["pattern_score"] = 42  # arrays say 2 - 1 = 1
-    db.write_text(json.dumps({"talks": [_talk()]}))
+    db.write_text(_db_json({"talks": [_talk()]}))
     batch.write_text(json.dumps([ret]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
@@ -1414,7 +1431,7 @@ def test_non_numeric_pattern_score_never_reaches_the_db(persist_results, tmp_pat
     batch = tmp_path / "batch-returns.json"
     ret = _return()
     ret["pattern_observations"]["pattern_score"] = bad
-    db.write_text(json.dumps({"talks": [_talk()]}))
+    db.write_text(_db_json({"talks": [_talk()]}))
     batch.write_text(json.dumps([ret]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
@@ -1439,7 +1456,7 @@ def test_invalid_score_inside_the_declared_dict_is_rejected(
     ret = _return()
     ret["pattern_observations"]["pattern_score"] = {
         "patterns_used": 2, "antipatterns_detected": 1, "score": inner}
-    db.write_text(json.dumps({"talks": [_talk()]}))
+    db.write_text(_db_json({"talks": [_talk()]}))
     batch.write_text(json.dumps([ret]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
@@ -1455,7 +1472,7 @@ def test_merge_stamps_the_talk_schema_version(persist_results, tmp_path):
     """stateful-artifacts requires a schema_version on every record."""
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [_talk()]}))
+    db.write_text(_db_json({"talks": [_talk()]}))
     batch.write_text(json.dumps([_return()]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
@@ -1466,27 +1483,50 @@ def test_merge_stamps_the_talk_schema_version(persist_results, tmp_path):
     assert talk["schema_version"] == persist_results.TALK_SCHEMA_VERSION
 
 
-def test_schema_version_is_stamped_over_an_older_value(persist_results, tmp_path):
-    """A v1 record merged by this writer becomes v2 — that is the migration."""
+def test_persistence_accepts_historical_talk_under_current_root(
+        persist_results, tmp_path):
+    """Current roots may retain v1-v4 talks until that exact talk is persisted."""
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
     old = _talk()
     old["schema_version"] = 1
-    db.write_text(json.dumps({"talks": [old]}))
+    db.write_text(_db_json({"talks": [old]}))
     batch.write_text(json.dumps([_return()]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
-    assert (json.loads(db.read_text())["talks"][0]["schema_version"] ==
-            persist_results.TALK_SCHEMA_VERSION)
+    assert (
+        json.loads(db.read_text())["talks"][0]["schema_version"]
+        == persist_results.TALK_SCHEMA_VERSION
+    )
 
 
-def test_legacy_migration_marks_pattern_evidence_unlocated(persist_results):
+def test_persistence_refuses_legacy_database_without_rewriting(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(json.dumps({"talks": [_talk()]}))
+    batch.write_text(json.dumps([_return()]))
+    before = db.read_bytes()
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "migrate-tracking-database.py" in result.stderr
+    assert db.read_bytes() == before
+
+
+def test_root_migration_preserves_historical_pattern_evidence(tracking_database):
     talk = {
         "filename": "legacy.md",
         "schema_version": 2,
+        "status": "processed",
         "pattern_observations": {
             "patterns_detected": [{
                 "pattern_id": "narrative-arc",
@@ -1508,15 +1548,15 @@ def test_legacy_migration_marks_pattern_evidence_unlocated(persist_results):
     }
     database = {"talks": [talk]}
 
-    assert persist_results.migrate_records(database) == 1
-    observations = talk["pattern_observations"]
-    assert talk["schema_version"] == persist_results.TALK_SCHEMA_VERSION
-    assert observations["patterns_detected"][0]["evidence_citations"] == []
-    assert observations["antipatterns_detected"][0]["evidence_citations"] == []
-    assert "evidence_schema_version" not in observations
+    before = copy.deepcopy(talk)
+
+    migrated = tracking_database.migrate_tracking_database(database).database
+
+    assert migrated["talks"][0] == before
 
 
-def test_future_talk_schema_rejects_before_any_record_is_migrated(persist_results):
+def test_future_talk_schema_rejects_before_any_record_is_migrated(
+        persist_results, tracking_database):
     database = {
         "talks": [
             {"filename": "legacy.md", "schema_version": 1},
@@ -1528,8 +1568,11 @@ def test_future_talk_schema_rejects_before_any_record_is_migrated(persist_result
     }
     before = copy.deepcopy(database)
 
-    with pytest.raises(ValueError, match="will not downgrade"):
-        persist_results.migrate_records(database)
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError,
+        match="talks_schema_version_unsupported",
+    ):
+        tracking_database.migrate_tracking_database(database)
 
     assert database == before
 
@@ -1539,6 +1582,31 @@ def test_cli_rejects_future_talk_schema_without_rewriting(
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
     original = {"talks": [_talk(schema_version=99)]}
+    db.write_text(_db_json(original))
+    batch.write_text(json.dumps([_return()]))
+    before = db.read_bytes()
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "talks_schema_version_unsupported" in result.stderr
+    assert db.read_bytes() == before
+
+
+def test_cli_assesses_future_root_before_old_talks_shape(
+    persist_results,
+    tmp_path,
+):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    original = {
+        "schema_version": 99,
+        "future_inventory": {"records": "opaque"},
+    }
     db.write_text(json.dumps(original))
     batch.write_text(json.dumps([_return()]))
     before = db.read_bytes()
@@ -1550,8 +1618,8 @@ def test_cli_rejects_future_talk_schema_without_rewriting(
     )
 
     assert result.returncode == 1
-    assert "future talk schema_version 99" in result.stderr
-    assert "will not downgrade" in result.stderr
+    assert "tracking_database_schema_version_unsupported" in result.stderr
+    assert "expected a JSON object with a `talks` array" not in result.stderr
     assert db.read_bytes() == before
 
 
@@ -1559,7 +1627,7 @@ def test_non_object_talk_member_is_actionable_and_does_not_rewrite(
         persist_results, tmp_path):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [_talk(), "not-a-talk"]}))
+    db.write_text(_db_json({"talks": [_talk(), "not-a-talk"]}))
     batch.write_text(json.dumps([_return()]))
     before = db.read_bytes()
 
@@ -1609,7 +1677,7 @@ def test_a_malformed_content_block_fails_loudly(persist_results, tmp_path, block
     batch = tmp_path / "batch-returns.json"
     ret = _return()
     ret[block] = [{"slide_count": 60}]  # a list where an object is declared
-    db.write_text(json.dumps({"talks": [_talk()]}))
+    db.write_text(_db_json({"talks": [_talk()]}))
     batch.write_text(json.dumps([ret]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
@@ -1632,7 +1700,7 @@ def test_malformed_detection_arrays_fail_loudly(persist_results, tmp_path, bad):
     batch = tmp_path / "batch-returns.json"
     ret = _return()
     ret["pattern_observations"]["patterns_detected"] = bad
-    db.write_text(json.dumps({"talks": [_talk()]}))
+    db.write_text(_db_json({"talks": [_talk()]}))
     batch.write_text(json.dumps([ret]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
@@ -1650,7 +1718,7 @@ def test_a_malformed_return_leaves_the_talk_untouched(persist_results, tmp_path)
     ret = _return()
     ret["pattern_observations"]["patterns_detected"] = ["narrative-arc"]
     original = _talk()
-    db.write_text(json.dumps({"talks": [original]}))
+    db.write_text(_db_json({"talks": [original]}))
     batch.write_text(json.dumps([ret]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
@@ -1679,7 +1747,7 @@ def test_v2_destructive_empty_scalars_leave_database_byte_stable(
         transcript_source="manual",
     )]}
     ret = _return(**{field: value})
-    db.write_text(json.dumps(original))
+    db.write_text(_db_json(original))
     before = db.read_bytes()
     batch.write_text(json.dumps([ret]))
 
@@ -1710,7 +1778,7 @@ def test_malformed_per_slide_visual_leaves_database_untouched(
         }],
     })
     original = {"talks": [_talk()]}
-    db.write_text(json.dumps(original))
+    db.write_text(_db_json(original))
     before = db.read_bytes()
     batch.write_text(json.dumps([ret]))
 
@@ -1739,7 +1807,7 @@ def test_effective_per_slide_dependencies_fail_before_database_write(
         "slide_count": 1,
         "per_slide_visual": [_visual_row()],
     })
-    db.write_text(json.dumps({"talks": [talk]}))
+    db.write_text(_db_json({"talks": [talk]}))
     before = db.read_bytes()
     batch.write_text(json.dumps([ret]))
 
@@ -1773,7 +1841,7 @@ def test_late_effective_failure_keeps_complete_database_byte_stable(
         "slide_count": 1,
         "per_slide_visual": [_visual_row()],
     })
-    db.write_text(json.dumps({"talks": [first_talk, second_talk]}))
+    db.write_text(_db_json({"talks": [first_talk, second_talk]}))
     before = db.read_bytes()
     batch.write_text(json.dumps([first_return, second_return]))
 
@@ -1792,7 +1860,7 @@ def test_malformed_stored_structured_container_keeps_database_byte_stable(
         persist_results, tmp_path):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [_talk(structured_data=["legacy"])]}))
+    db.write_text(_db_json({"talks": [_talk(structured_data=["legacy"])]}))
     before = db.read_bytes()
     batch.write_text(json.dumps([_return()]))
 
@@ -1815,7 +1883,7 @@ def test_undeclared_legacy_verbatim_lane_keeps_database_byte_stable(
         "jokes": ["legacy line"],
         "legacy_lane": ["undeclared"],
     })
-    db.write_text(json.dumps({"talks": [talk]}))
+    db.write_text(_db_json({"talks": [talk]}))
     before = db.read_bytes()
     batch.write_text(json.dumps([_return(verbatim_examples={"jokes": []})]))
 
@@ -1840,7 +1908,7 @@ def test_missing_image_source_distribution_basis_leaves_database_untouched(
         "unknown": 2,
     }
     original = {"talks": [_talk()]}
-    db.write_text(json.dumps(original))
+    db.write_text(_db_json(original))
     before = db.read_bytes()
     batch.write_text(json.dumps([ret]))
 
@@ -1862,7 +1930,7 @@ def test_v2_image_source_basis_without_map_leaves_database_untouched(
     ret = _return()
     ret["structured_data"]["image_source_distribution_basis"] = (
         "Unit: slide; unknown origins stay unknown.")
-    db.write_text(json.dumps({"talks": [_talk()]}))
+    db.write_text(_db_json({"talks": [_talk()]}))
     before = db.read_bytes()
     batch.write_text(json.dumps([ret]))
 
@@ -1877,22 +1945,21 @@ def test_v2_image_source_basis_without_map_leaves_database_untouched(
     assert db.read_bytes() == before
 
 
-def test_migration_stamps_every_record_not_just_merged_ones(persist_results, tmp_path):
-    """Stamping only touched talks leaves the artifact permanently mixed-version,
-    so a reader cannot tell an unversioned record from an untouched one."""
+def test_persistence_reports_that_schema_migration_was_not_run(
+        persist_results, tmp_path):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
     merged, untouched = _talk(), _talk()
     untouched["filename"] = "other-talk.md"
     untouched["_queue_claim"]["batch_id"] = "unrelated-batch"
-    db.write_text(json.dumps({"talks": [merged, untouched]}))
+    db.write_text(_db_json({"talks": [merged, untouched]}))
     batch.write_text(json.dumps([_return()]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)["migrated_records"] == 2
+    assert json.loads(result.stdout)["migrated_records"] == 0
     for talk in json.loads(db.read_text())["talks"]:
         assert talk["schema_version"] == persist_results.TALK_SCHEMA_VERSION
 
@@ -1905,7 +1972,7 @@ def test_score_object_without_a_score_key_fails_loudly(persist_results, tmp_path
     ret = _return()
     ret["pattern_observations"]["pattern_score"] = {
         "patterns_used": 2, "antipatterns_detected": 1}
-    db.write_text(json.dumps({"talks": [_talk()]}))
+    db.write_text(_db_json({"talks": [_talk()]}))
     batch.write_text(json.dumps([ret]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
@@ -1935,7 +2002,7 @@ def test_clear_fields_removes_contaminated_values_and_promoted_scalars(
     ])
     del ret["structured_data"]["slide_count"]
     ret["verbatim_examples"]["jokes"] = []
-    db.write_text(json.dumps({"talks": [talk]}))
+    db.write_text(_db_json({"talks": [talk]}))
     batch.write_text(json.dumps([ret]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
@@ -1965,7 +2032,7 @@ def test_pattern_score_clear_removes_both_nested_and_promoted_value(
     ret = _return(clear_fields=["pattern_observations.pattern_score"])
     # The valid replacement score is written after the clear; the important
     # invariant is that no old 99 survives on either surface.
-    db.write_text(json.dumps({"talks": [talk]}))
+    db.write_text(_db_json({"talks": [talk]}))
     batch.write_text(json.dumps([ret]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
@@ -1982,7 +2049,7 @@ def test_historical_return_is_marked_unbaselineable_and_claim_is_closed(
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
     talk = _talk(reprocess_reason="pattern_scoring_generation:legacy_generation")
-    db.write_text(json.dumps({"talks": [talk]}))
+    db.write_text(_db_json({"talks": [talk]}))
     batch.write_text(json.dumps([_return()]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
@@ -2048,7 +2115,7 @@ def test_v3_member_baseline_mismatch_rejects_whole_batch_without_write(
         "average_pattern_score": 1.0,
     })
     original = {"talks": talks}
-    db.write_text(json.dumps(original))
+    db.write_text(_db_json(original))
     before = db.read_bytes()
     batch.write_text(json.dumps(returns))
 
@@ -2096,7 +2163,7 @@ def test_post_batch_stdout_uses_complete_replacement_cohort_and_keeps_claim(
             persist_results.PATTERN_SCORING_SCHEMA_VERSION),
         "pattern_catalog_fingerprint": persist_results.load_catalog().fingerprint,
     })
-    db.write_text(json.dumps({"talks": [talk, prior]}))
+    db.write_text(_db_json({"talks": [talk, prior]}))
     batch.write_text(json.dumps([ret]))
 
     result = subprocess.run(
@@ -2133,7 +2200,7 @@ def test_missing_status_rejects_the_whole_batch_without_migrating_db(
     original = {"talks": [_talk()]}
     invalid = _return()
     del invalid["status"]
-    db.write_text(json.dumps(original))
+    db.write_text(_db_json(original))
     batch.write_text(json.dumps([_return(filename="talk.md"), invalid]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
@@ -2148,14 +2215,14 @@ def test_duplicate_db_filenames_are_rejected_before_write(persist_results, tmp_p
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
     original = {"talks": [_talk(), _talk()]}
-    db.write_text(json.dumps(original))
+    db.write_text(_db_json(original))
     batch.write_text(json.dumps([_return()]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
         capture_output=True, text=True,
     )
     assert result.returncode == 1
-    assert "duplicate filenames" in result.stderr
+    assert "duplicate talk filename" in result.stderr
     assert json.loads(db.read_text()) == original
 
 
@@ -2166,7 +2233,7 @@ def test_partial_three_member_batch_is_rejected_before_any_db_write(
     talks = [_talk(filename=f"{name}.md") for name in ("a", "b", "c")]
     returns = [_return(filename=f"{name}.md") for name in ("a", "b")]
     original = {"talks": talks}
-    db.write_text(json.dumps(original))
+    db.write_text(_db_json(original))
     batch.write_text(json.dumps(returns))
 
     result = subprocess.run(
@@ -2193,7 +2260,7 @@ def test_partially_closed_batch_cannot_be_finished_piecemeal(
             "result_status": "processed",
         })
     original = {"talks": talks}
-    db.write_text(json.dumps(original))
+    db.write_text(_db_json(original))
     batch.write_text(json.dumps([
         _return(filename=f"{name}.md") for name in ("a", "b", "c")]))
 
@@ -2214,7 +2281,7 @@ def test_stale_return_generation_cannot_roll_back_a_requeue(persist_results, tmp
     talk["_queue_claim"]["reprocess_generation"] = 2
     original = {"talks": [talk]}
     stale = _return()  # generation 1
-    db.write_text(json.dumps(original))
+    db.write_text(_db_json(original))
     batch.write_text(json.dumps([stale]))
     result = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],
@@ -2230,7 +2297,7 @@ def test_claim_generation_cannot_lag_top_level_generation(persist_results, tmp_p
     batch = tmp_path / "batch-returns.json"
     talk = _talk(reprocess_generation=2)
     original = {"talks": [talk]}
-    db.write_text(json.dumps(original))
+    db.write_text(_db_json(original))
     batch.write_text(json.dumps([_return()]))
 
     result = subprocess.run(
@@ -2239,7 +2306,7 @@ def test_claim_generation_cannot_lag_top_level_generation(persist_results, tmp_p
     )
 
     assert result.returncode == 1
-    assert "active claim generation 1 disagrees with talk generation 2" in result.stderr
+    assert "current claim generation 1 disagrees with talk generation 2" in result.stderr
     assert json.loads(db.read_text()) == original
 
 
@@ -2250,7 +2317,7 @@ def test_active_claim_with_undeclared_fields_is_rejected_before_write(
     talk = _talk()
     talk["_queue_claim"]["released_at"] = None
     original = {"talks": [talk]}
-    db.write_text(json.dumps(original))
+    db.write_text(_db_json(original))
     batch.write_text(json.dumps([_return()]))
 
     result = subprocess.run(
@@ -2285,7 +2352,7 @@ def test_skipped_return_preserves_prior_analysis_and_persists_terminal_metadata(
         pptx_path=None,
         slides_url=None,
     )
-    db.write_text(json.dumps({"talks": [talk]}))
+    db.write_text(_db_json({"talks": [talk]}))
     batch.write_text(json.dumps([_skipped_return()]))
 
     result = subprocess.run(
@@ -2353,7 +2420,7 @@ def test_skipped_no_sources_rejects_each_live_capability(
     talk = _talk(**{**base, **source_fields})
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [talk]}))
+    db.write_text(_db_json({"talks": [talk]}))
     batch.write_text(json.dumps([_skipped_return()]))
     before = db.read_bytes()
 
@@ -2408,7 +2475,7 @@ def test_invalid_source_cannot_hide_independent_terminal_capability(
     talk = _talk(**fields)
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [talk]}))
+    db.write_text(_db_json({"talks": [talk]}))
     batch.write_text(json.dumps([_skipped_return()]))
 
     result = subprocess.run(
@@ -2456,7 +2523,7 @@ def test_download_failure_rejects_when_a_local_artifact_remains(
     })
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [talk]}))
+    db.write_text(_db_json({"talks": [talk]}))
     batch.write_text(json.dumps([
         _skipped_return(status="skipped_download_failed")]))
     before = db.read_bytes()
@@ -2482,7 +2549,7 @@ def test_broken_local_reference_allows_no_sources_terminal(
     )
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [talk]}))
+    db.write_text(_db_json({"talks": [talk]}))
     batch.write_text(json.dumps([_skipped_return()]))
 
     result = subprocess.run(
@@ -2504,7 +2571,7 @@ def test_broken_local_reference_with_remote_allows_download_failed(
     )
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [talk]}))
+    db.write_text(_db_json({"talks": [talk]}))
     batch.write_text(json.dumps([
         _skipped_return(status="skipped_download_failed")]))
 
@@ -2529,7 +2596,7 @@ def test_download_failure_requires_a_remote_acquisition_path(
     )
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [talk]}))
+    db.write_text(_db_json({"talks": [talk]}))
     batch.write_text(json.dumps([
         _skipped_return(status="skipped_download_failed")]))
 
@@ -2557,7 +2624,7 @@ def test_malformed_remote_references_do_not_authorize_download_failed(
     )
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [talk]}))
+    db.write_text(_db_json({"talks": [talk]}))
     batch.write_text(json.dumps([
         _skipped_return(status="skipped_download_failed")]))
 
@@ -2576,7 +2643,7 @@ def test_duplicate_skip_requires_a_bound_canonical_talk(
     talk = _talk(video_url=None, pptx_path=None, slides_url=None)
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [talk]}))
+    db.write_text(_db_json({"talks": [talk]}))
     batch.write_text(json.dumps([_skipped_return(status="skipped_duplicate")]))
 
     result = subprocess.run(
@@ -2620,7 +2687,7 @@ def test_mechanically_bound_skip_status_can_close_claim(
     })
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [talk]}))
+    db.write_text(_db_json({"talks": [talk]}))
     batch.write_text(json.dumps([_skipped_return(status=status)]))
 
     result = subprocess.run(
@@ -2642,7 +2709,7 @@ def test_skipped_return_with_analysis_fields_aborts_without_write(
     batch = tmp_path / "batch-returns.json"
     original = {"talks": [_talk(rhetoric_notes="trusted prior analysis")]}
     invalid = _skipped_return(rhetoric_notes="stale rejected analysis")
-    db.write_text(json.dumps(original))
+    db.write_text(_db_json(original))
     batch.write_text(json.dumps([invalid]))
 
     result = subprocess.run(
@@ -2672,7 +2739,7 @@ def test_wrong_transcript_source_cannot_be_resurrected(
         "transcript", "static_slides"]
     _complete_unavailable_source_gates(return_validation, ret)
     original = {"talks": [talk]}
-    db.write_text(json.dumps(original))
+    db.write_text(_db_json(original))
     batch.write_text(json.dumps([ret]))
 
     result = subprocess.run(
@@ -2688,7 +2755,7 @@ def test_wrong_transcript_source_cannot_be_resurrected(
 def test_completed_generation_cannot_be_replayed(persist_results, tmp_path):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    db.write_text(json.dumps({"talks": [_talk()]}))
+    db.write_text(_db_json({"talks": [_talk()]}))
     batch.write_text(json.dumps([_return()]))
     first = subprocess.run(
         [sys.executable, persist_results.__file__, str(db), str(batch)],

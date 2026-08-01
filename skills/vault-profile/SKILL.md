@@ -110,6 +110,10 @@ Run `"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/load-v
   never confers pattern-baseline eligibility.
 - Exit non-zero with stderr message if arguments, vault sources, catalog identity, or
   scoring-generation metadata are missing or malformed.
+- Legacy database schema 0 and current schema 1 are read-only inputs. An
+  unsupported future database or record schema exits non-zero as no usable prior
+  state. Compatibility stays internal and does not add fields to the payload.
+  This skill never migrates the database.
 
 If the script aborts on missing `rhetoric-style-summary.md`, run vault-ingress first. If `slide-design-spec.md` is missing, `design_spec` is `""` and the design-spec section of the profile remains empty — continue without aborting.
 

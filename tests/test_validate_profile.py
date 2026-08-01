@@ -166,9 +166,11 @@ def _minimal_profile(validate_profile):
     return profile
 
 
-def _run(validate_profile, profile, tmp_path):
+def _run(validate_profile, profile, tmp_path, *, database=None):
     (tmp_path / "tracking-database.json").write_text(
-        json.dumps({"config": {}, "talks": []}),
+        json.dumps(
+            {"config": {}, "talks": []} if database is None else database
+        ),
         encoding="utf-8",
     )
     path = tmp_path / "profile.json"
@@ -189,6 +191,25 @@ def test_profile_without_engines_still_validates(validate_profile, tmp_path, cap
     assert rc == 0
     assert out["valid"] is True
     assert out["missing_keys"] == []
+
+
+def test_validate_profile_rejects_future_tracking_database(
+    validate_profile, tmp_path, capsys
+):
+    profile = _minimal_profile(validate_profile)
+
+    rc = _run(
+        validate_profile,
+        profile,
+        tmp_path,
+        database={"schema_version": 99, "config": {}, "talks": []},
+    )
+
+    captured = capsys.readouterr()
+    out = json.loads(captured.out)
+    assert rc == 1
+    assert out["valid"] is False
+    assert "no usable prior state" in captured.err
 
 
 def test_profile_with_engines_validates(validate_profile, tmp_path, capsys):
@@ -501,7 +522,7 @@ def test_load_vault_separates_pattern_generation_from_instrumentation(
     )
     missing_generation.pop("pattern_scoring_generation_status")
     pending_duplicate = _scored_talk(
-        "current-old-date.md",
+        "pending-ineligible.md",
         60,
         status="pending",
         generation_status="future",
@@ -572,6 +593,75 @@ def test_load_vault_separates_pattern_generation_from_instrumentation(
     assert "snapshot observation time" in payload["baseline_note"]
     assert "processed_date" in payload["baseline_note"]
     assert "does not confer pattern-scoring" in payload["instrumentation_note"]
+
+
+def test_load_vault_rejects_future_tracking_database(
+    load_vault,
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    _write_vault(tmp_path, [])
+    database_path = tmp_path / "tracking-database.json"
+    database = json.loads(database_path.read_text(encoding="utf-8"))
+    database["schema_version"] = 99
+    database_path.write_text(json.dumps(database), encoding="utf-8")
+    before = database_path.read_bytes()
+
+    rc, payload, error = _run_load_vault(load_vault, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert payload is None
+    assert "not usable by this reader" in error
+    assert database_path.read_bytes() == before
+
+
+def test_load_vault_projects_confirmed_intents_without_storage_metadata(
+    load_vault,
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    _write_vault(tmp_path, [])
+    database_path = tmp_path / "tracking-database.json"
+    database = {
+        "schema_version": 1,
+        "config": {"schema_version": 1, "synthetic": True},
+        "talks": [],
+        "pptx_catalog": [],
+        "qr_codes": [],
+        "resources": [],
+        "thumbnails": [],
+        "confirmed_intents": [{
+            "schema_version": 1,
+            "pattern": "delayed_self_introduction",
+            "intent": "deliberate",
+            "rule": "Use the two-phase introduction",
+            "note": "Speaker-confirmed",
+            "confirmed_date": "2026-08-01",
+            "source_talk": "example.md",
+        }],
+        "improvement_goals": [],
+    }
+    raw = (json.dumps(database, indent=2) + "\n").encode()
+    database_path.write_bytes(raw)
+
+    rc, payload, error = _run_load_vault(
+        load_vault, tmp_path, monkeypatch, capsys
+    )
+
+    assert rc == 0
+    assert error == ""
+    assert payload["confirmed_intents"] == [{
+        "pattern": "delayed_self_introduction",
+        "intent": "deliberate",
+        "rule": "Use the two-phase introduction",
+        "note": "Speaker-confirmed",
+    }]
+    assert list(payload["confirmed_intents"][0]) == [
+        "pattern", "intent", "rule", "note",
+    ]
+    assert database_path.read_bytes() == raw
 
 
 @pytest.mark.parametrize(

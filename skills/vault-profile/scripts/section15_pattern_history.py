@@ -57,6 +57,10 @@ from pattern_opportunities import PatternOpportunityError  # noqa: E402
 from return_validation import (  # noqa: E402
     ReturnValidationError,
 )
+from tracking_database import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+    TrackingDatabaseError,
+    assess_tracking_database,
+)
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseIOError,
@@ -575,14 +579,33 @@ def _load_json(path: Path) -> object:
         ) from exc
 
 
+def _require_usable_tracking_database(tracking_database: object) -> None:
+    """Reject malformed or unreadable owner generations before config semantics."""
+    if not isinstance(tracking_database, Mapping):
+        raise Section15PatternHistoryError("tracking database must be a JSON object")
+    try:
+        assessment = assess_tracking_database(tracking_database)
+    except TrackingDatabaseError as exc:
+        raise Section15PatternHistoryError(
+            f"tracking database schema is invalid: {exc}"
+        ) from exc
+    if not assessment.usable:
+        raise Section15PatternHistoryError(
+            "tracking database has no usable prior state for this reader: "
+            + ", ".join(assessment.reason_codes)
+        )
+
+
 def _load_tracking_database(path: Path) -> dict[str, Any]:
     try:
         snapshot = snapshot_tracking_database(path)
-        return decode_json_object(snapshot)
+        tracking_database = decode_json_object(snapshot)
     except TrackingDatabaseIOError as exc:
         raise Section15PatternHistoryError(
             f"cannot load strict tracking database from {path}: {exc}"
         ) from exc
+    _require_usable_tracking_database(tracking_database)
+    return tracking_database
 
 
 def _pattern_profile_candidate(value: object) -> object:
@@ -598,8 +621,8 @@ def _validate_complete_tracking_cohort(
     evidence_freshness_assessor: EvidenceFreshnessAssessor,
 ) -> None:
     """Bind a write candidate to the complete live scoring cohort."""
-    if not isinstance(tracking_database, Mapping):
-        raise Section15PatternHistoryError("tracking database must be a JSON object")
+    _require_usable_tracking_database(tracking_database)
+    assert isinstance(tracking_database, Mapping)
     talks = tracking_database.get("talks")
     if not isinstance(talks, list):
         raise Section15PatternHistoryError(

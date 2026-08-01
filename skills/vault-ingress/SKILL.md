@@ -51,6 +51,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | [references/processing-rules.md](references/processing-rules.md) | Language policy, pattern migration logic, structured field rules |
 | [references/known-issues.md](references/known-issues.md) | Edge cases — wide-angle recordings, Whisper hallucination, non-speaker talks |
 | `skills/vault-ingress/scripts/persist-results.py` | Deterministically merge batch subagent returns into the tracking DB (Step 4) |
+| `skills/vault-ingress/scripts/migrate-tracking-database.py` | Owner-only tracking schema migration with hash precondition, backup, and atomic replacement (Step 1) |
 | `skills/vault-ingress/scripts/check-runtime.py` | Stdlib-only configured-interpreter and lane dependency probe |
 | `skills/vault-ingress/scripts/write-analysis.py` | Render per-talk `analyses/*.md` from persisted effective state authorized by the same batch returns (Step 4) |
 | `skills/vault-ingress/scripts/validate-returns.py` | Reject malformed schemas, statuses, scores, and catalog observations before either Step 4 writer runs |
@@ -98,8 +99,51 @@ files to shownotes entries.
    [references/schemas-db.md](references/schemas-db.md#owner-read-and-mutation-contract).
 2. **Path missing** — first-time setup: ask preferred location via `AskUserQuestion`,
    create the directory (and symlink if a custom path was chosen), then use a sole
-   `initialize_database` mutation. Review its dry-run and apply it with
-   `--expected-sha256 missing`; never create the JSON file directly.
+   `initialize_database` mutation. Include database `schema_version: 1`, config
+   `schema_version: 1`, and empty `talks`, `pptx_catalog`, `qr_codes`, `resources`,
+   `thumbnails`, `confirmed_intents`, and `improvement_goals` arrays. Review the
+   dry-run and apply it with `--expected-sha256 missing`; never create the JSON
+   file directly.
+
+**Schema gate** — vault-ingress owns the tracking database shape and migrations.
+The stdlib-only strict reader may use the host interpreter for the initial
+bootstrap read only. Read `config.python_path` from an existing database, or ask
+for the interpreter path without writing the database when that field is absent.
+Immediately re-read the same canonical path with that configured interpreter and
+require the same SHA-256; restart discovery if the generation changed. Use the
+configured interpreter for migration, queue commands, and every later toolkit
+command. Run the owner migration before any other database mutation:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/migrate-tracking-database.py" \
+  "{vault_root}/tracking-database.json"
+```
+
+Exit 0 writes one dry-run JSON report with `input_sha256`, source and target
+schema versions, `output_sha256`, `record_counts`, `changed`,
+`database_written: false`, `warnings`, and the deterministic backup path. A
+changed report authorizes this exact apply command:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/migrate-tracking-database.py" \
+  "{vault_root}/tracking-database.json" --apply --expected-sha256 "{input_sha256}"
+```
+
+Exit 0 from apply writes one JSON report with `database_written: true`, preserves
+the complete original bytes under `{vault_root}/.backups/`, and atomically
+installs database schema v1. A non-empty `warnings` array means replacement
+completed with a durability warning and must not be reported as a failed/no-write
+run. Exit 2 writes one error object to stdout plus a diagnostic to stderr and
+leaves the database unchanged. Recover or
+complete every active queue claim named by the diagnostic. For an unversioned
+database, use `queue-state.py ... inspect` to identify the lease and
+`queue-state.py ... recover` to close it. Those two commands accept schema 0;
+recovery changes only queue-lease/status state and does not stamp or migrate the
+database or talk record. The existing queue transition may advance a recovered
+legacy claim receipt from schema v1 to v2 while adding its release fields. Rerun
+migration dry-run, then apply its new exact digest. Do not copy a digest across
+runs. `queue-state.py ... normalize` and `queue-state.py ... claim` require
+database schema 1.
 
 **Config bootstrapping** — ask once per missing field and persist to the tracking
 database with expectation-bound `set_config` mutations. Re-read after every
@@ -119,6 +163,12 @@ runtime with the shipped stdlib-only checker:
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/check-runtime.py" \
   --lanes core,pdf,pptx
 ```
+
+All owner-authored tracking writes below require database schema 1 after this
+gate. Preserve every independent record version and validate the complete
+candidate before installing it. Only `migrate-tracking-database.py` may move
+schema 0 to schema 1; its hash precondition binds replacement to the exact input
+bytes as documented above.
 
 Core requires Python 3.10+ and PyYAML and is blocking. The PDF and PPTX lanes
 require pypdf and python-pptx respectively; a missing optional lane is reported
@@ -158,8 +208,8 @@ atomic and rejects a tracking-database symlink. See
 [references/schemas-db.md](references/schemas-db.md#shownotes-scanimport-report)
 for the complete report and mutation contract.
 
-**Scan for .pptx files:** Recursively glob `**/*.pptx` in `pptx_source_dir`; fuzzy-match
-to `talks[]` entries. Report counts, then persist each reviewed result with a
+**Scan for .pptx files:** Recursively glob `**/*.pptx` in `pptx_source_dir`;
+fuzzy-match to `talks[]` entries. Report counts, then persist each reviewed result with a
 `record_pptx` mutation and `schema_version: 1`, including the exact prior catalog record and, for a match,
 the talk's exact prior `pptx_path` expectation. See [references/schemas-db.md](references/schemas-db.md)
 for the PPTX extraction output schema (per-slide visual data, shape types, global design stats).
@@ -436,7 +486,8 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/persist-results.py" {vault_root}/tracking-database.json batch-returns.json`.
   The script first requires the return filenames to equal every live member of one
   run/batch claim; partial, extra, mixed-identity, duplicate, closed, or stranded
-  batches fail before migration or merge. It then merges each return into its matching
+  batches fail before merge. The script requires database schema v1 and current
+  independent record versions; Step 1 is the sole migration path. It then merges each return into its matching
   talk entry, promotes the declared queryable scalars to the talk top level, and
   rewrites the DB in place. Do NOT hand-copy fields one at a time — that is what
   dropped structured data before (it was computed and reached the analysis files
@@ -489,7 +540,7 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   interrupted batch is recovered with
   `queue-state.py ... recover --now <ISO> --stale-after-seconds <N>`, not by
   replaying whichever old return files happen to exist.
-  Future talk-record schemas are rejected before migration so this writer never
+  Future talk-record schemas are rejected before merge so this writer never
   stamps a newer record down to its current version. Pass the canonical tracking
   DB path: queue and persistence tools reject a final-component symlink before
   opening it, preventing atomic replacement from splitting the link and target.
@@ -613,10 +664,10 @@ Proceed immediately to Step 8.
 
 ## Step 8 — Verify Improvement Goals
 
-If the tracking DB has no `improvement_goals` in a verifiable state (none whose
-`status` is outside `achieved`/`retired`), skip this step silently. Otherwise, with the
-post-batch full-cohort pattern baseline current, pass the complete active-goal array
-and that structured baseline to:
+If the tracking DB has no active `improvement_goals` (none whose `status` is
+outside `achieved`/`retired`), skip this step silently. Otherwise, with the
+post-batch full-cohort pattern baseline current, pass the complete active-goal
+array and that structured baseline to:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-clarification/scripts/goal_generation_provenance.py" \
@@ -625,15 +676,32 @@ and that structured baseline to:
 
 The input object contains `goals` and `current_pattern_baseline`; stdout is one
 schema-v1 assessment per goal. Exit 1 is a malformed owner record or baseline:
-stop without changing any goal. Only a `comparable` assessment authorizes metric
-calculation. Record `needs_rebaseline` for a pattern-generation mismatch and
-`unverifiable` for a missing current baseline or legacy pattern goal; preserve its
-`current_value` and do not assign an outcome status. Pacing and independent goals
-remain comparable through their separate provenance lanes. Persist each assessment
-with a `patch_improvement_goal_verification` mutation whose `expect` object exactly
-matches every verification field being set. Dry-run the complete plan, review it,
-apply it against the reported input SHA, then re-read the database. The full write rubric
-is in [references/processing-rules.md](references/processing-rules.md) Improvement
+stop before constructing a mutation plan and change no goal. Require exactly one
+assessment for every active goal before calculating or writing anything. Only a
+`comparable` assessment authorizes metric calculation.
+
+Apply the assessment according to the stored goal record schema; never restamp a
+legacy goal:
+
+- A schema-v1 `antipattern` or `underuse` goal is report-only
+  `unverifiable`. Preserve the complete record and create no mutation for it.
+- A schema-v1 `pacing` or `other` goal may be comparable through its independent
+  provenance lane. For a comparable goal, patch only `current_value`,
+  `last_checked`, `checked_by`, and `status`; never add `verification_state` or
+  `verification_reasons`. A non-comparable assessment is report-only.
+- A schema-v2 goal uses the full verification contract. Persist
+  `needs_rebaseline` or `unverifiable` in `verification_state` with the exact
+  assessment reasons while preserving `current_value` and `status`. For a
+  comparable goal, persist the calculated metric, check metadata, outcome status,
+  `verification_state: "current"`, and empty `verification_reasons`.
+
+For every mutation, `expect` must contain exactly the fields being set with the
+values from the latest strict read. If no assessment authorizes a write, do not
+invoke the mutator. Otherwise dry-run the complete multi-goal plan as one
+transaction, review it, apply it against the reported input SHA, then re-read the
+database; one failed assessment or mutation precondition must never leave a
+partial goal update. The full write rubric is in
+[references/processing-rules.md](references/processing-rules.md) Improvement
 Goal Verification. Report current comparable outcomes first, then every goal that
 needs rebaselining or is unverifiable.
 

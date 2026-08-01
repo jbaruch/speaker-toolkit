@@ -40,10 +40,18 @@ joint effort — the skill brings rhetoric knowledge, the author brings topic ex
 The vault lives at `~/.claude/rhetoric-knowledge-vault/` (may be a symlink to a custom
 location). Load `tracking-database.json` with the strict owner reader at
 `{speaker_toolkit_root}/skills/vault-ingress/scripts/read-tracking-database.py` to
-get `config.vault_root`; never parse it directly. The reader is stdlib-only, so the
-host interpreter may bootstrap this first read. Afterward, use only the exact
-non-empty `config.python_path` for every toolkit command. Missing or unusable
-configuration stops this flow and invokes `Skill(skill: "vault-ingress")` at Step 1.
+get `config.vault_root`; never parse it directly. The stdlib-only reader may use
+the host interpreter for this one bootstrap read. It accepts legacy database
+schema 0 and current schema 1 without rewriting either. Stop on unsupported root
+or owner-record generations and route migration to `Skill(skill: "vault-ingress")`.
+
+Discover the exact non-empty `config.python_path`, then immediately re-read the
+same canonical database path with that interpreter and require the same SHA-256;
+restart discovery if the generation changed. Use only that configured interpreter
+for every later toolkit command. Missing or unusable configuration stops this flow
+and invokes vault-ingress Step 1. Read-only phases may continue on schema 0, but
+publishing and post-event writes require schema 1 before their paired network,
+deck, image, or tracking side effects. Route schema 0 through vault-ingress first.
 
 Load from vault root: `rhetoric-style-summary.md` (constitution — all patterns),
 `slide-design-spec.md` (visual rules), `speaker-profile.json` (structured data).

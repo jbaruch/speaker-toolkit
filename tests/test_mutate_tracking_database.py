@@ -18,8 +18,11 @@ def _write_json(path: Path, value: object) -> None:
 
 def _base_database() -> dict[str, object]:
     return {
-        "config": {},
-        "talks": [{"filename": "talk.md", "status": "processed"}],
+        "schema_version": 1,
+        "config": {"schema_version": 1},
+        "talks": [
+            {"schema_version": 5, "filename": "talk.md", "status": "processed"}
+        ],
         "pptx_catalog": [],
         "qr_codes": [],
         "resources": [],
@@ -212,7 +215,10 @@ def test_noop_plan_preserves_noncanonical_bytes_and_inode(
     tmp_path: Path,
 ) -> None:
     database_path = tmp_path / "tracking-database.json"
-    raw = b'{"config":{"speaker_name":"Ada"},"talks":[]}\n'
+    database = _base_database()
+    database["config"]["speaker_name"] = "Ada"
+    database["talks"] = []
+    raw = (json.dumps(database, separators=(",", ":")) + "\n").encode()
     database_path.write_bytes(raw)
     plan_path = tmp_path / "plan.json"
     _write_json(
@@ -394,6 +400,68 @@ def test_plan_strict_json_rejects_duplicate_keys(
         mutate_tracking_database.load_plan(plan_path)
 
 
+def test_plan_strict_json_rejects_non_roundtrippable_number(
+    mutate_tracking_database,
+    tmp_path: Path,
+) -> None:
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(
+        '{"schema_version":1,"mutations":[{"kind":"set_config",'
+        '"path":["ratio"],"expect":{"$missing":true},'
+        '"value":0.12345678901234567890123456789}]}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="cannot round-trip losslessly",
+    ):
+        mutate_tracking_database.load_plan(plan_path)
+
+
+@pytest.mark.parametrize(
+    ("raw", "message"),
+    [
+        pytest.param(
+            b'{"schema_version":1,"mutations":' + b"[" * 500 + b"{}"
+            + b"]" * 500 + b"}\n",
+            "maximum supported JSON nesting depth 200",
+            id="decoded-depth-limit",
+        ),
+        pytest.param(
+            b'{"schema_version":1,"mutations":' + b"[" * 10_000 + b"{}"
+            + b"]" * 10_000 + b"}\n",
+            "maximum supported JSON nesting depth 200",
+            id="decoder-recursion-limit",
+        ),
+        pytest.param(
+            b'{"schema_version":1,"mutations":[{"kind":"set_config",'
+            b'"path":["value"],"expect":{"$missing":true},'
+            b'"value":"\\ud800"}]}\n',
+            "unpaired UTF-16 surrogate",
+            id="unpaired-surrogate",
+        ),
+    ],
+)
+def test_plan_strict_json_rejects_unsafe_tree(
+    mutate_tracking_database,
+    tmp_path: Path,
+    raw: bytes,
+    message: str,
+) -> None:
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_bytes(raw)
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match=message,
+    ) as stopped:
+        mutate_tracking_database.load_plan(plan_path)
+
+    assert len(str(stopped.value)) < 1000
+    assert plan_path.read_bytes() == raw
+
+
 def test_talk_clarification_operation_accepts_only_structured_exact_fields(
     mutate_tracking_database,
 ) -> None:
@@ -438,17 +506,155 @@ def test_talk_clarification_operation_accepts_only_structured_exact_fields(
         )
 
 
+@pytest.mark.parametrize("schema_version", [1, 2, 3, 4])
+@pytest.mark.parametrize(
+    ("kind", "field", "value"),
+    [
+        ("update_talk_publishing", "shownotes_published", True),
+        (
+            "update_talk_clarification",
+            "humor_postmortem",
+            ["legacy talk must first be promoted by its domain writer"],
+        ),
+    ],
+)
+def test_talk_metadata_mutations_require_exact_current_talk_schema(
+    mutate_tracking_database,
+    schema_version: int,
+    kind: str,
+    field: str,
+    value: object,
+) -> None:
+    database = _base_database()
+    database["talks"][0]["schema_version"] = schema_version
+    original = copy.deepcopy(database)
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="must be exact current talk schema 5",
+    ):
+        mutate_tracking_database.build_candidate(
+            database,
+            [
+                {
+                    "kind": kind,
+                    "filename": "talk.md",
+                    "expect": {field: MISSING},
+                    "set": {field: value},
+                }
+            ],
+        )
+
+    assert database == original
+
+
+def _legacy_goal_for_mutation(kind: str) -> dict[str, object]:
+    goal = {
+        key: copy.deepcopy(value)
+        for key, value in _goal().items()
+        if key
+        not in {
+            "verification_state",
+            "verification_reasons",
+            "supersedes_goal_id",
+            "baseline_provenance",
+        }
+    }
+    goal["schema_version"] = 1
+    goal["kind"] = kind
+    goal["antipattern_id"] = "shortchanged" if kind == "antipattern" else None
+    return goal
+
+
+@pytest.mark.parametrize("kind", ["antipattern", "underuse"])
+def test_legacy_pattern_goals_are_report_only(
+    mutate_tracking_database,
+    kind: str,
+) -> None:
+    database = _base_database()
+    goal = _legacy_goal_for_mutation(kind)
+    database["improvement_goals"] = [goal]
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="historical schema-v1 .* skip and report",
+    ):
+        mutate_tracking_database.build_candidate(
+            database,
+            [
+                {
+                    "kind": "patch_improvement_goal_verification",
+                    "id": goal["id"],
+                    "expect": {"status": "active"},
+                    "set": {"status": "stalled"},
+                }
+            ],
+        )
+
+
+@pytest.mark.parametrize("kind", ["pacing", "other"])
+def test_legacy_independent_goals_allow_only_legacy_verification_fields(
+    mutate_tracking_database,
+    kind: str,
+) -> None:
+    database = _base_database()
+    goal = _legacy_goal_for_mutation(kind)
+    database["improvement_goals"] = [goal]
+    mutation = {
+        "kind": "patch_improvement_goal_verification",
+        "id": goal["id"],
+        "expect": {
+            "status": "active",
+            "current_value": "",
+            "last_checked": None,
+            "checked_by": None,
+        },
+        "set": {
+            "status": "improving",
+            "current_value": "3",
+            "last_checked": "2026-08-01",
+            "checked_by": "vault-ingress",
+        },
+    }
+
+    candidate, changes = mutate_tracking_database.build_candidate(
+        database,
+        [mutation],
+    )
+
+    updated = candidate["improvement_goals"][0]
+    assert updated["schema_version"] == 1
+    assert updated["status"] == "improving"
+    assert updated["current_value"] == "3"
+    assert "verification_state" not in updated
+    assert changes[0]["kind"] == "patch_improvement_goal_verification"
+
+    forbidden = copy.deepcopy(mutation)
+    forbidden["expect"] = {"verification_state": MISSING}
+    forbidden["set"] = {"verification_state": "current"}
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="unsupported fields.*verification_state",
+    ):
+        mutate_tracking_database.build_candidate(database, [forbidden])
+
+
 def test_legacy_goal_retirement_preserves_every_other_field(
     mutate_tracking_database,
 ) -> None:
     database = _base_database()
     legacy = {
-        "id": "legacy-goal",
-        "schema_version": 1,
-        "status": "active",
-        "legacy_note": {"must": "survive"},
-        "verification_reasons": ["historical"],
+        key: copy.deepcopy(value)
+        for key, value in _goal().items()
+        if key
+        not in {
+            "verification_state",
+            "verification_reasons",
+            "supersedes_goal_id",
+            "baseline_provenance",
+        }
     }
+    legacy.update({"id": "legacy-goal", "schema_version": 1})
     database["improvement_goals"] = [copy.deepcopy(legacy)]
 
     candidate, changes = mutate_tracking_database.build_candidate(
@@ -524,7 +730,7 @@ def test_json_preconditions_and_noops_are_type_sensitive(
     mutate_tracking_database,
 ) -> None:
     database = _base_database()
-    database["config"] = {"enabled": True}
+    database["config"] = {"schema_version": 1, "enabled": True}
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
         match="precondition failed",
@@ -594,7 +800,10 @@ def test_delete_missing_nested_config_does_not_materialize_parents(
         ],
     )
 
-    assert candidate["config"] == {"shownotes": {"enabled": True}}
+    assert candidate["config"] == {
+        "schema_version": 1,
+        "shownotes": {"enabled": True},
+    }
     assert len(changes) == 1
     assert changes[0]["identity"] == "shownotes.enabled"
 
@@ -619,7 +828,10 @@ def test_delete_missing_nested_config_preserves_exact_expectations(
         )
 
     database = _base_database()
-    database["config"] = {"shownotes": {"legacy": None}}
+    database["config"] = {
+        "schema_version": 1,
+        "shownotes": {"legacy": None},
+    }
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
         match=r"config\.shownotes\.legacy must be an object",

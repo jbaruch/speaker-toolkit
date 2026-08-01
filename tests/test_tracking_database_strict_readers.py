@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 import pytest
 
@@ -51,6 +52,63 @@ def _database(tmp_path: Path, raw: bytes) -> Path:
     path = tmp_path / "tracking-database.json"
     path.write_bytes(raw)
     return path
+
+
+def test_owner_reader_accepts_implicit_legacy_after_schema_assessment(
+    read_tracking_database,
+    tmp_path: Path,
+) -> None:
+    raw = b'{"config":{},"talks":[]}\n'
+    database = _database(tmp_path, raw)
+
+    report = read_tracking_database.execute(database)
+
+    assert report["ok"] is True
+    assert report["database"] == {"config": {}, "talks": []}
+    assert database.read_bytes() == raw
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "schema_version": 2,
+            "future_config": ["no old config/talks shape"],
+        },
+        {
+            "config": {},
+            "talks": [
+                {
+                    "schema_version": 6,
+                    "talk_id": "future-talk",
+                }
+            ],
+        },
+    ],
+)
+def test_owner_reader_rejects_no_usable_owner_state_without_database_output(
+    read_tracking_database,
+    tracking_database_io,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    payload: dict[str, object],
+) -> None:
+    raw = (json.dumps(payload) + "\n").encode()
+    database = _database(tmp_path, raw)
+
+    with pytest.raises(
+        tracking_database_io.TrackingDatabaseIOError,
+        match="no usable legacy/current owner state",
+    ):
+        read_tracking_database.execute(database)
+
+    result = read_tracking_database.main([str(database)])
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
+    assert result == 2
+    assert output["ok"] is False
+    assert "database" not in output
+    assert database.read_bytes() == raw
 
 
 @pytest.mark.parametrize(("raw", "message"), STRICT_INVALID_CASES)

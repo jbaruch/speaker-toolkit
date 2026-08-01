@@ -12,7 +12,7 @@ user_invocable: true
 
 # Vault Clarification — Interactive Session
 
-Process the steps below in order; each step's output informs the next, and the first-session infrastructure capture in Step 4 gates profile generation downstream. Do not skip ahead.
+Process the steps below in order; each step's output informs the next, and the first-session infrastructure capture in Step 5 gates profile generation downstream. Do not skip ahead.
 
 Resolve the absolute path of this loaded `SKILL.md`, then set
 `speaker_toolkit_root` to the plugin root two directories above the directory
@@ -61,7 +61,34 @@ nothing. The canonical command and operation contract is in
 | [references/humor-post-mortem.md](references/humor-post-mortem.md) | Protocol for grading humor effectiveness |
 | [references/blind-spot-moments.md](references/blind-spot-moments.md) | Protocol for capturing audience/room data |
 
-## Step 1 — Rhetoric Clarification
+## Step 1 — Verify Tracking Schema
+
+Run the vault-ingress owner migration in dry-run mode before reading session
+state:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/migrate-tracking-database.py" \
+  "{vault_root}/tracking-database.json"
+```
+
+Exit 0 writes one JSON object with `from_schema_version`,
+`to_schema_version`, `changed`, `database_written: false`, `input_sha256`, and
+`record_counts`. Continue only for `changed: false` at database schema v1. A
+legacy report requires the owner workflow; invoke `Skill(skill: "vault-ingress")`
+with the migration report as handoff context, then finish this clarification run.
+Exit 2 writes one error object to stdout plus an `ERROR:` diagnostic to stderr;
+stop without changing session state.
+
+Every tracking write in Steps 2–8 is current-only. Preserve database schema 1,
+config schema 1, talk schema 5, and every unrelated record. Stamp confirmed
+intents with schema 1 and new improvement goals with schema 2. Capture the exact
+input bytes immediately before each write, reject a changed generation, validate
+the complete current shape, and use a same-directory atomic replacement. Never
+turn this authorized writer into an implicit migrator.
+
+Proceed immediately to Step 2.
+
+## Step 2 — Rhetoric Clarification
 
 For each surprising, contradictory, or ambiguous observation, ask one topic at a time
 via `AskUserQuestion`: intentional vs accidental patterns, invisible context,
@@ -82,34 +109,34 @@ AskUserQuestion(
 )
 ```
 
-Proceed immediately to Step 2.
+Proceed immediately to Step 3.
 
-## Step 2 — Blind Spot Moments
+## Step 3 — Blind Spot Moments
 
 Follow [references/blind-spot-moments.md](references/blind-spot-moments.md) — ask about audience reactions,
 physical performance, and room context that transcripts cannot capture.
 
-Proceed immediately to Step 3.
+Proceed immediately to Step 4.
 
-## Step 3 — Humor Post-Mortem
+## Step 4 — Humor Post-Mortem
 
 Follow [references/humor-post-mortem.md](references/humor-post-mortem.md) — walk through detected humor beats,
 grade effectiveness, capture spontaneous material.
 
-Proceed immediately to Step 4.
+Proceed immediately to Step 5.
 
-## Step 4 — Speaker Infrastructure (first session only)
+## Step 5 — Speaker Infrastructure (first session only)
 
-If `config.clarification_sessions_completed` is already ≥ 1, skip this step — infrastructure was captured in the first session. Proceed immediately to Step 5.
+If `config.clarification_sessions_completed` is already ≥ 1, skip this step — infrastructure was captured in the first session. Proceed immediately to Step 6.
 
 Otherwise, ask for any empty config fields (`speaker_name` through `publishing_process.*`).
 See [references/schemas-config.md](references/schemas-config.md) for the full field list and questions to ask.
 Persist each confirmed answer with `set_config`, expecting the exact value observed
 by the latest strict read.
 
-Proceed immediately to Step 5.
+Proceed immediately to Step 6.
 
-## Step 5 — Structured Intent Capture
+## Step 6 — Structured Intent Capture
 
 Persist each confirmed intent with `upsert_confirmed_intent`, expecting either the
 exact existing record for that pattern or `{"$missing": true}`.
@@ -125,9 +152,9 @@ Example:
 ```
 See [references/schemas-config.md](references/schemas-config.md) for the full schema.
 
-Proceed immediately to Step 6.
+Proceed immediately to Step 7.
 
-## Step 6 — Set Improvement Goals
+## Step 7 — Set Improvement Goals
 
 Close the coaching loop. Review Section 15 of `rhetoric-style-summary.md` as narrative
 coaching context, plus any `regressed`/`stalled` goals from a prior session, then ask
@@ -189,17 +216,19 @@ Improvement Goal Verification.
 
 If Section 15 has no speaker-selected pattern target, or the validated profile has no
 non-empty matching raw-score-comparable current pattern cohort, say so and skip
-pattern goal-setting — proceed to Step 7. Independent pacing goals may still be
+pattern goal-setting — proceed to Step 8. Independent pacing goals may still be
 available.
 
-Proceed immediately to Step 7.
+Proceed immediately to Step 8.
 
-## Step 7 — Mark Session Complete
+## Step 8 — Mark Session Complete
 
 Using the latest strict read, persist
 `config.clarification_sessions_completed + 1` with `set_config`, expecting the
 exact prior integer. This counter gates profile generation (vault-profile skill
 requires >= 1).
+The owner mutation preserves `config.schema_version: 1` and every unrelated
+field.
 
 Finish here.
 

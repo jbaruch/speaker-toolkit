@@ -2,7 +2,7 @@
 
 ## Config Fields — Clarification Session Questions
 
-Fields below `template_skip_patterns` are asked during Step 4 (first session
+Fields below `template_skip_patterns` are asked during Step 5 (first session
 only) when empty. The question column shows what to ask the speaker.
 
 | Config field | Question |
@@ -74,8 +74,9 @@ artifact that closes the coaching loop: the speaker picks 1–2 focus areas, and
 later ingress run checks whether the targeted issue actually moved. Without it the
 system diagnoses but never verifies that the speaker acted.
 
-**Owner:** vault-clarification owns the record shape and migrations (it creates and
-retires goals during a session through `upsert_improvement_goal`). **Reader/updater:**
+**Artifact owner:** vault-ingress owns the tracking database, record shapes, and
+migrations. **Authorized writer:** vault-clarification creates and retires goals
+during a session through `upsert_improvement_goal`. **Reader/updater:**
 vault-ingress reads active goals and changes only the verification fields through
 `patch_improvement_goal_verification` (`status`, `current_value`,
 `last_checked`, `checked_by`, `verification_state`, `verification_reasons`) — never

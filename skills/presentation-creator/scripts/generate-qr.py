@@ -35,12 +35,12 @@ import datetime
 import io
 import json
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import sys
 import urllib.error
 import urllib.request
-from pathlib import Path
 
 try:
     import qrcode
@@ -65,6 +65,12 @@ VAULT_INGRESS_SCRIPTS = (
 if str(VAULT_INGRESS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(VAULT_INGRESS_SCRIPTS))
 
+from tracking_database import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+    QR_CODE_RECORD_SCHEMA_VERSION,
+    TrackingDatabaseError,
+    assess_tracking_database,
+    require_current_tracking_database,
+)
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseIOError,
@@ -83,7 +89,6 @@ QR_ERROR_CORRECTION = ERROR_CORRECT_M
 # QR placement: bottom-right, 2 inches wide, 0.3 inch margin from edges
 QR_WIDTH_INCHES = 2.0
 QR_MARGIN_INCHES = 0.3
-QR_CODE_RECORD_SCHEMA_VERSION = 1
 
 # Existing-QR detection (content-based, size-independent). A QR is a SQUARE
 # picture that is BOTH essentially two colors AND roughly balanced between them:
@@ -158,8 +163,9 @@ def write_tracking_db(tracking_db_snapshot, tracking_db):
     """Commit QR metadata against the generation loaded before QR work."""
     snapshot = _require_tracking_db_snapshot(tracking_db_snapshot)
     try:
+        require_current_tracking_database(tracking_db)
         return write_json_object(snapshot, tracking_db)
-    except TrackingDatabaseIOError as exc:
+    except (TrackingDatabaseError, TrackingDatabaseIOError) as exc:
         raise ValueError(f"cannot safely update tracking database: {exc}") from exc
 
 
@@ -856,6 +862,21 @@ def main():
         tracking_db,
         tracking_db_snapshot,
     ) = load_vault_config(vault_path, args.profile)
+    if tracking_db_snapshot is not None:
+        try:
+            database_assessment = assess_tracking_database(tracking_db)
+        except TrackingDatabaseError as exc:
+            raise SystemExit(f"ERROR: cannot use tracking database: {exc}") from exc
+        if not database_assessment.usable:
+            raise SystemExit(
+                "ERROR: tracking database has no usable prior state for this reader: "
+                + ", ".join(database_assessment.reason_codes)
+            )
+        if not args.dry_run and database_assessment.state != "current":
+            raise SystemExit(
+                "ERROR: QR persistence requires the current tracking schema; run "
+                "vault-ingress migration before generating the short link"
+            )
     qr_config = speaker_profile.get("publishing_process", {}).get("qr_code", {})
     if not args.dry_run and vault_present_at_start:
         try:

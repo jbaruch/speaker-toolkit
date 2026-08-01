@@ -49,6 +49,10 @@ from source_identity_matching import (
     known_event_aliases,
     titles_agree,
 )
+from tracking_database import (
+    TrackingDatabaseError,
+    assess_tracking_database,
+)
 from tracking_database_io import (
     TrackingDatabaseIOError,
     decode_json_object,
@@ -194,6 +198,27 @@ class VaultPreflight:
                 expected="object", actual=type(self.database).__name__,
             )
             return self.report(0)
+
+        try:
+            assessment = assess_tracking_database(self.database)
+        except TrackingDatabaseError as exc:
+            self.add(
+                "blocking",
+                "tracking_database_schema_invalid",
+                str(exc),
+                field="schema_version",
+            )
+        else:
+            if not assessment.usable:
+                self.add(
+                    "blocking",
+                    "tracking_database_schema_unsupported",
+                    "tracking database is not usable by this reader",
+                    field="schema_version",
+                    expected=assessment.as_dict()["accepted_schema_versions"],
+                    actual=assessment.schema_version,
+                )
+                return self.report(0)
 
         config = self.database.get("config", {})
         if isinstance(config, dict):
