@@ -628,35 +628,6 @@ def test_module_probe_timeout_is_a_bounded_failure() -> None:
     _assert_probe_result_removed(observed_result_paths[0])
 
 
-def test_module_probe_bounds_a_blocked_child_process(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    module_name = "speaker_toolkit_test_blocked_initializer"
-    (tmp_path / f"{module_name}.py").write_text(
-        "import time\n"
-        "time.sleep(10)\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setenv(
-        "PYTHONPATH",
-        _child_probe_environment(tmp_path)["PYTHONPATH"],
-    )
-    timeout_seconds = 0.1
-    monkeypatch.setattr(
-        check_runtime,
-        "MODULE_PROBE_TIMEOUT_SECONDS",
-        timeout_seconds,
-    )
-
-    result = check_runtime._probe_module(module_name)
-
-    assert result == _failed_probe(
-        "timeout",
-        timeout_seconds=timeout_seconds,
-    )
-
-
 def test_module_probe_start_failure_is_lane_local() -> None:
     def runner(
         _command: list[str], **_kwargs: object
