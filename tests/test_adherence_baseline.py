@@ -119,6 +119,32 @@ def test_builds_deterministic_global_snapshot_with_exact_batch_exclusion(
     }
 
 
+def test_builds_distinct_all_inclusive_current_cohort(adherence_baseline):
+    snapshot = adherence_baseline.build_current_cohort_baseline(
+        [_talk("first.md", 1), _talk("second.md", 2)],
+        as_of=AS_OF,
+        pattern_catalog_fingerprint=CATALOG,
+        pattern_scoring_schema_version=2,
+    )
+
+    assert snapshot["active_batch_excluded"] is False
+    assert snapshot["excluded_filenames"] == []
+    assert snapshot["scored_talk_count"] == 2
+    assert snapshot["pattern_score_sum"] == 3
+    assert snapshot["average_pattern_score"] == 1.5
+
+
+def test_full_cohort_shape_cannot_claim_exclusions(adherence_baseline):
+    snapshot = _build(adherence_baseline, [], selected=["active.md"])
+    snapshot["active_batch_excluded"] = False
+
+    with pytest.raises(
+        adherence_baseline.AdherenceBaselineError,
+        match=r"excluded_filenames must be \[\]",
+    ):
+        adherence_baseline.validate_adherence_baseline(snapshot)
+
+
 @pytest.mark.parametrize("missing_lane", ["promoted", "nested"])
 def test_current_generation_requires_both_score_lanes(
     adherence_baseline,
@@ -263,6 +289,24 @@ def test_current_generation_requires_present_reasons(adherence_baseline):
 
 
 @pytest.mark.parametrize(
+    "missing_field",
+    ["pattern_catalog_fingerprint", "pattern_scoring_schema_version"],
+)
+def test_current_generation_requires_complete_generation_identity(
+    adherence_baseline,
+    missing_field,
+):
+    talk = _talk("incomplete-current.md", 1)
+    talk.pop(missing_field)
+
+    with pytest.raises(
+        adherence_baseline.AdherenceBaselineError,
+        match=f"missing required identity fields .*{missing_field}",
+    ):
+        _build(adherence_baseline, [talk])
+
+
+@pytest.mark.parametrize(
     ("scores", "expected"),
     [
         ([1, 0, 0, 0, 0, 0, 0, 0], 0.12),
@@ -297,8 +341,8 @@ def test_zero_population_uses_zero_sum_and_null_average(adherence_baseline):
         ("scope", "mode", "scope must be 'global'"),
         (
             "active_batch_excluded",
-            False,
-            "active_batch_excluded must be true",
+            1,
+            "active_batch_excluded must be a boolean",
         ),
         (
             "eligible_statuses",

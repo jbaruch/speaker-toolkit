@@ -48,6 +48,7 @@ Usage:
     replaced atomically; a structured JSON summary is printed to stdout:
         {"persisted": <int>, "db_path": "<path>",
          "run_date": "<YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS+00:00>",
+         "current_adherence_baseline": {"active_batch_excluded": false, "...": "..."},
          "talks": [{"filename": "...", "status": "...", "promoted": ["..."],
                     "stamped_processed_date": <bool>,
                     "coerced_pattern_score": <bool>}]}
@@ -79,6 +80,10 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 
+from adherence_baseline import (
+    AdherenceBaselineError,
+    build_current_cohort_baseline,
+)
 from ingress_contract import (
     IngressContractError,
     TALK_SCHEMA_VERSION,
@@ -90,10 +95,11 @@ from return_validation import (
     ANALYSIS_STATUSES,
     CURRENT_PATTERN_SCORING_GENERATION_STATUS,
     IMAGE_SOURCE_GROUP,
+    LEGACY_QUEUE_CLAIM_SCHEMA_VERSION,
     LEGACY_RETURN_SCHEMA_VERSION,
     LEGACY_UNBASELINEABLE_SCORING_STATUS,
     PATTERN_SCORING_SCHEMA_VERSION,
-    QUEUE_CLAIM_SCHEMA_VERSION,
+    PREVIOUS_QUEUE_CLAIM_SCHEMA_VERSION,
     RETURN_SCHEMA_VERSION,
     SNAPSHOT_RETURN_SCHEMA_VERSIONS,
     STRUCTURED_FIELD_POLICIES,
@@ -355,7 +361,8 @@ def completion_timestamp(run_date):
 
 def close_queue_claim(talk, ret, run_date):
     claim = talk["_queue_claim"]
-    claim["schema_version"] = QUEUE_CLAIM_SCHEMA_VERSION
+    if claim.get("schema_version") == LEGACY_QUEUE_CLAIM_SCHEMA_VERSION:
+        claim["schema_version"] = PREVIOUS_QUEUE_CLAIM_SCHEMA_VERSION
     claim["state"] = "completed"
     claim["released_at"] = completion_timestamp(run_date)
     claim["release_reason"] = "return_persisted"
@@ -580,6 +587,15 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
                 (return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS or
                  not is_empty(ret[f]))):
             candidate[f] = copy.deepcopy(ret[f])
+    if (return_schema_version == RETURN_SCHEMA_VERSION and
+            "adherence_comparison" in ret):
+        candidate["adherence_comparison"] = copy.deepcopy(
+            ret["adherence_comparison"])
+    elif return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
+        # A v2 replay is archival prose, never an authenticated current
+        # comparison. Snapshot replacement therefore clears any stale v3
+        # comparison left by an earlier generation.
+        candidate.pop("adherence_comparison", None)
     # A single owner supplies one exact stamp for every member.  This prevents a
     # return's day-granular timestamp from defeating a second-resolution batch
     # stamp and keeps processed_date, queue release, and rendered provenance in
@@ -835,6 +851,25 @@ def main():
                             talk.get("pattern_scoring_generation_reasons", [])
                             if analysis_result else [])})
 
+    # This all-inclusive cohort is derived only after every member merged into
+    # the isolated in-memory candidate. It is intentionally distinct from the
+    # immutable preclaim snapshot carried by each claim (which excludes the
+    # active batch).
+    try:
+        current_adherence_baseline = build_current_cohort_baseline(
+            db["talks"],
+            as_of=completion_timestamp(run_date),
+            pattern_catalog_fingerprint=catalog.fingerprint,
+            pattern_scoring_schema_version=PATTERN_SCORING_SCHEMA_VERSION,
+        )
+    except AdherenceBaselineError as exc:
+        print(
+            "ERROR: cannot derive the post-batch current adherence cohort: "
+            f"{exc}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     try:
         atomic_write_json(db_path, db)
     except ValueError as exc:
@@ -845,6 +880,7 @@ def main():
                "schema_version": TALK_SCHEMA_VERSION, "migrated_records": migrated,
                "pattern_scoring_schema_version": PATTERN_SCORING_SCHEMA_VERSION,
                "pattern_catalog_fingerprint": catalog.fingerprint,
+               "current_adherence_baseline": current_adherence_baseline,
                "talks": summary}, sys.stdout, ensure_ascii=False)
     sys.stdout.write("\n")
 

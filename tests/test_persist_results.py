@@ -71,6 +71,10 @@ def _return(**overrides):
         },
     }
     ret.update(overrides)
+    if (ret.get("return_schema_version") == 3 and
+            "adherence_assessment" not in overrides and
+            "adherence_comparison" not in overrides):
+        ret["adherence_assessment"] = ""
     return ret
 
 
@@ -98,6 +102,43 @@ def _talk(**overrides):
     }
     talk.update(overrides)
     return talk
+
+
+def _adherence_baseline(persist_results, *, count=0, filenames=("talk.md",)):
+    return {
+        "schema_version": 1,
+        "as_of": "2026-07-31T18:00:00+00:00",
+        "scope": "global",
+        "active_batch_excluded": True,
+        "excluded_filenames": sorted(filenames),
+        "eligible_statuses": ["processed", "processed_partial"],
+        "pattern_scoring_generation_status": "current",
+        "pattern_scoring_generation_reasons": [],
+        "pattern_catalog_fingerprint": persist_results.load_catalog().fingerprint,
+        "pattern_scoring_schema_version": (
+            persist_results.PATTERN_SCORING_SCHEMA_VERSION),
+        "scored_talk_count": count,
+        "pattern_score_sum": count,
+        "average_pattern_score": 1.0 if count else None,
+    }
+
+
+def _v3_talk_and_return(persist_results, *, filename="talk.md"):
+    ret = _return(
+        filename=filename,
+        return_schema_version=3,
+        adherence_assessment="",
+    )
+    talk = _talk(filename=filename)
+    talk["_queue_claim"].update({
+        "schema_version": 3,
+        "required_return_schema_version": 3,
+        "adherence_baseline": _adherence_baseline(
+            persist_results,
+            filenames=(filename,),
+        ),
+    })
+    return talk, ret
 
 
 def _skipped_return(**overrides):
@@ -283,6 +324,51 @@ def test_v2_registered_maps_are_atomic_snapshots(persist_results, field):
     persist_results.merge_talk(talk, ret)
 
     assert talk["structured_data"][field] == {"current": {"value": 2}}
+
+
+@pytest.mark.parametrize(
+    ("claim_version", "return_version", "closed_version"),
+    [(1, 1, 2), (2, 2, 2), (3, 3, 3)],
+)
+def test_queue_claim_closure_preserves_the_version_matrix(
+        persist_results, claim_version, return_version, closed_version):
+    if claim_version == 3:
+        talk, ret = _v3_talk_and_return(persist_results)
+    else:
+        talk = _talk()
+        talk["_queue_claim"]["schema_version"] = claim_version
+        ret = _return(return_schema_version=return_version)
+
+    persist_results.merge_talk(
+        talk,
+        ret,
+        run_date="2026-07-31T18:05:00+00:00",
+        enforce_queue_claim=True,
+    )
+
+    claim = talk["_queue_claim"]
+    assert claim["schema_version"] == closed_version
+    assert claim["state"] == "completed"
+    assert claim["result_payload_sha256"] == \
+        persist_results.canonical_return_sha256(ret)
+
+
+def test_v2_snapshot_clears_stale_authenticated_adherence_comparison(
+        persist_results):
+    stale = {
+        "schema_version": 1,
+        "baseline": {"untrusted": "stale"},
+        "talk_pattern_score": 99,
+    }
+    talk = _talk(adherence_comparison=copy.deepcopy(stale))
+
+    persist_results.merge_talk(talk, _return(return_schema_version=2))
+
+    assert "adherence_comparison" not in talk
+
+    legacy = _talk(adherence_comparison=copy.deepcopy(stale))
+    persist_results.merge_talk(legacy, _return(return_schema_version=1))
+    assert legacy["adherence_comparison"] == stale
 
 
 def test_v2_atomic_snapshot_matches_rendered_analysis(
@@ -1673,11 +1759,109 @@ def test_catalog_generation_is_stamped_and_processing_claim_is_closed(
     assert stored["pattern_catalog_fingerprint"] == report["pattern_catalog_fingerprint"]
     assert stored["_queue_claim"]["state"] == "completed"
     assert stored["_queue_claim"]["schema_version"] == \
-        persist_results.QUEUE_CLAIM_SCHEMA_VERSION
+        persist_results.PREVIOUS_QUEUE_CLAIM_SCHEMA_VERSION
     assert stored["_queue_claim"]["result_status"] == "processed"
     assert stored["_queue_claim"]["release_reason"] == "return_persisted"
     assert stored["_queue_claim"]["result_payload_sha256"] == \
         persist_results.canonical_return_sha256(_return())
+
+
+def test_v3_member_baseline_mismatch_rejects_whole_batch_without_write(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    filenames = ("a.md", "b.md")
+    baseline = _adherence_baseline(
+        persist_results, filenames=filenames)
+    talks = []
+    returns = []
+    for filename in filenames:
+        talk, ret = _v3_talk_and_return(
+            persist_results, filename=filename)
+        talk["_queue_claim"]["adherence_baseline"] = copy.deepcopy(baseline)
+        talks.append(talk)
+        returns.append(ret)
+    talks[1]["_queue_claim"]["adherence_baseline"].update({
+        "scored_talk_count": 1,
+        "pattern_score_sum": 1,
+        "average_pattern_score": 1.0,
+    })
+    original = {"talks": talks}
+    db.write_text(json.dumps(original))
+    before = db.read_bytes()
+    batch.write_text(json.dumps(returns))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "share one immutable adherence_baseline" in result.stderr
+    assert db.read_bytes() == before
+
+
+def test_post_batch_stdout_uses_complete_replacement_cohort_and_keeps_claim(
+        persist_results, tmp_path):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    talk, ret = _v3_talk_and_return(persist_results)
+    claim_baseline = copy.deepcopy(talk["_queue_claim"]["adherence_baseline"])
+    talk.update({
+        "pattern_score": 99,
+        "pattern_observations": {
+            **talk["pattern_observations"],
+            "pattern_score": 99,
+        },
+        "pattern_scoring_generation_status": "current",
+        "pattern_scoring_generation_reasons": [],
+        "pattern_scoring_schema_version": (
+            persist_results.PATTERN_SCORING_SCHEMA_VERSION),
+        "pattern_catalog_fingerprint": persist_results.load_catalog().fingerprint,
+    })
+    prior = _talk(filename="prior.md", status="processed")
+    prior.pop("_queue_claim")
+    prior.update({
+        "pattern_score": 3,
+        "pattern_observations": {
+            **prior["pattern_observations"],
+            "pattern_score": 3,
+        },
+        "pattern_scoring_generation_status": "current",
+        "pattern_scoring_generation_reasons": [],
+        "pattern_scoring_schema_version": (
+            persist_results.PATTERN_SCORING_SCHEMA_VERSION),
+        "pattern_catalog_fingerprint": persist_results.load_catalog().fingerprint,
+    })
+    db.write_text(json.dumps({"talks": [talk, prior]}))
+    batch.write_text(json.dumps([ret]))
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            persist_results.__file__,
+            str(db),
+            str(batch),
+            "--run-date",
+            "2026-07-31T18:05:00+00:00",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    cohort = report["current_adherence_baseline"]
+    assert cohort["active_batch_excluded"] is False
+    assert cohort["excluded_filenames"] == []
+    assert cohort["as_of"] == "2026-07-31T18:05:00+00:00"
+    assert cohort["scored_talk_count"] == 2
+    assert cohort["pattern_score_sum"] == 4
+    assert cohort["average_pattern_score"] == 2.0
+    stored = json.loads(db.read_text())["talks"][0]
+    assert stored["pattern_score"] == 1
+    assert stored["_queue_claim"]["adherence_baseline"] == claim_baseline
 
 
 def test_missing_status_rejects_the_whole_batch_without_migrating_db(

@@ -18,10 +18,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
-from typing import NoReturn
+from typing import NoReturn, cast
 
 from yaml import YAMLError
 
+from adherence_baseline import (
+    AdherenceBaselineError,
+    validate_adherence_baseline,
+)
 from catalog_io import (
     DuplicateYAMLKeyError,
     EvidenceSourceGroups,
@@ -171,7 +175,8 @@ SUBSTANTIVE_PROSE_FIELDS = frozenset({
 LANGUAGE_RE = re.compile(r"^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$")
 VIDEO_SOURCE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 VIDEO_EXTRACTION_SCHEMA_VERSION = 3
-QUEUE_CLAIM_SCHEMA_VERSION = 2
+QUEUE_CLAIM_SCHEMA_VERSION = 3
+PREVIOUS_QUEUE_CLAIM_SCHEMA_VERSION = 2
 LEGACY_QUEUE_CLAIM_SCHEMA_VERSION = 1
 LEGACY_RETURN_SCHEMA_VERSION = 1
 PREVIOUS_RETURN_SCHEMA_VERSION = 2
@@ -186,6 +191,8 @@ SNAPSHOT_RETURN_SCHEMA_VERSIONS = frozenset({
     RETURN_SCHEMA_VERSION,
 })
 PATTERN_SCORING_SCHEMA_VERSION = 3
+ADHERENCE_COMPARISON_SCHEMA_VERSION = 1
+MIN_ADHERENCE_BASELINE_TALKS = 10
 CURRENT_PATTERN_SCORING_GENERATION_STATUS = "current"
 LEGACY_UNBASELINEABLE_SCORING_STATUS = "legacy_unbaselineable"
 UNSCORED_PATTERN_SCORING_GENERATION_STATUS = "not_applicable"
@@ -194,7 +201,7 @@ RETURN_QUEUE_CLAIM_FIELDS = frozenset({
     "batch_id",
     "reprocess_generation",
 })
-ACTIVE_QUEUE_CLAIM_FIELDS = frozenset({
+BASE_ACTIVE_QUEUE_CLAIM_FIELDS = frozenset({
     "schema_version",
     "run_id",
     "batch_id",
@@ -203,14 +210,31 @@ ACTIVE_QUEUE_CLAIM_FIELDS = frozenset({
     "reprocess_generation",
     "state",
 })
-COMPLETED_QUEUE_CLAIM_FIELDS = ACTIVE_QUEUE_CLAIM_FIELDS | frozenset({
+ACTIVE_QUEUE_CLAIM_FIELDS = BASE_ACTIVE_QUEUE_CLAIM_FIELDS | frozenset({
+    "required_return_schema_version",
+    "adherence_baseline",
+})
+COMPLETED_QUEUE_CLAIM_SUFFIX_FIELDS = frozenset({
     "released_at",
     "release_reason",
     "result_payload_sha256",
     "result_status",
 })
+COMPLETED_QUEUE_CLAIM_FIELDS = (
+    ACTIVE_QUEUE_CLAIM_FIELDS | COMPLETED_QUEUE_CLAIM_SUFFIX_FIELDS)
+PREVIOUS_COMPLETED_QUEUE_CLAIM_FIELDS = (
+    BASE_ACTIVE_QUEUE_CLAIM_FIELDS | COMPLETED_QUEUE_CLAIM_SUFFIX_FIELDS)
 LEGACY_COMPLETED_QUEUE_CLAIM_FIELDS = (
-    COMPLETED_QUEUE_CLAIM_FIELDS - {"result_payload_sha256"}
+    BASE_ACTIVE_QUEUE_CLAIM_FIELDS |
+    (COMPLETED_QUEUE_CLAIM_SUFFIX_FIELDS - {"result_payload_sha256"})
+)
+ADHERENCE_COMPARISON_FIELDS = frozenset({
+    "schema_version",
+    "baseline",
+    "talk_pattern_score",
+})
+_ADHERENCE_SENTENCE_TERMINATOR = re.compile(
+    r"[.!?]+(?:[\"')\]]+)?(?=\s|$)"
 )
 CLAIMABLE_PREVIOUS_STATUSES = frozenset({
     "pending",
@@ -1226,6 +1250,82 @@ def _validate_score(observations: dict, pattern_count: int, antipattern_count: i
                 f"pattern_score.{field} is {value}, but the detection arrays require {wanted}")
 
 
+def resolved_return_pattern_score(observations: dict) -> int:
+    """Return the already-validated integer score from one observation block."""
+    raw = observations["pattern_score"]
+    if isinstance(raw, dict):
+        return raw["score"]
+    return raw
+
+
+def _validate_adherence_comparison(
+        ret: dict, return_schema_version: int, talk_pattern_score: int) -> None:
+    """Validate the standalone half of the claim-bound adherence contract."""
+    comparison = ret.get("adherence_comparison")
+    assessment = ret.get("adherence_assessment")
+    if return_schema_version != RETURN_SCHEMA_VERSION:
+        if "adherence_comparison" in ret:
+            raise ReturnValidationError(
+                "adherence_comparison is supported only by return schema v3")
+        return
+    if comparison is None:
+        if assessment != "":
+            raise ReturnValidationError(
+                "return-schema v3 without adherence_comparison must use the "
+                "exact empty adherence_assessment sentinel")
+        return
+    if not isinstance(comparison, dict):
+        raise ReturnValidationError(
+            "adherence_comparison must be an object when present")
+    _validate_exact_fields(
+        comparison,
+        ADHERENCE_COMPARISON_FIELDS,
+        "adherence_comparison",
+    )
+    comparison_version = comparison.get("schema_version")
+    if (isinstance(comparison_version, bool) or
+            not isinstance(comparison_version, int) or
+            comparison_version != ADHERENCE_COMPARISON_SCHEMA_VERSION):
+        raise ReturnValidationError(
+            "adherence_comparison.schema_version must be "
+            f"the integer {ADHERENCE_COMPARISON_SCHEMA_VERSION}")
+    try:
+        baseline = validate_adherence_baseline(comparison.get("baseline"))
+    except AdherenceBaselineError as exc:
+        raise ReturnValidationError(
+            f"adherence_comparison.baseline is invalid: {exc}") from exc
+    baseline_count = cast(int, baseline["scored_talk_count"])
+    if baseline_count < MIN_ADHERENCE_BASELINE_TALKS:
+        raise ReturnValidationError(
+            "adherence_comparison is forbidden below the minimum baseline "
+            f"population of {MIN_ADHERENCE_BASELINE_TALKS} talks")
+    comparison_score = comparison.get("talk_pattern_score")
+    if (isinstance(comparison_score, bool) or
+            not isinstance(comparison_score, int) or
+            comparison_score != talk_pattern_score):
+        raise ReturnValidationError(
+            "adherence_comparison.talk_pattern_score must be an integer equal "
+            "to the validated "
+            f"pattern_observations.pattern_score {talk_pattern_score}")
+    if not isinstance(assessment, str) or not assessment.strip():
+        raise ReturnValidationError(
+            "return-schema v3 with an eligible adherence baseline requires a "
+            "substantive adherence_assessment")
+    assessment_text = assessment.strip()
+    endings = list(_ADHERENCE_SENTENCE_TERMINATOR.finditer(assessment_text))
+    sentence_count = len(endings)
+    # Deliberately mechanical: every .?! cluster followed by whitespace/end is
+    # a boundary, including abbreviation periods. Authors should spell out an
+    # abbreviation that would otherwise create a false boundary. The final
+    # sentence must carry terminal punctuation.
+    if (sentence_count not in range(2, 5) or not endings or
+            endings[-1].end() != len(assessment_text)):
+        raise ReturnValidationError(
+            "adherence_assessment must contain exactly 2-4 punctuation-"
+            "terminated sentences; periods in abbreviations count as sentence "
+            "boundaries")
+
+
 def _validate_per_slide_visual(structured: dict) -> None:
     if "per_slide_visual" not in structured:
         return
@@ -1585,16 +1685,23 @@ def _validate_stored_claim(expected: dict, filename: str) -> None:
     if (isinstance(version, bool) or not isinstance(version, int)
             or version not in {
                 LEGACY_QUEUE_CLAIM_SCHEMA_VERSION,
+                PREVIOUS_QUEUE_CLAIM_SCHEMA_VERSION,
                 QUEUE_CLAIM_SCHEMA_VERSION,
             }):
         raise ReturnValidationError(
             f"{filename} queue claim schema_version must be "
-            f"{LEGACY_QUEUE_CLAIM_SCHEMA_VERSION} or {QUEUE_CLAIM_SCHEMA_VERSION}, "
+            f"one of {sorted({LEGACY_QUEUE_CLAIM_SCHEMA_VERSION, PREVIOUS_QUEUE_CLAIM_SCHEMA_VERSION, QUEUE_CLAIM_SCHEMA_VERSION})}, "
             f"got {version!r}")
     if state == "claimed":
-        expected_fields = ACTIVE_QUEUE_CLAIM_FIELDS
+        expected_fields = (
+            ACTIVE_QUEUE_CLAIM_FIELDS
+            if version == QUEUE_CLAIM_SCHEMA_VERSION
+            else BASE_ACTIVE_QUEUE_CLAIM_FIELDS
+        )
     elif version == LEGACY_QUEUE_CLAIM_SCHEMA_VERSION:
         expected_fields = LEGACY_COMPLETED_QUEUE_CLAIM_FIELDS
+    elif version == PREVIOUS_QUEUE_CLAIM_SCHEMA_VERSION:
+        expected_fields = PREVIOUS_COMPLETED_QUEUE_CLAIM_FIELDS
     else:
         expected_fields = COMPLETED_QUEUE_CLAIM_FIELDS
     label = f"{filename} queue claim"
@@ -1610,6 +1717,33 @@ def _validate_stored_claim(expected: dict, filename: str) -> None:
         raise ReturnValidationError(
             f"{filename} queue claim claimed_at must be a timezone-aware timestamp, "
             "not a bare date")
+    if version == QUEUE_CLAIM_SCHEMA_VERSION:
+        if expected.get("claimed_at") != normalized_claimed_at:
+            raise ReturnValidationError(
+                f"{filename} schema-v3 queue claim claimed_at must use canonical "
+                f"UTC whole-second form {normalized_claimed_at!r}")
+        required_return = expected.get("required_return_schema_version")
+        if (isinstance(required_return, bool) or
+                not isinstance(required_return, int) or
+                required_return != RETURN_SCHEMA_VERSION):
+            raise ReturnValidationError(
+                f"{filename} schema-v3 queue claim must require return schema "
+                f"version {RETURN_SCHEMA_VERSION}, got {required_return!r}")
+        try:
+            baseline = validate_adherence_baseline(
+                expected.get("adherence_baseline"))
+        except AdherenceBaselineError as exc:
+            raise ReturnValidationError(
+                f"{filename} queue claim adherence_baseline is invalid: {exc}"
+            ) from exc
+        if baseline["as_of"] != normalized_claimed_at:
+            raise ReturnValidationError(
+                f"{filename} queue claim adherence_baseline.as_of must equal "
+                "claimed_at")
+        if baseline["active_batch_excluded"] is not True:
+            raise ReturnValidationError(
+                f"{filename} schema-v3 queue claim adherence_baseline must "
+                "exclude the active batch")
     previous = expected.get("previous_status")
     if previous not in CLAIMABLE_PREVIOUS_STATUSES:
         raise ReturnValidationError(
@@ -1632,7 +1766,10 @@ def _validate_stored_claim(expected: dict, filename: str) -> None:
         raise ReturnValidationError(
             f"{filename} completed queue claim has invalid result_status "
             f"{expected.get('result_status')!r}")
-    if version == QUEUE_CLAIM_SCHEMA_VERSION:
+    if version in {
+            PREVIOUS_QUEUE_CLAIM_SCHEMA_VERSION,
+            QUEUE_CLAIM_SCHEMA_VERSION,
+            }:
         receipt = expected.get("result_payload_sha256")
         if (not isinstance(receipt, str)
                 or re.fullmatch(r"[0-9a-f]{64}", receipt) is None):
@@ -1732,19 +1869,71 @@ def validate_claim_against_talk(
             f"{filename} has no {required}; refusing an unclaimed or replayed return")
     _validate_stored_claim(expected, filename)
     return_schema_version = resolve_return_schema_version(ret)
-    if (expected.get("schema_version") in {
+    claim_schema_version = expected.get("schema_version")
+    if (claim_schema_version in {
             LEGACY_QUEUE_CLAIM_SCHEMA_VERSION,
-            QUEUE_CLAIM_SCHEMA_VERSION,
+            PREVIOUS_QUEUE_CLAIM_SCHEMA_VERSION,
             } and return_schema_version not in {
                 LEGACY_RETURN_SCHEMA_VERSION,
                 PREVIOUS_RETURN_SCHEMA_VERSION,
             }):
         raise ReturnValidationError(
             f"{filename} queue claim schema_version "
-            f"{expected.get('schema_version')} cannot authorize return schema "
-            f"version {return_schema_version}; finish this legacy claim with a "
-            "v1/v2 return and wait for claim-v3 integration in #157 before "
-            "issuing v3 work")
+            f"{claim_schema_version} cannot authorize return schema version "
+            f"{return_schema_version}; legacy claims authorize only v1/v2 "
+            "returns")
+    if (claim_schema_version == QUEUE_CLAIM_SCHEMA_VERSION and
+            return_schema_version !=
+            expected.get("required_return_schema_version")):
+        raise ReturnValidationError(
+            f"{filename} queue claim schema_version {claim_schema_version} "
+            f"requires return schema version "
+            f"{expected.get('required_return_schema_version')}, got "
+            f"{return_schema_version}")
+    if claim_schema_version == QUEUE_CLAIM_SCHEMA_VERSION:
+        baseline = validate_adherence_baseline(
+            expected["adherence_baseline"])
+        current_catalog = load_catalog()
+        if (baseline["pattern_catalog_fingerprint"] !=
+                current_catalog.fingerprint or
+                baseline["pattern_scoring_schema_version"] !=
+                PATTERN_SCORING_SCHEMA_VERSION):
+            raise ReturnValidationError(
+                f"{filename} schema-v3 claim baseline generation no longer "
+                "matches the current catalog/scoring contract; recover and "
+                "reclaim the batch before accepting returns")
+        if ret.get("status") in ANALYSIS_STATUSES:
+            comparison = ret.get("adherence_comparison")
+            baseline_count = cast(int, baseline["scored_talk_count"])
+            if baseline_count >= MIN_ADHERENCE_BASELINE_TALKS:
+                if not isinstance(comparison, dict):
+                    raise ReturnValidationError(
+                        f"{filename} schema-v3 claim has an eligible adherence "
+                        "baseline and requires adherence_comparison")
+                if comparison.get("baseline") != baseline:
+                    raise ReturnValidationError(
+                        f"{filename} adherence_comparison.baseline does not "
+                        "exactly match the immutable queue-claim baseline")
+                observations = ret.get("pattern_observations")
+                if not isinstance(observations, dict):
+                    raise ReturnValidationError(
+                        f"{filename} return has no pattern observations for "
+                        "adherence comparison")
+                score = resolved_return_pattern_score(observations)
+                comparison_score = comparison.get("talk_pattern_score")
+                if (isinstance(comparison_score, bool) or
+                        not isinstance(comparison_score, int) or
+                        comparison_score != score):
+                    raise ReturnValidationError(
+                        f"{filename} adherence comparison talk score does not "
+                        "match the validated return score")
+            elif (comparison is not None or
+                  ret.get("adherence_assessment") != ""):
+                raise ReturnValidationError(
+                    f"{filename} schema-v3 claim baseline has fewer than "
+                    f"{MIN_ADHERENCE_BASELINE_TALKS} talks; return the exact "
+                    "empty adherence_assessment sentinel and omit "
+                    "adherence_comparison")
     talk_generation = talk.get("reprocess_generation")
     if (isinstance(talk_generation, bool) or not isinstance(talk_generation, int)
             or talk_generation < 1):
@@ -1768,7 +1957,10 @@ def validate_claim_against_talk(
             f"{filename} has an active claim but status is {talk.get('status')!r}, "
             "expected 'reprocessing-inflight'")
     if expected.get("state") == "completed":
-        if expected.get("schema_version") != QUEUE_CLAIM_SCHEMA_VERSION:
+        if expected.get("schema_version") not in {
+                PREVIOUS_QUEUE_CLAIM_SCHEMA_VERSION,
+                QUEUE_CLAIM_SCHEMA_VERSION,
+                }:
             raise ReturnValidationError(
                 f"{filename} completed queue claim schema_version "
                 f"{expected.get('schema_version')!r} predates the return-payload "
@@ -1814,6 +2006,21 @@ def validate_persisted_catalog_generation(
     if ret.get("status") not in ANALYSIS_STATUSES:
         return
     filename = ret.get("filename", "<unknown>")
+    if resolve_return_schema_version(ret) == RETURN_SCHEMA_VERSION:
+        if talk.get("adherence_assessment") != ret.get("adherence_assessment"):
+            raise ReturnValidationError(
+                f"{filename} persisted adherence_assessment diverges from the "
+                "receipt-bound return")
+        if "adherence_comparison" in ret:
+            if talk.get("adherence_comparison") != \
+                    ret["adherence_comparison"]:
+                raise ReturnValidationError(
+                    f"{filename} persisted adherence_comparison diverges from "
+                    "the receipt-bound return")
+        elif "adherence_comparison" in talk:
+            raise ReturnValidationError(
+                f"{filename} persisted analysis retained an adherence_comparison "
+                "for a below-threshold return")
     assessment = assess_scoring_generation(ret, catalog)
     observations = talk.get("pattern_observations")
     if not isinstance(observations, dict):
@@ -1979,6 +2186,30 @@ def validate_batch_claims_against_talks(
             f"{required_state!r} before this write; closed or stranded member(s): "
             f"{wrong_states}")
 
+    member_claims = [talk["_queue_claim"] for talk in members]
+    claim_versions = {claim.get("schema_version") for claim in member_claims}
+    if QUEUE_CLAIM_SCHEMA_VERSION in claim_versions:
+        if claim_versions != {QUEUE_CLAIM_SCHEMA_VERSION}:
+            raise ReturnValidationError(
+                "queue batch cannot mix schema-v3 claims with legacy claim "
+                f"versions: {sorted(claim_versions, key=repr)}")
+        claimed_at_values = {claim.get("claimed_at") for claim in member_claims}
+        if len(claimed_at_values) != 1:
+            raise ReturnValidationError(
+                "schema-v3 queue batch must share one claimed_at timestamp")
+        canonical_baseline = member_claims[0].get("adherence_baseline")
+        if any(claim.get("adherence_baseline") != canonical_baseline
+               for claim in member_claims):
+            raise ReturnValidationError(
+                "schema-v3 queue batch must share one immutable "
+                "adherence_baseline")
+        if (not isinstance(canonical_baseline, dict) or
+                canonical_baseline.get("excluded_filenames") !=
+                sorted(expected_names)):
+            raise ReturnValidationError(
+                "schema-v3 adherence_baseline.excluded_filenames must equal "
+                f"the exact queue batch {sorted(expected_names)}")
+
     returns_by_name = {ret["filename"]: ret for ret in returns}
     for filename in sorted(expected_names):
         validate_claim_against_talk(
@@ -2116,6 +2347,11 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
             "pattern ids cannot be both detected and not_evaluable: "
             f"{sorted(unavailable_overlap)}")
     _validate_score(observations, len(patterns), len(antipatterns))
+    _validate_adherence_comparison(
+        ret,
+        return_schema_version,
+        resolved_return_pattern_score(observations),
+    )
     _validate_catalog_feedback(ret.get("catalog_feedback"))
 
 

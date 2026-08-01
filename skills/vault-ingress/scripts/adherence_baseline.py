@@ -158,7 +158,15 @@ def _matches_generation(
     raw_fingerprint = talk.get("pattern_catalog_fingerprint", _MISSING)
     raw_version = talk.get("pattern_scoring_schema_version", _MISSING)
     if raw_fingerprint is _MISSING or raw_version is _MISSING:
-        return False
+        missing = []
+        if raw_fingerprint is _MISSING:
+            missing.append("pattern_catalog_fingerprint")
+        if raw_version is _MISSING:
+            missing.append("pattern_scoring_schema_version")
+        raise AdherenceBaselineError(
+            f"{filename} claims the current scoring generation but is missing "
+            f"required identity fields {missing}"
+        )
     stored_fingerprint = _require_catalog_fingerprint(
         raw_fingerprint, f"{filename}.pattern_catalog_fingerprint"
     )
@@ -232,21 +240,16 @@ def _average_pattern_score(score_sum: int, talk_count: int) -> float | None:
     return result
 
 
-def build_adherence_baseline(
+def _build_adherence_baseline(
     talks: object,
     *,
     selected_filenames: object,
     as_of: object,
     pattern_catalog_fingerprint: object,
     pattern_scoring_schema_version: object,
+    active_batch_excluded: bool,
 ) -> dict[str, object]:
-    """Build one deterministic global baseline excluding the active batch.
-
-    Only processed or partially processed talks stamped with the requested
-    catalog fingerprint and scoring schema participate.  Selected filenames
-    are compared exactly and excluded before generation or score inspection so
-    an active batch can never include its own previous results.
-    """
+    """Build one deterministic global baseline with explicit cohort scope."""
     normalized_as_of = normalize_as_of(as_of)
     exact_fingerprint = _require_catalog_fingerprint(
         pattern_catalog_fingerprint, "pattern_catalog_fingerprint"
@@ -257,6 +260,10 @@ def build_adherence_baseline(
         minimum=1,
     )
     excluded_filenames = _selected_filenames(selected_filenames)
+    if not active_batch_excluded and excluded_filenames:
+        raise AdherenceBaselineError(
+            "a full current-cohort baseline cannot exclude filenames"
+        )
     excluded = frozenset(excluded_filenames)
 
     scored_talk_count = 0
@@ -288,7 +295,7 @@ def build_adherence_baseline(
         "schema_version": ADHERENCE_BASELINE_SCHEMA_VERSION,
         "as_of": normalized_as_of,
         "scope": ADHERENCE_BASELINE_SCOPE,
-        "active_batch_excluded": True,
+        "active_batch_excluded": active_batch_excluded,
         "excluded_filenames": excluded_filenames,
         "eligible_statuses": list(ELIGIBLE_STATUSES),
         "pattern_scoring_generation_status": (
@@ -304,6 +311,47 @@ def build_adherence_baseline(
         ),
     }
     return validate_adherence_baseline(snapshot)
+
+
+def build_adherence_baseline(
+    talks: object,
+    *,
+    selected_filenames: object,
+    as_of: object,
+    pattern_catalog_fingerprint: object,
+    pattern_scoring_schema_version: object,
+) -> dict[str, object]:
+    """Build a claim-time baseline excluding the exact active batch.
+
+    Exclusion happens before generation or score inspection, so a reparse can
+    never compare a talk with its own previous result.
+    """
+    return _build_adherence_baseline(
+        talks,
+        selected_filenames=selected_filenames,
+        as_of=as_of,
+        pattern_catalog_fingerprint=pattern_catalog_fingerprint,
+        pattern_scoring_schema_version=pattern_scoring_schema_version,
+        active_batch_excluded=True,
+    )
+
+
+def build_current_cohort_baseline(
+    talks: object,
+    *,
+    as_of: object,
+    pattern_catalog_fingerprint: object,
+    pattern_scoring_schema_version: object,
+) -> dict[str, object]:
+    """Build an all-inclusive post-batch snapshot of the current cohort."""
+    return _build_adherence_baseline(
+        talks,
+        selected_filenames=(),
+        as_of=as_of,
+        pattern_catalog_fingerprint=pattern_catalog_fingerprint,
+        pattern_scoring_schema_version=pattern_scoring_schema_version,
+        active_batch_excluded=False,
+    )
 
 
 def validate_adherence_baseline(snapshot: object) -> dict[str, object]:
@@ -334,8 +382,11 @@ def validate_adherence_baseline(snapshot: object) -> dict[str, object]:
         )
     if snapshot["scope"] != ADHERENCE_BASELINE_SCOPE:
         raise AdherenceBaselineError(f"scope must be {ADHERENCE_BASELINE_SCOPE!r}")
-    if snapshot["active_batch_excluded"] is not True:
-        raise AdherenceBaselineError("active_batch_excluded must be true")
+    active_batch_excluded = snapshot["active_batch_excluded"]
+    if not isinstance(active_batch_excluded, bool):
+        raise AdherenceBaselineError(
+            "active_batch_excluded must be a boolean"
+        )
 
     raw_excluded = snapshot["excluded_filenames"]
     if not isinstance(raw_excluded, list):
@@ -344,6 +395,10 @@ def validate_adherence_baseline(snapshot: object) -> dict[str, object]:
     if raw_excluded != excluded_filenames:
         raise AdherenceBaselineError(
             "excluded_filenames must be sorted in canonical filename order"
+        )
+    if not active_batch_excluded and excluded_filenames:
+        raise AdherenceBaselineError(
+            "excluded_filenames must be [] when active_batch_excluded is false"
         )
     if snapshot["eligible_statuses"] != list(ELIGIBLE_STATUSES):
         raise AdherenceBaselineError(
@@ -406,7 +461,7 @@ def validate_adherence_baseline(snapshot: object) -> dict[str, object]:
         "schema_version": schema_version,
         "as_of": normalized_as_of,
         "scope": ADHERENCE_BASELINE_SCOPE,
-        "active_batch_excluded": True,
+        "active_batch_excluded": active_batch_excluded,
         "excluded_filenames": excluded_filenames,
         "eligible_statuses": list(ELIGIBLE_STATUSES),
         "pattern_scoring_generation_status": (

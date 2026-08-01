@@ -69,6 +69,10 @@ def _return(**overrides):
         },
     }
     value.update(overrides)
+    if (value.get("return_schema_version") == 3 and
+            "adherence_assessment" not in overrides and
+            "adherence_comparison" not in overrides):
+        value["adherence_assessment"] = ""
     return value
 
 
@@ -269,6 +273,57 @@ def _claimed_talk(ret, **overrides):
     return talk
 
 
+def _adherence_baseline(return_validation, *, count, filenames=("talk.md",)):
+    return {
+        "schema_version": 1,
+        "as_of": "2026-07-31T18:00:00+00:00",
+        "scope": "global",
+        "active_batch_excluded": True,
+        "excluded_filenames": sorted(filenames),
+        "eligible_statuses": ["processed", "processed_partial"],
+        "pattern_scoring_generation_status": "current",
+        "pattern_scoring_generation_reasons": [],
+        "pattern_catalog_fingerprint": return_validation.load_catalog().fingerprint,
+        "pattern_scoring_schema_version": (
+            return_validation.PATTERN_SCORING_SCHEMA_VERSION),
+        "scored_talk_count": count,
+        "pattern_score_sum": count,
+        "average_pattern_score": 1.0 if count else None,
+    }
+
+
+def _v3_claimed_talk(return_validation, ret, *, baseline_count):
+    talk = _claimed_talk(ret)
+    talk["_queue_claim"].update({
+        "schema_version": 3,
+        "required_return_schema_version": 3,
+        "adherence_baseline": _adherence_baseline(
+            return_validation,
+            count=baseline_count,
+            filenames=(ret["filename"],),
+        ),
+    })
+    return talk
+
+
+def _with_adherence_comparison(return_validation, ret, *, count=10):
+    baseline = _adherence_baseline(
+        return_validation,
+        count=count,
+        filenames=(ret["filename"],),
+    )
+    ret["adherence_assessment"] = (
+        "This talk matches the established pattern baseline. "
+        "Its validated score remains within the expected range."
+    )
+    ret["adherence_comparison"] = {
+        "schema_version": 1,
+        "baseline": baseline,
+        "talk_pattern_score": ret["pattern_observations"]["pattern_score"]["score"],
+    }
+    return ret
+
+
 def test_valid_return_resolves_the_catalog_fingerprint(return_validation):
     catalog = return_validation.validate_batch([_return()])
     assert len(catalog.entries) == 111
@@ -283,6 +338,8 @@ def test_return_schema_reads_every_supported_version(
         del value["return_schema_version"]
     else:
         value["return_schema_version"] = version
+    if version == 3:
+        value["adherence_assessment"] = ""
 
     return_validation.validate_batch([value])
 
@@ -306,6 +363,162 @@ def test_legacy_claim_cannot_authorize_v3_return_before_claim_v3(
             return_validation.ReturnValidationError,
             match="cannot authorize return schema version 3"):
         return_validation.validate_claim_against_talk(talk, value)
+
+
+@pytest.mark.parametrize("claim_version", [1, 2])
+@pytest.mark.parametrize("return_version", [1, 2])
+def test_legacy_claims_authorize_only_legacy_returns(
+        return_validation, claim_version, return_version):
+    value = _return(return_schema_version=return_version)
+    talk = _claimed_talk(value)
+    talk["_queue_claim"]["schema_version"] = claim_version
+
+    return_validation.validate_batch([value])
+    return_validation.validate_claim_against_talk(talk, value)
+
+
+@pytest.mark.parametrize("return_version", [1, 2])
+def test_v3_claim_requires_its_exact_return_version(
+        return_validation, return_version):
+    value = _return(return_schema_version=return_version)
+    talk = _v3_claimed_talk(
+        return_validation, value, baseline_count=9)
+
+    with pytest.raises(
+            return_validation.ReturnValidationError,
+            match="requires return schema version 3"):
+        return_validation.validate_claim_against_talk(talk, value)
+
+
+def test_v3_below_threshold_requires_exact_empty_sentinel(return_validation):
+    value = _return(return_schema_version=3)
+    talk = _v3_claimed_talk(
+        return_validation, value, baseline_count=9)
+
+    return_validation.validate_batch([value])
+    return_validation.validate_claim_against_talk(talk, value)
+
+    value["adherence_assessment"] = "Not empty. Still forbidden."
+    assert "without adherence_comparison" in _error(return_validation, value)
+
+
+def test_v3_threshold_requires_exact_claim_baseline_and_score(return_validation):
+    value = _with_adherence_comparison(
+        return_validation, _return(return_schema_version=3))
+    talk = _v3_claimed_talk(
+        return_validation, value, baseline_count=10)
+
+    return_validation.validate_batch([value])
+    return_validation.validate_claim_against_talk(talk, value)
+
+    mismatched = copy.deepcopy(value)
+    mismatched["adherence_comparison"]["baseline"]["excluded_filenames"] = [
+        "other.md"]
+    return_validation.validate_batch([mismatched])
+    with pytest.raises(
+            return_validation.ReturnValidationError,
+            match="does not exactly match"):
+        return_validation.validate_claim_against_talk(talk, mismatched)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("schema_version", True),
+        ("talk_pattern_score", True),
+        ("talk_pattern_score", 0.0),
+    ],
+)
+def test_adherence_comparison_rejects_json_numeric_lookalikes(
+        return_validation, field, value):
+    ret = _with_adherence_comparison(
+        return_validation, _return(return_schema_version=3))
+    ret["adherence_comparison"][field] = value
+
+    assert field in _error(return_validation, ret)
+
+
+@pytest.mark.parametrize(
+    "assessment",
+    [
+        "Only one sentence.",
+        "One. Two. Three. Four. Five.",
+        "One sentence ends. The second lacks punctuation",
+    ],
+)
+def test_adherence_comparison_enforces_two_to_four_sentences(
+        return_validation, assessment):
+    ret = _with_adherence_comparison(
+        return_validation, _return(return_schema_version=3))
+    ret["adherence_assessment"] = assessment
+
+    assert "exactly 2-4" in _error(return_validation, ret)
+
+
+def test_v3_batch_members_share_one_exact_preclaim_snapshot(return_validation):
+    returns = [
+        _return(filename=filename, return_schema_version=3)
+        for filename in ("a.md", "b.md")
+    ]
+    baseline = _adherence_baseline(
+        return_validation,
+        count=9,
+        filenames=("a.md", "b.md"),
+    )
+    talks = []
+    for ret in returns:
+        talk = _v3_claimed_talk(
+            return_validation, ret, baseline_count=9)
+        talk["_queue_claim"]["adherence_baseline"] = copy.deepcopy(baseline)
+        talks.append(talk)
+
+    return_validation.validate_batch(returns)
+    return_validation.validate_batch_claims_against_talks(
+        talks, returns, required_state="claimed")
+
+
+@pytest.mark.parametrize("claim_version", [2, 3])
+def test_completed_receipted_claims_replay_the_exact_return(
+        return_validation, claim_version):
+    if claim_version == 3:
+        ret = _return(return_schema_version=3)
+        talk = _v3_claimed_talk(
+            return_validation, ret, baseline_count=9)
+    else:
+        ret = _return(return_schema_version=2)
+        talk = _claimed_talk(ret)
+        talk["_queue_claim"]["schema_version"] = 2
+    talk["status"] = ret["status"]
+    talk["_queue_claim"].update({
+        "state": "completed",
+        "released_at": "2026-07-31T18:05:00+00:00",
+        "release_reason": "return_persisted",
+        "result_status": ret["status"],
+        "result_payload_sha256": return_validation.canonical_return_sha256(ret),
+    })
+
+    return_validation.validate_batch([ret])
+    return_validation.validate_claim_against_talk(
+        talk, ret, require_completed=True)
+
+
+def test_completed_receiptless_v1_claim_cannot_authorize_analysis_replay(
+        return_validation):
+    ret = _return(return_schema_version=1)
+    talk = _claimed_talk(ret)
+    talk["status"] = ret["status"]
+    talk["_queue_claim"].update({
+        "state": "completed",
+        "released_at": "2026-07-31T18:05:00+00:00",
+        "release_reason": "return_persisted",
+        "result_status": ret["status"],
+    })
+
+    with pytest.raises(
+            return_validation.ReturnValidationError,
+            match="predates the return-payload receipt"):
+        return_validation.validate_claim_against_talk(
+            talk, ret, require_completed=True)
 
 
 def test_trusted_video_return_requires_complete_manifest_and_promoted_path(

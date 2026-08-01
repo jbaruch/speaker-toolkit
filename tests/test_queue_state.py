@@ -4,7 +4,7 @@ All timestamps are injected and every fixture is local. The CLI never reaches a
 network or reads subagent returns.
 """
 
-import importlib.util
+import copy
 import json
 import os
 import subprocess
@@ -22,16 +22,6 @@ SCRIPT = (
     / "queue-state.py"
 )
 NOW = "2026-07-31T18:00:00+00:00"
-
-
-@pytest.fixture(scope="session")
-def queue_state():
-    spec = importlib.util.spec_from_file_location("queue_state", SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["queue_state"] = module
-    spec.loader.exec_module(module)
-    return module
 
 
 def _talk(video_id, *, status="pending", filename=None, video=True) -> dict[str, object]:
@@ -237,6 +227,44 @@ def test_claim_is_idempotent_for_an_existing_run_and_batch(tmp_path):
     assert path.read_bytes() == first_bytes
 
 
+def test_new_claim_is_v3_with_one_immutable_batch_baseline(tmp_path):
+    talks = [_talk("eg6gqvUFh6Q"), _talk("iPYc7LCH608")]
+    path = _write_db(tmp_path, talks)
+
+    result = _claim(path, limit=2)
+
+    assert result.returncode == 0, result.stderr
+    claims = json.loads(result.stdout)["claimed"]
+    assert {claim["schema_version"] for claim in claims} == {3}
+    assert {claim["required_return_schema_version"] for claim in claims} == {3}
+    assert claims[0]["adherence_baseline"] == claims[1]["adherence_baseline"]
+    baseline = claims[0]["adherence_baseline"]
+    assert baseline["as_of"] == NOW
+    assert baseline["excluded_filenames"] == sorted(
+        talk["filename"] for talk in talks)
+
+
+def test_claim_baseline_failure_is_copy_on_write(tmp_path):
+    malformed = _talk("eg6gqvUFh6Q", status="processed")
+    malformed.update({
+        "pattern_scoring_generation_status": "current",
+        "pattern_scoring_generation_reasons": [],
+        "pattern_score": 1,
+        "pattern_observations": {"pattern_score": 1},
+    })
+    path = _write_db(tmp_path, [malformed, _talk("iPYc7LCH608")])
+    before = path.read_bytes()
+
+    result = _claim(
+        path,
+        filenames=("playlist-iPYc7LCH608.md",),
+    )
+
+    assert result.returncode == 2
+    assert "missing required identity fields" in result.stderr
+    assert path.read_bytes() == before
+
+
 def test_same_run_and_batch_reclaims_a_stale_recovered_generation(tmp_path):
     path = _write_db(
         tmp_path,
@@ -250,6 +278,7 @@ def test_same_run_and_batch_reclaims_a_stale_recovered_generation(tmp_path):
         "--now", "2026-07-31T17:00:00+00:00",
     )
     assert first.returncode == 0, first.stderr
+    first_claim = json.loads(first.stdout)["claimed"][0]
     recovered = _run(
         path,
         "recover",
@@ -275,17 +304,16 @@ def test_same_run_and_batch_reclaims_a_stale_recovered_generation(tmp_path):
     assert talk["status"] == "reprocessing-inflight"
     assert talk["reprocess_generation"] == 2
     assert talk["_queue_claim"]["reprocess_generation"] == 2
-    assert talk["_queue_claim_history"] == [{
-        "schema_version": 2,
-        "run_id": "reparse",
-        "batch_id": "25",
-        "claimed_at": "2026-07-31T17:00:00+00:00",
-        "previous_status": "needs-reprocessing",
-        "reprocess_generation": 1,
-        "state": "stale_recovered",
-        "released_at": "2026-07-31T18:00:00+00:00",
-        "release_reason": "lease_expired",
-    }]
+    archived = talk["_queue_claim_history"][0]
+    assert archived["schema_version"] == 3
+    assert archived["adherence_baseline"] == first_claim["adherence_baseline"]
+    assert archived["state"] == "stale_recovered"
+    assert archived["released_at"] == "2026-07-31T18:00:00+00:00"
+    assert archived["release_reason"] == "lease_expired"
+    assert talk["_queue_claim"]["adherence_baseline"]["as_of"] == \
+        "2026-07-31T18:01:00+00:00"
+    assert (talk["_queue_claim"]["adherence_baseline"] !=
+            archived["adherence_baseline"])
 
     retried_bytes = path.read_bytes()
     replay = _run(
@@ -301,6 +329,75 @@ def test_same_run_and_batch_reclaims_a_stale_recovered_generation(tmp_path):
     assert len(replay_payload["claimed"]) == 1
     assert replay_payload["claimed"][0]["reprocess_generation"] == 2
     assert path.read_bytes() == retried_bytes
+
+
+def test_v3_batch_epoch_can_span_current_and_history_after_member_reclaim(
+        tmp_path):
+    path = _write_db(
+        tmp_path,
+        [_talk("eg6gqvUFh6Q"), _talk("iPYc7LCH608")],
+    )
+    claimed = _claim(path, run_id="old-run", batch_id="old-batch", limit=2)
+    assert claimed.returncode == 0, claimed.stderr
+    database = _read_db(path)
+    for talk in database["talks"]:
+        talk["status"] = "processed"
+        talk["_queue_claim"].update({
+            "state": "completed",
+            "released_at": "2026-07-31T18:05:00+00:00",
+            "release_reason": "return_persisted",
+            "result_status": "processed",
+            "result_payload_sha256": "0" * 64,
+        })
+
+    reclaimed = database["talks"][0]
+    old_claim = copy.deepcopy(reclaimed["_queue_claim"])
+    reclaimed["_queue_claim_history"] = [old_claim]
+    new_claim = copy.deepcopy(old_claim)
+    for field in (
+            "released_at", "release_reason", "result_status",
+            "result_payload_sha256"):
+        new_claim.pop(field)
+    new_claim.update({
+        "run_id": "new-run",
+        "batch_id": "new-batch",
+        "claimed_at": "2026-07-31T19:00:00+00:00",
+        "reprocess_generation": 2,
+        "state": "claimed",
+    })
+    new_claim["adherence_baseline"]["as_of"] = new_claim["claimed_at"]
+    new_claim["adherence_baseline"]["excluded_filenames"] = [
+        reclaimed["filename"]]
+    reclaimed["_queue_claim"] = new_claim
+    reclaimed["reprocess_generation"] = 2
+    reclaimed["status"] = "reprocessing-inflight"
+
+    path.write_text(json.dumps(database))
+    result = _run(path, "inspect", "--run-id", "new-run")
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_v3_current_batch_cannot_split_claimed_at(tmp_path):
+    path = _write_db(
+        tmp_path,
+        [_talk("eg6gqvUFh6Q"), _talk("iPYc7LCH608")],
+    )
+    claimed = _claim(path, run_id="run", batch_id="batch", limit=2)
+    assert claimed.returncode == 0, claimed.stderr
+    database = _read_db(path)
+    second_claim = database["talks"][1]["_queue_claim"]
+    second_claim["claimed_at"] = "2026-07-31T18:00:01+00:00"
+    second_claim["adherence_baseline"]["as_of"] = second_claim["claimed_at"]
+
+    path.write_text(json.dumps(database))
+    before = path.read_bytes()
+
+    result = _run(path, "inspect", "--run-id", "run")
+
+    assert result.returncode == 2
+    assert "do not share one claimed_at" in result.stderr
+    assert path.read_bytes() == before
 
 
 def test_claim_is_idempotent_for_a_completed_same_run_and_batch(tmp_path):
