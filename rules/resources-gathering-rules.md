@@ -15,9 +15,9 @@ manually scan the outline first — the script handles URL detection, repo
 matching, book patterns, RFC citations, and tool mentions consistently.
 Manual scanning misses items and introduces inconsistency.
 
-```bash
-python3 skills/presentation-creator/scripts/extract-resources.py outline.yaml
-```
+Use the installed-root, configured-interpreter command in
+`skills/presentation-creator/references/phase6-publishing.md`; do not duplicate
+or improvise its invocation here.
 
 ## 2. Speaker Review is Mandatory
 
@@ -43,10 +43,7 @@ higher in the review list and flag them as "from Coda section."
 
 `resources.json` lives in the talk working directory alongside
 `outline.yaml`. It is talk-specific, not vault-level. Path:
-
-```
-{presentations-dir}/{conference}/{year}/{talk-slug}/resources.json
-```
+`{presentations-dir}/{conference}/{year}/{talk-slug}/resources.json`.
 
 ## 5. Shownotes Integration
 
@@ -63,22 +60,15 @@ adds resources manually, check for duplicates before appending.
 
 ## 7. Tracking Database
 
-After resources are approved, prepare this complete `resources[]` record:
+After resources are approved, prepare a complete `resources[]` record with
+exactly these fields:
 
-```json
-{
-  "schema_version": 1,
-  "talk_slug": "...",
-  "item_count": 12,
-  "category_breakdown": {
-    "urls": 5,
-    "repos": 1,
-    "tools": 3,
-    "books": 2,
-    "rfcs": 1
-  }
-}
-```
+- `schema_version`: exact integer `1`.
+- `talk_slug`: non-empty string without leading or trailing whitespace.
+- `item_count`: exact non-negative integer.
+- `category_breakdown`: object mapping non-empty category names without leading
+  or trailing whitespace to exact non-negative integer counts. Use `urls`,
+  `repos`, `tools`, `books`, and `rfcs` for the standard categories.
 
 `item_count` must equal the sum of the non-negative integer category counts.
 Persist the record only with the ingress owner's `upsert_resource` mutation,

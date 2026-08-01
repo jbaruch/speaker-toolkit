@@ -678,11 +678,21 @@ def _apply_set_config(
     if not isinstance(config, dict):
         raise TrackingDatabaseMutationError("database config must be an object")
     parent = config
+    label = "config." + ".".join(path)
     for offset, part in enumerate(path[:-1]):
-        child = parent.get(part)
-        if child is None and part not in parent:
+        if part not in parent:
+            if delete:
+                _expect_value(
+                    exists=False,
+                    actual=None,
+                    expected=mutation["expect"],
+                    label=label,
+                )
+                return
             child = {}
             parent[part] = child
+        else:
+            child = parent[part]
         if not isinstance(child, dict):
             prefix = ".".join(path[: offset + 1])
             raise TrackingDatabaseMutationError(f"config.{prefix} must be an object")
@@ -690,7 +700,6 @@ def _apply_set_config(
     leaf = path[-1]
     exists = leaf in parent
     actual = parent.get(leaf)
-    label = "config." + ".".join(path)
     _expect_value(exists=exists, actual=actual, expected=mutation["expect"], label=label)
     before: object = actual if exists else MISSING_MARKER
     if delete:

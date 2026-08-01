@@ -1,10 +1,12 @@
 """Tests for generate-qr.py — QR generation (no network calls)."""
 
+import json
 import os
 
 from PIL import Image
 from pptx import Presentation
 from pptx.util import Inches
+import pytest
 
 from conftest import make_deck
 
@@ -153,6 +155,158 @@ def test_tracking_db_semantic_noop_preserves_raw_bytes_and_inode(
     assert result.installed is False
     assert path.read_bytes() == raw
     assert path.stat().st_ino == snapshot.generation.inode
+
+
+@pytest.mark.parametrize("mode", ["png", "deck"])
+def test_main_existing_vault_without_database_stops_before_side_effects(
+    generate_qr,
+    tmp_path,
+    monkeypatch,
+    capsys,
+    mode,
+):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    output = tmp_path / "talk-qr.png"
+    deck = tmp_path / "talk.pptx"
+    arguments = ["generate-qr.py"]
+    if mode == "png":
+        arguments.extend(["--png-only", "--output", str(output)])
+    else:
+        deck.write_bytes(b"unchanged deck")
+        arguments.append(str(deck))
+    arguments.extend(
+        [
+            "--talk-slug",
+            "talk",
+            "--shownotes-url",
+            "https://example.com/talk",
+            "--vault",
+            str(vault),
+        ]
+    )
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("QR side effect ran before tracking DB validation")
+
+    monkeypatch.setattr(generate_qr.sys, "argv", arguments)
+    monkeypatch.setattr(generate_qr, "resolve_short_url", forbidden)
+    monkeypatch.setattr(generate_qr, "generate_qr_png", forbidden)
+    monkeypatch.setattr(generate_qr, "Presentation", forbidden)
+    monkeypatch.setattr(generate_qr, "insert_qr_via_powerpoint", forbidden)
+
+    with pytest.raises(SystemExit) as exc_info:
+        generate_qr.main()
+
+    assert exc_info.value.code == 1
+    assert "tracking-database.json is missing" in capsys.readouterr().err
+    assert not output.exists()
+    if mode == "deck":
+        assert deck.read_bytes() == b"unchanged deck"
+
+
+def test_main_dry_run_allows_existing_vault_without_database(
+    generate_qr,
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("dry run performed a write")
+
+    monkeypatch.setattr(
+        generate_qr.sys,
+        "argv",
+        [
+            "generate-qr.py",
+            "--png-only",
+            "--talk-slug",
+            "talk",
+            "--short-url",
+            "https://example.com/talk",
+            "--vault",
+            str(vault),
+            "--dry-run",
+        ],
+    )
+    monkeypatch.setattr(generate_qr, "generate_qr_png", forbidden)
+    monkeypatch.setattr(generate_qr, "write_tracking_db", forbidden)
+
+    generate_qr.main()
+
+    assert "DRY RUN: would save QR" in capsys.readouterr().out
+
+
+def test_main_invalid_background_stops_before_url_resolution(
+    generate_qr,
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("URL resolution ran before local validation")
+
+    monkeypatch.setattr(
+        generate_qr.sys,
+        "argv",
+        [
+            "generate-qr.py",
+            "--png-only",
+            "--talk-slug",
+            "talk",
+            "--shownotes-url",
+            "https://example.com/talk",
+            "--vault",
+            str(tmp_path / "missing-vault"),
+            "--bg-color",
+            "not-rgb",
+        ],
+    )
+    monkeypatch.setattr(generate_qr, "resolve_short_url", forbidden)
+
+    with pytest.raises(SystemExit) as exc_info:
+        generate_qr.main()
+
+    assert exc_info.value.code == 1
+    assert "--bg-color must be R,G,B" in capsys.readouterr().out
+
+
+def test_main_valid_snapshot_generates_png_and_persists_metadata(
+    generate_qr,
+    tmp_path,
+    monkeypatch,
+):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    database_path = vault / "tracking-database.json"
+    database_path.write_text(
+        json.dumps({"config": {}, "talks": []}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        generate_qr.sys,
+        "argv",
+        [
+            "generate-qr.py",
+            "--png-only",
+            "--talk-slug",
+            "talk",
+            "--short-url",
+            "https://example.com/talk",
+            "--vault",
+            str(vault),
+        ],
+    )
+
+    generate_qr.main()
+
+    assert (tmp_path / "talk-qr.png").is_file()
+    database = json.loads(database_path.read_text(encoding="utf-8"))
+    assert database["qr_codes"][0]["talk_slug"] == "talk"
 
 
 def test_resolve_slide_bg_rgb_none_for_plain_deck(generate_qr, tmp_path):

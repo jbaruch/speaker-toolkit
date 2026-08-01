@@ -142,15 +142,23 @@ def load_vault_config(vault_path, profile_path=None):
     return speaker_profile, secrets, tracking_db, tracking_db_snapshot
 
 
-def write_tracking_db(tracking_db_snapshot, tracking_db):
-    """Commit QR metadata against the generation loaded before QR work."""
+def _require_tracking_db_snapshot(
+    tracking_db_snapshot: object,
+) -> TrackingDatabaseSnapshot:
+    """Return the loaded snapshot or reject a vault that cannot be persisted."""
     if not isinstance(tracking_db_snapshot, TrackingDatabaseSnapshot):
         raise ValueError(
             "tracking-database.json is missing; initialize it through "
             "vault-ingress mutate-tracking-database.py before generating a QR"
         )
+    return tracking_db_snapshot
+
+
+def write_tracking_db(tracking_db_snapshot, tracking_db):
+    """Commit QR metadata against the generation loaded before QR work."""
+    snapshot = _require_tracking_db_snapshot(tracking_db_snapshot)
     try:
-        return write_json_object(tracking_db_snapshot, tracking_db)
+        return write_json_object(snapshot, tracking_db)
     except TrackingDatabaseIOError as exc:
         raise ValueError(f"cannot safely update tracking database: {exc}") from exc
 
@@ -820,10 +828,26 @@ def main():
         print(f"ERROR: Deck file not found: {args.deck}")
         sys.exit(1)
 
+    # Validate local inputs before URL shortening can create or retarget a link.
+    explicit_bg = None
+    if args.bg_color:
+        try:
+            parts = [int(x.strip()) for x in args.bg_color.split(",")]
+            if len(parts) != 3 or not all(0 <= x <= 255 for x in parts):
+                raise ValueError
+            explicit_bg = tuple(parts)
+        except ValueError:
+            print(
+                "ERROR: --bg-color must be R,G,B with values 0-255 "
+                f"(got: {args.bg_color})"
+            )
+            sys.exit(1)
+
     # Determine vault path
     vault_path = args.vault
     if not vault_path:
         vault_path = os.path.expanduser("~/.claude/rhetoric-knowledge-vault")
+    vault_present_at_start = os.path.isdir(vault_path)
 
     # Load config
     (
@@ -833,6 +857,12 @@ def main():
         tracking_db_snapshot,
     ) = load_vault_config(vault_path, args.profile)
     qr_config = speaker_profile.get("publishing_process", {}).get("qr_code", {})
+    if not args.dry_run and vault_present_at_start:
+        try:
+            _require_tracking_db_snapshot(tracking_db_snapshot)
+        except ValueError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
 
     # Determine the URL to encode in the QR
     if args.short_url:
@@ -858,18 +888,6 @@ def main():
         )
 
     print(f"QR will encode: {qr_url}")
-
-    # Parse --bg-color if provided
-    explicit_bg = None
-    if args.bg_color:
-        try:
-            parts = [int(x.strip()) for x in args.bg_color.split(",")]
-            if len(parts) != 3 or not all(0 <= x <= 255 for x in parts):
-                raise ValueError
-            explicit_bg = tuple(parts)
-        except ValueError:
-            print(f"ERROR: --bg-color must be R,G,B with values 0-255 (got: {args.bg_color})")
-            sys.exit(1)
 
     # --- PNG-only mode: no deck needed ---
     if args.png_only:
@@ -967,7 +985,7 @@ def main():
 
     if not args.dry_run:
         tdb_path = os.path.join(vault_path, "tracking-database.json")
-        if os.path.isdir(vault_path):
+        if vault_present_at_start:
             try:
                 write_result = write_tracking_db(
                     tracking_db_snapshot,

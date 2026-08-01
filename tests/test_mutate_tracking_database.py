@@ -573,6 +573,70 @@ def test_json_preconditions_and_noops_are_type_sensitive(
         )
 
 
+def test_delete_missing_nested_config_does_not_materialize_parents(
+    mutate_tracking_database,
+) -> None:
+    candidate, changes = mutate_tracking_database.build_candidate(
+        _base_database(),
+        [
+            {
+                "kind": "set_config",
+                "path": ["shownotes", "legacy", "enabled"],
+                "expect": MISSING,
+                "delete": True,
+            },
+            {
+                "kind": "set_config",
+                "path": ["shownotes", "enabled"],
+                "expect": MISSING,
+                "value": True,
+            },
+        ],
+    )
+
+    assert candidate["config"] == {"shownotes": {"enabled": True}}
+    assert len(changes) == 1
+    assert changes[0]["identity"] == "shownotes.enabled"
+
+
+def test_delete_missing_nested_config_preserves_exact_expectations(
+    mutate_tracking_database,
+) -> None:
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="precondition failed",
+    ):
+        mutate_tracking_database.build_candidate(
+            _base_database(),
+            [
+                {
+                    "kind": "set_config",
+                    "path": ["shownotes", "legacy", "enabled"],
+                    "expect": {"$missing": 1},
+                    "delete": True,
+                }
+            ],
+        )
+
+    database = _base_database()
+    database["config"] = {"shownotes": {"legacy": None}}
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match=r"config\.shownotes\.legacy must be an object",
+    ):
+        mutate_tracking_database.build_candidate(
+            database,
+            [
+                {
+                    "kind": "set_config",
+                    "path": ["shownotes", "legacy", "enabled"],
+                    "expect": MISSING,
+                    "delete": True,
+                }
+            ],
+        )
+
+
 def test_boolean_plan_and_record_schema_versions_are_rejected(
     mutate_tracking_database,
     tmp_path: Path,
