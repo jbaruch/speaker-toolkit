@@ -1,5 +1,13 @@
 # Changelog
 
+### fix(vault-ingress) — suppress presentation-only shownotes conflicts
+
+Shownotes title comparison now treats straight and curly single/double quote
+glyphs as equivalent after Unicode NFC normalization. Conference comparison
+uses NFC plus case folding only. These transforms never rewrite stored or
+reported values, while substantive wording, punctuation, whitespace, source,
+and identity differences continue to require review.
+
 ## 0.20.2 — 2026-08-01
 
 ### fix(vault-ingress) — contain native dependency probe crashes
