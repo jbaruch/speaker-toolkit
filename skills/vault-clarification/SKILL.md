@@ -12,7 +12,10 @@ user_invocable: true
 
 # Vault Clarification — Interactive Session
 
-Process the steps below in order; each step's output informs the next, and the first-session infrastructure capture in Step 5 gates profile generation downstream. Do not skip ahead.
+Process steps in order. Do not skip ahead.
+
+Each step's output informs the next. The first-session infrastructure capture in
+Step 5 gates profile generation downstream.
 
 Resolve the absolute path of this loaded `SKILL.md`, then set
 `speaker_toolkit_root` to the plugin root two directories above the directory
