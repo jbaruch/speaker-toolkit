@@ -7,6 +7,7 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [11, 13]
+evidence_channels: [slide_sequence, video]
 detection_signals:
   - "incremental diagram building"
   - "piece-by-piece reveal"

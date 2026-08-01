@@ -35,7 +35,8 @@ positional argument is then just a label for the JSON output.
 
 Output: one JSON object on stdout, on EVERY exit path including argument errors —
     {"ok": bool, "video_id": "...", "method": "captions|whisper|existing|none",
-     "words": int, "path": "...", "reason": "...", "language": "en"|null}
+     "words": int, "path": "...", "timed_path": "..."|null,
+     "reason": "...", "language": "en"|null}
 
 `language` is the caption track's own language code, or Whisper's detected
 language — the source of the talk's `delivery_language`. It is null on the
@@ -45,18 +46,26 @@ Exit:   0 wrote a valid transcript (or --force absent and a valid one existed)
         2 argument or tool-state error
 
 The output path is written ATOMICALLY and only after validation passes, so a
-failed fetch can never leave a corrupt file where a transcript belongs.
+failed fetch can never leave a corrupt file where a transcript belongs. If the
+timing sidecar is replaced just before a transcript-write failure, its hash does
+not match the old transcript and readers reject it.
 """
 
 import argparse
 import json
-import os
 import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import NoReturn
+
+from transcript_timing import (
+    load_verified_segments,
+    sidecar_path,
+    write_atomically,
+    write_transcript_bundle,
+)
 
 # Text that proves the "transcript" is a crash report rather than speech. Anchored
 # at the head of the file: a talk about Python may legitimately say "traceback".
@@ -165,7 +174,7 @@ def segments_to_text(segments):
 
 
 def fetch_captions(video_id, languages):
-    """Return (caption text, language code), or (None, None) when unavailable.
+    """Return ``(text, language, timed segments)`` or three ``None`` values.
 
     The 1.0 API is instance-based (`YouTubeTranscriptApi().fetch`); the older one
     was a classmethod (`.get_transcript`). Both are tried so the script survives
@@ -178,7 +187,7 @@ def fetch_captions(video_id, languages):
         print("youtube-transcript-api is not installed — "
               "`pip install youtube-transcript-api`, or pass --method whisper",
               file=sys.stderr)
-        return None, None
+        return None, None, None
 
     api = YouTubeTranscriptApi()
     try:
@@ -189,7 +198,7 @@ def fetch_captions(video_id, languages):
         else:
             print("youtube-transcript-api exposes neither .fetch nor .get_transcript; "
                   "the API changed again — update fetch_captions()", file=sys.stderr)
-            return None, None
+            return None, None, None
     except YouTubeTranscriptApiException as exc:
         # Every "this video has no usable caption track" case — subtitles
         # disabled, no track in the requested languages, age restriction, IP
@@ -198,16 +207,16 @@ def fetch_captions(video_id, languages):
         # previous fetch ended up writing its own traceback into the corpus.
         print(f"caption track unavailable for {video_id}: "
               f"{type(exc).__name__}: {str(exc).splitlines()[0]}", file=sys.stderr)
-        return None, None
+        return None, None, None
     # The track's own language, not the first preference we asked for — they
     # differ whenever the requested language is unavailable and the API falls
     # back. `delivery_language` is derived from this, so guessing is not an option.
     language = getattr(segments, "language_code", None)
-    return segments_to_text(segments), language
+    return segments_to_text(segments), language, segments
 
 
 def transcribe_audio(audio_path, video_id, model):
-    """Transcribe a local audio/video file. Returns (text, language) or (None, None)."""
+    """Return ``(text, language, timed segments)`` from local Whisper."""
     try:
         import mlx_whisper
     except ImportError:
@@ -215,7 +224,7 @@ def transcribe_audio(audio_path, video_id, model):
               "`pip install 'speaker-toolkit[whisper]'`, or supply the transcript "
               "by hand. On other platforms use a caption track or an external "
               "transcription service.", file=sys.stderr)
-        return None, None
+        return None, None, None
 
     try:
         result = mlx_whisper.transcribe(str(audio_path), path_or_hf_repo=model)
@@ -224,18 +233,20 @@ def transcribe_audio(audio_path, video_id, model):
         # Must not escape as a traceback — callers parse this script's stdout.
         print(f"mlx_whisper could not transcribe {video_id}: "
               f"{type(exc).__name__}: {exc}", file=sys.stderr)
-        return None, None
+        return None, None, None
     text = result.get("text") if isinstance(result, dict) else None
     if not text:
         print(f"mlx_whisper returned no text for {video_id}", file=sys.stderr)
-        return None, None
+        return None, None, None
     # Whisper detects the spoken language; this is the only language signal on
     # the audio path, and `delivery_language` is derived from it.
-    return text, (result.get("language") if isinstance(result, dict) else None)
+    language = result.get("language") if isinstance(result, dict) else None
+    segments = result.get("segments") if isinstance(result, dict) else None
+    return text, language, segments
 
 
 def fetch_whisper(video_id, work_dir, model):
-    """Download audio and transcribe. Returns (text, language) or (None, None)."""
+    """Download audio and return Whisper text, language, and timed segments."""
     url = f"https://www.youtube.com/watch?v={video_id}"
     audio = Path(work_dir) / "audio.mp3"
     try:
@@ -250,39 +261,17 @@ def fetch_whisper(video_id, work_dir, model):
         # the same silent-failure shape the whole file exists to prevent.
         print(f"cannot run yt-dlp ({exc}) — install it with "
               "`brew install yt-dlp` or `pip install yt-dlp`", file=sys.stderr)
-        return None, None
+        return None, None, None
     if download.returncode != 0 or not audio.exists():
         print(f"yt-dlp could not download audio for {video_id}: "
               f"{download.stderr.strip()[:400]}", file=sys.stderr)
-        return None, None
+        return None, None, None
 
     return transcribe_audio(audio, video_id, model)
 
 
-def write_atomically(path, text):
-    """Write via a temp file in the same directory, then replace.
-
-    A half-written transcript is the same defect class as a traceback-as-
-    transcript: it looks like data.
-    """
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    handle, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".partial")
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8") as fh:
-            fh.write(text)
-        os.replace(tmp, path)
-    finally:
-        # `finally`, not a catch: cleanup must also run on KeyboardInterrupt and
-        # SystemExit, and neither may be swallowed (`rules/error-handling.md`).
-        # After a successful os.replace the temp path is gone, so this is a no-op
-        # on the happy path.
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-
-
 def emit(ok, video_id, method, words, path, reason, code,
-         language=None) -> NoReturn:
+         language=None, timed_path=None) -> NoReturn:
     """Print the contract object and exit. Never returns — hence `NoReturn`.
 
     The annotation is load-bearing, not decoration: callers rely on `emit` ending
@@ -291,7 +280,8 @@ def emit(ok, video_id, method, words, path, reason, code,
     """
     print(json.dumps({"ok": ok, "video_id": video_id, "method": method,
                       "words": words, "path": str(path), "reason": reason,
-                      "language": language}))
+                      "language": language,
+                      "timed_path": str(timed_path) if timed_path else None}))
     sys.exit(code)
 
 
@@ -330,7 +320,8 @@ def main(argv=None):
             emit(False, args.video, "none", 0, args.out,
                  f"--audio file does not exist: {audio_path}", 2)
         out = Path(args.out)
-        text, language = transcribe_audio(audio_path, args.video, args.whisper_model)
+        text, language, segments = transcribe_audio(
+            audio_path, args.video, args.whisper_model)
         if text is None:
             emit(False, args.video, "none", 0, out,
                  "local transcription produced no text — see stderr", 1)
@@ -341,14 +332,15 @@ def main(argv=None):
             emit(False, args.video, "whisper", count_words(text), out, reason, 1,
                  language)
         try:
-            write_atomically(out, text)
+            timed_path = write_transcript_bundle(
+                out, text, segments, source="whisper")
         except OSError as exc:
-            print(f"cannot write the transcript to {out}: {exc}", file=sys.stderr)
+            print(f"cannot write the transcript bundle to {out}: {exc}", file=sys.stderr)
             emit(False, args.video, "whisper", count_words(text), out,
-                 f"transcript produced but could not be written: {exc}", 2,
+                 f"transcript produced but its bundle could not be written: {exc}", 2,
                  language)
         emit(True, args.video, "whisper", count_words(text), out, reason, 0,
-             language)
+             language, timed_path)
 
     video_id = resolve_video_id(args.video)
     if not video_id:
@@ -377,8 +369,11 @@ def main(argv=None):
             existing, min_words=args.min_words,
             duration_seconds=args.duration_seconds)
         if ok:
+            timed_segments, _ = load_verified_segments(out, existing)
+            timed_path = sidecar_path(out) if timed_segments else None
             emit(True, video_id, "existing", count_words(existing), out,
-                 f"kept existing transcript ({reason})", 0)
+                 f"kept existing transcript ({reason})", 0,
+                 timed_path=timed_path)
         print(f"existing transcript at {out} is not usable: {reason}", file=sys.stderr)
 
     languages = [lang.strip() for lang in (args.languages or "").split(",") if lang.strip()]
@@ -388,10 +383,11 @@ def main(argv=None):
     failures = []
     for name in attempts:
         if name == "captions":
-            text, language = fetch_captions(video_id, languages)
+            text, language, segments = fetch_captions(video_id, languages)
         else:
             with tempfile.TemporaryDirectory() as work_dir:
-                text, language = fetch_whisper(video_id, work_dir, args.whisper_model)
+                text, language, segments = fetch_whisper(
+                    video_id, work_dir, args.whisper_model)
         if text is None:
             failures.append(f"{name}: unavailable")
             continue
@@ -399,16 +395,19 @@ def main(argv=None):
             text, min_words=args.min_words, duration_seconds=args.duration_seconds)
         if ok:
             try:
-                write_atomically(out, text)
+                timed_path = write_transcript_bundle(
+                    out, text, segments, source=name)
             except OSError as exc:
-                # write_atomically's `finally` has already removed the temp file,
-                # so the output path is untouched. Emit rather than traceback.
-                print(f"cannot write the transcript to {out}: {exc}",
+                # Each atomic writer has removed its own temporary file. A
+                # sidecar replaced before a transcript failure is hash-stale and
+                # therefore rejected by readers rather than misapplied.
+                print(f"cannot write the transcript bundle to {out}: {exc}",
                       file=sys.stderr)
                 emit(False, video_id, name, count_words(text), out,
-                     f"transcript fetched but could not be written: {exc}", 2,
+                     f"transcript fetched but its bundle could not be written: {exc}", 2,
                      language)
-            emit(True, video_id, name, count_words(text), out, reason, 0, language)
+            emit(True, video_id, name, count_words(text), out, reason, 0,
+                 language, timed_path)
         failures.append(f"{name}: {reason}")
 
     emit(False, video_id, "none", 0, out,

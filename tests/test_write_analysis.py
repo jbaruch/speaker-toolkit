@@ -39,11 +39,17 @@ def _return(**overrides):
         "pattern_observations": {
             "patterns_detected": [
                 {"pattern_id": "narrative-arc", "confidence": "strong",
-                 "evidence": "Four-act catalog."},
+                 "evidence": "Four-act catalog.",
+                 "evidence_citations": [
+                     {"channel": "slides", "slide_numbers": [1, 8, 20, 31]}
+                 ]},
             ],
             "antipatterns_detected": [
                 {"pattern_id": "ant-fonts", "confidence": "moderate",
-                 "evidence": "7.5pt body text."},
+                 "evidence": "7.5pt body text.",
+                 "evidence_citations": [
+                     {"channel": "slides", "slide_numbers": [17]}
+                 ]},
             ],
             "pattern_score": {"patterns_used": 25, "antipatterns_detected": 3, "score": 22},
         },
@@ -74,10 +80,10 @@ def test_title_from_db_wins_over_filename(write_analysis):
 
 
 def test_scoring_tables_carry_evidence(write_analysis):
-    md = write_analysis.render_analysis(_return())
+    md = write_analysis.render_analysis(_return(), evidence_verified=True)
     assert "**Pattern score:** 22 (25 patterns − 3 antipatterns)" in md
-    assert "| `narrative-arc` | strong | Four-act catalog. |" in md
-    assert "| `ant-fonts` | moderate | 7.5pt body text. |" in md
+    assert "| `narrative-arc` | strong | Four-act catalog. | slides 1, 8, 20, 31 |" in md
+    assert "| `ant-fonts` | moderate | 7.5pt body text. | slides 17 |" in md
 
 
 def test_per_slide_visual_becomes_a_table(write_analysis):
@@ -100,8 +106,59 @@ def test_pipes_and_newlines_do_not_break_table_rows(write_analysis):
     # Splitting on UNESCAPED pipes is what a markdown renderer does; escaped
     # ones stay inside the cell.
     cells = [c for c in re.split(r"(?<!\\)\|", row)[1:-1]]
-    assert len(cells) == 3
+    assert len(cells) == 4
     assert "\\|" in cells[2]
+
+
+def test_timed_transcript_citation_renders_engine_locations(write_analysis):
+    ret = _return()
+    ret["pattern_observations"]["patterns_detected"] = [
+        {
+            "pattern_id": "opening-punch",
+            "confidence": "strong",
+            "evidence": "A concrete failure story opens the talk.",
+            "evidence_citations": [
+                {
+                    "channel": "timed_transcript",
+                    "quote": "The deploy failed on Friday night.",
+                    "line_start": 1,
+                    "line_end": 1,
+                    "start_seconds": 2.0,
+                    "end_seconds": 5.5,
+                }
+            ],
+        }
+    ]
+    md = write_analysis.render_analysis(ret, evidence_verified=True)
+    assert "transcript lines 1–1 (2.0s–5.5s)" in md
+    assert "The deploy failed on Friday night." in md
+
+
+def test_non_english_citation_renders_translation_before_original(write_analysis):
+    rendered = write_analysis.render_evidence_citation(
+        {
+            "channel": "transcript",
+            "quote": "Этот сбой изменил весь наш процесс.",
+            "translation": "That failure changed our entire process.",
+            "line_start": 4,
+            "line_end": 4,
+        },
+        evidence_verified=True,
+    )
+    assert rendered.index("That failure changed") < rendered.index("Этот сбой")
+    assert "original:" in rendered
+
+
+def test_raw_return_locations_are_labeled_unverified(write_analysis):
+    md = write_analysis.render_analysis(_return())
+    assert "unverified: slides 1, 8, 20, 31" in md
+
+
+def test_missing_citations_are_explicitly_legacy_unverified(write_analysis):
+    ret = _return()
+    del ret["pattern_observations"]["patterns_detected"][0]["evidence_citations"]
+    md = write_analysis.render_analysis(ret)
+    assert "legacy/unverified" in md
 
 
 def test_absent_sections_are_skipped_not_stubbed(write_analysis):
@@ -191,6 +248,100 @@ def test_cli_uses_titles_from_tracking_db(write_analysis, tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert (out / "talk.md").read_text().startswith("# Rhetoric Analysis: Real Title")
+
+
+def test_cli_renders_persisted_locations_not_model_locations(write_analysis, tmp_path):
+    batch = tmp_path / "batch-returns.json"
+    db = tmp_path / "tracking-database.json"
+    out = tmp_path / "analyses"
+    ret = _return()
+    ret["pattern_observations"]["patterns_detected"] = [
+        {
+            "pattern_id": "opening-punch",
+            "confidence": "strong",
+            "evidence": "The talk opens on a failure.",
+            "evidence_citations": [
+                {
+                    "channel": "timed_transcript",
+                    "quote": "The deploy failed on Friday night.",
+                    "line_start": 999,
+                    "line_end": 999,
+                    "start_seconds": 999.0,
+                    "end_seconds": 1000.0,
+                }
+            ],
+        }
+    ]
+    persisted = json.loads(json.dumps(ret["pattern_observations"]))
+    persisted["evidence_schema_version"] = 1
+    persisted["patterns_detected"][0]["evidence_citations"][0].update(
+        {
+            "line_start": 1,
+            "line_end": 1,
+            "start_seconds": 2.0,
+            "end_seconds": 5.5,
+        }
+    )
+    batch.write_text(json.dumps([ret]))
+    db.write_text(
+        json.dumps(
+            {
+                "talks": [
+                    {
+                        "filename": "talk.md",
+                        "title": "Real Title",
+                        "pattern_observations": persisted,
+                    }
+                ]
+            }
+        )
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rendered = (out / "talk.md").read_text()
+    assert "transcript lines 1–1 (2.0s–5.5s)" in rendered
+    assert "999" not in rendered
+    assert "unverified:" not in rendered
+
+
+def test_stale_persisted_detections_are_not_labeled_verified(write_analysis):
+    ret = _return()
+    talk = {
+        "pattern_observations": {
+            "patterns_detected": [
+                {
+                    "pattern_id": "bookends",
+                    "confidence": "strong",
+                    "evidence": "Old evidence from a previous batch.",
+                    "evidence_citations": [
+                        {"channel": "slides", "slide_numbers": [1, 31]}
+                    ],
+                }
+            ],
+            "antipatterns_detected": [],
+        }
+    }
+
+    effective, verified = write_analysis.overlay_persisted_evidence(ret, talk)
+
+    assert effective is ret
+    assert verified is False
+    rendered = write_analysis.render_analysis(effective, evidence_verified=verified)
+    assert "unverified: slides 1, 8, 20, 31" in rendered
+    assert "Old evidence from a previous batch" not in rendered
 
 
 def test_cli_fails_visibly_on_return_without_filename(write_analysis, tmp_path):

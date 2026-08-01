@@ -6,6 +6,7 @@ part: deliver
 phase_relevance:
   - guardrails
 vault_dimensions: [4, 14]
+evidence_channels: [video]
 detection_signals:
   - "disruptive audience interaction"
   - "hijacked Q&A"

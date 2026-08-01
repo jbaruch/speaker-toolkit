@@ -6,6 +6,7 @@ part: deliver
 phase_relevance:
   - guardrails
 vault_dimensions: [12, 14]
+evidence_channels: [timed_transcript, video]
 detection_signals:
   - "rushing through material"
   - "visible time pressure"

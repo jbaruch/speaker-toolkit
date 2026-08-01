@@ -7,6 +7,7 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [2, 4, 11]
+evidence_channels: [timed_transcript, video]
 detection_signals:
   - "audience asked to commit an answer before the reveal"
   - "prediction solicited ahead of a demo, result, or number"

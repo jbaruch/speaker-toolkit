@@ -7,6 +7,7 @@ phase_relevance:
   - architecture
   - slides
 vault_dimensions: [8, 13]
+evidence_channels: [slides, video]
 detection_signals:
   - "full-bleed image slides"
   - "minimal text on image slides"

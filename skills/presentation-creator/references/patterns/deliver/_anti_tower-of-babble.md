@@ -6,6 +6,7 @@ part: deliver
 phase_relevance:
   - guardrails
 vault_dimensions: [7, 9, 14]
+evidence_channels: [transcript, slides, video]
 detection_signals:
   - "unexplained acronyms"
   - "audience confusion from jargon"

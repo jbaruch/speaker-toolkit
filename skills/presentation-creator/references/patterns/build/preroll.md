@@ -7,6 +7,7 @@ phase_relevance:
   - slides
   - publishing
 vault_dimensions: [1, 13]
+evidence_channels: [video]
 detection_signals:
   - "pre-talk info slide"
   - "looping intro display"

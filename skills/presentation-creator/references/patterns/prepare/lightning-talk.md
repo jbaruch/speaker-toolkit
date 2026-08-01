@@ -6,6 +6,8 @@ part: prepare
 phase_relevance:
   - architecture
 vault_dimensions: [2, 12]
+evidence_channels: [timed_transcript, slides, slide_sequence, video, talk_metadata]
+evidence_metadata_fields: [title, conference, slide_count]
 detection_signals:
   - "5-minute format"
   - "fixed slide count"

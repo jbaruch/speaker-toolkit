@@ -7,6 +7,7 @@ phase_relevance:
   - architecture
   - content
 vault_dimensions: [2, 5, 9]
+evidence_channels: [timed_transcript, slides, slide_sequence, video]
 detection_signals:
   - "establishes 'what is' baseline before introducing thesis"
   - "explicit gap-revelation moment (call to adventure)"

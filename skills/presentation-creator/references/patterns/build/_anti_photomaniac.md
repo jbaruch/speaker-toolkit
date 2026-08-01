@@ -7,6 +7,7 @@ phase_relevance:
   - guardrails
   - slides
 vault_dimensions: [10, 13, 14]
+evidence_channels: [slides, video]
 detection_signals:
   - "random stock photos"
   - "images disconnected from narrative"

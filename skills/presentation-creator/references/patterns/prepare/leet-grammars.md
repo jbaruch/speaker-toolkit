@@ -6,6 +6,7 @@ part: prepare
 phase_relevance:
   - content
 vault_dimensions: [7, 10]
+evidence_channels: [transcript, slides, video]
 detection_signals:
   - "correct use of community jargon"
   - "insider references"

@@ -8,6 +8,7 @@ phase_relevance:
   - content
   - guardrails
 vault_dimensions: [4, 9]
+evidence_channels: [transcript, slides, video]
 detection_signals:
   - "each major claim answers precision, process, impact, and implication questions"
   - "talk supplies numbers, mechanism, human consequence, and long-range framing for the same point"

@@ -6,6 +6,7 @@ part: deliver
 phase_relevance:
   - guardrails
 vault_dimensions: [9, 14]
+evidence_channels: [transcript, video]
 detection_signals:
   - "speaker discusses preparation process"
   - "equipment apologies"

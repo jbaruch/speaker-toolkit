@@ -7,6 +7,7 @@ phase_relevance:
   - content
   - publishing
 vault_dimensions: [4]
+evidence_channels: [video]
 detection_signals:
   - "deliberate question bait planted"
   - "obvious curiosity gap left open"

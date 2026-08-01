@@ -7,6 +7,7 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [3, 5, 13]
+evidence_channels: [video]
 detection_signals:
   - "deliberately constructed peak moment that audiences quote afterward"
   - "single beat carries disproportionate weight in audience recall"

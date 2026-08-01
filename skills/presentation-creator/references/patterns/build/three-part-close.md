@@ -7,6 +7,7 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [2, 10]
+evidence_channels: [slide_sequence, video]
 detection_signals:
   - "closing sequence has summary slide, CTA slide, and thanks slide"
   - "three distinct closing slides in sequence"

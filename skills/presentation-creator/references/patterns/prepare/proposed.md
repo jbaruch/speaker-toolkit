@@ -8,11 +8,12 @@ phase_relevance:
   - intent
 vault_dimensions: [9]
 detection_signals:
-  - "clear abstract structure"
-  - "CFP-quality description"
+  - "submitted CFP proposal is available"
+  - "accepted scope is compared directly with the delivered talk"
 related_patterns: [required, peer-review, know-your-audience]
 inverse_of: []
 difficulty: foundational
+observable: false
 ---
 
 # Proposed
@@ -35,12 +36,15 @@ Treat submission as commitment. The moment you click "submit," you are making a 
 Use this pattern whenever you want to speak at a conference or event with a CFP process. The discipline of writing a strong abstract also helps clarify your thinking even if you never submit it. Avoid submitting proposals you are not genuinely committed to delivering — the conference ecosystem depends on speaker reliability.
 
 ## Detection Heuristics
-The vault should look for evidence that the presentation was developed from a clear, well-structured proposal. A talk with a crisp thesis, well-defined scope, and promised takeaways likely originated from a strong CFP submission.
+A crisp talk does not prove that a proposal was submitted or treated as binding.
+Verify Proposed from the actual submitted CFP artifact and compare its promised
+scope with the delivered talk. Without that artifact, the pattern is unevaluable.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Clear thesis and scope consistent with a well-crafted abstract; promised takeaways delivered; content matches published description
-- Moderate signal (1 pt): Reasonable structure but some drift from what might have been proposed; scope somewhat fuzzy
-- Absent (0 pts): No evidence of structured planning; talk feels improvised or unfocused
+- Strong signal (2 pts): The submitted/accepted CFP artifact is available and the delivered talk fulfills its scope and promised takeaways
+- Moderate signal (1 pt): The proposal is available and the talk fulfills most promises with limited, explainable drift
+- Absent (0 pts): Records show no proposal was submitted for this talk or the submitted scope was not treated as a commitment
+- Unevaluable: The submitted CFP artifact is unavailable
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 9 (Speaker Credibility/Ethos).

@@ -1,5 +1,14 @@
 # Changelog
 
+### fix(vault-ingress) — require source-located evidence for observable patterns
+
+Pattern detections now carry validated transcript, slide, video, or allowlisted
+talk-metadata citations instead of treating a free-form evidence string as proof.
+Caption, Whisper, and VTT ingestion preserve hash-bound timing sidecars; legacy
+evidence remains readable but renders as unverified, and ten process-only
+patterns move out of automatic observation when the available artifacts cannot
+establish how the talk was prepared.
+
 ## 0.18.73 — 2026-07-28
 
 ### fix(vault-ingress) — a bare-int `pattern_score` no longer silently drops the scalar

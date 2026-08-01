@@ -19,9 +19,11 @@ python3 skills/vault-ingress/scripts/fetch-transcript.py {youtube_id} \
 ```
 
 The script owns the whole chain — caption track first, local Whisper fallback,
-validation, atomic write. It prints one JSON object and never leaves a file
-behind on failure. Exit codes and the JSON shape are the script's contract; see
-its module docstring.
+validation, atomic write. It prints one JSON object and never leaves a corrupt
+transcript behind on failure. A sidecar written just before a transcript-write
+failure is hash-stale and therefore unusable by readers. When source segment timing exists, `timed_path` names the
+hash-bound `{id}.segments.json` sidecar; otherwise it is `null`. Exit codes and
+the JSON shape are the script's contract; see its module docstring.
 
 | exit | meaning | what to do |
 |---|---|---|
@@ -54,6 +56,11 @@ Pass `--duration-seconds` when the runtime is known — it enables the
 words-per-minute check that catches a caption track returning only its opening
 minute.
 
+Treat `timed_path: null` literally. The plain transcript is still usable for a
+`transcript` quote, but it cannot establish opening/closing position, pauses, or
+other timing-dependent claims. Never invent a timestamp or reuse an unverified
+sidecar; the persistence step rejects both.
+
 **A transcript already on disk is not proof of a transcript.** Ten corpus files
 were empty, a traceback, or a stub. Running the script without `--force` is the
 check: it validates any existing file and either keeps it or replaces it.
@@ -70,7 +77,10 @@ python3 skills/vault-ingress/scripts/fetch-transcript.py {talk_label} \
 ```
 
 Set `transcript_source: whisper` on exit 0. Fall back to `processed_partial`
-when no audio is obtainable at all.
+when no audio is obtainable at all. Also return the exact vault-relative
+`transcript_path` (for example `transcripts/infoq-talk-id.txt`); without it the
+persistence validator cannot locate a non-YouTube transcript reliably. YouTube
+talks may omit the field because `youtube_id` remains the canonical fallback.
 
 ### Slide acquisition (per `slide_source`)
 
@@ -119,9 +129,11 @@ Apply all 14 dimensions from
 (Areas for Improvement). Follow language policy and verbatim-quote rules in
 [processing-rules.md](processing-rules.md).
 
-**Quote rule:** verbatim quotes must be English-first —
-`"English translation" (original text)`. Never quote non-English text without
-an English translation preceding it.
+**Quote rule:** human-readable verbatim examples must be English-first —
+`"English translation" (original text)`. The `evidence_citations[].quote` field
+is the deliberate exception: return only the exact source-language span there so
+persistence can match it, and put the English rendering in the adjacent
+`translation` field. The analysis renderer displays translation first.
 
 ### Slides with `text_extraction_confidence: low` — inventory + pixels
 
@@ -199,8 +211,13 @@ Structural fields stay authoritative for what they actually measure —
 
 Scan observations against the pattern taxonomy at
 `skills/presentation-creator/references/patterns/_index.md`. Skip patterns
-marked `observable: false`. Record confidence (strong/moderate/weak) and
-evidence per pattern. Compute per-talk score:
+marked `observable: false`; do not infer hidden preparation or provenance from a
+polished result. For each detection, record confidence (strong/moderate/weak), a
+brief evidence explanation, and at least one direct source citation through a
+channel allowed by the pattern's `evidence_channels`. Timing claims require a
+verified timed transcript or direct video review; sequence claims require the
+actual consecutive slides; motion/delivery claims require direct video review.
+Do not cite a video interval unless you inspected that interval. Compute per-talk score:
 `count(patterns) − count(antipatterns)`. Store in `pattern_observations`.
 See [processing-rules.md](processing-rules.md) for full tagging rules.
 
@@ -211,15 +228,28 @@ structure:
 
 ```json
 {
-  "talk_id": "...",
+  "filename": "talk.md",
   "status": "processed",
-  "transcript_source": "youtube",
+  "transcript_source": "youtube_auto",
   "slide_source": "pdf",
-  "pattern_observations": [
-    {"pattern_id": "...", "confidence": "strong", "evidence": "..."}
-  ],
-  "new_patterns": ["..."],
-  "summary_updates": [{"section": 1, "content": "..."}],
+  "pattern_observations": {
+    "patterns_detected": [{
+      "pattern_id": "progressive-reveal",
+      "confidence": "strong",
+      "evidence": "Three consecutive slides add one element at a time.",
+      "evidence_citations": [
+        {"channel": "slide_sequence", "slide_numbers": [21, 22, 23]}
+      ]
+    }],
+    "antipatterns_detected": [],
+    "pattern_score": {
+      "patterns_used": 1,
+      "antipatterns_detected": 0,
+      "score": 1
+    }
+  },
+  "new_patterns": "",
+  "summary_updates": "",
   "structured_data": {"delivery_language": "en", "co_presenter": false}
 }
 ```

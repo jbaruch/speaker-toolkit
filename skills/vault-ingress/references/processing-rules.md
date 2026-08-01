@@ -9,6 +9,11 @@ MUST be written in English regardless of the talk's delivery language. For non-E
   parentheses. Never the reverse. Format: `"English text" (оригинальный текст)`.
   Example: `"That's the whole point" (В этом весь смысл)` — NOT
   `"В этом весь смысл" (That's the whole point)`
+- **Evidence-citation exception**: `evidence_citations[].quote` is the
+  machine-verification field and MUST contain only the exact source-language span.
+  Put its English rendering in `evidence_citations[].translation`; renderers show
+  the translation first and label the original. Keep the human `evidence` summary
+  in English.
 - **Verbal signatures**: store separately tagged with language code (e.g.,
   `[ru] "получается что"`) — do NOT merge into the main English signature list
 - **Slide text**: translate in the analysis, note original language
@@ -27,11 +32,38 @@ but any talks with status `"processed"` or `"processed_partial"` have no
 
 Scan observations against the pattern taxonomy index at
 `skills/presentation-creator/references/patterns/_index.md` (path relative to plugin root).
-Skip patterns marked `observable: false` — these are pre-event logistics and physical
-stage behaviors that cannot be detected from transcripts or slides. For each observable
-pattern/antipattern, determine if the talk exhibits it (strong/moderate/weak confidence),
-record evidence, and compute per-talk pattern score:
-count(patterns) − count(antipatterns). Return in the `pattern_observations` field.
+Skip every pattern marked `observable: false`. These include hidden preparation,
+provenance, decision, and post-event processes as well as behavior that the available
+artifacts cannot establish. A polished outcome is not proof that a named process
+produced it: for example, audience fit does not prove `know-your-audience`, coherent
+art does not prove `fourthought`, and incorporated feedback does not prove
+`peer-review`.
+
+For each observable pattern/antipattern:
+
+1. Apply the entry's stated detection semantics, not just keyword or thematic
+   similarity. A quote that mentions a concept does not prove a structural pattern.
+2. Use only direct evidence from the artifacts actually inspected. The allowed
+   channels are `transcript`, `timed_transcript`, `slides`, `slide_sequence`,
+   `video`, and `talk_metadata`. Every observable entry declares
+   `evidence_channels`; every citation must use one of those channels. An entry
+   that permits `talk_metadata` also declares the narrower
+   `evidence_metadata_fields` it may cite.
+3. Return confidence (`strong|moderate|weak`), a short `evidence` explanation, and a
+   non-empty `evidence_citations` array using the shapes in
+   [schemas-db.md](schemas-db.md) Pattern Evidence Citation Schema. Do not launder a
+   timing, sequence, motion, or delivery claim through generic transcript/slide
+   prose: use `timed_transcript`, `slide_sequence`, or `video` as required.
+4. Omit a detection when no allowed source-located citation proves it. Put useful
+   but unverified hypotheses in clarification notes, not the score.
+
+`persist-results.py` deterministically validates the catalog ID/type, bucket,
+uniqueness, observability, channel, quote, slide range, and available artifact context before writing. It also
+replaces model-supplied transcript lines/timestamps and metadata values with locations
+resolved from the source artifacts.
+
+Compute the per-talk score as count(patterns) − count(antipatterns) and return it in
+`pattern_observations`.
 
 ## Structured Field Extraction
 

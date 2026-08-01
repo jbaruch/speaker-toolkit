@@ -21,8 +21,11 @@ combinatorics are needed.
    for the ones you want to present as options.
 2. **During vault Step 3 (Analysis):** Scan against observable patterns only — skip
    patterns marked `observable: false` (pre-event logistics, physical stage behaviors,
-   post-event follow-up, and external systems that leave no trace in transcripts or
-   slides).
+   post-event follow-up, hidden authoring processes, and external systems that the
+   acquired artifacts cannot directly prove). Every observable entry declares
+   `evidence_channels`, and every detection needs source-located evidence through one of
+   those channels. A polished outcome is not evidence that a named preparation process
+   occurred.
 3. **During creator Phase 4 (Guardrails):** Read all antipatterns and compare against
    the outline. Flag matches as `[RECURRING]` (from speaker profile) or `[CONTEXTUAL]`
    (new detection). Skip unobservable antipatterns.
@@ -281,8 +284,9 @@ Reverse lookup: which patterns relate to each of the 14 rhetoric analysis dimens
 
 ## Unobservable Patterns — Go-Live Checklist
 
-These patterns involve pre-event logistics, physical stage behaviors, post-event
-follow-up, or external systems that leave **no trace in transcripts or slides**. The vault cannot score them. Instead,
+These patterns involve pre-event logistics, hidden authoring processes, physical stage
+behaviors, post-event follow-up, or external systems that the current ingress artifacts
+cannot directly prove. The vault cannot score them. Instead,
 they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation checklist.
 
 **Do not include these in vault scoring or the speaker profile's `pattern_profile`.**
@@ -290,6 +294,13 @@ they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation 
 ### Pre-Event Preparation
 | ID | Name | Checklist Action |
 |----|------|-----------------|
+| know-your-audience | Know Your Audience | Capture the audience/organizer research and note which talk choices it changed |
+| required | Required | Confirm whether the talk is assigned/mandatory and use the low-risk practice opportunity deliberately |
+| fourthought | Fourthought | Ideate, capture, and organize before opening the slide tool; retain the preparation artifacts |
+| proposed | Proposed | Keep the accepted CFP submission and compare the final scope against its promises |
+| concurrent-creation | Concurrent Creation | When collaborating, name one Slide Wrangler and preserve the creation history |
+| peer-review | Peer Review | Have a colleague/editor review the text and retain the review comments |
+| social-media-advertising | Social Media Advertising | Publish and retain dated promotional posts that link to the talk |
 | preparation | Preparation | Pack duplicate cables, backup deck to USB/cloud, hydrate, check room layout and schedule |
 | carnegie-hall | Carnegie Hall | Complete 4 structured rehearsals: (1) pace/timing, (2) delivery, (3) fix notes from 1-2, (4) find the groove |
 | stakeout | The Stakeout | Locate a productive staging area near the venue, arrive with ample buffer time |
@@ -306,11 +317,14 @@ they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation 
 ### Post-Event
 | ID | Name | Checklist Action |
 |----|------|-----------------|
+| crucible | Crucible | Record feedback and the concrete revisions made before the next delivery |
 | spaced-followup | Spaced Follow-Up | 1–2 weeks after the talk, send the opt-in list 2–3 recall questions — ask, do not summarize. Only collect addresses if you will actually send it |
 
 ### Antipatterns to Avoid (unobservable)
 | ID | Name | What to Watch For |
 |----|------|------------------|
+| abstract-attorney | Abstract Attorney | Compare the final talk directly with the accepted abstract before delivery; do not infer compliance from the talk alone |
+| borrowed-shoes | Borrowed Shoes | Confirm deck authorship and substantially adapt another author's material before presenting it |
 | laser-weapons | Laser Weapons | Don't wave the pointer constantly — build highlights into slides instead |
 | bunker | Bunker | Step out from behind the podium, walk the stage, make eye contact |
 | backchannel | Backchannel | Don't monitor social media during your talk — use it as feedback after |
@@ -320,8 +334,8 @@ they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation 
 ## Summary Statistics
 
 - **Total entries:** 111 (83 patterns + 28 antipatterns)
-- **Observable (vault-scorable):** 99 (74 patterns + 25 antipatterns)
-- **Unobservable (go-live checklist):** 12 (9 patterns + 3 antipatterns)
+- **Observable (vault-scorable):** 89 (66 patterns + 23 antipatterns)
+- **Unobservable (go-live checklist):** 22 (17 patterns + 5 antipatterns)
 - **Prepare phase:** 24 (20 patterns + 4 antipatterns)
 - **Build phase:** 51 (41 patterns + 10 antipatterns)
 - **Deliver phase:** 36 (22 patterns + 14 antipatterns)

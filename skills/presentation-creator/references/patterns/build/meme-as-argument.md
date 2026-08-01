@@ -7,6 +7,7 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [4, 7, 12]
+evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "internet memes carry argumentative weight, not decoration"
   - "memes function as visual shorthand for claims"

@@ -6,6 +6,7 @@ part: deliver
 phase_relevance:
   - guardrails
 vault_dimensions: [7, 14]
+evidence_channels: [timed_transcript]
 detection_signals:
   - "frequent filler words"
   - "um/ah patterns"

@@ -7,6 +7,7 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [4, 7]
+evidence_channels: [slide_sequence, video]
 detection_signals:
   - "single base image annotated across multiple slides"
   - "elements added one per slide to build a cumulative argument"

@@ -7,6 +7,7 @@ phase_relevance:
   - intent
   - architecture
 vault_dimensions: [2]
+evidence_channels: [transcript, slides, slide_sequence, video]
 detection_signals:
   - "three major sections"
   - "three-act structure"

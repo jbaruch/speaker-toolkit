@@ -34,10 +34,33 @@ def _return(**overrides):
         "verbatim_examples": {"jokes": ["j1"]},
         "pattern_observations": {
             "patterns_detected": [
-                {"pattern_id": "narrative-arc", "confidence": "strong"},
-                {"pattern_id": "bookends", "confidence": "moderate"},
+                {
+                    "pattern_id": "narrative-arc",
+                    "confidence": "strong",
+                    "evidence": "The deck follows a problem-to-resolution arc.",
+                    "evidence_citations": [
+                        {"channel": "slides", "slide_numbers": [1, 20, 60]}
+                    ],
+                },
+                {
+                    "pattern_id": "bookends",
+                    "confidence": "moderate",
+                    "evidence": "Matching dividers bracket the main sections.",
+                    "evidence_citations": [
+                        {"channel": "slides", "slide_numbers": [2, 18]}
+                    ],
+                },
             ],
-            "antipatterns_detected": [{"pattern_id": "shortchanged", "confidence": "weak"}],
+            "antipatterns_detected": [
+                {
+                    "pattern_id": "ant-fonts",
+                    "confidence": "weak",
+                    "evidence": "One code slide uses text below the readable threshold.",
+                    "evidence_citations": [
+                        {"channel": "slides", "slide_numbers": [8]}
+                    ],
+                }
+            ],
             "pattern_score": {"patterns_used": 8, "antipatterns_detected": 1, "score": 7},
         },
     }
@@ -49,6 +72,8 @@ def _talk(**overrides):
     talk = {
         "filename": "talk.md",
         "status": "pending",
+        "slide_source": "pptx",
+        "slide_count": 62,
         "structured_data": {},
         "verbatim_examples": {},
         "pattern_observations": {"pattern_ids": [], "antipattern_ids": [], "pattern_score": 0},
@@ -100,7 +125,7 @@ def test_pattern_observations_normalized(persist_results):
     persist_results.merge_talk(talk, _return())
     obs = talk["pattern_observations"]
     assert obs["pattern_ids"] == ["narrative-arc", "bookends"]
-    assert obs["antipattern_ids"] == ["shortchanged"]
+    assert obs["antipattern_ids"] == ["ant-fonts"]
     assert obs["pattern_score"] == 7  # flattened from {"score": 7}
     assert len(obs["patterns_detected"]) == 2  # detailed arrays kept for Section 15
 
@@ -461,7 +486,7 @@ def test_merge_stamps_the_talk_schema_version(persist_results, tmp_path):
 
 
 def test_schema_version_is_stamped_over_an_older_value(persist_results, tmp_path):
-    """A v1 record merged by this writer becomes v2 — that is the migration."""
+    """A v1 record merged by this writer becomes v3 — that is the migration."""
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
     old = _talk()
@@ -473,7 +498,7 @@ def test_schema_version_is_stamped_over_an_older_value(persist_results, tmp_path
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
-    assert json.loads(db.read_text())["talks"][0]["schema_version"] == 2
+    assert json.loads(db.read_text())["talks"][0]["schema_version"] == 3
 
 
 @pytest.mark.parametrize("block", ["structured_data", "verbatim_examples",
@@ -575,3 +600,426 @@ def test_score_object_without_a_score_key_fails_loudly(persist_results, tmp_path
     assert result.returncode == 1
     assert "no `score` key" in result.stderr
     assert "pattern_score" not in json.loads(db.read_text())["talks"][0]
+
+
+def test_detection_requires_source_located_evidence(persist_results):
+    detection = {
+        "pattern_id": "narrative-arc",
+        "confidence": "strong",
+        "evidence": "A clear problem-to-resolution arc.",
+    }
+    with pytest.raises(ValueError, match="evidence_citations"):
+        persist_results.validate_detection(
+            detection,
+            field="patterns_detected",
+            catalog=persist_results.load_pattern_catalog(),
+        )
+
+
+def test_transcript_quote_is_verified_and_locations_are_engine_owned(persist_results):
+    detection = {
+        "pattern_id": "opening-punch",
+        "confidence": "strong",
+        "evidence": "A concrete incident opens the talk.",
+        "evidence_citations": [
+            {
+                "channel": "timed_transcript",
+                "quote": "The production deploy failed on Friday night.",
+                "line_start": 999,
+                "start_seconds": 999,
+            }
+        ],
+    }
+    context = {
+        "transcript_text": (
+            "The production deploy failed on Friday night.\n"
+            "That incident changed our release process."
+        ),
+        "transcript_reason": "loaded fixture transcript",
+        "timed_segments": [
+            {
+                "text": "The production deploy failed on Friday night.",
+                "start_seconds": 2.0,
+                "end_seconds": 6.0,
+            },
+            {
+                "text": "That incident changed our release process.",
+                "start_seconds": 6.0,
+                "end_seconds": 10.0,
+            },
+        ],
+        "timing_reason": "2 verified timed segments",
+    }
+
+    validated = persist_results.validate_detection(
+        detection,
+        field="patterns_detected",
+        catalog=persist_results.load_pattern_catalog(),
+        evidence_context=context,
+    )
+
+    citation = validated["evidence_citations"][0]
+    assert citation["line_start"] == 1
+    assert citation["line_end"] == 1
+    assert citation["start_seconds"] == 2.0
+    assert citation["end_seconds"] == 6.0
+
+
+def test_non_english_citation_matches_original_and_keeps_translation(persist_results):
+    detection = {
+        "pattern_id": "narrative-arc",
+        "confidence": "strong",
+        "evidence": "The speaker frames the incident as the turning point.",
+        "evidence_citations": [
+            {
+                "channel": "transcript",
+                "quote": "Этот сбой изменил весь наш процесс.",
+                "translation": "That failure changed our entire process.",
+            }
+        ],
+    }
+    validated = persist_results.validate_detection(
+        detection,
+        field="patterns_detected",
+        catalog=persist_results.load_pattern_catalog(),
+        evidence_context={
+            "transcript_text": "Этот сбой изменил весь наш процесс.",
+            "timed_segments": [],
+        },
+    )
+    citation = validated["evidence_citations"][0]
+    assert citation["translation"] == "That failure changed our entire process."
+    assert citation["line_start"] == 1
+
+
+def test_citation_shapes_reject_unknown_model_fields(persist_results):
+    detection = {
+        "pattern_id": "narrative-arc",
+        "confidence": "strong",
+        "evidence": "A clear problem-to-resolution arc.",
+        "evidence_citations": [
+            {
+                "channel": "slides",
+                "slide_numbers": [1, 2],
+                "model_reasoning": "trust me",
+            }
+        ],
+    }
+    with pytest.raises(ValueError, match="unknown fields"):
+        persist_results.validate_detection(
+            detection,
+            field="patterns_detected",
+            catalog=persist_results.load_pattern_catalog(),
+        )
+
+
+def test_timing_dependent_pattern_fails_closed_without_sidecar(persist_results):
+    detection = {
+        "pattern_id": "opening-punch",
+        "confidence": "strong",
+        "evidence": "A concrete incident opens the talk.",
+        "evidence_citations": [
+            {
+                "channel": "timed_transcript",
+                "quote": "The production deploy failed on Friday night.",
+            }
+        ],
+    }
+    context = {
+        "transcript_text": "The production deploy failed on Friday night.",
+        "transcript_reason": "loaded fixture transcript",
+        "timed_segments": [],
+        "timing_reason": "timed transcript sidecar is missing",
+    }
+    with pytest.raises(ValueError, match="no verified timestamp"):
+        persist_results.validate_detection(
+            detection,
+            field="patterns_detected",
+            catalog=persist_results.load_pattern_catalog(),
+            evidence_context=context,
+        )
+
+
+def test_catalog_rejects_wrong_channel_and_hidden_process_inference(persist_results):
+    catalog = persist_results.load_pattern_catalog()
+    transcript_guess = {
+        "pattern_id": "composite-animation",
+        "confidence": "moderate",
+        "evidence": "The speaker describes several movements.",
+        "evidence_citations": [
+            {
+                "channel": "transcript",
+                "quote": "Watch this element move across the whole screen.",
+            }
+        ],
+    }
+    with pytest.raises(ValueError, match="cannot be proved through"):
+        persist_results.validate_detection(
+            transcript_guess,
+            field="patterns_detected",
+            catalog=catalog,
+        )
+
+    hidden_process = {
+        "pattern_id": "fourthought",
+        "confidence": "strong",
+        "evidence": "The final talk is well organized.",
+        "evidence_citations": [
+            {"channel": "slides", "slide_numbers": [1, 2]}
+        ],
+    }
+    with pytest.raises(ValueError, match="observable:false"):
+        persist_results.validate_detection(
+            hidden_process,
+            field="patterns_detected",
+            catalog=catalog,
+        )
+
+
+def test_catalog_rejects_pattern_antipattern_bucket_swaps(persist_results):
+    detection = {
+        "pattern_id": "ant-fonts",
+        "confidence": "strong",
+        "evidence": "The slide text is too small to read.",
+        "evidence_citations": [
+            {"channel": "slides", "slide_numbers": [8]}
+        ],
+    }
+    with pytest.raises(ValueError, match="cataloged as 'antipattern'"):
+        persist_results.validate_detection(
+            detection,
+            field="patterns_detected",
+            catalog=persist_results.load_pattern_catalog(),
+        )
+
+
+def test_duplicate_pattern_ids_are_rejected(persist_results):
+    observations = _return()["pattern_observations"]
+    observations["patterns_detected"] = [
+        observations["patterns_detected"][0],
+        observations["patterns_detected"][0],
+    ]
+    with pytest.raises(ValueError, match="duplicate pattern IDs"):
+        persist_results.require_detections(
+            observations,
+            "patterns_detected",
+            catalog=persist_results.load_pattern_catalog(),
+        )
+
+
+def test_v3_migration_marks_legacy_evidence_unlocated(persist_results):
+    db = {
+        "talks": [
+            _talk(
+                schema_version=2,
+                pattern_observations={
+                    "patterns_detected": [
+                        {
+                            "pattern_id": "narrative-arc",
+                            "confidence": "strong",
+                            "evidence": "Legacy prose only.",
+                        }
+                    ],
+                    "antipatterns_detected": [],
+                    "pattern_score": 1,
+                },
+            )
+        ]
+    }
+    assert persist_results.migrate_records(db) == 1
+    talk = db["talks"][0]
+    assert talk["schema_version"] == 3
+    assert talk["pattern_observations"]["evidence_schema_version"] == 1
+    assert talk["pattern_observations"]["patterns_detected"][0][
+        "evidence_citations"
+    ] == []
+
+
+def test_non_youtube_transcript_path_is_resolved_inside_vault(persist_results, tmp_path):
+    transcript_dir = tmp_path / "transcripts"
+    transcript_dir.mkdir()
+    transcript = transcript_dir / "infoq-talk.txt"
+    transcript.write_text(
+        "The production deploy failed on Friday night.",
+        encoding="utf-8",
+    )
+    talk = _talk(filename="infoq.md")
+    ret = _return(
+        filename="infoq.md",
+        transcript_path="transcripts/infoq-talk.txt",
+    )
+
+    context = persist_results.build_evidence_context(tmp_path, talk, ret)
+
+    assert context["transcript_text"] == transcript.read_text(encoding="utf-8")
+    assert "loaded transcript" in context["transcript_reason"]
+
+
+@pytest.mark.parametrize(
+    "bad_path",
+    ["../secret.txt", "/tmp/secret.txt", "analyses/talk.txt", "transcripts/talk.json"],
+)
+def test_transcript_path_cannot_escape_its_vault_directory(
+    persist_results,
+    tmp_path,
+    bad_path,
+):
+    with pytest.raises(ValueError, match="under the vault's transcripts"):
+        persist_results.build_evidence_context(
+            tmp_path,
+            _talk(filename="infoq.md"),
+            _return(filename="infoq.md", transcript_path=bad_path),
+        )
+
+
+def test_invalid_youtube_id_cannot_become_a_transcript_path(persist_results, tmp_path):
+    with pytest.raises(ValueError, match="11-character YouTube id"):
+        persist_results.build_evidence_context(
+            tmp_path,
+            _talk(youtube_id="../../escape"),
+            _return(),
+        )
+
+
+def test_youtube_talk_cannot_redirect_evidence_to_another_transcript(
+    persist_results,
+    tmp_path,
+):
+    with pytest.raises(ValueError, match="does not match this talk's youtube_id"):
+        persist_results.build_evidence_context(
+            tmp_path,
+            _talk(youtube_id="eg6gqvUFh6Q"),
+            _return(transcript_path="transcripts/someone-else.txt"),
+        )
+
+
+def test_slide_citation_requires_a_declared_usable_source(persist_results):
+    detection = {
+        "pattern_id": "narrative-arc",
+        "confidence": "strong",
+        "evidence": "The deck follows a problem-to-resolution arc.",
+        "evidence_citations": [
+            {"channel": "slides", "slide_numbers": [1, 2]}
+        ],
+    }
+    with pytest.raises(ValueError, match="no usable slide source/count"):
+        persist_results.validate_detection(
+            detection,
+            field="patterns_detected",
+            catalog=persist_results.load_pattern_catalog(),
+            evidence_context={"slide_source": "model_guess", "slide_count": 2},
+        )
+
+
+def test_video_citation_rejects_nonfinite_timestamps(persist_results):
+    detection = {
+        "pattern_id": "make-it-rain",
+        "confidence": "strong",
+        "evidence": "Objects are thrown to audience members.",
+        "evidence_citations": [
+            {"channel": "video", "start_seconds": 2.0, "end_seconds": float("inf")}
+        ],
+    }
+    with pytest.raises(ValueError, match="numeric start_seconds/end_seconds"):
+        persist_results.validate_detection(
+            detection,
+            field="patterns_detected",
+            catalog=persist_results.load_pattern_catalog(),
+            evidence_context={"video_url": "https://example.test/video"},
+        )
+
+
+def test_talk_metadata_cannot_cite_generated_analysis_prose(persist_results):
+    detection = {
+        "pattern_id": "lightning-talk",
+        "confidence": "strong",
+        "evidence": "The return calls itself a lightning talk.",
+        "evidence_citations": [
+            {"channel": "talk_metadata", "field": "rhetoric_notes"}
+        ],
+    }
+    with pytest.raises(ValueError, match="is not source metadata"):
+        persist_results.validate_detection(
+            detection,
+            field="patterns_detected",
+            catalog=persist_results.load_pattern_catalog(),
+        )
+
+
+def test_pattern_metadata_policy_rejects_irrelevant_source_fields(persist_results):
+    detection = {
+        "pattern_id": "lightning-talk",
+        "confidence": "strong",
+        "evidence": "A transcript artifact exists.",
+        "evidence_citations": [
+            {"channel": "talk_metadata", "field": "transcript_path"}
+        ],
+    }
+    with pytest.raises(ValueError, match="not permitted for this pattern"):
+        persist_results.validate_detection(
+            detection,
+            field="patterns_detected",
+            catalog=persist_results.load_pattern_catalog(),
+        )
+
+
+def test_talk_metadata_value_is_stamped_from_promoted_source_field(
+    persist_results,
+    tmp_path,
+):
+    ret = _return()
+    context = persist_results.build_evidence_context(tmp_path, _talk(), ret)
+    detection = {
+        "pattern_id": "lightning-talk",
+        "confidence": "moderate",
+        "evidence": "The deck uses the fixed 20-slide format.",
+        "evidence_citations": [
+            {"channel": "talk_metadata", "field": "slide_count", "value": 999}
+        ],
+    }
+
+    validated = persist_results.validate_detection(
+        detection,
+        field="patterns_detected",
+        catalog=persist_results.load_pattern_catalog(),
+        evidence_context=context,
+    )
+
+    assert validated["evidence_citations"][0]["value"] == 62
+
+
+def test_catalog_rejects_duplicate_evidence_channels(persist_results, tmp_path):
+    category = tmp_path / "build"
+    category.mkdir()
+    (category / "duplicate.md").write_text(
+        """---
+id: duplicate
+type: pattern
+observable: true
+evidence_channels: [video, video]
+---
+# Duplicate
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="invalid evidence_channels"):
+        persist_results.load_pattern_catalog(tmp_path)
+
+
+def test_migration_refuses_to_downgrade_a_future_schema(persist_results):
+    db = {"talks": [_talk(schema_version=persist_results.TALK_SCHEMA_VERSION + 1)]}
+    with pytest.raises(ValueError, match="will not downgrade"):
+        persist_results.migrate_records(db)
+    assert db["talks"][0]["schema_version"] == persist_results.TALK_SCHEMA_VERSION + 1
+
+
+def test_future_schema_preflight_leaves_earlier_legacy_record_untouched(persist_results):
+    legacy = _talk(schema_version=2)
+    future = _talk(
+        filename="future.md",
+        schema_version=persist_results.TALK_SCHEMA_VERSION + 1,
+    )
+    db = {"talks": [legacy, future]}
+    with pytest.raises(ValueError, match="will not downgrade"):
+        persist_results.migrate_records(db)
+    assert legacy["schema_version"] == 2

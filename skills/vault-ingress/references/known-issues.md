@@ -91,6 +91,23 @@ text that wasn't said.
 - Set `transcript_quality: "partial"` on talks where whole sections are
   unreliable.
 
+## Timed Sidecars Can Be Missing or Stale
+
+Legacy transcripts have no `{id}.segments.json`, and a manually edited `.txt`
+can no longer match the timing file that was generated with it. This does not
+make the transcript unusable, but applying those timestamps would attach
+evidence to the wrong moment.
+
+**Mitigations:**
+
+- `transcript_timing.py` binds every sidecar to the exact transcript text with
+  `transcript_sha256`; readers reject a missing, malformed, unsupported, empty,
+  or hash-mismatched sidecar.
+- Use ordinary `transcript` citations when exact timing is irrelevant.
+- When a pattern requires position or timing, regenerate the transcript bundle
+  from captions/Whisper/VTT or review the video directly. Do not silently
+  downgrade it to an unlocated quote.
+
 ## Non-Speaker Talks Slip into Playlists
 
 Conference playlists sometimes mix talks from multiple speakers, and a vault

@@ -6,6 +6,7 @@ part: deliver
 phase_relevance:
   - content
 vault_dimensions: [9]
+evidence_channels: [video]
 detection_signals:
   - "confident delivery"
   - "no unnecessary apologies"

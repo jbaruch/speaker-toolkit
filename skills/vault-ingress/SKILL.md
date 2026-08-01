@@ -30,7 +30,8 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | `slide-design-spec.md` | Visual design rules from PDF + PPTX analysis |
 | `speaker-profile.json` | Machine-readable bridge to presentation-creator |
 | `analyses/{talk_filename}.md` | Per-talk rhetoric analysis (one file per processed talk) |
-| `transcripts/{youtube_id}.txt` | Downloaded/cleaned transcripts |
+| `transcripts/{transcript_id}.txt` | Downloaded/cleaned transcripts (`youtube_id` for YouTube talks) |
+| `transcripts/{transcript_id}.segments.json` | Optional hash-bound source timing for the matching transcript |
 | `slides/{id}.pdf` | Slide PDFs (from Google Drive, PPTX export, or video extraction) |
 | [references/schemas-db.md](references/schemas-db.md) | DB + subagent schemas; extraction output schemas |
 | [references/rhetoric-dimensions.md](references/rhetoric-dimensions.md) | 14 analysis dimensions |
@@ -45,6 +46,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | `skills/vault-ingress/scripts/batch-download-videos.sh` | Parallel video download for batch processing |
 | `skills/vault-ingress/scripts/vtt-cleanup.py` | Clean VTT subtitles into plain transcript text |
 | `skills/vault-ingress/scripts/fetch-transcript.py` | Fetch a transcript, validate it, write only if real (captions → local Whisper) |
+| `skills/vault-ingress/scripts/transcript_timing.py` | Own timed-transcript sidecar writes, validation, and quote resolution |
 
 A talk is processable when it has `video_url`. Slide sources, in order of preference:
 1. `pptx_path` — richest data (exact colors, fonts, shapes via python-pptx)
@@ -119,8 +121,8 @@ pattern-taxonomy tagging, and the return-JSON shape — lives in
 
 Transcripts come from `skills/vault-ingress/scripts/fetch-transcript.py`, never from inline fetch
 code. It tries the caption track, falls back to local Whisper, validates the
-result, and writes atomically only on success — so a failed fetch leaves no file
-rather than leaving a crash report where speech belongs:
+result, and writes atomically only on success. A failed fetch never replaces the
+transcript with a crash report or partial speech:
 
 ```bash
 python3 skills/vault-ingress/scripts/fetch-transcript.py <video-id-or-url> \
@@ -130,7 +132,10 @@ python3 skills/vault-ingress/scripts/fetch-transcript.py <video-id-or-url> \
 Exit 0 wrote (or kept) a valid transcript; exit 1 means no source produced one
 and the talk is `processed_partial` at best; exit 2 is an argument or tool-state
 error. Validation thresholds and failure signatures are the script's own — see
-its module docstring and the constants above `validate_transcript`.
+its module docstring and the constants above `validate_transcript`. Its JSON
+`timed_path` is non-null only when a schema- and hash-verified segment sidecar is
+available. A missing sidecar does not invalidate ordinary transcript evidence,
+but it cannot support patterns whose semantics depend on position or timing.
 
 ## Step 4 — Persist Subagent Results
 
@@ -148,7 +153,10 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   Contract, the promoted-scalar allowlist, and merge semantics live in
   `skills/vault-ingress/scripts/persist-results.py` (top-of-file docstring and the `PROMOTE` list) — to make
   a new field queryable, extend the return schema and that list; never reintroduce
-  manual mapping.
+  manual mapping. The same script validates each new pattern detection against
+  the catalog's observability and evidence-channel policy, verifies its cited
+  source location, and refuses the whole batch before mutation when evidence is
+  absent or unverifiable.
 - **Write per-talk analysis files — run the script, do NOT hand-write them.** Run
   `python3 skills/vault-ingress/scripts/write-analysis.py batch-returns.json {vault_root}/analyses --talks {vault_root}/tracking-database.json`
   over the SAME `batch-returns.json` the merge consumed, so the DB and the files
@@ -277,6 +285,8 @@ auto-invoke.
 - Create `transcripts/`, `slides/`, `analyses/` dirs if missing.
 - Re-read tracking DB before writing (single source of truth).
 - Preserve all summary content — add/refine, never delete.
+- Auto-score only source-located observations for `observable: true` catalog entries.
+  Hidden preparation/provenance belongs in clarification, not pattern inference.
 - After 10+ scored talks, produce per-talk adherence assessments against the
   Section 15 baseline — definition in
   [references/processing-rules.md](references/processing-rules.md) Adherence Assessment.

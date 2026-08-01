@@ -6,6 +6,7 @@ part: deliver
 phase_relevance:
   - guardrails
 vault_dimensions: [4, 14]
+evidence_channels: [transcript, video]
 detection_signals:
   - "negative polling questions"
   - "audience asked to admit ignorance"

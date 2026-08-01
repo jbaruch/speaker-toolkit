@@ -6,6 +6,7 @@ part: prepare
 phase_relevance:
   - intake
 vault_dimensions: [9]
+evidence_channels: [transcript, slides, video]
 detection_signals:
   - "clear motivation stated"
   - "strong personal connection to topic"

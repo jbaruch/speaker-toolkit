@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - slides
 vault_dimensions: [5, 13]
+evidence_channels: [video]
 detection_signals:
   - "dissolve transitions"
   - "seamless slide flow"

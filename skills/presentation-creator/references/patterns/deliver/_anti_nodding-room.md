@@ -6,6 +6,7 @@ part: deliver
 phase_relevance:
   - guardrails
 vault_dimensions: [4, 12, 14]
+evidence_channels: [video]
 detection_signals:
   - "uninterrupted tell-only delivery with no moment the audience must produce anything"
   - "every callback is a restatement; every question is rhetorical and self-answered"

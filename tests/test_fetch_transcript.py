@@ -157,7 +157,11 @@ def test_caption_errors_fall_through_instead_of_propagating(fetch_transcript, mo
         raise TranscriptsDisabled("eg6gqvUFh6Q")
 
     monkeypatch.setattr(YouTubeTranscriptApi, "fetch", boom, raising=False)
-    assert fetch_transcript.fetch_captions("eg6gqvUFh6Q", ["en"]) == (None, None)
+    assert fetch_transcript.fetch_captions("eg6gqvUFh6Q", ["en"]) == (
+        None,
+        None,
+        None,
+    )
 
 
 def test_captions_report_the_track_language(fetch_transcript, monkeypatch):
@@ -170,8 +174,10 @@ def test_captions_report_the_track_language(fetch_transcript, monkeypatch):
     from youtube_transcript_api import YouTubeTranscriptApi
 
     class Segment:
-        def __init__(self, text):
+        def __init__(self, text, start=1.0, duration=2.0):
             self.text = text
+            self.start = start
+            self.duration = duration
 
     class Fetched(list):
         language_code = "ru"
@@ -179,9 +185,10 @@ def test_captions_report_the_track_language(fetch_transcript, monkeypatch):
     monkeypatch.setattr(YouTubeTranscriptApi, "fetch",
                         lambda self, *a, **k: Fetched([Segment("привет")]),
                         raising=False)
-    text, language = fetch_transcript.fetch_captions("x", ["en", "ru"])
+    text, language, segments = fetch_transcript.fetch_captions("x", ["en", "ru"])
     assert text == "привет"
     assert language == "ru"
+    assert segments[0].start == 1.0
 
 
 def test_write_is_atomic_and_leaves_no_partial(fetch_transcript, tmp_path):
@@ -287,3 +294,26 @@ def test_cli_keeps_a_valid_existing_transcript_without_refetching(
     assert payload["ok"] is True
     assert payload["method"] == "existing"
     assert payload["words"] == 900
+    assert payload["timed_path"] is None
+
+
+def test_cli_reports_a_verified_existing_timing_sidecar(fetch_transcript, tmp_path):
+    out = tmp_path / "eg6gqvUFh6Q.txt"
+    text = _talk(900)
+    fetch_transcript.write_transcript_bundle(
+        out,
+        text,
+        [{"text": text, "start": 0.0, "end": 600.0}],
+        source="captions",
+    )
+
+    result = subprocess.run(
+        [sys.executable, fetch_transcript.__file__, "eg6gqvUFh6Q", "--out", str(out)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["method"] == "existing"
+    assert payload["timed_path"] == str(tmp_path / "eg6gqvUFh6Q.segments.json")

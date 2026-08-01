@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - publishing
 vault_dimensions: [8]
+evidence_channels: [video]
 detection_signals:
   - "recorded full presentation"
   - "video artifact of talk"

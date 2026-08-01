@@ -6,6 +6,7 @@ part: deliver
 phase_relevance:
   - content
 vault_dimensions: [4]
+evidence_channels: [video]
 detection_signals:
   - "physical props used"
   - "audience interaction through objects"

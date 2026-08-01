@@ -19,6 +19,7 @@ import os
 import re
 
 import pytest
+import yaml
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PATTERNS = os.path.join(
@@ -45,6 +46,16 @@ def _read(path):
 def _front(path, key):
     m = re.search(rf"^{key}:\s*(\S+)\s*$", _read(path), re.M)
     return m.group(1) if m else None
+
+
+def _metadata(path):
+    parts = _read(path).split("---", 2)
+    assert len(parts) == 3, f"{path}: missing YAML frontmatter"
+    return yaml.safe_load(parts[1])
+
+
+def _entry(pattern_id):
+    return next(path for path in ENTRY_FILES if _metadata(path)["id"] == pattern_id)
 
 
 def test_catalog_is_present():
@@ -143,3 +154,95 @@ def test_index_summary_statistics_are_accurate():
             f"{anti - unobs_anti} antipatterns)") in index
     assert (f"**Unobservable (go-live checklist):** {unobs} "
             f"({unobs - unobs_anti} patterns + {unobs_anti} antipatterns)") in index
+
+
+def test_evidence_channels_use_the_closed_source_channel_vocabulary():
+    allowed = {
+        "transcript",
+        "timed_transcript",
+        "slides",
+        "slide_sequence",
+        "video",
+        "talk_metadata",
+    }
+    for path in ENTRY_FILES:
+        channels = _metadata(path).get("evidence_channels")
+        if _metadata(path).get("observable") is not False:
+            assert isinstance(channels, list) and channels, (
+                f"{os.path.basename(path)}: every observable entry needs a "
+                "non-empty evidence_channels list")
+            assert set(channels) <= allowed, (
+                f"{os.path.basename(path)}: unknown channels {set(channels) - allowed}")
+
+
+def test_metadata_channel_declares_the_fields_it_can_use():
+    for path in ENTRY_FILES:
+        metadata = _metadata(path)
+        channels = metadata.get("evidence_channels") or []
+        fields = metadata.get("evidence_metadata_fields") or []
+        assert bool(fields) == ("talk_metadata" in channels), (
+            f"{os.path.basename(path)}: talk_metadata and evidence_metadata_fields "
+            "must be declared together")
+        assert len(fields) == len(set(fields)), (
+            f"{os.path.basename(path)}: duplicate evidence metadata fields")
+
+
+@pytest.mark.parametrize(
+    "pattern_id,channels",
+    [
+        ("opening-punch", {"timed_transcript", "slides", "video"}),
+        ("call-to-adventure", {"timed_transcript", "video"}),
+        ("progressive-reveal", {"slide_sequence", "video"}),
+        ("composite-animation", {"video"}),
+        ("preroll", {"video"}),
+        ("make-it-rain", {"video"}),
+        ("weatherman", {"video"}),
+        ("ant-fonts", {"slides", "video"}),
+        ("three-part-close", {"slide_sequence", "video"}),
+        ("screen-blackout", {"video"}),
+        ("takahashi", {"slides", "slide_sequence", "video"}),
+    ],
+)
+def test_channel_sensitive_patterns_cannot_fall_back_to_transcript_guessing(
+        pattern_id, channels):
+    assert set(_metadata(_entry(pattern_id))["evidence_channels"]) == channels
+
+
+def test_hidden_process_and_provenance_ids_are_not_auto_scorable():
+    hidden = {
+        "abstract-attorney",
+        "borrowed-shoes",
+        "concurrent-creation",
+        "crucible",
+        "fourthought",
+        "know-your-audience",
+        "peer-review",
+        "proposed",
+        "required",
+        "social-media-advertising",
+    }
+    assert {
+        pattern_id
+        for pattern_id in hidden
+        if _metadata(_entry(pattern_id)).get("observable") is not False
+    } == set()
+
+
+@pytest.mark.parametrize(
+    "pattern_id,anchors",
+    [
+        ("takahashi", ("one word, phrase, or image per slide", "hundreds of slides")),
+        ("cookie-cutter", ("forcing each idea into exactly one slide",)),
+        ("progressive-reveal", ("same base image", "adding one annotation per slide")),
+        ("meme-as-argument", ("internet memes", "argumentative devices")),
+        ("dead-demo", ("time filler", "no narrative connection")),
+        ("three-part-close", ("three distinct slides", "summary, call to action, thanks")),
+        ("anti-sell", ("products, employer, or credentials", "expects a pitch")),
+        ("negative-ignorance", ('who here is not familiar with x?',)),
+        ("shortchanged", ("last-minute reduction", "previous speakers running long")),
+    ],
+)
+def test_stable_ids_retain_their_distinguishing_source_meaning(pattern_id, anchors):
+    text = _read(_entry(pattern_id)).casefold()
+    for anchor in anchors:
+        assert anchor.casefold() in text, f"{pattern_id}: missing source-meaning anchor {anchor!r}"

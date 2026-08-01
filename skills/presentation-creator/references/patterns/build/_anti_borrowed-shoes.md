@@ -7,12 +7,12 @@ phase_relevance:
   - guardrails
 vault_dimensions: [7, 8, 14]
 detection_signals:
-  - "mismatch between speaker style and slides"
-  - "uncomfortable delivery rhythm"
-  - "borrowed material without adaptation"
+  - "deck provenance identifies a different author"
+  - "version history shows no substantive adaptation by the presenter"
 related_patterns: [crucible, narrative-arc, carnegie-hall]
 inverse_of: []
 difficulty: foundational
+observable: false
 ---
 
 # Borrowed Shoes
@@ -37,12 +37,16 @@ This is an antipattern and should always be avoided. If you must present materia
 The one exception is a deliberate, rehearsed co-presentation where the original creator coaches the second presenter through the material, transfers the contextual knowledge, and helps the second presenter internalize the timing and emphasis. This transforms Borrowed Shoes into a genuine collaboration.
 
 ## Detection Heuristics
-When scoring talks, watch for signs of disconnect between the presenter and the slides: hesitation at transitions (suggesting unfamiliarity with slide order), mismatched verbal emphasis (the presenter stresses different points than the slide design emphasizes), visual style inconsistent with the presenter's other materials, and inability to answer detailed questions about design or content choices. A presenter who says "I believe this slide is about..." or "I think the original author intended..." is exhibiting classic Borrowed Shoes signals.
+Awkward delivery or an unfamiliar visual style does not prove who authored a
+deck. Verify Borrowed Shoes only when deck provenance identifies another author
+and version history shows the presenter did not substantially adapt it. Without
+both facts, treat the cause of the mismatch as unknown.
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Presenter clearly working from someone else's slides with no adaptation — visible discomfort at transitions, mismatched emphasis, inability to explain design choices
-- Moderate signal (1 pt): Some adaptation of borrowed material visible — speaker notes in the presenter's voice, some slides modified — but occasional friction between presenter style and slide design
-- Absent (0 pts — antipattern not present): Slides clearly reflect the presenter's own style, voice, and rhythm, with seamless integration between spoken delivery and visual design
+- Strong signal (2 pts — antipattern present): Deck provenance identifies another author and version history shows no substantive adaptation by the presenter
+- Moderate signal (1 pt): Provenance identifies borrowed material and version history shows only superficial adaptation
+- Absent (0 pts — antipattern not present): Provenance/version history shows original authorship or substantial adaptation into the presenter's own material
+- Unevaluable: Authorship or version history is unavailable
 
 ## Relationship to Vault Dimensions
 Dimension 7 (Language and Communication): Borrowed Shoes creates a mismatch between the presenter's natural communication style and the language embedded in the slides. Dimension 8 (Slide Design): The design choices in borrowed slides reflect someone else's visual thinking. Dimension 14 (Overall Quality Indicators): A presenter working from borrowed material almost always delivers at a lower quality level than their natural capability.

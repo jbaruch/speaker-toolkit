@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - slides
 vault_dimensions: [11, 13]
+evidence_channels: [slide_sequence, video]
 detection_signals:
   - "animated focus indicators"
   - "zoom-to-detail on code"

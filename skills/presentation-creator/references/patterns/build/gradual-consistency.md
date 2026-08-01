@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - slides
 vault_dimensions: [8, 13]
+evidence_channels: [slide_sequence, video]
 detection_signals:
   - "build animations revealing final state"
   - "incremental content reveal"

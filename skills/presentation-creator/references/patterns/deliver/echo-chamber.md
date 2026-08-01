@@ -6,6 +6,7 @@ part: deliver
 phase_relevance:
   - publishing
 vault_dimensions: [4, 7]
+evidence_channels: [video]
 detection_signals:
   - "questions repeated before answering"
   - "audience questions restated"

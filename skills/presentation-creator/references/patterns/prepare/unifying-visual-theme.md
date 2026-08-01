@@ -7,6 +7,7 @@ phase_relevance:
   - architecture
   - slides
 vault_dimensions: [10, 13]
+evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "consistent visual metaphor"
   - "recurring visual elements"

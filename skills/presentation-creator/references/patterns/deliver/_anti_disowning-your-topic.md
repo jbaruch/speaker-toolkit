@@ -6,6 +6,7 @@ part: deliver
 phase_relevance:
   - guardrails
 vault_dimensions: [9, 12, 14]
+evidence_channels: [timed_transcript, video]
 detection_signals:
   - "pace acceleration mid-talk"
   - "skipping prepared material"

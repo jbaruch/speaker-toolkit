@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - slides
 vault_dimensions: [13]
+evidence_channels: [slide_sequence, video]
 detection_signals:
   - "hidden elements revealed during presentation"
   - "surprise reveals"

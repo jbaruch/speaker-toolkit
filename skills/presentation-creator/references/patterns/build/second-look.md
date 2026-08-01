@@ -7,6 +7,7 @@ phase_relevance:
   - slides
   - publishing
 vault_dimensions: [8, 13]
+evidence_channels: [slides, video]
 detection_signals:
   - "slide carries a room-legible layer and a deliberately unreadable reward layer"
   - "detail is never narrated and the argument does not depend on it"

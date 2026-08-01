@@ -7,6 +7,7 @@ phase_relevance:
   - intent
   - content
 vault_dimensions: [9, 11]
+evidence_channels: [transcript, slides, video]
 detection_signals:
   - "audience positioned as hero"
   - "knowledge-sharing framing"

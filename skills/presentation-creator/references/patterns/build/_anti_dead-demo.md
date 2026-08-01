@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - guardrails
 vault_dimensions: [11, 14]
+evidence_channels: [video]
 detection_signals:
   - "purposeless demo"
   - "demo as time filler"

@@ -7,6 +7,7 @@ phase_relevance:
   - architecture
   - content
 vault_dimensions: [2, 12]
+evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "modular content sections"
   - "cut lines present"

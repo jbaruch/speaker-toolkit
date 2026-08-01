@@ -7,6 +7,7 @@ phase_relevance:
   - intent
   - content
 vault_dimensions: [1, 4]
+evidence_channels: [timed_transcript, slides, video]
 detection_signals:
   - "personal story in opening 1-2 minutes"
   - "unexpected fact or surprise as hook"
