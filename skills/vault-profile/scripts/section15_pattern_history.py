@@ -57,6 +57,7 @@ from pattern_opportunities import PatternOpportunityError  # noqa: E402
 from return_validation import (  # noqa: E402
     ReturnValidationError,
 )
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseIOError,
     decode_json_object,

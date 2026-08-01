@@ -71,6 +71,7 @@ from return_validation import (  # noqa: E402
     ReturnValidationError,
     load_catalog,
 )
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseIOError,
     decode_json_object,

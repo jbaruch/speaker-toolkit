@@ -518,7 +518,8 @@ def test_atomic_replace_failure_leaves_database_and_cleans_stage(
     def fail_replace(_source: object, _destination: object) -> None:
         raise OSError("simulated replacement failure")
 
-    monkeypatch.setattr(scan_shownotes.os, "replace", fail_replace)
+    tracking_database_os = getattr(sys.modules["tracking_database_io"], "os")
+    monkeypatch.setattr(tracking_database_os, "replace", fail_replace)
 
     with pytest.raises(
         scan_shownotes.ShownotesScanError,
