@@ -1,6 +1,7 @@
 """Tests for guardrail-check.py — profile-aware checks against outline.yaml."""
 
 import copy
+import json
 from pathlib import Path
 
 import pytest
@@ -39,6 +40,52 @@ def outline(outline_schema):
 @pytest.fixture(scope="session")
 def base_data():
     return yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
+
+
+def test_main_emits_one_structured_json_report(guardrail_check, capsys):
+    return_code = guardrail_check.main(
+        ["guardrail-check.py", str(FIXTURE), "-"]
+    )
+    captured = capsys.readouterr()
+
+    assert return_code == 0
+    assert captured.err == ""
+    report = json.loads(captured.out)
+    assert report["schema_version"] == 1
+    assert report["talk_title"]
+    assert [check["name"] for check in report["checks"]] == [
+        "Pattern history",
+        "Slide budget",
+        "Act 1 ratio",
+        "Branding",
+        "Profanity",
+        "Data attribution",
+        "Closing",
+        "Cut lines",
+    ]
+    assert report["pattern_history"]["history_enabled"] is False
+    assert report["pattern_history"]["suppressed_fields"]
+    assert report["recurring_antipatterns"] == []
+    assert report["contextual_taxonomy_scan"] == {
+        "enabled": True,
+        "history_independent": True,
+        "scope": "current_outline",
+    }
+    assert report["required_companion_check"].endswith("check-rhetorical.py")
+
+
+def test_main_rejects_invalid_input_without_stdout(
+        guardrail_check, tmp_path, capsys):
+    missing_outline = tmp_path / "missing-outline.yaml"
+
+    return_code = guardrail_check.main(
+        ["guardrail-check.py", str(missing_outline), "-"]
+    )
+    captured = capsys.readouterr()
+
+    assert return_code == 1
+    assert captured.out == ""
+    assert f"failed to load {missing_outline}" in captured.err
 
 
 # ── Slide budget ─────────────────────────────────────────────────────

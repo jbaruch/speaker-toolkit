@@ -5,18 +5,24 @@ Phase 4 runs two complementary checkers against `outline.yaml`:
 | Script | Surface | Output |
 |--------|---------|--------|
 | `scripts/check-rhetorical.py outline.yaml` | Closed pattern taxonomy — opening PUNCH, big-idea singleton, thesis preview/payoff, sparkline elements, register coverage or match, master-story threading, callback ledger, inoculation count, progressive-list contiguity, running gags, duration accounting | `rhetorical-review.md` |
-| `scripts/guardrail-check.py outline.yaml <speaker-profile.json\|-> [rhetoric-style-summary.md]` | Profile-aware rules — pattern-history authorization, slide budget, Act 1 ratio, branding, profanity, data attribution, closing completeness, cut-line availability (conditional on `modular_design`) | stdout report |
+| `scripts/guardrail-check.py outline.yaml <speaker-profile.json\|-> [rhetoric-style-summary.md]` | Profile-aware rules — pattern-history authorization, slide budget, Act 1 ratio, branding, profanity, data attribution, closing completeness, cut-line availability (conditional on `modular_design`) | schema-v1 JSON on stdout |
 
 `guardrail-check.py` imports the vault-profile provenance assessor through
 `scripts/pattern_history_status.py`. A valid profile always wins. When its history is
 disabled, the optional summary path can authorize only the unique current block parsed
 by `skills/vault-profile/scripts/section15_pattern_history.py`; sources are never
-merged. The guardrail prints current-cohort recurring antipattern labels only while
+merged. The guardrail emits current-cohort recurring antipattern records only while
 `history_enabled` and `classification_fields_available` are both true. Exact raw
-occurrence rows alone never authorize recurring severity. Otherwise it prints an exact
-warning plus suppression notice.
+occurrence rows alone never authorize recurring severity. Otherwise its
+`pattern_history.suppressed_fields` records the unavailable history-derived fields.
 Current-outline contextual taxonomy scanning and illustration coverage (checks 9B and
 10 below) remain agent-run checks alongside the script output.
+
+The JSON object contains `schema_version`, `talk_title`, named `checks`, the full
+`pattern_history` authorization payload, structured `recurring_antipatterns`,
+`contextual_taxonomy_scan`, and `required_companion_check`. A produced report exits
+0 even when a check status is FAIL. Input failures exit non-zero with diagnostics on
+stderr and no stdout.
 
 The two scripts are independent — run both. `check-rhetorical.py` needs no
 profile and emits a deterministic report regardless of the speaker. `guardrail-check.py`
@@ -406,7 +412,8 @@ SKIP for low-stakes talks (internal demos, small-group presentations, tutorial s
 
 ## Guardrail Summary Template
 
-Use this template after each check:
+Render this human summary from the JSON report after completing the agent-run checks.
+This template is not the script's stdout contract.
 
 ```
 GUARDRAIL CHECK — {talk title} — {date}

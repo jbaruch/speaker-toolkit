@@ -960,12 +960,13 @@ def test_guardrail_suppresses_unconfigured_fallback_classifications(
             str(summary_path),
         ]
     )
-    output = capsys.readouterr().out
+    report = json.loads(capsys.readouterr().out)
+    checks = {item["name"]: item for item in report["checks"]}
 
     assert return_code == 0
-    assert "Pattern classifications disabled" in output
-    assert "source=section15_current_block" not in output
-    assert "[RECURRING]" not in output
+    assert "Pattern classifications disabled" in checks["Pattern history"]["detail"]
+    assert report["pattern_history"]["history_source"] is None
+    assert report["recurring_antipatterns"] == []
 
 
 def test_creator_docs_route_summary_fallback_through_shared_parser():

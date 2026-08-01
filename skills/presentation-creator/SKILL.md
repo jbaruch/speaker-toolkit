@@ -401,8 +401,8 @@ per check.
 runtime profile data: pattern-history authorization, slide budget, Act 1 ratio
 limits, branding, profanity register, data attribution, closing completeness, and
 cut-line availability (conditional on `modular_design`). It emits historical
-`[RECURRING]` antipattern labels only when the exact-generation history gate passes,
-and always leaves the current-outline contextual taxonomy scan enabled. Illustration
+`recurring_antipatterns` records only when the exact-generation history gate passes.
+`contextual_taxonomy_scan.enabled` remains true for the current outline. Illustration
 coverage and the contextual scan still live in `phase4-guardrails.md` as additional
 manual checks the agent should surface alongside the script's output. See
 [references/phase4-guardrails.md](references/phase4-guardrails.md) for the
@@ -410,20 +410,13 @@ full check list and report format.
 
 The script reports the 7 independent non-pattern checks plus pattern-history status
 and any authorized recurring-history lines; the agent adds the remaining categories
-manually:
-
-```
-GUARDRAIL CHECK — {talk title}
-================================================
-[PASS/FAIL] Slide budget: {actual}/{max} for {duration}-min slot
-[PASS/WARN/FAIL] Act 1 ratio: {%} (limit: {max}% — WARN within 5%)
-[PASS/WARN] Branding: footer elements for {conference}
-[PASS/WARN/FAIL] Profanity: {register} applied, {N} on-slide
-[PASS/FAIL] Data attribution: {N} slides with numeric claims and source check
-[PASS/FAIL] Closing: summary={y/n} CTA={y/n} social={y/n}
-[PASS/FAIL] Cut lines: {cuttable_min} min of cuttable content (or PASS-skipped when modular_design is disabled)
-================================================
-```
+manually. Stdout is one schema-v1 JSON object. Read `checks[]` for each named
+status and detail, `pattern_history` for authorization and suppressed fields,
+`recurring_antipatterns` for authorized history, `contextual_taxonomy_scan` for
+the independent current-outline lane, and `required_companion_check` for the
+structural checker. Exit 0 means the report was produced; FAIL remains a check
+status. Input failures exit non-zero, write diagnostics to stderr, and leave
+stdout empty.
 
 Agent-added (not in script yet):
 - Current-taxonomy contextual antipattern scan of the new outline; this runs even when

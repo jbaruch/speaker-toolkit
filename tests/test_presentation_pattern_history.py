@@ -307,16 +307,18 @@ def test_guardrail_keeps_nonpattern_checks_and_contextual_scan_when_history_disa
     return_code = guardrail_check.main(
         ["guardrail-check.py", str(OUTLINE), str(profile_path)]
     )
-    output = capsys.readouterr().out
+    report = json.loads(capsys.readouterr().out)
+    checks = {item["name"]: item for item in report["checks"]}
 
     assert return_code == 0
-    assert "[FAIL] Slide budget: 11/5" in output
-    assert "[INFO] Contextual taxonomy scan: enabled" in output
-    assert "Historical pattern tiers" in output
-    assert "[RECURRING]" not in output
-    assert "history-antipattern-sentinel" not in output
-    assert "legacy-issue-sentinel" not in output
-    assert "legacy-badge-sentinel" not in output
+    assert checks["Slide budget"]["status"] == "FAIL"
+    assert checks["Slide budget"]["detail"].startswith("11/5")
+    assert report["contextual_taxonomy_scan"]["enabled"] is True
+    assert report["pattern_history"]["suppressed_fields"]
+    assert report["recurring_antipatterns"] == []
+    assert "history-antipattern-sentinel" not in json.dumps(report)
+    assert "legacy-issue-sentinel" not in json.dumps(report)
+    assert "legacy-badge-sentinel" not in json.dumps(report)
 
 
 def test_guardrail_suppresses_recurring_labels_without_owner_policy(
@@ -331,11 +333,13 @@ def test_guardrail_suppresses_recurring_labels_without_owner_policy(
     return_code = guardrail_check.main(
         ["guardrail-check.py", str(OUTLINE), str(profile_path)]
     )
-    output = capsys.readouterr().out
+    report = json.loads(capsys.readouterr().out)
+    checks = {item["name"]: item for item in report["checks"]}
 
     assert return_code == 0
-    assert "[WARN] Pattern history: Pattern classifications disabled" in output
-    assert "[RECURRING]" not in output
+    assert checks["Pattern history"]["status"] == "WARN"
+    assert "Pattern classifications disabled" in checks["Pattern history"]["detail"]
+    assert report["recurring_antipatterns"] == []
 
 
 def test_assessment_does_not_mutate_profile(pattern_history_status):

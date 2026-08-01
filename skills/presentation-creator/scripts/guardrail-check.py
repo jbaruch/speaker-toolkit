@@ -4,8 +4,8 @@
 Reads `outline.yaml` (validated by `outline_schema.py`) and a speaker profile.
 Computes profile-thresholded checks (slide budget, Act 1 ratio, branding,
 profanity, closing completeness, cut-line availability, data-attribution
-heuristics). Outputs a structured report with [PASS], [WARN], or [FAIL]
-labels.
+heuristics). Outputs a structured JSON report with PASS, WARN, or FAIL
+statuses.
 
 Structural pattern checks (opening PUNCH, big-idea singleton, sparkline
 elements, callback ledger, master-story threading, etc.) are handled by
@@ -15,7 +15,8 @@ Usage:
     guardrail-check.py <outline.yaml> <speaker-profile.json|-> \
         [rhetoric-style-summary.md]
 
-Output: report to stdout; exits 0 even if FAIL — the report is informational.
+Output: one schema-v1 JSON report to stdout. Exits 0 even if a check has FAIL
+status; malformed inputs exit non-zero with diagnostics on stderr.
 """
 
 from __future__ import annotations
@@ -413,11 +414,11 @@ def check_pattern_history(
     return "WARN", disabled_history_warning(status)
 
 
-def recurring_pattern_history_lines(
+def recurring_pattern_history_items(
     pattern_profile: Mapping[str, object] | None,
     status: CreatorPatternHistoryStatus,
-) -> list[str]:
-    """Render recurring labels only from authorized current-generation history."""
+) -> list[dict[str, object]]:
+    """Return recurring records only from authorized current-generation history."""
     if not status.history_enabled:
         return []
 
@@ -425,7 +426,7 @@ def recurring_pattern_history_lines(
     raw_frequency = pattern_profile.get("antipattern_frequency")
     assert isinstance(raw_frequency, list)  # shared assessment postcondition
 
-    lines: list[str] = []
+    items: list[dict[str, object]] = []
     for item in raw_frequency:
         if not isinstance(item, Mapping) or item.get("severity") != "recurring":
             continue
@@ -442,11 +443,15 @@ def recurring_pattern_history_lines(
         ):
             continue
         trend = item.get("trend")
-        detail = f"{count}/{out_of}"
+        record: dict[str, object] = {
+            "pattern_id": pattern_id,
+            "times_detected": count,
+            "out_of": out_of,
+        }
         if isinstance(trend, str) and trend:
-            detail += f", {trend}"
-        lines.append(f"[RECURRING] {pattern_id}: {detail}")
-    return lines
+            record["trend"] = trend
+        items.append(record)
+    return items
 
 
 # ── Main ─────────────────────────────────────────────────────────────
@@ -499,9 +504,6 @@ def main(argv: list[str]) -> int:
         print(profile_load_error, file=sys.stderr)
         return 1
 
-    print(f"GUARDRAIL CHECK — {outline.talk.title}")
-    print("=" * 60)
-
     history_resolution = resolve_creator_pattern_history(profile, summary_text)
     history_status = history_resolution.status
     checks = [
@@ -515,30 +517,42 @@ def main(argv: list[str]) -> int:
         ("Cut lines", check_cut_lines(outline, profile)),
     ]
 
-    for name, (label, detail) in checks:
-        print(f"[{label}] {name}: {detail}")
-
-    for line in recurring_pattern_history_lines(
-        history_resolution.pattern_profile,
-        history_status,
-    ):
-        print(line)
+    suppressed_fields = []
     if not history_status.history_enabled:
-        print(
-            "[INFO] Historical pattern tiers, labels, strengths, underuse, "
-            "by-mode data, and legacy/ambiguous pattern-derived guardrails or "
-            "badges: suppressed",
-        )
-    print(
-        "[INFO] Contextual taxonomy scan: enabled for the current outline "
-        "independently of speaker history",
-    )
-
-    print("=" * 60)
-    print(
-        "Structural taxonomy checks (PUNCH, big-idea, sparkline, master-story, "
-        "callbacks, etc.) → run scripts/check-rhetorical.py",
-    )
+        suppressed_fields = [
+            "tiers",
+            "labels",
+            "strengths",
+            "underuse",
+            "by_mode",
+            "legacy_pattern_guardrails",
+            "legacy_pattern_badges",
+        ]
+    report = {
+        "schema_version": 1,
+        "talk_title": outline.talk.title,
+        "checks": [
+            {"name": name, "status": label, "detail": detail}
+            for name, (label, detail) in checks
+        ],
+        "pattern_history": {
+            **history_status.as_dict(),
+            "suppressed_fields": suppressed_fields,
+        },
+        "recurring_antipatterns": recurring_pattern_history_items(
+            history_resolution.pattern_profile,
+            history_status,
+        ),
+        "contextual_taxonomy_scan": {
+            "enabled": True,
+            "scope": "current_outline",
+            "history_independent": True,
+        },
+        "required_companion_check": (
+            "skills/presentation-creator/scripts/check-rhetorical.py"
+        ),
+    }
+    print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 
 
