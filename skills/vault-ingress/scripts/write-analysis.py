@@ -256,16 +256,24 @@ def render_evidence_citation(citation):
         location = ""
         line_start = citation.get("line_start")
         line_end = citation.get("line_end")
-        if line_start is not None:
+        if line_start is not None and line_end is not None:
             location = (
                 f" lines {line_start}–{line_end}"
                 if line_end != line_start
                 else f" line {line_start}"
             )
+        elif line_start is not None:
+            location = f" from line {line_start}"
+        elif line_end is not None:
+            location = f" through line {line_end}"
         start = citation.get("start_seconds")
         end = citation.get("end_seconds")
         if start is not None and end is not None:
             location += f" @ {start}–{end}s"
+        elif start is not None:
+            location += f" @ from {start}s"
+        elif end is not None:
+            location += f" @ through {end}s"
         quote = citation.get("quote", "")
         if citation.get("translation"):
             rendered = (
@@ -284,10 +292,17 @@ def render_evidence_citation(citation):
             + artifact_suffix
         )
     if channel == "video":
-        return (
-            f"{prefix} {citation.get('start_seconds')}–"
-            f"{citation.get('end_seconds')}s{artifact_suffix}"
-        )
+        start = citation.get("start_seconds")
+        end = citation.get("end_seconds")
+        if start is not None and end is not None:
+            location = f"{start}–{end}s"
+        elif start is not None:
+            location = f"from {start}s"
+        elif end is not None:
+            location = f"through {end}s"
+        else:
+            location = "location unavailable"
+        return f"{prefix} {location}{artifact_suffix}"
     if channel == "talk_metadata":
         return f"{prefix} supplement {citation.get('field')}={citation.get('value')!r}"
     return json.dumps(citation, ensure_ascii=False, sort_keys=True)

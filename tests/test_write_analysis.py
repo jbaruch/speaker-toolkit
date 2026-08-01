@@ -536,6 +536,76 @@ def test_timed_transcript_citation_renders_engine_locations(write_analysis):
     assert "quality vault:transcripts/talk.quality.json" in rendered
 
 
+@pytest.mark.parametrize(
+    ("citation", "expected"),
+    [
+        (
+            {
+                "source": "transcript",
+                "channel": "transcript",
+                "quote": "Only the first bound survived.",
+                "line_start": 3,
+            },
+            "from line 3",
+        ),
+        (
+            {
+                "source": "transcript",
+                "channel": "transcript",
+                "quote": "Only the final bound survived.",
+                "line_end": 5,
+            },
+            "through line 5",
+        ),
+        (
+            {
+                "source": "transcript",
+                "channel": "timed_transcript",
+                "quote": "The segment starts here.",
+                "start_seconds": 2.0,
+            },
+            "@ from 2.0s",
+        ),
+        (
+            {
+                "source": "transcript",
+                "channel": "timed_transcript",
+                "quote": "The segment ends here.",
+                "end_seconds": 5.5,
+            },
+            "@ through 5.5s",
+        ),
+        (
+            {
+                "source": "delivery_video",
+                "channel": "video",
+                "start_seconds": 7.0,
+            },
+            "from 7.0s",
+        ),
+        (
+            {
+                "source": "delivery_video",
+                "channel": "video",
+                "end_seconds": 9.0,
+            },
+            "through 9.0s",
+        ),
+        (
+            {"source": "delivery_video", "channel": "video"},
+            "location unavailable",
+        ),
+    ],
+)
+def test_partial_citation_bounds_render_without_internal_none(
+    write_analysis, citation, expected
+):
+    rendered = write_analysis.render_evidence_citation(citation)
+
+    assert expected in rendered
+    assert "None" not in rendered
+
+
 def test_non_english_citation_renders_translation_before_original(write_analysis):
     rendered = write_analysis.render_evidence_citation(
         {
