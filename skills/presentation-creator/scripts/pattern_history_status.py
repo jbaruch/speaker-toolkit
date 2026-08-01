@@ -32,14 +32,12 @@ _PROFILE_SCRIPTS = Path(__file__).resolve().parents[2] / "vault-profile" / "scri
 if str(_PROFILE_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_PROFILE_SCRIPTS))
 
-# The sibling skill directory is inserted above at runtime; static analysis cannot
-# resolve that deliberate plugin-local path mutation.
-from profile_pattern_provenance import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+from profile_pattern_provenance import (  # noqa: E402
     REASON_CLASSIFICATION_POLICY_UNAVAILABLE,
     REASON_EMPTY_CURRENT_COHORT,
     assess_pattern_profile,
 )
-from section15_pattern_history import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+from section15_pattern_history import (  # noqa: E402
     Section15PatternHistoryAssessment,
     assess_section15_pattern_history,
 )

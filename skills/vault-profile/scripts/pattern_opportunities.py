@@ -27,7 +27,7 @@ _INGRESS_SCRIPTS = (
 if str(_INGRESS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_INGRESS_SCRIPTS))
 
-from return_validation import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+from return_validation import (  # noqa: E402
     load_catalog,
 )
 

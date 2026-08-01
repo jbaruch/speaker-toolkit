@@ -22,11 +22,11 @@ _INGRESS_SCRIPTS = (
 if str(_INGRESS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_INGRESS_SCRIPTS))
 
-from adherence_baseline import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+from adherence_baseline import (  # noqa: E402
     AdherenceBaselineError,
     validate_adherence_baseline,
 )
-from return_validation import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+from return_validation import (  # noqa: E402
     PATTERN_SCORING_SCHEMA_VERSION,
     ReturnValidationError,
     load_catalog,

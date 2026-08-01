@@ -44,7 +44,7 @@ from profile_pattern_provenance import (  # noqa: E402
     PatternProfileAssessment,
     assess_pattern_profile,
 )
-from adherence_baseline import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+from adherence_baseline import (  # noqa: E402
     AdherenceBaselineError,
     EvidenceFreshnessAssessor,
 )
@@ -54,7 +54,7 @@ from pattern_cohort_snapshot import (  # noqa: E402
     configured_evidence_freshness_assessor,
 )
 from pattern_opportunities import PatternOpportunityError  # noqa: E402
-from return_validation import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+from return_validation import (  # noqa: E402
     ReturnValidationError,
 )
 

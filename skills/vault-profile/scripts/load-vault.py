@@ -57,7 +57,7 @@ INGRESS_SCRIPTS = (
 if str(INGRESS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(INGRESS_SCRIPTS))
 
-from adherence_baseline import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+from adherence_baseline import (  # noqa: E402
     AdherenceBaselineError,
     normalize_as_of,
 )
@@ -66,7 +66,7 @@ from pattern_cohort_snapshot import (  # noqa: E402
     build_current_pattern_snapshot,
     configured_evidence_freshness_assessor,
 )
-from return_validation import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+from return_validation import (  # noqa: E402
     PATTERN_SCORING_SCHEMA_VERSION,
     ReturnValidationError,
     load_catalog,
