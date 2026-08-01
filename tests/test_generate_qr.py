@@ -103,6 +103,7 @@ def test_tracking_db_crud_insert(generate_qr):
     }
     generate_qr.update_tracking_db(db, entry, "test-talk-qr.png")
     assert len(db["qr_codes"]) == 1
+    assert db["qr_codes"][0]["schema_version"] == 1
     assert db["qr_codes"][0]["talk_slug"] == "test-talk"
     assert db["qr_codes"][0]["qr_png_rel_path"] == "test-talk-qr.png"
 
@@ -125,6 +126,7 @@ def test_tracking_db_crud_update(generate_qr):
     }
     generate_qr.update_tracking_db(db, entry, "new.png")
     assert len(db["qr_codes"]) == 1
+    assert db["qr_codes"][0]["schema_version"] == 1
     assert db["qr_codes"][0]["target_url"] == "https://new-url.com"
     assert db["qr_codes"][0]["qr_png_rel_path"] == "new.png"
     # created_at preserved from original

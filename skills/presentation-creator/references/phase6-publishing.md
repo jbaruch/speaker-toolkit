@@ -44,8 +44,8 @@ and Coda slides are easy to miss — this step catches them systematically.
    and edits entries. Save the approved list back to `resources.json` with
    `approved: true` on accepted items.
 
-5. Persist a complete `resources[]` entry recording the talk slug, item count,
-   and category breakdown with the ingress owner's `upsert_resource` mutation.
+5. Persist a complete `resources[]` entry with `schema_version: 1`, the talk slug,
+   item count, and category breakdown through the ingress owner's `upsert_resource` mutation.
    Expect the exact existing record for the slug, or `{"$missing": true}` for a
    first entry. Dry-run, review, apply against the reported input SHA, and re-read
    as specified by the
@@ -182,8 +182,8 @@ path make the check before resolving the link.
    - Auto-select foreground color (black on light backgrounds, white on dark) using
      WCAG relative luminance
    - Insert the QR as a 2" square in the bottom-right corner
-   - Persist QR metadata in `qr_codes[]` through the shared tracking-database
-     transaction used by `generate-qr.py`
+   - Persist schema-v1 QR metadata in `qr_codes[]` through the shared
+     tracking-database transaction used by `generate-qr.py`
 
 5. Re-running for the same `talk_slug` with a different target URL will PATCH the
    existing short link (keeping QR codes already printed valid) rather than creating

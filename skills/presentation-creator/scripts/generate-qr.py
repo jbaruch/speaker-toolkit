@@ -82,6 +82,7 @@ QR_ERROR_CORRECTION = ERROR_CORRECT_M
 # QR placement: bottom-right, 2 inches wide, 0.3 inch margin from edges
 QR_WIDTH_INCHES = 2.0
 QR_MARGIN_INCHES = 0.3
+QR_CODE_RECORD_SCHEMA_VERSION = 1
 
 # Existing-QR detection (content-based, size-independent). A QR is a SQUARE
 # picture that is BOTH essentially two colors AND roughly balanced between them:
@@ -754,6 +755,7 @@ def update_tracking_db(tracking_db, entry, qr_png_rel_path):
     talk_slug = entry["talk_slug"]
 
     new_entry = {
+        "schema_version": QR_CODE_RECORD_SCHEMA_VERSION,
         "talk_slug": talk_slug,
         "target_url": entry["target_url"],
         "shortener": entry["shortener"],

@@ -161,6 +161,7 @@ Current `schema_version`: **4**. The validator (`scripts/validate-profile.py`,
 
   "confirmed_intents": [
     {
+      "schema_version": 1,
       "pattern": "name of the pattern",
       "intent": "deliberate",
       "rule": "what the presentation-creator should do about it",

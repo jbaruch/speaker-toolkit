@@ -116,6 +116,7 @@ exact existing record for that pattern or `{"$missing": true}`.
 Example:
 ```json
 {
+  "schema_version": 1,
   "pattern": "delayed_self_introduction",
   "intent": "deliberate",
   "rule": "Use two-phase intro: brief bio at slide 3, full re-intro mid-talk",

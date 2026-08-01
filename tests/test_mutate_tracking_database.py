@@ -339,7 +339,10 @@ def test_initialization_dry_run_and_missing_precondition(
         expected_sha256="missing",
     )
     assert applied["database_written"] is True
-    assert json.loads(database_path.read_text(encoding="utf-8"))["talks"] == []
+    initialized = json.loads(database_path.read_text(encoding="utf-8"))
+    assert initialized["schema_version"] == 1
+    assert initialized["config"]["schema_version"] == 1
+    assert initialized["talks"] == []
 
 
 def test_initialization_surfaces_owner_io_failure_as_mutation_error(
@@ -589,3 +592,34 @@ def test_boolean_plan_and_record_schema_versions_are_rejected(
         match="schema_version must be exact integer 1",
     ):
         mutate_tracking_database.build_candidate(_base_database(), [mutation])
+
+
+@pytest.mark.parametrize("mutation_index", [1, 2, 5, 6])
+def test_versioned_owner_records_require_schema_version(
+    mutate_tracking_database,
+    mutation_index: int,
+) -> None:
+    mutation = copy.deepcopy(_complete_plan()["mutations"][mutation_index])
+    del mutation["record"]["schema_version"]
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="missing .*schema_version",
+    ):
+        mutate_tracking_database.build_candidate(_base_database(), [mutation])
+
+
+def test_initialization_rejects_noninteger_config_schema_version(
+    mutate_tracking_database,
+) -> None:
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="config.schema_version must be exact integer 1",
+    ):
+        mutate_tracking_database.initial_database(
+            {
+                "kind": "initialize_database",
+                "config": {"schema_version": True},
+            },
+            index=0,
+        )

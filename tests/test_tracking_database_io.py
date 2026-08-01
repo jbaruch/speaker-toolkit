@@ -339,6 +339,11 @@ def test_commit_rejects_substituted_stage_without_unlinking_it(
     expected = tracking_database_io.snapshot_tracking_database(path)
     attacker = tmp_path / "attacker.json"
     attacker_raw = _write(attacker, {"attacker": True})
+    backup = tmp_path / "backups" / "tracking-database.bak"
+    request = tracking_database_io.BackupRequest(
+        path=backup,
+        input_sha256=expected.sha256,
+    )
     original_stage = tracking_database_io._stage_candidate
     substituted: list[Path] = []
 
@@ -361,11 +366,13 @@ def test_commit_rejects_substituted_stage_without_unlinking_it(
         tracking_database_io.commit_tracking_database(
             expected,
             tracking_database_io.render_json_object({"talks": [], "config": {}}),
+            backup=request,
         )
 
     assert path.read_bytes() == original
     assert attacker.read_bytes() == attacker_raw
     assert substituted[0].is_symlink()
+    assert not backup.exists()
 
 
 def test_initialization_rejects_substituted_stage_without_unlinking_it(

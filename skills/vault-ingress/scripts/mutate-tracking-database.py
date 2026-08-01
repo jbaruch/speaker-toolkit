@@ -33,6 +33,8 @@ from tracking_database_io import (
 
 PLAN_SCHEMA_VERSION = 1
 OWNER_RECORD_SCHEMA_VERSION = 1
+TRACKING_DATABASE_SCHEMA_VERSION = 1
+CONFIG_RECORD_SCHEMA_VERSION = 1
 MISSING_MARKER = {"$missing": True}
 COLLECTION_IDENTITIES = {
     "upsert_confirmed_intent": ("confirmed_intents", "pattern"),
@@ -86,11 +88,10 @@ GOAL_REQUIRED_FIELDS = frozenset(
     }
 )
 CONFIRMED_INTENT_REQUIRED_FIELDS = frozenset(
-    {"pattern", "intent", "rule", "note"}
+    {"schema_version", "pattern", "intent", "rule", "note"}
 )
 CONFIRMED_INTENT_OPTIONAL_FIELDS = frozenset(
     {
-        "schema_version",
         "confirmed_date",
         "source_talk",
         "source_talks",
@@ -99,10 +100,11 @@ CONFIRMED_INTENT_OPTIONAL_FIELDS = frozenset(
     }
 )
 RESOURCE_REQUIRED_FIELDS = frozenset(
-    {"talk_slug", "item_count", "category_breakdown"}
+    {"schema_version", "talk_slug", "item_count", "category_breakdown"}
 )
 PPTX_REQUIRED_FIELDS = frozenset(
     {
+        "schema_version",
         "pptx_path",
         "talk_filename",
         "matched",
@@ -112,6 +114,7 @@ PPTX_REQUIRED_FIELDS = frozenset(
 )
 THUMBNAIL_REQUIRED_FIELDS = frozenset(
     {
+        "schema_version",
         "talk_slug",
         "youtube_url",
         "source_slide_num",
@@ -124,9 +127,6 @@ THUMBNAIL_REQUIRED_FIELDS = frozenset(
         "approved",
     }
 )
-RECORD_SCHEMA_FIELD = frozenset({"schema_version"})
-
-
 class TrackingDatabaseMutationError(ValueError):
     """A mutation plan, precondition, or database shape is invalid."""
 
@@ -263,9 +263,7 @@ def _string_array(value: object, label: str, *, nonempty: bool = False) -> list[
     return normalized
 
 
-def _validate_optional_record_schema(record: dict[str, Any], label: str) -> None:
-    if "schema_version" not in record:
-        return
+def _validate_record_schema(record: dict[str, Any], label: str) -> None:
     if not json_values_equal(record["schema_version"], OWNER_RECORD_SCHEMA_VERSION):
         raise TrackingDatabaseMutationError(
             f"{label}.schema_version must be exact integer "
@@ -420,7 +418,7 @@ def _validate_collection_record(kind: str, record: dict[str, Any]) -> None:
             optional=CONFIRMED_INTENT_OPTIONAL_FIELDS,
             label=label,
         )
-        _validate_optional_record_schema(record, label)
+        _validate_record_schema(record, label)
         _nonempty(record["pattern"], f"{label}.pattern")
         _nonempty(record["intent"], f"{label}.intent")
         _nonempty(record["rule"], f"{label}.rule")
@@ -550,10 +548,9 @@ def _validate_collection_record(kind: str, record: dict[str, Any]) -> None:
         _require_keys(
             record,
             required=RESOURCE_REQUIRED_FIELDS,
-            optional=RECORD_SCHEMA_FIELD,
             label=label,
         )
-        _validate_optional_record_schema(record, label)
+        _validate_record_schema(record, label)
         _nonempty(record["talk_slug"], f"{label}.talk_slug")
         item_count = _exact_integer(record["item_count"], f"{label}.item_count")
         breakdown = record["category_breakdown"]
@@ -577,10 +574,9 @@ def _validate_collection_record(kind: str, record: dict[str, Any]) -> None:
         _require_keys(
             record,
             required=THUMBNAIL_REQUIRED_FIELDS,
-            optional=RECORD_SCHEMA_FIELD,
             label=label,
         )
-        _validate_optional_record_schema(record, label)
+        _validate_record_schema(record, label)
         for field in (
             "talk_slug",
             "youtube_url",
@@ -923,10 +919,9 @@ def _apply_record_pptx(
     _require_keys(
         record,
         required=PPTX_REQUIRED_FIELDS,
-        optional=RECORD_SCHEMA_FIELD,
         label=record_label,
     )
-    _validate_optional_record_schema(record, record_label)
+    _validate_record_schema(record, record_label)
     pptx_path = _nonempty(record["pptx_path"], f"{record_label}.pptx_path")
     if type(record["matched"]) is not bool:
         raise TrackingDatabaseMutationError(f"mutations[{index}].record.matched must be boolean")
@@ -1021,8 +1016,19 @@ def initial_database(mutation: dict[str, Any], *, index: int) -> dict[str, Any]:
     config = mutation["config"]
     if not isinstance(config, dict):
         raise TrackingDatabaseMutationError(f"mutations[{index}].config must be an object")
+    initial_config = copy.deepcopy(config)
+    if "schema_version" in initial_config and not json_values_equal(
+        initial_config["schema_version"],
+        CONFIG_RECORD_SCHEMA_VERSION,
+    ):
+        raise TrackingDatabaseMutationError(
+            f"mutations[{index}].config.schema_version must be exact integer "
+            f"{CONFIG_RECORD_SCHEMA_VERSION}"
+        )
+    initial_config["schema_version"] = CONFIG_RECORD_SCHEMA_VERSION
     return {
-        "config": copy.deepcopy(config),
+        "schema_version": TRACKING_DATABASE_SCHEMA_VERSION,
+        "config": initial_config,
         "talks": [],
         "pptx_catalog": [],
         "qr_codes": [],

@@ -174,8 +174,8 @@ clarification sessions when the speaker confirms a pattern is intentional.
 }
 ```
 
-Required fields are `pattern`, `intent`, `rule`, and `note`. The owner also
-accepts optional exact integer `schema_version: 1` and the clarification
+Required fields are exact integer `schema_version: 1`, `pattern`, `intent`,
+`rule`, and `note`. The owner also accepts the clarification
 provenance fields `confirmed_date`, one of `source_talk` / legacy `talk` /
 `source_talks`, and `retrofit_targets`. The plural fields are non-empty unique
 string arrays. Existing speaker-owned non-empty intent labels remain readable;

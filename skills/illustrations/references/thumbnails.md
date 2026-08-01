@@ -207,6 +207,7 @@ Prepare this complete `thumbnails[]` record:
 
 ```json
 {
+  "schema_version": 1,
   "talk_slug": "judgment-day",
   "youtube_url": "https://youtube.com/watch?v=...",
   "source_slide_num": 15,

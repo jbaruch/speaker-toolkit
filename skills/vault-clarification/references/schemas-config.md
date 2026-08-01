@@ -58,8 +58,8 @@ records only with the ingress owner's `upsert_confirmed_intent` mutation; see th
 }
 ```
 
-The complete record has exactly required string fields `pattern`, `intent`,
-`rule`, and `note`, plus optional exact integer `schema_version: 1` and optional
+The complete record has required exact integer `schema_version: 1` and string
+fields `pattern`, `intent`, `rule`, and `note`, plus optional
 speaker-confirmation provenance. Provenance may use one of singular `source_talk`
 or legacy alias `talk`, or the non-empty unique string array `source_talks`;
 `confirmed_date` is canonical `YYYY-MM-DD`, and `retrofit_targets` is an optional

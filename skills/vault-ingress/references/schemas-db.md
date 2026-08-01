@@ -7,7 +7,9 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
 
 ```json
 {
+  "schema_version": 1,
   "config": {
+    "schema_version": 1,
     "vault_root": "~/.claude/rhetoric-knowledge-vault",
     "vault_storage_path": "/actual/path/if/custom (null when using default location)",
     "pptx_source_dir": "/path/to/Presentations",
@@ -133,6 +135,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
   "_comment_schema_version": "Talk-record schema version, stamped by persist-results.py. v1 is the implicit unversioned shape. v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, evidence ledger v2, and current scoring schema v5. Migration preserves v1-v4 evidence and never synthesizes v5 outcomes.",
   "_comment_absent_transcript_source": "Absent transcript_source: the key may be MISSING on a talk, and missing is meaningful — it means provenance is unknown, not that no transcript exists (that is the explicit value `none`). It arises on one path: fetch-transcript.py returning method `existing`, where a valid transcript was already on disk and no fetch ran, so nothing was learned about where it came from. Writers MUST NOT backfill a guess; `manual` in particular asserts a human produced it. Readers gauging transcript reliability MUST treat absent as unknown and MUST NOT default it to any value.",
   "pptx_catalog": [{
+    "schema_version": 1,
     "pptx_path": "Conference/Year/Talk Name.pptx",
     "talk_filename": "2024-04-10-talk-slug.md or null",
     "matched": true,
@@ -140,6 +143,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "visual_extracted": false
   }],
   "qr_codes": [{
+    "schema_version": 1,
     "talk_slug": "arc-of-ai",
     "target_url": "canonical talk URL",
     "shortener": "bitly|rebrandly|none",
@@ -202,20 +206,19 @@ exact-type rule. The supported mutation kinds are:
 |---|---|
 | `initialize_database` | Sole mutation for a missing database; carries initial `config` |
 | `set_config` | Set or delete one nested config path against its exact prior value |
-| `record_pptx` | Replace/add one complete PPTX catalog record and, when matched, bind the talk's expected `pptx_path` |
-| `upsert_confirmed_intent` | Replace/add one complete record identified by `pattern` |
+| `record_pptx` | Replace/add one complete schema-v1 PPTX catalog record and, when matched, bind the talk's expected `pptx_path` |
+| `upsert_confirmed_intent` | Replace/add one complete schema-v1 record identified by `pattern` |
 | `upsert_improvement_goal` | Replace/add one complete record identified by `id` |
 | `patch_improvement_goal_verification` | Set only verification fields, with `expect` covering exactly the same fields |
 | `retire_improvement_goal` | Expect one complete current goal record and change only its `status` to `retired`, preserving legacy fields |
-| `upsert_resource` | Replace/add one complete record identified by `talk_slug` |
-| `upsert_thumbnail` | Replace/add one complete record identified by `talk_slug` |
+| `upsert_resource` | Replace/add one complete schema-v1 record identified by `talk_slug` |
+| `upsert_thumbnail` | Replace/add one complete schema-v1 record identified by `talk_slug` |
 | `update_talk_publishing` | Set supported publishing fields on one exact talk filename, with `expect` covering exactly the same fields |
 | `update_talk_clarification` | Set complete object/array `blind_spot_observations` or `humor_postmortem` values on one exact talk, with matching field expectations |
 
 The command owns each operation's closed fields and record validation; do not
 reimplement those allowlists in skill prose. PPTX, resource, thumbnail, and
-confirmed-intent records accept the optional exact integer `schema_version: 1`
-used by the owner-versioned database generation; a boolean or future version is
+confirmed-intent records require exact integer `schema_version: 1`; a boolean or future version is
 not equivalent. Complete resource category counts must sum to `item_count`, and
 publishing scalar/identifier types are checked before patching. Run the plan without `--apply`,
 review its `changes`, then bind apply to that report's exact input hash:
@@ -229,8 +232,9 @@ review its `changes`, then bind apply to that report's exact input hash:
   --apply --expected-sha256 <input-sha256-from-dry-run>
 ```
 
-Initialization uses a sole `initialize_database` mutation, defaults to dry-run,
-and applies with the literal `--expected-sha256 missing`. All other applies
+Initialization uses a sole `initialize_database` mutation, stamps database and
+config schema version 1, defaults to dry-run, and applies with the literal
+`--expected-sha256 missing`. All other applies
 require the dry-run SHA. The complete plan is one transaction: one failed type,
 record, semantic expectation, or file-generation precondition installs nothing.
 Re-read after apply rather than assuming the candidate is still current.

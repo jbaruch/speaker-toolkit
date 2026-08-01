@@ -67,6 +67,7 @@ After resources are approved, prepare this complete `resources[]` record:
 
 ```json
 {
+  "schema_version": 1,
   "talk_slug": "...",
   "item_count": 12,
   "category_breakdown": {

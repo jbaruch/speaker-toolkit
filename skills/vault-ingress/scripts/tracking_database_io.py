@@ -857,12 +857,14 @@ def commit_tracking_database(
         if candidate == current.raw:
             result = unchanged_write_result(expected)
         else:
-            if backup is not None:
-                backup_path = _write_exact_backup(backup, expected)
             stage = _stage_candidate(expected.path, candidate, current.mode)
             try:
                 _require_expected_generation(expected)
                 _verify_staged_candidate(stage, candidate)
+                if backup is not None:
+                    backup_path = _write_exact_backup(backup, expected)
+                    _require_expected_generation(expected)
+                    _verify_staged_candidate(stage, candidate)
                 try:
                     _replace_staged_candidate(stage, expected.path)
                 except OSError as exc:

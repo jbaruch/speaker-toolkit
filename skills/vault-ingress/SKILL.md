@@ -160,7 +160,7 @@ for the complete report and mutation contract.
 
 **Scan for .pptx files:** Recursively glob `**/*.pptx` in `pptx_source_dir`; fuzzy-match
 to `talks[]` entries. Report counts, then persist each reviewed result with a
-`record_pptx` mutation, including the exact prior catalog record and, for a match,
+`record_pptx` mutation and `schema_version: 1`, including the exact prior catalog record and, for a match,
 the talk's exact prior `pptx_path` expectation. See [references/schemas-db.md](references/schemas-db.md)
 for the PPTX extraction output schema (per-slide visual data, shape types, global design stats).
 Run `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py"` for extraction.

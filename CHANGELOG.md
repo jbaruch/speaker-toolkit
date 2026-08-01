@@ -16,8 +16,11 @@ Owner-plan and source-repair equality is now recursive and JSON-type-sensitive:
 object order is irrelevant, array order is significant, and `true`, `1`, and `1.0`
 are distinct. Semantic no-ops, including QR metadata writes, preserve the original
 bytes and inode. Mutation records are closed and type-validated for PPTX, confirmed
-intent, improvement goal, resource, thumbnail, publishing, and optional schema-v1
-metadata. Clarification can persist complete blind-spot/humor structures, and exact
+intent, improvement goal, resource, thumbnail, and publishing metadata. New PPTX,
+QR, confirmed-intent, resource, and thumbnail records carry required schema-v1
+identities. Backups are deferred until the staged candidate passes its final integrity
+checks, followed by one more live-generation and stage verification before install.
+Clarification can persist complete blind-spot/humor structures, and exact
 record retirement changes only a goal's status while preserving legacy provenance.
 
 Clarification, profile, thumbnail, and resource instructions now bootstrap through
