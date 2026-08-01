@@ -17,15 +17,70 @@ OTHER_CATALOG = "d" * 64
 AS_OF = "2026-07-31T13:30:45.987654-05:00"
 
 
-# Built programmatically per testing-standards (no fixture file). The validator
-# checks key presence + schema_version only, so placeholder values are fine.
-def _minimal_profile():
-    return {k: [] for k in (
+# Built programmatically per testing-standards (no fixture file). A current
+# profile carries explicit zero-cohort pattern provenance rather than borrowing
+# historical pattern values.
+def _minimal_profile(validate_profile):
+    catalog_fingerprint, scoring_schema = (
+        validate_profile.active_pattern_generation_identity()
+    )
+    profile = {k: [] for k in (
         "generated_date", "talks_analyzed", "speaker", "infrastructure",
         "presentation_modes", "instrument_catalog", "rhetoric_defaults",
         "confirmed_intents", "guardrail_sources", "pacing", "pattern_profile",
         "visual_style_history", "publishing_process", "design_rules", "badges",
-    )} | {"schema_version": 2}
+    )} | {"schema_version": 3}
+    profile["pattern_profile"] = {
+        "pattern_baseline": {
+            "schema_version": 1,
+            "as_of": "2025-01-02T03:04:05+00:00",
+            "scope": "global",
+            "active_batch_excluded": False,
+            "excluded_filenames": [],
+            "eligible_statuses": ["processed", "processed_partial"],
+            "pattern_scoring_generation_status": "current",
+            "pattern_scoring_generation_reasons": [],
+            "pattern_catalog_fingerprint": catalog_fingerprint,
+            "pattern_scoring_schema_version": scoring_schema,
+            "scored_talk_count": 0,
+            "pattern_score_sum": 0,
+            "average_pattern_score": None,
+        },
+        "baseline_talk_filenames": [],
+        "talks_scored": 0,
+        "average_pattern_score": None,
+        "score_trend": "unavailable",
+        "pattern_breadth": {
+            "avg_distinct_patterns_per_talk": None,
+            "trend": "unavailable",
+            "note": "No current pattern cohort.",
+        },
+        "underused_patterns": [],
+        "score_drivers": {
+            "direction": "unavailable",
+            "antipattern_drivers": [],
+            "pattern_drivers": [],
+            "note": "No current pattern cohort.",
+        },
+        "by_mode": [],
+        "strengths": [],
+        "strengths_note": "No current pattern cohort.",
+        "note": "Only current observable patterns are included.",
+        "pattern_usage": [],
+        "antipattern_frequency": [],
+        "never_used_patterns": [],
+        "signature_combinations": [],
+        "mastery_levels": {
+            "signature": [],
+            "regular": [],
+            "occasional": [],
+            "rare": [],
+            "never_tried": [],
+        },
+    }
+    profile["rhetoric_defaults"] = {}
+    profile["guardrail_sources"] = {"recurring_issues": []}
+    return profile
 
 
 def _run(validate_profile, profile, tmp_path):
@@ -38,7 +93,7 @@ def _run(validate_profile, profile, tmp_path):
 def test_profile_without_engines_still_validates(validate_profile, tmp_path, capsys):
     # The whole point: presentation_engines is optional/additive — a profile that
     # never heard of it is still valid.
-    profile = _minimal_profile()
+    profile = _minimal_profile(validate_profile)
     assert "presentation_engines" not in profile
     rc = _run(validate_profile, profile, tmp_path)
     out = json.loads(capsys.readouterr().out)
@@ -48,7 +103,7 @@ def test_profile_without_engines_still_validates(validate_profile, tmp_path, cap
 
 
 def test_profile_with_engines_validates(validate_profile, tmp_path, capsys):
-    profile = _minimal_profile()
+    profile = _minimal_profile(validate_profile)
     profile["presentation_engines"] = [
         {"id": "pptx", "renderer": "pptx", "usage_count": 18, "out_of": 24}
     ]
@@ -59,7 +114,7 @@ def test_profile_with_engines_validates(validate_profile, tmp_path, capsys):
 
 
 def test_profile_missing_required_key_is_invalid(validate_profile, tmp_path, capsys):
-    profile = _minimal_profile()
+    profile = _minimal_profile(validate_profile)
     del profile["design_rules"]
     rc = _run(validate_profile, profile, tmp_path)
     out = json.loads(capsys.readouterr().out)
@@ -69,9 +124,9 @@ def test_profile_missing_required_key_is_invalid(validate_profile, tmp_path, cap
 
 
 def test_profile_with_outdated_schema_version_is_invalid(validate_profile, tmp_path, capsys):
-    # The v1→v2 bump (coaching-outcome fields) must be enforced: a v1 profile
-    # is rejected so a stale write can't pass validation.
-    profile = _minimal_profile() | {"schema_version": 1}
+    # Profiles before v3 have no exact pattern-generation provenance and cannot
+    # pass the owner writer's current-generation gate.
+    profile = _minimal_profile(validate_profile) | {"schema_version": 1}
     rc = _run(validate_profile, profile, tmp_path)
     out = json.loads(capsys.readouterr().out)
     assert rc == 1
