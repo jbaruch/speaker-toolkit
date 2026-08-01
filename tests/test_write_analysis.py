@@ -51,9 +51,31 @@ PERSISTED_ANALYSIS_FIELDS = (
     "rhetoric_notes",
     "areas_for_improvement",
     "adherence_assessment",
+    "adherence_comparison",
     "structured_data",
     "verbatim_examples",
 )
+
+
+def _adherence_baseline(filenames, *, scored_talk_count=10):
+    score_sum = scored_talk_count * 2
+    return {
+        "schema_version": 1,
+        "as_of": "2026-07-31T18:00:00+00:00",
+        "scope": "global",
+        "active_batch_excluded": True,
+        "excluded_filenames": sorted(filenames),
+        "eligible_statuses": ["processed", "processed_partial"],
+        "pattern_scoring_generation_status": "current",
+        "pattern_scoring_generation_reasons": [],
+        "pattern_catalog_fingerprint": CATALOG_FINGERPRINT,
+        "pattern_scoring_schema_version": 3,
+        "scored_talk_count": scored_talk_count,
+        "pattern_score_sum": score_sum,
+        "average_pattern_score": (
+            2.0 if scored_talk_count else None
+        ),
+    }
 
 
 def _return_receipt(ret):
@@ -138,11 +160,63 @@ def _return(**overrides):
     return ret
 
 
+def _v3_return(*, baseline=None, **overrides):
+    filename = overrides.get("filename", "talk.md")
+    if baseline is None:
+        baseline = _adherence_baseline([filename])
+    assessment = overrides.pop(
+        "adherence_assessment",
+        "The talk is below the established average but retains the "
+        "speaker's core narrative pattern. Its deliberate structure keeps "
+        "the departure from becoming backsliding.",
+    )
+    ret = _return(
+        return_schema_version=3,
+        adherence_assessment=assessment,
+        **overrides,
+    )
+    score = ret["pattern_observations"]["pattern_score"]
+    if isinstance(score, dict):
+        score = score["score"]
+    ret["adherence_comparison"] = {
+        "schema_version": 1,
+        "baseline": copy.deepcopy(baseline),
+        "talk_pattern_score": score,
+    }
+    return ret
+
+
 def _write_tracking_db(
         tmp_path, returns, *, title=None, name="tracking-db.json",
         persisted_date=None):
     talks = []
+    batch_filenames = sorted(ret["filename"] for ret in returns)
     for ret in returns:
+        return_schema_version = ret.get("return_schema_version", 1)
+        claim = {
+            "schema_version": 2,
+            **ret["queue_claim"],
+            "claimed_at": "2026-07-31T18:00:00+00:00",
+            "previous_status": "needs-reprocessing",
+            "state": "completed",
+            "released_at": "2026-07-31T18:05:00+00:00",
+            "release_reason": "return_persisted",
+            "result_status": ret["status"],
+            "result_payload_sha256": _return_receipt(ret),
+        }
+        if return_schema_version == 3:
+            comparison = ret.get("adherence_comparison")
+            baseline = (
+                comparison.get("baseline")
+                if isinstance(comparison, dict)
+                else _adherence_baseline(
+                    batch_filenames, scored_talk_count=0)
+            )
+            claim.update({
+                "schema_version": 3,
+                "required_return_schema_version": 3,
+                "adherence_baseline": copy.deepcopy(baseline),
+            })
         talk = {
             "filename": ret["filename"],
             "title": title,
@@ -159,17 +233,7 @@ def _write_tracking_db(
             "pattern_catalog_fingerprint": CATALOG_FINGERPRINT,
             "pattern_scoring_generation_status": "current",
             "pattern_scoring_generation_reasons": [],
-            "_queue_claim": {
-                "schema_version": 2,
-                **ret["queue_claim"],
-                "claimed_at": "2026-07-31T18:00:00+00:00",
-                "previous_status": "needs-reprocessing",
-                "state": "completed",
-                "released_at": "2026-07-31T18:05:00+00:00",
-                "release_reason": "return_persisted",
-                "result_status": ret["status"],
-                "result_payload_sha256": _return_receipt(ret),
-            },
+            "_queue_claim": claim,
         }
         if ret["status"] == "skipped_no_sources":
             talk.update({"video_url": None, "pptx_path": None, "slides_url": None})
@@ -291,6 +355,60 @@ def test_renders_core_sections(write_analysis):
     assert "## Presentation Patterns Scoring" in md
 
 
+@pytest.mark.parametrize("return_schema_version", [1, 2])
+def test_legacy_adherence_is_visibly_archival_and_unverified(
+        write_analysis, return_schema_version):
+    ret = _return(return_schema_version=return_schema_version)
+
+    md = write_analysis.render_analysis(ret)
+
+    assert "## Adherence Assessment (Legacy, Unverified)" in md
+    assert "**`legacy-unverified`:**" in md
+    assert f"return schema v{return_schema_version}" in md
+    assert "excluded from current numeric baselines, speaker profiles" in md
+    assert "Above the mode baseline." in md
+    assert "**Validated numeric anchor:**" not in md
+
+
+@pytest.mark.parametrize("return_schema_version", [1, 2, 3])
+def test_empty_adherence_assessment_is_omitted(
+        write_analysis, return_schema_version):
+    ret = _return(
+        return_schema_version=return_schema_version,
+        adherence_assessment="",
+    )
+
+    md = write_analysis.render_analysis(ret)
+
+    assert "## Adherence Assessment" not in md
+    assert "legacy-unverified" not in md
+    assert "Validated numeric anchor" not in md
+
+
+def test_v3_adherence_renders_mechanical_anchor_from_structured_comparison(
+        write_analysis):
+    baseline = _adherence_baseline(["talk.md"], scored_talk_count=10)
+    ret = _v3_return(
+        baseline=baseline,
+        adherence_assessment=(
+            "Model-authored prose claims 999 versus a 999 average. "
+            "The structured comparison remains authoritative."
+        ),
+    )
+
+    md = write_analysis.render_analysis(ret)
+
+    assert "## Adherence Assessment\n" in md
+    assert "**Validated numeric anchor:** talk pattern score `0`;" in md
+    assert "baseline average `2.0` across `10` scored talks" in md
+    assert "as of `2026-07-31T18:00:00+00:00`" in md
+    assert f"catalog fingerprint `{CATALOG_FINGERPRINT}`" in md
+    assert "pattern-scoring schema `3`" in md
+    assert "adherence-baseline schema `1`" in md
+    assert "Model-authored prose claims 999" in md
+    assert "legacy-unverified" not in md
+
+
 def test_title_from_db_wins_over_filename(write_analysis):
     md = write_analysis.render_analysis(_return(), title="Never Trust a Monkey")
     assert md.startswith("# Rhetoric Analysis: Never Trust a Monkey")
@@ -306,7 +424,7 @@ def test_scoring_tables_carry_evidence(write_analysis):
 
 def test_scoring_table_renders_exact_comparison_sources_with_markdown_escaping(
         write_analysis):
-    ret = _return(return_schema_version=3)
+    ret = _return(return_schema_version=3, adherence_assessment="")
     ret["pattern_observations"]["patterns_detected"] = [{
         "pattern_id": "gradual-consistency",
         "confidence": "moderate",
@@ -1026,6 +1144,110 @@ def test_completed_claim_requires_exact_schema_before_analysis_write(
     assert "must use exactly the schema fields" in result.stderr
     assert "unexpected" in result.stderr
     assert target.read_text() == "# current generation\n"
+
+
+@pytest.mark.parametrize("return_schema_version", [2, 3])
+def test_analysis_writer_accepts_completed_receipt_bearing_claim_v2_and_v3(
+        write_analysis, tmp_path, return_schema_version):
+    ret = (
+        _return()
+        if return_schema_version == 2
+        else _v3_return()
+    )
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    out = tmp_path / "analyses"
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    body = (out / "talk.md").read_text()
+    if return_schema_version == 2:
+        assert "**`legacy-unverified`:**" in body
+        assert "Validated numeric anchor" not in body
+    else:
+        assert "**Validated numeric anchor:**" in body
+        assert "baseline average `2.0` across `10` scored talks" in body
+        assert "legacy-unverified" not in body
+
+
+def test_analysis_writer_rejects_completed_claim_v1_without_receipt(
+        write_analysis, tmp_path):
+    ret = _return()
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    claim = payload["talks"][0]["_queue_claim"]
+    claim["schema_version"] = 1
+    claim.pop("result_payload_sha256")
+    db.write_text(json.dumps(payload))
+    out = tmp_path / "analyses"
+    out.mkdir()
+    target = out / "talk.md"
+    target.write_text("# trusted prior analysis\n")
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "predates the return-payload receipt" in result.stderr
+    assert target.read_text() == "# trusted prior analysis\n"
+
+
+@pytest.mark.parametrize("mutation", ["assessment", "comparison"])
+def test_analysis_writer_rejects_tampered_v3_adherence_before_any_batch_write(
+        write_analysis, tmp_path, mutation):
+    filenames = ["a.md", "b.md"]
+    baseline = _adherence_baseline(filenames)
+    returns = [
+        _v3_return(filename=filename, baseline=baseline)
+        for filename in filenames
+    ]
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps(returns))
+    db = _write_tracking_db(tmp_path, returns)
+    payload = json.loads(db.read_text())
+    tampered = payload["talks"][1]
+    if mutation == "assessment":
+        tampered["adherence_assessment"] = (
+            "Forged persisted assessment. It was not in the receipt."
+        )
+    else:
+        tampered["adherence_comparison"]["baseline"][
+            "average_pattern_score"] = 99.0
+    db.write_text(json.dumps(payload))
+    out = tmp_path / "analyses"
+    out.mkdir()
+    prior = {
+        filename: f"# trusted {filename}\n"
+        for filename in filenames
+    }
+    for filename, body in prior.items():
+        (out / filename).write_text(body)
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert f"persisted adherence_{mutation}" in result.stderr
+    for filename, body in prior.items():
+        assert (out / filename).read_text() == body
+    assert sorted(path.name for path in out.iterdir()) == filenames
 
 
 def test_substituted_return_payload_cannot_overwrite_persisted_analysis(

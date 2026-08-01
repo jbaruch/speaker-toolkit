@@ -70,6 +70,7 @@ from ingress_contract import IngressContractError, reject_tracking_database_syml
 from return_validation import (
     ANALYSIS_STATUSES,
     LEGACY_UNBASELINEABLE_SCORING_STATUS,
+    RETURN_SCHEMA_VERSION,
     SNAPSHOT_RETURN_SCHEMA_VERSIONS,
     ReturnValidationError,
     normalize_processing_stamp,
@@ -103,6 +104,7 @@ PERSISTED_RENDER_FIELDS = (
     "rhetoric_notes",
     "areas_for_improvement",
     "adherence_assessment",
+    "adherence_comparison",
     "structured_data",
     "verbatim_examples",
     "pattern_observations",
@@ -124,7 +126,10 @@ def effective_render_payload(ret, talk):
     """
     if resolve_return_schema_version(ret) in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
         validate_persisted_v2_analysis_state(talk)
-    payload = {"filename": ret["filename"]}
+    payload = {
+        "filename": ret["filename"],
+        "return_schema_version": resolve_return_schema_version(ret),
+    }
     for field in PERSISTED_RENDER_FIELDS:
         if field in talk:
             payload[field] = copy.deepcopy(talk[field])
@@ -283,6 +288,67 @@ def render_catalog_feedback(feedback):
     return out
 
 
+def render_adherence_assessment(payload):
+    """Render current adherence from structured proof or label legacy prose.
+
+    Return schemas v1/v2 predate the immutable batch baseline. Their prose is
+    retained for archival fidelity, but it must never look like a verified
+    current comparison. Return v3 is different: shared validation binds the
+    persisted comparison to the completed claim and exact return score before
+    this renderer runs, so the numeric anchor is generated mechanically from
+    that persisted object rather than copied from model-authored prose.
+    """
+    assessment = payload.get("adherence_assessment")
+    if not assessment:
+        return []
+
+    return_schema_version = resolve_return_schema_version(payload)
+    if return_schema_version != RETURN_SCHEMA_VERSION:
+        return [
+            "## Adherence Assessment (Legacy, Unverified)",
+            "",
+            "> **`legacy-unverified`:** Archival adherence prose from return "
+            f"schema v{return_schema_version}. It is excluded from current "
+            "numeric baselines, speaker profiles, and rhetoric-summary "
+            "aggregation.",
+            "",
+            as_prose(assessment),
+            "",
+        ]
+
+    comparison = payload.get("adherence_comparison")
+    if not isinstance(comparison, dict):
+        raise ReturnValidationError(
+            "return-schema v3 adherence prose has no persisted, validated "
+            "adherence_comparison")
+    baseline = comparison.get("baseline")
+    if not isinstance(baseline, dict):
+        raise ReturnValidationError(
+            "return-schema v3 adherence_comparison has no persisted baseline")
+
+    anchor = (
+        "**Validated numeric anchor:** "
+        f"talk pattern score `{comparison.get('talk_pattern_score')}`; "
+        f"baseline average `{baseline.get('average_pattern_score')}` across "
+        f"`{baseline.get('scored_talk_count')}` scored talks; "
+        f"as of `{baseline.get('as_of')}`; "
+        "catalog fingerprint "
+        f"`{baseline.get('pattern_catalog_fingerprint')}`; "
+        "pattern-scoring schema "
+        f"`{baseline.get('pattern_scoring_schema_version')}`; "
+        "adherence-baseline schema "
+        f"`{baseline.get('schema_version')}`."
+    )
+    return [
+        "## Adherence Assessment",
+        "",
+        anchor,
+        "",
+        as_prose(assessment),
+        "",
+    ]
+
+
 def render_analysis(ret, title=None, run_date=None, *, persisted_date=None):
     """Build the full markdown document for one canonical analysis payload."""
     filename = ret.get("filename", "")
@@ -309,9 +375,7 @@ def render_analysis(ret, title=None, run_date=None, *, persisted_date=None):
     if ret.get("areas_for_improvement"):
         out += ["## Areas for Improvement (Dimension 14)", "",
                 as_prose(ret["areas_for_improvement"]), ""]
-    if ret.get("adherence_assessment"):
-        out += ["## Adherence Assessment", "",
-                as_prose(ret["adherence_assessment"]), ""]
+    out += render_adherence_assessment(ret)
 
     out += render_structured_data(ret.get("structured_data"))
     out += render_verbatim(ret.get("verbatim_examples"))
