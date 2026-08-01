@@ -121,8 +121,8 @@ pattern-taxonomy tagging, and the return-JSON shape — lives in
 
 Transcripts come from `skills/vault-ingress/scripts/fetch-transcript.py`, never from inline fetch
 code. It tries the caption track, falls back to local Whisper, validates the
-result, and writes atomically only on success — so a failed fetch never replaces
-the transcript with a crash report or partial speech:
+result, and writes atomically only on success. A failed fetch never replaces the
+transcript with a crash report or partial speech:
 
 ```bash
 python3 skills/vault-ingress/scripts/fetch-transcript.py <video-id-or-url> \

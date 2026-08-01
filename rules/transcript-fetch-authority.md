@@ -30,12 +30,14 @@ Run against a talk whose caption track is disabled, on Apple Silicon with the
 `whisper` extra installed:
 
 1. `python3 skills/vault-ingress/scripts/fetch-transcript.py <youtube_id> --out /tmp/t.txt --method whisper`
-2. Observe: exit 0, one JSON object on stdout with `"method": "whisper"` and a `words` count plausible for the runtime (conference delivery is 110–160 wpm).
-3. Confirm `/tmp/t.txt` holds prose, not `[Music]` markers or a traceback.
-4. Re-run with `yt-dlp` removed from `PATH`. Expect exit 1, a stderr line naming the install command, one JSON object with `"ok": false`, and NO file at the output path.
-5. `--audio <local file> --out /tmp/a.txt` on a non-YouTube recording: exit 0, `"method": "whisper"`, prose at the output path.
+2. Observe: exit 0, one JSON object on stdout with `"method": "whisper"`, `"timed_path": "/tmp/t.segments.json"`, and a `words` count plausible for the runtime (conference delivery is 110–160 wpm).
+3. `jq -e '.schema_version == 1 and .source == "whisper" and (.segments | length > 0) and all(.segments[]; .start_seconds >= 0 and .end_seconds > .start_seconds and (.text | length > 0))' /tmp/t.segments.json` exits 0.
+4. `test "$(jq -r .transcript_sha256 /tmp/t.segments.json)" = "$(shasum -a 256 /tmp/t.txt | awk '{print $1}')"` exits 0.
+5. Confirm `/tmp/t.txt` holds prose, not `[Music]` markers or a traceback.
+6. Re-run with `yt-dlp` removed from `PATH` and a fresh output path. Expect exit 1, a stderr line naming the install command, one JSON object with `"ok": false`, and no transcript or sidecar at that output path.
+7. `--audio <local file> --out /tmp/a.txt` on a non-YouTube recording: exit 0, `"method": "whisper"`, `"timed_path": "/tmp/a.segments.json"`, prose at the output path, and a sidecar that passes steps 3–4 after substituting `/tmp/a` for `/tmp/t`.
 
-A pass requires all five. Step 4 is the one that matters: it proves a tool-state failure still honours the JSON contract and still leaves nothing behind.
+A pass requires all seven checks.
 
 ## Scope Limits
 
