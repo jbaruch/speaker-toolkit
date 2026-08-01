@@ -16,6 +16,7 @@ import pytest
 def _return(**overrides):
     ret = {
         "filename": "talk.md",
+        "return_schema_version": 2,
         "queue_claim": {
             "run_id": "reparse",
             "batch_id": "25",
@@ -102,6 +103,7 @@ def _talk(**overrides):
 def _skipped_return(**overrides):
     ret = {
         "filename": "talk.md",
+        "return_schema_version": 2,
         "queue_claim": {
             "run_id": "reparse",
             "batch_id": "25",

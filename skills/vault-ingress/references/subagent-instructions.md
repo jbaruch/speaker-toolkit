@@ -277,7 +277,8 @@ See [processing-rules.md](processing-rules.md) for full tagging rules.
 
 Return exactly the shape in [schemas-db.md](schemas-db.md). `status`,
 `slide_source`, all five catalog-feedback lanes, and the complete pattern score
-object are mandatory. `transcript_source` is conditional provenance: omit it when
+object are mandatory. Set `return_schema_version` to integer `2`; missing/version-1
+returns are accepted only to replay historical saved artifacts. `transcript_source` is conditional provenance: omit it when
 the fetcher reports `existing` and the DB has no known provenance.
 `slides_local_path` is optional for ordinary returns but mandatory for
 `status: "processed"` with `slide_source: "video_extracted"`.
@@ -296,10 +297,11 @@ slide, page, or asset; how one class wins when multiple images or sources occur;
 which provenance evidence supports the classes; and how unverified origins enter
 the `unknown` count.
 
-Use `clear_fields` when the re-analysis disproves an earlier value. Each entry is
+Version-2 supplied fields are snapshots: an empty string, array, or declared map
+replaces an older value, while an omitted field preserves it. Use `clear_fields`
+when the re-analysis must delete a field rather than replace it. Each entry is
 an analysis-owned dotted path such as `verbatim_examples.jokes` or
-`structured_data.slide_count`; an empty replacement alone does not clear stale
-DB data because ordinary merges are additive. An untrusted or unpromoted
+`structured_data.slide_count`. An untrusted or unpromoted
 video-extraction result must include `slides_local_path` here so an older trusted
 deck path cannot survive the corrective merge; also clear any stale authored-slide
 structured fields disproved by the new evidence.
@@ -309,6 +311,7 @@ Minimal processed structure:
 ```json
 {
   "filename": "2026-01-01-example.md",
+  "return_schema_version": 2,
   "queue_claim": {
     "run_id": "reparse-2026-07",
     "batch_id": "25",

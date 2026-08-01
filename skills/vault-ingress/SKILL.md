@@ -206,7 +206,8 @@ batch. When all batches have finished, proceed to Step 6.
 
 Each subagent receives the talk's DB entry and current
 `rhetoric-style-summary.md`, runs A → B → B2 → C, and returns a JSON payload.
-Its return copies `run_id`, `batch_id`, and `reprocess_generation` from the
+Its return declares `return_schema_version: 2` and copies `run_id`, `batch_id`,
+and `reprocess_generation` from the
 talk's active `_queue_claim`; persistence rejects a stale or unclaimed return.
 Full procedure — slide acquisition per `slide_source`, rhetoric/style analysis,
 pattern-taxonomy tagging, and the return-JSON shape — lives in
@@ -257,9 +258,12 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   `skills/vault-ingress/scripts/persist-results.py` (top-of-file docstring and the `PROMOTE` list) — to make
   a new field queryable, extend the return schema and that list; never reintroduce
   manual mapping.
-  A corrective reparse that needs to remove an earlier value must declare its
-  analysis-owned dotted paths in `clear_fields`; empty values remain additive
-  no-ops. Any video return without a promoted artifact must clear
+  Current version-2 returns snapshot-replace every supplied declared field,
+  including empty values and complete structured maps; omission preserves a
+  field. Saved returns with missing/version-1 metadata retain their legacy
+  additive behavior. A corrective reparse that needs to delete a field rather
+  than replace it declares its analysis-owned dotted paths in `clear_fields`.
+  Any video return without a promoted artifact must clear
   `slides_local_path`; an untrusted return is context-only and cannot carry
   authored-slide evidence. The script
   persists that path when a trusted artifact is promoted, replaces a complete

@@ -31,6 +31,16 @@ gates must be recorded as `not_evaluable`, processed video-derived slide evidenc
 requires the schema-v3 verified-region provenance chain, and stale queue
 generations cannot be persisted.
 
+### fix(vault-ingress) — version the analysis-return merge contract
+
+New subagent returns declare `return_schema_version: 2`, giving reparses explicit
+snapshot semantics instead of inheriting recursive dictionary union from their JSON
+shape. Missing/version-1 returns remain readable under the historical additive
+contract, while wrong-typed and unknown future versions fail closed. The version-2
+contract treats supplied empty findings as real replacements, keeps omitted fields
+for partial-return compatibility, and reserves additive merging for explicitly
+registered extension namespaces.
+
 ### fix(vault-ingress) — persist complete queue batches under one timestamp
 
 Both persistence surfaces now fail closed unless return filenames exactly equal

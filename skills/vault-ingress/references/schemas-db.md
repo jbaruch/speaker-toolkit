@@ -152,6 +152,7 @@ Each subagent returns this JSON after processing one talk:
 ```json
 {
   "filename": "the .md filename",
+  "return_schema_version": 2,
   "queue_claim": {
     "run_id": "copied from talk._queue_claim.run_id",
     "batch_id": "copied from talk._queue_claim.batch_id",
@@ -324,9 +325,18 @@ classification rule including how a dominant class is selected, the provenance
 evidence used, and how unverified origins are counted as `unknown`. Both fields
 are authored-slide evidence and cannot be supplied from untrusted video context.
 
+Every newly produced return declares `return_schema_version: 2`. Version 2 is the
+complete-snapshot merge contract: supplied declared scalar and list fields replace
+prior values even when empty; complete structured maps and each verbatim lane replace
+their prior snapshots; omitted fields remain untouched. The image-source distribution
+and its basis form one dependent group. Unregistered incoming structured objects fail
+closed instead of acquiring accidental recursive-merge semantics. Historical returns
+with no version field, or with explicit version 1, retain the legacy additive merge
+contract so saved artifacts remain replayable. Unknown future versions are rejected.
+
 Every processed return carries the complete analysis shape, including empty
 strings/arrays for findings that did not occur. A skipped terminal return may
-contain only `filename`, `queue_claim`, `status`, and any known provenance. Both
+contain only `filename`, `return_schema_version`, `queue_claim`, and `status`. Both
 writers reject a missing/unknown status or a return whose queue generation does
 not match the talk's active claim. Returns should omit `processed_date`: the
 persistence writer's normalized batch `--run-date` (or generated UTC timestamp)
@@ -393,12 +403,13 @@ to a `processed_partial` return. An untrusted manifest is context-only: do not l
 speaker, PiP, and delivery/timing phenomena that it actually establishes; its scope can
 never be promoted into authored-slide evidence.
 
-`clear_fields` is the only mechanism that deletes prior analysis. Allowed paths
+`clear_fields` explicitly deletes prior analysis before the return is applied. Allowed paths
 are top-level analysis prose/provenance scalars or leaves under
 `structured_data`, `verbatim_examples`, and `pattern_observations`. It cannot
 clear queue identity, source URLs, catalog metadata, or the talk record itself.
-Clearing a promoted structured scalar clears its top-level copy too. Ordinary
-empty values remain additive no-ops.
+Clearing a promoted structured scalar clears its top-level copy too. A supplied
+version-2 replacement wins after a clear; version-2 empty values are real snapshots,
+not no-ops. Legacy v1 empty values retain their historical additive no-op behavior.
 
 `evidence_source` uses the enum defined by the pattern index's Evidence-Source Contract.
 Detected entries must name a qualifying source; `source_comparison` evidence must name

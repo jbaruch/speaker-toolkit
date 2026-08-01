@@ -17,6 +17,7 @@ VALIDATE_SCRIPT = os.path.join(
 def _return(**overrides):
     value = {
         "filename": "talk.md",
+        "return_schema_version": 2,
         "queue_claim": {
             "run_id": "reparse",
             "batch_id": "25",
@@ -237,6 +238,26 @@ def test_valid_return_resolves_the_catalog_fingerprint(return_validation):
     catalog = return_validation.validate_batch([_return()])
     assert len(catalog.entries) == 111
     assert len(catalog.fingerprint) == 64
+
+
+@pytest.mark.parametrize("version", [None, 1, 2])
+def test_return_schema_dual_reads_legacy_and_current_versions(
+        return_validation, version):
+    value = _return()
+    if version is None:
+        del value["return_schema_version"]
+    else:
+        value["return_schema_version"] = version
+
+    return_validation.validate_batch([value])
+
+
+@pytest.mark.parametrize("version", [0, 3, True, "2"])
+def test_return_schema_rejects_unknown_or_wrong_typed_versions(
+        return_validation, version):
+    value = _return(return_schema_version=version)
+
+    assert "return_schema_version" in _error(return_validation, value)
 
 
 def test_trusted_video_return_requires_complete_manifest_and_promoted_path(

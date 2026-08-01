@@ -80,6 +80,8 @@ VIDEO_SOURCE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 VIDEO_EXTRACTION_SCHEMA_VERSION = 3
 QUEUE_CLAIM_SCHEMA_VERSION = 2
 LEGACY_QUEUE_CLAIM_SCHEMA_VERSION = 1
+RETURN_SCHEMA_VERSION = 2
+LEGACY_RETURN_SCHEMA_VERSION = 1
 PATTERN_SCORING_SCHEMA_VERSION = 2
 RETURN_QUEUE_CLAIM_FIELDS = frozenset({
     "run_id",
@@ -112,6 +114,7 @@ CLAIMABLE_PREVIOUS_STATUSES = frozenset({
 SKIPPED_RETURN_FIELDS = frozenset({
     "filename",
     "queue_claim",
+    "return_schema_version",
     "status",
 })
 AUTHORED_SLIDE_FIELDS = frozenset({
@@ -178,6 +181,25 @@ MEME_CONTENT_TYPES = frozenset({"meme_only", "meme_with_text"})
 
 class ReturnValidationError(ValueError):
     """A subagent return violates the shared ingress contract."""
+
+
+def resolve_return_schema_version(ret: dict) -> int:
+    """Return the supported merge-contract version for a subagent result.
+
+    Historical return artifacts had no version field and used the v1 additive
+    merge contract.  Keep those artifacts replayable by treating ABSENT as v1,
+    while making every declared version exact and fail-closed.
+    """
+    version = ret.get("return_schema_version", LEGACY_RETURN_SCHEMA_VERSION)
+    if isinstance(version, bool) or not isinstance(version, int):
+        raise ReturnValidationError(
+            "return_schema_version must be the integer 1 or 2, "
+            f"got {version!r}")
+    if version not in {LEGACY_RETURN_SCHEMA_VERSION, RETURN_SCHEMA_VERSION}:
+        raise ReturnValidationError(
+            f"unsupported return_schema_version {version}; this reader supports "
+            f"{LEGACY_RETURN_SCHEMA_VERSION} and {RETURN_SCHEMA_VERSION}")
+    return version
 
 
 @dataclass(frozen=True)
@@ -1416,6 +1438,7 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
     if not isinstance(ret, dict):
         raise ReturnValidationError(
             f"subagent return must be an object, got {type(ret).__name__}")
+    resolve_return_schema_version(ret)
     _require_string(ret, "filename")
     status = ret.get("status")
     if status not in RETURN_STATUSES:
