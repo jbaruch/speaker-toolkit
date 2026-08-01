@@ -65,6 +65,7 @@ VAULT_INGRESS_SCRIPTS = (
 if str(VAULT_INGRESS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(VAULT_INGRESS_SCRIPTS))
 
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     QR_CODE_RECORD_SCHEMA_VERSION,
     TrackingDatabaseError,

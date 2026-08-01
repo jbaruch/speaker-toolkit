@@ -53,6 +53,7 @@ from pattern_cohort_snapshot import (  # noqa: E402
     build_current_pattern_snapshot,
     configured_evidence_freshness_assessor,
 )
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseError,
     assess_tracking_database,
