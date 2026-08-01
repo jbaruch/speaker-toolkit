@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.1 — 2026-08-01
+
 ### fix(vault-ingress) — give the tracking database one versioned owner
 
 Vault-ingress now owns tracking-database shape changes and migration (#147).
