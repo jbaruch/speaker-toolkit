@@ -12,6 +12,14 @@ detection_signals:
   - "hyperlinked menu slide"
   - "non-linear navigation"
   - "flexible agenda"
+evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
+  - "Evidence must expose the existing scoring cues: functional navigation, genuine audience selection, and smooth non-linear delivery."
+not_evaluable_when:
+  - "No delivery video covers the relevant event or interval."
+  - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
 related_patterns: [talklet, coda, live-demo]
 inverse_of: []
 difficulty: advanced
@@ -45,6 +53,9 @@ When scoring talks, look for a visible menu or selection mechanism, hyperlinked 
 - Strong signal (2 pts): Clear menu slide with functional hyperlinks, genuine audience selection mechanism, smooth navigation between non-sequential sections
 - Moderate signal (1 pt): Some audience choice offered but limited (e.g., choosing between two options), or menu exists but navigation is clunky
 - Absent (0 pts): Entirely linear presentation with no audience agency over content order
+
+## Evidence Gate
+Evaluate this entry only from delivery video covering the relevant event or interval. A deck or transcript may suggest planned content, but it cannot establish the delivered timing, interaction, room behavior, or an exhaustive absence outcome.
 
 ## Relationship to Vault Dimensions
 Dimension 2 (Structure and Flow): A La Carte Content represents a fundamentally different structural paradigm — non-linear, audience-directed flow rather than presenter-dictated sequence. Dimension 4 (Audience Engagement): This pattern is one of the strongest expressions of audience engagement, giving the audience literal control over the presentation's direction.

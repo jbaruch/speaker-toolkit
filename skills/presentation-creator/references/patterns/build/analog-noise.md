@@ -10,6 +10,16 @@ detection_signals:
   - "hand-drawn elements"
   - "rough/sketch aesthetic"
   - "intentionally imperfect visuals"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "Evidence must expose the visible construction across enough of the talk to apply the existing strong, moderate, or absent criterion."
+  - "Evidence must expose the existing scoring cues: strong: deliberate, consistent hand-drawn treatment; moderate: some inconsistent rough elements; absent: digitally clean standard elements."
+not_evaluable_when:
+  - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
+  - "Only a transcript or spoken account is available, or the visual source is too partial to distinguish the asserted tier from absence."
 related_patterns: [defy-defaults, leet-grammars]
 inverse_of: []
 difficulty: intermediate
@@ -54,6 +64,9 @@ When scoring talks, look for visual elements that are deliberately imperfect: ha
 - Strong signal (2 pts): Deliberate, consistent use of hand-drawn or sketch-style visual elements that create a cohesive aesthetic, or strategic use of imperfect elements for emphasis at key moments
 - Moderate signal (1 pt): Some hand-drawn or rough elements present but inconsistently applied, or the aesthetic feels accidental rather than intentional
 - Absent (0 pts): All visual elements are digitally clean and standard, with no hand-drawn or rough aesthetic choices
+
+## Evidence Gate
+Evaluate this entry only from rendered static slides, the native deck, or delivery video that exposes the visible construction. Speech alone cannot establish its visual criteria, and an absence finding requires coverage of the complete relevant visual sequence.
 
 ## Relationship to Vault Dimensions
 Dimension 13 (Visual Polish and Craft): Analog Noise is a sophisticated expression of visual craft.

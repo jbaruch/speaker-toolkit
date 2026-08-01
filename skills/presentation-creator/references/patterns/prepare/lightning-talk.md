@@ -11,6 +11,14 @@ detection_signals:
   - "fixed slide count"
   - "memorized delivery"
   - "rapid-fire pacing"
+evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
+  - "Evidence must expose the existing scoring cues: second-level speech-slide synchronization, auto-advance behavior, and delivered timing."
+not_evaluable_when:
+  - "No delivery video covers the relevant event or interval."
+  - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
 related_patterns: [talklet, carnegie-hall, fourthought, defy-defaults, narrative-arc]
 inverse_of: []
 difficulty: advanced
@@ -42,6 +50,9 @@ The vault should look for evidence of extreme compression and precision: fixed s
 - Strong signal (2 pts): Perfectly timed delivery; slides and speech synchronized to the second; clear narrative arc within extreme time constraints; memorable conclusion
 - Moderate signal (1 pt): Reasonable timing but occasional desynchronization; content mostly fits the format but some slides feel rushed or wasted
 - Absent (0 pts): Delivery clearly under-rehearsed; speaker fights the auto-advance; narrative arc absent or broken; timing significantly off
+
+## Evidence Gate
+Evaluate this entry only from delivery video covering the relevant event or interval. A deck or transcript may suggest planned content, but it cannot establish the delivered timing, interaction, room behavior, or an exhaustive absence outcome.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 2 (Structure/Organization). Relates to Dimension 12 (Time/Pacing).

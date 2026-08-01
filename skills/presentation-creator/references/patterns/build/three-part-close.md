@@ -11,6 +11,16 @@ detection_signals:
   - "closing sequence has summary slide, CTA slide, and thanks slide"
   - "three distinct closing slides in sequence"
   - "explicit recap, action, gratitude structure"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "Evidence must expose the visible construction across enough of the talk to apply the existing strong, moderate, or absent criterion."
+  - "Evidence must expose the existing scoring cues: strong: three or more separate closing-job slides; moderate: two jobs separated; absent: one combined slide or no close."
+not_evaluable_when:
+  - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
+  - "Only a transcript or spoken account is available, or the visual source is too partial to distinguish the asserted tier from absence."
 related_patterns: [bookends, call-to-action, coda, new-bliss]
 inverse_of: [shortchanged]
 difficulty: foundational
@@ -38,6 +48,9 @@ Check the last 3–5 slides of the deck. Are there at least three distinct slide
 - Strong signal (2 pts): three or more distinct closing slides with clearly separated jobs (recap → CTA → thanks); consistent visual treatment marks them as a closing group
 - Moderate signal (1 pt): two of the three jobs are present on separate slides; closing structure is partial
 - Absent (0 pts): single closing slide combining recap, CTA, and thanks; or no closing slide at all
+
+## Evidence Gate
+Evaluate this entry only from rendered static slides, the native deck, or delivery video that exposes the visible construction. Speech alone cannot establish its visual criteria, and an absence finding requires coverage of the complete relevant visual sequence.
 
 ## Relationship to Vault Dimensions
 Dimension 2 (Structure and Flow): Three-Part Close is a structural commitment to giving the ending the same care as the opening. Dimension 10 (Closing Strategy): The pattern is the most explicit expression of a designed closing.

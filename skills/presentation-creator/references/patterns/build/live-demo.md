@@ -11,6 +11,14 @@ detection_signals:
   - "live software demonstration"
   - "real-time tool interaction"
   - "unscripted product showcase"
+evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
+  - "Evidence must expose the existing scoring cues: actual interaction with a live system, rehearsal quality, narrative framing, and recovery."
+not_evaluable_when:
+  - "No delivery video covers the relevant event or interval."
+  - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
 related_patterns: [lipsync, traveling-highlights]
 inverse_of: [dead-demo]
 difficulty: advanced
@@ -44,6 +52,9 @@ When scoring talks, watch for moments where the presenter leaves the slide deck 
 - Strong signal (2 pts): Well-rehearsed live demonstration that serves the narrative, is appropriately scoped, and includes visible backup preparedness (e.g., seamless recovery from a glitch, or mention of recorded fallback)
 - Moderate signal (1 pt): Live demonstration present but either too long, not well-integrated with the narrative, or showing signs of insufficient rehearsal
 - Absent (0 pts): No live demonstration when one would have strengthened the talk, or a demonstration that fails without recovery, or a Dead Demo used as time filler
+
+## Evidence Gate
+Evaluate this entry only from delivery video covering the relevant event or interval. A deck or transcript may suggest planned content, but it cannot establish the delivered timing, interaction, room behavior, or an exhaustive absence outcome.
 
 ## Relationship to Vault Dimensions
 Dimension 11 (Demonstrations and Tools): Live Demo is the primary pattern for this dimension, representing the highest-risk, highest-reward approach to showing tools and systems in action during a presentation.

@@ -11,6 +11,16 @@ detection_signals:
   - "agenda slides with highlighting"
   - "progress indicators"
   - "topic map showing current position"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "Evidence must expose the visible construction across enough of the talk to apply the existing strong, moderate, or absent criterion."
+  - "Evidence must expose the existing scoring cues: strong: recurring three-state progress display; moderate: initial agenda or inconsistent highlighting; absent: no agenda or progress indicator."
+not_evaluable_when:
+  - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
+  - "Only a transcript or spoken account is available, or the visual source is too partial to distinguish the asserted tier from absence."
 related_patterns: [context-keeper, bookends]
 inverse_of: []
 difficulty: foundational
@@ -44,6 +54,9 @@ When scoring talks, look for recurring agenda or progress indicators that show t
 - Strong signal (2 pts): Clear, recurring Breadcrumbs mechanism with three-state visualization (completed, current, upcoming), used consistently throughout the presentation at section transitions
 - Moderate signal (1 pt): An agenda slide shown at the beginning but not revisited, or inconsistent highlighting of current position
 - Absent (0 pts): No agenda, progress indicator, or structural navigation cues visible to the audience
+
+## Evidence Gate
+Evaluate this entry only from rendered static slides, the native deck, or delivery video that exposes the visible construction. Speech alone cannot establish its visual criteria, and an absence finding requires coverage of the complete relevant visual sequence.
 
 ## Relationship to Vault Dimensions
 Dimension 2 (Structure and Flow): Breadcrumbs are a direct, explicit revelation of the presentation's structure, making the flow visible and navigable for the audience. Dimension 13 (Visual Polish and Craft): Well-designed Breadcrumbs require thoughtful visual design — color coding, spatial arrangement, and consistent styling — that reflects overall visual craft.

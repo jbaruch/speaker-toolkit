@@ -11,6 +11,14 @@ detection_signals:
   - "humor/story every 10-20 minutes"
   - "attention pattern breaks"
   - "strategic entertainment placement"
+evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
+  - "Evidence must expose the existing scoring cues: 10-to-20-minute spacing, delivery context, and audience-energy claims."
+not_evaluable_when:
+  - "No delivery video covers the relevant event or interval."
+  - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
 related_patterns: [leet-grammars, narrative-arc, entertainment, crucible, retrieval-beat]
 inverse_of: [alienating-artifact]
 difficulty: intermediate
@@ -53,6 +61,9 @@ The vault should look for evidence of strategic entertainment placement: humor, 
 - Strong signal (2 pts): Well-placed humor/stories every 10-20 minutes; breaks are contextualized and reinforce content; variety in break types; audience energy remains high
 - Moderate signal (1 pt): Some breaks present but inconsistently spaced; humor is present but not always relevant to content
 - Absent (0 pts): No discernible breaks; presentation is a continuous monologue; audience attention likely flags
+
+## Evidence Gate
+Evaluate this entry only from delivery video covering the relevant event or interval. A deck or transcript may suggest planned content, but it cannot establish the delivered timing, interaction, room behavior, or an exhaustive absence outcome.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 3 (Delivery/Presentation Skills). Relates to Dimension 12 (Time/Pacing).

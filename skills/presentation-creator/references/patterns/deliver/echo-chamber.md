@@ -10,6 +10,15 @@ detection_signals:
   - "questions repeated before answering"
   - "audience questions restated"
   - "Q&A management technique visible"
+evaluable_from:
+  - transcript
+  - delivery_video
+evidence_requirements:
+  - "Evidence must preserve the spoken wording and order across the interval needed to apply the existing rhetorical or delivery criteria."
+  - "Evidence must expose the existing scoring cues: audience question repeated or rephrased before the answer."
+not_evaluable_when:
+  - "Neither a transcript nor delivery video covers the relevant spoken interval."
+  - "The available spoken record is too partial or normalized to preserve the wording, order, or absence required by the existing scoring criteria."
 related_patterns: [seeding-the-first-question]
 inverse_of: []
 difficulty: foundational
@@ -46,6 +55,9 @@ Use this pattern in every Q&A session, without exception. It is especially criti
 - Strong signal (2 pts): Every audience question is clearly repeated or rephrased before the speaker answers, with natural delivery and consistent application
 - Moderate signal (1 pt): Some questions repeated but the practice is inconsistent — speaker sometimes jumps to answering without restating
 - Absent (0 pts): Speaker never repeats questions, answers are directed to the questioner rather than the room, rest of audience cannot follow Q&A
+
+## Evidence Gate
+Evaluate this entry only from a transcript or delivery video that preserves the relevant spoken wording and order. A visual artifact alone cannot establish the rhetorical move, and an absence finding requires coverage of the complete relevant spoken interval.
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 7 (Clarity / Communication).

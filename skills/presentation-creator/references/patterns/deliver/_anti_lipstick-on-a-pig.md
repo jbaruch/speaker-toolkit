@@ -10,6 +10,16 @@ detection_signals:
   - "beautiful slides but shallow content"
   - "style over substance"
   - "visual polish without structural depth"
+evaluable_from:
+  - delivery_video
+  - [static_slides, transcript]
+  - [native_deck, transcript]
+evidence_requirements:
+  - "Evidence must jointly cover the rendered visual channel and spoken track for the same delivery, either in delivery video or matched visual and transcript sources."
+  - "Evidence must expose the existing scoring cues: visual polish must be evaluated against delivered substance."
+not_evaluable_when:
+  - "Only the visual channel or only the spoken channel is available."
+  - "The visual and transcript artifacts are unmatched or too incomplete to establish their relationship or an exhaustive absence outcome."
 related_patterns: [narrative-arc]
 inverse_of: [narrative-arc]
 difficulty: foundational
@@ -46,6 +56,9 @@ This is an antipattern to avoid by investing appropriately in content before des
 - Strong signal (2 pts — antipattern present): Beautiful slides mask shallow or unstructured content — the talk looks great but delivers no lasting value
 - Moderate signal (1 pt): Content is reasonable but could be deeper, visual polish slightly outweighs structural rigor
 - Absent (0 pts — antipattern not present): Content is substantive and well-structured, with visual design that enhances rather than replaces the message — both substance and style are present
+
+## Evidence Gate
+Evaluate this entry only from delivery video or from matched static/native visuals plus transcript evidence for the same delivery. Either channel alone can hide a qualifying or disqualifying cue, so absence requires both.
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 8 (Content Depth / Value). It also maps to Vault Dimension 9 (Speaker Authority / Credibility). It also maps to Vault Dimension 14 (Speaker Craft / Professionalism).

@@ -76,7 +76,7 @@ EVIDENCE_GATE_FIELDS = frozenset({
     "evidence_requirements",
     "not_evaluable_when",
 })
-REQUIRED_EVIDENCE_GATES = {
+EXISTING_REQUIRED_EVIDENCE_GATES = {
     "progressive-reveal": frozenset({
         frozenset({"static_slides"}),
         frozenset({"native_deck"}),
@@ -113,6 +113,119 @@ REQUIRED_EVIDENCE_GATES = {
         frozenset({"static_slides", "transcript"}),
         frozenset({"native_deck", "transcript"}),
     }),
+}
+
+SAFE_VISUAL_GATE_IDS = frozenset({
+    "analog-noise",
+    "bookends",
+    "breadcrumbs",
+    "context-keeper",
+    "cookie-cutter",
+    "defy-defaults",
+    "floodmarks",
+    "fontaholic",
+    "injured-outlines",
+    "intermezzi",
+    "peer-review",
+    "three-part-close",
+    "unifying-visual-theme",
+})
+SAFE_MOTION_GATE_IDS = frozenset({
+    "cave-painting",
+    "crawling-credits",
+    "soft-transitions",
+})
+SAFE_DELIVERY_GATE_IDS = frozenset({
+    "a-la-carte-content",
+    "brain-breaks",
+    "breathing-room",
+    "celery",
+    "dead-demo",
+    "dual-headed-monster",
+    "hecklers",
+    "lightning-talk",
+    "live-demo",
+    "make-it-rain",
+    "weatherman",
+})
+SAFE_SPOKEN_GATE_IDS = frozenset({"echo-chamber"})
+SAFE_COMBINED_GATE_IDS = frozenset({"lipstick-on-a-pig"})
+SAFE_CODA_GATE_IDS = frozenset({"coda"})
+
+VISUAL_GATE = frozenset({
+    frozenset({"static_slides"}),
+    frozenset({"native_deck"}),
+    frozenset({"delivery_video"}),
+})
+MOTION_GATE = frozenset({
+    frozenset({"native_deck"}),
+    frozenset({"delivery_video"}),
+})
+DELIVERY_GATE = frozenset({frozenset({"delivery_video"})})
+SPOKEN_GATE = frozenset({
+    frozenset({"transcript"}),
+    frozenset({"delivery_video"}),
+})
+COMBINED_GATE = frozenset({
+    frozenset({"delivery_video"}),
+    frozenset({"static_slides", "transcript"}),
+    frozenset({"native_deck", "transcript"}),
+})
+CODA_GATE = frozenset({
+    frozenset({"static_slides", "transcript"}),
+    frozenset({"native_deck", "transcript"}),
+})
+
+SAFE_SOURCE_GATE_GROUPS = (
+    (SAFE_VISUAL_GATE_IDS, VISUAL_GATE),
+    (SAFE_MOTION_GATE_IDS, MOTION_GATE),
+    (SAFE_DELIVERY_GATE_IDS, DELIVERY_GATE),
+    (SAFE_SPOKEN_GATE_IDS, SPOKEN_GATE),
+    (SAFE_COMBINED_GATE_IDS, COMBINED_GATE),
+    (SAFE_CODA_GATE_IDS, CODA_GATE),
+)
+SAFE_SOURCE_GATES = {
+    pattern_id: alternatives
+    for pattern_ids, alternatives in SAFE_SOURCE_GATE_GROUPS
+    for pattern_id in pattern_ids
+}
+assert len(SAFE_SOURCE_GATES) == 30
+
+HELD_FOR_OUTCOME_OR_TIER_GATES = frozenset({
+    "alienating-artifact",
+    "ant-fonts",
+    "anti-sell",
+    "backtracking",
+    "bullet-riddled-corpse",
+    "call-to-action",
+    "call-to-adventure",
+    "concrete-before-abstract",
+    "crawling-code",
+    "emergence",
+    "entertainment",
+    "flyover",
+    "foreshadowing",
+    "going-meta",
+    "hiccup-words",
+    "master-story",
+    "meme-as-argument",
+    "mentor",
+    "narrative-arc",
+    "negative-ignorance",
+    "new-bliss",
+    "nodding-room",
+    "opening-punch",
+    "photomaniac",
+    "seeding-the-first-question",
+    "sparkline",
+    "tower-of-babble",
+    "triad",
+})
+assert len(HELD_FOR_OUTCOME_OR_TIER_GATES) == 28
+
+REQUIRED_EVIDENCE_GATES = {
+    **EXISTING_REQUIRED_EVIDENCE_GATES,
+    **SAFE_SOURCE_GATES,
 }
 
 
@@ -305,6 +418,22 @@ def test_source_dependent_patterns_have_required_evidence_gates(
     assert len(metadata["evidence_requirements"]) >= 2
     assert len(metadata["not_evaluable_when"]) >= 2
     assert "## Evidence Gate" in _read(path)
+
+
+@pytest.mark.parametrize(
+    "pattern_id",
+    sorted(HELD_FOR_OUTCOME_OR_TIER_GATES),
+)
+def test_held_entries_remain_ungated_until_outcome_or_tier_metadata_exists(
+        pattern_id):
+    """Do not suppress valid positive evidence with one entry-wide source gate.
+
+    These entries need positive-versus-absence or tier-specific source metadata.
+    Keeping them ungated is deliberate until the validator can represent that
+    distinction.
+    """
+    metadata = _metadata(_path_for_id(pattern_id))
+    assert EVIDENCE_GATE_FIELDS.isdisjoint(metadata)
 
 
 def test_evidence_source_enum_is_documented_in_index():

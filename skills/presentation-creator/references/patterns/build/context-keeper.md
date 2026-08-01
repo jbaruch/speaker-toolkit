@@ -12,6 +12,16 @@ detection_signals:
   - "visible progress indicator"
   - "structural navigation cues"
   - "audience knows their position in the flow"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "Evidence must expose the visible construction across enough of the talk to apply the existing strong, moderate, or absent criterion."
+  - "Evidence must expose the existing scoring cues: strong: clear, consistent visible structure mechanism; moderate: inconsistent structural cues; absent: no visible structural cues."
+not_evaluable_when:
+  - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
+  - "Only a transcript or spoken account is available, or the visual source is too partial to distinguish the asserted tier from absence."
 related_patterns: [breadcrumbs, bookends, narrative-arc, charred-trail, cave-painting]
 inverse_of: []
 difficulty: foundational
@@ -45,6 +55,9 @@ When scoring talks, look for any mechanism that reveals the presentation's struc
 - Strong signal (2 pts): Clear, consistent context keeping mechanism that reveals presentation structure and current position; audience can always orient themselves within the overall flow
 - Moderate signal (1 pt): Some structural cues present but inconsistent, or context keeping used in some sections but not others
 - Absent (0 pts): No visible structural cues; audience has no way to gauge their position in the presentation or the overall content structure
+
+## Evidence Gate
+Evaluate this entry only from rendered static slides, the native deck, or delivery video that exposes the visible construction. Speech alone cannot establish its visual criteria, and an absence finding requires coverage of the complete relevant visual sequence.
 
 ## Relationship to Vault Dimensions
 Dimension 2 (Structure and Flow): a direct expression of structural awareness. Dimension 5 (Storytelling and Narrative): narrative-based Context Keepers signal structural position. Dimension 13 (Visual Polish and Craft): the visual implementation of context keeping elements.

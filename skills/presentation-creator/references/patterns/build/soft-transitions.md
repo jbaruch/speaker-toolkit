@@ -10,6 +10,15 @@ detection_signals:
   - "dissolve transitions"
   - "seamless slide flow"
   - "hidden slide boundaries"
+evaluable_from:
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "Evidence must expose native motion or transition behavior, or observed delivery playback, across the relevant sequence."
+  - "Evidence must expose the existing scoring cues: strong: consistent dissolves inside sections; moderate: inconsistent or structurally indiscriminate dissolves; absent: hard cuts or novelty transitions."
+not_evaluable_when:
+  - "Only flattened static slides or a transcript is available."
+  - "The source does not expose the zoom, scrolling, transition behavior, or pacing needed by the existing scoring criteria."
 related_patterns: [intermezzi, cave-painting]
 inverse_of: [cookie-cutter]
 difficulty: intermediate
@@ -43,6 +52,9 @@ When scoring talks, look for smooth dissolve transitions between consecutive sli
 - Strong signal (2 pts): Consistent use of dissolve transitions within sections creating seamless content flow, combined with element-level entrance animations; clear structural breaks preserved at section boundaries
 - Moderate signal (1 pt): Some dissolve transitions used but inconsistently, or dissolves used everywhere including section boundaries (obscuring structure)
 - Absent (0 pts): All slides transition with hard cuts, or distracting novelty transitions (wipes, spins, 3D flips) used throughout
+
+## Evidence Gate
+Evaluate this entry only from native-deck behavior or delivery video that exposes the relevant motion or playback. A flattened slide artifact or transcript cannot establish zoom, scrolling, transition behavior, pacing, or their absence.
 
 ## Relationship to Vault Dimensions
 Dimension 5 (Storytelling and Narrative): Soft Transitions support narrative flow. Dimension 13 (Visual Polish and Craft): The technique requires careful attention to timing, element coordination, and visual continuity.

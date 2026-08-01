@@ -10,6 +10,14 @@ detection_signals:
   - "low content-to-time ratio"
   - "audience disengagement visible"
   - "mandatory meeting with nothing new to say"
+evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
+  - "Evidence must expose the existing scoring cues: delivered value-to-time ratio, padding, and effort imposed on the audience."
+not_evaluable_when:
+  - "No delivery video covers the relevant event or interval."
+  - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
 related_patterns: [required, know-your-audience, narrative-arc, brain-breaks]
 inverse_of: [narrative-arc]
 difficulty: foundational
@@ -41,6 +49,9 @@ The vault should look for signs of low content density: minimal new information,
 - Strong signal (2 pts — antipattern present): Classic Celery — presentation takes more effort to attend than it provides in value; content could have been an email; no narrative structure
 - Moderate signal (1 pt): Adequate content but with noticeable padding; some sections feel like time-fillers rather than value-adders
 - Absent (0 pts — antipattern not present): High content-to-time ratio; every minute delivers value; audience would not have been better served by a document or email
+
+## Evidence Gate
+Evaluate this entry only from delivery video covering the relevant event or interval. A deck or transcript may suggest planned content, but it cannot establish the delivered timing, interaction, room behavior, or an exhaustive absence outcome.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 2 (Structure/Organization). Relates to Dimension 14 (Overall Impression/Polish).

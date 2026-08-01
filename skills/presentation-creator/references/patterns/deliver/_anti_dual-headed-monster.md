@@ -10,6 +10,14 @@ detection_signals:
   - "split attention between audiences"
   - "hybrid format compromises"
   - "technology management overhead"
+evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
+  - "Evidence must expose the existing scoring cues: hybrid-delivery context switching, technology friction, and audience compromise."
+not_evaluable_when:
+  - "No delivery video covers the relevant event or interval."
+  - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
 related_patterns: [live-on-tape, weatherman]
 inverse_of: []
 difficulty: intermediate
@@ -48,6 +56,9 @@ This is an antipattern to avoid when possible and to manage carefully when unavo
 - Strong signal (2 pts — antipattern present): Speaker tries to serve both audiences equally, resulting in a fragmented experience for everyone — visible context-switching, technology struggles, and disjointed delivery
 - Moderate signal (1 pt): Speaker attempts hybrid delivery with some success but visible compromises and occasional technology-related disruptions
 - Absent (0 pts — antipattern not present): Speaker clearly optimizes for one audience, with appropriate accommodation for the other — technology is managed by a dedicated person, delivery is coherent and focused
+
+## Evidence Gate
+Evaluate this entry only from delivery video covering the relevant event or interval. A deck or transcript may suggest planned content, but it cannot establish the delivered timing, interaction, room behavior, or an exhaustive absence outcome.
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 14 (Speaker Craft / Professionalism).

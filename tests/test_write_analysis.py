@@ -109,7 +109,7 @@ def _return(**overrides):
                  "evidence_source": "static_slides", "evidence": "7.5pt body text."},
             ],
             "evidence_sources": ["transcript", "native_deck", "static_slides",
-                                 "source_comparison"],
+                                 "delivery_video", "source_comparison"],
             "not_evaluable": [],
             "pattern_score": {"patterns_used": 1, "antipatterns_detected": 1, "score": 0},
         },

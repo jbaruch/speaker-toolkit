@@ -11,6 +11,15 @@ detection_signals:
   - "reference slides at end"
   - "bibliography or resource list"
   - "further reading section"
+evaluable_from:
+  - [static_slides, transcript]
+  - [native_deck, transcript]
+evidence_requirements:
+  - "Evidence must show supplementary deck material after, and separate from, the spoken conclusion."
+  - "Evidence must expose the existing scoring cues: reference material appears after, and remains separate from, the spoken conclusion."
+not_evaluable_when:
+  - "Only a deck is available without a transcript that locates the spoken conclusion."
+  - "Only delivery video or transcript is available without an inspectable authored deck showing the post-spoken material."
 related_patterns: [infodeck, vacation-photos]
 inverse_of: []
 difficulty: foundational
@@ -44,6 +53,9 @@ When scoring talks, look for a clear demarcation point between the spoken conclu
 - Strong signal (2 pts): Clear reference/bibliography section at end of deck, separated from spoken content, with organized further reading materials
 - Moderate signal (1 pt): Some references collected at end but mixed with spoken content, or references present but unorganized
 - Absent (0 pts): No reference section, or references scattered inline throughout the presentation
+
+## Evidence Gate
+Evaluate Coda only from an inspectable static or native deck paired with the spoken track. The pair must establish that supplementary material appears after and remains separate from the spoken conclusion; a deck alone or delivery video alone is insufficient.
 
 ## Relationship to Vault Dimensions
 Dimension 6 (Information Density): manages information density across the spoken portion and the reference section. Dimension 8 (Slide Design): a deck-structure decision about what belongs in the spoken flow versus reference material.

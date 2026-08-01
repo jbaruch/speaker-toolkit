@@ -57,7 +57,7 @@ def _return(**overrides):
                  "evidence": "The close is compressed."},
             ],
             "evidence_sources": ["transcript", "native_deck", "static_slides",
-                                 "source_comparison"],
+                                 "delivery_video", "source_comparison"],
             "not_evaluable": [],
             "pattern_score": {"patterns_used": 2, "antipatterns_detected": 1, "score": 1},
         },
@@ -227,7 +227,8 @@ def test_pattern_observations_normalized(persist_results):
     assert obs["pattern_score"] == 1  # flattened from {"score": 1}
     assert len(obs["patterns_detected"]) == 2  # detailed arrays kept for Section 15
     assert obs["evidence_sources"] == [
-        "transcript", "native_deck", "static_slides", "source_comparison"]
+        "transcript", "native_deck", "static_slides", "delivery_video",
+        "source_comparison"]
     assert obs["not_evaluable"] == []
     assert obs["not_evaluable_ids"] == []
 

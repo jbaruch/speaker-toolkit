@@ -10,6 +10,14 @@ detection_signals:
   - "speaker faces audience"
   - "uses presenter display"
   - "interacts with slides without turning around"
+evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
+  - "Evidence must expose the existing scoring cues: speaker orientation, presenter-display use, and eye contact."
+not_evaluable_when:
+  - "No delivery video covers the relevant event or interval."
+  - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
 related_patterns: [make-it-rain, lipsync]
 inverse_of: []
 difficulty: foundational
@@ -44,6 +52,9 @@ Use this pattern in every presentation that involves projected slides. It requir
 - Strong signal (2 pts): Speaker faces audience at all times, uses presenter display effectively, interacts with slides without turning around, maintains strong eye contact
 - Moderate signal (1 pt): Speaker mostly faces audience but occasionally turns to check the screen
 - Absent (0 pts): Speaker frequently turns their back to the audience to read or reference slides
+
+## Evidence Gate
+Evaluate this entry only from delivery video covering the relevant event or interval. A deck or transcript may suggest planned content, but it cannot establish the delivered timing, interaction, room behavior, or an exhaustive absence outcome.
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 12 (Delivery Mechanics). Facing the audience is a fundamental delivery skill that affects eye contact, audience reading, vocal projection (speaking toward the audience rather than away from them), and overall stage presence.

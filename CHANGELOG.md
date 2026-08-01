@@ -110,6 +110,22 @@ non-empty `image_source_distribution_basis` that declares the counting unit,
 dominance rule, provenance evidence, and treatment of unknown origins. Both
 fields are barred from untrusted video-only context.
 
+### fix(vault-ingress) — add source-safe catalog entry gates
+
+Thirty catalog entries whose existing criteria have one mechanically safe
+entry-level source boundary now declare `evaluable_from`, positive evidence
+requirements, and explicit not-evaluable conditions. This covers visual,
+native-motion, delivered-event, and one spoken entry, plus the expressible
+paired-source contracts for Lipstick on a Pig and Coda. The two paired contracts
+require the exact visual-plus-transcript group and `source_comparison`; a single
+channel cannot silently support a detection or absence claim.
+
+Twenty-eight other candidates intentionally remain ungated. Their current tiers
+allow different sources for positive evidence, strong evidence, or exhaustive
+absence, which the entry-level contract cannot represent without rejecting valid
+observations or legitimizing invalid ones. This change does not claim to solve
+tier-specific or positive-versus-absence eligibility.
+
 ### feat(vault-ingress) — inventory native PPTX timing without claiming playback
 
 PPTX extraction schema v2 now emits a fixed `native_timing` record per slide and

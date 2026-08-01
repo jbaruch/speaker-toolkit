@@ -11,6 +11,16 @@ detection_signals:
   - "non-default fonts"
   - "personalized template"
   - "distinctive visual identity"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "Evidence must expose the visible construction across enough of the talk to apply the existing strong, moderate, or absent criterion."
+  - "Evidence must expose the existing scoring cues: strong: distinctive custom visual identity; moderate: partial customization; absent: recognizable default template."
+not_evaluable_when:
+  - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
+  - "Only a transcript or spoken account is available, or the visual source is too partial to distinguish the asserted tier from absence."
 related_patterns: [analog-noise, bookends, intermezzi]
 inverse_of: [floodmarks]
 difficulty: intermediate
@@ -44,6 +54,9 @@ When scoring talks, look for visual elements that are clearly not from any stand
 - Strong signal (2 pts): Distinctive custom visual identity with a coherent color palette, custom typography, and personalized layouts that clearly deviate from tool or conference defaults
 - Moderate signal (1 pt): Some customization visible (e.g., custom colors but default fonts, or custom backgrounds but standard layouts)
 - Absent (0 pts): Presentation uses a recognizable default template or conference template with no customization
+
+## Evidence Gate
+Evaluate this entry only from rendered static slides, the native deck, or delivery video that exposes the visible construction. Speech alone cannot establish its visual criteria, and an absence finding requires coverage of the complete relevant visual sequence.
 
 ## Relationship to Vault Dimensions
 Dimension 13 (Visual Polish and Craft): Defy Defaults is a direct expression of visual craft, demonstrating that the presenter has made intentional design decisions rather than accepting tool-generated defaults.

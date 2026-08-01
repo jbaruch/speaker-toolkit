@@ -11,6 +11,16 @@ detection_signals:
   - "excessive font variety"
   - "inconsistent typography"
   - "more than 2-3 fonts used"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "Evidence must expose the visible construction across enough of the talk to apply the existing strong, moderate, or absent criterion."
+  - "Evidence must expose the existing scoring cues: strong: five or more font families; moderate: four or fewer; absent: consistent two-to-three-family palette."
+not_evaluable_when:
+  - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
+  - "Only a transcript or spoken account is available, or the visual source is too partial to distinguish the asserted tier from absence."
 related_patterns: [floodmarks]
 inverse_of: []
 difficulty: foundational
@@ -44,6 +54,9 @@ When scoring talks, count the number of distinct font families used across the s
 - Strong signal (2 pts — antipattern present): Five or more font families used across the deck, inconsistent typography within individual slides, ransom-note visual effect
 - Moderate signal (1 pt): Generally consistent typography with one or two additional fonts used for specific purposes (code, quotes), total of four or fewer font families
 - Absent (0 pts — antipattern not present): Consistent typographic palette of two to three font families throughout the entire deck, with variety achieved through size, weight, and style rather than new typefaces
+
+## Evidence Gate
+Evaluate this entry only from rendered static slides, the native deck, or delivery video that exposes the visible construction. Speech alone cannot establish its visual criteria, and an absence finding requires coverage of the complete relevant visual sequence.
 
 ## Relationship to Vault Dimensions
 Dimension 13 (Slide Aesthetics): Typography is one of the most fundamental elements of visual design, and Fontaholic behavior directly degrades the aesthetic quality of slides by introducing visual chaos where consistency is needed. Dimension 14 (Overall Quality Indicators): Typographic inconsistency is a reliable signal of inexperience or inattention to design details, impacting the perceived professionalism of the entire presentation.

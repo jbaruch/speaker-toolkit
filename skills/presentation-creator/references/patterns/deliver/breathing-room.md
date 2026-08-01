@@ -10,6 +10,14 @@ detection_signals:
   - "strategic pauses"
   - "comfortable silences"
   - "pacing variation with deliberate slow moments"
+evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
+  - "Evidence must expose the existing scoring cues: actual silence, timing, and delivery pacing."
+not_evaluable_when:
+  - "No delivery video covers the relevant event or interval."
+  - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
 related_patterns: [narrative-arc, brain-breaks, know-your-audience]
 inverse_of: [hiccup-words]
 difficulty: intermediate
@@ -51,6 +59,9 @@ Use this pattern in every presentation, with the frequency and duration of pause
 - Strong signal (2 pts): Strategic pauses are evident throughout, silences are confident and well-timed, pacing varies deliberately, audience has time to absorb key points
 - Moderate signal (1 pt): Some pauses present but inconsistent — speaker occasionally rushes through important moments
 - Absent (0 pts): No strategic pauses, speaker fills every moment with words, rapid-fire delivery throughout
+
+## Evidence Gate
+Evaluate this entry only from delivery video covering the relevant event or interval. A deck or transcript may suggest planned content, but it cannot establish the delivered timing, interaction, room behavior, or an exhaustive absence outcome.
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 7 (Clarity / Communication) and to Vault Dimension 12 (Delivery Mechanics). The ability to hold silence is both a communication technique and a marker of delivery mastery.

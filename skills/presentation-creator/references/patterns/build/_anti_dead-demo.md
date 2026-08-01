@@ -10,6 +10,14 @@ detection_signals:
   - "purposeless demo"
   - "demo as time filler"
   - "no narrative connection to demonstration"
+evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
+  - "Evidence must expose the existing scoring cues: live demo framing, synthesis, placement, and audience engagement."
+not_evaluable_when:
+  - "No delivery video covers the relevant event or interval."
+  - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
 related_patterns: [live-demo, a-la-carte-content]
 inverse_of: [live-demo]
 difficulty: foundational
@@ -45,6 +53,9 @@ When scoring talks, evaluate whether each demonstration is preceded by a problem
 - Strong signal (2 pts — antipattern present): Demonstrations used as time fillers with no narrative connection, feature touring without context, audience engagement visibly declining during demo sections
 - Moderate signal (1 pt): Demonstrations are partially integrated with the narrative — some framing present but incomplete, or demo content occasionally drifts into feature touring without clear purpose
 - Absent (0 pts — antipattern not present): All demonstrations are narratively motivated — preceded by a problem or question, accompanied by purposeful commentary, and followed by synthesis that connects the demo to the larger message
+
+## Evidence Gate
+Evaluate this entry only from delivery video covering the relevant event or interval. A deck or transcript may suggest planned content, but it cannot establish the delivered timing, interaction, room behavior, or an exhaustive absence outcome.
 
 ## Relationship to Vault Dimensions
 Dimension 11 (Demonstrations and Tools): Dead Demo is the anti-form of demonstration — tool interaction that fails to serve any communicative purpose, degrading rather than enhancing the presentation's engagement with tools and technology. Dimension 14 (Overall Quality Indicators): A purposeless demonstration is one of the most visible quality failures in a technical presentation, signaling insufficient preparation and weak narrative design.

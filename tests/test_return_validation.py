@@ -51,7 +51,7 @@ def _return(**overrides):
                 "dimensions": [12, 14],
             }],
             "evidence_sources": ["transcript", "native_deck", "static_slides",
-                                 "source_comparison"],
+                                 "delivery_video", "source_comparison"],
             "not_evaluable": [],
             "pattern_score": {
                 "patterns_used": 1,
@@ -341,6 +341,9 @@ def test_slides_only_return_requires_verbal_layer_patterns_not_evaluable(
 
     assert not_evaluable["second-look"]["evidence_source"] == "static_slides"
     assert not_evaluable["vacation-photos"]["evidence_source"] == \
+        "static_slides"
+    assert not_evaluable["coda"]["evidence_source"] == "static_slides"
+    assert not_evaluable["lipstick-on-a-pig"]["evidence_source"] == \
         "static_slides"
     return_validation.validate_batch([value])
 
@@ -702,6 +705,7 @@ def test_source_gated_pattern_rejects_nonqualifying_evidence(return_validation):
 
 def test_detection_source_must_have_been_inspected(return_validation):
     value = _return()
+    value["pattern_observations"]["evidence_sources"].remove("delivery_video")
     value["pattern_observations"]["patterns_detected"][0]["evidence_source"] = \
         "delivery_video"
     assert "is not listed in pattern_observations.evidence_sources" in _error(
@@ -796,7 +800,12 @@ def test_conjunctive_gate_requires_source_comparison_marker(return_validation):
     not_evaluable_ids = {
         item["pattern_id"] for item in observations["not_evaluable"]}
 
-    assert {"second-look", "vacation-photos"} <= not_evaluable_ids
+    assert {
+        "coda",
+        "lipstick-on-a-pig",
+        "second-look",
+        "vacation-photos",
+    } <= not_evaluable_ids
     return_validation.validate_batch([value])
 
 
@@ -820,6 +829,100 @@ def test_source_gated_pattern_can_be_recorded_as_not_evaluable(return_validation
         "reason": "The static export contains no animation timing.",
     }]
     return_validation.validate_batch([value])
+
+
+@pytest.mark.parametrize(("pattern_id", "evidence_source"), [
+    ("analog-noise", "transcript"),
+    ("soft-transitions", "static_slides"),
+    ("live-demo", "transcript"),
+    ("echo-chamber", "static_slides"),
+    ("lipstick-on-a-pig", "transcript"),
+    ("coda", "delivery_video"),
+])
+def test_safe_source_gates_reject_representative_single_channel_counterexamples(
+        return_validation, pattern_id, evidence_source):
+    value = _return()
+    observations = value["pattern_observations"]
+    lane = (
+        "antipatterns_detected"
+        if pattern_id == "lipstick-on-a-pig"
+        else "patterns_detected"
+    )
+    observations[lane][0].update({
+        "pattern_id": pattern_id,
+        "evidence_source": evidence_source,
+    })
+    assert "cannot be evaluated from" in _error(return_validation, value)
+
+
+@pytest.mark.parametrize(
+    ("pattern_id", "lane", "slide_source", "sources", "detection_source"),
+    [
+        (
+            "lipstick-on-a-pig",
+            "antipatterns_detected",
+            "pptx",
+            ["delivery_video"],
+            "delivery_video",
+        ),
+        (
+            "lipstick-on-a-pig",
+            "antipatterns_detected",
+            "pdf",
+            ["static_slides", "transcript", "source_comparison"],
+            "source_comparison",
+        ),
+        (
+            "lipstick-on-a-pig",
+            "antipatterns_detected",
+            "pptx",
+            ["native_deck", "transcript", "source_comparison"],
+            "source_comparison",
+        ),
+        (
+            "coda",
+            "patterns_detected",
+            "pdf",
+            ["static_slides", "transcript", "source_comparison"],
+            "source_comparison",
+        ),
+        (
+            "coda",
+            "patterns_detected",
+            "pptx",
+            ["native_deck", "transcript", "source_comparison"],
+            "source_comparison",
+        ),
+    ],
+)
+def test_safe_nested_gates_accept_only_exact_compared_source_groups(
+        return_validation, pattern_id, lane, slide_source, sources,
+        detection_source):
+    value = _return(slide_source=slide_source, transcript_source="manual")
+    observations = value["pattern_observations"]
+    observations["evidence_sources"] = sources
+    for detection_lane in ("patterns_detected", "antipatterns_detected"):
+        observations[detection_lane][0]["evidence_source"] = detection_source
+    observations[lane][0]["pattern_id"] = pattern_id
+    _complete_unavailable_source_gates(return_validation, value)
+
+    return_validation.validate_batch([value])
+
+
+@pytest.mark.parametrize(("pattern_id", "lane"), [
+    ("lipstick-on-a-pig", "antipatterns_detected"),
+    ("coda", "patterns_detected"),
+])
+def test_safe_nested_gate_detection_requires_source_comparison_marker(
+        return_validation, pattern_id, lane):
+    value = _return(slide_source="pdf", transcript_source="manual")
+    observations = value["pattern_observations"]
+    observations["evidence_sources"] = ["static_slides", "transcript"]
+    for detection_lane in ("patterns_detected", "antipatterns_detected"):
+        observations[detection_lane][0]["evidence_source"] = "static_slides"
+    observations[lane][0]["pattern_id"] = pattern_id
+
+    assert "cannot be evaluated from" in _error(return_validation, value)
 
 
 def test_ungated_pattern_cannot_be_recorded_as_not_evaluable(return_validation):

@@ -10,6 +10,15 @@ detection_signals:
   - "scrolling credits animation"
   - "multi-contributor acknowledgment"
   - "Star Wars style credits"
+evaluable_from:
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "Evidence must expose native motion or transition behavior, or observed delivery playback, across the relevant sequence."
+  - "Evidence must expose the existing scoring cues: strong: smooth, well-paced scrolling; moderate: scrolling with pacing or formatting defects; absent: static credits or no scroll."
+not_evaluable_when:
+  - "Only flattened static slides or a transcript is available."
+  - "The source does not expose the zoom, scrolling, transition behavior, or pacing needed by the existing scoring criteria."
 related_patterns: [coda]
 inverse_of: []
 difficulty: intermediate
@@ -43,6 +52,9 @@ When scoring talks, look for animated credit sequences that scroll vertically. T
 - Strong signal (2 pts): Smooth, well-paced scrolling credits with organized groupings, readable font size, and deliberate cinematic presentation of contributor acknowledgments
 - Moderate signal (1 pt): Scrolling credits present but with pacing issues (too fast or too slow), inconsistent formatting, or lacking clear organization
 - Absent (0 pts): No scrolling credits used, or contributors listed on static slides with cramped text or omitted entirely
+
+## Evidence Gate
+Evaluate this entry only from native-deck behavior or delivery video that exposes the relevant motion or playback. A flattened slide artifact or transcript cannot establish zoom, scrolling, transition behavior, pacing, or their absence.
 
 ## Relationship to Vault Dimensions
 Dimension 6 (Information Density): Crawling Credits manages high-density acknowledgment information by distributing it over time rather than space, keeping the screen uncluttered at any given moment while still conveying comprehensive credit. Dimension 13 (Slide Aesthetics): The cinematic quality of well-executed Crawling Credits elevates the overall aesthetic of the presentation, turning a potentially mundane obligation into a visually engaging moment.

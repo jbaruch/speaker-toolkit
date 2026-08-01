@@ -10,6 +10,14 @@ detection_signals:
   - "physical props used"
   - "audience interaction through objects"
   - "tangible demonstrations"
+evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
+  - "Evidence must expose the existing scoring cues: physical props, room interaction, and live logistics."
+not_evaluable_when:
+  - "No delivery video covers the relevant event or interval."
+  - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
 related_patterns: [entertainment, weatherman]
 inverse_of: []
 difficulty: advanced
@@ -46,6 +54,9 @@ Use this pattern when you have the logistical capacity to support it and when th
 - Strong signal (2 pts): Physical props are used effectively to enhance understanding and engagement, with clear connection between physical element and content, logistics handled smoothly
 - Moderate signal (1 pt): Some physical elements present but connection to content is weak or logistics are rough
 - Absent (0 pts): Presentation is entirely screen-based with no physical interaction elements
+
+## Evidence Gate
+Evaluate this entry only from delivery video covering the relevant event or interval. A deck or transcript may suggest planned content, but it cannot establish the delivered timing, interaction, room behavior, or an exhaustive absence outcome.
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 4 (Audience Engagement). Physical interaction creates a qualitatively different type of engagement than visual or auditory stimulation alone. It breaks the passive viewing pattern and transforms attendees from audience members into participants.

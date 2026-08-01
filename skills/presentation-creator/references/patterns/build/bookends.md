@@ -11,6 +11,16 @@ detection_signals:
   - "section opener/closer slides"
   - "distinct visual style for section boundaries"
   - "recurring section divider pattern"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "Evidence must expose the visible construction across enough of the talk to apply the existing strong, moderate, or absent criterion."
+  - "Evidence must expose the existing scoring cues: strong: distinct bookends at every major boundary; moderate: some or inconsistent dividers; absent: no visually distinct section dividers."
+not_evaluable_when:
+  - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
+  - "Only a transcript or spoken account is available, or the visual source is too partial to distinguish the asserted tier from absence."
 related_patterns: [context-keeper, narrative-arc, intermezzi, defy-defaults]
 inverse_of: [floodmarks]
 difficulty: foundational
@@ -46,6 +56,9 @@ When scoring talks, look for slides that are visually distinct from content slid
 - Strong signal (2 pts): Consistent, visually distinct Bookend slides at every major section boundary, with a clear design language that distinguishes them from content slides; effective use as branding containers if required
 - Moderate signal (1 pt): Some section divider slides present but inconsistent in design, or Bookends used for some sections but not others
 - Absent (0 pts): No visually distinct section divider slides; sections flow into each other with no structural markers
+
+## Evidence Gate
+Evaluate this entry only from rendered static slides, the native deck, or delivery video that exposes the visible construction. Speech alone cannot establish its visual criteria, and an absence finding requires coverage of the complete relevant visual sequence.
 
 ## Relationship to Vault Dimensions
 Dimension 2 (Structure and Flow): Bookends are the most visible expression of structural organization, literally marking the boundaries between content sections. Dimension 5 (Storytelling and Narrative): When aligned with narrative phases, Bookends reinforce the story structure. Dimension 13 (Visual Polish and Craft): Well-designed Bookends demonstrate visual design skill and attention to structural consistency.

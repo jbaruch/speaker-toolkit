@@ -10,6 +10,16 @@ detection_signals:
   - "single sub-bullet under headers"
   - "orphaned outline items"
   - "incomplete list hierarchies"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "Evidence must expose the visible construction across enough of the talk to apply the existing strong, moderate, or absent criterion."
+  - "Evidence must expose the existing scoring cues: strong: multiple single-child hierarchy instances; moderate: one or two; absent: at least two items at every level."
+not_evaluable_when:
+  - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
+  - "Only a transcript or spoken account is available, or the visual source is too partial to distinguish the asserted tier from absence."
 related_patterns: [fourthought]
 inverse_of: [fourthought]
 difficulty: foundational
@@ -41,6 +51,9 @@ When scoring talks, examine every bulleted list and hierarchical outline for sin
 - Strong signal (2 pts — antipattern present): Multiple instances of single sub-bullets under headings, orphaned outline items, or hierarchies that add structural complexity without adding meaning
 - Moderate signal (1 pt): Most outlines are well-formed, with one or two instances of single-child hierarchies that do not significantly impact comprehension
 - Absent (0 pts — antipattern not present): All outlines and bulleted lists have at least two items at every level, indicating thorough and complete hierarchical thinking
+
+## Evidence Gate
+Evaluate this entry only from rendered static slides, the native deck, or delivery video that exposes the visible construction. Speech alone cannot establish its visual criteria, and an absence finding requires coverage of the complete relevant visual sequence.
 
 ## Relationship to Vault Dimensions
 Dimension 8 (Slide Design): Injured Outlines represent a structural flaw in slide content organization. Dimension 14 (Overall Quality Indicators): The presence of Injured Outlines is a signal of insufficient preparation and incomplete analytical thinking.

@@ -12,6 +12,15 @@ detection_signals:
   - "zoom transitions"
   - "spatial organization"
   - "visible overall structure"
+evaluable_from:
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "Evidence must expose native motion or transition behavior, or observed delivery playback, across the relevant sequence."
+  - "Evidence must expose the existing scoring cues: strong: smooth zoom transitions on a spatial canvas; moderate: partial or disorienting transitions; absent: standard linear slides without zoom."
+not_evaluable_when:
+  - "Only flattened static slides or a transcript is available."
+  - "The source does not expose the zoom, scrolling, transition behavior, or pacing needed by the existing scoring criteria."
 related_patterns: [context-keeper, soft-transitions, brain-breaks, takahashi, lipsync]
 inverse_of: []
 difficulty: advanced
@@ -45,6 +54,9 @@ The vault should look for evidence of canvas-based spatial organization: zoom tr
 - Strong signal (2 pts): Canvas-based layout with meaningful spatial organization; smooth zoom transitions; overall structure visible and contextualized; spatial relationships reinforce content relationships
 - Moderate signal (1 pt): Some spatial organization but not fully exploited; transitions present but occasionally disorienting; overall structure partially visible
 - Absent (0 pts): Standard linear slides with no spatial dimension; no zoom or canvas-based transitions
+
+## Evidence Gate
+Evaluate this entry only from native-deck behavior or delivery video that exposes the relevant motion or playback. A flattened slide artifact or transcript cannot establish zoom, scrolling, transition behavior, pacing, or their absence.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 5 (Storytelling/Narrative). Relates to Dimension 13 (Visual Aids Effectiveness).

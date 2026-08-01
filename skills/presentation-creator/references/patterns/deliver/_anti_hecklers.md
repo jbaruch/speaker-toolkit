@@ -10,6 +10,14 @@ detection_signals:
   - "disruptive audience interaction"
   - "hijacked Q&A"
   - "presenter-audience conflict"
+evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
+  - "Evidence must expose the existing scoring cues: actual interruption, adversarial dynamics, speaker control, and room response."
+not_evaluable_when:
+  - "No delivery video covers the relevant event or interval."
+  - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
 related_patterns: [know-your-audience, display-of-high-value]
 inverse_of: []
 difficulty: intermediate
@@ -46,6 +54,9 @@ This is an antipattern to prepare for rather than a pattern to apply. Have strat
 - Strong signal (2 pts — antipattern present): Speaker loses control to a disruptive audience member — debate ensues, time is consumed, other audience members disengage
 - Moderate signal (1 pt): Speaker manages disruptions but with visible stress or some loss of presentation momentum
 - Absent (0 pts — antipattern not present): Speaker handles disruptive audience members gracefully — redirects time sinks, deflects hecklers, and maintains professional composure throughout, protecting the experience for the broader audience
+
+## Evidence Gate
+Evaluate this entry only from delivery video covering the relevant event or interval. A deck or transcript may suggest planned content, but it cannot establish the delivered timing, interaction, room behavior, or an exhaustive absence outcome.
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 14 (Speaker Craft / Professionalism).
