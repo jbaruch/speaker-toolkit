@@ -5,20 +5,30 @@ The installed plugin does not ship ``pyproject.toml``. This stdlib-only probe is
 the executable dependency contract for the interpreter recorded in
 ``config.python_path``. Core failures block ingress. Recognized missing or
 incompatible optional dependencies are reported as degradation unless the
-caller explicitly requires that lane. Unexpected probe faults fail visibly.
+caller explicitly requires that lane. Isolated import faults remain lane-local.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib
 import json
+import os
+import signal
 import shutil
+import subprocess
 import sys
-from typing import Any
+import tempfile
+from pathlib import Path
+from typing import Any, BinaryIO, Callable, TypedDict
 
 
 REPORT_SCHEMA_VERSION = 1
+MODULE_PROBE_SCHEMA_VERSION = 1
+MODULE_PROBE_TIMEOUT_SECONDS = 30
+MODULE_PROBE_MAX_OUTPUT_BYTES = 4096
+MODULE_PROBE_CHILD_FLAG = "--module-probe-child"
 MINIMUM_PYTHON = (3, 10)
 LANE_REQUIREMENTS: dict[str, dict[str, dict[str, str]]] = {
     "core": {
@@ -64,12 +74,207 @@ DEFAULT_LANES = ("core", "pdf", "pptx")
 DEFAULT_REQUIRED_LANES = ("core",)
 
 
-def _module_available(import_name: str) -> bool:
+class ModuleProbeResult(TypedDict):
+    """Parent-side result for one isolated dependency import."""
+
+    available: bool
+    failure: dict[str, object] | None
+
+
+def _failed_module_probe(reason: str, **details: object) -> ModuleProbeResult:
+    failure: dict[str, object] = {"reason": reason}
+    failure.update(details)
+    return {"available": False, "failure": failure}
+
+
+def _write_module_probe_result(
+    result_file: BinaryIO,
+    payload: dict[str, object],
+) -> None:
+    """Replace the pre-created child result through its retained descriptor."""
+    rendered = (json.dumps(payload, sort_keys=True) + "\n").encode("utf-8")
+    result_file.seek(0)
+    result_file.truncate()
+    remaining = memoryview(rendered)
+    while remaining:
+        written = result_file.write(remaining)
+        if written is None or written <= 0:
+            raise OSError("module probe result write made no progress")
+        remaining = remaining[written:]
+    result_file.flush()
+
+
+def _module_probe_child(import_name: str) -> dict[str, object]:
+    """Import one module and return the private child-process payload."""
     try:
         importlib.import_module(import_name)
-    except (ImportError, OSError, RuntimeError):
-        return False
-    return True
+    except ImportError as exc:
+        return {
+            "schema_version": MODULE_PROBE_SCHEMA_VERSION,
+            "available": False,
+            "failure_reason": "unavailable_import",
+            "exception_type": type(exc).__name__,
+        }
+    return {
+        "schema_version": MODULE_PROBE_SCHEMA_VERSION,
+        "available": True,
+    }
+
+
+def _malformed_child_output(malformation: str) -> ModuleProbeResult:
+    return _failed_module_probe(
+        "malformed_child_output",
+        malformation=malformation,
+    )
+
+
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON object key")
+        result[key] = value
+    return result
+
+
+def _reject_nonstandard_json_constant(_value: str) -> object:
+    raise ValueError("non-standard JSON number")
+
+
+def _decode_module_probe_child(raw: bytes) -> ModuleProbeResult:
+    if len(raw) > MODULE_PROBE_MAX_OUTPUT_BYTES:
+        return _malformed_child_output("oversized")
+    if not raw.strip():
+        return _malformed_child_output("empty")
+    try:
+        decoded = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return _malformed_child_output("invalid_utf8")
+    lines = decoded.splitlines()
+    if len(lines) != 1:
+        return _malformed_child_output("multiple_lines")
+    try:
+        payload = json.loads(
+            lines[0],
+            object_pairs_hook=_unique_json_object,
+            parse_constant=_reject_nonstandard_json_constant,
+        )
+    except (json.JSONDecodeError, RecursionError, ValueError):
+        return _malformed_child_output("invalid_json")
+    if not isinstance(payload, dict):
+        return _malformed_child_output("invalid_payload")
+    schema_version = payload.get("schema_version")
+    if (
+        type(schema_version) is not int
+        or schema_version != MODULE_PROBE_SCHEMA_VERSION
+    ):
+        return _malformed_child_output("invalid_payload")
+    available = payload.get("available")
+    if available is True and set(payload) == {"schema_version", "available"}:
+        return {"available": True, "failure": None}
+    expected_failure_keys = {
+        "schema_version",
+        "available",
+        "failure_reason",
+        "exception_type",
+    }
+    failure_reason = payload.get("failure_reason")
+    exception_type = payload.get("exception_type")
+    if (
+        available is False
+        and set(payload) == expected_failure_keys
+        and isinstance(failure_reason, str)
+        and failure_reason in {"unavailable_import", "initializer_exception"}
+        and isinstance(exception_type, str)
+        and bool(exception_type)
+    ):
+        return _failed_module_probe(
+            str(failure_reason),
+            exception_type=exception_type,
+        )
+    return _malformed_child_output("invalid_payload")
+
+
+def _read_module_probe_child_result(result_file: BinaryIO) -> ModuleProbeResult:
+    """Read one bounded result through the parent's retained descriptor."""
+    try:
+        result_file.seek(0)
+        remaining = MODULE_PROBE_MAX_OUTPUT_BYTES + 1
+        chunks: list[bytes] = []
+        while remaining:
+            chunk = result_file.read(remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+    except OSError:
+        return _malformed_child_output("unreadable")
+    return _decode_module_probe_child(raw)
+
+
+def _signal_name(signal_number: int) -> str:
+    try:
+        return signal.Signals(signal_number).name
+    except ValueError:
+        return f"SIG{signal_number}"
+
+
+def _probe_module(
+    import_name: str,
+    *,
+    runner: Callable[..., subprocess.CompletedProcess[object]] | None = None,
+) -> ModuleProbeResult:
+    """Probe one import in a bounded child of this exact interpreter."""
+    run = subprocess.run if runner is None else runner
+    with tempfile.TemporaryDirectory(prefix="speaker-toolkit-module-probe-") as temp:
+        result_path = Path(temp) / "result.json"
+        with result_path.open("x+b", buffering=0) as result_file:
+            command = [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                MODULE_PROBE_CHILD_FLAG,
+                import_name,
+                str(result_path),
+            ]
+            try:
+                completed = run(
+                    command,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                    timeout=MODULE_PROBE_TIMEOUT_SECONDS,
+                )
+            except subprocess.TimeoutExpired:
+                return _failed_module_probe(
+                    "timeout",
+                    timeout_seconds=MODULE_PROBE_TIMEOUT_SECONDS,
+                )
+            except OSError as exc:
+                return _failed_module_probe(
+                    "probe_start_failure",
+                    exception_type=type(exc).__name__,
+                )
+            if completed.returncode != 0:
+                if completed.returncode < 0:
+                    signal_number = -completed.returncode
+                    return _failed_module_probe(
+                        "native_crash",
+                        termination="signal",
+                        signal_number=signal_number,
+                        signal_name=_signal_name(signal_number),
+                    )
+                return _failed_module_probe(
+                    "native_crash",
+                    termination="exit",
+                    exit_code=completed.returncode,
+                )
+            return _read_module_probe_child_result(result_file)
+
+
+def _module_available(import_name: str) -> bool:
+    """Return the legacy boolean view of an isolated module probe."""
+    return _probe_module(import_name)["available"]
 
 
 def _command_available(command: str) -> bool:
@@ -101,9 +306,18 @@ def build_report(
     lane_reports: dict[str, dict[str, Any]] = {}
     for lane in selected:
         requirements = LANE_REQUIREMENTS[lane]
-        modules = {
-            distribution: _module_available(import_name)
+        module_probes = {
+            distribution: _probe_module(import_name)
             for distribution, import_name in requirements["modules"].items()
+        }
+        modules = {
+            distribution: probe["available"]
+            for distribution, probe in module_probes.items()
+        }
+        module_failures = {
+            distribution: probe["failure"]
+            for distribution, probe in module_probes.items()
+            if probe["failure"] is not None
         }
         commands = {
             label: _command_available(command)
@@ -122,6 +336,7 @@ def build_report(
             "available": available,
             "required": lane in required,
             "modules": modules,
+            "module_failures": module_failures,
             "commands": commands,
             "missing_modules": missing_modules,
             "missing_commands": missing_commands,
@@ -169,19 +384,52 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "vault-ingress runtime is unavailable for required lanes "
             f"{blocking}; use Python {MINIMUM_PYTHON[0]}.{MINIMUM_PYTHON[1]}+ "
-            f"and install the missing modules or commands listed in the JSON "
-            f"into {sys.executable}, then rerun this check",
+            "and install the missing modules or commands, or repair failed "
+            f"dependency initialization, listed in the JSON in {sys.executable}, "
+            "then rerun this check",
+            file=sys.stderr,
+        )
+    elif report["degraded_lanes"]:
+        degraded = ", ".join(report["degraded_lanes"])
+        print(
+            "vault-ingress runtime is degraded for optional lanes "
+            f"{degraded}; install the missing modules or commands, or repair "
+            "failed dependency initialization, listed in the JSON in "
+            f"{sys.executable}, then rerun this check",
             file=sys.stderr,
         )
     return 0 if report["ok"] else 1
 
 
 if __name__ == "__main__":
+    child_probe = len(sys.argv) == 4 and sys.argv[1] == MODULE_PROBE_CHILD_FLAG
+    if child_probe:
+        with Path(sys.argv[3]).open("r+b", buffering=0) as child_result_file:
+            with (
+                open(os.devnull, "w", encoding="utf-8") as dependency_output,
+                contextlib.redirect_stdout(dependency_output),
+                contextlib.redirect_stderr(dependency_output),
+            ):
+                try:
+                    child_payload = _module_probe_child(sys.argv[2])
+                # The parent silently collapses a non-zero exit without a result into
+                # native_crash; emit initializer_exception because propagation would
+                # erase the actionable Python initializer-failure classification.
+                except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
+                    child_payload = {
+                        "schema_version": MODULE_PROBE_SCHEMA_VERSION,
+                        "available": False,
+                        "failure_reason": "initializer_exception",
+                        "exception_type": type(exc).__name__,
+                    }
+            _write_module_probe_result(child_result_file, child_payload)
+        raise SystemExit(0)
     try:
         raise SystemExit(main())
-    # outer-boundary-process-contract: callers treat missing JSON as a silent
-    # probe failure; emit one failure object and recovery step before exiting.
-    except Exception as exc:  # noqa: BLE001
+    # Callers treat a non-zero exit without report JSON as a silent precheck
+    # failure; emit one failure report and recovery step because propagation
+    # would suppress the machine-readable diagnostic contract.
+    except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
         print(
             json.dumps(
                 {

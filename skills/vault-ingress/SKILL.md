@@ -181,9 +181,11 @@ inspection needs `pdftoppm`; video extraction needs Pillow, `imagehash`,
 Inspect those with the checker's `google-drive`, `captions`,
 `youtube-download`, `pdf-render`, `video`, and `whisper` lanes as selected talks
 require. Each lane is independent: a failed optional import/tool disables only
-that lane when the checker recognizes dependency absence or incompatibility.
-An unexpected initializer fault stops the probe with one JSON error and a
-recovery instruction.
+that lane. Import failure details appear under the lane's `module_failures`;
+dependency absence, initializer exceptions, native crashes, timeouts, and
+invalid child results degrade an optional lane or block a required lane without
+breaking the one-JSON contract. The checker writes a recovery instruction to
+stderr whenever a lane is unavailable.
 
 **Scan for new talks:** run the deterministic scanner in its default read-only
 mode:
