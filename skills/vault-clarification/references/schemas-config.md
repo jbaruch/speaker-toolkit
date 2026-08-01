@@ -63,15 +63,21 @@ system diagnoses but never verifies that the speaker acted.
 **Owner:** vault-clarification owns the record shape and migrations (it creates and
 retires goals during a session). **Reader/updater:** vault-ingress reads active
 goals and writes only the verification fields (`status`, `current_value`,
-`last_checked`, `checked_by`) — never the shape. On a record whose `schema_version`
-it does not recognize, vault-ingress treats it as read-only "no usable goal" and
-skips verification; the next clarification session migrates it.
+`last_checked`, `checked_by`, `verification_state`, `verification_reasons`) — never
+the owner shape or fixed baseline. On a record whose `schema_version` it does not
+recognize, vault-ingress treats it as read-only and skips verification.
+
+Schema v2 binds every catalog-derived goal to the exact pattern-scoring generation
+accepted by the speaker. The full baseline snapshot is copied from a validated
+schema-v3 `speaker-profile.json`; Section 15 is a narrative mirror, never the machine
+source. The helper at `scripts/goal_generation_provenance.py` makes the mechanical
+comparability decision for both the owner and reader.
 
 ```json
 {
   "improvement_goals": [{
     "id": "reduce-shortchanged",
-    "schema_version": 1,
+    "schema_version": 2,
     "issue": "Shortchanged — rushing the final third under time pressure",
     "kind": "antipattern|underuse|pacing|other",
     "antipattern_id": "shortchanged (null unless kind=antipattern)",
@@ -83,7 +89,28 @@ skips verification; the next clarification session migrates it.
     "status": "active|improving|achieved|stalled|regressed|retired",
     "current_value": "",
     "last_checked": null,
-    "checked_by": null
+    "checked_by": null,
+    "verification_state": "pending|current|needs_rebaseline|unverifiable",
+    "verification_reasons": [],
+    "supersedes_goal_id": null,
+    "baseline_provenance": {
+      "lane": "pattern_scoring",
+      "pattern_baseline": {
+        "schema_version": 1,
+        "as_of": "2026-06-11T12:00:00+00:00",
+        "scope": "global",
+        "active_batch_excluded": false,
+        "excluded_filenames": [],
+        "eligible_statuses": ["processed", "processed_partial"],
+        "pattern_scoring_generation_status": "current",
+        "pattern_scoring_generation_reasons": [],
+        "pattern_catalog_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pattern_scoring_schema_version": 3,
+        "scored_talk_count": 12,
+        "pattern_score_sum": 72,
+        "average_pattern_score": 6.0
+      }
+    }
   }]
 }
 ```
@@ -93,9 +120,23 @@ skips verification; the next clarification session migrates it.
   pattern to start using), `pacing` (hit the time/slide budget), `other` (free-form).
 - `antipattern_id` is set only when `kind` is `antipattern`; it is `null` for
   `underuse`, `pacing`, and `other` goals (no antipattern exists to reference).
-- `baseline_value` is captured from Section 15 of `rhetoric-style-summary.md` at the
-  moment the goal is set — the fixed yardstick the next run measures against.
+- `baseline_value` is the human-readable metric value accepted by the speaker. For
+  a pattern goal, compute it from the same validated profile cohort carried in
+  `baseline_provenance.pattern_baseline`; never parse it from Section 15.
 - `target` is the speaker's own stated aim, not a generic standard.
+- `baseline_provenance.lane` is `pattern_scoring` for `antipattern` and `underuse`,
+  `pacing` for pacing, and `independent` for `other`. Pacing/independent records omit
+  `pattern_baseline`. An `other` goal cannot be used to evade pattern provenance.
+- Pattern baselines must be non-empty post-batch full-cohort snapshots
+  (`active_batch_excluded: false`, `excluded_filenames: []`). A fingerprint or scoring
+  schema mismatch produces `needs_rebaseline`; a missing current baseline or legacy
+  schema-v1 pattern goal is `unverifiable`. Neither state permits an outcome status.
+- Rebaselining is an explicit speaker decision: preserve the old record, retire it,
+  and create a new schema-v2 record with `supersedes_goal_id`. Never overwrite or
+  restamp the old baseline.
+- Existing schema-v1 `antipattern`/`underuse` goals remain read-only and
+  unverifiable. Existing schema-v1 `pacing` and truly non-pattern `other` goals remain
+  independent of catalog releases.
 - Verification rubric (how vault-ingress sets `status`) lives in
   [../../vault-ingress/references/processing-rules.md](../../vault-ingress/references/processing-rules.md)
   Improvement Goal Verification.
