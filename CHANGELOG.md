@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.3 — 2026-08-01
+
 ### fix(vault-ingress) — suppress presentation-only shownotes conflicts
 
 Shownotes title comparison now treats straight and curly single/double quote
