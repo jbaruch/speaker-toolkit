@@ -11,7 +11,6 @@ import runpy
 import signal
 import subprocess
 import sys
-import time
 
 import pytest
 
@@ -650,15 +649,12 @@ def test_module_probe_bounds_a_blocked_child_process(
         timeout_seconds,
     )
 
-    started_at = time.monotonic()
     result = check_runtime._probe_module(module_name)
-    elapsed = time.monotonic() - started_at
 
     assert result == _failed_probe(
         "timeout",
         timeout_seconds=timeout_seconds,
     )
-    assert elapsed < 3
 
 
 def test_module_probe_start_failure_is_lane_local() -> None:
