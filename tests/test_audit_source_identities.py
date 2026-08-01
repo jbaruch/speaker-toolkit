@@ -401,6 +401,28 @@ def test_inactive_stored_id_is_not_fetched_or_resurrected(
     assert report["talks"] == []
 
 
+def test_future_tracking_database_is_not_fetched_or_rewritten(
+        audit_source_identities):
+    database = {
+        "schema_version": 99,
+        "future_inventory": {"records": "not-an-old-talks-array"},
+    }
+    before = json.dumps(database, sort_keys=True)
+    calls = []
+
+    report = audit_source_identities.audit_database(
+        database,
+        database_path="/vault/tracking-database.json",
+        metadata_fetcher=lambda video_id: calls.append(video_id),
+        captured_at=CAPTURED_AT,
+    )
+
+    assert calls == []
+    assert "tracking_database_schema_unsupported" in finding_codes(report)
+    assert "talks_shape_invalid" not in finding_codes(report)
+    assert json.dumps(database, sort_keys=True) == before
+
+
 def test_incomplete_provider_metadata_is_proposed_without_invented_values(
         audit_source_identities):
     report = audit_source_identities.audit_database(

@@ -47,9 +47,32 @@ def _database_path(
     config: dict[str, object],
     *,
     talks: list[dict[str, object]] | None = None,
+    legacy: bool = False,
 ) -> Path:
     path = tmp_path / "tracking-database.json"
-    _write_json(path, {"config": config, "talks": talks or []})
+    if legacy:
+        database = {"config": config, "talks": talks or []}
+    else:
+        current_talks = []
+        for talk in talks or []:
+            current_talk = {**talk, "schema_version": 5}
+            current_talk["source_rejections"] = [
+                {**rejection, "schema_version": 1}
+                for rejection in current_talk.get("source_rejections", [])
+            ]
+            current_talks.append(current_talk)
+        database = {
+            "schema_version": 1,
+            "config": {"schema_version": 1, **config},
+            "talks": current_talks,
+            "pptx_catalog": [],
+            "qr_codes": [],
+            "resources": [],
+            "thumbnails": [],
+            "confirmed_intents": [],
+            "improvement_goals": [],
+        }
+    _write_json(path, database)
     return path
 
 
@@ -128,6 +151,26 @@ def test_dry_run_parses_jekyll_links_and_derives_exact_source_ids(
     assert database_path.read_bytes() == before
 
 
+def test_legacy_database_is_dry_run_only(tmp_path: Path) -> None:
+    site, _ = _shownotes_site(tmp_path)
+    database_path = _database_path(
+        tmp_path,
+        _local_config(site),
+        legacy=True,
+    )
+    before = database_path.read_bytes()
+
+    scan_shownotes.execute(database_path, apply_requested=False)
+
+    assert database_path.read_bytes() == before
+    with pytest.raises(
+        scan_shownotes.ShownotesScanError,
+        match="migrate-tracking-database.py",
+    ):
+        scan_shownotes.execute(database_path, apply_requested=True)
+    assert database_path.read_bytes() == before
+
+
 def test_apply_adds_only_complete_proposal_and_preserves_file_mode(
     tmp_path: Path,
 ) -> None:
@@ -170,7 +213,7 @@ def test_exact_filename_update_fills_only_empty_fields(tmp_path: Path) -> None:
         "title": "Deterministic Ingress",
         "conference": "TestConf",
         "date": "2026-08-01",
-        "schema_version": 4,
+        "schema_version": 5,
         "status": "processed",
     }
     database_path = _database_path(
@@ -184,7 +227,7 @@ def test_exact_filename_update_fills_only_empty_fields(tmp_path: Path) -> None:
     talk = json.loads(database_path.read_text(encoding="utf-8"))["talks"][0]
     assert talk["video_url"] == video_url
     assert talk["youtube_id"] == YOUTUBE_ID
-    assert talk["schema_version"] == 4
+    assert talk["schema_version"] == 5
     assert talk["status"] == "processed"
     assert report["entries"][0]["changes"] == {
         "video_url": video_url,
@@ -438,6 +481,24 @@ def test_database_symlink_is_rejected_before_read(tmp_path: Path) -> None:
         match="symbolic link",
     ):
         scan_shownotes.execute(link, apply_requested=False)
+
+
+def test_future_root_is_classified_before_old_shownotes_shapes(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "tracking-database.json"
+    raw = b'{"schema_version":99,"future_inventory":{"records":[]}}\n'
+    database_path.write_bytes(raw)
+
+    with pytest.raises(
+        scan_shownotes.ShownotesScanError,
+        match="tracking_database_schema_version_unsupported",
+    ) as stopped:
+        scan_shownotes.execute(database_path, apply_requested=False)
+
+    assert "config must be" not in str(stopped.value)
+    assert "talk records are invalid" not in str(stopped.value)
+    assert database_path.read_bytes() == raw
 
 
 def test_shownotes_directory_symlink_is_rejected_before_glob(

@@ -17,6 +17,20 @@ def _write(path: Path, value: object) -> bytes:
     return raw
 
 
+def _current_database() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "config": {"schema_version": 1},
+        "talks": [],
+        "pptx_catalog": [],
+        "qr_codes": [],
+        "resources": [],
+        "thumbnails": [],
+        "confirmed_intents": [],
+        "improvement_goals": [],
+    }
+
+
 def _inject_final_window_replacement(
     tracking_database_io,
     monkeypatch: pytest.MonkeyPatch,
@@ -150,7 +164,8 @@ def test_qr_writer_preserves_final_window_generation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     path = tmp_path / "tracking-database.json"
-    _write(path, {"config": {}, "talks": [], "qr_codes": []})
+    database = _current_database()
+    _write(path, database)
     expected = tracking_database_io.snapshot_tracking_database(path)
     concurrent = _inject_final_window_replacement(
         tracking_database_io,
@@ -161,7 +176,7 @@ def test_qr_writer_preserves_final_window_generation(
     with pytest.raises(ValueError, match="generation changed"):
         generate_qr.write_tracking_db(
             expected,
-            {"config": {}, "talks": [], "qr_codes": [], "writer": "qr"},
+            database | {"writer": "qr"},
         )
 
     assert path.read_bytes() == concurrent
@@ -174,7 +189,7 @@ def test_owner_mutation_cli_preserves_final_window_generation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     path = tmp_path / "tracking-database.json"
-    _write(path, {"config": {}, "talks": []})
+    _write(path, _current_database())
     plan = tmp_path / "plan.json"
     _write(
         plan,

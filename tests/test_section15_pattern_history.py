@@ -716,6 +716,58 @@ def test_section15_replace_cli_binds_real_vault_freshness(
     assert section15.BLOCK_START in summary_path.read_text(encoding="utf-8")
 
 
+def test_replace_cli_gates_future_database_before_config_path_semantics(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    profile = _pattern_profile()
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(), encoding="utf-8")
+    original_summary = summary_path.read_bytes()
+    profile_path = tmp_path / "pattern-profile.json"
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+    database_path = tmp_path / "tracking-database.json"
+    database_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 99,
+                "config": {"vault_storage_path": "\u0000"},
+                "talks": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    original_database = database_path.read_bytes()
+
+    def forbidden_path_semantics(*_args, **_kwargs):
+        pytest.fail("configured path semantics ran before the owner schema gate")
+
+    monkeypatch.setattr(
+        section15,
+        "configured_evidence_freshness_assessor",
+        forbidden_path_semantics,
+    )
+
+    return_code = section15.main(
+        [
+            "replace",
+            str(summary_path),
+            str(profile_path),
+            str(database_path),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert return_code == 1
+    assert captured.out == ""
+    assert "no usable prior state" in captured.err
+    assert "tracking_database_schema_version_unsupported" in captured.err
+    assert "Traceback" not in captured.err
+    assert summary_path.read_bytes() == original_summary
+    assert database_path.read_bytes() == original_database
+
+
 def test_atomic_helper_inserts_once_then_reports_noop(tmp_path):
     summary_path = tmp_path / "rhetoric-style-summary.md"
     summary_path.write_text(_summary(), encoding="utf-8")
@@ -774,7 +826,7 @@ def test_invalid_candidate_and_torn_summary_are_no_write_failures(tmp_path):
     assert summary_path.read_text(encoding="utf-8") == torn
 
 
-def test_replace_ignores_duplicate_filenames_in_ineligible_rows(tmp_path):
+def test_replace_rejects_duplicate_filenames_in_ineligible_rows(tmp_path):
     profile = _pattern_profile()
     database = _tracking_database(profile)
     database["talks"].append(
@@ -787,16 +839,40 @@ def test_replace_ignores_duplicate_filenames_in_ineligible_rows(tmp_path):
     summary_path = tmp_path / "rhetoric-style-summary.md"
     summary_path.write_text(_summary(), encoding="utf-8")
 
-    result = section15.replace_section15_current_block(
-        summary_path,
-        profile,
-        database,
-        evidence_freshness_assessor=_fresh_evidence,
-    )
+    before = summary_path.read_bytes()
+    with pytest.raises(
+        section15.Section15PatternHistoryError,
+        match="duplicate talk filename",
+    ):
+        section15.replace_section15_current_block(
+            summary_path,
+            profile,
+            database,
+            evidence_freshness_assessor=_fresh_evidence,
+        )
+    assert summary_path.read_bytes() == before
 
-    assert result.changed is True
-    assert result.eligible_talk_count == 2
-    assert section15.BLOCK_START in summary_path.read_text(encoding="utf-8")
+
+def test_replace_rejects_future_tracking_database_without_write(tmp_path):
+    profile = _pattern_profile()
+    database = _tracking_database(profile)
+    database["schema_version"] = 99
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(), encoding="utf-8")
+    before = summary_path.read_bytes()
+
+    with pytest.raises(
+        section15.Section15PatternHistoryError,
+        match="no usable prior state",
+    ):
+        section15.replace_section15_current_block(
+            summary_path,
+            profile,
+            database,
+            evidence_freshness_assessor=_fresh_evidence,
+        )
+
+    assert summary_path.read_bytes() == before
 
 
 def test_failed_atomic_swap_leaves_original_and_no_temp_file(

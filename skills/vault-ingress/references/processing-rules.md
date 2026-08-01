@@ -402,17 +402,25 @@ Before calculating any metric, run
 `"{python_path}" "{speaker_toolkit_root}/skills/vault-clarification/scripts/goal_generation_provenance.py"` with the complete
 active-goal array and the structured post-batch full-cohort pattern baseline. The
 script emits one assessment with a stable `decision` and `reason_codes` per goal;
-exit 1 blocks all goal writes. It is the sole authority for generation
+exit 1 blocks all goal writes. Require exactly one assessment for every active
+goal before constructing a mutation plan. It is the sole authority for generation
 comparability—do not reproduce its fingerprint/schema predicate and never parse
 Section 15 prose as its baseline.
 
 - A `comparable` assessment authorizes the metric and outcome rubric below.
-- For `needs_rebaseline` or `unverifiable`, copy the assessment decision to
-  `verification_state` and its codes to `verification_reasons`. In either case,
-  preserve `current_value` and must not set `status` to
-  `achieved`, `improving`, `stalled`, or `regressed`. A speaker-confirmed
-  rebaseline is owned by vault-clarification; ingress never restamps the fixed
-  baseline.
+- A schema-v1 `antipattern` or `underuse` goal is historical, report-only
+  `unverifiable`. Preserve the complete record and do not create a mutation for
+  it.
+- A schema-v1 `pacing` or `other` goal may remain comparable through its
+  independent provenance lane. If comparable, patch only `current_value`,
+  `last_checked`, `checked_by`, and `status`. Never add `verification_state` or
+  `verification_reasons` to a schema-v1 record. A non-comparable assessment is
+  report-only.
+- For a schema-v2 `needs_rebaseline` or `unverifiable` assessment, copy the
+  decision to `verification_state` and its codes to `verification_reasons`.
+  In either case, preserve `current_value` and must not set `status` to
+  `achieved`, `improving`, `stalled`, or `regressed`. A speaker-confirmed rebaseline is owned by
+  vault-clarification; ingress never restamps the fixed baseline.
 - Pacing and independent goals continue through their own provenance lanes and
   are not invalidated by a pattern-catalog generation change.
 
@@ -422,9 +430,11 @@ For each comparable goal with `status` not in (`achieved`, `retired`):
   speaker profile (this step runs after Step 7, so `pacing.adherence` and
   `pattern_profile.by_mode` are current). Examples by `kind`: `antipattern` → the
   antipattern's frequency over recent talks; `underuse` → the pattern's recent usage
-  or distinct-pattern breadth; `pacing` → `pacing.adherence.over_budget_rate`. Write
-  `current_value`, `last_checked` (today), `checked_by: "vault-ingress"`,
-  `verification_state: "current"`, and empty `verification_reasons`.
+  or distinct-pattern breadth; `pacing` → `pacing.adherence.over_budget_rate`.
+  For schema v1, write only `current_value`, `last_checked` (today),
+  `checked_by: "vault-ingress"`, and `status`. For schema v2, write those
+  fields plus `verification_state: "current"` and empty
+  `verification_reasons`.
 - Set `status` by comparing `current_value` against `baseline_value` and `target`:
   - `achieved` — `current_value` meets or beats `target`.
   - `improving` — moved toward `target` versus `baseline_value` but not there yet.
@@ -433,7 +443,16 @@ For each comparable goal with `status` not in (`achieved`, `retired`):
 - Only count talks processed after `set_date` toward movement — a goal can't
   be judged on talks that predate it.
 - Never overwrite `baseline_value`, `target`, `issue`, or `set_date` — those are the
-  fixed yardstick; verification is non-owner and touches status fields only.
+  fixed yardstick; the verification writer changes only the schema-authorized
+  verification and status fields above.
+
+Use one `patch_improvement_goal_verification` mutation per writable assessment.
+Each mutation's `expect` object must contain exactly the fields it sets with the
+values from the latest strict read. If every assessment is report-only, do not
+invoke the mutator. Otherwise dry-run the complete multi-goal plan, review it,
+apply the whole plan against the reported input SHA, and re-read the database.
+An assessment failure, malformed plan, stale expectation, or changed database
+generation installs no partial goal update.
 
 Report each goal's status in the run summary. A `regressed` or `stalled` goal is the
 strongest signal to surface — it is the speaker's own priority, not a machine-chosen

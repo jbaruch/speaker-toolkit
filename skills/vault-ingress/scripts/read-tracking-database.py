@@ -8,6 +8,10 @@ import json
 from pathlib import Path
 import sys
 
+from tracking_database import (
+    TrackingDatabaseError,
+    assess_tracking_database,
+)
 from tracking_database_io import (
     TrackingDatabaseIOError,
     decode_json_object,
@@ -21,6 +25,18 @@ REPORT_SCHEMA_VERSION = 1
 def execute(path: Path) -> dict[str, object]:
     snapshot = snapshot_tracking_database(path)
     database = decode_json_object(snapshot)
+    try:
+        assessment = assess_tracking_database(database)
+    except TrackingDatabaseError as exc:
+        raise TrackingDatabaseIOError(
+            f"tracking database owner assessment failed: {exc}"
+        ) from exc
+    if not assessment.usable:
+        reasons = ", ".join(assessment.reason_codes) or "unsupported_owner_state"
+        raise TrackingDatabaseIOError(
+            "tracking database has no usable legacy/current owner state "
+            f"({reasons})"
+        )
     return {
         "schema_version": REPORT_SCHEMA_VERSION,
         "ok": True,

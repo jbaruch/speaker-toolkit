@@ -479,6 +479,15 @@ not a closed three-value enum. `deliberate`, `accidental`, and
 `context_dependent` are recommended defaults, while established labels such as
 `accepted_tradeoff`, `fact`, or `deliberate_signature` remain authoritative.
 
+The `confirmed_intents[].schema_version` shown in the profile is the independent
+public profile-domain intent schema, not the tracking-database record version.
+`load-vault.py` projects only `pattern`, `intent`, `rule`, and `note` from stored
+intent records; it strips database schema and capture provenance before profile
+generation. Storage-only fields such as `confirmed_date`, source-talk pointers,
+and `retrofit_targets` intentionally do not enter the semantic profile. The
+profile producer then emits the profile-domain schema-v1 intent object shown
+above.
+
 ### Pattern Cohort Provenance
 
 `pattern_profile.pattern_baseline` is copied unchanged from the loader's

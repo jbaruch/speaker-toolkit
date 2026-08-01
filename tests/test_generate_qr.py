@@ -2,13 +2,30 @@
 
 import json
 import os
+import sys
+from pathlib import Path
+
+import pytest
 
 from PIL import Image
 from pptx import Presentation
 from pptx.util import Inches
-import pytest
 
 from conftest import make_deck
+
+
+def _current_tracking_database():
+    return {
+        "schema_version": 1,
+        "config": {"schema_version": 1},
+        "talks": [],
+        "pptx_catalog": [],
+        "qr_codes": [],
+        "resources": [],
+        "thumbnails": [],
+        "confirmed_intents": [],
+        "improvement_goals": [],
+    }
 
 
 def _square_png(tmp_path, name="sq.png"):
@@ -133,6 +150,7 @@ def test_tracking_db_crud_update(generate_qr):
     assert db["qr_codes"][0]["qr_png_rel_path"] == "new.png"
     # created_at preserved from original
     assert db["qr_codes"][0]["created_at"] == "2024-01-01"
+    assert db["qr_codes"][0]["schema_version"] == 1
 
 
 def test_tracking_db_semantic_noop_preserves_raw_bytes_and_inode(
@@ -140,14 +158,11 @@ def test_tracking_db_semantic_noop_preserves_raw_bytes_and_inode(
     tmp_path,
 ):
     path = tmp_path / "tracking-database.json"
-    raw = b'{"qr_codes":[],"config":{"enabled":true},"talks":[]}\n'
+    database = _current_tracking_database()
+    raw = (json.dumps(database, separators=(",", ":")) + "\n").encode()
     path.write_bytes(raw)
     snapshot = generate_qr.snapshot_tracking_database(path)
-    equivalent = {
-        "talks": [],
-        "config": {"enabled": True},
-        "qr_codes": [],
-    }
+    equivalent = {key: database[key] for key in reversed(database)}
 
     result = generate_qr.write_tracking_db(snapshot, equivalent)
 
@@ -284,7 +299,7 @@ def test_main_valid_snapshot_generates_png_and_persists_metadata(
     vault.mkdir()
     database_path = vault / "tracking-database.json"
     database_path.write_text(
-        json.dumps({"config": {}, "talks": []}) + "\n",
+        json.dumps(_current_tracking_database()) + "\n",
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
@@ -592,3 +607,116 @@ def test_slug_cache_entry_is_reused(generate_qr, monkeypatch):
     )
     assert short_url == "https://jbaru.ch/my-slug"
     assert meta["short_path"] == "my-slug"
+
+
+def test_main_dry_run_dual_reads_legacy_database_without_writing(
+        generate_qr, monkeypatch, tmp_path):
+    database = {"config": {}, "talks": [], "pptx_catalog": []}
+    path = tmp_path / "tracking-database.json"
+    path.write_text(json.dumps(database), encoding="utf-8")
+    before = path.read_bytes()
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "legacy",
+        "--short-url", "https://example.test/legacy", "--vault", str(tmp_path),
+        "--dry-run",
+    ])
+
+    generate_qr.main()
+
+    assert path.read_bytes() == before
+
+
+def test_main_rejects_legacy_database_before_qr_side_effect(
+        generate_qr, monkeypatch, tmp_path):
+    database = {"config": {}, "talks": [], "pptx_catalog": []}
+    path = tmp_path / "tracking-database.json"
+    path.write_text(json.dumps(database), encoding="utf-8")
+    before = path.read_bytes()
+    monkeypatch.setattr(
+        generate_qr,
+        "generate_qr_png",
+        lambda *_: pytest.fail("QR generation must not start on legacy state"),
+    )
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "legacy",
+        "--short-url", "https://example.test/legacy", "--vault", str(tmp_path),
+    ])
+
+    with pytest.raises(SystemExit, match="current tracking schema"):
+        generate_qr.main()
+
+    assert path.read_bytes() == before
+
+
+def test_main_current_database_stamps_qr_record_and_writes_atomically(
+        generate_qr, monkeypatch, tmp_path):
+    database = _current_tracking_database()
+    path = tmp_path / "tracking-database.json"
+    path.write_text(json.dumps(database), encoding="utf-8")
+    output = tmp_path / "current.png"
+    monkeypatch.setattr(
+        generate_qr,
+        "generate_qr_png",
+        lambda _url, _fg, _bg, target: Path(target).write_bytes(b"qr"),
+    )
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "current",
+        "--short-url", "https://example.test/current", "--vault", str(tmp_path),
+        "--output", str(output),
+    ])
+
+    generate_qr.main()
+
+    written = json.loads(path.read_text(encoding="utf-8"))
+    assert written["schema_version"] == 1
+    assert written["qr_codes"] == [{
+        "schema_version": 1,
+        "talk_slug": "current",
+        "target_url": "https://example.test/current",
+        "shortener": "mcp_preresolved",
+        "short_path": None,
+        "short_url": "https://example.test/current",
+        "shortener_link_id": None,
+        "qr_png_rel_path": "current-qr.png",
+        "created_at": written["qr_codes"][0]["created_at"],
+        "updated_at": written["qr_codes"][0]["updated_at"],
+    }]
+
+
+def test_main_rejects_future_database_without_side_effect(
+        generate_qr, monkeypatch, tmp_path):
+    database = _current_tracking_database() | {"schema_version": 2}
+    path = tmp_path / "tracking-database.json"
+    path.write_text(json.dumps(database), encoding="utf-8")
+    before = path.read_bytes()
+    monkeypatch.setattr(
+        generate_qr,
+        "generate_qr_png",
+        lambda *_: pytest.fail("QR generation must not start on future state"),
+    )
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "future",
+        "--short-url", "https://example.test/future", "--vault", str(tmp_path),
+        "--dry-run",
+    ])
+
+    with pytest.raises(SystemExit, match="no usable prior state"):
+        generate_qr.main()
+
+    assert path.read_bytes() == before
+
+
+def test_main_rejects_tracking_database_symlink_before_loading_config(
+        generate_qr, monkeypatch, tmp_path):
+    target = tmp_path / "target.json"
+    target.write_text(json.dumps(_current_tracking_database()), encoding="utf-8")
+    path = tmp_path / "tracking-database.json"
+    path.symlink_to(target.name)
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "link",
+        "--short-url", "https://example.test/link", "--vault", str(tmp_path),
+        "--dry-run",
+    ])
+
+    with pytest.raises(SystemExit, match="symbolic link"):
+        generate_qr.main()

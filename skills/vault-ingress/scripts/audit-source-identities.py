@@ -28,6 +28,10 @@ from source_identity_matching import (
     normalized_words,
     titles_agree,
 )
+from tracking_database import (
+    TrackingDatabaseError,
+    assess_tracking_database,
+)
 from tracking_database_io import (
     TrackingDatabaseIOError,
     decode_json_object,
@@ -52,6 +56,8 @@ ERROR_CODES = frozenset({
     "provider_webpage_identity_mismatch",
     "talk_shape_invalid",
     "talks_shape_invalid",
+    "tracking_database_schema_invalid",
+    "tracking_database_schema_unsupported",
 })
 
 
@@ -371,24 +377,56 @@ def audit_database(
     sources: list[dict[str, Any]] = []
     groups: defaultdict[str, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
 
+    talks: list[Any] = []
     if not isinstance(database, dict):
         findings.append(_finding(
             "database_shape_invalid", None, [], [],
             "tracking database must be a JSON object",
             {"actual": type(database).__name__}, "high",
         ))
-        talks: list[Any] = []
     else:
-        raw_talks = database.get("talks")
-        if not isinstance(raw_talks, list):
-            findings.append(_finding(
-                "talks_shape_invalid", None, [], [],
-                "tracking database talks must be an array",
-                {"actual": type(raw_talks).__name__}, "high",
-            ))
+        try:
+            assessment = assess_tracking_database(database)
+        except TrackingDatabaseError as exc:
+            findings.append(
+                _finding(
+                    "tracking_database_schema_invalid",
+                    None,
+                    [],
+                    [],
+                    str(exc),
+                    {},
+                    "high",
+                )
+            )
             talks = []
         else:
-            talks = raw_talks
+            if not assessment.usable:
+                findings.append(
+                    _finding(
+                        "tracking_database_schema_unsupported",
+                        None,
+                        [],
+                        [],
+                        "tracking database is not usable by this reader",
+                        {
+                            "schema_version": assessment.schema_version,
+                            "reason_codes": list(assessment.reason_codes),
+                        },
+                        "high",
+                    )
+                )
+                talks = []
+            else:
+                raw_talks = database.get("talks")
+                if not isinstance(raw_talks, list):
+                    findings.append(_finding(
+                        "talks_shape_invalid", None, [], [],
+                        "tracking database talks must be an array",
+                        {"actual": type(raw_talks).__name__}, "high",
+                    ))
+                else:
+                    talks = raw_talks
 
     event_aliases = known_event_aliases(talks)
 

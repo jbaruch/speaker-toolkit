@@ -20,10 +20,29 @@ import re
 import sys
 from typing import Any, NoReturn
 
+from tracking_database import (
+    CONFIG_RECORD_SCHEMA_VERSION,
+    CONFIRMED_INTENT_OPTIONAL_FIELDS,
+    CONFIRMED_INTENT_RECORD_SCHEMA_VERSION,
+    CONFIRMED_INTENT_REQUIRED_FIELDS as OWNER_CONFIRMED_INTENT_REQUIRED_FIELDS,
+    IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION,
+    IMPROVEMENT_GOAL_REQUIRED_FIELDS as OWNER_IMPROVEMENT_GOAL_REQUIRED_FIELDS,
+    PPTX_CATALOG_RECORD_SCHEMA_VERSION,
+    PPTX_CATALOG_REQUIRED_FIELDS,
+    RESOURCE_RECORD_SCHEMA_VERSION,
+    RESOURCE_REQUIRED_FIELDS as OWNER_RESOURCE_REQUIRED_FIELDS,
+    THUMBNAIL_RECORD_SCHEMA_VERSION,
+    THUMBNAIL_REQUIRED_FIELDS as OWNER_THUMBNAIL_REQUIRED_FIELDS,
+    TALK_RECORD_SCHEMA_VERSION,
+    TRACKING_DATABASE_SCHEMA_VERSION,
+    TrackingDatabaseError,
+    require_current_tracking_database,
+)
 from tracking_database_io import (
     TrackingDatabaseIOError,
     commit_tracking_database,
     decode_json_object,
+    decode_json_object_bytes,
     initialize_tracking_database,
     json_values_equal,
     render_json_object,
@@ -32,9 +51,16 @@ from tracking_database_io import (
 
 
 PLAN_SCHEMA_VERSION = 1
-OWNER_RECORD_SCHEMA_VERSION = 1
-TRACKING_DATABASE_SCHEMA_VERSION = 1
-CONFIG_RECORD_SCHEMA_VERSION = 1
+OWNER_RECORD_SCHEMA_VERSION = CONFIRMED_INTENT_RECORD_SCHEMA_VERSION
+if len(
+    {
+        OWNER_RECORD_SCHEMA_VERSION,
+        PPTX_CATALOG_RECORD_SCHEMA_VERSION,
+        RESOURCE_RECORD_SCHEMA_VERSION,
+        THUMBNAIL_RECORD_SCHEMA_VERSION,
+    }
+) != 1:
+    raise RuntimeError("typed owner collection versions require per-kind validation")
 MISSING_MARKER = {"$missing": True}
 COLLECTION_IDENTITIES = {
     "upsert_confirmed_intent": ("confirmed_intents", "pattern"),
@@ -65,68 +91,16 @@ GOAL_VERIFICATION_FIELDS = frozenset(
         "verification_reasons",
     }
 )
-GOAL_REQUIRED_FIELDS = frozenset(
-    {
-        "id",
-        "schema_version",
-        "issue",
-        "kind",
-        "antipattern_id",
-        "metric",
-        "baseline_value",
-        "target",
-        "set_date",
-        "set_by",
-        "status",
-        "current_value",
-        "last_checked",
-        "checked_by",
-        "verification_state",
-        "verification_reasons",
-        "supersedes_goal_id",
-        "baseline_provenance",
-    }
+LEGACY_GOAL_VERIFICATION_FIELDS = frozenset(
+    {"status", "current_value", "last_checked", "checked_by"}
 )
-CONFIRMED_INTENT_REQUIRED_FIELDS = frozenset(
-    {"schema_version", "pattern", "intent", "rule", "note"}
-)
-CONFIRMED_INTENT_OPTIONAL_FIELDS = frozenset(
-    {
-        "confirmed_date",
-        "source_talk",
-        "source_talks",
-        "talk",
-        "retrofit_targets",
-    }
-)
-RESOURCE_REQUIRED_FIELDS = frozenset(
-    {"schema_version", "talk_slug", "item_count", "category_breakdown"}
-)
-PPTX_REQUIRED_FIELDS = frozenset(
-    {
-        "schema_version",
-        "pptx_path",
-        "talk_filename",
-        "matched",
-        "slide_count",
-        "visual_extracted",
-    }
-)
-THUMBNAIL_REQUIRED_FIELDS = frozenset(
-    {
-        "schema_version",
-        "talk_slug",
-        "youtube_url",
-        "source_slide_num",
-        "speaker_photo_used",
-        "thumbnail_path",
-        "shownotes_thumbnail_path",
-        "dimensions",
-        "file_size_kb",
-        "created_at",
-        "approved",
-    }
-)
+GOAL_REQUIRED_FIELDS = OWNER_IMPROVEMENT_GOAL_REQUIRED_FIELDS | {"schema_version"}
+CONFIRMED_INTENT_REQUIRED_FIELDS = OWNER_CONFIRMED_INTENT_REQUIRED_FIELDS | {
+    "schema_version"
+}
+RESOURCE_REQUIRED_FIELDS = OWNER_RESOURCE_REQUIRED_FIELDS | {"schema_version"}
+PPTX_REQUIRED_FIELDS = PPTX_CATALOG_REQUIRED_FIELDS | {"schema_version"}
+THUMBNAIL_REQUIRED_FIELDS = OWNER_THUMBNAIL_REQUIRED_FIELDS | {"schema_version"}
 class TrackingDatabaseMutationError(ValueError):
     """A mutation plan, precondition, or database shape is invalid."""
 
@@ -137,40 +111,14 @@ class _ArgumentParser(argparse.ArgumentParser):
 
 
 def _strict_json_object(raw: bytes, path: Path, label: str) -> dict[str, Any]:
-    def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        for key, value in pairs:
-            if key in result:
-                raise TrackingDatabaseMutationError(
-                    f"{label} {path} contains duplicate object key {key!r}"
-                )
-            result[key] = value
-        return result
-
-    def reject_non_finite(value: str) -> NoReturn:
-        raise TrackingDatabaseMutationError(
-            f"{label} {path} contains non-standard JSON number {value}"
-        )
-
     try:
-        value = json.loads(
-            raw.decode("utf-8"),
-            object_pairs_hook=reject_duplicate_keys,
-            parse_constant=reject_non_finite,
+        return decode_json_object_bytes(
+            raw,
+            path,
+            label=label,
         )
-    except TrackingDatabaseMutationError:
-        raise
-    except UnicodeDecodeError as exc:
-        raise TrackingDatabaseMutationError(
-            f"{label} {path} is not UTF-8: {exc}"
-        ) from exc
-    except json.JSONDecodeError as exc:
-        raise TrackingDatabaseMutationError(
-            f"{label} {path} is invalid JSON at line {exc.lineno}, column {exc.colno}"
-        ) from exc
-    if not isinstance(value, dict):
-        raise TrackingDatabaseMutationError(f"{label} root must be a JSON object")
-    return value
+    except TrackingDatabaseIOError as exc:
+        raise TrackingDatabaseMutationError(str(exc)) from exc
 
 
 def load_plan(path: Path) -> dict[str, Any]:
@@ -443,9 +391,13 @@ def _validate_collection_record(kind: str, record: dict[str, Any]) -> None:
     elif kind == "upsert_improvement_goal":
         label = "improvement-goal record"
         _require_keys(record, required=GOAL_REQUIRED_FIELDS, label=label)
-        if not json_values_equal(record["schema_version"], 2):
+        if not json_values_equal(
+            record["schema_version"],
+            IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION,
+        ):
             raise TrackingDatabaseMutationError(
-                f"{label}.schema_version must be exact integer 2"
+                f"{label}.schema_version must be exact integer "
+                f"{IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION}"
             )
         for field in (
             "id",
@@ -764,6 +716,19 @@ def _apply_record_patch(
     return before, after
 
 
+def _require_current_talk_record(
+    talk: dict[str, Any],
+    *,
+    filename: str,
+) -> None:
+    version = talk.get("schema_version")
+    if type(version) is not int or version != TALK_RECORD_SCHEMA_VERSION:
+        raise TrackingDatabaseMutationError(
+            f"talks[{filename!r}].schema_version must be exact current talk "
+            f"schema {TALK_RECORD_SCHEMA_VERSION} before this mutation"
+        )
+
+
 def _apply_update_talk(
     database: dict[str, Any],
     mutation: dict[str, Any],
@@ -778,6 +743,7 @@ def _apply_update_talk(
     )
     filename = _nonempty(mutation["filename"], f"mutations[{index}].filename")
     talk = _talk_by_filename(database, filename)
+    _require_current_talk_record(talk, filename=filename)
     _validate_publishing_values(mutation["set"], f"mutations[{index}].set")
     before, after = _apply_record_patch(
         talk,
@@ -809,6 +775,7 @@ def _apply_update_talk_clarification(
     )
     filename = _nonempty(mutation["filename"], f"mutations[{index}].filename")
     talk = _talk_by_filename(database, filename)
+    _require_current_talk_record(talk, filename=filename)
     _validate_clarification_values(mutation["set"], f"mutations[{index}].set")
     before, after = _apply_record_patch(
         talk,
@@ -843,6 +810,23 @@ def _apply_goal_verification(
     _, goal = _find_unique_record(goals, "id", identity, label="improvement_goals")
     if goal is None:
         raise TrackingDatabaseMutationError(f"improvement goal {identity!r} does not exist")
+    goal_version = goal.get("schema_version")
+    goal_kind = goal.get("kind")
+    if goal_version == 1:
+        if goal_kind in {"antipattern", "underuse"}:
+            raise TrackingDatabaseMutationError(
+                f"improvement goal {identity!r} is a historical schema-v1 "
+                f"{goal_kind} goal; skip and report it instead of partially "
+                "upgrading it"
+            )
+        allowed_fields = LEGACY_GOAL_VERIFICATION_FIELDS
+    elif goal_version == IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION:
+        allowed_fields = GOAL_VERIFICATION_FIELDS
+    else:
+        raise TrackingDatabaseMutationError(
+            f"improvement goal {identity!r} has unsupported schema_version "
+            f"{goal_version!r}"
+        )
     _validate_goal_verification_values(
         mutation["set"],
         f"mutations[{index}].set",
@@ -851,7 +835,7 @@ def _apply_goal_verification(
         goal,
         expect=mutation["expect"],
         set_values=mutation["set"],
-        allowed_fields=GOAL_VERIFICATION_FIELDS,
+        allowed_fields=allowed_fields,
         label=f"improvement_goals[{identity!r}]",
     )
     _record_change(
@@ -1052,6 +1036,10 @@ def build_candidate(
     database: dict[str, Any],
     mutations: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    try:
+        require_current_tracking_database(database)
+    except TrackingDatabaseError as exc:
+        raise TrackingDatabaseMutationError(str(exc)) from exc
     candidate = copy.deepcopy(database)
     _validate_database_shape(candidate)
     changes: list[dict[str, Any]] = []
@@ -1086,6 +1074,12 @@ def build_candidate(
                 f"mutations[{index}].kind {kind!r} is unsupported"
             )
     _validate_database_shape(candidate)
+    try:
+        require_current_tracking_database(candidate)
+    except TrackingDatabaseError as exc:
+        raise TrackingDatabaseMutationError(
+            f"mutation candidate violates the tracking-database schema: {exc}"
+        ) from exc
     return candidate, changes
 
 
@@ -1131,6 +1125,12 @@ def execute(
             )
         candidate = initial_database(mutations[0], index=0)
         _validate_database_shape(candidate)
+        try:
+            require_current_tracking_database(candidate)
+        except TrackingDatabaseError as exc:
+            raise TrackingDatabaseMutationError(
+                f"initial database violates the tracking-database schema: {exc}"
+            ) from exc
         rendered = render_json_object(candidate)
         output_sha256 = hashlib.sha256(rendered).hexdigest()
         if apply:

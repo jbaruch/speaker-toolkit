@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from tracking_database import TALK_RECORD_SCHEMA_VERSION
 
-TALK_SCHEMA_VERSION = 5
+TALK_SCHEMA_VERSION = TALK_RECORD_SCHEMA_VERSION
 TRANSCRIPT_ARTIFACT_FIELDS = ("transcript_path",)
 PDF_SOURCE_FIELDS = (
     "slides_url",

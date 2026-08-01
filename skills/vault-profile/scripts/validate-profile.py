@@ -54,6 +54,11 @@ from pattern_cohort_snapshot import (  # noqa: E402
     configured_evidence_freshness_assessor,
 )
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
+from tracking_database import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+    TrackingDatabaseError,
+    assess_tracking_database,
+)
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseIOError,
     decode_json_object,
@@ -171,6 +176,15 @@ def _load_live_pattern_snapshot(
         database = decode_json_object(database_snapshot)
     except TrackingDatabaseIOError as exc:
         raise ValueError(f"tracking-database.json is invalid: {exc}") from exc
+    try:
+        assessment = assess_tracking_database(database)
+    except TrackingDatabaseError as exc:
+        raise ValueError(f"tracking-database.json schema is invalid: {exc}") from exc
+    if not assessment.usable:
+        raise ValueError(
+            "tracking-database.json has no usable prior state for this reader: "
+            + ", ".join(assessment.reason_codes)
+        )
     talks = database.get("talks")
     if not isinstance(talks, list) or any(
         not isinstance(talk, Mapping) for talk in talks

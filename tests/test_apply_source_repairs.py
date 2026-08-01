@@ -13,14 +13,22 @@ def write_json(path, value):
 
 def base_database():
     return {
-        "config": {},
+        "schema_version": 1,
+        "config": {"schema_version": 1},
         "talks": [{
+            "schema_version": 5,
             "filename": "talk.md",
             "status": "processed",
             "video_url": "https://youtu.be/AbCdEfGhI_1",
             "youtube_id": "AbCdEfGhI_1",
             "transcript_source": "youtube_auto",
         }],
+        "pptx_catalog": [],
+        "qr_codes": [],
+        "resources": [],
+        "thumbnails": [],
+        "confirmed_intents": [],
+        "improvement_goals": [],
     }
 
 
@@ -69,6 +77,55 @@ def test_dry_run_reports_changes_without_writing(
     assert report["database_written"] is False
     assert report["durability_state"] == "dry_run"
     assert report["warnings"] == []
+    assert database_path.read_bytes() == before
+
+
+def test_legacy_database_rejects_repair_dry_run_without_writing(
+    apply_source_repairs, tmp_path,
+):
+    database_path = tmp_path / "tracking-database.json"
+    plan_path = tmp_path / "plan.json"
+    database = base_database()
+    database.pop("schema_version")
+    database["config"].pop("schema_version")
+    database["talks"][0].pop("schema_version")
+    write_json(database_path, database)
+    write_json(plan_path, repair_plan())
+    before = database_path.read_bytes()
+
+    with pytest.raises(
+        apply_source_repairs.SourceRepairError,
+        match="migrate-tracking-database.py",
+    ):
+        apply_source_repairs.execute(database_path, plan_path, apply=False)
+
+    assert database_path.read_bytes() == before
+
+
+def test_repair_cannot_create_unversioned_source_rejection(
+    apply_source_repairs, tmp_path,
+):
+    database_path = tmp_path / "tracking-database.json"
+    plan_path = tmp_path / "plan.json"
+    write_json(database_path, base_database())
+    plan = repair_plan()
+    plan["repairs"][0]["expect"]["source_rejections"] = {"$missing": True}
+    plan["repairs"][0]["set"]["source_rejections"] = [{
+        "source_type": "video",
+        "url": "https://youtu.be/AbCdEfGhI_1",
+        "reason": "wrong_delivery",
+        "evidence": "provider metadata identifies another delivery",
+        "verified_at": "2026-08-01T12:00:00+00:00",
+    }]
+    write_json(plan_path, plan)
+    before = database_path.read_bytes()
+
+    with pytest.raises(
+        apply_source_repairs.SourceRepairError,
+        match="source_rejections_schema_version_missing",
+    ):
+        apply_source_repairs.execute(database_path, plan_path, apply=False)
+
     assert database_path.read_bytes() == before
 
 
@@ -220,7 +277,16 @@ def test_active_queue_claim_cannot_be_repaired(
     plan_path = tmp_path / "plan.json"
     database = base_database()
     database["talks"][0]["status"] = "reprocessing-inflight"
-    database["talks"][0]["_queue_claim"] = {"state": "claimed"}
+    database["talks"][0]["reprocess_generation"] = 1
+    database["talks"][0]["_queue_claim"] = {
+        "schema_version": 1,
+        "run_id": "repair-blocked",
+        "batch_id": "1",
+        "claimed_at": "2026-08-01T12:00:00+00:00",
+        "previous_status": "needs-reprocessing",
+        "reprocess_generation": 1,
+        "state": "claimed",
+    }
     write_json(database_path, database)
     write_json(plan_path, repair_plan())
 

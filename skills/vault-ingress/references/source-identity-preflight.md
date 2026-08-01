@@ -155,6 +155,7 @@ the decision on the talk so a later scan cannot reintroduce it:
 ```json
 {
   "source_rejections": [{
+    "schema_version": 1,
     "source_type": "video",
     "url": "https://youtu.be/AbCdEfGhI_1",
     "reason": "non_delivery_clip",

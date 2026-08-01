@@ -95,7 +95,7 @@ def source_identity(**updates):
     return evidence
 
 
-def write_database(fixture, talks, config=None):
+def write_database(fixture, talks, config=None, *, current=False):
     database = {
         "config": config or {
             "speaker_name": "Baruch Sadogursky",
@@ -103,6 +103,20 @@ def write_database(fixture, talks, config=None):
         },
         "talks": talks,
     }
+    if current:
+        database.update({
+            "schema_version": 1,
+            "pptx_catalog": [],
+            "qr_codes": [],
+            "resources": [],
+            "thumbnails": [],
+            "confirmed_intents": [],
+            "improvement_goals": [],
+        })
+        database["config"]["schema_version"] = 1
+        for talk in talks:
+            if isinstance(talk, dict):
+                talk["schema_version"] = 5
     fixture["database"].write_text(
         json.dumps(database, indent=2), encoding="utf-8"
     )
@@ -311,7 +325,7 @@ def test_legacy_quality_warning_allows_normalize_to_requeue(
 ):
     transcript = materialize_transcript(vault_fixture)
     transcript.with_suffix(".quality.json").unlink()
-    write_database(vault_fixture, [base_talk()])
+    write_database(vault_fixture, [base_talk()], current=True)
 
     report = preflight_vault.run_preflight(vault_fixture["root"])
     assert report["ok"] is True
@@ -1243,6 +1257,23 @@ def test_report_is_deterministic_and_preflight_is_read_only(
     second = preflight_vault.run_preflight(vault_fixture["root"])
 
     assert first == second
+    assert database.read_bytes() == before
+
+
+def test_future_tracking_database_is_blocking_no_usable_state(
+    preflight_vault, vault_fixture,
+):
+    database = write_database(vault_fixture, [base_talk()])
+    payload = json.loads(database.read_text(encoding="utf-8"))
+    payload["schema_version"] = 99
+    database.write_text(json.dumps(payload), encoding="utf-8")
+    before = database.read_bytes()
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert finding_codes(report, "blocking") == {
+        "tracking_database_schema_unsupported"
+    }
     assert database.read_bytes() == before
 
 

@@ -36,6 +36,11 @@ from ingress_contract import (
     parse_youtube_id,
     validate_talk_record_schemas,
 )
+from tracking_database import (
+    TrackingDatabaseError,
+    assess_tracking_database,
+    require_current_tracking_database,
+)
 from tracking_database_io import (
     TrackingDatabaseConflictError,
     TrackingDatabaseIOError,
@@ -172,6 +177,15 @@ def _load_database(
         payload = decode_json_object(snapshot)
     except TrackingDatabaseIOError as exc:
         raise ShownotesScanError(str(exc)) from exc
+    try:
+        assessment = assess_tracking_database(payload)
+    except TrackingDatabaseError as exc:
+        raise ShownotesScanError(str(exc)) from exc
+    if not assessment.usable:
+        raise ShownotesScanError(
+            "tracking database is not usable by this reader: "
+            + ", ".join(assessment.reason_codes)
+        )
     try:
         validate_talk_record_schemas(payload.get("talks"))
     except ValueError as exc:
@@ -939,6 +953,11 @@ def _atomic_write_database(
 
 def execute(database_path: Path, *, apply_requested: bool) -> dict[str, Any]:
     database, database_snapshot = _load_database(database_path)
+    if apply_requested:
+        try:
+            require_current_tracking_database(database)
+        except TrackingDatabaseError as exc:
+            raise ShownotesScanError(str(exc)) from exc
     location = resolve_shownotes_location(database["config"])
     report, candidate = build_scan_report(
         database_path,

@@ -3,7 +3,7 @@
 ## Config Fields — Clarification Session Questions
 
 Fields below `template_skip_patterns` are asked during vault-clarification
-Step 4 (first session only) when empty. The question column shows what to
+Step 5 (first session only) when empty. The question column shows what to
 ask the speaker.
 
 | Config field | Question |
@@ -30,6 +30,7 @@ ask the speaker.
 ```json
 {
   "config": {
+    "schema_version": 1,
     "vault_root": "~/.claude/rhetoric-knowledge-vault",
     "vault_storage_path": "/actual/path/if/custom (null when using default location)",
     "pptx_source_dir": "/path/to/Presentations",
@@ -151,9 +152,9 @@ them as follows:
 | `config.talks_source_dir` | `config.shownotes.source.path_or_url` + `talks_subdir` (split on the last path segment) |
 | `config.shownotes_url_pattern` (flat `{slug}`) | `config.shownotes.url.base` + `config.shownotes.url.template` (template defaults to `/{slug}/`) |
 
-If a vault presents only the legacy fields, readers should upgrade-on-read
-(build the shownotes block in memory) and vault-profile writes the new schema
-on next regeneration. Do not leave both shapes populated — one source of truth.
+If a vault presents only the legacy fields, readers build the shownotes block
+in memory. vault-ingress owns persistence of the current config shape. Do not
+leave both shapes populated — one source of truth.
 
 ## Confirmed Intents Schema
 

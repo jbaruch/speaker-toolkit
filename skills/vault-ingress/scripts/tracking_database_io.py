@@ -15,9 +15,11 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+from decimal import Decimal, DecimalException
 import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import secrets
@@ -26,6 +28,7 @@ from typing import Any, Iterator, NoReturn
 
 
 READ_CHUNK_SIZE = 1024 * 1024
+MAX_JSON_NESTING_DEPTH = 200
 
 
 class TrackingDatabaseIOError(ValueError):
@@ -250,13 +253,53 @@ def snapshot_tracking_database(
     )
 
 
+def _validate_decoded_json_tree(payload: object, *, subject: str) -> None:
+    """Reject unsafe depth and non-scalar Unicode without recursive walking."""
+    pending: list[tuple[object, int]] = [(payload, 0)]
+    deepest_container_visits: dict[int, int] = {}
+    while pending:
+        value, depth = pending.pop()
+        if isinstance(value, str):
+            if any(0xD800 <= ord(character) <= 0xDFFF for character in value):
+                raise TrackingDatabaseIOError(
+                    f"{subject} contains an unpaired UTF-16 surrogate in a "
+                    "JSON string"
+                )
+            continue
+        if isinstance(value, dict):
+            if depth > MAX_JSON_NESTING_DEPTH:
+                raise TrackingDatabaseIOError(
+                    f"{subject} exceeds maximum supported JSON nesting depth "
+                    f"{MAX_JSON_NESTING_DEPTH}"
+                )
+            previous_depth = deepest_container_visits.get(id(value))
+            if previous_depth is not None and previous_depth >= depth:
+                continue
+            deepest_container_visits[id(value)] = depth
+            for key, child in value.items():
+                pending.append((key, depth + 1))
+                pending.append((child, depth + 1))
+            continue
+        if isinstance(value, list):
+            if depth > MAX_JSON_NESTING_DEPTH:
+                raise TrackingDatabaseIOError(
+                    f"{subject} exceeds maximum supported JSON nesting depth "
+                    f"{MAX_JSON_NESTING_DEPTH}"
+                )
+            previous_depth = deepest_container_visits.get(id(value))
+            if previous_depth is not None and previous_depth >= depth:
+                continue
+            deepest_container_visits[id(value)] = depth
+            pending.extend((child, depth + 1) for child in value)
+
+
 def decode_json_object_bytes(
     raw: bytes,
     path: str | os.PathLike[str],
     *,
     label: str = "tracking database",
 ) -> dict[str, Any]:
-    """Decode strict UTF-8 JSON while rejecting duplicate keys and non-finite values."""
+    """Decode one bounded, Unicode-scalar, strict UTF-8 JSON object."""
     artifact_path = _absolute_path(path)
 
     def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -274,11 +317,42 @@ def decode_json_object_bytes(
             f"{label} {artifact_path} contains non-standard JSON number {value}"
         )
 
+    def non_roundtrippable_number(value: str) -> TrackingDatabaseIOError:
+        description = (
+            repr(value)
+            if len(value) <= 80
+            else f"with {len(value)} characters beginning {value[:32]!r}"
+        )
+        return TrackingDatabaseIOError(
+            f"{label} {artifact_path} contains JSON number {description} that "
+            "cannot round-trip losslessly through this toolkit; replace it "
+            "with a string or use a supported finite number"
+        )
+
+    def parse_lossless_int(value: str) -> int:
+        try:
+            return int(value)
+        except (ValueError, OverflowError) as exc:
+            raise non_roundtrippable_number(value) from exc
+
+    def parse_lossless_float(value: str) -> float:
+        """Reject numbers that cannot round-trip through the toolkit decoder."""
+        try:
+            exact = Decimal(value)
+            decoded = float(value)
+        except (DecimalException, ValueError, OverflowError) as exc:
+            raise non_roundtrippable_number(value) from exc
+        if not math.isfinite(decoded) or Decimal(repr(decoded)) != exact:
+            raise non_roundtrippable_number(value)
+        return decoded
+
     try:
         payload = json.loads(
             raw.decode("utf-8"),
             object_pairs_hook=reject_duplicate_keys,
             parse_constant=reject_non_finite,
+            parse_float=parse_lossless_float,
+            parse_int=parse_lossless_int,
         )
     except TrackingDatabaseIOError:
         raise
@@ -286,11 +360,20 @@ def decode_json_object_bytes(
         raise TrackingDatabaseIOError(
             f"{label} {artifact_path} is not valid UTF-8: {exc}"
         ) from exc
+    except RecursionError as exc:
+        raise TrackingDatabaseIOError(
+            f"{label} {artifact_path} exceeds maximum supported JSON nesting "
+            f"depth {MAX_JSON_NESTING_DEPTH}"
+        ) from exc
     except json.JSONDecodeError as exc:
         raise TrackingDatabaseIOError(
             f"{label} {artifact_path} is not valid JSON at line {exc.lineno}, "
             f"column {exc.colno}"
         ) from exc
+    _validate_decoded_json_tree(
+        payload,
+        subject=f"{label} {artifact_path}",
+    )
     if not isinstance(payload, dict):
         raise TrackingDatabaseIOError(
             f"{label} {artifact_path} root must be a JSON object"
@@ -309,6 +392,10 @@ def decode_json_object(
 
 def render_json_object(payload: dict[str, Any]) -> bytes:
     """Render the canonical human-readable tracking-database JSON form."""
+    _validate_decoded_json_tree(
+        payload,
+        subject="tracking-database candidate",
+    )
     try:
         rendered = json.dumps(
             payload,
@@ -316,11 +403,22 @@ def render_json_object(payload: dict[str, Any]) -> bytes:
             ensure_ascii=False,
             allow_nan=False,
         )
+    except RecursionError as exc:
+        raise TrackingDatabaseIOError(
+            "tracking-database candidate exceeds maximum supported JSON nesting "
+            f"depth {MAX_JSON_NESTING_DEPTH}"
+        ) from exc
     except (TypeError, ValueError) as exc:
         raise TrackingDatabaseIOError(
             f"tracking-database candidate is not strict JSON: {exc}"
         ) from exc
-    return rendered.encode("utf-8") + b"\n"
+    try:
+        return rendered.encode("utf-8") + b"\n"
+    except UnicodeEncodeError as exc:
+        raise TrackingDatabaseIOError(
+            "tracking-database candidate contains an unpaired UTF-16 surrogate "
+            "and is not valid Unicode scalar text"
+        ) from exc
 
 
 def _lock_identity(metadata: os.stat_result) -> tuple[int, int]:

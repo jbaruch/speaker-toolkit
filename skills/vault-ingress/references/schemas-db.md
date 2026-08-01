@@ -5,6 +5,83 @@
 The tracking database (`tracking-database.json`) is the single source of truth.
 Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
 
+**Owner:** vault-ingress owns the artifact shape, every independent record
+shape, and all migrations. vault-clarification may write current config,
+confirmed-intent, and improvement-goal records. presentation-creator may write
+current QR records. vault-profile and the remaining presentation consumers are
+read-only. Non-owner readers accept legacy database schema 0 and current schema
+1 during rollout. They never rewrite legacy state. An unsupported future
+database or record version is no usable prior state.
+
+The independently versioned records are the database root, `config`, each
+`talks[]`, `pptx_catalog[]`, `qr_codes[]`, `resources[]`, `thumbnails[]`,
+`confirmed_intents[]`, `improvement_goals[]`, and
+`talks[].source_rejections[]`. Queue claims, source identities, adherence
+baselines, and evidence ledgers retain their existing domain schema fields.
+Objects embedded inside a versioned record are part of that containing record
+unless this reference declares a separate schema.
+
+Current constants live in
+`skills/vault-ingress/scripts/tracking_database.py`. Database schema 0 is the
+implicit unversioned corpus. Within that root, a missing talk version is the
+historical talk schema v1, not a request to synthesize v5 evidence; missing
+config, PPTX, QR, resource, thumbnail, confirmed-intent, source-rejection, and
+goal versions likewise map only to their validated historical v1 shapes. Run the
+owner migration in vault-ingress Step 1.
+Dry-run emits the exact input SHA-256. Apply requires that digest, refuses active
+queue claims, stores the complete original bytes under `.backups/`, and replaces
+the verified generation atomically. Backup directory and file opens do not
+follow symbolic links. The writer repeats its byte-and-file-generation check
+after staging and immediately before replacement. A current schema-v1 database
+is an idempotent no-op. Before migration, queue `inspect` may read schema 0 and
+queue `recover` may close an active schema-0 lease in place. Recovery changes
+only queue lease/status state and never stamps database or talk schema fields;
+the established queue transition may advance a recovered claim receipt from v1
+to v2 while adding its release fields.
+
+The schema-0 migration is a preservation migration. Its only allowed semantic
+changes are adding root schema v1, adding the validated historical version to an
+unversioned owner record, and creating absent owned arrays as empty arrays. It
+preserves every other JSON value and missing-vs-present distinction, including
+legacy-v1 `pattern_observations` objects, arrays, or nulls and every historical
+citation/source-inspection field. Explicit version 0 sentinels, future owner
+versions, ambiguous or malformed historical records, and active claims fail
+before backup or write. An exact current database is a byte-and-inode-preserving
+no-op.
+
+| Independent record | Current schema |
+|---|---:|
+| database root | 1 |
+| config | 1 |
+| talk | 5 |
+| PPTX catalog | 1 |
+| QR code | 1 |
+| resource summary | 1 |
+| thumbnail | 1 |
+| confirmed intent | 1 |
+| source rejection | 1 |
+| improvement goal | 2 (schema 1 remains readable historical state) |
+
+| Component | Access | Contract |
+|---|---|---|
+| vault-ingress migration | owner read/write | Accept schema 0 or 1; migrate 0 exactly once; never downgrade future state |
+| vault-ingress queue inspection/recovery | owner compatibility transition | Inspect schema 0/1; recover active leases in schema 0/1; never stamp artifact or talk schema versions |
+| vault-ingress queue normalization/claim, persistence, shownotes apply, source repair | current read/write | Require database schema 1 plus supported explicit owner-record versions; targeted writers emit their current record generation and never migrate the root implicitly |
+| vault-ingress preflight, source audit, analysis rendering, shownotes dry-run | dual reader | Parse schemas 0 and 1; gate through existing finding/error channels; never rewrite |
+| vault-clarification | current read/write | Route schema migration to vault-ingress; stamp config v1, confirmed intent v1, improvement goal v2 |
+| presentation-creator QR writer | dual reader/current writer | Read schemas 0 and 1; require schema 1 before URL creation or QR metadata persistence; stamp QR v1 |
+| presentation-creator publishing/post-event | authorized current writer | Require schema 1 before tracking writes; stamp resource v1 and preserve talk v5 |
+| illustrations thumbnail workflow | authorized current writer | Require schema 1 before tracking writes; stamp thumbnail v1 and preserve talk v5 |
+| vault-profile | dual reader | Parse schemas 0 and 1; treat unsupported generations as unavailable; never migrate |
+
+Current database schema 1 requires all eight top-level state fields shown below.
+Missing legacy arrays become empty during owner migration. Current writers do
+not create them opportunistically. A schema-v1 improvement goal remains valid
+historical state; migration never fabricates the schema-v2 baseline provenance
+needed for current pattern-goal verification. Talks v1-v5 remain readable under
+the current root and are promoted only when the talk-domain writer legitimately
+persists that exact talk.
+
 ```json
 {
   "schema_version": 1,
@@ -48,6 +125,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     },
     "source_relation": {"type": "duplicate|borrowed_recording", "target_filename": "canonical-talk.md"},
     "source_rejections": [{
+      "schema_version": 1,
       "source_type": "video|slides", "url": "known-bad upstream URL",
       "reason": "non_delivery_clip|wrong_delivery|unrelated_recording",
       "evidence": "how the rejection was verified",
@@ -132,7 +210,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
       "not_evaluable": []
     }
   }],
-  "_comment_schema_version": "Talk-record schema version, stamped by persist-results.py. v1 is the implicit unversioned shape. v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, evidence ledger v2, and current scoring schema v5. Migration preserves v1-v4 evidence and never synthesizes v5 outcomes.",
+  "_comment_schema_version": "Database schema v1 is owner-migrated by vault-ingress. A missing talk record version is the historical implicit-v1 lineage. v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, evidence ledger v2, and current scoring schema v5. Root migration preserves all historical evidence and never synthesizes v5 outcomes.",
   "_comment_absent_transcript_source": "Absent transcript_source: the key may be MISSING on a talk, and missing is meaningful — it means provenance is unknown, not that no transcript exists (that is the explicit value `none`). It arises on one path: fetch-transcript.py returning method `existing`, where a valid transcript was already on disk and no fetch ran, so nothing was learned about where it came from. Writers MUST NOT backfill a guess; `manual` in particular asserts a human produced it. Readers gauging transcript reliability MUST treat absent as unknown and MUST NOT default it to any value.",
   "pptx_catalog": [{
     "schema_version": 1,
@@ -154,7 +232,32 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "created_at": "2026-04-15",
     "updated_at": "2026-04-15"
   }],
-  "confirmed_intents": [],
+  "resources": [{
+    "schema_version": 1,
+    "talk_slug": "arc-of-ai",
+    "item_count": 12,
+    "category_breakdown": {"urls": 7, "repos": 3, "books_papers": 2}
+  }],
+  "thumbnails": [{
+    "schema_version": 1,
+    "talk_slug": "arc-of-ai",
+    "youtube_url": "https://youtube.com/watch?v=dQw4w9WgXcQ",
+    "source_slide_num": 15,
+    "speaker_photo_used": "photos/speaker-headshot.png",
+    "thumbnail_path": "illustrations/thumbnail.png",
+    "shownotes_thumbnail_path": "assets/images/thumbnails/arc-of-ai-thumbnail.png",
+    "dimensions": "1280x720",
+    "file_size_kb": 185,
+    "created_at": "2026-04-20",
+    "approved": true
+  }],
+  "confirmed_intents": [{
+    "schema_version": 1,
+    "pattern": "delayed_self_introduction",
+    "intent": "deliberate",
+    "rule": "Use two-phase introduction",
+    "note": "Speaker-confirmed intent"
+  }],
   "improvement_goals": []
 }
 ```
@@ -170,13 +273,20 @@ through the owner command:
 ```
 
 The command accepts only a no-follow regular file and strictly decodes one UTF-8
-JSON object. Duplicate keys at any depth, non-finite numbers, invalid JSON, and
-non-object roots fail closed. Success returns report schema v1 with
+JSON object. Duplicate keys at any depth, non-finite numbers, finite numbers that
+cannot round-trip through the toolkit without changing mathematical value,
+nesting deeper than 200 JSON containers, unpaired UTF-16 surrogate escapes,
+invalid JSON, and non-object roots fail closed. After decoding, owner schema
+assessment is the first semantic operation: an unsupported root, record,
+queue-claim, or adherence-baseline generation returns no database payload and is
+never interpreted with an older identity or nested shape. Success returns report schema v1 with
 `database_path`, the exact-byte `sha256`, and `database`; failure exits `2` with
-`ok: false` and no database value. During first-time initialization or while
-setting an absent `config.python_path`, the host Python may run the stdlib-only
-owner read/mutation commands. Re-read immediately after setting it. All later
-commands use that exact configured interpreter.
+`ok: false` and no database value. The host Python may run only this stdlib-only
+bootstrap read until `config.python_path` is discovered or supplied by the user.
+Immediately repeat the read against the same canonical path with that configured
+interpreter and require the same SHA-256; restart if the generation changed. Use
+the configured interpreter for initialization, migration, queue recovery, typed
+mutation, and every later toolkit command.
 
 Agent-owned config and catalog changes use a typed plan:
 
@@ -196,6 +306,9 @@ Every plan is strict JSON with exactly `schema_version` and a non-empty
 `mutations` array. Every expectation is either the exact decoded value/record
 seen by the owner reader or the exact missing marker `{"$missing": true}`. JSON
 `null` is a present value and is never interchangeable with that marker.
+The plan decoder applies the same finite-number round-trip, 200-container depth,
+and Unicode-scalar gates as the database decoder, so a reviewed value cannot
+silently change or fail later during rendering.
 Equality is recursive JSON equality: object key order is irrelevant, array order
 is significant, and booleans, integers, and decimals are distinct types. Thus
 `true`, `1`, and `1.0` never satisfy one another, and `{"$missing": 1}` is an
@@ -430,9 +543,9 @@ its source locations and evidence ledger v1 but migration never fabricates v5
 applicability assessments, outcomes, or opportunity identity.
 
 `improvement_goals` is the coaching-loop artifact — speaker-chosen focus areas that
-a later ingress run verifies. vault-clarification owns the record shape; vault-ingress
-writes only the verification fields. Record schema, lifecycle, and owner/reader
-contract:
+a later ingress run verifies. vault-ingress owns the record shape and migrations;
+vault-clarification creates and retires current records. Ingress verification writes
+only the verification fields. Record schema, lifecycle, and writer/reader contract:
 [../../vault-clarification/references/schemas-config.md](../../vault-clarification/references/schemas-config.md)
 Improvement Goals Schema. Verification rubric: [processing-rules.md](processing-rules.md)
 Improvement Goal Verification.
@@ -1016,7 +1129,7 @@ closed field sets; unknown model-supplied fields are rejected.
 `evidence_metadata_fields`; generated prose such as `rhetoric_notes` cannot cite
 itself, and an irrelevant metadata field cannot stand in for pattern evidence.
 
-Migrated v1–v3 records may contain `evidence_citations: []`. That is a deliberate
+Historical v1–v3 records may contain `evidence_citations: []`. That is a deliberate
 legacy marker: readers may render the old `evidence` prose, but must not present
 it as source-verified. The v4/v5 writer never accepts an empty array for a new
 detection. `evidence_schema_version` is writer-owned persisted state; workers

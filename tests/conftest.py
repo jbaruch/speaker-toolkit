@@ -134,6 +134,21 @@ def scan_shownotes_module():
 
 
 @pytest.fixture(scope="session")
+def tracking_database():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "tracking_database.py"), "tracking_database"
+    )
+
+
+@pytest.fixture(scope="session")
+def migrate_tracking_database():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "migrate-tracking-database.py"),
+        "migrate_tracking_database",
+    )
+
+
+@pytest.fixture(scope="session")
 def return_validation():
     return _import_script(
         os.path.join(SCRIPTS_VI, "return_validation.py"), "return_validation")

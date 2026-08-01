@@ -14,6 +14,13 @@ Before ANY Phase 7 action, load these files. If any is missing, STOP and ask.
    Load via `scripts/outline_schema.py`.
 4. **YouTube video URL** — provided by the speaker at trigger time
 
+Read the tracking database through the main presentation-creator compatibility
+gate. Thumbnail and shownotes lookup may read schema 0 or 1. Any database update
+in this phase requires current database schema 1 and talk schema 5 before the
+thumbnail, shownotes, or video side effect paired with it. Route schema 0 through
+`Skill(skill: "vault-ingress")`; preserve all schema fields and apply the main
+skill's exact-generation atomic-write contract.
+
 If shownotes don't exist and the speaker wants Step 7.2, STOP and ask — either
 run Phase 6 Step 6.1 first, or get the shownotes URL manually.
 
@@ -90,6 +97,8 @@ The `expect` object must cover exactly the fields being set with values from the
 latest strict read. Dry-run, review, apply against the reported input SHA, and
 re-read through the
 [owner mutation contract](../../vault-ingress/references/schemas-db.md#owner-read-and-mutation-contract).
+Keep that talk record at `schema_version: 5`; this workflow is an authorized
+current writer, not a schema owner or migrator.
 
 ---
 

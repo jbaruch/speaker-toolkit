@@ -21,7 +21,7 @@ Stdout (JSON):
     {
       "vault_root":        "<absolute path>",
       "config":            { ... }   # tracking-database.json `config` block
-      "confirmed_intents": [ ... ]   # tracking-database.json `confirmed_intents`
+      "confirmed_intents": [ ... ]   # projected semantic intent fields
       "talks":             [ ... ]   # all talks
       "processed_talks":   [ ... ]   # talks with status processed* only
       "baseline_talks":    [ ... ]   # exact active pattern-scoring generation
@@ -72,6 +72,11 @@ from return_validation import (  # noqa: E402
     load_catalog,
 )
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
+from tracking_database import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+    TrackingDatabaseError,
+    assess_tracking_database,
+)
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseIOError,
     decode_json_object,
@@ -86,6 +91,7 @@ DEFAULT_VAULT = "~/.claude/rhetoric-knowledge-vault"
 # baseline eligibility is determined independently by exact catalog/scoring
 # identity through ``partition_pattern_scoring_cohort``.
 INSTRUMENTATION_EPOCH = "2026-07-26"
+_CONFIRMED_INTENT_PROFILE_FIELDS = ("pattern", "intent", "rule", "note")
 
 
 def partition_by_instrumentation(processed_talks, epoch=INSTRUMENTATION_EPOCH):
@@ -112,6 +118,18 @@ def default_as_of(now: datetime | None = None) -> str:
     if not isinstance(moment, datetime):
         raise AdherenceBaselineError("now must be a datetime")
     return normalize_as_of(moment.isoformat())
+
+
+def project_confirmed_intents(records):
+    """Remove tracking-storage metadata from the public profile projection."""
+    projected = []
+    for record in records:
+        projected.append({
+            field: record[field]
+            for field in _CONFIRMED_INTENT_PROFILE_FIELDS
+            if field in record
+        })
+    return projected
 
 
 def _parse_args(argv: list[str]) -> tuple[pathlib.Path, str | None]:
@@ -166,6 +184,20 @@ def main(argv: list[str]) -> int:
         db = decode_json_object(database_snapshot)
     except TrackingDatabaseIOError as exc:
         print(f"ERROR: tracking-database.json is malformed: {exc}", file=sys.stderr)
+        return 1
+    try:
+        database_assessment = assess_tracking_database(db)
+    except TrackingDatabaseError as exc:
+        print(
+            f"ERROR: tracking-database.json schema is invalid: {exc}", file=sys.stderr
+        )
+        return 1
+    if not database_assessment.usable:
+        print(
+            "ERROR: tracking-database.json is not usable by this reader: "
+            + ", ".join(database_assessment.reason_codes),
+            file=sys.stderr,
+        )
         return 1
 
     summary_path = vault_root / "rhetoric-style-summary.md"
@@ -232,7 +264,9 @@ def main(argv: list[str]) -> int:
     payload = {
         "vault_root": str(vault_root),
         "config": db.get("config", {}),
-        "confirmed_intents": db.get("confirmed_intents", []),
+        "confirmed_intents": project_confirmed_intents(
+            db.get("confirmed_intents", [])
+        ),
         "talks": talks,
         "processed_talks": processed_talks,
         "baseline_talks": baseline_talks,

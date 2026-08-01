@@ -51,6 +51,118 @@ def test_strict_decoder_rejects_ambiguous_json_without_changing_bytes(
     assert path.read_bytes() == raw
 
 
+@pytest.mark.parametrize(
+    "token",
+    [
+        "0.12345678901234567890123456789",
+        "1e400",
+        pytest.param(
+            "1e" + "9" * 30,
+            id="extreme-exponent",
+        ),
+        pytest.param(
+            "7" * 5000,
+            id="huge-integer",
+        ),
+    ],
+)
+def test_strict_decoder_rejects_numbers_that_cannot_round_trip(
+    tracking_database_io,
+    tmp_path: Path,
+    token: str,
+) -> None:
+    path = tmp_path / "tracking-database.json"
+    raw = f'{{"talks":[],"value":{token}}}\n'.encode()
+    path.write_bytes(raw)
+
+    snapshot = tracking_database_io.snapshot_tracking_database(path)
+    with pytest.raises(
+        tracking_database_io.TrackingDatabaseIOError,
+        match="cannot round-trip losslessly",
+    ) as stopped:
+        tracking_database_io.decode_json_object(snapshot)
+
+    assert len(str(stopped.value)) < 1000
+    assert path.read_bytes() == raw
+
+
+@pytest.mark.parametrize(
+    ("raw", "message"),
+    [
+        pytest.param(
+            b'{"config":{"value":' + b"[" * 500 + b"0" + b"]" * 500
+            + b'},"talks":[]}\n',
+            "maximum supported JSON nesting depth 200",
+            id="decoded-depth-limit",
+        ),
+        pytest.param(
+            b'{"config":{"value":' + b"[" * 10_000 + b"0" + b"]" * 10_000
+            + b'},"talks":[]}\n',
+            "maximum supported JSON nesting depth 200",
+            id="decoder-recursion-limit",
+        ),
+        pytest.param(
+            b'{"config":{"value":"\\ud800"},"talks":[]}\n',
+            "unpaired UTF-16 surrogate",
+            id="unpaired-surrogate",
+        ),
+    ],
+)
+def test_strict_decoder_rejects_unsafe_tree_before_consumers(
+    tracking_database_io,
+    tmp_path: Path,
+    raw: bytes,
+    message: str,
+) -> None:
+    path = tmp_path / "tracking-database.json"
+    path.write_bytes(raw)
+
+    with pytest.raises(
+        tracking_database_io.TrackingDatabaseIOError,
+        match=message,
+    ) as stopped:
+        tracking_database_io.decode_json_object(
+            tracking_database_io.snapshot_tracking_database(path)
+        )
+
+    assert len(str(stopped.value)) < 1000
+    assert path.read_bytes() == raw
+
+
+def test_strict_decoder_accepts_valid_escaped_surrogate_pair(
+    tracking_database_io,
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "tracking-database.json"
+    raw = b'{"config":{"value":"\\ud83d\\ude00"},"talks":[]}\n'
+    path.write_bytes(raw)
+
+    decoded = tracking_database_io.decode_json_object(
+        tracking_database_io.snapshot_tracking_database(path)
+    )
+
+    assert decoded["config"]["value"] == "😀"
+    assert path.read_bytes() == raw
+
+
+@pytest.mark.parametrize("token", ["0.1", "0.10", "1e0", "-0.0"])
+def test_strict_decoder_accepts_lossless_numeric_lexical_variants(
+    tracking_database_io,
+    tmp_path: Path,
+    token: str,
+) -> None:
+    path = tmp_path / "tracking-database.json"
+    raw = f'{{"talks":[],"value":{token}}}\n'.encode()
+    path.write_bytes(raw)
+
+    decoded = tracking_database_io.decode_json_object(
+        tracking_database_io.snapshot_tracking_database(path)
+    )
+
+    assert decoded["value"] == float(token)
+    assert type(decoded["value"]) is float
+
+
 def test_snapshot_rejects_final_symlink(tracking_database_io, tmp_path: Path) -> None:
     target = tmp_path / "target.json"
     _write(target, {"talks": []})
@@ -70,6 +182,65 @@ def test_renderer_refuses_to_create_non_standard_json(tracking_database_io) -> N
         match="candidate is not strict JSON",
     ):
         tracking_database_io.render_json_object({"value": float("nan")})
+
+
+def test_renderer_rejects_unsafe_depth_with_bounded_domain_error(
+    tracking_database_io,
+) -> None:
+    nested: object = 0
+    for _ in range(tracking_database_io.MAX_JSON_NESTING_DEPTH + 1):
+        nested = [nested]
+
+    with pytest.raises(
+        tracking_database_io.TrackingDatabaseIOError,
+        match="maximum supported JSON nesting depth 200",
+    ) as stopped:
+        tracking_database_io.render_json_object({"value": nested})
+
+    assert len(str(stopped.value)) < 1000
+
+
+def test_renderer_rejects_unpaired_surrogate_with_domain_error(
+    tracking_database_io,
+) -> None:
+    with pytest.raises(
+        tracking_database_io.TrackingDatabaseIOError,
+        match="unpaired UTF-16 surrogate",
+    ):
+        tracking_database_io.render_json_object({"value": "\ud800"})
+
+
+def test_renderer_normalizes_recursion_error_backstop(
+    tracking_database_io,
+    monkeypatch,
+) -> None:
+    def fail_render(*_args, **_kwargs):
+        raise RecursionError("synthetic renderer recursion")
+
+    monkeypatch.setattr(tracking_database_io.json, "dumps", fail_render)
+
+    with pytest.raises(
+        tracking_database_io.TrackingDatabaseIOError,
+        match="maximum supported JSON nesting depth 200",
+    ):
+        tracking_database_io.render_json_object({"value": "safe"})
+
+
+def test_renderer_normalizes_unicode_encode_error_backstop(
+    tracking_database_io,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        tracking_database_io.json,
+        "dumps",
+        lambda *_args, **_kwargs: "\ud800",
+    )
+
+    with pytest.raises(
+        tracking_database_io.TrackingDatabaseIOError,
+        match="unpaired UTF-16 surrogate",
+    ):
+        tracking_database_io.render_json_object({"value": "safe"})
 
 
 def test_commit_refuses_an_invalid_candidate_before_locking(

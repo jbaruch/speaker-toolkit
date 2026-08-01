@@ -38,6 +38,7 @@ def _talk(
 ) -> dict[str, object]:
     filename = filename or f"playlist-{video_id}.md"
     return {
+        "schema_version": 5,
         "filename": filename,
         "title": filename,
         "status": status,
@@ -74,7 +75,7 @@ def _scored_talk(
     return talk
 
 
-def _write_db(tmp_path, talks, *, config=None):
+def _write_db(tmp_path, talks, *, config=None, current=True):
     transcripts = tmp_path / "transcripts"
     transcripts.mkdir(exist_ok=True)
     for talk in talks:
@@ -202,10 +203,23 @@ def _write_db(tmp_path, talks, *, config=None):
                 ).encode("utf-8")).hexdigest(),
             )
     path = tmp_path / "tracking-database.json"
-    path.write_text(
-        json.dumps({"config": config or {}, "talks": talks}, indent=2),
-        encoding="utf-8",
-    )
+    database = {
+        "config": {**(config or {})},
+        "talks": talks,
+        "pptx_catalog": [],
+        "qr_codes": [],
+        "resources": [],
+        "thumbnails": [],
+        "confirmed_intents": [],
+        "improvement_goals": [],
+    }
+    if current:
+        database["schema_version"] = 1
+        database["config"]["schema_version"] = 1
+    else:
+        for talk in talks:
+            talk.pop("schema_version", None)
+    path.write_text(json.dumps(database, indent=2), encoding="utf-8")
     return path
 
 
@@ -1359,6 +1373,89 @@ def test_inspect_reconstructs_claims_after_stale_recovery(tmp_path):
     assert payload["claims"][0]["state"] == "stale_recovered"
 
 
+def test_legacy_database_inspect_is_read_only(tmp_path):
+    talk = _talk("eg6gqvUFh6Q", status="processed")
+    talk["reprocess_generation"] = 1
+    talk["_queue_claim"] = {
+        "schema_version": 1,
+        "run_id": "legacy-run",
+        "batch_id": "legacy-batch",
+        "claimed_at": "2026-07-31T17:00:00+00:00",
+        "previous_status": "needs-reprocessing",
+        "reprocess_generation": 1,
+        "state": "completed",
+        "released_at": "2026-07-31T17:30:00+00:00",
+        "release_reason": "return_persisted",
+        "result_status": "processed",
+    }
+    path = _write_db(tmp_path, [talk], current=False)
+    before = path.read_bytes()
+
+    result = _run(path, "inspect", "--run-id", "legacy-run")
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["claims"][0]["state"] == "completed"
+    assert path.read_bytes() == before
+
+
+def test_legacy_database_recover_closes_lease_without_migrating(tmp_path):
+    talk = _talk("eg6gqvUFh6Q", status="reprocessing-inflight")
+    talk["reprocess_generation"] = 1
+    talk["_queue_claim"] = {
+        "schema_version": 1,
+        "run_id": "legacy-run",
+        "batch_id": "legacy-batch",
+        "claimed_at": "2026-07-31T17:00:00+00:00",
+        "previous_status": "needs-reprocessing",
+        "reprocess_generation": 1,
+        "state": "claimed",
+    }
+    path = _write_db(tmp_path, [talk], current=False)
+
+    result = _run(
+        path,
+        "recover",
+        "--now",
+        "2026-07-31T18:00:00+00:00",
+        "--stale-after-seconds",
+        "3600",
+    )
+
+    assert result.returncode == 0, result.stderr
+    database = _read_db(path)
+    assert "schema_version" not in database
+    assert "schema_version" not in database["config"]
+    assert "schema_version" not in database["talks"][0]
+    assert database["talks"][0]["status"] == "needs-reprocessing"
+    assert database["talks"][0]["_queue_claim"]["schema_version"] == 2
+    assert database["talks"][0]["_queue_claim"]["state"] == "stale_recovered"
+
+
+@pytest.mark.parametrize("action", ["normalize", "claim"])
+def test_legacy_database_rejects_new_queue_mutations(tmp_path, action):
+    path = _write_db(tmp_path, [_talk("eg6gqvUFh6Q")], current=False)
+    before = path.read_bytes()
+    arguments = (
+        ("normalize",)
+        if action == "normalize"
+        else (
+            "claim",
+            "--run-id",
+            "new-run",
+            "--batch-id",
+            "1",
+            "--now",
+            NOW,
+        )
+    )
+
+    result = _run(path, *arguments)
+
+    assert result.returncode == 2
+    assert "migrate-tracking-database.py" in json.loads(result.stdout)["error"]
+    assert path.read_bytes() == before
+
+
 def test_inspect_accepts_a_completed_persistence_claim(tmp_path):
     talk = _talk("eg6gqvUFh6Q", status="processed")
     talk["reprocess_generation"] = 1
@@ -1430,7 +1527,10 @@ def test_unknown_future_claim_schema_fails_without_rewriting(tmp_path):
     result = _run(path, "inspect", "--run-id", "future-run")
 
     assert result.returncode == 2
-    assert "newer than supported" in json.loads(result.stdout)["error"]
+    assert (
+        "queue_claim_schema_version_unsupported"
+        in json.loads(result.stdout)["error"]
+    )
     assert path.read_bytes() == before
 
 

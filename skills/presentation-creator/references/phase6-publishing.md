@@ -176,6 +176,12 @@ path make the check before resolving the link.
      --output /path/to/qr.png --bg-color 128,0,128
    ```
 
+   The script is a non-owner dual reader and a current-schema writer. Dry-run
+   accepts legacy database schema 0 or current schema 1 without changing either.
+   A real run requires database schema 1 before URL-shortener calls, deck edits,
+   or tracking persistence. Route a legacy database through vault-ingress Step 1.
+   An unsupported future database or record version is no usable prior state.
+
 4. The script will:
    - Match the QR background color to the target slide (walks slide → layout → master
      for solid fill; falls back to white with a warning for theme-colored fills)
@@ -184,6 +190,8 @@ path make the check before resolving the link.
    - Insert the QR as a 2" square in the bottom-right corner
    - Persist schema-v1 QR metadata in `qr_codes[]` through the shared
      tracking-database transaction used by `generate-qr.py`
+   - Refuse a concurrent database generation and replace the verified current
+     database atomically
 
 5. Re-running for the same `talk_slug` with a different target URL will PATCH the
    existing short link (keeping QR codes already printed valid) rather than creating
