@@ -31,6 +31,35 @@ gates must be recorded as `not_evaluable`, processed video-derived slide evidenc
 requires the schema-v3 verified-region provenance chain, and stale queue
 generations cannot be persisted.
 
+### fix(vault-ingress) — bind catalog outcomes to exact evidence generations
+
+Catalog gates now distinguish base evaluation, strong-confidence support, and
+absence support. `Traveling Highlights` is the canary: static pages still
+support moderate/weak detection, while strong or silent-absence outcomes require
+a native deck or delivery video. `Gradual Consistency` and `Invisibility` now
+declare exact two-source comparison groups; the invalid singleton
+`source_comparison` shortcut is gone. Progressive Reveal and all held
+owner-review entries remain unchanged.
+
+Return schema v3 requires `evidence_sources_used` to identify the exact
+qualifying group for every comparison detection. During the claim-issuance
+pause, newly emitted v2 work includes the same proof and must validate as a
+current scoring generation; only saved v1/v2 returns may omit it. Those saved returns remain
+replayable under their historical validation rules: one qualifying pair is
+inferred, while ambiguous or current-rule-ineligible evidence is persisted with
+`pattern_scoring_generation_status: legacy_unbaselineable`, exact reasons, and
+no current fingerprint. The renderer recomputes that status from the completed
+return receipt and current catalog, shows exact sources used, and visibly labels
+excluded analyses. Pattern scoring schema v3 marks this evidence-integrity epoch;
+the numeric score remains patterns minus antipatterns.
+
+No queue-claim schema changes are included. New claim issuance stays paused for
+#157. Existing claim-schema v1/v2 work emits return v2 and remains completable;
+return v1 is replay-only, and return v3 is not claim-authorized until #157 adds
+claim v3 with an explicit required-return version. The current profile/load-vault
+baseline readers are likewise not yet generation-aware and remain in #157's
+scope.
+
 ### fix(vault-ingress) — version the analysis-return merge contract
 
 New subagent returns declare `return_schema_version: 2`, giving reparses explicit

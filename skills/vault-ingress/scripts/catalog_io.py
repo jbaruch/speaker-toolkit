@@ -77,10 +77,12 @@ def catalog_entry_paths(root: Path) -> list[Path]:
 def parse_evidence_source_groups(
     value: object,
     allowed_sources: Collection[str],
+    *,
+    field_name: str = "evaluable_from",
 ) -> EvidenceSourceGroups:
     """Parse OR alternatives whose nested lists express conjunctive sources."""
     if not isinstance(value, list) or not value:
-        raise ValueError("evaluable_from must be a non-empty list")
+        raise ValueError(f"{field_name} must be a non-empty list")
 
     allowed = frozenset(allowed_sources)
     groups: list[frozenset[str]] = []
@@ -91,26 +93,30 @@ def parse_evidence_source_groups(
             raw_group = option
         else:
             raise ValueError(
-                f"evaluable_from[{index}] must be a source string or an "
+                f"{field_name}[{index}] must be a source string or an "
                 "all-of list containing at least two sources")
         if any(not isinstance(source, str) for source in raw_group):
             raise ValueError(
-                f"evaluable_from[{index}] sources must all be strings")
+                f"{field_name}[{index}] sources must all be strings")
         if len(raw_group) != len(set(raw_group)):
             raise ValueError(
-                f"evaluable_from[{index}] contains duplicate sources")
+                f"{field_name}[{index}] contains duplicate sources")
         unknown = sorted(set(raw_group) - allowed)
         if unknown:
             raise ValueError(
-                f"evaluable_from[{index}] contains unknown sources: {unknown}")
+                f"{field_name}[{index}] contains unknown sources: {unknown}")
         group = frozenset(raw_group)
+        if group == frozenset({SOURCE_COMPARISON}):
+            raise ValueError(
+                f"{field_name}[{index}] cannot use source_comparison as a "
+                "singleton; name the exact underlying source pair")
         if len(group) > 1 and SOURCE_COMPARISON in group:
             raise ValueError(
                 "source_comparison labels a completed comparison and cannot be "
                 "an underlying source in an all-of alternative")
         if group in groups:
             raise ValueError(
-                f"evaluable_from contains duplicate alternative {sorted(group)}")
+                f"{field_name} contains duplicate alternative {sorted(group)}")
         groups.append(group)
     return tuple(groups)
 

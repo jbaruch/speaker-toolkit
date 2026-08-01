@@ -83,10 +83,12 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "slide_count": 0, "slide_design_style": null, "illustration_style": null,
     "opening_type": null, "closing_type": null, "narrative_arc_type": null,
     "audience_interaction_count": 0, "pattern_score": 0,
-    "pattern_scoring_schema_version": 2,
+    "pattern_scoring_generation_status": "current",
+    "pattern_scoring_generation_reasons": [],
+    "pattern_scoring_schema_version": 3,
     "pattern_catalog_fingerprint": "sha256 of the exact catalog files used",
     "pattern_observations": {
-      "evidence_sources": ["transcript", "static_slides"],
+      "evidence_sources": ["static_slides", "native_deck", "delivery_video", "transcript", "source_comparison"],
       "pattern_ids": [],
       "antipattern_ids": [],
       "not_evaluable_ids": [],
@@ -96,7 +98,7 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
       "not_evaluable": []
     }
   }],
-  "_comment_schema_version": "Talk-record schema version, stamped by persist-results.py. v1 is the implicit unversioned shape. v2 makes transcript_source optional. v3 adds optional queue-generation, catalog-fingerprint, scoring-version, evidence-source, and not-evaluable fields plus explicit corrective clears. Existing field representations do not change, so older readers ignore the additions; a validated re-analysis supplies the generation-specific fields.",
+  "_comment_schema_version": "Talk-record schema version, stamped by persist-results.py. v1 is the implicit unversioned shape. v2 makes transcript_source optional. v3 adds optional queue-generation, catalog-fingerprint, scoring-generation status/reasons, scoring-version, evidence-source, and not-evaluable fields plus explicit corrective clears. Existing field representations do not change, so older readers ignore the additions; a validated re-analysis supplies the generation-specific fields.",
   "_comment_absent_transcript_source": "Absent transcript_source: the key may be MISSING on a talk, and missing is meaningful — it means provenance is unknown, not that no transcript exists (that is the explicit value `none`). It arises on one path: fetch-transcript.py returning method `existing`, where a valid transcript was already on disk and no fetch ran, so nothing was learned about where it came from. Writers MUST NOT backfill a guess; `manual` in particular asserts a human produced it. Readers gauging transcript reliability MUST treat absent as unknown and MUST NOT default it to any value.",
   "pptx_catalog": [{
     "pptx_path": "Conference/Year/Talk Name.pptx",
@@ -118,6 +120,20 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
   }],
   "confirmed_intents": [],
   "improvement_goals": []
+}
+```
+
+The copyable talk above is a current scoring generation. A replayable legacy
+return that cannot prove the current evidence contract instead stores this
+mutually exclusive shape and omits both `pattern_scoring_schema_version` and
+`pattern_catalog_fingerprint`:
+
+```json
+{
+  "pattern_scoring_generation_status": "legacy_unbaselineable",
+  "pattern_scoring_generation_reasons": [
+    "comparison_group_ambiguous:gradual-consistency"
+  ]
 }
 ```
 
@@ -309,6 +325,13 @@ Each subagent returns this JSON after processing one talk:
 }
 ```
 
+A `source_comparison` detection adds
+`"evidence_sources_used": ["static_slides", "native_deck"]` (or another
+exact qualifying catalog group). Newly emitted v2 work must include this proof;
+v3 enforces it structurally. The field is forbidden on non-comparison
+detections. Only replayed v1/v2 artifacts may omit it, and persistence infers
+the proof only when exactly one pair qualifies.
+
 `per_slide_visual`, when present, is a closed, complete slide ledger. It requires
 a positive integer `slide_count` and exactly that many rows in ascending order,
 with `slide_number` covering every integer from 1 through `slide_count` once.
@@ -337,15 +360,27 @@ classification rule including how a dominant class is selected, the provenance
 evidence used, and how unverified origins are counted as `unknown`. Both fields
 are authored-slide evidence and cannot be supplied from untrusted video context.
 
-Every newly produced return declares `return_schema_version: 2`. Version 2 is the
-complete-snapshot merge contract: supplied declared scalar and list fields replace
-prior values even when empty where the field permits emptiness; complete structured
-maps and each verbatim lane replace
-their prior snapshots; omitted fields remain untouched. The image-source distribution
-and its basis form one dependent group. Unregistered incoming structured objects fail
-closed instead of acquiring accidental recursive-merge semantics. Historical returns
-with no version field, or with explicit version 1, retain the legacy additive merge
-contract so saved artifacts remain replayable. Unknown future versions are rejected.
+The worker matches the active claim contract. During the #157 issuance pause,
+the only processable work is an existing claim-schema v1/v2 lease, and newly
+emitted work for that lease declares `return_schema_version: 2`. Return v1 is
+replay-only. After #157, claim schema v3 will carry
+`required_return_schema_version: 3`; only that explicit contract authorizes a
+new v3 return. Do not issue new claims or attach v3 to a legacy claim before the
+integration lands.
+
+For newly emitted v2 work during the pause, `validate-returns.py` must report
+the processed talk's scoring-generation status as `current`; a valid but
+`legacy_unbaselineable` result is replay-only and must be repaired.
+
+Versions 2 and 3 share the complete-snapshot merge contract: supplied declared
+scalar and list fields replace prior values, including empties only where the
+field contract permits emptiness; complete structured maps and each verbatim
+lane replace their prior snapshots; omitted fields remain untouched. The
+image-source distribution and its basis form one dependent group. Unregistered
+incoming structured objects fail closed instead of acquiring accidental
+recursive-merge semantics. Historical returns with no version field, or with
+explicit version 1, retain the legacy additive merge contract so saved
+artifacts remain replayable. Unknown future versions are rejected.
 
 The structured snapshot objects currently registered for atomic replacement are
 `image_source_distribution`, `color_coded_backgrounds`,
@@ -357,10 +392,11 @@ The structured snapshot objects currently registered for atomic replacement are
 Their complete nested contents come from the current analysis, so no child from an
 older run survives. Experimental recursively additive data must live under the
 explicit `structured_data.extensions` object. A new top-level object needs a named
-policy here and in `STRUCTURED_FIELD_POLICIES` before a version-2 return may use it.
+policy here and in `STRUCTURED_FIELD_POLICIES` before a snapshot return may use it.
 The six documented `verbatim_examples` lanes are exact: a stale undeclared lane makes
-the effective v2 candidate invalid until `clear_fields` removes it. A valid v2
-verbatim object may still repair a legacy non-object container atomically.
+the effective snapshot candidate invalid until `clear_fields` removes it. A
+valid snapshot verbatim object may still repair a legacy non-object container
+atomically.
 
 Every processed return carries the required top-level analysis blocks and the
 complete required `pattern_observations` fields. Individual `structured_data`
@@ -370,8 +406,8 @@ records that the current analysis found none. Required prose fields use an empty
 string only for `adherence_assessment`, `new_patterns`, and `summary_updates`.
 For `adherence_assessment`, the no-assessment sentinel is exactly `""`; whitespace-only
 text is invalid.
-Version-2 `rhetoric_notes` and `areas_for_improvement` must contain non-whitespace
-substantive analysis. An unknown `transcript_source` is omitted; a present value
+Versions 2 and 3 require `rhetoric_notes` and `areas_for_improvement` to contain
+substantive non-whitespace analysis. An unknown `transcript_source` is omitted; a present value
 must be one of the declared enums and must never be JSON `null`. Missing/version-1
 returns retain their historical type-only and empty-value no-op behavior. A skipped
 terminal return may contain only `filename`, `return_schema_version`, `queue_claim`,
@@ -396,7 +432,8 @@ must be recovered into a fresh queue generation rather than finished piecemeal.
 Queue-claim schema v2 adds `result_payload_sha256` to completed claims. The
 receipt hashes the exact return payload after stable JSON key/whitespace
 canonicalization. `persist-results.py` accepts an active v1 or v2 lease, upgrades
-it to v2 when closing it, and stores the receipt; new claims are v2. The analysis
+it to v2 when closing it, and stores the receipt. New claim issuance is paused
+until #157 introduces the claim-v3 required-return contract. The analysis
 writer recomputes the receipt and rejects a substituted payload. `queue-state.py`
 dual-reads v1/v2 without mutating `inspect` or idempotent replay; a v1 claim is
 upgraded only as part of an actual queue transition that is written. An already
@@ -410,12 +447,22 @@ acquisition path and no remaining local transcript, PPTX, or PDF artifact.
 `skipped_duplicate` requires `source_relation.type: duplicate` plus a non-empty
 `target_filename`.
 
-Before rendering a processed result, `write-analysis.py` also requires the
-talk's `pattern_catalog_fingerprint` and `pattern_scoring_schema_version` to
-equal the catalog and scoring contract it just validated. Skipped results do not
-render or restamp prior analysis-generation metadata.
+Before rendering a processed result, `write-analysis.py` recomputes the scoring
+generation from the receipt-bound return and current catalog. A current result
+must carry `pattern_scoring_generation_status: current`, an empty reasons array,
+scoring schema 3, and the exact catalog fingerprint. A replayable v1/v2 result
+that cannot prove the current evidence contract carries
+`legacy_unbaselineable` plus exact sorted machine reasons and must not retain a
+current scoring version or fingerprint. Its Markdown visibly labels the
+baseline exclusion. Skipped results are `not_applicable` in validator and
+persistence reports and do not render or restamp prior analysis-generation
+metadata.
 
-The completed return receipt authorizes rendering, but version-2 analysis-owned
+The current vault-profile/load-vault baseline readers do not yet consume these
+generation fields; #157 owns that integration. Do not issue new claims or treat
+those readers as generation-aware before it lands.
+
+The completed return receipt authorizes rendering, but snapshot analysis-owned
 content comes from the validated persisted effective talk, not the partial raw
 return. This is the single canonical merged payload: a structured field or verbatim
 lane omitted by the return and preserved by persistence remains present in Markdown.
@@ -454,18 +501,26 @@ are top-level analysis prose/provenance scalars or leaves under
 `structured_data`, `verbatim_examples`, and `pattern_observations`. It cannot
 clear queue identity, source URLs, catalog metadata, or the talk record itself.
 Clearing a promoted structured scalar clears its top-level copy too. A supplied
-version-2 replacement wins after a clear; version-2 empty values are real snapshots,
+v2/v3 replacement wins after a clear; permitted empty values are real snapshots,
 not no-ops. Legacy v1 empty values retain their historical additive no-op behavior.
 
 `evidence_source` uses the enum defined by the pattern index's Evidence-Source Contract.
-Detected entries must name a qualifying source; `source_comparison` evidence must name
-both compared sources. A nested `evaluable_from` alternative requires all named
-underlying sources plus the `source_comparison` marker, which does not count as an
-underlying source. `not_evaluable` is a separate array for source-gated entries that
-cannot be judged from the available evidence. Every observable gated catalog entry with
-no satisfied singleton or conjunctive alternative must appear there; an entry may also
-appear when an otherwise eligible source cannot establish its stated evidence
-requirements. Its entries are excluded from
+Detected entries must name a qualifying source. Strong detections use
+`strong_evaluable_from` (defaulting to `evaluable_from`); moderate/weak
+detections use the base gate. A `source_comparison` detection must name both
+sources in its evidence. Newly emitted v2 work and every v3 return carry a
+duplicate-free `evidence_sources_used` array exactly equal to one qualifying
+underlying group. Saved v1/v2 replay may omit that array; persistence infers it
+only when exactly one pair qualifies. Zero or multiple qualifying groups remain
+replayable but are excluded from current baselines. The `source_comparison`
+marker does not count as an underlying source and is forbidden as a catalog
+gate member or singleton.
+
+For an undetected entry, `absence_evaluable_from` defaults to the base gate. An
+unsatisfied absence gate requires `not_evaluable`; a valid positive detection
+takes precedence. A satisfied role gate permits silent absence but does not
+forbid explicit `not_evaluable` when a catalog disqualifier or artifact
+capability failure still prevents evaluation. Its entries are excluded from
 `pattern_ids`, `antipattern_ids`, and every `pattern_score` count. Never put an
 unavailable entry in a detected array or treat it as an absent pattern.
 

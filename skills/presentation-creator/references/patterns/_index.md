@@ -44,6 +44,19 @@ fields:
 - `evidence_requirements`: positive facts the named source must establish before scoring.
 - `not_evaluable_when`: precise source limitations that prohibit a present/absent guess.
 
+Two optional outcome-specific gates use the same OR/all-of grammar:
+
+- `strong_evaluable_from`: sources that can support a `confidence: strong`
+  detection. It defaults to `evaluable_from` when omitted; moderate and weak
+  detections always use the base gate.
+- `absence_evaluable_from`: sources that can establish a valid undetected
+  outcome. It defaults to `evaluable_from` when omitted. When this gate is not
+  satisfied, an undetected entry is `not_evaluable`; a valid positive detection
+  takes precedence and suppresses that contradictory absence requirement. A
+  satisfied role gate permits an undetected outcome but does not prohibit an
+  explicit `not_evaluable` when a catalog disqualifier or artifact capability
+  failure still prevents evaluation.
+
 The evidence-source enum is deliberately small:
 
 | Value | Meaning and evidentiary limit |
@@ -54,21 +67,26 @@ The evidence-source enum is deliberately small:
 | `transcript` | Spoken-track text or captions. Establishes verbal content only; it cannot prove a visual animation by itself. |
 | `source_comparison` | An explicit comparison between two named sources or artifacts, such as delivery video versus a distributed PDF. The evidence must identify both. |
 
-For a nested `evaluable_from` alternative, list every underlying source plus
-`source_comparison` in the return's inspected sources and cite
-`evidence_source: source_comparison` on the detection. The comparison label does
-not count as an underlying source: at least two named underlying sources must be
-present, including at least one visual source. Alternatives remain OR: for
+For any nested gate alternative, list every underlying source plus the
+`source_comparison` marker in the return's global inspected
+`evidence_sources`. For a positive comparison detection, additionally cite
+`evidence_source: source_comparison` and include `evidence_sources_used` with
+exactly the qualifying underlying group. For an undetected absence outcome,
+gate satisfaction is derived only from the global inspected-source list; there
+is no detection object or `evidence_sources_used` field. The comparison label is
+never a gate member or singleton alternative. Alternatives remain OR: for
 example, `delivery_video` can be a self-contained singleton alternative beside
 an all-of `[static_slides, transcript]` alternative.
 
-For a detection, record the qualifying value as `evidence_source` alongside the concrete
-evidence. If no available source is eligible, a requirement is unmet, or a
-`not_evaluable_when` condition applies, append the pattern ID, best available source, and
-reason to `pattern_observations.not_evaluable`. Do not add it to either detected array,
-do not infer absence, and exclude it from `pattern_score`. `observable: false` remains a
-separate catalog-wide rule: those entries are skipped and surfaced as go-live actions,
-not emitted as per-talk `not_evaluable` observations.
+For a positive detection, record the qualifying value as `evidence_source`
+alongside the concrete evidence. For an undetected outcome, apply the effective
+absence gate described above. Append the pattern ID, best available source, and
+reason to `pattern_observations.not_evaluable` when that absence gate is
+unsatisfied or a `not_evaluable_when` condition still prevents judgment. Do not
+add it to either detected array, do not infer absence, and exclude it from
+`pattern_score`. `observable: false` remains a separate catalog-wide rule: those
+entries are skipped and surfaced as go-live actions, not emitted as per-talk
+`not_evaluable` observations.
 
 ---
 

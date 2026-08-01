@@ -273,14 +273,24 @@ evidence per pattern. Compute per-talk score:
 `count(patterns) − count(antipatterns)`. Store in `pattern_observations`.
 See [processing-rules.md](processing-rules.md) for full tagging rules.
 
+Use `evaluable_from` for moderate/weak detections,
+`strong_evaluable_from` (or its base-gate default) for strong detections, and
+`absence_evaluable_from` (or its base-gate default) for undetected outcomes. A
+valid positive detection takes precedence over an unavailable absence gate.
+Every `source_comparison` detection must include `evidence_sources_used` as the
+exact qualifying underlying source group; do not include that field on any
+other detection.
+
 ## C. Return JSON
 
 Return exactly the shape in [schemas-db.md](schemas-db.md). `status`,
 `slide_source`, all five catalog-feedback lanes, and the complete pattern score
-object are mandatory. Set `return_schema_version` to integer `2`; missing/version-1
-returns are accepted only to replay historical saved artifacts. Version-2
-`rhetoric_notes` and `areas_for_improvement` must contain substantive non-whitespace
-analysis. Empty strings remain valid for `adherence_assessment`, `new_patterns`, and
+object are mandatory. Match `return_schema_version` to the active claim:
+claim-schema v1/v2 emits return v2; after #157, claim-schema v3 with
+`required_return_schema_version: 3` emits return v3. Return v1 is replay-only.
+Both snapshot versions require `rhetoric_notes` and `areas_for_improvement` to
+contain substantive non-whitespace analysis. Empty strings remain valid for
+`adherence_assessment`, `new_patterns`, and
 `summary_updates` where documented; the adherence no-assessment sentinel must be
 exactly `""`, never whitespace. `transcript_source` is conditional provenance:
 omit the key when the fetcher reports `existing` and the DB has no known provenance;
@@ -302,7 +312,8 @@ slide, page, or asset; how one class wins when multiple images or sources occur;
 which provenance evidence supports the classes; and how unverified origins enter
 the `unknown` count.
 
-Version-2 supplied fields are snapshots: an empty string, array, or declared map
+Version-2 and version-3 supplied fields are snapshots: an empty string, array,
+or declared map
 replaces an older value when that field permits emptiness, while an omitted field
 preserves it. Use `clear_fields`
 when the re-analysis must delete a field rather than replace it. Each entry is
@@ -371,6 +382,17 @@ Minimal processed structure:
 }
 ```
 
+For a comparison detection, the detection object additionally carries, for
+example, `"evidence_sources_used": ["static_slides", "native_deck"]`.
+The array is duplicate-free, excludes the `source_comparison` marker, and must
+exactly match one qualifying catalog group.
+
+Do not issue a new queue claim while #157 (claim v3 and downstream generation
+integration) remains open. A worker finishing an existing active v1/v2 claim
+emits a v2 return; do not attach v3, alter the claim payload, or invent a new
+claim schema. Once #157 lands, only a claim-v3 payload that explicitly requires
+return v3 authorizes that version.
+
 Before returning, run the deterministic gate:
 
 ```bash
@@ -379,3 +401,7 @@ python3 skills/vault-ingress/scripts/validate-returns.py batch-returns.json
 
 Fix every reported error. Do not weaken a catalog ID, polarity, observability,
 evidence, confidence, score, or status error into a prose caveat.
+For newly emitted work, also require the validator report's matching
+`pattern_scoring_generations` entry to have `status: "current"` and an empty
+reasons array. `legacy_unbaselineable` is replay compatibility, not an accepted
+new-work outcome.

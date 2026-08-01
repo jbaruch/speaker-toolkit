@@ -13,7 +13,8 @@ The machine-owned contract is expressed by the named constants below:
 
 * ``ENTRY_TYPES`` and ``PARTS`` define catalog polarity and lifecycle kinds.
 * ``CREATOR_PHASES`` defines the frontmatter phase namespace.
-* ``EVIDENCE_SOURCES`` and ``EVIDENCE_GATE_FIELDS`` define source gates.
+* ``EVIDENCE_SOURCES``, ``BASE_EVIDENCE_GATE_FIELDS``, and
+  ``OUTCOME_EVIDENCE_GATE_FIELDS`` define source gates.
 * ``SCORING_*_RE`` define the direct scoring-label contract.
 * ``normalize_alias`` defines the collision namespace for IDs, names, and
   optional explicit aliases.
@@ -67,11 +68,17 @@ EVIDENCE_SOURCES = frozenset({
     "transcript",
     "source_comparison",
 })
-EVIDENCE_GATE_FIELDS = frozenset({
+BASE_EVIDENCE_GATE_FIELDS = frozenset({
     "evaluable_from",
     "evidence_requirements",
     "not_evaluable_when",
 })
+OUTCOME_EVIDENCE_GATE_FIELDS = frozenset({
+    "strong_evaluable_from",
+    "absence_evaluable_from",
+})
+EVIDENCE_GATE_FIELDS = (
+    BASE_EVIDENCE_GATE_FIELDS | OUTCOME_EVIDENCE_GATE_FIELDS)
 
 ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 INDEX_PHASE_RE = re.compile(r"^### (Prepare|Build|Deliver) Phase\b")
@@ -509,12 +516,14 @@ def _validate_observability(entry: CatalogEntry, errors: list[Issue]) -> None:
             "observable",
         ))
 
-    present = EVIDENCE_GATE_FIELDS.intersection(entry.metadata)
+    present_base = BASE_EVIDENCE_GATE_FIELDS.intersection(entry.metadata)
+    present_outcomes = OUTCOME_EVIDENCE_GATE_FIELDS.intersection(entry.metadata)
+    present = present_base | present_outcomes
     has_evidence_section = _markdown_h2_section(
         entry.text,
         "Evidence Gate",
     ) is not None
-    if present and present != EVIDENCE_GATE_FIELDS:
+    if present and present_base != BASE_EVIDENCE_GATE_FIELDS:
         errors.append(Issue(
             "source_gate_partial",
             f"source gate is partial; present fields are {sorted(present)}",
@@ -544,17 +553,23 @@ def _validate_observability(entry: CatalogEntry, errors: list[Issue]) -> None:
             "observable",
         ))
 
-    try:
-        parse_evidence_source_groups(
-            entry.metadata.get("evaluable_from"), EVIDENCE_SOURCES)
-    except ValueError as exc:
-        errors.append(Issue(
-            "evidence_source_invalid",
-            str(exc),
-            entry.relative_path,
-            entry.pattern_id or "",
-            "evaluable_from",
-        ))
+    for field in (
+            "evaluable_from", "strong_evaluable_from",
+            "absence_evaluable_from"):
+        if field not in entry.metadata:
+            continue
+        try:
+            parse_evidence_source_groups(
+                entry.metadata.get(field), EVIDENCE_SOURCES,
+                field_name=field)
+        except ValueError as exc:
+            errors.append(Issue(
+                "evidence_source_invalid",
+                str(exc),
+                entry.relative_path,
+                entry.pattern_id or "",
+                field,
+            ))
     _string_list(entry, "evidence_requirements", errors, nonempty=True)
     _string_list(entry, "not_evaluable_when", errors, nonempty=True)
     if not has_evidence_section:
@@ -1221,7 +1236,7 @@ def _build_report(
     observable = sum(entry.observable is True for entry in entry_values)
     unobservable = sum(entry.observable is False for entry in entry_values)
     source_gated = sum(
-        EVIDENCE_GATE_FIELDS <= set(entry.metadata)
+        BASE_EVIDENCE_GATE_FIELDS <= set(entry.metadata)
         for entry in entry_values
     )
     related_edges = sorted(

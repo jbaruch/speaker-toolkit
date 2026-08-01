@@ -13,7 +13,7 @@ had just refuted.
 This script is that second half. It reads the same `batch-returns.json` array
 `persist-results.py` consumes, verifies each exact return against its completed
 claim receipt, then renders analysis-owned fields from the persisted effective
-talk. Version-2 omissions therefore preserve the same values in both the DB and
+talk. Version-2/v3 omissions therefore preserve the same values in both the DB and
 Markdown instead of disappearing from the file. Receipt-bound catalog feedback,
 which is intentionally not stored on the talk, still comes from the exact return.
 
@@ -69,7 +69,8 @@ import unicodedata
 from ingress_contract import IngressContractError, reject_tracking_database_symlink
 from return_validation import (
     ANALYSIS_STATUSES,
-    RETURN_SCHEMA_VERSION,
+    LEGACY_UNBASELINEABLE_SCORING_STATUS,
+    SNAPSHOT_RETURN_SCHEMA_VERSIONS,
     ReturnValidationError,
     normalize_processing_stamp,
     resolve_return_schema_version,
@@ -105,6 +106,8 @@ PERSISTED_RENDER_FIELDS = (
     "structured_data",
     "verbatim_examples",
     "pattern_observations",
+    "pattern_scoring_generation_status",
+    "pattern_scoring_generation_reasons",
 )
 
 
@@ -119,7 +122,7 @@ def effective_render_payload(ret, talk):
     result of applying that return's versioned omission/replacement semantics.
     Only the non-persisted catalog-feedback side channel comes from the return.
     """
-    if resolve_return_schema_version(ret) == RETURN_SCHEMA_VERSION:
+    if resolve_return_schema_version(ret) in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
         validate_persisted_v2_analysis_state(talk)
     payload = {"filename": ret["filename"]}
     for field in PERSISTED_RENDER_FIELDS:
@@ -198,17 +201,25 @@ def render_pattern_table(entries):
     """Render patterns_detected / antipatterns_detected as an evidence table."""
     if not entries:
         return ["_None recorded._"]
-    out = ["| Pattern ID | Confidence | Evidence Source | Evidence |",
-           "|---|---|---|---|"]
+    out = [
+        "| Pattern ID | Confidence | Evidence Source | Sources Used | Evidence |",
+        "|---|---|---|---|---|",
+    ]
     for e in entries:
         if not isinstance(e, dict):
-            out.append(f"| {md_escape_cell(e)} | | | |")
+            out.append(f"| {md_escape_cell(e)} | | | | |")
             continue
         pid = e.get("pattern_id", "")
-        out.append("| `{}` | {} | {} | {} |".format(
+        sources_used = e.get("evidence_sources_used")
+        sources_used_text = (
+            ", ".join(str(source) for source in sources_used)
+            if isinstance(sources_used, list) else ""
+        )
+        out.append("| `{}` | {} | {} | {} | {} |".format(
             md_escape_cell(pid),
             md_escape_cell(e.get("confidence", "")),
             md_escape_cell(e.get("evidence_source", "")),
+            md_escape_cell(sources_used_text),
             md_escape_cell(e.get("evidence", "")),
         ))
     return out
@@ -308,6 +319,18 @@ def render_analysis(ret, title=None, run_date=None, *, persisted_date=None):
     obs = ret.get("pattern_observations")
     if isinstance(obs, dict) and obs:
         out += ["## Presentation Patterns Scoring", ""]
+        if (ret.get("pattern_scoring_generation_status") ==
+                LEGACY_UNBASELINEABLE_SCORING_STATUS):
+            out.append(
+                "**Baseline eligibility:** Excluded from current pattern "
+                "baselines; this replayed legacy return cannot establish the "
+                "current evidence contract.")
+            reasons = ret.get("pattern_scoring_generation_reasons")
+            if isinstance(reasons, list) and reasons:
+                out.append(
+                    "**Generation reasons:** " + ", ".join(str(reason)
+                                                            for reason in reasons))
+            out.append("")
         score = obs.get("pattern_score")
         if isinstance(score, dict):
             out.append("**Pattern score:** {} ({} patterns − {} antipatterns)".format(

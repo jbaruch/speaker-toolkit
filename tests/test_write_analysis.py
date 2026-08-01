@@ -155,8 +155,10 @@ def _write_tracking_db(
             "youtube_id": "AbCdEfGhI_1",
             "pptx_path": "Conference/Talk.pptx",
             "slides_url": "https://drive.google.com/file/d/slides-id/view",
-            "pattern_scoring_schema_version": 2,
+            "pattern_scoring_schema_version": 3,
             "pattern_catalog_fingerprint": CATALOG_FINGERPRINT,
+            "pattern_scoring_generation_status": "current",
+            "pattern_scoring_generation_reasons": [],
             "_queue_claim": {
                 "schema_version": 2,
                 **ret["queue_claim"],
@@ -237,6 +239,44 @@ def _complete_unavailable_source_gates(return_validation, ret):
     return ret
 
 
+def _gradual_legacy_return(
+        return_validation, *, include_delivery=False):
+    sources = ["transcript", "static_slides", "native_deck"]
+    if include_delivery:
+        sources.append("delivery_video")
+    sources.append("source_comparison")
+    ret = _return(return_schema_version=2)
+    ret["pattern_observations"].update({
+        "patterns_detected": [{
+            "pattern_id": "gradual-consistency",
+            "confidence": "moderate",
+            "evidence_source": "source_comparison",
+            "evidence": "The rendered and native deck views agree.",
+        }],
+        "antipatterns_detected": [],
+        "evidence_sources": sources,
+        "pattern_score": {
+            "patterns_used": 1,
+            "antipatterns_detected": 0,
+            "score": 1,
+        },
+    })
+    return _complete_unavailable_source_gates(return_validation, ret)
+
+
+def _reopen_tracking_claim(path):
+    payload = json.loads(path.read_text())
+    talk = payload["talks"][0]
+    talk["status"] = "reprocessing-inflight"
+    claim = talk["_queue_claim"]
+    claim["state"] = "claimed"
+    for field in (
+            "released_at", "release_reason", "result_status",
+            "result_payload_sha256"):
+        claim.pop(field, None)
+    path.write_text(json.dumps(payload))
+
+
 def test_renders_core_sections(write_analysis):
     md = write_analysis.render_analysis(
         _return(slides_local_path="slides/source.pdf"))
@@ -259,8 +299,31 @@ def test_title_from_db_wins_over_filename(write_analysis):
 def test_scoring_tables_carry_evidence(write_analysis):
     md = write_analysis.render_analysis(_return())
     assert "**Pattern score:** 0 (1 patterns − 1 antipatterns)" in md
-    assert "| `narrative-arc` | strong | transcript | Four-act catalog. |" in md
-    assert "| `ant-fonts` | moderate | static_slides | 7.5pt body text. |" in md
+    assert "| Pattern ID | Confidence | Evidence Source | Sources Used | Evidence |" in md
+    assert "| `narrative-arc` | strong | transcript |  | Four-act catalog. |" in md
+    assert "| `ant-fonts` | moderate | static_slides |  | 7.5pt body text. |" in md
+
+
+def test_scoring_table_renders_exact_comparison_sources_with_markdown_escaping(
+        write_analysis):
+    ret = _return(return_schema_version=3)
+    ret["pattern_observations"]["patterns_detected"] = [{
+        "pattern_id": "gradual-consistency",
+        "confidence": "moderate",
+        "evidence_source": "source_comparison",
+        "evidence_sources_used": ["static_slides", "native_deck"],
+        "evidence": "The rendered and native decks agree | exactly.",
+    }]
+    md = write_analysis.render_analysis(ret)
+    row = next(
+        line for line in md.splitlines()
+        if line.startswith("| `gradual-consistency`")
+    )
+    assert (
+        "| `gradual-consistency` | moderate | source_comparison | "
+        "static_slides, native_deck | " in row
+    )
+    assert "agree \\| exactly" in row
 
 
 def test_per_slide_visual_becomes_a_table(write_analysis):
@@ -284,8 +347,8 @@ def test_pipes_and_newlines_do_not_break_table_rows(write_analysis):
     # Splitting on UNESCAPED pipes is what a markdown renderer does; escaped
     # ones stay inside the cell.
     cells = [c for c in re.split(r"(?<!\\)\|", row)[1:-1]]
-    assert len(cells) == 4
-    assert "\\|" in cells[3]
+    assert len(cells) == 5
+    assert "\\|" in cells[4]
 
 
 def test_absent_sections_are_skipped_not_stubbed(write_analysis):
@@ -514,6 +577,81 @@ def test_persist_then_write_uses_one_exact_batch_timestamp(
     body = (out / "talk.md").read_text()
     assert f"**Processed:** {authoritative}" in body
     assert "**Processed:** 2026-07-26" not in body
+
+
+def test_legacy_single_pair_is_inferred_persisted_and_rendered(
+        persist_results, write_analysis, return_validation, tmp_path):
+    ret = _gradual_legacy_return(return_validation)
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    _reopen_tracking_claim(db)
+    out = tmp_path / "analyses"
+
+    persisted = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch),
+         "--run-date", "2026-07-31T20:00:00+00:00"],
+        capture_output=True,
+        text=True,
+    )
+    assert persisted.returncode == 0, persisted.stderr
+    written = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert written.returncode == 0, written.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    detection = stored["pattern_observations"]["patterns_detected"][0]
+    assert detection["evidence_sources_used"] == [
+        "static_slides", "native_deck"]
+    assert stored["pattern_scoring_generation_status"] == "current"
+    body = (out / "talk.md").read_text()
+    assert (
+        "| `gradual-consistency` | moderate | source_comparison | "
+        "static_slides, native_deck | " in body
+    )
+    assert "Excluded from current pattern baselines" not in body
+
+
+def test_legacy_ambiguous_comparison_is_visibly_excluded_when_rendered(
+        persist_results, write_analysis, return_validation, tmp_path):
+    ret = _gradual_legacy_return(
+        return_validation, include_delivery=True)
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    _reopen_tracking_claim(db)
+    out = tmp_path / "analyses"
+
+    persisted = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch),
+         "--run-date", "2026-07-31T20:00:00+00:00"],
+        capture_output=True,
+        text=True,
+    )
+    assert persisted.returncode == 0, persisted.stderr
+    written = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert written.returncode == 0, written.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    assert stored["pattern_scoring_generation_status"] == \
+        "legacy_unbaselineable"
+    assert "pattern_scoring_schema_version" not in stored
+    assert "pattern_catalog_fingerprint" not in stored
+    body = (out / "talk.md").read_text()
+    assert "Excluded from current pattern baselines" in body
+    assert "comparison_group_ambiguous:gradual-consistency" in body
+    assert (
+        "| `gradual-consistency` | moderate | source_comparison |  | " in body
+    )
 
 
 def test_v2_omitted_persisted_fields_remain_in_rendered_analysis(
@@ -941,6 +1079,128 @@ def test_renderer_requires_the_catalog_generation_persisted_for_each_talk(
 
     assert result.returncode == 1
     assert diagnostic in result.stderr
+    assert not out.exists()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "confidence",
+        "evidence_source",
+        "evidence",
+        "evidence_sources_used",
+        "pattern_score",
+        "not_evaluable",
+        "evidence_sources",
+    ],
+)
+def test_renderer_rejects_any_mutated_canonical_pattern_field_before_write(
+        write_analysis, tmp_path, mutation):
+    ret = _return()
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    observations = payload["talks"][0]["pattern_observations"]
+    detection = observations["patterns_detected"][0]
+    if mutation == "confidence":
+        detection["confidence"] = "weak"
+    elif mutation == "evidence_source":
+        detection["evidence_source"] = "native_deck"
+    elif mutation == "evidence":
+        detection["evidence"] = "forged persisted evidence"
+    elif mutation == "evidence_sources_used":
+        detection["evidence_sources_used"] = [
+            "static_slides", "native_deck"]
+    elif mutation == "pattern_score":
+        observations["pattern_score"] = 99
+        payload["talks"][0]["pattern_score"] = 99
+    elif mutation == "not_evaluable":
+        observations["not_evaluable"] = [{
+            "pattern_id": "composite-animation",
+            "evidence_source": "static_slides",
+            "reason": "forged exclusion",
+        }]
+        observations["not_evaluable_ids"] = ["composite-animation"]
+    elif mutation == "evidence_sources":
+        observations["evidence_sources"] = ["transcript"]
+    db.write_text(json.dumps(payload))
+    out = tmp_path / "analyses"
+    out.mkdir()
+    target = out / "talk.md"
+    target.write_text("# trusted analysis\n")
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "receipt-bound canonical return fields" in result.stderr
+    assert target.read_text() == "# trusted analysis\n"
+
+
+def test_renderer_recomputes_status_and_rejects_a_forged_exclusion(
+        write_analysis, tmp_path):
+    ret = _return()
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    payload = json.loads(db.read_text())
+    talk = payload["talks"][0]
+    talk["pattern_scoring_generation_status"] = "legacy_unbaselineable"
+    talk["pattern_scoring_generation_reasons"] = [
+        "comparison_group_ambiguous:gradual-consistency"]
+    talk.pop("pattern_scoring_schema_version")
+    talk.pop("pattern_catalog_fingerprint")
+    db.write_text(json.dumps(payload))
+    out = tmp_path / "analyses"
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "does not match 'current'" in result.stderr
+    assert not out.exists()
+
+
+def test_renderer_rejects_stale_current_metadata_on_legacy_exclusion(
+        persist_results, write_analysis, return_validation, tmp_path):
+    ret = _gradual_legacy_return(
+        return_validation, include_delivery=True)
+    batch = tmp_path / "batch-returns.json"
+    batch.write_text(json.dumps([ret]))
+    db = _write_tracking_db(tmp_path, [ret])
+    _reopen_tracking_claim(db)
+    persisted = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch),
+         "--run-date", "2026-07-31T20:00:00+00:00"],
+        capture_output=True,
+        text=True,
+    )
+    assert persisted.returncode == 0, persisted.stderr
+    payload = json.loads(db.read_text())
+    talk = payload["talks"][0]
+    talk["pattern_scoring_schema_version"] = 3
+    talk["pattern_catalog_fingerprint"] = CATALOG_FINGERPRINT
+    db.write_text(json.dumps(payload))
+    out = tmp_path / "analyses"
+
+    result = subprocess.run(
+        [sys.executable, write_analysis.__file__, str(batch), str(out),
+         "--talks", str(db)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "retains stale current scoring metadata" in result.stderr
     assert not out.exists()
 
 

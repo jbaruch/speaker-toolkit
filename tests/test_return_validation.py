@@ -202,14 +202,49 @@ def _complete_unavailable_source_gates(return_validation, value):
     """Record every catalog gate the fixture's inspected sources cannot score."""
     available = set(value["pattern_observations"]["evidence_sources"])
     catalog = return_validation.load_catalog()
+    version = return_validation.resolve_return_schema_version(value)
+    detected = {
+        item["pattern_id"]
+        for lane in ("patterns_detected", "antipatterns_detected")
+        for item in value["pattern_observations"][lane]
+    }
     value["pattern_observations"]["not_evaluable"] = [{
         "pattern_id": pattern_id,
         "evidence_source": sorted(available)[0],
         "reason": "The inspected fixture sources cannot evaluate this pattern.",
     } for pattern_id, entry in sorted(catalog.entries.items())
-        if entry.observable and entry.evaluable_from is not None and
+        if entry.observable and pattern_id not in detected and
+        (entry.absence_evaluable_from
+         if version == return_validation.RETURN_SCHEMA_VERSION
+         else entry.evaluable_from) is not None and
         not return_validation.qualifying_evidence_groups(
-            entry.evaluable_from, available)]
+            (entry.absence_evaluable_from
+             if version == return_validation.RETURN_SCHEMA_VERSION
+             else entry.evaluable_from),
+            available)]
+    return value
+
+
+def _single_pattern(
+        value, pattern_id, *, confidence="moderate",
+        evidence_source="static_slides", evidence_sources_used=None):
+    detection = {
+        "pattern_id": pattern_id,
+        "confidence": confidence,
+        "evidence_source": evidence_source,
+        "evidence": "Synthetic evidence for the selected catalog contract.",
+        "dimensions": [13],
+    }
+    if evidence_sources_used is not None:
+        detection["evidence_sources_used"] = evidence_sources_used
+    observations = value["pattern_observations"]
+    observations["patterns_detected"] = [detection]
+    observations["antipatterns_detected"] = []
+    observations["pattern_score"] = {
+        "patterns_used": 1,
+        "antipatterns_detected": 0,
+        "score": 1,
+    }
     return value
 
 
@@ -240,8 +275,8 @@ def test_valid_return_resolves_the_catalog_fingerprint(return_validation):
     assert len(catalog.fingerprint) == 64
 
 
-@pytest.mark.parametrize("version", [None, 1, 2])
-def test_return_schema_dual_reads_legacy_and_current_versions(
+@pytest.mark.parametrize("version", [None, 1, 2, 3])
+def test_return_schema_reads_every_supported_version(
         return_validation, version):
     value = _return()
     if version is None:
@@ -252,12 +287,25 @@ def test_return_schema_dual_reads_legacy_and_current_versions(
     return_validation.validate_batch([value])
 
 
-@pytest.mark.parametrize("version", [0, 3, True, "2"])
+@pytest.mark.parametrize("version", [0, 4, True, "3"])
 def test_return_schema_rejects_unknown_or_wrong_typed_versions(
         return_validation, version):
     value = _return(return_schema_version=version)
 
     assert "return_schema_version" in _error(return_validation, value)
+
+
+@pytest.mark.parametrize("claim_version", [1, 2])
+def test_legacy_claim_cannot_authorize_v3_return_before_claim_v3(
+        return_validation, claim_version):
+    value = _return(return_schema_version=3)
+    talk = _claimed_talk(value)
+    talk["_queue_claim"]["schema_version"] = claim_version
+
+    with pytest.raises(
+            return_validation.ReturnValidationError,
+            match="cannot authorize return schema version 3"):
+        return_validation.validate_claim_against_talk(talk, value)
 
 
 def test_trusted_video_return_requires_complete_manifest_and_promoted_path(
@@ -876,6 +924,270 @@ def test_safe_source_gates_reject_representative_single_channel_counterexamples(
     assert "cannot be evaluated from" in _error(return_validation, value)
 
 
+def test_v3_traveling_highlights_accepts_moderate_static_evidence(
+        return_validation):
+    value = _return(
+        return_schema_version=3,
+        slide_source="pdf",
+        transcript_source="none",
+    )
+    value["pattern_observations"]["evidence_sources"] = ["static_slides"]
+    _single_pattern(value, "traveling-highlights")
+    _complete_unavailable_source_gates(return_validation, value)
+
+    return_validation.validate_batch([value])
+
+
+def test_v3_traveling_highlights_strong_requires_motion_evidence(
+        return_validation):
+    value = _return(
+        return_schema_version=3,
+        slide_source="pdf",
+        transcript_source="none",
+    )
+    value["pattern_observations"]["evidence_sources"] = ["static_slides"]
+    _single_pattern(value, "traveling-highlights", confidence="strong")
+    _complete_unavailable_source_gates(return_validation, value)
+
+    assert "strong source alternatives" in _error(return_validation, value)
+
+
+def test_v2_strong_tier_replays_but_is_not_current_scoring(
+        return_validation):
+    value = _return(
+        return_schema_version=2,
+        slide_source="pdf",
+        transcript_source="none",
+    )
+    value["pattern_observations"]["evidence_sources"] = ["static_slides"]
+    _single_pattern(value, "traveling-highlights", confidence="strong")
+    _complete_unavailable_source_gates(return_validation, value)
+
+    catalog = return_validation.validate_batch([value])
+    assessment = return_validation.assess_scoring_generation(value, catalog)
+
+    assert assessment.current is False
+    assert assessment.reasons == (
+        "strong_gate_unsatisfied:traveling-highlights",)
+
+
+def test_v3_undetected_canary_requires_not_evaluable_when_absence_is_unproven(
+        return_validation):
+    value = _return(
+        return_schema_version=3,
+        slide_source="pdf",
+        transcript_source="none",
+    )
+    value["pattern_observations"]["evidence_sources"] = ["static_slides"]
+    _single_pattern(value, "narrative-arc")
+    _complete_unavailable_source_gates(return_validation, value)
+    value["pattern_observations"]["not_evaluable"] = [
+        item for item in value["pattern_observations"]["not_evaluable"]
+        if item["pattern_id"] != "traveling-highlights"
+    ]
+
+    assert "traveling-highlights" in _error(return_validation, value)
+
+
+def test_v3_positive_detection_precedes_the_absence_outcome(
+        return_validation):
+    value = _return(
+        return_schema_version=3,
+        slide_source="pdf",
+        transcript_source="none",
+    )
+    value["pattern_observations"]["evidence_sources"] = ["static_slides"]
+    _single_pattern(value, "traveling-highlights")
+    _complete_unavailable_source_gates(return_validation, value)
+
+    assert "traveling-highlights" not in {
+        item["pattern_id"]
+        for item in value["pattern_observations"]["not_evaluable"]
+    }
+    return_validation.validate_batch([value])
+
+
+def test_v3_explicit_not_evaluable_allowed_when_role_gate_is_satisfied(
+        return_validation):
+    value = _return(return_schema_version=3, transcript_source="none")
+    value["pattern_observations"]["evidence_sources"] = ["native_deck"]
+    _single_pattern(
+        value, "narrative-arc", evidence_source="native_deck")
+    _complete_unavailable_source_gates(return_validation, value)
+    value["pattern_observations"]["not_evaluable"].append({
+        "pattern_id": "traveling-highlights",
+        "evidence_source": "native_deck",
+        "reason": "The native deck opens, but its build metadata is corrupt, "
+                  "so highlight travel cannot be judged.",
+    })
+
+    return_validation.validate_batch([value])
+    assessment = return_validation.assess_scoring_generation(
+        value, return_validation.load_catalog())
+    assert assessment.current
+
+
+def test_progressive_reveal_keeps_base_gate_defaults(return_validation):
+    value = _return(
+        return_schema_version=3,
+        slide_source="pdf",
+        transcript_source="none",
+    )
+    value["pattern_observations"]["evidence_sources"] = ["static_slides"]
+    _single_pattern(value, "progressive-reveal", confidence="strong")
+    _complete_unavailable_source_gates(return_validation, value)
+
+    return_validation.validate_batch([value])
+
+
+def test_v3_comparison_requires_exact_evidence_sources_used(return_validation):
+    value = _return(return_schema_version=3)
+    _single_pattern(
+        value,
+        "gradual-consistency",
+        evidence_source="source_comparison",
+    )
+
+    assert "evidence_sources_used" in _error(return_validation, value)
+
+
+def test_v3_nested_absence_gate_uses_global_sources_without_detection_proof(
+        return_validation):
+    value = _return(return_schema_version=3)
+    value["pattern_observations"]["evidence_sources"] = [
+        "transcript", "static_slides", "source_comparison"]
+    _single_pattern(
+        value, "narrative-arc", evidence_source="transcript")
+    _complete_unavailable_source_gates(return_validation, value)
+
+    assert "coda" not in {
+        item["pattern_id"]
+        for item in value["pattern_observations"]["not_evaluable"]
+    }
+    return_validation.validate_batch([value])
+
+    without_marker = copy.deepcopy(value)
+    without_marker["pattern_observations"]["evidence_sources"].remove(
+        "source_comparison")
+    for item in without_marker["pattern_observations"]["not_evaluable"]:
+        if item["evidence_source"] == "source_comparison":
+            item["evidence_source"] = "static_slides"
+    assert "coda" in _error(return_validation, without_marker)
+
+
+def test_v3_comparison_accepts_one_exact_qualifying_pair(return_validation):
+    value = _return(return_schema_version=3)
+    _single_pattern(
+        value,
+        "gradual-consistency",
+        evidence_source="source_comparison",
+        evidence_sources_used=["static_slides", "native_deck"],
+    )
+
+    return_validation.validate_batch([value])
+
+
+def test_v3_comparison_rejects_qualifying_group_superset(return_validation):
+    value = _return(return_schema_version=3)
+    _single_pattern(
+        value,
+        "gradual-consistency",
+        evidence_source="source_comparison",
+        evidence_sources_used=[
+            "static_slides", "native_deck", "delivery_video"],
+    )
+
+    assert "exactly match one qualifying comparison group" in _error(
+        return_validation, value)
+
+
+@pytest.mark.parametrize("version", [1, 2, 3])
+def test_evidence_sources_used_is_forbidden_on_noncomparison_detections(
+        return_validation, version):
+    value = _return(return_schema_version=version)
+    value["pattern_observations"]["patterns_detected"][0][
+        "evidence_sources_used"] = ["static_slides", "native_deck"]
+
+    assert "allowed only when evidence_source is 'source_comparison'" in _error(
+        return_validation, value)
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_legacy_explicit_comparison_pair_is_validated_and_currentizable(
+        return_validation, version):
+    value = _return(return_schema_version=version)
+    _single_pattern(
+        value,
+        "gradual-consistency",
+        evidence_source="source_comparison",
+        evidence_sources_used=["native_deck", "static_slides"],
+    )
+
+    catalog = return_validation.validate_batch([value])
+    assessment = return_validation.assess_scoring_generation(value, catalog)
+
+    assert assessment.current is True
+    assert assessment.patterns_detected[0]["evidence_sources_used"] == [
+        "static_slides", "native_deck"]
+
+
+@pytest.mark.parametrize(
+    ("sources", "reason"),
+    [
+        (
+            ["static_slides", "native_deck", "delivery_video",
+             "source_comparison"],
+            "comparison_group_ambiguous:gradual-consistency",
+        ),
+        (
+            ["static_slides", "transcript", "source_comparison"],
+            "comparison_group_unresolved:gradual-consistency",
+        ),
+    ],
+)
+@pytest.mark.parametrize("version", [1, 2])
+def test_legacy_comparison_ambiguity_replays_but_is_unbaselineable(
+        return_validation, sources, reason, version):
+    value = _return(
+        return_schema_version=version,
+        slide_source="pptx" if "native_deck" in sources else "pdf",
+    )
+    value["pattern_observations"]["evidence_sources"] = sources
+    _single_pattern(
+        value,
+        "gradual-consistency",
+        evidence_source="source_comparison",
+    )
+    _complete_unavailable_source_gates(return_validation, value)
+
+    catalog = return_validation.validate_batch([value])
+    assessment = return_validation.assess_scoring_generation(value, catalog)
+
+    assert assessment.current is False
+    assert reason in assessment.reasons
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_legacy_comparison_infers_only_qualifying_pair(
+        return_validation, version):
+    value = _return(return_schema_version=version)
+    value["pattern_observations"]["evidence_sources"] = [
+        "static_slides", "native_deck", "source_comparison"]
+    _single_pattern(
+        value,
+        "gradual-consistency",
+        evidence_source="source_comparison",
+    )
+    _complete_unavailable_source_gates(return_validation, value)
+
+    catalog = return_validation.validate_batch([value])
+    assessment = return_validation.assess_scoring_generation(value, catalog)
+
+    assert assessment.current is True
+    assert assessment.patterns_detected[0]["evidence_sources_used"] == [
+        "static_slides", "native_deck"]
+
+
 @pytest.mark.parametrize(
     ("pattern_id", "lane", "slide_source", "sources", "detection_source"),
     [
@@ -1333,6 +1645,57 @@ def test_validator_cli_emits_structured_report(tmp_path):
     assert report["valid"] is True
     assert report["returns"] == 1
     assert report["catalog_entries"] == 111
+    assert report["return_schema_versions"] == {"2": 1}
+    assert report["pattern_scoring_schema_version"] == 3
+    assert report["pattern_scoring_generations"] == [{
+        "filename": "talk.md",
+        "status": "current",
+        "reasons": [],
+    }]
+
+
+def test_validator_report_marks_replayable_legacy_return_unbaselineable(
+        return_validation):
+    value = _return(return_schema_version=2)
+    _single_pattern(
+        value,
+        "traveling-highlights",
+        confidence="strong",
+        evidence_source="static_slides",
+    )
+    catalog = return_validation.validate_batch([value])
+
+    report = return_validation.validation_report([value], catalog)
+
+    assert report["pattern_scoring_generations"] == [{
+        "filename": "talk.md",
+        "status": "legacy_unbaselineable",
+        "reasons": ["strong_gate_unsatisfied:traveling-highlights"],
+    }]
+
+
+@pytest.mark.parametrize("version", [1, 2, 3])
+def test_validator_report_never_marks_skipped_return_baseline_current(
+        return_validation, version):
+    value = {
+        "filename": "talk.md",
+        "return_schema_version": version,
+        "queue_claim": {
+            "run_id": "reparse",
+            "batch_id": "25",
+            "reprocess_generation": 1,
+        },
+        "status": "skipped_no_sources",
+    }
+    catalog = return_validation.validate_batch([value])
+
+    report = return_validation.validation_report([value], catalog)
+
+    assert report["pattern_scoring_generations"] == [{
+        "filename": "talk.md",
+        "status": "not_applicable",
+        "reasons": [],
+    }]
 
 
 def test_validator_cli_reports_the_filename_on_failure(tmp_path):

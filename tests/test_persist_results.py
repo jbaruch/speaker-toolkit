@@ -129,6 +129,36 @@ def _complete_unavailable_source_gates(return_validation, ret):
     return ret
 
 
+def _gradual_comparison_return(
+        return_validation, *, version=2, include_delivery=False,
+        evidence_sources_used=None):
+    """Build one exact-pair legacy/current comparison fixture."""
+    sources = ["transcript", "static_slides", "native_deck"]
+    if include_delivery:
+        sources.append("delivery_video")
+    sources.append("source_comparison")
+    detection = {
+        "pattern_id": "gradual-consistency",
+        "confidence": "moderate",
+        "evidence_source": "source_comparison",
+        "evidence": "The rendered and native deck views agree.",
+    }
+    if evidence_sources_used is not None:
+        detection["evidence_sources_used"] = evidence_sources_used
+    ret = _return(return_schema_version=version)
+    ret["pattern_observations"].update({
+        "patterns_detected": [detection],
+        "antipatterns_detected": [],
+        "evidence_sources": sources,
+        "pattern_score": {
+            "patterns_used": 1,
+            "antipatterns_detected": 0,
+            "score": 1,
+        },
+    })
+    return _complete_unavailable_source_gates(return_validation, ret)
+
+
 def _visual_row(*, background="current", content_type="title"):
     return {
         "slide_number": 1,
@@ -170,6 +200,10 @@ def test_skipped_merge_cannot_mutate_prior_analysis_even_without_validator(
         rhetoric_notes="trusted prior analysis",
         structured_data={"slide_count": 42},
         verbatim_examples={"jokes": ["kept"]},
+        pattern_scoring_generation_status="current",
+        pattern_scoring_generation_reasons=[],
+        pattern_scoring_schema_version=2,
+        pattern_catalog_fingerprint="0" * 64,
         video_url=None,
         pptx_path=None,
         slides_url=None,
@@ -188,6 +222,9 @@ def test_skipped_merge_cannot_mutate_prior_analysis_even_without_validator(
     assert talk["rhetoric_notes"] == "trusted prior analysis"
     assert talk["structured_data"] == {"slide_count": 42}
     assert talk["verbatim_examples"] == {"jokes": ["kept"]}
+    assert talk["pattern_scoring_generation_status"] == "current"
+    assert talk["pattern_scoring_schema_version"] == 2
+    assert talk["pattern_catalog_fingerprint"] == "0" * 64
     assert talk["processed_date"] == "2026-06-18"
     assert talk["transcript_source"] == "youtube_auto"
     assert talk["slide_source"] == "pptx"
@@ -559,6 +596,138 @@ def test_pattern_observations_normalized(persist_results):
         "source_comparison"]
     assert obs["not_evaluable"] == []
     assert obs["not_evaluable_ids"] == []
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_legacy_single_comparison_pair_is_inferred_and_stamped_current(
+        persist_results, return_validation, version):
+    talk = _talk()
+    ret = _gradual_comparison_return(return_validation, version=version)
+
+    persist_results.merge_talk(talk, ret)
+
+    detection = talk["pattern_observations"]["patterns_detected"][0]
+    assert detection["evidence_sources_used"] == [
+        "static_slides", "native_deck"]
+    assert talk["pattern_scoring_generation_status"] == "current"
+    assert talk["pattern_scoring_generation_reasons"] == []
+    assert talk["pattern_scoring_schema_version"] == 3
+    assert talk["pattern_catalog_fingerprint"] == \
+        return_validation.load_catalog().fingerprint
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_legacy_ambiguous_comparison_replays_but_is_excluded_from_baselines(
+        persist_results, return_validation, version):
+    talk = _talk(
+        pattern_scoring_schema_version=2,
+        pattern_catalog_fingerprint="0" * 64,
+    )
+    ret = _gradual_comparison_return(
+        return_validation, version=version, include_delivery=True)
+
+    persist_results.merge_talk(talk, ret)
+
+    detection = talk["pattern_observations"]["patterns_detected"][0]
+    assert "evidence_sources_used" not in detection
+    assert talk["pattern_scoring_generation_status"] == \
+        "legacy_unbaselineable"
+    assert talk["pattern_scoring_generation_reasons"] == [
+        "comparison_group_ambiguous:gradual-consistency"]
+    assert "pattern_scoring_schema_version" not in talk
+    assert "pattern_catalog_fingerprint" not in talk
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_legacy_new_strong_gate_failure_replays_without_current_fingerprint(
+        persist_results, version):
+    talk = _talk(
+        pattern_scoring_schema_version=2,
+        pattern_catalog_fingerprint="0" * 64,
+    )
+    ret = _return(return_schema_version=version)
+    ret["pattern_observations"].update({
+        "patterns_detected": [{
+            "pattern_id": "traveling-highlights",
+            "confidence": "strong",
+            "evidence_source": "static_slides",
+            "evidence": "The highlight appears in the static rendering.",
+        }],
+        "antipatterns_detected": [],
+        "pattern_score": {
+            "patterns_used": 1,
+            "antipatterns_detected": 0,
+            "score": 1,
+        },
+    })
+
+    persist_results.merge_talk(talk, ret)
+
+    assert talk["pattern_scoring_generation_status"] == \
+        "legacy_unbaselineable"
+    assert talk["pattern_scoring_generation_reasons"] == [
+        "strong_gate_unsatisfied:traveling-highlights"]
+    assert "pattern_scoring_schema_version" not in talk
+    assert "pattern_catalog_fingerprint" not in talk
+
+
+def test_direct_v3_ineligible_merge_fails_without_mutating_talk(
+        persist_results):
+    talk = _talk()
+    original = copy.deepcopy(talk)
+    ret = _return(return_schema_version=3)
+    ret["pattern_observations"].update({
+        "patterns_detected": [{
+            "pattern_id": "traveling-highlights",
+            "confidence": "strong",
+            "evidence_source": "static_slides",
+            "evidence": "Static pages cannot establish a strong detection.",
+        }],
+        "antipatterns_detected": [],
+        "pattern_score": {
+            "patterns_used": 1,
+            "antipatterns_detected": 0,
+            "score": 1,
+        },
+    })
+
+    with pytest.raises(ValueError, match="strong_gate_unsatisfied"):
+        persist_results.merge_talk(talk, ret)
+
+    assert talk == original
+
+
+def test_direct_catalog_fingerprint_mismatch_fails_without_mutating_talk(
+        persist_results, return_validation):
+    talk = _talk()
+    original = copy.deepcopy(talk)
+
+    with pytest.raises(ValueError, match="does not match the catalog"):
+        persist_results.merge_talk(
+            talk,
+            _return(),
+            catalog_fingerprint="0" * 64,
+            catalog=return_validation.load_catalog(),
+        )
+
+    assert talk == original
+
+
+@pytest.mark.parametrize(
+    ("return_schema_version", "expected"),
+    [(1, "legacy assessment"), (2, ""), (3, "")],
+)
+def test_only_v2_and_v3_use_snapshot_scalar_semantics(
+        persist_results, return_schema_version, expected):
+    talk = _talk(adherence_assessment="legacy assessment")
+    ret = _return(
+        return_schema_version=return_schema_version,
+        adherence_assessment="",
+    )
+
+    persist_results.merge_talk(talk, ret)
+
+    assert talk["adherence_assessment"] == expected
 
 
 def test_not_evaluable_patterns_are_persisted_but_never_scored(
@@ -1660,6 +1829,10 @@ def test_skipped_return_preserves_prior_analysis_and_persists_terminal_metadata(
         rhetoric_notes="trusted prior analysis",
         structured_data={"slide_count": 42},
         verbatim_examples={"jokes": ["kept"]},
+        pattern_scoring_generation_status="current",
+        pattern_scoring_generation_reasons=[],
+        pattern_scoring_schema_version=2,
+        pattern_catalog_fingerprint="0" * 64,
         video_url=None,
         pptx_path=None,
         slides_url=None,
@@ -1681,7 +1854,14 @@ def test_skipped_return_preserves_prior_analysis_and_persists_terminal_metadata(
     assert stored["rhetoric_notes"] == "trusted prior analysis"
     assert stored["structured_data"] == {"slide_count": 42}
     assert stored["verbatim_examples"] == {"jokes": ["kept"]}
+    assert stored["pattern_scoring_generation_status"] == "current"
+    assert stored["pattern_scoring_schema_version"] == 2
+    assert stored["pattern_catalog_fingerprint"] == "0" * 64
     assert stored["_queue_claim"]["state"] == "completed"
+    report = json.loads(result.stdout)
+    assert report["talks"][0]["pattern_scoring_generation_status"] == \
+        "not_applicable"
+    assert report["talks"][0]["pattern_scoring_generation_reasons"] == []
 
 
 @pytest.mark.parametrize(

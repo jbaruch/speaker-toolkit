@@ -76,6 +76,12 @@ EVIDENCE_GATE_FIELDS = frozenset({
     "evidence_requirements",
     "not_evaluable_when",
 })
+OUTCOME_EVIDENCE_GATE_FIELDS = frozenset({
+    "strong_evaluable_from",
+    "absence_evaluable_from",
+})
+ALL_EVIDENCE_GATE_FIELDS = (
+    EVIDENCE_GATE_FIELDS | OUTCOME_EVIDENCE_GATE_FIELDS)
 EXISTING_REQUIRED_EVIDENCE_GATES = {
     "progressive-reveal": frozenset({
         frozenset({"static_slides"}),
@@ -88,7 +94,8 @@ EXISTING_REQUIRED_EVIDENCE_GATES = {
     }),
     "invisibility": frozenset({
         frozenset({"native_deck"}),
-        frozenset({"source_comparison"}),
+        frozenset({"native_deck", "static_slides"}),
+        frozenset({"delivery_video", "static_slides"}),
     }),
     "exuberant-title-top": frozenset({
         frozenset({"native_deck"}),
@@ -96,7 +103,8 @@ EXISTING_REQUIRED_EVIDENCE_GATES = {
     }),
     "gradual-consistency": frozenset({
         frozenset({"native_deck"}),
-        frozenset({"source_comparison"}),
+        frozenset({"native_deck", "static_slides"}),
+        frozenset({"delivery_video", "static_slides"}),
     }),
     "traveling-highlights": frozenset({
         frozenset({"static_slides"}),
@@ -361,38 +369,47 @@ def test_type_matches_anti_prefix(path):
 def test_evidence_gate_frontmatter_is_well_formed(path):
     """An evidence gate must be complete and use the documented source enum."""
     metadata = _metadata(path)
-    present = EVIDENCE_GATE_FIELDS.intersection(metadata)
-    if not present:
+    present_base = EVIDENCE_GATE_FIELDS.intersection(metadata)
+    present_outcomes = OUTCOME_EVIDENCE_GATE_FIELDS.intersection(metadata)
+    if not present_base and not present_outcomes:
         return
 
-    assert present == EVIDENCE_GATE_FIELDS, (
-        f"{os.path.basename(path)}: partial evidence gate; present={sorted(present)}")
+    assert present_base == EVIDENCE_GATE_FIELDS, (
+        f"{os.path.basename(path)}: partial evidence gate; "
+        f"present={sorted(present_base | present_outcomes)}")
 
-    sources = metadata["evaluable_from"]
     requirements = metadata["evidence_requirements"]
     disqualifiers = metadata["not_evaluable_when"]
-    assert isinstance(sources, list) and sources, (
-        f"{os.path.basename(path)}: evaluable_from must be a non-empty list")
-    groups = []
-    for option in sources:
-        if isinstance(option, list):
-            assert len(option) >= 2, (
-                f"{os.path.basename(path)}: nested alternatives need two sources")
-        group = [option] if isinstance(option, str) else option
-        assert isinstance(group, list) and group, (
-            f"{os.path.basename(path)}: invalid evidence-source alternative")
-        assert all(isinstance(source, str) for source in group), (
-            f"{os.path.basename(path)}: evidence sources must be strings")
-        assert set(group) <= EVIDENCE_SOURCE_VALUES, (
-            f"{os.path.basename(path)}: unknown evidence sources "
-            f"{sorted(set(group) - EVIDENCE_SOURCE_VALUES)}")
-        assert len(group) == len(set(group)), (
-            f"{os.path.basename(path)}: duplicate evidence sources")
-        assert len(group) == 1 or "source_comparison" not in group, (
-            f"{os.path.basename(path)}: comparison label cannot be an underlying source")
-        groups.append(frozenset(group))
-    assert len(groups) == len(set(groups)), (
-        f"{os.path.basename(path)}: duplicate evidence-source alternatives")
+    for gate_field in (
+            "evaluable_from", "strong_evaluable_from",
+            "absence_evaluable_from"):
+        if gate_field not in metadata:
+            continue
+        sources = metadata[gate_field]
+        assert isinstance(sources, list) and sources, (
+            f"{os.path.basename(path)}: {gate_field} must be a non-empty list")
+        groups = []
+        for option in sources:
+            if isinstance(option, list):
+                assert len(option) >= 2, (
+                    f"{os.path.basename(path)}: nested alternatives need two sources")
+            group = [option] if isinstance(option, str) else option
+            assert isinstance(group, list) and group, (
+                f"{os.path.basename(path)}: invalid evidence-source alternative")
+            assert all(isinstance(source, str) for source in group), (
+                f"{os.path.basename(path)}: evidence sources must be strings")
+            assert set(group) <= EVIDENCE_SOURCE_VALUES, (
+                f"{os.path.basename(path)}: unknown evidence sources "
+                f"{sorted(set(group) - EVIDENCE_SOURCE_VALUES)}")
+            assert len(group) == len(set(group)), (
+                f"{os.path.basename(path)}: duplicate evidence sources")
+            assert group != ["source_comparison"], (
+                f"{os.path.basename(path)}: comparison label needs an exact pair")
+            assert len(group) == 1 or "source_comparison" not in group, (
+                f"{os.path.basename(path)}: comparison label cannot be an underlying source")
+            groups.append(frozenset(group))
+        assert len(groups) == len(set(groups)), (
+            f"{os.path.basename(path)}: duplicate evidence-source alternatives")
     for field, values in (("evidence_requirements", requirements),
                           ("not_evaluable_when", disqualifiers)):
         assert isinstance(values, list) and values, (
@@ -433,7 +450,22 @@ def test_held_entries_remain_ungated_until_outcome_or_tier_metadata_exists(
     distinction.
     """
     metadata = _metadata(_path_for_id(pattern_id))
-    assert EVIDENCE_GATE_FIELDS.isdisjoint(metadata)
+    assert ALL_EVIDENCE_GATE_FIELDS.isdisjoint(metadata)
+
+
+def test_traveling_highlights_is_the_outcome_gate_canary():
+    metadata = _metadata(_path_for_id("traveling-highlights"))
+
+    assert metadata["strong_evaluable_from"] == [
+        "native_deck", "delivery_video"]
+    assert metadata["absence_evaluable_from"] == [
+        "native_deck", "delivery_video"]
+
+
+def test_progressive_reveal_gate_remains_base_only():
+    metadata = _metadata(_path_for_id("progressive-reveal"))
+
+    assert OUTCOME_EVIDENCE_GATE_FIELDS.isdisjoint(metadata)
 
 
 def test_evidence_source_enum_is_documented_in_index():
@@ -442,6 +474,20 @@ def test_evidence_source_enum_is_documented_in_index():
                     index.index("## Pattern Catalog")]
     for source in EVIDENCE_SOURCE_VALUES:
         assert f"`{source}`" in section, f"index does not document {source!r}"
+
+
+def test_index_scopes_exact_comparison_proof_to_positive_detections():
+    index = _read(INDEX)
+    section = index[index.index("## Evidence-Source Contract"):
+                    index.index("## Pattern Catalog")]
+    normalized = " ".join(section.split())
+
+    assert "For a positive comparison detection" in normalized
+    assert "For an undetected absence outcome" in normalized
+    assert (
+        "there is no detection object or `evidence_sources_used` field"
+        in normalized
+    )
 
 
 def test_unobservable_files_match_the_index():

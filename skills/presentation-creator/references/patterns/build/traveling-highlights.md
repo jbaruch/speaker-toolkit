@@ -14,6 +14,12 @@ evaluable_from:
   - static_slides
   - native_deck
   - delivery_video
+strong_evaluable_from:
+  - native_deck
+  - delivery_video
+absence_evaluable_from:
+  - native_deck
+  - delivery_video
 evidence_requirements:
   - "Evidence must show the same dense visual across ordered states with a focus marker moving between regions, or show the authored motion directly."
   - "A strong score requires native or delivery evidence of smooth, intentional motion and timing."

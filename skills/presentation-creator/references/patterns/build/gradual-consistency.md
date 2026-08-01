@@ -12,7 +12,8 @@ detection_signals:
   - "printed vs presented difference"
 evaluable_from:
   - native_deck
-  - source_comparison
+  - [native_deck, static_slides]
+  - [delivery_video, static_slides]
 evidence_requirements:
   - "Evidence must establish an incremental live build and a coherent complete state in the distributed or printed artifact."
   - "The observation must identify the live/build source and the final-state artifact being compared."

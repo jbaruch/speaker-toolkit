@@ -181,6 +181,13 @@ Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
 
 ## Step 2 — Select Talks to Process
 
+> **Claim-issuance pause (#157):** do not create a new queue claim while the
+> claim-v3 integration is pending. Existing active v1/v2 claims remain valid but
+> workers must emit return-schema v2 for them; return v1 is replay-only. Do not
+> attach a v3 return or migrate claim ownership. After #157, a claim-v3 record
+> with `required_return_schema_version: 3` authorizes return v3. Resume new
+> claims only after that integration lands.
+
 - Run `python3 skills/vault-ingress/scripts/queue-state.py
   {vault_root}/tracking-database.json normalize` once. This migrates legacy
   `skipped_no_video`/`skipped_no_transcript` states from the talk's usable source
@@ -189,7 +196,8 @@ Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
   capability. Only a record with no transcript artifact/acquisition path, slide,
   or video source becomes `skipped_no_sources`. The normalization report includes `source_capabilities`
   (`video`, `slides`, `transcript`) for every changed row so the decision is auditable.
-- Claim each exact batch through `queue-state.py ... claim --run-id <stable-run>
+- After #157 lifts the issuance pause, claim each exact batch through
+  `queue-state.py ... claim --run-id <stable-run>
   --batch-id <stable-batch> --now <timezone-aware-ISO>`. The command selects
   `pending`, `needs-reprocessing`, and retryable download failures, writes an
   atomic lease, increments `reprocess_generation`, and returns the claimed talk
@@ -206,9 +214,12 @@ batch. When all batches have finished, proceed to Step 6.
 
 Each subagent receives the talk's DB entry and current
 `rhetoric-style-summary.md`, runs A → B → B2 → C, and returns a JSON payload.
-Its return declares `return_schema_version: 2` and copies `run_id`, `batch_id`,
-and `reprocess_generation` from the
-talk's active `_queue_claim`; persistence rejects a stale or unclaimed return.
+Its return version matches the active claim contract: claim schema v1/v2 emits
+`return_schema_version: 2`; after #157, claim schema v3 with
+`required_return_schema_version: 3` emits return v3. Return v1 is replay-only.
+The return copies `run_id`, `batch_id`, and `reprocess_generation` from the
+talk's active `_queue_claim`; persistence rejects a stale, mismatched, or
+unclaimed return.
 Full procedure — slide acquisition per `slide_source`, rhetoric/style analysis,
 pattern-taxonomy tagging, and the return-JSON shape — lives in
 [references/subagent-instructions.md](references/subagent-instructions.md).
@@ -244,6 +255,10 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   proves a verified manual `slide_region`. `status: "processed"` additionally
   requires its promoted `slides_local_path`. Both writers import this same validator,
   so bypassing the standalone command cannot weaken the boundary.
+  For newly emitted work, exit 0 is necessary but not sufficient: every
+  processed entry in `pattern_scoring_generations` must report
+  `status: current`. `legacy_unbaselineable` exists only so saved v1/v2 artifacts remain
+  replayable and must be repaired before accepting new analysis.
 - **Update tracking DB — deterministic merge, NOT hand-mapping.** Collect the
   batch's subagent JSON returns into an array file (`batch-returns.json`) and run
   `python3 skills/vault-ingress/scripts/persist-results.py {vault_root}/tracking-database.json batch-returns.json`.
@@ -256,22 +271,27 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   but never landed in the DB).
   Contract, the promoted-scalar allowlist, and merge semantics live in
   `skills/vault-ingress/scripts/persist-results.py` (top-of-file docstring and the
-  `PROMOTE` list); the shared v2 structured policy registry lives in
+  `PROMOTE` list); the shared snapshot structured policy registry lives in
   `skills/vault-ingress/scripts/return_validation.py` so standalone validation and
   persistence enforce the same container shapes. To make
   a new field queryable, extend the return schema and that list; never reintroduce
   manual mapping.
-  Current version-2 returns snapshot-replace every supplied declared field,
-  including empty values and complete structured maps; omission preserves a
-  field. Saved returns with missing/version-1 metadata retain their legacy
+  Version-2 and version-3 returns snapshot-replace every supplied declared
+  field, including empty values where that field contract permits emptiness,
+  and complete structured maps; omission preserves a field. Saved returns with
+  missing/version-1 metadata retain their legacy
   additive behavior. A corrective reparse that needs to delete a field rather
   than replace it declares its analysis-owned dotted paths in `clear_fields`.
   Any video return without a promoted artifact must clear
   `slides_local_path`; an untrusted return is context-only and cannot carry
   authored-slide evidence. The script
   persists that path when a trusted artifact is promoted, replaces a complete
-  video-extraction manifest atomically, clears matching promoted scalars, stamps
-  the exact catalog fingerprint and scoring-schema version, and writes the DB atomically.
+  video-extraction manifest atomically, and clears matching promoted scalars.
+  Returns satisfying the current evidence contract receive the exact catalog
+  fingerprint and scoring-schema version. Replayable v1/v2 returns that cannot
+  prove it are retained with
+  `pattern_scoring_generation_status: legacy_unbaselineable`, exact machine reasons, and no current fingerprint or
+  scoring version. The DB write remains atomic.
   Its normalized `--run-date` (or generated UTC timestamp) is authoritative for
   every processed member's `processed_date` and claim release; return-side dates
   are legacy advisory metadata and cannot override it. A return-side full

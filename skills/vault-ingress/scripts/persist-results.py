@@ -88,14 +88,20 @@ from ingress_contract import (
 from return_validation import (
     ADDITIVE_MAP,
     ANALYSIS_STATUSES,
+    CURRENT_PATTERN_SCORING_GENERATION_STATUS,
     IMAGE_SOURCE_GROUP,
     LEGACY_RETURN_SCHEMA_VERSION,
+    LEGACY_UNBASELINEABLE_SCORING_STATUS,
     PATTERN_SCORING_SCHEMA_VERSION,
     QUEUE_CLAIM_SCHEMA_VERSION,
     RETURN_SCHEMA_VERSION,
+    SNAPSHOT_RETURN_SCHEMA_VERSIONS,
     STRUCTURED_FIELD_POLICIES,
+    UNSCORED_PATTERN_SCORING_GENERATION_STATUS,
     ReturnValidationError,
+    assess_scoring_generation,
     canonical_return_sha256,
+    load_catalog,
     normalize_processing_stamp,
     resolve_return_schema_version,
     validate_batch_claims_against_talks,
@@ -230,7 +236,7 @@ def merge_structured_v2(existing, incoming):
     if present_group and present_group != IMAGE_SOURCE_GROUP:
         missing = sorted(IMAGE_SOURCE_GROUP - present_group)
         raise ValueError(
-            "return-schema v2 image-source snapshot is incomplete; missing "
+            "snapshot return image-source group is incomplete; missing "
             f"{missing}")
 
     validate_v2_structured_policy_shapes(incoming)
@@ -255,7 +261,7 @@ def merge_structured_v2(existing, incoming):
 
 
 def merge_verbatim_v2(existing, incoming):
-    """Snapshot-replace each supplied declared verbatim lane, including []."""
+    """Snapshot-replace each supplied v2/v3 verbatim lane, including []."""
     validate_verbatim_examples(incoming, reject_unknown=True)
     merged = copy.deepcopy(existing)
     for field, value in incoming.items():
@@ -289,7 +295,7 @@ def _sync_v2_promotions(talk, incoming_structured):
 
 def validate_effective_v2_state(
         talk, incoming_structured, *, pattern_snapshot_replaced):
-    """Validate the post-merge candidate before claim closure or publication."""
+    """Validate a post-v2/v3 snapshot candidate before publication."""
     validate_talk_record_schemas([talk])
     try:
         validate_persisted_v2_analysis_state(talk)
@@ -308,7 +314,7 @@ def validate_effective_v2_state(
 
     if not pattern_snapshot_replaced:
         raise ValueError(
-            "return-schema v2 analysis did not replace pattern_observations")
+            "snapshot return did not replace pattern_observations")
 
 
 def _delete_path(obj, parts):
@@ -492,7 +498,7 @@ def normalize_pattern_observations(existing, patterns, antipatterns,
 
 
 def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
-               *, enforce_queue_claim=False):
+               *, enforce_queue_claim=False, catalog=None):
     """Merge one return into its talk.
 
     Returns (promoted, stamped, coerced_score, cleared).
@@ -543,13 +549,27 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     antipatterns = require_detections(observation_values, "antipatterns_detected")
     not_evaluable = require_detections(observation_values, "not_evaluable")
     evidence_sources = observation_values.get("evidence_sources")
+    resolved_catalog = catalog or load_catalog()
+    if (catalog_fingerprint is not None and
+            catalog_fingerprint != resolved_catalog.fingerprint):
+        raise ValueError(
+            "catalog_fingerprint does not match the catalog used to assess "
+            "the return")
+    scoring_assessment = assess_scoring_generation(ret, resolved_catalog)
+    if (return_schema_version == RETURN_SCHEMA_VERSION and
+            not scoring_assessment.current):
+        raise ValueError(
+            "return-schema v3 cannot satisfy the current scoring generation: "
+            f"{list(scoring_assessment.reasons)}")
+    patterns = scoring_assessment.patterns_detected
+    antipatterns = scoring_assessment.antipatterns_detected
     score, coerced_score = resolve_pattern_score(
         observation_values, patterns, antipatterns)
 
-    if return_schema_version == RETURN_SCHEMA_VERSION:
+    if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
         # Validate persisted block types before a clear could conceal malformed
         # structured state, then apply every operation to the isolated candidate.
-        # Verbatim and pattern blocks are supplied snapshots in every valid v2
+        # Verbatim and pattern blocks are supplied snapshots in every valid v2/v3
         # analysis, so they may repair legacy array containers atomically.
         require_stored_mapping(candidate, "structured_data")
 
@@ -557,7 +577,7 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     candidate["schema_version"] = TALK_SCHEMA_VERSION
     for f in SCALARS:
         if (f in ret and
-                (return_schema_version == RETURN_SCHEMA_VERSION or
+                (return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS or
                  not is_empty(ret[f]))):
             candidate[f] = copy.deepcopy(ret[f])
     # A single owner supplies one exact stamp for every member.  This prevents a
@@ -572,7 +592,7 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     elif not is_empty(ret.get("processed_date")):
         candidate["processed_date"] = normalize_stamp(ret["processed_date"])
     if structured is not None:
-        if return_schema_version == RETURN_SCHEMA_VERSION:
+        if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
             candidate["structured_data"] = merge_structured_v2(
                 require_stored_mapping(candidate, "structured_data"), structured)
         else:
@@ -586,7 +606,7 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
             candidate["structured_data"]["video_extraction"] = copy.deepcopy(
                 structured["video_extraction"])
     if verbatim is not None:
-        if return_schema_version == RETURN_SCHEMA_VERSION:
+        if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
             existing_verbatim = candidate.get("verbatim_examples")
             candidate["verbatim_examples"] = merge_verbatim_v2(
                 existing_verbatim if isinstance(existing_verbatim, dict) else {},
@@ -596,7 +616,7 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
             candidate["verbatim_examples"] = deep_merge(
                 candidate.get("verbatim_examples") or {}, verbatim)
     if observations is not None:
-        if return_schema_version == RETURN_SCHEMA_VERSION:
+        if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
             candidate["pattern_observations"] = _normalized_pattern_fields(
                 patterns, antipatterns, not_evaluable, evidence_sources, score)
         elif observations:
@@ -604,7 +624,7 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
                 candidate.get("pattern_observations"), patterns, antipatterns,
                 not_evaluable, evidence_sources, score)
 
-    if return_schema_version == RETURN_SCHEMA_VERSION:
+    if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
         promoted = _sync_v2_promotions(candidate, structured or {})
     else:
         promoted = []
@@ -621,14 +641,26 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     if score is not None:
         candidate["pattern_score"] = score
         promoted.append("pattern_score")
-    elif (return_schema_version == RETURN_SCHEMA_VERSION and
+    elif (return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS and
           observations is not None):
         candidate.pop("pattern_score", None)
     if ret.get("status") in ANALYSIS_STATUSES:
-        candidate["pattern_scoring_schema_version"] = PATTERN_SCORING_SCHEMA_VERSION
-        if catalog_fingerprint:
-            candidate["pattern_catalog_fingerprint"] = catalog_fingerprint
-    if return_schema_version == RETURN_SCHEMA_VERSION:
+        if scoring_assessment.current:
+            candidate["pattern_scoring_generation_status"] = \
+                CURRENT_PATTERN_SCORING_GENERATION_STATUS
+            candidate["pattern_scoring_generation_reasons"] = []
+            candidate["pattern_scoring_schema_version"] = \
+                PATTERN_SCORING_SCHEMA_VERSION
+            candidate["pattern_catalog_fingerprint"] = \
+                resolved_catalog.fingerprint
+        else:
+            candidate["pattern_scoring_generation_status"] = \
+                LEGACY_UNBASELINEABLE_SCORING_STATUS
+            candidate["pattern_scoring_generation_reasons"] = \
+                list(scoring_assessment.reasons)
+            candidate.pop("pattern_scoring_schema_version", None)
+            candidate.pop("pattern_catalog_fingerprint", None)
+    if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
         validate_effective_v2_state(
             candidate,
             structured or {},
@@ -787,13 +819,21 @@ def main():
         try:
             promoted, stamped, coerced, cleared = merge_talk(
                 talk, ret, run_date, catalog.fingerprint,
-                enforce_queue_claim=True)
+                enforce_queue_claim=True, catalog=catalog)
         except ValueError as exc:
             print(f"ERROR: {name}: {exc}", file=sys.stderr)
             sys.exit(1)
+        analysis_result = talk.get("status") in ANALYSIS_STATUSES
         summary.append({"filename": name, "status": talk.get("status"),
                         "promoted": promoted, "stamped_processed_date": stamped,
-                        "coerced_pattern_score": coerced, "cleared": cleared})
+                        "coerced_pattern_score": coerced, "cleared": cleared,
+                        "pattern_scoring_generation_status": (
+                            talk.get("pattern_scoring_generation_status")
+                            if analysis_result else
+                            UNSCORED_PATTERN_SCORING_GENERATION_STATUS),
+                        "pattern_scoring_generation_reasons": (
+                            talk.get("pattern_scoring_generation_reasons", [])
+                            if analysis_result else [])})
 
     try:
         atomic_write_json(db_path, db)

@@ -12,7 +12,8 @@ detection_signals:
   - "handout vs live differences"
 evaluable_from:
   - native_deck
-  - source_comparison
+  - [native_deck, static_slides]
+  - [delivery_video, static_slides]
 evidence_requirements:
   - "Evidence must show a live reveal of an element absent from the static or distributed state."
   - "Use either inspectable zero-opacity animation metadata or an explicit comparison naming the live and static sources."

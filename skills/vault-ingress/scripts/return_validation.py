@@ -9,6 +9,7 @@ inject another catalog directory for tests.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -54,13 +55,14 @@ RETURN_STATUSES = ANALYSIS_STATUSES | SKIPPED_STATUSES
 SLIDE_SOURCES = frozenset({"pptx", "pdf", "both", "video_extracted", "none"})
 TRANSCRIPT_SOURCES = frozenset({"youtube_auto", "whisper", "manual", "none"})
 CONFIDENCE_LEVELS = frozenset({"strong", "moderate", "weak"})
-EVIDENCE_SOURCES = frozenset({
+EVIDENCE_SOURCE_ORDER = (
     "static_slides",
     "native_deck",
     "delivery_video",
     "transcript",
     "source_comparison",
-})
+)
+EVIDENCE_SOURCES = frozenset(EVIDENCE_SOURCE_ORDER)
 CATALOG_FEEDBACK_LISTS = frozenset({
     "unmatched_observations",
     "confusable_pairs",
@@ -171,9 +173,22 @@ VIDEO_SOURCE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 VIDEO_EXTRACTION_SCHEMA_VERSION = 3
 QUEUE_CLAIM_SCHEMA_VERSION = 2
 LEGACY_QUEUE_CLAIM_SCHEMA_VERSION = 1
-RETURN_SCHEMA_VERSION = 2
 LEGACY_RETURN_SCHEMA_VERSION = 1
-PATTERN_SCORING_SCHEMA_VERSION = 2
+PREVIOUS_RETURN_SCHEMA_VERSION = 2
+RETURN_SCHEMA_VERSION = 3
+SUPPORTED_RETURN_SCHEMA_VERSIONS = frozenset({
+    LEGACY_RETURN_SCHEMA_VERSION,
+    PREVIOUS_RETURN_SCHEMA_VERSION,
+    RETURN_SCHEMA_VERSION,
+})
+SNAPSHOT_RETURN_SCHEMA_VERSIONS = frozenset({
+    PREVIOUS_RETURN_SCHEMA_VERSION,
+    RETURN_SCHEMA_VERSION,
+})
+PATTERN_SCORING_SCHEMA_VERSION = 3
+CURRENT_PATTERN_SCORING_GENERATION_STATUS = "current"
+LEGACY_UNBASELINEABLE_SCORING_STATUS = "legacy_unbaselineable"
+UNSCORED_PATTERN_SCORING_GENERATION_STATUS = "not_applicable"
 RETURN_QUEUE_CLAIM_FIELDS = frozenset({
     "run_id",
     "batch_id",
@@ -284,12 +299,13 @@ def resolve_return_schema_version(ret: dict) -> int:
     version = ret.get("return_schema_version", LEGACY_RETURN_SCHEMA_VERSION)
     if isinstance(version, bool) or not isinstance(version, int):
         raise ReturnValidationError(
-            "return_schema_version must be the integer 1 or 2, "
+            "return_schema_version must be one of the supported integers "
+            f"{sorted(SUPPORTED_RETURN_SCHEMA_VERSIONS)}, "
             f"got {version!r}")
-    if version not in {LEGACY_RETURN_SCHEMA_VERSION, RETURN_SCHEMA_VERSION}:
+    if version not in SUPPORTED_RETURN_SCHEMA_VERSIONS:
         raise ReturnValidationError(
             f"unsupported return_schema_version {version}; this reader supports "
-            f"{LEGACY_RETURN_SCHEMA_VERSION} and {RETURN_SCHEMA_VERSION}")
+            f"{sorted(SUPPORTED_RETURN_SCHEMA_VERSIONS)}")
     return version
 
 
@@ -299,13 +315,34 @@ class CatalogEntry:
     entry_type: str
     observable: bool
     evaluable_from: EvidenceSourceGroups | None
+    strong_evaluable_from: EvidenceSourceGroups | None
+    absence_evaluable_from: EvidenceSourceGroups | None
     path: str
+
+    def detection_gate(self, confidence: str) -> EvidenceSourceGroups | None:
+        """Return the effective positive gate for one confidence outcome."""
+        if confidence == "strong":
+            return self.strong_evaluable_from
+        return self.evaluable_from
 
 
 @dataclass(frozen=True)
 class PatternCatalog:
     entries: dict[str, CatalogEntry]
     fingerprint: str
+
+
+@dataclass(frozen=True)
+class ScoringGenerationAssessment:
+    """Canonical detections plus eligibility for the current scoring epoch."""
+
+    patterns_detected: list[dict]
+    antipatterns_detected: list[dict]
+    reasons: tuple[str, ...]
+
+    @property
+    def current(self) -> bool:
+        return not self.reasons
 
 
 @dataclass(frozen=True)
@@ -433,28 +470,45 @@ def load_catalog(catalog_dir: str | Path | None = None) -> PatternCatalog:
         if not isinstance(observable, bool):
             raise ReturnValidationError(
                 f"catalog entry {path} has non-boolean observable={observable!r}")
-        gate_fields = {
+        base_gate_fields = {
             "evaluable_from", "evidence_requirements", "not_evaluable_when"}
-        present_gates = gate_fields.intersection(front)
+        outcome_gate_fields = {
+            "strong_evaluable_from", "absence_evaluable_from"}
+        present_gates = base_gate_fields.intersection(front)
+        present_outcome_gates = outcome_gate_fields.intersection(front)
         evaluable_from = None
-        if present_gates:
-            if present_gates != gate_fields:
+        strong_evaluable_from = None
+        absence_evaluable_from = None
+        if present_gates or present_outcome_gates:
+            if present_gates != base_gate_fields:
                 raise ReturnValidationError(
                     f"catalog entry {path} has a partial evidence gate: "
-                    f"{sorted(present_gates)}")
+                    f"{sorted(present_gates | present_outcome_gates)}")
             raw_sources = front["evaluable_from"]
             try:
                 evaluable_from = parse_evidence_source_groups(
                     raw_sources, EVIDENCE_SOURCES)
+                strong_evaluable_from = parse_evidence_source_groups(
+                    front.get("strong_evaluable_from", raw_sources),
+                    EVIDENCE_SOURCES,
+                    field_name="strong_evaluable_from",
+                )
+                absence_evaluable_from = parse_evidence_source_groups(
+                    front.get("absence_evaluable_from", raw_sources),
+                    EVIDENCE_SOURCES,
+                    field_name="absence_evaluable_from",
+                )
             except ValueError as exc:
                 raise ReturnValidationError(
-                    f"catalog entry {path} has invalid evaluable_from: {exc}") from exc
+                    f"catalog entry {path} has invalid evidence gate: {exc}") from exc
         relative = path.relative_to(root).as_posix()
         entries[pattern_id] = CatalogEntry(
             pattern_id=pattern_id,
             entry_type=entry_type,
             observable=observable,
             evaluable_from=evaluable_from,
+            strong_evaluable_from=strong_evaluable_from,
+            absence_evaluable_from=absence_evaluable_from,
             path=relative,
         )
         fingerprint_contents.append((relative, content))
@@ -765,9 +819,68 @@ def _validate_video_return(ret: dict, structured: dict,
     return state.trusted_slide_region
 
 
+def canonical_evidence_source_group(group: frozenset[str]) -> list[str]:
+    """Return one comparison group in the stable public source order."""
+    return [source for source in EVIDENCE_SOURCE_ORDER if source in group]
+
+
+def qualifying_comparison_groups(
+        entry: CatalogEntry, confidence: str,
+        available_sources: set[str], *,
+        current_contract: bool = True) -> tuple[frozenset[str], ...]:
+    """Return satisfied all-of groups for one positive detection outcome."""
+    gate = (
+        entry.detection_gate(confidence)
+        if current_contract else entry.evaluable_from
+    )
+    if gate is None:
+        return ()
+    return tuple(
+        group for group in qualifying_evidence_groups(gate, available_sources)
+        if len(group) > 1
+    )
+
+
+def _validate_comparison_evidence_sources_used(
+        detection: dict, label: str, entry: CatalogEntry, confidence: str,
+        available_sources: set[str], return_schema_version: int) -> None:
+    """Bind current comparison detections to one exact qualifying source group."""
+    evidence_source = detection.get("evidence_source")
+    supplied = detection.get("evidence_sources_used")
+    if evidence_source != "source_comparison":
+        if "evidence_sources_used" in detection:
+            raise ReturnValidationError(
+                f"{label}.evidence_sources_used is allowed only when "
+                "evidence_source is 'source_comparison'")
+        return
+    if (return_schema_version != RETURN_SCHEMA_VERSION and
+            "evidence_sources_used" not in detection):
+        return
+    if (not isinstance(supplied, list) or len(supplied) < 2 or
+            any(source not in EVIDENCE_SOURCES or
+                source == "source_comparison" for source in supplied) or
+            len(supplied) != len(set(supplied))):
+        raise ReturnValidationError(
+            f"{label}.evidence_sources_used must be a duplicate-free array of "
+            "at least two underlying evidence sources")
+    supplied_group = frozenset(supplied)
+    qualifying = qualifying_comparison_groups(
+        entry,
+        confidence,
+        available_sources,
+        current_contract=return_schema_version == RETURN_SCHEMA_VERSION,
+    )
+    if supplied_group not in qualifying:
+        allowed = [canonical_evidence_source_group(group) for group in qualifying]
+        raise ReturnValidationError(
+            f"{label}.evidence_sources_used must exactly match one qualifying "
+            f"comparison group; allowed groups are {allowed}")
+
+
 def _validate_detection_list(
         observations: dict, field: str, expected_type: str,
-        catalog: PatternCatalog, available_sources: set[str]) -> list[dict]:
+        catalog: PatternCatalog, available_sources: set[str],
+        return_schema_version: int) -> list[dict]:
     value = observations.get(field)
     if not isinstance(value, list):
         raise ReturnValidationError(
@@ -806,13 +919,34 @@ def _validate_detection_list(
             raise ReturnValidationError(
                 f"{label}.evidence_source {evidence_source!r} is not listed in "
                 "pattern_observations.evidence_sources")
-        if (entry.evaluable_from is not None and
-                not evidence_source_satisfies_gate(
-                    entry.evaluable_from, evidence_source, available_sources)):
-            allowed = [sorted(group) for group in entry.evaluable_from]
+        detection_gate = (
+            entry.detection_gate(confidence)
+            if return_schema_version == RETURN_SCHEMA_VERSION
+            else entry.evaluable_from
+        )
+        gate_satisfied = (
+            detection_gate is None or evidence_source_satisfies_gate(
+                detection_gate, evidence_source, available_sources)
+        )
+        legacy_unresolved_comparison = (
+            return_schema_version != RETURN_SCHEMA_VERSION and
+            evidence_source == "source_comparison" and
+            "evidence_sources_used" not in detection
+        )
+        if not gate_satisfied and not legacy_unresolved_comparison:
+            allowed = [canonical_evidence_source_group(group)
+                       for group in detection_gate or ()]
             raise ReturnValidationError(
                 f"{pattern_id!r} cannot be evaluated from {evidence_source!r}; "
-                f"catalog allows source alternatives {allowed}")
+                f"catalog allows {confidence} source alternatives {allowed}")
+        _validate_comparison_evidence_sources_used(
+            detection,
+            label,
+            entry,
+            confidence,
+            available_sources,
+            return_schema_version,
+        )
         _require_string(detection, "evidence")
         dimensions = detection.get("dimensions")
         if dimensions is not None:
@@ -822,6 +956,140 @@ def _validate_detection_list(
                 raise ReturnValidationError(
                     f"{label}.dimensions must be an array of integers from 1 through 14")
     return value
+
+
+def assess_scoring_generation(
+        ret: dict, catalog: PatternCatalog) -> ScoringGenerationAssessment:
+    """Canonicalize detections and assess the current scoring-v3 contract.
+
+    V1/v2 returns remain valid under their historical base-gate semantics. This
+    separate assessment upgrades exact or unambiguous comparison proof and
+    records every newer strong/absence outcome the legacy payload cannot prove.
+    V3 validation makes the same reasons hard errors before this helper runs.
+    """
+    version = resolve_return_schema_version(ret)
+    observations = ret.get("pattern_observations")
+    if not isinstance(observations, dict):
+        return ScoringGenerationAssessment([], [], ())
+    available = set(observations.get("evidence_sources") or [])
+    normalized_lanes: list[list[dict]] = []
+    reasons: set[str] = set()
+    detected_ids: set[str] = set()
+    for field in ("patterns_detected", "antipatterns_detected"):
+        normalized = []
+        raw_detections = observations.get(field)
+        detections = raw_detections if isinstance(raw_detections, list) else []
+        for detection in detections:
+            item = copy.deepcopy(detection)
+            pattern_id = item.get("pattern_id")
+            if isinstance(pattern_id, str):
+                detected_ids.add(pattern_id)
+            entry = catalog.entries.get(pattern_id)
+            confidence = item.get("confidence")
+            comparison_group = None
+            if item.get("evidence_source") == "source_comparison":
+                groups = (
+                    qualifying_comparison_groups(
+                        entry,
+                        confidence,
+                        available,
+                        current_contract=True,
+                    )
+                    if entry is not None and isinstance(confidence, str) else ()
+                )
+                if "evidence_sources_used" in item:
+                    supplied = frozenset(item.get("evidence_sources_used") or [])
+                    matched = next(
+                        (group for group in groups if group == supplied), None)
+                    if matched is None:
+                        # validate_return owns the user-facing failure; keep this
+                        # helper fail-closed for direct persistence callers.
+                        reasons.add(f"comparison_group_unresolved:{pattern_id}")
+                    else:
+                        comparison_group = matched
+                        item["evidence_sources_used"] = (
+                            canonical_evidence_source_group(matched))
+                elif version == RETURN_SCHEMA_VERSION:
+                    # A current return without explicit comparison proof is
+                    # invalid; validation provides the precise diagnostic.
+                    reasons.add(f"comparison_group_unresolved:{pattern_id}")
+                elif len(groups) == 1:
+                    comparison_group = groups[0]
+                    item["evidence_sources_used"] = (
+                        canonical_evidence_source_group(groups[0]))
+                elif not groups:
+                    reasons.add(f"comparison_group_unresolved:{pattern_id}")
+                else:
+                    reasons.add(f"comparison_group_ambiguous:{pattern_id}")
+            if (entry is not None and confidence == "strong" and
+                    entry.strong_evaluable_from is not None):
+                if item.get("evidence_source") == "source_comparison":
+                    strong_groups = qualifying_comparison_groups(
+                        entry, confidence, available)
+                    strong_satisfied = comparison_group in strong_groups
+                else:
+                    strong_satisfied = evidence_source_satisfies_gate(
+                        entry.strong_evaluable_from,
+                        item.get("evidence_source"),
+                        available,
+                    )
+                if not strong_satisfied:
+                    reasons.add(f"strong_gate_unsatisfied:{pattern_id}")
+            normalized.append(item)
+        normalized_lanes.append(normalized)
+
+    raw_not_evaluable = observations.get("not_evaluable")
+    not_evaluable_ids = {
+        item.get("pattern_id") for item in raw_not_evaluable
+        if isinstance(item, dict) and isinstance(item.get("pattern_id"), str)
+    } if isinstance(raw_not_evaluable, list) else set()
+    for pattern_id, entry in catalog.entries.items():
+        absence_gate = entry.absence_evaluable_from
+        if (not entry.observable or absence_gate is None or
+                pattern_id in detected_ids):
+            continue
+        absence_satisfied = bool(qualifying_evidence_groups(
+            absence_gate, available))
+        if pattern_id not in not_evaluable_ids and not absence_satisfied:
+            reasons.add(f"absence_gate_unsatisfied:{pattern_id}")
+
+    return ScoringGenerationAssessment(
+        normalized_lanes[0],
+        normalized_lanes[1],
+        tuple(sorted(reasons)),
+    )
+
+
+def canonical_persisted_pattern_observations(
+        ret: dict, catalog: PatternCatalog,
+        assessment: ScoringGenerationAssessment | None = None) -> dict:
+    """Return the receipt-bound normalized pattern block stored by ingress."""
+    resolved = assessment or assess_scoring_generation(ret, catalog)
+    observations = ret.get("pattern_observations")
+    if not isinstance(observations, dict):
+        raise ReturnValidationError(
+            "pattern_observations is required and must be an object")
+    raw_score = observations.get("pattern_score")
+    score = raw_score.get("score") if isinstance(raw_score, dict) else raw_score
+    raw_not_evaluable = observations.get("not_evaluable")
+    not_evaluable = (
+        copy.deepcopy(raw_not_evaluable)
+        if isinstance(raw_not_evaluable, list) else []
+    )
+    evidence_sources = copy.deepcopy(observations.get("evidence_sources"))
+    return {
+        "patterns_detected": copy.deepcopy(resolved.patterns_detected),
+        "pattern_ids": [
+            item["pattern_id"] for item in resolved.patterns_detected],
+        "antipatterns_detected": copy.deepcopy(resolved.antipatterns_detected),
+        "antipattern_ids": [
+            item["pattern_id"] for item in resolved.antipatterns_detected],
+        "not_evaluable": not_evaluable,
+        "not_evaluable_ids": [
+            item["pattern_id"] for item in not_evaluable],
+        "evidence_sources": evidence_sources,
+        "pattern_score": score,
+    }
 
 
 def _validate_available_sources(observations: dict, slide_source: str,
@@ -864,7 +1132,8 @@ def _validate_available_sources(observations: dict, slide_source: str,
 
 
 def _validate_not_evaluable(observations: dict, catalog: PatternCatalog,
-                            available_sources: set[str]) -> list[dict]:
+                            available_sources: set[str],
+                            return_schema_version: int) -> list[dict]:
     entries = observations.get("not_evaluable")
     if not isinstance(entries, list):
         raise ReturnValidationError(
@@ -898,15 +1167,27 @@ def _validate_not_evaluable(observations: dict, catalog: PatternCatalog,
 
 def _validate_unavailable_catalog_gates(catalog: PatternCatalog,
                                         available_sources: set[str],
-                                        not_evaluable: list[dict]) -> None:
-    """Require an explicit outcome for every gate with no qualifying source."""
+                                        not_evaluable: list[dict],
+                                        detected_ids: set[str],
+                                        return_schema_version: int) -> None:
+    """Require an explicit outcome when absence cannot be established.
+
+    A valid positive detection is authoritative and suppresses the otherwise
+    contradictory absence requirement. Undetected entries use their effective
+    absence gate, which defaults to the base evaluable_from contract.
+    """
     recorded = {item["pattern_id"] for item in not_evaluable}
-    required = {
-        pattern_id for pattern_id, entry in catalog.entries.items()
-        if (entry.observable and entry.evaluable_from is not None and
-            not qualifying_evidence_groups(
-                entry.evaluable_from, available_sources))
-    }
+    required = set()
+    for pattern_id, entry in catalog.entries.items():
+        gate = (
+            entry.absence_evaluable_from
+            if return_schema_version == RETURN_SCHEMA_VERSION
+            else entry.evaluable_from
+        )
+        if (entry.observable and gate is not None and
+                pattern_id not in detected_ids and
+                not qualifying_evidence_groups(gate, available_sources)):
+            required.add(pattern_id)
     missing = sorted(required - recorded)
     if missing:
         raise ReturnValidationError(
@@ -1064,7 +1345,7 @@ def _validate_image_source_distribution(structured: dict) -> None:
 
 def validate_structured_data(
         structured: dict, *, require_complete_groups: bool = False) -> None:
-    """Validate structured findings, optionally enforcing v2 snapshot groups."""
+    """Validate structured findings, optionally enforcing snapshot groups."""
     if "co_presenter" in structured and not isinstance(structured["co_presenter"], bool):
         raise ReturnValidationError("structured_data.co_presenter must be a boolean")
     if "co_presenters" in structured:
@@ -1079,7 +1360,7 @@ def validate_structured_data(
     if (require_complete_groups and structured.get("co_presenter") is False and
             structured.get("co_presenters")):
         raise ReturnValidationError(
-            "return-schema v2 structured_data.co_presenter is false, so "
+            "snapshot return structured_data.co_presenter is false, so "
             "co_presenters must be empty or omitted")
     language = structured.get("delivery_language")
     if language is not None and (not isinstance(language, str) or
@@ -1093,7 +1374,7 @@ def validate_structured_data(
             ("image_source_distribution" in structured) !=
             ("image_source_distribution_basis" in structured)):
         raise ReturnValidationError(
-            "return-schema v2 requires structured_data.image_source_distribution "
+            "snapshot return requires structured_data.image_source_distribution "
             "and image_source_distribution_basis to be supplied together")
 
 
@@ -1133,7 +1414,7 @@ def validate_verbatim_examples(
         unknown = sorted(set(verbatim) - VERBATIM_EXAMPLE_FIELDS)
         if unknown:
             raise ReturnValidationError(
-                f"return-schema v2 has unknown verbatim_examples lanes: {unknown}")
+                f"snapshot return has unknown verbatim_examples lanes: {unknown}")
     for field in VERBATIM_EXAMPLE_FIELDS.intersection(verbatim):
         values = verbatim[field]
         if (not isinstance(values, list) or
@@ -1153,7 +1434,7 @@ def _require_persisted_analysis_mapping(talk: dict, field: str) -> dict:
 
 
 def validate_persisted_v2_analysis_state(talk: dict) -> None:
-    """Validate the canonical effective analysis consumed after v2 persistence."""
+    """Validate canonical effective analysis after v2/v3 persistence."""
     structured = _require_persisted_analysis_mapping(talk, "structured_data")
     verbatim = _require_persisted_analysis_mapping(talk, "verbatim_examples")
     observations = _require_persisted_analysis_mapping(talk, "pattern_observations")
@@ -1167,7 +1448,7 @@ def validate_persisted_v2_analysis_state(talk: dict) -> None:
     actual_fields = set(observations)
     if actual_fields != PERSISTED_PATTERN_OBSERVATION_FIELDS:
         raise ReturnValidationError(
-            "persisted v2 pattern snapshot has noncanonical fields; expected "
+            "persisted pattern snapshot has noncanonical fields; expected "
             f"{sorted(PERSISTED_PATTERN_OBSERVATION_FIELDS)}, got "
             f"{sorted(actual_fields)}")
     for lane, ids_lane in (
@@ -1180,27 +1461,27 @@ def validate_persisted_v2_analysis_state(talk: dict) -> None:
                 any(not isinstance(entry, dict) for entry in entries) or
                 not isinstance(ids, list)):
             raise ReturnValidationError(
-                f"persisted v2 pattern snapshot {lane}/{ids_lane} has an "
+                f"persisted pattern snapshot {lane}/{ids_lane} has an "
                 "invalid container shape")
         expected_ids = [
             entry.get("pattern_id") for entry in entries
             if entry.get("pattern_id")]
         if ids != expected_ids:
             raise ReturnValidationError(
-                f"persisted v2 pattern snapshot {ids_lane} does not match {lane}")
+                f"persisted pattern snapshot {ids_lane} does not match {lane}")
     evidence_sources = observations["evidence_sources"]
     if (not isinstance(evidence_sources, list) or
             any(not isinstance(source, str) for source in evidence_sources)):
         raise ReturnValidationError(
-            "persisted v2 pattern snapshot evidence_sources must be an array "
+            "persisted pattern snapshot evidence_sources must be an array "
             "of strings")
     score = observations["pattern_score"]
     if isinstance(score, bool) or not isinstance(score, int):
         raise ReturnValidationError(
-            "persisted v2 pattern snapshot pattern_score must be an integer")
+            "persisted pattern snapshot pattern_score must be an integer")
     if talk.get("pattern_score") != score:
         raise ReturnValidationError(
-            "persisted v2 pattern snapshot diverges from promoted pattern_score")
+            "persisted pattern snapshot diverges from promoted pattern_score")
 
 
 def _validate_catalog_feedback(feedback) -> None:
@@ -1450,6 +1731,20 @@ def validate_claim_against_talk(
         raise ReturnValidationError(
             f"{filename} has no {required}; refusing an unclaimed or replayed return")
     _validate_stored_claim(expected, filename)
+    return_schema_version = resolve_return_schema_version(ret)
+    if (expected.get("schema_version") in {
+            LEGACY_QUEUE_CLAIM_SCHEMA_VERSION,
+            QUEUE_CLAIM_SCHEMA_VERSION,
+            } and return_schema_version not in {
+                LEGACY_RETURN_SCHEMA_VERSION,
+                PREVIOUS_RETURN_SCHEMA_VERSION,
+            }):
+        raise ReturnValidationError(
+            f"{filename} queue claim schema_version "
+            f"{expected.get('schema_version')} cannot authorize return schema "
+            f"version {return_schema_version}; finish this legacy claim with a "
+            "v1/v2 return and wait for claim-v3 integration in #157 before "
+            "issuing v3 work")
     talk_generation = talk.get("reprocess_generation")
     if (isinstance(talk_generation, bool) or not isinstance(talk_generation, int)
             or talk_generation < 1):
@@ -1519,6 +1814,57 @@ def validate_persisted_catalog_generation(
     if ret.get("status") not in ANALYSIS_STATUSES:
         return
     filename = ret.get("filename", "<unknown>")
+    assessment = assess_scoring_generation(ret, catalog)
+    observations = talk.get("pattern_observations")
+    if not isinstance(observations, dict):
+        raise ReturnValidationError(
+            f"{filename} persisted pattern_observations must be an object")
+    expected_observations = canonical_persisted_pattern_observations(
+        ret, catalog, assessment)
+    divergent_fields = sorted(
+        field for field, expected in expected_observations.items()
+        if observations.get(field) != expected
+    )
+    if divergent_fields:
+        raise ReturnValidationError(
+            f"{filename} persisted pattern observations diverge from the "
+            f"receipt-bound canonical return fields: {divergent_fields}")
+    status = talk.get("pattern_scoring_generation_status")
+    reasons = talk.get("pattern_scoring_generation_reasons")
+    if not assessment.current:
+        if resolve_return_schema_version(ret) == RETURN_SCHEMA_VERSION:
+            raise ReturnValidationError(
+                f"{filename} current return cannot satisfy scoring generation 3: "
+                f"{list(assessment.reasons)}")
+        if status != LEGACY_UNBASELINEABLE_SCORING_STATUS:
+            raise ReturnValidationError(
+                f"{filename} persisted pattern_scoring_generation_status "
+                f"{status!r} does not match recomputed legacy evidence status")
+        if reasons != list(assessment.reasons):
+            raise ReturnValidationError(
+                f"{filename} persisted pattern_scoring_generation_reasons "
+                "do not match the receipt-bound return and current catalog")
+        stale = sorted(
+            field for field in (
+                "pattern_scoring_schema_version",
+                "pattern_catalog_fingerprint",
+            )
+            if field in talk
+        )
+        if stale:
+            raise ReturnValidationError(
+                f"{filename} legacy-unbaselineable analysis retains stale "
+                f"current scoring metadata: {stale}")
+        return
+
+    if status != CURRENT_PATTERN_SCORING_GENERATION_STATUS:
+        raise ReturnValidationError(
+            f"{filename} persisted pattern_scoring_generation_status {status!r} "
+            f"does not match {CURRENT_PATTERN_SCORING_GENERATION_STATUS!r}")
+    if reasons != []:
+        raise ReturnValidationError(
+            f"{filename} current scoring generation must persist an empty "
+            "pattern_scoring_generation_reasons array")
     scoring_version = talk.get("pattern_scoring_schema_version")
     if scoring_version != PATTERN_SCORING_SCHEMA_VERSION:
         raise ReturnValidationError(
@@ -1660,14 +2006,14 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
     slides_local_path = _validate_slides_local_path(ret)
 
     transcript_source = ret.get("transcript_source")
-    if (return_schema_version == RETURN_SCHEMA_VERSION and
+    if (return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS and
             "transcript_source" in ret and
             transcript_source not in TRANSCRIPT_SOURCES):
         raise ReturnValidationError(
-            "return-schema v2 transcript_source must be omitted when provenance "
+            "snapshot return transcript_source must be omitted when provenance "
             f"is unknown or be one of {sorted(TRANSCRIPT_SOURCES)}, got "
             f"{transcript_source!r}")
-    if (return_schema_version != RETURN_SCHEMA_VERSION and
+    if (return_schema_version not in SNAPSHOT_RETURN_SCHEMA_VERSIONS and
             transcript_source is not None and
             transcript_source not in TRANSCRIPT_SOURCES):
         raise ReturnValidationError(
@@ -1696,12 +2042,12 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
             raise ReturnValidationError(f"{field} is required and must be a string")
         if not isinstance(ret[field], str):
             raise ReturnValidationError(f"{field} must be a string, got {type(ret[field]).__name__}")
-        if (return_schema_version == RETURN_SCHEMA_VERSION and
+        if (return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS and
                 field in SUBSTANTIVE_PROSE_FIELDS and
                 not ret[field].strip()):
             raise ReturnValidationError(
                 f"{field} must be a non-whitespace string for {status}")
-        if (return_schema_version == RETURN_SCHEMA_VERSION and
+        if (return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS and
                 field == "adherence_assessment" and ret[field] != "" and
                 not ret[field].strip()):
             raise ReturnValidationError(
@@ -1716,25 +2062,25 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
     if slide_source == "video_extracted":
         video_static_slides_available = _validate_video_return(
             ret, structured, slides_local_path)
-    if return_schema_version == RETURN_SCHEMA_VERSION:
+    if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
         # Source trust errors are more actionable than dependent-group errors,
-        # so enforce the v2 snapshot pair only after video scope is checked.
+        # so enforce snapshot-dependent groups only after video scope is checked.
         validate_v2_structured_policy_shapes(structured)
         validate_structured_data(structured, require_complete_groups=True)
     verbatim = ret.get("verbatim_examples")
     if not isinstance(verbatim, dict):
         raise ReturnValidationError("verbatim_examples is required and must be an object")
-    if return_schema_version == RETURN_SCHEMA_VERSION:
+    if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
         validate_verbatim_examples(verbatim, reject_unknown=True)
     observations = ret.get("pattern_observations")
     if not isinstance(observations, dict):
         raise ReturnValidationError("pattern_observations is required and must be an object")
-    if return_schema_version == RETURN_SCHEMA_VERSION:
+    if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
         unknown_observations = sorted(
             set(observations) - PATTERN_OBSERVATION_RETURN_FIELDS)
         if unknown_observations:
             raise ReturnValidationError(
-                "return-schema v2 has unknown pattern_observations fields: "
+                "snapshot return has unknown pattern_observations fields: "
                 f"{unknown_observations}")
 
     resolved_catalog = catalog or load_catalog()
@@ -1743,14 +2089,20 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
         video_static_slides_available=video_static_slides_available)
     patterns = _validate_detection_list(
         observations, "patterns_detected", "pattern", resolved_catalog,
-        available_sources)
+        available_sources, return_schema_version)
     antipatterns = _validate_detection_list(
         observations, "antipatterns_detected", "antipattern", resolved_catalog,
-        available_sources)
+        available_sources, return_schema_version)
     not_evaluable = _validate_not_evaluable(
-        observations, resolved_catalog, available_sources)
+        observations, resolved_catalog, available_sources,
+        return_schema_version)
+    detected_ids = (
+        {item["pattern_id"] for item in patterns} |
+        {item["pattern_id"] for item in antipatterns}
+    )
     _validate_unavailable_catalog_gates(
-        resolved_catalog, available_sources, not_evaluable)
+        resolved_catalog, available_sources, not_evaluable, detected_ids,
+        return_schema_version)
     overlap = ({item["pattern_id"] for item in patterns} &
                {item["pattern_id"] for item in antipatterns})
     if overlap:
@@ -1805,10 +2157,36 @@ def validate_batch(returns, catalog: PatternCatalog | None = None) -> PatternCat
 
 def validation_report(returns, catalog: PatternCatalog) -> dict:
     """Build the stable JSON result emitted by the validator CLI."""
+    schema_versions: dict[str, int] = {}
+    scoring_generations = []
+    for ret in returns:
+        version = resolve_return_schema_version(ret)
+        version_key = str(version)
+        schema_versions[version_key] = schema_versions.get(version_key, 0) + 1
+        if ret.get("status") not in ANALYSIS_STATUSES:
+            scoring_generations.append({
+                "filename": ret["filename"],
+                "status": UNSCORED_PATTERN_SCORING_GENERATION_STATUS,
+                "reasons": [],
+            })
+        else:
+            assessment = assess_scoring_generation(ret, catalog)
+            scoring_generations.append({
+                "filename": ret["filename"],
+                "status": (
+                    CURRENT_PATTERN_SCORING_GENERATION_STATUS
+                    if assessment.current
+                    else LEGACY_UNBASELINEABLE_SCORING_STATUS
+                ),
+                "reasons": list(assessment.reasons),
+            })
     return {
         "valid": True,
         "returns": len(returns),
         "filenames": [ret["filename"] for ret in returns],
+        "return_schema_versions": dict(sorted(schema_versions.items())),
+        "pattern_scoring_schema_version": PATTERN_SCORING_SCHEMA_VERSION,
+        "pattern_scoring_generations": scoring_generations,
         "catalog_entries": len(catalog.entries),
         "catalog_fingerprint": catalog.fingerprint,
     }

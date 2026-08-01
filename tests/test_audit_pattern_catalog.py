@@ -394,6 +394,7 @@ def test_source_gate_accepts_conjunctive_alternatives(
     [["source_comparison", "transcript"]],
     [["static_slides", "speaker_memory"]],
     ["delivery_video", "delivery_video"],
+    ["source_comparison"],
 ])
 def test_source_gate_rejects_invalid_alternatives(
     tmp_path,
@@ -410,6 +411,34 @@ def test_source_gate_rejects_invalid_alternatives(
     report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
 
     assert "evidence_source_invalid" in _codes(report)
+
+
+def test_optional_outcome_gates_use_the_base_gate_grammar(
+        tmp_path, audit_pattern_catalog):
+    entries = _base_entries()
+    entries[0].update({
+        "evaluable_from": ["static_slides", "native_deck"],
+        "strong_evaluable_from": ["native_deck"],
+        "absence_evaluable_from": ["native_deck", "delivery_video"],
+        "evidence_requirements": ["The outcome is visible."],
+        "not_evaluable_when": ["The qualifying source is unavailable."],
+    })
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert report["valid"] is True
+
+
+@pytest.mark.parametrize(
+    "field", ["strong_evaluable_from", "absence_evaluable_from"])
+def test_optional_outcome_gate_requires_complete_base_metadata(
+        tmp_path, audit_pattern_catalog, field):
+    entries = _base_entries()
+    entries[0][field] = ["delivery_video"]
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert "source_gate_partial" in _codes(report)
 
 
 def test_unobservable_entry_cannot_have_source_gate(tmp_path, audit_pattern_catalog):

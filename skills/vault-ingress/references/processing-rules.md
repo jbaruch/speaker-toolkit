@@ -30,28 +30,40 @@ Scan observations against the pattern taxonomy index at
 Skip patterns marked `observable: false` — these are pre-event logistics and physical
 stage behaviors that cannot be detected from transcripts or slides.
 
-For every other entry, inspect `evaluable_from`, `evidence_requirements`, and
-`not_evaluable_when` when present. The allowed evidence-source values and their limits
-are defined in the index's Evidence-Source Contract. Only score an entry when an
-available eligible source establishes its requirements. Every detected pattern or
-antipattern must record both concrete `evidence` and the qualifying `evidence_source`.
-When `evidence_source` is `source_comparison`, name both compared sources in `evidence`.
+For every other entry, inspect `evaluable_from`, optional
+`strong_evaluable_from` and `absence_evaluable_from`, `evidence_requirements`,
+and `not_evaluable_when` when present. The allowed evidence-source values and
+their limits are defined in the index's Evidence-Source Contract. A strong
+detection uses `strong_evaluable_from` (defaulting to `evaluable_from`);
+moderate and weak detections use `evaluable_from`. Only score an entry when an
+available eligible source establishes its requirements. Every detected pattern
+or antipattern must record concrete `evidence` and the qualifying
+`evidence_source`. When that source is `source_comparison`, also return the
+duplicate-free `evidence_sources_used` array. It must exactly equal one
+qualifying all-of group, while the prose evidence names what was compared.
 
-If no eligible source is available, a requirement cannot be established, or a stated
-disqualifier applies, add an item to `pattern_observations.not_evaluable` with the
-`pattern_id`, best available `evidence_source`, and a precise `reason`. Do not guess, do
-not place that entry in either detected array, and do not interpret `not_evaluable` as
-absence. Exclude not-evaluable entries from the score. Compute per-talk pattern score as
-count(detected patterns) − count(detected antipatterns), then return the detections,
-not-evaluable observations, and score in `pattern_observations`.
+For an entry with no positive detection, use `absence_evaluable_from`
+(defaulting to `evaluable_from`) to decide whether the inspected sources can
+support an undetected outcome. If that gate is not satisfied, or a stated
+disqualifier prevents either outcome, add an item to
+`pattern_observations.not_evaluable` with the `pattern_id`, best available
+`evidence_source`, and a precise `reason`. A valid positive detection takes
+precedence: never add the same ID to `not_evaluable` merely because the absence
+gate is unavailable. Do not guess and do not interpret `not_evaluable` as
+absence. Exclude not-evaluable entries from the score. Compute per-talk pattern
+score as count(detected patterns) − count(detected antipatterns), then return
+the detections, not-evaluable observations, and score in
+`pattern_observations`.
 
-This is exhaustive for source gates: every observable catalog entry for which
-no `evaluable_from` alternative is satisfied by the return's inspected sources
-must be represented in `not_evaluable`. A string alternative needs that one
-source. A nested alternative needs every named underlying source plus the
-`source_comparison` marker; the marker is the detection's `evidence_source`, not
-one of the underlying sources. Artifact scope still controls what counts as a
-source. In particular, an untrusted video
+This is exhaustive for source gates: every undetected observable catalog entry
+for which no effective absence alternative is satisfied by the return's
+inspected sources must be represented in `not_evaluable`. A string alternative
+needs that one source. A nested alternative needs every named underlying source
+plus the `source_comparison` marker in the global inspected `evidence_sources`.
+For absence evaluation, that global list is the complete proof; there is no
+detection object, detection `evidence_source`, or `evidence_sources_used` field.
+Artifact scope still controls what counts as a source. In particular, an
+untrusted video
 `full_frame_context` may support concrete `delivery_video` observations but never
 creates `static_slides` or `native_deck` evidence.
 

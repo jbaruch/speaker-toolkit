@@ -23,7 +23,17 @@ exit `2`.
   consumers reject duplicates instead of accepting PyYAML's last value.
 - `evaluable_from` is an OR list. String items are singleton alternatives;
   nested lists are conjunctive alternatives whose underlying sources must all
-  be present with `source_comparison` evidence.
+  be present with the `source_comparison` marker in the return's global
+  inspected-source list. Positive comparison detections bind one exact group in
+  `evidence_sources_used`; absence evaluation has no detection object and uses
+  only that global list. `source_comparison` is a return marker, never a
+  singleton alternative or member of a conjunctive group.
+- `strong_evaluable_from` and `absence_evaluable_from` are optional outcome
+  gates with the same grammar. Each defaults to `evaluable_from`; neither may
+  appear unless the complete base gate triplet is present. Strong detections
+  use the strong gate, moderate/weak detections use the base gate, and an
+  undetected result uses the absence gate. A valid positive detection wins over
+  the otherwise contradictory absence outcome.
 - Entry prose owns definitions, boundaries, examples, and semantic intent.
 - `inverse_of` is symmetric. Either endpoint may originate the assertion, but
   both endpoints must declare it.
@@ -81,8 +91,10 @@ The `errors` lane contains mechanically decidable contract failures:
   duplicated; index related-ID lists may be empty but may not repeat an ID.
 - Filename, ID, directory, lifecycle part, index kind, or polarity disagree.
 - Frontmatter contains invalid YAML or repeats a mapping key at any depth.
-- An evidence-source alternative is empty, duplicated, unknown, or uses
-  `source_comparison` as an underlying member of a conjunctive alternative.
+- An evidence-source alternative is empty, duplicated, unknown, uses a
+  singleton `source_comparison`, or uses `source_comparison` as an underlying
+  member of a conjunctive alternative. The same checks apply to base, strong,
+  and absence gates.
 - Frontmatter lists or creator-phase values violate their declared shape.
 - Observable state and source-gate metadata/prose are incompatible.
 - Related or inverse references are dangling, duplicated, or self-referential.
