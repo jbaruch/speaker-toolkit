@@ -49,9 +49,11 @@ Discover the exact non-empty `config.python_path`, then immediately re-read the
 same canonical database path with that interpreter and require the same SHA-256;
 restart discovery if the generation changed. Use only that configured interpreter
 for every later toolkit command. Missing or unusable configuration stops this flow
-and invokes vault-ingress Step 1. Read-only phases may continue on schema 0, but
+and invokes `Skill(skill: "vault-ingress")` with Step 1 as the handoff context.
+Read-only phases may continue on schema 0, but
 publishing and post-event writes require schema 1 before their paired network,
-deck, image, or tracking side effects. Route schema 0 through vault-ingress first.
+deck, image, or tracking side effects. For schema 0, invoke
+`Skill(skill: "vault-ingress")` with a Step 1 migration handoff before continuing.
 
 Load from vault root: `rhetoric-style-summary.md` (constitution — all patterns),
 `slide-design-spec.md` (visual rules), `speaker-profile.json` (structured data).

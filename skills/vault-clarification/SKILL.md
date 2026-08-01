@@ -130,7 +130,8 @@ Proceed immediately to Step 5.
 
 ## Step 5 — Speaker Infrastructure (first session only)
 
-If `config.clarification_sessions_completed` is already ≥ 1, skip this step — infrastructure was captured in the first session. Proceed immediately to Step 6.
+If `config.clarification_sessions_completed` is already ≥ 1, skip this step.
+Proceed immediately to Step 6.
 
 Otherwise, ask for any empty config fields (`speaker_name` through `publishing_process.*`).
 See [references/schemas-config.md](references/schemas-config.md) for the full field list and questions to ask.
@@ -219,7 +220,7 @@ Improvement Goal Verification.
 
 If Section 15 has no speaker-selected pattern target, or the validated profile has no
 non-empty matching raw-score-comparable current pattern cohort, say so and skip
-pattern goal-setting — proceed to Step 8. Independent pacing goals may still be
+pattern goal-setting. Proceed to Step 8. Independent pacing goals may still be
 available.
 
 Proceed immediately to Step 8.
