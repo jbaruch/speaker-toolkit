@@ -187,9 +187,13 @@ def md_escape_cell(value):
     text = "" if value is None else str(value)
     # Both newline forms end a row; a bare \r breaks rendering in some viewers
     # even though it is invisible in the source.
-    return (text.replace("|", "\\|")
-                .replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
-                .strip())
+    return (
+        text.replace("|", "\\|")
+        .replace("\r\n", " ")
+        .replace("\n", " ")
+        .replace("\r", " ")
+        .strip()
+    )
 
 
 def render_table(rows):
@@ -207,10 +211,14 @@ def render_table(rows):
         for key in row:
             if key not in columns:
                 columns.append(key)
-    out = ["| " + " | ".join(columns) + " |",
-           "|" + "|".join("---" for _ in columns) + "|"]
+    out = [
+        "| " + " | ".join(columns) + " |",
+        "|" + "|".join("---" for _ in columns) + "|",
+    ]
     for row in rows:
-        out.append("| " + " | ".join(md_escape_cell(row.get(c)) for c in columns) + " |")
+        out.append(
+            "| " + " | ".join(md_escape_cell(row.get(c)) for c in columns) + " |"
+        )
     return out
 
 
@@ -251,7 +259,8 @@ def render_evidence_citation(citation):
         if line_start is not None:
             location = (
                 f" lines {line_start}–{line_end}"
-                if line_end != line_start else f" line {line_start}"
+                if line_end != line_start
+                else f" line {line_start}"
             )
         start = citation.get("start_seconds")
         end = citation.get("end_seconds")
@@ -260,11 +269,11 @@ def render_evidence_citation(citation):
         quote = citation.get("quote", "")
         if citation.get("translation"):
             rendered = (
-                f'{prefix}{location}: translation: “{citation["translation"]}”; '
-                f'original: “{quote}”'
+                f"{prefix}{location}: translation: “{citation['translation']}”; "
+                f"original: “{quote}”"
             )
         else:
-            rendered = f'{prefix}{location}: “{quote}”'
+            rendered = f"{prefix}{location}: “{quote}”"
         return rendered + artifact_suffix
     if channel in {"slides", "slide_sequence"}:
         numbers = citation.get("slide_numbers") or []
@@ -280,10 +289,7 @@ def render_evidence_citation(citation):
             f"{citation.get('end_seconds')}s{artifact_suffix}"
         )
     if channel == "talk_metadata":
-        return (
-            f"{prefix} supplement {citation.get('field')}="
-            f"{citation.get('value')!r}"
-        )
+        return f"{prefix} supplement {citation.get('field')}={citation.get('value')!r}"
     return json.dumps(citation, ensure_ascii=False, sort_keys=True)
 
 
@@ -303,26 +309,31 @@ def render_pattern_table(entries, *, located=True):
         sources_used = e.get("evidence_sources_used")
         sources_used_text = (
             ", ".join(str(source) for source in sources_used)
-            if isinstance(sources_used, list) else ""
+            if isinstance(sources_used, list)
+            else ""
         )
         citations = e.get("evidence_citations")
         if isinstance(citations, list) and citations:
             rendered_locations = "; ".join(
-                render_evidence_citation(citation) for citation in citations)
+                render_evidence_citation(citation) for citation in citations
+            )
             locations = (
-                rendered_locations if located
+                rendered_locations
+                if located
                 else "Unverified model-supplied location: " + rendered_locations
             )
         else:
             locations = "Unverified legacy evidence (no canonical source location)"
-        out.append("| `{}` | {} | {} | {} | {} | {} |".format(
-            md_escape_cell(pid),
-            md_escape_cell(e.get("confidence", "")),
-            md_escape_cell(e.get("evidence_source", "")),
-            md_escape_cell(sources_used_text),
-            md_escape_cell(e.get("evidence", "")),
-            md_escape_cell(locations),
-        ))
+        out.append(
+            "| `{}` | {} | {} | {} | {} | {} |".format(
+                md_escape_cell(pid),
+                md_escape_cell(e.get("confidence", "")),
+                md_escape_cell(e.get("evidence_source", "")),
+                md_escape_cell(sources_used_text),
+                md_escape_cell(e.get("evidence", "")),
+                md_escape_cell(locations),
+            )
+        )
     return out
 
 
@@ -345,8 +356,7 @@ def render_source_inspection(entries):
             coverage = f"pages {entry.get('page_ranges')} / {entry.get('page_count')}"
         elif source == "delivery_video":
             coverage = (
-                f"seconds {entry.get('time_ranges')} / "
-                f"{entry.get('duration_seconds')}"
+                f"seconds {entry.get('time_ranges')} / {entry.get('duration_seconds')}"
             )
         else:
             coverage = f"scope {entry.get('comparison_scope')}"
@@ -354,7 +364,8 @@ def render_source_inspection(entries):
         digest = entry.get("artifact_sha256")
         identity = (
             f"{entry.get('artifact_root')}:{path} sha256:{str(digest)[:12]}"
-            if path and digest else "—"
+            if path and digest
+            else "—"
         )
         timing_path = entry.get("timing_artifact_path")
         timing_digest = entry.get("timing_artifact_sha256")
@@ -371,15 +382,17 @@ def render_source_inspection(entries):
                 f"{quality_path} sha256:{str(quality_digest)[:12]}"
             )
         group = entry.get("evidence_sources_used") or ""
-        out.append("| {} | {} | {} | {} | {} | {} | {} |".format(
-            md_escape_cell(source),
-            md_escape_cell(coverage),
-            md_escape_cell(entry.get("coverage_complete")),
-            md_escape_cell(entry.get("absence_capability_complete")),
-            md_escape_cell(entry.get("absence_capability_reason")),
-            md_escape_cell(identity),
-            md_escape_cell(group),
-        ))
+        out.append(
+            "| {} | {} | {} | {} | {} | {} | {} |".format(
+                md_escape_cell(source),
+                md_escape_cell(coverage),
+                md_escape_cell(entry.get("coverage_complete")),
+                md_escape_cell(entry.get("absence_capability_complete")),
+                md_escape_cell(entry.get("absence_capability_reason")),
+                md_escape_cell(identity),
+                md_escape_cell(group),
+            )
+        )
     return out
 
 
@@ -400,11 +413,20 @@ def render_structured_data(sd):
         rows = sd.get(key)
         if isinstance(rows, list) and rows:
             out += [f"### {key}", "", *render_table(rows), ""]
-    nested = {k: v for k, v in sd.items()
-              if k not in TABLE_BLOCKS and not isinstance(v, SCALARS) and v is not None}
+    nested = {
+        k: v
+        for k, v in sd.items()
+        if k not in TABLE_BLOCKS and not isinstance(v, SCALARS) and v is not None
+    }
     if nested:
-        out += ["### Additional structured fields", "", "```json",
-                json.dumps(nested, indent=2, ensure_ascii=False), "```", ""]
+        out += [
+            "### Additional structured fields",
+            "",
+            "```json",
+            json.dumps(nested, indent=2, ensure_ascii=False),
+            "```",
+            "",
+        ]
     return out
 
 
@@ -436,8 +458,14 @@ def render_catalog_feedback(feedback):
         return []
     out = ["## Catalog Feedback", ""]
     for section, entries in populated.items():
-        out += [f"### {section}", "", "```json",
-                json.dumps(entries, indent=2, ensure_ascii=False), "```", ""]
+        out += [
+            f"### {section}",
+            "",
+            "```json",
+            json.dumps(entries, indent=2, ensure_ascii=False),
+            "```",
+            "",
+        ]
     return out
 
 
@@ -475,12 +503,14 @@ def render_adherence_assessment(payload):
         raise ReturnValidationError(
             f"return-schema v{RETURN_SCHEMA_VERSION} adherence prose has no "
             "persisted, validated "
-            "adherence_comparison")
+            "adherence_comparison"
+        )
     baseline = comparison.get("baseline")
     if not isinstance(baseline, dict):
         raise ReturnValidationError(
             f"return-schema v{RETURN_SCHEMA_VERSION} adherence_comparison has "
-            "no persisted baseline")
+            "no persisted baseline"
+        )
 
     anchor = (
         "**Validated numeric anchor:** "
@@ -530,11 +560,19 @@ def render_analysis(ret, title=None, run_date=None, *, persisted_date=None):
     out += ["", "---", ""]
 
     if ret.get("rhetoric_notes"):
-        out += ["## Rhetoric Notes (Dimensions 1-13)", "",
-                as_prose(ret["rhetoric_notes"]), ""]
+        out += [
+            "## Rhetoric Notes (Dimensions 1-13)",
+            "",
+            as_prose(ret["rhetoric_notes"]),
+            "",
+        ]
     if ret.get("areas_for_improvement"):
-        out += ["## Areas for Improvement (Dimension 14)", "",
-                as_prose(ret["areas_for_improvement"]), ""]
+        out += [
+            "## Areas for Improvement (Dimension 14)",
+            "",
+            as_prose(ret["areas_for_improvement"]),
+            "",
+        ]
     out += render_adherence_assessment(ret)
 
     out += render_structured_data(ret.get("structured_data"))
@@ -565,45 +603,69 @@ def render_analysis(ret, title=None, run_date=None, *, persisted_date=None):
                 "have no canonical source locations.",
                 "",
             ]
-        if (ret.get("pattern_scoring_generation_status") ==
-                LEGACY_UNBASELINEABLE_SCORING_STATUS or not located):
+        if (
+            ret.get("pattern_scoring_generation_status")
+            == LEGACY_UNBASELINEABLE_SCORING_STATUS
+            or not located
+        ):
             out.append(
                 "**Baseline eligibility:** Excluded from current pattern "
                 "baselines; this historical return cannot establish the "
-                "current evidence contract.")
+                "current evidence contract."
+            )
             reasons = ret.get("pattern_scoring_generation_reasons")
             if isinstance(reasons, list) and reasons:
                 out.append(
-                    "**Generation reasons:** " + ", ".join(str(reason)
-                                                            for reason in reasons))
+                    "**Generation reasons:** "
+                    + ", ".join(str(reason) for reason in reasons)
+                )
             out.append("")
         score = obs.get("pattern_score")
         if isinstance(score, dict):
-            out.append("**Pattern score:** {} ({} patterns − {} antipatterns)".format(
-                score.get("score", "?"),
-                score.get("patterns_used", len(obs.get("patterns_detected") or [])),
-                score.get("antipatterns_detected",
-                          len(obs.get("antipatterns_detected") or [])),
-            ))
+            out.append(
+                "**Pattern score:** {} ({} patterns − {} antipatterns)".format(
+                    score.get("score", "?"),
+                    score.get("patterns_used", len(obs.get("patterns_detected") or [])),
+                    score.get(
+                        "antipatterns_detected",
+                        len(obs.get("antipatterns_detected") or []),
+                    ),
+                )
+            )
         elif score is not None:
-            out.append("**Pattern score:** {} ({} patterns − {} antipatterns)".format(
-                score,
-                len(obs.get("patterns_detected") or []),
-                len(obs.get("antipatterns_detected") or []),
-            ))
-        out += ["", "### Patterns Detected", "",
-                *render_pattern_table(
-                    obs.get("patterns_detected"), located=located), "",
-                "### Antipatterns Detected", "",
-                *render_pattern_table(
-                    obs.get("antipatterns_detected"), located=located), ""]
+            out.append(
+                "**Pattern score:** {} ({} patterns − {} antipatterns)".format(
+                    score,
+                    len(obs.get("patterns_detected") or []),
+                    len(obs.get("antipatterns_detected") or []),
+                )
+            )
+        out += [
+            "",
+            "### Patterns Detected",
+            "",
+            *render_pattern_table(obs.get("patterns_detected"), located=located),
+            "",
+            "### Antipatterns Detected",
+            "",
+            *render_pattern_table(obs.get("antipatterns_detected"), located=located),
+            "",
+        ]
         evidence_sources = obs.get("evidence_sources")
         if evidence_sources:
-            out += ["### Evidence Sources Inspected", "",
-                    ", ".join(f"`{source}`" for source in evidence_sources), ""]
+            out += [
+                "### Evidence Sources Inspected",
+                "",
+                ", ".join(f"`{source}`" for source in evidence_sources),
+                "",
+            ]
         if obs.get("source_inspection"):
-            out += ["### Inspection Coverage and Artifact Identity", "",
-                    *render_source_inspection(obs.get("source_inspection")), ""]
+            out += [
+                "### Inspection Coverage and Artifact Identity",
+                "",
+                *render_source_inspection(obs.get("source_inspection")),
+                "",
+            ]
         if obs.get("opportunity_coverage_identity"):
             out += [
                 "### Opportunity Coverage Identity",
@@ -627,8 +689,12 @@ def render_analysis(ret, title=None, run_date=None, *, persisted_date=None):
             ]
         unevaluable = obs.get("not_evaluable") or obs.get("unevaluable_from_pdf")
         if unevaluable:
-            out += ["### Not Evaluable From Available Evidence", "",
-                    *render_table(unevaluable), ""]
+            out += [
+                "### Not Evaluable From Available Evidence",
+                "",
+                *render_table(unevaluable),
+                "",
+            ]
 
     out += render_catalog_feedback(ret.get("catalog_feedback"))
     return "\n".join(out).rstrip() + "\n"
@@ -648,8 +714,11 @@ def safe_output_name(filename):
     # `...` survives basename and is not caught by an equality check, so test for
     # "contains nothing but dots or whitespace" rather than enumerating cases.
     if not base.strip(". \t\r\n"):
-        print(f"ERROR: return `filename` {filename!r} does not name a file; "
-              f"cannot place its analysis file", file=sys.stderr)
+        print(
+            f"ERROR: return `filename` {filename!r} does not name a file; "
+            f"cannot place its analysis file",
+            file=sys.stderr,
+        )
         sys.exit(1)
     # Match the extension case-insensitively so `TALK.MD` does not become
     # `TALK.MD.md`.
@@ -667,23 +736,27 @@ def persisted_processed_stamp(ret, talk, requested_stamp=None):
     if not isinstance(stored, str) or not stored.strip():
         raise ReturnValidationError(
             f"{ret.get('filename', '<unknown>')} persisted talk has no processed_date; "
-            "run persist-results.py successfully before writing its analysis")
+            "run persist-results.py successfully before writing its analysis"
+        )
     try:
         normalized_stored = normalize_processing_stamp(stored)
     except ValueError as exc:
         raise ReturnValidationError(
             f"{ret.get('filename', '<unknown>')} persisted processed_date is invalid: "
-            f"{exc}") from exc
+            f"{exc}"
+        ) from exc
     if normalized_stored != stored:
         raise ReturnValidationError(
             f"{ret.get('filename', '<unknown>')} persisted processed_date {stored!r} "
             f"is not the canonical stored stamp {normalized_stored!r}; rerun "
-            "persist-results.py before writing its analysis")
+            "persist-results.py before writing its analysis"
+        )
 
     if requested_stamp is not None and requested_stamp != stored:
         raise ReturnValidationError(
             f"{ret.get('filename', '<unknown>')} --run-date {requested_stamp!r} "
-            f"does not match persisted value {stored!r}")
+            f"does not match persisted value {stored!r}"
+        )
     returned_stamp = ret.get("processed_date")
     if returned_stamp is not None:
         try:
@@ -691,13 +764,14 @@ def persisted_processed_stamp(ret, talk, requested_stamp=None):
         except ValueError as exc:
             raise ReturnValidationError(
                 f"{ret.get('filename', '<unknown>')} return processed_date is invalid: "
-                f"{exc}") from exc
-        if (len(normalized_returned_stamp) > 10
-                and normalized_returned_stamp != stored):
+                f"{exc}"
+            ) from exc
+        if len(normalized_returned_stamp) > 10 and normalized_returned_stamp != stored:
             raise ReturnValidationError(
                 f"{ret.get('filename', '<unknown>')} explicit return processed_date "
                 f"{normalized_returned_stamp!r} conflicts with persisted batch "
-                f"stamp {stored!r}")
+                f"stamp {stored!r}"
+            )
     return stored
 
 
@@ -711,7 +785,8 @@ def preflight_output_targets(out_dir, rendered):
         entries = list(os.scandir(out_dir))
     except OSError as exc:
         raise AnalysisBatchWriteError(
-            f"cannot inspect output directory {out_dir}: {exc}") from exc
+            f"cannot inspect output directory {out_dir}: {exc}"
+        ) from exc
     existing_by_key = {}
     for entry in entries:
         key = _target_key_from_basename(entry.name)
@@ -725,7 +800,8 @@ def preflight_output_targets(out_dir, rendered):
             raise AnalysisBatchWriteError(
                 f"analysis target {basename!r} for {name!r} collides with existing "
                 f"output entry or entries {collisions} under normalized/case-folded "
-                "filesystem identity")
+                "filesystem identity"
+            )
         exact = [entry for entry in matches if entry.name == basename]
         if not exact:
             continue
@@ -733,14 +809,17 @@ def preflight_output_targets(out_dir, rendered):
             mode = os.lstat(exact[0].path).st_mode
         except OSError as exc:
             raise AnalysisBatchWriteError(
-                f"cannot inspect existing analysis target {exact[0].path}: {exc}") from exc
+                f"cannot inspect existing analysis target {exact[0].path}: {exc}"
+            ) from exc
         if stat.S_ISDIR(mode):
             raise AnalysisBatchWriteError(
-                f"analysis target {exact[0].path} is an existing directory")
+                f"analysis target {exact[0].path} is an existing directory"
+            )
         if not (stat.S_ISREG(mode) or stat.S_ISLNK(mode)):
             raise AnalysisBatchWriteError(
                 f"analysis target {exact[0].path} is neither a regular file nor "
-                "a symbolic link and cannot be replaced safely")
+                "a symbolic link and cannot be replaced safely"
+            )
 
 
 def _stage_text(path, body):
@@ -748,7 +827,8 @@ def _stage_text(path, body):
     directory = os.path.dirname(os.path.abspath(path)) or "."
     basename = os.path.basename(path)
     fd, temp_path = tempfile.mkstemp(
-        prefix=f".{basename}.", suffix=".stage", dir=directory)
+        prefix=f".{basename}.", suffix=".stage", dir=directory
+    )
     staged = False
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -794,7 +874,8 @@ def _rollback_analysis_batch(items):
                 item["backup"] = None
             except OSError as exc:
                 errors.append(
-                    f"cannot restore {target} from recovery backup {backup}: {exc}")
+                    f"cannot restore {target} from recovery backup {backup}: {exc}"
+                )
     return errors
 
 
@@ -809,17 +890,20 @@ def atomic_write_batch(rendered):
     staging_complete = False
     try:
         for name, path, body in rendered:
-            items.append({
-                "name": name,
-                "path": path,
-                "stage": _stage_text(path, body),
-                "backup": None,
-                "installed": False,
-            })
+            items.append(
+                {
+                    "name": name,
+                    "path": path,
+                    "stage": _stage_text(path, body),
+                    "backup": None,
+                    "installed": False,
+                }
+            )
         staging_complete = True
     except OSError as exc:
         raise AnalysisBatchWriteError(
-            f"cannot stage complete analysis batch: {exc}") from exc
+            f"cannot stage complete analysis batch: {exc}"
+        ) from exc
     finally:
         if not staging_complete:
             for item in items:
@@ -837,11 +921,13 @@ def atomic_write_batch(rendered):
                 mode = os.lstat(target).st_mode
                 if stat.S_ISDIR(mode):
                     raise AnalysisBatchWriteError(
-                        f"analysis target {target} became a directory before commit")
+                        f"analysis target {target} became a directory before commit"
+                    )
                 directory = os.path.dirname(os.path.abspath(target)) or "."
                 basename = os.path.basename(target)
                 fd, backup = tempfile.mkstemp(
-                    prefix=f".{basename}.", suffix=".backup", dir=directory)
+                    prefix=f".{basename}.", suffix=".backup", dir=directory
+                )
                 os.close(fd)
                 backup_installed = False
                 try:
@@ -925,16 +1011,21 @@ def parse_args(argv):
         args.append(argv[i])
         i += 1
     if len(args) != 2:
-        print(f"Usage: {sys.argv[0]} <batch-returns.json> <analyses-dir> "
-              f"--talks <tracking-database.json> [--run-date YYYY-MM-DD]",
-              file=sys.stderr)
+        print(
+            f"Usage: {sys.argv[0]} <batch-returns.json> <analyses-dir> "
+            f"--talks <tracking-database.json> [--run-date YYYY-MM-DD]",
+            file=sys.stderr,
+        )
         sys.exit(1)
     if run_date is not None:
         try:
             run_date = normalize_processing_stamp(run_date)
         except ValueError as exc:
-            print("ERROR: --run-date must be YYYY-MM-DD or a timezone-aware "
-                  f"ISO-8601 timestamp: {exc}", file=sys.stderr)
+            print(
+                "ERROR: --run-date must be YYYY-MM-DD or a timezone-aware "
+                f"ISO-8601 timestamp: {exc}",
+                file=sys.stderr,
+            )
             sys.exit(1)
     return args[0], args[1], run_date, talks_path
 
@@ -950,9 +1041,11 @@ def main():
         sys.exit(1)
 
     if not talks_path:
-        print("ERROR: --talks <tracking-database.json> is required so queue "
-              "generation can be verified before an analysis file is replaced",
-              file=sys.stderr)
+        print(
+            "ERROR: --talks <tracking-database.json> is required so queue "
+            "generation can be verified before an analysis file is replaced",
+            file=sys.stderr,
+        )
         sys.exit(1)
     try:
         reject_tracking_database_symlink(talks_path)
@@ -961,13 +1054,17 @@ def main():
         sys.exit(1)
     db = load_json(talks_path, "tracking database")
     if not isinstance(db, dict) or not isinstance(db.get("talks"), list):
-        print(f"ERROR: {talks_path} is not a tracking database — expected a JSON "
-              f"object with a `talks` array; pass the vault's "
-              "tracking-database.json", file=sys.stderr)
+        print(
+            f"ERROR: {talks_path} is not a tracking database — expected a JSON "
+            f"object with a `talks` array; pass the vault's "
+            "tracking-database.json",
+            file=sys.stderr,
+        )
         sys.exit(1)
     raw_config = db.get("config")
     source_roots: dict[str, object] = (
-        copy.deepcopy(raw_config) if isinstance(raw_config, dict) else {})
+        copy.deepcopy(raw_config) if isinstance(raw_config, dict) else {}
+    )
     configured_vault = source_roots.get("vault_storage_path")
     vault_root = (
         os.path.abspath(os.path.expanduser(configured_vault))
@@ -977,7 +1074,8 @@ def main():
     artifact_capabilities_by_filename = assess_batch_artifact_capabilities(
         db["talks"],
         {
-            ret["filename"] for ret in returns
+            ret["filename"]
+            for ret in returns
             if isinstance(ret, dict) and isinstance(ret.get("filename"), str)
         },
         vault_root=vault_root,
@@ -985,68 +1083,90 @@ def main():
     )
     try:
         talks_by_name = validate_batch_claims_against_talks(
-            db["talks"], returns, required_state="completed",
-            artifact_capabilities_by_filename=artifact_capabilities_by_filename)
+            db["talks"],
+            returns,
+            required_state="completed",
+            artifact_capabilities_by_filename=artifact_capabilities_by_filename,
+        )
         canonical_returns = []
         for ret in returns:
             name = ret["filename"]
-            if (ret.get("status") in ANALYSIS_STATUSES and
-                    resolve_return_schema_version(ret) in
-                    SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS):
-                persisted_observations = talks_by_name[name].get(
-                    "pattern_observations")
+            if (
+                ret.get("status") in ANALYSIS_STATUSES
+                and resolve_return_schema_version(ret)
+                in SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS
+            ):
+                persisted_observations = talks_by_name[name].get("pattern_observations")
                 if not isinstance(persisted_observations, dict):
                     raise PatternEvidenceError(
-                        f"{name} has no persisted canonical pattern observations")
+                        f"{name} has no persisted canonical pattern observations"
+                    )
                 canonical_ret = copy.deepcopy(ret)
-                canonical_observations = canonical_ret.get(
-                    "pattern_observations")
+                canonical_observations = canonical_ret.get("pattern_observations")
                 if not isinstance(canonical_observations, dict):
                     raise PatternEvidenceError(
-                        f"{name} raw return has no pattern observations")
+                        f"{name} raw return has no pattern observations"
+                    )
                 for field in (
-                    "evidence_schema_version", "source_inspection",
-                    "patterns_detected", "antipatterns_detected",
-                    "not_evaluable", "applicability_assessments",
-                    "pattern_outcomes", "opportunity_coverage_identity",
+                    "evidence_schema_version",
+                    "source_inspection",
+                    "patterns_detected",
+                    "antipatterns_detected",
+                    "not_evaluable",
+                    "applicability_assessments",
+                    "pattern_outcomes",
+                    "opportunity_coverage_identity",
                 ):
                     if (
-                        field in {
-                            "applicability_assessments", "pattern_outcomes",
+                        field
+                        in {
+                            "applicability_assessments",
+                            "pattern_outcomes",
                             "opportunity_coverage_identity",
                         }
-                        and resolve_return_schema_version(ret)
-                            != RETURN_SCHEMA_VERSION
+                        and resolve_return_schema_version(ret) != RETURN_SCHEMA_VERSION
                     ):
                         continue
                     if field not in persisted_observations:
                         raise PatternEvidenceError(
                             f"{name} persisted observations lack canonical "
-                            f"field {field!r}")
+                            f"field {field!r}"
+                        )
                     canonical_observations[field] = copy.deepcopy(
-                        persisted_observations[field])
+                        persisted_observations[field]
+                    )
             else:
                 canonical_ret = copy.deepcopy(ret)
             if return_evidence_claim(canonical_ret) != return_evidence_claim(ret):
                 raise PatternEvidenceError(
-                    "canonicalization changed model-authored return fields")
+                    "canonicalization changed model-authored return fields"
+                )
             canonical_returns.append(canonical_ret)
             validate_persisted_catalog_generation(
-                talks_by_name[name], ret, catalog,
+                talks_by_name[name],
+                ret,
+                catalog,
                 canonical_ret=(
                     canonical_ret
-                    if resolve_return_schema_version(ret) in
-                    SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS else None
+                    if resolve_return_schema_version(ret)
+                    in SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS
+                    else None
                 ),
             )
-            if resolve_return_schema_version(ret) in SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS:
+            if (
+                resolve_return_schema_version(ret)
+                in SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS
+            ):
                 freshness_reasons = assess_current_persisted_pattern_evidence_freshness(
-                    talks_by_name[name], vault_root=vault_root,
-                    source_roots=source_roots)
+                    talks_by_name[name],
+                    vault_root=vault_root,
+                    source_roots=source_roots,
+                )
                 if freshness_reasons:
                     raise PatternEvidenceError(
                         f"{name} persisted evidence artifacts are stale or "
-                        f"unverifiable: {list(freshness_reasons)}")
+                        f"unverifiable: {list(freshness_reasons)}"
+                    )
     except (PatternEvidenceError, ReturnValidationError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -1077,7 +1197,8 @@ def main():
         path = os.path.join(out_dir, safe_name)
         try:
             processed_stamp = persisted_processed_stamp(
-                ret, talks_by_name[name], requested_stamp=run_date)
+                ret, talks_by_name[name], requested_stamp=run_date
+            )
         except ReturnValidationError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             sys.exit(1)
@@ -1096,24 +1217,38 @@ def main():
     try:
         os.makedirs(out_dir, exist_ok=True)
     except OSError as e:
-        print(f"ERROR: cannot create output directory {out_dir}: {e} — check the "
-              f"path exists as a directory and is writable", file=sys.stderr)
+        print(
+            f"ERROR: cannot create output directory {out_dir}: {e} — check the "
+            f"path exists as a directory and is writable",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     try:
         atomic_write_batch(rendered)
     except OSError as e:
-        print(f"ERROR: cannot commit analysis batch: {e} — check the output "
-              "directory is writable and has free space", file=sys.stderr)
+        print(
+            f"ERROR: cannot commit analysis batch: {e} — check the output "
+            "directory is writable and has free space",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     written = []
     for name, path, body in rendered:
         written.append({"filename": name, "path": path, "bytes": len(body.encode())})
 
-    json.dump({"written": len(written), "dir": out_dir, "files": written,
-               "skipped": skipped, "pattern_catalog_fingerprint": catalog.fingerprint},
-              sys.stdout, ensure_ascii=False)
+    json.dump(
+        {
+            "written": len(written),
+            "dir": out_dir,
+            "files": written,
+            "skipped": skipped,
+            "pattern_catalog_fingerprint": catalog.fingerprint,
+        },
+        sys.stdout,
+        ensure_ascii=False,
+    )
     sys.stdout.write("\n")
 
 
