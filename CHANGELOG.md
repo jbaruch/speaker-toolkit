@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.2 — 2026-08-01
+
 ### fix(vault-ingress) — contain native dependency probe crashes
 
 Runtime module imports now run in bounded child processes launched by the exact
