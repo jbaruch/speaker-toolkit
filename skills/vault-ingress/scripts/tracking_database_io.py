@@ -352,45 +352,44 @@ def _exclusive_database_lock(path: Path) -> Iterator[_DatabaseLock]:
             f"cannot open cooperative tracking-database lock {lock_path}: {exc}"
         ) from exc
     acquired = False
+    initialized = False
     try:
-        opened = os.fstat(descriptor)
-        if not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
-            raise TrackingDatabaseIOError(
-                f"cooperative tracking-database lock {lock_path} must be one regular file"
-            )
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
-        acquired = True
         try:
-            visible = lock_path.lstat()
+            opened = os.fstat(descriptor)
+            if not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
+                raise TrackingDatabaseIOError(
+                    f"cooperative tracking-database lock {lock_path} must be one regular file"
+                )
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            acquired = True
+            try:
+                visible = lock_path.lstat()
+            except OSError as exc:
+                raise TrackingDatabaseIOError(
+                    f"cannot verify cooperative tracking-database lock {lock_path}: {exc}"
+                ) from exc
+            locked = os.fstat(descriptor)
+            if (
+                stat.S_ISLNK(visible.st_mode)
+                or not stat.S_ISREG(visible.st_mode)
+                or _lock_identity(visible) != _lock_identity(locked)
+                or locked.st_nlink != 1
+            ):
+                raise TrackingDatabaseIOError(
+                    f"cooperative tracking-database lock {lock_path} changed while locking; "
+                    "restore the persistent regular lock file and retry"
+                )
         except OSError as exc:
             raise TrackingDatabaseIOError(
-                f"cannot verify cooperative tracking-database lock {lock_path}: {exc}"
+                f"cannot acquire tracking-database lock through {lock_path}: {exc}"
             ) from exc
-        locked = os.fstat(descriptor)
-        if (
-            stat.S_ISLNK(visible.st_mode)
-            or not stat.S_ISREG(visible.st_mode)
-            or _lock_identity(visible) != _lock_identity(locked)
-            or locked.st_nlink != 1
-        ):
-            raise TrackingDatabaseIOError(
-                f"cooperative tracking-database lock {lock_path} changed while locking; "
-                "restore the persistent regular lock file and retry"
-            )
-    except OSError as exc:
-        try:
-            os.close(descriptor)
-        except OSError:
-            pass
-        raise TrackingDatabaseIOError(
-            f"cannot acquire tracking-database lock through {lock_path}: {exc}"
-        ) from exc
-    except BaseException:
-        try:
-            os.close(descriptor)
-        except OSError:
-            pass
-        raise
+        initialized = True
+    finally:
+        if not initialized:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
 
     lock = _DatabaseLock(descriptor=descriptor, path=lock_path, warnings=[])
     try:
@@ -659,6 +658,7 @@ def _stage_candidate(path: Path, candidate: bytes, mode: int) -> StagedCandidate
     )
     descriptor: int | None = None
     name: str | None = None
+    completed = False
     try:
         flags = os.O_RDWR | os.O_CREAT | os.O_EXCL
         flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
@@ -700,23 +700,24 @@ def _stage_candidate(path: Path, candidate: bytes, mode: int) -> StagedCandidate
             size=len(candidate),
         )
         _verify_staged_candidate(stage, candidate)
+        completed = True
         return stage
-    except BaseException:
-        if descriptor is not None and name is not None:
-            if _visible_descriptor_identity(name, descriptor, directory_descriptor):
+    finally:
+        if not completed:
+            if descriptor is not None and name is not None:
+                if _visible_descriptor_identity(name, descriptor, directory_descriptor):
+                    try:
+                        os.unlink(name, dir_fd=directory_descriptor)
+                    except OSError:
+                        pass
                 try:
-                    os.unlink(name, dir_fd=directory_descriptor)
+                    os.close(descriptor)
                 except OSError:
                     pass
             try:
-                os.close(descriptor)
+                os.close(directory_descriptor)
             except OSError:
                 pass
-        try:
-            os.close(directory_descriptor)
-        except OSError:
-            pass
-        raise
 
 
 def _verify_staged_candidate(stage: StagedCandidate, candidate: bytes) -> None:

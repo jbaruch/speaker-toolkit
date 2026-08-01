@@ -977,7 +977,8 @@ def main():
             print(
                 "Tracking DB SHA-256: "
                 f"{write_result.input_sha256} -> {write_result.output_sha256} "
-                f"({write_result.durability_state})"
+                f"({write_result.durability_state})",
+                file=sys.stderr,
             )
             for warning in write_result.warnings:
                 print(f"WARNING: {warning}", file=sys.stderr)

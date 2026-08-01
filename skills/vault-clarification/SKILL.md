@@ -173,9 +173,9 @@ in prose.
 Retire goals the speaker no longer wants with `retire_improvement_goal`, naming
 its exact `id` and expecting the complete current record. That operation changes
 only `status` to `retired`, so legacy fields and fixed provenance survive unchanged;
-leave `achieved` goals in place as history. A schema-v1 pattern goal is historical
-and unverifiable, not a baseline to restamp. Compatibility shorthand:
-schema-v1 pattern goal is historical and unverifiable. If the speaker explicitly chooses to
+leave `achieved` goals in place as history.
+A schema-v1 pattern goal is historical and unverifiable, never a baseline to restamp.
+If the speaker explicitly chooses to
 rebaseline one, retire the old record and create a new schema-v2 record whose
 `supersedes_goal_id` points to it. This preserves the old fixed yardstick rather than
 silently overwriting it.

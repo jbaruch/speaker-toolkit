@@ -270,6 +270,65 @@ def test_replace_interrupt_cleans_stage_but_keeps_persistent_lock(
     assert tracking_database_io.lock_path_for(path).is_file()
 
 
+def test_lock_acquisition_interrupt_closes_descriptor(
+    tracking_database_io,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "tracking-database.json"
+    original = _write(path, {"talks": []})
+    expected = tracking_database_io.snapshot_tracking_database(path)
+    lock_path = tracking_database_io.lock_path_for(path)
+    real_flock = tracking_database_io.fcntl.flock
+
+    def interrupt_after_acquire(descriptor: int, operation: int) -> object:
+        result = real_flock(descriptor, operation)
+        if operation == fcntl.LOCK_EX:
+            raise KeyboardInterrupt
+        return result
+
+    monkeypatch.setattr(tracking_database_io.fcntl, "flock", interrupt_after_acquire)
+    with pytest.raises(KeyboardInterrupt):
+        tracking_database_io.commit_tracking_database(
+            expected,
+            tracking_database_io.render_json_object({"talks": [], "config": {}}),
+        )
+
+    assert path.read_bytes() == original
+    probe = os.open(lock_path, os.O_RDWR)
+    try:
+        real_flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        real_flock(probe, fcntl.LOCK_UN)
+    finally:
+        os.close(probe)
+
+
+def test_staging_interrupt_cleans_candidate_and_preserves_database(
+    tracking_database_io,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "tracking-database.json"
+    original = _write(path, {"talks": []})
+    expected = tracking_database_io.snapshot_tracking_database(path)
+    real_write = tracking_database_io._write_descriptor
+
+    def interrupt_after_write(descriptor: int, raw: bytes) -> None:
+        real_write(descriptor, raw)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(tracking_database_io, "_write_descriptor", interrupt_after_write)
+    with pytest.raises(KeyboardInterrupt):
+        tracking_database_io.commit_tracking_database(
+            expected,
+            tracking_database_io.render_json_object({"talks": [], "config": {}}),
+        )
+
+    assert path.read_bytes() == original
+    assert not list(tmp_path.glob(".*.tracking-db.tmp"))
+    assert tracking_database_io.lock_path_for(path).is_file()
+
+
 def test_commit_rejects_substituted_stage_without_unlinking_it(
     tracking_database_io,
     tmp_path: Path,
