@@ -38,13 +38,19 @@ def _talk(
     status="processed",
     catalog=CATALOG,
     scoring_schema=2,
+    generation_status="current",
+    generation_reasons=None,
     nested=True,
 ):
+    if generation_reasons is None:
+        generation_reasons = []
     talk = {
         "filename": filename,
         "status": status,
         "pattern_catalog_fingerprint": catalog,
         "pattern_scoring_schema_version": scoring_schema,
+        "pattern_scoring_generation_status": generation_status,
+        "pattern_scoring_generation_reasons": generation_reasons,
         "pattern_score": score,
     }
     if nested:
@@ -73,6 +79,11 @@ def test_builds_deterministic_global_snapshot_with_exact_batch_exclusion(
         _talk("pending.md", 90, status="pending"),
         _talk("old-catalog.md", 80, catalog=OTHER_CATALOG),
         _talk("old-scoring.md", 70, scoring_schema=1),
+        _talk(
+            "legacy-generation.md",
+            60,
+            generation_status="legacy_unbaselineable",
+        ),
         {
             "filename": "unscored.md",
             "status": "processed",
@@ -98,6 +109,8 @@ def test_builds_deterministic_global_snapshot_with_exact_batch_exclusion(
         "active_batch_excluded": True,
         "excluded_filenames": ["active.md", "unused-selected.md"],
         "eligible_statuses": ["processed", "processed_partial"],
+        "pattern_scoring_generation_status": "current",
+        "pattern_scoring_generation_reasons": [],
         "pattern_catalog_fingerprint": CATALOG,
         "pattern_scoring_schema_version": 2,
         "scored_talk_count": 3,
@@ -179,6 +192,76 @@ def test_rejects_malformed_persisted_generation_identity(
         _build(adherence_baseline, [talk])
 
 
+@pytest.mark.parametrize("generation_status", [True, "future", ""])
+def test_rejects_malformed_or_unknown_generation_status(
+    adherence_baseline,
+    generation_status,
+):
+    talk = _talk(
+        "bad-generation-status.md",
+        1,
+        generation_status=generation_status,
+    )
+
+    with pytest.raises(
+        adherence_baseline.AdherenceBaselineError,
+        match="pattern_scoring_generation_status must be one of",
+    ):
+        _build(adherence_baseline, [talk])
+
+
+def test_missing_and_legacy_generation_statuses_are_excluded(adherence_baseline):
+    missing = _talk("missing-status.md", 100)
+    missing.pop("pattern_scoring_generation_status")
+    legacy = _talk(
+        "legacy.md",
+        100,
+        generation_status="legacy_unbaselineable",
+    )
+    legacy.pop("pattern_scoring_generation_reasons")
+
+    snapshot = _build(
+        adherence_baseline,
+        [missing, legacy],
+    )
+
+    assert snapshot["scored_talk_count"] == 0
+    assert snapshot["pattern_score_sum"] == 0
+    assert snapshot["average_pattern_score"] is None
+
+
+@pytest.mark.parametrize(
+    "generation_reasons",
+    [["legacy catalog"], "none", False, {}],
+)
+def test_current_generation_requires_exact_empty_reasons(
+    adherence_baseline,
+    generation_reasons,
+):
+    talk = _talk(
+        "bad-generation-reasons.md",
+        1,
+        generation_reasons=generation_reasons,
+    )
+
+    with pytest.raises(
+        adherence_baseline.AdherenceBaselineError,
+        match="pattern_scoring_generation_reasons must be exactly",
+    ):
+        _build(adherence_baseline, [talk])
+
+
+def test_current_generation_requires_present_reasons(adherence_baseline):
+    talk = _talk("missing-generation-reasons.md", 1)
+    talk.pop("pattern_scoring_generation_reasons")
+
+    with pytest.raises(
+        adherence_baseline.AdherenceBaselineError,
+        match="pattern_scoring_generation_reasons must be exactly",
+    ):
+        _build(adherence_baseline, [talk])
+
+
 @pytest.mark.parametrize(
     ("scores", "expected"),
     [
@@ -221,6 +304,16 @@ def test_zero_population_uses_zero_sum_and_null_average(adherence_baseline):
             "eligible_statuses",
             ["processed_partial", "processed"],
             "eligible_statuses must be exactly",
+        ),
+        (
+            "pattern_scoring_generation_status",
+            "legacy_unbaselineable",
+            "pattern_scoring_generation_status must be exactly 'current'",
+        ),
+        (
+            "pattern_scoring_generation_reasons",
+            ["not current"],
+            "pattern_scoring_generation_reasons must be exactly",
         ),
         (
             "pattern_scoring_schema_version",
@@ -272,6 +365,41 @@ def test_validation_recomputes_count_sum_average_invariant(adherence_baseline):
     with pytest.raises(
         adherence_baseline.AdherenceBaselineError,
         match="does not match ROUND_HALF_EVEN count/sum result",
+    ):
+        adherence_baseline.validate_adherence_baseline(snapshot)
+
+
+def test_validation_rejects_huge_integer_average_without_overflow(adherence_baseline):
+    snapshot = _build(adherence_baseline, [_talk("talk.md", 1)])
+    snapshot["average_pattern_score"] = 10**400
+
+    with pytest.raises(
+        adherence_baseline.AdherenceBaselineError,
+        match="does not match ROUND_HALF_EVEN count/sum result",
+    ):
+        adherence_baseline.validate_adherence_baseline(snapshot)
+
+
+def test_build_rejects_unrepresentable_huge_score_with_domain_error(
+    adherence_baseline,
+):
+    with pytest.raises(
+        adherence_baseline.AdherenceBaselineError,
+        match="cannot be represented as a finite two-place JSON number",
+    ):
+        _build(adherence_baseline, [_talk("huge.md", 10**400)])
+
+
+def test_validation_rejects_unrepresentable_huge_sum_with_domain_error(
+    adherence_baseline,
+):
+    snapshot = _build(adherence_baseline, [_talk("talk.md", 1)])
+    snapshot["pattern_score_sum"] = 10**400
+    snapshot["average_pattern_score"] = 10**400
+
+    with pytest.raises(
+        adherence_baseline.AdherenceBaselineError,
+        match="cannot be represented as a finite two-place JSON number",
     ):
         adherence_baseline.validate_adherence_baseline(snapshot)
 

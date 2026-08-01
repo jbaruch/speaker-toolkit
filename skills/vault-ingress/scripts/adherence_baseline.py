@@ -14,13 +14,21 @@ import math
 import re
 from collections.abc import Iterable, Iterator, Mapping
 from datetime import datetime, timezone
-from decimal import Decimal, ROUND_HALF_EVEN
+from decimal import Decimal, DecimalException, ROUND_HALF_EVEN
 from typing import cast
 
 
 ADHERENCE_BASELINE_SCHEMA_VERSION = 1
 ADHERENCE_BASELINE_SCOPE = "global"
 ELIGIBLE_STATUSES = ("processed", "processed_partial")
+CURRENT_PATTERN_SCORING_GENERATION_STATUS = "current"
+_LEGACY_PATTERN_SCORING_GENERATION_STATUS = "legacy_unbaselineable"
+_KNOWN_PATTERN_SCORING_GENERATION_STATUSES = frozenset(
+    {
+        CURRENT_PATTERN_SCORING_GENERATION_STATUS,
+        _LEGACY_PATTERN_SCORING_GENERATION_STATUS,
+    }
+)
 
 _CATALOG_FINGERPRINT = re.compile(r"[0-9a-f]{64}")
 _MISSING = object()
@@ -32,6 +40,8 @@ _SNAPSHOT_FIELDS = (
     "active_batch_excluded",
     "excluded_filenames",
     "eligible_statuses",
+    "pattern_scoring_generation_status",
+    "pattern_scoring_generation_reasons",
     "pattern_catalog_fingerprint",
     "pattern_scoring_schema_version",
     "scored_talk_count",
@@ -124,6 +134,27 @@ def _matches_generation(
     pattern_scoring_schema_version: int,
     filename: str,
 ) -> bool:
+    raw_status = talk.get("pattern_scoring_generation_status", _MISSING)
+    if raw_status is _MISSING:
+        return False
+    if (
+        not isinstance(raw_status, str)
+        or raw_status not in _KNOWN_PATTERN_SCORING_GENERATION_STATUSES
+    ):
+        raise AdherenceBaselineError(
+            f"{filename}.pattern_scoring_generation_status must be one of "
+            f"{sorted(_KNOWN_PATTERN_SCORING_GENERATION_STATUSES)!r}, got "
+            f"{raw_status!r}"
+        )
+    if raw_status != CURRENT_PATTERN_SCORING_GENERATION_STATUS:
+        return False
+    raw_reasons = talk.get("pattern_scoring_generation_reasons", _MISSING)
+    if raw_reasons != []:
+        raise AdherenceBaselineError(
+            f"{filename}.pattern_scoring_generation_reasons must be exactly [] "
+            "when pattern_scoring_generation_status is 'current'"
+        )
+
     raw_fingerprint = talk.get("pattern_catalog_fingerprint", _MISSING)
     raw_version = talk.get("pattern_scoring_schema_version", _MISSING)
     if raw_fingerprint is _MISSING or raw_version is _MISSING:
@@ -182,11 +213,23 @@ def _resolved_pattern_score(
 def _average_pattern_score(score_sum: int, talk_count: int) -> float | None:
     if talk_count == 0:
         return None
-    average = (Decimal(score_sum) / Decimal(talk_count)).quantize(
-        _TWO_DECIMAL_PLACES,
-        rounding=ROUND_HALF_EVEN,
-    )
-    return float(average)
+    try:
+        average = (Decimal(score_sum) / Decimal(talk_count)).quantize(
+            _TWO_DECIMAL_PLACES,
+            rounding=ROUND_HALF_EVEN,
+        )
+        result = float(average)
+    except (DecimalException, OverflowError) as exc:
+        raise AdherenceBaselineError(
+            "average_pattern_score cannot be represented as a finite "
+            "two-place JSON number"
+        ) from exc
+    if not math.isfinite(result):
+        raise AdherenceBaselineError(
+            "average_pattern_score cannot be represented as a finite "
+            "two-place JSON number"
+        )
+    return result
 
 
 def build_adherence_baseline(
@@ -248,6 +291,10 @@ def build_adherence_baseline(
         "active_batch_excluded": True,
         "excluded_filenames": excluded_filenames,
         "eligible_statuses": list(ELIGIBLE_STATUSES),
+        "pattern_scoring_generation_status": (
+            CURRENT_PATTERN_SCORING_GENERATION_STATUS
+        ),
+        "pattern_scoring_generation_reasons": [],
         "pattern_catalog_fingerprint": exact_fingerprint,
         "pattern_scoring_schema_version": exact_scoring_version,
         "scored_talk_count": scored_talk_count,
@@ -302,6 +349,19 @@ def validate_adherence_baseline(snapshot: object) -> dict[str, object]:
         raise AdherenceBaselineError(
             f"eligible_statuses must be exactly {list(ELIGIBLE_STATUSES)!r}"
         )
+    if (
+        snapshot["pattern_scoring_generation_status"]
+        != CURRENT_PATTERN_SCORING_GENERATION_STATUS
+    ):
+        raise AdherenceBaselineError(
+            "pattern_scoring_generation_status must be exactly "
+            f"{CURRENT_PATTERN_SCORING_GENERATION_STATUS!r}"
+        )
+    if snapshot["pattern_scoring_generation_reasons"] != []:
+        raise AdherenceBaselineError(
+            "pattern_scoring_generation_reasons must be exactly [] for the "
+            "current baseline cohort"
+        )
 
     fingerprint = _require_catalog_fingerprint(
         snapshot["pattern_catalog_fingerprint"],
@@ -334,7 +394,7 @@ def validate_adherence_baseline(snapshot: object) -> dict[str, object]:
             raise AdherenceBaselineError(
                 "average_pattern_score must be a finite JSON number when talks are scored"
             )
-        if not math.isfinite(float(raw_average)):
+        if isinstance(raw_average, float) and not math.isfinite(raw_average):
             raise AdherenceBaselineError("average_pattern_score must be finite")
         if raw_average != expected_average:
             raise AdherenceBaselineError(
@@ -349,6 +409,10 @@ def validate_adherence_baseline(snapshot: object) -> dict[str, object]:
         "active_batch_excluded": True,
         "excluded_filenames": excluded_filenames,
         "eligible_statuses": list(ELIGIBLE_STATUSES),
+        "pattern_scoring_generation_status": (
+            CURRENT_PATTERN_SCORING_GENERATION_STATUS
+        ),
+        "pattern_scoring_generation_reasons": [],
         "pattern_catalog_fingerprint": fingerprint,
         "pattern_scoring_schema_version": scoring_version,
         "scored_talk_count": talk_count,
