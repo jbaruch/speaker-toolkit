@@ -130,9 +130,17 @@ the pattern goal has no verifiable baseline yet and do not create it. `pacing` u
 lane; a catalog release must not invalidate it. `other` uses `independent` and must
 not conceal a catalog-pattern metric.
 
-Run `"{python_path}" "{speaker_toolkit_root}/skills/vault-clarification/scripts/goal_generation_provenance.py"` with
-the candidate goal and the profile's current pattern baseline before writing it. The script owns generation
-comparability; do not reproduce its fingerprint/schema comparison in prose.
+Run `"{python_path}" "{speaker_toolkit_root}/skills/vault-clarification/scripts/goal_generation_provenance.py"`
+before writing the candidate. Send one JSON object on stdin:
+`{"goals": [<candidate-goal-object>], "current_pattern_baseline": <pattern_profile.pattern_baseline-object-or-null>}`.
+Exit 0 writes one JSON object to stdout:
+`{"schema_version": 1, "assessments": [{"goal_id": "<id>", "comparable": <boolean>, "decision": "comparable|needs_rebaseline|unverifiable", "reason_codes": [<stable-code>, ...]}]}`.
+Require exit 0 and one assessment for the candidate. Write the candidate only for
+`"comparable": true`; surface `decision` and `reason_codes` for a false assessment.
+Malformed JSON or a contract violation exits 1, writes no stdout, and writes
+`ERROR: <diagnostic>` to stderr; stop without writing the candidate. The script
+owns generation comparability; do not reproduce its fingerprint/schema comparison
+in prose.
 
 Retire goals the speaker no longer wants (`status: "retired"`); leave `achieved`
 goals in place as history. A schema-v1 pattern goal is historical and unverifiable,

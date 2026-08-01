@@ -41,6 +41,16 @@ def test_reader_runs_mechanical_gate_and_never_scores_mismatch():
     assert "must not set `status` to\n  `achieved`" in PROCESSING
 
 
+def test_owner_documents_goal_gate_cli_contract():
+    assert '"goals": [<candidate-goal-object>]' in SKILL
+    assert '"current_pattern_baseline": <pattern_profile.pattern_baseline' in SKILL
+    assert '"schema_version": 1, "assessments":' in SKILL
+    assert "Require exit 0 and one assessment for the candidate" in SKILL
+    assert 'Write the candidate only for\n`"comparable": true`' in SKILL
+    assert "violation exits 1, writes no stdout" in SKILL
+    assert "`ERROR: <diagnostic>` to stderr" in SKILL
+
+
 def test_legacy_pattern_goal_is_read_only_until_speaker_rebaseline():
     assert "schema-v1 pattern goal is historical and unverifiable" in SKILL
     assert (
