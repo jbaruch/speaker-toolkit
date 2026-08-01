@@ -36,7 +36,7 @@ saves the output. You emit the ops while walking the outline (Step 5.2), then
 validate and build:
 
 ```bash
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/validate-deckops.py" ops.txt
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/validate-deckops.py" ops.txt
 bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/build-deck.sh" '{template_copy_pptx_path}' '{output_path}' ops.txt
 ```
 
@@ -293,7 +293,7 @@ speaker's `publishing_process.export_method` and platform.
 Run the export script — it auto-detects PowerPoint (macOS AppleScript) or LibreOffice:
 
 ```bash
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/export-pdf.py" path/to/deck.pptx [path/to/output.pdf]
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/export-pdf.py" path/to/deck.pptx [path/to/output.pdf]
 ```
 
 If `output.pdf` is omitted, uses the same name with `.pdf` extension.

@@ -1,16 +1,16 @@
 # Changelog
 
-## 0.20.0 — 2026-08-01
+### fix(vault-ingress) — serialize tracking-database access and close owner schemas
 
-### fix(vault-ingress) — close the tracking-database transaction and owner schemas
-
-Tracking-database staging now retains a no-follow file descriptor and opened parent
-directory through installation. The writer revalidates staged bytes, hash, inode,
-generation, type, link count, and directory-relative identity at the install boundary;
-a substituted staged name fails closed and is never unlinked. Immediate post-install
-verification detects observable non-cooperative edits. Once replace/link succeeds,
-verification, directory sync/close, staged cleanup, and lock unlock/close failures are
-reported truthfully as installed warnings rather than generic not-installed errors.
+All toolkit tracking-database writers now share one persistent sibling lock and one
+strict exact-generation transaction. Reads reject duplicate keys, non-standard JSON
+numbers, non-object roots, symlinks, and generation swaps before network or mutation
+work. Writes retain no-follow file and directory descriptors through staged `fsync`,
+revalidate bytes and identity at the install boundary, atomically replace, and sync the
+parent directory. Staged-name substitution fails closed; immediate post-install checks
+detect observable non-cooperative edits. Installed-but-not-fully-synced outcomes are
+reported truthfully, semantic no-ops preserve bytes and inode, and source-repair
+backups are never-overwritten copies bound to the exact input hash.
 
 Owner-plan and source-repair equality is now recursive and JSON-type-sensitive:
 object order is irrelevant, array order is significant, and `true`, `1`, and `1.0`
@@ -31,25 +31,6 @@ reference documents post-install outcomes plus the residual non-cooperating-writ
 last-instruction race.
 
 ## 0.19.0 — 2026-08-01
-
-### fix(vault-ingress) — serialize every tracking-database writer and fail ambiguous reads closed
-
-All toolkit tracking-database writers now share one persistent sibling lock and
-one exact-generation transaction: strict no-follow snapshot, typed validation,
-staged file `fsync`, a second byte-and-inode precondition check, atomic replace,
-and parent-directory `fsync`. No-op writes preserve bytes and inode; installed-
-but-not-directory-synced results are explicit. Source-repair backups are
-never-overwritten copies bound to the exact input hash.
-
-Agent-owned config, PPTX, intent, coaching, resource, thumbnail, and publishing
-changes now use one typed dry-run/apply command with exact semantic expectations
-and an input-SHA precondition. Queue, persistence, shownotes import, source repair,
-and QR writers use the same transaction rather than private atomic-write helpers.
-
-Every public tracking-database consumer now uses the same strict UTF-8 JSON
-reader. Duplicate keys at any depth, `NaN`/infinities, non-object roots, symlinks,
-and generation swaps fail before network work, profile generation, analysis
-rendering, or mutation can occur.
 
 ### feat(vault-ingress) — make reparses exhaustive, source-bound, and freshness-bound
 

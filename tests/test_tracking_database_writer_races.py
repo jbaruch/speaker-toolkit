@@ -248,7 +248,7 @@ def test_queue_and_persistence_writers_serialize_then_reject_stale_input(
                 {"config": {}, "talks": [], "writer": "persistence"},
                 expected_snapshot=persistence_snapshot,
             )
-        except Exception as exc:
+        except ValueError as exc:
             persistence_errors.append(exc)
 
     def stage_queue_and_contend(target: Path, candidate: bytes, mode: int) -> str:

@@ -688,7 +688,7 @@ def test_cross_writer_waits_then_rejects_its_stale_generation(
                 second_snapshot,
                 second_candidate,
             )
-        except Exception as exc:
+        except tracking_database_io.TrackingDatabaseConflictError as exc:
             second_errors.append(exc)
 
     def stage_and_contend(target: Path, candidate: bytes, mode: int) -> str:
