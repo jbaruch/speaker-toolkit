@@ -1,11 +1,13 @@
 """Pure construction and validation for batch-stable adherence baselines.
 
-The queue owner will snapshot this payload before it claims a batch.  This
-module deliberately performs no I/O and never reads the clock: callers supply
-the complete talk population, the exact selected filenames, and the as-of
-timestamp.  Keeping the aggregation here makes queue, return, persistence, and
-rendering integrations share one denominator without coupling this contract to
-any of those surfaces.
+The queue owner will snapshot this payload before it claims a batch.  Profile
+generation and other downstream consumers can also use the same exact scoring-
+generation selector for post-batch views.  This module deliberately performs
+no I/O and never reads the clock: callers supply the complete talk population,
+the exact selected filenames, and the as-of timestamp.  Keeping the selection
+and aggregation here makes queue, return, persistence, rendering, and profile
+integrations share one denominator without coupling this contract to any of
+those surfaces.
 """
 
 from __future__ import annotations
@@ -23,6 +25,10 @@ ADHERENCE_BASELINE_SCOPE = "global"
 ELIGIBLE_STATUSES = ("processed", "processed_partial")
 CURRENT_PATTERN_SCORING_GENERATION_STATUS = "current"
 _LEGACY_PATTERN_SCORING_GENERATION_STATUS = "legacy_unbaselineable"
+MISSING_GENERATION_STATUS_REASON = "missing_generation_status"
+LEGACY_GENERATION_REASON = "legacy_generation"
+CATALOG_FINGERPRINT_MISMATCH_REASON = "catalog_fingerprint_mismatch"
+SCORING_SCHEMA_VERSION_MISMATCH_REASON = "scoring_schema_version_mismatch"
 _KNOWN_PATTERN_SCORING_GENERATION_STATUSES = frozenset(
     {
         CURRENT_PATTERN_SCORING_GENERATION_STATUS,
@@ -127,16 +133,16 @@ def _talk_records(value: object) -> Iterator[Mapping[str, object]]:
         yield cast(Mapping[str, object], talk)
 
 
-def _matches_generation(
+def _classify_generation(
     talk: Mapping[str, object],
     *,
     pattern_catalog_fingerprint: str,
     pattern_scoring_schema_version: int,
     filename: str,
-) -> bool:
+) -> tuple[bool, list[str], str | None, str | None, int | None]:
     raw_status = talk.get("pattern_scoring_generation_status", _MISSING)
     if raw_status is _MISSING:
-        return False
+        return False, [MISSING_GENERATION_STATUS_REASON], None, None, None
     if (
         not isinstance(raw_status, str)
         or raw_status not in _KNOWN_PATTERN_SCORING_GENERATION_STATUSES
@@ -147,7 +153,7 @@ def _matches_generation(
             f"{raw_status!r}"
         )
     if raw_status != CURRENT_PATTERN_SCORING_GENERATION_STATUS:
-        return False
+        return False, [LEGACY_GENERATION_REASON], raw_status, None, None
     raw_reasons = talk.get("pattern_scoring_generation_reasons", _MISSING)
     if raw_reasons != []:
         raise AdherenceBaselineError(
@@ -175,9 +181,17 @@ def _matches_generation(
         f"{filename}.pattern_scoring_schema_version",
         minimum=1,
     )
+    reason_codes = []
+    if stored_fingerprint != pattern_catalog_fingerprint:
+        reason_codes.append(CATALOG_FINGERPRINT_MISMATCH_REASON)
+    if stored_version != pattern_scoring_schema_version:
+        reason_codes.append(SCORING_SCHEMA_VERSION_MISMATCH_REASON)
     return (
-        stored_fingerprint == pattern_catalog_fingerprint
-        and stored_version == pattern_scoring_schema_version
+        not reason_codes,
+        reason_codes,
+        raw_status,
+        stored_fingerprint,
+        stored_version,
     )
 
 
@@ -240,6 +254,94 @@ def _average_pattern_score(score_sum: int, talk_count: int) -> float | None:
     return result
 
 
+def partition_pattern_scoring_cohort(
+    talks: object,
+    *,
+    excluded_filenames: object,
+    pattern_catalog_fingerprint: object,
+    pattern_scoring_schema_version: object,
+) -> tuple[
+    list[Mapping[str, object]],
+    list[Mapping[str, object]],
+    list[dict[str, object]],
+]:
+    """Partition eligible talks by exact active scoring generation.
+
+    The first list contains talks that match the active catalog fingerprint and
+    scoring schema and have valid, equal promoted/nested scores.  The second
+    contains eligible talks whose generation is missing, legacy, or valid but
+    different.  The third contains a deterministic reason-code record for each
+    talk in the second list, in the same order.  Ineligible statuses and exact
+    excluded filenames appear in none of the lists.  Exclusion happens before
+    generation or score inspection so an active reparse can safely omit its own
+    previous records.
+
+    Malformed metadata is never silently classified as legacy: unknown
+    statuses, invalid generation identity, incomplete current-generation
+    claims, and invalid score lanes raise :class:`AdherenceBaselineError`.
+    Input order is preserved within both returned lists.
+    """
+    exact_fingerprint = _require_catalog_fingerprint(
+        pattern_catalog_fingerprint, "pattern_catalog_fingerprint"
+    )
+    exact_scoring_version = _require_integer(
+        pattern_scoring_schema_version,
+        "pattern_scoring_schema_version",
+        minimum=1,
+    )
+    excluded = frozenset(_selected_filenames(excluded_filenames))
+
+    current: list[Mapping[str, object]] = []
+    noncurrent: list[Mapping[str, object]] = []
+    exclusion_details: list[dict[str, object]] = []
+    seen_filenames: set[str] = set()
+    for talk in _talk_records(talks):
+        filename = _require_filename(talk.get("filename"), "talk filename")
+        if filename in seen_filenames:
+            raise AdherenceBaselineError(
+                f"talk population contains duplicate filename {filename!r}"
+            )
+        seen_filenames.add(filename)
+        if talk.get("status") not in ELIGIBLE_STATUSES or filename in excluded:
+            continue
+        (
+            is_current,
+            reason_codes,
+            observed_status,
+            observed_fingerprint,
+            observed_scoring_version,
+        ) = _classify_generation(
+            talk,
+            pattern_catalog_fingerprint=exact_fingerprint,
+            pattern_scoring_schema_version=exact_scoring_version,
+            filename=filename,
+        )
+        if not is_current:
+            noncurrent.append(talk)
+            exclusion_details.append(
+                {
+                    "filename": filename,
+                    "reason_codes": reason_codes,
+                    "observed_pattern_scoring_generation_status": observed_status,
+                    "observed_pattern_catalog_fingerprint": observed_fingerprint,
+                    "observed_pattern_scoring_schema_version": (
+                        observed_scoring_version
+                    ),
+                    "expected_pattern_scoring_generation_status": (
+                        CURRENT_PATTERN_SCORING_GENERATION_STATUS
+                    ),
+                    "expected_pattern_catalog_fingerprint": exact_fingerprint,
+                    "expected_pattern_scoring_schema_version": (
+                        exact_scoring_version
+                    ),
+                }
+            )
+            continue
+        _resolved_pattern_score(talk, filename=filename)
+        current.append(talk)
+    return current, noncurrent, exclusion_details
+
+
 def _build_adherence_baseline(
     talks: object,
     *,
@@ -264,32 +366,20 @@ def _build_adherence_baseline(
         raise AdherenceBaselineError(
             "a full current-cohort baseline cannot exclude filenames"
         )
-    excluded = frozenset(excluded_filenames)
-
-    scored_talk_count = 0
-    pattern_score_sum = 0
-    seen_filenames: set[str] = set()
-    for talk in _talk_records(talks):
-        filename = _require_filename(talk.get("filename"), "talk filename")
-        if filename in seen_filenames:
-            raise AdherenceBaselineError(
-                f"talk population contains duplicate filename {filename!r}"
-            )
-        seen_filenames.add(filename)
-        if talk.get("status") not in ELIGIBLE_STATUSES:
-            continue
-        if filename in excluded:
-            continue
-        if not _matches_generation(
+    current_talks, _, _ = partition_pattern_scoring_cohort(
+        talks,
+        excluded_filenames=excluded_filenames,
+        pattern_catalog_fingerprint=exact_fingerprint,
+        pattern_scoring_schema_version=exact_scoring_version,
+    )
+    scored_talk_count = len(current_talks)
+    pattern_score_sum = sum(
+        _resolved_pattern_score(
             talk,
-            pattern_catalog_fingerprint=exact_fingerprint,
-            pattern_scoring_schema_version=exact_scoring_version,
-            filename=filename,
-        ):
-            continue
-        score = _resolved_pattern_score(talk, filename=filename)
-        scored_talk_count += 1
-        pattern_score_sum += score
+            filename=_require_filename(talk.get("filename"), "talk filename"),
+        )
+        for talk in current_talks
+    )
 
     snapshot: dict[str, object] = {
         "schema_version": ADHERENCE_BASELINE_SCHEMA_VERSION,

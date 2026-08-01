@@ -134,6 +134,98 @@ def test_builds_distinct_all_inclusive_current_cohort(adherence_baseline):
     assert snapshot["average_pattern_score"] == 1.5
 
 
+def test_partitions_exact_generation_with_deterministic_exclusion_reasons(
+    adherence_baseline,
+):
+    missing = _talk("missing.md", 50)
+    missing.pop("pattern_scoring_generation_status")
+    selected_invalid = _talk(
+        "selected.md",
+        40,
+        generation_reasons=["must not be inspected"],
+    )
+    talks = [
+        _talk("current.md", 1),
+        missing,
+        _talk("legacy.md", 2, generation_status="legacy_unbaselineable"),
+        _talk("old-catalog.md", 3, catalog=OTHER_CATALOG),
+        _talk("old-schema.md", 4, scoring_schema=1),
+        _talk("both-old.md", 5, catalog=OTHER_CATALOG, scoring_schema=1),
+        _talk("pending.md", 6, status="pending", generation_status="future"),
+        selected_invalid,
+    ]
+
+    current, excluded, details = (
+        adherence_baseline.partition_pattern_scoring_cohort(
+            talks,
+            excluded_filenames=["selected.md"],
+            pattern_catalog_fingerprint=CATALOG,
+            pattern_scoring_schema_version=2,
+        )
+    )
+
+    assert [talk["filename"] for talk in current] == ["current.md"]
+    assert [talk["filename"] for talk in excluded] == [
+        "missing.md",
+        "legacy.md",
+        "old-catalog.md",
+        "old-schema.md",
+        "both-old.md",
+    ]
+    common_expected = {
+        "expected_pattern_scoring_generation_status": "current",
+        "expected_pattern_catalog_fingerprint": CATALOG,
+        "expected_pattern_scoring_schema_version": 2,
+    }
+    assert details == [
+        {
+            "filename": "missing.md",
+            "reason_codes": ["missing_generation_status"],
+            "observed_pattern_scoring_generation_status": None,
+            "observed_pattern_catalog_fingerprint": None,
+            "observed_pattern_scoring_schema_version": None,
+            **common_expected,
+        },
+        {
+            "filename": "legacy.md",
+            "reason_codes": ["legacy_generation"],
+            "observed_pattern_scoring_generation_status": (
+                "legacy_unbaselineable"
+            ),
+            "observed_pattern_catalog_fingerprint": None,
+            "observed_pattern_scoring_schema_version": None,
+            **common_expected,
+        },
+        {
+            "filename": "old-catalog.md",
+            "reason_codes": ["catalog_fingerprint_mismatch"],
+            "observed_pattern_scoring_generation_status": "current",
+            "observed_pattern_catalog_fingerprint": OTHER_CATALOG,
+            "observed_pattern_scoring_schema_version": 2,
+            **common_expected,
+        },
+        {
+            "filename": "old-schema.md",
+            "reason_codes": ["scoring_schema_version_mismatch"],
+            "observed_pattern_scoring_generation_status": "current",
+            "observed_pattern_catalog_fingerprint": CATALOG,
+            "observed_pattern_scoring_schema_version": 1,
+            **common_expected,
+        },
+        {
+            "filename": "both-old.md",
+            "reason_codes": [
+                "catalog_fingerprint_mismatch",
+                "scoring_schema_version_mismatch",
+            ],
+            "observed_pattern_scoring_generation_status": "current",
+            "observed_pattern_catalog_fingerprint": OTHER_CATALOG,
+            "observed_pattern_scoring_schema_version": 1,
+            **common_expected,
+        },
+    ]
+
+
 def test_full_cohort_shape_cannot_claim_exclusions(adherence_baseline):
     snapshot = _build(adherence_baseline, [], selected=["active.md"])
     snapshot["active_batch_excluded"] = False

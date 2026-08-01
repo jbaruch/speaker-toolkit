@@ -3,13 +3,18 @@
 
 Reads the rhetoric vault and emits a single JSON payload to stdout containing
 all source data needed to construct speaker-profile.json. The skill orchestrator
-calls this script once and then aggregates the payload into the profile.
+calls this script once and then aggregates the payload into the profile. Pattern
+baselines are selected by exact active catalog/scoring-generation identity;
+extractor instrumentation cohorts remain a separate concern.
 
 Contract
 --------
 Args:
     vault_root: optional path to vault root. Defaults to
                 ~/.claude/rhetoric-knowledge-vault.
+    --as-of:    optional timezone-aware ISO-8601 snapshot observation time.
+                Defaults to the current UTC time and is normalized to whole
+                seconds.
 
 Stdout (JSON):
     {
@@ -18,17 +23,22 @@ Stdout (JSON):
       "confirmed_intents": [ ... ]   # tracking-database.json `confirmed_intents`
       "talks":             [ ... ]   # all talks
       "processed_talks":   [ ... ]   # talks with status processed* only
-      "baseline_talks":    [ ... ]   # processed talks scored on current instrumentation
-      "stale_instrumentation_talks": [ ... ]   # processed, but scored pre-epoch
-      "baseline_note":     "...",    # why baselines must use baseline_talks only
+      "baseline_talks":    [ ... ]   # exact active pattern-scoring generation
+      "excluded_pattern_scoring_talks": [ ... ] # legacy/mismatched generation
+      "pattern_scoring_exclusions": [ ... ] # deterministic per-talk reasons
+      "pattern_baseline":  { ... }   # exact-cohort count/sum/average + provenance
+      "current_instrumentation_talks": [ ... ]  # current extractor cohort
+      "stale_instrumentation_talks": [ ... ]    # pre-epoch extractor cohort
+      "baseline_note":     "...",    # exact pattern-cohort semantics
+      "instrumentation_note": "...", # extractor cohort is independent
       "summary":           "...",    # rhetoric-style-summary.md contents
       "design_spec":       "..."     # slide-design-spec.md contents (or "")
     }
 
 Exit codes:
     0   success
-    1   tracking-database.json or rhetoric-style-summary.md missing/malformed.
-        Diagnostic message goes to stderr.
+    1   arguments, vault inputs, catalog, or scoring-generation metadata are
+        missing/malformed. Diagnostic message goes to stderr.
 """
 
 from __future__ import annotations
@@ -36,16 +46,32 @@ from __future__ import annotations
 import json
 import pathlib
 import sys
+from datetime import datetime, timezone
+
+
+INGRESS_SCRIPTS = pathlib.Path(__file__).resolve().parents[2] / "vault-ingress" / "scripts"
+if str(INGRESS_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(INGRESS_SCRIPTS))
+
+from adherence_baseline import (  # noqa: E402
+    AdherenceBaselineError,
+    build_current_cohort_baseline,
+    normalize_as_of,
+    partition_pattern_scoring_cohort,
+)
+from return_validation import (  # noqa: E402
+    PATTERN_SCORING_SCHEMA_VERSION,
+    ReturnValidationError,
+    load_catalog,
+)
 
 
 DEFAULT_VAULT = "~/.claude/rhetoric-knowledge-vault"
 
-# Talks processed on or after this date were scored by an extractor that can read
-# text baked into images and payload held in OOXML tables; talks processed before
-# it were not. The gap is not noise — measured across the corpus mid-reparse, the
-# two cohorts averaged 28.0 and 11.8, and a mixed mean tracks how far the reparse
-# has got rather than anything about the speaker. Partitioning here rather than in
-# skill prose keeps the two cohorts from being averaged together by accident.
+# Talks processed on or after this date used the current extractor generation.
+# This partition supports extractor- and pacing-sensitive analysis only. Pattern
+# baseline eligibility is determined independently by exact catalog/scoring
+# identity through ``partition_pattern_scoring_cohort``.
 INSTRUMENTATION_EPOCH = "2026-07-26"
 
 
@@ -63,10 +89,56 @@ def partition_by_instrumentation(processed_talks, epoch=INSTRUMENTATION_EPOCH):
     return current, stale
 
 
+def default_as_of(now: datetime | None = None) -> str:
+    """Return a canonical UTC whole-second observation timestamp.
+
+    ``now`` is injectable so tests and replay tools never need to depend on the
+    wall clock.
+    """
+    moment = now if now is not None else datetime.now(timezone.utc)
+    if not isinstance(moment, datetime):
+        raise AdherenceBaselineError("now must be a datetime")
+    return normalize_as_of(moment.isoformat())
+
+
+def _parse_args(argv: list[str]) -> tuple[pathlib.Path, str | None]:
+    vault_root_arg: str | None = None
+    as_of: str | None = None
+    index = 1
+    while index < len(argv):
+        arg = argv[index]
+        if arg == "--as-of":
+            if as_of is not None:
+                raise ValueError("--as-of may be supplied only once")
+            index += 1
+            if index >= len(argv):
+                raise ValueError("--as-of requires a timezone-aware ISO-8601 value")
+            as_of = argv[index]
+        elif arg.startswith("-"):
+            raise ValueError(f"unknown option {arg!r}")
+        elif vault_root_arg is None:
+            vault_root_arg = arg
+        else:
+            raise ValueError(f"unexpected extra argument {arg!r}")
+        index += 1
+
+    return (
+        pathlib.Path(vault_root_arg or DEFAULT_VAULT).expanduser().resolve(),
+        as_of,
+    )
+
+
 def main(argv: list[str]) -> int:
-    vault_root = pathlib.Path(
-        argv[1] if len(argv) > 1 else DEFAULT_VAULT
-    ).expanduser().resolve()
+    try:
+        vault_root, supplied_as_of = _parse_args(argv)
+        as_of = (
+            normalize_as_of(supplied_as_of)
+            if supplied_as_of is not None
+            else default_as_of()
+        )
+    except (AdherenceBaselineError, ValueError) as exc:
+        print(f"ERROR: invalid arguments: {exc}", file=sys.stderr)
+        return 1
 
     db_path = vault_root / "tracking-database.json"
     if not db_path.exists():
@@ -78,10 +150,13 @@ def main(argv: list[str]) -> int:
         return 1
     try:
         db = json.loads(db_path.read_text())
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, OSError) as exc:
         print(
             f"ERROR: tracking-database.json is malformed: {exc}", file=sys.stderr
         )
+        return 1
+    if not isinstance(db, dict):
+        print("ERROR: tracking-database.json root must be an object", file=sys.stderr)
         return 1
 
     summary_path = vault_root / "rhetoric-style-summary.md"
@@ -92,16 +167,50 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 1
-    summary = summary_path.read_text()
+    try:
+        summary = summary_path.read_text()
+    except OSError as exc:
+        print(f"ERROR: cannot read rhetoric-style-summary.md: {exc}", file=sys.stderr)
+        return 1
 
     design_spec_path = vault_root / "slide-design-spec.md"
-    design_spec = design_spec_path.read_text() if design_spec_path.exists() else ""
+    try:
+        design_spec = design_spec_path.read_text() if design_spec_path.exists() else ""
+    except OSError as exc:
+        print(f"ERROR: cannot read slide-design-spec.md: {exc}", file=sys.stderr)
+        return 1
 
     talks = db.get("talks", [])
+    if not isinstance(talks, list) or any(not isinstance(talk, dict) for talk in talks):
+        print("ERROR: tracking-database.json `talks` must be an array of objects", file=sys.stderr)
+        return 1
     processed_statuses = {"processed", "processed_partial"}
     processed_talks = [t for t in talks if t.get("status") in processed_statuses]
 
-    scoreable, stale = partition_by_instrumentation(processed_talks)
+    current_instrumentation, stale_instrumentation = partition_by_instrumentation(
+        processed_talks
+    )
+    try:
+        catalog = load_catalog()
+        (
+            baseline_talks,
+            excluded_pattern_talks,
+            pattern_scoring_exclusions,
+        ) = partition_pattern_scoring_cohort(
+            processed_talks,
+            excluded_filenames=(),
+            pattern_catalog_fingerprint=catalog.fingerprint,
+            pattern_scoring_schema_version=PATTERN_SCORING_SCHEMA_VERSION,
+        )
+        pattern_baseline = build_current_cohort_baseline(
+            processed_talks,
+            as_of=as_of,
+            pattern_catalog_fingerprint=catalog.fingerprint,
+            pattern_scoring_schema_version=PATTERN_SCORING_SCHEMA_VERSION,
+        )
+    except (AdherenceBaselineError, ReturnValidationError) as exc:
+        print(f"ERROR: cannot build current pattern-scoring cohort: {exc}", file=sys.stderr)
+        return 1
 
     payload = {
         "vault_root": str(vault_root),
@@ -109,16 +218,27 @@ def main(argv: list[str]) -> int:
         "confirmed_intents": db.get("confirmed_intents", []),
         "talks": talks,
         "processed_talks": processed_talks,
-        "baseline_talks": scoreable,
-        "stale_instrumentation_talks": stale,
+        "baseline_talks": baseline_talks,
+        "excluded_pattern_scoring_talks": excluded_pattern_talks,
+        "pattern_scoring_exclusions": pattern_scoring_exclusions,
+        "pattern_baseline": pattern_baseline,
+        "current_instrumentation_talks": current_instrumentation,
+        "stale_instrumentation_talks": stale_instrumentation,
         "baseline_note": (
-            f"pattern_score baselines MUST be computed from baseline_talks only "
-            f"({len(scoreable)} talks). The {len(stale)} talks in "
-            f"stale_instrumentation_talks were scored before "
-            f"{INSTRUMENTATION_EPOCH} against an extractor blind to text baked "
-            f"into images and to OOXML-table payload; their scores measure scan "
-            f"depth, not delivery. Mixing the two cohorts produces an average "
-            f"that tracks reparse progress rather than the speaker."
+            "Pattern-score baselines MUST use baseline_talks only "
+            f"({len(baseline_talks)} talks): each record exactly matches the "
+            "active pattern catalog fingerprint, scoring schema, and current "
+            "generation contract. excluded_pattern_scoring_talks contains "
+            f"{len(excluded_pattern_talks)} eligible records with a missing, "
+            "legacy, or different valid generation. pattern_baseline.as_of is "
+            "the snapshot observation time; each talk's processed_date remains "
+            "talk-processing metadata and never determines pattern eligibility."
+        ),
+        "instrumentation_note": (
+            "current_instrumentation_talks and stale_instrumentation_talks are "
+            "separate extractor/pacing cohorts partitioned at "
+            f"{INSTRUMENTATION_EPOCH}. Membership in either instrumentation "
+            "cohort does not confer pattern-scoring baseline eligibility."
         ),
         "summary": summary,
         "design_spec": design_spec,
