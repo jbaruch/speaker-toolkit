@@ -278,6 +278,7 @@ def test_main_valid_snapshot_generates_png_and_persists_metadata(
     generate_qr,
     tmp_path,
     monkeypatch,
+    capsys,
 ):
     vault = tmp_path / "vault"
     vault.mkdir()
@@ -307,6 +308,11 @@ def test_main_valid_snapshot_generates_png_and_persists_metadata(
     assert (tmp_path / "talk-qr.png").is_file()
     database = json.loads(database_path.read_text(encoding="utf-8"))
     assert database["qr_codes"][0]["talk_slug"] == "talk"
+    assert "Tracking DB updated:" in capsys.readouterr().out
+
+    generate_qr.main()
+
+    assert "Tracking DB unchanged:" in capsys.readouterr().out
 
 
 def test_resolve_slide_bg_rgb_none_for_plain_deck(generate_qr, tmp_path):

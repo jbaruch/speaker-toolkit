@@ -994,7 +994,10 @@ def main():
             except ValueError as exc:
                 print(f"ERROR: {exc}", file=sys.stderr)
                 sys.exit(1)
-            print(f"Tracking DB updated: {tdb_path}")
+            if write_result.installed:
+                print(f"Tracking DB updated: {tdb_path}")
+            else:
+                print(f"Tracking DB unchanged: {tdb_path}")
             print(
                 "Tracking DB SHA-256: "
                 f"{write_result.input_sha256} -> {write_result.output_sha256} "
