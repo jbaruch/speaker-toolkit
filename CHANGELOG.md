@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.18.74 — 2026-08-01
+
 ### fix(vault-ingress) — require source-located evidence for observable patterns
 
 Pattern detections now carry validated transcript, slide, video, or allowlisted
