@@ -7,12 +7,13 @@ phase_relevance:
   - content
 vault_dimensions: [2, 8]
 detection_signals:
-  - "multi-author collaboration"
-  - "consistent template usage across sections"
-  - "placeholder slides visible"
+  - "creation history documents non-linear authoring"
+  - "collaboration record names one Slide Wrangler"
+  - "speaker confirms the shared-deck workflow"
 related_patterns: [talklet, unifying-visual-theme]
 inverse_of: []
 difficulty: intermediate
+observable: false
 ---
 
 # Concurrent Creation
@@ -42,12 +43,16 @@ The practical translation: if Concurrent Creation is the *workflow*, analog plan
 Use this pattern for any presentation where you have the flexibility to work non-linearly, and especially for group presentations. Avoid for very short presentations (five minutes or less) where sequential creation is natural and the overhead of assembly exceeds the benefit. Also avoid when all collaborators are not aligned on the template and visual standards — Concurrent Creation without visual consistency produces a Frankenstein deck.
 
 ## Detection Heuristics
-The vault should look for signs of collaborative creation: consistent templates across sections created by different authors, uniform visual styling, and smooth integration between segments. For individual speakers, look for the richness that comes from inspired creation — sections where depth and enthusiasm are uniformly high rather than trailing off toward the end.
+Do not infer an authoring workflow from a coherent final deck. Consistent styling
+and even section quality can come from many processes. Verify Concurrent Creation
+only from creation history, collaboration records, or speaker confirmation that
+the work was authored out of order or coordinated through one Slide Wrangler.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Multi-author sections feel unified; consistent template and voice throughout; smooth transitions between collaborators' sections
-- Moderate signal (1 pt): Some consistency in collaborative sections but occasional style or formatting shifts between authors
-- Absent (0 pts): Obvious visual or tonal inconsistencies between sections; "Frankenstein deck" feel where different parts clearly had different creators with no integration
+- Strong signal: Creation history or collaboration records show non-linear/shared authoring coordinated through one Slide Wrangler
+- Moderate signal: Records show shared or non-linear authoring, but ownership/coordination was inconsistent
+- Absent: Records show a strictly sequential workflow or uncoordinated shared editing
+- Unevaluable: No creation history, collaboration record, or speaker confirmation is available
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 2 (Structure/Organization). Relates to Dimension 8 (Slide Design/Visual Quality).

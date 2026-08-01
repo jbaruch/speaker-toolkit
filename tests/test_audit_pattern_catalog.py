@@ -40,14 +40,14 @@ def _base_entries() -> list[dict]:
 def _scoring(entry_type: str) -> str:
     if entry_type == "antipattern":
         return """## Scoring Criteria
-- Strong signal (2 pts — antipattern present): repeated harmful behavior
-- Moderate signal (1 pt): one limited harmful instance
-- Absent (0 pts — antipattern not present): no harmful behavior
+- Strong signal (antipattern present): repeated harmful behavior
+- Moderate signal: one limited harmful instance
+- Absent (antipattern not present): no harmful behavior
 """
     return """## Scoring Criteria
-- Strong signal (2 pts): repeated effective behavior
-- Moderate signal (1 pt): one limited effective instance
-- Absent (0 pts): no effective behavior
+- Strong signal: repeated effective behavior
+- Moderate signal: one limited effective instance
+- Absent: no effective behavior
 """
 
 
@@ -180,8 +180,12 @@ def test_bundled_catalog_passes_structural_contract(audit_pattern_catalog):
     assert report["summary"]["entries_loaded"] == 111
     assert report["summary"]["patterns"] == 83
     assert report["summary"]["antipatterns"] == 28
-    assert report["summary"]["observable"] == 99
-    assert report["summary"]["unobservable"] == 12
+    assert report["summary"]["observable"] == 81
+    assert report["summary"]["unobservable"] == 30
+    assert report["summary"]["positive_gated"] == 81
+    assert report["summary"]["absence_gated"] == 16
+    assert report["summary"]["applicability_gated"] == 37
+    assert report["summary"]["positive_only"] == 65
 
 
 def test_bundled_catalog_has_no_phase_or_inverse_polarity_debt(
@@ -429,6 +433,221 @@ def test_optional_outcome_gates_use_the_base_gate_grammar(
     assert report["valid"] is True
 
 
+@pytest.mark.parametrize("absence_gate", [
+    ["native_deck"],
+    ["delivery_video"],
+    ["source_comparison"],
+    [["static_slides", "transcript"]],
+])
+def test_current_catalog_rejects_absence_sources_without_complete_receipts(
+    tmp_path,
+    audit_pattern_catalog,
+    absence_gate,
+):
+    entries = _base_entries()
+    entries[0].update({
+        "evaluable_from": ["static_slides", "transcript"],
+        "strong_evaluable_from": ["static_slides", "transcript"],
+        "absence_evaluable_from": absence_gate,
+        "evidence_requirements": ["The outcome is visible."],
+        "not_evaluable_when": ["The qualifying source is unavailable."],
+    })
+
+    report = audit_pattern_catalog.audit_catalog(
+        _write_catalog(tmp_path, entries),
+        enforce_current_source_capabilities=True,
+    )
+
+    assert "absence_source_capability_unsupported" in _codes(report)
+
+
+def test_current_catalog_checks_inherited_absence_gate_capability(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    entries = _base_entries()
+    entries[0].update({
+        "evaluable_from": ["delivery_video"],
+        "evidence_requirements": ["The outcome is visible."],
+        "not_evaluable_when": ["The qualifying source is unavailable."],
+    })
+
+    report = audit_pattern_catalog.audit_catalog(
+        _write_catalog(tmp_path, entries),
+        enforce_current_source_capabilities=True,
+    )
+
+    assert "absence_source_capability_unsupported" in _codes(report)
+
+
+def test_external_catalog_preserves_generic_absence_gate_grammar(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    entries = _base_entries()
+    entries[0].update({
+        "evaluable_from": ["delivery_video"],
+        "strong_evaluable_from": ["delivery_video"],
+        "absence_evaluable_from": ["delivery_video"],
+        "evidence_requirements": ["The outcome is visible."],
+        "not_evaluable_when": ["The qualifying source is unavailable."],
+    })
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert report["valid"] is True
+    assert "absence_source_capability_unsupported" not in _codes(report)
+
+
+def test_explicit_null_absence_gate_is_valid_and_positive_only(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    entries = _base_entries()
+    entries[0].update({
+        "evaluable_from": ["delivery_video"],
+        "strong_evaluable_from": ["delivery_video"],
+        "absence_evaluable_from": None,
+        "evidence_requirements": ["The positive behavior is visible."],
+        "not_evaluable_when": ["The qualifying source is unavailable."],
+    })
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert report["valid"] is True
+    assert report["summary"]["positive_gated"] == 1
+    assert report["summary"]["absence_gated"] == 0
+    assert report["summary"]["positive_only"] == 1
+
+
+def test_omitted_absence_gate_inherits_the_base_gate(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    entries = _base_entries()
+    entries[0].update({
+        "evaluable_from": ["delivery_video"],
+        "evidence_requirements": ["The positive behavior is visible."],
+        "not_evaluable_when": ["The qualifying source is unavailable."],
+    })
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert report["valid"] is True
+    assert report["summary"]["positive_gated"] == 1
+    assert report["summary"]["absence_gated"] == 1
+    assert report["summary"]["positive_only"] == 0
+
+
+def test_null_strong_gate_is_rejected(tmp_path, audit_pattern_catalog):
+    entries = _base_entries()
+    entries[0].update({
+        "evaluable_from": ["delivery_video"],
+        "strong_evaluable_from": None,
+        "evidence_requirements": ["The positive behavior is visible."],
+        "not_evaluable_when": ["The qualifying source is unavailable."],
+    })
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert "evidence_source_invalid" in _codes(report)
+
+
+def test_applicability_fields_must_be_declared_together(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    entries = _base_entries()
+    entries[0].update({
+        "evaluable_from": ["delivery_video"],
+        "evidence_requirements": ["The behavior is visible."],
+        "not_evaluable_when": ["The qualifying source is unavailable."],
+        "not_applicable_when": [{
+            "condition_id": "independent-context",
+            "description": "The complete delivery establishes independent context.",
+        }],
+    })
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert "applicability_contract_partial" in _codes(report)
+
+
+def test_complete_applicability_contract_is_valid(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    entries = _base_entries()
+    entries[0].update({
+        "evaluable_from": ["delivery_video"],
+        "evidence_requirements": ["The behavior is visible."],
+        "not_evaluable_when": ["The qualifying source is unavailable."],
+        "not_applicable_when": [{
+            "condition_id": "independent-context",
+            "description": "The complete delivery establishes independent context.",
+        }],
+        "applicability_evaluable_from": ["delivery_video"],
+    })
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert report["valid"] is True
+    assert report["summary"]["applicability_gated"] == 1
+
+
+@pytest.mark.parametrize(("conditions", "code"), [
+    ([], "not_applicable_conditions_invalid"),
+    (["independent-context"], "not_applicable_condition_invalid"),
+    ([{"condition_id": "Independent Context", "description": "Complete."}],
+     "not_applicable_condition_id_invalid"),
+    ([{"condition_id": "independent-context", "description": ""}],
+     "not_applicable_description_invalid"),
+    ([
+        {"condition_id": "independent-context", "description": "First."},
+        {"condition_id": "independent-context", "description": "Second."},
+    ], "not_applicable_condition_duplicate"),
+])
+def test_applicability_conditions_are_structurally_validated(
+    tmp_path,
+    audit_pattern_catalog,
+    conditions,
+    code,
+):
+    entries = _base_entries()
+    entries[0].update({
+        "evaluable_from": ["delivery_video"],
+        "evidence_requirements": ["The behavior is visible."],
+        "not_evaluable_when": ["The qualifying source is unavailable."],
+        "not_applicable_when": conditions,
+        "applicability_evaluable_from": ["delivery_video"],
+    })
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert code in _codes(report)
+
+
+def test_applicability_gate_rejects_unknown_source(
+    tmp_path,
+    audit_pattern_catalog,
+):
+    entries = _base_entries()
+    entries[0].update({
+        "evaluable_from": ["delivery_video"],
+        "evidence_requirements": ["The behavior is visible."],
+        "not_evaluable_when": ["The qualifying source is unavailable."],
+        "not_applicable_when": [{
+            "condition_id": "independent-context",
+            "description": "The complete delivery establishes independent context.",
+        }],
+        "applicability_evaluable_from": ["speaker-memory"],
+    })
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert "applicability_evidence_source_invalid" in _codes(report)
+
+
 @pytest.mark.parametrize(
     "field", ["strong_evaluable_from", "absence_evaluable_from"])
 def test_optional_outcome_gate_requires_complete_base_metadata(
@@ -588,9 +807,9 @@ def test_same_polarity_inverse_is_semantic_debt(tmp_path, audit_pattern_catalog)
 def test_antipattern_scoring_uses_direct_polarity(tmp_path, audit_pattern_catalog):
     entries = _base_entries()
     entries[1]["_scoring"] = """## Scoring Criteria
-- Strong signal (2 pts): antipattern absent
-- Moderate signal (1 pt): mixed
-- Absent (0 pts): antipattern present
+- Strong signal: antipattern absent
+- Moderate signal: mixed
+- Absent: antipattern present
 """
 
     report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
@@ -598,11 +817,38 @@ def test_antipattern_scoring_uses_direct_polarity(tmp_path, audit_pattern_catalo
     assert "antipattern_scoring_polarity_inverted" in _codes(report)
 
 
-def test_scoring_scale_must_have_all_three_labels(tmp_path, audit_pattern_catalog):
+def test_numeric_scoring_labels_are_rejected(tmp_path, audit_pattern_catalog):
     entries = _base_entries()
     entries[0]["_scoring"] = """## Scoring Criteria
 - Strong signal (2 pts): effective
+- Moderate signal (1 pt): mixed
 - Absent (0 pts): absent
+"""
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert "scoring_arithmetic_label_forbidden" in _codes(report)
+
+
+def test_medium_scoring_label_is_rejected(tmp_path, audit_pattern_catalog):
+    entries = _base_entries()
+    entries[0]["_scoring"] = """## Scoring Criteria
+- Strong signal: effective
+- Medium signal: mixed
+- Absent: absent
+"""
+
+    report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
+
+    assert "scoring_medium_label_invalid" in _codes(report)
+    assert "scoring_label_count_invalid" in _codes(report)
+
+
+def test_scoring_scale_must_have_all_three_labels(tmp_path, audit_pattern_catalog):
+    entries = _base_entries()
+    entries[0]["_scoring"] = """## Scoring Criteria
+- Strong signal: effective
+- Absent: absent
 """
 
     report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
@@ -613,9 +859,9 @@ def test_scoring_scale_must_have_all_three_labels(tmp_path, audit_pattern_catalo
 def test_inline_scoring_phrase_is_not_a_section(tmp_path, audit_pattern_catalog):
     entries = _base_entries()
     entries[0]["_scoring"] = """This names ## Scoring Criteria without a heading.
-- Strong signal (2 pts): effective
-- Moderate signal (1 pt): mixed
-- Absent (0 pts): absent
+- Strong signal: effective
+- Moderate signal: mixed
+- Absent: absent
 """
 
     report = audit_pattern_catalog.audit_catalog(_write_catalog(tmp_path, entries))
@@ -669,6 +915,15 @@ def test_normalized_alias_collision_is_rejected(tmp_path, audit_pattern_catalog)
     )
     assert collision["entry_id"] == "blocked-path"
     assert collision["related_id"] == "clear-path"
+
+
+def test_normalized_alias_preserves_accented_latin_letters(
+    audit_pattern_catalog,
+):
+    assert (
+        audit_pattern_catalog.normalize_alias("Á la Carte Content")
+        == "a-la-carte-content"
+    )
 
 
 def test_duplicate_explicit_aliases_are_rejected(tmp_path, audit_pattern_catalog):

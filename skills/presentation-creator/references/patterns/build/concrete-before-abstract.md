@@ -6,11 +6,28 @@ part: build
 phase_relevance:
   - content
 vault_dimensions: [11, 9, 2]
+evidence_channels: [timed_transcript, slide_sequence, video]
 detection_signals:
   - "a tangible example, object, story, or live demo precedes the named concept it illustrates"
   - "the framework/term is introduced only after the audience has experienced an instance of it"
   - "the abstract label arrives as a summary of concrete material already shown, not as a preamble"
   - "inductive sequencing across a section: instances -> pattern -> name, rather than definition -> examples"
+evaluable_from:
+  - transcript
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - transcript
+  - delivery_video
+absence_evaluable_from:
+  - transcript
+evidence_requirements:
+  - "Evidence must order a concrete instance and the later named abstraction within the same section; a concrete-looking slide alone is only a candidate signal."
+  - "Strong scoring requires complete spoken coverage showing repeated instance-to-label hinges; absent scoring is authorized only from a complete transcript showing consistent definition-first ordering across the talk."
+not_evaluable_when:
+  - "Slides are available without the spoken track needed to know whether the abstraction was named before the visible instance."
+  - "The spoken source is incomplete for repeated-use evidence, or the transcript is incomplete across the sections needed to establish definition-first absence."
 related_patterns: [live-demo, master-story, vacation-photos, mentor, the-big-why, sparkline]
 inverse_of: []
 difficulty: intermediate
@@ -47,9 +64,13 @@ The vault should look for inductive ordering at the section level, not the talk 
 In transcript-only analysis the hinge phrases are the most reliable marker. The concrete-then-named ordering survives auto-captioning even when slide order does not.
 
 ## Scoring Criteria
-- Strong signal (2 pts): The talk repeatedly grounds concepts in a tangible instance before naming them; multiple sections show the instance → intuition → named-label ordering with clean hinge moments; labels read as earned compressions of concrete material already delivered.
-- Moderate signal (1 pt): The pattern appears for the talk's central concept (or a few sections) but is mixed with definition-first ordering elsewhere; OR the concrete anchors are present but the label is announced slightly too early to fully earn the payoff.
-- Absent (0 pts): Concepts are introduced definition-first with examples used only as after-the-fact illustration; no inductive instance → name sequencing; or the talk is purely concrete with no abstractions named at all.
+- Strong signal: The talk repeatedly grounds concepts in a tangible instance before naming them; multiple sections show the instance → intuition → named-label ordering with clean hinge moments; labels read as earned compressions of concrete material already delivered.
+- Moderate signal: The pattern appears for the talk's central concept (or a few sections) but is mixed with definition-first ordering elsewhere; OR the concrete anchors are present but the label is announced slightly too early to fully earn the payoff.
+- Absent: Concepts are introduced definition-first with examples used only as after-the-fact illustration; no inductive instance → name sequencing; or the talk is purely concrete with no abstractions named at all.
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+An absence finding is authorized only from a complete transcript (`transcript`) covering the required spoken scope; delivery video, rendered/static slides, native decks, and comparison artifacts do not authorize absence.
 
 ## Relationship to Vault Dimensions
 Relates most directly to Dimension 11 (Technical Content Delivery) — concrete-before-abstract is a core complexity-handling and simplification strategy, the sequencing discipline behind "make abstract claims concrete." Relates to Dimension 9 (Persuasion Techniques) as a grounding move: leading with a felt instance lets the audience supply its own evidence before the generalization is named. Relates to Dimension 2 (Narrative Structure) as a structural choice about ordering (inductive vs. deductive) that operates within sections and shapes the rhythm of a frameworks-heavy talk.

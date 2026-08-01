@@ -6,11 +6,20 @@ part: deliver
 phase_relevance:
   - publishing
 vault_dimensions: [12]
+evidence_channels: [video]
 detection_signals:
   - "speaker faces audience"
   - "uses presenter display"
   - "interacts with slides without turning around"
 evaluable_from:
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: no-projected-slides
+    description: "Complete delivery video establishes that the talk uses no projected or shared slides requiring presenter-display orientation."
+applicability_evaluable_from:
   - delivery_video
 evidence_requirements:
   - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
@@ -18,6 +27,7 @@ evidence_requirements:
 not_evaluable_when:
   - "No delivery video covers the relevant event or interval."
   - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
+  - "The complete delivery is unavailable, so the no-projected-slides applicability condition cannot be assessed."
 related_patterns: [make-it-rain, lipsync]
 inverse_of: []
 difficulty: foundational
@@ -49,12 +59,13 @@ Use this pattern in every presentation that involves projected slides. It requir
 - Speaker interacts with projected content from a front-facing position
 
 ## Scoring Criteria
-- Strong signal (2 pts): Speaker faces audience at all times, uses presenter display effectively, interacts with slides without turning around, maintains strong eye contact
-- Moderate signal (1 pt): Speaker mostly faces audience but occasionally turns to check the screen
-- Absent (0 pts): Speaker frequently turns their back to the audience to read or reference slides
+- Strong signal: Speaker faces audience at all times, uses presenter display effectively, interacts with slides without turning around, maintains strong eye contact
+- Moderate signal: Speaker mostly faces audience but occasionally turns to check the screen
+- Absent: Speaker frequently turns their back to the audience to read or reference slides
 
 ## Evidence Gate
-Evaluate this entry only from delivery video covering the relevant event or interval. A deck or transcript may suggest planned content, but it cannot establish the delivered timing, interaction, room behavior, or an exhaustive absence outcome.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 12 (Delivery Mechanics). Facing the audience is a fundamental delivery skill that affects eye contact, audience reading, vocal projection (speaking toward the audience rather than away from them), and overall stage presence.

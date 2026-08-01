@@ -6,10 +6,31 @@ part: build
 phase_relevance:
   - content
 vault_dimensions: [2, 5]
+evidence_channels: [transcript, timed_transcript, slides, slide_sequence, video]
 detection_signals:
   - "explicit callbacks to earlier content"
   - "context reset moments"
   - "cross-cutting connections revealed"
+evaluable_from:
+  - transcript
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: lightning-format
+    description: "Complete delivery video establishes a lightning-talk or five-minute-pitch format where the catalog says backtracking should be avoided to preserve forward momentum."
+applicability_evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "A positive finding must locate both the earlier element and the later callback and show that the return adds context or a new connection rather than merely repeating content."
+  - "A strong finding requires delivery evidence for the callback signpost and the claimed audience engagement; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "Only the callback or only its supposed antecedent is available, or the source order is incomplete."
+  - "The recording does not expose the claimed audience response needed for the asserted positive tier."
+  - "The complete format and duration are unavailable, so the lightning-format applicability condition cannot be assessed."
 related_patterns: [fourthought, foreshadowing, talklet]
 inverse_of: []
 difficulty: intermediate
@@ -40,9 +61,13 @@ Avoid Backtracking when the callback is superficial or forced. If you have to st
 When scoring talks, listen for explicit verbal callbacks to earlier material. Phrases like "as we saw earlier," "this connects back to," or "remember the diagram from the first section" are strong signals. Visual callbacks — reshowing an earlier slide or diagram with new annotations — are even stronger. Look for moments where the audience visibly reacts with recognition or understanding as earlier material is recontextualized.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Multiple deliberate callbacks to earlier content that reveal new connections or deepen understanding, with clear verbal signposts and audience engagement at those moments
-- Moderate signal (1 pt): One or two references to earlier material that provide some reinforcement but do not fundamentally transform understanding
-- Absent (0 pts): Strictly linear presentation with no revisitation of earlier material, or repetition without added insight
+- Strong signal: Multiple deliberate callbacks to earlier content that reveal new connections or deepen understanding, with clear verbal signposts and audience engagement at those moments
+- Moderate signal: One or two references to earlier material that provide some reinforcement but do not fundamentally transform understanding
+- Absent: Strictly linear presentation with no revisitation of earlier material, or repetition without added insight
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 2 (Structure and Flow): Backtracking creates a non-linear narrative architecture. Dimension 5 (Audience Engagement): Backtracking engages the audience's memory and pattern-matching capabilities.

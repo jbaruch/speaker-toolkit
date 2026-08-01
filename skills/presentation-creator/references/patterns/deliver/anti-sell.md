@@ -6,10 +6,23 @@ part: deliver
 phase_relevance:
   - content
 vault_dimensions: [11, 6]
+evidence_channels: [transcript, video]
 detection_signals:
   - "speaker downplays own product, employer, or work"
   - "self-deprecating framing of own credentials"
   - "explicit hedge against perceived sales pitch"
+evaluable_from:
+  - transcript
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "A positive finding must locate an explicit deflection tied to the speaker's own product, employer, book, credentials, or other visible commercial interest; general humility or a vendor-neutral tone does not qualify."
+  - "A strong finding requires delivery video showing the brief deflection, its humor or register, and the later structural choice not to pitch."
+not_evaluable_when:
+  - "The source does not establish a visible commercial or credential context that could create a pitch expectation."
+  - "Only a neutral product mention, generic self-deprecation, or excerpted disclaimer is available without the surrounding delivery needed to establish Anti-Sell."
 related_patterns: [delayed-self-introduction, the-big-why, mentor]
 inverse_of: [disowning-your-topic]
 difficulty: intermediate
@@ -34,9 +47,13 @@ Use Anti-Sell whenever the speaker has a visible commercial affiliation — work
 Look for moments where the speaker mentions their employer, product, book, or credentials in a deflated or self-deprecating register. Phrases like "this isn't a pitch," "you can ignore the bio," "we make X, which is fine" are positive signals. The deflection should appear in the opening or at the moments where a product mention is structurally unavoidable.
 
 ## Scoring Criteria
-- Strong signal (2 pts): explicit, brief, humor-tinged Anti-Sell mention at the talk's opening and at any product reference; visible structural choice not to pitch
-- Moderate signal (1 pt): one Anti-Sell mention or a generally vendor-neutral framing without explicit deflection
-- Absent (0 pts): straight product or employer pitch with no visible hedge; or full vendor-neutrality with no need for the pattern
+- Strong signal: explicit, brief, humor-tinged Anti-Sell mention at the talk's opening and at any product reference; visible structural choice not to pitch
+- Moderate signal: one Anti-Sell mention or a generally vendor-neutral framing without explicit deflection
+- Absent: In an established pitch-expectation context, a straight product or employer pitch proceeds with no visible hedge
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 11 (Self-Presentation): how the speaker positions themselves relative to commercial interests. Dimension 6 (Evidence and Persuasion): a credibility move.

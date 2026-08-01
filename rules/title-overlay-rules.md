@@ -154,7 +154,7 @@ deck's own natural shadows — the title still sits on a darker field,
 but the darkening looks like "deeper shadow of the same style" rather
 than a black film dropped on top.
 
-Suggested sampler (`skills/illustrations/scripts/suggest-scrim-color.py`):
+Suggested sampler (`{speaker_toolkit_root}/skills/illustrations/scripts/suggest-scrim-color.py`):
 
 1. Resize each illustration to ~200px longest edge.
 2. Take the darkest 5% of pixels across the whole deck by Rec. 709

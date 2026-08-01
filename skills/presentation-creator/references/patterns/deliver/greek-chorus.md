@@ -7,10 +7,24 @@ phase_relevance:
   - architecture
   - content
 vault_dimensions: [4, 9]
+evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "supporting character on slides"
   - "ally-assisted delivery"
   - "fictional persona providing commentary"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "A visual positive finding must identify a recurring, explicitly voiced persona that comments on or challenges the argument; a decorative mascot or repeated illustration alone does not qualify."
+  - "A real-audience ally or strong finding requires complete delivery video showing how supporting voices function in the talk and whether the interaction reinforces trust rather than appearing scripted; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "Slides show only an unnamed recurring character without dialogue, commentary, or a role in the argument."
+  - "The recording does not capture the projected personas, audience interventions, or enough of the delivery to establish strong use."
 related_patterns: [posse, mentor]
 inverse_of: []
 difficulty: advanced
@@ -42,9 +56,13 @@ Use this pattern when presenting controversial or counterintuitive ideas that be
 - Audience objections are preemptively voiced through a supporting device
 
 ## Scoring Criteria
-- Strong signal (2 pts): Effective use of supporting voices — either fictional slide characters or real allies — that reinforce the message authentically and enhance audience trust
-- Moderate signal (1 pt): Some attempt at multi-vocal presentation but execution is inconsistent or feels forced
-- Absent (0 pts): Single-voice presentation with no supporting characters or ally integration
+- Strong signal: Effective use of supporting voices — either fictional slide characters or real allies — that reinforce the message authentically and enhance audience trust
+- Moderate signal: Some attempt at multi-vocal presentation but execution is inconsistent or feels forced
+- Absent: Single-voice presentation with no supporting characters or ally integration
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 9 (Speaker Authority / Credibility).

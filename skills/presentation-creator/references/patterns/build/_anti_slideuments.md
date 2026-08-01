@@ -13,6 +13,7 @@ detection_signals:
 related_patterns: [infodeck, charred-trail, gradual-consistency]
 inverse_of: [infodeck]
 difficulty: foundational
+observable: false
 ---
 
 # Slideuments
@@ -40,9 +41,16 @@ If organizational pressure demands a single artifact (a common corporate scenari
 When scoring talks, look for slides that contain complete sentences or full paragraphs — indicators that the slides were designed to be read without a presenter. Also look for the inverse: moments where a distributed slide deck is incomprehensible without the speaker's verbal context, suggesting it was designed for live delivery but distributed as a document. The clearest signal is a deck that feels too dense for presenting but too sparse for reading.
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Classic Slideument behavior — dense text slides used for both presenting and distributing, no speaker notes, no separate document, both audiences poorly served
-- Moderate signal (1 pt): Some Slideument tendencies — slides that are slightly too text-heavy for presentation but have enough context to be somewhat readable standalone
-- Absent (0 pts — antipattern not present): Clear separation between presentation and document artifacts, or slides with comprehensive speaker notes that serve as the document layer while keeping slides visual and sparse
+- Strong signal (antipattern present): Classic Slideument behavior — dense text slides used for both presenting and distributing, no speaker notes, no separate document, both audiences poorly served
+- Moderate signal: Some Slideument tendencies — slides that are slightly too text-heavy for presentation but have enough context to be somewhat readable standalone
+- Absent (antipattern not present): Clear separation between presentation and document artifacts, or slides with comprehensive speaker notes that serve as the document layer while keeping slides visual and sparse
+
+## Vault Observability
+Dense live slides are an observable symptom, but Slideuments is defined by one artifact being
+used for both live presentation and standalone distribution, including the presence or absence
+of notes and a separate document. Current ingress does not identify that distributed artifact
+policy. Keep density findings under visual antipatterns until those artifact roles can be
+compared directly.
 
 ## Relationship to Vault Dimensions
 Dimension 8 (Slide Design): Slideuments represent a fundamental design failure. Dimension 14 (Overall Quality Indicators): The presence of Slideument behavior is a strong negative quality signal.

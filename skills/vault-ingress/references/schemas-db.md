@@ -52,9 +52,9 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
       "verified_at": "timezone-aware ISO-8601 timestamp"
     }],
     "pptx_path": "Conference/Year/Talk Name.pptx  (optional — highest quality slide source when available)",
-    "transcript_path": "transcripts/<artifact>.txt  (optional explicit local transcript)",
-    "schema_version": 3,
+    "schema_version": 5,
     "transcript_source": "youtube_auto|whisper|manual|none  (how the transcript was obtained; MAY BE ABSENT — see below)",
+    "transcript_path": "transcripts/{id}.txt  (optional vault-relative path; required for non-YouTube transcript evidence)",
     "slide_source": "pptx|pdf|both|video_extracted|none  (set in Step 2 per slide source hierarchy)",
     "slides_local_path": "slides/<artifact>.pdf  (optional explicit local PDF; legacy readers also accept slides_pdf_path/pdf_path)",
     "pptx_visual_status": "pending|extracted|no_pptx",
@@ -62,15 +62,15 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "reprocess_reason": "machine-readable reason for needs-reprocessing, or null",
     "reprocess_generation": 1,
     "_queue_claim": {
-      "schema_version": 3,
+      "schema_version": 5,
       "run_id": "reparse-2026-07",
       "batch_id": "25",
       "claimed_at": "2026-07-31T18:00:00+00:00",
       "previous_status": "needs-reprocessing",
       "reprocess_generation": 1,
-      "required_return_schema_version": 3,
+      "required_return_schema_version": 5,
       "adherence_baseline": {
-        "schema_version": 1,
+        "schema_version": 2,
         "as_of": "2026-07-31T18:00:00+00:00",
         "scope": "global",
         "active_batch_excluded": true,
@@ -79,7 +79,11 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
         "pattern_scoring_generation_status": "current",
         "pattern_scoring_generation_reasons": [],
         "pattern_catalog_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "pattern_scoring_schema_version": 3,
+        "pattern_scoring_schema_version": 5,
+        "eligible_talk_count": 25,
+        "opportunity_coverage_identity": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "raw_score_comparison_status": "available",
+        "raw_score_comparison_reason": null,
         "scored_talk_count": 25,
         "pattern_score_sum": 170,
         "average_pattern_score": 6.8
@@ -97,20 +101,36 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
     "audience_interaction_count": 0, "pattern_score": 0,
     "pattern_scoring_generation_status": "current",
     "pattern_scoring_generation_reasons": [],
-    "pattern_scoring_schema_version": 3,
+    "pattern_scoring_schema_version": 5,
     "pattern_catalog_fingerprint": "sha256 of the exact catalog files used",
     "pattern_observations": {
-      "evidence_sources": ["static_slides", "native_deck", "delivery_video", "transcript", "source_comparison"],
+      "evidence_schema_version": 2,
+      "evidence_sources": ["transcript"],
+      "source_inspection": [{
+        "source": "transcript",
+        "line_ranges": [[1, 240]],
+        "line_count": 240,
+        "coverage_complete": true,
+        "artifact_root": "vault",
+        "artifact_path": "transcripts/dQw4w9WgXcQ.txt",
+        "artifact_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }],
       "pattern_ids": [],
       "antipattern_ids": [],
       "not_evaluable_ids": [],
       "pattern_score": 0,
       "patterns_detected": [],
       "antipatterns_detected": [],
+      "applicability_assessments": [],
+      "pattern_outcomes": [
+        {"pattern_id": "another-catalog-id", "outcome": "not_evaluable"},
+        {"pattern_id": "one-catalog-id", "outcome": "undetected"}
+      ],
+      "opportunity_coverage_identity": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       "not_evaluable": []
     }
   }],
-  "_comment_schema_version": "Talk-record schema version, stamped by persist-results.py. v1 is the implicit unversioned shape. v2 makes transcript_source optional. v3 adds optional queue-generation, catalog-fingerprint, scoring-generation status/reasons, scoring-version, evidence-source, and not-evaluable fields plus explicit corrective clears. Existing field representations do not change, so older readers ignore the additions; a validated re-analysis supplies the generation-specific fields.",
+  "_comment_schema_version": "Talk-record schema version, stamped by persist-results.py. v1 is the implicit unversioned shape. v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, evidence ledger v2, and current scoring schema v5. Migration preserves v1-v4 evidence and never synthesizes v5 outcomes.",
   "_comment_absent_transcript_source": "Absent transcript_source: the key may be MISSING on a talk, and missing is meaningful — it means provenance is unknown, not that no transcript exists (that is the explicit value `none`). It arises on one path: fetch-transcript.py returning method `existing`, where a valid transcript was already on disk and no fetch ran, so nothing was learned about where it came from. Writers MUST NOT backfill a guess; `manual` in particular asserts a human produced it. Readers gauging transcript reliability MUST treat absent as unknown and MUST NOT default it to any value.",
   "pptx_catalog": [{
     "pptx_path": "Conference/Year/Talk Name.pptx",
@@ -135,6 +155,75 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
 }
 ```
 
+## Shownotes Scan/Import Report
+
+Run `scan-shownotes.py` against the canonical tracking database. The scanner
+reads `config.shownotes.source` for local sources and resolves
+`path_or_url/talks_subdir` inside the configured root. A null or absent
+`config.shownotes` may use the legacy absolute `config.talks_source_dir` during
+migration. `remote_url`, `none`, and disabled sources return a structured no-op
+without reading Markdown or writing the database.
+
+The command emits report schema v1:
+
+```json
+{
+  "schema_version": 1,
+  "ok": true,
+  "mode": "dry-run|apply",
+  "operation": "scan|skipped_disabled|skipped_nonlocal",
+  "apply_requested": false,
+  "database_written": false,
+  "mutation_count": 1,
+  "scanned_file_count": 1,
+  "existing_talk_count": 10,
+  "counts": {
+    "add": 1,
+    "update": 0,
+    "unchanged": 0,
+    "review_required": 0
+  },
+  "shownotes": {
+    "enabled": true,
+    "source_type": "local_jekyll",
+    "config_origin": "shownotes|talks_source_dir",
+    "root": "/absolute/shownotes/root",
+    "talks_subdir": "_talks",
+    "talks_directory": "/absolute/shownotes/root/_talks"
+  },
+  "entries": [{
+    "filename": "2026-08-01-talk.md",
+    "disposition": "add|update|unchanged|review_required",
+    "proposal": {"filename": "2026-08-01-talk.md"},
+    "changes": {},
+    "issues": [],
+    "applied": false
+  }]
+}
+```
+
+Dry-run is the default and never writes. `--apply` adds complete new records
+with current talk schema and status `pending`, or fills empty fields on an exact
+filename match. Established values are not overwritten. Conflicting,
+incomplete, and normalized-collision entries stay `review_required` and never
+mutate. `mutation_count` counts deterministic `add` and `update` candidates;
+`database_written` records whether an atomic replacement occurred.
+
+Supported Markdown metadata includes YAML, TOML, and JSON frontmatter plus a
+body H1 and labeled `Conference`, `Event`, `Venue`, `Date`, `Video`, `Recording`,
+`Slides`, or `Deck` links. YouTube and Google Drive identities use the shared
+ingress URL parsers. A proposed source matches a rejection when its URL is exact
+or its parsed provider ID equals the rejected URL's ID. Such a proposal remains
+inactive with `rejected_source_reappeared` until human review supplies a valid
+replacement.
+
+The two persisted `pattern_outcomes` rows in the tracking-DB example are
+illustrative only; a real v5 persisted talk contains exactly one sorted row for
+every observable catalog entry. The raw v5 worker return below includes
+`applicability_assessments` but must omit engine-owned
+`evidence_schema_version`, `pattern_outcomes`, and
+`opportunity_coverage_identity`; persistence derives all three.
+
 The copyable talk above is a current scoring generation. A replayable legacy
 return that cannot prove the current evidence contract instead stores this
 mutually exclusive shape and omits both `pattern_scoring_schema_version` and
@@ -149,11 +238,18 @@ mutually exclusive shape and omits both `pattern_scoring_schema_version` and
 }
 ```
 
-A successfully persisted, above-threshold return v3 also stores its exact
-three-field `adherence_comparison` beside `adherence_assessment`; its shape is
-the return schema below. Below threshold the field is absent. A v2 snapshot
-replay clears a stale comparison so legacy prose cannot retain authenticated
-v3 numeric context.
+A fresh v5 worker uses the exact empty adherence sentinel and does not author a
+raw-score comparison. Only an owner-side consumer that sees the canonical talk
+outcomes may compare against a baseline carrying the same
+`opportunity_coverage_identity`. Baseline schema v2 keeps all fresh-v5 talks in
+`eligible_talk_count`; `scored_talk_count` is only the exact-identity raw-score
+cohort. Mixed identities use zero/null score aggregates plus explicit
+`raw_score_comparison_status: "unavailable"` and reason
+`mixed_opportunity_coverage` rather than normalizing unlike denominators. A
+non-empty cohort whose exhaustive outcome matrix contains no `detected` or
+`undetected` row also uses zero/null aggregates with reason
+`no_evaluable_pattern_opportunities`; missing opportunities must never publish
+an available zero average.
 
 `source_identity` and `source_relation` are optional. Their owned shape,
 offline comparison rules, duplicate semantics, and compatibility policy are in
@@ -165,13 +261,16 @@ date, and a captured webpage URL is never an automatic active-source repair.
 
 Queue eligibility is not encoded by `video_url` alone. One shared resolver derives
 auditable `source_capabilities` for queueing, return provenance, and terminal
-status checks. A transcript capability requires `transcript_path` or an active
-video acquisition path; `transcript_source: manual` is provenance only and does
-not prove an artifact exists. Slide capability requires a PPTX/PDF reference.
-Legacy no-video/no-transcript statuses normalize to `skipped_no_sources` only
-when the shared capability list is empty.
+status checks. A local capability requires an artifact that the source-specific
+quality checker/parser/probe can actually read under the vault or configured source
+root; a non-empty, escaped, symlinked, missing, or malformed local path is not a
+capability. Active remote video/slide acquisition paths remain separate eligible
+capabilities because processing performs that acquisition. `transcript_source:
+manual` is provenance only and does not prove an artifact exists. Legacy
+no-video/no-transcript statuses normalize to `skipped_no_sources` only when the
+shared verified-local plus remote-acquisition capability list is empty.
 
-Every fresh queue claim is schema v3 and carries exactly the
+Every fresh queue claim is schema v5 and carries exactly the
 `required_return_schema_version` and `adherence_baseline` fields shown above.
 The queue owner builds one baseline before mutating any selected talk, copies it
 unchanged to every batch member, and requires `adherence_baseline.as_of` to equal
@@ -179,9 +278,10 @@ the canonical `claimed_at`. `excluded_filenames` is the sorted exact batch;
 exclusion happens before generation identity or score inspection so a talk's
 prior result cannot compare with itself. Only eligible talks stamped `current`
 with empty reasons and the baseline's exact catalog fingerprint/scoring schema
-contribute. Promoted and nested pattern scores must agree. Count and sum are
-integers; the average uses decimal `ROUND_HALF_EVEN` to two places and is null
-only for a zero population.
+contribute to `eligible_talk_count`. Exact opportunity identity additionally
+controls the raw-score cohort. Promoted and nested pattern scores must agree.
+Count and sum are integers; an available average uses decimal
+`ROUND_HALF_EVEN` to two places.
 
 A closed claim adds `released_at` and `release_reason`; a completed claim also
 adds terminal `result_status` and the canonical `result_payload_sha256` receipt.
@@ -189,10 +289,27 @@ Those suffix fields are forbidden while `state` is `claimed`.
 
 Claim records are immutable generation evidence. Idempotent replay returns the
 stored claim and leaves DB bytes unchanged. Recovery closes but preserves the
-same v3 snapshot; a later claim increments `reprocess_generation` and captures a
+same v5 snapshot; a later claim increments `reprocess_generation` and captures a
 fresh snapshot. Historical retry epochs may span `_queue_claim_history` and
 current `_queue_claim` locations, but their combined members must still match
 the baseline's exact excluded filenames and share one snapshot.
+
+The four version axes are deliberately explicit:
+
+| Claim | Authorized return | Persisted talk | Pattern scoring |
+|---|---|---|---|
+| v1 or v2 | saved v1 or v2 only | migrated legacy record | never current v5 |
+| v3 | v3 only | migrated union-safe record | never current v5 |
+| v4 | v4 only | archival source-located v4 | never current v5 |
+| v5 | v5 only | v5 | v5 when canonical evidence/outcomes are fresh |
+
+Claim/return compatibility authorizes replay; it does not grant current scoring
+status. Only a v5 return canonicalized from current source artifacts can produce
+talk schema v5 with `pattern_scoring_schema_version: 5`, evidence ledger v2,
+exhaustive outcomes, and `pattern_scoring_generation_status: "current"`.
+V1–v3 detections retain the explicit empty-citation legacy sentinel. V4 keeps
+its source locations and evidence ledger v1 but migration never fabricates v5
+applicability assessments, outcomes, or opportunity identity.
 
 `improvement_goals` is the coaching-loop artifact — speaker-chosen focus areas that
 a later ingress run verifies. vault-clarification owns the record shape; vault-ingress
@@ -209,7 +326,7 @@ Each subagent returns this JSON after processing one talk:
 ```json
 {
   "filename": "the .md filename",
-  "return_schema_version": 3,
+  "return_schema_version": 5,
   "queue_claim": {
     "run_id": "copied from talk._queue_claim.run_id",
     "batch_id": "copied from talk._queue_claim.batch_id",
@@ -224,6 +341,7 @@ Each subagent returns this JSON after processing one talk:
   "rhetoric_notes": "500-1000 words: qualitative observations across dimensions 1-13",
   "areas_for_improvement": "100-300 words: honest critical reflection (Dimension 14); name the related antipattern ID + severity per issue where a Dimension 14 antipattern applies",
   "transcript_source": "youtube_auto|whisper|manual  (how the transcript was obtained; OMIT the key entirely when provenance is unknown — see Absent transcript_source in the DB schema above)",
+  "transcript_path": "transcripts/{id}.txt  (optional exact repeat of a pre-registered non-YouTube path; cannot introduce citation authority)",
   "structured_data": {
     "delivery_language": "en|de|ru|etc  (primary language of the talk)",
     "co_presenter": false,
@@ -299,39 +417,38 @@ Each subagent returns this JSON after processing one talk:
     "opening_lines": ["first 2-3 sentences of the talk, verbatim"],
     "closing_lines": ["last 2-3 sentences of the talk, verbatim"]
   },
-  "adherence_assessment": "This talk remains close to the established pattern baseline. Its detected antipattern explains the modest gap without changing the claim snapshot.",
-  "adherence_comparison": {
-    "schema_version": 1,
-    "baseline": {
-      "schema_version": 1,
-      "as_of": "2026-07-31T18:00:00+00:00",
-      "scope": "global",
-      "active_batch_excluded": true,
-      "excluded_filenames": ["the .md filename"],
-      "eligible_statuses": ["processed", "processed_partial"],
-      "pattern_scoring_generation_status": "current",
-      "pattern_scoring_generation_reasons": [],
-      "pattern_catalog_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "pattern_scoring_schema_version": 3,
-      "scored_talk_count": 25,
-      "pattern_score_sum": 170,
-      "average_pattern_score": 6.8
-    },
-    "talk_pattern_score": 6
-  },
+  "adherence_assessment": "",
   "new_patterns": "100-300 words on NEW patterns not in summary, or ''",
   "summary_updates": "50-200 words: additions for rhetoric-style-summary.md by section #, or ''",
   "pattern_observations": {
     "evidence_sources": [
       "every source actually inspected: static_slides|native_deck|delivery_video|transcript|source_comparison"
     ],
+    "source_inspection": [
+      {"source": "transcript", "line_ranges": [[1, 240]]},
+      {"source": "static_slides", "page_ranges": [[1, 60]]},
+      {"source": "native_deck", "page_ranges": [[1, 60]]},
+      {"source": "delivery_video", "time_ranges": [[0, 1800.0]]},
+      {
+        "source": "source_comparison",
+        "evidence_sources_used": ["static_slides", "native_deck"],
+        "comparison_scope": "full"
+      },
+      {
+        "source": "source_comparison",
+        "evidence_sources_used": ["transcript", "delivery_video"],
+        "comparison_scope": "partial"
+      }
+    ],
     "patterns_detected": [
       {
-        "pattern_id": "narrative-arc",
+        "pattern_id": "progressive-reveal",
         "confidence": "strong|moderate|weak",
         "evidence_source": "static_slides|native_deck|delivery_video|transcript|source_comparison",
-        "evidence": "brief description of what was observed",
-        "dimensions": [2, 5]
+        "evidence": "Three consecutive slides add one element at a time.",
+        "evidence_citations": [
+          {"source": "native_deck", "channel": "slide_sequence", "slide_numbers": [21, 22, 23]}
+        ]
       }
     ],
     "antipatterns_detected": [
@@ -339,15 +456,40 @@ Each subagent returns this JSON after processing one talk:
         "pattern_id": "shortchanged",
         "confidence": "strong|moderate|weak",
         "evidence_source": "static_slides|native_deck|delivery_video|transcript|source_comparison",
-        "evidence": "brief description of what was observed",
-        "dimensions": [12, 14]
+        "evidence": "The talk announces the close before beginning a new topic.",
+        "evidence_citations": [
+          {"source": "transcript", "channel": "timed_transcript", "quote": "Before I finish, there is one more architecture topic."}
+        ]
+      }
+    ],
+    "applicability_assessments": [
+      {
+        "pattern_id": "pattern-with-applicability-contract",
+        "result": "not_applicable",
+        "condition_id": "catalog-owned-condition-id",
+        "evidence_source": "transcript",
+        "evidence": "The complete transcript establishes the catalog-owned condition.",
+        "evidence_citations": [
+          {"source": "transcript", "channel": "transcript", "quote": "A unique source-language span of at least four words"}
+        ]
       }
     ],
     "not_evaluable": [
       {
         "pattern_id": "composite-animation",
-        "evidence_source": "static_slides",
-        "reason": "Only a flattened PDF was available, so simultaneous layered animation and timing could not be established."
+        "reason_code": "missing_required_source_coverage"
+      },
+      {
+        "pattern_id": "catalog-entry-awaiting-owner-gate",
+        "reason_code": "source_gate_pending_owner_review"
+      },
+      {
+        "pattern_id": "positive-only-pattern",
+        "reason_code": "absence_not_authorized_by_catalog"
+      },
+      {
+        "pattern_id": "conditional-pattern-with-incomplete-coverage",
+        "reason_code": "missing_applicability_source_coverage"
       }
     ],
     "pattern_score": {
@@ -385,11 +527,10 @@ Each subagent returns this JSON after processing one talk:
 }
 ```
 
-A `source_comparison` detection adds
+A `source_comparison` detection or applicability assessment adds
 `"evidence_sources_used": ["static_slides", "native_deck"]` (or another
-exact qualifying catalog group). Newly emitted v2 work must include this proof;
-v3 enforces it structurally. The field is forbidden on non-comparison
-detections. Only replayed v1/v2 artifacts may omit it, and persistence infers
+exact qualifying catalog group). Return v5 enforces this proof structurally.
+The field is forbidden on non-comparison records. Only replayed v1–v3 artifacts may omit it, and persistence infers
 the proof only when exactly one pair qualifies.
 
 `per_slide_visual`, when present, is a closed, complete slide ledger. It requires
@@ -420,18 +561,18 @@ classification rule including how a dominant class is selected, the provenance
 evidence used, and how unverified origins are counted as `unknown`. Both fields
 are authored-slide evidence and cannot be supplied from untrusted video context.
 
-The worker matches the active claim contract. Every fresh claim is schema v3
-with `required_return_schema_version: 3`, and only that exact claim authorizes a
-v3 return. Claim schemas v1/v2 authorize return schemas v1/v2 only; use v2 for
-newly authored compatibility work, while v1 remains saved-artifact replay
-support. Never attach a v3 return to a legacy claim or mutate the claim to make
-the version appear compatible.
+The worker matches the active claim contract. Every fresh claim is schema v5
+with `required_return_schema_version: 5`, and only that exact claim authorizes a
+v5 return. Saved claim schemas v1/v2 authorize only return schemas v1/v2;
+schema v3 authorizes only v3; schema v4 authorizes only archival v4. Recover a
+live legacy lease and issue a new v5 generation; never mutate its claim to make
+a newer return appear compatible.
 
 For newly emitted work, `validate-returns.py` must report the processed talk's
 scoring-generation status as `current`; a valid but
 `legacy_unbaselineable` result is replay-only and must be repaired.
 
-Versions 2 and 3 share the complete-snapshot merge contract: supplied declared
+Versions 2–5 share the complete-snapshot merge contract: supplied declared
 scalar and list fields replace prior values, including empties only where the
 field contract permits emptiness; complete structured maps and each verbatim
 lane replace their prior snapshots; omitted fields remain untouched. The
@@ -465,18 +606,14 @@ records that the current analysis found none. Required prose fields use an empty
 string only for `adherence_assessment`, `new_patterns`, and `summary_updates`.
 For `adherence_assessment`, the no-assessment sentinel is exactly `""`; whitespace-only
 text is invalid.
-Return v3 binds adherence to the active claim. When the claim baseline's
-`scored_talk_count` is below 10, the exact empty sentinel is required and
-`adherence_comparison` is forbidden. At 10+, `adherence_comparison` is required
-and has exactly three fields: integer `schema_version: 1`, the complete
-`baseline` exactly equal to `talk._queue_claim.adherence_baseline`, and integer
-`talk_pattern_score` exactly equal to the validated pattern score. Its
-`adherence_assessment` contains 2–4 punctuation-terminated sentences. The
-deterministic sentence convention counts every `.`, `?`, or `!` cluster before
-whitespace/end—including abbreviation periods—and requires final punctuation.
-Return v1/v2 cannot carry `adherence_comparison`; any non-empty legacy adherence
-prose is archival `legacy-unverified`, never verified numeric evidence.
-Versions 2 and 3 require `rhetoric_notes` and `areas_for_improvement` to contain
+Fresh return v5 uses exact `adherence_assessment: ""` and omits
+`adherence_comparison`. The worker cannot know the engine-owned canonical talk
+`opportunity_coverage_identity`. An owner-side consumer may construct a numeric
+comparison only after persistence, only when the talk identity exactly equals a
+schema-v2 baseline identity, `raw_score_comparison_status` is `available`, and
+the baseline has at least ten exact-identity scored talks. Comparisons from
+return v1–v4 are archival only and never verified current numeric evidence.
+Versions 2–5 require `rhetoric_notes` and `areas_for_improvement` to contain
 substantive non-whitespace analysis. An unknown `transcript_source` is omitted; a present value
 must be one of the declared enums and must never be JSON `null`. Missing/version-1
 returns retain their historical type-only and empty-value no-op behavior. A skipped
@@ -498,18 +635,20 @@ batch in `claimed` state and closes it as `completed`; `write-analysis.py`
 requires that same whole batch in `completed` state. A genuinely one-member
 batch is complete and remains supported. A partially closed or stranded batch
 must be recovered into a fresh queue generation rather than finished piecemeal.
-For claim v3, every live batch member must also share one canonical
+For claim v3–v5, every live batch member must also share one canonical
 `claimed_at`, one identical baseline, and an `excluded_filenames` array equal to
 the exact sorted batch. Persistence validates all of those conditions before
 the first candidate merge; one mismatch leaves both DB and analysis artifacts
 unchanged.
 
 Queue-claim schema v2 adds `result_payload_sha256` to completed claims; schema
-v3 adds the required-return version and immutable adherence snapshot. The
+v3 adds the required-return version and immutable adherence snapshot. Schema v4
+freezes those fields to the source-located return-v4/scoring-v4 contract. Schema
+v5 carries the v5 return/scoring contract and schema-v2 baseline. The
 receipt hashes the exact return payload after stable JSON key/whitespace
-canonicalization. `persist-results.py` closes v1 as v2, v2 as v2, and v3 as v3,
-storing the receipt for every completed v2/v3 claim. The analysis writer
-recomputes it and rejects a substituted payload. `queue-state.py` reads v1/v2/v3
+canonicalization. `persist-results.py` closes v1 as v2 and closes v2–v5 at
+their own versions, storing the receipt for every completed v2–v5 claim. The analysis writer
+recomputes it and rejects a substituted payload. `queue-state.py` reads v1–v5
 without mutating `inspect` or idempotent replay. An already completed v1 claim
 has no reconstructable receipt and therefore cannot authorize an analysis
 replacement until a fresh generation is processed. Unknown future claim
@@ -517,35 +656,41 @@ versions fail closed.
 
 Recovery never rewrites a claim snapshot. It marks the generation closed and
 restores its prior claimable status; reclaiming creates a new generation with a
-fresh pre-mutation baseline. A historical v3 batch may therefore be split across
+fresh pre-mutation baseline. A historical v3/v4/v5 batch may therefore be split across
 current and history storage locations, but the combined `(run_id, batch_id,
 claimed_at)` epoch must still have exact membership and one baseline.
 
 Terminal skip reasons are state-bound too. `skipped_no_sources` requires an
 empty capability list. `skipped_download_failed` requires a remote video/slide
-acquisition path and no remaining local transcript, PPTX, or PDF artifact.
+acquisition path and no remaining verified local transcript, PPTX, PDF, or video
+artifact; a stale local declaration does not block that terminal result.
 `skipped_duplicate` requires `source_relation.type: duplicate` plus a non-empty
 `target_filename`.
 
 Before rendering a processed result, `write-analysis.py` recomputes the scoring
 generation from the receipt-bound return and current catalog. A current result
 must carry `pattern_scoring_generation_status: current`, an empty reasons array,
-scoring schema 3, and the exact catalog fingerprint. A replayable v1/v2 result
+scoring schema 5, and the exact catalog fingerprint. A replayable v1–v4 result
 that cannot prove the current evidence contract carries
 `legacy_unbaselineable` plus exact sorted machine reasons and must not retain a
 current scoring version or fingerprint. Its Markdown visibly labels adherence
 prose `legacy-unverified` and states that it is excluded from current numeric
-baselines, Section 15 aggregates, and speaker profiles. A v2 snapshot replay
-also clears any stale authenticated `adherence_comparison` from a prior v3
+baselines, Section 15 aggregates, and speaker profiles. A v2–v4 snapshot replay
+also clears any stale authenticated `adherence_comparison` from a prior
 generation. Skipped results are `not_applicable` in validator and
 persistence reports and do not render or restamp prior analysis-generation
 metadata.
 
 After all members merge successfully, `persist-results.py` emits
-`current_adherence_baseline` on stdout. It uses the same schema version 1 but is
+`current_adherence_baseline` on stdout. It uses baseline schema version 2 and is
 explicitly all-inclusive: `active_batch_excluded: false` and
-`excluded_filenames: []`. Its `as_of` is the authoritative completion stamp, and
-its count/sum/ROUND_HALF_EVEN average describe the complete post-batch candidate.
+`excluded_filenames: []`. Its `as_of` is the authoritative completion stamp.
+`eligible_talk_count` describes every fresh-v5 candidate; score count/sum/average
+describe only one exact opportunity-identity cohort. Mixed identities make the
+raw-score comparison unavailable with zero/null score aggregates while retaining
+the full per-pattern opportunity cohort. A shared identity with no evaluable
+outcome uses the same zero/null sentinel with
+`no_evaluable_pattern_opportunities` rather than publishing an available `0.0`.
 Section 15 and profile generation consume exact current-generation talk data and
 this post-batch aggregate; they must not recompute after member 1, use a
 processing-date cohort, or mutate a preclaim baseline.
@@ -589,28 +734,38 @@ are top-level analysis prose/provenance scalars or leaves under
 `structured_data`, `verbatim_examples`, and `pattern_observations`. It cannot
 clear queue identity, source URLs, catalog metadata, or the talk record itself.
 Clearing a promoted structured scalar clears its top-level copy too. A supplied
-v2/v3 replacement wins after a clear; permitted empty values are real snapshots,
+v2–v5 replacement wins after a clear; permitted empty values are real snapshots,
 not no-ops. Legacy v1 empty values retain their historical additive no-op behavior.
 
 `evidence_source` uses the enum defined by the pattern index's Evidence-Source Contract.
 Detected entries must name a qualifying source. Strong detections use
 `strong_evaluable_from` (defaulting to `evaluable_from`); moderate/weak
 detections use the base gate. A `source_comparison` detection must name both
-sources in its evidence. Newly emitted v2 work and every v3 return carry a
+sources in its evidence. Every v4/v5 return carries a
 duplicate-free `evidence_sources_used` array exactly equal to one qualifying
-underlying group. Saved v1/v2 replay may omit that array; persistence infers it
+underlying group. Saved v1–v3 replay may omit that array; persistence infers it
 only when exactly one pair qualifies. Zero or multiple qualifying groups remain
 replayable but are excluded from current baselines. The `source_comparison`
 marker does not count as an underlying source and is forbidden as a catalog
 gate member or singleton.
 
-For an undetected entry, `absence_evaluable_from` defaults to the base gate. An
-unsatisfied absence gate requires `not_evaluable`; a valid positive detection
-takes precedence. A satisfied role gate permits silent absence but does not
-forbid explicit `not_evaluable` when a catalog disqualifier or artifact
-capability failure still prevents evaluation. Its entries are excluded from
-`pattern_ids`, `antipattern_ids`, and every `pattern_score` count. Never put an
-unavailable entry in a detected array or treat it as an absent pattern.
+For an undetected entry, `absence_evaluable_from` defaults to the base gate. V4
+absence remains archival and is never current. In v5, complete canonical
+inspection coverage is necessary but never sufficient to authorize absence:
+the persistence engine must also derive `absence_capability_complete: true` for
+the current source role, and the entry's `absence_evaluable_from` singleton gate
+must match that complete source. An unsatisfied gate requires exactly
+`{"pattern_id": "...", "reason_code": "missing_required_source_coverage"}`.
+An explicit null absence gate requires `absence_not_authorized_by_catalog` and
+keeps the entry positive-only. In v5, incomplete applicability coverage requires
+`missing_applicability_source_coverage`; complete applicability coverage requires
+exactly one source-located assessment for every nondetected conditional entry.
+An observable entry with no owner-approved gate requires
+`source_gate_pending_owner_review`; it cannot be detected or silently counted
+as absent. This is fail-closed catalog debt, not a model waiver. A valid positive
+detection takes precedence for a gated entry. Not-evaluable entries are excluded
+from `pattern_ids`, `antipattern_ids`, and every `pattern_score` count. Never put
+an unavailable entry in a detected array or treat it as an absent pattern.
 
 `catalog_feedback` is mandatory on current processed returns and uses only the
 five lanes shown above (empty arrays are valid). Exact IDs and
@@ -620,6 +775,266 @@ aggregator also audits historical returns, reports legacy compatibility issues
 without silently repairing them, and preserves per-entry provenance. Its owned
 schema and aggregation contract are in
 [catalog-feedback-intake.md](catalog-feedback-intake.md).
+
+### Source Inspection Receipt Schema
+
+Every return v4/v5 carries `pattern_observations.source_inspection`. Its source-name
+set exactly equals `evidence_sources`; comparison records may repeat the
+`source_comparison` name only for distinct underlying groups. Worker-authored
+records are closed objects:
+
+```json
+{"source": "transcript", "line_ranges": [[1, 120], [121, 240]]}
+{"source": "static_slides", "page_ranges": [[1, 20], [25, 60]]}
+{"source": "native_deck", "page_ranges": [[1, 60]]}
+{"source": "delivery_video", "time_ranges": [[0, 900.0], [905.0, 1800.0]]}
+{"source": "source_comparison", "evidence_sources_used": ["static_slides", "native_deck"], "comparison_scope": "full"}
+{"source": "source_comparison", "evidence_sources_used": ["transcript", "delivery_video"], "comparison_scope": "partial"}
+```
+
+Line/page ranges are inclusive positive integers. Time ranges are finite
+non-negative seconds with `end > start`. In all three lanes, ranges are ordered,
+non-overlapping, and may be adjacent. Persistence reads the exact artifacts to
+derive their line/page count or video duration. Coverage is complete only when
+the ranges start at 1 (or time 0), reach the verified final bound, and contain no
+gap. A comparison's range receipt is complete only when `comparison_scope` is
+`full` and every named underlying source has complete range coverage. That
+remains positive evidence; neither `full` nor `partial` comparison proves an
+undetected or applicability outcome until a future canonical receipt establishes
+aligned modality capture.
+
+`native_deck` and `static_slides` are distinct evidence sources. Reading or
+extracting a `.pptx` establishes only `native_deck`; it never silently creates a
+rendered-page receipt or authorizes static-slide absence. A real PDF, a trusted
+video-extracted slide artifact, or a stable PDF exported from the exact PPTX may
+establish positive `static_slides` evidence only when the concrete artifact is
+actually inspected and identity-bound in canonical persistence. Video-extracted
+static pages, bare `native_deck`, and bare `delivery_video` are positive-only;
+their current receipts do not prove exhaustive modality capture. A genuine
+authored/rendered PDF may be absence-capable when its catalog gate permits it.
+
+Canonical rows make the distinction auditable. `coverage_complete` is locator
+range completeness. `absence_capability_complete` is the independent engine-owned
+negative/applicability gate, and `absence_capability_reason` carries its stable
+reason (`authorized_transcript`, `authorized_rendered_static`,
+`nonexhaustive_video_extraction`, `bare_native_deck`, `bare_delivery_video`,
+`comparison_alignment_unverified`, or `incomplete_range_coverage`). Workers
+must not return either absence-capability field.
+
+Workers never return canonical receipt enrichment. Persistence adds
+`artifact_root`, vault/root-relative `artifact_path`, `artifact_sha256`, optional
+timing-artifact identity, required quality-artifact identity for current v4/v5
+transcript evidence, derived `line_count`/`page_count`/`duration_seconds`, and
+`coverage_complete`; comparison records add `artifact_identities`. Current
+cohort readers re-hash these identities and fail stale, missing, symlinked,
+relocated, or owner-path-drifted evidence closed. Transcript freshness also
+re-runs the hash-bound quality policy against the current owner/provider duration;
+a material identity-duration change yields `transcript_quality_context_drift`
+even when the transcript and sidecar bytes themselves did not change.
+
+### Pattern Evidence Citation Schema
+
+`evidence` remains the concise human explanation. `evidence_citations` is the
+auditable proof. Every newly returned detection requires one or more citations;
+`persist-results.py` rejects missing citations, unknown or duplicate pattern IDs,
+pattern/antipattern bucket swaps, `observable: false` patterns, and citation
+channels not permitted by that pattern's required `evidence_channels`
+frontmatter. An observable catalog entry without that field is itself invalid
+and stops persistence.
+
+A permitted citation channel is necessary but not sufficient. Every citation's
+`source` names the underlying member it locates or supplements, and its `channel`
+must be compatible with that source. The detection's `evidence_source` must
+independently satisfy its effective source/outcome gate,
+and at least one citation must locate proof from that source: transcript evidence
+uses `transcript` or `timed_transcript`, static/native deck evidence uses `slides`
+or `slide_sequence`, and delivery evidence uses `video`. A `source_comparison`
+detection must cite every member named by `evidence_sources_used`.
+`talk_metadata` may supplement those citations but cannot replace the qualifying
+gate source.
+
+Allowed citation shapes:
+
+```json
+{"source": "transcript", "channel": "transcript", "quote": "A unique source-language span of at least four words", "translation": "Required English translation for non-English delivery; otherwise optional"}
+{"source": "transcript", "channel": "timed_transcript", "quote": "A unique source-language span of at least four words", "translation": "Required English translation for non-English delivery; otherwise optional"}
+{"source": "static_slides", "channel": "slides", "slide_numbers": [4, 17]}
+{"source": "native_deck", "channel": "slide_sequence", "slide_numbers": [21, 22, 23]}
+{"source": "delivery_video", "channel": "video", "start_seconds": 42.5, "end_seconds": 48.0}
+{"source": "delivery_video", "channel": "talk_metadata", "field": "slide_count"}
+```
+
+Those are the complete worker-side shapes. A worker supplies the source/channel
+and the smallest source locator it can actually claim: quote, slide numbers,
+video interval, or metadata field. It must not copy `line_start`, `line_end`,
+transcript `start_seconds`/`end_seconds`, artifact root/path/hash fields,
+timing/quality-artifact fields, metadata `value`/`owner_value_after_return`, or
+any other canonical enrichment from an earlier analysis. Unknown raw citation fields are
+rejected. Catalog dimensions are likewise engine-owned; workers should omit
+them, although a supplied v4/v5 `dimensions` array is accepted only when it exactly
+matches catalog order.
+
+For transcript citations, `quote` is always the exact source-language text needed
+for matching. When either preclaim metadata or the validated return's
+`structured_data.delivery_language` identifies non-English delivery, a non-empty
+English `translation` is required so readers still see English first. It remains
+optional for English delivery. The model never supplies a translated composite
+string as `quote`, because that string does not occur in the source transcript.
+`persist-results.py` verifies that the normalized quote occurs exactly once in
+the local transcript and stamps `line_start`/`line_end`; for
+`timed_transcript`, it also stamps `start_seconds`/`end_seconds` from a verified
+timing sidecar. Model-supplied locations are discarded. A `slide_sequence` must
+contain at least two consecutive ascending slide numbers. Slide numbers are
+checked against an independently resolved slide artifact/count. A video citation
+is valid only when the video was directly reviewed at that interval; the writer
+binds its range to an identity-bound local or timed artifact and checks the
+verified duration bound. A video URL alone cannot verify a timestamp.
+`talk_metadata.value` and `owner_value_after_return` are likewise writer-owned:
+the former records the pre-return source value and the latter binds freshness to
+the persisted owner value after the return is applied. Citation objects use these
+closed field sets; unknown model-supplied fields are rejected.
+`talk_metadata.field` is restricted to source/provenance fields declared by `persist-results.py`'s
+`TALK_METADATA_FIELDS` and then to the pattern's narrower
+`evidence_metadata_fields`; generated prose such as `rhetoric_notes` cannot cite
+itself, and an irrelevant metadata field cannot stand in for pattern evidence.
+
+Migrated v1–v3 records may contain `evidence_citations: []`. That is a deliberate
+legacy marker: readers may render the old `evidence` prose, but must not present
+it as source-verified. The v4/v5 writer never accepts an empty array for a new
+detection. `evidence_schema_version` is writer-owned persisted state; workers
+must not return it, and legacy detections never acquire it by migration.
+
+The same boundary applies to `not_evaluable`. Workers return only `pattern_id`
+and one exact current reason code. Persistence derives
+`required_source_groups`, `available_source_groups`, and `capability_fact` from
+the catalog and canonical inspection receipt. It also injects catalog dimensions
+and canonical slide count where applicable. The raw-return receipt remains the
+hash of exactly what the worker sent; canonical enrichment is deterministic and
+does not alter that receipt.
+
+## Transcript Timing and Quality Receipt Schemas
+
+`fetch-transcript.py` and `vtt-cleanup.py` keep the readable transcript at
+`transcripts/{id}.txt`. When timing is trustworthy they also write
+`transcripts/{id}.segments.json`; otherwise a fresh/forced bundle removes any
+older timing sidecar. This closed receipt owns acquisition identity and timing
+only:
+
+```json
+{
+  "schema_version": 2,
+  "transcript_sha256": "SHA-256 of the exact on-disk transcript bytes",
+  "source": "captions|whisper|vtt",
+  "provenance": {
+    "kind": "youtube_captions",
+    "video_id": "dQw4w9WgXcQ",
+    "duration_seconds": 212.125
+  },
+  "segments": [
+    {"text": "Timed source text", "start_seconds": 1.2, "end_seconds": 3.4}
+  ]
+}
+```
+
+The top-level keys are exact. `provenance` is exactly one compatible shape:
+
+```json
+{"kind": "youtube_captions", "video_id": "dQw4w9WgXcQ", "duration_seconds": 212.125}
+{"kind": "youtube_whisper", "video_id": "dQw4w9WgXcQ", "duration_seconds": 212.125}
+{"kind": "local_media_whisper", "media_sha256": "64 lowercase hex characters", "duration_seconds": 212.125}
+{"kind": "vtt_artifact", "artifact_path": "source.en.vtt", "artifact_sha256": "64 lowercase hex characters", "cue_extent_seconds": 212.125}
+```
+
+YouTube and local-media timing require a positive trusted duration. The VTT
+path is a safe transcript-directory-relative POSIX path to a non-symlink
+regular file; the digest binds its exact bytes and cue extent equals the final
+segment boundary. Every segment is canonical, joined segment text equals the
+transcript modulo Unicode whitespace layout, and no segment extends past its
+source-owned duration beyond the reader's one-second measurement tolerance.
+`vtt-cleanup.py` therefore requires both input and explicit output paths; an
+existing output bundle is preserved unless `--force` authorizes replacement.
+
+`fetch-transcript.py` separately writes `transcripts/{id}.quality.json`. This
+closed receipt owns quality authority even when no timed segments exist:
+
+```json
+{
+  "schema_version": 1,
+  "transcript_sha256": "SHA-256 of the exact on-disk transcript bytes",
+  "policy": {
+    "schema_version": 1,
+    "min_words": 400,
+    "duration_seconds": null
+  },
+  "provenance": {"kind": "fixed_default"}
+}
+```
+
+The only other provenance forms are exact duration-bound objects:
+
+```json
+{"kind": "youtube_duration", "video_id": "dQw4w9WgXcQ", "duration_seconds": 212.125}
+{"kind": "local_media_duration", "media_sha256": "64 lowercase hex characters", "duration_seconds": 212.125}
+```
+
+The policy keys are exactly `schema_version`, `min_words`, and
+`duration_seconds`; policy schema is `1`. `min_words` is the canonical floor
+actually applied. With `duration_seconds: null`, it is at least 400. A trusted
+short duration may derive a lower floor at 30 words per minute; an invocation
+value below that derived floor cannot lower it, while any value above the
+derived floor tightens it. A duration-bearing provenance object must repeat the policy
+duration exactly. `youtube_duration.video_id` binds to the owning YouTube talk;
+`local_media_duration.media_sha256` binds to exact local-media bytes.
+
+The owner of both receipt shapes is
+`skills/vault-ingress/scripts/transcript_timing.py`; current timing schema is `2`
+and quality-receipt/policy schema remains `1`. Readers hash raw `.txt` bytes,
+never decoded/newline-normalized text. Any byte replacement, including CRLF→LF,
+invalidates both receipts.
+
+Missing, malformed, owner-mismatched, text-incomplete, over-bound, or hash-stale
+timing leaves the plain transcript
+readable but makes `timed_transcript` evidence unavailable. Never copy
+timestamps from a stale timing receipt or silently downgrade a pattern whose
+semantics require timing. Writers do not emit empty timing receipts: a fresh or
+forced semantic bundle with no usable timing removes the old sidecar and keeps
+`timed_path: null`.
+
+Timing schema v1 and minimal sidecars are archival only. Their missing owner
+artifact and duration bounds cannot be inferred safely, so they cannot supply
+timing or promote transcript provenance. There is no automatic in-place
+migration. Re-fetch/re-transcribe from the proved owner source, or re-import the
+original VTT file, to regenerate schema v2. Missing timing remains optional for
+ordinary transcript evidence; the independent schema-v1 quality receipt stays
+valid when its exact transcript bytes and owner context remain current.
+
+Quality availability is independent. A successful fetch or existing-artifact
+validation returns `quality_path` for a current receipt even when `timed_path`
+is null. Missing legacy quality is unverified and must be revalidated before v5
+scoring; malformed, hash-stale, wrong-owner, wrong-media, or duration-drifted
+quality fails closed. Worker-returned duration or talk analysis metadata is
+never quality authority. A stored policy is revalidated against its owner;
+tightening a caller's `--min-words` can reject existing text but cannot authorize
+replacement. Bundle writers stage transcript, timing deletion/replacement, and
+quality together. A caught failure rolls every attempted path back to its exact
+prior bytes.
+
+For an already-valid transcript, caption timing enrichment is deliberately
+non-destructive. Pass the owner's known provenance to `fetch-transcript.py` via
+`--existing-source`. Only a known `youtube_auto` transcript may acquire a new
+caption timing receipt, and only when the fetched caption text differs from the
+existing UTF-8 text by Unicode whitespace alone. The script then writes only
+the hash-bound timing sidecar and preserves the transcript bytes exactly.
+Manual, Whisper, unknown-provenance, or text-mismatched transcripts remain
+untimed; they are never relabeled or overwritten by the enrichment path. The
+talk's recorded `transcript_source` remains canonical even when a sidecar is
+valid; timing receipts can confirm matching ownership but cannot rewrite it.
+
+Fresh provider text may still be valid when optional segment timing is not. The
+fetcher prevalidates timing and, on malformed segments, transcript-text
+mismatch, or a source-bound violation, writes the semantic transcript and
+quality receipt while removing stale timing in the same transaction. Direct
+`write_timing_receipt` calls remain strict and reject those payloads.
 
 ## Video Extraction Output Schema
 

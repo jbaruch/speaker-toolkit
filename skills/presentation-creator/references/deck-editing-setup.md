@@ -42,7 +42,7 @@ deck must never carry the macro.
 already has them, so this is a no-op there):
 
 ```bash
-python3 skills/presentation-creator/scripts/sync-deck-drivers.py materialize
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/sync-deck-drivers.py" materialize
 ```
 
 This recreates `RunDeckOps.bas` and the eight `.applescript` drivers from their

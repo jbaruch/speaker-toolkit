@@ -7,10 +7,28 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [11, 13]
+evidence_channels: [video]
 detection_signals:
   - "recorded demo playback"
   - "embedded video of tool interaction"
   - "narrated screen recording"
+evaluable_from:
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: no-executable-subject
+    description: "Complete delivery video establishes that the talk explains or claims no executable tool, system, or workflow that could be demonstrated."
+applicability_evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "A positive finding requires delivery video showing that tool interaction is prerecorded and played back during the talk, with the presenter narrating the recording rather than operating the tool live."
+  - "A strong finding additionally requires smooth pacing, appropriate editing, and seamless integration with the surrounding delivered slides."
+not_evaluable_when:
+  - "Only smooth cursor movement or a screen capture is visible and the recording does not establish whether the presenter is operating the system live."
+  - "The delivery video is incomplete or omits the demonstration opportunity, playback boundary, narration, or surrounding slide transition."
+  - "The complete delivery is unavailable, so the no-executable-subject applicability condition cannot be assessed."
 related_patterns: [live-demo, cave-painting, live-on-tape]
 inverse_of: []
 difficulty: intermediate
@@ -41,9 +59,13 @@ Avoid Lipsync when the live, real-time nature of the demonstration is the point 
 When scoring talks, look for embedded video playback during demonstration segments. Indicators include perfectly smooth mouse movements, absence of typing errors, consistent pacing, and the presenter speaking naturally without looking at the projected screen. A presenter who narrates confidently without monitoring the demo is likely using Lipsync.
 
 ## Scoring Criteria
-- Strong signal (2 pts): High-quality embedded recording with live narration, smooth pacing, appropriate editing, and seamless integration with the surrounding slides
-- Moderate signal (1 pt): Recorded demo present but with quality issues (low resolution, unedited dead time, poor integration with slides) or overly long
-- Absent (0 pts): No recorded demo when one would have been appropriate, or a risky live demo used where Lipsync would have been safer and more effective
+- Strong signal: High-quality embedded recording with live narration, smooth pacing, appropriate editing, and seamless integration with the surrounding slides
+- Moderate signal: Recorded demo present but with quality issues (low resolution, unedited dead time, poor integration with slides) or overly long
+- Absent: No recorded demo when one would have been appropriate, or a risky live demo used where Lipsync would have been safer and more effective
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 11 (Demonstrations and Tools): Lipsync is the risk-managed alternative to Live Demo for showing tools and systems in action, prioritizing reliability and polish over the credibility of real-time execution. Dimension 13 (Slide Aesthetics): A well-produced Lipsync recording integrated into the slide deck elevates the overall visual quality of the presentation, particularly when enhanced with zoom effects, highlights, and clean editing.

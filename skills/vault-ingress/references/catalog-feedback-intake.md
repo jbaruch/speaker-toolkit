@@ -6,9 +6,9 @@ change. It validates and aggregates feedback; it never edits pattern files,
 the tracking database, returns, or the vault.
 
 ```bash
-python3 skills/vault-ingress/scripts/aggregate-catalog-feedback.py \
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/aggregate-catalog-feedback.py" \
   reparse/returns batch-returns.json \
-  --catalog skills/presentation-creator/references/patterns
+  --catalog "{speaker_toolkit_root}/skills/presentation-creator/references/patterns"
 ```
 
 Inputs may be:

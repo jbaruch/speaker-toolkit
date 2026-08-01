@@ -229,27 +229,48 @@ def _write_tracking_db(
             "youtube_id": "AbCdEfGhI_1",
             "pptx_path": "Conference/Talk.pptx",
             "slides_url": "https://drive.google.com/file/d/slides-id/view",
-            "pattern_scoring_schema_version": 3,
-            "pattern_catalog_fingerprint": CATALOG_FINGERPRINT,
-            "pattern_scoring_generation_status": "current",
-            "pattern_scoring_generation_reasons": [],
             "_queue_claim": claim,
         }
+        if return_schema_version == 3:
+            # Preserve the exact pre-v4 baseline-bound generation so the
+            # renderer can replay its historical receipt without treating it as
+            # new source-located evidence.
+            talk.update({
+                "pattern_scoring_schema_version": 3,
+                "pattern_catalog_fingerprint": CATALOG_FINGERPRINT,
+                "pattern_scoring_generation_status": "current",
+                "pattern_scoring_generation_reasons": [],
+            })
+        else:
+            talk.update({
+                "pattern_scoring_generation_status": "legacy_unbaselineable",
+                "pattern_scoring_generation_reasons": [
+                    "return_schema_precedes_source_locations"],
+            })
         if ret["status"] == "skipped_no_sources":
-            talk.update({"video_url": None, "pptx_path": None, "slides_url": None})
+            talk.update({
+                "video_url": None,
+                "youtube_id": None,
+                "pptx_path": None,
+                "slides_url": None,
+            })
         else:
             for field in PERSISTED_ANALYSIS_FIELDS:
                 if field in ret:
                     talk[field] = copy.deepcopy(ret[field])
             returned_observations = ret["pattern_observations"]
+            patterns_detected = copy.deepcopy(
+                returned_observations["patterns_detected"])
+            antipatterns_detected = copy.deepcopy(
+                returned_observations["antipatterns_detected"])
+            for detection in patterns_detected + antipatterns_detected:
+                detection["evidence_citations"] = []
             observations = {
-                "patterns_detected": copy.deepcopy(
-                    returned_observations["patterns_detected"]),
+                "patterns_detected": patterns_detected,
                 "pattern_ids": [
                     item["pattern_id"]
                     for item in returned_observations["patterns_detected"]],
-                "antipatterns_detected": copy.deepcopy(
-                    returned_observations["antipatterns_detected"]),
+                "antipatterns_detected": antipatterns_detected,
                 "antipattern_ids": [
                     item["pattern_id"]
                     for item in returned_observations["antipatterns_detected"]],
@@ -385,7 +406,7 @@ def test_empty_adherence_assessment_is_omitted(
     assert "Validated numeric anchor" not in md
 
 
-def test_v3_adherence_renders_mechanical_anchor_from_structured_comparison(
+def test_v3_adherence_is_archival_despite_structured_historical_comparison(
         write_analysis):
     baseline = _adherence_baseline(["talk.md"], scored_talk_count=10)
     ret = _v3_return(
@@ -398,15 +419,10 @@ def test_v3_adherence_renders_mechanical_anchor_from_structured_comparison(
 
     md = write_analysis.render_analysis(ret)
 
-    assert "## Adherence Assessment\n" in md
-    assert "**Validated numeric anchor:** talk pattern score `0`;" in md
-    assert "baseline average `2.0` across `10` scored talks" in md
-    assert "as of `2026-07-31T18:00:00+00:00`" in md
-    assert f"catalog fingerprint `{CATALOG_FINGERPRINT}`" in md
-    assert "pattern-scoring schema `3`" in md
-    assert "adherence-baseline schema `1`" in md
+    assert "## Adherence Assessment (Legacy, Unverified)" in md
+    assert "**Validated numeric anchor:**" not in md
     assert "Model-authored prose claims 999" in md
-    assert "legacy-unverified" not in md
+    assert "legacy-unverified" in md
 
 
 def test_title_from_db_wins_over_filename(write_analysis):
@@ -444,6 +460,174 @@ def test_scoring_table_renders_exact_comparison_sources_with_markdown_escaping(
     assert "agree \\| exactly" in row
 
 
+def test_timed_transcript_citation_renders_engine_locations(write_analysis):
+    rendered = write_analysis.render_evidence_citation({
+        "source": "transcript",
+        "channel": "timed_transcript",
+        "quote": "The deploy failed on Friday night.",
+        "line_start": 1,
+        "line_end": 1,
+        "start_seconds": 2.0,
+        "end_seconds": 5.5,
+        "artifact_root": "vault",
+        "artifact_path": "transcripts/talk.txt",
+        "artifact_sha256": "a" * 64,
+        "timing_artifact_root": "vault",
+        "timing_artifact_path": "transcripts/talk.segments.json",
+        "timing_artifact_sha256": "b" * 64,
+        "quality_artifact_root": "vault",
+        "quality_artifact_path": "transcripts/talk.quality.json",
+        "quality_artifact_sha256": "c" * 64,
+    })
+
+    assert "transcript/timed_transcript line 1 @ 2.0–5.5s" in rendered
+    assert "The deploy failed on Friday night." in rendered
+    assert "sha256:aaaaaaaaaaaa" in rendered
+    assert "timing vault:transcripts/talk.segments.json" in rendered
+    assert "quality vault:transcripts/talk.quality.json" in rendered
+
+
+def test_non_english_citation_renders_translation_before_original(
+        write_analysis):
+    rendered = write_analysis.render_evidence_citation({
+        "source": "transcript",
+        "channel": "transcript",
+        "quote": "Этот сбой изменил весь наш процесс.",
+        "translation": "That failure changed our entire process.",
+        "line_start": 4,
+        "line_end": 4,
+    })
+
+    assert rendered.index("That failure changed") < rendered.index("Этот сбой")
+    assert "original:" in rendered
+
+
+def test_raw_return_locations_are_labeled_unverified(write_analysis):
+    ret = _return()
+    ret["pattern_observations"]["patterns_detected"][0][
+        "evidence_citations"] = [{
+            "source": "transcript",
+            "channel": "transcript",
+            "quote": "A model-supplied source claim remains unverified.",
+            "line_start": 999,
+            "line_end": 999,
+        }]
+
+    md = write_analysis.render_analysis(ret)
+
+    assert "Unverified model-supplied location:" in md
+    assert "line 999" in md
+    assert "Verified canonical evidence" not in md
+
+
+def test_missing_citations_are_explicitly_legacy_unverified(write_analysis):
+    md = write_analysis.render_analysis(_return())
+
+    assert "Legacy/unverified" in md
+    assert "Unverified legacy evidence (no canonical source location)" in md
+
+
+def _canonical_render_talk(raw):
+    talk = copy.deepcopy(raw)
+    # Keep this helper focused on evidence rendering. Current adherence prose is
+    # only renderable with its separately validated batch comparison receipt.
+    talk["adherence_assessment"] = ""
+    citation = {
+        "source": "transcript",
+        "channel": "transcript",
+        "quote": "The deploy failed on Friday night.",
+        "line_start": 1,
+        "line_end": 1,
+        "artifact_root": "vault",
+        "artifact_path": "transcripts/talk.txt",
+        "artifact_sha256": "a" * 64,
+    }
+    talk["pattern_observations"] = {
+        "evidence_schema_version": 1,
+        "patterns_detected": [{
+            "pattern_id": "echo-chamber",
+            "confidence": "moderate",
+            "evidence_source": "transcript",
+            "evidence": "The opening phrase is repeated throughout the talk.",
+            "dimensions": [4, 7],
+            "evidence_citations": [citation],
+        }],
+        "pattern_ids": ["echo-chamber"],
+        "antipatterns_detected": [],
+        "antipattern_ids": [],
+        "not_evaluable": [],
+        "not_evaluable_ids": [],
+        "evidence_sources": ["transcript"],
+        "source_inspection": [{
+            "source": "transcript",
+            "line_ranges": [[1, 1]],
+            "line_count": 1,
+            "artifact_root": "vault",
+            "artifact_path": "transcripts/talk.txt",
+            "artifact_sha256": "a" * 64,
+            "coverage_complete": True,
+        }],
+        "pattern_score": 1,
+    }
+    talk["pattern_score"] = 1
+    talk["pattern_scoring_generation_status"] = "current"
+    talk["pattern_scoring_generation_reasons"] = []
+    talk["pattern_scoring_schema_version"] = 4
+    talk["pattern_catalog_fingerprint"] = CATALOG_FINGERPRINT
+    return talk
+
+
+def test_cli_renders_persisted_locations_not_model_locations(write_analysis):
+    raw = _return(return_schema_version=4)
+    raw["pattern_observations"]["patterns_detected"][0][
+        "evidence_citations"] = [{
+            "source": "transcript",
+            "channel": "transcript",
+            "quote": "The deploy failed on Friday night.",
+            "line_start": 999,
+            "line_end": 999,
+        }]
+    payload = write_analysis.effective_render_payload(
+        raw, _canonical_render_talk(raw))
+
+    rendered = write_analysis.render_analysis(payload)
+
+    assert "transcript/transcript line 1" in rendered
+
+
+def test_source_inspection_renders_range_and_absence_authority_separately(
+    write_analysis,
+):
+    rows = write_analysis.render_source_inspection([{
+        "source": "delivery_video",
+        "time_ranges": [[0, 60.0]],
+        "duration_seconds": 60.0,
+        "coverage_complete": True,
+        "absence_capability_complete": False,
+        "absence_capability_reason": "bare_delivery_video",
+        "artifact_root": "vault",
+        "artifact_path": "video/talk.mp4",
+        "artifact_sha256": "a" * 64,
+    }])
+    rendered = "\n".join(rows)
+
+    assert "Range complete" in rendered
+    assert "Absence capable" in rendered
+    assert "bare_delivery_video" in rendered
+    assert "| True | False |" in rendered
+    assert "line 999" not in rendered
+
+
+def test_stale_persisted_detections_are_not_labeled_verified(write_analysis):
+    stale = _canonical_render_talk(_return(return_schema_version=3))
+
+    rendered = write_analysis.render_analysis(stale)
+
+    assert "Legacy/unverified" in rendered
+    assert "Verified canonical evidence" not in rendered
+    assert "Unverified model-supplied location:" in rendered
+
+
 def test_per_slide_visual_becomes_a_table(write_analysis):
     md = write_analysis.render_analysis(_return())
     assert "### per_slide_visual" in md
@@ -465,7 +649,7 @@ def test_pipes_and_newlines_do_not_break_table_rows(write_analysis):
     # Splitting on UNESCAPED pipes is what a markdown renderer does; escaped
     # ones stay inside the cell.
     cells = [c for c in re.split(r"(?<!\\)\|", row)[1:-1]]
-    assert len(cells) == 5
+    assert len(cells) == 6
     assert "\\|" in cells[4]
 
 
@@ -725,13 +909,14 @@ def test_legacy_single_pair_is_inferred_persisted_and_rendered(
     detection = stored["pattern_observations"]["patterns_detected"][0]
     assert detection["evidence_sources_used"] == [
         "static_slides", "native_deck"]
-    assert stored["pattern_scoring_generation_status"] == "current"
+    assert stored["pattern_scoring_generation_status"] == \
+        "legacy_unbaselineable"
     body = (out / "talk.md").read_text()
     assert (
         "| `gradual-consistency` | moderate | source_comparison | "
         "static_slides, native_deck | " in body
     )
-    assert "Excluded from current pattern baselines" not in body
+    assert "Excluded from current pattern baselines" in body
 
 
 def test_legacy_ambiguous_comparison_is_visibly_excluded_when_rendered(
@@ -1172,9 +1357,8 @@ def test_analysis_writer_accepts_completed_receipt_bearing_claim_v2_and_v3(
         assert "**`legacy-unverified`:**" in body
         assert "Validated numeric anchor" not in body
     else:
-        assert "**Validated numeric anchor:**" in body
-        assert "baseline average `2.0` across `10` scored talks" in body
-        assert "legacy-unverified" not in body
+        assert "**`legacy-unverified`:**" in body
+        assert "Validated numeric anchor" not in body
 
 
 def test_analysis_writer_rejects_completed_claim_v1_without_receipt(
@@ -1375,8 +1559,6 @@ def test_renderer_recomputes_status_and_rejects_a_forged_exclusion(
     talk["pattern_scoring_generation_status"] = "legacy_unbaselineable"
     talk["pattern_scoring_generation_reasons"] = [
         "comparison_group_ambiguous:gradual-consistency"]
-    talk.pop("pattern_scoring_schema_version")
-    talk.pop("pattern_catalog_fingerprint")
     db.write_text(json.dumps(payload))
     out = tmp_path / "analyses"
 
@@ -1388,7 +1570,7 @@ def test_renderer_recomputes_status_and_rejects_a_forged_exclusion(
     )
 
     assert result.returncode == 1
-    assert "does not match 'current'" in result.stderr
+    assert "pattern_scoring_generation_reasons" in result.stderr
     assert not out.exists()
 
 
@@ -1725,6 +1907,36 @@ def test_late_batch_commit_failure_restores_every_earlier_target(
     with pytest.raises(
             write_analysis.AnalysisBatchWriteError,
             match="every prior target was restored"):
+        write_analysis.atomic_write_batch(rendered)
+
+    assert first.read_text() == "old a\n"
+    assert second.read_text() == "old b\n"
+    assert sorted(path.name for path in out.iterdir()) == ["a.md", "b.md"]
+
+
+def test_interrupted_batch_commit_restores_targets_and_propagates(
+        write_analysis, tmp_path, monkeypatch):
+    out = tmp_path / "analyses"
+    out.mkdir()
+    first = out / "a.md"
+    second = out / "b.md"
+    first.write_text("old a\n")
+    second.write_text("old b\n")
+    rendered = [
+        ("a.md", str(first), "new a\n"),
+        ("b.md", str(second), "new b\n"),
+    ]
+    real_replace = write_analysis.os.replace
+
+    def interrupt_second_install(source, target):
+        if str(source).endswith(".stage") and str(target) == str(second):
+            raise KeyboardInterrupt
+        return real_replace(source, target)
+
+    monkeypatch.setattr(
+        write_analysis.os, "replace", interrupt_second_install)
+
+    with pytest.raises(KeyboardInterrupt):
         write_analysis.atomic_write_batch(rendered)
 
     assert first.read_text() == "old a\n"

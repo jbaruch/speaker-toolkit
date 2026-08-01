@@ -1,0 +1,1000 @@
+"""Section 15 current-block provenance and creator fallback tests."""
+
+from __future__ import annotations
+
+import importlib
+import hashlib
+import json
+import copy
+import sys
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+PROFILE_SCRIPTS = ROOT / "skills" / "vault-profile" / "scripts"
+CREATOR_SCRIPTS = ROOT / "skills" / "presentation-creator" / "scripts"
+OUTLINE = Path(__file__).parent / "fixtures" / "outline-example.yaml"
+for script_directory in (PROFILE_SCRIPTS, CREATOR_SCRIPTS):
+    if str(script_directory) not in sys.path:
+        sys.path.insert(0, str(script_directory))
+
+section15 = importlib.import_module("section15_pattern_history")
+pattern_history_status = importlib.import_module("pattern_history_status")
+provenance = importlib.import_module("profile_pattern_provenance")
+opportunities = importlib.import_module("pattern_opportunities")
+pattern_evidence = importlib.import_module("pattern_evidence")
+adherence_baseline = importlib.import_module("adherence_baseline")
+transcript_timing = importlib.import_module("transcript_timing")
+
+
+def _fresh_evidence(_talk: object) -> tuple[str, ...]:
+    return ()
+
+
+def _transcript_projection() -> tuple[list[dict], list[dict], list[dict]]:
+    catalog = opportunities.load_catalog()
+    transcript = frozenset({"transcript"})
+    outcomes = []
+    not_evaluable = []
+    assessments = []
+    for pattern_id, entry in sorted(catalog.entries.items()):
+        if not entry.observable:
+            continue
+        if entry.applicability_evaluable_from is not None:
+            if transcript not in entry.applicability_evaluable_from:
+                outcomes.append({"pattern_id": pattern_id, "outcome": "not_evaluable"})
+                not_evaluable.append({"pattern_id": pattern_id})
+                continue
+            assessments.append({"pattern_id": pattern_id, "result": "applicable"})
+        outcome = (
+            "undetected"
+            if entry.absence_evaluable_from is not None
+            and transcript in entry.absence_evaluable_from
+            else "not_evaluable"
+        )
+        outcomes.append({"pattern_id": pattern_id, "outcome": outcome})
+        if outcome == "not_evaluable":
+            not_evaluable.append({"pattern_id": pattern_id})
+    return outcomes, not_evaluable, assessments
+
+
+def _pattern_profile(*, note: str = "Current exact cohort.") -> dict[str, Any]:
+    fingerprint, scoring_schema = provenance.active_pattern_generation_identity()
+    assert scoring_schema == 5
+    filenames = ["example-a.md", "example-b.md"]
+    outcome_talks = _outcome_talks(filenames)
+    rows = opportunities.build_pattern_opportunity_rows(outcome_talks)
+    opportunity_identity = outcome_talks[0]["pattern_observations"][
+        "opportunity_coverage_identity"
+    ]
+    return {
+        "pattern_baseline": {
+            "schema_version": 2,
+            "as_of": "2025-01-02T03:04:05+00:00",
+            "scope": "global",
+            "active_batch_excluded": False,
+            "excluded_filenames": [],
+            "eligible_statuses": ["processed", "processed_partial"],
+            "pattern_scoring_generation_status": "current",
+            "pattern_scoring_generation_reasons": [],
+            "pattern_catalog_fingerprint": fingerprint,
+            "pattern_scoring_schema_version": scoring_schema,
+            "scored_talk_count": 2,
+            "pattern_score_sum": 0,
+            "average_pattern_score": 0.0,
+            "eligible_talk_count": 2,
+            "opportunity_coverage_identity": opportunity_identity,
+            "raw_score_comparison_status": "available",
+            "raw_score_comparison_reason": None,
+        },
+        "baseline_talk_filenames": filenames,
+        "eligible_talk_count": 2,
+        "talks_scored": 2,
+        "average_pattern_score": 0.0,
+        "score_trend": "unavailable",
+        "pattern_breadth": {
+            "avg_distinct_patterns_per_talk": None,
+            "trend": "unavailable",
+            "note": note,
+        },
+        "underused_patterns": [],
+        "score_drivers": {
+            "direction": "unavailable",
+            "antipattern_drivers": [],
+            "pattern_drivers": [],
+            "note": note,
+        },
+        "by_mode": [],
+        "strengths": [],
+        "strengths_note": note,
+        "note": note,
+        "pattern_usage": rows["pattern_usage"],
+        "antipattern_frequency": rows["antipattern_frequency"],
+        "never_used_patterns": [],
+        "signature_combinations": [],
+        "mastery_levels": {
+            "signature": [],
+            "regular": [],
+            "occasional": [],
+            "rare": [],
+            "never_tried": [],
+        },
+        "classification_availability": (
+            provenance.unavailable_classification_availability()
+        ),
+    }
+
+
+def _outcome_talks(
+    filenames: list[str],
+    scores: list[int] | None = None,
+    *,
+    outcome: str | None = None,
+) -> list[dict[str, Any]]:
+    catalog = opportunities.load_catalog()
+    observable_ids = sorted(
+        pattern_id for pattern_id, entry in catalog.entries.items() if entry.observable
+    )
+    resolved_scores = scores or [0] * len(filenames)
+    fingerprint, scoring_schema = provenance.active_pattern_generation_identity()
+    talks = []
+    for filename, score in zip(filenames, resolved_scores):
+        if outcome is None:
+            pattern_outcomes, not_evaluable, assessments = _transcript_projection()
+        else:
+            pattern_outcomes = [
+                {"pattern_id": pattern_id, "outcome": outcome}
+                for pattern_id in observable_ids
+            ]
+            not_evaluable = (
+                [{"pattern_id": pattern_id} for pattern_id in observable_ids]
+                if outcome == "not_evaluable"
+                else []
+            )
+            assessments = []
+        talks.append(
+            {
+                "filename": filename,
+                "pattern_score": score,
+                "pattern_observations": {
+                    "pattern_score": score,
+                    "patterns_detected": [],
+                    "antipatterns_detected": [],
+                    "not_evaluable": copy.deepcopy(not_evaluable),
+                    "applicability_assessments": copy.deepcopy(assessments),
+                    "pattern_outcomes": pattern_outcomes,
+                    "opportunity_coverage_identity": (
+                        pattern_evidence.opportunity_coverage_identity(
+                            pattern_outcomes,
+                            pattern_catalog_fingerprint=fingerprint,
+                            pattern_scoring_schema_version=scoring_schema,
+                        )
+                    ),
+                },
+            }
+        )
+    return talks
+
+
+def _tracking_database(
+    pattern_profile: dict[str, Any],
+    *,
+    outcome: str | None = None,
+) -> dict[str, Any]:
+    baseline = pattern_profile["pattern_baseline"]
+    filenames = pattern_profile["baseline_talk_filenames"]
+    scores = [baseline["pattern_score_sum"], *([0] * (len(filenames) - 1))]
+    talks = _outcome_talks(filenames, scores, outcome=outcome)
+    for talk in talks:
+        talk.update(
+            {
+                "status": "processed",
+                "pattern_scoring_generation_status": "current",
+                "pattern_scoring_generation_reasons": [],
+                "pattern_catalog_fingerprint": baseline["pattern_catalog_fingerprint"],
+                "pattern_scoring_schema_version": baseline[
+                    "pattern_scoring_schema_version"
+                ],
+            }
+        )
+    return {"talks": talks}
+
+
+def _all_unknown_pattern_profile() -> dict[str, Any]:
+    profile = _pattern_profile(note="All opportunities are unknown.")
+    filenames = profile["baseline_talk_filenames"]
+    outcome_talks = _outcome_talks(filenames, outcome="not_evaluable")
+    rows = opportunities.build_pattern_opportunity_rows(outcome_talks)
+    profile["pattern_baseline"].update(
+        {
+            "scored_talk_count": 0,
+            "pattern_score_sum": 0,
+            "average_pattern_score": None,
+            "opportunity_coverage_identity": None,
+            "raw_score_comparison_status": "unavailable",
+            "raw_score_comparison_reason": (
+                adherence_baseline.NO_EVALUABLE_PATTERN_OPPORTUNITIES_REASON
+            ),
+        }
+    )
+    profile["talks_scored"] = 0
+    profile["average_pattern_score"] = None
+    profile["pattern_usage"] = rows["pattern_usage"]
+    profile["antipattern_frequency"] = rows["antipattern_frequency"]
+    return profile
+
+
+def _add_fresh_transcript_evidence(
+    database: dict[str, Any],
+    vault_root: Path,
+) -> None:
+    transcripts = vault_root / "transcripts"
+    transcripts.mkdir(exist_ok=True)
+    for talk in database["talks"]:
+        video_id = hashlib.sha256(talk["filename"].encode("utf-8")).hexdigest()[:11]
+        source_duration = 60.0
+        artifact = transcripts / f"{video_id}.txt"
+        content = ("synthetic evidence " * 225).strip() + "\n"
+        transcript_timing.write_transcript_bundle(
+            artifact,
+            content,
+            [{"text": content, "start": 0.0, "end": 10.0}],
+            source="captions",
+            timing_provenance=transcript_timing.youtube_timing_provenance(
+                "captions", video_id, source_duration
+            ),
+            quality_policy=transcript_timing.build_quality_policy(400),
+            quality_policy_provenance={"kind": "fixed_default"},
+        )
+        quality_artifact = artifact.with_suffix(".quality.json")
+        timing_artifact = artifact.with_suffix(".segments.json")
+        relative = artifact.relative_to(vault_root).as_posix()
+        quality_relative = quality_artifact.relative_to(vault_root).as_posix()
+        timing_relative = timing_artifact.relative_to(vault_root).as_posix()
+        artifact_digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        quality_digest = hashlib.sha256(quality_artifact.read_bytes()).hexdigest()
+        timing_digest = hashlib.sha256(timing_artifact.read_bytes()).hexdigest()
+        catalog = opportunities.load_catalog()
+        located_assessments = []
+        for assessment in talk["pattern_observations"].get(
+            "applicability_assessments", []
+        ):
+            entry = catalog.entries[assessment["pattern_id"]]
+            channel = (
+                "transcript"
+                if "transcript" in entry.evidence_channels
+                else "timed_transcript"
+            )
+            citation = {
+                "source": "transcript",
+                "channel": channel,
+                "quote": "synthetic evidence synthetic evidence",
+                "line_start": 1,
+                "line_end": 1,
+                "artifact_root": "vault",
+                "artifact_path": relative,
+                "artifact_sha256": artifact_digest,
+                "timing_artifact_root": "vault",
+                "timing_artifact_path": timing_relative,
+                "timing_artifact_sha256": timing_digest,
+                "quality_artifact_root": "vault",
+                "quality_artifact_path": quality_relative,
+                "quality_artifact_sha256": quality_digest,
+            }
+            if channel == "timed_transcript":
+                citation.update(
+                    {
+                        "start_seconds": 0.0,
+                        "end_seconds": 10.0,
+                    }
+                )
+            located_assessments.append(
+                {
+                    **assessment,
+                    "evidence_source": "transcript",
+                    "evidence": "The complete transcript establishes applicability.",
+                    "evidence_citations": [citation],
+                }
+            )
+        talk["transcript_path"] = relative
+        talk["transcript_source"] = "youtube_auto"
+        talk["youtube_id"] = video_id
+        talk["source_identity"] = {
+            "schema_version": 1,
+            "provider": "youtube",
+            "video_id": video_id,
+            "duration_seconds": source_duration,
+        }
+        talk["pattern_observations"].update(
+            {
+                "evidence_schema_version": 2,
+                "evidence_sources": ["transcript"],
+                "source_inspection": [
+                    {
+                        "source": "transcript",
+                        "line_ranges": [[1, 1]],
+                        "line_count": 1,
+                        "coverage_complete": True,
+                        "absence_capability_complete": True,
+                        "absence_capability_reason": "authorized_transcript",
+                        "artifact_root": "vault",
+                        "artifact_path": relative,
+                        "artifact_sha256": artifact_digest,
+                        "timing_artifact_root": "vault",
+                        "timing_artifact_path": timing_relative,
+                        "timing_artifact_sha256": timing_digest,
+                        "quality_artifact_root": "vault",
+                        "quality_artifact_path": quality_relative,
+                        "quality_artifact_sha256": quality_digest,
+                    }
+                ],
+                "patterns_detected": [],
+                "antipatterns_detected": [],
+                "applicability_assessments": located_assessments,
+            }
+        )
+        validation = importlib.import_module("return_validation")
+        reasons = validation.assess_current_persisted_pattern_evidence_freshness(
+            talk,
+            vault_root=vault_root,
+            catalog=catalog,
+        )
+        assert reasons == (), "\n".join(reasons)
+
+
+def _payload(pattern_profile: dict[str, Any]) -> dict[str, Any]:
+    baseline = pattern_profile["pattern_baseline"]
+    return {
+        "schema_version": section15.BLOCK_SCHEMA_VERSION,
+        "source_lane": section15.BLOCK_SOURCE_LANE,
+        "pattern_catalog_fingerprint": baseline["pattern_catalog_fingerprint"],
+        "pattern_scoring_schema_version": baseline["pattern_scoring_schema_version"],
+        "baseline_talk_filenames": pattern_profile["baseline_talk_filenames"],
+        "pattern_profile": pattern_profile,
+    }
+
+
+def _block_from_json(payload_json: str) -> str:
+    return (
+        f"{section15.BLOCK_START}\n"
+        "```json\n"
+        f"{payload_json}\n"
+        "```\n\n"
+        f"{section15.NON_BASELINE_NOTICE}\n"
+        f"{section15.BLOCK_END}"
+    )
+
+
+def _summary(block: str = "") -> str:
+    block_area = f"\n{block}\n" if block else "\n"
+    return (
+        "# Synthetic rhetoric summary\n\n"
+        "## 14. Slide-to-Speech Relationship\n\n"
+        "Synthetic prior prose.\n\n"
+        "## 15. Reflection: Recurring Areas for Improvement\n"
+        f"{block_area}\n"
+        "- Historical narrative count: 99 of 100. This is not a baseline.\n\n"
+        "## 16. Speaker-Confirmed Intent\n\n"
+        "Synthetic following prose.\n"
+    )
+
+
+def _summary_from_payload(payload: dict[str, Any]) -> str:
+    return _summary(
+        _block_from_json(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False))
+    )
+
+
+def test_exact_current_block_accepts_complete_scoring_v5_cohort():
+    profile = _pattern_profile()
+    block = section15.render_section15_current_block(profile)
+
+    assessment = section15.assess_section15_pattern_history(_summary(block))
+
+    assert assessment.current_contract is True
+    assert assessment.catalog_fields_available is True
+    assert assessment.scored_talk_count == 2
+    assert assessment.reason_codes == (
+        provenance.REASON_CLASSIFICATION_POLICY_UNAVAILABLE,
+    )
+    assert assessment.classification_fields_available is False
+    assert assessment.pattern_profile == profile
+    assert profile["pattern_baseline"]["pattern_scoring_schema_version"] == 5
+    assert profile["baseline_talk_filenames"] == sorted(
+        profile["baseline_talk_filenames"]
+    )
+
+
+def test_all_unknown_cohort_stays_raw_score_unavailable_through_section15_and_creator(
+    tmp_path,
+):
+    profile = _all_unknown_pattern_profile()
+    database = _tracking_database(profile, outcome="not_evaluable")
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(), encoding="utf-8")
+
+    result = section15.replace_section15_current_block(
+        summary_path,
+        profile,
+        database,
+        evidence_freshness_assessor=_fresh_evidence,
+    )
+    summary = summary_path.read_text(encoding="utf-8")
+    assessment = section15.assess_section15_pattern_history(summary)
+    creator_status = pattern_history_status.assess_creator_pattern_history(
+        {"schema_version": 4, "pattern_profile": profile},
+        summary,
+    )
+
+    assert result.scored_talk_count == 0
+    assert result.eligible_talk_count == 2
+    assert assessment.current_contract is True
+    assert assessment.catalog_fields_available is True
+    assert assessment.scored_talk_count == 0
+    assert assessment.pattern_profile is not None
+    baseline = assessment.pattern_profile["pattern_baseline"]
+    assert baseline["average_pattern_score"] is None
+    assert baseline["raw_score_comparison_status"] == "unavailable"
+    assert baseline["raw_score_comparison_reason"] == (
+        adherence_baseline.NO_EVALUABLE_PATTERN_OPPORTUNITIES_REASON
+    )
+    assert creator_status.history_enabled is False
+    assert creator_status.opportunity_rows_available is True
+    assert creator_status.classification_fields_available is False
+    assert creator_status.scored_talk_count == 0
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "reason"),
+    [
+        (
+            "pattern_catalog_fingerprint",
+            "0" * 64,
+            provenance.REASON_CATALOG_FINGERPRINT_MISMATCH,
+        ),
+        (
+            "pattern_scoring_schema_version",
+            3,
+            provenance.REASON_SCORING_SCHEMA_MISMATCH,
+        ),
+    ],
+)
+def test_stale_generation_identity_fails_closed(field, value, reason):
+    profile = _pattern_profile()
+    profile["pattern_baseline"][field] = value
+    payload = _payload(profile)
+    payload[field] = value
+
+    assessment = section15.assess_section15_pattern_history(
+        _summary_from_payload(payload)
+    )
+
+    assert assessment.current_contract is False
+    assert assessment.catalog_fields_available is False
+    assert reason in assessment.reason_codes
+    assert assessment.pattern_profile is None
+
+
+def test_incomplete_pattern_history_payload_fails_shared_assessor():
+    profile = _pattern_profile()
+    del profile["strengths"]
+
+    assessment = section15.assess_section15_pattern_history(
+        _summary_from_payload(_payload(profile))
+    )
+
+    assert assessment.current_contract is False
+    assert provenance.REASON_INVALID_CONTRACT in assessment.reason_codes
+    assert any(
+        "missing required schema-v4 fields" in error for error in assessment.errors
+    )
+
+
+def test_duplicate_block_and_torn_markers_fail_closed():
+    block = section15.render_section15_current_block(_pattern_profile())
+
+    duplicate = section15.assess_section15_pattern_history(
+        _summary(block + "\n\n" + block)
+    )
+    torn = section15.assess_section15_pattern_history(
+        _summary(section15.BLOCK_START + "\n```json\n{}")
+    )
+
+    assert duplicate.reason_codes == (section15.REASON_BLOCK_DUPLICATE,)
+    assert torn.reason_codes == (section15.REASON_BLOCK_INVALID,)
+    assert duplicate.pattern_profile is None
+    assert torn.pattern_profile is None
+
+
+def test_duplicate_json_keys_fail_closed():
+    payload_json = json.dumps(_payload(_pattern_profile()), sort_keys=True)
+    payload_json = payload_json.replace(
+        '"schema_version": 2',
+        '"schema_version": 2, "schema_version": 2',
+        1,
+    )
+
+    assessment = section15.assess_section15_pattern_history(
+        _summary(_block_from_json(payload_json))
+    )
+
+    assert assessment.reason_codes == (section15.REASON_BLOCK_INVALID,)
+    assert "duplicate JSON key" in assessment.errors[0]
+
+
+def test_nonfinite_json_number_fails_closed():
+    payload_json = json.dumps(_payload(_pattern_profile()), sort_keys=True)
+    payload_json = payload_json.replace('"talks_scored": 2', '"talks_scored": NaN')
+
+    assessment = section15.assess_section15_pattern_history(
+        _summary(_block_from_json(payload_json))
+    )
+
+    assert assessment.reason_codes == (section15.REASON_BLOCK_INVALID,)
+    assert "non-finite JSON number" in assessment.errors[0]
+
+
+def test_ordinary_section15_prose_never_restores_history():
+    assessment = section15.assess_section15_pattern_history(_summary())
+    status = pattern_history_status.assess_creator_pattern_history(
+        {"schema_version": 2},
+        _summary(),
+    )
+
+    assert assessment.reason_codes == (section15.REASON_BLOCK_MISSING,)
+    assert status.history_enabled is False
+    assert status.history_source is None
+    assert section15.REASON_BLOCK_MISSING in status.reason_codes
+
+
+def test_current_profile_rows_do_not_authorize_unconfigured_classifications():
+    profile_history = _pattern_profile(note="Profile payload wins.")
+    summary_history = _pattern_profile(note="Summary payload must be ignored.")
+    profile = {"schema_version": 4, "pattern_profile": profile_history}
+    summary = _summary(section15.render_section15_current_block(summary_history))
+
+    resolution = pattern_history_status.resolve_creator_pattern_history(
+        profile,
+        summary,
+    )
+
+    assert resolution.status.history_enabled is False
+    assert resolution.status.opportunity_rows_available is True
+    assert resolution.status.classification_fields_available is False
+    assert resolution.status.history_source is None
+    assert resolution.pattern_profile is None
+
+
+def test_current_section15_rows_do_not_authorize_unconfigured_classifications():
+    summary_history = _pattern_profile()
+    summary = _summary(section15.render_section15_current_block(summary_history))
+
+    resolution = pattern_history_status.resolve_creator_pattern_history(
+        {"schema_version": 2},
+        summary,
+    )
+
+    assert resolution.status.history_enabled is False
+    assert resolution.status.opportunity_rows_available is True
+    assert resolution.status.history_source is None
+    assert provenance.REASON_CLASSIFICATION_POLICY_UNAVAILABLE in (
+        resolution.status.reason_codes
+    )
+    assert resolution.pattern_profile is None
+
+
+def test_status_cli_uses_valid_fallback_when_profile_file_is_malformed(
+    tmp_path,
+    capsys,
+):
+    profile_path = tmp_path / "speaker-profile.json"
+    profile_path.write_text("{torn", encoding="utf-8")
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(
+        _summary(section15.render_section15_current_block(_pattern_profile())),
+        encoding="utf-8",
+    )
+
+    return_code = pattern_history_status.main(
+        [
+            "pattern_history_status.py",
+            str(profile_path),
+            str(summary_path),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert captured.out, captured.err
+    payload = json.loads(captured.out)
+
+    assert return_code == 0
+    assert payload["history_enabled"] is False
+    assert payload["opportunity_rows_available"] is True
+    assert payload["history_source"] is None
+
+
+def test_status_cli_reports_current_rows_without_authorizing_classifications(
+    tmp_path,
+    capsys,
+):
+    profile_path = tmp_path / "speaker-profile.json"
+    profile_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 4,
+                "pattern_profile": _pattern_profile(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    return_code = pattern_history_status.main(
+        [
+            "pattern_history_status.py",
+            str(profile_path),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert return_code == 0
+    assert payload["history_enabled"] is False
+    assert payload["opportunity_rows_available"] is True
+    assert payload["classification_fields_available"] is False
+    assert payload["history_source"] is None
+
+
+def test_atomic_replacement_preserves_all_bytes_outside_unique_block(tmp_path):
+    old_block = section15.render_section15_current_block(
+        _pattern_profile(note="Old payload.")
+    )
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(old_block), encoding="utf-8")
+    original = summary_path.read_bytes()
+    before, remainder = original.split(section15.BLOCK_START.encode(), 1)
+    _, after = remainder.split(section15.BLOCK_END.encode(), 1)
+
+    result = section15.replace_section15_current_block(
+        summary_path,
+        _pattern_profile(note="New payload."),
+        _tracking_database(_pattern_profile(note="New payload.")),
+        evidence_freshness_assessor=_fresh_evidence,
+    )
+    updated = summary_path.read_bytes()
+    updated_before, updated_remainder = updated.split(section15.BLOCK_START.encode(), 1)
+    _, updated_after = updated_remainder.split(section15.BLOCK_END.encode(), 1)
+
+    assert result.changed is True
+    assert before == updated_before
+    assert after == updated_after
+    assert b"New payload." in updated
+    assert b"Old payload." not in updated
+
+
+def test_section15_writer_cannot_omit_freshness_assessment(tmp_path):
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(), encoding="utf-8")
+    profile = _pattern_profile()
+
+    with pytest.raises(TypeError, match="evidence_freshness_assessor"):
+        section15.replace_section15_current_block(
+            summary_path,
+            profile,
+            _tracking_database(profile),
+        )
+
+
+def test_section15_replace_cli_binds_real_vault_freshness(
+    tmp_path,
+    capsys,
+):
+    profile = _pattern_profile()
+    database = _tracking_database(profile)
+    database["config"] = {}
+    _add_fresh_transcript_evidence(database, tmp_path)
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(), encoding="utf-8")
+    profile_path = tmp_path / "pattern-profile.json"
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+    database_path = tmp_path / "tracking-database.json"
+    database_path.write_text(json.dumps(database), encoding="utf-8")
+
+    return_code = section15.main(
+        [
+            "replace",
+            str(summary_path),
+            str(profile_path),
+            str(database_path),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert captured.out, captured.err
+    payload = json.loads(captured.out)
+
+    assert return_code == 0
+    assert payload["changed"] is True
+    assert section15.BLOCK_START in summary_path.read_text(encoding="utf-8")
+
+
+def test_atomic_helper_inserts_once_then_reports_noop(tmp_path):
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(), encoding="utf-8")
+    profile = _pattern_profile()
+
+    database = _tracking_database(profile)
+    inserted = section15.replace_section15_current_block(
+        summary_path,
+        profile,
+        database,
+        evidence_freshness_assessor=_fresh_evidence,
+    )
+    first_bytes = summary_path.read_bytes()
+    unchanged = section15.replace_section15_current_block(
+        summary_path,
+        profile,
+        database,
+        evidence_freshness_assessor=_fresh_evidence,
+    )
+
+    assert inserted.changed is True
+    assert unchanged.changed is False
+    assert summary_path.read_bytes() == first_bytes
+    assert first_bytes.count(section15.BLOCK_START.encode()) == 1
+    assert first_bytes.count(section15.BLOCK_END.encode()) == 1
+
+
+def test_invalid_candidate_and_torn_summary_are_no_write_failures(tmp_path):
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(), encoding="utf-8")
+    original = summary_path.read_bytes()
+    invalid_profile = _pattern_profile()
+    invalid_profile["baseline_talk_filenames"] = [
+        "example-b.md",
+        "example-a.md",
+    ]
+
+    with pytest.raises(section15.Section15PatternHistoryError):
+        section15.replace_section15_current_block(
+            summary_path,
+            invalid_profile,
+            _tracking_database(invalid_profile),
+            evidence_freshness_assessor=_fresh_evidence,
+        )
+    assert summary_path.read_bytes() == original
+
+    torn = _summary(section15.BLOCK_START + "\n```json\n{}")
+    summary_path.write_text(torn, encoding="utf-8")
+    with pytest.raises(section15.Section15PatternHistoryError):
+        section15.replace_section15_current_block(
+            summary_path,
+            _pattern_profile(),
+            _tracking_database(_pattern_profile()),
+            evidence_freshness_assessor=_fresh_evidence,
+        )
+    assert summary_path.read_text(encoding="utf-8") == torn
+
+
+def test_replace_ignores_duplicate_filenames_in_ineligible_rows(tmp_path):
+    profile = _pattern_profile()
+    database = _tracking_database(profile)
+    database["talks"].append(
+        {
+            "filename": profile["baseline_talk_filenames"][0],
+            "status": "pending",
+            "pattern_scoring_generation_status": "future",
+        }
+    )
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(), encoding="utf-8")
+
+    result = section15.replace_section15_current_block(
+        summary_path,
+        profile,
+        database,
+        evidence_freshness_assessor=_fresh_evidence,
+    )
+
+    assert result.changed is True
+    assert result.eligible_talk_count == 2
+    assert section15.BLOCK_START in summary_path.read_text(encoding="utf-8")
+
+
+def test_failed_atomic_swap_leaves_original_and_no_temp_file(
+    tmp_path,
+    monkeypatch,
+):
+    old_block = section15.render_section15_current_block(
+        _pattern_profile(note="Original payload.")
+    )
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(old_block), encoding="utf-8")
+    original = summary_path.read_bytes()
+
+    def fail_swap(_source, _destination):
+        raise OSError("synthetic atomic-swap failure")
+
+    monkeypatch.setattr(section15.os, "replace", fail_swap)
+    with pytest.raises(OSError, match="synthetic atomic-swap failure"):
+        section15.replace_section15_current_block(
+            summary_path,
+            _pattern_profile(note="Candidate payload."),
+            _tracking_database(_pattern_profile(note="Candidate payload.")),
+            evidence_freshness_assessor=_fresh_evidence,
+        )
+
+    assert summary_path.read_bytes() == original
+    assert list(tmp_path.glob(f".{summary_path.name}.*.tmp")) == []
+
+
+def test_replace_rejects_stale_same_generation_profile_cohort(tmp_path):
+    profile = _pattern_profile()
+    database = _tracking_database(profile)
+    extra = copy.deepcopy(database["talks"][0])
+    extra["filename"] = "example-c.md"
+    extra["pattern_score"] = 0
+    extra["pattern_observations"]["pattern_score"] = 0
+    database["talks"].append(extra)
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(), encoding="utf-8")
+    original = summary_path.read_bytes()
+
+    with pytest.raises(
+        section15.Section15PatternHistoryError,
+        match="complete tracking-database scoring cohort",
+    ):
+        section15.replace_section15_current_block(
+            summary_path,
+            profile,
+            database,
+            evidence_freshness_assessor=_fresh_evidence,
+        )
+
+    assert summary_path.read_bytes() == original
+
+
+def test_replace_rejects_self_consistent_rows_not_present_in_live_database(tmp_path):
+    profile = _pattern_profile()
+    row = next(row for row in profile["pattern_usage"] if row["evaluable_count"] == 2)
+    row["detected_count"] = 1
+    row["times_used"] = 1
+    row["usage_rate"] = 0.5
+    database = _tracking_database(_pattern_profile())
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(), encoding="utf-8")
+    original = summary_path.read_bytes()
+
+    with pytest.raises(
+        section15.Section15PatternHistoryError,
+        match="deterministic rows recomputed",
+    ):
+        section15.replace_section15_current_block(
+            summary_path,
+            profile,
+            database,
+            evidence_freshness_assessor=_fresh_evidence,
+        )
+
+    assert summary_path.read_bytes() == original
+
+
+def test_replace_rejects_profile_whose_persisted_evidence_is_stale(tmp_path):
+    profile = _pattern_profile()
+    database = _tracking_database(profile)
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(), encoding="utf-8")
+    original = summary_path.read_bytes()
+
+    def assess(talk):
+        if talk["filename"] == "example-a.md":
+            return ("source_inspection[0]:artifact_digest_mismatch",)
+        return ()
+
+    with pytest.raises(
+        section15.Section15PatternHistoryError,
+        match="complete tracking-database scoring cohort",
+    ):
+        section15.replace_section15_current_block(
+            summary_path,
+            profile,
+            database,
+            evidence_freshness_assessor=assess,
+        )
+
+    assert summary_path.read_bytes() == original
+
+
+def test_replace_cli_reports_catalog_domain_failure_without_traceback(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    profile = _pattern_profile()
+    database = _tracking_database(profile)
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(), encoding="utf-8")
+    original = summary_path.read_bytes()
+    profile_path = tmp_path / "pattern-profile.json"
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+    database_path = tmp_path / "tracking-database.json"
+    database_path.write_text(json.dumps(database), encoding="utf-8")
+
+    def fail_snapshot(*_args, **_kwargs):
+        raise section15.ReturnValidationError("synthetic active catalog failure")
+
+    monkeypatch.setattr(section15, "build_current_pattern_snapshot", fail_snapshot)
+
+    return_code = section15.main(
+        [
+            "replace",
+            str(summary_path),
+            str(profile_path),
+            str(database_path),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert return_code == 1
+    assert captured.out == ""
+    assert "cannot verify the complete tracking-database cohort" in captured.err
+    assert "synthetic active catalog failure" in captured.err
+    assert "Traceback" not in captured.err
+    assert summary_path.read_bytes() == original
+
+
+def test_guardrail_suppresses_unconfigured_fallback_classifications(
+    guardrail_check,
+    tmp_path,
+    capsys,
+):
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(
+        _summary(section15.render_section15_current_block(_pattern_profile())),
+        encoding="utf-8",
+    )
+
+    return_code = guardrail_check.main(
+        [
+            "guardrail-check.py",
+            str(OUTLINE),
+            "-",
+            str(summary_path),
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert return_code == 0
+    assert "Pattern classifications disabled" in output
+    assert "source=section15_current_block" not in output
+    assert "[RECURRING]" not in output
+
+
+def test_creator_docs_route_summary_fallback_through_shared_parser():
+    creator = ROOT / "skills" / "presentation-creator"
+    docs = {
+        "skill": (creator / "SKILL.md").read_text(encoding="utf-8"),
+        "phase0": (creator / "references" / "phase0-intake.md").read_text(
+            encoding="utf-8"
+        ),
+        "phase4": (creator / "references" / "phase4-guardrails.md").read_text(
+            encoding="utf-8"
+        ),
+    }
+
+    for text in docs.values():
+        assert "section15_pattern_history.py" in text
+    assert "A valid profile always wins" in docs["skill"]
+    assert "summary is a fallback and never merges" in docs["phase0"]
+    assert "sources are never\nmerged" in docs["phase4"]
+
+
+def test_ingress_docs_require_live_database_for_current_block_replace():
+    ingress = ROOT / "skills" / "vault-ingress"
+    skill = (ingress / "SKILL.md").read_text(encoding="utf-8")
+    processing = (ingress / "references" / "processing-rules.md").read_text(
+        encoding="utf-8"
+    )
+
+    for text in (skill, processing):
+        assert "section15_pattern_history.py replace" in text
+        assert "tracking-database.json" in text
+        assert "stale" in text

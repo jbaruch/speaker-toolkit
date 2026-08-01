@@ -1,9 +1,9 @@
 """Strict, reusable availability contract for profile pattern history.
 
-Owner and consumer skills share this module so a profile either exposes one
-auditable current-generation pattern cohort everywhere or exposes no historical
-pattern guidance anywhere.  The module performs no writes and does not encode
-consumer-specific fallback policy.
+Owner and consumer skills share this module so a profile exposes auditable
+current-generation occurrence rows independently from policy-derived historical
+classifications. The module performs no writes and does not encode consumer-
+specific fallback policy.
 """
 
 from __future__ import annotations
@@ -22,14 +22,18 @@ _INGRESS_SCRIPTS = (
 if str(_INGRESS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_INGRESS_SCRIPTS))
 
-from adherence_baseline import (  # noqa: E402
+from adherence_baseline import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     AdherenceBaselineError,
     validate_adherence_baseline,
 )
-from return_validation import (  # noqa: E402
+from return_validation import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     PATTERN_SCORING_SCHEMA_VERSION,
     ReturnValidationError,
     load_catalog,
+)
+from pattern_opportunities import (  # noqa: E402
+    PatternOpportunityError,
+    validate_pattern_opportunity_rows,
 )
 
 
@@ -38,11 +42,19 @@ REASON_ACTIVE_CATALOG_UNAVAILABLE = "active_pattern_catalog_unavailable"
 REASON_CATALOG_FINGERPRINT_MISMATCH = "pattern_catalog_fingerprint_mismatch"
 REASON_SCORING_SCHEMA_MISMATCH = "pattern_scoring_schema_mismatch"
 REASON_EMPTY_CURRENT_COHORT = "empty_current_pattern_cohort"
+REASON_CLASSIFICATION_POLICY_UNAVAILABLE = "pattern_classification_policy_unavailable"
+
+CLASSIFICATION_AVAILABILITY_SCHEMA_VERSION = 1
+CLASSIFICATION_POLICY_UNAVAILABLE_REASON = "owner_policy_unconfigured"
+_CLASSIFICATION_AVAILABILITY_FIELDS = frozenset(
+    {"schema_version", "status", "reason_codes"}
+)
 
 _REQUIRED_PATTERN_PROFILE_FIELDS = frozenset(
     {
         "pattern_baseline",
         "baseline_talk_filenames",
+        "eligible_talk_count",
         "talks_scored",
         "average_pattern_score",
         "score_trend",
@@ -58,6 +70,7 @@ _REQUIRED_PATTERN_PROFILE_FIELDS = frozenset(
         "never_used_patterns",
         "signature_combinations",
         "mastery_levels",
+        "classification_availability",
     }
 )
 _REQUIRED_PATTERN_BREADTH_FIELDS = frozenset(
@@ -72,6 +85,13 @@ _ARRAY_PATTERN_PROFILE_FIELDS = (
     "strengths",
     "pattern_usage",
     "antipattern_frequency",
+    "never_used_patterns",
+    "signature_combinations",
+)
+_DERIVED_ARRAY_PATTERN_PROFILE_FIELDS = (
+    "underused_patterns",
+    "by_mode",
+    "strengths",
     "never_used_patterns",
     "signature_combinations",
 )
@@ -93,11 +113,22 @@ class PatternProfileAssessment:
     scored_talk_count: int | None
     reason_codes: tuple[str, ...]
     errors: tuple[str, ...]
+    eligible_talk_count: int | None = None
+    classification_fields_available: bool = False
 
 
 def active_pattern_generation_identity() -> tuple[str, int]:
     """Return the exact bundled catalog fingerprint and scoring schema."""
     return load_catalog().fingerprint, PATTERN_SCORING_SCHEMA_VERSION
+
+
+def unavailable_classification_availability() -> dict[str, object]:
+    """Return the sole schema-v4 classification state currently authorized."""
+    return {
+        "schema_version": CLASSIFICATION_AVAILABILITY_SCHEMA_VERSION,
+        "status": "unavailable",
+        "reason_codes": [CLASSIFICATION_POLICY_UNAVAILABLE_REASON],
+    }
 
 
 def _is_integer(value: object) -> TypeGuard[int]:
@@ -142,122 +173,38 @@ def _canonical_cohort_filenames(
     return filenames, errors
 
 
-def _validate_count_denominators(
-    value: object,
-    *,
-    expected_count: int,
-    path: str,
-) -> list[str]:
-    errors: list[str] = []
-    if isinstance(value, Mapping):
-        for key, child in value.items():
-            child_path = f"{path}.{key}"
-            if key == "out_of":
-                if not _is_integer(child) or child != expected_count:
-                    errors.append(
-                        f"{child_path} must equal the current pattern cohort count "
-                        f"{expected_count}, got {child!r}"
-                    )
-                continue
-            errors.extend(
-                _validate_count_denominators(
-                    child,
-                    expected_count=expected_count,
-                    path=child_path,
-                )
-            )
-    elif isinstance(value, list):
-        for index, child in enumerate(value):
-            errors.extend(
-                _validate_count_denominators(
-                    child,
-                    expected_count=expected_count,
-                    path=f"{path}[{index}]",
-                )
-            )
-    return errors
-
-
-def _validate_count_bounds(
-    value: object,
-    *,
-    cohort_count: int,
-    path: str,
-) -> list[str]:
-    errors: list[str] = []
-    if isinstance(value, Mapping):
-        for key, child in value.items():
-            child_path = f"{path}.{key}"
-            if key in {"times_used", "times_detected", "frequency"}:
-                if (
-                    not _is_integer(child)
-                    or child < 0
-                    or child > cohort_count
-                ):
-                    errors.append(
-                        f"{child_path} must be an integer from 0 through the "
-                        f"current pattern cohort count {cohort_count}, got "
-                        f"{child!r}"
-                    )
-                continue
-            if key in {"usage_rate", "frequency_rate"}:
-                if (
-                    isinstance(child, bool)
-                    or not isinstance(child, (int, float))
-                    or not math.isfinite(child)
-                    or child < 0
-                    or child > 1
-                ):
-                    errors.append(
-                        f"{child_path} must be a finite number from 0 through 1, "
-                        f"got {child!r}"
-                    )
-                continue
-            errors.extend(
-                _validate_count_bounds(
-                    child,
-                    cohort_count=cohort_count,
-                    path=child_path,
-                )
-            )
-    elif isinstance(value, list):
-        for index, child in enumerate(value):
-            errors.extend(
-                _validate_count_bounds(
-                    child,
-                    cohort_count=cohort_count,
-                    path=f"{path}[{index}]",
-                )
-            )
-    return errors
-
-
-def _validate_mode_counts(value: object, cohort_count: int) -> list[str]:
-    if not isinstance(value, list):
-        return ["pattern_profile.by_mode must be an array"]
-    errors: list[str] = []
-    for index, mode in enumerate(value):
-        if not isinstance(mode, Mapping):
-            errors.append(f"pattern_profile.by_mode[{index}] must be an object")
-            continue
-        count = mode.get("talks_in_mode")
-        if not _is_integer(count) or count < 0 or count > cohort_count:
-            errors.append(
-                f"pattern_profile.by_mode[{index}].talks_in_mode must be an "
-                f"integer from 0 through the current pattern cohort count "
-                f"{cohort_count}, got {count!r}"
-            )
-    return errors
-
-
-def _validate_empty_pattern_cohort(
+def _validate_unavailable_classifications(
     pattern_profile: Mapping[str, object],
 ) -> list[str]:
+    """Require fail-closed sentinels until an owner policy is versioned."""
     errors: list[str] = []
+    availability = pattern_profile.get("classification_availability")
+    expected_availability = unavailable_classification_availability()
+    if not isinstance(availability, Mapping):
+        errors.append("pattern_profile.classification_availability must be an object")
+    else:
+        missing = sorted(_CLASSIFICATION_AVAILABILITY_FIELDS - set(availability))
+        unknown = sorted(
+            set(availability) - _CLASSIFICATION_AVAILABILITY_FIELDS,
+            key=str,
+        )
+        if missing or unknown:
+            errors.append(
+                "pattern_profile.classification_availability fields are "
+                f"noncanonical; missing={missing}, "
+                f"unknown={[str(field) for field in unknown]}"
+            )
+        if dict(availability) != expected_availability:
+            errors.append(
+                "pattern_profile.classification_availability must use the "
+                "owner-policy-unconfigured sentinel until a versioned "
+                "classification policy exists"
+            )
+
     if pattern_profile.get("score_trend") != "unavailable":
         errors.append(
-            "pattern_profile.score_trend must be 'unavailable' when the current "
-            "pattern cohort is empty"
+            "pattern_profile.score_trend must be 'unavailable' while pattern "
+            "classification policy is unavailable"
         )
 
     breadth = pattern_profile.get("pattern_breadth")
@@ -265,12 +212,13 @@ def _validate_empty_pattern_cohort(
         if breadth.get("avg_distinct_patterns_per_talk") is not None:
             errors.append(
                 "pattern_profile.pattern_breadth.avg_distinct_patterns_per_talk "
-                "must be null when the current pattern cohort is empty"
+                "must be null while coverage-comparable breadth policy is "
+                "unavailable"
             )
         if breadth.get("trend") != "unavailable":
             errors.append(
                 "pattern_profile.pattern_breadth.trend must be 'unavailable' when "
-                "the current pattern cohort is empty"
+                "pattern classification policy is unavailable"
             )
 
     drivers = pattern_profile.get("score_drivers")
@@ -278,20 +226,20 @@ def _validate_empty_pattern_cohort(
         if drivers.get("direction") != "unavailable":
             errors.append(
                 "pattern_profile.score_drivers.direction must be 'unavailable' "
-                "when the current pattern cohort is empty"
+                "while pattern classification policy is unavailable"
             )
         for field in ("antipattern_drivers", "pattern_drivers"):
             if drivers.get(field) != []:
                 errors.append(
                     f"pattern_profile.score_drivers.{field} must be [] when the "
-                    "current pattern cohort is empty"
+                    "pattern classification policy is unavailable"
                 )
 
-    for field in _ARRAY_PATTERN_PROFILE_FIELDS:
+    for field in _DERIVED_ARRAY_PATTERN_PROFILE_FIELDS:
         if pattern_profile.get(field) != []:
             errors.append(
-                f"pattern_profile.{field} must be [] when the current pattern "
-                "cohort is empty"
+                f"pattern_profile.{field} must be [] while pattern "
+                "classification policy is unavailable"
             )
 
     mastery = pattern_profile.get("mastery_levels")
@@ -299,8 +247,8 @@ def _validate_empty_pattern_cohort(
         for tier in _MASTERY_TIERS:
             if mastery.get(tier) != []:
                 errors.append(
-                    f"pattern_profile.mastery_levels.{tier} must be [] when the "
-                    "current pattern cohort is empty"
+                    f"pattern_profile.mastery_levels.{tier} must be [] while "
+                    "pattern classification policy is unavailable"
                 )
     return errors
 
@@ -327,7 +275,7 @@ def assess_pattern_profile(pattern_profile: object) -> PatternProfileAssessment:
     missing_fields = sorted(_REQUIRED_PATTERN_PROFILE_FIELDS - set(pattern_profile))
     if missing_fields:
         errors.append(
-            "pattern_profile is missing required schema-v3 fields: "
+            "pattern_profile is missing required schema-v4 fields: "
             f"{', '.join(missing_fields)}"
         )
     unknown_fields = sorted(
@@ -336,7 +284,7 @@ def assess_pattern_profile(pattern_profile: object) -> PatternProfileAssessment:
     )
     if unknown_fields:
         errors.append(
-            "pattern_profile has unknown schema-v3 fields: "
+            "pattern_profile has unknown schema-v4 fields: "
             f"{', '.join(str(field) for field in unknown_fields)}"
         )
 
@@ -419,9 +367,7 @@ def assess_pattern_profile(pattern_profile: object) -> PatternProfileAssessment:
         errors.append("pattern_profile.mastery_levels must be an object")
 
     try:
-        baseline = validate_adherence_baseline(
-            pattern_profile.get("pattern_baseline")
-        )
+        baseline = validate_adherence_baseline(pattern_profile.get("pattern_baseline"))
     except AdherenceBaselineError as exc:
         errors.append(f"pattern_profile.pattern_baseline is invalid: {exc}")
         _append_reason(reason_codes, REASON_INVALID_CONTRACT)
@@ -433,8 +379,17 @@ def assess_pattern_profile(pattern_profile: object) -> PatternProfileAssessment:
             errors=tuple(errors),
         )
 
-    cohort_count = baseline["scored_talk_count"]
-    assert isinstance(cohort_count, int)  # canonical baseline postcondition
+    score_comparable_count = baseline["scored_talk_count"]
+    assert isinstance(score_comparable_count, int)  # canonical baseline postcondition
+    raw_eligible_count = baseline.get("eligible_talk_count")
+    if not _is_integer(raw_eligible_count) or raw_eligible_count < 0:
+        errors.append(
+            "pattern_profile.pattern_baseline must use scoring-v5 baseline schema 2 "
+            "with a non-negative eligible_talk_count"
+        )
+        eligible_count = 0
+    else:
+        eligible_count = raw_eligible_count
 
     if baseline["active_batch_excluded"] is not False:
         errors.append(
@@ -442,13 +397,13 @@ def assess_pattern_profile(pattern_profile: object) -> PatternProfileAssessment:
             "active_batch_excluded=false"
         )
     if baseline["excluded_filenames"] != []:
-        errors.append(
-            "pattern_profile.pattern_baseline.excluded_filenames must be []"
-        )
+        errors.append("pattern_profile.pattern_baseline.excluded_filenames must be []")
 
     active_scoring_schema = PATTERN_SCORING_SCHEMA_VERSION
+    active_catalog = None
     try:
-        active_fingerprint, _ = active_pattern_generation_identity()
+        active_catalog = load_catalog()
+        active_fingerprint = active_catalog.fingerprint
     except ReturnValidationError as exc:
         errors.append(
             "could not resolve the active Presentation Pattern catalog; repair the "
@@ -467,9 +422,7 @@ def assess_pattern_profile(pattern_profile: object) -> PatternProfileAssessment:
             "new scoring generation"
         )
         _append_reason(reason_codes, REASON_CATALOG_FINGERPRINT_MISMATCH)
-    if (
-        baseline["pattern_scoring_schema_version"] != active_scoring_schema
-    ):
+    if baseline["pattern_scoring_schema_version"] != active_scoring_schema:
         errors.append(
             "pattern_profile.pattern_baseline.pattern_scoring_schema_version is "
             f"{baseline['pattern_scoring_schema_version']!r}; expected active schema "
@@ -481,24 +434,36 @@ def assess_pattern_profile(pattern_profile: object) -> PatternProfileAssessment:
         pattern_profile.get("baseline_talk_filenames")
     )
     errors.extend(filename_errors)
-    if filenames is not None and len(filenames) != cohort_count:
+    if filenames is not None and len(filenames) != eligible_count:
         errors.append(
             "pattern_profile.baseline_talk_filenames length must equal "
-            f"pattern_baseline.scored_talk_count {cohort_count}, got "
+            f"pattern_baseline.eligible_talk_count {eligible_count}, got "
             f"{len(filenames)}"
         )
 
+    profile_eligible_count = pattern_profile.get("eligible_talk_count")
+    if (
+        not _is_integer(profile_eligible_count)
+        or profile_eligible_count != eligible_count
+    ):
+        errors.append(
+            "pattern_profile.eligible_talk_count must equal "
+            f"pattern_baseline.eligible_talk_count {eligible_count}, got "
+            f"{profile_eligible_count!r}"
+        )
+
     talks_scored = pattern_profile.get("talks_scored")
-    if not _is_integer(talks_scored) or talks_scored != cohort_count:
+    if not _is_integer(talks_scored) or talks_scored != score_comparable_count:
         errors.append(
             "pattern_profile.talks_scored must equal "
-            f"pattern_baseline.scored_talk_count {cohort_count}, got "
+            "pattern_baseline.scored_talk_count "
+            f"{score_comparable_count}, got "
             f"{talks_scored!r}"
         )
 
     profile_average = pattern_profile.get("average_pattern_score")
     baseline_average = baseline["average_pattern_score"]
-    if cohort_count == 0:
+    if score_comparable_count == 0:
         average_is_valid = profile_average is None
     else:
         average_is_valid = (
@@ -514,91 +479,48 @@ def assess_pattern_profile(pattern_profile: object) -> PatternProfileAssessment:
             f"{profile_average!r}"
         )
 
-    score_trend = pattern_profile.get("score_trend")
-    breadth_trend = breadth.get("trend") if isinstance(breadth, Mapping) else None
-    breadth_average = (
-        breadth.get("avg_distinct_patterns_per_talk")
-        if isinstance(breadth, Mapping)
-        else None
-    )
-    driver_direction = (
-        drivers.get("direction") if isinstance(drivers, Mapping) else None
-    )
-    if cohort_count > 0:
-        if score_trend not in {"improving", "stable", "declining"}:
-            errors.append(
-                "pattern_profile.score_trend must be improving, stable, or "
-                "declining when the current pattern cohort is non-empty"
-            )
-        if breadth_trend not in {"widening", "stable", "narrowing"}:
-            errors.append(
-                "pattern_profile.pattern_breadth.trend must be widening, stable, "
-                "or narrowing when the current pattern cohort is non-empty"
-            )
-        if (
-            isinstance(breadth_average, bool)
-            or not isinstance(breadth_average, (int, float))
-            or not math.isfinite(breadth_average)
-            or breadth_average < 0
-        ):
-            errors.append(
-                "pattern_profile.pattern_breadth.avg_distinct_patterns_per_talk "
-                "must be a finite non-negative number when the current pattern "
-                "cohort is non-empty"
-            )
-        if cohort_count < 10:
-            if score_trend != "stable" or driver_direction != "insufficient_history":
-                errors.append(
-                    "pattern profiles with fewer than 10 current talks must use "
-                    "score_trend='stable' and "
-                    "score_drivers.direction='insufficient_history'"
+    if active_catalog is not None:
+        try:
+            errors.extend(
+                validate_pattern_opportunity_rows(
+                    pattern_profile.get("pattern_usage"),
+                    pattern_profile.get("antipattern_frequency"),
+                    eligible_cohort_count=eligible_count,
+                    catalog=active_catalog,
                 )
-        elif driver_direction != score_trend:
-            errors.append(
-                "pattern_profile.score_drivers.direction must equal score_trend "
-                "when at least 10 current talks are scored"
             )
-
-    errors.extend(
-        _validate_count_denominators(
-            pattern_profile,
-            expected_count=cohort_count,
-            path="pattern_profile",
-        )
-    )
-    errors.extend(
-        _validate_count_bounds(
-            pattern_profile,
-            cohort_count=cohort_count,
-            path="pattern_profile",
-        )
-    )
-    errors.extend(_validate_mode_counts(pattern_profile.get("by_mode"), cohort_count))
-    if cohort_count == 0:
-        errors.extend(_validate_empty_pattern_cohort(pattern_profile))
+        except PatternOpportunityError as exc:
+            errors.append(f"pattern opportunity rows are invalid: {exc}")
+    errors.extend(_validate_unavailable_classifications(pattern_profile))
 
     if errors:
         _append_reason(reason_codes, REASON_INVALID_CONTRACT)
         return PatternProfileAssessment(
             current_contract=False,
             catalog_fields_available=False,
-            scored_talk_count=cohort_count,
+            scored_talk_count=score_comparable_count,
             reason_codes=tuple(reason_codes),
             errors=tuple(errors),
+            eligible_talk_count=eligible_count,
         )
 
-    if cohort_count == 0:
+    if eligible_count == 0:
         return PatternProfileAssessment(
             current_contract=True,
             catalog_fields_available=False,
-            scored_talk_count=0,
-            reason_codes=(REASON_EMPTY_CURRENT_COHORT,),
+            scored_talk_count=score_comparable_count,
+            reason_codes=(
+                REASON_EMPTY_CURRENT_COHORT,
+                REASON_CLASSIFICATION_POLICY_UNAVAILABLE,
+            ),
             errors=(),
+            eligible_talk_count=0,
         )
     return PatternProfileAssessment(
         current_contract=True,
         catalog_fields_available=True,
-        scored_talk_count=cohort_count,
-        reason_codes=(),
+        scored_talk_count=score_comparable_count,
+        reason_codes=(REASON_CLASSIFICATION_POLICY_UNAVAILABLE,),
         errors=(),
+        eligible_talk_count=eligible_count,
     )

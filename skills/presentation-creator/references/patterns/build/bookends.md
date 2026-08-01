@@ -7,6 +7,7 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [2, 5, 13]
+evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "section opener/closer slides"
   - "distinct visual style for section boundaries"
@@ -15,12 +16,26 @@ evaluable_from:
   - static_slides
   - native_deck
   - delivery_video
+strong_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+absence_evaluable_from:
+  - static_slides
+not_applicable_when:
+  - condition_id: fewer-than-three-major-sections
+    description: "A complete rendered deck, native deck, or delivery video establishes fewer than three major sections, below the catalog's stated Bookends use case."
+applicability_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
 evidence_requirements:
-  - "Evidence must expose the visible construction across enough of the talk to apply the existing strong, moderate, or absent criterion."
+  - "Evidence must expose the visible construction across enough of the talk to apply a positive criterion; an absent outcome requires a complete, separately declared rendered PDF."
   - "Evidence must expose the existing scoring cues: strong: distinct bookends at every major boundary; moderate: some or inconsistent dividers; absent: no visually distinct section dividers."
 not_evaluable_when:
   - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
-  - "Only a transcript or spoken account is available, or the visual source is too partial to distinguish the asserted tier from absence."
+  - "Only a transcript or spoken account is available, the visual source is too partial for the asserted positive tier, or the separately declared rendered PDF is incomplete for absence."
+  - "The source does not cover the complete section inventory needed to assess the fewer-than-three-sections applicability condition."
 related_patterns: [context-keeper, narrative-arc, intermezzi, defy-defaults]
 inverse_of: [floodmarks]
 difficulty: foundational
@@ -53,12 +68,13 @@ Avoid Bookends in very short presentations where the overhead of transition slid
 When scoring talks, look for slides that are visually distinct from content slides and that appear at section boundaries. These slides should share a consistent design language with each other (all Bookends look like Bookends) while differing from content slides. Section titles, transition phrases, or structural markers on these slides are positive indicators.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Consistent, visually distinct Bookend slides at every major section boundary, with a clear design language that distinguishes them from content slides; effective use as branding containers if required
-- Moderate signal (1 pt): Some section divider slides present but inconsistent in design, or Bookends used for some sections but not others
-- Absent (0 pts): No visually distinct section divider slides; sections flow into each other with no structural markers
+- Strong signal: Consistent, visually distinct Bookend slides at every major section boundary, with a clear design language that distinguishes them from content slides; effective use as branding containers if required
+- Moderate signal: Some section divider slides present but inconsistent in design, or Bookends used for some sections but not others
+- Absent: No visually distinct section divider slides; sections flow into each other with no structural markers
 
 ## Evidence Gate
-Evaluate this entry only from rendered static slides, the native deck, or delivery video that exposes the visible construction. Speech alone cannot establish its visual criteria, and an absence finding requires coverage of the complete relevant visual sequence.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+An absence finding is authorized only from a complete, separately declared rendered PDF (`static_slides`); a native deck, delivery video, transcript, or comparison artifact does not authorize absence.
 
 ## Relationship to Vault Dimensions
 Dimension 2 (Structure and Flow): Bookends are the most visible expression of structural organization, literally marking the boundaries between content sections. Dimension 5 (Storytelling and Narrative): When aligned with narrative phases, Bookends reinforce the story structure. Dimension 13 (Visual Polish and Craft): Well-designed Bookends demonstrate visual design skill and attention to structural consistency.

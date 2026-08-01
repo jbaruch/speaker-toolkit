@@ -21,6 +21,12 @@ user-invocable: true
 
 This skill is an action router — pick the step that matches the user's intent and execute only that step. Do not run other steps; do not parallelize.
 
+Resolve the absolute path of this loaded `SKILL.md`, then set
+`speaker_toolkit_root` to the plugin root two directories above the directory
+containing this file. Never derive it from the consumer working directory.
+Treat `{speaker_toolkit_root}` as absolute in every toolkit-owned command;
+talk, vault, and output paths remain consumer-owned.
+
 Step 1 inspects the request and the talk-directory state to decide the mode (Strategy / Generation / Thumbnail) and which subsequent step is the entry point. The "Multi-mode chaining" section at the end of Step 1 is the one explicit exception, and only triggers when a single invocation requests multiple modes.
 
 Owns every AI-generated image the toolkit produces: deck illustrations, build
@@ -83,7 +89,7 @@ Run the deterministic precheck first, then report its verdict in one line —
 never skip this step silently:
 
 ```bash
-python3 skills/illustrations/scripts/model_registry.py --check-freshness
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/model_registry.py" --check-freshness
 ```
 
 The script emits JSON: `last_reviewed`, `age_days`, `stale`, and the full
@@ -93,7 +99,7 @@ proceeding (e.g. "Registry reviewed 2026-06-02, 0 days old — fresh").
 - **`stale: true`** — use `WebSearch` to identify the current flagship image
   models from Google (Gemini image, Imagen) and OpenAI (`gpt-image-*`), plus
   any other vendor with a public image API. Reconcile the registry in
-  `skills/illustrations/scripts/model_registry.py`: add new flagships, drop
+  `{speaker_toolkit_root}/skills/illustrations/scripts/model_registry.py`: add new flagships, drop
   discontinued ones, refresh the attribute tiers, bump `REGISTRY_LAST_REVIEWED`.
   "Nano Banana" is Google's codename for the Gemini image line (Nano Banana
   Pro = Gemini 3 Pro Image) — fold a codename into the matching entry's
@@ -161,7 +167,7 @@ Proceed immediately to Step 6.
 Filter the roster to a shortlist by the Step 4 priorities — no render yet:
 
 ```bash
-python3 skills/illustrations/scripts/model_registry.py --shortlist <priorities>
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/model_registry.py" --shortlist <priorities>
 ```
 
 The roster is a seed cache, not an allowlist. To rank a model not in it (a new
@@ -187,7 +193,7 @@ Write `style-explore/candidates.json` (styles × shortlist × formats per the
 schema), then render:
 
 ```bash
-python3 skills/illustrations/scripts/generate-illustrations.py \
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-illustrations.py" \
   <outline> --style-explore style-explore/candidates.json
 ```
 
@@ -223,7 +229,7 @@ Then run the deterministic precheck and report its verdict in one line; never
 skip this step silently:
 
 ```bash
-python3 skills/illustrations/scripts/generate-illustrations.py \
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-illustrations.py" \
   <outline> --check-style-explore
 ```
 
@@ -244,7 +250,7 @@ here.
 Batch-generate every missing slide illustration from the outline:
 
 ```bash
-python3 skills/illustrations/scripts/generate-illustrations.py \
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-illustrations.py" \
   outline.yaml remaining
 ```
 
@@ -269,7 +275,7 @@ human-facing reveal); `--build` skips any non-final step whose `erase` prompt
 lacks a "Keep ..." clause.
 
 ```bash
-python3 skills/illustrations/scripts/generate-illustrations.py \
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-illustrations.py" \
   outline.yaml --build all
 ```
 
@@ -293,7 +299,7 @@ that order), with optional `--out`, `--image-ext`, `--scrim-color`,
 input deck unless `--out` is given.
 
 ```bash
-python3 skills/illustrations/scripts/apply-illustrations-to-deck.py \
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/apply-illustrations-to-deck.py" \
   deck.pptx illustrations/ outline.yaml
 ```
 
@@ -306,7 +312,7 @@ Run the thumbnail composition for a delivered talk. Surface 3–5 candidate
 slides ranked by visual impact, let the speaker pick, then compose:
 
 ```bash
-python3 skills/illustrations/scripts/generate-thumbnail.py \
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" \
   --slide-image illustrations/slide-NN.png \
   --speaker-photo "$SPEAKER_PHOTO" \
   --title "HOOK TITLE" \

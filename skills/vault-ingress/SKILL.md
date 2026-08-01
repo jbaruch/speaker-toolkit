@@ -16,6 +16,12 @@ user_invocable: true
 
 Process the steps below in order; each step's output (tracking DB state, batch results, per-talk artifacts) feeds the next. Do not skip ahead.
 
+Resolve the absolute path of this loaded `SKILL.md`, then set
+`speaker_toolkit_root` to the plugin root two directories above the directory
+containing this file. Never derive it from the consumer working directory.
+Treat `{speaker_toolkit_root}` as absolute in every toolkit-owned command;
+vault and source-artifact paths remain consumer-owned.
+
 Build a rhetoric and style knowledge base by analyzing presentation talks. Each run
 processes **unprocessed** talks, extracts rhetoric/style observations, and updates the
 running summary. The vault lives at `~/.claude/rhetoric-knowledge-vault/` (may be a
@@ -30,7 +36,9 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | `slide-design-spec.md` | Visual design rules from PDF + PPTX analysis |
 | `speaker-profile.json` | Machine-readable bridge to presentation-creator |
 | `analyses/{talk_filename}.md` | Per-talk rhetoric analysis (one file per processed talk) |
-| `transcripts/{youtube_id}.txt` | Downloaded/cleaned transcripts |
+| `transcripts/{transcript_id}.txt` | Downloaded/cleaned transcripts (`youtube_id` for YouTube talks) |
+| `transcripts/{transcript_id}.segments.json` | Hash-bound acquisition source and optional timing for the matching transcript |
+| `transcripts/{transcript_id}.quality.json` | Hash-bound exact quality policy and source-owned duration provenance |
 | `slides/{id}.pdf` | Slide PDFs (from Google Drive, PPTX export, or video extraction) |
 | [references/schemas-db.md](references/schemas-db.md) | DB + subagent schemas; extraction output schemas |
 | [references/rhetoric-dimensions.md](references/rhetoric-dimensions.md) | 14 analysis dimensions |
@@ -43,6 +51,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | [references/processing-rules.md](references/processing-rules.md) | Language policy, pattern migration logic, structured field rules |
 | [references/known-issues.md](references/known-issues.md) | Edge cases — wide-angle recordings, Whisper hallucination, non-speaker talks |
 | `skills/vault-ingress/scripts/persist-results.py` | Deterministically merge batch subagent returns into the tracking DB (Step 4) |
+| `skills/vault-ingress/scripts/check-runtime.py` | Stdlib-only configured-interpreter and lane dependency probe |
 | `skills/vault-ingress/scripts/write-analysis.py` | Render per-talk `analyses/*.md` from persisted effective state authorized by the same batch returns (Step 4) |
 | `skills/vault-ingress/scripts/validate-returns.py` | Reject malformed schemas, statuses, scores, and catalog observations before either Step 4 writer runs |
 | `skills/vault-ingress/scripts/queue-state.py` | Normalize legacy statuses; claim versioned batches; inspect or recover queue leases without replaying returns |
@@ -51,14 +60,16 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | `skills/vault-ingress/scripts/batch-download-videos.sh` | Parallel video download for batch processing |
 | `skills/vault-ingress/scripts/vtt-cleanup.py` | Clean VTT subtitles into plain transcript text |
 | `skills/vault-ingress/scripts/fetch-transcript.py` | Fetch a transcript, validate it, write only if real (captions → local Whisper) |
+| `skills/vault-ingress/scripts/transcript_timing.py` | Own independent timing/quality receipts, validation, and quote resolution |
 | `skills/vault-ingress/scripts/preflight-vault.py` | Read-only source/identity integrity gate before selection or re-analysis |
+| `skills/vault-ingress/scripts/scan-shownotes.py` | Deterministic shownotes discovery and guarded tracking-DB import |
 | `skills/vault-ingress/scripts/audit-source-identities.py` | Read-only `yt-dlp` evidence capture, deduplicated by active YouTube ID |
 | `skills/vault-ingress/scripts/audit-pattern-catalog.py` | Read-only pattern catalog graph and contract gate before analysis |
 | `skills/vault-ingress/scripts/apply-source-repairs.py` | Guarded dry-run/apply workflow for evidence-backed source metadata repairs |
 | `skills/vault-ingress/scripts/aggregate-catalog-feedback.py` | Validate and aggregate return feedback without editing the pattern catalog |
 
 A talk is processable when preflight confirms at least one usable transcript,
-slide, or video source. A talk may therefore be transcript-only or slides-only and
+slide, or video source. A talk may be transcript-only or slides-only and
 finish `processed_partial`; `video_url` is not a queue prerequisite. Slide sources,
 in order of preference:
 1. `pptx_path` — richest data (exact colors, fonts, shapes via python-pptx)
@@ -87,34 +98,62 @@ See [references/schemas-db.md](references/schemas-db.md) for the full schema
 and [../vault-profile/references/schemas-config.md](../vault-profile/references/schemas-config.md)
 for field-by-field semantics and migration notes.
 
-**Scan for new talks:** Build the talks directory path as
-`{shownotes.source.path_or_url}/{shownotes.source.talks_subdir}`; glob `*.md`
-there; parse and add any file not yet in `talks[]` (title, conference, date,
-URLs, status `"pending"`). For `remote_url` or `none` source types, skip the
-scan — the vault ingests only the talks the speaker has already registered
-elsewhere. Extract
-`video_url`, `slides_url` from frontmatter/links. Parse IDs from URLs:
-- `youtube_id`: accept `youtube.com/watch?v=`, `youtu.be/`,
-  `youtube.com/shorts/`, and `youtube.com/embed/`; require the resulting
-  11-character ID to agree with any stored value
-- `google_drive_id`: extract the file ID from the Google Drive URL
+`python_path` is the interpreter authority for every operational command below;
+never fall back to whichever `python3` happens to be on `PATH`. Installed plugin
+bundles do not include `pyproject.toml`, so immediately probe the configured
+runtime with the shipped stdlib-only checker:
 
-Before accepting a scanned source, compare it with the talk's
-`source_rejections`. Never reactivate a URL (or the same YouTube ID in another
-URL form) that was previously verified as a non-delivery clip, wrong delivery,
-unrelated recording, or wrong event's deck. Report the upstream drift and leave
-the rejected source inactive until a human supplies replacement evidence.
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/check-runtime.py" \
+  --lanes core,pdf,pptx
+```
 
-Default status is always `"pending"` for new entries.
+Core requires Python 3.10+ and PyYAML and is blocking. The PDF and PPTX lanes
+require pypdf and python-pptx respectively; a missing optional lane is reported
+as degraded and must not erase a healthy transcript or alternate slide lane.
+Require a lane before using it, for example `--require-lanes core,pdf`. Remote
+Drive acquisition additionally needs the `gdown` module; captions need
+`youtube-transcript-api`; audio download fallback needs `yt-dlp`; rendered PDF
+inspection needs `pdftoppm`; video extraction needs Pillow, `imagehash`,
+`ffmpeg`, and `ffprobe`; local Whisper needs `mlx-whisper` and `ffprobe`.
+Inspect those with the checker's `google-drive`, `captions`,
+`youtube-download`, `pdf-render`, `video`, and `whisper` lanes as selected talks
+require. Each lane is independent: a failed optional import/tool disables only
+that lane when the checker recognizes dependency absence or incompatibility.
+An unexpected initializer fault stops the probe with one JSON error and a
+recovery instruction.
+
+**Scan for new talks:** run the deterministic scanner in its default read-only
+mode:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/scan-shownotes.py" \
+  "{vault_root}/tracking-database.json"
+```
+
+Read the structured report before any mutation. `add` and `update` entries are
+safe deterministic proposals; `review_required` entries need a human decision.
+The scanner uses exact filename identity, derives supported YouTube and Google
+Drive IDs, and keeps every matching `source_rejections` identity inactive.
+Incomplete metadata, conflicts, and normalized filename collisions remain
+proposals. Disabled, `remote_url`, and `none` sources return a structured no-op.
+
+Apply the reviewed deterministic proposals with the same command plus
+`--apply`. Only `add` and `update` entries mutate the tracking database. New
+records receive current `schema_version` and status `"pending"`; exact-filename
+updates fill empty fields without overwriting established values. The write is
+atomic and rejects a tracking-database symlink. See
+[references/schemas-db.md](references/schemas-db.md#shownotes-scanimport-report)
+for the complete report and mutation contract.
 
 **Scan for .pptx files:** Recursively glob `**/*.pptx` in `pptx_source_dir`; fuzzy-match
 to `talks[]` entries. Report counts. See [references/schemas-db.md](references/schemas-db.md)
 for the PPTX extraction output schema (per-slide visual data, shape types, global design stats).
-Run `python3 skills/vault-ingress/scripts/pptx-extraction.py` for extraction.
+Run `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py"` for extraction.
 Consume current schema v2 for timing/build evidence. A v0/v1 record has unknown
 timing, not zero timing, and must be regenerated; an unknown future schema is
 unusable until this reader is updated. The vault-profile layout-only consumer is
-the documented v1/v2 exception because `template_layouts` did not change.
+the documented v1/v2 exception for the unchanged `template_layouts` field.
 
 **Pattern taxonomy recovery:** See [references/processing-rules.md](references/processing-rules.md) for the queue-owned
 contract. Step 2 normalization deterministically routes processed results outside
@@ -124,7 +163,7 @@ generation currency from processing date or hand-edit those statuses.
 **Pattern catalog preflight:** Before source selection or re-analysis, run:
 
 ```bash
-python3 skills/vault-ingress/scripts/audit-pattern-catalog.py
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/audit-pattern-catalog.py"
 ```
 
 Stdout is stable JSON. Exit 1 means structural catalog errors: stop before
@@ -137,7 +176,7 @@ report, and no-write contracts are defined in
 selection or re-analysis, run the read-only offline gate:
 
 ```bash
-python3 skills/vault-ingress/scripts/preflight-vault.py {vault_root}
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/preflight-vault.py" {vault_root}
 ```
 
 Exit 1 means one or more blocking integrity errors (identity disagreement,
@@ -151,7 +190,7 @@ report and evidence shape are defined in
 After the offline gate, capture and compare live YouTube provider evidence:
 
 ```bash
-python3 skills/vault-ingress/scripts/audit-source-identities.py {vault_root}
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/audit-source-identities.py" {vault_root}
 ```
 
 This networked audit invokes `yt-dlp` once per distinct active YouTube ID and
@@ -166,9 +205,9 @@ Only after that human review, write a source-repair plan containing supported
 facts and exact old-value preconditions, then dry-run it before applying:
 
 ```bash
-python3 skills/vault-ingress/scripts/apply-source-repairs.py \
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/apply-source-repairs.py" \
   {vault_root}/tracking-database.json source-repair-plan.json
-python3 skills/vault-ingress/scripts/apply-source-repairs.py \
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/apply-source-repairs.py" \
   {vault_root}/tracking-database.json source-repair-plan.json --apply
 ```
 
@@ -182,41 +221,55 @@ Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
 
 ## Step 2 — Select Talks to Process
 
-Fresh queue work uses claim schema v3. Before changing any talk status,
+Fresh queue work uses claim schema v5. Before changing any talk status,
 `queue-state.py claim` snapshots one immutable `adherence_baseline` for the
-entire selected batch, stamps `required_return_schema_version: 3`, and copies
+entire selected batch, stamps `required_return_schema_version: 5`, and copies
 that exact snapshot into every member claim. The snapshot uses the current
 catalog fingerprint and pattern-scoring schema, includes only current
 `processed`/`processed_partial` talks, and excludes every active-batch filename
 before inspecting its prior score. Its `as_of` equals the claim's canonical
 `claimed_at`; do not edit or recompute it after the claim is written.
 
-- Run `python3 skills/vault-ingress/scripts/queue-state.py
+- Run `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/queue-state.py"
   {vault_root}/tracking-database.json normalize` once. This one copy-on-write
   command migrates legacy
   `skipped_no_video`/`skipped_no_transcript` states from the talk's usable source
-  capabilities. A record with a transcript artifact or slide source re-enters the
-  queue even without video; a `transcript_source` provenance label alone is not
-  capability. Only a record with no transcript artifact/acquisition path, slide,
-  or video source becomes `skipped_no_sources`. The same command uses the shared
+  capabilities. The shared root-aware assessor must actually read and validate a
+  local transcript/deck/PDF before it counts; a non-empty or missing path is not a
+  capability. Declared remote video/slide acquisition remains eligible for a
+  claim-time download. A `transcript_source` provenance label alone
+  is not capability. Only a record with no verified local source or remote
+  acquisition path becomes `skipped_no_sources`. The same command uses the shared
   exact-generation selector to requeue valid `processed`/`processed_partial`
-  results that cannot enter the active pattern cohort. Its `normalizations` report
-  carries ordered reason codes and the stored `reprocess_reason` for each changed
-  row. Malformed current-generation identity or score lanes reject the complete
-  command without writing; inflight, pending, already-queued, and skipped records
-  are not generation-normalized. A repeated successful normalization with no new
-  drift leaves the DB bytes unchanged. Completed claims remain immutable evidence
-  on the requeued talk and move to history normally when a later claim is created.
+  results that cannot enter the active pattern cohort. For scoring v5, exact
+  generation identity is necessary but insufficient: the shared freshness assessor
+  also re-hashes every persisted source-located artifact against the database's
+  vault and configured source roots. Missing, replaced, or otherwise drifted
+  evidence is excluded and requeued. Transcript freshness also revalidates the
+  hash-bound quality policy against current owner/provider duration; source-
+  identity drift cannot leave a previously accepted partial transcript in the
+  cohort. Its `normalizations` report carries ordered
+  reason codes, deterministic freshness details where applicable, and the stored
+  `reprocess_reason` for each changed row. Malformed current-generation identity or
+  score lanes reject the complete command without writing; inflight, pending,
+  already-queued, and skipped records are not generation-normalized. A repeated
+  successful normalization with no new drift leaves the DB bytes unchanged.
+  Completed claims remain immutable evidence on the requeued talk and move to
+  history normally when a later claim is created.
 - Claim each exact batch through `queue-state.py ... claim --run-id <stable-run>
   --batch-id <stable-batch> --now <timezone-aware-ISO>`. The command selects
   `pending`, `needs-reprocessing`, and retryable download failures, writes an
   atomic lease, increments `reprocess_generation`, and returns the claimed talk
-  list. Every fresh claim is schema v3 and requires return schema v3. Never
+  list. Every fresh claim is schema v5 and requires return schema v5. Never
   change a record to `reprocessing-inflight` by hand.
+- Before claiming a non-YouTube talk whose transcript will be used as evidence,
+  acquire the transcript and register its canonical vault-relative
+  `transcript_path` through the guarded source-repair workflow. A worker-returned
+  path cannot grant citation authority to that same return.
 - Repeating the same live/completed run and batch is an idempotent replay: use
   the exact stored claims and baseline, and do not rewrite the DB. Recover an
   expired or stranded lease with `queue-state.py ... recover`; recovery keeps
-  the v3 snapshot in claim history. A later claim creates a new generation and
+  the saved snapshot in claim history. A later claim creates a new generation and
   takes a fresh pre-mutation snapshot rather than editing or reusing the old
   generation's baseline.
 - Set `slide_source` per the hierarchy above. Mark `"skipped_no_sources"` only if
@@ -235,17 +288,24 @@ The summary supports qualitative rhetoric analysis, but the worker MUST NOT
 parse Section 15 for numeric adherence. The immutable
 `talk._queue_claim.adherence_baseline` is the sole numeric authority.
 
-The return version matches the active claim contract. A fresh schema-v3 claim
-with `required_return_schema_version: 3` requires return v3. Compatibility work
-under a legacy claim schema v1/v2 may use only return v1/v2; use v2 for newly
-authored compatibility work, while v1 remains saved-artifact replay support.
-Never attach return v3 to a legacy claim.
+The return version matches the active claim contract. A fresh schema-v5 claim
+with `required_return_schema_version: 5` requires return v5. Saved claim schemas
+v1–v4 authorize only their same-numbered return schemas and remain replayable
+archival artifacts; none can enter the current scoring cohort. Recover a live
+legacy lease and issue a fresh v5 generation instead of mutating its claim.
+A successfully persisted v5 return produces talk-record schema v5 and is the
+only return generation eligible for pattern-scoring schema v5. Valid v4
+source-located evidence remains intact with evidence-ledger schema v1, but it is
+requeued for v5 and never receives synthesized v5 outcomes.
 
-For a v3 claim whose baseline has fewer than 10 scored talks, return the exact
-empty `adherence_assessment` string and omit `adherence_comparison`. At 10 or
-more, copy the claim baseline exactly into the structured comparison, bind the
-validated talk score, and write 2–4 punctuation-terminated assessment
-sentences. Never regenerate the baseline after analyzing the talk.
+Return v5 uses the exact empty `adherence_assessment` sentinel and omits
+`adherence_comparison` unless an owner-side second-stage comparison can prove
+that the canonical talk and frozen baseline carry the same
+`opportunity_coverage_identity`. Persistence never guesses or normalizes across
+different identities. The schema-v2 baseline keeps `eligible_talk_count` for
+per-pattern history separately from the exact-identity `scored_talk_count`; a
+mixed opportunity cohort or a cohort with no evaluable pattern opportunities uses
+the explicit unavailable/null comparison sentinel.
 The return copies `run_id`, `batch_id`, and `reprocess_generation` from the
 talk's active `_queue_claim`; persistence rejects a stale, mismatched, or
 unclaimed return.
@@ -253,20 +313,69 @@ Full procedure — slide acquisition per `slide_source`, rhetoric/style analysis
 pattern-taxonomy tagging, and the return-JSON shape — lives in
 [references/subagent-instructions.md](references/subagent-instructions.md).
 
+Every v4/v5 worker also returns a closed `source_inspection` receipt. Transcript,
+static-slide/native-deck, and delivery-video records carry the exact line, page,
+or time ranges actually inspected. Distinct source comparisons each carry their
+exact underlying group and `comparison_scope`. Workers return only those raw
+ranges and citation claims; persistence derives artifact roots/paths/hashes,
+line and time matches, metadata values, coverage flags, and the evidence schema
+marker. Never copy engine-owned fields from an earlier analysis into a return.
+
 Transcripts come from `skills/vault-ingress/scripts/fetch-transcript.py`, never from inline fetch
 code. It tries the caption track, falls back to local Whisper, validates the
-result, and writes atomically only on success — so a failed fetch leaves no file
-rather than leaving a crash report where speech belongs:
+result, and writes atomically only on success. A failed fetch never replaces the
+transcript with a crash report or partial speech:
 
 ```bash
-python3 skills/vault-ingress/scripts/fetch-transcript.py <video-id-or-url> \
-    --out {vault_root}/transcripts/<youtube_id>.txt [--duration-seconds N]
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/fetch-transcript.py" <video-id-or-url> \
+    --out {vault_root}/transcripts/<youtube_id>.txt \
+    --existing-source <youtube_auto|whisper|manual|unknown> \
+    [--duration-seconds N]
 ```
 
 Exit 0 wrote (or kept) a valid transcript; exit 1 means no source produced one
 and the talk is `processed_partial` at best; exit 2 is an argument or tool-state
 error. Validation thresholds and failure signatures are the script's own — see
-its module docstring and the constants above `validate_transcript`.
+its module docstring and `transcript_quality.py`. `--duration-seconds` is only an
+expected value and must match a source-owned provider or local-media probe; a
+worker return or unbound metadata never lowers the quality floor. Its JSON
+`quality_path` names the required hash-current quality receipt on every success.
+`timed_path` is non-null only when a separate schema- and hash-verified timing
+receipt has usable owner-bound segments. Current timing receipts are schema v2;
+v1/minimal sidecars are archival and cannot supply timing or provenance. Do not
+rewrite them in place: re-fetch/re-transcribe from the proved source, or import
+the original VTT artifact, so the current writer can bind owner and bounds.
+Missing or rejected timing does not invalidate ordinary
+transcript evidence, but missing quality does exclude it from current v5
+scoring; requeue legacy transcripts through the fetcher. Reparse runs must pass
+the talk's owner-recorded `transcript_source` (or `unknown` when absent), even
+when the transcript already exists. For `youtube_auto` only, a missing/stale
+timing receipt triggers non-destructive caption enrichment: fetched caption text
+must equal the existing text exactly except for whitespace layout before a
+caption timing receipt is written, and the transcript bytes are never replaced.
+Edited, manual, Whisper, unknown-provenance, or mismatching text remains
+timing-unavailable and is never relabeled as captions.
+
+Without `--force`, any existing transcript is validation-only: a stricter caller
+policy may reject it but cannot authorize replacement. Pass `--force` only after
+inspecting the named artifact and intentionally authorizing new source bytes.
+A failed fetch or caught bundle write restores the prior transcript, quality,
+and timing bytes. If fetched text is valid but optional segments are malformed,
+text-mismatched, or outside their source bound, the transaction writes text and
+quality, removes stale timing, and reports timing unavailable.
+
+For a supplied WebVTT artifact, choose the output identity explicitly; language
+suffixes must never collide implicitly:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/vtt-cleanup.py" \
+  {vault_root}/transcripts/<source>.vtt \
+  {vault_root}/transcripts/<transcript_id>.txt [--force]
+```
+
+The VTT must be a non-symlink regular file inside the transcript directory.
+Its schema-v2 receipt binds the safe relative path, exact VTT digest, and final
+cue extent. Replacement still requires explicit `--force`.
 
 ## Step 4 — Persist Subagent Results
 
@@ -274,26 +383,43 @@ Runs after each batch inside Step 3's loop (not as a separate post-loop
 phase). Mechanical persistence of the batch's subagent JSON returns:
 
 - **Validate the whole batch before any write.** Run
-  `python3 skills/vault-ingress/scripts/validate-returns.py batch-returns.json`.
+  `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/validate-returns.py" batch-returns.json`.
   Stop on a non-zero exit and repair the named return. The validator enforces the
   terminal status, return field types, catalog ID and polarity, observability,
   confidence and evidence, score arithmetic, co-presenter shape, language code,
   all catalog-feedback lanes, source-gated `not_evaluable` coverage, and the
-  schema-v3 video-artifact trust boundary. For `video_extracted`, the enum alone
+  schema-v3 video-artifact trust boundary. V4/v5 `not_evaluable` entries contain
+  only `pattern_id` plus the exact reason code derived by the contract. An
+  observable catalog entry still awaiting an owner-approved source gate fails
+  closed: it cannot be detected or silently counted as absent and must use
+  `source_gate_pending_owner_review`. For `video_extracted`, the enum alone
   never creates `static_slides`: that source exists only when the complete manifest
   proves a verified manual `slide_region`. `status: "processed"` additionally
   requires its promoted `slides_local_path`. Both writers import this same validator,
   so bypassing the standalone command cannot weaken the boundary.
+  For v5, an N/A-capable nondetected entry is assessed only after its complete
+  `applicability_evaluable_from` gate is proven. Complete coverage requires
+  exactly one source-located `applicability_assessments` row; incomplete
+  coverage forbids a row and yields `not_evaluable`. Catalog-authorized
+  `not_applicable`, applicable-then-undetected, positive-only absence, and
+  missing-coverage states remain distinct.
+  Range-complete does not mean modality-complete. Bare `native_deck`, bare
+  `delivery_video`, video-extracted static pages, and current source-comparison
+  receipts remain positive-only; they cannot authorize absence or force an
+  applicability assessment until a canonical modality/alignment receipt exists.
+  Canonical inspection rows expose this with engine-owned
+  `absence_capability_complete` and `absence_capability_reason` alongside the
+  independent `coverage_complete` locator receipt.
   For newly emitted work, exit 0 is necessary but not sufficient: every
   processed entry in `pattern_scoring_generations` must report
-  `status: current`. `legacy_unbaselineable` exists only so saved v1/v2 artifacts remain
+  `status: current`. `legacy_unbaselineable` exists only so saved v1–v4 artifacts remain
   replayable and must be repaired before accepting new analysis.
-  A v3 analysis additionally obeys its claim-bound adherence gate: below 10
-  baseline talks means exact empty prose and no comparison; at 10+ it means one
-  exact structured comparison against the immutable claim snapshot.
+  A v5 analysis additionally carries one sorted engine-owned `pattern_outcomes`
+  row per observable catalog entry plus `opportunity_coverage_identity`. Raw
+  returns cannot supply either field.
 - **Update tracking DB — deterministic merge, NOT hand-mapping.** Collect the
   batch's subagent JSON returns into an array file (`batch-returns.json`) and run
-  `python3 skills/vault-ingress/scripts/persist-results.py {vault_root}/tracking-database.json batch-returns.json`.
+  `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/persist-results.py" {vault_root}/tracking-database.json batch-returns.json`.
   The script first requires the return filenames to equal every live member of one
   run/batch claim; partial, extra, mixed-identity, duplicate, closed, or stranded
   batches fail before migration or merge. It then merges each return into its matching
@@ -308,7 +434,12 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   persistence enforce the same container shapes. To make
   a new field queryable, extend the return schema and that list; never reintroduce
   manual mapping.
-  Version-2 and version-3 returns snapshot-replace every supplied declared
+  The same script validates each new detection against catalog observability,
+  its `evidence_source` source/outcome gate, and its evidence-channel policy; it
+  resolves every `evidence_citations` source location and refuses the whole
+  batch when proof is absent or unverifiable. Comparison detections must locate
+  proof from every underlying member of `evidence_sources_used`.
+  Version-2 through version-5 returns snapshot-replace every supplied declared
   field, including empty values where that field contract permits emptiness,
   and complete structured maps; omission preserves a field. Saved returns with
   missing/version-1 metadata retain their legacy
@@ -320,7 +451,7 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   persists that path when a trusted artifact is promoted, replaces a complete
   video-extraction manifest atomically, and clears matching promoted scalars.
   Returns satisfying the current evidence contract receive the exact catalog
-  fingerprint and scoring-schema version. Replayable v1/v2 returns that cannot
+  fingerprint and scoring-schema version 5. Replayable v1–v4 returns that cannot
   prove it are retained with
   `pattern_scoring_generation_status: legacy_unbaselineable`, exact machine reasons, and no current fingerprint or
   scoring version. The DB write remains atomic.
@@ -336,8 +467,8 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   timestamp is treated as an explicit identity assertion and must normalize to
   the same batch stamp or the entire write fails.
   A successful merge closes the matching queue lease as `completed`; it never
-  deletes claim history. Claim v3 closes as v3, claim v2 closes as v2, and an
-  active v1 lease upgrades to v2. Every completed v2/v3 claim stores a canonical
+  deletes claim history. Claims v2 through v5 close at their own versions, and
+  an active v1 lease upgrades to v2. Every completed v2–v5 claim stores a canonical
   SHA-256 receipt of the exact return payload; a receiptless completed v1 claim
   cannot authorize analysis replacement. Unknown future claim versions fail
   closed. An
@@ -349,12 +480,12 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   DB path: queue and persistence tools reject a final-component symlink before
   opening it, preventing atomic replacement from splitting the link and target.
 - **Write per-talk analysis files — run the script, do NOT hand-write them.** Run
-  `python3 skills/vault-ingress/scripts/write-analysis.py batch-returns.json {vault_root}/analyses --talks {vault_root}/tracking-database.json`
+  `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/write-analysis.py" batch-returns.json {vault_root}/analyses --talks {vault_root}/tracking-database.json`
   over the SAME `batch-returns.json` the merge consumed, so the DB and the files
   cannot diverge. The writer verifies each completed claim's payload receipt and
   persisted catalog fingerprint/scoring version, requires exact membership
-  across the completed batch, validates the persisted effective v2 analysis, and
-  renders analysis-owned fields from that canonical talk state. Thus fields
+  across the completed batch, validates the persisted effective snapshot analysis, and
+  renders analysis-owned fields from that canonical talk state. Fields
   omitted and preserved during persistence remain in Markdown. Only the
   receipt-bound, non-persisted catalog-feedback side channel comes from the
   return. The writer also renders the persisted, writer-owned timestamp. It
@@ -369,13 +500,13 @@ phase). Mechanical persistence of the batch's subagent JSON returns:
   and catalog feedback — creates `analyses/` if missing, prints a JSON summary, and
   exits non-zero on a return with no `filename`. Section list and field handling live
   in `skills/vault-ingress/scripts/write-analysis.py` (top-of-file docstring).
-  Non-empty adherence prose from a legacy v1/v2 return is preserved only as
+  Non-empty adherence prose from a legacy v1–v4 return is preserved only as
   archival text under an unmistakable `legacy-unverified` label. It is never a
   current numeric comparison, Section 15 aggregate, or profile input.
 - **Aggregate catalog feedback — after the final batch, do not hand-harvest or
   auto-edit the catalog.** Run the read-only intake over every return file or
   return directory:
-  `python3 skills/vault-ingress/scripts/aggregate-catalog-feedback.py {return_paths}`.
+  `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/aggregate-catalog-feedback.py" {return_paths}`.
   Review the stable JSON's invalid entries, exact-ID recurrence, normalized
   suggestions, and polarity warnings with the speaker. Recurrence is evidence
   for review, never authorization to change a catalog file. The five lanes and
@@ -386,9 +517,9 @@ Proceed immediately to Step 5.
 
 ## Step 5 — Update Rhetoric Summary
 
-Still per-batch (continues Step 3's loop). The summary update is a separate
-step from Step 4's persistence because it requires a speaker-review gate —
-unlike DB writes, edits to `rhetoric-style-summary.md` change the speaker's
+Still per-batch (continues Step 3's loop). The summary update requires a
+speaker-review gate and stays separate from Step 4 persistence. Unlike DB
+writes, edits to `rhetoric-style-summary.md` change the speaker's
 ground-truth narrative and must not be applied silently.
 
 1. **Speaker-review gate.** Present the subagent's proposed `summary_updates`
@@ -408,6 +539,21 @@ ground-truth narrative and must not be applied silently.
    fingerprint/scoring-schema cohort. Never use a processing-date cohort and
    never rebuild after member 1 of a multi-member batch. Section 15 remains
    human-readable narrative; workers do not parse it as numeric authority.
+   Render its sole machine-readable current block only from the complete
+   post-batch `pattern_profile` candidate and live tracking database:
+
+   ```bash
+   "{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py" replace \
+     {vault_root}/rhetoric-style-summary.md pattern-profile-candidate.json \
+     {vault_root}/tracking-database.json
+   ```
+
+   The helper rejects a stale same-generation cohort, validates through the
+   shared profile assessor, and atomically replaces only the delimited block.
+   `section15_pattern_history.py replace` is the sole supported current-block
+   replacement operation and always requires the live tracking database.
+   A nonzero exit guarantees no write; do not hand-edit or partially update the
+   block.
    **Recount status from the DB every time** — never increment manually.
 3. **Report.** Output: talks processed, new patterns, current state, skipped
    talks. Flag structural changes prominently (new presentation mode, new
@@ -422,7 +568,7 @@ Runs once after all Step 3 batches have completed.
 Process PPTX files not yet extracted during Step 3: unmatched catalog entries, talks
 that used PDF as primary but have a PPTX available, or entries with
 `pptx_visual_status: "pending"`. Skip if already `"extracted"`.
-Run `python3 skills/vault-ingress/scripts/pptx-extraction.py <path.pptx>` for each file.
+Run `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py" <path.pptx>` for each file.
 Require schema v2 before using native timing fields. Regenerate v0/v1 output and
 stop on an unknown future schema rather than interpreting missing fields as zero.
 
@@ -441,8 +587,11 @@ Proceed immediately to Step 7.
 ## Step 7 — Regenerate Speaker Profile
 
 If `{vault_root}/speaker-profile.json` exists, invoke `Skill(skill: "vault-profile")`
-with the updated tracking database. Report the diff of changes (added fields,
-changed values) so the speaker can verify.
+with the updated tracking database plus the resolved `{vault_root}` and exact
+database-configured `{python_path}` as handoff context. The profile skill re-reads
+the database and rejects a missing or mismatched interpreter; never let the handoff
+fall back to `python3` on `PATH`. Report the diff of changes (added fields, changed
+values) so the speaker can verify.
 
 If the profile doesn't exist, skip this step silently.
 
@@ -456,7 +605,7 @@ post-batch full-cohort pattern baseline current, pass the complete active-goal a
 and that structured baseline to:
 
 ```bash
-python3 skills/vault-clarification/scripts/goal_generation_provenance.py \
+"{python_path}" "{speaker_toolkit_root}/skills/vault-clarification/scripts/goal_generation_provenance.py" \
   < goal-generation-input.json
 ```
 
@@ -517,7 +666,8 @@ auto-invoke.
 
 Persistence mechanically rechecks terminal reasons against the claimed talk.
 `skipped_no_sources` requires no live capability; `skipped_download_failed`
-requires a remote acquisition path and no local transcript/PPTX/PDF reference;
+requires a remote acquisition path and no verified local transcript/PPTX/PDF/video
+artifact; stale or unreadable local declarations are not capabilities;
 `skipped_duplicate` requires a bound duplicate `source_relation` target.
 
 ## Important Notes
@@ -525,10 +675,11 @@ requires a remote acquisition path and no local transcript/PPTX/PDF reference;
 - Create `transcripts/`, `slides/`, `analyses/` dirs if missing.
 - Re-read tracking DB before writing (single source of truth).
 - Preserve all summary content — add/refine, never delete.
-- After 10+ talks in the claim's immutable scored cohort, a v3 worker produces
-  a structured comparison and 2–4 sentence assessment against that claim
-  baseline — never against a reparsed Section 15 narrative. Definition in
-  [references/processing-rules.md](references/processing-rules.md) Adherence Assessment.
+- Auto-score only source-located observations for `observable: true` catalog entries.
+  Hidden preparation/provenance belongs in clarification, not pattern inference.
+- Raw-score, breadth, and adherence comparisons are permitted only across an
+  exact matching `opportunity_coverage_identity`. A mismatched or mixed cohort
+  uses the explicit unavailable/empty sentinel; never normalize denominators.
 
 For input-quality edge cases that require non-default handling — wide-angle
 room recordings, Whisper hallucination on bad audio, non-speaker talks

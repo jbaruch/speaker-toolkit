@@ -6,10 +6,22 @@ part: deliver
 phase_relevance:
   - guardrails
 vault_dimensions: [7, 14]
+evidence_channels: [timed_transcript, video]
 detection_signals:
   - "frequent filler words"
   - "um/ah patterns"
   - "stammering under pressure"
+evaluable_from:
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "A finding must be grounded in the recording's original delivered audio, not filler words inserted, normalized, or deleted by an automatic caption track."
+  - "A strong outcome requires sufficiently complete, intelligible speech coverage to judge whether audible fillers or involuntary verbal tics are distracting across the delivery; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "Only a transcript or auto-generated captions are available, because caption systems routinely omit or normalize filler words and stammers."
+  - "The delivery recording has missing, dubbed, heavily edited, or unintelligible audio, or contains only a short excerpt that cannot support the claimed frequency."
 related_patterns: [breathing-room, carnegie-hall]
 inverse_of: [breathing-room]
 difficulty: foundational
@@ -41,9 +53,13 @@ This is an antipattern to recognize and mitigate, not a pattern to apply. Every 
 - Speaker seems unaware of their verbal tics
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Frequent filler words throughout delivery, noticeably undermining credibility and distracting from content
-- Moderate signal (1 pt): Occasional filler words present but not distractingly frequent — speaker shows awareness and sometimes self-corrects
-- Absent (0 pts — antipattern not present): Minimal filler words throughout — speaker pauses confidently instead of filling gaps, delivery is clean and professional
+- Strong signal (antipattern present): Frequent filler words throughout delivery, noticeably undermining credibility and distracting from content
+- Moderate signal: Occasional filler words present but not distractingly frequent — speaker shows awareness and sometimes self-corrects
+- Absent (antipattern not present): Minimal filler words throughout — speaker pauses confidently instead of filling gaps, delivery is clean and professional
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 7 (Clarity / Communication) and to Vault Dimension 14 (Speaker Craft / Professionalism).

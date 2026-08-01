@@ -8,6 +8,7 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [2, 5, 13]
+evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "visible progress indicator"
   - "structural navigation cues"
@@ -16,12 +17,23 @@ evaluable_from:
   - static_slides
   - native_deck
   - delivery_video
+strong_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: short-talk-at-most-15-minutes
+    description: "Complete delivery video establishes a talk of at most 15 minutes, where the catalog says brevity itself supplies context and heavy context keeping should be avoided."
+applicability_evaluable_from:
+  - delivery_video
 evidence_requirements:
-  - "Evidence must expose the visible construction across enough of the talk to apply the existing strong, moderate, or absent criterion."
+  - "Evidence must expose the visible construction across enough of the talk to apply a positive criterion; current artifacts do not authorize an absent outcome."
   - "Evidence must expose the existing scoring cues: strong: clear, consistent visible structure mechanism; moderate: inconsistent structural cues; absent: no visible structural cues."
 not_evaluable_when:
   - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
-  - "Only a transcript or spoken account is available, or the visual source is too partial to distinguish the asserted tier from absence."
+  - "Only a transcript or spoken account is available, or the visual source is too partial for the asserted positive tier; non-detection remains not_evaluable."
+  - "The complete delivery duration is unavailable, so the short-talk applicability condition cannot be assessed."
 related_patterns: [breadcrumbs, bookends, narrative-arc, charred-trail, cave-painting]
 inverse_of: []
 difficulty: foundational
@@ -52,12 +64,13 @@ Avoid heavy-handed context keeping in very short presentations (lightning talks,
 When scoring talks, look for any mechanism that reveals the presentation's structure and the audience's position within it. This can be visual (progress bars, highlighted agendas), structural (consistent section dividers), or narrative (clear story phases). The audience should be able to answer "where are we in the talk?" at any point.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Clear, consistent context keeping mechanism that reveals presentation structure and current position; audience can always orient themselves within the overall flow
-- Moderate signal (1 pt): Some structural cues present but inconsistent, or context keeping used in some sections but not others
-- Absent (0 pts): No visible structural cues; audience has no way to gauge their position in the presentation or the overall content structure
+- Strong signal: Clear, consistent context keeping mechanism that reveals presentation structure and current position; audience can always orient themselves within the overall flow
+- Moderate signal: Some structural cues present but inconsistent, or context keeping used in some sections but not others
+- Absent: No visible structural cues; audience has no way to gauge their position in the presentation or the overall content structure
 
 ## Evidence Gate
-Evaluate this entry only from rendered static slides, the native deck, or delivery video that exposes the visible construction. Speech alone cannot establish its visual criteria, and an absence finding requires coverage of the complete relevant visual sequence.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 2 (Structure and Flow): a direct expression of structural awareness. Dimension 5 (Storytelling and Narrative): narrative-based Context Keepers signal structural position. Dimension 13 (Visual Polish and Craft): the visual implementation of context keeping elements.

@@ -13,6 +13,7 @@ detection_signals:
 related_patterns: [carnegie-hall, crucible]
 inverse_of: []
 difficulty: foundational
+observable: false
 ---
 
 # The Big Why
@@ -60,9 +61,16 @@ Use this pattern at the very beginning of any presentation commitment. It is esp
 The vault should look for evidence of genuine motivation and personal connection to the topic. Passion is difficult to fake and relatively easy to detect through word choice, energy level, and the depth of engagement with the material.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Clear personal connection to topic; passion evident throughout; speaker's motivation enhances rather than detracts from content
-- Moderate signal (1 pt): Some personal connection visible but inconsistent; motivation unclear or generic
-- Absent (0 pts): No discernible personal investment in the topic; delivery feels mechanical or obligatory
+- Strong signal: Clear personal connection to topic; passion evident throughout; speaker's motivation enhances rather than detracts from content
+- Moderate signal: Some personal connection visible but inconsistent; motivation unclear or generic
+- Absent: No discernible personal investment in the topic; delivery feels mechanical or obligatory
+
+## Vault Observability
+A talk can state a reason for presenting and display delivery energy, but those artifacts cannot
+prove the private, pre-commitment motivation this pattern asks the speaker to clarify or whether
+that motivation sustained preparation. Do not infer genuine investment from performance. The
+observable audience-side Big Idea described above should be analyzed through its own structural
+patterns rather than used as proxy evidence for the speaker's Big Why.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 9 (Speaker Credibility/Ethos).

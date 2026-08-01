@@ -39,7 +39,7 @@ Before generating, ensure:
 ## Slide Selection Modes
 
 ```bash
-python3 skills/illustrations/scripts/generate-illustrations.py outline.yaml remaining
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-illustrations.py" outline.yaml remaining
 ```
 
 `remaining` skips slides whose images already exist; `all` regenerates every
@@ -55,7 +55,7 @@ grid) — see [strategy.md](strategy.md) Sub-steps 3 and 5.
 slide's prompt across the cached `COMPARE_MODELS` roster.
 
 ```bash
-python3 skills/illustrations/scripts/generate-illustrations.py outline.yaml --compare 2
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-illustrations.py" outline.yaml --compare 2
 ```
 
 Output lands in `illustrations/model-comparison/`. The roster, vendor aliases,
@@ -118,7 +118,7 @@ for the full policy (auto-loaded).
 ## Apply to Deck
 
 ```bash
-python3 skills/illustrations/scripts/apply-illustrations-to-deck.py \
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/apply-illustrations-to-deck.py" \
   deck.pptx illustrations/ outline.yaml \
   --out deck-with-titles.pptx \
   --scrim-color 100903 --scrim-alpha 47553   # omit for plain 45% black
@@ -144,13 +144,13 @@ Run this as the FINAL write of the build, AFTER speaker notes are injected:
 ```bash
 # operate on a uniquely-named copy — PowerPoint keys open decks by filename
 cp deck-with-titles.pptx deck-bg-src.pptx
-bash skills/presentation-creator/scripts/apply-backgrounds.sh \
+bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/apply-backgrounds.sh" \
   deck-bg-src.pptx deck-final.pptx deck-with-titles.backgrounds.json
 ```
 
 macOS + Microsoft PowerPoint only; see [`rules/deck-editing-rules.md`](../../../rules/deck-editing-rules.md).
 
-If no scrim color is supplied, run `python3 skills/illustrations/scripts/suggest-scrim-color.py illustrations/`
+If no scrim color is supplied, run `python3 "{speaker_toolkit_root}/skills/illustrations/scripts/suggest-scrim-color.py" illustrations/`
 first to sample a deck-tuned color. For warm or cool styled decks, the
 sampled color reads as "deeper shadow in the same style" instead of a flat
 black film.

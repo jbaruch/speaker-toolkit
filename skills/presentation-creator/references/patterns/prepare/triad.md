@@ -7,10 +7,28 @@ phase_relevance:
   - intent
   - architecture
 vault_dimensions: [2]
+evidence_channels: [transcript, slides, slide_sequence, video]
 detection_signals:
   - "three major sections"
   - "three-act structure"
   - "content organized in triads"
+evaluable_from:
+  - transcript
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - transcript
+  - static_slides
+  - native_deck
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "The source must cover the complete talk or deck and show that exactly three units are central organizing elements rather than a local list."
+  - "A strong score requires all three central themes to receive appropriate depth and together form a complete story."
+not_evaluable_when:
+  - "Only one section, excerpt, or local three-item list is visible without the talk's overall architecture."
+  - "The transcript, deck, or video is incomplete, so the number and role of the central organizing units cannot be established."
 related_patterns: [narrative-arc, fourthought, talklet]
 inverse_of: []
 difficulty: foundational
@@ -39,9 +57,13 @@ Use the Triad for any presentation where you are synthesizing multiple ideas int
 The vault should look for evidence of intentional three-part organization. Three major sections, three key arguments, three case studies, or three phases in a process all suggest the Triad pattern is in use.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Presentation clearly organized around three central themes; each theme receives appropriate depth; the three themes together tell a complete story
-- Moderate signal (1 pt): Some three-part organization visible but not fully developed; one theme may dominate while others feel rushed
-- Absent (0 pts): No discernible three-part organization; material feels either randomly structured or organized around too many competing themes
+- Strong signal: Presentation clearly organized around three central themes; each theme receives appropriate depth; the three themes together tell a complete story
+- Moderate signal: Some three-part organization visible but not fully developed; one theme may dominate while others feel rushed
+- Absent: No discernible three-part organization; material feels either randomly structured or organized around too many competing themes
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 2 (Structure/Organization) as one of the most effective organizational strategies available. The Triad provides a memorable and satisfying structure that helps audiences follow and retain complex material.

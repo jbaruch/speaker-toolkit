@@ -21,7 +21,7 @@ creation at runtime.
 
 ## Schema Versioning
 
-Current `schema_version`: **3**. The validator (`scripts/validate-profile.py`,
+Current `schema_version`: **4**. The validator (`scripts/validate-profile.py`,
 `CURRENT_SCHEMA_VERSION`) accepts only the current version.
 
 - **v1 → v2** adds the coaching-outcome fields, all additive: `pattern_profile.score_drivers`,
@@ -31,12 +31,18 @@ Current `schema_version`: **3**. The validator (`scripts/validate-profile.py`,
   `pattern_profile.pattern_baseline` snapshot and exact sorted
   `baseline_talk_filenames`, and requires every catalog-derived denominator to use that
   cohort. This is a generation boundary, not an additive coaching field.
-- **Generation:** vault-profile writes only v3. Stored v1/v2 profiles are non-current and
+- **v3 → v4** binds occurrence history to scoring-v5's exhaustive per-talk outcomes.
+  It separates `eligible_talk_count` from raw-score-comparable `talks_scored`, adds
+  exact per-pattern opportunity denominators and coverage, and makes classification
+  availability explicit. Until a speaker-owned classification policy is versioned,
+  all novelty, mastery, recurring-severity, underuse, combination, and trend fields
+  use fail-closed sentinels.
+- **Generation:** vault-profile writes only v4. Stored v1/v2/v3 profiles are non-current and
   `scripts/validate-profile.py` rejects them as generation output. Compatibility for
   non-owner readers is a separate rollout concern; an old profile never authorizes the
   writer to reuse legacy pattern aggregates.
-- **Migration:** vault-profile regenerates the profile wholesale each run. A v1/v2 file is
-  replaced by a v3 file on the next run — no in-place migration step. The only value carried
+- **Migration:** vault-profile regenerates the profile wholesale each run. An older file is
+  replaced by a v4 file on the next run — no in-place migration step. The only value carried
   across regenerations is `infrastructure.template_layouts[].use_for` (merged by the
   `(master_index, name)` pair, version-independent).
 - **Generation reset:** when either the catalog fingerprint or pattern-scoring schema
@@ -47,7 +53,7 @@ Current `schema_version`: **3**. The validator (`scripts/validate-profile.py`,
 
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "generated_date": "2026-02-22",
   "talks_analyzed": 24,
 
@@ -283,7 +289,7 @@ Current `schema_version`: **3**. The validator (`scripts/validate-profile.py`,
 
   "pattern_profile": {
     "pattern_baseline": {
-      "schema_version": 1,
+      "schema_version": 2,
       "as_of": "2026-02-22T12:00:00+00:00",
       "scope": "global",
       "active_batch_excluded": false,
@@ -292,10 +298,14 @@ Current `schema_version`: **3**. The validator (`scripts/validate-profile.py`,
       "pattern_scoring_generation_status": "current",
       "pattern_scoring_generation_reasons": [],
       "pattern_catalog_fingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      "pattern_scoring_schema_version": 3,
+      "pattern_scoring_schema_version": 5,
       "scored_talk_count": 24,
       "pattern_score_sum": 163,
-      "average_pattern_score": 6.79
+      "average_pattern_score": 6.79,
+      "eligible_talk_count": 24,
+      "opportunity_coverage_identity": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+      "raw_score_comparison_status": "available",
+      "raw_score_comparison_reason": null
     },
     "baseline_talk_filenames": [
       "example-01.md",
@@ -323,89 +333,70 @@ Current `schema_version`: **3**. The validator (`scripts/validate-profile.py`,
       "example-23.md",
       "example-24.md"
     ],
+    "eligible_talk_count": 24,
     "talks_scored": 24,
     "average_pattern_score": 6.79,
-    "score_trend": "improving|stable|declining|unavailable",
+    "score_trend": "unavailable",
     "pattern_breadth": {
-      "avg_distinct_patterns_per_talk": 7.4,
-      "trend": "widening|stable|narrowing|unavailable",
-      "note": "Distinct observable patterns deployed per talk, averaged across scored talks — the 'are you using enough of your toolkit' dimension, isolated from antipattern avoidance. A narrowing trend lowers pattern_score with zero antipatterns involved. Breadth is range, not a target to maximize: more patterns is not automatically better (cramming is its own antipattern), but a contracting range is a regression signal symmetric to rising antipatterns."
+      "avg_distinct_patterns_per_talk": null,
+      "trend": "unavailable",
+      "note": "Unavailable until a speaker-owned coverage-comparable breadth policy is versioned."
     },
-    "underused_patterns": [
-      {
-        "pattern_id": "sparkline",
-        "mastery_level": "never_tried|rare",
-        "fits_modes": ["b"],
-        "note": "observable, high-fit for an established mode, never or rarely deployed — a growth opportunity, NOT a deficiency. Sourced from both never_used_patterns and the never_tried/rare tiers of mastery_levels, filtered to patterns whose Vault Dims match the speaker's modes. Surfaced so coaching covers positive space, not only antipatterns. Distinct from a fading_pattern, which the speaker DID use and dropped."
-      }
-    ],
+    "underused_patterns": [],
     "score_drivers": {
-      "direction": "improving|stable|declining|insufficient_history|unavailable",
-      "antipattern_drivers": [
-        {"pattern_id": "shortchanged", "frequency_trend": "increasing", "evidence": "detected in 4 of the last 6 talks, up from 1 of the prior 6"}
-      ],
-      "pattern_drivers": [
-        {"pattern_id": "bookends", "usage_trend": "decreasing", "evidence": "signature pattern absent from the last 3 talks"}
-      ],
-      "note": "Attribution for score_trend — names which patterns/antipatterns moved the score, in EITHER direction. Array names denote the metric, not the direction; each entry's own trend field (frequency_trend / usage_trend, each 'increasing'|'decreasing'|'stable') is authoritative. antipattern_drivers = antipattern_frequency entries whose movement shifted the score (frequency_trend='increasing' lowers it, 'decreasing' raises it). pattern_drivers = pattern_usage entries, each keyed by a concrete pattern_id with its usage_trend, whose movement shifted the score, signature OR regular (usage_trend='decreasing' lowers it, 'increasing' raises it). Breadth is NOT encoded as a pattern_drivers entry — read the sibling pattern_breadth.trend as an additional driver when it is not 'stable' ('narrowing' lowers the score, 'widening' raises it). For direction='declining', list the rising antipatterns + the fading/narrowing patterns; for 'improving', the receding antipatterns + the growing patterns/breadth. Underuse alone can drive a decline with zero antipatterns. Empty driver arrays are valid only when direction is 'stable' or 'insufficient_history' (<10 talks_scored). When talks_scored <10, direction='insufficient_history' and score_trend MUST be 'stable' (its neutral value — trend is not yet meaningful); never pair direction='insufficient_history' with a directional score_trend ('improving'/'declining')."
+      "direction": "unavailable",
+      "antipattern_drivers": [],
+      "pattern_drivers": [],
+      "note": "Unavailable until a speaker-owned trend policy is versioned."
     },
-    "by_mode": [
-      {
-        "mode_id": "a",
-        "talks_in_mode": 11,
-        "stable": true,
-        "average_pattern_score": 7.2,
-        "avg_distinct_patterns_per_talk": 8.1,
-        "top_antipatterns": ["shortchanged"],
-        "note": "Per-mode baseline. Adherence, breadth, and underuse should compare a talk to ITS mode's baseline, not the global one — a lightning talk that 'underuses audience interaction' is a false positive, not the same finding as a keynote doing so. stable=true only when talks_in_mode >= 3; below that, omit the mode or mark stable=false and fall back to the global baseline."
-      }
-    ],
-    "strengths": [
-      {
-        "pattern_id": "narrative-arc",
-        "kind": "signature_pattern|signature_combination",
-        "mastery_level": "signature",
-        "evidence": "deployed in 22 of 24 talks at strong confidence",
-        "lean_in": "your structural backbone — keep building talks around it; it's what audiences remember"
-      }
-    ],
-    "strengths_note": "The positive counterpart to non-pattern recurring_issues and underused_patterns: what the speaker already does well, framed as 'lean in / double down', so coaching is not purely deficit-oriented. Sourced from mastery_levels.signature and signature_combinations. Catalog-derived reinforcement lives here rather than being duplicated as a badge. For kind='signature_combination', pattern_id holds the combination label.",
-    "note": "Only observable patterns are included. Patterns marked observable: false in the taxonomy (pre-event logistics, physical stage behaviors, external systems) are excluded from scoring and surfaced as a go-live checklist in creator Phase 6 instead.",
+    "by_mode": [],
+    "strengths": [],
+    "strengths_note": "Unavailable until a speaker-owned classification policy is versioned.",
+    "note": "Only observable patterns are included. Patterns marked observable: false in the taxonomy (pre-event logistics, hidden authoring/provenance processes, physical stage behaviors, post-event follow-up, and external systems the current artifacts cannot prove) are excluded from scoring and surfaced as a go-live checklist in creator Phase 6 instead.",
+    // Opportunity arrays are abbreviated here for readability. Generated
+    // profiles contain one sorted row for every observable catalog entry of
+    // the matching polarity.
     "pattern_usage": [
       {
         "pattern_id": "narrative-arc",
+        "detected_count": 22,
+        "evaluable_count": 24,
+        "unevaluable_count": 0,
+        "not_applicable_count": 0,
+        "eligible_cohort_count": 24,
+        "coverage": 1.0,
         "times_used": 22,
         "out_of": 24,
-        "usage_rate": 0.92,
-        "average_confidence": "strong|moderate|weak",
-        "trend": "consistent|increasing|decreasing",
-        "mastery_level": "signature|regular|occasional|rare"
+        "usage_rate": 0.9166666666666666
       }
     ],
     "antipattern_frequency": [
       {
         "pattern_id": "shortchanged",
+        "detected_count": 8,
+        "evaluable_count": 24,
+        "unevaluable_count": 0,
+        "not_applicable_count": 0,
+        "eligible_cohort_count": 24,
+        "coverage": 1.0,
         "times_detected": 8,
         "out_of": 24,
-        "frequency_rate": 0.33,
-        "trend": "increasing|stable|decreasing",
-        "severity": "recurring|occasional|rare"
+        "frequency_rate": 0.3333333333333333
       }
     ],
-    "never_used_patterns": ["takahashi", "cave-painting", "greek-chorus (observable patterns only — unobservable patterns excluded)"],
-    "signature_combinations": [
-      {
-        "patterns": ["narrative-arc", "bookends", "foreshadowing"],
-        "frequency": 15,
-        "label": "Story Sandwich"
-      }
-    ],
+    "never_used_patterns": [],
+    "signature_combinations": [],
     "mastery_levels": {
       "signature": [],
       "regular": [],
       "occasional": [],
       "rare": [],
       "never_tried": []
+    },
+    "classification_availability": {
+      "schema_version": 1,
+      "status": "unavailable",
+      "reason_codes": ["owner_policy_unconfigured"]
     }
   },
 
@@ -488,21 +479,40 @@ Current `schema_version`: **3**. The validator (`scripts/validate-profile.py`,
 `pattern_baseline` payload. It uses the vault-ingress adherence-baseline schema and
 must describe the active catalog fingerprint and scoring schema with
 `active_batch_excluded: false` and `excluded_filenames: []`.
+For scoring schema v5, the loader also requires every selected talk's persisted
+source-location ledger and citations to remain fresh against the live vault and
+configured source roots, plus one canonical exhaustive `pattern_outcomes` matrix and
+matching `opportunity_coverage_identity`. Generation identity alone cannot authorize
+the cohort.
 `baseline_talk_filenames` is the sorted, unique list of exact filenames from
-`baseline_talks`; its length, `talks_scored`, every nested `out_of` denominator, and
-`pattern_baseline.scored_talk_count` are identical. Occurrence counts cannot be
-negative or exceed that count. `average_pattern_score` exactly equals the baseline's
-validated count/sum average. The fingerprint shown above is an illustrative
-64-character value; generation always copies the active value supplied by the loader.
+`baseline_talks`; its length and `pattern_profile.eligible_talk_count` equal
+`pattern_baseline.eligible_talk_count`. That eligible count is also copied into every
+opportunity row. A row's `out_of` is its own evaluable count, not the global cohort
+count. `pattern_usage` and `antipattern_frequency` contain one sorted row for every
+observable catalog entry of the matching polarity, including when no talk supplied an
+evaluable opportunity. Their exact fields and arithmetic are owned by
+`scripts/pattern_opportunities.py`.
 
-All `pattern_profile` fields in the schema are required in v3. Every Presentation
-Pattern catalog-derived value uses `baseline_talks` only: usage, antipattern
-frequency, never-used patterns, mastery tiers, signature combinations, strengths,
-underuse, breadth, score drivers, and mode splits. `talks_analyzed` may still count every processed talk. Pacing uses
-the separately named `current_instrumentation_talks` cohort and never borrows the
-pattern denominator.
+Raw score fields are a separate lane. `talks_scored` and `average_pattern_score`
+exactly mirror the validated baseline's raw-score-comparison count and average. When
+eligible talks have mixed opportunity identities, or when their shared identity has
+no evaluable (`detected` or `undetected`) opportunity, the baseline explicitly reports
+`raw_score_comparison_status: "unavailable"`, zero scored talks, and a null average.
+The respective stable reasons are `mixed_opportunity_coverage` and
+`no_evaluable_pattern_opportunities`; the per-pattern occurrence rows remain
+available.
 
-`pattern_profile` is the only v3 storage lane for catalog history.
+All `pattern_profile` fields in the schema are required in v4. The current
+`classification_availability` sentinel states that no speaker-owned versioned
+classification policy exists. Therefore zero detections cannot authorize
+`never_used_patterns`, and occurrence rates cannot authorize mastery, recurring
+severity, strengths, underuse, combinations, mode splits, or trends. Those fields use
+the exact empty/unavailable shapes in the example until the owner versions such a
+policy. `talks_analyzed` may still count every processed talk. Pacing uses the
+separately named `current_instrumentation_talks` cohort and never borrows the pattern
+denominator.
+
+`pattern_profile` is the only v4 storage lane for catalog history.
 `rhetoric_defaults` must not duplicate mastery, signatures, usage, scores, or other
 pattern-history fields. `guardrail_sources.recurring_issues[]` and `badges[]` are
 non-pattern-only lanes: every entry carries `source_lane: "non_pattern"` and must not
@@ -513,18 +523,25 @@ recurring issues or badges.
 
 Writers and readers call
 `scripts/profile_pattern_provenance.py::assess_pattern_profile` for the same strict
-decision. `current_contract: true` means the v3 provenance is canonical;
-`catalog_fields_available: true` additionally requires a non-empty current cohort.
-A reader may continue using unrelated non-pattern fields from a v1/v2 profile, but it
+decision. `current_contract: true` means the v4 provenance is structurally canonical;
+`catalog_fields_available: true` additionally requires a non-empty eligible cohort.
+`classification_fields_available: false` suppresses every derived history tier even
+when exact occurrence rows are present. The owner additionally runs
+`"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/validate-profile.py" --vault-root <path>`;
+it recomputes the cohort from the
+live tracking database and rejects structurally valid but source-fabricated rows.
+A reader may continue using unrelated non-pattern fields from an older profile, but it
 must treat that profile's historical pattern fields as unavailable rather than migrate
 or infer provenance.
 
 When the current pattern cohort is empty, preserve the canonical zero-count baseline,
-an empty `baseline_talk_filenames`, `talks_scored: 0`, and
-`average_pattern_score: null`. Set `score_trend`, `pattern_breadth.trend`, and
-`score_drivers.direction` to `"unavailable"`; set the breadth average to `null` and
-every catalog-derived array/mastery tier to `[]`. Never fall back to a v1/v2 profile,
-the rhetoric summary, excluded scoring generations, or the instrumentation cohort.
+an empty `baseline_talk_filenames`, `eligible_talk_count: 0`, `talks_scored: 0`, and
+`average_pattern_score: null`. Keep the exhaustive positive and negative catalog rows
+with zero counts and null rates/coverage. Set `score_trend`, `pattern_breadth.trend`,
+and `score_drivers.direction` to `"unavailable"`; set the breadth average to `null`
+and every classification-derived array/mastery tier to `[]`. Never fall back to an
+older profile, the rhetoric summary, excluded scoring generations, or the
+instrumentation cohort.
 
 ## How the Presentation Creator Uses Each Section
 
@@ -544,7 +561,7 @@ automatically picks up changes when the profile is regenerated.
 | `guardrail_sources` | Phase 4 (guardrails) | All guardrail checks with thresholds |
 | `instrument_catalog` | Phase 2 (architecture) | Complete instrument menu by dimension |
 | `visual_style_history` | Phase 2 (architecture — illustration strategy) | Default aesthetic, mode-specific departures, style proposals |
-| `pattern_profile` | Phase 2 (architecture), Phase 4 (guardrails) | Pattern Strategy 4-tier recommendations, antipattern warnings |
+| `pattern_profile` | Phase 2 (architecture), Phase 4 (guardrails) | Auditable occurrence rows; 4-tier recommendations and recurring antipattern warnings only when the shared gate explicitly authorizes classification fields |
 | `badges` | Informational | Fun speaker achievements mined from vault data |
 | `infrastructure.template_layouts` | Phase 5 (slide generation) | Layout map and selection logic |
 | `infrastructure.font_pair` | Phase 5 (slide generation) | Font usage rules |

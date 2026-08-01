@@ -60,9 +60,9 @@ Use this pattern for every presentation, scaling the number of rehearsals to the
 - Body language appears natural and practiced, not stiff or uncertain
 
 ## Scoring Criteria
-- Strong signal (2 pts): Delivery is polished, well-timed, with smooth transitions and confident handling of any disruptions — clear evidence of multiple rehearsals
-- Moderate signal (1 pt): Delivery is competent but shows occasional rough edges — timing slightly off, one or two awkward transitions
-- Absent (0 pts): Delivery feels unrehearsed — stumbling over transitions, poor timing, reading from slides, visible uncertainty about what comes next
+- Strong signal: Delivery is polished, well-timed, with smooth transitions and confident handling of any disruptions — clear evidence of multiple rehearsals
+- Moderate signal: Delivery is competent but shows occasional rough edges — timing slightly off, one or two awkward transitions
+- Absent: Delivery feels unrehearsed — stumbling over transitions, poor timing, reading from slides, visible uncertainty about what comes next
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 12 (Delivery Mechanics) through the direct improvement of pacing, transitions, and physical delivery, and to Vault Dimension 14 (Speaker Craft / Professionalism) through the discipline and preparation that rehearsal represents.

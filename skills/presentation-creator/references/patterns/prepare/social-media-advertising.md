@@ -7,12 +7,12 @@ phase_relevance:
   - publishing
 vault_dimensions: [4]
 detection_signals:
-  - "mentions social handles"
-  - "references hashtags"
-  - "promotes resources URL"
+  - "dated promotional posts link to the talk"
+  - "campaign or referral record shows pre-event promotion"
 related_patterns: [seeding-satisfaction]
 inverse_of: []
 difficulty: foundational
+observable: false
 ---
 
 # Social Media Advertising
@@ -35,12 +35,15 @@ The key is authenticity. Promotion should feel like genuine enthusiasm for shari
 Use for any public-facing presentation where attendance is voluntary. Especially valuable for conference talks and meetup presentations. Less applicable for mandatory internal presentations where attendance is already guaranteed, though even there, building anticipation can improve audience engagement. Avoid over-promotion that feels spammy — quality of posts matters more than quantity.
 
 ## Detection Heuristics
-The vault should look for evidence that the speaker has promoted the talk through digital channels. Mentions of social handles, hashtags, or resource URLs within the presentation itself suggest the speaker is building a broader conversation around their content.
+A social handle or resource URL inside the deck is not evidence of pre-event
+promotion. Verify this pattern from dated promotional posts or campaign/referral
+records that link to the talk. Without those external artifacts it is unevaluable.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Presentation references social channels, hashtags, or URLs for further engagement; evidence of pre-event community building
-- Moderate signal (1 pt): Minimal social references; a single URL or handle mentioned in passing
-- Absent (0 pts): No social media or promotional elements present in the talk materials
+- Strong signal: Multiple dated pre-event promotional posts link to the talk and show deliberate campaign/community building
+- Moderate signal: One dated promotional post links to the talk before the event
+- Absent: Available account/campaign history shows no pre-event promotion
+- Unevaluable: Relevant account or campaign history is unavailable
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 4 (Audience Engagement).

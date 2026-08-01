@@ -9,7 +9,7 @@ composition. The script encapsulates the researched prompt strategy, face
 preservation, and YouTube spec compliance.
 
 ```bash
-python3 skills/illustrations/scripts/generate-thumbnail.py \
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" \
   --slide-image illustrations/slide-15.png \
   --speaker-photo ~/photos/headshot.jpg \
   --title "JUDGMENT DAY" \
@@ -160,7 +160,7 @@ them in agent-rolled prompts):
 
 **Why `--aesthetic` defaults to `photo` in the CLI:** speakers without
 a documented illustrated brand are the safer fallback for the script's
-default flag. The agent's recommendation, however, follows the profile's
+default flag. The agent's recommendation follows the profile's
 `visual_style_history` — see "Choosing per speaker" above — and should
 override the CLI default whenever the profile signals a clear illustrated
 brand.

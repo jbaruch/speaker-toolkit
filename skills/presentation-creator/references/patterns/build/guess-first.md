@@ -7,11 +7,25 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [2, 4, 11]
+evidence_channels: [timed_transcript, video]
 detection_signals:
   - "audience asked to commit an answer before the reveal"
   - "prediction solicited ahead of a demo, result, or number"
   - "speaker withholds the answer through a deliberate pause for attempt"
   - "reveal is framed against what the audience just predicted"
+evaluable_from:
+  - transcript
+  - delivery_video
+strong_evaluable_from:
+  - transcript
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "Evidence must locate the prediction prompt, a verified pause or audience-production cue, and the later reveal in that order."
+  - "A strong score requires multiple genuine prediction moments and at least one exploited prediction-versus-result gap; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "The transcript has no verified timing or audience-production cue capable of distinguishing a genuine answer gap from an immediately self-answered question."
+  - "The transcript or video is incomplete across prompts and reveals or across the talk needed to establish recurrence."
 related_patterns: [concrete-before-abstract, retrieval-beat, live-demo, progressive-reveal, foreshadowing, inoculation]
 inverse_of: []
 difficulty: intermediate
@@ -62,9 +76,13 @@ The vault should look for the audience being put on the hook before a reveal:
 - Counter-signal: rhetorical questions the speaker answers immediately. "What happens when you do this? Well, it crashes." That is a rhetorical flourish, not a generation move, and it should not score. The distinguishing test is whether the room was given room to answer.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Multiple genuine prediction moments where the room commits before a reveal; at least one where the predicted answer and the true answer visibly diverge and the speaker exploits the gap; questions are attemptable and land at structurally important moments
-- Moderate signal (1 pt): The speaker asks anticipatory questions but does not leave real room to answer, or the guesses are too easy to create a gap, or a single instance appears in an otherwise tell-only talk
-- Absent (0 pts): Every result is delivered cold; questions to the room are rhetorical and self-answered; the audience is never on record before a reveal
+- Strong signal: Multiple genuine prediction moments where the room commits before a reveal; at least one where the predicted answer and the true answer visibly diverge and the speaker exploits the gap; questions are attemptable and land at structurally important moments
+- Moderate signal: The speaker asks anticipatory questions but does not leave real room to answer, or the guesses are too easy to create a gap, or a single instance appears in an otherwise tell-only talk
+- Absent: Every result is delivered cold; questions to the room are rhetorical and self-answered; the audience is never on record before a reveal
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 2 (Narrative Structure) as a sequencing move — it reorders the beats of a reveal. Relates to Dimension 4 (Audience Interaction), since the commitment is usually solicited from the room. Relates to Dimension 11 (Technical Content Delivery), where its highest-value application lives: predicting demo output, benchmark numbers, and failure modes.

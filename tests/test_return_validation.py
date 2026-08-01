@@ -1,6 +1,7 @@
 """Contract tests for the shared vault-ingress return validator."""
 
 import copy
+from dataclasses import replace
 import json
 import os
 import subprocess
@@ -196,16 +197,16 @@ def _video_return(*, trusted=True, promoted=True, **overrides):
     return value
 
 
-def _error(return_validation, value):
+def _error(return_validation, value, catalog=None):
     with pytest.raises(return_validation.ReturnValidationError) as excinfo:
-        return_validation.validate_batch([value])
+        return_validation.validate_batch([value], catalog)
     return str(excinfo.value)
 
 
-def _complete_unavailable_source_gates(return_validation, value):
+def _complete_unavailable_source_gates(return_validation, value, catalog=None):
     """Record every catalog gate the fixture's inspected sources cannot score."""
     available = set(value["pattern_observations"]["evidence_sources"])
-    catalog = return_validation.load_catalog()
+    catalog = catalog or return_validation.load_catalog()
     version = return_validation.resolve_return_schema_version(value)
     detected = {
         item["pattern_id"]
@@ -219,11 +220,11 @@ def _complete_unavailable_source_gates(return_validation, value):
     } for pattern_id, entry in sorted(catalog.entries.items())
         if entry.observable and pattern_id not in detected and
         (entry.absence_evaluable_from
-         if version == return_validation.RETURN_SCHEMA_VERSION
+         if version in return_validation.OUTCOME_GATE_RETURN_SCHEMA_VERSIONS
          else entry.evaluable_from) is not None and
         not return_validation.qualifying_evidence_groups(
             (entry.absence_evaluable_from
-             if version == return_validation.RETURN_SCHEMA_VERSION
+             if version in return_validation.OUTCOME_GATE_RETURN_SCHEMA_VERSIONS
              else entry.evaluable_from),
             available)]
     return value
@@ -344,7 +345,7 @@ def test_return_schema_reads_every_supported_version(
     return_validation.validate_batch([value])
 
 
-@pytest.mark.parametrize("version", [0, 4, True, "3"])
+@pytest.mark.parametrize("version", [0, 6, True, "5"])
 def test_return_schema_rejects_unknown_or_wrong_typed_versions(
         return_validation, version):
     value = _return(return_schema_version=version)
@@ -615,6 +616,12 @@ def test_slides_only_return_requires_verbal_layer_patterns_not_evaluable(
             observations["patterns_detected"] +
             observations["antipatterns_detected"]):
         detection["evidence_source"] = "static_slides"
+    observations["antipatterns_detected"] = []
+    observations["pattern_score"] = {
+        "patterns_used": 1,
+        "antipatterns_detected": 0,
+        "score": 1,
+    }
     _complete_unavailable_source_gates(return_validation, value)
     not_evaluable = {
         item["pattern_id"]: item
@@ -855,6 +862,12 @@ def test_corrected_pdf_only_return_is_backed_by_claimed_talk(
             observations["patterns_detected"] +
             observations["antipatterns_detected"]):
         detection["evidence_source"] = "static_slides"
+    observations["antipatterns_detected"] = []
+    observations["pattern_score"] = {
+        "patterns_used": 1,
+        "antipatterns_detected": 0,
+        "score": 1,
+    }
     _complete_unavailable_source_gates(return_validation, value)
     return_validation.validate_batch([value])
     talk = _claimed_talk(
@@ -1180,8 +1193,13 @@ def test_v2_strong_tier_replays_but_is_not_current_scoring(
     assessment = return_validation.assess_scoring_generation(value, catalog)
 
     assert assessment.current is False
-    assert assessment.reasons == (
-        "strong_gate_unsatisfied:traveling-highlights",)
+    assert "return_schema_precedes_source_locations" in assessment.reasons
+    assert "strong_gate_unsatisfied:traveling-highlights" in assessment.reasons
+    assert any(
+        reason.startswith("absence_gate_unsatisfied:")
+        for reason in assessment.reasons
+    )
+    assert assessment.reasons == tuple(sorted(assessment.reasons))
 
 
 def test_v3_undetected_canary_requires_not_evaluable_when_absence_is_unproven(
@@ -1196,10 +1214,10 @@ def test_v3_undetected_canary_requires_not_evaluable_when_absence_is_unproven(
     _complete_unavailable_source_gates(return_validation, value)
     value["pattern_observations"]["not_evaluable"] = [
         item for item in value["pattern_observations"]["not_evaluable"]
-        if item["pattern_id"] != "traveling-highlights"
+        if item["pattern_id"] != "flyover"
     ]
 
-    assert "traveling-highlights" in _error(return_validation, value)
+    assert "flyover" in _error(return_validation, value)
 
 
 def test_v3_positive_detection_precedes_the_absence_outcome(
@@ -1237,7 +1255,8 @@ def test_v3_explicit_not_evaluable_allowed_when_role_gate_is_satisfied(
     return_validation.validate_batch([value])
     assessment = return_validation.assess_scoring_generation(
         value, return_validation.load_catalog())
-    assert assessment.current
+    assert assessment.current is False
+    assert assessment.reasons == ("return_schema_precedes_source_locations",)
 
 
 def test_progressive_reveal_keeps_base_gate_defaults(return_validation):
@@ -1266,18 +1285,31 @@ def test_v3_comparison_requires_exact_evidence_sources_used(return_validation):
 
 def test_v3_nested_absence_gate_uses_global_sources_without_detection_proof(
         return_validation):
+    bundled = return_validation.load_catalog()
+    entries = dict(bundled.entries)
+    entries["coda"] = replace(
+        entries["coda"],
+        absence_evaluable_from=(
+            frozenset({"transcript", "static_slides"}),
+        ),
+    )
+    legacy_catalog = return_validation.PatternCatalog(
+        entries=entries,
+        fingerprint=bundled.fingerprint,
+    )
     value = _return(return_schema_version=3)
     value["pattern_observations"]["evidence_sources"] = [
         "transcript", "static_slides", "source_comparison"]
     _single_pattern(
         value, "narrative-arc", evidence_source="transcript")
-    _complete_unavailable_source_gates(return_validation, value)
+    _complete_unavailable_source_gates(
+        return_validation, value, legacy_catalog)
 
     assert "coda" not in {
         item["pattern_id"]
         for item in value["pattern_observations"]["not_evaluable"]
     }
-    return_validation.validate_batch([value])
+    return_validation.validate_batch([value], legacy_catalog)
 
     without_marker = copy.deepcopy(value)
     without_marker["pattern_observations"]["evidence_sources"].remove(
@@ -1285,7 +1317,7 @@ def test_v3_nested_absence_gate_uses_global_sources_without_detection_proof(
     for item in without_marker["pattern_observations"]["not_evaluable"]:
         if item["evidence_source"] == "source_comparison":
             item["evidence_source"] = "static_slides"
-    assert "coda" in _error(return_validation, without_marker)
+    assert "coda" in _error(return_validation, without_marker, legacy_catalog)
 
 
 def test_v3_comparison_accepts_one_exact_qualifying_pair(return_validation):
@@ -1326,7 +1358,7 @@ def test_evidence_sources_used_is_forbidden_on_noncomparison_detections(
 
 
 @pytest.mark.parametrize("version", [1, 2])
-def test_legacy_explicit_comparison_pair_is_validated_and_currentizable(
+def test_legacy_explicit_comparison_pair_is_replayable_but_not_current(
         return_validation, version):
     value = _return(return_schema_version=version)
     _single_pattern(
@@ -1339,7 +1371,8 @@ def test_legacy_explicit_comparison_pair_is_validated_and_currentizable(
     catalog = return_validation.validate_batch([value])
     assessment = return_validation.assess_scoring_generation(value, catalog)
 
-    assert assessment.current is True
+    assert assessment.current is False
+    assert assessment.reasons == ("return_schema_precedes_source_locations",)
     assert assessment.patterns_detected[0]["evidence_sources_used"] == [
         "static_slides", "native_deck"]
 
@@ -1381,7 +1414,7 @@ def test_legacy_comparison_ambiguity_replays_but_is_unbaselineable(
 
 
 @pytest.mark.parametrize("version", [1, 2])
-def test_legacy_comparison_infers_only_qualifying_pair(
+def test_legacy_comparison_infers_pair_but_remains_historical(
         return_validation, version):
     value = _return(return_schema_version=version)
     value["pattern_observations"]["evidence_sources"] = [
@@ -1396,7 +1429,13 @@ def test_legacy_comparison_infers_only_qualifying_pair(
     catalog = return_validation.validate_batch([value])
     assessment = return_validation.assess_scoring_generation(value, catalog)
 
-    assert assessment.current is True
+    assert assessment.current is False
+    assert "return_schema_precedes_source_locations" in assessment.reasons
+    assert any(
+        reason.startswith("absence_gate_unsatisfied:")
+        for reason in assessment.reasons
+    )
+    assert assessment.reasons == tuple(sorted(assessment.reasons))
     assert assessment.patterns_detected[0]["evidence_sources_used"] == [
         "static_slides", "native_deck"]
 
@@ -1473,12 +1512,22 @@ def test_safe_nested_gate_detection_requires_source_comparison_marker(
 
 def test_ungated_pattern_cannot_be_recorded_as_not_evaluable(return_validation):
     value = _return()
+    _single_pattern(value, "progressive-reveal", evidence_source="static_slides")
     value["pattern_observations"]["not_evaluable"] = [{
         "pattern_id": "narrative-arc",
         "evidence_source": "transcript",
         "reason": "No reason can override available transcript evidence.",
     }]
-    assert "has no source-aware evidence gate" in _error(return_validation, value)
+    catalog = return_validation.load_catalog()
+    catalog.entries["narrative-arc"] = replace(
+        catalog.entries["narrative-arc"],
+        evaluable_from=None,
+        strong_evaluable_from=None,
+        absence_evaluable_from=None,
+    )
+    with pytest.raises(return_validation.ReturnValidationError) as excinfo:
+        return_validation.validate_batch([value], catalog)
+    assert "has no source-aware evidence gate" in str(excinfo.value)
 
 
 def test_detected_pattern_cannot_also_be_not_evaluable(return_validation):
@@ -1859,11 +1908,11 @@ def test_validator_cli_emits_structured_report(tmp_path):
     assert report["returns"] == 1
     assert report["catalog_entries"] == 111
     assert report["return_schema_versions"] == {"2": 1}
-    assert report["pattern_scoring_schema_version"] == 3
+    assert report["pattern_scoring_schema_version"] == 5
     assert report["pattern_scoring_generations"] == [{
         "filename": "talk.md",
-        "status": "current",
-        "reasons": [],
+        "status": "legacy_unbaselineable",
+        "reasons": ["return_schema_precedes_source_locations"],
     }]
 
 
@@ -1883,7 +1932,10 @@ def test_validator_report_marks_replayable_legacy_return_unbaselineable(
     assert report["pattern_scoring_generations"] == [{
         "filename": "talk.md",
         "status": "legacy_unbaselineable",
-        "reasons": ["strong_gate_unsatisfied:traveling-highlights"],
+        "reasons": [
+            "return_schema_precedes_source_locations",
+            "strong_gate_unsatisfied:traveling-highlights",
+        ],
     }]
 
 

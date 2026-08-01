@@ -24,12 +24,24 @@ from pathlib import Path
 import re
 import sys
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+
+from ingress_contract import (
+    YOUTUBE_ID_RE,
+    is_youtube_url,
+    parse_google_drive_id,
+    parse_youtube_id,
+)
 
 from return_validation import (
+    PATTERN_SCORING_SCHEMA_VERSION,
     ReturnValidationError,
     VIDEO_EXTRACTION_SCHEMA_VERSION,
     validate_video_extraction_manifest,
+)
+from pattern_evidence import (
+    PATTERN_EVIDENCE_SCHEMA_VERSION,
+    assess_talk_artifact_capabilities,
+    validate_transcript_quality_for_owner,
 )
 from source_identity_matching import (
     EventAlias,
@@ -60,86 +72,7 @@ SLIDE_CONTRACT_CODES = frozenset({
     "slide_video_artifact_missing",
 })
 
-YOUTUBE_ID_RE = re.compile(r"[A-Za-z0-9_-]{11}")
 WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
-
-
-def parse_youtube_id(url: Any) -> str | None:
-    """Return an ID from supported YouTube URL forms, otherwise ``None``.
-
-    Supported forms are ``youtube.com/watch?v=...``, ``youtu.be/...``, and
-    ``youtube.com/{shorts,embed}/...``.  A syntactically YouTube-looking URL
-    with an invalid ID also returns ``None``; :func:`is_youtube_url` lets the
-    validator distinguish that corruption from an unrelated video provider.
-    """
-    if not isinstance(url, str) or not url.strip():
-        return None
-    candidate = url.strip()
-    if "://" not in candidate and (
-        candidate.startswith("youtube.com/")
-        or candidate.startswith("www.youtube.com/")
-        or candidate.startswith("m.youtube.com/")
-        or candidate.startswith("youtu.be/")
-    ):
-        candidate = "https://" + candidate
-
-    parsed = urlparse(candidate)
-    host = (parsed.hostname or "").casefold().rstrip(".")
-    if host.startswith("www."):
-        host = host[4:]
-    if host.startswith("m."):
-        host = host[2:]
-
-    video_id: str | None = None
-    if host == "youtu.be":
-        parts = [part for part in parsed.path.split("/") if part]
-        video_id = parts[0] if parts else None
-    elif host in {"youtube.com", "youtube-nocookie.com"}:
-        parts = [part for part in parsed.path.split("/") if part]
-        if parts == ["watch"]:
-            values = parse_qs(parsed.query).get("v", [])
-            video_id = values[0] if values else None
-        elif len(parts) >= 2 and parts[0] in {"shorts", "embed"}:
-            video_id = parts[1]
-
-    if video_id and YOUTUBE_ID_RE.fullmatch(video_id):
-        return video_id
-    return None
-
-
-def is_youtube_url(url: Any) -> bool:
-    """Whether ``url`` names a recognized YouTube host (valid ID or not)."""
-    if not isinstance(url, str) or not url.strip():
-        return False
-    candidate = url.strip()
-    if "://" not in candidate:
-        candidate = "https://" + candidate
-    host = (urlparse(candidate).hostname or "").casefold().rstrip(".")
-    return host in {
-        "youtube.com", "www.youtube.com", "m.youtube.com",
-        "youtu.be", "www.youtu.be", "youtube-nocookie.com",
-        "www.youtube-nocookie.com",
-    }
-
-
-def parse_google_drive_id(url: Any) -> str | None:
-    """Return a stable file/deck ID from common Google Drive URL forms."""
-    if not isinstance(url, str) or not url.strip():
-        return None
-    candidate = url.strip()
-    if "://" not in candidate:
-        candidate = "https://" + candidate
-    parsed = urlparse(candidate)
-    host = (parsed.hostname or "").casefold().rstrip(".")
-    if host not in {"drive.google.com", "docs.google.com"}:
-        return None
-    parts = [part for part in parsed.path.split("/") if part]
-    if len(parts) >= 3 and parts[0] in {"file", "presentation"} and parts[1] == "d":
-        # Published Docs URLs use /d/e/<publication-id>. The publication ID is
-        # stable for rejection matching even though it is not a Drive file ID.
-        return parts[3] if len(parts) >= 4 and parts[2] == "e" else parts[2]
-    values = parse_qs(parsed.query).get("id", [])
-    return values[0] if values and values[0] else None
 
 
 def _nonempty_string(value: Any) -> str | None:
@@ -162,8 +95,10 @@ def _json_value(value: Any) -> Any:
         return value
     if isinstance(value, float):
         return value if math.isfinite(value) else repr(value)
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         return [_json_value(item) for item in value]
+    if isinstance(value, (set, frozenset)):
+        return [_json_value(item) for item in sorted(value, key=repr)]
     if isinstance(value, dict):
         return {str(key): _json_value(item) for key, item in value.items()}
     return repr(value)
@@ -184,6 +119,7 @@ class VaultPreflight:
         self.youtube_ids: dict[int, str] = {}
         self.valid_relations: dict[int, tuple[str, str]] = {}
         self.event_aliases: set[EventAlias] = set()
+        self.artifact_capabilities: dict[int, dict[str, object]] = {}
 
     def add(
         self,
@@ -197,6 +133,7 @@ class VaultPreflight:
         expected: Any = None,
         actual: Any = None,
         artifact_path: Path | str | None = None,
+        capability_fact: Any = None,
     ) -> None:
         self.findings.append({
             "severity": severity,
@@ -211,6 +148,7 @@ class VaultPreflight:
                 str(Path(artifact_path).resolve(strict=False))
                 if artifact_path is not None else None
             ),
+            "capability_fact": _json_value(capability_fact),
         })
 
     def talk_add(
@@ -223,6 +161,17 @@ class VaultPreflight:
     ) -> None:
         talk = self.talks[index]
         filename = _nonempty_string(talk.get("filename"))
+        if (
+            severity == "warning"
+            and (
+                "artifact" in code
+                or "receipt" in code
+                or "reference" in code
+                or code.startswith("video_extraction_provenance_")
+            )
+            and "capability_fact" not in details
+        ):
+            details["capability_fact"] = self._capabilities(index)
         self.add(
             severity,
             code,
@@ -506,15 +455,57 @@ class VaultPreflight:
                     actual=active_url,
                 )
 
-    def _artifact_severity(self, talk: dict[str, Any], *, declared: bool) -> str:
-        # A completed record that explicitly declares an acquisition source has
-        # made an integrity claim.  A pending/processable record is expected to
-        # acquire the same artifact during ingress, so absence is actionable but
-        # not yet corruption.
-        if declared and talk.get("status") in COMPLETED_STATUSES:
+    def _is_current_artifact_generation(self, talk: dict[str, Any]) -> bool:
+        observations = talk.get("pattern_observations")
+        return (
+            talk.get("status") in COMPLETED_STATUSES
+            and talk.get("pattern_scoring_generation_status") == "current"
+            and talk.get("pattern_scoring_generation_reasons") == []
+            and talk.get("pattern_scoring_schema_version")
+                == PATTERN_SCORING_SCHEMA_VERSION
+            and isinstance(observations, dict)
+            and observations.get("evidence_schema_version")
+                == PATTERN_EVIDENCE_SCHEMA_VERSION
+        )
+
+    def _capabilities(self, index: int) -> dict[str, object]:
+        cached = self.artifact_capabilities.get(index)
+        if cached is not None:
+            return cached
+        source_dir = _nonempty_string(self.config.get("pptx_source_dir"))
+        source_roots = (
+            {"pptx_source_dir": source_dir} if source_dir is not None else None
+        )
+        assessed = assess_talk_artifact_capabilities(
+            self.talks[index],
+            vault_root=self.vault_root,
+            source_roots=source_roots,
+        )
+        self.artifact_capabilities[index] = assessed
+        return assessed
+
+    def _artifact_severity(
+        self, index: int, talk: dict[str, Any], *, declared: bool
+    ) -> str:
+        # Current v5 evidence is an integrity claim and remains fail-closed.
+        if declared and self._is_current_artifact_generation(talk):
             return "blocking"
-        if talk.get("status") == "processed":
-            return "blocking"
+        # A legacy completed record is migration input, not current proof. If
+        # another verified/repairable/remote lane can drive normalization and
+        # reprocessing, report actionable work without deadlocking that repair.
+        if talk.get("status") in COMPLETED_STATUSES:
+            capabilities = self._capabilities(index)
+            usable: set[object] = set()
+            for field in (
+                "verified_capabilities",
+                "repair_capabilities",
+                "acquisition_capabilities",
+            ):
+                values = capabilities.get(field)
+                if isinstance(values, (tuple, list, set, frozenset)):
+                    usable.update(values)
+            if not usable:
+                return "blocking"
         return "warning"
 
     def _validate_artifacts(self, index: int) -> None:
@@ -533,7 +524,7 @@ class VaultPreflight:
                 isinstance(transcript_source, str)
                 and transcript_source in TRANSCRIPT_SOURCES - {"none"}
             )
-            severity = self._artifact_severity(talk, declared=declared)
+            severity = self._artifact_severity(index, talk, declared=declared)
             if transcript_path is None:
                 self.talk_add(
                     index, severity, "transcript_reference_missing",
@@ -548,6 +539,9 @@ class VaultPreflight:
                     field="transcript_source", actual=transcript_source,
                     artifact_path=transcript_path,
                 )
+            else:
+                self._validate_transcript_quality(
+                    index, talk, transcript_path, severity)
 
         slide_source = talk.get("slide_source")
         if (
@@ -556,7 +550,7 @@ class VaultPreflight:
             or slide_source == "none"
         ):
             return
-        severity = self._artifact_severity(talk, declared=True)
+        severity = self._artifact_severity(index, talk, declared=True)
 
         if slide_source in {"pptx", "both"}:
             pptx_path = self._pptx_path(talk)
@@ -665,6 +659,66 @@ class VaultPreflight:
             return self.vault_root / "transcripts" / f"{youtube_id}.txt"
         return None
 
+    def _validate_transcript_quality(
+        self,
+        index: int,
+        talk: dict[str, Any],
+        transcript_path: Path,
+        severity: str,
+    ) -> None:
+        try:
+            text = transcript_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            self.talk_add(
+                index, severity, "transcript_artifact_unreadable",
+                "transcript artifact cannot be decoded as UTF-8 speech text",
+                artifact_path=transcript_path, actual=str(exc))
+            return
+        valid, reason, receipt_reason, receipt_bound = (
+            validate_transcript_quality_for_owner(
+                transcript_path,
+                text,
+                talk,
+                vault_root=self.vault_root,
+            )
+        )
+        if valid:
+            return
+        if not receipt_bound:
+            capabilities = self._capabilities(index)
+            self.talk_add(
+                index,
+                severity,
+                "transcript_quality_receipt_unverified",
+                "current transcript evidence requires a hash-current full "
+                "quality-policy and provenance receipt",
+                artifact_path=transcript_path,
+                actual={
+                    "receipt_reason": receipt_reason,
+                    "capabilities": capabilities,
+                },
+            )
+            return
+        if reason.startswith("receipt_owner_mismatch:"):
+            self.talk_add(
+                index,
+                "blocking",
+                "transcript_quality_provenance_mismatch",
+                "transcript quality provenance is not bound to the current "
+                "talk owner and exact source artifact",
+                artifact_path=transcript_path,
+                actual=reason.removeprefix("receipt_owner_mismatch: "),
+            )
+            return
+        self.talk_add(
+            index,
+            severity,
+            "transcript_artifact_quality_invalid",
+            "transcript artifact fails its exact receipt-bound quality contract",
+            artifact_path=transcript_path,
+            actual=reason,
+        )
+
     def _pptx_path(self, talk: dict[str, Any]) -> Path | None:
         value = _nonempty_string(talk.get("pptx_path"))
         if value is None:
@@ -725,7 +779,7 @@ class VaultPreflight:
             state = validate_video_extraction_manifest({"video_extraction": extraction})
         except ReturnValidationError as exc:
             self.talk_add(
-                index, severity, "video_extraction_provenance_invalid",
+                index, "blocking", "video_extraction_provenance_invalid",
                 "video extraction manifest violates the schema-v3 artifact contract",
                 field="structured_data.video_extraction",
                 expected="complete, internally consistent schema-v3 manifest",
@@ -751,7 +805,7 @@ class VaultPreflight:
                 errors.append("every artifact path must exist")
         if errors:
             self.talk_add(
-                index, severity, "video_extraction_provenance_invalid",
+                index, "blocking", "video_extraction_provenance_invalid",
                 "video extraction manifest is structurally or referentially invalid",
                 field="structured_data.video_extraction",
                 expected="complete schema-v3 manifest with existing source/artifacts",
@@ -760,7 +814,7 @@ class VaultPreflight:
             return
         if require_trusted and not state.trusted_slide_region:
             self.talk_add(
-                index, severity, "video_extraction_untrusted",
+                index, "blocking", "video_extraction_untrusted",
                 "video frames have not passed verified manual crop review",
                 field="structured_data.video_extraction.review_required",
                 expected=False,

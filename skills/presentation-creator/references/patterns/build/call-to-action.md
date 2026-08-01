@@ -7,12 +7,33 @@ phase_relevance:
   - content
   - publishing
 vault_dimensions: [4, 6, 9]
+evidence_channels: [timed_transcript, video]
 detection_signals:
   - "explicit imperative ask in the closing zone"
   - "asks are specific and immediately executable, not generic"
   - "asks are differentiated by audience action type (doer/supplier/influencer/innovator)"
   - "the ask is named, not implied"
-related_patterns: [sparkline, coda, mentor, the-big-why, foreshadowing]
+evaluable_from:
+  - transcript
+  - delivery_video
+strong_evaluable_from:
+  - transcript
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: purely-ceremonial-talk
+    description: "A complete transcript or delivery video establishes a purely ceremonial presentation whose purpose does not permit or call for audience action."
+applicability_evaluable_from:
+  - transcript
+  - delivery_video
+evidence_requirements:
+  - "The spoken source must cover the complete closing zone and locate explicit imperative asks that the audience could execute immediately."
+  - "A strong score must locate differentiated asks and the following New Bliss; a generic value statement or Q&A invitation is not an ask."
+not_evaluable_when:
+  - "The transcript or video does not cover the complete closing zone through the talk's literal end."
+  - "The available transcript lacks verified ordering or timing needed to place the candidate ask in the closing 15–25 percent."
+  - "The complete presentation purpose is unavailable, so the purely-ceremonial applicability condition cannot be assessed."
+related_patterns: [sparkline, coda, mentor, the-big-why, new-bliss]
 inverse_of: []
 difficulty: foundational
 ---
@@ -60,9 +81,13 @@ The vault should look for the imperative-ask cluster in the closing 15–25% of 
 The clearest absence-signal is a closing zone consisting only of "thanks", "questions", or a generic value-statement summary.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Multiple specific, immediately-executable asks differentiated by action-temperament type; pivot language clearly marks the structural transition; followed by a new-bliss future-state vision (not the talk's literal end)
-- Moderate signal (1 pt): A clear ask is present but not differentiated by action type, OR multiple asks but all addressed to a single audience type, OR specific ask but no new-bliss follow-up (talk ends on the to-do list)
-- Absent (0 pts): No identifiable ask in the closing zone; talk ends on a thank-you, a credentials slide, a Q&A invite, or a generic value statement
+- Strong signal: Multiple specific, immediately-executable asks differentiated by action-temperament type; pivot language clearly marks the structural transition; followed by a new-bliss future-state vision (not the talk's literal end)
+- Moderate signal: A clear ask is present but not differentiated by action type, OR multiple asks but all addressed to a single audience type, OR specific ask but no new-bliss follow-up (talk ends on the to-do list)
+- Absent: No identifiable ask in the closing zone; talk ends on a thank-you, a credentials slide, a Q&A invite, or a generic value statement
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 4 (Audience Interaction). Relates to Dimension 6 (Closing Pattern) as one of two named structural elements in the closing zone (alongside `coda` and `new-bliss`). Relates to Dimension 9 (Persuasion Techniques).

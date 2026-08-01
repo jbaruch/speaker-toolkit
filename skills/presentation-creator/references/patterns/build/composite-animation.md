@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - slides
 vault_dimensions: [13]
+evidence_channels: [slides, video]
 detection_signals:
   - "layered animations"
   - "simultaneous animation effects"
@@ -13,6 +14,10 @@ detection_signals:
 evaluable_from:
   - native_deck
   - delivery_video
+strong_evaluable_from:
+  - native_deck
+  - delivery_video
+absence_evaluable_from: null
 evidence_requirements:
   - "Evidence must show two or more effects running concurrently on one element or on aligned copies perceived as one element."
   - "The timing and compositing must be observable at the claimed pivotal moment."
@@ -49,15 +54,13 @@ Avoid using Composite Animation as a general-purpose embellishment. If you find 
 When scoring talks, look for animation effects that appear custom or unusual — motion that does not match any standard animation preset. Simultaneous transformations on a single element (e.g., an element that fades, scales, and rotates at the same time) are a strong indicator. The effect should appear only at key moments, not throughout the deck.
 
 ## Scoring Criteria
-- Strong signal (2 pts): One or two instances of clearly composite animation effects at pivotal moments, executed smoothly with precise timing
-- Moderate signal (1 pt): Attempted layered animations that are slightly mistimed or used on non-critical content
-- Absent (0 pts): Only standard, single-layer animations used throughout the presentation
+- Strong signal: One or two instances of clearly composite animation effects at pivotal moments, executed smoothly with precise timing
+- Moderate signal: Attempted layered animations that are slightly mistimed or used on non-critical content
+- Absent: Only standard, single-layer animations used throughout the presentation
 
 ## Evidence Gate
-Static slides are not evidence of Composite Animation, even when a still looks custom or
-adjacent pages show successive states. Score only when native animation metadata or the
-delivered motion shows concurrent effects on the same perceived element. Ordinary
-progressive reveals and separate sequential transitions do not qualify.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 13 (Visual Polish and Craft): Composite Animation is a direct expression of visual craft.

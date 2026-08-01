@@ -5,7 +5,7 @@ gate before ingress selection or re-analysis. It accepts either the vault root
 or `tracking-database.json`, performs no network access and makes no writes:
 
 ```bash
-python3 skills/vault-ingress/scripts/preflight-vault.py \
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/preflight-vault.py" \
   ~/.claude/rhetoric-knowledge-vault/
 ```
 

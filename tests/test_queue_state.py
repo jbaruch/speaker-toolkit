@@ -5,13 +5,17 @@ network or reads subagent returns.
 """
 
 import copy
+import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+from pptx import Presentation
+from pypdf import PdfWriter
 
 
 SCRIPT = (
@@ -24,7 +28,14 @@ SCRIPT = (
 NOW = "2026-07-31T18:00:00+00:00"
 
 
-def _talk(video_id, *, status="pending", filename=None, video=True) -> dict[str, object]:
+def _talk(
+    video_id,
+    *,
+    status="pending",
+    filename=None,
+    video=True,
+    youtube_identity=True,
+) -> dict[str, object]:
     filename = filename or f"playlist-{video_id}.md"
     return {
         "filename": filename,
@@ -33,7 +44,7 @@ def _talk(video_id, *, status="pending", filename=None, video=True) -> dict[str,
         "video_url": (
             f"https://www.youtube.com/watch?v={video_id}" if video else ""
         ),
-        "youtube_id": video_id,
+        "youtube_id": video_id if youtube_identity else None,
     }
 
 
@@ -63,13 +74,161 @@ def _scored_talk(
     return talk
 
 
-def _write_db(tmp_path, talks):
+def _write_db(tmp_path, talks, *, config=None):
+    transcripts = tmp_path / "transcripts"
+    transcripts.mkdir(exist_ok=True)
+    for talk in talks:
+        if talk.get("pattern_scoring_schema_version") != 5:
+            continue
+        observations = talk.get("pattern_observations")
+        if not isinstance(observations, dict):
+            continue
+        artifact = transcripts / f"{Path(str(talk['filename'])).stem}.txt"
+        content = ("synthetic evidence " * 225).strip() + "\n"
+        artifact.write_text(content, encoding="utf-8")
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        relative = artifact.relative_to(tmp_path).as_posix()
+        quality = artifact.with_suffix(".quality.json")
+        quality.write_text(
+            json.dumps({
+                "schema_version": 1,
+                "transcript_sha256": digest,
+                "policy": {
+                    "schema_version": 1,
+                    "min_words": 400,
+                    "duration_seconds": None,
+                },
+                "provenance": {"kind": "fixed_default"},
+            }),
+            encoding="utf-8",
+        )
+        quality_digest = hashlib.sha256(quality.read_bytes()).hexdigest()
+        quality_relative = quality.relative_to(tmp_path).as_posix()
+        talk.setdefault("transcript_path", relative)
+        observations.setdefault("evidence_schema_version", 2)
+        observations.setdefault("evidence_sources", ["transcript"])
+        observations.setdefault(
+            "source_inspection",
+            [
+                {
+                    "source": "transcript",
+                    "line_ranges": [[1, 1]],
+                    "line_count": 1,
+                    "coverage_complete": True,
+                    "artifact_root": "vault",
+                    "artifact_path": relative,
+                    "artifact_sha256": digest,
+                    "quality_artifact_root": "vault",
+                    "quality_artifact_path": quality_relative,
+                    "quality_artifact_sha256": quality_digest,
+                }
+            ],
+        )
+        score = observations.get("pattern_score", 0)
+        patterns = [
+            {
+                "pattern_id": f"fixture-pattern-{index}",
+                "confidence": "moderate",
+                "evidence_source": "transcript",
+                "evidence": "Synthetic source-located fixture evidence.",
+                "evidence_citations": [{
+                    "source": "transcript",
+                    "channel": "transcript",
+                    "quote": "synthetic evidence synthetic evidence",
+                    "line_start": 1,
+                    "line_end": 1,
+                    "artifact_root": "vault",
+                    "artifact_path": relative,
+                    "artifact_sha256": digest,
+                    "quality_artifact_root": "vault",
+                    "quality_artifact_path": quality_relative,
+                    "quality_artifact_sha256": quality_digest,
+                }],
+            }
+            for index in range(max(int(score), 0))
+        ]
+        antipatterns = [
+            {
+                "pattern_id": f"fixture-antipattern-{index}",
+                "confidence": "moderate",
+                "evidence_source": "transcript",
+                "evidence": "Synthetic source-located fixture evidence.",
+                "evidence_citations": [{
+                    "source": "transcript",
+                    "channel": "transcript",
+                    "quote": "synthetic evidence synthetic evidence",
+                    "line_start": 1,
+                    "line_end": 1,
+                    "artifact_root": "vault",
+                    "artifact_path": relative,
+                    "artifact_sha256": digest,
+                    "quality_artifact_root": "vault",
+                    "quality_artifact_path": quality_relative,
+                    "quality_artifact_sha256": quality_digest,
+                }],
+            }
+            for index in range(max(-int(score), 0))
+        ]
+        observations.setdefault("patterns_detected", patterns)
+        observations.setdefault("antipatterns_detected", antipatterns)
+        observations.setdefault("applicability_assessments", [])
+        observations.setdefault("not_evaluable", [])
+        outcomes = [
+            {"pattern_id": item["pattern_id"], "outcome": "detected"}
+            for item in patterns + antipatterns
+        ]
+        outcomes.sort(key=lambda item: item["pattern_id"])
+        observations.setdefault("pattern_outcomes", outcomes)
+        fingerprint = talk.get("pattern_catalog_fingerprint")
+        if fingerprint is not None:
+            payload = {
+                "pattern_scoring_schema_version": 5,
+                "pattern_catalog_fingerprint": fingerprint,
+                "opportunity_states": [
+                    {
+                        "pattern_id": item["pattern_id"],
+                        "opportunity_state": "evaluable",
+                    }
+                    for item in outcomes
+                ],
+            }
+            observations.setdefault(
+                "opportunity_coverage_identity",
+                hashlib.sha256(json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode("utf-8")).hexdigest(),
+            )
     path = tmp_path / "tracking-database.json"
     path.write_text(
-        json.dumps({"config": {}, "talks": talks}, indent=2),
+        json.dumps({"config": config or {}, "talks": talks}, indent=2),
         encoding="utf-8",
     )
     return path
+
+
+def _write_verified_transcript(tmp_path, name="talk"):
+    transcript = tmp_path / "transcripts" / f"{name}.txt"
+    transcript.parent.mkdir(exist_ok=True)
+    text = " ".join(["substantive transcript evidence"] * 200)
+    transcript.write_text(text, encoding="utf-8")
+    transcript.with_suffix(".quality.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "transcript_sha256": hashlib.sha256(
+                text.encode("utf-8")).hexdigest(),
+            "policy": {
+                "schema_version": 1,
+                "min_words": 400,
+                "duration_seconds": None,
+            },
+            "provenance": {"kind": "fixed_default"},
+        }),
+        encoding="utf-8",
+    )
+    return transcript
 
 
 def _read_db(path):
@@ -105,9 +264,15 @@ def test_claim_recovers_the_two_stranded_transcript_statuses(tmp_path):
     talks = [
         _talk("eixm_f7Jpdc", status="skipped_no_transcript"),
         _talk("QS-_4k7o7A4", status="skipped_no_transcript"),
-        _talk("abcdefghijk", status="skipped_no_video", video=False),
+        _talk(
+            "abcdefghijk", status="skipped_no_video", video=False,
+            youtube_identity=False, filename="catalog-no-source.md",
+        ),
         _talk("lmnopqrstuv", status="skipped_duplicate"),
-        _talk("wxyzABCDEF0", status="pending", video=False),
+        _talk(
+            "wxyzABCDEF0", status="pending", video=False,
+            youtube_identity=False, filename="catalog-pending.md",
+        ),
     ]
     path = _write_db(tmp_path, talks)
 
@@ -124,9 +289,9 @@ def test_claim_recovers_the_two_stranded_transcript_statuses(tmp_path):
     records = {talk["filename"]: talk for talk in _read_db(path)["talks"]}
     assert records["playlist-eixm_f7Jpdc.md"]["status"] == "reprocessing-inflight"
     assert records["playlist-QS-_4k7o7A4.md"]["status"] == "reprocessing-inflight"
-    assert records["playlist-abcdefghijk.md"]["status"] == "skipped_no_sources"
+    assert records["catalog-no-source.md"]["status"] == "skipped_no_sources"
     assert records["playlist-lmnopqrstuv.md"]["status"] == "skipped_duplicate"
-    assert records["playlist-wxyzABCDEF0.md"]["status"] == "pending"
+    assert records["catalog-pending.md"]["status"] == "pending"
     assert not [item for item in tmp_path.iterdir() if item.name.endswith(".partial")]
 
 
@@ -150,19 +315,41 @@ def test_legacy_no_video_status_with_video_is_normalized_and_claimed(tmp_path):
     assert payload["claimed"][0]["previous_status"] == "pending"
 
 
-@pytest.mark.parametrize("source_fields,expected_capability", [
-    ({"slides_url": "https://drive.google.com/open?id=deck"}, "slides"),
-    ({"pptx_path": "decks/talk.pptx"}, "slides"),
-    ({"slides_local_path": "slides/talk.pdf"}, "slides"),
-    ({"transcript_path": "transcripts/talk.txt"}, "transcript"),
+@pytest.mark.parametrize("source_kind,expected_capability", [
+    ("remote_slides", "slides"),
+    ("pptx", "slides"),
+    ("pdf", "slides"),
+    ("transcript", "transcript"),
 ])
 def test_legacy_no_video_talk_with_nonvideo_source_is_claimable(
-        tmp_path, source_fields, expected_capability):
+        tmp_path, source_kind, expected_capability):
     talk = _talk(
         "abcdefghijk", status="skipped_no_video", video=False,
+        youtube_identity=False,
         filename="source-only.md",
     )
-    talk.update(source_fields)
+    if source_kind == "remote_slides":
+        talk["slides_url"] = "https://drive.google.com/open?id=deck"
+    elif source_kind == "pptx":
+        deck = tmp_path / "decks" / "talk.pptx"
+        deck.parent.mkdir()
+        presentation = Presentation()
+        presentation.slides.add_slide(presentation.slide_layouts[6])
+        presentation.save(deck)
+        talk["pptx_path"] = "decks/talk.pptx"
+    elif source_kind == "pdf":
+        pdf = tmp_path / "slides" / "talk.pdf"
+        pdf.parent.mkdir()
+        writer = PdfWriter()
+        writer.add_blank_page(width=640, height=480)
+        with pdf.open("wb") as stream:
+            writer.write(stream)
+        talk["slides_local_path"] = "slides/talk.pdf"
+    else:
+        transcript = tmp_path / "transcripts" / "abcdefghijk.txt"
+        transcript.parent.mkdir()
+        transcript.write_text(" ".join(["synthetic"] * 450), encoding="utf-8")
+        talk["transcript_path"] = "transcripts/abcdefghijk.txt"
     path = _write_db(tmp_path, [talk])
 
     result = _claim(path)
@@ -180,11 +367,269 @@ def test_legacy_no_video_talk_with_nonvideo_source_is_claimable(
     assert payload["claimed"][0]["previous_status"] == "pending"
 
 
+@pytest.mark.parametrize(
+    "broken_field",
+    ["pptx_path", "slides_local_path", "transcript_path"],
+)
+def test_broken_local_path_is_not_a_processable_capability(
+    tmp_path,
+    broken_field,
+):
+    talk = _talk(
+        "abcdefghijk",
+        status="skipped_no_video",
+        video=False,
+        youtube_identity=False,
+        filename="broken-local.md",
+    )
+    talk[broken_field] = {
+        "pptx_path": "missing/source.pptx",
+        "slides_local_path": "missing/source.pdf",
+        "transcript_path": "transcripts/source.txt",
+    }[broken_field]
+    path = _write_db(tmp_path, [talk])
+
+    result = _claim(path)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["normalizations"] == [
+        {
+            "filename": "broken-local.md",
+            "previous_status": "skipped_no_video",
+            "status": "skipped_no_sources",
+            "video_present": False,
+            "source_capabilities": [],
+        }
+    ]
+    assert payload["claimed"] == []
+
+
+def test_low_quality_transcript_is_not_a_processable_capability(tmp_path):
+    transcript = tmp_path / "transcripts" / "abcdefghijk.txt"
+    transcript.parent.mkdir()
+    transcript.write_text("too short to be a talk", encoding="utf-8")
+    talk = _talk(
+        "abcdefghijk",
+        status="skipped_no_video",
+        video=False,
+        youtube_identity=False,
+        filename="short-transcript.md",
+    )
+    talk["transcript_path"] = "transcripts/abcdefghijk.txt"
+    path = _write_db(tmp_path, [talk])
+
+    result = _claim(path)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["normalizations"][0]["status"] == "skipped_no_sources"
+    assert payload["normalizations"][0]["source_capabilities"] == []
+    assert payload["claimed"] == []
+
+
+def test_symlinked_transcript_is_not_a_processable_capability(tmp_path):
+    source = tmp_path / "external-transcript.txt"
+    source.write_text(" ".join(["synthetic"] * 450), encoding="utf-8")
+    transcript = tmp_path / "transcripts" / "abcdefghijk.txt"
+    transcript.parent.mkdir()
+    transcript.symlink_to(source)
+    talk = _talk(
+        "abcdefghijk",
+        status="skipped_no_video",
+        video=False,
+        youtube_identity=False,
+        filename="symlinked-transcript.md",
+    )
+    talk["transcript_path"] = "transcripts/abcdefghijk.txt"
+    path = _write_db(tmp_path, [talk])
+
+    result = _claim(path)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["normalizations"][0]["status"] == "skipped_no_sources"
+    assert payload["normalizations"][0]["source_capabilities"] == []
+    assert payload["claimed"] == []
+
+
+def test_local_artifact_path_escape_is_not_a_processable_capability(tmp_path):
+    outside = tmp_path.parent / f"{tmp_path.name}-outside.pptx"
+    presentation = Presentation()
+    presentation.slides.add_slide(presentation.slide_layouts[6])
+    presentation.save(outside)
+    talk = _talk(
+        "abcdefghijk",
+        status="skipped_no_video",
+        video=False,
+        youtube_identity=False,
+        filename="escaped-deck.md",
+    )
+    talk["pptx_path"] = f"../{outside.name}"
+    path = _write_db(tmp_path, [talk])
+
+    result = _claim(path)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["normalizations"][0]["status"] == "skipped_no_sources"
+    assert payload["normalizations"][0]["source_capabilities"] == []
+    assert payload["claimed"] == []
+
+
+def test_invalid_transcript_does_not_hide_valid_deck_from_queue(tmp_path):
+    deck = tmp_path / "decks" / "talk.pptx"
+    deck.parent.mkdir()
+    presentation = Presentation()
+    presentation.slides.add_slide(presentation.slide_layouts[6])
+    presentation.save(deck)
+    talk = _talk(
+        "abcdefghijk",
+        status="skipped_no_video",
+        video=False,
+        youtube_identity=False,
+        filename="deck-survives.md",
+    )
+    talk.update({
+        "transcript_path": "../bad.txt",
+        "pptx_path": "decks/talk.pptx",
+    })
+    path = _write_db(tmp_path, [talk])
+
+    result = _claim(path)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["normalizations"][0]["source_capabilities"] == ["slides"]
+    assert payload["claimed"][0]["filename"] == "deck-survives.md"
+
+
+def test_invalid_deck_does_not_hide_valid_transcript_from_queue(tmp_path):
+    transcript = _write_verified_transcript(tmp_path)
+    talk = _talk(
+        "abcdefghijk",
+        status="skipped_no_video",
+        video=False,
+        youtube_identity=False,
+        filename="transcript-survives.md",
+    )
+    talk.update({
+        "transcript_path": transcript.relative_to(tmp_path).as_posix(),
+        "transcript_source": "manual",
+        "pptx_path": "../bad.pptx",
+    })
+    path = _write_db(tmp_path, [talk])
+
+    result = _claim(path)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["normalizations"][0]["source_capabilities"] == [
+        "transcript"]
+    assert payload["claimed"][0]["filename"] == "transcript-survives.md"
+
+
+def test_configured_pptx_root_is_used_for_queue_eligibility(tmp_path):
+    source_root = tmp_path / "configured-pptx"
+    source_root.mkdir()
+    deck = source_root / "talk.pptx"
+    presentation = Presentation()
+    presentation.slides.add_slide(presentation.slide_layouts[6])
+    presentation.save(deck)
+    talk = _talk(
+        "abcdefghijk",
+        status="skipped_no_video",
+        video=False,
+        youtube_identity=False,
+        filename="configured-pptx.md",
+    )
+    talk["pptx_path"] = deck.name
+    path = _write_db(
+        tmp_path,
+        [talk],
+        config={"pptx_source_dir": str(source_root)},
+    )
+
+    result = _claim(path)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["normalizations"][0]["source_capabilities"] == ["slides"]
+    assert payload["claimed"][0]["filename"] == "configured-pptx.md"
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="local video capability requires ffmpeg and ffprobe",
+)
+def test_readable_identity_bound_local_video_is_claimable(tmp_path):
+    video = tmp_path / "videos" / "abcdefghijk.mp4"
+    video.parent.mkdir()
+    created = subprocess.run(
+        [
+            "ffmpeg",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=160x90:r=1",
+            "-t",
+            "1",
+            "-pix_fmt",
+            "yuv420p",
+            "-y",
+            str(video),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert created.returncode == 0, created.stderr
+    talk = _talk(
+        "abcdefghijk",
+        status="skipped_no_video",
+        video=False,
+        youtube_identity=False,
+        filename="local-video.md",
+    )
+    talk["video_local_path"] = "videos/abcdefghijk.mp4"
+    path = _write_db(tmp_path, [talk])
+
+    result = _claim(path)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["normalizations"][0]["source_capabilities"] == ["video"]
+    assert payload["claimed"][0]["filename"] == "local-video.md"
+
+
+def test_retry_status_with_only_a_missing_local_artifact_is_not_claimed(tmp_path):
+    talk = _talk(
+        "abcdefghijk",
+        status="skipped_download_failed",
+        video=False,
+        youtube_identity=False,
+        filename="retry-missing.md",
+    )
+    talk["transcript_path"] = "transcripts/abcdefghijk.txt"
+    path = _write_db(tmp_path, [talk])
+
+    result = _claim(path)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["claimed"] == []
+    assert payload["remaining_eligible"] == 0
+    assert _read_db(path)["talks"][0]["status"] == "skipped_download_failed"
+
+
 def test_manual_provenance_label_without_artifact_is_not_a_capability(tmp_path):
     talk = _talk(
         "abcdefghijk",
         status="skipped_no_video",
         video=False,
+        youtube_identity=False,
         filename="label-only.md",
     )
     talk["transcript_source"] = "manual"
@@ -204,7 +649,7 @@ def test_manual_provenance_label_without_artifact_is_not_a_capability(tmp_path):
     assert payload["claimed"] == []
 
 
-def test_normalize_requeues_every_noncurrent_pattern_generation_atomically(
+def test_normalize_requeues_every_noncurrent_or_stale_generation_atomically(
         tmp_path, return_validation):
     fingerprint = return_validation.load_catalog().fingerprint
     scoring_schema = return_validation.PATTERN_SCORING_SCHEMA_VERSION
@@ -247,7 +692,7 @@ def test_normalize_requeues_every_noncurrent_pattern_generation_atomically(
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["changed"] == 5
+    assert payload["changed"] == 6
     generation_changes = {
         item["filename"]: item
         for item in payload["normalizations"]
@@ -257,6 +702,7 @@ def test_normalize_requeues_every_noncurrent_pattern_generation_atomically(
         filename: item["reason_codes"]
         for filename, item in generation_changes.items()
     } == {
+        "current-old-date.md": ["persisted_evidence_stale"],
         "legacy-recent.md": ["legacy_generation"],
         "old-catalog-recent.md": ["catalog_fingerprint_mismatch"],
         "old-schema-recent.md": ["scoring_schema_version_mismatch"],
@@ -270,8 +716,6 @@ def test_normalize_requeues_every_noncurrent_pattern_generation_atomically(
         for filename, item in generation_changes.items()
     }
     records = {talk["filename"]: talk for talk in _read_db(path)["talks"]}
-    assert records["current-old-date.md"]["status"] == "processed"
-    assert "reprocess_reason" not in records["current-old-date.md"]
     for filename in generation_changes:
         assert records[filename]["status"] == "needs-reprocessing"
         assert records[filename]["reprocess_reason"] == \
@@ -308,6 +752,44 @@ def test_normalize_preserves_ordered_generation_reasons(tmp_path, return_validat
         "pattern_scoring_generation:catalog_fingerprint_mismatch+"
         "scoring_schema_version_mismatch"
     )
+
+
+@pytest.mark.parametrize("drift", ["missing", "digest_mismatch"])
+def test_normalize_requeues_current_generation_when_evidence_artifact_drifts(
+    tmp_path,
+    return_validation,
+    drift,
+):
+    fingerprint = return_validation.load_catalog().fingerprint
+    talk = _scored_talk(
+        "GGGGGGGGGGG",
+        filename="artifact-drift.md",
+        fingerprint=fingerprint,
+        scoring_schema=return_validation.PATTERN_SCORING_SCHEMA_VERSION,
+    )
+    path = _write_db(tmp_path, [talk])
+    stored = _read_db(path)["talks"][0]
+    relative = stored["pattern_observations"]["source_inspection"][0][
+        "artifact_path"
+    ]
+    artifact = tmp_path / relative
+    if drift == "missing":
+        artifact.unlink()
+    else:
+        artifact.write_text("Replacement with a different digest.\n", encoding="utf-8")
+
+    result = _run(path, "normalize")
+
+    assert result.returncode == 0, result.stderr
+    change = json.loads(result.stdout)["normalizations"][0]
+    assert change["filename"] == "artifact-drift.md"
+    assert change["reason_codes"] == ["persisted_evidence_stale"]
+    assert any(drift in detail for detail in change["evidence_freshness_details"])
+    assert change["reprocess_reason"] == (
+        "pattern_scoring_generation:persisted_evidence_stale"
+    )
+    repaired = _read_db(path)["talks"][0]
+    assert repaired["status"] == "needs-reprocessing"
 
 
 @pytest.mark.parametrize(
@@ -480,10 +962,12 @@ def test_completed_claim_status_drift_rejects_unowned_reprocess_reason(
 def test_legacy_true_no_source_talk_is_the_only_one_skipped(tmp_path):
     no_source = _talk(
         "abcdefghijk", status="skipped_no_transcript", video=False,
+        youtube_identity=False,
         filename="no-source.md",
     )
     slides_only = _talk(
         "lmnopqrstuv", status="skipped_no_transcript", video=False,
+        youtube_identity=False,
         filename="slides-only.md",
     )
     slides_only["google_drive_id"] = "drive-artifact"
@@ -526,7 +1010,7 @@ def test_claim_is_idempotent_for_an_existing_run_and_batch(tmp_path):
     assert path.read_bytes() == first_bytes
 
 
-def test_new_claim_is_v3_with_one_immutable_batch_baseline(tmp_path):
+def test_new_claim_is_v5_with_one_immutable_batch_baseline(tmp_path):
     talks = [_talk("eg6gqvUFh6Q"), _talk("iPYc7LCH608")]
     path = _write_db(tmp_path, talks)
 
@@ -534,13 +1018,58 @@ def test_new_claim_is_v3_with_one_immutable_batch_baseline(tmp_path):
 
     assert result.returncode == 0, result.stderr
     claims = json.loads(result.stdout)["claimed"]
-    assert {claim["schema_version"] for claim in claims} == {3}
-    assert {claim["required_return_schema_version"] for claim in claims} == {3}
+    assert {claim["schema_version"] for claim in claims} == {5}
+    assert {claim["required_return_schema_version"] for claim in claims} == {5}
     assert claims[0]["adherence_baseline"] == claims[1]["adherence_baseline"]
     baseline = claims[0]["adherence_baseline"]
     assert baseline["as_of"] == NOW
     assert baseline["excluded_filenames"] == sorted(
         talk["filename"] for talk in talks)
+
+
+def test_inspect_dual_reads_a_schema_v3_adherence_claim(tmp_path):
+    path = _write_db(tmp_path, [_talk("eg6gqvUFh6Q")])
+    claimed = _claim(path)
+    assert claimed.returncode == 0, claimed.stderr
+    database = _read_db(path)
+    claim = database["talks"][0]["_queue_claim"]
+    claim["schema_version"] = 3
+    claim["required_return_schema_version"] = 3
+    baseline = claim["adherence_baseline"]
+    baseline["schema_version"] = 1
+    for field in (
+        "eligible_talk_count",
+        "opportunity_coverage_identity",
+        "raw_score_comparison_status",
+        "raw_score_comparison_reason",
+    ):
+        baseline.pop(field, None)
+    path.write_text(json.dumps(database))
+    before = path.read_bytes()
+
+    inspected = _run(path, "inspect", "--run-id", "run-1")
+
+    assert inspected.returncode == 0, inspected.stderr
+    assert json.loads(inspected.stdout)["claims"][0]["schema_version"] == 3
+    assert path.read_bytes() == before
+
+
+def test_schema_v5_claim_cannot_request_a_schema_v3_return(tmp_path):
+    path = _write_db(tmp_path, [_talk("eg6gqvUFh6Q")])
+    claimed = _claim(path)
+    assert claimed.returncode == 0, claimed.stderr
+    database = _read_db(path)
+    database["talks"][0]["_queue_claim"][
+        "required_return_schema_version"
+    ] = 3
+    path.write_text(json.dumps(database))
+    before = path.read_bytes()
+
+    inspected = _run(path, "inspect", "--run-id", "run-1")
+
+    assert inspected.returncode == 2
+    assert "must equal its claim schema version 5" in inspected.stderr
+    assert path.read_bytes() == before
 
 
 def test_claim_baseline_failure_is_copy_on_write(tmp_path):
@@ -604,7 +1133,7 @@ def test_same_run_and_batch_reclaims_a_stale_recovered_generation(tmp_path):
     assert talk["reprocess_generation"] == 2
     assert talk["_queue_claim"]["reprocess_generation"] == 2
     archived = talk["_queue_claim_history"][0]
-    assert archived["schema_version"] == 3
+    assert archived["schema_version"] == 5
     assert archived["adherence_baseline"] == first_claim["adherence_baseline"]
     assert archived["state"] == "stale_recovered"
     assert archived["released_at"] == "2026-07-31T18:00:00+00:00"
@@ -630,7 +1159,7 @@ def test_same_run_and_batch_reclaims_a_stale_recovered_generation(tmp_path):
     assert path.read_bytes() == retried_bytes
 
 
-def test_v3_batch_epoch_can_span_current_and_history_after_member_reclaim(
+def test_v4_batch_epoch_can_span_current_and_history_after_member_reclaim(
         tmp_path):
     path = _write_db(
         tmp_path,
@@ -677,7 +1206,7 @@ def test_v3_batch_epoch_can_span_current_and_history_after_member_reclaim(
     assert result.returncode == 0, result.stderr
 
 
-def test_v3_current_batch_cannot_split_claimed_at(tmp_path):
+def test_v4_current_batch_cannot_split_claimed_at(tmp_path):
     path = _write_db(
         tmp_path,
         [_talk("eg6gqvUFh6Q"), _talk("iPYc7LCH608")],
@@ -1029,7 +1558,10 @@ def test_malformed_claim_timestamp_rejects(tmp_path):
     "talk",
     [
         _talk("eg6gqvUFh6Q", status="skipped_duplicate"),
-        _talk("iPYc7LCH608", status="pending", video=False),
+        _talk(
+            "iPYc7LCH608", status="pending", video=False,
+            youtube_identity=False, filename="catalog-pending.md",
+        ),
     ],
 )
 def test_explicit_claim_rejects_invalid_transitions(tmp_path, talk):

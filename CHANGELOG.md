@@ -1,209 +1,178 @@
 # Changelog
 
-## 0.19.0 — 2026-07-31
+## 0.19.0 — 2026-08-01
 
-### feat(vault-ingress) — make source identity and evidence scope enforceable
+### feat(vault-ingress) — make reparses exhaustive, source-bound, and freshness-bound
 
-The ingress pipeline now treats provenance as a contract instead of descriptive
-metadata. A shared validator binds every return to its queue generation, verifies
-source capability and evidence scope, and rejects stale, malformed, or
-cross-source claims before persistence. Queue leases are recoverable, claims can
-be driven by usable video, slide, or transcript evidence, and guarded repair
-plans can correct source metadata without changing unrelated talk fields.
+This release incorporates the official 0.18.74 source-located evidence contract
+as its base: observable detections require validated transcript, slide, video,
+or allowlisted metadata citations; hash-bound transcript timing remains
+optional; and the ten process-only entries moved out of automatic observation
+remain unscored.
 
-Video extraction now separates full-frame context from a manually verified slide
-region. Only a schema-v3 provenance manifest tied to the source video and the
-verified crop can promote a video-derived deck into the canonical slide path;
-context-only analysis may still describe the delivered talk but cannot invent
-authored-slide counts or design claims. Native PPTX extraction also recovers
-grouped shapes, tables, graphic frames, backgrounds, and damaged ZIP members
-while recording the input digest and pipeline version.
+Fresh work now advances together to queue-claim schema v5, return schema v5,
+persisted talk schema v5, evidence-ledger schema v2, and pattern-scoring schema
+v5. Workers report exact detections, applicability assessments, not-evaluable
+reasons, and the line/page/time ranges they actually inspected. Persistence
+resolves those raw receipts against owner-side artifacts, derives canonical
+roots, paths, hashes, bounds, coverage, and evidence facts, then writes one
+sorted `pattern_outcomes` row for every observable catalog entry plus an
+`opportunity_coverage_identity`. Outcomes distinguish `detected`, `undetected`,
+`not_applicable`, and `not_evaluable`; workers cannot author the derived ledger
+or identity.
 
-Source audits now cover YouTube identity, duplicates, rejection ledgers, artifact
-paths, provider facts, live reachability, and title/event correspondence. The
-catalog has deterministic structural and semantic audits, explicit source gates,
-mirrored inverse relationships, unambiguous names for confusable patterns, and a
-feedback aggregator that separates accepted observations from malformed legacy
-returns and proposed additions.
+Generation identity is no longer enough by itself. Current scoring also requires
+the exact live catalog fingerprint and fresh source-located artifacts. Queue
+normalization re-hashes persisted evidence, revalidates transcript quality
+against current source-owned duration, and requeues missing, replaced, or
+drifted evidence with deterministic reasons. Saved v1–v4 claims and returns
+remain replayable archival evidence, but they cannot enter the v5 cohort and
+migration never fabricates v5 applicability or outcomes.
 
-This release intentionally tightens the ingress contract: unavailable catalog
-gates must be recorded as `not_evaluable`, processed video-derived slide evidence
-requires the schema-v3 verified-region provenance chain, and stale queue
-generations cannot be persisted.
+### fix(vault-ingress) — make transcript quality and timing receipts non-forgeable
 
-### fix(vault-ingress) — bind catalog outcomes to exact evidence generations
+Transcript text, quality policy, and timing are separate hash-bound artifacts.
+The quality receipt records the applied word floor and its owner/provider or
+local-media duration provenance; a caller-supplied duration cannot weaken it.
+Timing remains an enrichment, not a prerequisite for ordinary semantic
+transcript evidence.
 
-Catalog gates now distinguish base evaluation, strong-confidence support, and
-absence support. `Traveling Highlights` is the canary: static pages still
-support moderate/weak detection, while strong or silent-absence outcomes require
-a native deck or delivery video. `Gradual Consistency` and `Invisibility` now
-declare exact two-source comparison groups; the invalid singleton
-`source_comparison` shortcut is gone. Progressive Reveal and all held
-owner-review entries remain unchanged.
+For an existing `youtube_auto` transcript, the fetcher may restore a missing or
+stale caption-timing receipt only when newly fetched captions reproduce the
+existing text exactly after whitespace-layout normalization. It never replaces
+the transcript bytes during enrichment. Edited, manual, Whisper,
+unknown-provenance, or text-mismatching transcripts remain timing-unavailable
+and are never relabeled as captions. Failed acquisition is atomic and cannot
+replace trusted text with a partial payload or crash output.
 
-Return schema v3 requires `evidence_sources_used` to identify the exact
-qualifying group for every comparison detection. During the claim-issuance
-pause, newly emitted v2 work includes the same proof and must validate as a
-current scoring generation; only saved v1/v2 returns may omit it. Those saved returns remain
-replayable under their historical validation rules: one qualifying pair is
-inferred, while ambiguous or current-rule-ineligible evidence is persisted with
-`pattern_scoring_generation_status: legacy_unbaselineable`, exact reasons, and
-no current fingerprint. The renderer recomputes that status from the completed
-return receipt and current catalog, shows exact sources used, and visibly labels
-excluded analyses. Pattern scoring schema v3 marks this evidence-integrity epoch;
-the numeric score remains patterns minus antipatterns.
+Local-audio acquisition now binds hashing, duration probing, Whisper output,
+quality, and timing to one twice-verified private media snapshot, then rechecks
+the original path and bytes immediately before commit. VTT import validates
+root containment, component symlinks, regular-file type, and stable bytes before
+reading or writing. Provider chatter is quarantined from the one-JSON stdout
+contract, and transcript/quality/timing destination symlinks are refused rather
+than rewritten during force or rollback paths.
 
-No queue-claim schema changes are included. New claim issuance stays paused for
-#157. Existing claim-schema v1/v2 work emits return v2 and remains completable;
-return v1 is replay-only, and return v3 is not claim-authorized until #157 adds
-claim v3 with an explicit required-return version. The current profile/load-vault
-baseline readers are likewise not yet generation-aware and remain in #157's
-scope.
+Evidence resolution snapshots transcript text and both receipt files around
+validation, retries a concurrently replaced generation, and stamps identities
+only from the accepted byte set. Local delivery-video duration and digest are
+likewise accepted only when device, inode, size, and timestamps remain stable
+across probing and hashing, so one evidence context cannot mix artifact
+generations during parallel reparse or cloud synchronization.
 
-### fix(vault-ingress) — version the analysis-return merge contract
+### fix(vault-ingress) — isolate runtime and source capabilities
 
-New subagent returns declare `return_schema_version: 2`, giving reparses explicit
-snapshot semantics instead of inheriting recursive dictionary union from their JSON
-shape. Missing/version-1 returns remain readable under the historical additive
-contract, while wrong-typed and unknown future versions fail closed. The version-2
-contract treats supplied empty findings as real replacements, keeps omitted fields
-for partial-return compatibility, and reserves additive merging for explicitly
-registered extension namespaces. Persistence applies the version-2 policy to a
-copy-on-write candidate, validates dependent image-source, slide-ledger,
-co-presenter, pattern, verbatim, and promoted-field state, and closes the queue
-claim only after that candidate is valid. Complete verbatim and pattern snapshots
-can repair legacy array containers; malformed structured containers remain a
-no-write error because omitted structured fields must be preserved safely.
-The standalone return validator and persistence now import one structured-field
-policy registry, so a wrong-typed or undeclared v2 snapshot object is rejected at
-preflight instead of first failing inside the database writer.
+The configured `python_path` is now executable authority, with a stdlib-only
+runtime probe for independent core, PDF, PPTX, Drive, captions, YouTube
+download, PDF rendering, video, and Whisper lanes. A missing optional dependency
+degrades only that lane; it cannot erase a healthy transcript or alternate slide
+capability.
 
-### fix(vault-ingress) — render the persisted effective analysis
+Queueing, offline preflight, terminal-state validation, and persistence share
+the same root-aware capability resolver. Local transcript, PDF, PPTX, and video
+declarations count only when the source-specific parser, quality check, or probe
+can read the artifact under an allowed root; provenance labels and non-empty
+paths are not capabilities. Remote acquisition remains a separate capability.
+`skipped_no_sources`, `skipped_download_failed`, and duplicate outcomes are
+accepted only when their mechanically checkable source state agrees.
 
-`write-analysis.py` now uses the completed, validated talk as the canonical source
-for every analysis-owned section while retaining the exact return receipt as its
-authorization and source for non-persisted catalog feedback. A version-2 return may
-omit a structured field or verbatim lane and preserve it in the database; that same
-preserved value now remains in Markdown. Persisted integer scores retain their
-pattern/antipattern count detail by deriving the counts from the canonical detection
-arrays. Invalid effective state aborts before any analysis target is replaced.
+Shownotes discovery is now a deterministic `scan-shownotes.py` dry-run instead
+of an LLM-authored database edit. It parses supported local collection formats,
+derives provider IDs, catches rejected-source identities across alternate URL
+forms, and leaves incomplete or conflicting records as review proposals. Its
+explicit `--apply` path adds or fills only deterministic records through a
+no-follow, generation-bound atomic database replacement.
 
-Version-2 returns also reject empty/whitespace `rhetoric_notes` and
-`areas_for_improvement`, plus an explicitly present null `transcript_source`, before
-snapshot replacement can erase trusted prose or provenance. Empty adherence and
-summary proposal fields remain valid, omission still represents unknown transcript
-provenance, and missing/version-1 returns retain their historical replay behavior.
+### fix(patterns) — separate observable evidence from defensible absence
 
-### fix(vault-ingress) — persist complete queue batches under one timestamp
+All 81 observable entries now have explicit positive, strong, and absence
+outcome gates, and 37 have source-located applicability gates. Only 16 entries
+authorize absence: eleven from a completely inspected, separately declared
+rendered PDF and five from a completely inspected transcript. The other 65
+explicitly use `absence_evaluable_from: null` and are positive-only.
 
-Both persistence surfaces now fail closed unless return filenames exactly equal
-every member of one live queue run/batch and each member matches its own current
-generation. Partial, extra, mixed-identity, duplicate, partially closed, and
-stranded batches are rejected before the tracking DB or an analysis file is
-changed; genuine one-record batches remain valid.
+Complete locator ranges are not automatically modality-complete. Sampled or
+deduplicated video-extracted pages, bare native decks, bare delivery video, and
+current comparison receipts can support positive detections but cannot authorize
+absence or force applicability decisions. Canonical receipts expose this
+distinction with independent `coverage_complete`,
+`absence_capability_complete`, and stable capability reasons. Thus a missing
+source, a catalog-authorized not-applicable condition, an
+applicable-but-undetected opportunity, and a positive-only entry remain
+different denominator states.
 
-The persistence writer's normalized batch timestamp is now authoritative for
-every processed talk's `processed_date` and queue release. Legacy return-side
-date-only values cannot replace a second-resolution stamp; an explicit full
-timestamp that disagrees is rejected. The analysis writer renders the stored
-value while checking any supplied `--run-date` against it for every return.
-Skipped outcomes still leave prior analysis and its processing stamp untouched.
+### feat(vault-profile) — make scoring opportunity-aware and classification fail closed
 
-### fix(vault-ingress) — bind analysis files to the persisted return generation
+Scoring v5 compares raw scores only inside one exact
+`opportunity_coverage_identity`. Adherence-baseline schema v2 therefore
+separates the complete fresh `eligible_talk_count` used for per-pattern
+occurrence rows from the exact-identity `scored_talk_count`. Mixed identities
+produce `raw_score_comparison_status: unavailable` with reason
+`mixed_opportunity_coverage`; an all-unknown cohort produces the same zero/null
+score sentinel with `no_evaluable_pattern_opportunities` instead of publishing
+an available `0.0`. Owner-side talk comparison additionally requires at least
+ten scored talks with the same identity.
 
-Completed queue claims now use schema v2 and carry a canonical SHA-256 receipt
-of the exact return payload merged into the tracking database. The analysis
-writer recomputes that receipt before rendering, so replacing the batch-return
-file after persistence cannot produce a Markdown analysis that disagrees with
-the DB. New claims are v2; active v1 claims remain completable and upgrade on
-closure. Queue inspection and idempotent replay dual-read v1/v2 without silently
-rewriting state. Legacy completed claims remain non-renderable because their
-original payload cannot be reconstructed, while unknown future claim versions
-fail closed.
+Speaker-profile schema v4 copies the validated baseline and exhaustive
+per-pattern opportunity rows, preserving each pattern's own evaluable
+denominator and unknown coverage. Owner validation recomputes the live cohort
+and rejects a structurally plausible but source-stale profile. Section 15's
+schema-v2 current block is generated from the same full post-batch candidate,
+checked against the live database, and replaced atomically; surrounding prose
+remains historical narrative rather than numeric authority.
 
-Processed analyses also render only when each talk's persisted catalog
-fingerprint and scoring-schema version equal the catalog generation validated by
-the renderer. A changed taxonomy can no longer silently reinterpret an older
-persisted score while producing a current-looking file.
+No speaker-owned versioned classification policy exists yet, so profile and
+Section 15 classification fields fail closed even when occurrence rows are
+current. The presentation creator suppresses mastery, novelty,
+signature/contextual-history tiers, recurring severity, trends,
+pattern-derived badges, and other historical classifications while keeping
+current-taxonomy analysis of the new talk available. A valid profile has
+priority; Section 15 is only a strictly validated fallback and can never repair
+stale history by implication.
 
-### fix(vault-ingress) — share live source and state-file boundaries
+### fix(vault-ingress) — make catalog, leases, persistence, and rendering transactional
 
-Queue selection and persistence now use one capability resolver. A
-`transcript_source: manual` provenance label no longer makes a talk claimable
-without a transcript artifact or active video acquisition path. Terminal skips
-are bound to mechanically checkable state: no-sources requires no live
-capability, download-failed requires a remote path and no local transcript/deck,
-and duplicate requires a canonical `source_relation` target.
+Catalog loading and auditing now share one canonical normalization path,
+deterministic fingerprint, graph/source-gate validation, and explicit
+semantic-debt reporting. Source audits cover provider identity, duplicate and
+rejection ledgers, artifact paths, and title/event correspondence; guarded
+repair plans use exact old-value preconditions, backups, and atomic replacement.
+Catalog feedback remains a provenance-preserving review queue, never
+authorization for automatic taxonomy edits.
 
-The talk-schema migrator preflights every record and rejects unknown future
-versions before touching older records, so it cannot stamp a newer shape down to
-v3. Non-object talk members now produce an actionable no-write error. Queue,
-DB-persistence, and analysis tools also reject a tracking-database symlink before
-opening it; callers must pass the canonical file path so atomic replacement
-cannot split the link entry from its unchanged target.
+Video-derived authored-slide evidence requires the complete schema-v3
+verified-region provenance chain; sampled context cannot invent authored-slide
+counts or negative evidence. Native PPTX schema v2 preserves package identity,
+grouped/table/graphic/background fidelity, and timing structure without claiming
+delivered playback. Per-slide ledgers, image-source count maps and their basis,
+co-presenter data, citations, and promoted fields are deep-validated before
+mutation.
 
-### fix(vault-ingress) — commit analysis replacements as one batch
+Schema-v5 queue claims are immutable, recoverable leases bound to one run,
+batch, generation, baseline, and required return version. Persistence requires
+the exact live batch, uses one authoritative timestamp, closes claims only after
+every candidate validates, and stores a canonical receipt of each accepted
+return. Snapshot returns v2–v5 replace supplied declared fields, preserve
+omissions, and use explicit `clear_fields` for deletions; unknown containers and
+future schemas fail closed.
 
-`write-analysis.py` now inspects every existing target before staging, including
-directories, special files, and output entries that collide only after Unicode
-normalization or case folding. It stages the complete batch, moves existing
-targets to same-directory recovery backups, and restores them in reverse order
-if any later replacement fails. A two-file batch can no longer leave the first
-analysis updated when the second target fails.
+Analysis rendering verifies the completed claim receipt and current scoring
+generation, then renders the validated persisted effective talk rather than a
+partial raw return. It preflights normalized/case-folded target collisions and
+special files, stages the whole batch, and rolls back replacements in reverse
+order on failure. A late error can no longer split the database, queue state, or
+analysis directory into different generations.
 
-Exact analysis-target symlinks retain the safe prior behavior: replacement moves
-the symlink entry itself and installs a regular analysis file without following
-or changing the external target.
+## 0.18.74 — 2026-08-01
 
-### fix(vault-ingress) — enforce canonical per-slide and image-source records
+### fix(vault-ingress) — require source-located evidence for observable patterns
 
-Processed returns now deep-validate `structured_data.per_slide_visual` before
-either persistence surface writes. A ledger must contain exactly one canonical
-seven-key row for every slide in order, use the documented closed content and
-composition vocabularies, and carry correctly typed labels and booleans. Extra
-keys and legacy four-key/alias row shapes fail closed. Background sequences and
-meme counts are cross-checked against the rows when supplied.
-
-`image_source_distribution` is now a source-label-to-nonnegative-integer map;
-free-form note values and negative or boolean counts are rejected. The contract
-also distinguishes observable appearance from source provenance: unverified
-authorship belongs in the `unknown` count, not in an inferred AI/stock label or
-an embedded classification note. Every returned distribution now requires a
-non-empty `image_source_distribution_basis` that declares the counting unit,
-dominance rule, provenance evidence, and treatment of unknown origins. Both
-fields are barred from untrusted video-only context.
-
-### fix(vault-ingress) — add source-safe catalog entry gates
-
-Thirty catalog entries whose existing criteria have one mechanically safe
-entry-level source boundary now declare `evaluable_from`, positive evidence
-requirements, and explicit not-evaluable conditions. This covers visual,
-native-motion, delivered-event, and one spoken entry, plus the expressible
-paired-source contracts for Lipstick on a Pig and Coda. The two paired contracts
-require the exact visual-plus-transcript group and `source_comparison`; a single
-channel cannot silently support a detection or absence claim.
-
-Twenty-eight other candidates intentionally remain ungated. Their current tiers
-allow different sources for positive evidence, strong evidence, or exhaustive
-absence, which the entry-level contract cannot represent without rejecting valid
-observations or legitimizing invalid ones. This change does not claim to solve
-tier-specific or positive-versus-absence eligibility.
-
-### feat(vault-ingress) — inventory native PPTX timing without claiming playback
-
-PPTX extraction schema v2 now emits a fixed `native_timing` record per slide and
-stable deck totals. Exact animation behaviors, visibility set actions, slide
-transitions, and audio/video timing nodes remain separate, with package-part
-provenance and `observed_playback: false`. A timing container or media node can
-therefore never become an inferred generic-motion or delivered-behavior claim.
-
-The extractor schema moves from 1 to 2 and its behavior pipeline from 1.0.0 to
-1.1.0. Old v0/v1 output must be regenerated for timing questions—missing means
-unknown, not zero—and unknown future versions fail closed. The layout-only
-vault-profile consumer explicitly dual-reads v1/v2 because its
-`template_layouts` field is unchanged. Synthetic coverage includes visibility,
-effect, scale, rotation, motion, general/color behavior, media-only timing,
-transitions, and adjacent static progressive builds.
+Pattern detections now carry validated transcript, slide, video, or allowlisted
+talk-metadata citations instead of treating a free-form evidence string as proof.
+Caption, Whisper, and VTT ingestion preserve hash-bound timing sidecars; legacy
+evidence remains readable but renders as unverified, and ten process-only
+patterns move out of automatic observation when the available artifacts cannot
+establish how the talk was prepared.
 
 ## 0.18.73 — 2026-07-28
 

@@ -2,7 +2,7 @@
 
 ## Guardrail Check Script
 
-Run `skills/presentation-creator/scripts/guardrail-check.py <outline.yaml>
+Run `python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/guardrail-check.py" <outline.yaml>
 <speaker-profile.json>` to compute guardrail checks. The script handles the
 three-outcome PASS/WARN/FAIL logic:
 
@@ -22,7 +22,7 @@ contextual-history tiers, New-to-You claims, strengths, underuse, by-mode histor
 historical recurring labels, and pattern-derived recurring issues or badges. Always
 retain the current-taxonomy scan of the new outline.
 
-Schema-v3 top-level `guardrail_sources.recurring_issues[]` and `badges[]` are usable
+Schema-v4 top-level `guardrail_sources.recurring_issues[]` and `badges[]` are usable
 only when each consumed entry explicitly declares `source_lane: "non_pattern"`.
 Suppress legacy or ambiguous entries. Catalog-derived warnings and reinforcement come
 only from authorized `pattern_profile` history.
@@ -54,3 +54,9 @@ When history is disabled, do not manufacture those tiers from legacy profiles or
 unprovenanced prose. Present a flat relevant-pattern list from the current taxonomy
 without usage or novelty claims. A catalog fingerprint or scoring-schema change is a
 generation reset, never evidence of improvement or regression.
+
+`opportunity_rows_available: true` is an audit signal, not history authorization. Raw
+occurrence rows do not establish novelty, mastery, recurring severity, or trend. The
+four tiers and `[RECURRING]` labels also require
+`classification_fields_available: true`; current owner-policy-unconfigured schema-v4
+profiles stay on the flat taxonomy path.

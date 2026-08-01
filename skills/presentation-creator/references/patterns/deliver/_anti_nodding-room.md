@@ -6,11 +6,28 @@ part: deliver
 phase_relevance:
   - guardrails
 vault_dimensions: [4, 12, 14]
+evidence_channels: [video]
 detection_signals:
   - "uninterrupted tell-only delivery with no moment the audience must produce anything"
   - "every callback is a restatement; every question is rhetorical and self-answered"
   - "close is a fully-populated summary slide read aloud"
   - "speaker cites nods, smiles, or applause as evidence the material landed"
+evaluable_from:
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: performance-shaped-talk
+    description: "Complete delivery video establishes that the talk is performance-, inspiration-, or entertainment-shaped rather than intended to teach knowledge or skill transfer."
+applicability_evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "A positive finding requires complete delivery video establishing a teaching-shaped purpose and locating the audience-production opportunities, rhetorical self-answers, callbacks, and close across the full talk."
+  - "A strong finding requires zero genuine audience-production moments across the complete teaching-shaped delivery; nods, smiles, applause, and rhetorical questions are not production."
+not_evaluable_when:
+  - "The recording is incomplete, omits the close, or does not capture enough audience interaction to inventory production moments across the full talk."
+  - "The talk's teaching-versus-performance purpose cannot be established from the complete delivery, so the applicability condition remains unknown."
 related_patterns: [retrieval-beat, guess-first, spaced-followup, carnegie-hall, red-yellow-green]
 inverse_of: [retrieval-beat]
 difficulty: intermediate
@@ -59,9 +76,13 @@ The vault detects this **structurally**, not from audience reaction — retentio
 Do not flag a talk merely for being tell-shaped. Keynotes, inspirational talks, and performance-shaped talks legitimately contract with the audience to be watched, and this antipattern does not apply to them. The flag requires a talk whose *stated purpose is teaching* — a tutorial, a deep dive, a workshop, a "how we did X and how you can too" — combined with the structural signature above. A talk that never intended to be learned from cannot fail to be learned from.
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): A teaching-shaped talk with zero audience-production moments across its full length; rhetorical self-answered questions; restatement callbacks; summary-slide close; optionally, explicit appeals to room reaction as evidence of comprehension
-- Moderate signal (1 pt): A teaching-shaped talk with a single token production moment (one show of hands early, never repeated) in an otherwise pure-broadcast structure, or a summary close in a talk that otherwise engages
-- Absent (0 pts — antipattern not present): The talk demands production from the audience at multiple points, or the talk is performance-shaped and the antipattern does not apply
+- Strong signal (antipattern present): A teaching-shaped talk with zero audience-production moments across its full length; rhetorical self-answered questions; restatement callbacks; summary-slide close; optionally, explicit appeals to room reaction as evidence of comprehension
+- Moderate signal: A teaching-shaped talk with a single token production moment (one show of hands early, never repeated) in an otherwise pure-broadcast structure, or a summary close in a talk that otherwise engages
+- Absent (antipattern not present): An applicable teaching-shaped talk demands genuine production from the audience at multiple points
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 4 (Audience Interaction) as the primary axis — the antipattern *is* the null case of audience interaction, dressed as a room that is engaged. Relates to Dimension 12 (Pacing Clues), since a talk with no production beats has no gather-and-consolidate rhythm and runs as an undifferentiated stream. Relates to Dimension 14 (Areas for Improvement), where it belongs in a distinct category: unlike most entries in Dimension 14, this one flags talks that are *already good* and would be improved by the one thing their positive feedback will never ask for.

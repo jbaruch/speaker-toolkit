@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - slides
 vault_dimensions: [13]
+evidence_channels: [slide_sequence, video]
 detection_signals:
   - "animated title positioning"
   - "emphasis through motion"
@@ -13,6 +14,10 @@ detection_signals:
 evaluable_from:
   - native_deck
   - delivery_video
+strong_evaluable_from:
+  - native_deck
+  - delivery_video
+absence_evaluable_from: null
 evidence_requirements:
   - "The title must be observed centered and isolated before moving to the top as body content appears."
   - "The temporal ordering and title motion must be visible, not reconstructed from a final layout."
@@ -51,15 +56,13 @@ Avoid using it on every slide, which dilutes the emphasis effect. Also avoid it 
 When scoring talks, look for titles that appear centered on screen before migrating to the top position as body content builds in. The key signal is the temporal isolation of the title — it gets its own moment before other content appears. Compare the live presentation to printed handouts to confirm the effect is achieved through animation rather than static layout.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Selective use of animated title positioning at key moments, smooth animation execution, clear emphasis benefit from the temporal isolation
-- Moderate signal (1 pt): Title animation present but overused (every slide) or poorly executed (jerky motion, too slow)
-- Absent (0 pts): All titles appear in their final position simultaneously with body content, no temporal emphasis used
+- Strong signal: Selective use of animated title positioning at key moments, smooth animation execution, clear emphasis benefit from the temporal isolation
+- Moderate signal: Title animation present but overused (every slide) or poorly executed (jerky motion, too slow)
+- Absent: All titles appear in their final position simultaneously with body content, no temporal emphasis used
 
 ## Evidence Gate
-A final-state slide alone is not evidence for Exuberant Title Top. Native animation data
-or delivery video must show the title centered in isolation and then moving to the top
-before the body arrives. A merely large centered title, a normal top title, or two layouts
-whose movement and ordering cannot be established does not qualify.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 13 (Visual Polish and Craft): Exuberant Title Top demonstrates sophisticated animation craft, using motion and timing to create emphasis that goes beyond what static design can achieve.

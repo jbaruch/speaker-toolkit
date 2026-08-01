@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - slides
 vault_dimensions: [5, 13]
+evidence_channels: [slide_sequence, video]
 detection_signals:
   - "dissolve transitions"
   - "seamless slide flow"
@@ -13,6 +14,10 @@ detection_signals:
 evaluable_from:
   - native_deck
   - delivery_video
+strong_evaluable_from:
+  - native_deck
+  - delivery_video
+absence_evaluable_from: null
 evidence_requirements:
   - "Evidence must expose native motion or transition behavior, or observed delivery playback, across the relevant sequence."
   - "Evidence must expose the existing scoring cues: strong: consistent dissolves inside sections; moderate: inconsistent or structurally indiscriminate dissolves; absent: hard cuts or novelty transitions."
@@ -49,12 +54,13 @@ Avoid Soft Transitions at section boundaries where you want a clear structural b
 When scoring talks, look for smooth dissolve transitions between consecutive slides within sections, particularly when the dissolves are subtle enough that slide boundaries are not immediately apparent. The absence of jarring cuts within content sequences, combined with clear structural breaks between sections, is the ideal implementation.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Consistent use of dissolve transitions within sections creating seamless content flow, combined with element-level entrance animations; clear structural breaks preserved at section boundaries
-- Moderate signal (1 pt): Some dissolve transitions used but inconsistently, or dissolves used everywhere including section boundaries (obscuring structure)
-- Absent (0 pts): All slides transition with hard cuts, or distracting novelty transitions (wipes, spins, 3D flips) used throughout
+- Strong signal: Consistent use of dissolve transitions within sections creating seamless content flow, combined with element-level entrance animations; clear structural breaks preserved at section boundaries
+- Moderate signal: Some dissolve transitions used but inconsistently, or dissolves used everywhere including section boundaries (obscuring structure)
+- Absent: All slides transition with hard cuts, or distracting novelty transitions (wipes, spins, 3D flips) used throughout
 
 ## Evidence Gate
-Evaluate this entry only from native-deck behavior or delivery video that exposes the relevant motion or playback. A flattened slide artifact or transcript cannot establish zoom, scrolling, transition behavior, pacing, or their absence.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 5 (Storytelling and Narrative): Soft Transitions support narrative flow. Dimension 13 (Visual Polish and Craft): The technique requires careful attention to timing, element coordination, and visual continuity.

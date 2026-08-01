@@ -6,11 +6,20 @@ part: deliver
 phase_relevance:
   - guardrails
 vault_dimensions: [4, 14]
+evidence_channels: [video]
 detection_signals:
   - "disruptive audience interaction"
   - "hijacked Q&A"
   - "presenter-audience conflict"
 evaluable_from:
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: no-audience-disruption
+    description: "Complete delivery video with audible audience interaction establishes that no disruptive audience member or adversarial interruption occurs."
+applicability_evaluable_from:
   - delivery_video
 evidence_requirements:
   - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
@@ -18,6 +27,7 @@ evidence_requirements:
 not_evaluable_when:
   - "No delivery video covers the relevant event or interval."
   - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
+  - "The complete audience-interaction record is unavailable, so the no-disruption applicability condition cannot be assessed."
 related_patterns: [know-your-audience, display-of-high-value]
 inverse_of: []
 difficulty: intermediate
@@ -51,12 +61,13 @@ This is an antipattern to prepare for rather than a pattern to apply. Have strat
 - Speaker-audience dynamic becomes adversarial
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Speaker loses control to a disruptive audience member — debate ensues, time is consumed, other audience members disengage
-- Moderate signal (1 pt): Speaker manages disruptions but with visible stress or some loss of presentation momentum
-- Absent (0 pts — antipattern not present): Speaker handles disruptive audience members gracefully — redirects time sinks, deflects hecklers, and maintains professional composure throughout, protecting the experience for the broader audience
+- Strong signal (antipattern present): Speaker loses control to a disruptive audience member — debate ensues, time is consumed, other audience members disengage
+- Moderate signal: Speaker manages disruptions but with visible stress or some loss of presentation momentum
+- Absent (antipattern not present): Speaker handles disruptive audience members gracefully — redirects time sinks, deflects hecklers, and maintains professional composure throughout, protecting the experience for the broader audience
 
 ## Evidence Gate
-Evaluate this entry only from delivery video covering the relevant event or interval. A deck or transcript may suggest planned content, but it cannot establish the delivered timing, interaction, room behavior, or an exhaustive absence outcome.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 14 (Speaker Craft / Professionalism).

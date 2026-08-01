@@ -8,12 +8,12 @@ phase_relevance:
   - architecture
 vault_dimensions: [2, 8]
 detection_signals:
-  - "well-organized thought flow"
-  - "ideas not constrained to slide boundaries"
-  - "organic concept grouping"
+  - "ideation, capture, and organization artifacts predate slide authoring"
+  - "speaker confirms the four-phase preparation workflow"
 related_patterns: [unifying-visual-theme, backtracking, narrative-arc]
 inverse_of: [cookie-cutter, injured-outlines]
 difficulty: foundational
+observable: false
 ---
 
 # Fourthought
@@ -36,12 +36,16 @@ Fourthought also makes revision dramatically easier. When your ideas live in a m
 Use this pattern for every presentation of any significance. The only exception might be a quick internal update where you are essentially filling in a pre-existing template with new data. Even then, spending five minutes thinking before opening the tool will improve the result. The pattern scales — a five-minute lightning talk benefits from Fourthought just as much as a 90-minute keynote.
 
 ## Detection Heuristics
-The vault should look for evidence of pre-design thinking. Well-organized thought flow, ideas that span multiple slides naturally rather than being artificially constrained, and organic concept grouping all suggest the speaker invested in ideation and organization before touching the tool.
+Do not infer preparation order from a well-organized result. Verify Fourthought
+only from ideation, capture, and organization artifacts that predate the deck, or
+from speaker confirmation of the four-phase workflow. A coherent talk without
+those sources is unevaluable, not evidence that the process occurred.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Ideas flow organically across slides; concepts are grouped by logic rather than by slide boundaries; overall structure feels intentional and well-considered
-- Moderate signal (1 pt): Some evidence of pre-design thinking but occasional sections feel tool-driven; structure is reasonable but not exceptional
-- Absent (0 pts): Slides feel like the first draft; ideas are chopped into uniform slide-sized pieces; no evidence of structural planning
+- Strong signal: Dated ideation, capture, and organization artifacts all predate slide authoring and show the four-phase workflow
+- Moderate signal: Some pre-slide ideation/organization artifacts exist, but one phase is undocumented
+- Absent: Creation history shows slide authoring began before any captured ideation or organization
+- Unevaluable: Preparation artifacts or speaker confirmation are unavailable
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 2 (Structure/Organization). Relates to Dimension 8 (Slide Design/Visual Quality).

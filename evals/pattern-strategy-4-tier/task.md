@@ -2,20 +2,24 @@
 
 ## Background
 
-Morgan Lee is preparing a 45-minute talk for DevRelCon 2025 about "Developer Relations in the Age of AI Assistants." Morgan has a documented history of 22 talks with tracked presentation patterns — some they use consistently, some occasionally, and some they've never tried. There are also known antipatterns from their history.
+Morgan Lee is preparing a 45-minute talk for DevRelCon 2025 about "Developer Relations in the Age of AI Assistants." Morgan has a legacy profile containing historical pattern classifications, but it predates the current opportunity-aware contract and cannot authorize those claims.
 
-For this fixed synthetic case, the active Presentation Pattern catalog fingerprint is
-64 lowercase `a` characters and the active pattern-scoring schema is `3`.
+For this fixed synthetic case, the installed creator requires speaker-profile schema
+`4` and pattern-scoring schema `5`. The supplied profile is deliberately stale:
+speaker-profile schema `3` with pattern-scoring schema `4`. Its old mastery, novelty,
+frequency, severity, and trend fields must fail closed even though they are internally
+consistent.
 
-Given Morgan's pattern profile and the draft outline below, produce a pattern strategy recommendation that organizes techniques into tiers based on Morgan's history and this talk's context.
+Given Morgan's stale pattern profile and the draft outline below, produce a taxonomy-grounded pattern strategy for this talk without treating the legacy fields as speaker history.
 
 ## Output Specification
 
 Produce a pattern strategy report saved to `pattern-strategy.md` containing:
 
-1. A tiered pattern recommendation organized into tiers based on the speaker's usage history
-2. Antipattern flags for any risks detected in the draft, each tagged so the speaker can tell at a glance which risks come from their habitual patterns versus risks specific to this outline
-3. Any specific recommendations for this talk
+1. Surface the pattern-history-disabled warning and recommend regenerating the profile.
+2. Present one flat relevant-pattern list from the current taxonomy. Do not emit the four historical tiers, usage/novelty/mastery/trend claims, or `[NEW]` labels.
+3. Flag risks detected in the draft as `[CONTEXTUAL]`. Do not emit `[RECURRING]` from the stale profile.
+4. Include specific recommendations for this talk.
 
 Use the speaker profile and draft outline provided below.
 
@@ -42,7 +46,7 @@ The following files are provided as inputs. Extract them before beginning.
       "pattern_scoring_generation_status": "current",
       "pattern_scoring_generation_reasons": [],
       "pattern_catalog_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "pattern_scoring_schema_version": 3,
+      "pattern_scoring_schema_version": 4,
       "scored_talk_count": 22,
       "pattern_score_sum": 154,
       "average_pattern_score": 7.0

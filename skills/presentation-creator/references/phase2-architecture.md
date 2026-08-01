@@ -93,7 +93,9 @@ This is an architecture-phase concern (not a content-phase one) because the asks
 Read [patterns/_index.md](patterns/_index.md) for the current taxonomy. Read
 `profile → pattern_profile` only when Phase 0's
 `pattern_history_status.py` result has `history_enabled: true`. Never infer an
-enabled state from profile recency, schema tolerance, or Section 15 prose.
+enabled state from profile recency, schema tolerance, Section 15 prose, or
+`opportunity_rows_available: true`. Current schema-v4 profiles explicitly report
+classification policy unavailable, so use the flat taxonomy path below.
 
 With authorized history, present patterns in **4 tiers:**
 
@@ -149,8 +151,8 @@ history tiers, usage statistics, novelty claims, strengths, underuse, or by-mode
 claims. Do not call taxonomy entries "new to you" merely because history is
 unavailable. Contextual antipattern warnings still apply. Section 15 can restore the
 history view only when its current block carries a complete explicit provenance
-contract accepted by the shared assessor; otherwise it is narrative context, not
-history authorization.
+contract and the shared assessor reports `classification_fields_available: true`;
+an occurrence-only block is narrative/audit context, not tier authorization.
 
 Enhance decisions 3-10 with pattern cross-references as shared vocabulary: when recommending
 an opening pattern, reference the taxonomy ID; when selecting a narrative structure, note

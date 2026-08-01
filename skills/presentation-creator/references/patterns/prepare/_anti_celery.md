@@ -6,12 +6,16 @@ part: prepare
 phase_relevance:
   - guardrails
 vault_dimensions: [2, 14]
+evidence_channels: [video]
 detection_signals:
   - "low content-to-time ratio"
   - "audience disengagement visible"
   - "mandatory meeting with nothing new to say"
 evaluable_from:
   - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
 evidence_requirements:
   - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
   - "Evidence must expose the existing scoring cues: delivered value-to-time ratio, padding, and effort imposed on the audience."
@@ -46,12 +50,13 @@ This is an antipattern — it should always be avoided. Be vigilant against crea
 The vault should look for signs of low content density: minimal new information, content that could be conveyed more efficiently in writing, no discernible narrative structure, and the general feeling that the audience's time is not being respected.
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Classic Celery — presentation takes more effort to attend than it provides in value; content could have been an email; no narrative structure
-- Moderate signal (1 pt): Adequate content but with noticeable padding; some sections feel like time-fillers rather than value-adders
-- Absent (0 pts — antipattern not present): High content-to-time ratio; every minute delivers value; audience would not have been better served by a document or email
+- Strong signal (antipattern present): Classic Celery — presentation takes more effort to attend than it provides in value; content could have been an email; no narrative structure
+- Moderate signal: Adequate content but with noticeable padding; some sections feel like time-fillers rather than value-adders
+- Absent (antipattern not present): High content-to-time ratio; every minute delivers value; audience would not have been better served by a document or email
 
 ## Evidence Gate
-Evaluate this entry only from delivery video covering the relevant event or interval. A deck or transcript may suggest planned content, but it cannot establish the delivered timing, interaction, room behavior, or an exhaustive absence outcome.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 2 (Structure/Organization). Relates to Dimension 14 (Overall Impression/Polish).

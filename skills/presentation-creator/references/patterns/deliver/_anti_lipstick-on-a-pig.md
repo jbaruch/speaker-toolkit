@@ -6,6 +6,7 @@ part: deliver
 phase_relevance:
   - guardrails
 vault_dimensions: [8, 9, 14]
+evidence_channels: [transcript, slides, video]
 detection_signals:
   - "beautiful slides but shallow content"
   - "style over substance"
@@ -14,12 +15,17 @@ evaluable_from:
   - delivery_video
   - [static_slides, transcript]
   - [native_deck, transcript]
+strong_evaluable_from:
+  - delivery_video
+  - [static_slides, transcript]
+  - [native_deck, transcript]
+absence_evaluable_from: null
 evidence_requirements:
   - "Evidence must jointly cover the rendered visual channel and spoken track for the same delivery, either in delivery video or matched visual and transcript sources."
   - "Evidence must expose the existing scoring cues: visual polish must be evaluated against delivered substance."
 not_evaluable_when:
   - "Only the visual channel or only the spoken channel is available."
-  - "The visual and transcript artifacts are unmatched or too incomplete to establish their relationship or an exhaustive absence outcome."
+  - "The visual and transcript artifacts are unmatched or too incomplete to establish the positive relationship; no artifact combination authorizes an absence outcome."
 related_patterns: [narrative-arc]
 inverse_of: [narrative-arc]
 difficulty: foundational
@@ -53,12 +59,13 @@ This is an antipattern to avoid by investing appropriately in content before des
 - Preparation time was heavily skewed toward design over research and structuring
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Beautiful slides mask shallow or unstructured content — the talk looks great but delivers no lasting value
-- Moderate signal (1 pt): Content is reasonable but could be deeper, visual polish slightly outweighs structural rigor
-- Absent (0 pts — antipattern not present): Content is substantive and well-structured, with visual design that enhances rather than replaces the message — both substance and style are present
+- Strong signal (antipattern present): Beautiful slides mask shallow or unstructured content — the talk looks great but delivers no lasting value
+- Moderate signal: Content is reasonable but could be deeper, visual polish slightly outweighs structural rigor
+- Absent (antipattern not present): Content is substantive and well-structured, with visual design that enhances rather than replaces the message — both substance and style are present
 
 ## Evidence Gate
-Evaluate this entry only from delivery video or from matched static/native visuals plus transcript evidence for the same delivery. Either channel alone can hide a qualifying or disqualifying cue, so absence requires both.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 8 (Content Depth / Value). It also maps to Vault Dimension 9 (Speaker Authority / Credibility). It also maps to Vault Dimension 14 (Speaker Craft / Professionalism).

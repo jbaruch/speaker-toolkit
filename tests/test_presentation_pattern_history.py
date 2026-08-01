@@ -15,11 +15,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = (
-    ROOT
-    / "skills"
-    / "presentation-creator"
-    / "scripts"
-    / "pattern_history_status.py"
+    ROOT / "skills" / "presentation-creator" / "scripts" / "pattern_history_status.py"
 )
 OUTLINE = Path(__file__).parent / "fixtures" / "outline-example.yaml"
 
@@ -36,14 +32,48 @@ def pattern_history_status():
 
 def _pattern_profile(*, count: int = 2) -> dict[str, Any]:
     provenance = importlib.import_module("profile_pattern_provenance")
+    opportunities = importlib.import_module("pattern_opportunities")
+    pattern_evidence = importlib.import_module("pattern_evidence")
     fingerprint, scoring_schema = provenance.active_pattern_generation_identity()
     filenames = [] if count == 0 else ["example-a.md", "example-b.md"]
     score_sum = 0 if count == 0 else 14
     average = None if count == 0 else 7.0
-    unavailable = count == 0
+    catalog = opportunities.load_catalog()
+    observable_ids = sorted(
+        pattern_id for pattern_id, entry in catalog.entries.items() if entry.observable
+    )
+    outcome_talks = []
+    for filename in filenames:
+        pattern_outcomes = [
+            {"pattern_id": pattern_id, "outcome": "undetected"}
+            for pattern_id in observable_ids
+        ]
+        outcome_talks.append(
+            {
+                "filename": filename,
+                "pattern_observations": {
+                    "patterns_detected": [],
+                    "antipatterns_detected": [],
+                    "pattern_outcomes": pattern_outcomes,
+                },
+            }
+        )
+    rows = opportunities.build_pattern_opportunity_rows(
+        outcome_talks,
+        catalog=catalog,
+    )
+    opportunity_identity = (
+        pattern_evidence.opportunity_coverage_identity(
+            outcome_talks[0]["pattern_observations"]["pattern_outcomes"],
+            pattern_catalog_fingerprint=fingerprint,
+            pattern_scoring_schema_version=scoring_schema,
+        )
+        if count
+        else None
+    )
     return {
         "pattern_baseline": {
-            "schema_version": 1,
+            "schema_version": 2,
             "as_of": "2025-01-02T03:04:05+00:00",
             "scope": "global",
             "active_batch_excluded": False,
@@ -56,19 +86,24 @@ def _pattern_profile(*, count: int = 2) -> dict[str, Any]:
             "scored_talk_count": count,
             "pattern_score_sum": score_sum,
             "average_pattern_score": average,
+            "eligible_talk_count": count,
+            "opportunity_coverage_identity": opportunity_identity,
+            "raw_score_comparison_status": ("available" if count else "unavailable"),
+            "raw_score_comparison_reason": (None if count else "empty_current_cohort"),
         },
         "baseline_talk_filenames": filenames,
+        "eligible_talk_count": count,
         "talks_scored": count,
         "average_pattern_score": average,
-        "score_trend": "unavailable" if unavailable else "stable",
+        "score_trend": "unavailable",
         "pattern_breadth": {
-            "avg_distinct_patterns_per_talk": None if unavailable else 4.5,
-            "trend": "unavailable" if unavailable else "stable",
+            "avg_distinct_patterns_per_talk": None,
+            "trend": "unavailable",
             "note": "Exact current cohort.",
         },
         "underused_patterns": [],
         "score_drivers": {
-            "direction": "unavailable" if unavailable else "insufficient_history",
+            "direction": "unavailable",
             "antipattern_drivers": [],
             "pattern_drivers": [],
             "note": "Exact current cohort.",
@@ -77,8 +112,8 @@ def _pattern_profile(*, count: int = 2) -> dict[str, Any]:
         "strengths": [],
         "strengths_note": "Exact current cohort.",
         "note": "Observable catalog entries only.",
-        "pattern_usage": [],
-        "antipattern_frequency": [],
+        "pattern_usage": rows["pattern_usage"],
+        "antipattern_frequency": rows["antipattern_frequency"],
         "never_used_patterns": [],
         "signature_combinations": [],
         "mastery_levels": {
@@ -88,26 +123,34 @@ def _pattern_profile(*, count: int = 2) -> dict[str, Any]:
             "rare": [],
             "never_tried": [],
         },
+        "classification_availability": (
+            provenance.unavailable_classification_availability()
+        ),
     }
 
 
-def _profile(*, schema_version: int = 3, count: int = 2) -> dict[str, Any]:
+def _profile(*, schema_version: int = 4, count: int = 2) -> dict[str, Any]:
     return {
         "schema_version": schema_version,
         "pattern_profile": _pattern_profile(count=count),
     }
 
 
-def test_matching_v3_provenance_enables_history(pattern_history_status):
+def test_matching_v4_rows_suppress_unconfigured_classifications(
+    pattern_history_status,
+):
     status = pattern_history_status.assess_creator_pattern_history(_profile())
 
-    assert status.history_enabled is True
+    assert status.history_enabled is False
+    assert status.opportunity_rows_available is True
+    assert status.classification_fields_available is False
     assert status.scored_talk_count == 2
-    assert status.reason_codes == ()
-    assert status.reasons == ()
+    assert status.eligible_talk_count == 2
+    assert status.reason_codes == ("pattern_classification_policy_unavailable",)
+    assert "owner thresholds" in status.reasons[0]
 
 
-@pytest.mark.parametrize("schema_version", [1, 2])
+@pytest.mark.parametrize("schema_version", [1, 2, 3])
 def test_legacy_profile_schema_disables_only_history(
     pattern_history_status,
     schema_version,
@@ -172,13 +215,13 @@ def test_inconsistent_cohort_disables_history_with_exact_error(
     assert provenance.REASON_INVALID_CONTRACT in status.reason_codes
     assert status.reasons == (
         "pattern_profile.baseline_talk_filenames length must equal "
-        "pattern_baseline.scored_talk_count 2, got 1",
+        "pattern_baseline.eligible_talk_count 2, got 1",
     )
 
 
 def test_missing_pattern_profile_fails_closed(pattern_history_status):
     status = pattern_history_status.assess_creator_pattern_history(
-        {"schema_version": 3, "pacing": {"still": "usable"}}
+        {"schema_version": 4, "pacing": {"still": "usable"}}
     )
     provenance = importlib.import_module("profile_pattern_provenance")
 
@@ -190,14 +233,15 @@ def test_missing_pattern_profile_fails_closed(pattern_history_status):
 def test_empty_current_cohort_is_current_but_history_disabled(
     pattern_history_status,
 ):
-    status = pattern_history_status.assess_creator_pattern_history(
-        _profile(count=0)
-    )
+    status = pattern_history_status.assess_creator_pattern_history(_profile(count=0))
     provenance = importlib.import_module("profile_pattern_provenance")
 
     assert status.history_enabled is False
     assert status.scored_talk_count == 0
-    assert status.reason_codes == (provenance.REASON_EMPTY_CURRENT_COHORT,)
+    assert status.reason_codes == (
+        provenance.REASON_EMPTY_CURRENT_COHORT,
+        provenance.REASON_CLASSIFICATION_POLICY_UNAVAILABLE,
+    )
     assert "no talks in the active catalog" in status.reasons[0]
 
 
@@ -221,7 +265,7 @@ def test_status_cli_emits_machine_readable_disabled_state(
 
 
 def _guardrail_profile(*, current_history: bool) -> dict[str, Any]:
-    profile = _profile(schema_version=3 if current_history else 2)
+    profile = _profile(schema_version=4 if current_history else 2)
     source_lane = {"source_lane": "non_pattern"} if current_history else {}
     profile.update(
         {
@@ -246,16 +290,6 @@ def _guardrail_profile(*, current_history: bool) -> dict[str, Any]:
             "badges": [{"id": "legacy-badge-sentinel", **source_lane}],
         }
     )
-    profile["pattern_profile"]["antipattern_frequency"] = [
-        {
-            "pattern_id": "history-antipattern-sentinel",
-            "times_detected": 1,
-            "out_of": 2,
-            "frequency_rate": 0.5,
-            "trend": "stable",
-            "severity": "recurring",
-        }
-    ]
     return profile
 
 
@@ -285,7 +319,7 @@ def test_guardrail_keeps_nonpattern_checks_and_contextual_scan_when_history_disa
     assert "legacy-badge-sentinel" not in output
 
 
-def test_guardrail_emits_recurring_label_only_for_current_history(
+def test_guardrail_suppresses_recurring_labels_without_owner_policy(
     guardrail_check,
     tmp_path,
     capsys,
@@ -300,8 +334,8 @@ def test_guardrail_emits_recurring_label_only_for_current_history(
     output = capsys.readouterr().out
 
     assert return_code == 0
-    assert "[PASS] Pattern history: enabled" in output
-    assert "[RECURRING] history-antipattern-sentinel: 1/2, stable" in output
+    assert "[WARN] Pattern history: Pattern classifications disabled" in output
+    assert "[RECURRING]" not in output
 
 
 def test_assessment_does_not_mutate_profile(pattern_history_status):
@@ -326,9 +360,7 @@ def _creator_docs() -> dict[str, str]:
         "phase4": (creator / "references" / "phase4-guardrails.md").read_text(
             encoding="utf-8"
         ),
-        "rules": (ROOT / "rules" / "guardrail-rules.md").read_text(
-            encoding="utf-8"
-        ),
+        "rules": (ROOT / "rules" / "guardrail-rules.md").read_text(encoding="utf-8"),
     }
 
 
@@ -362,21 +394,24 @@ def test_docs_suppress_history_tiers_and_cross_generation_diffs():
     assert "never evidence of improvement or regression" in docs["rules"]
 
 
-def test_pattern_strategy_eval_uses_fixed_schema_v3_provenance():
-    task = (
-        ROOT / "evals" / "pattern-strategy-4-tier" / "task.md"
-    ).read_text(encoding="utf-8")
+def test_pattern_strategy_eval_fails_closed_on_deliberately_legacy_provenance():
+    task = (ROOT / "evals" / "pattern-strategy-4-tier" / "task.md").read_text(
+        encoding="utf-8"
+    )
     criteria = json.loads(
         (ROOT / "evals" / "pattern-strategy-4-tier" / "criteria.json").read_text(
             encoding="utf-8"
         )
     )
 
+    assert "installed creator requires speaker-profile schema\n`4`" in task
+    assert "pattern-scoring schema `5`" in task
     assert '"schema_version": 3' in task
-    assert '"pattern_scoring_schema_version": 3' in task
+    assert '"pattern_scoring_schema_version": 4' in task
+    assert "deliberately stale" in task
     assert '"pattern_catalog_fingerprint": "' + ("a" * 64) + '"' in task
     assert '"baseline_talk_filenames"' in task
     assert sum(item["max_score"] for item in criteria["checklist"]) == 100
-    assert criteria["checklist"][0]["name"] == (
-        "Current provenance authorizes history"
-    )
+    assert criteria["checklist"][0]["name"] == "Legacy provenance fails closed"
+    assert "history-disabled" in criteria["checklist"][0]["description"]
+    assert any(item["name"] == "No recurring labels" for item in criteria["checklist"])

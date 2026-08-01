@@ -7,6 +7,7 @@ phase_relevance:
   - architecture
   - slides
 vault_dimensions: [5, 13]
+evidence_channels: [slide_sequence, video]
 detection_signals:
   - "canvas-based layout"
   - "zoom transitions"
@@ -15,12 +16,23 @@ detection_signals:
 evaluable_from:
   - native_deck
   - delivery_video
+strong_evaluable_from:
+  - native_deck
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: no-spatial-or-hierarchical-content
+    description: "A complete native deck or delivery video establishes a strictly linear topic with no spatial, hierarchical, geographic, architectural, or process relationship for a navigable canvas to preserve."
+applicability_evaluable_from:
+  - native_deck
+  - delivery_video
 evidence_requirements:
   - "Evidence must expose native motion or transition behavior, or observed delivery playback, across the relevant sequence."
   - "Evidence must expose the existing scoring cues: strong: smooth zoom transitions on a spatial canvas; moderate: partial or disorienting transitions; absent: standard linear slides without zoom."
 not_evaluable_when:
   - "Only flattened static slides or a transcript is available."
   - "The source does not expose the zoom, scrolling, transition behavior, or pacing needed by the existing scoring criteria."
+  - "The complete content structure is unavailable, so the no-spatial-or-hierarchical-content applicability condition cannot be assessed."
 related_patterns: [context-keeper, soft-transitions, brain-breaks, takahashi, lipsync]
 inverse_of: []
 difficulty: advanced
@@ -51,12 +63,13 @@ Use Cave Painting for topics with inherent spatial or hierarchical structure: sy
 The vault should look for evidence of canvas-based spatial organization: zoom transitions between sections, a visible overall structure that contextualizes individual sections, and the characteristic "pull back to see the whole, zoom in for detail" rhythm.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Canvas-based layout with meaningful spatial organization; smooth zoom transitions; overall structure visible and contextualized; spatial relationships reinforce content relationships
-- Moderate signal (1 pt): Some spatial organization but not fully exploited; transitions present but occasionally disorienting; overall structure partially visible
-- Absent (0 pts): Standard linear slides with no spatial dimension; no zoom or canvas-based transitions
+- Strong signal: Canvas-based layout with meaningful spatial organization; smooth zoom transitions; overall structure visible and contextualized; spatial relationships reinforce content relationships
+- Moderate signal: Some spatial organization but not fully exploited; transitions present but occasionally disorienting; overall structure partially visible
+- Absent: Standard linear slides with no spatial dimension; no zoom or canvas-based transitions
 
 ## Evidence Gate
-Evaluate this entry only from native-deck behavior or delivery video that exposes the relevant motion or playback. A flattened slide artifact or transcript cannot establish zoom, scrolling, transition behavior, pacing, or their absence.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 5 (Storytelling/Narrative). Relates to Dimension 13 (Visual Aids Effectiveness).

@@ -4,8 +4,9 @@
 Reads the rhetoric vault and emits a single JSON payload to stdout containing
 all source data needed to construct speaker-profile.json. The skill orchestrator
 calls this script once and then aggregates the payload into the profile. Pattern
-baselines are selected by exact active catalog/scoring-generation identity;
-extractor instrumentation cohorts remain a separate concern.
+baselines are selected by exact active catalog/scoring-generation identity and
+current persisted evidence artifacts; extractor instrumentation cohorts remain
+a separate concern.
 
 Contract
 --------
@@ -27,6 +28,7 @@ Stdout (JSON):
       "excluded_pattern_scoring_talks": [ ... ] # legacy/mismatched generation
       "pattern_scoring_exclusions": [ ... ] # deterministic per-talk reasons
       "pattern_baseline":  { ... }   # exact-cohort count/sum/average + provenance
+      "pattern_opportunities": { ... } # deterministic exhaustive per-pattern rows
       "current_instrumentation_talks": [ ... ]  # current extractor cohort
       "stale_instrumentation_talks": [ ... ]    # pre-epoch extractor cohort
       "baseline_note":     "...",    # exact pattern-cohort semantics
@@ -49,17 +51,22 @@ import sys
 from datetime import datetime, timezone
 
 
-INGRESS_SCRIPTS = pathlib.Path(__file__).resolve().parents[2] / "vault-ingress" / "scripts"
+INGRESS_SCRIPTS = (
+    pathlib.Path(__file__).resolve().parents[2] / "vault-ingress" / "scripts"
+)
 if str(INGRESS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(INGRESS_SCRIPTS))
 
-from adherence_baseline import (  # noqa: E402
+from adherence_baseline import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     AdherenceBaselineError,
-    build_current_cohort_baseline,
     normalize_as_of,
-    partition_pattern_scoring_cohort,
 )
-from return_validation import (  # noqa: E402
+from pattern_cohort_snapshot import (  # noqa: E402
+    PatternCohortSnapshotError,
+    build_current_pattern_snapshot,
+    configured_evidence_freshness_assessor,
+)
+from return_validation import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     PATTERN_SCORING_SCHEMA_VERSION,
     ReturnValidationError,
     load_catalog,
@@ -151,9 +158,7 @@ def main(argv: list[str]) -> int:
     try:
         db = json.loads(db_path.read_text())
     except (json.JSONDecodeError, OSError) as exc:
-        print(
-            f"ERROR: tracking-database.json is malformed: {exc}", file=sys.stderr
-        )
+        print(f"ERROR: tracking-database.json is malformed: {exc}", file=sys.stderr)
         return 1
     if not isinstance(db, dict):
         print("ERROR: tracking-database.json root must be an object", file=sys.stderr)
@@ -182,34 +187,42 @@ def main(argv: list[str]) -> int:
 
     talks = db.get("talks", [])
     if not isinstance(talks, list) or any(not isinstance(talk, dict) for talk in talks):
-        print("ERROR: tracking-database.json `talks` must be an array of objects", file=sys.stderr)
+        print(
+            "ERROR: tracking-database.json `talks` must be an array of objects",
+            file=sys.stderr,
+        )
         return 1
     processed_statuses = {"processed", "processed_partial"}
     processed_talks = [t for t in talks if t.get("status") in processed_statuses]
-
     current_instrumentation, stale_instrumentation = partition_by_instrumentation(
         processed_talks
     )
     try:
         catalog = load_catalog()
-        (
-            baseline_talks,
-            excluded_pattern_talks,
-            pattern_scoring_exclusions,
-        ) = partition_pattern_scoring_cohort(
-            processed_talks,
-            excluded_filenames=(),
-            pattern_catalog_fingerprint=catalog.fingerprint,
-            pattern_scoring_schema_version=PATTERN_SCORING_SCHEMA_VERSION,
-        )
-        pattern_baseline = build_current_cohort_baseline(
-            processed_talks,
+        snapshot = build_current_pattern_snapshot(
+            talks,
             as_of=as_of,
-            pattern_catalog_fingerprint=catalog.fingerprint,
-            pattern_scoring_schema_version=PATTERN_SCORING_SCHEMA_VERSION,
+            evidence_freshness_assessor=configured_evidence_freshness_assessor(
+                vault_root,
+                db.get("config"),
+                catalog=catalog,
+            ),
+            catalog=catalog,
         )
-    except (AdherenceBaselineError, ReturnValidationError) as exc:
-        print(f"ERROR: cannot build current pattern-scoring cohort: {exc}", file=sys.stderr)
+        baseline_talks = snapshot["baseline_talks"]
+        excluded_pattern_talks = snapshot["excluded_pattern_scoring_talks"]
+        pattern_scoring_exclusions = snapshot["pattern_scoring_exclusions"]
+        pattern_baseline = snapshot["pattern_baseline"]
+        pattern_opportunities = snapshot["pattern_opportunities"]
+    except (
+        AdherenceBaselineError,
+        PatternCohortSnapshotError,
+        ReturnValidationError,
+    ) as exc:
+        print(
+            f"ERROR: cannot build current pattern-scoring cohort: {exc}",
+            file=sys.stderr,
+        )
         return 1
 
     payload = {
@@ -222,15 +235,19 @@ def main(argv: list[str]) -> int:
         "excluded_pattern_scoring_talks": excluded_pattern_talks,
         "pattern_scoring_exclusions": pattern_scoring_exclusions,
         "pattern_baseline": pattern_baseline,
+        "pattern_opportunities": pattern_opportunities,
         "current_instrumentation_talks": current_instrumentation,
         "stale_instrumentation_talks": stale_instrumentation,
         "baseline_note": (
             "Pattern-score baselines MUST use baseline_talks only "
             f"({len(baseline_talks)} talks): each record exactly matches the "
-            "active pattern catalog fingerprint, scoring schema, and current "
-            "generation contract. excluded_pattern_scoring_talks contains "
+            "active pattern catalog fingerprint, scoring schema "
+            f"{PATTERN_SCORING_SCHEMA_VERSION}, current "
+            "generation contract, and unchanged source-located evidence "
+            "artifacts. excluded_pattern_scoring_talks contains "
             f"{len(excluded_pattern_talks)} eligible records with a missing, "
-            "legacy, or different valid generation. pattern_baseline.as_of is "
+            "legacy, or different valid generation, or stale persisted evidence. "
+            "pattern_baseline.as_of is "
             "the snapshot observation time; each talk's processed_date remains "
             "talk-processing metadata and never determines pattern eligibility."
         ),

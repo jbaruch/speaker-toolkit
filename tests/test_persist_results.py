@@ -5,12 +5,33 @@ the tracking DB, with the declared queryable scalars promoted to the talk top le
 """
 
 import copy
+import importlib
 import json
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from pypdf import PdfWriter
+from pptx import Presentation
+
+
+def test_atomic_json_write_cleans_stage_and_propagates_interrupt(
+    persist_results, tmp_path, monkeypatch,
+):
+    target = tmp_path / "tracking-database.json"
+    target.write_text('{"old": true}\n', encoding="utf-8")
+
+    def interrupt(_source, _target):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(persist_results.os, "replace", interrupt)
+
+    with pytest.raises(KeyboardInterrupt):
+        persist_results.atomic_write_json(target, {"new": True})
+
+    assert json.loads(target.read_text(encoding="utf-8")) == {"old": True}
+    assert [path.name for path in tmp_path.iterdir()] == [target.name]
 
 
 def _return(**overrides):
@@ -156,6 +177,131 @@ def _skipped_return(**overrides):
     return ret
 
 
+def _v4_transcript_batch(return_validation, tmp_path, *, language="en"):
+    """Build one real-artifact v4 batch with exhaustive catalog outcomes."""
+    transcript = tmp_path / "transcripts" / "manual-talk.txt"
+    transcript.parent.mkdir()
+    lines = [
+        "A uniquely phrased production failure opens this synthetic talk clearly."
+    ]
+    lines.extend(
+        f"Synthetic transcript line {number} provides substantive source evidence "
+        "for deterministic catalog verification."
+        for number in range(2, 82)
+    )
+    transcript.write_text("\n".join(lines), encoding="utf-8")
+    transcript_timing = importlib.import_module("transcript_timing")
+    transcript_text = transcript.read_text(encoding="utf-8")
+    transcript_timing.write_quality_receipt(
+        transcript,
+        transcript_text,
+        transcript_timing.build_quality_policy(400),
+        {"kind": "fixed_default"},
+    )
+    filename = "talk.md"
+    baseline = _adherence_baseline(
+        return_validation, count=0, filenames=(filename,))
+    claim = {
+        "schema_version": 4,
+        "run_id": "reparse-v4",
+        "batch_id": "batch-1",
+        "claimed_at": "2026-07-31T18:00:00+00:00",
+        "previous_status": "needs-reprocessing",
+        "reprocess_generation": 1,
+        "state": "claimed",
+        "required_return_schema_version": 4,
+        "adherence_baseline": baseline,
+    }
+    talk = {
+        "schema_version": 4,
+        "filename": filename,
+        "title": "Synthetic v4 Talk",
+        "status": "reprocessing-inflight",
+        "reprocess_generation": 1,
+        "transcript_path": "transcripts/manual-talk.txt",
+        "transcript_source": "manual",
+        "slide_source": "none",
+        "delivery_language": language,
+        "_queue_claim": claim,
+    }
+    detected_id = "echo-chamber"
+    catalog = return_validation.load_catalog()
+    not_evaluable = []
+    for pattern_id, entry in sorted(catalog.entries.items()):
+        if not entry.observable or pattern_id == detected_id:
+            continue
+        gate = entry.absence_evaluable_from
+        if gate is None:
+            not_evaluable.append({
+                "pattern_id": pattern_id,
+                "reason_code": (
+                    "absence_not_authorized_by_catalog"
+                    if entry.evaluable_from is not None
+                    else "source_gate_pending_owner_review"
+                ),
+            })
+        elif not any(group == frozenset({"transcript"}) for group in gate):
+            not_evaluable.append({
+                "pattern_id": pattern_id,
+                "reason_code": "missing_required_source_coverage",
+            })
+    ret = {
+        "filename": filename,
+        "return_schema_version": 4,
+        "queue_claim": {
+            "run_id": "reparse-v4",
+            "batch_id": "batch-1",
+            "reprocess_generation": 1,
+        },
+        "status": "processed_partial",
+        "transcript_source": "manual",
+        "slide_source": "none",
+        "rhetoric_notes": "The talk uses a clear incident-led narrative.",
+        "areas_for_improvement": "The close could return to the opening incident.",
+        "adherence_assessment": "",
+        "new_patterns": "",
+        "summary_updates": "",
+        "structured_data": {
+            "delivery_language": language,
+            "co_presenter": False,
+        },
+        "verbatim_examples": {},
+        "pattern_observations": {
+            "patterns_detected": [{
+                "pattern_id": detected_id,
+                "confidence": "moderate",
+                "evidence_source": "transcript",
+                "evidence": "A concrete production failure opens the narrative.",
+                "evidence_citations": [{
+                    "source": "transcript",
+                    "channel": "transcript",
+                    "quote": lines[0],
+                }],
+            }],
+            "antipatterns_detected": [],
+            "evidence_sources": ["transcript"],
+            "source_inspection": [{
+                "source": "transcript",
+                "line_ranges": [[1, len(lines)]],
+            }],
+            "not_evaluable": not_evaluable,
+            "pattern_score": {
+                "patterns_used": 1,
+                "antipatterns_detected": 0,
+                "score": 1,
+            },
+        },
+        "catalog_feedback": {
+            "unmatched_observations": [],
+            "confusable_pairs": [],
+            "definition_problems": [],
+            "scoring_problems": [],
+            "tensions": [],
+        },
+    }
+    return talk, ret
+
+
 def _complete_unavailable_source_gates(return_validation, ret):
     available = set(ret["pattern_observations"]["evidence_sources"])
     catalog = return_validation.load_catalog()
@@ -246,6 +392,7 @@ def test_skipped_merge_cannot_mutate_prior_analysis_even_without_validator(
         pattern_scoring_schema_version=2,
         pattern_catalog_fingerprint="0" * 64,
         video_url=None,
+        youtube_id=None,
         pptx_path=None,
         slides_url=None,
     )
@@ -684,8 +831,54 @@ def test_pattern_observations_normalized(persist_results):
     assert obs["not_evaluable_ids"] == []
 
 
+def test_transcript_quote_is_verified_and_locations_are_engine_owned(
+        persist_results, return_validation, tmp_path):
+    talk, ret = _v4_transcript_batch(return_validation, tmp_path)
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(json.dumps({"talks": [talk]}))
+    batch.write_text(json.dumps([ret]))
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            persist_results.__file__,
+            str(db),
+            str(batch),
+            "--run-date",
+            "2026-07-31T18:05:00+00:00",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    observations = stored["pattern_observations"]
+    citation = observations["patterns_detected"][0]["evidence_citations"][0]
+    assert citation["line_start"] == 1
+    assert citation["line_end"] == 1
+    assert citation["artifact_root"] == "vault"
+    assert citation["artifact_path"] == "transcripts/manual-talk.txt"
+    assert len(citation["artifact_sha256"]) == 64
+    assert observations["evidence_schema_version"] == 1
+    assert observations["source_inspection"][0]["coverage_complete"] is True
+    assert stored["pattern_scoring_generation_status"] == \
+        "legacy_unbaselineable"
+    assert "return_schema_precedes_exhaustive_outcomes" in stored[
+        "pattern_scoring_generation_reasons"
+    ]
+    assert "pattern_scoring_schema_version" not in stored
+    assert "pattern_catalog_fingerprint" not in stored
+    # The worker receipt remains the exact raw claim; engine-owned locations
+    # exist only in the canonical persisted projection.
+    raw = json.loads(batch.read_text())[0]
+    assert "line_start" not in raw["pattern_observations"][
+        "patterns_detected"][0]["evidence_citations"][0]
+
+
 @pytest.mark.parametrize("version", [1, 2])
-def test_legacy_single_comparison_pair_is_inferred_and_stamped_current(
+def test_legacy_single_comparison_pair_is_inferred_but_remains_historical(
         persist_results, return_validation, version):
     talk = _talk()
     ret = _gradual_comparison_return(return_validation, version=version)
@@ -695,11 +888,12 @@ def test_legacy_single_comparison_pair_is_inferred_and_stamped_current(
     detection = talk["pattern_observations"]["patterns_detected"][0]
     assert detection["evidence_sources_used"] == [
         "static_slides", "native_deck"]
-    assert talk["pattern_scoring_generation_status"] == "current"
-    assert talk["pattern_scoring_generation_reasons"] == []
-    assert talk["pattern_scoring_schema_version"] == 3
-    assert talk["pattern_catalog_fingerprint"] == \
-        return_validation.load_catalog().fingerprint
+    assert talk["pattern_scoring_generation_status"] == \
+        "legacy_unbaselineable"
+    assert talk["pattern_scoring_generation_reasons"] == [
+        "return_schema_precedes_source_locations"]
+    assert "pattern_scoring_schema_version" not in talk
+    assert "pattern_catalog_fingerprint" not in talk
 
 
 @pytest.mark.parametrize("version", [1, 2])
@@ -719,7 +913,9 @@ def test_legacy_ambiguous_comparison_replays_but_is_excluded_from_baselines(
     assert talk["pattern_scoring_generation_status"] == \
         "legacy_unbaselineable"
     assert talk["pattern_scoring_generation_reasons"] == [
-        "comparison_group_ambiguous:gradual-consistency"]
+        "comparison_group_ambiguous:gradual-consistency",
+        "return_schema_precedes_source_locations",
+    ]
     assert "pattern_scoring_schema_version" not in talk
     assert "pattern_catalog_fingerprint" not in talk
 
@@ -752,15 +948,16 @@ def test_legacy_new_strong_gate_failure_replays_without_current_fingerprint(
     assert talk["pattern_scoring_generation_status"] == \
         "legacy_unbaselineable"
     assert talk["pattern_scoring_generation_reasons"] == [
-        "strong_gate_unsatisfied:traveling-highlights"]
+        "return_schema_precedes_source_locations",
+        "strong_gate_unsatisfied:traveling-highlights",
+    ]
     assert "pattern_scoring_schema_version" not in talk
     assert "pattern_catalog_fingerprint" not in talk
 
 
-def test_direct_v3_ineligible_merge_fails_without_mutating_talk(
+def test_direct_v3_ineligible_merge_replays_as_historical(
         persist_results):
     talk = _talk()
-    original = copy.deepcopy(talk)
     ret = _return(return_schema_version=3)
     ret["pattern_observations"].update({
         "patterns_detected": [{
@@ -777,10 +974,14 @@ def test_direct_v3_ineligible_merge_fails_without_mutating_talk(
         },
     })
 
-    with pytest.raises(ValueError, match="strong_gate_unsatisfied"):
-        persist_results.merge_talk(talk, ret)
+    persist_results.merge_talk(talk, ret)
 
-    assert talk == original
+    assert talk["pattern_scoring_generation_status"] == \
+        "legacy_unbaselineable"
+    assert talk["pattern_scoring_generation_reasons"] == [
+        "return_schema_precedes_source_locations",
+        "strong_gate_unsatisfied:traveling-highlights",
+    ]
 
 
 def test_direct_catalog_fingerprint_mismatch_fails_without_mutating_talk(
@@ -1279,6 +1480,39 @@ def test_schema_version_is_stamped_over_an_older_value(persist_results, tmp_path
             persist_results.TALK_SCHEMA_VERSION)
 
 
+def test_legacy_migration_marks_pattern_evidence_unlocated(persist_results):
+    talk = {
+        "filename": "legacy.md",
+        "schema_version": 2,
+        "pattern_observations": {
+            "patterns_detected": [{
+                "pattern_id": "narrative-arc",
+                "confidence": "strong",
+                "evidence": "Legacy prose without a source location.",
+            }],
+            "antipatterns_detected": [{
+                "pattern_id": "shortchanged",
+                "confidence": "moderate",
+                "evidence": "A legacy model-supplied location is untrusted.",
+                "evidence_citations": [{
+                    "source": "transcript",
+                    "channel": "transcript",
+                    "line_start": 999,
+                    "line_end": 999,
+                }],
+            }],
+        },
+    }
+    database = {"talks": [talk]}
+
+    assert persist_results.migrate_records(database) == 1
+    observations = talk["pattern_observations"]
+    assert talk["schema_version"] == persist_results.TALK_SCHEMA_VERSION
+    assert observations["patterns_detected"][0]["evidence_citations"] == []
+    assert observations["antipatterns_detected"][0]["evidence_citations"] == []
+    assert "evidence_schema_version" not in observations
+
+
 def test_future_talk_schema_rejects_before_any_record_is_migrated(persist_results):
     database = {
         "talks": [
@@ -1740,7 +1974,7 @@ def test_pattern_score_clear_removes_both_nested_and_promoted_value(
     assert stored["pattern_observations"]["pattern_score"] == 1
 
 
-def test_catalog_generation_is_stamped_and_processing_claim_is_closed(
+def test_historical_return_is_marked_unbaselineable_and_claim_is_closed(
         persist_results, tmp_path):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
@@ -1754,9 +1988,13 @@ def test_catalog_generation_is_stamped_and_processing_claim_is_closed(
     assert result.returncode == 0, result.stderr
     report = json.loads(result.stdout)
     stored = json.loads(db.read_text())["talks"][0]
-    assert stored["pattern_scoring_schema_version"] == \
-        persist_results.PATTERN_SCORING_SCHEMA_VERSION
-    assert stored["pattern_catalog_fingerprint"] == report["pattern_catalog_fingerprint"]
+    assert stored["pattern_scoring_generation_status"] == \
+        "legacy_unbaselineable"
+    assert stored["pattern_scoring_generation_reasons"] == [
+        "return_schema_precedes_source_locations"]
+    assert "pattern_scoring_schema_version" not in stored
+    assert "pattern_catalog_fingerprint" not in stored
+    assert report["pattern_catalog_fingerprint"]
     assert stored["_queue_claim"]["state"] == "completed"
     assert stored["_queue_claim"]["schema_version"] == \
         persist_results.PREVIOUS_QUEUE_CLAIM_SCHEMA_VERSION
@@ -1847,6 +2085,7 @@ def test_post_batch_stdout_uses_complete_replacement_cohort_and_keeps_claim(
         "pattern_observations": {
             **prior["pattern_observations"],
             "pattern_score": 3,
+            "opportunity_coverage_identity": "0" * 64,
         },
         "pattern_scoring_generation_status": "current",
         "pattern_scoring_generation_reasons": [],
@@ -1876,9 +2115,9 @@ def test_post_batch_stdout_uses_complete_replacement_cohort_and_keeps_claim(
     assert cohort["active_batch_excluded"] is False
     assert cohort["excluded_filenames"] == []
     assert cohort["as_of"] == "2026-07-31T18:05:00+00:00"
-    assert cohort["scored_talk_count"] == 2
-    assert cohort["pattern_score_sum"] == 4
-    assert cohort["average_pattern_score"] == 2.0
+    assert cohort["scored_talk_count"] == 0
+    assert cohort["pattern_score_sum"] == 0
+    assert cohort["average_pattern_score"] is None
     stored = json.loads(db.read_text())["talks"][0]
     assert stored["pattern_score"] == 1
     assert stored["_queue_claim"]["adherence_baseline"] == claim_baseline
@@ -2039,6 +2278,7 @@ def test_skipped_return_preserves_prior_analysis_and_persists_terminal_metadata(
         pattern_scoring_schema_version=2,
         pattern_catalog_fingerprint="0" * 64,
         video_url=None,
+        youtube_id=None,
         pptx_path=None,
         slides_url=None,
     )
@@ -2071,24 +2311,42 @@ def test_skipped_return_preserves_prior_analysis_and_persists_terminal_metadata(
 
 
 @pytest.mark.parametrize(
-    "source_fields",
-    [
-        {"video_url": "https://youtu.be/AbCdEfGhI_1"},
-        {"transcript_path": "transcripts/talk.txt"},
-        {"pptx_path": "decks/talk.pptx"},
-        {"slides_local_path": "slides/talk.pdf"},
-    ],
-)
+    "capability", ["remote_video", "transcript", "pptx", "pdf"])
 def test_skipped_no_sources_rejects_each_live_capability(
-        persist_results, tmp_path, source_fields):
+        persist_results, tmp_path, capability):
     base = {
         "video_url": None,
+        "youtube_id": None,
         "pptx_path": None,
         "slides_url": None,
         "google_drive_id": None,
         "transcript_path": None,
         "slides_local_path": None,
     }
+    source_fields = {}
+    if capability == "remote_video":
+        source_fields = {"video_url": "https://youtu.be/AbCdEfGhI_1"}
+    elif capability == "transcript":
+        path = tmp_path / "transcripts" / "AbCdEfGhI_1.txt"
+        path.parent.mkdir()
+        path.write_text(" ".join(["substantive"] * 600), encoding="utf-8")
+        source_fields = {
+            "transcript_path": "transcripts/AbCdEfGhI_1.txt"}
+    elif capability == "pptx":
+        path = tmp_path / "decks" / "talk.pptx"
+        path.parent.mkdir()
+        deck = Presentation()
+        deck.slides.add_slide(deck.slide_layouts[6])
+        deck.save(str(path))
+        source_fields = {"pptx_path": "decks/talk.pptx"}
+    else:
+        path = tmp_path / "slides" / "talk.pdf"
+        path.parent.mkdir()
+        writer = PdfWriter()
+        writer.add_blank_page(width=640, height=480)
+        with path.open("wb") as stream:
+            writer.write(stream)
+        source_fields = {"slides_local_path": "slides/talk.pdf"}
     talk = _talk(**{**base, **source_fields})
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
@@ -2107,16 +2365,85 @@ def test_skipped_no_sources_rejects_each_live_capability(
     assert db.read_bytes() == before
 
 
-@pytest.mark.parametrize(
-    "local_source",
-    [
-        {"transcript_path": "transcripts/talk.txt"},
-        {"pptx_path": "decks/talk.pptx"},
-        {"slides_local_path": "slides/talk.pdf"},
-    ],
-)
+@pytest.mark.parametrize("surviving_source", ["deck", "transcript"])
+def test_invalid_source_cannot_hide_independent_terminal_capability(
+        persist_results, tmp_path, surviving_source):
+    fields = {
+        "video_url": None,
+        "youtube_id": None,
+        "slides_url": None,
+        "google_drive_id": None,
+        "slides_local_path": None,
+    }
+    if surviving_source == "deck":
+        deck = tmp_path / "decks" / "talk.pptx"
+        deck.parent.mkdir()
+        presentation = Presentation()
+        presentation.slides.add_slide(presentation.slide_layouts[6])
+        presentation.save(deck)
+        fields.update({
+            "transcript_path": "../bad.txt",
+            "pptx_path": "decks/talk.pptx",
+        })
+    else:
+        transcript = tmp_path / "transcripts" / "manual-talk.txt"
+        transcript.parent.mkdir()
+        text = " ".join(["substantive transcript evidence"] * 200)
+        transcript.write_text(text, encoding="utf-8")
+        transcript_timing = importlib.import_module("transcript_timing")
+        transcript_timing.write_quality_receipt(
+            transcript,
+            text,
+            transcript_timing.build_quality_policy(400),
+            {"kind": "fixed_default"},
+        )
+        fields.update({
+            "transcript_path": "transcripts/manual-talk.txt",
+            "transcript_source": "manual",
+            "pptx_path": "../bad.pptx",
+        })
+    talk = _talk(**fields)
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(json.dumps({"talks": [talk]}))
+    batch.write_text(json.dumps([_skipped_return()]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "cannot finish skipped_no_sources" in result.stderr
+    assert surviving_source in result.stderr or (
+        surviving_source == "deck" and "slides" in result.stderr)
+
+
+@pytest.mark.parametrize("artifact_kind", ["transcript", "pptx", "pdf"])
 def test_download_failure_rejects_when_a_local_artifact_remains(
-        persist_results, tmp_path, local_source):
+        persist_results, tmp_path, artifact_kind):
+    local_source = {}
+    if artifact_kind == "transcript":
+        path = tmp_path / "transcripts" / "AbCdEfGhI_1.txt"
+        path.parent.mkdir()
+        path.write_text(" ".join(["substantive"] * 600), encoding="utf-8")
+        local_source = {"transcript_path": "transcripts/AbCdEfGhI_1.txt"}
+    elif artifact_kind == "pptx":
+        path = tmp_path / "decks" / "talk.pptx"
+        path.parent.mkdir()
+        deck = Presentation()
+        deck.slides.add_slide(deck.slide_layouts[6])
+        deck.save(str(path))
+        local_source = {"pptx_path": "decks/talk.pptx"}
+    else:
+        path = tmp_path / "slides" / "talk.pdf"
+        path.parent.mkdir()
+        writer = PdfWriter()
+        writer.add_blank_page(width=640, height=480)
+        with path.open("wb") as stream:
+            writer.write(stream)
+        local_source = {"slides_local_path": "slides/talk.pdf"}
     talk = _talk(**{
         "pptx_path": None,
         "slides_url": None,
@@ -2138,13 +2465,65 @@ def test_download_failure_rejects_when_a_local_artifact_remains(
     )
 
     assert result.returncode == 1
-    assert "while a local transcript, PPTX, or PDF artifact remains" in result.stderr
+    assert "source capabilities remain verified or repairable" in result.stderr
     assert db.read_bytes() == before
+
+
+def test_broken_local_reference_allows_no_sources_terminal(
+        persist_results, tmp_path):
+    talk = _talk(
+        video_url=None,
+        youtube_id=None,
+        slides_url=None,
+        pptx_path="decks/missing.pptx",
+    )
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(json.dumps({"talks": [talk]}))
+    batch.write_text(json.dumps([_skipped_return()]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(db.read_text())["talks"][0]["status"] == \
+        "skipped_no_sources"
+
+
+def test_broken_local_reference_with_remote_allows_download_failed(
+        persist_results, tmp_path):
+    talk = _talk(
+        slides_url=None,
+        pptx_path="decks/missing.pptx",
+    )
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(json.dumps({"talks": [talk]}))
+    batch.write_text(json.dumps([
+        _skipped_return(status="skipped_download_failed")]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(db.read_text())["talks"][0]["status"] == \
+        "skipped_download_failed"
 
 
 def test_download_failure_requires_a_remote_acquisition_path(
         persist_results, tmp_path):
-    talk = _talk(video_url=None, pptx_path=None, slides_url=None)
+    talk = _talk(
+        video_url=None,
+        youtube_id=None,
+        pptx_path=None,
+        slides_url=None,
+    )
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
     db.write_text(json.dumps({"talks": [talk]}))
@@ -2158,7 +2537,35 @@ def test_download_failure_requires_a_remote_acquisition_path(
     )
 
     assert result.returncode == 1
-    assert "without a declared video or remote slide acquisition path" in result.stderr
+    assert (
+        "without a usable remote video, transcript/YouTube identity, or slide "
+        "acquisition path"
+    ) in result.stderr
+
+
+def test_malformed_remote_references_do_not_authorize_download_failed(
+        persist_results, tmp_path):
+    talk = _talk(
+        video_url="https://youtu.be/too-short",
+        youtube_id=None,
+        pptx_path=None,
+        slides_url="javascript:alert(1)",
+        google_drive_id="../",
+    )
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(json.dumps({"talks": [talk]}))
+    batch.write_text(json.dumps([
+        _skipped_return(status="skipped_download_failed")]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "without a usable remote video" in result.stderr
 
 
 def test_duplicate_skip_requires_a_bound_canonical_talk(

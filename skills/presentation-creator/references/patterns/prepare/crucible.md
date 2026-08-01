@@ -7,12 +7,13 @@ phase_relevance:
   - content
 vault_dimensions: [12, 14]
 detection_signals:
-  - "evidence of iterative refinement"
-  - "talk evolves across deliveries"
-  - "responsive to audience feedback"
+  - "versioned deliveries show concrete revisions"
+  - "feedback records are linked to subsequent changes"
+  - "speaker confirms the iteration history"
 related_patterns: [brain-breaks, fourthought, carnegie-hall, traveling-highlights]
 inverse_of: []
 difficulty: intermediate
+observable: false
 ---
 
 # Crucible
@@ -52,12 +53,16 @@ Murder Your Darlings is not the same as the post-delivery Crucible refinement: t
 Use this pattern whenever you deliver a presentation more than once. Even single-delivery talks benefit from a post-mortem analysis. Avoid using the Crucible as an excuse to under-prepare — "I'll fix it after the first delivery" is not a substitute for thorough initial preparation. The Crucible refines good material into great material; it cannot rescue material that was never good.
 
 ## Detection Heuristics
-The vault should look for evidence that the presentation has been refined through multiple deliveries. Polished transitions, precisely calibrated timing, and the kind of confident spontaneity that only comes from deep familiarity with material are strong indicators.
+Polish is not proof of repeated delivery. Verify Crucible only from versioned
+deliveries or feedback records that show specific changes between performances.
+Without that history, the workflow is unevaluable even when the talk appears
+highly practiced.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Presentation shows evidence of iterative refinement; timing is precise; transitions are seamless; speaker handles unexpected moments with grace born of experience
-- Moderate signal (1 pt): Presentation is competent but shows signs of being relatively new — some rough transitions, occasional timing issues
-- Absent (0 pts): Presentation feels like a first draft delivered live; structural issues that one delivery would have revealed remain unaddressed
+- Strong signal: Versioned deliveries and linked feedback show multiple concrete revisions after live performance
+- Moderate signal: At least one post-delivery revision is directly documented, but the feedback-to-change trail is incomplete
+- Absent: Version history shows no revision after prior delivery despite captured feedback
+- Unevaluable: Prior versions, feedback records, or speaker confirmation are unavailable
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 12 (Time/Pacing). Relates to Dimension 14 (Overall Impression/Polish).

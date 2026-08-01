@@ -16,20 +16,27 @@ what wrote four Python tracebacks into `transcripts/` when the upstream library
 renamed a method, and nothing noticed because nothing validated the output.
 
 ```bash
-python3 skills/vault-ingress/scripts/fetch-transcript.py {youtube_id} \
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/fetch-transcript.py" {youtube_id} \
   --out "{vault_root}/transcripts/{youtube_id}.txt" \
+  --existing-source "{talk.transcript_source|unknown}" \
   [--duration-seconds {seconds}]
 ```
 
 The script owns the whole chain — caption track first, local Whisper fallback,
-validation, atomic write. It prints one JSON object and never leaves a file
-behind on failure. Exit codes and the JSON shape are the script's contract; see
-its module docstring.
+validation, atomic write. It prints one JSON object and never leaves a corrupt
+transcript behind on failure. Transcript, quality, and timing changes are staged
+together; a caught replacement failure restores every prior byte. When verified
+source-bound segment timing exists, `timed_path` names hash-bound schema-v2
+`{id}.segments.json`; otherwise it is `null` and stale timing is removed. On
+every success, `quality_path` names the independent hash-bound
+`{id}.quality.json` receipt, including for an existing transcript and when no
+timed segments exist. Exit codes and the JSON shape are the script's contract;
+see its module docstring.
 
 | exit | meaning | what to do |
 |---|---|---|
 | 0 | a valid transcript is at `--out` | continue; read `method` to set `transcript_source` |
-| 1 | no source produced a valid transcript | `processed_partial` at best — say so in `rhetoric_notes` |
+| 1 | no source produced valid text, or existing text failed policy without replacement authorization | inspect the reason; `processed_partial` at best |
 | 2 | argument or tool-state error | the id or the environment is wrong, not the talk |
 
 Map the returned `method` to `transcript_source`:
@@ -53,32 +60,82 @@ language code, or Whisper's detected language. It is `null` on the `existing`
 path — keep whatever the talk already records, and leave the field unset rather
 than guessing when there is nothing to copy.
 
-Pass `--duration-seconds` when the runtime is known — it enables the
-words-per-minute check that catches a caption track returning only its opening
-minute.
+`--duration-seconds` is an expected runtime, never authority. The script uses it
+only when it matches a provider/`yt-dlp` probe for the exact YouTube ID or
+`ffprobe` over the exact local-media file. Do not pass a return field, prose
+estimate, or unbound talk-metadata duration. `--min-words` can tighten the safe
+floor but cannot lower it; a short-talk floor comes only from the trusted probe.
+
+Treat `timed_path: null` literally. A hash-current `quality_path` still permits
+an ordinary `transcript` quote, but no opening/closing position, pause, or other
+timing-dependent claim. Missing or stale quality is unverified legacy input and
+cannot enter current v5 scoring; requeue it through this script. Never invent a
+timestamp, reuse an unverified receipt, or copy receipt fields into a return;
+persistence owns and verifies both artifacts.
+
+Timing schema v1/minimal receipts are archival and cannot establish ownership,
+timing, or transcript provenance. Do not relabel or patch them in place. Re-run
+the current fetch/transcription against a source with provable owner duration,
+or re-import the original VTT artifact, to generate schema v2. If optional
+segments are malformed, text-mismatched, or outside that bound, valid semantic
+text plus quality still commit and timing remains unavailable.
 
 **A transcript already on disk is not proof of a transcript.** Ten corpus files
 were empty, a traceback, or a stub. Running the script without `--force` is the
-check: it validates any existing file and either keeps it or replaces it.
+check: it validates any existing file and atomically creates or reuses its exact
+quality receipt without replacing transcript bytes. A stricter `--min-words`
+may reject existing text but never authorizes provider replacement. Inspect the
+named artifact and pass `--force` only when replacement is intentional. Invalid
+UTF-8 fails explicitly; readers never hash replacement-decoded text.
 
-**Non-YouTube talks** (InfoQ, Vimeo, conference platforms): acquire the audio or
-video file, then pass it to the same script with `--audio`. Do not call
+`--existing-source` is mandatory context, not a provenance guess. For a valid
+existing transcript, only known `youtube_auto` provenance permits caption-timing
+enrichment. The fetched captions must match the existing text exactly after
+collapsing Unicode whitespace; case, punctuation, words, and order may not
+change. On a match the script writes only the timing sidecar and preserves the
+transcript bytes. Manual, Whisper, unknown-provenance, and mismatched text stay
+untimed and are never relabeled.
+
+**Non-YouTube talks** (InfoQ, Vimeo, conference platforms): the orchestrator must
+acquire the transcript and register its canonical vault-relative
+`transcript_path` before claiming the talk. Pass the audio or video file to the
+same script with `--audio`. Do not call
 `mlx_whisper.transcribe()` yourself — the validation, the atomic write and the
 JSON contract all live in the script, and a hand-rolled call has none of them.
 
 ```bash
-python3 skills/vault-ingress/scripts/fetch-transcript.py {talk_label} \
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/fetch-transcript.py" {talk_label} \
   --audio "{path_to_audio_or_video}" \
+  --existing-source "{talk.transcript_source|unknown}" \
   --out "{vault_root}/transcripts/{talk_id}.txt"
 ```
 
 Set `transcript_source: whisper` on exit 0. Fall back to `processed_partial`
-when no audio is obtainable at all.
+when no audio is obtainable at all. You may repeat the exact pre-registered
+`transcript_path` (for example `transcripts/infoq-talk-id.txt`), but a new or
+redirected return path cannot authorize citations in that return. Recover and
+reclaim after source registration if the path was missing. YouTube talks may
+omit the field because `youtube_id` remains the canonical fallback.
+The local-media quality receipt binds trusted duration to SHA-256 of the exact
+input media; moving a policy to another recording does not authorize it.
+
+For an existing WebVTT artifact, provide an explicit collision-free output:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/vtt-cleanup.py" \
+  "{vault_root}/transcripts/{source}.vtt" \
+  "{vault_root}/transcripts/{talk_id}.txt" [--force]
+```
+
+The input must be a non-symlink regular file within the output transcript
+directory. The schema-v2 timing receipt binds its safe relative path, exact
+digest, and final cue extent. An existing output is preserved unless `--force`
+explicitly authorizes full transcript/receipt replacement.
 
 ### Slide acquisition (per `slide_source`)
 
 - **`pptx` / `both`** — run
-  `python3 skills/vault-ingress/scripts/pptx-extraction.py <path.pptx>`.
+  `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py" <path.pptx>`.
   Require extraction schema v2 before using native timing/build evidence. A
   missing/v0/v1 schema means timing is unknown and the deck must be re-extracted;
   an unknown future version is unusable until the reader contract is updated.
@@ -94,7 +151,7 @@ when no audio is obtainable at all.
     --merge-output-format mp4 \
     -o "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
     "https://www.youtube.com/watch?v={youtube_id}"
-  python3 skills/vault-ingress/scripts/video-slide-extraction.py \
+  "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/video-slide-extraction.py" \
     "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
     "{vault_root}/slides-rebuild/{youtube_id}" "{youtube_id}"
   ```
@@ -120,7 +177,10 @@ when no audio is obtainable at all.
   `status: "processed"` requires both the trusted manifest and the promoted top-level
   `slides_local_path: "slides/{youtube_id}.pdf"`. A trusted artifact may still finish
   `processed_partial` when another channel fails, and its verified `slide_region` may
-  supply `static_slides` evidence even before promotion. Any return without a promoted
+  supply positive `static_slides` evidence even before promotion. It does not
+  authorize an undetected or applicability outcome: extraction schema v3 proves
+  crop/artifact identity, not that sampling, transition filtering, and deduplication
+  preserved every delivered visual state. Any return without a promoted
   artifact must omit `slides_local_path` and put `slides_local_path` in `clear_fields`.
   If the manifest itself is untrusted, the result is context-only: return
   `processed_partial` and omit authored-slide structured claims such as `slide_count`,
@@ -138,7 +198,7 @@ when no audio is obtainable at all.
   `page_count` are retained video samples, not authored `slide_count`; populate
   `structured_data.slide_count` only from corroborated deck numbering or an authored
   source. For batch downloads, use
-  `skills/vault-ingress/scripts/batch-download-videos.sh <vault_root> ID1 ID2 ...`.
+  `"{speaker_toolkit_root}/skills/vault-ingress/scripts/batch-download-videos.sh" <vault_root> ID1 ID2 ...`.
 - **`none`** — transcript-only, status `processed_partial`.
 - **Fallback** — if primary slides fail but `video_url` exists, fall back to
   video extraction. A talk can still reach `processed` status this way.
@@ -163,9 +223,13 @@ Apply all 14 dimensions from
 (Areas for Improvement). Follow language policy and verbatim-quote rules in
 [processing-rules.md](processing-rules.md).
 
-**Quote rule:** verbatim quotes must be English-first —
-`"English translation" (original text)`. Never quote non-English text without
-an English translation preceding it.
+**Quote rule:** human-readable verbatim examples must be English-first —
+`"English translation" (original text)`. The `evidence_citations[].quote` field
+is the deliberate exception: return only the exact source-language span there so
+persistence can match it. When the preclaim or validated return identifies a
+non-English `delivery_language`, the adjacent `translation` field is mandatory,
+non-empty English; it is optional for English delivery. The analysis renderer
+displays translation first.
 
 ### Slides with `text_extraction_confidence: low` — inventory + pixels
 
@@ -219,9 +283,17 @@ When any slide in a deck reports `text_extraction_confidence: "low"`:
    absent — render to a temp path, which needs no id and no cleanup:
 
    ```bash
-   python3 skills/presentation-creator/scripts/export-pdf.py \
+   "{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/export-pdf.py" \
      "{pptx_path}" "{tmp}/deck.pdf"
    ```
+
+   The temporary render is valid for visual judgment in this run, but it is not
+   automatically a `static_slides` scoring source: raw inspection has no path
+   field and persistence cannot identity-bind an ephemeral artifact. To use a
+   rendered PPTX as static-slide evidence or authorize absence, promote it to a
+   stable owner-declared PDF path before claiming and issue a fresh claim. The
+   resolver will then retain both the distinct `native_deck` and `static_slides`
+   identities; it never aliases the PPTX itself to static pages.
 
    If the export fails and no PDF exists for the talk, say so in the analysis
    and mark Dimensions 8 and 13 design fields low-confidence rather than
@@ -271,8 +343,15 @@ evidence and must not be relabeled as observed motion.
 
 Scan observations against the pattern taxonomy at
 `skills/presentation-creator/references/patterns/_index.md`. Skip patterns
-marked `observable: false`. Record confidence (strong/moderate/weak) and
-evidence per pattern. Compute per-talk score:
+marked `observable: false`; do not infer hidden preparation or provenance from a
+polished result. For each detection, record confidence (strong/moderate/weak), a
+brief evidence explanation, and at least one direct source citation through a
+channel allowed by the pattern's `evidence_channels`. Timing claims require a
+verified timed transcript or direct video review; sequence claims require the
+actual consecutive slides. Native-deck structure can support motion/build
+claims only when the entry's gate permits `native_deck`; observed playback and
+delivery claims require direct video review.
+Do not cite a video interval unless you inspected that interval. Compute per-talk score:
 `count(patterns) − count(antipatterns)`. Store in `pattern_observations`.
 See [processing-rules.md](processing-rules.md) for full tagging rules.
 
@@ -282,18 +361,69 @@ Use `evaluable_from` for moderate/weak detections,
 valid positive detection takes precedence over an unavailable absence gate.
 Every `source_comparison` detection must include `evidence_sources_used` as the
 exact qualifying underlying source group; do not include that field on any
-other detection.
+other detection. Its citations must collectively locate proof from every named
+underlying source. A `talk_metadata` citation may supplement a detection but
+cannot replace its qualifying source/outcome gate.
+
+### Record exact source inspection coverage
+
+Return v4/v5 requires a receipt for the material you actually inspected, not just
+a list of artifacts that happened to exist. `pattern_observations.evidence_sources`
+must be the exact source-name set represented by `source_inspection`:
+
+```json
+[
+  {"source": "transcript", "line_ranges": [[1, 180], [181, 360]]},
+  {"source": "static_slides", "page_ranges": [[1, 18], [20, 42]]},
+  {"source": "native_deck", "page_ranges": [[1, 42]]},
+  {"source": "delivery_video", "time_ranges": [[0, 600.0], [615.0, 1800.0]]},
+  {
+    "source": "source_comparison",
+    "evidence_sources_used": ["static_slides", "native_deck"],
+    "comparison_scope": "full"
+  },
+  {
+    "source": "source_comparison",
+    "evidence_sources_used": ["transcript", "delivery_video"],
+    "comparison_scope": "partial"
+  }
+]
+```
+
+Use inclusive positive line/page ranges and finite non-negative video seconds.
+Ranges are ascending and non-overlapping; adjacent ranges are allowed. Do not
+fill gaps you did not inspect. `comparison_scope: "full"` asserts that the
+comparison covered every named member in full; use `partial` otherwise. More
+than one comparison record is allowed only when the exact underlying groups
+differ. Artifact coexistence without actual comparison gets no comparison
+record.
+
+Canonical `coverage_complete` means the declared ranges covered that artifact;
+it is not a blanket negative-evidence grant. Bare `native_deck`, bare
+`delivery_video`, and video-extracted static pages remain positive-only because
+their receipts do not prove modality completeness. A `full` comparison likewise
+supports positive comparison claims but cannot authorize absence or force a v5
+applicability assessment until an alignment/modality receipt exists. Persistence
+adds engine-owned `absence_capability_complete` and
+`absence_capability_reason`; workers must not return either field.
+
+The worker returns only those ranges/groups/scopes. Do not add line/page counts,
+verified duration, `coverage_complete`, artifact root/path/hash fields, timing
+artifact identity, or comparison `artifact_identities`; persistence derives
+them from the preclaim artifacts and rejects false bounds or source claims.
 
 ## C. Return JSON
 
 Return exactly the shape in [schemas-db.md](schemas-db.md). `status`,
 `slide_source`, all five catalog-feedback lanes, and the complete pattern score
 object are mandatory. Match `return_schema_version` to the active claim:
-fresh claim-schema v3 with `required_return_schema_version: 3` emits return v3.
-Compatibility work under claim schema v1/v2 may emit return v1/v2 only; use v2
-for newly authored compatibility work, while v1 remains saved-artifact replay
-support. Never attach return v3 to a legacy claim.
-Both snapshot versions require `rhetoric_notes` and `areas_for_improvement` to
+fresh claim-schema v5 with `required_return_schema_version: 5` emits return v5.
+Saved claim schemas v1/v2 authorize only saved return schemas v1/v2; claim
+schema v3 authorizes only return schema v3, and claim schema v4 authorizes only
+archival return schema v4.
+Recover a live legacy lease and issue a fresh v5 generation; never mutate its
+claim or attach a newer return to it.
+Snapshot versions 2–5 require `rhetoric_notes` and `areas_for_improvement` to
 contain substantive non-whitespace analysis. Empty strings remain valid for
 `adherence_assessment`, `new_patterns`, and
 `summary_updates` where documented; the adherence no-assessment sentinel must be
@@ -305,21 +435,15 @@ never emit JSON `null`.
 Omit `processed_date`; the persistence writer owns one normalized timestamp for
 the complete queue batch and the analysis writer renders that stored value.
 
-For return v3, read `talk._queue_claim.adherence_baseline` without modifying it:
-
-- When `scored_talk_count < 10`, return
-  `"adherence_assessment": ""` exactly and omit `adherence_comparison`.
-- When `scored_talk_count >= 10`, return `adherence_comparison` with exactly
-  `schema_version`, `baseline`, and `talk_pattern_score`. Copy the complete
-  baseline exactly from the claim and bind the integer talk score to the
-  validated `pattern_observations.pattern_score`. Write 2–4
-  punctuation-terminated assessment sentences that interpret those structured
-  numbers. Every `.`, `?`, or `!` cluster before whitespace/end counts as a
-  boundary—including abbreviation periods—and the last sentence needs terminal
-  punctuation.
+For return v5, always return `"adherence_assessment": ""` exactly and omit
+`adherence_comparison`. The worker cannot know the canonical, engine-owned talk
+`opportunity_coverage_identity`. Only an owner-side consumer after persistence
+may compare a talk against a schema-v2 baseline, and only when the identities
+match exactly, comparison status is available, and at least ten talks share the
+same identity.
 
 Never recalculate after inspecting the talk, substitute the post-batch cohort,
-parse Section 15, or infer a cohort from processing dates. Legacy v1/v2
+parse Section 15, or infer a cohort from processing dates. Legacy v1–v4
 adherence prose is archival `legacy-unverified`, not a current numeric input.
 
 When returning `per_slide_visual`, use the exact seven-key row contract and
@@ -334,7 +458,7 @@ slide, page, or asset; how one class wins when multiple images or sources occur;
 which provenance evidence supports the classes; and how unverified origins enter
 the `unknown` count.
 
-Version-2 and version-3 supplied fields are snapshots: an empty string, array,
+Version-2 through version-5 supplied fields are snapshots: an empty string, array,
 or declared map
 replaces an older value when that field permits emptiness, while an omitted field
 preserves it. Use `clear_fields`
@@ -350,12 +474,12 @@ nested dictionary union. Put genuinely additive experimental data under
 `structured_data.extensions.<producer_namespace>`; an undeclared top-level object
 is rejected until its replacement policy is documented and registered.
 
-Minimal processed structure for a fresh v3 claim below the 10-talk threshold:
+Minimal processed structure for a fresh v5 claim:
 
 ```json
 {
   "filename": "2026-01-01-example.md",
-  "return_schema_version": 3,
+  "return_schema_version": 5,
   "queue_claim": {
     "run_id": "reparse-2026-07",
     "batch_id": "25",
@@ -363,7 +487,7 @@ Minimal processed structure for a fresh v3 claim below the 10-talk threshold:
   },
   "status": "processed",
   "transcript_source": "youtube_auto",
-  "slide_source": "pdf",
+  "slide_source": "both",
   "slides_local_path": "slides/example.pdf",
   "rhetoric_notes": "Dimensions 1-13 analysis...",
   "areas_for_improvement": "Dimension 14 analysis...",
@@ -376,17 +500,41 @@ Minimal processed structure for a fresh v3 claim below the 10-talk threshold:
   },
   "verbatim_examples": {},
   "pattern_observations": {
-    "evidence_sources": ["transcript", "static_slides", "delivery_video"],
+    "evidence_sources": [
+      "transcript",
+      "static_slides",
+      "native_deck",
+      "delivery_video",
+      "source_comparison"
+    ],
+    "source_inspection": [
+      {"source": "transcript", "line_ranges": [[1, 360]]},
+      {"source": "static_slides", "page_ranges": [[1, 42]]},
+      {"source": "native_deck", "page_ranges": [[1, 42]]},
+      {"source": "delivery_video", "time_ranges": [[0, 1800.0]]},
+      {
+        "source": "source_comparison",
+        "evidence_sources_used": ["static_slides", "native_deck"],
+        "comparison_scope": "full"
+      }
+    ],
     "patterns_detected": [
       {
         "pattern_id": "narrative-arc",
         "confidence": "strong",
         "evidence_source": "transcript",
         "evidence": "Four named acts build one argument.",
-        "dimensions": [2, 5]
+        "evidence_citations": [
+          {
+            "source": "transcript",
+            "channel": "transcript",
+            "quote": "First, understand the problem before trying to fix it."
+          }
+        ]
       }
     ],
     "antipatterns_detected": [],
+    "applicability_assessments": [],
     "not_evaluable": [],
     "pattern_score": {
       "patterns_used": 1,
@@ -404,51 +552,42 @@ Minimal processed structure for a fresh v3 claim below the 10-talk threshold:
 }
 ```
 
-At the 10-talk threshold, replace the empty sentinel with 2–4 sentences and add
-the exact structured comparison:
-
-```json
-{
-  "adherence_assessment": "This talk remains close to the established pattern baseline. Its detected antipattern explains the gap without changing the claim snapshot.",
-  "adherence_comparison": {
-    "schema_version": 1,
-    "baseline": {
-      "schema_version": 1,
-      "as_of": "2026-07-31T18:00:00+00:00",
-      "scope": "global",
-      "active_batch_excluded": true,
-      "excluded_filenames": ["2026-01-01-example.md"],
-      "eligible_statuses": ["processed", "processed_partial"],
-      "pattern_scoring_generation_status": "current",
-      "pattern_scoring_generation_reasons": [],
-      "pattern_catalog_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "pattern_scoring_schema_version": 3,
-      "scored_talk_count": 25,
-      "pattern_score_sum": 170,
-      "average_pattern_score": 6.8
-    },
-    "talk_pattern_score": 1
-  }
-}
-```
-
-The concrete values above are illustrative; the actual `baseline` object MUST
-be copied completely and exactly from the active claim, not reconstructed or
-partially projected.
+The raw worker return must not include engine-owned `evidence_schema_version`,
+`pattern_outcomes`, or `opportunity_coverage_identity`. Persistence derives the
+exhaustive sorted outcome ledger and its identity from the validated raw lanes.
 
 For a comparison detection, the detection object additionally carries, for
 example, `"evidence_sources_used": ["static_slides", "native_deck"]`.
 The array is duplicate-free, excludes the `source_comparison` marker, and must
 exactly match one qualifying catalog group.
 
-Fresh work arrives only under a claim-v3 payload that explicitly requires return
-v3. A worker finishing an existing v1/v2 claim stays within return v1/v2 and
-must not alter the claim payload, invent a new schema, or attach v3.
+Fresh work arrives only under a claim-v5 payload that explicitly requires return
+v5. Saved claims v1/v2 remain replayable only with saved returns v1/v2; claim v3
+requires return v3 and claim v4 requires archival return v4. Recover a live
+legacy lease without rewriting it; otherwise issue a new v5 claim. Never alter a
+saved claim payload, invent a schema, or attach a newer return to a legacy claim.
+
+In raw v4/v5 citations, return only `source`, `channel`, and the locator you
+actually observed: transcript `quote` (plus optional `translation`), slide
+`slide_numbers`, video `start_seconds`/`end_seconds`, or metadata `field`.
+Never return transcript line/timestamp matches, artifact root/path/hash fields,
+timing-artifact fields, or metadata `value`/`owner_value_after_return`; those are
+engine-owned. Omit catalog-owned `dimensions`; if retained for compatibility,
+it must match the exact catalog order. V4/v5 `not_evaluable` entries contain only
+`pattern_id` and `reason_code`: `missing_required_source_coverage` for an
+incompletely covered absence gate, `absence_not_authorized_by_catalog` for an
+explicit positive-only entry, `missing_applicability_source_coverage` for a v5
+conditional entry whose applicability gate is incomplete, or
+`source_gate_pending_owner_review` for an observable entry still missing an
+approved positive gate. V5 additionally returns one exact source-located
+`applicability_assessments` row for every nondetected conditional entry whose
+applicability gate is complete. An ungated entry fails closed and cannot be
+returned as detected or silently absent.
 
 Before returning, run the deterministic gate:
 
 ```bash
-python3 skills/vault-ingress/scripts/validate-returns.py batch-returns.json
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/validate-returns.py" batch-returns.json
 ```
 
 Fix every reported error. Do not weaken a catalog ID, polarity, observability,

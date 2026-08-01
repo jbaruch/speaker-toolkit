@@ -8,23 +8,12 @@ phase_relevance:
   - guardrails
 vault_dimensions: [7, 8]
 detection_signals:
-  - "clean grammar"
-  - "consistent style"
-  - "polished text"
-  - "no typos on slides"
-evaluable_from:
-  - static_slides
-  - native_deck
-  - delivery_video
-evidence_requirements:
-  - "Evidence must expose the visible construction across enough of the talk to apply the existing strong, moderate, or absent criterion."
-  - "Evidence must expose the existing scoring cues: strong: zero visible text errors; moderate: one or two minor errors; absent: multiple text errors."
-not_evaluable_when:
-  - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
-  - "Only a transcript or spoken account is available, or the visual source is too partial to distinguish the asserted tier from absence."
+  - "review comments or copyediting artifact are available"
+  - "speaker identifies the colleague or editor who reviewed the text"
 related_patterns: [leet-grammars]
 inverse_of: [tower-of-babble]
 difficulty: foundational
+observable: false
 ---
 
 # Peer Review
@@ -75,15 +64,16 @@ Use Peer Review for any presentation you care about. At minimum, always complete
 Avoid skipping Peer Review on the claim that you "know the material." Expertise in a subject does not guarantee clear communication of that subject. In fact, domain experts are often the worst at spotting their own unclear writing.
 
 ## Detection Heuristics
-When scoring talks, look for the absence of errors rather than the presence of editing marks. Clean grammar, consistent capitalization, uniform punctuation style, and the absence of typos on slides are all strong indicators that Peer Review was applied. Inconsistent formatting — some slides with periods at the end of bullets, others without — suggests the pattern was not followed.
+Do not infer a review process from clean output. Error-free text may be
+self-edited, while reviewed text may still contain mistakes. Verify Peer Review
+only from review comments, a copyediting artifact, or speaker confirmation that
+identifies the reviewer and the material they reviewed.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Zero visible typos or grammatical errors on slides, consistent style throughout, polished and professional text quality
-- Moderate signal (1 pt): Mostly clean text with one or two minor errors, generally consistent style with occasional lapses
-- Absent (0 pts): Multiple typos, grammatical errors, inconsistent capitalization or punctuation, or unclear phrasing on slides
-
-## Evidence Gate
-Evaluate this entry only from rendered static slides, the native deck, or delivery video that exposes the visible construction. Speech alone cannot establish its visual criteria, and an absence finding requires coverage of the complete relevant visual sequence.
+- Strong signal: Review comments or copyediting artifacts identify a reviewer and show substantive issues addressed
+- Moderate signal: A reviewer and reviewed material are confirmed, but the change record is incomplete
+- Absent: Available creation history shows no external review before delivery
+- Unevaluable: Review artifacts and speaker confirmation are unavailable
 
 ## Relationship to Vault Dimensions
 Dimension 7 (Language and Communication): Peer Review covers language quality across the presentation. Dimension 8 (Slide Design): clean, error-free text is part of professional slide design.

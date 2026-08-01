@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - slides
 vault_dimensions: [13]
+evidence_channels: [slide_sequence, video]
 detection_signals:
   - "hidden elements revealed during presentation"
   - "surprise reveals"
@@ -14,12 +15,18 @@ evaluable_from:
   - native_deck
   - [native_deck, static_slides]
   - [delivery_video, static_slides]
+strong_evaluable_from:
+  - native_deck
+  - [native_deck, static_slides]
+  - [delivery_video, static_slides]
+absence_evaluable_from: null
 evidence_requirements:
   - "Evidence must show a live reveal of an element absent from the static or distributed state."
   - "Use either inspectable zero-opacity animation metadata or an explicit comparison naming the live and static sources."
 not_evaluable_when:
   - "Only a static slide, PDF, or final-state image is available."
   - "An entrance effect is visible but the source cannot establish that the element was deliberately absent from the distributed state."
+  - "The sources do not establish a pre-distribution requirement, so a non-detection cannot prove that this distribution-specific technique was applicable and absent."
 related_patterns: [gradual-consistency]
 inverse_of: []
 difficulty: advanced
@@ -50,16 +57,13 @@ Avoid Invisibility when there is no distribution requirement — if your slides 
 When scoring live presentations, look for elements that appear to materialize on slides that seemed complete or sparse — content that clearly was not visible in the static layout suddenly appearing through animation. Comparing distributed handouts to the live presentation and noting significant differences is the most reliable detection method.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Strategic use of hidden elements revealed during live presentation to create surprise or emphasis, particularly when handouts were distributed in advance; clear difference between live and printed versions
-- Moderate signal (1 pt): Some elements appear through animation that could have been hidden for strategic purposes, but the intent is unclear
-- Absent (0 pts): All elements visible in both printed and live versions, no strategic use of opacity or hidden elements
+- Strong signal: Strategic use of hidden elements revealed during live presentation to create surprise or emphasis, particularly when handouts were distributed in advance; clear difference between live and printed versions
+- Moderate signal: Some elements appear through animation that could have been hidden for strategic purposes, but the intent is unclear
+- Absent: All elements visible in both printed and live versions, no strategic use of opacity or hidden elements
 
 ## Evidence Gate
-A static artifact alone is not evidence for or against Invisibility. Establish both the
-element's absence from the distributed/static state and its live reveal, either from
-inspectable native opacity/build metadata or from an explicit source comparison. A blank
-slide, a complete final slide, or an ordinary entrance animation without proof of the
-static-state difference is not enough.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 13 (Visual Polish and Craft): Invisibility demonstrates advanced technical knowledge of presentation tool capabilities and sophisticated thinking about the relationship between live and printed artifacts.

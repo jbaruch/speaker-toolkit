@@ -26,8 +26,8 @@ because the model preserves the existing composition and style at each step.
 ## Run
 
 ```bash
-python3 skills/illustrations/scripts/generate-illustrations.py outline.yaml --build 5     # one slide
-python3 skills/illustrations/scripts/generate-illustrations.py outline.yaml --build all   # all builds
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-illustrations.py" outline.yaml --build 5     # one slide
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-illustrations.py" outline.yaml --build all   # all builds
 ```
 
 Output: `illustrations/builds/slide-NN-build-MM.jpg`.
@@ -112,12 +112,12 @@ structural slide insertion never uses python-pptx, per `rules/deck-editing-rules
 # 1. Emit the build-expansion manifest from the outline + generated frames.
 #    Pass --notes <notes.json> so each parent's speaker notes ride onto its
 #    FINAL frame (expansion drops the parent slide, so notes must be carried).
-python3 skills/illustrations/scripts/build-expansion-manifest.py \
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/build-expansion-manifest.py" \
     outline.yaml illustrations/builds/ \
     --notes notes.json --out builds-manifest.json
 
 # 2. Expand: replace each parent slide with its frames as full-bleed bg-fill slides
-bash skills/presentation-creator/scripts/expand-builds.sh \
+bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/expand-builds.sh" \
     <deck-copy.pptx> <deck-expanded.pptx> builds-manifest.json
 ```
 

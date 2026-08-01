@@ -29,7 +29,7 @@ and Coda slides are easy to miss — this step catches them systematically.
 
 1. Run the extraction script against `outline.yaml`:
    ```bash
-   python3 skills/presentation-creator/scripts/extract-resources.py outline.yaml
+   python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-resources.py" outline.yaml
    ```
 
 2. The script produces `resources.json` in the talk working directory with
@@ -147,20 +147,20 @@ path make the check before resolving the link.
 3. Run the QR generation script:
    ```bash
    # MCP-preresolved mode:
-   python3 skills/presentation-creator/scripts/generate-qr.py deck.pptx \
+   python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/generate-qr.py" deck.pptx \
      --talk-slug SLUG --short-url SHORT_URL
 
    # Direct API mode:
-   python3 skills/presentation-creator/scripts/generate-qr.py deck.pptx \
+   python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/generate-qr.py" deck.pptx \
      --talk-slug SLUG --shownotes-url SHOWNOTES_URL \
      --vault /path/to/vault
 
    # No shortening:
-   python3 skills/presentation-creator/scripts/generate-qr.py deck.pptx \
+   python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/generate-qr.py" deck.pptx \
      --talk-slug SLUG --shownotes-url SHOWNOTES_URL
 
    # PNG-only (no deck — for presenterm, PDF, or standalone use):
-   python3 skills/presentation-creator/scripts/generate-qr.py --png-only \
+   python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/generate-qr.py" --png-only \
      --talk-slug SLUG --shownotes-url SHOWNOTES_URL \
      --output /path/to/qr.png --bg-color 128,0,128
    ```
@@ -206,11 +206,11 @@ Generate a plain-text timing file for [timemytalk.app](https://timemytalk.app)
 by running:
 
 ```bash
-python3 skills/presentation-creator/scripts/generate-talk-timings.py \
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/generate-talk-timings.py" \
   outline.yaml --output talk-timings.txt
 
 # If the talk slot includes Q&A time:
-python3 skills/presentation-creator/scripts/generate-talk-timings.py \
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/generate-talk-timings.py" \
   outline.yaml --qa 5 --output talk-timings.txt
 ```
 
@@ -242,8 +242,9 @@ Before delivery, surface a delivery-readiness checklist composed of two strands:
 
 1. **Unobservable patterns** from [patterns/_index.md](patterns/_index.md) (the
    "Unobservable Patterns — Go-Live Checklist" section). These are patterns the vault
-   **cannot score retroactively** because they involve pre-event logistics, physical
-   stage behaviors, or external systems.
+   **cannot score retroactively** because they involve pre-event logistics, hidden
+   authoring/provenance processes, physical stage behaviors, post-event follow-up,
+   or external systems the current artifacts cannot prove.
 2. **Observable delivery reminders** that the speaker can decide to apply on the day —
    venue setup choices (lights, lectern, mic), opening discipline, time discipline,
    and screen-blackout tactics. These *are* observable post-talk, but the speaker
@@ -265,6 +266,13 @@ VENUE SETUP:
     shouting
 
 PRE-EVENT:
+[ ] Know Your Audience — audience/organizer research captured; concrete adaptations noted
+[ ] Required — mandatory/assigned context confirmed and used deliberately as practice
+[ ] Fourthought — ideation/capture/organization completed before slide authoring
+[ ] Proposed — accepted CFP artifact retained; final scope checked against its promises
+[ ] Concurrent Creation — one Slide Wrangler named; collaboration history retained
+[ ] Peer Review — colleague/editor review completed; comments retained
+[ ] Social Media Advertising — dated promotional posts published and retained, if relevant
 [ ] Preparation — backups, cables, hydration, room layout check
 [ ] Carnegie Hall — completed 4 rehearsals (pace, delivery, fixes, groove)
 [ ] The Stakeout — staging area identified near venue
@@ -293,9 +301,15 @@ DURING DELIVERY:
 [ ] Red/Yellow/Green — exit feedback cards set up (if venue supports)
 
 AVOID:
+[ ] Abstract Attorney — compare the final talk directly with the accepted abstract
+[ ] Borrowed Shoes — confirm authorship and substantially adapt borrowed material
 [ ] Laser Weapons — don't wave the pointer; use built-in highlights
 [ ] Bunker — step out from behind the podium
 [ ] Backchannel — don't monitor social media during the talk
+
+POST-EVENT:
+[ ] Crucible — record feedback and the concrete revisions made before the next delivery
+[ ] Spaced Follow-Up — after 1–2 weeks, send opt-in attendees 2–3 recall questions
 ==================================
 ```
 

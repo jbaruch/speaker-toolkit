@@ -7,6 +7,7 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [2, 5, 13]
+evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "section divider slides"
   - "thematic shift markers"
@@ -15,12 +16,25 @@ evaluable_from:
   - static_slides
   - native_deck
   - delivery_video
+strong_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: short-talk-at-most-15-minutes
+    description: "Complete delivery video establishes a talk of at most 15 minutes, where the catalog says atmospheric transition slides would consume disproportionate time."
+  - condition_id: continuous-single-theme-flow
+    description: "Complete delivery video establishes one continuous subject, emotional register, and presentation mode with no major thematic shift for an atmospheric transition to mark."
+applicability_evaluable_from:
+  - delivery_video
 evidence_requirements:
-  - "Evidence must expose the visible construction across enough of the talk to apply the existing strong, moderate, or absent criterion."
+  - "Evidence must expose the visible construction across enough of the talk to apply a positive criterion; current artifacts do not authorize an absent outcome."
   - "Evidence must expose the existing scoring cues: strong: coherent thematic transition slides; moderate: divider labels or inconsistent use; absent: no distinct transition slides."
 not_evaluable_when:
   - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
-  - "Only a transcript or spoken account is available, or the visual source is too partial to distinguish the asserted tier from absence."
+  - "Only a transcript or spoken account is available, or the visual source is too partial for the asserted positive tier; non-detection remains not_evaluable."
+  - "The complete delivery is unavailable, so duration and thematic-flow applicability conditions cannot both be assessed."
 related_patterns: [context-keeper, bookends, narrative-arc, unifying-visual-theme, brain-breaks]
 inverse_of: []
 difficulty: intermediate
@@ -51,12 +65,13 @@ Avoid Intermezzi in short presentations where they would consume a disproportion
 When scoring talks, look for slides between major sections that are visually distinct from content slides and that serve an atmospheric or transitional purpose. These slides might feature imagery, quotes, visual themes, or palette transitions. The key distinction from Bookends is that Intermezzi emphasize mood and theme rather than explicit structural labeling.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Consistent, thematically coherent Intermezzi between sections that signal thematic shifts, provide cognitive pauses, and contribute to the presentation's visual identity; possibly used as a Foreshadowing vehicle
-- Moderate signal (1 pt): Some section divider slides present but they function more as structural labels than atmospheric transitions, or Intermezzi used inconsistently
-- Absent (0 pts): No distinct transition slides between sections; sections flow directly into each other with no visual or thematic pause
+- Strong signal: Consistent, thematically coherent Intermezzi between sections that signal thematic shifts, provide cognitive pauses, and contribute to the presentation's visual identity; possibly used as a Foreshadowing vehicle
+- Moderate signal: Some section divider slides present but they function more as structural labels than atmospheric transitions, or Intermezzi used inconsistently
+- Absent: No distinct transition slides between sections; sections flow directly into each other with no visual or thematic pause
 
 ## Evidence Gate
-Evaluate this entry only from rendered static slides, the native deck, or delivery video that exposes the visible construction. Speech alone cannot establish its visual criteria, and an absence finding requires coverage of the complete relevant visual sequence.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 2 (Structure and Flow): Intermezzi contribute to structural clarity by marking section boundaries. Dimension 5 (Storytelling and Narrative): Intermezzi support narrative flow and emotional pacing. Dimension 13 (Visual Polish and Craft): Well-designed Intermezzi contribute to the overall aesthetic coherence of the presentation.

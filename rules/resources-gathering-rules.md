@@ -11,7 +11,7 @@ matching, book patterns, RFC citations, and tool mentions consistently.
 Manual scanning misses items and introduces inconsistency.
 
 ```bash
-python3 skills/presentation-creator/scripts/extract-resources.py outline.yaml
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-resources.py" outline.yaml
 ```
 
 ## 2. Speaker Review is Mandatory

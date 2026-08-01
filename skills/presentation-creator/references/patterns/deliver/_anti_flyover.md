@@ -6,11 +6,26 @@ part: deliver
 phase_relevance:
   - guardrails
 vault_dimensions: [4, 14]
+evidence_channels: [transcript, video]
 detection_signals:
   - "speaker disparages or diminishes the local audience or region"
   - "speaker valorizes their home region/employer as the place where things really happen"
   - "phrasing like 'you might not have noticed it here, but where I'm from...'"
   - "the room is framed as behind, provincial, or not the real audience"
+evaluable_from:
+  - transcript
+  - delivery_video
+strong_evaluable_from:
+  - transcript
+  - delivery_video
+absence_evaluable_from:
+  - transcript
+evidence_requirements:
+  - "Evidence must preserve the conversational context around local-versus-home comparisons so neutral comparisons are not scored as audience diminishment."
+  - "A strong score requires repeated status comparisons across the talk; absence is authorized only from a complete transcript."
+not_evaluable_when:
+  - "Only isolated quotations or clips are available without enough context to identify which audience or region is being compared."
+  - "The spoken source does not cover the whole talk needed to establish recurrence, or the transcript is incomplete for absence."
 related_patterns: [know-your-audience, seeding-satisfaction, mentor]
 inverse_of: [know-your-audience]
 difficulty: foundational
@@ -46,9 +61,13 @@ This is an antipattern and should always be avoided. Share your home-region or h
 - Pattern recurs across the talk rather than appearing once — a sign it reflects the speaker's actual stance, not a slip
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Speaker repeatedly diminishes the audience or their region while valorizing their own, severing trust with the room
-- Moderate signal (1 pt): Mostly respectful, but an occasional comparison frames the local audience or region as behind
-- Absent (0 pts — antipattern not present): Speaker shares home-region/high-scale experience as a peer, never positioning the present audience as inferior; the room is treated as capable and worth addressing as equals
+- Strong signal (antipattern present): Speaker repeatedly diminishes the audience or their region while valorizing their own, severing trust with the room
+- Moderate signal: Mostly respectful, but an occasional comparison frames the local audience or region as behind
+- Absent (antipattern not present): Speaker shares home-region/high-scale experience as a peer, never positioning the present audience as inferior; the room is treated as capable and worth addressing as equals
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+An absence finding is authorized only from a complete transcript (`transcript`) covering the required spoken scope; delivery video, rendered/static slides, native decks, and comparison artifacts do not authorize absence.
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 4 (Audience Engagement) — it actively dismantles the speaker-audience relationship — and to Vault Dimension 14 (Speaker Craft / Professionalism), where condescension toward the room reads as a fundamental failure of professional respect.

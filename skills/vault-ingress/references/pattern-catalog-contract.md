@@ -3,7 +3,7 @@
 Run the catalog auditor before selecting or re-analyzing talks:
 
 ```bash
-python3 skills/vault-ingress/scripts/audit-pattern-catalog.py
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/audit-pattern-catalog.py"
 ```
 
 Pass `--catalog <patterns-directory>` to inspect another catalog. The command

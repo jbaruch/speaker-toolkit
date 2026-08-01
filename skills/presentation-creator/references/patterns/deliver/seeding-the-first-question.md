@@ -7,10 +7,27 @@ phase_relevance:
   - content
   - publishing
 vault_dimensions: [4]
+evidence_channels: [video]
 detection_signals:
   - "deliberate question bait planted"
   - "obvious curiosity gap left open"
   - "Q&A ice-breaker seeded early"
+evaluable_from:
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: no-q-and-a-segment
+    description: "Complete delivery video establishes that the session contains no audience Q&A segment in which a first question could occur."
+applicability_evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Delivery video must cover both the planted curiosity gap and the Q&A opening so their relationship can be observed."
+  - "A strong score must connect the seed to the first question and show participation flowing afterward; an unrelated first question does not qualify."
+not_evaluable_when:
+  - "The recording ends before Q&A, begins after the possible seed, or otherwise cannot connect both events."
+  - "The complete session is unavailable, so the no-Q&A applicability condition cannot be assessed."
 related_patterns: [preroll, know-your-audience, display-of-high-value, greek-chorus]
 inverse_of: []
 difficulty: intermediate
@@ -42,9 +59,13 @@ Use this pattern whenever your talk has a Q&A segment, especially with audiences
 - Speaker appears unsurprised and well-prepared for the first question asked
 
 ## Scoring Criteria
-- Strong signal (2 pts): Deliberate question seed is planted, Q&A opens naturally with someone asking the seeded question, conversation flows freely afterward
-- Moderate signal (1 pt): Some attempt at seeding visible but the connection between seed and first question is weak
-- Absent (0 pts): No seeding evident, Q&A opens with awkward silence or forced participation
+- Strong signal: Deliberate question seed is planted, Q&A opens naturally with someone asking the seeded question, conversation flows freely afterward
+- Moderate signal: Some attempt at seeding visible but the connection between seed and first question is weak
+- Absent: No seeding evident, Q&A opens with awkward silence or forced participation
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 4 (Audience Engagement). It catalyzes audience participation during Q&A, transforming a potentially dead segment into an active conversation.

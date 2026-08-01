@@ -6,10 +6,34 @@ part: build
 phase_relevance:
   - slides
 vault_dimensions: [8, 13]
+evidence_channels: [slide_sequence, video]
 detection_signals:
   - "sequential item reveal"
   - "dimming of previous items"
   - "focus maintained on current point"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: no-sequential-multi-item-slide
+    description: "A complete deck or delivery video establishes that no slide presents multiple items for sequential discussion, so Charred Trail has no qualifying visual opportunity."
+applicability_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "Static-slide evidence must show consecutive rendered build states of the same list with new items appearing and prior items visibly dimming."
+  - "Strong evidence must establish consistent reveal-and-dim behavior across the relevant sequences; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "Only one flattened final state is available, even if several items are gray."
+  - "Neither native build metadata nor delivery video is complete enough for the claimed positive tier."
+  - "The source does not cover the complete visual inventory needed to assess whether any sequential multi-item slide exists."
 related_patterns: [context-keeper, exuberant-title-top, bookends]
 inverse_of: []
 difficulty: foundational
@@ -40,9 +64,13 @@ Avoid Charred Trail when all items on a slide are meant to be considered simulta
 When scoring talks, look for sequential reveal animations where previous items visually recede as new items appear. The dimming effect is the key indicator — items changing to gray, reducing opacity, or otherwise becoming visually subordinate to the current item. A simple sequential reveal without dimming is related but does not fully implement the Charred Trail pattern.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Sequential item reveals with clear dimming of previous items, consistent dim levels throughout the deck, effective focus management on multi-item slides
-- Moderate signal (1 pt): Sequential reveals present but without dimming, or dimming used inconsistently across the deck
-- Absent (0 pts): All items on multi-item slides appear simultaneously, or no animation used for sequential content
+- Strong signal: Sequential item reveals with clear dimming of previous items, consistent dim levels throughout the deck, effective focus management on multi-item slides
+- Moderate signal: Sequential reveals present but without dimming, or dimming used inconsistently across the deck
+- Absent: All items on multi-item slides appear simultaneously, or no animation used for sequential content
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 8 (Slide Design): Charred Trail demonstrates thoughtful slide design by managing visual attention through animation rather than relying on the audience to follow along unaided. Dimension 13 (Visual Polish and Craft): The consistent application of dim effects and reveal timing reflects attention to visual polish.

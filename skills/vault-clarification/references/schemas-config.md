@@ -69,7 +69,7 @@ recognize, vault-ingress treats it as read-only and skips verification.
 
 Schema v2 binds every catalog-derived goal to the exact pattern-scoring generation
 accepted by the speaker. The full baseline snapshot is copied from a validated
-schema-v3 `speaker-profile.json`; Section 15 is a narrative mirror, never the machine
+schema-v4 `speaker-profile.json`; Section 15 is narrative context, never the machine
 source. The helper at `scripts/goal_generation_provenance.py` makes the mechanical
 comparability decision for both the owner and reader.
 
@@ -96,7 +96,7 @@ comparability decision for both the owner and reader.
     "baseline_provenance": {
       "lane": "pattern_scoring",
       "pattern_baseline": {
-        "schema_version": 1,
+        "schema_version": 2,
         "as_of": "2026-06-11T12:00:00+00:00",
         "scope": "global",
         "active_batch_excluded": false,
@@ -105,19 +105,24 @@ comparability decision for both the owner and reader.
         "pattern_scoring_generation_status": "current",
         "pattern_scoring_generation_reasons": [],
         "pattern_catalog_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "pattern_scoring_schema_version": 3,
+        "pattern_scoring_schema_version": 5,
         "scored_talk_count": 12,
         "pattern_score_sum": 72,
-        "average_pattern_score": 6.0
+        "average_pattern_score": 6.0,
+        "eligible_talk_count": 12,
+        "opportunity_coverage_identity": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "raw_score_comparison_status": "available",
+        "raw_score_comparison_reason": null
       }
     }
   }]
 }
 ```
 
-- `kind` ties the goal to a coaching surface: `antipattern` (a recurring antipattern
-  to reduce), `underuse` (a signature pattern to stop dropping, or an underused
-  pattern to start using), `pacing` (hit the time/slide budget), `other` (free-form).
+- `kind` ties the goal to a coaching surface: `antipattern` (a speaker-selected
+  antipattern occurrence to reduce), `underuse` (a speaker-selected pattern occurrence
+  to increase), `pacing` (hit the time/slide budget), `other` (free-form). Raw
+  occurrence rows do not classify recurrence, signature status, or underuse.
 - `antipattern_id` is set only when `kind` is `antipattern`; it is `null` for
   `underuse`, `pacing`, and `other` goals (no antipattern exists to reference).
 - `baseline_value` is the human-readable metric value accepted by the speaker. For
@@ -129,8 +134,10 @@ comparability decision for both the owner and reader.
   `pattern_baseline`. An `other` goal cannot be used to evade pattern provenance.
 - Pattern baselines must be non-empty post-batch full-cohort snapshots
   (`active_batch_excluded: false`, `excluded_filenames: []`). A fingerprint or scoring
-  schema mismatch produces `needs_rebaseline`; a missing current baseline or legacy
-  schema-v1 pattern goal is `unverifiable`. Neither state permits an outcome status.
+  schema mismatch produces `needs_rebaseline`; scoring-v5 also requires one available
+  `opportunity_coverage_identity` for raw-score comparability. A missing current
+  baseline or legacy schema-v1 pattern goal is `unverifiable`. Neither state permits
+  an outcome status.
 - Rebaselining is an explicit speaker decision: preserve the old record, retire it,
   and create a new schema-v2 record with `supersedes_goal_id`. Never overwrite or
   restamp the old baseline.

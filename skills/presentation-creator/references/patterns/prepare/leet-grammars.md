@@ -13,6 +13,7 @@ detection_signals:
 related_patterns: [analog-noise, brain-breaks]
 inverse_of: [tower-of-babble]
 difficulty: advanced
+observable: false
 ---
 
 # Leet Grammars
@@ -38,9 +39,15 @@ Use Leet Grammars when presenting to a community whose language you genuinely kn
 The vault should look for specialized vocabulary used correctly and naturally. Insider references that demonstrate genuine community membership, technical terms deployed with precision, and cultural references that resonate with the target audience are all positive signals.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Community jargon used correctly and naturally throughout; insider references resonate; speaker demonstrates genuine membership in the audience's community
-- Moderate signal (1 pt): Some specialized vocabulary present but used cautiously; speaker demonstrates familiarity with the community but not deep membership
-- Absent (0 pts): Generic vocabulary only; no community-specific language; speaker could be addressing any audience
+- Strong signal: Community jargon used correctly and naturally throughout; insider references resonate; speaker demonstrates genuine membership in the audience's community
+- Moderate signal: Some specialized vocabulary present but used cautiously; speaker demonstrates familiarity with the community but not deep membership
+- Absent: Generic vocabulary only; no community-specific language; speaker could be addressing any audience
+
+## Vault Observability
+Talk artifacts can locate specialized vocabulary, but the pattern requires correctness for a
+particular community, authentic membership, and resonance with that community. Those facts
+cannot be established from the speaker's own words or slides without independently verified
+community and speaker context. Do not turn fluent jargon into inferred identity or belonging.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 7 (Technical Depth/Accuracy). Relates to Dimension 10 (Creativity/Originality).

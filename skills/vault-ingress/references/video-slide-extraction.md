@@ -85,7 +85,7 @@ manual crop; it never deletes the source video.
 
 ## Usage
 
-Run `python3 skills/vault-ingress/scripts/video-slide-extraction.py` for each video after downloading it:
+Run `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/video-slide-extraction.py"` for each video after downloading it:
 
 ```bash
 # Download video at 720p
@@ -95,14 +95,14 @@ yt-dlp -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]"
   "https://www.youtube.com/watch?v={youtube_id}"
 
 # Extract slides
-python3 skills/vault-ingress/scripts/video-slide-extraction.py \
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/video-slide-extraction.py" \
   "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
   "{vault_root}/slides-rebuild/{youtube_id}" \
   "{youtube_id}"
 
 # Inspect the JSON result and both artifacts. If review_required is true, inspect
 # the candidate against the context/source and rerun with checked coordinates:
-python3 skills/vault-ingress/scripts/video-slide-extraction.py \
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/video-slide-extraction.py" \
   "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
   "{vault_root}/slides-rebuild/{youtube_id}" \
   "{youtube_id}" \
@@ -114,7 +114,7 @@ cp "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.slide-region.pdf" \
   "{vault_root}/slides/{youtube_id}.pdf"
 ```
 
-For batch downloads: `skills/vault-ingress/scripts/batch-download-videos.sh <vault_root> ID1 ID2 ...`
+For batch downloads: `"{speaker_toolkit_root}/skills/vault-ingress/scripts/batch-download-videos.sh" <vault_root> ID1 ID2 ...`
 
 Always store the full script result in `structured_data.video_extraction` and keep
 `slide_source: "video_extracted"` to name the acquisition path. Set

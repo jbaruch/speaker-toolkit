@@ -7,12 +7,33 @@ phase_relevance:
   - architecture
   - content
 vault_dimensions: [1, 2, 9]
+evidence_channels: [timed_transcript, video]
 detection_signals:
   - "explicit gap-reveal moment between current reality and proposed future"
   - "Big Idea stated at the structural transition from setup to body"
   - "audience cannot remain neutral after this moment — they engage or resist"
   - "transition language signaling structural shift (e.g., 'But what if…', 'Imagine instead…', 'This is what we're missing.')"
-related_patterns: [sparkline, the-big-why, opening-punch, narrative-arc, foreshadowing]
+evaluable_from:
+  - transcript
+  - delivery_video
+strong_evaluable_from:
+  - transcript
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: non-persuasive-talk
+    description: "A complete transcript or delivery video establishes a primarily informative talk with no requested change in audience position or behavior."
+applicability_evaluable_from:
+  - transcript
+  - delivery_video
+evidence_requirements:
+  - "The spoken source must cover the opening 25 percent and the transition into the body so the current-reality baseline, gap pivot, and Big Idea can be ordered."
+  - "A thesis statement alone is insufficient; evidence must locate the current-versus-future gap and its structural transition language."
+not_evaluable_when:
+  - "The transcript or video omits part of the opening or the opening-to-body transition."
+  - "The transcript lacks verified ordering or timing needed to place the candidate pivot in the opening zone."
+  - "The complete presentation purpose is unavailable, so the non-persuasive applicability condition cannot be assessed."
+related_patterns: [sparkline, the-big-why, opening-punch, narrative-arc, foreshadowing, know-your-audience, mentor]
 inverse_of: []
 difficulty: intermediate
 ---
@@ -56,9 +77,13 @@ The vault should look for the structural transition specifically:
 The clearest absence-signal is a talk that progresses smoothly from setup to conclusion without any structural pivot — pure information delivery with no called-out moment of tension.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Clear "what is" baseline; explicit gap-reveal moment with structural transition language; complete Big Idea stated at the pivot; audience response evident in transcript
-- Moderate signal (1 pt): Some gap-reveal happens but is muted — Big Idea is implied rather than stated, or the transition is gradual rather than pivot-shaped, or "what is" baseline is too thin to provide contrast
-- Absent (0 pts): Talk progresses linearly from setup to conclusion with no identifiable structural pivot; thesis is never stated as a single complete sentence; no moment after which the audience cannot remain neutral
+- Strong signal: Clear "what is" baseline; explicit gap-reveal moment with structural transition language; complete Big Idea stated at the pivot; audience response evident in transcript
+- Moderate signal: Some gap-reveal happens but is muted — Big Idea is implied rather than stated, or the transition is gradual rather than pivot-shaped, or "what is" baseline is too thin to provide contrast
+- Absent: Talk progresses linearly from setup to conclusion with no identifiable structural pivot; thesis is never stated as a single complete sentence; no moment after which the audience cannot remain neutral
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 1 (Opening Pattern). Relates to Dimension 2 (Narrative Structure) as one of two named turning points in the sparkline form. Relates to Dimension 9 (Persuasion Techniques).

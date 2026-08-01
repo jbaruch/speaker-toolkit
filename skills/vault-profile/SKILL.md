@@ -14,11 +14,31 @@ user_invocable: true
 
 Process steps in order. Do not skip ahead.
 
+Resolve the absolute path of this loaded `SKILL.md`, then set
+`speaker_toolkit_root` to the plugin root two directories above the directory
+containing this file. Never derive it from the consumer working directory.
+Treat `{speaker_toolkit_root}` as absolute in every toolkit-owned command;
+vault paths remain consumer-owned.
+
 Generate or update `speaker-profile.json` from vault data. This profile is the
 structured bridge between the vault and the presentation-creator skill.
 
 The vault lives at `~/.claude/rhetoric-knowledge-vault/` (may be a symlink).
 Read `tracking-database.json` from there to get `vault_root`.
+
+Before running any toolkit script, read `config.python_path` from that tracking
+database and set `python_path` to that exact value. It is the interpreter
+authority for every operational command in this skill. If vault-ingress Step 7
+invoked this skill, accept its resolved `{vault_root}` and `{python_path}` as
+handoff context, then re-read the database and require the stored value to match.
+If `python_path` is absent, empty, mismatched, or cannot execute the core runtime
+probe below, stop and direct the speaker to vault-ingress Step 1 to repair the
+configuration. Never fall back to whichever `python3` happens to be on `PATH`.
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/check-runtime.py" \
+  --lanes core,pptx --require-lanes core
+```
 
 ## Key Files & References
 
@@ -31,8 +51,10 @@ Read `tracking-database.json` from there to get `vault_root`.
 | [references/speaker-profile-schema.md](references/speaker-profile-schema.md) | Profile JSON schema |
 | [references/schemas-config.md](references/schemas-config.md) | Config fields + confirmed intents schema |
 | `scripts/load-vault.py` | Read vault sources, emit JSON payload to stdout |
-| `scripts/validate-profile.py` | Validate profile v3 + exact pattern-cohort provenance |
-| `scripts/profile_pattern_provenance.py` | Shared strict pattern-history availability contract for writers/readers |
+| `scripts/validate-profile.py` | Validate profile v4 against the live vault cohort |
+| `scripts/pattern_cohort_snapshot.py` | Shared fresh-cohort selection used by loader and validator |
+| `scripts/pattern_opportunities.py` | Exact scoring-v5 opportunity-row aggregation and validation |
+| `scripts/profile_pattern_provenance.py` | Shared occurrence/classification availability contract for writers/readers |
 | `scripts/compute-pacing-adherence.py` | Compute `pacing.adherence` from scored talks + slide budgets |
 
 ## Prerequisites
@@ -43,10 +65,11 @@ Read `tracking-database.json` from there to get `vault_root`.
 
 ## Step 1 — Load Vault Sources
 
-Run `python3 skills/vault-profile/scripts/load-vault.py` to read `tracking-database.json`, `rhetoric-style-summary.md`, and `slide-design-spec.md` from the vault root. The script emits a single JSON payload on stdout.
+Run `"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/load-vault.py"` to read `tracking-database.json`, `rhetoric-style-summary.md`, and `slide-design-spec.md` from the vault root. The script emits a single JSON payload on stdout.
 
 ```bash
-python3 skills/vault-profile/scripts/load-vault.py > /tmp/vault-payload.json
+"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/load-vault.py" \
+  "{vault_root}" > /tmp/vault-payload.json
 ```
 
 **I/O contract:**
@@ -54,11 +77,21 @@ python3 skills/vault-profile/scripts/load-vault.py > /tmp/vault-payload.json
   defaults are documented in the script's top-of-file contract.
 - Stdout (JSON): `{vault_root, config, confirmed_intents, talks, processed_talks,
   baseline_talks, excluded_pattern_scoring_talks, pattern_scoring_exclusions,
-  pattern_baseline, current_instrumentation_talks, stale_instrumentation_talks,
-  baseline_note, instrumentation_note, summary, design_spec}`.
-- `baseline_talks` is the exact active Presentation Pattern scoring generation.
-  `pattern_baseline` is its canonical full-cohort count/sum/average snapshot.
-  `pattern_scoring_exclusions` explains every eligible talk omitted from that cohort.
+  pattern_baseline, pattern_opportunities, current_instrumentation_talks,
+  stale_instrumentation_talks, baseline_note, instrumentation_note, summary,
+  design_spec}`.
+- `baseline_talks` is the exact active Presentation Pattern scoring generation whose
+  persisted source-located artifacts still match their recorded identities. The
+  loader passes both the vault root and database-configured source roots to the
+  shared read-only freshness assessor. `pattern_baseline.eligible_talk_count` is the
+  occurrence cohort size. Its raw-score count and average are available only when all
+  eligible talks share one `opportunity_coverage_identity` and that identity contains
+  at least one evaluable opportunity; otherwise the baseline carries the explicit
+  mixed-coverage or no-evaluable-opportunities unavailable state. `pattern_opportunities`
+  contains the canonical exhaustive positive and negative rows. Copy those rows; do
+  not recalculate them in the model. `pattern_scoring_exclusions` explains every
+  eligible talk omitted from the cohort, including deterministic artifact-drift
+  details.
 - `current_instrumentation_talks` and `stale_instrumentation_talks` are a separate
   extractor cohort used for pacing-sensitive analysis. Instrumentation membership
   never confers pattern-baseline eligibility.
@@ -74,7 +107,8 @@ Proceed immediately to Step 2.
 Keep three explicitly named cohorts while aggregating:
 
 - `processed_talks` supplies `talks_analyzed` and non-catalog narrative/profile data.
-- `baseline_talks` supplies every Presentation Pattern catalog-derived field.
+- `baseline_talks` supplies only source review; the deterministic
+  `pattern_opportunities` payload supplies catalog occurrence rows.
 - `current_instrumentation_talks` supplies the separately named pacing cohort.
 
 For non-catalog dimensions, skip processed talks with empty `structured_data` and use
@@ -89,8 +123,17 @@ Proceed immediately to Step 3.
 
 If `config.template_pptx_path` is set, call the vault-ingress PPTX extraction script:
 
+First require the configured interpreter's PPTX lane; an unavailable lane blocks
+this extraction but must not be replaced with another interpreter:
+
 ```bash
-python3 skills/vault-ingress/scripts/pptx-extraction.py "$TEMPLATE_PPTX_PATH" > /tmp/template-layouts.json
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/check-runtime.py" \
+  --lanes core,pptx --require-lanes core,pptx
+```
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py" \
+  "$TEMPLATE_PPTX_PATH" > /tmp/template-layouts.json
 ```
 
 **I/O contract** (defined in vault-ingress; see `skills/vault-ingress/scripts/pptx-extraction.py`):
@@ -99,8 +142,8 @@ python3 skills/vault-ingress/scripts/pptx-extraction.py "$TEMPLATE_PPTX_PATH" > 
 - Exit non-zero with stderr message if the file is missing, unreadable, or not a valid `.pptx`.
 
 Check the extraction root's `schema_version` before reading layouts. This
-layout-only consumer accepts v1 and v2 because the v2 timing additions do not
-change `template_layouts`. Missing/legacy v0 or an unknown future version is not
+layout-only consumer accepts v1 and v2 for `template_layouts` only.
+Missing/legacy v0 or an unknown future version is not
 usable prior output: rerun the current extractor and read that result. Do not
 interpret a v1 record as carrying zero timing; it carries no timing contract.
 
@@ -119,7 +162,7 @@ Construct the `speaker-profile.json` dict per [references/speaker-profile-schema
 | `rhetoric_defaults` | `confirmed_intents` (from Step 1 payload) |
 | `pacing` | `current_instrumentation_talks` only (separate non-pattern cohort) |
 | `guardrail_sources` | aggregated non-pattern data only; catalog history stays in `pattern_profile` |
-| `pattern_profile` | `pattern_observations` across `baseline_talks` only |
+| `pattern_profile` | Step 1 `pattern_baseline` and deterministic `pattern_opportunities`; `baseline_talks` only for source review |
 | `visual_style_history` | dimension 13f observations from `summary` |
 
 Top-level keys (full nested schema in [references/speaker-profile-schema.md](references/speaker-profile-schema.md)):
@@ -134,16 +177,31 @@ publishing_process, design_rules, badges
 Copy Step 1 `pattern_baseline` unchanged into
 `pattern_profile.pattern_baseline`. Set
 `pattern_profile.baseline_talk_filenames` to the sorted, unique exact filenames from
-`baseline_talks`. The validator requires its length, `talks_scored`, and every
-catalog-derived `out_of` denominator to equal
-`pattern_baseline.scored_talk_count`; it also verifies the baseline's count/sum/average
-contract against the active catalog fingerprint and scoring schema.
+`baseline_talks`, and copy `pattern_baseline.eligible_talk_count` to
+`pattern_profile.eligible_talk_count`. Set `talks_scored` and
+`average_pattern_score` from the baseline's raw-score-comparison fields. They may be
+`0` and `null` while `eligible_talk_count` is non-zero when opportunity identities are
+mixed or no outcome is evaluable; never turn missing opportunity coverage into a zero
+average.
 
-Build **every** Presentation Pattern catalog-derived value from `baseline_talks` only:
-pattern usage, antipattern frequency, never-used patterns, mastery levels, signature
-combinations, strengths, underused patterns, pattern breadth, score drivers, by-mode
-aggregates. Do not combine a count, numerator, trend window, or mode split from another
-cohort. `talks_analyzed` may remain the count of all `processed_talks`.
+Copy `pattern_opportunities.pattern_usage` and
+`pattern_opportunities.antipattern_frequency` unchanged into the matching profile
+fields. Their per-pattern denominators are not the global eligible count: the exact
+row contract belongs to `scripts/pattern_opportunities.py`. Keep the exhaustive rows
+even when the cohort is empty; their rates and coverage then use the script's null
+sentinels.
+The loader has already excluded scoring-v5 records whose persisted citation
+artifacts are missing, replaced, or inconsistent with their recorded root and digest;
+never restore them from another cohort or a prior profile.
+
+No speaker-owned versioned classification policy exists yet. Copy the exact
+owner-policy-unconfigured `classification_availability` sentinel from
+[references/speaker-profile-schema.md](references/speaker-profile-schema.md), and
+fail closed for every policy-derived claim: `score_trend`, breadth trend/average, and
+score-driver direction are unavailable; driver arrays, `never_used_patterns`, mastery
+tiers, signatures, strengths, underuse, and `by_mode` are empty. Zero detections do not
+mean never used, and a positive frequency does not mean recurring. `talks_analyzed`
+may remain the count of all `processed_talks`.
 
 Keep `pattern_profile` as the only catalog-history storage lane. Do not copy mastery,
 signatures, scores, usage, or other pattern aggregates into `rhetoric_defaults`. Do not
@@ -152,54 +210,20 @@ derive those warnings and reinforcement directly from validated `pattern_profile
 Every top-level recurring issue or badge is non-pattern data and carries
 `source_lane: "non_pattern"`.
 
-When building a non-empty `pattern_profile`, attribute `score_trend` instead of leaving it a
-bare label. A declining score has two symmetric causes — bad things present and
-good things absent — and `score_drivers` MUST name whichever moved:
-- **Antipatterns rising** — every `antipattern_frequency` entry with `trend` `increasing`.
-- **Patterns fading or breadth narrowing** — every `pattern_usage` entry with `trend`
-  `decreasing` (signature OR regular), and a `pattern_breadth.trend` of `narrowing`,
-  which drives a decline even when no single pattern fades. Underuse alone can lower
-  the score with zero antipatterns.
-
-Also compute `pattern_breadth` (average distinct observable patterns per talk +
-trend) and `underused_patterns` — the union of `never_used_patterns` with the
-patterns in the `never_tried` and `rare` tiers of `mastery_levels`, kept only where
-the pattern's taxonomy Vault Dims fit the speaker's `presentation_modes`. This is the
-positive-space coaching signal, framed as growth, not deficiency.
-
-Where `baseline_talks` is too small for a mode, emit `stable: false`; never top it up
-from a different generation or cohort.
-
-Compute `pattern_profile.by_mode` — the per-mode baseline. The tracking DB has no
-per-talk mode field. Assign each `baseline_talk` to the `presentation_modes` entry
-whose `when_to_use` best matches the talk's `structured_data` — `slide_count` and
-`meme_count` density, `audience_interaction_count`, `opening_type`,
-`narrative_arc_type`, and `slide_design_style`. This assignment is a classification
-judgment, not a stored value — it stays LLM-side. Then, for each mode with **≥3 assigned talks**, emit
-`average_pattern_score`, `avg_distinct_patterns_per_talk`, `top_antipatterns`, and
-`stable: true`. Modes below 3 talks are omitted (or `stable: false`); consumers fall
-back to the global baseline. This prevents false underuse findings when a short-format
-mode is judged against a keynote baseline.
-
-Compute `pattern_profile.strengths` — the speaker's signature patterns (from
-`mastery_levels.signature`) and `signature_combinations`, each with a `lean_in` line.
-This is the positive-space counterpart to non-pattern `recurring_issues` and
-`underused_patterns`; it is also the catalog-history replacement for pattern-derived
-badges. Strengths are actionable reinforcement the creator skill amplifies.
-
 If `baseline_talks` is empty, emit the explicit unavailable form from
 [references/speaker-profile-schema.md](references/speaker-profile-schema.md): retain
-the zero-count `pattern_baseline`, use empty filenames and catalog-derived arrays,
-set both score and breadth averages to null, and use `unavailable` for the pattern
-trend/direction fields. Do not reuse pattern values from the prior profile or summary.
+the zero-count `pattern_baseline`, use empty filenames, preserve the exhaustive
+zero-opportunity rows, set both score and breadth averages to null, and use
+`unavailable` for the pattern trend/direction fields. Do not reuse pattern values from
+the prior profile or summary.
 
-Compute `pacing.adherence` by running `python3 skills/vault-profile/scripts/compute-pacing-adherence.py`. The
+Compute `pacing.adherence` by running `"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/compute-pacing-adherence.py"`. The
 deterministic arithmetic — duration parsing, slides-per-minute, budget-band
 classification, over-budget counts, rate, and trend — lives in the script per
 `script-delegation`, not in this prose.
 
 ```bash
-echo "$PACING_INPUT" | python3 skills/vault-profile/scripts/compute-pacing-adherence.py
+echo "$PACING_INPUT" | "{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/compute-pacing-adherence.py"
 ```
 
 **I/O contract** (parse + budget-band rules in the script's top-of-file docstring):
@@ -223,19 +247,25 @@ review. It cannot override or fill the current pattern cohort. See
 [references/speaker-profile-schema.md](references/speaker-profile-schema.md)
 `pattern_profile`.
 
-Set `schema_version` to `3` and `generated_date` to today's date in `YYYY-MM-DD` form.
+Set `schema_version` to `4` and `generated_date` to today's date in `YYYY-MM-DD` form.
 
 Proceed immediately to Step 5.
 
 ## Step 5 — Validate the Profile
 
-Pipe the constructed profile dict through `python3 skills/vault-profile/scripts/validate-profile.py` to verify schema v3, the complete nested pattern profile, canonical full-cohort provenance, active catalog/scoring identity, and coherent denominators.
+Pipe the constructed profile dict through
+`"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/validate-profile.py" --vault-root "$VAULT_ROOT"`.
+Schema-v4 owner validation reparses the live tracking database with the same shared
+cohort builder as Step 1 and rejects any candidate baseline, filename set, eligible
+count, or opportunity row that is not source-exact.
 
 ```bash
-echo "$PROFILE_JSON" | python3 skills/vault-profile/scripts/validate-profile.py
+echo "$PROFILE_JSON" | "{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/validate-profile.py" --vault-root "$VAULT_ROOT"
 ```
 
 **I/O contract:**
+- Args: required `--vault-root <path>`; profile JSON is read from stdin when no profile
+  path is supplied.
 - Stdin (JSON): the profile dict.
 - Stdout (JSON): `{valid, schema_version, missing_keys, errors}`.
 - Exit code: `0` on valid, `1` on invalid.
@@ -253,11 +283,14 @@ If `{vault_root}/speaker-profile.json` already exists, compare
 generation reset and do not classify any catalog-derived score, trend, usage, mastery,
 or strength difference across that boundary as a regression.
 
-Within the same exact pattern generation, diff the new profile against it. Report to the speaker:
+Within the same exact pattern generation, diff non-pattern profile data. Do not report
+raw-score movement across a changed or unavailable
+`pattern_baseline.opportunity_coverage_identity`, and do not infer policy-derived
+pattern changes while `classification_availability.status` is `unavailable`. Report to
+the speaker:
 - New instruments added to `instrument_catalog`
 - Revised thresholds in `guardrail_sources`
 - New non-pattern guardrails added to `recurring_issues`
-- Shifts in `pattern_profile.score_drivers` — a newly `declining` direction, a new `antipattern_drivers` entry with a rising `frequency_trend`, or a `pattern_breadth.trend` flipping to `narrowing` (using fewer of the toolkit) is a regression signal worth flagging.
 - A worsening `pacing.adherence.trend` or a rising `over_budget_rate` — the speaker is increasingly running long.
 - **New presentation modes** — flag prominently (the highest-signal field change for creator-skill behavior).
 

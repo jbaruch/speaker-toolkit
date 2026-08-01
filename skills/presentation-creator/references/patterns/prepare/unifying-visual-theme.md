@@ -7,6 +7,7 @@ phase_relevance:
   - architecture
   - slides
 vault_dimensions: [10, 13]
+evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "consistent visual metaphor"
   - "recurring visual elements"
@@ -15,12 +16,18 @@ evaluable_from:
   - static_slides
   - native_deck
   - delivery_video
+strong_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+absence_evaluable_from:
+  - static_slides
 evidence_requirements:
-  - "Evidence must expose the visible construction across enough of the talk to apply the existing strong, moderate, or absent criterion."
+  - "Evidence must expose the visible construction across enough of the talk to apply a positive criterion; an absent outcome requires a complete, separately declared rendered PDF."
   - "Evidence must expose the existing scoring cues: strong: consistent recurring visual metaphor; moderate: partial visual consistency; absent: no coherent visual vocabulary."
 not_evaluable_when:
   - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
-  - "Only a transcript or spoken account is available, or the visual source is too partial to distinguish the asserted tier from absence."
+  - "Only a transcript or spoken account is available, the visual source is too partial for the asserted positive tier, or the separately declared rendered PDF is incomplete for absence."
 related_patterns: [brain-breaks, defy-defaults, narrative-arc]
 inverse_of: [photomaniac]
 difficulty: intermediate
@@ -49,12 +56,13 @@ Use a visual theme for any presentation where you want to create a memorable, co
 The vault should look for consistent visual elements that appear across multiple slides, creating a sense of visual coherence that extends beyond mere template consistency. A strong visual theme goes beyond matching colors to include matching imagery, metaphors, or illustration styles.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Consistent visual metaphor or recurring visual element throughout; imagery reinforces content; professional-quality visual assets; attributions present
-- Moderate signal (1 pt): Some visual consistency but not a deliberate theme; template provides basic coherence; occasional high-quality images
-- Absent (0 pts): No visual coherence beyond default template; random or low-quality images; clip art
+- Strong signal: Consistent visual metaphor or recurring visual element throughout; imagery reinforces content; professional-quality visual assets; attributions present
+- Moderate signal: Some visual consistency but not a deliberate theme; template provides basic coherence; occasional high-quality images
+- Absent: No visual coherence beyond default template; random or low-quality images; clip art
 
 ## Evidence Gate
-Evaluate this entry only from rendered static slides, the native deck, or delivery video that exposes the visible construction. Speech alone cannot establish its visual criteria, and an absence finding requires coverage of the complete relevant visual sequence.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+An absence finding is authorized only from a complete, separately declared rendered PDF (`static_slides`); a native deck, delivery video, transcript, or comparison artifact does not authorize absence.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 10 (Creativity/Originality). Relates to Dimension 13 (Visual Aids Effectiveness).

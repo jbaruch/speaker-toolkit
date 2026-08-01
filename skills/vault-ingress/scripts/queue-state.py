@@ -8,9 +8,10 @@ Eligibility is source-capability based: a preflighted transcript, slide, or vide
 reference can support a claim. Video is not mandatory, and only a legacy record
 with none of those capabilities normalizes to ``skipped_no_sources``.
 Normalization also routes every valid processed result outside the active
-pattern-scoring generation back to ``needs-reprocessing``. It delegates the
-generation decision to ``partition_pattern_scoring_cohort``; malformed current
-metadata is a whole-command no-write error, never a migration guess.
+pattern-scoring generation, or whose persisted citation artifacts have drifted,
+back to ``needs-reprocessing``. It delegates the cohort decision to
+``partition_pattern_scoring_cohort``; malformed current metadata is a
+whole-command no-write error, never a migration guess.
 
 Usage:
     queue-state.py <tracking-database.json> normalize
@@ -28,22 +29,23 @@ when state changed.
 
 Claim schema (owned by this script; stored in ``talk._queue_claim``):
     {
-      "schema_version": 3,
+      "schema_version": 5,
       "run_id": "reparse-2026-07",
       "batch_id": "25",
       "claimed_at": "2026-07-31T18:00:00+00:00",
       "previous_status": "needs-reprocessing",
       "reprocess_generation": 2,
       "state": "claimed",
-      "required_return_schema_version": 3,
-      "adherence_baseline": {"schema_version": 1, "...": "..."}
+      "required_return_schema_version": 5,
+      "adherence_baseline": {"schema_version": 2, "...": "..."}
     }
 
-Fresh claims always use schema v3 and require return v3. The queue snapshots one
+Fresh claims always use schema v5 and require return v5. The queue snapshots one
 baseline before mutating the selected talks, excludes the exact active batch,
 and copies the same immutable payload to every member. Schema-v1/v2 claims are
-accepted only for compatibility and authorize return v1/v2, never v3; they are
-not newly issued.
+accepted only for compatibility and authorize return v1/v2; schema-v3 claims
+authorize only return v3, and schema-v4 claims authorize only archival return
+v4. None of them authorizes v5 or is newly issued.
 
 Stale recovery adds ``released_at`` and ``release_reason`` and changes ``state``
 to ``stale_recovered``. A later generation moves the prior claim to
@@ -72,35 +74,48 @@ from ingress_contract import (
     IngressContractError,
     has_video_source,
     reject_tracking_database_symlink,
-    source_capabilities,
 )
 from adherence_baseline import (
+    ADHERENCE_BASELINE_SCHEMA_VERSION,
     AdherenceBaselineError,
     CATALOG_FINGERPRINT_MISMATCH_REASON,
     LEGACY_GENERATION_REASON,
+    LEGACY_ADHERENCE_BASELINE_SCHEMA_VERSION,
     MISSING_GENERATION_STATUS_REASON,
+    PERSISTED_EVIDENCE_STALE_REASON,
     SCORING_SCHEMA_VERSION_MISMATCH_REASON,
     build_adherence_baseline,
     partition_pattern_scoring_cohort,
     validate_adherence_baseline,
+)
+from pattern_evidence import (
+    assess_talk_artifact_capabilities,
 )
 from return_validation import (
     PATTERN_SCORING_SCHEMA_VERSION,
     QUEUE_CLAIM_SCHEMA_VERSION,
     RETURN_SCHEMA_VERSION,
     ReturnValidationError,
+    assess_current_persisted_pattern_evidence_freshness,
     load_catalog,
 )
 
 
 CLAIM_SCHEMA_VERSION = QUEUE_CLAIM_SCHEMA_VERSION
-PREVIOUS_CLAIM_SCHEMA_VERSION = 2
+if CLAIM_SCHEMA_VERSION != RETURN_SCHEMA_VERSION:
+    raise RuntimeError(
+        "current queue-claim and ingress-return schema versions must match"
+    )
 LEGACY_CLAIM_SCHEMA_VERSION = 1
-SUPPORTED_CLAIM_SCHEMA_VERSIONS = frozenset({
-    LEGACY_CLAIM_SCHEMA_VERSION,
-    PREVIOUS_CLAIM_SCHEMA_VERSION,
-    CLAIM_SCHEMA_VERSION,
-})
+RECEIPT_CLAIM_SCHEMA_VERSION = 2
+ADHERENCE_CLAIM_SCHEMA_VERSION = 3
+SUPPORTED_CLAIM_SCHEMA_VERSIONS = frozenset(range(1, CLAIM_SCHEMA_VERSION + 1))
+RECEIPT_CLAIM_SCHEMA_VERSIONS = frozenset(
+    range(RECEIPT_CLAIM_SCHEMA_VERSION, CLAIM_SCHEMA_VERSION + 1)
+)
+ADHERENCE_CLAIM_SCHEMA_VERSIONS = frozenset(
+    range(ADHERENCE_CLAIM_SCHEMA_VERSION, CLAIM_SCHEMA_VERSION + 1)
+)
 INFLIGHT_STATUS = "reprocessing-inflight"
 CLAIMABLE_STATUSES = frozenset({
     "pending",
@@ -126,6 +141,7 @@ PATTERN_SCORING_REPROCESS_REASON_SEQUENCES = frozenset({
     (LEGACY_GENERATION_REASON,),
     (CATALOG_FINGERPRINT_MISMATCH_REASON,),
     (SCORING_SCHEMA_VERSION_MISMATCH_REASON,),
+    (PERSISTED_EVIDENCE_STALE_REASON,),
     (
         CATALOG_FINGERPRINT_MISMATCH_REASON,
         SCORING_SCHEMA_VERSION_MISMATCH_REASON,
@@ -134,6 +150,7 @@ PATTERN_SCORING_REPROCESS_REASON_SEQUENCES = frozenset({
 LEGACY_REPROCESS_REASONS = frozenset({
     "pattern_scoring_added", "source_identity_correction",
 })
+CAPABILITY_ORDER = ("video", "slides", "transcript")
 
 
 class QueueStateError(ValueError):
@@ -207,8 +224,94 @@ def has_video(talk):
     return has_video_source(talk)
 
 
-def has_processable_source(talk):
-    return bool(source_capabilities(talk))
+def evidence_roots(database, path):
+    """Return the database-bound vault root and configured source roots."""
+    source_roots = (
+        database.get("config")
+        if isinstance(database.get("config"), dict)
+        else {}
+    )
+    configured_vault = source_roots.get("vault_storage_path")
+    vault_root = (
+        Path(configured_vault).expanduser().resolve()
+        if isinstance(configured_vault, str) and configured_vault.strip()
+        else path.parent.resolve()
+    )
+    return vault_root, source_roots
+
+
+def evidence_freshness_assessor(database, path):
+    """Bind the shared read-only assessor to this database's trusted roots."""
+    vault_root, source_roots = evidence_roots(database, path)
+    cache = {}
+
+    def assess(talk):
+        identity = id(talk)
+        if identity not in cache:
+            cache[identity] = assess_current_persisted_pattern_evidence_freshness(
+                talk,
+                vault_root=vault_root,
+                source_roots=source_roots,
+            )
+        return cache[identity]
+
+    return assess
+
+
+def artifact_capability_assessor(database, path):
+    """Bind and memoize root-aware local/acquisition capability checks."""
+    vault_root, source_roots = evidence_roots(database, path)
+    cache = {}
+
+    def assess(talk):
+        filename = talk.get("filename")
+        if filename not in cache:
+            cache[filename] = assess_talk_artifact_capabilities(
+                talk,
+                vault_root=vault_root,
+                source_roots=source_roots,
+            )
+        return cache[filename]
+
+    return assess
+
+
+def processable_capabilities(talk, *, capability_assessor):
+    """Return verified, repairable-local, and acquisition capabilities."""
+    assessment = capability_assessor(talk)
+    if not isinstance(assessment, dict):
+        raise QueueStateError(
+            f"{talk.get('filename')}: artifact capability assessor returned "
+            "a non-object result"
+        )
+    verified = assessment.get("verified_capabilities")
+    acquisition = assessment.get("acquisition_capabilities")
+    repair = assessment.get("repair_capabilities", ())
+    if (
+        not isinstance(verified, tuple)
+        or not isinstance(acquisition, tuple)
+        or not isinstance(repair, tuple)
+    ):
+        raise QueueStateError(
+            f"{talk.get('filename')}: artifact capability assessor returned "
+            "a malformed capability contract"
+        )
+    available = set(verified) | set(repair) | set(acquisition)
+    if not available.issubset(CAPABILITY_ORDER):
+        raise QueueStateError(
+            f"{talk.get('filename')}: artifact capability assessor returned "
+            f"unknown capabilities {sorted(available - set(CAPABILITY_ORDER))}"
+        )
+    return [capability for capability in CAPABILITY_ORDER if capability in available]
+
+
+def has_processable_source(talk, *, capability_assessor):
+    return bool(
+        processable_capabilities(
+            talk,
+            capability_assessor=capability_assessor,
+        )
+    )
 
 
 def pattern_scoring_reprocess_reason(reason_codes):
@@ -271,27 +374,40 @@ def validate_claim(claim, filename, *, historical=False):
         raise QueueStateError(
             f"{filename}: claim.state {state!r} is invalid; expected {sorted(CLAIM_STATES)}"
         )
-    if version == CLAIM_SCHEMA_VERSION:
+    if version in ADHERENCE_CLAIM_SCHEMA_VERSIONS:
         if claim.get("claimed_at") != claimed_at:
             raise QueueStateError(
-                f"{filename}: schema-v3 claim.claimed_at must use canonical UTC "
+                f"{filename}: schema-v{version} claim.claimed_at must use "
+                "canonical UTC "
                 f"whole-second form {claimed_at!r}"
             )
         required_return = claim.get("required_return_schema_version")
         if (isinstance(required_return, bool) or
                 not isinstance(required_return, int) or
-                required_return != RETURN_SCHEMA_VERSION):
+                required_return != version):
             raise QueueStateError(
-                f"{filename}: schema-v3 claim.required_return_schema_version "
-                f"must be {RETURN_SCHEMA_VERSION}"
+                f"{filename}: schema-v{version} "
+                "claim.required_return_schema_version must equal its claim "
+                f"schema version {version}"
             )
         try:
             baseline = validate_adherence_baseline(
                 claim.get("adherence_baseline"))
         except AdherenceBaselineError as exc:
             raise QueueStateError(
-                f"{filename}: invalid schema-v3 claim adherence_baseline: {exc}"
+                f"{filename}: invalid schema-v{version} claim "
+                f"adherence_baseline: {exc}"
             ) from exc
+        expected_baseline_schema = (
+            ADHERENCE_BASELINE_SCHEMA_VERSION
+            if version == CLAIM_SCHEMA_VERSION
+            else LEGACY_ADHERENCE_BASELINE_SCHEMA_VERSION
+        )
+        if baseline.get("schema_version") != expected_baseline_schema:
+            raise QueueStateError(
+                f"{filename}: schema-v{version} claim requires adherence "
+                f"baseline schema {expected_baseline_schema}"
+            )
         if baseline["as_of"] != claim["claimed_at"]:
             raise QueueStateError(
                 f"{filename}: claim adherence_baseline.as_of must equal "
@@ -299,13 +415,14 @@ def validate_claim(claim, filename, *, historical=False):
             )
         if baseline["active_batch_excluded"] is not True:
             raise QueueStateError(
-                f"{filename}: schema-v3 claim adherence_baseline must exclude "
+                f"{filename}: schema-v{version} claim adherence_baseline must "
+                "exclude "
                 "the active batch"
             )
     elif ("required_return_schema_version" in claim or
           "adherence_baseline" in claim):
         raise QueueStateError(
-            f"{filename}: schema-v{version} claim cannot carry schema-v3 "
+            f"{filename}: schema-v{version} claim cannot carry adherence-claim "
             "return or adherence-baseline fields"
         )
     released_at = claim.get("released_at")
@@ -323,15 +440,14 @@ def validate_claim(claim, filename, *, historical=False):
                 "skipped_download_failed", "skipped_duplicate"}:
             raise QueueStateError(
                 f"{filename}: a completed claim must carry a terminal result_status")
-        if (version in {PREVIOUS_CLAIM_SCHEMA_VERSION, CLAIM_SCHEMA_VERSION}
+        if (version in RECEIPT_CLAIM_SCHEMA_VERSIONS
                 and "result_payload_sha256" not in claim):
             raise QueueStateError(
                 f"{filename}: a schema-v{version} completed claim must carry "
                 "result_payload_sha256")
         receipt = claim.get("result_payload_sha256")
         if (receipt is None and
-                version in {PREVIOUS_CLAIM_SCHEMA_VERSION,
-                            CLAIM_SCHEMA_VERSION} and
+                version in RECEIPT_CLAIM_SCHEMA_VERSIONS and
                 not historical):
             raise QueueStateError(
                 f"{filename}: a current schema-v{version} completed claim must "
@@ -465,17 +581,17 @@ def validate_database(database, *, allow_claim_status_drift=False):
                 f"duplicate talk filename {filename!r} — filenames are queue identities"
             )
         seen.add(filename)
-    _validate_schema_v3_claim_batches(talks)
+    _validate_adherence_claim_batches(talks)
 
 
-def _validate_schema_v3_claim_batches(talks):
-    """Require every stored claim-v3 batch snapshot to be exact and shared."""
+def _validate_adherence_claim_batches(talks):
+    """Require every stored claim-v3/v4/v5 batch snapshot to be exact and shared."""
     current_batches = {}
     claim_epochs = {}
     for talk in talks:
         current = talk.get("_queue_claim")
         if (isinstance(current, dict) and
-                current.get("schema_version") == CLAIM_SCHEMA_VERSION):
+                current.get("schema_version") in ADHERENCE_CLAIM_SCHEMA_VERSIONS):
             identity = (current["run_id"], current["batch_id"])
             current_batches.setdefault(identity, []).append(
                 (talk["filename"], current))
@@ -483,7 +599,7 @@ def _validate_schema_v3_claim_batches(talks):
             claim_epochs.setdefault(epoch, []).append(
                 (talk["filename"], current))
         for claim in talk.get("_queue_claim_history", []):
-            if claim.get("schema_version") != CLAIM_SCHEMA_VERSION:
+            if claim.get("schema_version") not in ADHERENCE_CLAIM_SCHEMA_VERSIONS:
                 continue
             epoch = (
                 claim["run_id"],
@@ -496,28 +612,36 @@ def _validate_schema_v3_claim_batches(talks):
         claimed_at = members[0][1]["claimed_at"]
         if any(claim["claimed_at"] != claimed_at for _, claim in members):
             raise QueueStateError(
-                f"schema-v3 current claims for run {identity[0]!r} batch "
+                f"adherence current claims for run {identity[0]!r} batch "
                 f"{identity[1]!r} do not share one claimed_at timestamp"
             )
     for epoch, members in claim_epochs.items():
-        _validate_schema_v3_claim_batch_members(epoch[:2], members)
+        _validate_adherence_claim_batch_members(epoch[:2], members)
 
 
-def _validate_schema_v3_claim_batch_members(identity, members):
+def _validate_adherence_claim_batch_members(identity, members):
     """Validate one current batch or one historical retry epoch."""
     expected_filenames = sorted(filename for filename, _ in members)
     canonical = members[0][1]["adherence_baseline"]
+    canonical_version = members[0][1]["schema_version"]
     for filename, claim in members:
+        if claim["schema_version"] != canonical_version:
+            raise QueueStateError(
+                f"{filename}: claims for run {identity[0]!r} batch "
+                f"{identity[1]!r} mix adherence schema versions"
+            )
         if claim["adherence_baseline"] != canonical:
             raise QueueStateError(
-                f"{filename}: schema-v3 claims for run {identity[0]!r} "
+                f"{filename}: schema-v{canonical_version} claims for run "
+                f"{identity[0]!r} "
                 f"batch {identity[1]!r} do not share one immutable "
                 "adherence_baseline"
             )
         if claim["adherence_baseline"]["excluded_filenames"] != \
                 expected_filenames:
             raise QueueStateError(
-                f"{filename}: schema-v3 adherence_baseline excluded_filenames "
+                f"{filename}: schema-v{canonical_version} adherence_baseline "
+                "excluded_filenames "
                 f"must equal the exact stored batch {expected_filenames}"
             )
 
@@ -526,7 +650,7 @@ def upgrade_claim_for_write(claim):
     """Upgrade one v1 claim only when its owning queue transition is persisted."""
     if claim.get("schema_version") != LEGACY_CLAIM_SCHEMA_VERSION:
         return
-    claim["schema_version"] = PREVIOUS_CLAIM_SCHEMA_VERSION
+    claim["schema_version"] = RECEIPT_CLAIM_SCHEMA_VERSION
     if claim.get("state") == "completed":
         claim["result_payload_sha256"] = None
 
@@ -582,13 +706,16 @@ def write_database_atomically(path, database):
         ) from exc
 
 
-def normalize_legacy_statuses(database):
+def normalize_legacy_statuses(database, *, capability_assessor):
     changes = []
     for talk in database["talks"]:
         previous = talk["status"]
         if previous not in LEGACY_STATUSES:
             continue
-        capabilities = source_capabilities(talk)
+        capabilities = processable_capabilities(
+            talk,
+            capability_assessor=capability_assessor,
+        )
         current = "pending" if capabilities else "skipped_no_sources"
         talk["status"] = current
         changes.append({
@@ -601,7 +728,9 @@ def normalize_legacy_statuses(database):
     return changes
 
 
-def normalize_pattern_scoring_generations(database):
+def normalize_pattern_scoring_generations(
+    database, *, evidence_freshness_assessor
+):
     """Requeue every valid processed talk outside the active score generation."""
     try:
         catalog = load_catalog()
@@ -610,6 +739,7 @@ def normalize_pattern_scoring_generations(database):
             excluded_filenames=[],
             pattern_catalog_fingerprint=catalog.fingerprint,
             pattern_scoring_schema_version=PATTERN_SCORING_SCHEMA_VERSION,
+            evidence_freshness_assessor=evidence_freshness_assessor,
         )
     except (AdherenceBaselineError, ReturnValidationError, OSError) as exc:
         raise QueueStateError(
@@ -687,13 +817,24 @@ def archive_current_claim(talk, now_text):
     talk.setdefault("_queue_claim_history", []).append(archived)
 
 
-def claim_talk(talk, run_id, batch_id, now_text, adherence_baseline):
+def claim_talk(
+    talk,
+    run_id,
+    batch_id,
+    now_text,
+    adherence_baseline,
+    *,
+    capability_assessor,
+):
     previous = talk["status"]
     if previous not in CLAIMABLE_STATUSES:
         raise QueueStateError(
             f"{talk['filename']}: cannot transition {previous!r} to {INFLIGHT_STATUS}"
         )
-    if not has_processable_source(talk):
+    if not has_processable_source(
+        talk,
+        capability_assessor=capability_assessor,
+    ):
         raise QueueStateError(
             f"{talk['filename']}: cannot claim a talk without a usable transcript, "
             "slide, or video source"
@@ -708,7 +849,7 @@ def claim_talk(talk, run_id, batch_id, now_text, adherence_baseline):
         "previous_status": previous,
         "reprocess_generation": generation,
         "state": "claimed",
-        "required_return_schema_version": RETURN_SCHEMA_VERSION,
+        "required_return_schema_version": CLAIM_SCHEMA_VERSION,
         "adherence_baseline": copy.deepcopy(adherence_baseline),
     }
     talk["reprocess_generation"] = generation
@@ -722,8 +863,19 @@ def claim_talk(talk, run_id, batch_id, now_text, adherence_baseline):
 
 def command_normalize(database, path, _args):
     candidate = copy.deepcopy(database)
-    normalizations = normalize_legacy_statuses(candidate)
-    normalizations.extend(normalize_pattern_scoring_generations(candidate))
+    capability_assessor = artifact_capability_assessor(candidate, path)
+    normalizations = normalize_legacy_statuses(
+        candidate,
+        capability_assessor=capability_assessor,
+    )
+    normalizations.extend(
+        normalize_pattern_scoring_generations(
+            candidate,
+            evidence_freshness_assessor=evidence_freshness_assessor(
+                candidate, path
+            ),
+        )
+    )
     if normalizations:
         validate_database(candidate)
         write_database_atomically(path, candidate)
@@ -789,7 +941,11 @@ def command_claim(database, path, args):
             )
 
     candidate = copy.deepcopy(database)
-    normalizations = normalize_legacy_statuses(candidate)
+    capability_assessor = artifact_capability_assessor(candidate, path)
+    normalizations = normalize_legacy_statuses(
+        candidate,
+        capability_assessor=capability_assessor,
+    )
     by_filename = {talk["filename"]: talk for talk in candidate["talks"]}
     if requested:
         missing = sorted(set(requested) - set(by_filename))
@@ -805,7 +961,10 @@ def command_claim(database, path, args):
                 raise QueueStateError(
                     f"{talk['filename']}: cannot claim status {talk['status']!r}"
                 )
-            if not has_processable_source(talk):
+            if not has_processable_source(
+                talk,
+                capability_assessor=capability_assessor,
+            ):
                 raise QueueStateError(
                     f"{talk['filename']}: cannot claim a talk without a usable "
                     "transcript, slide, or video source"
@@ -813,7 +972,11 @@ def command_claim(database, path, args):
     else:
         eligible = [
             talk for talk in candidate["talks"]
-            if talk["status"] in CLAIMABLE_STATUSES and has_processable_source(talk)
+            if talk["status"] in CLAIMABLE_STATUSES
+            and has_processable_source(
+                talk,
+                capability_assessor=capability_assessor,
+            )
         ]
         selected = sorted(eligible, key=lambda talk: talk["filename"])[:args.limit]
 
@@ -826,17 +989,31 @@ def command_claim(database, path, args):
             as_of=now_text,
             pattern_catalog_fingerprint=catalog.fingerprint,
             pattern_scoring_schema_version=PATTERN_SCORING_SCHEMA_VERSION,
+            evidence_freshness_assessor=evidence_freshness_assessor(
+                database, path
+            ),
         )
     except (AdherenceBaselineError, ReturnValidationError, OSError) as exc:
         raise QueueStateError(
             f"cannot snapshot the adherence baseline before claiming batch: {exc}"
         ) from exc
     claimed = [
-        claim_talk(talk, run_id, batch_id, now_text, baseline)
+        claim_talk(
+            talk,
+            run_id,
+            batch_id,
+            now_text,
+            baseline,
+            capability_assessor=capability_assessor,
+        )
         for talk in selected
     ]
     remaining = sum(
-        talk["status"] in CLAIMABLE_STATUSES and has_processable_source(talk)
+        talk["status"] in CLAIMABLE_STATUSES
+        and has_processable_source(
+            talk,
+            capability_assessor=capability_assessor,
+        )
         for talk in candidate["talks"]
     )
     if normalizations or claimed:

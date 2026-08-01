@@ -8,11 +8,28 @@ phase_relevance:
   - content
   - guardrails
 vault_dimensions: [4, 9]
+evidence_channels: [transcript, slides, video]
 detection_signals:
   - "each major claim answers precision, process, impact, and implication questions"
   - "talk supplies numbers, mechanism, human consequence, and long-range framing for the same point"
   - "evidence register matched to a homogeneous room rather than spread across four"
   - "counter-signal: every claim defended in one register only"
+evaluable_from:
+  - transcript
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+  - [transcript, static_slides]
+  - [transcript, native_deck]
+absence_evaluable_from: null
+evidence_requirements:
+  - "A positive finding must identify a load-bearing claim and locate distinct precision, mechanism, human-consequence, or forward-implication support for that same claim; register variety scattered across unrelated claims does not qualify."
+  - "A strong finding requires complete speech-and-visual coverage showing multiple registers on the talk's major claims, including at least one claim with all four; do not infer a preparation audit from vocabulary alone."
+not_evaluable_when:
+  - "The source does not expose a complete load-bearing claim and its supporting argument, or the transcript and deck cannot be aligned at claim level."
+  - "A negative judgment would depend on unverified audience homogeneity, the speaker's default register, or private deliberation; those facts are not established by talk artifacts."
 related_patterns: [know-your-audience, inoculation, leet-grammars, crucible, peer-review, concrete-before-abstract]
 inverse_of: [golden-rule]
 difficulty: intermediate
@@ -71,9 +88,13 @@ The vault should look for register spread across a claim's defense, not for the 
 - Counter-signal: every claim in the talk defended the same way. A talk that is all benchmarks, or all anecdote, or all architecture diagram, is running one register and has not been walked around — score it under `_anti_golden-rule.md`
 
 ## Scoring Criteria
-- Strong signal (2 pts): The talk's major claims are each defended across multiple registers; at least one claim visibly answers all four; the human-consequence and mechanism questions are answered without being asked, which is the rarest evidence of a real audit
-- Moderate signal (1 pt): Claims are defended in two or three registers, or the coverage is uneven — one claim walked around, the rest single-register; or a homogeneous room is matched well without evidence the alternatives were considered
-- Absent (0 pts): Every claim defended in the speaker's single default register; the unasked questions stay unasked and unanswered
+- Strong signal: The talk's major claims are each defended across multiple registers; at least one claim visibly answers all four; the human-consequence and mechanism questions are answered without being asked, which is the rarest evidence of a real audit
+- Moderate signal: Claims are defended in two or three registers, or the coverage is uneven — one claim walked around, the rest single-register; or a homogeneous room is matched well without evidence the alternatives were considered
+- Absent: Every claim defended in the speaker's single default register; the unasked questions stay unasked and unanswered
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 9 (Persuasion Techniques) as the primary axis — the pattern is about what counts as proof to whom, which is a persuasion question rather than a structural one. Relates to Dimension 4 (Audience Interaction) through audience modeling, the same pairing `know-your-audience` carries.

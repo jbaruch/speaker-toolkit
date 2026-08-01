@@ -92,6 +92,14 @@ from ingress_contract import (
     reject_tracking_database_symlink,
     validate_talk_record_schemas,
 )
+from pattern_evidence import (
+    LEGACY_PATTERN_EVIDENCE_SCHEMA_VERSION,
+    PATTERN_EVIDENCE_SCHEMA_VERSION,
+    PatternEvidenceError,
+    assess_batch_artifact_capabilities,
+    canonicalize_return_evidence,
+    return_evidence_claim,
+)
 from return_validation import (
     ADDITIVE_MAP,
     ANALYSIS_STATUSES,
@@ -104,10 +112,13 @@ from return_validation import (
     PREVIOUS_QUEUE_CLAIM_SCHEMA_VERSION,
     RETURN_SCHEMA_VERSION,
     SNAPSHOT_RETURN_SCHEMA_VERSIONS,
+    SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS,
     STRUCTURED_FIELD_POLICIES,
     UNSCORED_PATTERN_SCORING_GENERATION_STATUS,
     ReturnValidationError,
+    assess_current_persisted_pattern_evidence_freshness,
     assess_scoring_generation,
+    canonical_persisted_pattern_observations,
     canonical_return_sha256,
     load_catalog,
     normalize_processing_stamp,
@@ -118,6 +129,7 @@ from return_validation import (
     validate_persisted_v2_analysis_state,
     validate_v2_structured_policy_shapes,
     validate_verbatim_examples,
+    validate_v5_adherence_opportunity,
 )
 
 
@@ -155,6 +167,8 @@ def normalize_stamp(value):
 # v3 adds optional scoring-generation identity fields and explicit corrective
 # clear semantics. Existing readers ignore the new metadata; older records stay
 # readable and acquire generation identity on their next validated analysis. The
+# two historical v3 lineages are unified by v4's source-located evidence ledger.
+# V5 adds exhaustive applicability/outcome state and opportunity identity. The
 # shared constant lives in ingress_contract.py so readers reject future records
 # against the same boundary this owner migrates.
 
@@ -183,8 +197,8 @@ PROMOTE = [
 # legacy `processed_date` cannot override the batch timestamp.
 SCALARS = [
     "status", "rhetoric_notes", "areas_for_improvement",
-    "adherence_assessment", "transcript_source", "slide_source",
-    "slides_local_path",
+    "adherence_assessment", "transcript_source", "transcript_path",
+    "slide_source", "slides_local_path",
 ]
 
 PROMOTED_BY_STRUCTURED_KEY = {
@@ -269,7 +283,7 @@ def merge_structured_v2(existing, incoming):
 
 
 def merge_verbatim_v2(existing, incoming):
-    """Snapshot-replace each supplied v2/v3 verbatim lane, including []."""
+    """Snapshot-replace each supplied v2–v5 verbatim lane, including []."""
     validate_verbatim_examples(incoming, reject_unknown=True)
     merged = copy.deepcopy(existing)
     for field, value in incoming.items():
@@ -303,7 +317,7 @@ def _sync_v2_promotions(talk, incoming_structured):
 
 def validate_effective_v2_state(
         talk, incoming_structured, *, pattern_snapshot_replaced):
-    """Validate a post-v2/v3 snapshot candidate before publication."""
+    """Validate a post-v2–v5 snapshot candidate before publication."""
     validate_talk_record_schemas([talk])
     try:
         validate_persisted_v2_analysis_state(talk)
@@ -507,7 +521,8 @@ def normalize_pattern_observations(existing, patterns, antipatterns,
 
 
 def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
-               *, enforce_queue_claim=False, catalog=None):
+               *, enforce_queue_claim=False, catalog=None,
+               canonical_ret=None, artifact_capabilities=None):
     """Merge one return into its talk.
 
     Returns (promoted, stamped, coerced_score, cleared).
@@ -526,7 +541,22 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
             "run_date is required when closing a queue claim so released_at is "
             "deterministic")
     if enforce_queue_claim:
-        validate_claim_against_talk(talk, ret)
+        validate_claim_against_talk(
+            talk, ret, artifact_capabilities=artifact_capabilities)
+
+    if return_schema_version in SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS:
+        if not isinstance(canonical_ret, dict):
+            raise ValueError(
+                f"return-schema v{return_schema_version} requires source evidence canonicalization "
+                "before merge")
+        if return_evidence_claim(canonical_ret) != return_evidence_claim(ret):
+            raise ValueError(
+                "canonical evidence changed model-authored return fields")
+        evidence_ret = canonical_ret
+        if enforce_queue_claim:
+            validate_v5_adherence_opportunity(talk, ret, canonical_ret)
+    else:
+        evidence_ret = ret
 
     candidate = copy.deepcopy(talk)
     # A terminal result closes the reason that put this talk in the queue. The
@@ -556,7 +586,7 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
 
     structured = require_mapping(ret, "structured_data")
     verbatim = require_mapping(ret, "verbatim_examples")
-    observations = require_mapping(ret, "pattern_observations")
+    observations = require_mapping(evidence_ret, "pattern_observations")
     observation_values = observations or {}
     patterns = require_detections(observation_values, "patterns_detected")
     antipatterns = require_detections(observation_values, "antipatterns_detected")
@@ -568,11 +598,13 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
         raise ValueError(
             "catalog_fingerprint does not match the catalog used to assess "
             "the return")
-    scoring_assessment = assess_scoring_generation(ret, resolved_catalog)
+    scoring_assessment = assess_scoring_generation(
+        evidence_ret, resolved_catalog)
     if (return_schema_version == RETURN_SCHEMA_VERSION and
             not scoring_assessment.current):
         raise ValueError(
-            "return-schema v3 cannot satisfy the current scoring generation: "
+            f"return-schema v{return_schema_version} cannot satisfy the "
+            "current scoring generation: "
             f"{list(scoring_assessment.reasons)}")
     patterns = scoring_assessment.patterns_detected
     antipatterns = scoring_assessment.antipatterns_detected
@@ -582,7 +614,7 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
         # Validate persisted block types before a clear could conceal malformed
         # structured state, then apply every operation to the isolated candidate.
-        # Verbatim and pattern blocks are supplied snapshots in every valid v2/v3
+        # Verbatim and pattern blocks are supplied snapshots in every valid v2–v5
         # analysis, so they may repair legacy array containers atomically.
         require_stored_mapping(candidate, "structured_data")
 
@@ -593,13 +625,13 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
                 (return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS or
                  not is_empty(ret[f]))):
             candidate[f] = copy.deepcopy(ret[f])
-    if (return_schema_version == RETURN_SCHEMA_VERSION and
+    if (return_schema_version in SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS and
             "adherence_comparison" in ret):
         candidate["adherence_comparison"] = copy.deepcopy(
             ret["adherence_comparison"])
     elif return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
-        # A v2 replay is archival prose, never an authenticated current
-        # comparison. Snapshot replacement therefore clears any stale v3
+        # A v2–v4 replay is archival prose, never an authenticated current
+        # comparison. Snapshot replacement therefore clears any stale
         # comparison left by an earlier generation.
         candidate.pop("adherence_comparison", None)
     # A single owner supplies one exact stamp for every member.  This prevents a
@@ -639,12 +671,25 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
                 candidate.get("verbatim_examples") or {}, verbatim)
     if observations is not None:
         if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
-            candidate["pattern_observations"] = _normalized_pattern_fields(
-                patterns, antipatterns, not_evaluable, evidence_sources, score)
+            candidate["pattern_observations"] = \
+                canonical_persisted_pattern_observations(
+                    evidence_ret, resolved_catalog, scoring_assessment)
         elif observations:
             candidate["pattern_observations"] = normalize_pattern_observations(
                 candidate.get("pattern_observations"), patterns, antipatterns,
                 not_evaluable, evidence_sources, score)
+
+    if return_schema_version not in SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS:
+        persisted_observations = candidate.get("pattern_observations")
+        if isinstance(persisted_observations, dict):
+            persisted_observations.pop("evidence_schema_version", None)
+            for lane in ("patterns_detected", "antipatterns_detected"):
+                detections = persisted_observations.get(lane)
+                if not isinstance(detections, list):
+                    continue
+                for detection in detections:
+                    if isinstance(detection, dict):
+                        detection["evidence_citations"] = []
 
     if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
         promoted = _sync_v2_promotions(candidate, structured or {})
@@ -704,15 +749,43 @@ def migrate_records(db):
     tell an unversioned record from one this writer had never seen, which is the
     ambiguity the version exists to remove.
 
-    The migration is a stamp, not a transform: v2 to v3 adds optional generation
-    metadata written only when a validated analysis is merged. No existing field
-    changes representation, so records need no content rewrite.
+    Talk schema v4 unifies the queue/catalog lineage with source-located
+    evidence. Talk schema v5 adds exhaustive applicability/outcome state and an
+    opportunity-coverage identity. Historical detections receive the explicit
+    empty-citation sentinel, but migration never fabricates v5 assessments,
+    outcomes, identity, or current evidence: an unverified location cannot
+    become current proof.
     """
     talks = validate_talk_record_schemas(db.get("talks"))
     migrated = 0
     for talk in talks:
+        changed = False
+        observations = talk.get("pattern_observations")
+        located_evidence = (
+            isinstance(observations, dict)
+            and observations.get("evidence_schema_version") in {
+                LEGACY_PATTERN_EVIDENCE_SCHEMA_VERSION,
+                PATTERN_EVIDENCE_SCHEMA_VERSION,
+            }
+        )
+        if isinstance(observations, dict) and not located_evidence:
+            if observations.pop("evidence_schema_version", None) is not None:
+                changed = True
+            if observations.pop("source_inspection", None) is not None:
+                changed = True
+            for lane in ("patterns_detected", "antipatterns_detected"):
+                detections = observations.get(lane)
+                if not isinstance(detections, list):
+                    continue
+                for detection in detections:
+                    if (isinstance(detection, dict) and
+                            detection.get("evidence_citations") != []):
+                        detection["evidence_citations"] = []
+                        changed = True
         if talk.get("schema_version") != TALK_SCHEMA_VERSION:
             talk["schema_version"] = TALK_SCHEMA_VERSION
+            changed = True
+        if changed:
             migrated += 1
     return migrated
 
@@ -723,6 +796,7 @@ def atomic_write_json(path, payload):
     basename = os.path.basename(path)
     try:
         fd, temp_path = tempfile.mkstemp(prefix=f".{basename}.", suffix=".tmp", dir=directory)
+        installed = False
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 json.dump(payload, handle, indent=2, ensure_ascii=False)
@@ -730,12 +804,13 @@ def atomic_write_json(path, payload):
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temp_path, path)
-        except BaseException:
-            try:
-                os.unlink(temp_path)
-            except FileNotFoundError:
-                pass
-            raise
+            installed = True
+        finally:
+            if not installed:
+                try:
+                    os.unlink(temp_path)
+                except FileNotFoundError:
+                    pass
     except OSError as exc:
         raise ValueError(f"cannot atomically write tracking database {path}: {exc}") from exc
 
@@ -822,18 +897,65 @@ def main():
         print(f"ERROR: {db_path} is not a tracking database — expected a JSON "
               "object with a `talks` array", file=sys.stderr)
         sys.exit(1)
+    raw_config = db.get("config")
+    source_roots: dict[str, object] = (
+        copy.deepcopy(raw_config) if isinstance(raw_config, dict) else {})
+    configured_vault = source_roots.get("vault_storage_path")
+    vault_root = (
+        os.path.abspath(os.path.expanduser(configured_vault))
+        if isinstance(configured_vault, str) and configured_vault.strip()
+        else os.path.dirname(os.path.abspath(db_path))
+    )
+    artifact_capabilities_by_filename = assess_batch_artifact_capabilities(
+        db["talks"],
+        {
+            ret["filename"] for ret in returns
+            if isinstance(ret, dict) and isinstance(ret.get("filename"), str)
+        },
+        vault_root=vault_root,
+        source_roots=source_roots,
+    )
     try:
         by_name = validate_batch_claims_against_talks(
-            db["talks"], returns, required_state="claimed")
+            db["talks"], returns, required_state="claimed",
+            artifact_capabilities_by_filename=artifact_capabilities_by_filename)
     except ReturnValidationError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
+
+    # Resolve every model-authored location against the complete pre-return
+    # batch before changing even the in-memory DB. The completed claim keeps a
+    # SHA-256 receipt of the exact raw payload; canonical returns are
+    # engine-owned enrichments whose claim projection must remain identical.
+    canonical_returns = []
+    for ret in returns:
+        name = ret["filename"]
+        try:
+            if (ret.get("status") in ANALYSIS_STATUSES and
+                    resolve_return_schema_version(ret) in
+                    SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS):
+                canonical = canonicalize_return_evidence(
+                    ret, by_name[name], vault_root, catalog,
+                    source_roots=source_roots,
+                    pattern_scoring_schema_version=(
+                        PATTERN_SCORING_SCHEMA_VERSION
+                    ),
+                )
+            else:
+                canonical = copy.deepcopy(ret)
+            if return_evidence_claim(canonical) != return_evidence_claim(ret):
+                raise PatternEvidenceError(
+                    "canonicalization changed model-authored return fields")
+        except PatternEvidenceError as exc:
+            print(f"ERROR: {name}: {exc}", file=sys.stderr)
+            sys.exit(1)
+        canonical_returns.append(canonical)
 
     # All input, catalog and identity validation is complete before the in-memory
     # artifact changes. A bad final return cannot leave an earlier return applied.
     migrated = migrate_records(db)
     summary = []
-    for ret in returns:
+    for ret, canonical_ret in zip(returns, canonical_returns):
         name = ret.get("filename")
         # Missing names were rejected as a complete batch above; indexing keeps
         # that invariant explicit for both readers and static analysis.
@@ -841,7 +963,10 @@ def main():
         try:
             promoted, stamped, coerced, cleared = merge_talk(
                 talk, ret, run_date, catalog.fingerprint,
-                enforce_queue_claim=True, catalog=catalog)
+                enforce_queue_claim=True, catalog=catalog,
+                canonical_ret=canonical_ret,
+                artifact_capabilities=(
+                    artifact_capabilities_by_filename.get(name)))
         except ValueError as exc:
             print(f"ERROR: {name}: {exc}", file=sys.stderr)
             sys.exit(1)
@@ -867,6 +992,10 @@ def main():
             as_of=completion_timestamp(run_date),
             pattern_catalog_fingerprint=catalog.fingerprint,
             pattern_scoring_schema_version=PATTERN_SCORING_SCHEMA_VERSION,
+            evidence_freshness_assessor=lambda talk: (
+                assess_current_persisted_pattern_evidence_freshness(
+                    talk, vault_root=vault_root, source_roots=source_roots)
+            ),
         )
     except AdherenceBaselineError as exc:
         print(

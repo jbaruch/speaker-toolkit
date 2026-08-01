@@ -6,6 +6,7 @@ part: deliver
 phase_relevance:
   - publishing
 vault_dimensions: [4, 7]
+evidence_channels: [transcript, video]
 detection_signals:
   - "questions repeated before answering"
   - "audience questions restated"
@@ -13,12 +14,23 @@ detection_signals:
 evaluable_from:
   - transcript
   - delivery_video
+strong_evaluable_from:
+  - transcript
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: no-q-and-a-segment
+    description: "A complete transcript or delivery video establishes that the session contains no audience Q&A segment."
+applicability_evaluable_from:
+  - transcript
+  - delivery_video
 evidence_requirements:
   - "Evidence must preserve the spoken wording and order across the interval needed to apply the existing rhetorical or delivery criteria."
   - "Evidence must expose the existing scoring cues: audience question repeated or rephrased before the answer."
 not_evaluable_when:
   - "Neither a transcript nor delivery video covers the relevant spoken interval."
-  - "The available spoken record is too partial or normalized to preserve the wording, order, or absence required by the existing scoring criteria."
+  - "The available spoken record is too partial or normalized to preserve the wording or order required for positive detection; current artifacts do not authorize absence."
+  - "The complete session is unavailable, so the no-Q&A applicability condition cannot be assessed."
 related_patterns: [seeding-the-first-question]
 inverse_of: []
 difficulty: foundational
@@ -52,12 +64,13 @@ Use this pattern in every Q&A session, without exception. It is especially criti
 - Hostile or confusing questions are gently reframed in the restatement
 
 ## Scoring Criteria
-- Strong signal (2 pts): Every audience question is clearly repeated or rephrased before the speaker answers, with natural delivery and consistent application
-- Moderate signal (1 pt): Some questions repeated but the practice is inconsistent — speaker sometimes jumps to answering without restating
-- Absent (0 pts): Speaker never repeats questions, answers are directed to the questioner rather than the room, rest of audience cannot follow Q&A
+- Strong signal: Every audience question is clearly repeated or rephrased before the speaker answers, with natural delivery and consistent application
+- Moderate signal: Some questions repeated but the practice is inconsistent — speaker sometimes jumps to answering without restating
+- Absent: Speaker never repeats questions, answers are directed to the questioner rather than the room, rest of audience cannot follow Q&A
 
 ## Evidence Gate
-Evaluate this entry only from a transcript or delivery video that preserves the relevant spoken wording and order. A visual artifact alone cannot establish the rhetorical move, and an absence finding requires coverage of the complete relevant spoken interval.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 4 (Audience Engagement) and to Vault Dimension 7 (Clarity / Communication).

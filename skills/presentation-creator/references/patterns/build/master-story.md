@@ -6,11 +6,35 @@ part: build
 phase_relevance:
   - content
 vault_dimensions: [2, 5, 7]
+evidence_channels: [transcript, timed_transcript, slides, slide_sequence, video]
 detection_signals:
   - "single anecdote introduced early and referenced 3+ times across the talk"
   - "each return to the story deepens or reframes its meaning"
   - "the story functions as a metaphor or anchor for the Big Idea"
   - "verbal callbacks tie disparate sections back to the same narrative"
+evaluable_from:
+  - transcript
+  - delivery_video
+  - [transcript, static_slides]
+  - [transcript, native_deck]
+strong_evaluable_from:
+  - transcript
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: short-talk-under-20-minutes
+    description: "Complete delivery video establishes a talk shorter than 20 minutes, where the catalog says repeated story returns do not have enough room to land."
+  - condition_id: purely-informational-big-idea
+    description: "Complete delivery video establishes that the talk's Big Idea serves only factual or step-by-step technical instruction, with no worldview, persuasive, or emotional thesis for a recurring story metaphor to carry."
+applicability_evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "The spoken source must locate an identifiable anecdote and its later callbacks; paired slides may corroborate a recurring visual anchor but cannot substitute for the story."
+  - "A strong score requires at least three returns across the complete talk, with each return adding meaning; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "Only recurring imagery, a mascot, or slide repetition is available without the spoken anecdote and callbacks."
+  - "The transcript or delivery video is incomplete across the talk, so three-or-more returns cannot be established."
+  - "The complete delivery is unavailable, so duration and Big-Idea-purpose applicability conditions cannot both be assessed."
 related_patterns: [narrative-arc, foreshadowing, sparkline, the-big-why, star-moment]
 inverse_of: []
 difficulty: advanced
@@ -61,9 +85,13 @@ The vault should look for recursive narrative structure:
 The pattern is often reinforced visually — the master story may have a single corresponding slide image that returns each time the verbal reference does, deepening the visual anchor.
 
 ## Scoring Criteria
-- Strong signal (2 pts): A clearly identifiable anecdote returned to 3+ times across the talk; each return adds new meaning or maps the story onto a new aspect of the Big Idea; first telling is complete and emotionally landed; verbal/visual anchor is consistent
-- Moderate signal (1 pt): An anecdote is referenced multiple times but returns are repetitions rather than deepenings; OR the story-Big Idea mapping is loose; OR the first telling is too brief to land emotionally
-- Absent (0 pts): No recurring anecdote in the talk; stories told are one-off and not returned to; no narrative thread connecting otherwise-distinct sections
+- Strong signal: A clearly identifiable anecdote returned to 3+ times across the talk; each return adds new meaning or maps the story onto a new aspect of the Big Idea; first telling is complete and emotionally landed; verbal/visual anchor is consistent
+- Moderate signal: An anecdote is referenced multiple times but returns are repetitions rather than deepenings; OR the story-Big Idea mapping is loose; OR the first telling is too brief to land emotionally
+- Absent: No recurring anecdote in the talk; stories told are one-off and not returned to; no narrative thread connecting otherwise-distinct sections
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 5 (Storytelling/Narrative) directly. Relates to Dimension 2 (Narrative Structure). Relates to Dimension 7 (Verbal Signatures).

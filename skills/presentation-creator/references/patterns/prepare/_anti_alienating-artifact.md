@@ -6,10 +6,28 @@ part: prepare
 phase_relevance:
   - guardrails
 vault_dimensions: [3, 10, 14]
+evidence_channels: [transcript, slides, video]
 detection_signals:
   - "offensive humor attempts"
   - "exclusionary references"
   - "culturally insensitive material"
+evaluable_from:
+  - transcript
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - transcript
+  - static_slides
+  - native_deck
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "A positive finding must cite the exact utterance or rendered artifact and enough surrounding context to distinguish speaker-endorsed exclusion from quotation, critique, reclamation, or a warning about that material."
+  - "A strong finding requires directly visible or audible exclusionary content; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "The source is a crop, excerpt, mistranslation, or decontextualized quotation that does not establish attribution, target, or rhetorical use."
+  - "The claimed cultural meaning depends on context the inspected artifacts do not supply; no spoken-track and visual-sequence combination authorizes an absence decision."
 related_patterns: [know-your-audience, brain-breaks]
 inverse_of: [brain-breaks, entertainment]
 difficulty: foundational
@@ -38,9 +56,13 @@ This is an antipattern — it should always be avoided. There is no scenario whe
 The vault should look for material that could alienate audience segments: profanity, sexual content, exclusionary humor, culturally insensitive references, or imagery that assumes audience homogeneity. Even mild instances should be flagged.
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Contains clearly offensive, exclusionary, or alienating material that would disengage significant portions of a diverse audience
-- Moderate signal (1 pt): Mostly professional but occasional borderline material that might make some audience members uncomfortable
-- Absent (0 pts — antipattern not present): Presentation is entirely professional and inclusive; humor (if present) is contextualized and inoffensive; no exclusionary references
+- Strong signal (antipattern present): Contains clearly offensive, exclusionary, or alienating material that would disengage significant portions of a diverse audience
+- Moderate signal: Mostly professional but occasional borderline material that might make some audience members uncomfortable
+- Absent (antipattern not present): Presentation is entirely professional and inclusive; humor (if present) is contextualized and inoffensive; no exclusionary references
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 3 (Delivery/Presentation Skills). Relates to Dimension 10 (Creativity/Originality). Relates to Dimension 14 (Overall Impression/Polish).

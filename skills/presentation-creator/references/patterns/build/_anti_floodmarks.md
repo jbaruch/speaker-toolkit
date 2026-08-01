@@ -7,6 +7,7 @@ phase_relevance:
   - guardrails
   - slides
 vault_dimensions: [13, 14]
+evidence_channels: [slides, video]
 detection_signals:
   - "pervasive branding on every slide"
   - "excessive corporate template elements"
@@ -15,12 +16,18 @@ evaluable_from:
   - static_slides
   - native_deck
   - delivery_video
+strong_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+absence_evaluable_from:
+  - static_slides
 evidence_requirements:
-  - "Evidence must expose the visible construction across enough of the talk to apply the existing strong, moderate, or absent criterion."
+  - "Evidence must expose the visible construction across enough of the talk to apply a positive criterion; an absent outcome requires a complete, separately declared rendered PDF."
   - "Evidence must expose the existing scoring cues: strong: heavy branding on every slide; moderate: minimal persistent branding; absent: branding limited to bookends."
 not_evaluable_when:
   - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
-  - "Only a transcript or spoken account is available, or the visual source is too partial to distinguish the asserted tier from absence."
+  - "Only a transcript or spoken account is available, the visual source is too partial for the asserted positive tier, or the separately declared rendered PDF is incomplete for absence."
 related_patterns: [bookends, defy-defaults, unifying-visual-theme]
 inverse_of: [defy-defaults, bookends]
 difficulty: foundational
@@ -51,12 +58,13 @@ The only exception is when branding is mandated by a conference or organization 
 When scoring talks, note whether corporate or conference branding appears on every slide or only on bookend slides. Measure the approximate percentage of slide area consumed by non-content elements (logos, bars, footers, headers, decorative elements). Look for slides where branding elements overlap with or crowd the actual content. A presenter who has clean content slides with branding only on bookends has explicitly addressed this antipattern.
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Heavy branding on every slide consuming significant screen real estate, decorative elements competing with content, visible template bloat reducing effective canvas
-- Moderate signal (1 pt): Branding present on all slides but minimal (small logo in corner, thin footer bar) that does not significantly reduce content area
-- Absent (0 pts — antipattern not present): Clean content slides with maximum canvas devoted to content, branding limited to bookend slides (title and closing), no persistent visual noise
+- Strong signal (antipattern present): Heavy branding on every slide consuming significant screen real estate, decorative elements competing with content, visible template bloat reducing effective canvas
+- Moderate signal: Branding present on all slides but minimal (small logo in corner, thin footer bar) that does not significantly reduce content area
+- Absent (antipattern not present): Clean content slides with maximum canvas devoted to content, branding limited to bookend slides (title and closing), no persistent visual noise
 
 ## Evidence Gate
-Evaluate this entry only from rendered static slides, the native deck, or delivery video that exposes the visible construction. Speech alone cannot establish its visual criteria, and an absence finding requires coverage of the complete relevant visual sequence.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+An absence finding is authorized only from a complete, separately declared rendered PDF (`static_slides`); a native deck, delivery video, transcript, or comparison artifact does not authorize absence.
 
 ## Relationship to Vault Dimensions
 Dimension 13 (Slide Aesthetics): Floodmarks directly degrade slide aesthetics. Dimension 14 (Overall Quality Indicators): Heavy template branding signals defaults used without customization.

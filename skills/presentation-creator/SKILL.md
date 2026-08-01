@@ -25,6 +25,12 @@ re-runs) still require the documented pre-flight checklist before any
 action; do not parallelize and do not bypass the vault-loading or
 artifact-loading gates.
 
+Resolve the absolute path of this loaded `SKILL.md`, then set
+`speaker_toolkit_root` to the plugin root two directories above the directory
+containing this file. Never derive it from the consumer working directory.
+Treat `{speaker_toolkit_root}` as absolute in every toolkit-owned command;
+talk, vault, and output paths remain consumer-owned.
+
 Build presentations that match the speaker's documented rhetoric and style patterns.
 The rhetoric-knowledge-vault is this skill's constitution. Every presentation is a
 joint effort — the skill brings rhetoric knowledge, the author brings topic expertise.
@@ -53,32 +59,42 @@ Then load local references per phase:
 Then run:
 
 ```bash
-python3 skills/presentation-creator/scripts/pattern_history_status.py \
-  path/to/speaker-profile.json
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/pattern_history_status.py" \
+  path/to/speaker-profile.json path/to/rhetoric-style-summary.md
 ```
 
-The command emits `{history_enabled, profile_schema_version, scored_talk_count,
-reason_codes, reasons, warning}`. Pattern history is authorized only when
-`history_enabled` is true. Otherwise surface `warning` verbatim and recommend profile
-regeneration; continue using independent non-pattern fields such as pacing, visual
-rules, presentation modes, infrastructure, publishing config, and confirmed intents.
-Stored profile schemas v1/v2 remain readable for those non-pattern fields only.
+Use `-` for the profile path in summary-only mode. The command emits
+`{history_enabled, history_source, profile_schema_version, scored_talk_count,
+eligible_talk_count, opportunity_rows_available,
+classification_fields_available, reason_codes, reasons, warning}`. Historical
+classifications are authorized only when
+`history_enabled` is true. A valid profile always wins; the summary is considered
+only as fallback and is never merged with profile history. Otherwise surface
+`warning` verbatim and recommend profile regeneration; continue using independent
+non-pattern fields such as pacing, visual rules, presentation modes, infrastructure,
+publishing config, and confirmed intents. Exact occurrence rows may remain auditable
+when `opportunity_rows_available` is true, but that status never authorizes a
+classification. Stored profile schemas v1/v2/v3 remain
+readable for those non-pattern fields only.
 
 When pattern history is disabled, suppress every catalog-derived historical claim:
 signature and contextual-history tiers, New-to-You claims, strengths, underuse,
 by-mode history, recurring antipattern labels, and pattern-derived recurring issues
-or badges. Schema-v3 top-level recurring issues and badges remain usable only when
+or badges. Schema-v4 top-level recurring issues and badges remain usable only when
 their entries explicitly declare `source_lane: "non_pattern"`; legacy or ambiguous
 entries do not authorize history. Current-taxonomy scans of the new outline remain enabled. If no profile
 exists, run in **summary-only mode**: use default guardrail thresholds (1.5
 slides/min, 45% Act 1 cap) and ask for template/publishing data interactively. Section
-15 history is usable only when it embeds explicit current provenance that passes the
-same strict pattern-profile assessment; ordinary or stale Section 15 prose authorizes
-taxonomy-only recommendations, never speaker-history claims.
+15 classifications are usable only when its uniquely delimited current block passes
+`python3 "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py"` and the same strict
+pattern-profile assessment with `classification_fields_available: true`; ordinary,
+stale, or occurrence-only Section 15 data authorizes taxonomy-only recommendations,
+never speaker-history claims.
 
 When comparing two profiles, compare their pattern catalog fingerprints and scoring
 schemas first. A mismatch is a generation reset; do not call cross-generation pattern
-differences improvements or regressions.
+differences improvements or regressions. Raw scores are also incomparable when the
+baseline reports an unavailable or changed `opportunity_coverage_identity`.
 
 ## Workflow Overview
 
@@ -112,20 +128,20 @@ By end of Phase 3, the talk directory contains:
 Regenerate the four derived artifacts after every edit to `outline.yaml`:
 
 ```bash
-python3 skills/presentation-creator/scripts/extract-narrative.py outline.yaml > narrative.md
-python3 skills/presentation-creator/scripts/extract-script.py    outline.yaml > script.md
-python3 skills/presentation-creator/scripts/extract-slides.py    outline.yaml > slides.md
-python3 skills/presentation-creator/scripts/check-rhetorical.py  outline.yaml > rhetorical-review.md
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-narrative.py" outline.yaml > narrative.md
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-script.py"    outline.yaml > script.md
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-slides.py"    outline.yaml > slides.md
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/check-rhetorical.py"  outline.yaml > rhetorical-review.md
 ```
 
-Validate the YAML with `python3 skills/presentation-creator/scripts/outline_schema.py outline.yaml` — exits non-zero with a typed error if any validator fails.
+Validate the YAML with `python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" outline.yaml` — exits non-zero with a typed error if any validator fails.
 
 `narrative.md` is the exception to "by end of Phase 3" — it is generated earlier
 in partial form during Phases 1–2 so the author can review and approve the
 narrative before slide content development:
 
 ```bash
-python3 skills/presentation-creator/scripts/extract-narrative.py --partial outline.yaml > narrative.md
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-narrative.py" --partial outline.yaml > narrative.md
 ```
 
 `--partial` validates `talk` + `chapters` without requiring `slides[]`. The
@@ -141,7 +157,7 @@ action:
 - `speaker-profile.json` — publishing config, shortener, URL patterns
 - `secrets.json` — API keys for shorteners and Gemini
 - `outline.yaml` — source of truth for talk slug, metadata, slides, and shownotes URL.
-  Read it via `skills/presentation-creator/scripts/outline_schema.py` (the pydantic model exposes `talk.slug`,
+  Read it via `python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py"` (the pydantic model exposes `talk.slug`,
   `talk.title`, `talk.shownotes_url_base`, etc.) — never re-parse the YAML by hand.
 
 If the file is missing or fails to validate, STOP and ask. Do not guess values that
@@ -209,7 +225,7 @@ Save the partial outline to: `{presentations-dir}/{conference}/{year}/{talk-slug
 Then generate the narrative stub so the author can read the TL;DR early:
 
 ```bash
-python3 skills/presentation-creator/scripts/extract-narrative.py --partial outline.yaml > narrative.md
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-narrative.py" --partial outline.yaml > narrative.md
 ```
 
 At this phase `narrative.md` carries the TL;DR only — the chapter body fills in
@@ -254,7 +270,7 @@ Once the architecture is set, author `chapters[]` (section headings, `target_min
 its chapter body — for human review:
 
 ```bash
-python3 skills/presentation-creator/scripts/extract-narrative.py --partial outline.yaml > narrative.md
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-narrative.py" --partial outline.yaml > narrative.md
 ```
 
 Present `narrative.md` to the author. This is the narrative-approval point: the
@@ -355,11 +371,11 @@ placeholder definitions and meme-brief format.
 After saving `outline.yaml`, validate and regenerate the derived artifacts:
 
 ```bash
-python3 skills/presentation-creator/scripts/outline_schema.py outline.yaml      # validates; non-zero on error
-python3 skills/presentation-creator/scripts/extract-narrative.py outline.yaml > narrative.md
-python3 skills/presentation-creator/scripts/extract-script.py    outline.yaml > script.md
-python3 skills/presentation-creator/scripts/extract-slides.py    outline.yaml > slides.md
-python3 skills/presentation-creator/scripts/check-rhetorical.py  outline.yaml > rhetorical-review.md
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" outline.yaml      # validates; non-zero on error
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-narrative.py" outline.yaml > narrative.md
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-script.py"    outline.yaml > script.md
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-slides.py"    outline.yaml > slides.md
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/check-rhetorical.py"  outline.yaml > rhetorical-review.md
 ```
 
 The four `.md` files are read-only — never edit them directly; they regenerate
@@ -370,8 +386,8 @@ deterministically from `outline.yaml`.
 Run two checkers — they cover different surfaces:
 
 ```bash
-python3 skills/presentation-creator/scripts/check-rhetorical.py outline.yaml > rhetorical-review.md
-python3 skills/presentation-creator/scripts/guardrail-check.py   outline.yaml path/to/speaker-profile.json
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/check-rhetorical.py" outline.yaml > rhetorical-review.md
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/guardrail-check.py"   outline.yaml path/to/speaker-profile.json
 ```
 
 `check-rhetorical.py` enforces the **closed pattern taxonomy** (opening PUNCH,
@@ -413,7 +429,7 @@ Agent-added (not in script yet):
 - Current-taxonomy contextual antipattern scan of the new outline; this runs even when
   history is disabled and uses `[CONTEXTUAL]`, never `[RECURRING]`
 - Speaker-specific recurring issues from
-  `profile.guardrail_sources.recurring_issues[]` — schema-v3 entries with
+  `profile.guardrail_sources.recurring_issues[]` — schema-v4 entries with
   `source_lane: "non_pattern"` remain usable independently; legacy or ambiguous
   entries are suppressed, while catalog warnings come from authorized
   `pattern_profile` history
@@ -447,8 +463,8 @@ template's demo slides and creates every slide from the ops. See
 [references/deckops-spec.md](references/deckops-spec.md).
 
 ```bash
-python3 skills/presentation-creator/scripts/validate-deckops.py ops.txt
-bash skills/presentation-creator/scripts/build-deck.sh "{template_copy_pptx_path}" "{output_path}" ops.txt
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/validate-deckops.py" ops.txt
+bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/build-deck.sh" "{template_copy_pptx_path}" "{output_path}" ops.txt
 ```
 
 For non-illustrated slides and EXCEPTION-format slides, emit the content inline
@@ -472,27 +488,27 @@ reads `outline.yaml` directly (`style_anchor` + per-slide `image_prompt` /
 `builds`) — no surfacing or format translation needed.
 
 If any slide has progressive-reveal builds, expand them FIRST with
-`skills/presentation-creator/scripts/expand-builds.sh` (manifest from
+`"{speaker_toolkit_root}/skills/presentation-creator/scripts/expand-builds.sh"` (manifest from
 `build-expansion-manifest.py`): it replaces each parent slide with its build
 frames as full-bleed slides. Pass the speaker-notes JSON to
 `build-expansion-manifest.py --notes` so each build parent's note rides onto its
-FINAL frame during expansion (per `skills/illustrations/references/builds.md`);
+FINAL frame during expansion (per `{speaker_toolkit_root}/skills/illustrations/references/builds.md`);
 do not re-target those parent indices in any later notes pass. Run expansion
 BEFORE the by-index passes below — it renumbers later slides, so notes,
 backgrounds, and QR must key on the POST-expansion deck. See
-`rules/deck-editing-rules.md`.
+`{speaker_toolkit_root}/rules/deck-editing-rules.md`.
 
 Inject the remaining speaker notes from `script.md` after the illustrations skill
-returns, via real PowerPoint — `skills/presentation-creator/scripts/inject-notes.sh`
+returns, via real PowerPoint — `"{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.sh"`
 (notes JSON is the `{"<0-based slide #>": "text"}` map). When the deck was
 expanded, drop the build-parent entries already carried by `--notes` and key the
 remaining notes on the post-expansion slide order; with no builds, the original
 indices apply directly. PowerPoint writes valid notes OOXML, so the
 `<p:notesMasterIdLst>` Keynote patch the old python path needed is gone. THEN, as
 the final write, set the FULL-slide backgrounds via
-`skills/presentation-creator/scripts/apply-backgrounds.sh` using the manifest from
+`"{speaker_toolkit_root}/skills/presentation-creator/scripts/apply-backgrounds.sh"` using the manifest from
 the apply pass — it must run last; any later python-pptx save would re-drop the
-per-slide background fills. See `rules/deck-editing-rules.md`.
+per-slide background fills. See `{speaker_toolkit_root}/rules/deck-editing-rules.md`.
 
 **For presenterm talks (terminal markdown):**
 
@@ -536,7 +552,7 @@ Phase 0-6 flow. The talk has been given and recorded.
 
 Read [references/phase7-post-event.md](references/phase7-post-event.md) for
 the pre-flight checklist and Step 7.2 (Video to Shownotes). Step 7.1 detail
-lives in `skills/illustrations/references/thumbnails.md`.
+lives in `{speaker_toolkit_root}/skills/illustrations/references/thumbnails.md`.
 
 ---
 
@@ -550,9 +566,9 @@ lives in `skills/illustrations/references/thumbnails.md`.
    slide budget, profanity register, locale references, commercial intent.
 6. For structural edits (delete/reorder slides, import slides from another deck,
    global text replace), edit through real PowerPoint via
-   `skills/presentation-creator/scripts/run-deck-ops.sh`. python-pptx editing is
+   `"{speaker_toolkit_root}/skills/presentation-creator/scripts/run-deck-ops.sh"`. python-pptx editing is
    not used — it strips per-slide background fills, flattening illustrated decks.
-   See `rules/deck-editing-rules.md` (macOS + Microsoft PowerPoint only). On first
+   See `{speaker_toolkit_root}/rules/deck-editing-rules.md` (macOS + Microsoft PowerPoint only). On first
    use, walk the user through `references/deck-editing-setup.md` (enable macros,
    import the macro, grant Automation consent) before invoking the script.
 

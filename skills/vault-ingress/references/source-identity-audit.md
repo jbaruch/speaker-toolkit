@@ -9,8 +9,8 @@ Run it after the offline structural preflight and before writing a source-repair
 plan:
 
 ```bash
-python3 skills/vault-ingress/scripts/preflight-vault.py {vault_root}
-python3 skills/vault-ingress/scripts/audit-source-identities.py {vault_root}
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/preflight-vault.py" {vault_root}
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/audit-source-identities.py" {vault_root}
 ```
 
 The audit requires the `yt-dlp` executable and network access. An **active talk**
@@ -23,7 +23,7 @@ fetched; a rejected/cleared source stays inactive.
 Stdout is the only output. The helper accepts a vault root or the database path:
 
 ```bash
-python3 skills/vault-ingress/scripts/audit-source-identities.py \
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/audit-source-identities.py" \
   {vault_root}/tracking-database.json
 ```
 

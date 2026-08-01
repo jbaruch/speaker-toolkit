@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - slides
 vault_dimensions: [13]
+evidence_channels: [slides, video]
 detection_signals:
   - "hand-drawn elements"
   - "rough/sketch aesthetic"
@@ -14,12 +15,18 @@ evaluable_from:
   - static_slides
   - native_deck
   - delivery_video
+strong_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+absence_evaluable_from:
+  - static_slides
 evidence_requirements:
-  - "Evidence must expose the visible construction across enough of the talk to apply the existing strong, moderate, or absent criterion."
+  - "Evidence must expose the visible construction across enough of the talk to apply a positive criterion; an absent outcome requires a complete, separately declared rendered PDF."
   - "Evidence must expose the existing scoring cues: strong: deliberate, consistent hand-drawn treatment; moderate: some inconsistent rough elements; absent: digitally clean standard elements."
 not_evaluable_when:
   - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
-  - "Only a transcript or spoken account is available, or the visual source is too partial to distinguish the asserted tier from absence."
+  - "Only a transcript or spoken account is available, the visual source is too partial for the asserted positive tier, or the separately declared rendered PDF is incomplete for absence."
 related_patterns: [defy-defaults, leet-grammars]
 inverse_of: []
 difficulty: intermediate
@@ -61,12 +68,13 @@ Avoid Analog Noise in formal corporate settings where polished graphics are expe
 When scoring talks, look for visual elements that are deliberately imperfect: hand-drawn diagrams, sketch-style fonts, rough lines, watercolor or marker textures, or whiteboard-style illustrations. The key distinction is between intentional imperfection (a deliberate aesthetic choice) and unintentional sloppiness (misaligned elements, pixelated images, inconsistent formatting).
 
 ## Scoring Criteria
-- Strong signal (2 pts): Deliberate, consistent use of hand-drawn or sketch-style visual elements that create a cohesive aesthetic, or strategic use of imperfect elements for emphasis at key moments
-- Moderate signal (1 pt): Some hand-drawn or rough elements present but inconsistently applied, or the aesthetic feels accidental rather than intentional
-- Absent (0 pts): All visual elements are digitally clean and standard, with no hand-drawn or rough aesthetic choices
+- Strong signal: Deliberate, consistent use of hand-drawn or sketch-style visual elements that create a cohesive aesthetic, or strategic use of imperfect elements for emphasis at key moments
+- Moderate signal: Some hand-drawn or rough elements present but inconsistently applied, or the aesthetic feels accidental rather than intentional
+- Absent: All visual elements are digitally clean and standard, with no hand-drawn or rough aesthetic choices
 
 ## Evidence Gate
-Evaluate this entry only from rendered static slides, the native deck, or delivery video that exposes the visible construction. Speech alone cannot establish its visual criteria, and an absence finding requires coverage of the complete relevant visual sequence.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+An absence finding is authorized only from a complete, separately declared rendered PDF (`static_slides`); a native deck, delivery video, transcript, or comparison artifact does not authorize absence.
 
 ## Relationship to Vault Dimensions
 Dimension 13 (Visual Polish and Craft): Analog Noise is a sophisticated expression of visual craft.

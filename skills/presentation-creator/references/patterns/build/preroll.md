@@ -7,10 +7,28 @@ phase_relevance:
   - slides
   - publishing
 vault_dimensions: [1, 13]
+evidence_channels: [video]
 detection_signals:
   - "pre-talk info slide"
   - "looping intro display"
   - "housekeeping before start"
+evaluable_from:
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: no-prestart-display-opportunity
+    description: "Complete pre-start delivery video establishes an immediate handoff or venue-controlled display with no presenter-controlled screen period before the talk."
+applicability_evaluable_from:
+  - delivery_video
+evidence_requirements:
+  - "Delivery video must begin before the official talk start and show what the audience saw while assembling."
+  - "A strong score must expose a polished looping sequence with identification, abstract, and housekeeping; a static title slide supports only moderate."
+not_evaluable_when:
+  - "The recording starts at or after the first spoken line and contains no pre-start display period."
+  - "The pre-start screen is cropped, replaced, or otherwise not visible long enough to distinguish a loop from one static frame."
+  - "The source does not show the full pre-start interval needed to assess whether a presenter-controlled display opportunity existed."
 related_patterns: [seeding-the-first-question]
 inverse_of: [abstract-attorney]
 difficulty: foundational
@@ -41,9 +59,13 @@ Avoid investing significant effort in a Preroll when you have no control over th
 When scoring talks, look for evidence of pre-talk content: a title slide displayed before the official start, looping information visible as the audience settles, or the presenter referencing information that was shown beforehand. Ask whether the presenter used the pre-talk period productively or let it go to waste.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Polished looping Preroll with name, title, abstract, and housekeeping information displayed before the talk begins, clearly designed for the pre-audience period
-- Moderate signal (1 pt): A static title slide displayed before the talk, providing basic identification but lacking housekeeping or abstract information
-- Absent (0 pts): Blank screen, desktop wallpaper, or no pre-talk visual content visible as the audience assembles
+- Strong signal: Polished looping Preroll with name, title, abstract, and housekeeping information displayed before the talk begins, clearly designed for the pre-audience period
+- Moderate signal: A static title slide displayed before the talk, providing basic identification but lacking housekeeping or abstract information
+- Absent: Blank screen, desktop wallpaper, or no pre-talk visual content visible as the audience assembles
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 1 (Topic and Thesis): The Preroll establishes the topic and framing before the talk begins, giving the audience a head start on understanding what they are about to learn. Dimension 13 (Slide Aesthetics): The visual quality of the Preroll sets aesthetic expectations for the entire presentation, making it a first impression of the presenter's design sensibility.

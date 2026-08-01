@@ -6,10 +6,27 @@ part: deliver
 phase_relevance:
   - content
 vault_dimensions: [2, 11]
+evidence_channels: [timed_transcript, slides, video]
 detection_signals:
   - "speaker opens with hook/content rather than name and role"
   - "self-introduction appears after an initial slide or two"
   - "audience is engaged before they know who is speaking"
+evaluable_from:
+  - transcript
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+  - [transcript, static_slides]
+  - [transcript, native_deck]
+absence_evaluable_from: null
+evidence_requirements:
+  - "Evidence must cover from the first spoken line through the substantive self-introduction and preserve the relationship between opening speech and slide order."
+  - "A strong score requires delivery video or a complete transcript paired with the static or native opening slides; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "Only a title slide with the speaker's name is available, because it does not locate the substantive spoken introduction."
+  - "Opening speech or slides are missing, or coverage ends before the substantive introduction appears."
 related_patterns: [opening-punch, the-big-why, anti-sell]
 inverse_of: []
 difficulty: foundational
@@ -34,9 +51,13 @@ Use Delayed Self-Introduction when you have a strong opening hook — a counteri
 Look for slide order: is the first content slide a hook (claim, question, image) rather than a bio? When does the speaker say their name? If the name appears on slide 2 or later, the pattern is present. A bio slide that is structurally separate from the title slide and appears mid-opening is also a positive signal.
 
 ## Scoring Criteria
-- Strong signal (2 pts): bio appears two or more slides into the talk; the opening slide is a content hook with no biographical data
-- Moderate signal (1 pt): name appears on the title slide but the substantive self-introduction is delayed
-- Absent (0 pts): conventional opening with name, title, and bio on slide 1
+- Strong signal: bio appears two or more slides into the talk; the opening slide is a content hook with no biographical data
+- Moderate signal: name appears on the title slide but the substantive self-introduction is delayed
+- Absent: conventional opening with name, title, and bio on slide 1
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 2 (Structure and Flow): Delayed Self-Introduction is a structural decision about where attention is invested in the opening. Dimension 11 (Self-Presentation): The pattern reframes the speaker's authority as earned by content rather than declared by credentials.

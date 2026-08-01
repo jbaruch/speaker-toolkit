@@ -8,11 +8,12 @@ phase_relevance:
   - guardrails
 vault_dimensions: [2, 14]
 detection_signals:
-  - "abstract doesn't match delivery"
-  - "significant deviation from published description"
+  - "submitted abstract and final delivery are both available for direct comparison"
+  - "promised scope or takeaways are absent from the delivered talk"
 related_patterns: [preroll, narrative-arc, fourthought, triad, crucible, carnegie-hall]
 inverse_of: [preroll]
 difficulty: foundational
+observable: false
 ---
 
 # Abstract Attorney
@@ -35,12 +36,16 @@ The deeper lesson of the Abstract Attorney antipattern is that your abstract is 
 Be aware of this antipattern whenever you have pre-published a description of your talk. The defenses are most critical for conference presentations where the abstract was reviewed and approved by a program committee, as these carry the strongest implicit contract. Less critical for internal presentations where expectations are more fluid.
 
 ## Detection Heuristics
-The vault should look for signs of disconnect between the apparent description of the talk and the delivered content. Significant structural deviations from what the talk claims to cover, missing promised topics, or unexpected diversions all trigger this antipattern.
+Do not infer this from the talk alone: the accepted abstract is the comparison
+artifact. Verify it only by comparing that exact submission with the delivered
+scope and takeaways. Without the submission, the pattern is unevaluable rather
+than absent.
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Significant disconnect between described and delivered content; audience likely feels misled about what the talk would cover
-- Moderate signal (1 pt): Generally follows the described topics but some promised elements are missing or replaced without explanation
-- Absent (0 pts — antipattern not present): Content closely matches what was promised; any deviations are explicitly acknowledged and justified
+- Strong signal (antipattern present): Direct comparison with the accepted abstract shows promised scope or takeaways missing from the delivery
+- Moderate signal: Direct comparison shows smaller unexplained drift from the accepted abstract
+- Absent (antipattern not present): Direct comparison shows the delivered scope matches the accepted abstract, or deviations are explicitly acknowledged and justified
+- Unevaluable: The exact accepted abstract is unavailable
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 2 (Structure/Organization). Relates to Dimension 14 (Overall Impression/Polish).

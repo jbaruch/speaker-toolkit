@@ -10,7 +10,7 @@ The vault is located at `./vault/` and all the data is provided below. Your job 
 
 Generate `vault/speaker-profile.json` — a complete speaker profile synthesizing all available vault data.
 
-The profile should capture Taylor's patterns, defaults, and infrastructure in a structured form that another tool can consume programmatically. Include speaker badges that reflect Taylor's specific talk history.
+The profile should capture Taylor's defaults and infrastructure in a structured form that another tool can consume programmatically. The supplied talk rows predate source-located scoring-v5 outcomes and therefore cannot authorize a current pattern cohort: emit the canonical schema-v4 empty-current-cohort pattern contract instead of migrating the legacy pattern IDs, scores, or Section 15 prose into mastery, novelty, recurring severity, trends, or badges. Include only non-pattern badges, each marked `source_lane: "non_pattern"`, grounded in independent talk-count, pacing, visual, publishing, or confirmed-intent data.
 
 ## Input Files
 

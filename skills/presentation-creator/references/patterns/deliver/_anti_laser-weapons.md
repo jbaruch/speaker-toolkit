@@ -43,9 +43,9 @@ This is an antipattern to avoid entirely in the vast majority of presentations. 
 - Slides are complex enough to require external attention-direction tools
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Heavy laser pointer reliance throughout the talk, bouncing dot is a constant visual element, slides clearly need external highlighting to be understood
-- Moderate signal (1 pt): Laser pointer used occasionally but slides mostly self-direct attention
-- Absent (0 pts — antipattern not present): No laser pointer used — slides are designed with built-in visual emphasis (Traveling Highlights), attention flows naturally without external tools
+- Strong signal (antipattern present): Heavy laser pointer reliance throughout the talk, bouncing dot is a constant visual element, slides clearly need external highlighting to be understood
+- Moderate signal: Laser pointer used occasionally but slides mostly self-direct attention
+- Absent (antipattern not present): No laser pointer used — slides are designed with built-in visual emphasis (Traveling Highlights), attention flows naturally without external tools
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 13 (Visual Design Quality) and to Vault Dimension 14 (Speaker Craft / Professionalism).

@@ -6,12 +6,16 @@ part: deliver
 phase_relevance:
   - content
 vault_dimensions: [4]
+evidence_channels: [video]
 detection_signals:
   - "physical props used"
   - "audience interaction through objects"
   - "tangible demonstrations"
 evaluable_from:
   - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
 evidence_requirements:
   - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
   - "Evidence must expose the existing scoring cues: physical props, room interaction, and live logistics."
@@ -51,12 +55,13 @@ Use this pattern when you have the logistical capacity to support it and when th
 - Reward systems encourage participation through physical tokens
 
 ## Scoring Criteria
-- Strong signal (2 pts): Physical props are used effectively to enhance understanding and engagement, with clear connection between physical element and content, logistics handled smoothly
-- Moderate signal (1 pt): Some physical elements present but connection to content is weak or logistics are rough
-- Absent (0 pts): Presentation is entirely screen-based with no physical interaction elements
+- Strong signal: Physical props are used effectively to enhance understanding and engagement, with clear connection between physical element and content, logistics handled smoothly
+- Moderate signal: Some physical elements present but connection to content is weak or logistics are rough
+- Absent: Presentation is entirely screen-based with no physical interaction elements
 
 ## Evidence Gate
-Evaluate this entry only from delivery video covering the relevant event or interval. A deck or transcript may suggest planned content, but it cannot establish the delivered timing, interaction, room behavior, or an exhaustive absence outcome.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 4 (Audience Engagement). Physical interaction creates a qualitatively different type of engagement than visual or auditory stimulation alone. It breaks the passive viewing pattern and transforms attendees from audience members into participants.

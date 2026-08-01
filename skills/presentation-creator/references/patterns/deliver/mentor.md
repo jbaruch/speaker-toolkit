@@ -7,10 +7,27 @@ phase_relevance:
   - intent
   - content
 vault_dimensions: [9, 11]
+evidence_channels: [transcript, slides, video]
 detection_signals:
   - "audience positioned as hero"
   - "knowledge-sharing framing"
   - "speaker as guide not guru"
+evaluable_from:
+  - transcript
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - transcript
+  - delivery_video
+absence_evaluable_from:
+  - transcript
+evidence_requirements:
+  - "A positive finding must show the audience receiving agency in the argument while the speaker supplies guidance, tools, or a path; second-person pronouns by themselves do not establish the role relationship."
+  - "A strong outcome requires a complete spoken track; an absent outcome is authorized only from a complete transcript so the speaker-audience stance is judged across the talk rather than from a single slide or exhortation."
+not_evaluable_when:
+  - "Only an isolated use of 'you', a call-to-action slide, or generic encouragement is available without evidence of the audience-as-hero and speaker-as-guide relationship."
+  - "The transcript or delivery video omits material sections, so a local mentor stance cannot be distinguished from a talk that ultimately centers the speaker."
 related_patterns: [narrative-arc, display-of-high-value]
 inverse_of: []
 difficulty: intermediate
@@ -55,9 +72,13 @@ Use this pattern in every presentation, though the degree of mentor orientation 
 - Speaker shares their learning journey, not just their conclusions
 
 ## Scoring Criteria
-- Strong signal (2 pts): Speaker clearly positions audience as hero, content is framed around audience empowerment, speaker serves as guide enabling the audience's own journey
-- Moderate signal (1 pt): Some mentor framing but speaker occasionally slips into hero mode, focusing on personal accomplishments
-- Absent (0 pts): Speaker is clearly the hero of the narrative, talk focused on personal achievements with audience as passive admirers
+- Strong signal: Speaker clearly positions audience as hero, content is framed around audience empowerment, speaker serves as guide enabling the audience's own journey
+- Moderate signal: Some mentor framing but speaker occasionally slips into hero mode, focusing on personal accomplishments
+- Absent: Speaker is clearly the hero of the narrative, talk focused on personal achievements with audience as passive admirers
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+An absence finding is authorized only from a complete transcript (`transcript`) covering the required spoken scope; delivery video, rendered/static slides, native decks, and comparison artifacts do not authorize absence.
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 9 (Speaker Authority / Credibility). It also maps to Vault Dimension 11 (Teaching Effectiveness).

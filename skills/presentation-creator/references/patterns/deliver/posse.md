@@ -42,9 +42,9 @@ Use this pattern especially for first-time talks, unfamiliar venues, or high-sta
 - Audience engagement appears seeded by a supportive core group
 
 ## Scoring Criteria
-- Strong signal (2 pts): Speaker has visible support network present, leverages their energy effectively, and benefits from practical backup
-- Moderate signal (1 pt): One or two supporters present but not strategically positioned or leveraged
-- Absent (0 pts): Speaker is entirely alone with no visible support network
+- Strong signal: Speaker has visible support network present, leverages their energy effectively, and benefits from practical backup
+- Moderate signal: One or two supporters present but not strategically positioned or leveraged
+- Absent: Speaker is entirely alone with no visible support network
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 4 (Audience Engagement). The Posse directly influences the audience dynamic by seeding positive engagement patterns that spread to the broader room. The supportive energy created by allies lowers the barrier for strangers to engage, ask questions, and respond positively.

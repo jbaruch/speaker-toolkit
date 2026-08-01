@@ -8,11 +8,32 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [4, 12]
+evidence_channels: [timed_transcript, video]
 detection_signals:
   - "audience asked to recall earlier material from memory"
   - "speaker withholds a restatement and makes the room supply it"
   - "callback framed as a question rather than a summary"
   - "recall prompts distributed across the talk rather than clustered at the end"
+evaluable_from:
+  - transcript
+  - delivery_video
+strong_evaluable_from:
+  - transcript
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: performance-shaped-talk
+    description: "A complete transcript or delivery video establishes a performance-shaped keynote or similar watch-this format rather than a teaching or retention contract."
+applicability_evaluable_from:
+  - transcript
+  - delivery_video
+evidence_requirements:
+  - "Evidence must locate an earlier taught item, the later recall prompt, a verified pause or audience-production cue, and confirmation in that order."
+  - "A strong score requires multiple genuine prompts distributed across the talk; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "The transcript lacks verified timing or audience-production cues needed to distinguish retrieval from an immediately self-answered callback."
+  - "The spoken source omits the earlier teaching, later prompt, or close, or is incomplete for recurrence."
+  - "The complete presentation purpose is unavailable, so the performance-shaped applicability condition cannot be assessed."
 related_patterns: [guess-first, backtracking, breadcrumbs, brain-breaks, spaced-followup, bookends]
 inverse_of: [nodding-room]
 difficulty: intermediate
@@ -55,9 +76,13 @@ The vault should look for recall demanded rather than supplied:
 - Counter-signal (strong): a close consisting of a fully-populated summary slide read aloud by the speaker. That is the restatement default, and it is the specific move this pattern displaces.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Multiple genuine recall prompts distributed across the talk, with real pauses and evidence the room answered; the close asks the audience to reassemble the structure rather than reading it to them; prompts target material distant enough to require actual retrieval
-- Moderate signal (1 pt): One or two recall prompts, or prompts that the speaker answers immediately without leaving room, or prompts targeting material too recent to require retrieval
-- Absent (0 pts): Every callback is a restatement; the close is a summary slide read aloud; the audience is never asked to produce anything from memory
+- Strong signal: Multiple genuine recall prompts distributed across the talk, with real pauses and evidence the room answered; the close asks the audience to reassemble the structure rather than reading it to them; prompts target material distant enough to require actual retrieval
+- Moderate signal: One or two recall prompts, or prompts that the speaker answers immediately without leaving room, or prompts targeting material too recent to require retrieval
+- Absent: Every callback is a restatement; the close is a summary slide read aloud; the audience is never asked to produce anything from memory
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 4 (Audience Interaction) as the primary axis — the beat is a solicitation, and the room's response is the signal. Relates to Dimension 12 (Pacing Clues), since retrieval beats are structural punctuation: they mark boundaries, reset attention, and impose a rhythm of gather-and-consolidate on an otherwise continuous delivery.

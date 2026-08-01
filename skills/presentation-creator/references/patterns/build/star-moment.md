@@ -7,11 +7,23 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [3, 5, 13]
+evidence_channels: [video]
 detection_signals:
   - "deliberately constructed peak moment that audiences quote afterward"
   - "single beat carries disproportionate weight in audience recall"
   - "matches one of five sub-types (dramatization / sound bite / evocative visual / emotive story / shocking statistic)"
   - "amplifies the Big Idea rather than distracting from it"
+evaluable_from:
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "A positive finding must locate an observable structural peak, identify one of the five S.T.A.R. sub-types, and show how that beat amplifies the talk's stated Big Idea rather than merely drawing applause."
+  - "A strong finding requires delivery video that captures the complete construction and audience response; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "The recording is a highlight clip, omits the talk's Big Idea or surrounding structure, or supplies applause without the moment that caused it."
+  - "The recording does not expose audience response, stage action, projected visuals, audio, or material sections needed for a strong claim."
 related_patterns: [the-big-why, sparkline, narrative-arc, vacation-photos, foreshadowing, call-to-adventure]
 inverse_of: []
 difficulty: intermediate
@@ -59,9 +71,13 @@ The vault should look for moments with disproportionate retransmission signals:
 The sub-types are individually detectable: dramatizations leave verbal cues in the transcript ("let me show you something…"), sound bites are visible as repeated exact phrasing, evocative visuals appear as full-bleed images at structural peaks, emotive stories appear as personal-anecdote sequences, shocking statistics appear as numbers with explicit framing.
 
 ## Scoring Criteria
-- Strong signal (2 pts): At least one fully-constructed S.T.A.R. moment present, clearly tied to the Big Idea, evidence of audience response in transcript or slide deck; sub-type is unambiguous and well-executed
-- Moderate signal (1 pt): A moment exists that resembles a S.T.A.R. construction but is muted — story without clear connection to thesis, or sound bite without repetition, or visual without enough drama, or statistic without framing
-- Absent (0 pts): No moment in the talk that the audience would specifically remember; talk reads as evenly-weighted information delivery; no construction visible in transcript or slides
+- Strong signal: At least one fully constructed S.T.A.R. moment is clearly tied to the Big Idea, has an unambiguous and well-executed sub-type, and produces observable audience response in the delivery
+- Moderate signal: A moment exists that resembles a S.T.A.R. construction but is muted — story without clear connection to thesis, or sound bite without repetition, or visual without enough drama, or statistic without framing
+- Absent: Complete delivery remains evenly weighted, with no thesis-aligned constructed peak matching a S.T.A.R. sub-type
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Multi-dimensional pattern. Relates to Dimension 3 (Humor & Wit) for sound-bite and dramatization sub-types. Relates to Dimension 5 (Storytelling/Narrative) directly via the emotive-storytelling sub-type and the master-story technique. Relates to Dimension 13 (Slide Design) via the evocative-visual sub-type, where a single slide is constructed to be the moment. The pattern is one of the few that spans three vault dimensions.

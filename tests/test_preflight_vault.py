@@ -1,7 +1,9 @@
 """Regression tests for the offline vault identity/source preflight."""
 
 from copy import deepcopy
+import importlib
 import json
+from pathlib import Path
 import subprocess
 import sys
 from typing import Any
@@ -12,6 +14,13 @@ import pytest
 VIDEO_ID = "AbCdEfGhI_1"
 OTHER_VIDEO_ID = "ZyXwVuTsR_2"
 DRIVE_ID = "drive-file-123"
+QUEUE_STATE_SCRIPT = (
+    Path(__file__).parents[1]
+    / "skills"
+    / "vault-ingress"
+    / "scripts"
+    / "queue-state.py"
+)
 
 
 @pytest.fixture
@@ -43,6 +52,25 @@ def base_talk(**updates: Any) -> dict[str, Any]:
         "slide_source": "none",
         "status": "processed",
     }
+    talk.update(updates)
+    return talk
+
+
+def current_v5_talk(preflight_vault, **updates: Any) -> dict[str, Any]:
+    talk = base_talk()
+    talk.update({
+        "schema_version": 5,
+        "pattern_scoring_generation_status": "current",
+        "pattern_scoring_generation_reasons": [],
+        "pattern_scoring_schema_version": (
+            preflight_vault.PATTERN_SCORING_SCHEMA_VERSION
+        ),
+        "pattern_observations": {
+            "evidence_schema_version": (
+                preflight_vault.PATTERN_EVIDENCE_SCHEMA_VERSION
+            ),
+        },
+    })
     talk.update(updates)
     return talk
 
@@ -83,7 +111,18 @@ def write_database(fixture, talks, config=None):
 
 def materialize_transcript(fixture, video_id=VIDEO_ID):
     path = fixture["transcripts"] / f"{video_id}.txt"
-    path.write_text("a real transcript artifact", encoding="utf-8")
+    # Long enough to remain plausible for the 45-minute provider-duration
+    # fixtures. Tests targeting identity/provenance should not accidentally
+    # exercise the shared partial-transcript guard.
+    text = " ".join(["substantive transcript evidence"] * 600)
+    path.write_text(text, encoding="utf-8")
+    transcript_timing = importlib.import_module("transcript_timing")
+    transcript_timing.write_quality_receipt(
+        path,
+        text,
+        transcript_timing.build_quality_policy(400),
+        {"kind": "fixed_default"},
+    )
     return path
 
 
@@ -208,6 +247,124 @@ def test_clean_record_has_no_findings(preflight_vault, vault_fixture):
     assert report["blocking_count"] == 0
     assert report["warning_count"] == 0
     assert report["findings"] == []
+
+
+def test_missing_quality_receipt_is_actionable_for_completed_evidence(
+    preflight_vault,
+    vault_fixture,
+):
+    transcript = materialize_transcript(vault_fixture)
+    transcript.with_suffix(".quality.json").unlink()
+    talk = base_talk(source_identity=source_identity())
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "transcript_quality_receipt_unverified" in finding_codes(
+        report, "warning")
+    finding = next(
+        item for item in report["findings"]
+        if item["code"] == "transcript_quality_receipt_unverified"
+    )
+    assert finding["capability_fact"]["repair_capabilities"] == ["transcript"]
+
+
+def test_current_v5_missing_quality_receipt_remains_blocking(
+    preflight_vault,
+    vault_fixture,
+):
+    transcript = materialize_transcript(vault_fixture)
+    transcript.with_suffix(".quality.json").unlink()
+    talk = current_v5_talk(
+        preflight_vault,
+        source_identity=source_identity(),
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "transcript_quality_receipt_unverified" in finding_codes(
+        report, "blocking")
+
+
+def test_current_v5_missing_declared_artifact_remains_blocking(
+    preflight_vault,
+    vault_fixture,
+):
+    talk = current_v5_talk(
+        preflight_vault,
+        video_url=None,
+        youtube_id=None,
+        transcript_source="manual",
+        transcript_path="transcripts/missing.txt",
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "transcript_artifact_missing" in finding_codes(report, "blocking")
+
+
+def test_legacy_quality_warning_allows_normalize_to_requeue(
+    preflight_vault,
+    vault_fixture,
+):
+    transcript = materialize_transcript(vault_fixture)
+    transcript.with_suffix(".quality.json").unlink()
+    write_database(vault_fixture, [base_talk()])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+    assert report["ok"] is True
+    assert "transcript_quality_receipt_unverified" in finding_codes(
+        report, "warning")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(QUEUE_STATE_SCRIPT),
+            str(vault_fixture["database"]),
+            "normalize",
+        ],
+        cwd=QUEUE_STATE_SCRIPT.parents[3],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    normalized = json.loads(vault_fixture["database"].read_text(encoding="utf-8"))
+    assert normalized["talks"][0]["status"] == "needs-reprocessing"
+    assert normalized["talks"][0]["reprocess_reason"].endswith(
+        ":missing_generation_status"
+    )
+
+
+def test_quality_receipt_duration_uses_acquisition_level_tolerance(
+    preflight_vault,
+    vault_fixture,
+):
+    transcript = materialize_transcript(vault_fixture)
+    transcript_timing = importlib.import_module("transcript_timing")
+    text = transcript.read_text(encoding="utf-8")
+    transcript_timing.write_quality_receipt(
+        transcript,
+        text,
+        transcript_timing.build_quality_policy(
+            400, trusted_duration_seconds=2700.0),
+        {
+            "kind": "youtube_duration",
+            "video_id": VIDEO_ID,
+            "duration_seconds": 2700.0,
+        },
+    )
+    # This would have passed the retired max(60 seconds, 5%) comparison.
+    talk = base_talk(source_identity=source_identity(duration_seconds=2702.0))
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "transcript_quality_provenance_mismatch" in finding_codes(
+        report, "blocking")
 
 
 def test_h1b_upload_before_delivery_is_blocking(preflight_vault, vault_fixture):
@@ -460,17 +617,17 @@ def test_legacy_duplicate_relation_only_waives_the_same_recording(
     assert report["blocking_count"] == 0
 
 
-@pytest.mark.parametrize("fault_code", [
-    "slide_source_unsupported",
-    "slide_pptx_reference_missing",
-    "slide_pptx_artifact_missing",
-    "slide_pdf_reference_missing",
-    "slide_pdf_artifact_missing",
-    "slide_video_reference_missing",
-    "slide_video_artifact_missing",
+@pytest.mark.parametrize(("fault_code", "severity"), [
+    ("slide_source_unsupported", "blocking"),
+    ("slide_pptx_reference_missing", "warning"),
+    ("slide_pptx_artifact_missing", "warning"),
+    ("slide_pdf_reference_missing", "warning"),
+    ("slide_pdf_artifact_missing", "warning"),
+    ("slide_video_reference_missing", "blocking"),
+    ("slide_video_artifact_missing", "warning"),
 ])
 def test_all_seven_slide_contract_fault_classes_are_reported(
-    preflight_vault, vault_fixture, fault_code,
+    preflight_vault, vault_fixture, fault_code, severity,
 ):
     materialize_transcript(vault_fixture)
     talk = base_talk()
@@ -495,7 +652,7 @@ def test_all_seven_slide_contract_fault_classes_are_reported(
 
     report = preflight_vault.run_preflight(vault_fixture["root"])
 
-    assert fault_code in finding_codes(report, "blocking")
+    assert fault_code in finding_codes(report, severity)
     assert fault_code in preflight_vault.SLIDE_CONTRACT_CODES
 
 
@@ -515,7 +672,7 @@ def test_pending_artifact_gaps_are_warnings_not_blockers(
     } <= finding_codes(report, "warning")
 
 
-def test_declared_processed_artifact_gap_is_blocking(
+def test_recoverable_legacy_processed_artifact_gaps_are_warnings(
     preflight_vault, vault_fixture,
 ):
     talk = base_talk(slide_source="pdf", google_drive_id=DRIVE_ID)
@@ -526,7 +683,69 @@ def test_declared_processed_artifact_gap_is_blocking(
     assert {
         "transcript_artifact_missing",
         "slide_pdf_artifact_missing",
-    } <= finding_codes(report, "blocking")
+    } <= finding_codes(report, "warning")
+    assert report["ok"] is True
+
+
+def test_legacy_missing_remote_pdf_is_a_reacquisition_warning(
+    preflight_vault,
+    vault_fixture,
+):
+    talk = base_talk(
+        video_url=None,
+        youtube_id=None,
+        transcript_source="none",
+        slide_source="pdf",
+        slides_url=f"https://drive.google.com/file/d/{DRIVE_ID}/view",
+        google_drive_id=DRIVE_ID,
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["ok"] is True
+    finding = next(
+        item for item in report["findings"]
+        if item["code"] == "slide_pdf_artifact_missing"
+    )
+    assert finding["severity"] == "warning"
+    assert finding["capability_fact"]["acquisition_capabilities"] == ["slides"]
+
+
+def test_transcript_only_partial_record_can_repair_a_missing_slide_lane(
+    preflight_vault,
+    vault_fixture,
+):
+    transcript = vault_fixture["transcripts"] / "manual.txt"
+    text = " ".join(["substantive transcript evidence"] * 600)
+    transcript.write_text(text, encoding="utf-8")
+    transcript_timing = importlib.import_module("transcript_timing")
+    transcript_timing.write_quality_receipt(
+        transcript,
+        text,
+        transcript_timing.build_quality_policy(400),
+        {"kind": "fixed_default"},
+    )
+    talk = base_talk(
+        status="processed_partial",
+        video_url=None,
+        youtube_id=None,
+        transcript_source="manual",
+        transcript_path="transcripts/manual.txt",
+        slide_source="pdf",
+        google_drive_id=None,
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["ok"] is True
+    finding = next(
+        item for item in report["findings"]
+        if item["code"] == "slide_pdf_reference_missing"
+    )
+    assert finding["severity"] == "warning"
+    assert finding["capability_fact"]["verified_capabilities"] == ["transcript"]
 
 
 @pytest.mark.parametrize(
@@ -579,7 +798,7 @@ def test_missing_explicit_local_pdf_does_not_fall_back_to_another_identity(
 
     report = preflight_vault.run_preflight(vault_fixture["root"])
 
-    assert expected_code in finding_codes(report, "blocking")
+    assert expected_code in finding_codes(report, "warning")
 
 
 def test_video_pdf_page_count_is_never_treated_as_authored_slide_count(
@@ -652,7 +871,7 @@ def test_context_video_manifest_cannot_back_a_promoted_deck(
     assert "video_extraction_untrusted" in finding_codes(report, "blocking")
 
 
-def test_completed_legacy_video_pdf_without_provenance_is_blocking(
+def test_completed_legacy_video_pdf_without_provenance_is_repairable(
     preflight_vault, vault_fixture,
 ):
     materialize_transcript(vault_fixture)
@@ -665,7 +884,7 @@ def test_completed_legacy_video_pdf_without_provenance_is_blocking(
     report = preflight_vault.run_preflight(vault_fixture["root"])
 
     assert "video_extraction_provenance_missing" in finding_codes(
-        report, "blocking"
+        report, "warning"
     )
 
 

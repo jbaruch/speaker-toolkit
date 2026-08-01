@@ -6,6 +6,7 @@ part: build
 phase_relevance:
   - slides
 vault_dimensions: [6, 13]
+evidence_channels: [slides, video]
 detection_signals:
   - "scrolling credits animation"
   - "multi-contributor acknowledgment"
@@ -13,12 +14,17 @@ detection_signals:
 evaluable_from:
   - native_deck
   - delivery_video
+strong_evaluable_from:
+  - native_deck
+  - delivery_video
+absence_evaluable_from: null
 evidence_requirements:
   - "Evidence must expose native motion or transition behavior, or observed delivery playback, across the relevant sequence."
-  - "Evidence must expose the existing scoring cues: strong: smooth, well-paced scrolling; moderate: scrolling with pacing or formatting defects; absent: static credits or no scroll."
+  - "Evidence must expose the positive scoring cues: smooth, well-paced scrolling for strong, or scrolling with pacing or formatting defects for moderate."
 not_evaluable_when:
   - "Only flattened static slides or a transcript is available."
   - "The source does not expose the zoom, scrolling, transition behavior, or pacing needed by the existing scoring criteria."
+  - "The artifacts do not establish whether more than eight to ten contributors actually required acknowledgment, so a non-detection cannot be treated as absence."
 related_patterns: [coda]
 inverse_of: []
 difficulty: intermediate
@@ -49,12 +55,13 @@ Avoid Crawling Credits when you have only a handful of people to thank — a sim
 When scoring talks, look for animated credit sequences that scroll vertically. The presence of a scrolling list of names, contributors, or acknowledgments is a clear signal. Also look for evidence that the presenter chose this format deliberately — grouping by role, consistent formatting, appropriate pacing — rather than simply animating a text box as an afterthought.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Smooth, well-paced scrolling credits with organized groupings, readable font size, and deliberate cinematic presentation of contributor acknowledgments
-- Moderate signal (1 pt): Scrolling credits present but with pacing issues (too fast or too slow), inconsistent formatting, or lacking clear organization
-- Absent (0 pts): No scrolling credits used, or contributors listed on static slides with cramped text or omitted entirely
+- Strong signal: Smooth, well-paced scrolling credits with organized groupings, readable font size, and deliberate cinematic presentation of contributor acknowledgments
+- Moderate signal: Scrolling credits present but with pacing issues (too fast or too slow), inconsistent formatting, or lacking clear organization
+- Absent: No scrolling credits used, or contributors listed on static slides with cramped text or omitted entirely
 
 ## Evidence Gate
-Evaluate this entry only from native-deck behavior or delivery video that exposes the relevant motion or playback. A flattened slide artifact or transcript cannot establish zoom, scrolling, transition behavior, pacing, or their absence.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 6 (Information Density): Crawling Credits manages high-density acknowledgment information by distributing it over time rather than space, keeping the screen uncluttered at any given moment while still conveying comprehensive credit. Dimension 13 (Slide Aesthetics): The cinematic quality of well-executed Crawling Credits elevates the overall aesthetic of the presentation, turning a potentially mundane obligation into a visually engaging moment.

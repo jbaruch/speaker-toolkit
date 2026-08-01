@@ -7,12 +7,36 @@ phase_relevance:
   - intent
   - content
 vault_dimensions: [1, 4]
+evidence_channels: [timed_transcript, slides, video]
 detection_signals:
   - "personal story in opening 1-2 minutes"
   - "unexpected fact or surprise as hook"
   - "novel image or never-seen visual at start"
   - "challenging question or counterintuitive claim"
   - "humorous observation or anecdote in opening"
+evaluable_from:
+  - transcript
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+  - [transcript, static_slides]
+  - [transcript, native_deck]
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: tightly-formatted-ceremonial-slot
+    description: "A complete transcript or delivery video establishes a tightly formatted ceremonial slot of roughly 30 seconds whose convention requires an immediate topic statement rather than an opening hook."
+applicability_evaluable_from:
+  - transcript
+  - delivery_video
+evidence_requirements:
+  - "Evaluation must cover the delivered first one to two minutes and the corresponding opening visuals, with an exact Personal, Unexpected, Novel, Challenging, or Humorous element located in that window."
+  - "A strong finding must show an observable constructed hook and a clean transition into the talk; do not infer private authorial intent from polish, topic, or audience response alone."
+not_evaluable_when:
+  - "The recording or transcript starts after the opening, the opening timestamp is unknown, or the first slides cannot be aligned with the spoken opening."
+  - "Only an agenda/title slide or only an opening transcript fragment is available, so the complete multimodal opening cannot support a strong outcome; current artifacts do not authorize absence."
+  - "The complete slot format and duration are unavailable, so the ceremonial-slot applicability condition cannot be assessed."
 related_patterns: [bookends, narrative-arc, foreshadowing, preroll, know-your-audience]
 inverse_of: []
 difficulty: foundational
@@ -49,9 +73,13 @@ The vault should examine the first 1–2 minutes of transcript and the first 2�
 Generic openings — agenda slides, "let me introduce myself," "thanks for the invitation," "I want to talk about X today" — score this pattern absent regardless of what comes after.
 
 ## Scoring Criteria
-- Strong signal (2 pts): At least one PUNCH element clearly present in the first 1–2 minutes, executed with intent (not accidental); the opening lands rather than meanders
-- Moderate signal (1 pt): A PUNCH element is present but mixed with filler (e.g., a strong personal story that follows 90 seconds of agenda slides), or the opening relies on a single weak instance
-- Absent (0 pts): Generic opening — agenda slide, credential parade, formality, or filler — with no identifiable PUNCH element
+- Strong signal: At least one PUNCH element clearly constructed in the first 1–2 minutes and carried cleanly into the talk; the opening lands rather than meanders
+- Moderate signal: A PUNCH element is present but mixed with filler (e.g., a strong personal story that follows 90 seconds of agenda slides), or the opening relies on a single weak instance
+- Absent: Generic opening — agenda slide, credential parade, formality, or filler — with no identifiable PUNCH element
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 1 (Opening Pattern) as the primary typology for opening hooks. Also relates to Dimension 4 (Audience Interaction).

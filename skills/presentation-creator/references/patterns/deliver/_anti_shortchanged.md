@@ -6,11 +6,24 @@ part: deliver
 phase_relevance:
   - guardrails
 vault_dimensions: [12, 14]
+evidence_channels: [timed_transcript, video]
 detection_signals:
   - "rushing through material"
   - "visible time pressure"
   - "skipped content"
   - "compressed delivery"
+evaluable_from:
+  - transcript
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "A positive finding must include an explicit or externally visible last-minute time-reduction cue and locate the resulting compression, rushing, or awkward omission; fast pacing alone does not qualify."
+  - "A strong finding requires delivery video showing both the time pressure and a degraded audience experience rather than merely a shorter-than-expected recording."
+not_evaluable_when:
+  - "No explicit or externally visible reduction in the allotted time is established, so deliberate lightning-talk pacing or a planned fast close cannot be distinguished from Shortchanged."
+  - "The source omits the time-pressure cue, the affected delivery, or enough audience context to support the claimed degradation."
 related_patterns: [preparation, expansion-joints, weatherman]
 inverse_of: [expansion-joints, three-part-close]
 difficulty: foundational
@@ -42,9 +55,13 @@ This is an antipattern to be prepared for, not a pattern to apply. You cannot pr
 - Content feels compressed or incomplete in the final third of the talk
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Speaker panics under time pressure — visible rushing, compressed delivery, audience clearly receives a degraded experience
-- Moderate signal (1 pt): Speaker adapts to time pressure but with visible strain — some rushing evident, minor content awkwardness
-- Absent (0 pts — antipattern not present): Speaker handles time reduction gracefully — sections are cleanly omitted, core message is preserved at full quality, audience may not even notice the abbreviation
+- Strong signal (antipattern present): Speaker panics under time pressure — visible rushing, compressed delivery, audience clearly receives a degraded experience
+- Moderate signal: Speaker adapts to time pressure but with visible strain — some rushing evident, minor content awkwardness
+- Absent (antipattern not present): Speaker handles time reduction gracefully — sections are cleanly omitted, core message is preserved at full quality, audience may not even notice the abbreviation
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 12 (Delivery Mechanics) and to Vault Dimension 14 (Speaker Craft / Professionalism).

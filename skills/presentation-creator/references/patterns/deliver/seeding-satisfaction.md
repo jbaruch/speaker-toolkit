@@ -42,9 +42,9 @@ Use this pattern at every opportunity. It is especially valuable at conferences 
 - Speaker demonstrates awareness of specific audience demographics or concerns
 
 ## Scoring Criteria
-- Strong signal (2 pts): Clear evidence of pre-talk audience engagement — speaker references conversations, audience is warm from the start, feedback reflects personal connection
-- Moderate signal (1 pt): Some pre-talk interaction evident but limited in scope or impact
-- Absent (0 pts): Speaker arrives cold with no pre-talk audience interaction
+- Strong signal: Clear evidence of pre-talk audience engagement — speaker references conversations, audience is warm from the start, feedback reflects personal connection
+- Moderate signal: Some pre-talk interaction evident but limited in scope or impact
+- Absent: Speaker arrives cold with no pre-talk audience interaction
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 4 (Audience Engagement). Seeding Satisfaction operates on the engagement dimension by building rapport before the formal presentation begins.

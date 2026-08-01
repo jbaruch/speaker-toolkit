@@ -7,11 +7,20 @@ phase_relevance:
   - architecture
   - content
 vault_dimensions: [3, 12]
+evidence_channels: [timed_transcript, video]
 detection_signals:
   - "humor/story every 10-20 minutes"
   - "attention pattern breaks"
   - "strategic entertainment placement"
 evaluable_from:
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: short-talk-at-most-15-minutes
+    description: "Complete delivery video establishes a talk of at most 15 minutes, where the catalog says a forced break would disrupt rather than restore attention."
+applicability_evaluable_from:
   - delivery_video
 evidence_requirements:
   - "Delivery video must cover the event or interval needed to apply the existing delivery, timing, interaction, or audience-response criteria."
@@ -19,6 +28,7 @@ evidence_requirements:
 not_evaluable_when:
   - "No delivery video covers the relevant event or interval."
   - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
+  - "The complete delivery duration is unavailable, so the short-talk applicability condition cannot be assessed."
 related_patterns: [leet-grammars, narrative-arc, entertainment, crucible, retrieval-beat]
 inverse_of: [alienating-artifact]
 difficulty: intermediate
@@ -58,12 +68,13 @@ Use Brain Breaks in any presentation over 15 minutes. They become more critical 
 The vault should look for evidence of strategic entertainment placement: humor, stories, or pattern breaks appearing at roughly regular intervals throughout the presentation. The timing and type of breaks should suggest deliberate planning rather than random tangents.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Well-placed humor/stories every 10-20 minutes; breaks are contextualized and reinforce content; variety in break types; audience energy remains high
-- Moderate signal (1 pt): Some breaks present but inconsistently spaced; humor is present but not always relevant to content
-- Absent (0 pts): No discernible breaks; presentation is a continuous monologue; audience attention likely flags
+- Strong signal: Well-placed humor/stories every 10-20 minutes; breaks are contextualized and reinforce content; variety in break types; audience energy remains high
+- Moderate signal: Some breaks present but inconsistently spaced; humor is present but not always relevant to content
+- Absent: No discernible breaks; presentation is a continuous monologue; audience attention likely flags
 
 ## Evidence Gate
-Evaluate this entry only from delivery video covering the relevant event or interval. A deck or transcript may suggest planned content, but it cannot establish the delivered timing, interaction, room behavior, or an exhaustive absence outcome.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Relates to Dimension 3 (Delivery/Presentation Skills). Relates to Dimension 12 (Time/Pacing).

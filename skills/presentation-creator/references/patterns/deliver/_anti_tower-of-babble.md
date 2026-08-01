@@ -13,6 +13,7 @@ detection_signals:
 related_patterns: [know-your-audience, leet-grammars]
 inverse_of: [leet-grammars, peer-review]
 difficulty: foundational
+observable: false
 ---
 
 # Tower of Babble
@@ -43,9 +44,16 @@ This is an antipattern to avoid in every presentation. Always calibrate your voc
 - Translator struggling with undefined technical terms
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Dense jargon throughout without definition, audience visibly struggling to follow, vocabulary clearly mismatched to audience level
-- Moderate signal (1 pt): Mostly accessible language but occasional undefined jargon slips through
-- Absent (0 pts — antipattern not present): Vocabulary is precisely calibrated to audience level, technical terms are defined on first use, complex concepts are explained in accessible language alongside precise terminology
+- Strong signal (antipattern present): Dense jargon throughout without definition, audience visibly struggling to follow, vocabulary clearly mismatched to audience level
+- Moderate signal: Mostly accessible language but occasional undefined jargon slips through
+- Absent (antipattern not present): Vocabulary is precisely calibrated to audience level, technical terms are defined on first use, complex concepts are explained in accessible language alongside precise terminology
+
+## Vault Observability
+Talk artifacts can locate jargon and definitions, but they cannot establish the target
+audience's prior expertise well enough to distinguish precise insider language from an
+inaccessible mismatch or to prove calibration across the room. Visible confusion may
+corroborate a problem but does not identify its cause. Keep this as a creator guardrail
+until independently verified audience-context evidence is modeled.
 
 ## Relationship to Vault Dimensions
 This antipattern maps to Vault Dimension 7 (Clarity / Communication). It also maps to Vault Dimension 9 (Speaker Authority / Credibility). It also maps to Vault Dimension 14 (Speaker Craft / Professionalism).

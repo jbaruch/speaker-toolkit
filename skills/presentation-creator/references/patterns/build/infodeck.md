@@ -13,6 +13,7 @@ detection_signals:
 related_patterns: [coda]
 inverse_of: [slideuments]
 difficulty: intermediate
+observable: false
 ---
 
 # Infodeck
@@ -40,9 +41,15 @@ Avoid the Infodeck format when the document will be presented live. Also avoid i
 When scoring artifacts (not live presentations), look for dense, self-contained slide decks with substantial text, integrated diagrams, and no animations or transitions. The deck should be comprehensible without any verbal accompaniment. In the context of scoring live presentations, identifying an Infodeck being presented live is a negative signal — it suggests the presenter confused the format.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Clear separation between presentation artifacts (designed for live delivery) and Infodeck artifacts (designed for solo reading), with appropriate design choices for each
-- Moderate signal (1 pt): Some awareness of the distinction, with reference materials separated from live content but not fully optimized for solo consumption
-- Absent (0 pts): No distinction between live and distributed formats, or an Infodeck presented live without adaptation
+- Strong signal: Clear separation between presentation artifacts (designed for live delivery) and Infodeck artifacts (designed for solo reading), with appropriate design choices for each
+- Moderate signal: Some awareness of the distinction, with reference materials separated from live content but not fully optimized for solo consumption
+- Absent: No distinction between live and distributed formats, or an Infodeck presented live without adaptation
+
+## Vault Observability
+The defining evidence is the relationship between two independently identified artifacts:
+the live presentation deck and a separate document distributed for solo reading. Current
+talk ingress does not model a `distributed_document` role, so an input deck cannot prove
+that separation and delivery video cannot prove what was distributed afterward.
 
 ## Relationship to Vault Dimensions
 Dimension 8 (Slide Design): The Infodeck pattern directly addresses slide design by establishing that different consumption contexts demand different design approaches. Understanding when to create an Infodeck versus a presentation is a foundational slide design skill.

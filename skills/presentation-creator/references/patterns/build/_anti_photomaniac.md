@@ -7,10 +7,24 @@ phase_relevance:
   - guardrails
   - slides
 vault_dimensions: [10, 13, 14]
+evidence_channels: [slides, video]
 detection_signals:
   - "random stock photos"
   - "images disconnected from narrative"
   - "decorative photos without purpose"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "A positive finding must cite the rendered image and its local visual context; a generic stock-photo style or one familiar visual metaphor by itself is not evidence of random selection."
+  - "A strong outcome requires complete delivery video that relates repeated imagery to the accompanying narration and establishes whether the visuals serve or merely decorate the talk's narrative; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "Only isolated, cropped, or unordered slides are available, so repeated use and the image's role in the deck cannot be established."
+  - "The delivery recording omits projected slides or intelligible narration, or does not cover the delivered visual sequence needed for a strong judgment."
 related_patterns: [unifying-visual-theme, vacation-photos]
 inverse_of: [unifying-visual-theme, vacation-photos]
 difficulty: foundational
@@ -41,9 +55,13 @@ Invest time in developing a Unifying Visual Theme before selecting individual im
 When scoring talks, evaluate whether images connect specifically to the content they accompany or could be swapped between slides (or between presentations) without anyone noticing. Stock photo cliches — handshakes, light bulbs, puzzle pieces, road metaphors — are automatic warning signals. Also check image resolution: pixelated or watermarked images indicate Photomaniac behavior combined with insufficient investment in visual assets.
 
 ## Scoring Criteria
-- Strong signal (2 pts — antipattern present): Random stock photos with tenuous connections to content, visual cliches (handshakes, light bulbs, puzzle pieces), pixelated or low-resolution images, no unifying visual theme
-- Moderate signal (1 pt): Most images relate to their content, but some feel generic or decorative; overall visual theme is present but inconsistent
-- Absent (0 pts — antipattern not present): Images are specific, purposeful, and clearly connected to the narrative content they accompany, forming a coherent visual vocabulary rather than a random collection
+- Strong signal (antipattern present): Random stock photos with tenuous connections to content, visual cliches (handshakes, light bulbs, puzzle pieces), pixelated or low-resolution images, no unifying visual theme
+- Moderate signal: Most images relate to their content, but some feel generic or decorative; overall visual theme is present but inconsistent
+- Absent (antipattern not present): Images are specific, purposeful, and clearly connected to the narrative content they accompany, forming a coherent visual vocabulary rather than a random collection
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 10 (Visual Storytelling): Photomaniac is a direct failure of visual storytelling. The images tell no story. Dimension 13 (Slide Aesthetics): While individual Photomaniac images may be attractive, the lack of visual coherence degrades the overall aesthetic of the presentation. Dimension 14 (Overall Quality Indicators): Random stock photo selection signals a superficial approach to presentation design that prioritizes appearance over substance.

@@ -36,8 +36,8 @@ saves the output. You emit the ops while walking the outline (Step 5.2), then
 validate and build:
 
 ```bash
-python3 skills/presentation-creator/scripts/validate-deckops.py ops.txt
-bash skills/presentation-creator/scripts/build-deck.sh '{template_copy_pptx_path}' '{output_path}' ops.txt
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/validate-deckops.py" ops.txt
+bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/build-deck.sh" '{template_copy_pptx_path}' '{output_path}' ops.txt
 ```
 
 Op vocabulary, field layout, and state rules: `references/deckops-spec.md`. The
@@ -181,7 +181,7 @@ so the `<p:notesMasterIdLst>` Keynote patch the old python-pptx pass needed is n
 longer required (see `rules/deck-editing-rules.md`):
 
 ```bash
-bash skills/presentation-creator/scripts/inject-notes.sh <uniquely-named deck copy> <out.pptx> notes.json
+bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.sh" <uniquely-named deck copy> <out.pptx> notes.json
 ```
 
 Run this AFTER slide generation, and BEFORE the final `apply-backgrounds.sh`
@@ -239,7 +239,7 @@ editing strips each slide's per-slide background fill — on illustrated decks t
 silently flattens full-bleed art to bare color. See `rules/deck-editing-rules.md`.
 
 ```bash
-bash skills/presentation-creator/scripts/run-deck-ops.sh <basePath> <outPath> <importSpec> <orderStr> <replaceStr>
+bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/run-deck-ops.sh" <basePath> <outPath> <importSpec> <orderStr> <replaceStr>
 ```
 
 `orderStr` is the FINAL slide sequence as space-separated `<alias>:<1-based #>`
@@ -293,7 +293,7 @@ speaker's `publishing_process.export_method` and platform.
 Run the export script — it auto-detects PowerPoint (macOS AppleScript) or LibreOffice:
 
 ```bash
-python3 skills/presentation-creator/scripts/export-pdf.py path/to/deck.pptx [path/to/output.pdf]
+python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/export-pdf.py" path/to/deck.pptx [path/to/output.pdf]
 ```
 
 If `output.pdf` is omitted, uses the same name with `.pdf` extension.

@@ -13,8 +13,9 @@ The machine-owned contract is expressed by the named constants below:
 
 * ``ENTRY_TYPES`` and ``PARTS`` define catalog polarity and lifecycle kinds.
 * ``CREATOR_PHASES`` defines the frontmatter phase namespace.
-* ``EVIDENCE_SOURCES``, ``BASE_EVIDENCE_GATE_FIELDS``, and
-  ``OUTCOME_EVIDENCE_GATE_FIELDS`` define source gates.
+* ``EVIDENCE_SOURCES``, ``BASE_EVIDENCE_GATE_FIELDS``,
+  ``OUTCOME_EVIDENCE_GATE_FIELDS``, and ``APPLICABILITY_GATE_FIELDS`` define
+  source and applicability gates.
 * ``SCORING_*_RE`` define the direct scoring-label contract.
 * ``normalize_alias`` defines the collision namespace for IDs, names, and
   optional explicit aliases.
@@ -68,6 +69,14 @@ EVIDENCE_SOURCES = frozenset({
     "transcript",
     "source_comparison",
 })
+# Current-generation absence claims require a single, rendered/static artifact
+# or a complete transcript. Other source roles remain valid positive-evidence
+# grammar for external and historical catalogs, but cannot authorize absence in
+# the bundled catalog until a modality-specific completeness receipt exists.
+CURRENT_ABSENCE_CAPABILITY_SOURCES = frozenset({
+    "static_slides",
+    "transcript",
+})
 BASE_EVIDENCE_GATE_FIELDS = frozenset({
     "evaluable_from",
     "evidence_requirements",
@@ -77,22 +86,38 @@ OUTCOME_EVIDENCE_GATE_FIELDS = frozenset({
     "strong_evaluable_from",
     "absence_evaluable_from",
 })
+APPLICABILITY_GATE_FIELDS = frozenset({
+    "not_applicable_when",
+    "applicability_evaluable_from",
+})
 EVIDENCE_GATE_FIELDS = (
-    BASE_EVIDENCE_GATE_FIELDS | OUTCOME_EVIDENCE_GATE_FIELDS)
+    BASE_EVIDENCE_GATE_FIELDS
+    | OUTCOME_EVIDENCE_GATE_FIELDS
+    | APPLICABILITY_GATE_FIELDS
+)
 
 ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 INDEX_PHASE_RE = re.compile(r"^### (Prepare|Build|Deliver) Phase\b")
 SCORING_STRONG_RE = re.compile(
-    r"^- Strong signal \(2 pts(?P<qualifier>[^)]*)\):[ \t]*(?P<body>.*)$",
+    r"^- Strong signal(?: \((?P<qualifier>[^)]*)\))?:[ \t]*(?P<body>.*)$",
     re.MULTILINE,
 )
 SCORING_MODERATE_RE = re.compile(
-    r"^- Moderate signal \(1 pt\):[ \t]*(?P<body>.*)$",
+    r"^- Moderate signal:[ \t]*(?P<body>.*)$",
     re.MULTILINE,
 )
 SCORING_ABSENT_RE = re.compile(
-    r"^- Absent \(0 pts(?P<qualifier>[^)]*)\):[ \t]*(?P<body>.*)$",
+    r"^- Absent(?: \((?P<qualifier>[^)]*)\))?:[ \t]*(?P<body>.*)$",
     re.MULTILINE,
+)
+SCORING_ARITHMETIC_LABEL_RE = re.compile(
+    r"^- (?:Strong signal|Moderate signal|Absent) "
+    r"\([^)]*\b(?:pt|pts|point|points)\b[^)]*\):",
+    re.IGNORECASE | re.MULTILINE,
+)
+SCORING_MEDIUM_LABEL_RE = re.compile(
+    r"^- Medium signal(?: \([^)]*\))?:",
+    re.IGNORECASE | re.MULTILINE,
 )
 FENCE_RE = re.compile(r"^[ ]{0,3}(?P<marker>`{3,}|~{3,})(?P<rest>.*)$")
 
@@ -518,7 +543,8 @@ def _validate_observability(entry: CatalogEntry, errors: list[Issue]) -> None:
 
     present_base = BASE_EVIDENCE_GATE_FIELDS.intersection(entry.metadata)
     present_outcomes = OUTCOME_EVIDENCE_GATE_FIELDS.intersection(entry.metadata)
-    present = present_base | present_outcomes
+    present_applicability = APPLICABILITY_GATE_FIELDS.intersection(entry.metadata)
+    present = present_base | present_outcomes | present_applicability
     has_evidence_section = _markdown_h2_section(
         entry.text,
         "Evidence Gate",
@@ -558,6 +584,8 @@ def _validate_observability(entry: CatalogEntry, errors: list[Issue]) -> None:
             "absence_evaluable_from"):
         if field not in entry.metadata:
             continue
+        if field == "absence_evaluable_from" and entry.metadata[field] is None:
+            continue
         try:
             parse_evidence_source_groups(
                 entry.metadata.get(field), EVIDENCE_SOURCES,
@@ -570,6 +598,82 @@ def _validate_observability(entry: CatalogEntry, errors: list[Issue]) -> None:
                 entry.pattern_id or "",
                 field,
             ))
+
+    if present_applicability and present_applicability != APPLICABILITY_GATE_FIELDS:
+        errors.append(Issue(
+            "applicability_contract_partial",
+            "not_applicable_when and applicability_evaluable_from must be declared together",
+            entry.relative_path,
+            entry.pattern_id or "",
+            "not_applicable_when",
+        ))
+    elif present_applicability == APPLICABILITY_GATE_FIELDS:
+        try:
+            parse_evidence_source_groups(
+                entry.metadata.get("applicability_evaluable_from"),
+                EVIDENCE_SOURCES,
+                field_name="applicability_evaluable_from",
+            )
+        except ValueError as exc:
+            errors.append(Issue(
+                "applicability_evidence_source_invalid",
+                str(exc),
+                entry.relative_path,
+                entry.pattern_id or "",
+                "applicability_evaluable_from",
+            ))
+
+        conditions = entry.metadata.get("not_applicable_when")
+        if not isinstance(conditions, list) or not conditions:
+            errors.append(Issue(
+                "not_applicable_conditions_invalid",
+                "not_applicable_when must be a non-empty list of condition objects",
+                entry.relative_path,
+                entry.pattern_id or "",
+                "not_applicable_when",
+            ))
+        else:
+            seen_condition_ids: set[str] = set()
+            for position, condition in enumerate(conditions):
+                if not isinstance(condition, dict) or set(condition) != {
+                        "condition_id", "description"}:
+                    errors.append(Issue(
+                        "not_applicable_condition_invalid",
+                        "each applicability condition must contain exactly condition_id and description",
+                        entry.relative_path,
+                        entry.pattern_id or "",
+                        f"not_applicable_when[{position}]",
+                    ))
+                    continue
+                condition_id = condition.get("condition_id")
+                description = condition.get("description")
+                if not isinstance(condition_id, str) or not ID_RE.fullmatch(
+                        condition_id):
+                    errors.append(Issue(
+                        "not_applicable_condition_id_invalid",
+                        "condition_id must use the catalog's stable lowercase-hyphen identifier form",
+                        entry.relative_path,
+                        entry.pattern_id or "",
+                        f"not_applicable_when[{position}].condition_id",
+                    ))
+                elif condition_id in seen_condition_ids:
+                    errors.append(Issue(
+                        "not_applicable_condition_duplicate",
+                        "condition_id is duplicated within the entry",
+                        entry.relative_path,
+                        entry.pattern_id or "",
+                        f"not_applicable_when[{position}].condition_id",
+                    ))
+                else:
+                    seen_condition_ids.add(condition_id)
+                if not isinstance(description, str) or not description.strip():
+                    errors.append(Issue(
+                        "not_applicable_description_invalid",
+                        "applicability condition description must be a non-empty string",
+                        entry.relative_path,
+                        entry.pattern_id or "",
+                        f"not_applicable_when[{position}].description",
+                    ))
     _string_list(entry, "evidence_requirements", errors, nonempty=True)
     _string_list(entry, "not_evaluable_when", errors, nonempty=True)
     if not has_evidence_section:
@@ -579,6 +683,55 @@ def _validate_observability(entry: CatalogEntry, errors: list[Issue]) -> None:
             entry.relative_path,
             entry.pattern_id or "",
             "evaluable_from",
+        ))
+
+
+def _validate_current_absence_capability(
+    entry: CatalogEntry,
+    errors: list[Issue],
+) -> None:
+    """Reject absence gates that current receipts cannot prove exhaustive."""
+    if not BASE_EVIDENCE_GATE_FIELDS <= set(entry.metadata):
+        return
+    raw_gate = entry.metadata.get(
+        "absence_evaluable_from",
+        entry.metadata.get("evaluable_from"),
+    )
+    if raw_gate is None or not isinstance(raw_gate, list):
+        return
+
+    unsupported: list[str] = []
+    for position, alternative in enumerate(raw_gate):
+        if isinstance(alternative, str):
+            sources = [alternative]
+            nested = False
+        elif isinstance(alternative, list):
+            sources = alternative
+            nested = True
+        else:
+            continue
+        unsafe_sources = sorted(
+            source
+            for source in sources
+            if isinstance(source, str)
+            and source not in CURRENT_ABSENCE_CAPABILITY_SOURCES
+        )
+        if nested or unsafe_sources:
+            details = []
+            if nested:
+                details.append("nested all-of alternative")
+            if unsafe_sources:
+                details.append(f"unsupported sources {unsafe_sources}")
+            unsupported.append(f"alternative {position}: {', '.join(details)}")
+
+    if unsupported:
+        errors.append(Issue(
+            "absence_source_capability_unsupported",
+            "current-generation absence gates require singleton static_slides "
+            "or transcript alternatives; " + "; ".join(unsupported),
+            entry.relative_path,
+            entry.pattern_id or "",
+            "absence_evaluable_from",
         ))
 
 
@@ -597,6 +750,24 @@ def _validate_scoring(entry: CatalogEntry, errors: list[Issue]) -> None:
             "scoring_criteria",
         ))
         return
+
+    if SCORING_ARITHMETIC_LABEL_RE.search(section):
+        errors.append(Issue(
+            "scoring_arithmetic_label_forbidden",
+            "scoring decision labels are non-arithmetic and must not declare point values",
+            entry.relative_path,
+            entry.pattern_id or "",
+            "scoring_criteria",
+        ))
+    if SCORING_MEDIUM_LABEL_RE.search(section):
+        errors.append(Issue(
+            "scoring_medium_label_invalid",
+            "Medium signal is not canonical; use Moderate signal without "
+            "treating medium as an alias",
+            entry.relative_path,
+            entry.pattern_id or "",
+            "scoring_criteria",
+        ))
 
     strong = list(SCORING_STRONG_RE.finditer(section))
     moderate = list(SCORING_MODERATE_RE.finditer(section))
@@ -626,10 +797,10 @@ def _validate_scoring(entry: CatalogEntry, errors: list[Issue]) -> None:
             "scoring_criteria",
         ))
 
-    strong_qualifier = strong[0].group("qualifier").strip().casefold()
-    absent_qualifier = absent[0].group("qualifier").strip().casefold()
+    strong_qualifier = (strong[0].group("qualifier") or "").strip().casefold()
+    absent_qualifier = (absent[0].group("qualifier") or "").strip().casefold()
     if entry.entry_type == "antipattern":
-        if "antipattern present" not in strong_qualifier:
+        if strong_qualifier != "antipattern present":
             errors.append(Issue(
                 "antipattern_scoring_polarity_inverted",
                 "Strong signal must be labelled as antipattern present",
@@ -637,7 +808,7 @@ def _validate_scoring(entry: CatalogEntry, errors: list[Issue]) -> None:
                 entry.pattern_id or "",
                 "scoring_criteria",
             ))
-        if "antipattern not present" not in absent_qualifier:
+        if absent_qualifier != "antipattern not present":
             errors.append(Issue(
                 "antipattern_scoring_polarity_inverted",
                 "Absent must be labelled as antipattern not present",
@@ -1113,8 +1284,14 @@ def _validate_unobservable_index(
         ))
 
 
-def audit_catalog(catalog_dir: str | Path | None = None) -> dict[str, Any]:
+def audit_catalog(
+    catalog_dir: str | Path | None = None,
+    *,
+    enforce_current_source_capabilities: bool | None = None,
+) -> dict[str, Any]:
     """Return a stable read-only catalog audit report."""
+    if enforce_current_source_capabilities is None:
+        enforce_current_source_capabilities = catalog_dir is None
     root = Path(catalog_dir) if catalog_dir is not None else default_catalog_dir()
     errors: list[Issue] = []
     debts: list[Issue] = []
@@ -1145,6 +1322,8 @@ def audit_catalog(catalog_dir: str | Path | None = None) -> dict[str, Any]:
     for entry in parsed_entries:
         _validate_entry_identity(entry, errors)
         _validate_observability(entry, errors)
+        if enforce_current_source_capabilities:
+            _validate_current_absence_capability(entry, errors)
         _validate_scoring(entry, errors)
         entry_dimensions, entry_phases = _validate_dimensions_and_phases(entry, errors)
         entry_related, entry_inverse, entry_aliases = _entry_references(entry, errors)
@@ -1239,6 +1418,19 @@ def _build_report(
         BASE_EVIDENCE_GATE_FIELDS <= set(entry.metadata)
         for entry in entry_values
     )
+    absence_gated = sum(
+        BASE_EVIDENCE_GATE_FIELDS <= set(entry.metadata)
+        and entry.metadata.get(
+            "absence_evaluable_from",
+            entry.metadata.get("evaluable_from"),
+        ) is not None
+        for entry in entry_values
+    )
+    applicability_gated = sum(
+        APPLICABILITY_GATE_FIELDS <= set(entry.metadata)
+        for entry in entry_values
+    )
+    positive_only = source_gated - absence_gated
     related_edges = sorted(
         [source, target]
         for source, targets in related.items()
@@ -1273,6 +1465,8 @@ def _build_report(
         "summary": {
             "alias_keys": len(alias_namespace),
             "antipatterns": antipatterns,
+            "applicability_gated": applicability_gated,
+            "absence_gated": absence_gated,
             "entries_loaded": len(entries),
             "entry_files": len(parsed_entries),
             "error_codes": _code_counts(ordered_errors),
@@ -1282,6 +1476,8 @@ def _build_report(
             "inverse_declarations": len(inverse_declarations),
             "observable": observable,
             "patterns": patterns,
+            "positive_gated": source_gated,
+            "positive_only": positive_only,
             "related_edges": len(related_edges),
             "semantic_debt_codes": _code_counts(ordered_debts),
             "semantic_debts": len(ordered_debts),
@@ -1299,7 +1495,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--catalog",
         type=Path,
-        default=default_catalog_dir(),
+        default=None,
         help="pattern catalog directory containing _index.md and phase subdirectories",
     )
     return parser

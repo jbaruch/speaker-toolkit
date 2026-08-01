@@ -7,10 +7,32 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [11, 13]
+evidence_channels: [slide_sequence, video]
 detection_signals:
   - "incremental diagram building"
   - "piece-by-piece reveal"
   - "animated assembly of complex visual"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - delivery_video
+absence_evaluable_from: null
+not_applicable_when:
+  - condition_id: no-complex-visual
+    description: "A complete deck or delivery video establishes that the talk contains no complex diagram, flow, code listing, process, or layered visualization that would benefit from incremental assembly."
+applicability_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+evidence_requirements:
+  - "Evidence must show ordered states of the same diagram, code, or system flow accumulating components rather than only its assembled final state."
+  - "A strong score requires delivery video showing that each addition is narrated and paced toward a synthesis; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "Only a flattened final visual is available and intermediate assembly states cannot be observed."
+  - "Delivery is unavailable for a strong claim; native build metadata and delivery video do not authorize an absence claim."
+  - "The complete visual inventory is unavailable, so the no-complex-visual applicability condition cannot be assessed."
 related_patterns: [composite-animation, traveling-highlights, crawling-code]
 inverse_of: []
 difficulty: intermediate
@@ -41,9 +63,13 @@ Avoid Emergence for simple visuals that the audience can parse in a single glanc
 When scoring talks, watch for complex visuals that appear incrementally rather than all at once. Diagrams that grow over time, code that builds function by function, and system flows that add connections progressively are all positive signals. Note whether the presenter explains each addition before advancing or simply rapid-fires through the assembly without narration.
 
 ## Scoring Criteria
-- Strong signal (2 pts): Complex visuals built incrementally with clear pacing, each addition narrated and contextualized, and the complete reveal serving as a satisfying synthesis moment
-- Moderate signal (1 pt): Some incremental building present but inconsistent — some complex visuals built piece by piece while others are shown fully assembled, or pacing that is too fast for effective comprehension
-- Absent (0 pts): Complex visuals displayed as static, fully assembled images with no incremental building, forcing the audience to parse the entire visual at once
+- Strong signal: Complex visuals built incrementally with clear pacing, each addition narrated and contextualized, and the complete reveal serving as a satisfying synthesis moment
+- Moderate signal: Some incremental building present but inconsistent — some complex visuals built piece by piece while others are shown fully assembled, or pacing that is too fast for effective comprehension
+- Absent: Complex visuals displayed as static, fully assembled images with no incremental building, forcing the audience to parse the entire visual at once
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 11 (Demonstrations and Tools): Emergence enhances the presentation of tool outputs, code, and system diagrams by making their construction visible and comprehensible, rather than presenting them as fait accompli. Dimension 13 (Slide Aesthetics): The animated assembly of complex visuals represents sophisticated slide design that transforms static information displays into dynamic visual narratives.

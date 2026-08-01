@@ -90,6 +90,24 @@ def test_apply_writes_atomically_and_creates_exact_backup(
     assert next(backup_dir.iterdir()).read_bytes() == before
 
 
+def test_atomic_write_cleans_stage_and_propagates_interrupt(
+    apply_source_repairs, tmp_path, monkeypatch,
+):
+    target = tmp_path / "tracking-database.json"
+    target.write_text("old\n", encoding="utf-8")
+
+    def interrupt(_source, _target):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(apply_source_repairs.os, "replace", interrupt)
+
+    with pytest.raises(KeyboardInterrupt):
+        apply_source_repairs.atomic_write(target, "new\n")
+
+    assert target.read_text(encoding="utf-8") == "old\n"
+    assert [path.name for path in tmp_path.iterdir()] == [target.name]
+
+
 def test_expectation_mismatch_aborts_whole_plan_without_backup(
     apply_source_repairs, tmp_path,
 ):

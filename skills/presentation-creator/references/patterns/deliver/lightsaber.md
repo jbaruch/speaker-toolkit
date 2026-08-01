@@ -41,9 +41,9 @@ Use this pattern only when other methods (Traveling Highlights, animations, soft
 - Content that requires pointing is genuinely complex enough to justify it
 
 ## Scoring Criteria
-- Strong signal (2 pts): Laser pointer used sparingly and purposefully, with steady hand, for moments that genuinely benefit from external highlighting
-- Moderate signal (1 pt): Occasional laser pointer use that is mostly purposeful but sometimes defaults to unnecessary use
-- Absent (0 pts): Either no laser pointer at all (which may be fine) or constant use falling into the Laser Weapons antipattern
+- Strong signal: Laser pointer used sparingly and purposefully, with steady hand, for moments that genuinely benefit from external highlighting
+- Moderate signal: Occasional laser pointer use that is mostly purposeful but sometimes defaults to unnecessary use
+- Absent: Either no laser pointer at all (which may be fine) or constant use falling into the Laser Weapons antipattern
 
 ## Relationship to Vault Dimensions
 This pattern maps to Vault Dimension 11 (Teaching Effectiveness). The Lightsaber serves teaching by directing attention precisely to the element under discussion, ensuring the audience follows the speaker's instructional intent. Its value is entirely pedagogical — it exists to improve understanding, not to add visual flair.

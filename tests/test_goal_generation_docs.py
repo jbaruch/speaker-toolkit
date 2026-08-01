@@ -21,7 +21,8 @@ def test_owner_creates_generation_bound_schema_v2_pattern_goals():
     assert "`supersedes_goal_id` points to it" in SKILL
     assert '"schema_version": 2' in SCHEMA
     assert '"lane": "pattern_scoring"' in SCHEMA
-    assert '"pattern_scoring_schema_version": 3' in SCHEMA
+    assert '"pattern_scoring_schema_version": 5' in SCHEMA
+    assert '"opportunity_coverage_identity"' in SCHEMA
 
 
 def test_owner_keeps_pacing_and_pattern_provenance_separate():
@@ -31,17 +32,18 @@ def test_owner_keeps_pacing_and_pattern_provenance_separate():
 
 
 def test_reader_runs_mechanical_gate_and_never_scores_mismatch():
-    command = (
-        "python3 skills/vault-clarification/scripts/"
-        "goal_generation_provenance.py"
-    )
-    assert command in SKILL
-    assert command in INGRESS
+    script = "skills/vault-clarification/scripts/goal_generation_provenance.py"
+    assert script in SKILL
+    assert script in INGRESS
+    assert '`"{python_path}"' in SKILL
+    assert '"{python_path}"' in INGRESS
     assert "needs_rebaseline" in INGRESS
     assert "must not set `status` to\n  `achieved`" in PROCESSING
 
 
 def test_legacy_pattern_goal_is_read_only_until_speaker_rebaseline():
     assert "schema-v1 pattern goal is historical and unverifiable" in SKILL
-    assert "Existing schema-v1 `antipattern`/`underuse` goals remain read-only" in SCHEMA
+    assert (
+        "Existing schema-v1 `antipattern`/`underuse` goals remain read-only" in SCHEMA
+    )
     assert "preserve the old record, retire it" in SCHEMA

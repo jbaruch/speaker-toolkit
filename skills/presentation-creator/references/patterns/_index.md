@@ -21,10 +21,13 @@ combinatorics are needed.
    for the ones you want to present as options.
 2. **During vault Step 3 (Analysis):** Scan against observable patterns only — skip
    patterns marked `observable: false` (pre-event logistics, physical stage behaviors,
-   post-event follow-up, and external systems that leave no trace in transcripts or
-   slides). For entries with an evidence-source contract, score only when an available
-   source satisfies that contract; otherwise record the entry as `not_evaluable` rather
-   than guessing or treating it as absent.
+   post-event follow-up, hidden authoring processes, and external systems that the
+   acquired artifacts cannot directly prove). Every observable entry declares
+   `evidence_channels`, and every detection needs source-located evidence through one of
+   those channels. For entries with an evidence-source contract, score only when an
+   available source satisfies that contract; otherwise record the entry as
+   `not_evaluable` rather than guessing or treating it as absent. A polished outcome is
+   not evidence that a named preparation process occurred.
 3. **During creator Phase 4 (Guardrails):** Read all antipatterns and compare against
    the outline. Flag matches as `[RECURRING]` only from an exact-generation speaker
    history authorized by `pattern_history_status.py`; use `[CONTEXTUAL]` for the
@@ -33,6 +36,32 @@ combinatorics are needed.
 4. **During creator Phase 6 (Publishing / Go-Live):** Surface unobservable patterns as
    a go-live preparation checklist — these are actions to take before, during, and after
    delivery that the vault cannot score retroactively.
+
+## Decision Labels, Confidence, and Binary Pattern Score
+
+Every catalog entry defines three **non-arithmetic** decision labels. They are criteria
+for classifying the observed evidence, not point values:
+
+- **Strong signal:** the evidence meets that entry's Strong signal criterion.
+- **Moderate signal:** the evidence meets that entry's Moderate signal criterion but not
+  its Strong signal criterion.
+- **Absent:** qualifying inspection finds no detected instance under the entry's Absent
+  criterion. For antipatterns, the explicit `antipattern present` and
+  `antipattern not present` qualifiers preserve direct polarity.
+
+Runtime `confidence` records evidence certainty and has exactly three valid values:
+`weak`, `moderate`, and `strong`. `strong` maps to the entry's Strong signal decision
+criterion and must also satisfy any `strong_evaluable_from` gate. `moderate` maps to the
+entry's Moderate signal decision criterion and satisfies the base `evaluable_from` gate.
+`weak` means direct, source-located but incomplete positive evidence that satisfies the
+base gate. It never means speculation, a failed source gate, `not_evaluable`, or
+`not_applicable`. `medium` is invalid and is never an alias for `moderate`.
+
+Detection polarity remains binary regardless of confidence. Each detected pattern
+contributes **+1** and each detected antipattern contributes **−1** to `pattern_score`;
+`weak`, `moderate`, and `strong` detections have the same arithmetic weight. `Absent`,
+undetected, `not_evaluable`, and `not_applicable` outcomes contribute zero. Equivalently,
+`pattern_score = count(patterns_detected) - count(antipatterns_detected)`.
 
 ## Evidence-Source Contract
 
@@ -46,28 +75,64 @@ fields:
 - `evidence_requirements`: positive facts the named source must establish before scoring.
 - `not_evaluable_when`: precise source limitations that prohibit a present/absent guess.
 
-Two optional outcome-specific gates use the same OR/all-of grammar:
+Two outcome-specific gates use the same OR/all-of grammar. Every bundled observable
+entry declares both fields explicitly; omission/default behavior exists only for
+external or legacy catalogs:
 
 - `strong_evaluable_from`: sources that can support a `confidence: strong`
-  detection. It defaults to `evaluable_from` when omitted; moderate and weak
-  detections always use the base gate.
+  detection. Legacy loaders default it to `evaluable_from` when omitted; moderate
+  and weak detections always use the base gate.
 - `absence_evaluable_from`: sources that can establish a valid undetected
-  outcome. It defaults to `evaluable_from` when omitted. When this gate is not
+  outcome. Legacy loaders default it to `evaluable_from` when omitted. When this gate is not
   satisfied, an undetected entry is `not_evaluable`; a valid positive detection
   takes precedence and suppresses that contradictory absence requirement. A
   satisfied role gate permits an undetected outcome but does not prohibit an
   explicit `not_evaluable` when a catalog disqualifier or artifact capability
   failure still prevents evaluation.
 
+An explicit `absence_evaluable_from: null` is different from omission: it permits
+source-gated positive detections but never authorizes an absence. Use it when a talk
+artifact can expose the behavior but cannot prove that an external prerequisite or
+unobserved contingency created a fair opportunity for the behavior to occur.
+
+Logical prerequisites that complete permitted artifacts *can* establish use a required
+pair of applicability fields:
+
+- `not_applicable_when`: one or more stable `condition_id` + `description` objects.
+- `applicability_evaluable_from`: the same OR/all-of source grammar used by the evidence
+  gates; its source coverage applies to every condition on the entry.
+
+Every applicability condition must receive a source-located assessment. An explicit null
+absence gate permits source-gated positive detections but never authorizes an absence;
+entries with an applicability contract require a source-located applicable/not-applicable
+assessment, and only an applicable assessment plus complete absence-gate coverage yields
+undetected. An established condition yields `not_applicable`; incomplete applicability or
+absence coverage yields `not_evaluable`. This keeps inapplicable talks out of recurrence
+denominators instead of silently counting them as pattern absences.
+
+Applicability declarations preserve the catalog's intended future evidence semantics,
+but a source-role label does not manufacture a missing modality. The current runtime
+leaves a native-deck, delivery-video, or comparison-based applicability alternative
+unsatisfied unless a versioned capability/alignment receipt proves the exact screen,
+audio, audience, stage, session-boundary, playback, or comparison facts the condition
+requires. Unsupported applicability therefore yields `not_evaluable`, never a forced
+`applicable` or `not_applicable` assessment.
+
 The evidence-source enum is deliberately small:
 
 | Value | Meaning and evidentiary limit |
 |-------|-------------------------------|
-| `static_slides` | Ordered rendered slides, PDF pages, or page images. Establishes visible states and order, but not hidden animation metadata, motion quality, or timing. |
-| `native_deck` | Editable presentation source with inspectable builds, transitions, opacity, or animation metadata. |
-| `delivery_video` | Recording of the projected presentation. Establishes what the audience saw and the delivered timing. |
-| `transcript` | Spoken-track text or captions. Establishes verbal content only; it cannot prove a visual animation by itself. |
+| `static_slides` | Ordered rendered slides, PDF pages, or page images. A separately declared readable PDF may become absence-complete after full page inspection. A sampled/deduplicated video-extracted PDF remains positive-only because transient states may be missing. Static pages do not prove hidden animation, motion, timing, or delivered playback. |
+| `native_deck` | Editable presentation source with inspectable builds, transitions, opacity, or animation metadata. It does not by itself prove rendered appearance or observed playback. |
+| `delivery_video` | Identity-bound recording with inspectable time ranges. The role alone does not prove that projected content, intelligible/unedited audio, the audience, the speaker/stage, pre-start, or Q&A is present in frame. |
+| `transcript` | Spoken-track text or captions. Establishes verbal content only; it does not by itself prove timing, verbatim audio/prosody, audience response, or a visual animation. |
 | `source_comparison` | An explicit comparison between two named sources or artifacts, such as delivery video versus a distributed PDF. The evidence must identify both. |
+
+An evidence-source gate and `evidence_channels` are intersecting constraints, not
+alternative vocabularies. Every exact source named by a detection must have a
+source-located citation through a channel that the entry permits and that can locate that
+source. Passing a source gate never expands the entry's allowed citation channels, and a
+metadata citation may corroborate a detection but never widens the source gate.
 
 For any nested gate alternative, list every underlying source plus the
 `source_comparison` marker in the return's global inspected
@@ -79,6 +144,12 @@ is no detection object or `evidence_sources_used` field. The comparison label is
 never a gate member or singleton alternative. Alternatives remain OR: for
 example, `delivery_video` can be a self-contained singleton alternative beside
 an all-of `[static_slides, transcript]` alternative.
+
+For the current bundled catalog capability generation, absence gates are stricter than
+the general grammar: they are either `null`, singleton `transcript`, or singleton
+`static_slides`. `native_deck`, `delivery_video`, and nested/comparison alternatives may
+still support positive detections, but cannot establish absence until a versioned
+capability/alignment receipt is defined and audited.
 
 For a positive detection, record the qualifying value as `evidence_source`
 alongside the concrete evidence. For an undetected outcome, apply the effective
@@ -127,14 +198,14 @@ entries are skipped and surfaced as go-live actions, not emitted as per-talk
 
 | ID | Name | Type | Vault Dims | Creator Phases | Related |
 |----|------|------|------------|----------------|---------|
-| sparkline | Sparkline | pattern | 2, 5, 9 | architecture, content | narrative-arc, bookends, the-big-why, call-to-adventure, call-to-action, new-bliss |
+| sparkline | Sparkline | pattern | 2, 5, 9 | architecture, content | narrative-arc, bookends, mentor, know-your-audience, the-big-why, call-to-adventure, call-to-action, new-bliss, foreshadowing, star-moment |
 | three-part-close | Three-Part Close | pattern | 2, 10 | content, slides | bookends, call-to-action, coda, new-bliss |
 | progressive-reveal | Progressive Reveal | pattern | 4, 7 | content, slides | composite-animation, foreshadowing, traveling-highlights, sparkline |
 | meme-as-argument | Meme as Argument | pattern | 4, 7, 12 | content, slides | entertainment, brain-breaks, foreshadowing, unifying-visual-theme |
-| call-to-adventure | Call to Adventure | pattern | 1, 2, 9 | architecture, content | sparkline, the-big-why, opening-punch, narrative-arc |
-| call-to-action | Call to Action | pattern | 4, 6, 9 | content, publishing | sparkline, coda, mentor, the-big-why |
-| new-bliss | New Bliss | pattern | 5, 6, 9 | content | sparkline, call-to-action, coda, bookends |
-| star-moment | S.T.A.R. Moment | pattern | 3, 5, 13 | content, slides | the-big-why, sparkline, narrative-arc, vacation-photos, foreshadowing |
+| call-to-adventure | Call to Adventure | pattern | 1, 2, 9 | architecture, content | sparkline, the-big-why, opening-punch, narrative-arc, foreshadowing, know-your-audience, mentor |
+| call-to-action | Call to Action | pattern | 4, 6, 9 | content, publishing | sparkline, coda, mentor, the-big-why, new-bliss |
+| new-bliss | New Bliss | pattern | 5, 6, 9 | content | sparkline, call-to-action, coda, bookends, the-big-why |
+| star-moment | S.T.A.R. Moment | pattern | 3, 5, 13 | content, slides | the-big-why, sparkline, narrative-arc, vacation-photos, foreshadowing, call-to-adventure |
 | inoculation | Inoculation | pattern | 4, 9 | content, guardrails | know-your-audience, mentor, peer-review, sparkline, the-big-why |
 | master-story | Master Story | pattern | 2, 5, 7 | content | narrative-arc, foreshadowing, sparkline, the-big-why, star-moment |
 | concrete-before-abstract | Concrete Before Abstract | pattern | 11, 9, 2 | content | live-demo, master-story, vacation-photos, mentor, the-big-why, sparkline |
@@ -145,7 +216,7 @@ entries are skipped and surfaced as go-live actions, not emitted as per-talk
 | peer-review | Peer Review | pattern | 7, 8 | content, guardrails | leet-grammars |
 | foreshadowing | Foreshadowing | pattern | 2, 5 | content | narrative-arc, talklet, backtracking, intermezzi |
 | composite-animation | Composite Animation | pattern | 13 | slides | emergence, gradual-consistency |
-| a-la-carte-content | A la Carte Content | pattern | 2, 4 | architecture, content | talklet, coda, live-demo |
+| a-la-carte-content | Á la Carte Content | pattern | 2, 4 | architecture, content | talklet, coda, live-demo |
 | vacation-photos | Vacation Photos | pattern | 8, 13 | architecture, slides | unifying-visual-theme |
 | defy-defaults | Defy Defaults | pattern | 13 | slides | analog-noise, bookends, intermezzi |
 | analog-noise | Analog Noise | pattern | 13 | slides | defy-defaults, leet-grammars |
@@ -202,7 +273,7 @@ entries are skipped and surfaced as go-live actions, not emitted as per-talk
 | echo-chamber | Echo Chamber | pattern | 4, 7 | publishing | seeding-the-first-question |
 | red-yellow-green | Red, Yellow, Green | pattern | 4 | publishing | crucible, know-your-audience, retrieval-beat, spaced-followup |
 | lightsaber | Lightsaber | pattern | 11 | content | traveling-highlights |
-| stakeout | The Stakeout | pattern | 14 | publishing | preparation, carnegie-hall |
+| stakeout | Stakeout | pattern | 14 | publishing | preparation, carnegie-hall |
 | greek-chorus | Greek Chorus | pattern | 4, 9 | architecture, content | posse, mentor |
 | spaced-followup | Spaced Follow-Up | pattern | 6 | publishing | retrieval-beat, coda, call-to-action, live-on-tape, social-media-advertising, crucible |
 | shortchanged | Shortchanged | antipattern | 12, 14 | guardrails | preparation, expansion-joints, weatherman |
@@ -342,12 +413,31 @@ Reverse lookup: which patterns relate to each of the 14 rhetoric analysis dimens
 
 ---
 
+## Denominator-Safe Catalog Status
+
+All 81 observable entries have explicit positive, strong, and absence outcome gates. Of
+those, 37 also declare source-located applicability conditions. Only 16 currently permit
+absence; 65 are deliberately positive-only because their available role labels do not
+intrinsically prove the timing, rendering, screen, audio, audience, stage, session, or
+playback capability needed for an exhaustive negative judgment.
+
+| Absence gate | Exact bundled entries |
+|--------------|-----------------------|
+| `static_slides` | analog-noise, ant-fonts, bookends, breadcrumbs, cookie-cutter, defy-defaults, floodmarks, fontaholic, injured-outlines, takahashi, unifying-visual-theme |
+| `transcript` | concrete-before-abstract, flyover, going-meta, mentor, negative-ignorance |
+
+Every other observable entry declares `absence_evaluable_from: null`. For the static
+lane, this authority depends on a complete, separately declared readable PDF; a
+video-extracted, sampled, deduplicated, or cropped PDF can still support a positive
+detection but never joins an absence denominator.
+
 ---
 
 ## Unobservable Patterns — Go-Live Checklist
 
-These patterns involve pre-event logistics, physical stage behaviors, post-event
-follow-up, or external systems that leave **no trace in transcripts or slides**. The vault cannot score them. Instead,
+These patterns involve pre-event logistics, hidden authoring processes, physical stage
+behaviors, post-event follow-up, or external systems that the current ingress artifacts
+cannot directly prove. The vault cannot score them. Instead,
 they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation checklist.
 
 **Do not include these in vault scoring or the speaker profile's `pattern_profile`.**
@@ -355,12 +445,27 @@ they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation 
 ### Pre-Event Preparation
 | ID | Name | Checklist Action |
 |----|------|-----------------|
+| know-your-audience | Know Your Audience | Capture the audience/organizer research and note which talk choices it changed |
+| required | Required | Confirm whether the talk is assigned/mandatory and use the low-risk practice opportunity deliberately |
+| fourthought | Fourthought | Ideate, capture, and organize before opening the slide tool; retain the preparation artifacts |
+| proposed | Proposed | Keep the accepted CFP submission and compare the final scope against its promises |
+| concurrent-creation | Concurrent Creation | When collaborating, name one Slide Wrangler and preserve the creation history |
+| peer-review | Peer Review | Have a colleague/editor review the text and retain the review comments |
+| the-big-why | The Big Why | Write and retain the speaker's pre-commitment motivation instead of inferring it from delivery energy |
+| leet-grammars | Leet Grammars | Verify the target community, speaker relationship, and language accuracy with independent context before claiming insider belonging |
+| social-media-advertising | Social Media Advertising | Publish and retain dated promotional posts that link to the talk |
 | preparation | Preparation | Pack duplicate cables, backup deck to USB/cloud, hydrate, check room layout and schedule |
 | carnegie-hall | Carnegie Hall | Complete 4 structured rehearsals: (1) pace/timing, (2) delivery, (3) fix notes from 1-2, (4) find the groove |
-| stakeout | The Stakeout | Locate a productive staging area near the venue, arrive with ample buffer time |
+| stakeout | Stakeout | Locate a productive staging area near the venue, arrive with ample buffer time |
 | posse | Posse | Bring a friend/colleague for front-row support, positive energy, and equipment backup |
 | seeding-satisfaction | Seeding Satisfaction | Arrive early, mingle with attendees, make personal connections, verify audience assumptions |
 | shoeless | Shoeless | Activate your personal comfort ritual (favorite undershirt, sneakers, beverage placement) |
+
+### Artifact and Publishing Evidence
+| ID | Name | Checklist Action |
+|----|------|-----------------|
+| infodeck | Infodeck | Retain and label the separate live deck and distributed solo-reading artifact |
+| live-on-tape | Live on Tape | Retain the independently published recording URL and distribution record; do not use ingress's input video as tautological proof |
 
 ### During Delivery
 | ID | Name | Checklist Action |
@@ -371,22 +476,33 @@ they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation 
 ### Post-Event
 | ID | Name | Checklist Action |
 |----|------|-----------------|
+| crucible | Crucible | Record feedback and the concrete revisions made before the next delivery |
 | spaced-followup | Spaced Follow-Up | 1–2 weeks after the talk, send the opt-in list 2–3 recall questions — ask, do not summarize. Only collect addresses if you will actually send it |
 
 ### Antipatterns to Avoid (unobservable)
 | ID | Name | What to Watch For |
 |----|------|------------------|
+| abstract-attorney | Abstract Attorney | Compare the final talk directly with the accepted abstract before delivery; do not infer compliance from the talk alone |
+| borrowed-shoes | Borrowed Shoes | Confirm deck authorship and substantially adapt another author's material before presenting it |
 | laser-weapons | Laser Weapons | Don't wave the pointer constantly — build highlights into slides instead |
 | bunker | Bunker | Step out from behind the podium, walk the stage, make eye contact |
 | backchannel | Backchannel | Don't monitor social media during your talk — use it as feedback after |
+| disowning-your-topic | Disowning Your Topic | Compare the delivery with the prepared plan and ask why changes occurred; never infer audience-misreading motive from rushing alone |
+| golden-rule | The Golden Rule | Capture audience evidence-register spread and the speaker's deliberate coverage-or-match decision before judging a single-register talk |
+| slideuments | Slideuments | Compare the live deck, native notes, and independently distributed document before deciding one artifact served both jobs |
+| tower-of-babble | Tower of Babble | Capture verified audience expertise before deciding specialized vocabulary was mismatched rather than precise insider language |
 
 ---
 
 ## Summary Statistics
 
 - **Total entries:** 111 (83 patterns + 28 antipatterns)
-- **Observable (vault-scorable):** 99 (74 patterns + 25 antipatterns)
-- **Unobservable (go-live checklist):** 12 (9 patterns + 3 antipatterns)
+- **Observable (vault-scorable):** 81 (62 patterns + 19 antipatterns)
+- **Positive source-gated:** 81
+- **Absence source-gated:** 16
+- **Applicability-gated:** 37
+- **Positive-only (absence disabled):** 65
+- **Unobservable (go-live checklist):** 30 (21 patterns + 9 antipatterns)
 - **Prepare phase:** 24 (20 patterns + 4 antipatterns)
 - **Build phase:** 51 (41 patterns + 10 antipatterns)
 - **Deliver phase:** 36 (22 patterns + 14 antipatterns)

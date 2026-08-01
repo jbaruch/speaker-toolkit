@@ -7,10 +7,26 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [4, 7, 12]
+evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "internet memes carry argumentative weight, not decoration"
   - "memes function as visual shorthand for claims"
   - "humor breaks land specific rhetorical points"
+evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+strong_evaluable_from:
+  - static_slides
+  - native_deck
+  - delivery_video
+absence_evaluable_from: null
+evidence_requirements:
+  - "Evidence must include the neighboring setup, meme, and continuation so the meme's argumentative work can be distinguished from decoration."
+  - "A strong score must locate three or more argumentative meme uses; current artifacts do not authorize absence."
+not_evaluable_when:
+  - "Only an isolated meme page, thumbnail, or extracted image is available without its neighboring argumentative sequence."
+  - "The available visual source is incomplete, so repeated argumentative meme use cannot be established."
 related_patterns: [entertainment, brain-breaks, foreshadowing, unifying-visual-theme]
 inverse_of: []
 difficulty: advanced
@@ -37,9 +53,13 @@ Use Meme as Argument when the talk is making a polemic or comparative claim that
 Look for memes that carry argumentative work: the slide before sets up a claim, the meme image lands the punch, the slide after extends the argument. Recurring use of the same meme structure (e.g., the same unmasking template used multiple times) is a strong signal of pattern intent. Memes that could be removed without losing argumentative content are decoration, not Meme as Argument.
 
 ## Scoring Criteria
-- Strong signal (2 pts): three or more memes used as argumentative devices, each landing a specific claim that would be diminished by removing the meme
-- Moderate signal (1 pt): one or two memes used argumentatively; otherwise meme usage is decorative
-- Absent (0 pts): no memes, or memes used only as decoration with no argumentative work
+- Strong signal: three or more memes used as argumentative devices, each landing a specific claim that would be diminished by removing the meme
+- Moderate signal: one or two memes used argumentatively; otherwise meme usage is decorative
+- Absent: no memes, or memes used only as decoration with no argumentative work
+
+## Evidence Gate
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
 Dimension 4 (Humor and Surprise Techniques): Meme as Argument is a high-density humor mechanism that does double duty as rhetoric. Dimension 7 (Slide Design): The technique requires deliberate slide-construction discipline; the meme is a chosen visual asset, not a stock image grab. Dimension 12 (Cultural References): The pattern relies on shared meme literacy and lives or dies by audience-meme-fit.
