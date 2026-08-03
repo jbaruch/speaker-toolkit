@@ -27,6 +27,9 @@ operation-neutral diagnostics (#188). Successful evidence is unchanged, so no
 schema/pipeline migration is required. Ambiguous historical failure/skip
 receipts remain readable but are never relabeled; rerun ingress to regenerate
 them under the current mapping.
+Supervisor tests now reuse the canonical imported module instead of replacing
+it during collection, preserving dataclass and exception identity across test
+orders (#206).
 If psutil observes a root identity disappearing during a normal fast exit, Popen
 gets at most the remaining sample interval to confirm and reap that exact child;
 a still-live child, descendant leak, or non-ESRCH cleanup failure remains fatal.

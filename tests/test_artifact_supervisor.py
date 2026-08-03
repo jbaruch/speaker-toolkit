@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ctypes
-import importlib.util
+import importlib
 import io
 import json
 import os
@@ -27,11 +27,10 @@ SCRIPT = (
     / "artifact_supervisor.py"
 )
 SCRIPT_DIR = SCRIPT.parent
-SPEC = importlib.util.spec_from_file_location("artifact_supervisor", SCRIPT)
-assert SPEC is not None and SPEC.loader is not None
-artifact_supervisor = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = artifact_supervisor
-SPEC.loader.exec_module(artifact_supervisor)
+script_dir = os.fspath(SCRIPT_DIR)
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+artifact_supervisor = importlib.import_module("artifact_supervisor")
 
 
 WORKER_CODE = f"""
