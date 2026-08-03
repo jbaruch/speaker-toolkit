@@ -2658,6 +2658,386 @@ def test_version_flag_is_machine_readable(pptx_extraction):
     }
 
 
+_PAGE_DECIMAL_ALPHABETS = (
+    "0123456789",
+    "٠١٢٣٤٥٦٧٨٩",
+    "۰۱۲۳۴۵۶۷۸۹",
+    "０１２３４５６７８９",
+    "𝟘𝟙𝟚𝟛𝟜𝟝𝟞𝟟𝟠𝟡",
+)
+_PAGE_DECIMAL_ALPHABET_IDS = (
+    "ascii",
+    "arabic-indic",
+    "extended-arabic-indic",
+    "fullwidth",
+    "mathematical",
+)
+_INSPECTED_PAGES_GRAMMAR_ERROR = (
+    "--inspected-pages values must be PAGE or START-END"
+)
+
+
+def _render_page_decimal(value, alphabet):
+    return "".join(alphabet[int(digit)] for digit in str(value))
+
+
+def _render_mixed_page_decimal(value):
+    return "".join(
+        _PAGE_DECIMAL_ALPHABETS[index % len(_PAGE_DECIMAL_ALPHABETS)][int(digit)]
+        for index, digit in enumerate(str(value))
+    )
+
+
+class _NoSplitOrStripPageRange(str):
+    def split(self, *_args, **_kwargs):
+        raise AssertionError("page-range parsing must not split its input")
+
+    def strip(self, *_args, **_kwargs):
+        raise AssertionError("page-range parsing must not copy a stripped token")
+
+
+@pytest.mark.parametrize(
+    "alphabet",
+    _PAGE_DECIMAL_ALPHABETS,
+    ids=_PAGE_DECIMAL_ALPHABET_IDS,
+)
+def test_page_range_parser_supports_unicode_decimal_digits_at_global_ceiling(
+    pptx_extraction,
+    pptx_evidence,
+    alphabet,
+):
+    limit = pptx_evidence.PPTX_ARCHIVE_MAX_MEMBERS
+    limit_error = (
+        "--inspected-pages page numbers must not exceed the bounded PPTX "
+        f"page limit {limit}"
+    )
+
+    assert pptx_extraction.parse_page_range_arguments(
+        [
+            f"{_render_page_decimal(1, alphabet)}-"
+            f"{_render_page_decimal(3, alphabet)}"
+        ]
+    ) == [[1, 3]]
+    assert pptx_extraction.parse_page_range_arguments(
+        [_render_page_decimal(limit, alphabet)]
+    ) == [[limit, limit]]
+
+    with pytest.raises(pptx_extraction.PptxEvidenceError) as caught:
+        pptx_extraction.parse_page_range_arguments(
+            [_render_page_decimal(limit + 1, alphabet)]
+        )
+    assert str(caught.value) == limit_error
+
+
+def test_page_range_parser_supports_mixed_script_decimal_numbers(
+    pptx_extraction,
+    pptx_evidence,
+):
+    limit = pptx_evidence.PPTX_ARCHIVE_MAX_MEMBERS
+    limit_error = (
+        "--inspected-pages page numbers must not exceed the bounded PPTX "
+        f"page limit {limit}"
+    )
+
+    assert pptx_extraction.parse_page_range_arguments(
+        [
+            f"{_render_mixed_page_decimal(12345)}-"
+            f"{_render_mixed_page_decimal(12347)}"
+        ]
+    ) == [[12345, 12347]]
+    assert pptx_extraction.parse_page_range_arguments(
+        [_render_mixed_page_decimal(limit)]
+    ) == [[limit, limit]]
+
+    with pytest.raises(pptx_extraction.PptxEvidenceError) as caught:
+        pptx_extraction.parse_page_range_arguments(
+            [_render_mixed_page_decimal(limit + 1)]
+        )
+    assert str(caught.value) == limit_error
+
+
+def test_page_range_parser_rejects_local_impossibilities_with_fixed_errors(
+    pptx_extraction,
+    pptx_evidence,
+):
+    limit = pptx_evidence.PPTX_ARCHIVE_MAX_MEMBERS
+    cases = (
+        ("0", "--inspected-pages page numbers must be at least 1"),
+        ("0-1", "--inspected-pages page numbers must be at least 1"),
+        (
+            "5-3",
+            "--inspected-pages range end must not be less than its start",
+        ),
+        (
+            str(limit + 1),
+            "--inspected-pages page numbers must not exceed the bounded PPTX "
+            f"page limit {limit}",
+        ),
+        (
+            "9" * 5_000,
+            "--inspected-pages page numbers must not exceed the bounded PPTX "
+            f"page limit {limit}",
+        ),
+    )
+
+    for value, expected_message in cases:
+        with pytest.raises(pptx_extraction.PptxEvidenceError) as caught:
+            pptx_extraction.parse_page_range_arguments([value])
+        assert str(caught.value) == expected_message
+        assert value not in str(caught.value)
+
+
+def test_page_range_parser_bounds_malformed_diagnostics_without_echoing_input(
+    pptx_extraction,
+):
+    malformed = "x" + ("９" * 5_000)
+
+    with pytest.raises(pptx_extraction.PptxEvidenceError) as caught:
+        pptx_extraction.parse_page_range_arguments([malformed])
+
+    diagnostic = str(caught.value)
+    assert diagnostic == _INSPECTED_PAGES_GRAMMAR_ERROR
+    assert malformed not in diagnostic
+    assert len(diagnostic.encode("utf-8")) < 128
+
+
+def test_page_range_parser_enforces_range_count_without_split_amplification(
+    pptx_extraction,
+    pptx_evidence,
+):
+    limit = pptx_evidence.PPTX_ARCHIVE_MAX_MEMBERS
+    exact_limit = _NoSplitOrStripPageRange(("1," * (limit - 1)) + "1")
+    parsed = pptx_extraction.parse_page_range_arguments([exact_limit])
+
+    assert len(parsed) == limit
+    assert parsed[0] == parsed[-1] == [1, 1]
+
+    malformed = "x" + ("９" * 5_000)
+    limit_plus_one = _NoSplitOrStripPageRange(f"{exact_limit},{malformed}")
+    with pytest.raises(pptx_extraction.PptxEvidenceError) as caught:
+        pptx_extraction.parse_page_range_arguments([limit_plus_one])
+
+    diagnostic = str(caught.value)
+    assert diagnostic == (
+        f"--inspected-pages must contain no more than {limit} ranges"
+    )
+    assert malformed not in diagnostic
+    assert len(diagnostic.encode("utf-8")) < 128
+
+
+def test_page_range_parser_preserves_repeated_comma_and_leading_zero_inputs(
+    pptx_extraction,
+):
+    leading_zero_page = ("0" * 5_000) + "1"
+    leading_zero_end = ("０" * 5_000) + "３"
+    canonical = pptx_extraction.parse_page_range_arguments(
+        ["1", "2-4,6", "8-9"]
+    )
+    equivalent = pptx_extraction.parse_page_range_arguments(
+        [leading_zero_page, "0002-０００４,٠٠٠٦", "０００８-0009"]
+    )
+
+    assert canonical == equivalent == [[1, 1], [2, 4], [6, 6], [8, 9]]
+    assert pptx_extraction.parse_page_range_arguments(
+        [f"{leading_zero_page}-{leading_zero_end}"]
+    ) == [[1, 3]]
+
+
+def test_unicode_ranges_have_canonical_normalized_json_byte_equivalence(
+    pptx_extraction,
+    pptx_evidence,
+):
+    limit = pptx_evidence.PPTX_ARCHIVE_MAX_MEMBERS
+    canonical_ranges = pptx_evidence.normalize_page_ranges(
+        pptx_extraction.parse_page_range_arguments(["1-3", "5", str(limit)]),
+        page_count=limit,
+        allow_empty=True,
+    )
+    unicode_ranges = pptx_evidence.normalize_page_ranges(
+        pptx_extraction.parse_page_range_arguments(
+            [
+                " ١-۳, ５ ",
+                _render_mixed_page_decimal(limit),
+            ]
+        ),
+        page_count=limit,
+        allow_empty=True,
+    )
+
+    canonical_bytes = json.dumps(
+        canonical_ranges,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    unicode_bytes = json.dumps(
+        unicode_ranges,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    assert unicode_bytes == canonical_bytes
+
+
+def test_page_range_parser_leaves_deck_and_cross_range_checks_to_normalizer(
+    pptx_extraction,
+    pptx_evidence,
+):
+    deck_overflow = pptx_extraction.parse_page_range_arguments(["10"])
+    overlapping = pptx_extraction.parse_page_range_arguments(["2-3", "3-4"])
+
+    with pytest.raises(pptx_evidence.PptxEvidenceError):
+        pptx_evidence.normalize_page_ranges(
+            deck_overflow,
+            page_count=9,
+            allow_empty=True,
+        )
+    with pytest.raises(pptx_evidence.PptxEvidenceError):
+        pptx_evidence.normalize_page_ranges(
+            overlapping,
+            page_count=4,
+            allow_empty=True,
+        )
+
+
+def test_cli_rejects_impossible_page_ranges_before_artifact_work(
+    pptx_extraction,
+    pptx_evidence,
+    monkeypatch,
+    capsys,
+):
+    limit = pptx_evidence.PPTX_ARCHIVE_MAX_MEMBERS
+    artifact_calls = []
+
+    def forbidden_artifact_work(*args, **kwargs):
+        artifact_calls.append((args, kwargs))
+        pytest.fail("invalid page range reached PPTX artifact work")
+
+    monkeypatch.setattr(pptx_extraction, "extract_pptx", forbidden_artifact_work)
+    cases = (
+        ("0", "--inspected-pages page numbers must be at least 1"),
+        (
+            "5-3",
+            "--inspected-pages range end must not be less than its start",
+        ),
+        (
+            _render_mixed_page_decimal(limit + 1),
+            "--inspected-pages page numbers must not exceed the bounded PPTX "
+            f"page limit {limit}",
+        ),
+    )
+
+    for value, expected_message in cases:
+        with pytest.raises(SystemExit) as raised:
+            pptx_extraction.main(
+                [
+                    "/unread/deck.pptx",
+                    "--rendered-pdf",
+                    "/unread/deck.pdf",
+                    "--inspected-pages",
+                    value,
+                    "--no-ocr",
+                ]
+            )
+        assert raised.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert expected_message in captured.err
+        assert "Traceback" not in captured.err
+        assert value not in captured.err
+
+    assert artifact_calls == []
+
+
+def test_cli_bounds_resource_sized_page_range_errors_before_artifact_work(
+    pptx_extraction,
+    pptx_evidence,
+    monkeypatch,
+    capsys,
+):
+    limit = pptx_evidence.PPTX_ARCHIVE_MAX_MEMBERS
+    artifact_calls = []
+    malformed = "x" + ("９" * 5_000)
+    too_many = ("１," * limit) + malformed
+
+    def forbidden_artifact_work(*args, **kwargs):
+        artifact_calls.append((args, kwargs))
+        pytest.fail("resource-sized page range reached PPTX artifact work")
+
+    monkeypatch.setattr(pptx_extraction, "extract_pptx", forbidden_artifact_work)
+    cases = (
+        (malformed, _INSPECTED_PAGES_GRAMMAR_ERROR),
+        (
+            too_many,
+            f"--inspected-pages must contain no more than {limit} ranges",
+        ),
+    )
+
+    for value, expected_message in cases:
+        with pytest.raises(SystemExit) as raised:
+            pptx_extraction.main(
+                [
+                    "/unread/deck.pptx",
+                    "--rendered-pdf",
+                    "/unread/deck.pdf",
+                    "--inspected-pages",
+                    value,
+                    "--no-ocr",
+                ]
+            )
+        assert raised.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert expected_message in captured.err
+        assert malformed not in captured.err
+        assert "Traceback" not in captured.err
+        assert len(captured.err.encode("utf-8")) < 4_096
+
+    assert artifact_calls == []
+
+
+def test_cli_normalizes_long_leading_zero_page_range_before_artifact_work(
+    pptx_extraction,
+    monkeypatch,
+    capsys,
+):
+    artifact_calls = []
+    leading_zero_start = ("٠" * 5_000) + "１"
+    leading_zero_end = ("۰" * 5_000) + "𝟛"
+
+    def capture_artifact_work(path, **options):
+        artifact_calls.append((path, options))
+        return {"slide_count": 3}
+
+    monkeypatch.setattr(pptx_extraction, "extract_pptx", capture_artifact_work)
+
+    assert (
+        pptx_extraction.main(
+            [
+                "/unread/deck.pptx",
+                "--rendered-pdf",
+                "/unread/deck.pdf",
+                "--inspected-pages",
+                f"{leading_zero_start}-{leading_zero_end}",
+                "--no-ocr",
+            ]
+        )
+        == 0
+    )
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert json.loads(captured.out) == {"slide_count": 3}
+    assert artifact_calls == [
+        (
+            "/unread/deck.pptx",
+            {
+                "ocr": False,
+                "rendered_pdf_path": "/unread/deck.pdf",
+                "inspected_page_ranges": [[1, 3]],
+            },
+        )
+    ]
+
+
 def test_directory_worker_main_reports_closed_supervisor_failure(
     pptx_extraction,
     monkeypatch: pytest.MonkeyPatch,

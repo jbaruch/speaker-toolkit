@@ -1,5 +1,16 @@
 # Changelog
 
+### fix(vault-ingress) — reject impossible inspected-page ranges before PPTX work (#204)
+
+The PPTX CLI now rejects page zero, descending ranges, page numbers beyond the
+existing bounded archive-member ceiling, and excessive range counts before
+opening or supervising a PPTX or rendered PDF. It scans comma-delimited Unicode
+decimal input incrementally, accumulates numbers with an overflow-before-
+multiply check, and emits fixed bounded diagnostics without copying or echoing
+resource-sized tokens. Long leading-zero forms retain their existing normalized
+meaning. Actual deck page bounds, ordering and overlap across ranges, and
+canonical range output remain owned by the existing post-probe range validator.
+
 ## 0.20.8 — 2026-08-03
 
 ### fix(vault-ingress) — unify trusted vault-root authority (#212)
