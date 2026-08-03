@@ -1,5 +1,26 @@
 # Changelog
 
+### fix(vault-ingress) — validate video owner identity before output derivation (#214)
+
+Video slide extraction now admits only the shared canonical 11-character
+YouTube-ID grammar before path resolution, directory creation, ffmpeg, or
+artifact writes. Frame workspace and PDF paths are derived only from that
+validated identity and must remain below the canonical caller-authorized output
+root, including when a pre-existing symlink would redirect a derived path.
+Traversal, separator, drive/device, whitespace, NUL, Unicode-lookalike, and
+wrong-length identities fail with one closed reason. Manifest ownership and
+artifact filenames retain the same admitted ID; invalid legacy identities
+require repair and re-extraction rather than normalization.
+
+### fix(vault-ingress) — keep ffmpeg artifact paths out of the shell (#211)
+
+Frame extraction now invokes ffmpeg with an explicit argv vector and
+`shell=False`. Spaces, quotes, semicolons, substitutions, and redirection
+characters in otherwise valid native paths remain data, while failures report
+only the process exit status rather than an interpolated command. The remaining
+vault-ingress Python scripts contain no `os.system` or `shell=True` artifact
+boundary. The extractor pipeline advances to `0.11.0`; its schema remains v3.
+
 ### fix(vault-ingress) — make artifact locators host-deterministic (#210)
 
 Ingress now classifies raw artifact locators before `Path`, `abspath`,

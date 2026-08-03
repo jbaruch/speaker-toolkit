@@ -1281,9 +1281,9 @@ Stored in `structured_data.video_extraction` on the talk entry:
 {
   "slide_source": "video_extracted",
   "schema_version": 3,
-  "pipeline_version": "0.10.0",
-  "source_video_id": "aBcDeFg",
-  "source_video_path": "/vault/slides-rebuild/aBcDeFg/aBcDeFg.mp4",
+  "pipeline_version": "0.11.0",
+  "source_video_id": "AbCdEfGhI_1",
+  "source_video_path": "/vault/slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4",
   "total_frames_extracted": 1500,
   "unique_frame_count": 85,
   "authored_slide_count": null,
@@ -1300,21 +1300,21 @@ Stored in `structured_data.video_extraction` on the talk entry:
   ],
   "artifacts": [
     {
-      "path": "/vault/slides-rebuild/aBcDeFg/aBcDeFg.slide-region.pdf",
+      "path": "/vault/slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.slide-region.pdf",
       "artifact_scope": "slide_region",
       "page_count": 85,
-      "source_video_id": "aBcDeFg",
-      "source_video_path": "/vault/slides-rebuild/aBcDeFg/aBcDeFg.mp4",
+      "source_video_id": "AbCdEfGhI_1",
+      "source_video_path": "/vault/slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4",
       "crop_method": "manual",
       "crop_verified": true,
       "trusted_for_authored_slide_analysis": true
     },
     {
-      "path": "/vault/slides-rebuild/aBcDeFg/aBcDeFg.context.pdf",
+      "path": "/vault/slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.context.pdf",
       "artifact_scope": "full_frame_context",
       "page_count": 85,
-      "source_video_id": "aBcDeFg",
-      "source_video_path": "/vault/slides-rebuild/aBcDeFg/aBcDeFg.mp4",
+      "source_video_id": "AbCdEfGhI_1",
+      "source_video_path": "/vault/slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4",
       "crop_method": "none",
       "crop_verified": false,
       "trusted_for_authored_slide_analysis": false
