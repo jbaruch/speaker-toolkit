@@ -398,22 +398,33 @@ def test_return_pdf_mismatch_never_leaks_or_probes_an_invalid_preclaim(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    secret = _foreign_absolute_locator("credential-bearing-secret.pdf")
+    secret_preclaim = _foreign_absolute_locator("credential-bearing-secret.pdf")
+    secret_return = "slides/other-private-artifact.pdf"
+    preclaim_resolutions: list[object] = []
+
+    def reject_preclaim_resolution(*args, **kwargs):
+        preclaim_resolutions.append((args, kwargs))
+        pytest.fail("mismatched return reached preclaim artifact resolution")
+
     monkeypatch.setattr(
         pattern_evidence,
-        "probe_pdf_artifact",
-        lambda *_args, **_kwargs: pytest.fail("invalid preclaim reached PDF probe"),
+        "_resolve_preclaim_artifact",
+        reject_preclaim_resolution,
     )
 
     with pytest.raises(pattern_evidence.PatternEvidenceError) as caught:
         pattern_evidence.admit_return_artifacts(
             tmp_path / "vault",
-            {"slides_local_path": secret, "slide_source": "pdf"},
-            {"slides_local_path": "slides/other.pdf", "slide_source": "pdf"},
+            {"slides_local_path": secret_preclaim, "slide_source": "pdf"},
+            {"slides_local_path": secret_return, "slide_source": "pdf"},
         )
 
-    assert "artifact_locator_foreign_absolute" in str(caught.value)
-    assert secret not in str(caught.value)
+    assert str(caught.value) == (
+        "return PDF path must match the exact slides_local_path preclaim"
+    )
+    assert preclaim_resolutions == []
+    assert secret_preclaim not in str(caught.value)
+    assert secret_return not in str(caught.value)
 
 
 def test_pptx_preclaim_is_lexical_until_bounded_probe(

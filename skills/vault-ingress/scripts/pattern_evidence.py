@@ -914,6 +914,10 @@ def _returned_slide_artifact(
         declared_pdf = _declared_pdf_path(talk)
         if declared_pdf is not None and declared_pdf[0] != "google_drive_id":
             field, expected = declared_pdf
+            if returned_path != expected:
+                raise PatternEvidenceError(
+                    f"return PDF path must match the exact {field} preclaim"
+                )
             path, artifact_root, _root_kind = _resolve_preclaim_artifact(
                 vault_root,
                 talk,
@@ -921,10 +925,6 @@ def _returned_slide_artifact(
                 suffix=".pdf",
                 source_roots=None,
             )
-            if returned_path != expected:
-                raise PatternEvidenceError(
-                    f"return PDF path must match the exact {field} preclaim"
-                )
         else:
             drive_id = talk.get("google_drive_id")
             if not isinstance(drive_id, str) or not drive_id.strip():
