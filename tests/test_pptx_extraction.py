@@ -7,6 +7,7 @@ import struct
 import subprocess
 import sys
 import zipfile
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -635,47 +636,116 @@ def test_directory_cli_passes_only_the_exact_configured_skip_patterns(
     }
 
 
-def test_directory_relative_root_is_lexically_absolutized_before_supervision(
+def test_directory_relative_root_is_rejected_before_supervision(
+    pptx_extraction,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        pptx_extraction,
+        "run_authenticated_worker",
+        lambda *_args, **_kwargs: pytest.fail("relative root started worker"),
+    )
+
+    with pytest.raises(pptx_extraction.PptxEvidenceError) as caught:
+        pptx_extraction._run_supervised_directory_discovery(
+            ".",
+            [],
+            deadline=pptx_extraction.time.monotonic() + 30,
+        )
+
+    assert caught.value.reason_code == "pptx_batch_root_invalid"
+    assert caught.value.details == {"locator_failure": "artifact_locator_dot_segment"}
+
+
+def test_directory_foreign_home_and_noncanonical_roots_never_launch_worker(
+    pptx_extraction,
+    monkeypatch,
+):
+    foreign_roots = (
+        ["/foreign/decks"]
+        if pptx_extraction.os.name == "nt"
+        else [r"C:\conference\decks", r"\\server\share\decks"]
+    )
+    cases = [
+        ("decks", "artifact_root_not_native_absolute"),
+        ("~/decks", "artifact_locator_home_expansion_unsupported"),
+        (r"conference\decks", "artifact_locator_noncanonical_relative"),
+        *[(foreign, "artifact_locator_foreign_absolute") for foreign in foreign_roots],
+    ]
+    monkeypatch.setattr(
+        pptx_extraction,
+        "run_authenticated_worker",
+        lambda *_args, **_kwargs: pytest.fail("invalid root started worker"),
+    )
+
+    for locator, expected_failure in cases:
+        with pytest.raises(pptx_extraction.PptxEvidenceError) as caught:
+            pptx_extraction._run_supervised_directory_discovery(
+                locator,
+                [],
+                deadline=pptx_extraction.time.monotonic() + 30,
+            )
+        assert caught.value.reason_code == "pptx_batch_root_invalid"
+        assert caught.value.details == {"locator_failure": expected_failure}
+        assert locator not in str(caught.value)
+        assert locator not in repr(caught.value.details)
+
+
+def test_directory_worker_revalidates_root_before_discovery(
     pptx_extraction,
     monkeypatch,
     tmp_path,
 ):
-    monkeypatch.chdir(tmp_path)
-    captured = {}
-
-    def authenticated_worker(
-        _command, _operation, _generations, payload, _limits, **kwargs
-    ):
-        captured["payload"] = payload
-        captured["sensitive_values"] = kwargs["sensitive_values"]
-        return SimpleNamespace(
-            payload={
-                "schema_version": 1,
-                "kind": "directory",
-                "files": [],
-                "skipped": [],
-            }
-        )
-
+    request = pptx_extraction.WorkerRequest(
+        request_id="a" * 64,
+        operation=pptx_extraction._DIRECTORY_OPERATION,
+        request_sha256="b" * 64,
+        limit_profile_id=pptx_extraction._DIRECTORY_LIMITS.profile_id,
+        schema_generation=pptx_extraction.SCHEMA_VERSION,
+        pipeline_generation=pptx_extraction.PIPELINE_VERSION,
+        expected_generations={},
+        payload={"root_path": "relative", "skip_patterns": []},
+        key=b"k" * 32,
+    )
     monkeypatch.setattr(
         pptx_extraction,
-        "run_authenticated_worker",
-        authenticated_worker,
+        "_discover_pptx_files",
+        lambda *_args, **_kwargs: pytest.fail("invalid root reached discovery"),
     )
 
-    files, skipped = pptx_extraction._run_supervised_directory_discovery(
-        ".",
-        [],
-        deadline=pptx_extraction.time.monotonic() + 30,
+    with pytest.raises(pptx_extraction.SupervisorError) as caught:
+        pptx_extraction._dispatch_directory_worker(request)
+
+    assert caught.value.reason_code == "pptx_batch_root_invalid"
+    assert caught.value.details == {
+        "locator_failure": "artifact_root_not_native_absolute"
+    }
+
+    observed = {}
+
+    def discover(root, patterns):
+        observed["root"] = root
+        observed["patterns"] = patterns
+        return [], [], 0.0
+
+    monkeypatch.setattr(pptx_extraction, "_discover_pptx_files", discover)
+    payload = pptx_extraction._dispatch_directory_worker(
+        replace(
+            request,
+            payload={"root_path": str(tmp_path), "skip_patterns": []},
+        )
     )
 
-    assert files == []
-    assert skipped == []
-    assert captured["payload"]["root_path"] == str(tmp_path)
-    assert captured["sensitive_values"] == (str(tmp_path),)
+    assert observed == {"root": str(tmp_path), "patterns": []}
+    assert payload == {
+        "schema_version": 1,
+        "kind": "directory",
+        "files": [],
+        "skipped": [],
+    }
 
 
-def test_batch_reuses_canonical_root_if_working_directory_changes(
+def test_batch_reuses_native_absolute_root_if_working_directory_changes(
     pptx_extraction,
     monkeypatch,
     tmp_path,
@@ -710,7 +780,7 @@ def test_batch_reuses_canonical_root_if_working_directory_changes(
     )
     monkeypatch.setattr(pptx_extraction, "extract_pptx", extract)
 
-    results, skipped = pptx_extraction.batch_extract("decks", [], ocr=False)
+    results, skipped = pptx_extraction.batch_extract(root, [], ocr=False)
 
     assert skipped == []
     assert observed == [root / "deck.pptx"]

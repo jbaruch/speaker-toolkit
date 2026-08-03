@@ -22,6 +22,10 @@ from typing import Mapping, NoReturn, cast
 
 from yaml import YAMLError
 
+from artifact_locator import (
+    ArtifactLocatorError,
+    materialize_native_root,
+)
 from adherence_baseline import (
     ADHERENCE_BASELINE_SCHEMA_VERSION,
     AdherenceBaselineError,
@@ -932,15 +936,20 @@ def _manifest_nonnegative_int(manifest: dict, field: str, *, positive=False) -> 
 
 def _validate_absolute_manifest_path(value, field: str) -> str:
     if not isinstance(value, str) or not value.strip() or value != value.strip():
-        _manifest_error(field, f"must be a non-empty absolute path, got {value!r}")
-    if "\x00" in value:
-        _manifest_error(field, "must not contain a NUL byte")
-    if any(segment in {".", ".."} for segment in re.split(r"[\\/]", value)):
-        _manifest_error(field, "must not contain ambiguous dot segments")
-    path = Path(value)
-    if not path.is_absolute():
+        _manifest_error(field, "must be a non-empty native absolute path")
+    try:
+        materialize_native_root(value)
+    except ArtifactLocatorError as exc:
+        reason_message = {
+            "artifact_locator_nul_byte": "must not contain a NUL byte",
+            "artifact_locator_dot_segment": ("must not contain ambiguous dot segments"),
+        }.get(
+            exc.reason_code,
+            "must be a native absolute path without ambiguous syntax",
+        )
         _manifest_error(
-            field, f"must be an absolute path without traversal, got {value!r}"
+            field,
+            f"{reason_message} ({exc.reason_code})",
         )
     return value
 

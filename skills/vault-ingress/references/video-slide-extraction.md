@@ -87,6 +87,13 @@ manual crop; it never deletes the source video.
 
 Run `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/video-slide-extraction.py"` for each video after downloading it:
 
+The source-video and output-directory arguments must be native absolute paths.
+The producer validates their raw flavor before creating directories, resolving
+symlinks, invoking ffmpeg, or writing artifacts. Relative, `~`-expanded,
+device/current-drive, foreign absolute, raw-dot-segment, and dual-flavor `//`
+forms fail closed; paths are never translated between operating-system
+grammars.
+
 ```bash
 # Download video at 720p
 yt-dlp -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]" \

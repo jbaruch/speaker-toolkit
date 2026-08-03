@@ -17,6 +17,12 @@ VALIDATE_SCRIPT = os.path.join(
 )
 
 
+def _foreign_absolute_locator(name):
+    if os.name == "nt":
+        return f"/foreign/{name}"
+    return rf"C:\foreign\{name}"
+
+
 def _return(**overrides):
     value = {
         "filename": "talk.md",
@@ -949,6 +955,67 @@ def test_video_manifest_rejects_spoofed_or_inconsistent_provenance(
     value = _video_return(trusted=False, promoted=False)
     mutation(value["structured_data"]["video_extraction"])
     assert expected in _error(return_validation, value)
+
+
+@pytest.mark.parametrize(
+    "locator,reason_code",
+    [
+        (
+            "~/abcDEF12345.mp4",
+            "artifact_locator_home_expansion_unsupported",
+        ),
+        (
+            r"videos\abcDEF12345.mp4",
+            "artifact_locator_noncanonical_relative",
+        ),
+        (
+            "//server/share/abcDEF12345.mp4",
+            "artifact_locator_ambiguous_double_slash",
+        ),
+        (
+            _foreign_absolute_locator("abcDEF12345.mp4"),
+            "artifact_locator_foreign_absolute",
+        ),
+    ],
+)
+def test_video_manifest_absolute_paths_use_shared_locator_classifier(
+    return_validation,
+    locator,
+    reason_code,
+):
+    value = _video_return(trusted=False, promoted=False)
+    value["structured_data"]["video_extraction"]["source_video_path"] = locator
+
+    error = _error(return_validation, value)
+
+    assert reason_code in error
+    assert locator not in error
+
+
+def test_video_manifest_artifact_path_rejects_foreign_absolute_flavor(
+    return_validation,
+):
+    locator = _foreign_absolute_locator("abcDEF12345.context.pdf")
+    value = _video_return(trusted=False, promoted=False)
+    value["structured_data"]["video_extraction"]["artifacts"][0]["path"] = locator
+
+    error = _error(return_validation, value)
+
+    assert "artifact_locator_foreign_absolute" in error
+    assert locator not in error
+
+
+def test_video_manifest_relative_path_uses_native_root_failure_reason(
+    return_validation,
+):
+    value = _video_return(trusted=False, promoted=False)
+    value["structured_data"]["video_extraction"]["source_video_path"] = (
+        "videos/abcDEF12345.mp4"
+    )
+
+    error = _error(return_validation, value)
+
+    assert "artifact_root_not_native_absolute" in error
 
 
 def test_video_manifest_accepts_extractor_timestamp_rounding(return_validation):

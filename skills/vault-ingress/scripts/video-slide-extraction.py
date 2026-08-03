@@ -26,8 +26,8 @@ Usage:
                   crop; review-required runs always preserve context
 
 Examples:
-    video-slide-extraction.py video.mp4 output/ aBcDeFg
-    video-slide-extraction.py video.mp4 output/ aBcDeFg --fps 0.5 --threshold 12
+    video-slide-extraction.py /vault/video.mp4 /vault/output aBcDeFg
+    video-slide-extraction.py /vault/video.mp4 /vault/output aBcDeFg --fps 0.5 --threshold 12
 """
 
 import argparse
@@ -35,6 +35,8 @@ import glob
 import json
 import os
 import sys
+
+from artifact_locator import ArtifactLocatorError, materialize_native_root
 
 # Pipeline version — stamped into every video-extracted vault entry (DB row +
 # PDF metadata) so artifacts record which extraction iteration produced them.
@@ -122,6 +124,8 @@ def parse_slide_region(value: str) -> str | NormalizedSlideRegion:
 
 def extract_frames(video_path, frames_dir, fps=0.5):
     """Extract frames from video at specified fps."""
+    video_path = canonical_path(video_path)
+    frames_dir = canonical_path(frames_dir)
     os.makedirs(frames_dir, exist_ok=True)
     cmd = (
         f'ffmpeg -i "{video_path}" -vf "fps={fps}" -q:v 2 '
@@ -329,8 +333,14 @@ def crop_frame(img, region):
 
 
 def canonical_path(path):
-    """Return an absolute, symlink-resolved path for durable provenance."""
-    return os.path.realpath(os.path.abspath(os.fspath(path)))
+    """Return a native absolute, symlink-resolved path for durable provenance."""
+    try:
+        native = materialize_native_root(path)
+    except ArtifactLocatorError as exc:
+        raise ValueError(
+            f"artifact path must be native absolute ({exc.reason_code})"
+        ) from None
+    return os.path.realpath(os.fspath(native))
 
 
 def deduplicate_frames(frames, slide_region=None, hash_threshold=8):
@@ -597,7 +607,7 @@ def extract_slides_from_video(
     print(f"Extracting video artifacts from {youtube_id}...", file=sys.stderr)
 
     # Step 2: Extract frames
-    frames = extract_frames(video_path, frames_dir, fps=fps)
+    frames = extract_frames(source_video_path, frames_dir, fps=fps)
     if not frames:
         return {
             "slide_source": "video_extracted",
@@ -781,7 +791,6 @@ def main():
         )
         sys.exit(1)
 
-    os.makedirs(args.outdir, exist_ok=True)
     result = extract_slides_from_video(
         args.video,
         args.outdir,

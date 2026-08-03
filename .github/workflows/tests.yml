@@ -103,6 +103,7 @@ jobs:
       - run: pip install ".[test]"
       - run: >-
           pytest -v --tb=short
+          tests/test_artifact_locator.py
           tests/test_artifact_supervisor.py
           tests/test_artifact_metadata.py
           tests/test_pdf_evidence.py

@@ -1,5 +1,27 @@
 # Changelog
 
+### fix(vault-ingress) — make artifact locators host-deterministic (#210)
+
+Ingress now classifies raw artifact locators before `Path`, `abspath`,
+`expanduser`, symlink resolution, metadata inspection, cache lookup, or worker
+launch. Canonical trusted-root-relative locators use `/`; raw dot segments,
+home-relative forms, backslash/mixed relative syntax, Windows ambient-drive and
+device forms, dual-flavor `//` paths, foreign absolute flavors, and relative
+components that Win32 would trim or reinterpret as alternate streams or device
+names fail closed with stable path-neutral reasons. Native POSIX, Windows
+drive-absolute, and backslash-UNC locators remain available on their matching
+host.
+
+The same stdlib-only contract now governs PPTX/PDF/video context admission,
+preflight, return-manifest validation, freshness reconstruction, configured
+PPTX roots, and the direct metadata/probe/extraction/directory worker
+boundaries. A present `pptx_source_dir` must be native absolute; an invalid
+setting can no longer become a cwd-relative root or silently fall back. Worker
+payloads receive only already-materialized native absolute paths, with the same
+checks repeated at child boundaries. Foreign or legacy noncanonical locators
+require explicit owner repair and reprocessing; no database, return, evidence,
+or extraction schema is bumped and no stored locator is silently rewritten.
+
 ## 0.20.6 — 2026-08-03
 
 ### fix(vault-ingress) — supervise exact-generation PDF evidence (#183)

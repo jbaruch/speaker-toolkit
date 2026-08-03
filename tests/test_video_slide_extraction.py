@@ -84,6 +84,81 @@ def test_region_argument_rejects_invalid_geometry(video_slide_extraction, value)
         video_slide_extraction.parse_slide_region(value)
 
 
+@pytest.mark.parametrize(
+    ("locator", "reason_code"),
+    [
+        ("relative/video.mp4", "artifact_root_not_native_absolute"),
+        ("~/video.mp4", "artifact_locator_home_expansion_unsupported"),
+        (r"C:video.mp4", "artifact_locator_windows_drive_relative"),
+        (r"\video.mp4", "artifact_locator_windows_current_drive_rooted"),
+        (r"\\?\C:\video.mp4", "artifact_locator_windows_device_namespace"),
+        ("//server/share/video.mp4", "artifact_locator_ambiguous_double_slash"),
+        ("/vault/../video.mp4", "artifact_locator_dot_segment"),
+        (r"relative\video.mp4", "artifact_locator_noncanonical_relative"),
+    ],
+)
+def test_canonical_path_rejects_ambient_or_noncanonical_locators_before_realpath(
+    video_slide_extraction,
+    monkeypatch,
+    locator,
+    reason_code,
+):
+    monkeypatch.setattr(
+        video_slide_extraction.os.path,
+        "realpath",
+        lambda *_args, **_kwargs: pytest.fail("invalid locator reached realpath"),
+    )
+
+    with pytest.raises(ValueError, match=reason_code) as caught:
+        video_slide_extraction.canonical_path(locator)
+
+    assert locator not in str(caught.value)
+
+
+def test_video_pipeline_rejects_relative_output_before_filesystem_or_ffmpeg(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    video = tmp_path / "source.mp4"
+    monkeypatch.setattr(
+        video_slide_extraction.os,
+        "makedirs",
+        lambda *_args, **_kwargs: pytest.fail("invalid output reached filesystem"),
+    )
+    monkeypatch.setattr(
+        video_slide_extraction,
+        "extract_frames",
+        lambda *_args, **_kwargs: pytest.fail("invalid output reached ffmpeg"),
+    )
+
+    with pytest.raises(ValueError, match="artifact_root_not_native_absolute"):
+        video_slide_extraction.extract_slides_from_video(
+            str(video),
+            "relative-output",
+            "abcdefghijk",
+        )
+
+
+def test_extract_frames_rejects_foreign_source_before_creating_frame_directory(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    foreign = "/vault/source.mp4" if os.name == "nt" else r"C:\vault\source.mp4"
+    monkeypatch.setattr(
+        video_slide_extraction.os,
+        "makedirs",
+        lambda *_args, **_kwargs: pytest.fail("foreign source reached filesystem"),
+    )
+
+    with pytest.raises(ValueError, match="artifact_locator_foreign_absolute"):
+        video_slide_extraction.extract_frames(
+            foreign,
+            str(tmp_path / "frames"),
+        )
+
+
 def test_deduplicate_identical_frames(video_slide_extraction, tmp_path):
     """Identical frames should collapse to one."""
     frames = []
@@ -422,7 +497,7 @@ def test_no_region_emits_context_only_even_when_extra_context_is_disabled(
     Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
     video = tmp_path / "source.mp4"
     video.write_bytes(b"source-video")
-    outdir = tmp_path / "output" / ".." / "output"
+    outdir = tmp_path / "output"
     monkeypatch.setattr(
         video_slide_extraction,
         "extract_frames",
@@ -502,6 +577,7 @@ def test_manual_region_bypasses_detection_and_records_verified_provenance(
 ):
     frame = tmp_path / "manual-region-frame.png"
     Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
+    video = tmp_path / "source.mp4"
     outdir = tmp_path / "output"
     outdir.mkdir()
 
@@ -518,7 +594,7 @@ def test_manual_region_bypasses_detection_and_records_verified_provenance(
 
     region = (0.2, 0.1, 0.9, 0.8)
     result = video_slide_extraction.extract_slides_from_video(
-        "video.mp4",
+        str(video),
         str(outdir),
         "manual_id",
         slide_region=region,

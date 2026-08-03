@@ -26,6 +26,11 @@ import re
 import sys
 from typing import Any
 
+from artifact_locator import (
+    ArtifactLocatorError,
+    materialize_artifact_locator,
+    materialize_native_root,
+)
 from ingress_contract import (
     YOUTUBE_ID_RE,
     is_youtube_url,
@@ -45,6 +50,7 @@ from pattern_evidence import (
     PatternEvidenceError,
     assess_talk_artifact_capabilities,
     resolve_video_extraction_source,
+    validate_transcript_path,
     validate_transcript_quality_for_owner,
 )
 from pdf_evidence import PdfArtifactProbe, PdfEvidenceError, probe_pdf_artifact
@@ -97,8 +103,23 @@ SLIDE_CONTRACT_CODES = frozenset(
 WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
 
 
+def _reportable_artifact_path(value: Path | str | None) -> str | None:
+    """Return only a proved native absolute path; never cwd-rebase a locator."""
+    if value is None:
+        return None
+    try:
+        return os.fspath(materialize_artifact_locator(value))
+    except ArtifactLocatorError:
+        return None
+
+
 def _nonempty_string(value: Any) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _raw_locator_string(value: Any) -> str | None:
+    """Return a present locator unchanged so validation sees its raw grammar."""
+    return value if isinstance(value, str) and value else None
 
 
 def _is_timezone_aware_timestamp(value: Any) -> bool:
@@ -167,11 +188,7 @@ class VaultPreflight:
                 "message": message,
                 "expected": _json_value(expected),
                 "actual": _json_value(actual),
-                "artifact_path": (
-                    os.path.abspath(os.fspath(artifact_path))
-                    if artifact_path is not None
-                    else None
-                ),
+                "artifact_path": _reportable_artifact_path(artifact_path),
                 "capability_fact": _json_value(capability_fact),
             }
         )
@@ -241,6 +258,7 @@ class VaultPreflight:
         config = self.database.get("config", {})
         if isinstance(config, dict):
             self.config = config
+            self._validate_config_artifact_roots()
         else:
             self.add(
                 "warning",
@@ -291,6 +309,25 @@ class VaultPreflight:
         self._validate_relations()
         self._validate_duplicate_youtube_ids()
         return self.report(len(talks))
+
+    def _validate_config_artifact_roots(self) -> None:
+        """Report each invalid configured source root once, even without talks."""
+        if (
+            "pptx_source_dir" not in self.config
+            or self.config.get("pptx_source_dir") is None
+        ):
+            return
+        try:
+            materialize_native_root(self.config.get("pptx_source_dir"))
+        except ArtifactLocatorError as exc:
+            self.add(
+                "blocking",
+                "pptx_source_dir_invalid",
+                "configured PPTX source root must be a native absolute path",
+                field="config.pptx_source_dir",
+                expected="absent, null, or a native absolute path",
+                actual={"reason_code": exc.reason_code},
+            )
 
     def _validate_filenames(self) -> None:
         occurrences: defaultdict[str, list[int]] = defaultdict(list)
@@ -602,9 +639,11 @@ class VaultPreflight:
         cached = self.artifact_capabilities.get(index)
         if cached is not None:
             return cached
-        source_dir = _nonempty_string(self.config.get("pptx_source_dir"))
+        configured_source = self.config.get("pptx_source_dir")
         source_roots = (
-            {"pptx_source_dir": source_dir} if source_dir is not None else None
+            {"pptx_source_dir": configured_source}
+            if "pptx_source_dir" in self.config and configured_source is not None
+            else None
         )
         assessed = assess_talk_artifact_capabilities(
             self.talks[index],
@@ -692,7 +731,7 @@ class VaultPreflight:
             *,
             code_prefix: str,
             field: str,
-            artifact_path: Path,
+            artifact_path: Path | None,
         ) -> bool:
             capabilities = self._capabilities(index)
             raw_verified = capabilities.get("verified_evidence_sources")
@@ -757,7 +796,7 @@ class VaultPreflight:
 
         if slide_source in {"pptx", "both"}:
             pptx_path = self._pptx_path(talk)
-            if pptx_path is None:
+            if _raw_locator_string(talk.get("pptx_path")) is None:
                 self.talk_add(
                     index,
                     severity,
@@ -837,11 +876,13 @@ class VaultPreflight:
                     )
 
         if slide_source in {"pdf", "both"}:
+            explicit_field = self._slide_pdf_path_field(talk)
+            explicit_locator = _raw_locator_string(talk.get(explicit_field))
             explicit_pdf = self._slide_pdf_path(talk)
-            if explicit_pdf is not None:
+            if explicit_locator is not None:
                 require_static_pdf_capability(
                     code_prefix="slide_pdf",
-                    field=self._slide_pdf_path_field(talk),
+                    field=explicit_field,
                     artifact_path=explicit_pdf,
                 )
                 # An explicit local artifact is a complete offline reference.
@@ -869,12 +910,17 @@ class VaultPreflight:
                 )
 
         if slide_source == "video_extracted":
+            explicit_field = self._slide_pdf_path_field(talk)
+            explicit_locator = _raw_locator_string(talk.get(explicit_field))
             explicit_pdf = self._slide_pdf_path(talk)
-            if explicit_pdf is not None:
-                if require_static_pdf_capability(
-                    code_prefix="slide_video",
-                    field=self._slide_pdf_path_field(talk),
-                    artifact_path=explicit_pdf,
+            if explicit_locator is not None:
+                if (
+                    require_static_pdf_capability(
+                        code_prefix="slide_video",
+                        field=explicit_field,
+                        artifact_path=explicit_pdf,
+                    )
+                    and explicit_pdf is not None
                 ):
                     self._validate_video_extraction_provenance(
                         index,
@@ -976,10 +1022,16 @@ class VaultPreflight:
                     )
 
     def _transcript_path(self, talk: dict[str, Any]) -> Path | None:
-        explicit = _nonempty_string(talk.get("transcript_path"))
+        explicit = _raw_locator_string(talk.get("transcript_path"))
         if explicit:
-            path = Path(explicit).expanduser()
-            return path if path.is_absolute() else self.vault_root / path
+            try:
+                relative = validate_transcript_path(explicit)
+                return materialize_artifact_locator(
+                    relative.as_posix(),
+                    trusted_root=self.vault_root,
+                )
+            except (ArtifactLocatorError, PatternEvidenceError):
+                return None
         youtube_id = _nonempty_string(talk.get("youtube_id"))
         if youtube_id and YOUTUBE_ID_RE.fullmatch(youtube_id):
             return self.vault_root / "transcripts" / f"{youtube_id}.txt"
@@ -1050,22 +1102,25 @@ class VaultPreflight:
         )
 
     def _pptx_path(self, talk: dict[str, Any]) -> Path | None:
-        value = _nonempty_string(talk.get("pptx_path"))
+        value = _raw_locator_string(talk.get("pptx_path"))
         if value is None:
             return None
-        path = Path(value).expanduser()
-        if path.is_absolute():
-            return path
-        source_dir = _nonempty_string(self.config.get("pptx_source_dir"))
-        if source_dir:
-            return Path(source_dir).expanduser() / path
-        return self.vault_root / path
+        configured_source = self.config.get("pptx_source_dir")
+        try:
+            trusted_root = (
+                materialize_native_root(configured_source)
+                if "pptx_source_dir" in self.config and configured_source is not None
+                else self.vault_root
+            )
+            return materialize_artifact_locator(value, trusted_root=trusted_root)
+        except ArtifactLocatorError:
+            return None
 
     @staticmethod
     def _slide_pdf_path_field(talk: dict[str, Any]) -> str:
         """Return the first populated canonical-or-legacy local PDF field."""
         for field in ("slides_local_path", "slides_pdf_path", "pdf_path"):
-            if _nonempty_string(talk.get(field)):
+            if _raw_locator_string(talk.get(field)):
                 return field
         return "slides_local_path"
 
@@ -1078,11 +1133,16 @@ class VaultPreflight:
         no Google Drive identifier was ever recorded.
         """
         field = self._slide_pdf_path_field(talk)
-        value = _nonempty_string(talk.get(field))
+        value = _raw_locator_string(talk.get(field))
         if value is None:
             return None
-        path = Path(value).expanduser()
-        return path if path.is_absolute() else self.vault_root / path
+        try:
+            return materialize_artifact_locator(
+                value,
+                trusted_root=self.vault_root,
+            )
+        except ArtifactLocatorError:
+            return None
 
     def _validate_video_extraction_provenance(
         self,
@@ -1148,13 +1208,24 @@ class VaultPreflight:
         assert isinstance(artifacts, list)
         for artifact in artifacts:
             assert isinstance(artifact, dict)
-            artifact_path = _nonempty_string(artifact.get("path"))
+            artifact_path = _raw_locator_string(artifact.get("path"))
             if artifact_path is None:
                 errors.append("every artifact path must exist")
                 continue
             try:
+                materialized_artifact = materialize_artifact_locator(
+                    artifact_path,
+                    trusted_root=self.vault_root,
+                )
+            except ArtifactLocatorError:
+                errors.append(
+                    "every artifact path must be a native absolute or canonical "
+                    "vault-relative locator"
+                )
+                continue
+            try:
                 artifact_probe = probe_pdf_artifact(
-                    Path(artifact_path).expanduser(),
+                    materialized_artifact,
                     trusted_root=self.vault_root,
                 )
             except PdfEvidenceError as exc:

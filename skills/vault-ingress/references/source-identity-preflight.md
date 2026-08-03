@@ -211,12 +211,20 @@ Checks apply to a record with a declared transcript, slide, or video capability
   `transcript_path` is resolved from the vault root.
 - Slide source enum: `pptx`, `pdf`, `both`, `video_extracted`, `none`.
   `transcript_only` is unsupported; represent that state as `none`.
+- Persisted local-artifact locators are classified before host path
+  normalization. Relative locators use canonical `/` separators beneath their
+  documented trusted root; raw dot segments, `~`, backslash/mixed relative
+  syntax, Windows current-drive/per-drive-relative forms, device namespaces,
+  dual-flavor `//` paths, Win32-trimmed components, alternate-stream syntax,
+  and reserved DOS device basenames fail closed.
+- A native absolute locator is valid only on its matching host. Windows UNC
+  locators use their backslash form. Foreign absolute locators are never
+  translated or rebased beneath a trusted root; repair the owner locator and
+  reprocess its evidence after moving a vault between operating systems.
 - Relative `pptx_path` is resolved from `config.pptx_source_dir`, falling back
-  to the vault root.
-- PPTX locators reject raw dot segments, Windows current-drive/per-drive-relative
-  forms, and Windows device namespaces before host path normalization. Use a
-  trusted-root-relative locator or, on Windows, an ordinary fully qualified
-  drive/UNC path.
+  to the vault root only when that setting is absent or null. A present source
+  root must be a native absolute path; an invalid/relative/foreign root is a
+  blocking configuration error, not a request to fall back.
 - A recorded local PDF path is authoritative only after its exact generation
   passes the bounded metadata, copy/hash, strict container, and complete page-tree
   probe.
