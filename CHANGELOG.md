@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.7 — 2026-08-03
+
 ### fix(vault-ingress) — validate video owner identity before output derivation (#214)
 
 Video slide extraction now admits only the shared canonical 11-character
