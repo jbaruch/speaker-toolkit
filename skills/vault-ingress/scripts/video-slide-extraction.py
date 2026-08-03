@@ -26,15 +26,19 @@ Usage:
                   crop; review-required runs always preserve context
 
 Examples:
-    video-slide-extraction.py video.mp4 output/ aBcDeFg
-    video-slide-extraction.py video.mp4 output/ aBcDeFg --fps 0.5 --threshold 12
+    video-slide-extraction.py /vault/video.mp4 /vault/output AbCdEfGhI_1
+    video-slide-extraction.py /vault/video.mp4 /vault/output AbCdEfGhI_1 --fps 0.5 --threshold 12
 """
 
 import argparse
 import glob
 import json
 import os
+import subprocess
 import sys
+
+from artifact_locator import ArtifactLocatorError, materialize_native_root
+from ingress_contract import YOUTUBE_ID_RE
 
 # Pipeline version — stamped into every video-extracted vault entry (DB row +
 # PDF metadata) so artifacts record which extraction iteration produced them.
@@ -42,7 +46,7 @@ import sys
 # the download tier, region-detection logic, dedup hashing, or PDF assembly.
 # See skills/vault-ingress/references/video-slide-extraction.md ("Pipeline
 # Versioning") for the policy.
-PIPELINE_VERSION = "0.10.0"
+PIPELINE_VERSION = "0.11.0"
 
 # Shape version of the structured_data.video_extraction record (distinct from
 # PIPELINE_VERSION, which tracks extractor behavior — this tracks the record's
@@ -67,6 +71,25 @@ except ImportError as exc:
 
 
 NormalizedSlideRegion = tuple[float, float, float, float]
+
+
+def validate_youtube_id(value: object) -> str:
+    """Return one canonical ingress YouTube ID or fail with a closed reason."""
+    if not isinstance(value, str) or YOUTUBE_ID_RE.fullmatch(value) is None:
+        raise ValueError("youtube_id_invalid")
+    return value
+
+
+def _confined_output_path(output_root: str, filename: str) -> str:
+    """Return a derived output that remains under the canonical authorized root."""
+    candidate = os.path.realpath(os.path.join(output_root, filename))
+    try:
+        common = os.path.commonpath((output_root, candidate))
+    except ValueError:
+        common = ""
+    if os.path.normcase(common) != os.path.normcase(output_root):
+        raise ValueError("video_output_path_escape")
+    return candidate
 
 
 def _require_image_dependencies():
@@ -122,15 +145,30 @@ def parse_slide_region(value: str) -> str | NormalizedSlideRegion:
 
 def extract_frames(video_path, frames_dir, fps=0.5):
     """Extract frames from video at specified fps."""
+    video_path = canonical_path(video_path)
+    frames_dir = canonical_path(frames_dir)
     os.makedirs(frames_dir, exist_ok=True)
-    cmd = (
-        f'ffmpeg -i "{video_path}" -vf "fps={fps}" -q:v 2 '
-        f'"{frames_dir}/frame_%05d.jpg" -y -loglevel warning'
+    output_pattern = os.path.join(frames_dir, "frame_%05d.jpg")
+    completed = subprocess.run(
+        [
+            "ffmpeg",
+            "-i",
+            video_path,
+            "-vf",
+            f"fps={fps}",
+            "-q:v",
+            "2",
+            output_pattern,
+            "-y",
+            "-loglevel",
+            "warning",
+        ],
+        check=False,
+        shell=False,
     )
-    ret = os.system(cmd)
-    if ret != 0:
-        raise RuntimeError(f"ffmpeg failed with code {ret}")
-    frames = sorted(glob.glob(f"{frames_dir}/frame_*.jpg"))
+    if completed.returncode != 0:
+        raise RuntimeError(f"ffmpeg failed with exit status {completed.returncode}")
+    frames = sorted(glob.glob(os.path.join(frames_dir, "frame_*.jpg")))
     print(f"  Extracted {len(frames)} frames", file=sys.stderr)
     return frames
 
@@ -329,8 +367,14 @@ def crop_frame(img, region):
 
 
 def canonical_path(path):
-    """Return an absolute, symlink-resolved path for durable provenance."""
-    return os.path.realpath(os.path.abspath(os.fspath(path)))
+    """Return a native absolute, symlink-resolved path for durable provenance."""
+    try:
+        native = materialize_native_root(path)
+    except ArtifactLocatorError as exc:
+        raise ValueError(
+            f"artifact path must be native absolute ({exc.reason_code})"
+        ) from None
+    return os.path.realpath(os.fspath(native))
 
 
 def deduplicate_frames(frames, slide_region=None, hash_threshold=8):
@@ -461,6 +505,8 @@ def combine_to_pdf(
         raise ValueError("slide_region artifacts require a physical crop")
     if artifact_scope == "full_frame_context" and slide_region is not None:
         raise ValueError("full_frame_context artifacts must preserve the full frame")
+    if source_video_id is not None:
+        source_video_id = validate_youtube_id(source_video_id)
 
     images = []
     if not unique_frames:
@@ -543,6 +589,7 @@ def artifact_record(
         crop_method == "manual" and crop_verified
     ):
         raise ValueError("authored-slide trust requires a verified manual crop")
+    source_video_id = validate_youtube_id(source_video_id)
     return {
         "path": canonical_path(path),
         "artifact_scope": artifact_scope,
@@ -586,18 +633,22 @@ def extract_slides_from_video(
     Returns:
         dict with extraction results for structured_data
     """
+    youtube_id = validate_youtube_id(youtube_id)
     if fps <= 0:
         raise ValueError("fps must be greater than zero")
     output_dir = canonical_path(output_dir)
     source_video_path = canonical_path(video_path)
-    frames_dir = os.path.join(output_dir, "frames")
-    slide_pdf = os.path.join(output_dir, f"{youtube_id}.slide-region.pdf")
-    context_pdf = os.path.join(output_dir, f"{youtube_id}.context.pdf")
+    frames_dir = _confined_output_path(output_dir, "frames")
+    slide_pdf = _confined_output_path(
+        output_dir,
+        f"{youtube_id}.slide-region.pdf",
+    )
+    context_pdf = _confined_output_path(output_dir, f"{youtube_id}.context.pdf")
 
     print(f"Extracting video artifacts from {youtube_id}...", file=sys.stderr)
 
     # Step 2: Extract frames
-    frames = extract_frames(video_path, frames_dir, fps=fps)
+    frames = extract_frames(source_video_path, frames_dir, fps=fps)
     if not frames:
         return {
             "slide_source": "video_extracted",
@@ -773,6 +824,10 @@ def main():
         parser.error(
             "--region-verified requires manual LEFT,TOP,RIGHT,BOTTOM coordinates"
         )
+    try:
+        youtube_id = validate_youtube_id(args.youtube_id)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     if _DEPS_ERROR is not None:
         print(
@@ -781,11 +836,10 @@ def main():
         )
         sys.exit(1)
 
-    os.makedirs(args.outdir, exist_ok=True)
     result = extract_slides_from_video(
         args.video,
         args.outdir,
-        args.youtube_id,
+        youtube_id,
         fps=args.fps,
         hash_threshold=args.threshold,
         slide_region=args.region,

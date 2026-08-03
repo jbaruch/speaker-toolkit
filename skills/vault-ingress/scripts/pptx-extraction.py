@@ -48,6 +48,7 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.oxml.ns import qn
 
 import artifact_metadata
+from artifact_locator import ArtifactLocatorError, materialize_native_root
 from artifact_supervisor import (
     SupervisorError,
     SupervisorLimits,
@@ -1833,7 +1834,7 @@ def _usable_directory_identity(stat_result):
 
 def _discover_pptx_files(directory, skip_patterns):
     """Discover a deterministic, bounded set inside the contained worker."""
-    root = Path(directory)
+    root = Path(_validated_directory_root(directory))
     try:
         root_stat = root.lstat()
     except OSError as exc:
@@ -2009,19 +2010,22 @@ def _discover_pptx_files(directory, skip_patterns):
 
 
 def _validated_directory_root(value):
-    if (
-        not isinstance(value, str)
-        or not value
-        or "\x00" in value
-        or len(value) > _BATCH_MAX_ROOT_PATH_CHARS
-        or not os.path.isabs(value)
-        or os.path.abspath(value) != value
-    ):
+    try:
+        root = materialize_native_root(value)
+    except ArtifactLocatorError as exc:
         raise PptxEvidenceError(
-            "directory root must be a bounded path string",
+            "directory root must be a bounded native absolute path",
             reason_code="pptx_batch_root_invalid",
+            details={"locator_failure": exc.reason_code},
+        ) from exc
+    rendered = os.fspath(root)
+    if len(rendered) > _BATCH_MAX_ROOT_PATH_CHARS:
+        raise PptxEvidenceError(
+            "directory root must be a bounded native absolute path",
+            reason_code="pptx_batch_root_invalid",
+            details={"locator_failure": "directory_root_path_limit"},
         )
-    return value
+    return rendered
 
 
 def _validated_skip_patterns(value):
@@ -2188,7 +2192,7 @@ def _directory_limits_before_deadline(deadline_monotonic):
 
 def _run_supervised_directory_discovery(directory, skip_patterns, *, deadline):
     """Resolve one directory only through the authenticated bounded worker."""
-    root = _validated_directory_root(os.path.abspath(os.fspath(directory)))
+    root = _validated_directory_root(directory)
     patterns = _validated_skip_patterns(skip_patterns)
     limits, deadline_limited = _directory_limits_before_deadline(deadline)
     command = [sys.executable, os.path.abspath(__file__), _DIRECTORY_WORKER_FLAG]
@@ -2245,7 +2249,13 @@ def _dispatch_directory_worker(request: WorkerRequest):
         patterns = _validated_skip_patterns(request.payload.get("skip_patterns"))
         discovered, skipped, _started = _discover_pptx_files(root, patterns)
     except PptxEvidenceError as exc:
-        raise SupervisorError(exc.reason_code) from exc
+        locator_failure = exc.details.get("locator_failure")
+        details = (
+            {"locator_failure": locator_failure}
+            if isinstance(locator_failure, str)
+            else {}
+        )
+        raise SupervisorError(exc.reason_code, details) from exc
     return {
         "schema_version": _DIRECTORY_MANIFEST_SCHEMA_VERSION,
         "kind": "directory",
@@ -2317,7 +2327,7 @@ def batch_extract(directory, skip_patterns, *, ocr=True):
     results = []
     started = time.monotonic()
     deadline = started + _BATCH_MAX_WALL_SECONDS
-    root = Path(_validated_directory_root(os.path.abspath(os.fspath(directory))))
+    root = Path(_validated_directory_root(directory))
     try:
         relative_files, skipped = _run_supervised_directory_discovery(
             root,

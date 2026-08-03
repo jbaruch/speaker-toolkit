@@ -32,6 +32,11 @@ from artifact_metadata import (
     decode_artifact_metadata_payload,
     inspect_metadata_generation,
 )
+from artifact_locator import (
+    ArtifactLocatorError,
+    materialize_artifact_locator,
+    materialize_native_root,
+)
 from artifact_supervisor import (
     DiagnosticReceipt,
     FileGeneration,
@@ -255,23 +260,40 @@ def _failure(
     )
 
 
-def _lexical_absolute(value: str | os.PathLike[str]) -> Path:
+def _materialize_public_locator(
+    value: object,
+    *,
+    trusted_root: object | None,
+) -> tuple[Path, Path | None]:
     try:
-        rendered = os.fspath(value)
-    except TypeError as exc:
-        raise _failure("pdf_evidence_invalid") from exc
-    if not isinstance(rendered, str) or not rendered or "\x00" in rendered:
-        raise _failure("pdf_evidence_invalid")
-    return Path(os.path.abspath(rendered))
+        root = (
+            materialize_native_root(trusted_root) if trusted_root is not None else None
+        )
+        artifact = materialize_artifact_locator(value, trusted_root=root)
+    except ArtifactLocatorError as exc:
+        raise _failure(
+            "pdf_evidence_invalid",
+            details={"locator_failure": exc.reason_code},
+        ) from exc
+    return artifact, root
 
 
-def _worker_bound_path(value: object) -> Path:
-    if not isinstance(value, str) or not value or "\x00" in value:
-        raise SupervisorError("invalid_worker_request")
-    path = Path(value)
-    if not path.is_absolute() or Path(os.path.abspath(value)) != path:
-        raise SupervisorError("invalid_worker_request")
-    return path
+def _worker_bound_paths(
+    artifact_value: object,
+    root_value: object | None,
+) -> tuple[Path, Path | None]:
+    try:
+        root = materialize_native_root(root_value) if root_value is not None else None
+        artifact = materialize_artifact_locator(
+            artifact_value,
+            trusted_root=root,
+        )
+    except ArtifactLocatorError as exc:
+        raise SupervisorError(
+            "invalid_worker_request",
+            {"locator_failure": exc.reason_code},
+        ) from exc
+    return artifact, root
 
 
 def _metadata_failure_payload(exc: ArtifactMetadataUnavailable) -> dict[str, object]:
@@ -289,11 +311,13 @@ def _metadata_failure_payload(exc: ArtifactMetadataUnavailable) -> dict[str, obj
 def _metadata_child(payload: Mapping[str, object]) -> dict[str, object]:
     if set(payload) != {"pdf_path", "trusted_root"}:
         raise SupervisorError("invalid_worker_request")
-    artifact = _worker_bound_path(payload.get("pdf_path"))
     root_value = payload.get("trusted_root")
     if root_value is not None and not isinstance(root_value, str):
         raise SupervisorError("invalid_worker_request")
-    trusted_root = _worker_bound_path(root_value) if root_value is not None else None
+    artifact, trusted_root = _worker_bound_paths(
+        payload.get("pdf_path"),
+        root_value,
+    )
     try:
         receipt = inspect_metadata_generation(
             artifact,
@@ -1173,11 +1197,13 @@ def _probe_payload_values(
         "max_pages",
     }:
         raise SupervisorError("invalid_worker_request")
-    artifact = _worker_bound_path(payload.get("pdf_path"))
     root_value = payload.get("trusted_root")
     if root_value is not None and not isinstance(root_value, str):
         raise SupervisorError("invalid_worker_request")
-    trusted_root = _worker_bound_path(root_value) if root_value is not None else None
+    artifact, trusted_root = _worker_bound_paths(
+        payload.get("pdf_path"),
+        root_value,
+    )
     max_input_bytes = payload.get("max_input_bytes")
     max_pages = payload.get("max_pages")
     if max_input_bytes != PDF_MAX_INPUT_BYTES or max_pages != PDF_MAX_PAGES:
@@ -1680,9 +1706,16 @@ def probe_pdf_artifact(
     deadline_monotonic: float | None = None,
 ) -> PdfArtifactProbe:
     """Return exact PDF evidence without whole-file work in the parent process."""
-    artifact = _lexical_absolute(path)
-    root = _lexical_absolute(trusted_root) if trusted_root is not None else None
-    artifact, root = canonicalize_trusted_artifact_locator(artifact, root)
+    artifact, root = _materialize_public_locator(path, trusted_root=trusted_root)
+    try:
+        artifact, root = canonicalize_trusted_artifact_locator(artifact, root)
+    except ArtifactMetadataMalformed as exc:
+        raise _failure(
+            "pdf_evidence_invalid",
+            details={
+                "locator_failure": exc.locator_failure or "artifact_locator_invalid"
+            },
+        ) from exc
     try:
         receipt = _run_bounded_metadata_worker(
             artifact,

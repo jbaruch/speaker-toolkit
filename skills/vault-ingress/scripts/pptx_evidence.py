@@ -26,6 +26,11 @@ from pathlib import Path
 from typing import Any, BinaryIO, Callable, cast
 from zlib import error as ZlibError
 
+from artifact_locator import (
+    ArtifactLocatorError,
+    materialize_artifact_locator,
+    materialize_native_root,
+)
 from artifact_supervisor import (
     FileGeneration,
     JsonValue,
@@ -1110,6 +1115,44 @@ def _probe_failure(
     )
 
 
+def _materialize_public_input(
+    path: object,
+    *,
+    trusted_root: object | None,
+) -> tuple[Path, Path | None]:
+    """Materialize one host-stable locator before metadata or worker activity."""
+    try:
+        root = (
+            materialize_native_root(trusted_root) if trusted_root is not None else None
+        )
+        artifact = materialize_artifact_locator(path, trusted_root=root)
+    except ArtifactLocatorError as exc:
+        raise _probe_failure(
+            "pptx_evidence_invalid",
+            details={"locator_failure": exc.reason_code},
+        ) from exc
+    return artifact, root
+
+
+def _materialize_worker_input(
+    path: object,
+    *,
+    trusted_root: object | None,
+) -> tuple[Path, Path | None]:
+    """Repeat locator validation inside the authenticated worker boundary."""
+    try:
+        root = (
+            materialize_native_root(trusted_root) if trusted_root is not None else None
+        )
+        artifact = materialize_artifact_locator(path, trusted_root=root)
+    except ArtifactLocatorError as exc:
+        raise SupervisorError(
+            "invalid_worker_request",
+            {"locator_failure": exc.reason_code},
+        ) from exc
+    return artifact, root
+
+
 def _probe_child_failure_details(exc: PptxEvidenceError) -> dict[str, object]:
     """Copy only closed, bounded diagnostic fields into the child result."""
     if exc.reason_code in _CONTAINED_RENDERED_PDF_FAILURE_REASON_CODES:
@@ -1396,7 +1439,10 @@ def _metadata_generation_in_worker(
             cloud_reparse_tags=PPTX_WINDOWS_CLOUD_REPARSE_TAGS,
         )
     except ArtifactMetadataMalformed as exc:
-        raise SupervisorError("invalid_worker_request") from exc
+        details: dict[str, JsonValue] = {}
+        if exc.locator_failure is not None:
+            details["locator_failure"] = exc.locator_failure
+        raise SupervisorError("invalid_worker_request", details) from exc
     except ArtifactMetadataUnavailable as exc:
         raise _metadata_failure(
             exc.failure_kind,
@@ -1408,11 +1454,13 @@ def _metadata_generation_in_worker(
 def _metadata_child(payload: Mapping[str, object]) -> dict[str, object]:
     if set(payload) != {"pptx_path", "trusted_root"}:
         raise SupervisorError("invalid_worker_request")
-    path = _worker_bound_path(payload.get("pptx_path"))
     root_value = payload.get("trusted_root")
     if root_value is not None and not isinstance(root_value, str):
         raise SupervisorError("invalid_worker_request")
-    trusted_root = _worker_bound_path(root_value) if root_value is not None else None
+    path, trusted_root = _materialize_worker_input(
+        payload.get("pptx_path"),
+        trusted_root=root_value,
+    )
     try:
         generation, root_generation, reparse_tag = _metadata_generation_in_worker(
             path,
@@ -1504,12 +1552,7 @@ def _run_bounded_metadata_worker(
 ) -> _MetadataReceipt:
     if artifact_kind not in _ADMISSION_KINDS:
         raise _probe_failure("pptx_probe_malformed_result")
-    artifact = Path(os.path.abspath(os.fspath(path)))
-    root = (
-        Path(os.path.abspath(os.fspath(trusted_root)))
-        if trusted_root is not None
-        else None
-    )
+    artifact, root = _materialize_public_input(path, trusted_root=trusted_root)
     command = [
         sys.executable,
         os.fspath(Path(__file__).absolute()),
@@ -1843,12 +1886,7 @@ def _probe_file_identity(
     # Keep the lexical absolute path. Resolving here would follow a path that
     # was swapped to a symlink after lstat and could move worker I/O outside
     # the admitted artifact boundary.
-    canonical = Path(os.path.abspath(os.fspath(path)))
-    root = (
-        Path(os.path.abspath(os.fspath(trusted_root)))
-        if trusted_root is not None
-        else None
-    )
+    canonical, root = _materialize_public_input(path, trusted_root=trusted_root)
     generation = _supervised_file_generation(
         canonical,
         label="PPTX artifact",
@@ -1923,13 +1961,9 @@ def probe_pptx_artifact(
     deadline_monotonic: float | None = None,
 ) -> PptxArtifactProbe:
     """Return exact deck evidence through a bounded, generation-cached worker."""
-    root = (
-        Path(os.path.abspath(os.fspath(trusted_root)))
-        if trusted_root is not None
-        else None
-    )
+    artifact, root = _materialize_public_input(path, trusted_root=trusted_root)
     artifact, key = _probe_file_identity(
-        path,
+        artifact,
         trusted_root=root,
         deadline_monotonic=deadline_monotonic,
     )
@@ -2723,12 +2757,8 @@ def recompute_native_deck_audit(
     trusted_root: str | Path | None = None,
 ) -> dict[str, object]:
     """Recompute an exact audit through a bounded, generation-cached worker."""
-    root = (
-        Path(os.path.abspath(os.fspath(trusted_root)))
-        if trusted_root is not None
-        else None
-    )
-    artifact, key = _probe_file_identity(path, trusted_root=root)
+    artifact, root = _materialize_public_input(path, trusted_root=trusted_root)
+    artifact, key = _probe_file_identity(artifact, trusted_root=root)
     cached = _PPTX_NATIVE_AUDIT_CACHE.get(key)
     if isinstance(cached, dict):
         return copy.deepcopy(cached)
@@ -2820,12 +2850,7 @@ def _admit_supervised_input(
     del label  # Failure text is deliberately path- and artifact-label-free.
     if artifact_kind not in _ADMISSION_KINDS:
         raise _probe_failure("pptx_probe_malformed_result")
-    artifact = Path(os.path.abspath(os.fspath(path)))
-    root = (
-        Path(os.path.abspath(os.fspath(trusted_root)))
-        if trusted_root is not None
-        else None
-    )
+    artifact, root = _materialize_public_input(path, trusted_root=trusted_root)
     receipt = _run_bounded_metadata_worker(
         artifact,
         trusted_root=root,
@@ -4691,18 +4716,23 @@ def _run_supervised_pptx_extraction_impl(
     admitted_source_sizes: list[int],
 ) -> dict[str, object]:
     """Extract one deck only through the authenticated worker boundary."""
+    artifact, root = _materialize_public_input(
+        pptx_path,
+        trusted_root=trusted_root,
+    )
+    rendered_artifact: Path | None = None
+    if rendered_pdf_path is not None:
+        rendered_artifact, _rendered_root = _materialize_public_input(
+            rendered_pdf_path,
+            trusted_root=None,
+        )
     if type(ocr) is not bool:
         raise PptxEvidenceError(
             "ocr must be a boolean",
             reason_code="pptx_evidence_invalid",
         )
-    root = (
-        Path(os.path.abspath(os.fspath(trusted_root)))
-        if trusted_root is not None
-        else None
-    )
     artifact, generation, root_generation = _admit_supervised_input(
-        pptx_path,
+        artifact,
         label="PPTX artifact",
         trusted_root=root,
         deadline_monotonic=deadline_monotonic,
@@ -4729,12 +4759,11 @@ def _run_supervised_pptx_extraction_impl(
         if root_generation is None:
             raise _probe_failure("pptx_probe_malformed_result")
         expected["pptx_root"] = root_generation
-    rendered_artifact: Path | None = None
     rendered_generation: FileGeneration | None = None
-    if rendered_pdf_path is not None:
+    if rendered_artifact is not None:
         rendered_artifact, rendered_generation, rendered_root_generation = (
             _admit_supervised_input(
-                rendered_pdf_path,
+                rendered_artifact,
                 label="rendered PDF",
                 deadline_monotonic=deadline_monotonic,
                 artifact_kind=_RENDERED_PDF_ADMISSION_KIND,
@@ -4927,12 +4956,6 @@ def _worker_request_payload(request: WorkerRequest) -> dict[str, object]:
     return dict(request.payload)
 
 
-def _worker_bound_path(value: object) -> Path:
-    if not isinstance(value, str) or not value or "\x00" in value:
-        raise SupervisorError("invalid_worker_request")
-    return Path(value)
-
-
 def _worker_generation(
     path: Path,
     *,
@@ -5029,7 +5052,7 @@ def _load_pptx_extractor() -> Any:
 
 def _validated_extract_worker_payload(
     payload: Mapping[str, object],
-) -> tuple[Path, Path | None, str | None, list[list[int]]]:
+) -> tuple[Path, Path | None, Path | None, list[list[int]]]:
     """Validate the complete extraction request before any artifact I/O."""
     expected_fields = {
         "pptx_path",
@@ -5049,24 +5072,28 @@ def _validated_extract_worker_payload(
         != PPTX_EXTRACTION_PIPELINE_VERSION
     ):
         raise SupervisorError("invalid_worker_request")
-    pptx_path = _worker_bound_path(payload.get("pptx_path"))
     trusted_root_value = payload.get("trusted_root")
     if trusted_root_value is not None and not isinstance(trusted_root_value, str):
         raise SupervisorError("invalid_worker_request")
-    trusted_root = (
-        _worker_bound_path(trusted_root_value)
-        if trusted_root_value is not None
-        else None
+    pptx_path, trusted_root = _materialize_worker_input(
+        payload.get("pptx_path"),
+        trusted_root=trusted_root_value,
     )
     rendered_value = payload.get("rendered_pdf_path")
     if rendered_value is not None and not isinstance(rendered_value, str):
         raise SupervisorError("invalid_worker_request")
+    rendered_path = None
+    if rendered_value is not None:
+        rendered_path, _rendered_root = _materialize_worker_input(
+            rendered_value,
+            trusted_root=None,
+        )
     ranges = payload.get("inspected_page_ranges")
     try:
         ranges = _validated_requested_page_ranges(ranges)
     except PptxEvidenceError as exc:
         raise SupervisorError("invalid_worker_request") from exc
-    return pptx_path, trusted_root, rendered_value, ranges
+    return pptx_path, trusted_root, rendered_path, ranges
 
 
 def _extract_child(
@@ -5088,9 +5115,7 @@ def _extract_child(
         result = extract(
             pptx_path,
             ocr=payload["ocr"],
-            rendered_pdf_path=(
-                Path(rendered_value) if rendered_value is not None else None
-            ),
+            rendered_pdf_path=rendered_value,
             inspected_page_ranges=ranges,
             rendered_pdf_generation=rendered_pdf_generation,
         )
@@ -5138,6 +5163,7 @@ def _dispatch_supervised_worker(
     request: WorkerRequest,
 ) -> tuple[dict[str, object], dict[str, FileGeneration]]:
     payload = _worker_request_payload(request)
+    rendered_path: Path | None = None
     expected_profile = {
         PPTX_METADATA_OPERATION: PPTX_METADATA_LIMITS.profile_id,
         PPTX_PROBE_OPERATION: PPTX_PROBE_LIMITS.profile_id,
@@ -5161,28 +5187,24 @@ def _dispatch_supervised_worker(
         return _metadata_child(payload), {}
 
     if request.operation in {PPTX_PROBE_OPERATION, PPTX_NATIVE_AUDIT_OPERATION}:
-        pptx_path = _worker_bound_path(payload.get("pptx_path"))
-        trusted_root_value = payload.get("trusted_root")
         if set(payload) != {"pptx_path", "trusted_root"}:
             raise SupervisorError("invalid_worker_request")
+        trusted_root_value = payload.get("trusted_root")
         if trusted_root_value is not None and not isinstance(trusted_root_value, str):
             raise SupervisorError("invalid_worker_request")
-        trusted_root = (
-            _worker_bound_path(trusted_root_value)
-            if trusted_root_value is not None
-            else None
+        pptx_path, trusted_root = _materialize_worker_input(
+            payload.get("pptx_path"),
+            trusted_root=trusted_root_value,
         )
     elif request.operation == PPTX_EXTRACT_OPERATION:
-        pptx_path, trusted_root, _rendered_value, _ranges = (
+        pptx_path, trusted_root, rendered_path, _ranges = (
             _validated_extract_worker_payload(payload)
         )
     else:
         raise SupervisorError("invalid_worker_operation")
     paths: dict[str, tuple[Path, Path | None]] = {"pptx": (pptx_path, trusted_root)}
-    if request.operation == PPTX_EXTRACT_OPERATION:
-        rendered_value = payload.get("rendered_pdf_path")
-        if rendered_value is not None:
-            paths["rendered_pdf"] = (_worker_bound_path(rendered_value), None)
+    if request.operation == PPTX_EXTRACT_OPERATION and rendered_path is not None:
+        paths["rendered_pdf"] = (rendered_path, None)
     expected_names = set(paths)
     if trusted_root is not None:
         expected_names.add("pptx_root")

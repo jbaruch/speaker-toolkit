@@ -26,6 +26,7 @@ SCHEMA_PATH = os.path.join(
     "references",
     "schemas-db.md",
 )
+YOUTUBE_ID = "AbCdEfGhI_1"
 
 
 def _artifact(result, scope):
@@ -82,6 +83,261 @@ def test_region_argument_accepts_modes_and_normalized_coordinates(
 def test_region_argument_rejects_invalid_geometry(video_slide_extraction, value):
     with pytest.raises(argparse.ArgumentTypeError):
         video_slide_extraction.parse_slide_region(value)
+
+
+@pytest.mark.parametrize(
+    ("locator", "reason_code"),
+    [
+        ("relative/video.mp4", "artifact_root_not_native_absolute"),
+        ("~/video.mp4", "artifact_locator_home_expansion_unsupported"),
+        (r"C:video.mp4", "artifact_locator_windows_drive_relative"),
+        (r"\video.mp4", "artifact_locator_windows_current_drive_rooted"),
+        (r"\\?\C:\video.mp4", "artifact_locator_windows_device_namespace"),
+        ("//server/share/video.mp4", "artifact_locator_ambiguous_double_slash"),
+        ("/vault/../video.mp4", "artifact_locator_dot_segment"),
+        (r"relative\video.mp4", "artifact_locator_noncanonical_relative"),
+    ],
+)
+def test_canonical_path_rejects_ambient_or_noncanonical_locators_before_realpath(
+    video_slide_extraction,
+    monkeypatch,
+    locator,
+    reason_code,
+):
+    monkeypatch.setattr(
+        video_slide_extraction.os.path,
+        "realpath",
+        lambda *_args, **_kwargs: pytest.fail("invalid locator reached realpath"),
+    )
+
+    with pytest.raises(ValueError, match=reason_code) as caught:
+        video_slide_extraction.canonical_path(locator)
+
+    assert locator not in str(caught.value)
+
+
+def test_video_pipeline_rejects_relative_output_before_filesystem_or_ffmpeg(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    video = tmp_path / "source.mp4"
+    monkeypatch.setattr(
+        video_slide_extraction.os,
+        "makedirs",
+        lambda *_args, **_kwargs: pytest.fail("invalid output reached filesystem"),
+    )
+    monkeypatch.setattr(
+        video_slide_extraction,
+        "extract_frames",
+        lambda *_args, **_kwargs: pytest.fail("invalid output reached ffmpeg"),
+    )
+
+    with pytest.raises(ValueError, match="artifact_root_not_native_absolute"):
+        video_slide_extraction.extract_slides_from_video(
+            str(video),
+            "relative-output",
+            "abcdefghijk",
+        )
+
+
+def test_extract_frames_rejects_foreign_source_before_creating_frame_directory(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    foreign = "/vault/source.mp4" if os.name == "nt" else r"C:\vault\source.mp4"
+    monkeypatch.setattr(
+        video_slide_extraction.os,
+        "makedirs",
+        lambda *_args, **_kwargs: pytest.fail("foreign source reached filesystem"),
+    )
+
+    with pytest.raises(ValueError, match="artifact_locator_foreign_absolute"):
+        video_slide_extraction.extract_frames(
+            foreign,
+            str(tmp_path / "frames"),
+        )
+
+
+@pytest.mark.skipif(os.name == "nt", reason="characters are not valid Win32 names")
+@pytest.mark.parametrize(
+    "component",
+    [
+        "path with spaces",
+        'path-with-"quote',
+        "path;with;semicolons",
+        "path-$(command-substitution)",
+        "path>with-redirection",
+    ],
+)
+def test_extract_frames_passes_adversarial_paths_as_argv_data(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+    component,
+):
+    video = os.path.realpath(tmp_path / f"{component}.mp4")
+    frames_dir = os.path.realpath(tmp_path / f"frames-{component}")
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(video_slide_extraction.subprocess, "run", run)
+    monkeypatch.setattr(video_slide_extraction.os, "makedirs", lambda *_a, **_k: None)
+    monkeypatch.setattr(video_slide_extraction.glob, "glob", lambda _pattern: [])
+
+    assert video_slide_extraction.extract_frames(video, frames_dir, fps=0.25) == []
+
+    assert calls == [
+        (
+            [
+                "ffmpeg",
+                "-i",
+                video,
+                "-vf",
+                "fps=0.25",
+                "-q:v",
+                "2",
+                os.path.join(frames_dir, "frame_%05d.jpg"),
+                "-y",
+                "-loglevel",
+                "warning",
+            ],
+            {"check": False, "shell": False},
+        )
+    ]
+
+
+@pytest.mark.skipif(
+    os.name == "nt", reason="shell quoting regression is POSIX-specific"
+)
+def test_extract_frames_cannot_create_a_shell_side_effect_sentinel(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.chdir(tmp_path)
+    sentinel = tmp_path / "shell-side-effect"
+    video = tmp_path / 'source"; touch shell-side-effect; #.mp4'
+    frames_dir = tmp_path / "frames"
+
+    monkeypatch.setattr(
+        video_slide_extraction.subprocess,
+        "run",
+        lambda argv, **_kwargs: subprocess.CompletedProcess(argv, 0),
+    )
+    monkeypatch.setattr(video_slide_extraction.glob, "glob", lambda _pattern: [])
+
+    video_slide_extraction.extract_frames(str(video), str(frames_dir))
+
+    assert not sentinel.exists()
+
+
+def test_extract_frames_reports_closed_process_exit_status(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    video = tmp_path / "private-source.mp4"
+    frames_dir = tmp_path / "frames"
+    monkeypatch.setattr(
+        video_slide_extraction.subprocess,
+        "run",
+        lambda argv, **_kwargs: subprocess.CompletedProcess(argv, 17),
+    )
+
+    with pytest.raises(RuntimeError) as caught:
+        video_slide_extraction.extract_frames(str(video), str(frames_dir))
+
+    assert str(caught.value) == "ffmpeg failed with exit status 17"
+    assert str(video) not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "youtube_id",
+    [
+        None,
+        "",
+        " ",
+        "../escape-id",
+        "abc/defghij",
+        r"abc\defghij",
+        "/absolute-id",
+        r"C:\escape-id",
+        r"\\?\C:\escape",
+        "short-id",
+        "twelve_chars",
+        YOUTUBE_ID + "\x00",
+        "ＡbCdEfGhI_1",
+    ],
+)
+def test_video_pipeline_rejects_noncanonical_youtube_id_before_io(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+    youtube_id,
+):
+    monkeypatch.setattr(
+        video_slide_extraction,
+        "canonical_path",
+        lambda *_args, **_kwargs: pytest.fail("invalid ID reached path resolution"),
+    )
+    monkeypatch.setattr(
+        video_slide_extraction,
+        "extract_frames",
+        lambda *_args, **_kwargs: pytest.fail("invalid ID reached ffmpeg"),
+    )
+
+    with pytest.raises(ValueError) as caught:
+        video_slide_extraction.extract_slides_from_video(
+            tmp_path / "source.mp4",
+            tmp_path / "output",
+            youtube_id,
+        )
+
+    assert str(caught.value) == "youtube_id_invalid"
+    if isinstance(youtube_id, str) and youtube_id:
+        assert youtube_id not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "derived_name",
+    [
+        "frames",
+        f"{YOUTUBE_ID}.slide-region.pdf",
+        f"{YOUTUBE_ID}.context.pdf",
+    ],
+)
+def test_video_pipeline_rejects_existing_output_symlink_escape_before_ffmpeg(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+    derived_name,
+):
+    output = tmp_path / "output"
+    output.mkdir()
+    target = tmp_path / "outside"
+    try:
+        (output / derived_name).symlink_to(
+            target, target_is_directory=derived_name == "frames"
+        )
+    except (NotImplementedError, OSError):
+        pytest.skip("symlinks are not available to this test process")
+    monkeypatch.setattr(
+        video_slide_extraction,
+        "extract_frames",
+        lambda *_args, **_kwargs: pytest.fail("escaping output reached ffmpeg"),
+    )
+
+    with pytest.raises(ValueError, match="video_output_path_escape"):
+        video_slide_extraction.extract_slides_from_video(
+            tmp_path / "source.mp4",
+            output,
+            YOUTUBE_ID,
+        )
 
 
 def test_deduplicate_identical_frames(video_slide_extraction, tmp_path):
@@ -176,7 +432,7 @@ def test_combine_to_pdf_applies_crop_to_saved_pages(video_slide_extraction, tmp_
         str(output),
         slide_region=(0.25, 0.25, 0.75, 0.75),
         artifact_scope="slide_region",
-        source_video_id="video-id",
+        source_video_id=YOUTUBE_ID,
         crop_method="manual",
         crop_verified=True,
     )
@@ -216,7 +472,7 @@ def test_artifact_manifest_rejects_unverified_authored_slide_trust(
             tmp_path / "candidate.pdf",
             "slide_region",
             1,
-            "video-id",
+            YOUTUBE_ID,
             tmp_path / "source.mp4",
             crop_method="auto",
             crop_verified=False,
@@ -279,7 +535,7 @@ def test_success_cli_emits_only_result_json_on_stdout(
             video_slide_extraction.__file__,
             str(video),
             str(outdir),
-            "video-id",
+            YOUTUBE_ID,
             "--region",
             "none",
         ],
@@ -289,12 +545,58 @@ def test_success_cli_emits_only_result_json_on_stdout(
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
-    assert payload["source_video_id"] == "video-id"
+    assert payload["source_video_id"] == YOUTUBE_ID
     assert payload["artifacts"][0]["artifact_scope"] == "full_frame_context"
     assert "Extracting video artifacts" in captured.err
     assert "Deduplicated: 1 frames -> 1 unique frames" in captured.err
     assert "Saved full_frame_context PDF" in captured.err
     assert "Done: 1 unique frames retained" in captured.err
+
+
+@pytest.mark.parametrize(
+    "youtube_id",
+    ["../escape-id", r"abc\defghij", YOUTUBE_ID + "\x00"],
+)
+def test_cli_rejects_noncanonical_youtube_id_before_pipeline_io(
+    video_slide_extraction,
+    monkeypatch,
+    capsys,
+    youtube_id,
+):
+    monkeypatch.setattr(
+        video_slide_extraction,
+        "extract_slides_from_video",
+        lambda *_args, **_kwargs: pytest.fail("invalid CLI ID reached the pipeline"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            video_slide_extraction.__file__,
+            "/native/source.mp4",
+            "/native/output",
+            youtube_id,
+        ],
+    )
+
+    with pytest.raises(SystemExit) as caught:
+        video_slide_extraction.main()
+
+    assert caught.value.code == 2
+    captured = capsys.readouterr()
+    assert "youtube_id_invalid" in captured.err
+    assert youtube_id not in captured.err
+
+
+def test_ingress_scripts_have_no_shell_artifact_process_boundary():
+    scripts = os.path.dirname(SCRIPT_PATH)
+    for name in os.listdir(scripts):
+        if not name.endswith(".py"):
+            continue
+        with open(os.path.join(scripts, name), encoding="utf-8") as source_file:
+            source = source_file.read()
+        assert "os.system(" not in source, name
+        assert "shell=True" not in source.replace(" ", ""), name
 
 
 def test_combine_to_pdf_stamps_version_metadata(video_slide_extraction, tmp_path):
@@ -385,7 +687,7 @@ def test_full_pipeline(video_slide_extraction, tmp_path, capsys):
 
     outdir = str(tmp_path / "output")
     result = video_slide_extraction.extract_slides_from_video(
-        video, outdir, "test_id", fps=1, hash_threshold=8
+        video, outdir, YOUTUBE_ID, fps=1, hash_threshold=8
     )
     captured = capsys.readouterr()
     assert captured.out == ""
@@ -410,7 +712,7 @@ def test_full_pipeline(video_slide_extraction, tmp_path, capsys):
     context = _artifact(result, "full_frame_context")
     assert context["trusted_for_authored_slide_analysis"] is False
     assert os.path.isfile(context["path"])
-    assert context["path"].endswith("test_id.context.pdf")
+    assert context["path"].endswith(f"{YOUTUBE_ID}.context.pdf")
     assert result["source_video_path"] == os.path.realpath(video)
     assert os.path.isfile(video), "the extractor must preserve its source video"
 
@@ -422,7 +724,7 @@ def test_no_region_emits_context_only_even_when_extra_context_is_disabled(
     Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
     video = tmp_path / "source.mp4"
     video.write_bytes(b"source-video")
-    outdir = tmp_path / "output" / ".." / "output"
+    outdir = tmp_path / "output"
     monkeypatch.setattr(
         video_slide_extraction,
         "extract_frames",
@@ -432,7 +734,7 @@ def test_no_region_emits_context_only_even_when_extra_context_is_disabled(
     result = video_slide_extraction.extract_slides_from_video(
         str(video),
         str(outdir),
-        "no_region",
+        YOUTUBE_ID,
         slide_region="none",
         include_context_pdf=False,
     )
@@ -441,9 +743,9 @@ def test_no_region_emits_context_only_even_when_extra_context_is_disabled(
     assert result["artifacts"] == [_artifact(result, "full_frame_context")]
     context = result["artifacts"][0]
     assert context["path"] == os.path.realpath(
-        tmp_path / "output" / "no_region.context.pdf"
+        tmp_path / "output" / f"{YOUTUBE_ID}.context.pdf"
     )
-    assert context["source_video_id"] == "no_region"
+    assert context["source_video_id"] == YOUTUBE_ID
     assert context["source_video_path"] == os.path.realpath(video)
     assert context["crop_method"] == "none"
     assert context["crop_verified"] is False
@@ -474,7 +776,7 @@ def test_unverified_auto_crop_is_a_review_required_candidate(
     result = video_slide_extraction.extract_slides_from_video(
         str(video),
         str(outdir),
-        "auto_id",
+        YOUTUBE_ID,
         fps=0.5,
         include_context_pdf=False,
     )
@@ -487,8 +789,8 @@ def test_unverified_auto_crop_is_a_review_required_candidate(
     assert slide["crop_verified"] is False
     assert slide["trusted_for_authored_slide_analysis"] is False
     assert context["trusted_for_authored_slide_analysis"] is False
-    assert slide["path"] == os.path.realpath(outdir / "auto_id.slide-region.pdf")
-    assert context["path"] == os.path.realpath(outdir / "auto_id.context.pdf")
+    assert slide["path"] == os.path.realpath(outdir / f"{YOUTUBE_ID}.slide-region.pdf")
+    assert context["path"] == os.path.realpath(outdir / f"{YOUTUBE_ID}.context.pdf")
     with open(slide["path"], "rb") as slide_file:
         assert b"/MediaBox [ 0 0 500.0 250.0 ]" in slide_file.read()
     assert result["retained_frames"] == [
@@ -502,6 +804,7 @@ def test_manual_region_bypasses_detection_and_records_verified_provenance(
 ):
     frame = tmp_path / "manual-region-frame.png"
     Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
+    video = tmp_path / "source.mp4"
     outdir = tmp_path / "output"
     outdir.mkdir()
 
@@ -518,9 +821,9 @@ def test_manual_region_bypasses_detection_and_records_verified_provenance(
 
     region = (0.2, 0.1, 0.9, 0.8)
     result = video_slide_extraction.extract_slides_from_video(
-        "video.mp4",
+        str(video),
         str(outdir),
-        "manual_id",
+        YOUTUBE_ID,
         slide_region=region,
         slide_region_verified=True,
     )
@@ -559,7 +862,7 @@ def test_verified_crop_can_omit_extra_context_without_deleting_source(
     result = video_slide_extraction.extract_slides_from_video(
         str(video),
         str(outdir),
-        "manual_no_context",
+        YOUTUBE_ID,
         slide_region=(0.2, 0.1, 0.9, 0.8),
         slide_region_verified=True,
         include_context_pdf=False,
@@ -570,9 +873,9 @@ def test_verified_crop_can_omit_extra_context_without_deleting_source(
         "slide_region"
     ]
     assert _artifact(result, "slide_region")["path"].endswith(
-        "manual_no_context.slide-region.pdf"
+        f"{YOUTUBE_ID}.slide-region.pdf"
     )
-    assert not (outdir / "manual_no_context.context.pdf").exists()
+    assert not (outdir / f"{YOUTUBE_ID}.context.pdf").exists()
     assert video.exists()
 
 

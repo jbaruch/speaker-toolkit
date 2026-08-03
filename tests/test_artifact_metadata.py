@@ -252,6 +252,76 @@ def test_inspection_binds_exact_leaf_and_stable_root_identity(
     assert receipt.reparse_tag is None
 
 
+def test_metadata_relative_locator_is_materialized_beneath_native_root(
+    artifact_metadata,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "root"
+    deck = root / "nested" / "deck.pptx"
+    deck.parent.mkdir(parents=True)
+    deck.write_bytes(b"deck")
+
+    receipt = artifact_metadata.inspect_metadata_generation(
+        "nested/deck.pptx",
+        trusted_root=root,
+    )
+
+    assert receipt.generation == artifact_metadata.FileGeneration.from_stat(
+        deck.lstat()
+    )
+    assert receipt.root_generation == (
+        artifact_metadata.FileGeneration.from_directory_identity(root.lstat())
+    )
+
+
+def test_metadata_invalid_locators_fail_before_filesystem_inspection(
+    artifact_metadata,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    foreign_locators = (
+        ["/foreign/deck.pptx"]
+        if os.name == "nt"
+        else [r"C:\conference\deck.pptx", r"\\server\share\deck.pptx"]
+    )
+    cases = [
+        ("deck.pptx", None, "artifact_locator_trusted_root_required"),
+        (
+            "~/deck.pptx",
+            None,
+            "artifact_locator_home_expansion_unsupported",
+        ),
+        (
+            r"conference\deck.pptx",
+            tmp_path,
+            "artifact_locator_noncanonical_relative",
+        ),
+        (
+            tmp_path / "deck.pptx",
+            "relative-root",
+            "artifact_root_not_native_absolute",
+        ),
+        *[
+            (foreign, None, "artifact_locator_foreign_absolute")
+            for foreign in foreign_locators
+        ],
+    ]
+    monkeypatch.setattr(
+        Path,
+        "lstat",
+        lambda *_args, **_kwargs: pytest.fail("invalid locator reached lstat"),
+    )
+
+    for locator, root, expected_failure in cases:
+        with pytest.raises(artifact_metadata.ArtifactMetadataMalformed) as caught:
+            artifact_metadata.inspect_metadata_generation(
+                locator,
+                trusted_root=root,
+            )
+        assert caught.value.locator_failure == expected_failure
+        assert os.fspath(locator) not in str(caught.value)
+
+
 def test_directory_identity_excludes_mutable_child_metadata(
     artifact_metadata,
 ) -> None:

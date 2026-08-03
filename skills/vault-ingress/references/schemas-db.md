@@ -89,7 +89,7 @@ persists that exact talk.
     "schema_version": 1,
     "vault_root": "~/.claude/rhetoric-knowledge-vault",
     "vault_storage_path": "/actual/path/if/custom (null when using default location)",
-    "pptx_source_dir": "/path/to/Presentations",
+    "pptx_source_dir": "/native/absolute/path/to/Presentations (optional; null/absent falls back to the vault root)",
     "python_path": "/path/to/python3",
     "template_skip_patterns": ["template"],
     "shownotes": {
@@ -1281,9 +1281,9 @@ Stored in `structured_data.video_extraction` on the talk entry:
 {
   "slide_source": "video_extracted",
   "schema_version": 3,
-  "pipeline_version": "0.10.0",
-  "source_video_id": "aBcDeFg",
-  "source_video_path": "/vault/slides-rebuild/aBcDeFg/aBcDeFg.mp4",
+  "pipeline_version": "0.11.0",
+  "source_video_id": "AbCdEfGhI_1",
+  "source_video_path": "/vault/slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4",
   "total_frames_extracted": 1500,
   "unique_frame_count": 85,
   "authored_slide_count": null,
@@ -1300,21 +1300,21 @@ Stored in `structured_data.video_extraction` on the talk entry:
   ],
   "artifacts": [
     {
-      "path": "/vault/slides-rebuild/aBcDeFg/aBcDeFg.slide-region.pdf",
+      "path": "/vault/slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.slide-region.pdf",
       "artifact_scope": "slide_region",
       "page_count": 85,
-      "source_video_id": "aBcDeFg",
-      "source_video_path": "/vault/slides-rebuild/aBcDeFg/aBcDeFg.mp4",
+      "source_video_id": "AbCdEfGhI_1",
+      "source_video_path": "/vault/slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4",
       "crop_method": "manual",
       "crop_verified": true,
       "trusted_for_authored_slide_analysis": true
     },
     {
-      "path": "/vault/slides-rebuild/aBcDeFg/aBcDeFg.context.pdf",
+      "path": "/vault/slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.context.pdf",
       "artifact_scope": "full_frame_context",
       "page_count": 85,
-      "source_video_id": "aBcDeFg",
-      "source_video_path": "/vault/slides-rebuild/aBcDeFg/aBcDeFg.mp4",
+      "source_video_id": "AbCdEfGhI_1",
+      "source_video_path": "/vault/slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4",
       "crop_method": "none",
       "crop_verified": false,
       "trusted_for_authored_slide_analysis": false
@@ -1351,9 +1351,15 @@ applied from whether `slide_region` is present, and verified `false`; re-extract
 is still required before treating an old crop as verified.
 
 Version 3 separates derived artifacts by provenance and scope. `artifacts[].path` and
-`source_video_path` are absolute, symlink-resolved paths at extraction time.
-They must remain within the configured vault storage root, contain no NUL or raw
-dot segments, and name non-symlink descendants. Before a current return is
+`source_video_path` are native absolute, symlink-resolved paths at extraction
+time. They must remain within the configured vault storage root, contain no NUL,
+raw dot segments, `~`, device/current-drive syntax, foreign absolute flavor, or
+dual-flavor `//` form, and name non-symlink descendants. Persisted relative
+artifact locators elsewhere in the database use canonical `/` separators and
+exclude Win32-trimmed components, alternate-stream syntax, and reserved DOS
+device basenames. They are joined as logical root-relative components, never
+reinterpreted through the host's alternate separator or namespace rules. Before
+a current return is
 persisted, every manifest PDF—not only the trusted `slide_region`—must pass the
 bounded exact-generation PDF probe and match its recorded page count. A
 configured canonical vault symlink is admitted as the trusted root locator and

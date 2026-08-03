@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import importlib
 import json
+import os
 import struct
 import subprocess
 import sys
@@ -190,6 +191,165 @@ def test_metadata_generation_never_calls_owner_lstat(
     command_text = "\n".join(str(part) for part in captured["command"])
     assert str(deck) not in command_text
     assert captured["sensitive_values"] == (deck,)
+
+
+def test_public_pptx_locators_fail_before_metadata_or_cache(
+    pptx_evidence,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    foreign_locators = (
+        ["/foreign/deck.pptx"]
+        if os.name == "nt"
+        else [r"C:\conference\deck.pptx", r"\\server\share\deck.pptx"]
+    )
+    cases = [
+        ("deck.pptx", None, "artifact_locator_trusted_root_required"),
+        (
+            "~/deck.pptx",
+            None,
+            "artifact_locator_home_expansion_unsupported",
+        ),
+        (
+            r"conference\deck.pptx",
+            tmp_path,
+            "artifact_locator_noncanonical_relative",
+        ),
+        (
+            tmp_path / "deck.pptx",
+            "relative-root",
+            "artifact_root_not_native_absolute",
+        ),
+        (
+            r"\\server.\share\deck.pptx",
+            None,
+            "artifact_locator_windows_trimmed_component",
+        ),
+        *[
+            (foreign, None, "artifact_locator_foreign_absolute")
+            for foreign in foreign_locators
+        ],
+    ]
+    monkeypatch.setattr(
+        pptx_evidence,
+        "_invoke_metadata_worker",
+        lambda *_args, **_kwargs: pytest.fail("invalid locator started metadata"),
+    )
+    pptx_evidence.clear_pptx_artifact_probe_cache()
+
+    for locator, root, expected_failure in cases:
+        callers = (
+            lambda: pptx_evidence.probe_pptx_artifact(
+                locator,
+                trusted_root=root,
+            ),
+            lambda: pptx_evidence.recompute_native_deck_audit(
+                locator,
+                trusted_root=root,
+            ),
+            lambda: pptx_evidence.run_supervised_pptx_extraction(
+                locator,
+                trusted_root=root,
+                ocr=False,
+            ),
+        )
+        for call in callers:
+            with pytest.raises(pptx_evidence.PptxEvidenceError) as caught:
+                call()
+            assert caught.value.reason_code == "pptx_evidence_invalid"
+            assert caught.value.details == {"locator_failure": expected_failure}
+            assert os.fspath(locator) not in str(caught.value)
+            assert os.fspath(locator) not in repr(caught.value.details)
+        assert pptx_evidence._PPTX_ARTIFACT_PROBE_CACHE == {}
+        assert pptx_evidence._PPTX_NATIVE_AUDIT_CACHE == {}
+
+
+def test_invalid_rendered_pdf_locator_fails_before_deck_metadata(
+    pptx_evidence,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        pptx_evidence,
+        "_invoke_metadata_worker",
+        lambda *_args, **_kwargs: pytest.fail("invalid render started metadata"),
+    )
+
+    with pytest.raises(pptx_evidence.PptxEvidenceError) as caught:
+        pptx_evidence.run_supervised_pptx_extraction(
+            tmp_path / "deck.pptx",
+            rendered_pdf_path="rendered.pdf",
+            ocr=False,
+        )
+
+    assert caught.value.reason_code == "pptx_evidence_invalid"
+    assert caught.value.details == {
+        "locator_failure": "artifact_locator_trusted_root_required"
+    }
+
+
+def test_pptx_metadata_worker_revalidates_locator_before_inspection(
+    pptx_evidence,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    foreign = "/foreign/deck.pptx" if os.name == "nt" else r"C:\conference\deck.pptx"
+    monkeypatch.setattr(
+        pptx_evidence,
+        "_metadata_generation_in_worker",
+        lambda *_args, **_kwargs: pytest.fail("invalid locator reached metadata"),
+    )
+
+    with pytest.raises(pptx_evidence.SupervisorError) as caught:
+        pptx_evidence._metadata_child({"pptx_path": foreign, "trusted_root": None})
+
+    assert caught.value.reason_code == "invalid_worker_request"
+    assert caught.value.details == {
+        "locator_failure": "artifact_locator_foreign_absolute"
+    }
+
+    with pytest.raises(pptx_evidence.SupervisorError) as caught:
+        pptx_evidence._validated_extract_worker_payload(
+            {
+                "pptx_path": os.fspath(tmp_path / "deck.pptx"),
+                "trusted_root": None,
+                "ocr": False,
+                "rendered_pdf_path": foreign.replace(".pptx", ".pdf"),
+                "inspected_page_ranges": [],
+                "extraction_schema_version": (
+                    pptx_evidence.PPTX_EXTRACTION_SCHEMA_VERSION
+                ),
+                "extraction_pipeline_version": (
+                    pptx_evidence.PPTX_EXTRACTION_PIPELINE_VERSION
+                ),
+            }
+        )
+
+    assert caught.value.reason_code == "invalid_worker_request"
+    assert caught.value.details == {
+        "locator_failure": "artifact_locator_foreign_absolute"
+    }
+
+
+def test_relative_pptx_locator_is_materialized_beneath_native_root(
+    pptx_evidence,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "decks"
+    deck = root / "nested" / "deck.pptx"
+    _write_deck(deck, with_image=False)
+
+    artifact, generation, root_generation = pptx_evidence._admit_supervised_input(
+        "nested/deck.pptx",
+        label="PPTX artifact",
+        trusted_root=root,
+    )
+
+    assert artifact == deck
+    assert generation == pptx_evidence.FileGeneration.from_stat(deck.lstat())
+    assert root_generation == pptx_evidence.FileGeneration.from_directory_identity(
+        root.lstat()
+    )
 
 
 def test_unhashable_worker_reason_enums_fail_as_malformed_results(
@@ -3739,12 +3899,16 @@ def test_public_extractor_runs_healthy_deck_through_real_worker(
     deck = tmp_path / "healthy-worker.pptx"
     _write_deck(deck, with_image=False)
 
-    result = pptx_extraction.extract_pptx(deck, ocr=False)
+    result = pptx_extraction.extract_pptx(
+        deck.name,
+        trusted_root=tmp_path,
+        ocr=False,
+    )
 
     assert result["schema_version"] == 4
     assert result["pipeline_version"] == "1.5.0"
     assert result["slide_count"] == 1
-    assert result["pptx_path"] == str(deck)
+    assert result["pptx_path"] == deck.name
 
 
 def test_full_extraction_rejects_render_generation_change(

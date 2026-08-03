@@ -3,6 +3,7 @@
 from copy import deepcopy
 import importlib
 import json
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -27,6 +28,12 @@ QUEUE_STATE_SCRIPT = (
     / "scripts"
     / "queue-state.py"
 )
+
+
+def foreign_absolute_locator(name: str) -> str:
+    if os.name == "nt":
+        return f"/foreign/{name}"
+    return rf"C:\foreign\{name}"
 
 
 @pytest.fixture
@@ -1200,6 +1207,357 @@ def test_all_seven_slide_contract_fault_classes_are_reported(
 
     assert fault_code in finding_codes(report, severity)
     assert fault_code in preflight_vault.SLIDE_CONTRACT_CODES
+
+
+@pytest.mark.parametrize(
+    "source_fields,expected_code,expected_reason",
+    [
+        (
+            {
+                "slide_source": "pptx",
+                "pptx_path": foreign_absolute_locator("talk.pptx"),
+            },
+            "slide_pptx_artifact_unreadable",
+            "pptx_path: artifact_locator_foreign_absolute",
+        ),
+        (
+            {
+                "slide_source": "pptx",
+                "pptx_path": r"conference\talk.pptx",
+            },
+            "slide_pptx_artifact_unreadable",
+            "pptx_path: artifact_locator_noncanonical_relative",
+        ),
+        (
+            {
+                "slide_source": "pptx",
+                "pptx_path": "//server/share/talk.pptx",
+            },
+            "slide_pptx_artifact_unreadable",
+            "pptx_path: artifact_locator_ambiguous_double_slash",
+        ),
+        (
+            {
+                "slide_source": "pdf",
+                "slides_local_path": "~/slides/talk.pdf",
+            },
+            "slide_pdf_artifact_unreadable",
+            "slides_local_path: artifact_locator_home_expansion_unsupported",
+        ),
+        (
+            {
+                "slide_source": "pptx",
+                "pptx_path": " deck.pptx ",
+            },
+            "slide_pptx_artifact_unreadable",
+            "pptx_path: artifact_locator_empty_or_whitespace",
+        ),
+        (
+            {
+                "slide_source": "pdf",
+                "slides_local_path": " slides/talk.pdf ",
+            },
+            "slide_pdf_artifact_unreadable",
+            "slides_local_path: artifact_locator_empty_or_whitespace",
+        ),
+    ],
+)
+def test_preflight_uses_context_locator_contract_without_rebased_artifact_path(
+    preflight_vault,
+    vault_fixture,
+    source_fields,
+    expected_code,
+    expected_reason,
+) -> None:
+    talk = base_talk(
+        status="pending",
+        transcript_source="none",
+        video_url=None,
+        youtube_id=None,
+        **source_fields,
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(item for item in report["findings"] if item["code"] == expected_code)
+    assert finding["artifact_path"] is None
+    capability = finding["capability_fact"]
+    lane = "native_deck" if source_fields["slide_source"] == "pptx" else "static_slides"
+    assert capability["source_reasons"][lane] == expected_reason
+    raw_locator = next(
+        source_fields[field]
+        for field in ("pptx_path", "slides_local_path")
+        if field in source_fields
+    )
+    assert raw_locator not in json.dumps(finding, sort_keys=True)
+
+
+def test_preflight_rejects_invalid_configured_pptx_root_without_vault_fallback(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    deck = Presentation()
+    deck.slides.add_slide(deck.slide_layouts[6])
+    deck.save(str(vault_fixture["root"] / "shadow.pptx"))
+    talk = base_talk(
+        status="pending",
+        transcript_source="none",
+        video_url=None,
+        youtube_id=None,
+        slide_source="pptx",
+        pptx_path="shadow.pptx",
+    )
+    write_database(
+        vault_fixture,
+        [talk],
+        config={
+            "speaker_name": "Baruch Sadogursky",
+            "pptx_source_dir": "relative-presentations",
+        },
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "slide_pptx_artifact_unreadable"
+    )
+    assert finding["artifact_path"] is None
+    assert finding["capability_fact"]["source_reasons"]["native_deck"] == (
+        "pptx_source_dir: artifact_root_not_native_absolute"
+    )
+
+
+@pytest.mark.parametrize(
+    "configured_root,reason_code",
+    [
+        ("", "artifact_locator_empty_or_whitespace"),
+        ("relative-presentations", "artifact_root_not_native_absolute"),
+        ("~/presentations", "artifact_locator_home_expansion_unsupported"),
+        (
+            foreign_absolute_locator("presentations"),
+            "artifact_locator_foreign_absolute",
+        ),
+        (r"\\?\C:\presentations", "artifact_locator_windows_device_namespace"),
+    ],
+)
+def test_preflight_reports_invalid_configured_pptx_root_without_talks(
+    preflight_vault,
+    vault_fixture,
+    configured_root,
+    reason_code,
+) -> None:
+    write_database(
+        vault_fixture,
+        [],
+        config={
+            "speaker_name": "Baruch Sadogursky",
+            "pptx_source_dir": configured_root,
+        },
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    findings = [
+        item for item in report["findings"] if item["code"] == "pptx_source_dir_invalid"
+    ]
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["severity"] == "blocking"
+    assert finding["actual"] == {"reason_code": reason_code}
+    assert finding["artifact_path"] is None
+    if configured_root:
+        assert configured_root not in json.dumps(finding, sort_keys=True)
+
+
+def test_preflight_null_configured_pptx_root_uses_vault_fallback(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    deck = Presentation()
+    deck.slides.add_slide(deck.slide_layouts[6])
+    deck.save(str(vault_fixture["root"] / "deck.pptx"))
+    talk = base_talk(
+        status="pending",
+        transcript_source="none",
+        video_url=None,
+        youtube_id=None,
+        slide_source="pptx",
+        pptx_path="deck.pptx",
+    )
+    write_database(
+        vault_fixture,
+        [talk],
+        config={
+            "speaker_name": "Baruch Sadogursky",
+            "pptx_source_dir": None,
+        },
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "pptx_source_dir_invalid" not in finding_codes(report)
+    assert not any(
+        code.startswith("slide_pptx_artifact_") for code in finding_codes(report)
+    )
+
+
+def test_preflight_absolute_transcript_locator_cannot_select_existing_bytes(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    external = vault_fixture["root"].parent / "external.txt"
+    external.write_text("substantive transcript evidence " * 600, encoding="utf-8")
+    talk = base_talk(
+        status="pending",
+        transcript_source="manual",
+        transcript_path=str(external),
+        video_url=None,
+        youtube_id=None,
+        slide_source="none",
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "transcript_reference_missing"
+    )
+    assert finding["artifact_path"] is None
+    assert str(external) not in json.dumps(finding, sort_keys=True)
+
+
+def test_preflight_never_strips_a_transcript_locator_before_artifact_io(
+    preflight_vault,
+    vault_fixture,
+    monkeypatch,
+) -> None:
+    transcript = vault_fixture["transcripts"] / "manual.txt"
+    transcript.write_text("substantive transcript evidence " * 600, encoding="utf-8")
+    raw_locator = " transcripts/manual.txt "
+    talk = base_talk(
+        status="pending",
+        transcript_source="manual",
+        transcript_path=raw_locator,
+        video_url=None,
+        youtube_id=None,
+        slide_source="none",
+    )
+    write_database(vault_fixture, [talk])
+    original_is_file = Path.is_file
+    original_read_text = Path.read_text
+
+    def guarded_is_file(path: Path) -> bool:
+        if path == transcript:
+            pytest.fail("stripped transcript locator reached is_file")
+        return original_is_file(path)
+
+    def guarded_read_text(path: Path, *args, **kwargs) -> str:
+        if path == transcript:
+            pytest.fail("stripped transcript locator reached read_text")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "is_file", guarded_is_file)
+    monkeypatch.setattr(Path, "read_text", guarded_read_text)
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "transcript_reference_missing"
+    )
+    assert finding["artifact_path"] is None
+    assert raw_locator not in json.dumps(finding, sort_keys=True)
+
+
+def test_preflight_never_reads_a_transcript_owned_by_another_youtube_id(
+    preflight_vault,
+    vault_fixture,
+    monkeypatch,
+) -> None:
+    transcript = vault_fixture["transcripts"] / "other-owner.txt"
+    transcript.write_text("substantive transcript evidence " * 600, encoding="utf-8")
+    raw_locator = "transcripts/other-owner.txt"
+    talk = base_talk(
+        status="pending",
+        transcript_source="manual",
+        transcript_path=raw_locator,
+        slide_source="none",
+    )
+    write_database(vault_fixture, [talk])
+    original_is_file = Path.is_file
+    original_read_text = Path.read_text
+
+    def guarded_is_file(path: Path) -> bool:
+        if path == transcript:
+            pytest.fail("mismatched transcript owner reached is_file")
+        return original_is_file(path)
+
+    def guarded_read_text(path: Path, *args, **kwargs) -> str:
+        if path == transcript:
+            pytest.fail("mismatched transcript owner reached read_text")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "is_file", guarded_is_file)
+    monkeypatch.setattr(Path, "read_text", guarded_read_text)
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "transcript_reference_missing"
+    )
+    assert finding["artifact_path"] is None
+    assert raw_locator not in json.dumps(finding, sort_keys=True)
+
+
+def test_preflight_path_helpers_never_strip_raw_locator_grammar(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    validator = preflight_vault.VaultPreflight(
+        {},
+        vault_fixture["root"],
+        vault_fixture["database"],
+    )
+
+    assert validator._pptx_path({"pptx_path": " deck.pptx "}) is None
+    assert validator._slide_pdf_path({"slides_local_path": " slides/deck.pdf "}) is None
+
+
+def test_preflight_foreign_video_manifest_locator_is_path_neutral(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    manifest = context_video_manifest(vault_fixture)
+    foreign_video = foreign_absolute_locator(f"{VIDEO_ID}.mp4")
+    manifest["source_video_path"] = foreign_video
+    for artifact in manifest["artifacts"]:
+        artifact["source_video_path"] = foreign_video
+    talk = base_talk(
+        status="processed_partial",
+        transcript_source="none",
+        slide_source="video_extracted",
+        structured_data={"video_extraction": manifest},
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "video_extraction_provenance_invalid"
+    )
+    assert finding["artifact_path"] is None
+    assert "artifact_locator_foreign_absolute" in finding["actual"]
+    assert foreign_video not in json.dumps(finding, sort_keys=True)
 
 
 def test_pending_artifact_gaps_are_warnings_not_blockers(

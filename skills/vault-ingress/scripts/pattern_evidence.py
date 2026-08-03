@@ -13,8 +13,6 @@ import copy
 import hashlib
 import json
 import math
-import ntpath
-import os
 import re
 import subprocess
 from collections.abc import Collection, Iterable, Mapping
@@ -22,6 +20,12 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
+from artifact_locator import (
+    ArtifactLocatorError,
+    classify_artifact_locator,
+    materialize_artifact_locator,
+    materialize_native_root,
+)
 from ingress_contract import (
     has_remote_slide_acquisition,
     has_remote_video_acquisition,
@@ -242,36 +246,52 @@ def _resolve_local_artifact(
     if "\x00" in value:
         raise PatternEvidenceError(f"{label} must not contain a NUL byte")
     _reject_ambiguous_path_segments(value, label=label)
-    supplied = Path(value)
     suffixes = frozenset({suffix}) if isinstance(suffix, str) else suffix
-    if supplied.suffix.casefold() not in suffixes:
-        raise PatternEvidenceError(
-            f"{label} must use one of {sorted(suffixes)}, got {value!r}"
-        )
-    root = Path(vault_root).resolve()
-    candidate = supplied if supplied.is_absolute() else root / supplied
-    lexical = Path(os.path.abspath(candidate))
+    root = _native_artifact_root(vault_root, label="vault_root").resolve()
+    candidate = _materialize_artifact_locator(
+        value,
+        trusted_root=root,
+        label=label,
+    )
+    if candidate.suffix.casefold() not in suffixes:
+        raise PatternEvidenceError(f"{label} must use one of {sorted(suffixes)}")
+    lexical = candidate
     resolved = candidate.resolve(strict=False)
     try:
         resolved.relative_to(root)
     except ValueError as exc:
-        raise PatternEvidenceError(
-            f"{label} resolves outside the vault root: {value!r}"
-        ) from exc
+        raise PatternEvidenceError(f"{label} resolves outside the vault root") from exc
     if lexical != resolved:
-        raise PatternEvidenceError(
-            f"{label} must not traverse a symbolic link: {value!r}"
-        )
+        raise PatternEvidenceError(f"{label} must not traverse a symbolic link")
     if not resolved.is_file():
-        raise PatternEvidenceError(
-            f"{label} artifact is missing or unreadable: {resolved}"
-        )
+        raise PatternEvidenceError(f"{label} artifact is missing or unreadable")
     return resolved
 
 
 def _lexical_absolute(value: str | Path) -> Path:
     """Return an absolute locator without touching the filesystem."""
-    return Path(os.path.abspath(os.fspath(Path(value).expanduser())))
+    return _native_artifact_root(value, label="artifact root")
+
+
+def _materialize_artifact_locator(
+    value: object,
+    *,
+    trusted_root: object | None = None,
+    label: str,
+) -> Path:
+    """Translate the shared closed locator contract to evidence errors."""
+    try:
+        return materialize_artifact_locator(value, trusted_root=trusted_root)
+    except ArtifactLocatorError as exc:
+        raise PatternEvidenceError(f"{label}: {exc.reason_code}") from exc
+
+
+def _native_artifact_root(value: object, *, label: str) -> Path:
+    """Require a lexical native absolute root without cwd/home expansion."""
+    try:
+        return materialize_native_root(value)
+    except ArtifactLocatorError as exc:
+        raise PatternEvidenceError(f"{label}: {exc.reason_code}") from exc
 
 
 def _canonical_pdf_root(value: str | Path) -> Path:
@@ -285,47 +305,11 @@ def _canonical_pdf_root(value: str | Path) -> Path:
 
 
 def _reject_ambiguous_path_segments(value: str, *, label: str) -> None:
-    """Reject ambiguous Windows forms and dot segments before normalization."""
-
-    expanded = os.path.expanduser(value)
-    windows_normalized = expanded.replace("/", "\\")
-    if windows_normalized.startswith(("\\\\?\\", "\\\\.\\", "\\??\\", "\\\\??\\")):
-        raise PatternEvidenceError(
-            f"{label} uses an unsupported Windows device namespace; pass an "
-            "ordinary trusted-root-relative path or a fully qualified drive/UNC path"
-        )
-    windows_drive, windows_tail = ntpath.splitdrive(expanded)
-    drive_relative = re.fullmatch(
-        r"[A-Za-z]:", windows_drive
-    ) is not None and not windows_tail.startswith(("/", "\\"))
-    root_relative = (
-        windows_normalized.startswith("\\")
-        and not windows_normalized.startswith("\\\\")
-        and (expanded.startswith("\\") or os.name == "nt")
-    )
-    if drive_relative or root_relative:
-        raise PatternEvidenceError(
-            f"{label} is an ambiguous Windows path whose target depends on the "
-            "current drive or per-drive working directory; pass a "
-            "trusted-root-relative path or a fully qualified drive/UNC path"
-        )
-    separators: list[str] = []
-    for separator in (os.sep, os.altsep, "/", "\\"):
-        if separator is not None and separator not in separators:
-            separators.append(separator)
-    # Scan the full locator so ambiguous UNC share components cannot disappear
-    # into splitdrive(), and scan the tail as well so drive-relative C:.. forms
-    # expose the dot segment that is attached to the drive prefix.
-    segments = [expanded]
-    if windows_drive:
-        segments.append(windows_tail)
-    for separator in separators:
-        segments = [piece for segment in segments for piece in segment.split(separator)]
-    if any(segment in {".", ".."} for segment in segments):
-        raise PatternEvidenceError(
-            f"{label} contains an ambiguous '.' or '..' path segment; "
-            "pass a normalized path with all dot segments removed"
-        )
+    """Apply the shared host-independent lexical locator classifier."""
+    try:
+        classify_artifact_locator(value)
+    except ArtifactLocatorError as exc:
+        raise PatternEvidenceError(f"{label}: {exc.reason_code}") from exc
 
 
 def _resolve_local_bounded_artifact(
@@ -342,12 +326,12 @@ def _resolve_local_bounded_artifact(
     if "\x00" in value:
         raise PatternEvidenceError(f"{label} must not contain a NUL byte")
     _reject_ambiguous_path_segments(value, label=label)
-    root_locator = _lexical_absolute(trusted_root)
-    supplied = Path(value).expanduser()
-    if supplied.is_absolute():
-        candidate = _lexical_absolute(supplied)
-    else:
-        candidate = _lexical_absolute(root_locator / supplied)
+    root_locator = _native_artifact_root(trusted_root, label="trusted root")
+    candidate = _materialize_artifact_locator(
+        value,
+        trusted_root=root_locator,
+        label=label,
+    )
     canonical_root = root_locator
     if canonicalize_root:
         candidate, admitted_root = canonicalize_trusted_artifact_locator(
@@ -361,7 +345,7 @@ def _resolve_local_bounded_artifact(
         relative = candidate.relative_to(canonical_root)
     except ValueError as exc:
         raise PatternEvidenceError(
-            f"{label} resolves outside the trusted root: {value!r}"
+            f"{label} resolves outside the trusted root"
         ) from exc
     if not relative.parts or candidate.suffix.casefold() != suffix:
         raise PatternEvidenceError(f"{label} must use the {suffix} suffix")
@@ -512,85 +496,67 @@ def _resolve_preclaim_artifact(
     value = owner.get(field)
     if not isinstance(value, str) or not value.strip():
         raise PatternEvidenceError(f"{field} must be a non-empty path")
-    if suffix in {".pptx", ".pdf"}:
-        _reject_ambiguous_path_segments(value, label=field)
-        vault = _lexical_absolute(vault_root)
-        supplied = Path(value).expanduser()
-        configured_root: Path | None = None
-        if field == "pptx_path" and isinstance(source_roots, Mapping):
-            configured = source_roots.get("pptx_source_dir")
-            if isinstance(configured, str) and configured.strip():
-                configured_root = _lexical_absolute(configured)
-        resolver = (
-            _resolve_local_pptx_artifact
-            if suffix == ".pptx"
-            else _resolve_local_pdf_artifact
+    _reject_ambiguous_path_segments(value, label=field)
+    vault = _native_artifact_root(vault_root, label="vault_root")
+    configured_root: Path | None = None
+    if (
+        field == "pptx_path"
+        and isinstance(source_roots, Mapping)
+        and "pptx_source_dir" in source_roots
+        and source_roots.get("pptx_source_dir") is not None
+    ):
+        configured_root = _native_artifact_root(
+            source_roots.get("pptx_source_dir"),
+            label="pptx_source_dir",
         )
-        if supplied.is_absolute():
-            absolute = _lexical_absolute(supplied)
-            for root, root_kind in (
-                (vault, "vault"),
-                (configured_root, "pptx_source"),
-            ):
-                if root is None:
-                    continue
-                try:
-                    candidate = absolute.relative_to(root).as_posix()
-                except ValueError:
-                    continue
-                admitted_root = _canonical_pdf_root(root) if suffix == ".pdf" else root
-                return (
-                    resolver(
-                        root,
-                        candidate,
-                        label=field,
-                    ),
-                    admitted_root,
-                    root_kind,
-                )
-            root = _lexical_absolute(supplied.parent)
-            admitted_root = _canonical_pdf_root(root) if suffix == ".pdf" else root
-            return (
-                resolver(root, supplied.name, label=field),
-                admitted_root,
-                f"preclaim:{field}",
-            )
+    try:
+        locator_kind = classify_artifact_locator(value)
+    except ArtifactLocatorError as exc:
+        raise PatternEvidenceError(f"{field}: {exc.reason_code}") from exc
+    resolver = (
+        _resolve_local_pptx_artifact
+        if suffix == ".pptx"
+        else _resolve_local_pdf_artifact
+        if suffix == ".pdf"
+        else None
+    )
+    if locator_kind == "relative":
         root = configured_root or vault
         root_kind = "pptx_source" if configured_root is not None else "vault"
-        admitted_root = _canonical_pdf_root(root) if suffix == ".pdf" else root
-        return (
-            resolver(root, value, label=field),
-            admitted_root,
-            root_kind,
-        )
-
-    vault = Path(vault_root).resolve()
-    supplied = Path(value).expanduser()
-    root_kind = "vault"
-    if supplied.is_absolute():
-        lexical_supplied = Path(os.path.abspath(supplied))
-        resolved_supplied = supplied.resolve(strict=False)
-        if lexical_supplied != resolved_supplied:
-            raise PatternEvidenceError(
-                f"{field} must not traverse a symbolic link: {value!r}"
-            )
-        try:
-            candidate = resolved_supplied.relative_to(vault).as_posix()
-        except ValueError:
-            # An exact absolute path in the preclaim is trusted as an
-            # immutable source reference. Its parent becomes a field-specific
-            # root; workers cannot introduce or redirect this path.
-            root = supplied.parent.resolve()
-            root_kind = f"preclaim:{field}"
-            candidate = supplied.name
+        if resolver is None:
+            path = _resolve_local_artifact(root, value, suffix=suffix, label=field)
         else:
-            root = vault
-            root_kind = "vault"
-    else:
-        root = vault
-        candidate = value
-    path = _resolve_local_artifact(root, candidate, suffix=suffix, label=field)
-    return path, root, root_kind
+            path = resolver(root, value, label=field)
+        admitted_root = _canonical_pdf_root(root) if suffix == ".pdf" else root
+        return path, admitted_root, root_kind
+
+    absolute = _materialize_artifact_locator(value, label=field)
+    for root, root_kind in (
+        (vault, "vault"),
+        (configured_root, "pptx_source"),
+    ):
+        if root is None:
+            continue
+        try:
+            candidate = absolute.relative_to(root).as_posix()
+        except ValueError:
+            continue
+        admitted_root = _canonical_pdf_root(root) if suffix == ".pdf" else root
+        path = (
+            _resolve_local_artifact(root, candidate, suffix=suffix, label=field)
+            if resolver is None
+            else resolver(root, candidate, label=field)
+        )
+        return path, admitted_root, root_kind
+
+    root = _native_artifact_root(absolute.parent, label=f"{field} parent")
+    admitted_root = _canonical_pdf_root(root) if suffix == ".pdf" else root
+    path = (
+        _resolve_local_artifact(root, absolute.name, suffix=suffix, label=field)
+        if resolver is None
+        else resolver(root, absolute.name, label=field)
+    )
+    return path, admitted_root, f"preclaim:{field}"
 
 
 def _pptx_locator_count(
@@ -950,8 +916,7 @@ def _returned_slide_artifact(
             field, expected = declared_pdf
             if returned_path != expected:
                 raise PatternEvidenceError(
-                    f"return PDF path must match the exact {field} preclaim "
-                    f"{expected!r}"
+                    f"return PDF path must match the exact {field} preclaim"
                 )
             path, artifact_root, _root_kind = _resolve_preclaim_artifact(
                 vault_root,
@@ -1071,10 +1036,13 @@ def resolve_transcript_artifact(
     v3 citation implementation.  It is deliberately ignored: a return must not
     redirect evidence resolution to another talk's transcript.
     """
-    root = Path(vault_root).resolve()
+    root = _native_artifact_root(vault_root, label="vault_root").resolve()
 
     def bound(candidate: Path) -> Path:
-        lexical = Path(os.path.abspath(candidate))
+        lexical = _materialize_artifact_locator(
+            candidate,
+            label="transcript artifact",
+        )
         resolved = candidate.resolve(strict=False)
         try:
             resolved.relative_to(root)
@@ -1096,8 +1064,7 @@ def resolve_transcript_artifact(
             expected = PurePosixPath("transcripts") / f"{youtube_id}.txt"
             if relative != expected:
                 raise PatternEvidenceError(
-                    f"transcript_path {str(relative)!r} does not match the "
-                    f"claimed talk's youtube_id; expected {str(expected)!r}"
+                    "transcript_path does not match the claimed talk's youtube_id"
                 )
         resolved = bound(root.joinpath(*relative.parts))
         return resolved, f"resolved transcript_path {relative}"
@@ -1936,7 +1903,8 @@ def build_evidence_context(
     slide_artifact_identities = {}
     for source, path in slide_artifact_paths.items():
         root, root_kind = slide_artifact_roots.get(
-            source, (Path(vault_root).resolve(), "vault")
+            source,
+            (_native_artifact_root(vault_root, label="vault_root"), "vault"),
         )
         slide_artifact_identities[source] = _artifact_identity(
             root,
@@ -1953,13 +1921,16 @@ def build_evidence_context(
     ):
         try:
             local_video_path.resolve(strict=False).relative_to(
-                Path(vault_root).resolve()
+                _native_artifact_root(vault_root, label="vault_root")
             )
         except ValueError:
-            video_root = local_video_path.parent.resolve()
+            video_root = _native_artifact_root(
+                local_video_path.parent,
+                label="video artifact parent",
+            )
             video_root_kind = "preclaim:video_local_path"
         else:
-            video_root = Path(vault_root).resolve()
+            video_root = _native_artifact_root(vault_root, label="vault_root")
             video_root_kind = "vault"
         try:
             video_artifact_identity.update(
@@ -3870,33 +3841,46 @@ def assess_persisted_pattern_evidence_freshness(
                 return bounded_vault
             if bounded_suffix == ".pptx":
                 return vault
-            return Path(vault_root).resolve()
+            return vault
         if kind == "pptx_source":
             configured = (
                 source_roots.get("pptx_source_dir")
                 if isinstance(source_roots, Mapping)
                 else None
             )
-            if isinstance(configured, str) and configured.strip():
-                return (
-                    _lexical_absolute(configured)
-                    if bounded_suffix is not None
-                    else Path(configured).expanduser().resolve()
-                )
-            reasons.add(f"{label}:artifact_root_unconfigured")
-            return None
+            if configured is None:
+                reasons.add(f"{label}:artifact_root_unconfigured")
+                return None
+            try:
+                configured_root = materialize_native_root(configured)
+            except ArtifactLocatorError as exc:
+                reasons.add(f"{label}:artifact_root_invalid:{exc.reason_code}")
+                return None
+            return (
+                _canonical_pdf_root(configured_root)
+                if bounded_suffix == ".pdf"
+                else configured_root
+            )
         if isinstance(kind, str) and kind.startswith("preclaim:"):
             field = kind.removeprefix("preclaim:")
             declared = talk.get(field)
-            if isinstance(declared, str) and Path(declared).expanduser().is_absolute():
-                parent = Path(declared).expanduser().parent
-                if bounded_suffix == ".pdf":
-                    return _canonical_pdf_root(parent)
-                if bounded_suffix == ".pptx":
-                    return _lexical_absolute(parent)
-                return parent.resolve()
-            reasons.add(f"{label}:artifact_root_preclaim_missing")
-            return None
+            try:
+                locator_kind = classify_artifact_locator(declared)
+            except ArtifactLocatorError as exc:
+                reasons.add(f"{label}:artifact_root_preclaim_invalid:{exc.reason_code}")
+                return None
+            if locator_kind == "relative":
+                reasons.add(f"{label}:artifact_root_preclaim_missing")
+                return None
+            try:
+                absolute = materialize_artifact_locator(declared)
+            except ArtifactLocatorError as exc:
+                reasons.add(f"{label}:artifact_root_preclaim_invalid:{exc.reason_code}")
+                return None
+            parent = absolute.parent
+            if bounded_suffix == ".pdf":
+                return _canonical_pdf_root(parent)
+            return parent
         reasons.add(f"{label}:artifact_root_invalid")
         return None
 
@@ -3943,7 +3927,11 @@ def assess_persisted_pattern_evidence_freshness(
         if quality and not raw_path.endswith(".quality.json"):
             reasons.add(f"{label}:{prefix}_path_invalid")
             return None
-        lexical = Path(os.path.abspath(root.joinpath(*PurePosixPath(raw_path).parts)))
+        try:
+            lexical = materialize_artifact_locator(raw_path, trusted_root=root)
+        except ArtifactLocatorError:
+            reasons.add(f"{label}:{prefix}_path_invalid")
+            return None
         if bounded_suffix is not None:
             try:
                 resolved = _resolve_local_bounded_artifact(
@@ -4124,40 +4112,37 @@ def assess_persisted_pattern_evidence_freshness(
                 if isinstance(current_path, Path)
                 else []
             )
-        values: list[tuple[str | None, object]] = []
+        values: list[object] = []
         if source == "transcript":
             explicit = talk.get("transcript_path")
             if _nonempty(explicit):
-                values.append(("transcript_path", explicit))
+                values.append(explicit)
             else:
                 youtube_id = talk.get("youtube_id")
                 if isinstance(youtube_id, str) and _YOUTUBE_ID.fullmatch(youtube_id):
-                    values.append(("transcript_path", f"transcripts/{youtube_id}.txt"))
+                    values.append(f"transcripts/{youtube_id}.txt")
         elif source == "delivery_video":
             for field in ("video_local_path", "video_path"):
                 if _nonempty(talk.get(field)):
-                    values.append((field, talk[field]))
+                    values.append(talk[field])
             manifest_path = _dig(
                 talk, "structured_data.video_extraction.source_video_path"
             )
             if _nonempty(manifest_path):
-                values.append((None, manifest_path))
+                values.append(manifest_path)
         candidates: list[Path] = []
         allowed_suffixes = (
             frozenset({".txt"})
             if source == "transcript"
             else frozenset({".mp4", ".webm", ".mkv", ".mov"})
         )
-        for field, value in values:
-            if not isinstance(value, str):
+        for value in values:
+            try:
+                supplied = materialize_artifact_locator(value, trusted_root=vault)
+            except ArtifactLocatorError:
                 continue
-            supplied = Path(value).expanduser()
-            if supplied.suffix.casefold() not in allowed_suffixes:
-                continue
-            if supplied.is_absolute():
+            if supplied.suffix.casefold() in allowed_suffixes:
                 candidates.append(supplied.resolve(strict=False))
-            else:
-                candidates.append((vault / supplied).resolve(strict=False))
         return candidates
 
     inspection = observations.get("source_inspection")

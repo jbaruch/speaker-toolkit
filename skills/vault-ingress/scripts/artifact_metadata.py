@@ -9,6 +9,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from artifact_locator import (
+    ArtifactLocatorError,
+    materialize_artifact_locator,
+    materialize_native_root,
+)
 from artifact_supervisor import FileGeneration
 
 
@@ -40,6 +45,15 @@ METADATA_FAILURE_KINDS = frozenset(
 class ArtifactMetadataMalformed(ValueError):
     """A worker metadata request is structurally invalid before artifact I/O."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        locator_failure: str | None = None,
+    ) -> None:
+        self.locator_failure = locator_failure
+        super().__init__(message)
+
 
 class ArtifactMetadataUnavailable(OSError):
     """A stable, path-free artifact metadata failure."""
@@ -58,8 +72,8 @@ class ArtifactMetadataUnavailable(OSError):
 
 
 def canonicalize_trusted_artifact_locator(
-    path: Path,
-    trusted_root: Path | None,
+    path: object,
+    trusted_root: object | None,
 ) -> tuple[Path, Path | None]:
     """Admit a configured symlink root without resolving the artifact leaf.
 
@@ -67,16 +81,26 @@ def canonicalize_trusted_artifact_locator(
     Descendants remain lexical and are still checked component-by-component by
     the metadata worker after the root locator is mapped to its storage target.
     """
-    if trusted_root is None:
-        return path, None
     try:
-        canonical_root = trusted_root.resolve(strict=True)
+        root = (
+            materialize_native_root(trusted_root) if trusted_root is not None else None
+        )
+        artifact = materialize_artifact_locator(path, trusted_root=root)
+    except ArtifactLocatorError as exc:
+        raise ArtifactMetadataMalformed(
+            "artifact locator is invalid",
+            locator_failure=exc.reason_code,
+        ) from exc
+    if root is None:
+        return artifact, None
+    try:
+        canonical_root = root.resolve(strict=True)
     except (OSError, RuntimeError):
-        return path, trusted_root
+        return artifact, root
     try:
-        relative = path.relative_to(trusted_root)
+        relative = artifact.relative_to(root)
     except ValueError:
-        return path, canonical_root
+        return artifact, canonical_root
     return canonical_root / relative, canonical_root
 
 
@@ -187,27 +211,30 @@ def _failure(
 
 
 def inspect_metadata_generation(
-    path: Path,
+    path: object,
     *,
-    trusted_root: Path | None,
+    trusted_root: object | None,
     reparse_point_attribute: int = WINDOWS_REPARSE_POINT_ATTRIBUTE,
     cloud_reparse_tags: frozenset[int] = WINDOWS_CLOUD_REPARSE_TAGS,
 ) -> ArtifactMetadataReceipt:
     """Inspect one file without following links, for bounded-worker use only."""
-    if not path.is_absolute() or Path(os.path.abspath(path)) != path:
-        raise ArtifactMetadataMalformed("artifact path must be lexical absolute")
+    try:
+        root = (
+            materialize_native_root(trusted_root) if trusted_root is not None else None
+        )
+        artifact = materialize_artifact_locator(path, trusted_root=root)
+    except ArtifactLocatorError as exc:
+        raise ArtifactMetadataMalformed(
+            "artifact locator is invalid",
+            locator_failure=exc.reason_code,
+        ) from exc
 
-    target = path
+    target = artifact
     snapshot: os.stat_result | None = None
     root_generation: FileGeneration | None = None
-    if trusted_root is not None:
-        if (
-            not trusted_root.is_absolute()
-            or Path(os.path.abspath(trusted_root)) != trusted_root
-        ):
-            raise ArtifactMetadataMalformed("trusted root must be lexical absolute")
+    if root is not None:
         try:
-            relative = path.relative_to(trusted_root)
+            relative = artifact.relative_to(root)
         except ValueError as exc:
             raise _failure("root_escape") from exc
         if not relative.parts or any(
@@ -215,7 +242,7 @@ def inspect_metadata_generation(
         ):
             raise _failure("root_escape")
         try:
-            root_snapshot = trusted_root.lstat()
+            root_snapshot = root.lstat()
         except FileNotFoundError as exc:
             raise _failure("missing", exc) from exc
         except (OSError, RuntimeError) as exc:
@@ -232,7 +259,7 @@ def inspect_metadata_generation(
         ):
             raise _failure("root_escape")
         root_generation = FileGeneration.from_directory_identity(root_snapshot)
-        target = trusted_root
+        target = root
         for index, component in enumerate(relative.parts):
             target = target / component
             try:

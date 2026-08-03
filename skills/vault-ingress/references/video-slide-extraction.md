@@ -87,6 +87,22 @@ manual crop; it never deletes the source video.
 
 Run `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/video-slide-extraction.py"` for each video after downloading it:
 
+The source-video and output-directory arguments must be native absolute paths.
+The producer validates their raw flavor before creating directories, resolving
+symlinks, invoking ffmpeg, or writing artifacts. Relative, `~`-expanded,
+device/current-drive, foreign absolute, raw-dot-segment, and dual-flavor `//`
+forms fail closed; paths are never translated between operating-system
+grammars.
+
+`youtube_id` must match the shared ingress grammar exactly:
+`[A-Za-z0-9_-]{11}`. It is validated before any filesystem or process boundary,
+is never normalized, and is the only component used to derive the frame
+workspace, PDF filenames, and manifest ownership. Every derived path must stay
+under the canonical authorized output root; an existing redirecting symlink is
+rejected. The script passes video/output paths to ffmpeg as argv data with no
+shell interpolation, so shell metacharacters in valid native POSIX filenames do
+not become commands.
+
 ```bash
 # Download video at 720p
 yt-dlp -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]" \

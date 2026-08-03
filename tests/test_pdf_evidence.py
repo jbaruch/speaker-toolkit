@@ -127,6 +127,72 @@ def test_limits_use_dedicated_profiles_and_documented_ceilings() -> None:
     assert pdf_evidence.PDF_PROBE_LIMITS.max_processes == 1
 
 
+def test_public_pdf_locators_fail_before_metadata_worker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    foreign_locators = (
+        ["/foreign/talk.pdf"]
+        if os.name == "nt"
+        else [r"C:\conference\talk.pdf", r"\\server\share\talk.pdf"]
+    )
+    cases = [
+        ("talk.pdf", None, "artifact_locator_trusted_root_required"),
+        ("~/talk.pdf", None, "artifact_locator_home_expansion_unsupported"),
+        (
+            r"conference\talk.pdf",
+            tmp_path,
+            "artifact_locator_noncanonical_relative",
+        ),
+        (
+            tmp_path / "talk.pdf",
+            "relative-root",
+            "artifact_root_not_native_absolute",
+        ),
+        (
+            r"\\server.\share\talk.pdf",
+            None,
+            "artifact_locator_windows_trimmed_component",
+        ),
+        *[
+            (foreign, None, "artifact_locator_foreign_absolute")
+            for foreign in foreign_locators
+        ],
+    ]
+    monkeypatch.setattr(
+        pdf_evidence,
+        "_invoke_metadata_worker",
+        lambda *_args, **_kwargs: pytest.fail("invalid locator started metadata"),
+    )
+
+    for locator, root, expected_failure in cases:
+        with pytest.raises(pdf_evidence.PdfEvidenceError) as caught:
+            pdf_evidence.probe_pdf_artifact(locator, trusted_root=root)
+        assert caught.value.reason_code == "pdf_evidence_invalid"
+        assert caught.value.details == {"locator_failure": expected_failure}
+        assert os.fspath(locator) not in str(caught.value)
+        assert os.fspath(locator) not in repr(caught.value.details)
+
+
+def test_pdf_metadata_worker_revalidates_locator_before_inspection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    foreign = "/foreign/talk.pdf" if os.name == "nt" else r"C:\conference\talk.pdf"
+    monkeypatch.setattr(
+        pdf_evidence,
+        "inspect_metadata_generation",
+        lambda *_args, **_kwargs: pytest.fail("invalid locator reached metadata"),
+    )
+
+    with pytest.raises(pdf_evidence.SupervisorError) as caught:
+        pdf_evidence._metadata_child({"pdf_path": foreign, "trusted_root": None})
+
+    assert caught.value.reason_code == "invalid_worker_request"
+    assert caught.value.details == {
+        "locator_failure": "artifact_locator_foreign_absolute"
+    }
+
+
 def test_real_worker_probes_synthetic_pdf_and_reuses_exact_cache(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -135,7 +201,7 @@ def test_real_worker_probes_synthetic_pdf_and_reuses_exact_cache(
     source = _synthetic_pdf(2)
     artifact.write_bytes(source)
 
-    first = pdf_evidence.probe_pdf_artifact(artifact, trusted_root=tmp_path)
+    first = pdf_evidence.probe_pdf_artifact("talk.pdf", trusted_root=tmp_path)
 
     assert first.page_count == 2
     assert first.source_sha256 == hashlib.sha256(source).hexdigest()

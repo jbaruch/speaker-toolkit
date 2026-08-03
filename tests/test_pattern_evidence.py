@@ -34,6 +34,12 @@ SYNTHETIC_VIDEO_ID = "abcdefghijk"
 SYNTHETIC_DURATION = 600.0
 
 
+def _foreign_absolute_locator(name: str) -> str:
+    if os.name == "nt":
+        return f"/foreign/{name}"
+    return rf"C:\foreign\{name}"
+
+
 def _identity(name: str) -> dict[str, str]:
     return {
         "artifact_root": "vault",
@@ -388,6 +394,39 @@ def test_return_pdf_admission_accepts_only_the_exact_local_preclaim(
         pattern_evidence.admit_return_artifacts(vault, talk, redirected)
 
 
+def test_return_pdf_mismatch_never_leaks_or_probes_an_invalid_preclaim(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret_preclaim = _foreign_absolute_locator("credential-bearing-secret.pdf")
+    secret_return = "slides/other-private-artifact.pdf"
+    preclaim_resolutions: list[object] = []
+
+    def reject_preclaim_resolution(*args, **kwargs):
+        preclaim_resolutions.append((args, kwargs))
+        pytest.fail("mismatched return reached preclaim artifact resolution")
+
+    monkeypatch.setattr(
+        pattern_evidence,
+        "_resolve_preclaim_artifact",
+        reject_preclaim_resolution,
+    )
+
+    with pytest.raises(pattern_evidence.PatternEvidenceError) as caught:
+        pattern_evidence.admit_return_artifacts(
+            tmp_path / "vault",
+            {"slides_local_path": secret_preclaim, "slide_source": "pdf"},
+            {"slides_local_path": secret_return, "slide_source": "pdf"},
+        )
+
+    assert str(caught.value) == (
+        "return PDF path must match the exact slides_local_path preclaim"
+    )
+    assert preclaim_resolutions == []
+    assert secret_preclaim not in str(caught.value)
+    assert secret_return not in str(caught.value)
+
+
 def test_pptx_preclaim_is_lexical_until_bounded_probe(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -480,8 +519,9 @@ def test_pptx_preclaim_rejects_raw_dot_segments_before_normalization(
         )
 
         assert "native_deck" not in context["verified_evidence_sources"]
-        assert "ambiguous" in context["source_reasons"]["native_deck"]
-        assert "path segment" in context["source_reasons"]["native_deck"]
+        assert context["source_reasons"]["native_deck"].endswith(
+            "artifact_locator_dot_segment"
+        )
 
 
 @pytest.mark.parametrize(
@@ -501,7 +541,13 @@ def test_pptx_preclaim_rejects_raw_dot_segments_before_normalization(
     ],
 )
 def test_pptx_dot_segment_guard_is_platform_independent(locator: str) -> None:
-    with pytest.raises(pattern_evidence.PatternEvidenceError, match="ambiguous"):
+    with pytest.raises(
+        pattern_evidence.PatternEvidenceError,
+        match=(
+            r"artifact_locator_(dot_segment|windows_drive_relative|"
+            r"ambiguous_double_slash)"
+        ),
+    ):
         pattern_evidence._reject_ambiguous_path_segments(
             locator,
             label="pptx_path",
@@ -524,7 +570,7 @@ def test_pptx_windows_cwd_dependent_guard_is_platform_independent(
 ) -> None:
     with pytest.raises(
         pattern_evidence.PatternEvidenceError,
-        match="ambiguous Windows path",
+        match=r"artifact_locator_windows_(drive_relative|current_drive_rooted)",
     ) as caught:
         pattern_evidence._reject_ambiguous_path_segments(
             locator,
@@ -549,7 +595,7 @@ def test_pptx_windows_device_namespace_guard_is_platform_independent(
 ) -> None:
     with pytest.raises(
         pattern_evidence.PatternEvidenceError,
-        match="device namespace",
+        match=(r"artifact_locator_(windows_device_namespace|ambiguous_double_slash)"),
     ) as caught:
         pattern_evidence._reject_ambiguous_path_segments(
             locator,
@@ -562,37 +608,56 @@ def test_pptx_windows_device_namespace_guard_is_platform_independent(
 @pytest.mark.parametrize(
     "locator",
     [
-        r"conference\track\talk.pptx",
         "conference/track/talk.pptx",
-        r"conference\track/mixed/talk.pptx",
         r"C:\conference\talk.pptx",
         "C:/conference/talk.pptx",
         r"C:\conference/mixed\talk.pptx",
         r"\\server\share\conference\talk.pptx",
-        "//server/share/conference/talk.pptx",
         r"\\server\share/conference\talk.pptx",
     ],
 )
-def test_pptx_dot_segment_guard_accepts_clean_mixed_separators(locator: str) -> None:
+def test_pptx_locator_guard_accepts_canonical_relative_or_absolute_flavors(
+    locator: str,
+) -> None:
     pattern_evidence._reject_ambiguous_path_segments(locator, label="pptx_path")
 
 
-def test_forward_slash_root_uses_native_absolute_path_semantics() -> None:
-    locator = "/conference/talk.pptx"
-    if os.name == "nt":
-        with pytest.raises(
-            pattern_evidence.PatternEvidenceError,
-            match="ambiguous Windows path",
-        ):
-            pattern_evidence._reject_ambiguous_path_segments(
-                locator,
-                label="pptx_path",
-            )
-    else:
+@pytest.mark.parametrize(
+    "locator,reason_code",
+    [
+        (r"conference\track\talk.pptx", "artifact_locator_noncanonical_relative"),
+        (
+            r"conference\track/mixed/talk.pptx",
+            "artifact_locator_noncanonical_relative",
+        ),
+        (
+            "//server/share/conference/talk.pptx",
+            "artifact_locator_ambiguous_double_slash",
+        ),
+        ("conference./talk.pptx", "artifact_locator_windows_trimmed_component"),
+        (
+            "conference/deck:stream.pptx",
+            "artifact_locator_windows_reserved_character",
+        ),
+        ("CON/talk.pptx", "artifact_locator_windows_reserved_name"),
+    ],
+)
+def test_pptx_locator_guard_rejects_cross_host_relative_or_dual_flavors(
+    locator: str,
+    reason_code: str,
+) -> None:
+    with pytest.raises(pattern_evidence.PatternEvidenceError, match=reason_code):
         pattern_evidence._reject_ambiguous_path_segments(
             locator,
             label="pptx_path",
         )
+
+
+def test_forward_slash_root_is_classified_without_host_reinterpretation() -> None:
+    pattern_evidence._reject_ambiguous_path_segments(
+        "/conference/talk.pptx",
+        label="pptx_path",
+    )
 
 
 @pytest.mark.parametrize(
@@ -620,12 +685,202 @@ def test_pptx_cwd_dependent_preclaim_never_reaches_bounded_probe(
 
     assert "native_deck" not in context["verified_evidence_sources"]
     reason = context["source_reasons"]["native_deck"]
-    assert reason == (
-        "pptx_path is an ambiguous Windows path whose target depends on the "
-        "current drive or per-drive working directory; pass a "
-        "trusted-root-relative path or a fully qualified drive/UNC path"
+    expected_code = (
+        "artifact_locator_windows_drive_relative"
+        if locator.startswith("C:")
+        else "artifact_locator_windows_current_drive_rooted"
     )
+    assert reason == f"pptx_path: {expected_code}"
     assert locator not in reason
+
+
+@pytest.mark.parametrize(
+    "locator,reason_code",
+    [
+        ("~/conference/talk.pptx", "artifact_locator_home_expansion_unsupported"),
+        (
+            r"conference\track\talk.pptx",
+            "artifact_locator_noncanonical_relative",
+        ),
+        (
+            "//server/share/conference/talk.pptx",
+            "artifact_locator_ambiguous_double_slash",
+        ),
+        (
+            _foreign_absolute_locator("talk.pptx"),
+            "artifact_locator_foreign_absolute",
+        ),
+        ("conference./talk.pptx", "artifact_locator_windows_trimmed_component"),
+        (
+            "conference/deck:stream.pptx",
+            "artifact_locator_windows_reserved_character",
+        ),
+        ("CON/talk.pptx", "artifact_locator_windows_reserved_name"),
+    ],
+)
+def test_rejected_pptx_locator_never_selects_a_shadow_file_or_reaches_probe(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    locator: str,
+    reason_code: str,
+) -> None:
+    vault = tmp_path / "vault"
+    source_root = tmp_path / "pptx-source"
+    if os.name != "nt" and not locator.startswith("//"):
+        _write_pptx(source_root / locator)
+    monkeypatch.setattr(
+        pattern_evidence,
+        "probe_pptx_artifact",
+        lambda *_args, **_kwargs: pytest.fail("rejected locator reached probe"),
+    )
+
+    context = pattern_evidence.build_evidence_context(
+        vault,
+        {"pptx_path": locator, "slide_source": "pptx"},
+        source_roots={"pptx_source_dir": str(source_root)},
+    )
+
+    assert "native_deck" not in context["verified_evidence_sources"]
+    reason = context["source_reasons"]["native_deck"]
+    assert reason == f"pptx_path: {reason_code}"
+    assert locator not in reason
+
+
+@pytest.mark.parametrize(
+    "configured_root,reason_code",
+    [
+        ("", "artifact_locator_empty_or_whitespace"),
+        ("relative-presentations", "artifact_root_not_native_absolute"),
+        ("~/presentations", "artifact_locator_home_expansion_unsupported"),
+        (
+            _foreign_absolute_locator("presentations"),
+            "artifact_locator_foreign_absolute",
+        ),
+    ],
+)
+def test_invalid_configured_pptx_root_fails_closed_without_vault_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    configured_root: str,
+    reason_code: str,
+) -> None:
+    vault = tmp_path / "vault"
+    _write_pptx(vault / "deck.pptx")
+    monkeypatch.setattr(
+        pattern_evidence,
+        "probe_pptx_artifact",
+        lambda *_args, **_kwargs: pytest.fail(
+            "invalid configured root fell back to the vault"
+        ),
+    )
+
+    context = pattern_evidence.build_evidence_context(
+        vault,
+        {"pptx_path": "deck.pptx", "slide_source": "pptx"},
+        source_roots={"pptx_source_dir": configured_root},
+    )
+
+    assert "native_deck" not in context["verified_evidence_sources"]
+    assert context["source_reasons"]["native_deck"] == (
+        f"pptx_source_dir: {reason_code}"
+    )
+
+
+def test_null_configured_pptx_root_retains_vault_fallback(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    deck = vault / "deck.pptx"
+    _write_pptx(deck)
+
+    context = pattern_evidence.build_evidence_context(
+        vault,
+        {"pptx_path": deck.name, "slide_source": "pptx"},
+        source_roots={"pptx_source_dir": None},
+    )
+
+    assert context["slide_counts"] == {"native_deck": 2}
+    assert context["slide_artifact_identities"]["native_deck"]["artifact_root"] == (
+        "vault"
+    )
+
+
+def test_foreign_pdf_and_video_locators_fail_only_their_independent_lanes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    transcript, _ = _write_transcript(
+        vault,
+        name=SYNTHETIC_VIDEO_ID,
+        timed=False,
+    )
+    foreign_pdf = _foreign_absolute_locator("slides.pdf")
+    foreign_video = _foreign_absolute_locator(f"{SYNTHETIC_VIDEO_ID}.mp4")
+    monkeypatch.setattr(
+        pattern_evidence,
+        "probe_pdf_artifact",
+        lambda *_args, **_kwargs: pytest.fail("foreign PDF reached probe"),
+    )
+    monkeypatch.setattr(
+        pattern_evidence,
+        "_verified_video_snapshot",
+        lambda *_args, **_kwargs: pytest.fail("foreign video reached probe"),
+    )
+
+    context = pattern_evidence.build_evidence_context(
+        vault,
+        {
+            "filename": "talk.md",
+            "transcript_path": transcript.relative_to(vault).as_posix(),
+            "transcript_source": "manual",
+            "slides_local_path": foreign_pdf,
+            "slide_source": "pdf",
+            "video_local_path": foreign_video,
+            "youtube_id": SYNTHETIC_VIDEO_ID,
+        },
+    )
+
+    assert context["verified_evidence_sources"] == {"transcript"}
+    assert context["source_reasons"]["static_slides"] == (
+        "slides_local_path: artifact_locator_foreign_absolute"
+    )
+    assert context["source_reasons"]["delivery_video"] == (
+        "video_local_path: artifact_locator_foreign_absolute"
+    )
+
+
+def test_foreign_video_manifest_pdf_never_reaches_current_context_probe(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    foreign_pdf = _foreign_absolute_locator(f"{SYNTHETIC_VIDEO_ID}.slide-region.pdf")
+    monkeypatch.setattr(
+        pattern_evidence,
+        "probe_pdf_artifact",
+        lambda *_args, **_kwargs: pytest.fail("foreign manifest PDF reached probe"),
+    )
+    manifest = {
+        "unique_frame_count": 1,
+        "artifacts": [
+            {
+                "artifact_scope": "slide_region",
+                "source_video_id": SYNTHETIC_VIDEO_ID,
+                "page_count": 1,
+                "path": foreign_pdf,
+            }
+        ],
+    }
+
+    with pytest.raises(
+        pattern_evidence.PatternEvidenceError,
+        match="artifact_locator_foreign_absolute",
+    ) as caught:
+        pattern_evidence._probe_video_manifest_artifacts(
+            tmp_path / "vault",
+            manifest,
+            SYNTHETIC_VIDEO_ID,
+        )
+
+    assert foreign_pdf not in str(caught.value)
 
 
 def test_traversal_and_symlinked_artifacts_never_become_sources(
@@ -648,7 +903,9 @@ def test_traversal_and_symlinked_artifacts_never_become_sources(
         source_roots={"pptx_source_dir": str(source_root)},
     )
     assert "native_deck" not in traversal["verified_evidence_sources"]
-    assert "ambiguous" in traversal["source_reasons"]["native_deck"]
+    assert traversal["source_reasons"]["native_deck"].endswith(
+        "artifact_locator_dot_segment"
+    )
 
     source_root.mkdir(parents=True, exist_ok=True)
     real = source_root / "real.pptx"
@@ -1297,6 +1554,27 @@ def test_relative_pptx_native_deck_evidence_is_immediately_fresh(
             source_roots=roots,
         )
         == ()
+    )
+
+    foreign_owner = copy.deepcopy(persisted)
+    foreign_owner["pptx_path"] = _foreign_absolute_locator("deck.pptx")
+    foreign_reasons = pattern_evidence.assess_persisted_pattern_evidence_freshness(
+        foreign_owner,
+        vault_root=vault,
+        source_roots=roots,
+    )
+    assert any(
+        reason.endswith(":artifact_owner_path_drift") for reason in foreign_reasons
+    )
+
+    invalid_root_reasons = pattern_evidence.assess_persisted_pattern_evidence_freshness(
+        persisted,
+        vault_root=vault,
+        source_roots={"pptx_source_dir": "relative-presentations"},
+    )
+    assert any(
+        reason.endswith(":artifact_root_invalid:artifact_root_not_native_absolute")
+        for reason in invalid_root_reasons
     )
 
     missing_audit = copy.deepcopy(persisted)
@@ -2579,7 +2857,9 @@ def test_invalid_deck_cannot_hide_an_independent_valid_transcript(
     assert assessment["verified_capabilities"] == ("transcript",)
     assert assessment["verified_evidence_sources"] == ("transcript",)
     assert assessment["repair_capabilities"] == ()
-    assert "ambiguous" in assessment["source_reasons"]["native_deck"]
+    assert assessment["source_reasons"]["native_deck"].endswith(
+        "artifact_locator_dot_segment"
+    )
 
 
 def test_unprobeable_video_is_not_hashed_or_allowed_to_hide_other_lanes(
