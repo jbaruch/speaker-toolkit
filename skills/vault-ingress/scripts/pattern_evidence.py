@@ -483,13 +483,7 @@ def _resolve_preclaim_artifact(
 
     vault = Path(vault_root).resolve()
     supplied = Path(value).expanduser()
-    configured_root = None
     root_kind = "vault"
-    if field == "pptx_path" and isinstance(source_roots, Mapping):
-        configured = source_roots.get("pptx_source_dir")
-        if isinstance(configured, str) and configured.strip():
-            configured_root = Path(configured).expanduser().resolve()
-            root_kind = "pptx_source"
     if supplied.is_absolute():
         lexical_supplied = Path(os.path.abspath(supplied))
         resolved_supplied = supplied.resolve(strict=False)
@@ -500,31 +494,15 @@ def _resolve_preclaim_artifact(
         try:
             candidate = resolved_supplied.relative_to(vault).as_posix()
         except ValueError:
-            if configured_root is not None:
-                try:
-                    candidate = resolved_supplied.relative_to(
-                        configured_root
-                    ).as_posix()
-                except ValueError:
-                    root = supplied.parent.resolve()
-                    root_kind = f"preclaim:{field}"
-                    candidate: object = supplied.name
-                else:
-                    root = configured_root
-                    root_kind = "pptx_source"
-            else:
-                # An exact absolute path in the preclaim is trusted as an
-                # immutable source reference. Its parent becomes a field-specific
-                # root; workers cannot introduce or redirect this path.
-                root = supplied.parent.resolve()
-                root_kind = f"preclaim:{field}"
-                candidate = supplied.name
+            # An exact absolute path in the preclaim is trusted as an
+            # immutable source reference. Its parent becomes a field-specific
+            # root; workers cannot introduce or redirect this path.
+            root = supplied.parent.resolve()
+            root_kind = f"preclaim:{field}"
+            candidate = supplied.name
         else:
             root = vault
             root_kind = "vault"
-    elif configured_root is not None:
-        root = configured_root
-        candidate = value
     else:
         root = vault
         candidate = value
@@ -3761,14 +3739,6 @@ def assess_persisted_pattern_evidence_freshness(
             supplied = Path(value).expanduser()
             if supplied.is_absolute():
                 candidates.append(supplied.resolve(strict=False))
-            elif field == "pptx_path" and isinstance(source_roots, Mapping):
-                configured = source_roots.get("pptx_source_dir")
-                base = (
-                    Path(configured).expanduser().resolve()
-                    if isinstance(configured, str) and configured.strip()
-                    else vault
-                )
-                candidates.append((base / supplied).resolve(strict=False))
             else:
                 candidates.append((vault / supplied).resolve(strict=False))
         return candidates

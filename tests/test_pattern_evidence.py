@@ -248,8 +248,10 @@ def test_artifact_root_kinds_are_canonical_and_owner_bound(tmp_path: Path) -> No
     vault = tmp_path / "vault"
     source_root = tmp_path / "pptx-source"
     transcript, _ = _write_transcript(vault)
+    rendered_pdf = vault / "slides" / "rendered.pdf"
     configured_deck = source_root / "configured.pptx"
     absolute_deck = tmp_path / "external" / "absolute.pptx"
+    _write_pdf(rendered_pdf)
     _write_pptx(configured_deck)
     _write_pptx(absolute_deck)
 
@@ -267,6 +269,21 @@ def test_artifact_root_kinds_are_canonical_and_owner_bound(tmp_path: Path) -> No
     assert (
         configured["slide_artifact_identities"]["native_deck"]["artifact_root"]
         == "pptx_source"
+    )
+
+    configured_with_pdf = pattern_evidence.build_evidence_context(
+        vault,
+        {
+            "slides_local_path": rendered_pdf.relative_to(vault).as_posix(),
+            "slide_source": "pdf",
+        },
+        source_roots={"pptx_source_dir": str(source_root)},
+    )
+    assert (
+        configured_with_pdf["slide_artifact_identities"]["static_slides"][
+            "artifact_root"
+        ]
+        == "vault"
     )
 
     configured_absolute = pattern_evidence.build_evidence_context(
