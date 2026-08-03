@@ -141,8 +141,8 @@ def test_real_worker_probes_synthetic_pdf_and_reuses_exact_cache(
     assert first.source_sha256 == hashlib.sha256(source).hexdigest()
     assert first.source_size_bytes == len(source)
     assert first.generation == pdf_evidence.FileGeneration.from_stat(artifact.stat())
-    assert first.root_generation == pdf_evidence.FileGeneration.from_stat(
-        tmp_path.stat()
+    assert first.root_generation == (
+        pdf_evidence.FileGeneration.from_directory_identity(tmp_path.stat())
     )
     assert first.availability.state == "local"
     assert first.parser_diagnostics == pdf_evidence.DiagnosticReceipt.empty()
@@ -641,7 +641,32 @@ def test_supervisor_failures_have_closed_public_mapping(
         timeout_seconds=3.5,
     )
     assert mapped.reason_code == public_reason
-    assert set(mapped.details) <= {"timeout_seconds", "supervisor_reason_code"}
+    assert set(mapped.details) <= {
+        "generation_names",
+        "timeout_seconds",
+        "supervisor_reason_code",
+    }
+
+
+def test_generation_failure_preserves_only_closed_path_free_names() -> None:
+    mapped = pdf_evidence._supervisor_failure(
+        pdf_evidence.SupervisorError(
+            "worker_generation_changed",
+            {"generation_names": ["pdf_root"]},
+        ),
+        timeout_seconds=3.5,
+    )
+    assert mapped.reason_code == "pdf_artifact_changed"
+    assert mapped.details == {"generation_names": ["pdf_root"]}
+
+    malformed = pdf_evidence._supervisor_failure(
+        pdf_evidence.SupervisorError(
+            "worker_generation_changed",
+            {"generation_names": ["/private/source.pdf"]},
+        ),
+        timeout_seconds=3.5,
+    )
+    assert malformed.details == {}
 
 
 def test_supervisor_failure_preserves_only_bounded_diagnostic_receipt() -> None:
@@ -738,6 +763,7 @@ def test_copy_hashes_one_source_stream_and_rejects_wrong_generation(
             max_input_bytes=pdf_evidence.PDF_MAX_INPUT_BYTES,
         )
     assert caught.value.reason_code == "worker_generation_changed"
+    assert caught.value.details == {"generation_names": ["pdf"]}
 
 
 def test_pypdf_logger_is_routed_to_stderr_and_complete_tree_is_forced(
@@ -1052,6 +1078,50 @@ def test_child_dispatch_rejects_wrong_profile_and_policy(tmp_path: Path) -> None
     with pytest.raises(pdf_evidence.SupervisorError) as caught:
         pdf_evidence._dispatch_supervised_worker(wrong_profile)
     assert caught.value.reason_code == "invalid_worker_request"
+
+
+def test_child_dispatch_attributes_root_identity_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generation = _generation()
+    root_identity = replace(
+        _generation(inode=50),
+        size=0,
+        mtime_ns=0,
+        ctime_ns=0,
+        mode=0o040700,
+    )
+    monkeypatch.setattr(
+        pdf_evidence,
+        "_metadata_receipt_in_probe_worker",
+        lambda *_args, **_kwargs: _receipt(generation, root_identity),
+    )
+    request = pdf_evidence.WorkerRequest(
+        request_id="a" * 64,
+        operation=pdf_evidence.PDF_PROBE_OPERATION,
+        request_sha256="b" * 64,
+        limit_profile_id=pdf_evidence.PDF_PROBE_LIMITS.profile_id,
+        schema_generation=pdf_evidence.PDF_PROBE_SCHEMA_VERSION,
+        pipeline_generation=pdf_evidence.PDF_PROBE_PIPELINE_VERSION,
+        expected_generations={
+            "pdf": generation,
+            "pdf_root": replace(root_identity, inode=root_identity.inode + 1),
+        },
+        payload={
+            "pdf_path": os.fspath(tmp_path / "artifact.pdf"),
+            "trusted_root": os.fspath(tmp_path),
+            "max_input_bytes": pdf_evidence.PDF_MAX_INPUT_BYTES,
+            "max_pages": pdf_evidence.PDF_MAX_PAGES,
+        },
+        key=b"k" * 32,
+    )
+
+    with pytest.raises(pdf_evidence.SupervisorError) as caught:
+        pdf_evidence._dispatch_supervised_worker(request)
+
+    assert caught.value.reason_code == "worker_generation_changed"
+    assert caught.value.details == {"generation_names": ["pdf_root"]}
 
 
 def test_deadline_is_validated_and_clamps_worker_profile(

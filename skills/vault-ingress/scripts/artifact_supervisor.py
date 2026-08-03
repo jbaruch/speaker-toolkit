@@ -110,6 +110,21 @@ class FileGeneration:
         )
 
     @classmethod
+    def from_directory_identity(cls, value: os.stat_result) -> FileGeneration:
+        """Bind a directory object without binding its mutable child state."""
+        generation = cls.from_stat(value)
+        return cls(
+            size=0,
+            mtime_ns=0,
+            ctime_ns=0,
+            device=generation.device,
+            inode=generation.inode,
+            mode=generation.mode,
+            flags=generation.flags,
+            file_attributes=generation.file_attributes,
+        )
+
+    @classmethod
     def from_dict(cls, value: Mapping[str, object]) -> FileGeneration:
         expected = {
             "size",
@@ -858,8 +873,21 @@ def _verify_response(
         raise SupervisorError(
             "worker_generation_binding_mismatch", diagnostics=diagnostics
         )
-    if any(observed[name] != request.expected_generations[name] for name in observed):
-        raise SupervisorError("worker_generation_changed", diagnostics=diagnostics)
+    changed_generations = sorted(
+        name
+        for name in observed
+        if observed[name] != request.expected_generations[name]
+    )
+    if changed_generations:
+        generation_names: list[JsonValue] = list(changed_generations)
+        generation_details: dict[str, JsonValue] = {
+            "generation_names": generation_names
+        }
+        raise SupervisorError(
+            "worker_generation_changed",
+            generation_details,
+            diagnostics,
+        )
 
     # The potentially large, deeply nested worker payload remains opaque until
     # authentication and every request/profile/schema/file-generation binding

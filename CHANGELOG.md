@@ -21,7 +21,9 @@ must remain root-confined and non-symlinked, and the documented symlinked
 canonical vault root is mapped to its configured storage root without weakening
 descendant-link checks. A shared platform metadata decoder keeps PDF and PPTX
 cloud/reparse classification identical while preserving the older PPTX
-compatibility seams.
+compatibility seams. Trusted-root receipts bind stable directory identity and
+policy attributes while excluding mutable child-content size and timestamps, so
+normal NTFS metadata settlement cannot impersonate a PDF/PPTX leaf race.
 
 Contained PPTX render inspection reuses the same PDF ceilings, full page-tree
 walk, and repair-diagnostic policy without nesting a second supervisor. PPTX

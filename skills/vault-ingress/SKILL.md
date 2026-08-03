@@ -175,7 +175,10 @@ pypdf plus exactly `psutil==7.2.2`; the PPTX lane requires python-pptx plus the
 same exact psutil version. Both parser lanes run behind bounded worker
 supervision. The canonical vault locator may be the configured symlink; the PDF
 boundary maps that trusted root to storage while still rejecting every
-descendant symlink/reparse redirect. The checker emits report schema v2 and records exact pins under
+descendant symlink/reparse redirect. Trusted-root bindings retain the directory
+object's stable identity and policy attributes, not mutable child-content size or
+timestamps; PDF and PPTX leaf generations remain exact. The checker emits report
+schema v2 and records exact pins under
 each lane's `required_module_versions`; a mismatched version is unavailable. A
 missing optional lane is reported as degraded and must not erase a healthy
 transcript or alternate slide lane.

@@ -485,6 +485,7 @@ def test_generation_mismatch_precedes_nested_body_decode():
         _run("changed_generation_invalid_body")
 
     assert caught.value.reason_code == "worker_generation_changed"
+    assert caught.value.details == {"generation_names": ["pptx"]}
 
 
 def test_outer_response_parser_is_shallow_fixed_and_capped(monkeypatch):

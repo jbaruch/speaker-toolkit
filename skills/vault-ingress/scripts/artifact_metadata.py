@@ -135,7 +135,7 @@ class ArtifactAvailability:
 
 @dataclass(frozen=True)
 class ArtifactMetadataReceipt:
-    """One admitted file generation and its trusted-root/availability facts."""
+    """One admitted file generation and its trusted-root identity/availability."""
 
     generation: FileGeneration
     root_generation: FileGeneration | None
@@ -231,7 +231,7 @@ def inspect_metadata_generation(
             or not stat_module.S_ISDIR(root_snapshot.st_mode)
         ):
             raise _failure("root_escape")
-        root_generation = FileGeneration.from_stat(root_snapshot)
+        root_generation = FileGeneration.from_directory_identity(root_snapshot)
         target = trusted_root
         for index, component in enumerate(relative.parts):
             target = target / component
@@ -346,8 +346,13 @@ def decode_artifact_metadata_payload(
             raise ArtifactMetadataMalformed(
                 "metadata root generation is invalid"
             ) from exc
-        if not stat_module.S_ISDIR(root_generation.mode):
-            raise ArtifactMetadataMalformed("metadata root is not a directory")
+        if (
+            not stat_module.S_ISDIR(root_generation.mode)
+            or root_generation.size != 0
+            or root_generation.mtime_ns != 0
+            or root_generation.ctime_ns != 0
+        ):
+            raise ArtifactMetadataMalformed("metadata root identity is invalid")
     else:
         raise ArtifactMetadataMalformed("metadata root generation is invalid")
     observed_reparse_tag = payload.get("reparse_tag")

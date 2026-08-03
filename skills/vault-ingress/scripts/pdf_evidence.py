@@ -35,6 +35,7 @@ from artifact_metadata import (
 from artifact_supervisor import (
     DiagnosticReceipt,
     FileGeneration,
+    JsonValue,
     SupervisorError,
     SupervisorLimits,
     WorkerRequest,
@@ -63,6 +64,7 @@ PDF_MACOS_DATALESS_FLAG: Final = MACOS_DATALESS_FLAG
 PDF_WINDOWS_CLOUD_FILE_ATTRIBUTES: Final = WINDOWS_UNAVAILABLE_CLOUD_ATTRIBUTES
 PDF_WINDOWS_REPARSE_POINT_ATTRIBUTE: Final = WINDOWS_REPARSE_POINT_ATTRIBUTE
 PDF_WINDOWS_CLOUD_REPARSE_TAGS: Final = WINDOWS_CLOUD_REPARSE_TAGS
+_PDF_GENERATION_NAMES: Final = frozenset({"pdf", "pdf_root"})
 
 PDF_METADATA_LIMITS = SupervisorLimits(
     profile_id="pdf-metadata-v1",
@@ -555,6 +557,30 @@ def _unavailable_payload(
     }
 
 
+def _worker_generation_change(*names: str) -> SupervisorError:
+    normalized = sorted(set(names))
+    if not normalized or any(name not in _PDF_GENERATION_NAMES for name in normalized):
+        return SupervisorError("invalid_worker_request")
+    generation_names: list[JsonValue] = list(normalized)
+    details: dict[str, JsonValue] = {"generation_names": generation_names}
+    return SupervisorError(
+        "worker_generation_changed",
+        details,
+    )
+
+
+def _closed_generation_names(details: Mapping[str, object]) -> list[str]:
+    raw = details.get("generation_names")
+    if not isinstance(raw, list) or any(type(name) is not str for name in raw):
+        return []
+    normalized = sorted(set(cast(list[str], raw)))
+    if raw != normalized or any(
+        name not in _PDF_GENERATION_NAMES for name in normalized
+    ):
+        return []
+    return normalized
+
+
 def _source_open_flags() -> int:
     flags = os.O_RDONLY
     flags |= int(getattr(os, "O_BINARY", 0))
@@ -596,7 +622,7 @@ def _copy_and_hash_source(
                 details={"exception_type": type(exc).__name__},
             ) from exc
         if before != expected_generation:
-            raise SupervisorError("worker_generation_changed")
+            raise _worker_generation_change("pdf")
         try:
             destination_descriptor = os.open(
                 snapshot,
@@ -629,7 +655,7 @@ def _copy_and_hash_source(
                     details={"limit_bytes": max_input_bytes},
                 )
             if byte_count > expected_generation.size:
-                raise SupervisorError("worker_generation_changed")
+                raise _worker_generation_change("pdf")
             if len(header) < 5:
                 header.extend(chunk[: 5 - len(header)])
             digest.update(chunk)
@@ -648,7 +674,7 @@ def _copy_and_hash_source(
                 details={"exception_type": type(exc).__name__},
             ) from exc
         if after != before or byte_count != expected_generation.size:
-            raise SupervisorError("worker_generation_changed")
+            raise _worker_generation_change("pdf")
         return digest.hexdigest(), byte_count, bytes(header)
     finally:
         try:
@@ -1118,7 +1144,8 @@ def _metadata_receipt_in_probe_worker(
             cloud_reparse_tags=PDF_WINDOWS_CLOUD_REPARSE_TAGS,
         )
     except (ArtifactMetadataMalformed, ArtifactMetadataUnavailable) as exc:
-        raise SupervisorError("worker_generation_changed") from exc
+        names = ("pdf",) if trusted_root is None else ("pdf", "pdf_root")
+        raise _worker_generation_change(*names) from exc
 
 
 def _probe_payload_values(
@@ -1177,10 +1204,15 @@ def _dispatch_supervised_worker(
     observed: dict[str, FileGeneration] = {"pdf": before.generation}
     if before.root_generation is not None:
         observed["pdf_root"] = before.root_generation
-    if observed != dict(request.expected_generations):
-        raise SupervisorError("worker_generation_changed")
+    changed_before = sorted(
+        name
+        for name in observed
+        if observed[name] != request.expected_generations[name]
+    )
+    if changed_before:
+        raise _worker_generation_change(*changed_before)
     if _availability(before.generation).state != "local":
-        raise SupervisorError("worker_generation_changed")
+        raise _worker_generation_change("pdf")
 
     payload = _pdf_probe_child(
         artifact,
@@ -1189,8 +1221,13 @@ def _dispatch_supervised_worker(
         max_pages=max_pages,
     )
     after = _metadata_receipt_in_probe_worker(artifact, trusted_root)
-    if after != before:
-        raise SupervisorError("worker_generation_changed")
+    changed_after: list[str] = []
+    if after.generation != before.generation:
+        changed_after.append("pdf")
+    if after.root_generation != before.root_generation:
+        changed_after.append("pdf_root")
+    if changed_after:
+        raise _worker_generation_change(*changed_after)
     return payload, observed
 
 
@@ -1233,7 +1270,13 @@ def _supervisor_failure(
         return normalized
 
     if reason == "worker_generation_changed":
-        return _failure("pdf_artifact_changed", details=details())
+        generation_names = _closed_generation_names(exc.details)
+        return _failure(
+            "pdf_artifact_changed",
+            details=details(
+                **({"generation_names": generation_names} if generation_names else {})
+            ),
+        )
     if reason == "worker_timeout":
         return _failure(
             "pdf_probe_timeout",

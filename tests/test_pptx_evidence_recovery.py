@@ -431,10 +431,10 @@ def test_parser_worker_rejects_trusted_root_generation_swap(
     deck = root / "deck.pptx"
     _write_deck(deck, with_image=False)
     generation = pptx_evidence.FileGeneration.from_stat(deck.stat())
-    root_generation = pptx_evidence.FileGeneration.from_stat(root.stat())
+    root_generation = pptx_evidence.FileGeneration.from_directory_identity(root.stat())
     replaced_root = pptx_evidence.replace(
         root_generation,
-        ctime_ns=root_generation.ctime_ns + 1,
+        inode=root_generation.inode + 1,
     )
     root_reads = iter((root_generation, replaced_root))
     monkeypatch.setattr(

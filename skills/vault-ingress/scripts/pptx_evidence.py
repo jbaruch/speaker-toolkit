@@ -4926,7 +4926,7 @@ def _worker_root_generation(path: Path) -> FileGeneration:
         or not stat_module.S_ISDIR(snapshot.st_mode)
     ):
         raise SupervisorError("worker_generation_changed")
-    return FileGeneration.from_stat(snapshot)
+    return FileGeneration.from_directory_identity(snapshot)
 
 
 def _worker_generation_change(names: list[str]) -> SupervisorError:

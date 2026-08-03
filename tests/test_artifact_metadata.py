@@ -6,6 +6,7 @@ import copy
 import os
 import stat
 import sys
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -228,7 +229,7 @@ def test_reparse_policy_accepts_only_hydrated_supported_cloud_leaves(
     )
 
 
-def test_inspection_binds_exact_leaf_and_root_generations(
+def test_inspection_binds_exact_leaf_and_stable_root_identity(
     artifact_metadata,
     tmp_path: Path,
 ) -> None:
@@ -245,10 +246,56 @@ def test_inspection_binds_exact_leaf_and_root_generations(
     assert receipt.generation == artifact_metadata.FileGeneration.from_stat(
         deck.lstat()
     )
-    assert receipt.root_generation == artifact_metadata.FileGeneration.from_stat(
-        root.lstat()
+    assert receipt.root_generation == (
+        artifact_metadata.FileGeneration.from_directory_identity(root.lstat())
     )
     assert receipt.reparse_tag is None
+
+
+def test_directory_identity_excludes_mutable_child_metadata(
+    artifact_metadata,
+) -> None:
+    first = _stat_snapshot()
+    first.st_mode = stat.S_IFDIR | 0o755
+    changed_children = copy.copy(first)
+    changed_children.st_size += 4096
+    changed_children.st_mtime_ns += 1
+    changed_children.st_ctime_ns += 1
+
+    first_identity = artifact_metadata.FileGeneration.from_directory_identity(first)
+    changed_identity = artifact_metadata.FileGeneration.from_directory_identity(
+        changed_children
+    )
+
+    assert first_identity == changed_identity
+    assert first_identity.size == 0
+    assert first_identity.mtime_ns == 0
+    assert first_identity.ctime_ns == 0
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    [
+        ("dev", 40),
+        ("ino", 50),
+        ("mode", stat.S_IFDIR | 0o700),
+        ("flags", 4),
+        ("file_attributes", 8),
+    ],
+)
+def test_directory_identity_retains_swap_and_policy_fields(
+    artifact_metadata,
+    field: str,
+    replacement: int,
+) -> None:
+    first = _stat_snapshot()
+    first.st_mode = stat.S_IFDIR | 0o755
+    changed = copy.copy(first)
+    setattr(changed, f"st_{field}", replacement)
+
+    assert artifact_metadata.FileGeneration.from_directory_identity(
+        first
+    ) != artifact_metadata.FileGeneration.from_directory_identity(changed)
 
 
 def test_trusted_root_locator_maps_symlink_without_resolving_leaf(
@@ -374,7 +421,13 @@ def test_decoder_accepts_closed_hydrated_cloud_receipt(artifact_metadata) -> Non
     )
     root_generation = _generation(
         artifact_metadata,
+        size=0,
         mode=stat.S_IFDIR | 0o755,
+    )
+    root_generation = replace(
+        root_generation,
+        mtime_ns=0,
+        ctime_ns=0,
     )
     payload = {
         "schema_version": artifact_metadata.METADATA_SCHEMA_VERSION,
@@ -392,6 +445,32 @@ def test_decoder_accepts_closed_hydrated_cloud_receipt(artifact_metadata) -> Non
     assert receipt.generation == generation
     assert receipt.root_generation == root_generation
     assert receipt.reparse_tag == cloud_tag
+
+
+@pytest.mark.parametrize("field", ["size", "mtime_ns", "ctime_ns"])
+def test_decoder_rejects_mutable_directory_metadata_in_root_identity(
+    artifact_metadata,
+    field: str,
+) -> None:
+    root_identity = _generation(
+        artifact_metadata,
+        size=0,
+        mode=stat.S_IFDIR | 0o755,
+    )
+    root_identity = replace(
+        root_identity,
+        mtime_ns=0,
+        ctime_ns=0,
+    )
+    malformed = replace(root_identity, **{field: 1})
+    payload = _available_payload(artifact_metadata)
+    payload["root_generation"] = malformed.to_dict()
+
+    with pytest.raises(artifact_metadata.ArtifactMetadataMalformed):
+        artifact_metadata.decode_artifact_metadata_payload(
+            payload,
+            unavailable_reason_code="pdf_artifact_unavailable",
+        )
 
 
 def test_decoder_preserves_closed_unavailable_receipt(artifact_metadata) -> None:
