@@ -60,6 +60,8 @@ evidence instead of producing an internally invalid extraction record.
 Repeated references to one package asset must agree on a single SHA-256 across
 picture, background, and recovery bindings.
 
+## 0.20.4 — 2026-08-03
+
 ### fix(vault-ingress) — make damaged native-deck evidence fail closed (#151)
 
 PPTX extraction schema v3 validates every archive member and reports bad-CRC
