@@ -101,7 +101,7 @@ class FileGeneration:
         return cls(
             size=int(value.st_size),
             mtime_ns=int(value.st_mtime_ns),
-            ctime_ns=int(value.st_ctime_ns),
+            ctime_ns=_generation_ctime_ns(value),
             device=int(value.st_dev),
             inode=int(value.st_ino),
             mode=int(value.st_mode),
@@ -1948,6 +1948,15 @@ def _optional_stat_int(value: os.stat_result, name: str) -> int | None:
         if isinstance(result, int) and not isinstance(result, bool)
         else None
     )
+
+
+def _generation_ctime_ns(value: os.stat_result) -> int:
+    """Return one comparable path/handle timestamp semantic per platform."""
+    if os.name == "nt":
+        birthtime_ns = _optional_stat_int(value, "st_birthtime_ns")
+        if birthtime_ns is not None:
+            return birthtime_ns
+    return int(value.st_ctime_ns)
 
 
 def _strict_int(value: object, name: str) -> int:

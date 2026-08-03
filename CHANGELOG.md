@@ -26,6 +26,9 @@ cloud/reparse classification identical while preserving the older PPTX
 compatibility seams. Trusted-root receipts bind stable directory identity and
 policy attributes while excluding mutable child-content size and timestamps, so
 normal NTFS metadata settlement cannot impersonate a PDF/PPTX leaf race.
+Windows leaf receipts also canonicalize path- and handle-based snapshots to
+their shared creation-time semantic; CPython's incompatible `st_ctime_ns`
+meanings can no longer reject a valid same-path replacement (#201).
 
 Contained PPTX render inspection reuses the same PDF ceilings, full page-tree
 walk, and repair-diagnostic policy without nesting a second supervisor. PPTX

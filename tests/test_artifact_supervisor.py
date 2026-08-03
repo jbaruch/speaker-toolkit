@@ -14,6 +14,7 @@ import sys
 import threading
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import psutil
 import pytest
@@ -1473,6 +1474,85 @@ def test_file_generation_round_trip_and_limit_validation(tmp_path):
         artifact_supervisor.build_worker_request("probe", {}, {}, schema_generation=0)
     with pytest.raises(ValueError):
         artifact_supervisor.WorkerCredentials(bytearray(32))
+
+
+def test_file_generation_uses_windows_birthtime_for_path_handle_compatibility(
+    monkeypatch,
+):
+    common = {
+        "st_size": 123,
+        "st_mtime_ns": 456,
+        "st_dev": 10,
+        "st_ino": 11,
+        "st_mode": 0o100600,
+        "st_file_attributes": 0x20,
+    }
+    path_snapshot = cast(
+        os.stat_result,
+        SimpleNamespace(**common, st_ctime_ns=789, st_birthtime_ns=789),
+    )
+    handle_snapshot = cast(
+        os.stat_result,
+        SimpleNamespace(**common, st_ctime_ns=987, st_birthtime_ns=789),
+    )
+    replacement_snapshot = cast(
+        os.stat_result,
+        SimpleNamespace(
+            **{**common, "st_ino": 12},
+            st_ctime_ns=987,
+            st_birthtime_ns=789,
+        ),
+    )
+    monkeypatch.setattr(artifact_supervisor.os, "name", "nt")
+
+    path_generation = artifact_supervisor.FileGeneration.from_stat(path_snapshot)
+    handle_generation = artifact_supervisor.FileGeneration.from_stat(handle_snapshot)
+
+    assert path_generation == handle_generation
+    assert path_generation.ctime_ns == 789
+    assert (
+        artifact_supervisor.FileGeneration.from_stat(replacement_snapshot)
+        != path_generation
+    )
+
+
+def test_file_generation_falls_back_to_windows_ctime_without_birthtime(monkeypatch):
+    snapshot = cast(
+        os.stat_result,
+        SimpleNamespace(
+            st_size=123,
+            st_mtime_ns=456,
+            st_ctime_ns=987,
+            st_dev=10,
+            st_ino=11,
+            st_mode=0o100600,
+        ),
+    )
+    monkeypatch.setattr(artifact_supervisor.os, "name", "nt")
+
+    generation = artifact_supervisor.FileGeneration.from_stat(snapshot)
+
+    assert generation.ctime_ns == 987
+
+
+def test_file_generation_keeps_non_windows_ctime_semantics(monkeypatch):
+    snapshot = cast(
+        os.stat_result,
+        SimpleNamespace(
+            st_size=123,
+            st_mtime_ns=456,
+            st_ctime_ns=987,
+            st_birthtime_ns=789,
+            st_dev=10,
+            st_ino=11,
+            st_mode=0o100600,
+        ),
+    )
+    monkeypatch.setattr(artifact_supervisor.os, "name", "posix")
+
+    generation = artifact_supervisor.FileGeneration.from_stat(snapshot)
+
+    assert generation.ctime_ns == 987
 
 
 def test_shared_pptx_imports_do_not_require_optional_psutil():
