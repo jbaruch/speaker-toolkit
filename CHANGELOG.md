@@ -21,6 +21,12 @@ diagnostic for outer failures instead of exiting silently (partial #203).
 The picture-area render decision has one script-owned threshold shared by the
 producer and validator; schema prose points to that authority instead of
 copying its predicate (#205).
+Supervisor receipts now distinguish request, result, dependency, monitor,
+identity, containment, and configured resource-limit causes with
+operation-neutral diagnostics (#188). Successful evidence is unchanged, so no
+schema/pipeline migration is required. Ambiguous historical failure/skip
+receipts remain readable but are never relabeled; rerun ingress to regenerate
+them under the current mapping.
 If psutil observes a root identity disappearing during a normal fast exit, Popen
 gets at most the remaining sample interval to confirm and reap that exact child;
 a still-live child, descendant leak, or non-ESRCH cleanup failure remains fatal.

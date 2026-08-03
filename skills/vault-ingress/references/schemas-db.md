@@ -1799,6 +1799,14 @@ summary fields require complete coverage of every render-required slide.
 Persistence recomputes the audit in a bounded worker and matches the receipt to
 owner-canonical native-deck and static-slide identities.
 
+Current supervisor receipts preserve request, result, dependency, monitor,
+identity, containment, and resource-limit causes through the mapping owned by
+`pptx_evidence.py`. Successful extraction evidence is unchanged, so this does
+not advance the extraction schema or pipeline. Previously persisted ambiguous
+failure/skip receipts remain readable and must not be relabeled: their closed
+details do not prove a narrower historical cause. Rerun ingress to regenerate
+them under the current mapping before relying on remediation advice.
+
 `image_area_ratio` is the **largest** `is_picture: true` shape's area as a
 fraction of the slide as emitted by `pptx-extraction.py` and validated by
 `pptx_evidence.py`; it is always present. Script-owned normalization can make
