@@ -136,9 +136,13 @@ explicitly authorizes full transcript/receipt replacement.
 
 - **`pptx` / `both`** — run
   `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py" <path.pptx>`.
-  Require extraction schema v2 before using native timing/build evidence. A
-  missing/v0/v1 schema means timing is unknown and the deck must be re-extracted;
-  an unknown future version is unusable until the reader contract is updated.
+  Require extraction schema v3 for current analysis. Missing/v0/v1 output has
+  unknown timing; v2 has the pre-build timing lanes but lacks raw build-list
+  evidence, archive-recovery, and native/render audit receipts. Re-extract
+  v0-v2; an unknown future version
+  is unusable until the reader contract is updated. A non-empty
+  `archive_recovery` is degraded input, not permission to score the surviving
+  slides: restore or re-export a required native deck before returning evidence.
 - **`pdf`** — download via gdown (pass the bare Google Drive file id; gdown
   accepts a `url_or_id` argument, so no full download URL is needed):
   ```bash
@@ -265,9 +269,14 @@ When any slide in a deck reports `text_extraction_confidence: "low"`:
 1. Read `text_channels`, `unsupported_content`, and
    `render_required_reasons` from the extraction JSON first. Each channel names
    its source, confidence, and status. `ocr_text` remains a convenient combined
-   inventory. `shapes+ocr_unavailable` means install tesseract next time; an
-   `unsupported` or `unavailable` channel needs rendering or a specialized
-   parser. Do not invent words.
+   inventory. For OCR channels, read channel-level `attempted`, engine/version,
+   result confidence, reason, and every `ocr_receipts[]` record: each receipt
+   binds one exact package `part_name` and asset SHA-256 to its outcome.
+   `trustworthy_text: false`, `failed`, `unavailable`, or `genuine_empty` never
+   proves visible-text absence. `--no-ocr` and missing blobs are explicit
+   `attempted: false` outcomes. `shapes+ocr_unavailable` means install tesseract
+   next time; an `unsupported` or `unavailable` channel needs rendering or a
+   specialized parser. Do not invent words.
 
 2. Get a PDF to render for design judgment. Which one depends on `slide_source`
    — the `pptx` path never downloads one, so it has to be produced:
@@ -295,16 +304,39 @@ When any slide in a deck reports `text_extraction_confidence: "low"`:
    resolver will then retain both the distinct `native_deck` and `static_slides`
    identities; it never aliases the PPTX itself to static pages.
 
-   If the export fails and no PDF exists for the talk, say so in the analysis
-   and mark Dimensions 8 and 13 design fields low-confidence rather than
-   judging layout from shape JSON alone — an unreadable deck is not a wordless
-   one. Still use any `ocr_text` that the extractor produced from picture blobs.
+   If the export fails and no PDF exists for the talk, say so in the analysis,
+   omit render-dependent Dimensions 8 and 13 structured fields/detections, and
+   return the affected catalog outcomes as `not_evaluable` with missing source
+   coverage. There is no confidence carrier for those structured fields, so do
+   not put a guessed "low-confidence" value into them. Preserve only structural
+   observations that the native audit actually supports. Still use any
+   trustworthy, receipt-bearing `ocr_text` inventory that the extractor
+   produced from healthy picture blobs; low-confidence, failed, unavailable, or
+   empty OCR is not affirmative text evidence.
 
 3. Render the pages and read them for design:
 
    ```bash
    pdftoppm -png -r 100 -f <first> -l <last> "{pdf_path}" "{tmp}/slide"
    ```
+
+   Bind the rendered artifact and exact pages inspected by rerunning extraction:
+
+   ```bash
+   "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py" \
+     "{pptx_path}" --rendered-pdf "{pdf_path}" \
+     --inspected-pages <PAGE|START-END>
+   ```
+
+   Every current return that declares, inspects, or cites `native_deck` must
+   carry the current `native_deck_audit`, even when it reports zero findings.
+   `native_deck_audit.rendered_page_inspection.complete` must be true for
+   explicit authored visual summary fields. A native citation needs rendered
+   coverage only when its cited slide overlaps the audit's render-required
+   pages; an unrelated clean-slide citation remains usable. The owner
+   re-extracts the exact PPTX and matches the receipt to canonical
+   `native_deck` and `static_slides` identities. If extraction reports
+   `archive_recovery`, stop and repair/re-export the required deck.
 
 4. Judge **Dimension 8** structure (dense vs minimal, room vs reward layer) and
    **Dimension 13** (Slide Design) from the rendered images. Cross-check the
@@ -319,9 +351,11 @@ Structural fields stay authoritative for what they actually measure —
 
 ### Native timing is structure, not observed playback
 
-Schema-v2 PPTX extraction keeps four evidence lanes distinct on every slide:
+Schema-v3 PPTX extraction extends the schema-v2 timing model with a fifth raw
+build-list lane and keeps all five evidence lanes distinct on every slide:
 exact animation behavior elements, visibility-targeting `<p:set>` actions,
-slide transitions, and audio/video timing nodes. Read the per-slide
+slide transitions, audio/video timing nodes, and raw `<p:bldLst>` build entries.
+Read the per-slide
 `native_timing` record and the fixed-key `native_timing_summary`; do not derive
 an `animated` verdict merely from `<p:timing>` presence.
 
@@ -331,8 +365,11 @@ executed, looked smooth, or targeted the perceived object. Audio/video timing is
 not shape motion. Raw counts also do not establish concurrency or effect order,
 so multiple effect/scale/rotation elements alone cannot score
 `composite-animation`; inspect target/timing relationships or delivery video.
-Markup-compatibility Choice/Fallback branches are counted as stored, not resolved
-for the presenter that delivered the talk.
+Build-list records establish only that PowerPoint stored paragraph, diagram,
+OLE-chart, or graphic build metadata; they do not establish reveal order or a
+visible state and are never merged into visibility actions. Markup-compatibility
+Choice/Fallback branches are counted as stored, not resolved for the presenter
+that delivered the talk.
 
 Conversely, zero native timing does not rule out progressive builds implemented
 as adjacent duplicate slides. Ordered rendered states with controlled cumulative

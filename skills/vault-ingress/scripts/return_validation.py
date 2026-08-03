@@ -64,7 +64,13 @@ from pattern_evidence import (
     TALK_METADATA_FIELDS,
     assess_persisted_pattern_evidence_freshness as assess_artifact_freshness,
     opportunity_coverage_identity,
+    required_pptx_evidence_blocking_reason,
     validate_transcript_path,
+)
+from pptx_evidence import (
+    PptxEvidenceError,
+    ranges_cover_pages,
+    validate_native_deck_audit,
 )
 
 
@@ -331,6 +337,7 @@ AUTHORED_SLIDE_FIELDS = frozenset({
     "footer_observations",
     "shape_observations",
 })
+PPTX_RENDER_DEPENDENT_FIELDS = AUTHORED_SLIDE_FIELDS - {"slide_count"}
 PER_SLIDE_VISUAL_FIELDS = frozenset({
     "slide_number",
     "background_color_name",
@@ -1096,6 +1103,25 @@ def _validate_video_return(ret: dict, structured: dict,
                 "context-only video extraction cannot return authored-slide evidence "
                 f"in structured_data: {contaminated}")
     return state.trusted_slide_region
+
+
+def validate_authored_slide_fields_against_source(
+    structured: Mapping[str, object],
+    slide_source: str,
+) -> None:
+    """Reject model-authored slide evidence when no slide lane was used."""
+    if slide_source != "none":
+        return
+    contaminated = sorted(
+        field
+        for field in AUTHORED_SLIDE_FIELDS
+        if _is_nonempty(structured.get(field))
+    )
+    if contaminated:
+        raise ReturnValidationError(
+            "slide_source none cannot return authored-slide evidence in "
+            f"structured_data: {contaminated}"
+        )
 
 
 def canonical_evidence_source_group(group: frozenset[str]) -> list[str]:
@@ -2556,6 +2582,169 @@ def validate_structured_data(
             "and image_source_distribution_basis to be supplied together")
 
 
+def _native_deck_cited_slide_numbers(
+    detections: list[dict],
+) -> set[int]:
+    """Return exact native-deck slides cited by validated detections."""
+    cited: set[int] = set()
+    for detection in detections:
+        citations = detection.get("evidence_citations")
+        if not isinstance(citations, list):
+            continue
+        for citation in citations:
+            if not isinstance(citation, Mapping):
+                continue
+            if citation.get("source") != "native_deck":
+                continue
+            slide_numbers = citation.get("slide_numbers")
+            if not isinstance(slide_numbers, list):
+                continue
+            cited.update(
+                number
+                for number in slide_numbers
+                if isinstance(number, int) and not isinstance(number, bool)
+            )
+    return cited
+
+
+def _native_deck_findings_present(
+    structured: Mapping[str, object],
+    detections: list[dict],
+) -> bool:
+    """Return whether a PPTX return carries audit-bound native findings."""
+    if any(field in structured for field in PPTX_RENDER_DEPENDENT_FIELDS):
+        return True
+    return bool(_native_deck_cited_slide_numbers(detections))
+
+
+def validate_native_deck_design_receipt(
+    *,
+    structured: dict,
+    observations: dict,
+    slide_source: str,
+    detections: list[dict],
+) -> None:
+    """Require a current native audit and any claim-dependent render evidence."""
+    raw_audit = structured.get("native_deck_audit")
+    if raw_audit is not None and slide_source not in {"pptx", "both"}:
+        raise ReturnValidationError(
+            "structured_data.native_deck_audit requires slide_source pptx or both"
+        )
+    evidence_sources = observations.get("evidence_sources")
+    source_inspection = observations.get("source_inspection")
+    native_declared = (
+        slide_source in {"pptx", "both"}
+        or (
+            isinstance(evidence_sources, list)
+            and "native_deck" in evidence_sources
+        )
+        or (
+            isinstance(source_inspection, list)
+            and any(
+                isinstance(item, Mapping)
+                and item.get("source") == "native_deck"
+                for item in source_inspection
+            )
+        )
+        or bool(_native_deck_cited_slide_numbers(detections))
+    )
+    design_findings = (
+        native_declared
+        and _native_deck_findings_present(structured, detections)
+    )
+    if raw_audit is None:
+        if native_declared:
+            raise ReturnValidationError(
+                "declared, inspected, or cited native-deck evidence requires the current "
+                "structured_data.native_deck_audit from pptx-extraction.py"
+            )
+        return
+    slide_count = structured.get("slide_count")
+    expected_count = (
+        slide_count
+        if isinstance(slide_count, int) and not isinstance(slide_count, bool)
+        else None
+    )
+    try:
+        audit = validate_native_deck_audit(
+            raw_audit,
+            slide_count=expected_count,
+        )
+    except PptxEvidenceError as exc:
+        raise ReturnValidationError(
+            f"structured_data.native_deck_audit is invalid: {exc}"
+        ) from exc
+    if not design_findings or not audit["render_required_slide_numbers"]:
+        return
+    render_required = set(cast(list[int], audit["render_required_slide_numbers"]))
+    structured_visual_findings = any(
+        field in structured for field in PPTX_RENDER_DEPENDENT_FIELDS
+    )
+    cited_required = _native_deck_cited_slide_numbers(detections).intersection(
+        render_required
+    )
+    pages_requiring_render = (
+        render_required if structured_visual_findings else cited_required
+    )
+    if not pages_requiring_render:
+        return
+    receipt = audit["rendered_page_inspection"]
+    if not isinstance(receipt, Mapping):
+        raise ReturnValidationError(
+            "render-required native-deck findings need an "
+            "identity-bound rendered_page_inspection receipt"
+        )
+    inspected_required = receipt.get("inspected_required_slide_numbers")
+    if (
+        not isinstance(inspected_required, list)
+        or not pages_requiring_render.issubset(set(inspected_required))
+        or (structured_visual_findings and receipt.get("complete") is not True)
+    ):
+        raise ReturnValidationError(
+            "identity-bound rendered_page_inspection does not cover every "
+            "render-required slide used by the native-deck findings"
+        )
+    if not isinstance(evidence_sources, list) or "static_slides" not in evidence_sources:
+        raise ReturnValidationError(
+            "render-required native-deck design findings must list the exact "
+            "rendered PDF as inspected static_slides evidence"
+        )
+    static_receipt = (
+        next(
+            (
+                item
+                for item in source_inspection
+                if isinstance(item, Mapping)
+                and item.get("source") == "static_slides"
+            ),
+            None,
+        )
+        if isinstance(source_inspection, list)
+        else None
+    )
+    if static_receipt is None:
+        raise ReturnValidationError(
+            "render-required native-deck design findings need a static_slides "
+            "source_inspection record"
+        )
+    try:
+        audited_slide_count = cast(int, audit["slide_count"])
+        covered = ranges_cover_pages(
+            static_receipt.get("page_ranges"),
+            sorted(pages_requiring_render),
+            page_count=audited_slide_count,
+        )
+    except PptxEvidenceError as exc:
+        raise ReturnValidationError(
+            f"static_slides render inspection is invalid: {exc}"
+        ) from exc
+    if not covered:
+        raise ReturnValidationError(
+            "static_slides source_inspection must cover every render-required "
+            "native-deck page"
+        )
+
+
 def validate_structured_policy_value(field, value, policy) -> None:
     """Validate one declared v2 field against its persistence policy shape."""
     if policy in {ATOMIC_MAP, ADDITIVE_MAP} and not isinstance(value, dict):
@@ -3325,6 +3514,38 @@ def validate_claim_against_talk(
             raise ReturnValidationError(
                 "structured_data.video_extraction.source_video_id "
                 f"{returned_id!r} does not match talk youtube_id {expected_id!r}")
+    if (
+        ret.get("status") in ANALYSIS_STATUSES
+        and return_schema_version == RETURN_SCHEMA_VERSION
+        and artifact_capabilities is not None
+    ):
+        observations = ret.get("pattern_observations")
+        evidence_sources = (
+            observations.get("evidence_sources")
+            if isinstance(observations, dict)
+            else None
+        )
+        structured = ret.get("structured_data")
+        native_deck_used = (
+            ret.get("slide_source") in {"pptx", "both"}
+            or (
+                isinstance(evidence_sources, list)
+                and "native_deck" in evidence_sources
+            )
+            or (
+                isinstance(structured, dict)
+                and "native_deck_audit" in structured
+            )
+        )
+        blocking_reason = required_pptx_evidence_blocking_reason(
+            talk,
+            artifact_capabilities,
+            native_deck_used=native_deck_used,
+        )
+        if blocking_reason is not None:
+            raise ReturnValidationError(
+                f"{filename} cannot persist current analysis: {blocking_reason}"
+            )
     _validate_terminal_status_against_talk(
         talk, ret, artifact_capabilities=artifact_capabilities)
     _validate_return_sources_against_talk(talk, ret)
@@ -3691,6 +3912,7 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
     if not isinstance(structured, dict):
         raise ReturnValidationError("structured_data is required and must be an object")
     validate_structured_data(structured)
+    validate_authored_slide_fields_against_source(structured, slide_source)
     video_static_slides_available = False
     if slide_source == "video_extracted":
         video_static_slides_available = _validate_video_return(
@@ -3733,20 +3955,27 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
     antipatterns = _validate_detection_list(
         observations, "antipatterns_detected", "antipattern", resolved_catalog,
         available_sources, return_schema_version)
-    not_evaluable = _validate_not_evaluable(
-        observations, resolved_catalog, available_sources,
-        return_schema_version)
     detected_ids = (
-        {item["pattern_id"] for item in patterns} |
-        {item["pattern_id"] for item in antipatterns}
+        {item["pattern_id"] for item in patterns}
+        | {item["pattern_id"] for item in antipatterns}
     )
-    _validate_applicability_assessments(
+    applicability = _validate_applicability_assessments(
         observations,
         resolved_catalog,
         available_sources,
         detected_ids,
         return_schema_version,
     )
+    if return_schema_version == RETURN_SCHEMA_VERSION:
+        validate_native_deck_design_receipt(
+            structured=structured,
+            observations=observations,
+            slide_source=slide_source,
+            detections=[*patterns, *antipatterns, *applicability],
+        )
+    not_evaluable = _validate_not_evaluable(
+        observations, resolved_catalog, available_sources,
+        return_schema_version)
     _validate_unavailable_catalog_gates(
         resolved_catalog, available_sources, not_evaluable, detected_ids,
         return_schema_version)

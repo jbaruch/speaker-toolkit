@@ -75,6 +75,8 @@ SLIDE_CONTRACT_CODES = frozenset({
     "slide_source_unsupported",
     "slide_pptx_reference_missing",
     "slide_pptx_artifact_missing",
+    "slide_pptx_artifact_unreadable",
+    "slide_pptx_artifact_degraded",
     "slide_pdf_reference_missing",
     "slide_pdf_artifact_missing",
     "slide_video_reference_missing",
@@ -598,6 +600,59 @@ class VaultPreflight:
                     field="pptx_path", actual=talk.get("pptx_path"),
                     artifact_path=pptx_path,
                 )
+            else:
+                capabilities = self._capabilities(index)
+                raw_degradations = capabilities.get("degraded_evidence_sources")
+                degradation = (
+                    raw_degradations.get("native_deck")
+                    if isinstance(raw_degradations, dict)
+                    else None
+                )
+                raw_verified = capabilities.get("verified_evidence_sources")
+                native_verified = isinstance(
+                    raw_verified, (tuple, list, set, frozenset)
+                ) and "native_deck" in raw_verified
+                if isinstance(degradation, dict):
+                    self.talk_add(
+                        index,
+                        severity,
+                        "slide_pptx_artifact_degraded",
+                        "declared PPTX required loss-reporting media recovery; "
+                        "restore or re-export the deck before current analysis",
+                        field="pptx_path",
+                        actual=degradation,
+                        artifact_path=pptx_path,
+                        capability_fact=capabilities,
+                    )
+                elif not native_verified:
+                    raw_unavailable = capabilities.get(
+                        "unavailable_evidence_sources"
+                    )
+                    unavailable = (
+                        raw_unavailable.get("native_deck")
+                        if isinstance(raw_unavailable, dict)
+                        else None
+                    )
+                    raw_reasons = capabilities.get("source_reasons")
+                    reason = (
+                        unavailable
+                        if isinstance(unavailable, dict)
+                        else (
+                            raw_reasons.get("native_deck")
+                            if isinstance(raw_reasons, dict)
+                            else "PPTX parser returned no native-deck capability"
+                        )
+                    )
+                    self.talk_add(
+                        index,
+                        severity,
+                        "slide_pptx_artifact_unreadable",
+                        "declared PPTX exists but cannot be parsed or safely recovered",
+                        field="pptx_path",
+                        actual=reason,
+                        artifact_path=pptx_path,
+                        capability_fact=capabilities,
+                    )
 
         if slide_source in {"pdf", "both"}:
             explicit_pdf = self._slide_pdf_path(talk)

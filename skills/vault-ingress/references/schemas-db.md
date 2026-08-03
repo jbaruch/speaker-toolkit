@@ -1400,7 +1400,7 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
 | 10. Color Sequencing | Full sequence of hex values | `color_sequence` |
 | Text-channel provenance | Recursive shape text, table cells, picture OCR, background OCR | `text_channels[]` |
 | Unsupported visual containers | SmartArt, charts, OLE/media, unknown graphic frames, damaged assets | `unsupported_content[]`, `render_required_reasons[]` |
-| Native timing structure | Raw timing containers, behavior elements, visibility sets, transitions, and media timing | `native_timing`, `native_timing_summary` |
+| Native timing/build structure | Raw timing containers, behavior elements, visibility sets, transitions, media timing, and build-list entries | `native_timing`, `native_timing_summary` |
 
 ### What the Script Does NOT Extract (still needs PDF visual analysis)
 
@@ -1421,8 +1421,8 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
 
 ```json
 {
-  "schema_version": 2,
-  "pipeline_version": "1.1.0",
+  "schema_version": 3,
+  "pipeline_version": "1.2.0",
   "input_fingerprint": {
     "algorithm": "sha256",
     "digest": "64 lowercase hex characters",
@@ -1438,6 +1438,17 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
       "part_name": "ppt/media/image7.png",
       "error_type": "crc_mismatch",
       "status": "recovered_with_placeholder"
+    }
+  ],
+  "archive_recovery": [
+    {
+      "schema_version": 1,
+      "part_name": "ppt/media/image7.png",
+      "member_kind": "embedded_media",
+      "error_type": "crc_mismatch",
+      "status": "recovered_with_placeholder_asset",
+      "content_replaced": true,
+      "replacement_sha256": "64 lowercase hex characters"
     }
   ],
   "per_slide_visual": [
@@ -1461,11 +1472,41 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
           "channel": "shape_text|table_cell_text|picture_ocr|background_image_ocr|<unsupported-kind>_text|group_container_text",
           "text": "Talk Title",
           "confidence": "high|medium|low",
-          "status": "extracted|empty|skipped|unavailable|unsupported|requires_render",
+          "status": "extracted|empty|partial|failed|skipped|unavailable|unsupported|requires_render",
           "provenance": {
             "source": "pptx_shape_text_frame",
             "shape_path": ["Group 1", "Title 2"]
           }
+        },
+        {
+          "channel": "picture_ocr",
+          "text": "Recovered label",
+          "confidence": "low",
+          "result_confidence": 91.25,
+          "status": "extracted",
+          "attempted": true,
+          "engine": "tesseract",
+          "engine_version": "5.5.1",
+          "reason": null,
+          "provenance": {
+            "source": "embedded_picture_blobs",
+            "shape_paths": [["Picture 3"]]
+          },
+          "ocr_receipts": [
+            {
+              "attempted": true,
+              "engine": "tesseract",
+              "engine_version": "5.5.1",
+              "result_status": "text_recovered|low_confidence_text|genuine_empty|failed|unavailable|skipped",
+              "result_confidence": 91.25,
+              "error": null,
+              "part_name": "ppt/media/image3.png",
+              "asset_sha256": "64 lowercase hex characters",
+              "shape_path": ["Picture 3"],
+              "recovered_text": "Recovered label",
+              "trustworthy_text": true
+            }
+          ]
         }
       ],
       "unsupported_content": [
@@ -1499,8 +1540,18 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
           "total": 6
         },
         "media_timing_counts": {"audio": 1, "video": 0, "total": 1},
+        "build_list_present": true,
+        "build_list_count": 1,
+        "build_entry_counts": {
+          "paragraph": 1,
+          "diagram": 1,
+          "ole_chart": 0,
+          "graphic": 0,
+          "total": 2
+        },
         "has_animation_behaviors": true,
         "has_media_timing": true,
+        "has_build_entries": true,
         "provenance": {
           "source": "pptx_package_xml",
           "measurement": "raw_ooxml_element_counts",
@@ -1519,10 +1570,13 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
     "slides_with_transitions": 40,
     "slides_with_animation_behaviors": 10,
     "slides_with_media_timing": 2,
+    "slides_with_build_lists": 1,
+    "slides_with_build_entries": 1,
     "timing_element_count": 12,
     "transition_count": 40,
     "set_action_count": 18,
     "visibility_set_action_count": 9,
+    "build_list_count": 1,
     "animation_behavior_counts": {
       "general": 7,
       "color": 3,
@@ -1533,10 +1587,39 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
       "total": 36
     },
     "media_timing_counts": {"audio": 2, "video": 1, "total": 3},
+    "build_entry_counts": {
+      "paragraph": 1,
+      "diagram": 1,
+      "ole_chart": 0,
+      "graphic": 0,
+      "total": 2
+    },
     "provenance": {
       "source": "pptx_package_xml",
       "measurement": "raw_ooxml_element_counts",
       "observed_playback": false
+    }
+  },
+  "native_deck_audit": {
+    "schema_version": 1,
+    "extraction_schema_version": 3,
+    "extraction_pipeline_version": "1.2.0",
+    "source_pptx_sha256": "64 lowercase hex characters",
+    "source_pptx_size_bytes": 123456,
+    "slide_count": 60,
+    "render_required_slide_numbers": [1],
+    "render_required_reasons": {"1": ["smartart"]},
+    "extraction_receipt_sha256": "64 lowercase hex characters",
+    "rendered_page_inspection": {
+      "schema_version": 1,
+      "source_pptx_sha256": "64 lowercase hex characters",
+      "rendered_pdf_sha256": "64 lowercase hex characters",
+      "rendered_pdf_size_bytes": 98765,
+      "rendered_page_count": 60,
+      "inspected_page_ranges": [[1, 60]],
+      "inspected_required_slide_numbers": [1],
+      "complete": true,
+      "binding_sha256": "64 lowercase hex characters"
     }
   },
   "global_design": {
@@ -1549,26 +1632,38 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
 ```
 
 `schema_version` tracks this JSON field shape. Missing means legacy shape `0`;
-v1 added the version/fingerprint and current v2 adds `native_timing` to every
-slide plus `native_timing_summary`. `pipeline_version` tracks extraction behavior
-and changes when the walk, classification, confidence, OCR, recovery, or timing
-behavior changes; current is `1.1.0`.
+v1 added the version/fingerprint, v2 added `native_timing` to every slide plus
+`native_timing_summary`, and current v3 adds the raw build-list timing lane plus
+closed `archive_recovery` and `native_deck_audit` records. `pipeline_version`
+tracks extraction behavior and
+changes when the walk, classification, confidence, OCR, recovery, timing, or
+receipt behavior changes; current is `1.2.0`.
+
+Extractor schema v3 is independent of persisted pattern-evidence schema v2,
+return schema v5, queue-claim schema v5, and tracking-database schema v1. Those
+downstream generations do not advance here; their current readers bind or
+validate the new nested records inside their existing contracts.
 
 These records are transient per-invocation output, not a persisted artifact with
 an in-place migration. Regenerate old output with the current extractor. A timing
-reader must treat v0/v1 as **timing unknown**, never as all-zero, and rerun; an
-unknown future schema version is no usable prior output. The vault-profile layout
-reader may dual-read v1/v2 because `template_layouts` is unchanged, but it also
+reader must treat v0/v1 as **timing unknown**, never as all-zero. Schema v2 has
+the pre-build timing shape but lacks raw build-list evidence and cannot satisfy
+archive-recovery or audit-receipt requirements, so current analysis reruns it
+too. An unknown future schema version
+is no usable prior output. The vault-profile layout reader may read v1/v2/v3
+because `template_layouts` is unchanged, but it also
 rejects missing/unknown versions and reruns instead of guessing. This is the only
 declared cross-pipeline compatibility exception.
 `input_fingerprint` hashes the exact source PPTX bytes before any in-memory
 media recovery; identical bytes have the same fingerprint regardless of path.
 
-`corrupt_assets` is empty on a healthy package. A bad-CRC member under
+`archive_recovery` is empty on a healthy package. A bad-CRC member under
 `ppt/media/` is replaced only in an in-memory package with a transparent
-placeholder, allowing healthy text and slides to survive. Structural members
-(XML, relationships, content types) are never discarded; their corruption is
-a hard extraction error.
+placeholder, allowing healthy text and slides to survive while recording the
+lost part and exact replacement digest. `corrupt_assets` remains the legacy
+three-field projection. Structural members (XML, relationships, content types,
+layouts, masters, and presentation topology) are never discarded; their
+corruption makes the deck unavailable. The source file is never rewritten.
 
 `native_timing` inventories exact PresentationML element names under each slide's
 `<p:timing>` tree. `general` means the exact `<p:anim>` behavior, not a total;
@@ -1577,11 +1672,16 @@ specific behavior elements. `visibility_set_action_count` is the subset of
 `<p:set>` actions whose attribute name is `visibility` or ends in
 `.visibility`. Audio/video time nodes have a separate `media_timing_counts` lane,
 and slide transitions are counted separately whether or not a timing tree exists.
+The build lane counts only exact `p:bldP`, `p:bldDgm`, `p:bldOleChart`, and
+`p:bldGraphic` entries beneath `p:bldLst`, with fixed zero-valued keys and an
+explicit `build_list_present` flag. A build entry is raw package structure: it
+does not prove reveal order, visible state, execution, or delivered playback,
+and it is never merged into visibility-set counts.
 
 All counts are raw OOXML structure. Markup Compatibility `Choice` and `Fallback`
 branches are both present in the package and both counted. The provenance field's
 `observed_playback: false` is load-bearing: timing-container presence, media timing,
-or a motion behavior element does not prove execution, concurrency, smoothness,
+or a motion/build element does not prove execution, concurrency, smoothness,
 the perceived target, or delivered audience behavior. Adjacent static duplicate
 slides can still be progressive-reveal evidence after rendered-state inspection;
 they correctly carry zero native timing when the author implemented the build as
@@ -1598,8 +1698,20 @@ containers can remain invisible. On a `"low"` slide:
   channels*, never wordless
 - `ocr_text` holds the backward-compatible aggregate of picture and background
   image OCR channels when the engine ran (`text_extraction_method:
-  "shapes+ocr"`). Use it for cites,
-  transcript cross-checks, language policy on slide text, and pattern evidence
+  "shapes+ocr"`). Use only receipt records with `trustworthy_text: true` for
+  affirmative cites, transcript cross-checks, language policy on slide text,
+  and pattern evidence; lower-confidence recovered text remains available for
+  spelling review but is not trustworthy evidence
+- OCR channels add `attempted`, configured engine/version, aggregate numeric
+  `result_confidence` (finite 0..100 or null), a closed reason, and
+  `ocr_receipts[]`. Each per-asset receipt binds the exact package `part_name`,
+  asset SHA-256, and shape path to one result. `recovered_text` is capped at
+  8,000 characters per receipt. With no readable blob the channel has
+  `attempted: false`, `status: "unavailable"`, reason `no_readable_asset`, and
+  an empty receipt array. With `--no-ocr`, every readable asset gets an explicit
+  `attempted: false` / `result_status: "skipped"` receipt and reason
+  `ocr_disabled`. A missing engine records `ocr_engine_unavailable`; processing
+  failures record `ocr_failed` or `partial_ocr_results`
 - `text_extraction_method` is `"shapes"` when OCR was not attempted (high
   confidence, `--no-ocr`, or no usable image blob), `"shapes+ocr"` when it ran,
   `"shapes+ocr_unavailable"` when the engine was missing
@@ -1618,6 +1730,20 @@ SmartArt, charts, OLE/media objects, unknown graphic frames, unreadable images,
 and recovered corrupt assets are listed in `unsupported_content`. Never infer
 completeness when `render_required` is true; use
 `render_required_reasons` to choose the fallback.
+
+`native_deck_audit` binds the exact PPTX digest and size, extractor schema and
+pipeline, slide count, and every derived render-required slide/reason. Its
+optional `rendered_page_inspection` binds an equal-page-count PDF plus the exact
+inspected ranges. Hash, byte size, and page count come from one stable copied PDF
+generation; persistence snapshots the current canonical PDF again and compares
+all three, so a same-size replacement cannot inherit an old receipt. Every
+current return that declares, inspects, or cites `native_deck` must carry the
+current audit even when it reports zero findings. Native citations—including
+applicability citations—need rendered evidence only when their cited slide
+numbers overlap the audit's render-required slides; explicit authored visual
+summary fields require complete coverage of every render-required slide.
+Persistence recomputes the audit in a bounded worker and matches the receipt to
+owner-canonical native-deck and static-slide identities.
 
 `image_area_ratio` is the **largest** PICTURE shape's area as a fraction of the
 slide, rounded to 3 decimals; always present. `0.0` means no picture, unreadable

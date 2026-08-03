@@ -596,6 +596,7 @@ def test_bare_native_deck_is_fail_closed_for_applicability_and_fresh_with_root(
     tmp_path,
 ):
     import pattern_evidence
+    import pptx_evidence
 
     condition = return_validation.NotApplicableCondition(
         "no-opportunity", "No relevant opportunity occurs."
@@ -639,6 +640,12 @@ def test_bare_native_deck_is_fail_closed_for_applicability_and_fresh_with_root(
         ]
     )
     raw["slide_source"] = "pptx"
+    raw["structured_data"] = {
+        "slide_count": 1,
+        "native_deck_audit": pptx_evidence.recompute_native_deck_audit(
+            deck_path
+        ),
+    }
     raw["pattern_observations"].update(
         {
             "evidence_sources": ["native_deck"],

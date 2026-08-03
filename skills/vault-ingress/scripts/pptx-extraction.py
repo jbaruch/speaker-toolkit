@@ -17,6 +17,7 @@ about observed motion, concurrency, or delivered behavior.
 
 Usage:
     pptx-extraction.py <path> [--skip template] [--no-ocr]
+        [--rendered-pdf <path>] [--inspected-pages <PAGE|START-END>]
     pptx-extraction.py --version
 
     <path>       Path to a single .pptx file or a directory to scan recursively
@@ -29,7 +30,6 @@ Examples:
 """
 
 import argparse
-import base64
 import glob
 import hashlib
 import io
@@ -37,23 +37,30 @@ import json
 import os
 import re
 import sys
-import zipfile
 from collections import Counter
 from math import gcd
-from pathlib import Path
-from zlib import error as ZlibError
-
-from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.oxml.ns import qn
 
+from pptx_evidence import (
+    PPTX_EXTRACTION_PIPELINE_VERSION,
+    PPTX_EXTRACTION_SCHEMA_VERSION,
+    PptxEvidenceError,
+    build_native_deck_audit,
+    build_rendered_page_inspection,
+    finite_confidence,
+    parse_page_range_arguments,
+    presentation_with_media_recovery,
+    sha256_bytes,
+    snapshot_regular_file,
+)
+
 # Field-shape and behavior versions are deliberately separate. A missing
 # schema_version/pipeline_version identifies the legacy extractor output.
-# v2 adds the fixed-shape native_timing record on every slide plus stable deck
-# totals. The additive shape does not change v1 fields, but a v1 record cannot
-# answer timing questions and must not turn missing metadata into a zero count.
-SCHEMA_VERSION = 2
-PIPELINE_VERSION = "1.1.0"
+# v2 added fixed-shape native timing. V3 adds a raw build-list lane, a closed
+# native-deck audit, and an exact rendered-page inspection receipt.
+SCHEMA_VERSION = PPTX_EXTRACTION_SCHEMA_VERSION
+PIPELINE_VERSION = PPTX_EXTRACTION_PIPELINE_VERSION
 
 # PresentationML timing elements are counted by exact qualified name and kept
 # in separate semantic lanes. In particular, a <p:timing> container or a media
@@ -69,6 +76,12 @@ _ANIMATION_BEHAVIOR_ELEMENTS = {
 _MEDIA_TIMING_ELEMENTS = {
     "audio": "p:audio",
     "video": "p:video",
+}
+_BUILD_ENTRY_ELEMENTS = {
+    "paragraph": "p:bldP",
+    "diagram": "p:bldDgm",
+    "ole_chart": "p:bldOleChart",
+    "graphic": "p:bldGraphic",
 }
 _TIMING_PROVENANCE = {
     "source": "pptx_package_xml",
@@ -89,14 +102,6 @@ _GRAPHIC_DATA_URI_OLE = (
     "http://schemas.openxmlformats.org/presentationml/2006/ole"
 )
 
-# A valid, transparent one-pixel PNG. When a ZIP member under ppt/media has a
-# bad CRC, the extractor substitutes this blob in an in-memory copy of the
-# package. That preserves every healthy slide/shape while making the lost asset
-# explicit in corrupt_assets; the source file is never rewritten.
-_RECOVERY_IMAGE_BYTES = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
-)
-
 # A picture covering at least this fraction of the slide is large enough to be
 # carrying rendered text — AI-generated illustration decks bake titles, callout
 # labels, and annotations into the image, where python-pptx cannot see them.
@@ -111,6 +116,11 @@ _TEXT_BEARING_IMAGE_AREA_RATIO = 0.5
 # cites and transcript cross-checks, not a full document dump.
 _OCR_TEXT_MAX_CHARS = 8000
 
+# Mean Tesseract token confidence uses the engine's documented 0..100 scale.
+# Text below this floor remains visible for spelling review but is not marked
+# trustworthy evidence.
+_OCR_TRUST_CONFIDENCE = 50.0
+
 # One stderr warning per process when the OCR engine is missing — not once
 # per slide on a 100-slide deck.
 _ocr_unavailable_warned = False
@@ -118,18 +128,22 @@ _ocr_unavailable_warned = False
 # Cached tesseract availability for this process: None = not checked yet.
 _tesseract_available = None
 
+# Populated by the same availability probe, then repeated on every asset
+# receipt so an OCR result is reproducible and distinguishable from a skip.
+_tesseract_version = None
+
 
 class OcrUnavailableError(Exception):
     """Tesseract (or its Python binding) is not available on this machine."""
 
 
-def _count_in_timing(timing_elements, qualified_name):
-    """Count exact descendants across presentation timing containers."""
+def _count_in_containers(containers, qualified_name):
+    """Count exact descendants across selected PresentationML containers."""
     tag = qn(qualified_name)
     return sum(
         1
-        for timing in timing_elements
-        for _element in timing.iter(tag)
+        for container in containers
+        for _element in container.iter(tag)
     )
 
 
@@ -151,21 +165,27 @@ def extract_native_timing(slide):
     """
     root = slide.element
     timing_elements = list(root.iter(qn("p:timing")))
+    build_lists = list(root.iter(qn("p:bldLst")))
     set_actions = [
         element
         for timing in timing_elements
         for element in timing.iter(qn("p:set"))
     ]
     animation_counts = {
-        name: _count_in_timing(timing_elements, qualified_name)
+        name: _count_in_containers(timing_elements, qualified_name)
         for name, qualified_name in _ANIMATION_BEHAVIOR_ELEMENTS.items()
     }
     animation_counts["total"] = sum(animation_counts.values())
     media_counts = {
-        name: _count_in_timing(timing_elements, qualified_name)
+        name: _count_in_containers(timing_elements, qualified_name)
         for name, qualified_name in _MEDIA_TIMING_ELEMENTS.items()
     }
     media_counts["total"] = sum(media_counts.values())
+    build_counts = {
+        name: _count_in_containers(build_lists, qualified_name)
+        for name, qualified_name in _BUILD_ENTRY_ELEMENTS.items()
+    }
+    build_counts["total"] = sum(build_counts.values())
     part_name = str(slide.part.partname).lstrip("/")
     return {
         "timing_element_present": bool(timing_elements),
@@ -177,8 +197,12 @@ def extract_native_timing(slide):
         ),
         "animation_behavior_counts": animation_counts,
         "media_timing_counts": media_counts,
+        "build_list_present": bool(build_lists),
+        "build_list_count": len(build_lists),
+        "build_entry_counts": build_counts,
         "has_animation_behaviors": animation_counts["total"] > 0,
         "has_media_timing": media_counts["total"] > 0,
+        "has_build_entries": build_counts["total"] > 0,
         "provenance": {
             **_TIMING_PROVENANCE,
             "part_name": part_name,
@@ -192,15 +216,19 @@ def summarize_native_timing(per_slide_visual):
         name: 0 for name in _ANIMATION_BEHAVIOR_ELEMENTS
     }
     media_counts = {name: 0 for name in _MEDIA_TIMING_ELEMENTS}
+    build_counts = {name: 0 for name in _BUILD_ENTRY_ELEMENTS}
     summary = {
         "slides_with_timing_elements": 0,
         "slides_with_transitions": 0,
         "slides_with_animation_behaviors": 0,
         "slides_with_media_timing": 0,
+        "slides_with_build_lists": 0,
+        "slides_with_build_entries": 0,
         "timing_element_count": 0,
         "transition_count": 0,
         "set_action_count": 0,
         "visibility_set_action_count": 0,
+        "build_list_count": 0,
     }
     for slide_data in per_slide_visual:
         timing = slide_data["native_timing"]
@@ -212,23 +240,32 @@ def summarize_native_timing(per_slide_visual):
             timing["has_animation_behaviors"])
         summary["slides_with_media_timing"] += int(
             timing["has_media_timing"])
+        summary["slides_with_build_lists"] += int(
+            timing["build_list_present"])
+        summary["slides_with_build_entries"] += int(
+            timing["has_build_entries"])
         for field in (
             "timing_element_count",
             "transition_count",
             "set_action_count",
             "visibility_set_action_count",
+            "build_list_count",
         ):
             summary[field] += timing[field]
         for name in animation_counts:
             animation_counts[name] += timing["animation_behavior_counts"][name]
         for name in media_counts:
             media_counts[name] += timing["media_timing_counts"][name]
+        for name in build_counts:
+            build_counts[name] += timing["build_entry_counts"][name]
     animation_counts["total"] = sum(animation_counts.values())
     media_counts["total"] = sum(media_counts.values())
+    build_counts["total"] = sum(build_counts.values())
     return {
         **summary,
         "animation_behavior_counts": animation_counts,
         "media_timing_counts": media_counts,
+        "build_entry_counts": build_counts,
         "provenance": dict(_TIMING_PROVENANCE),
     }
 
@@ -240,74 +277,6 @@ def _input_fingerprint(blob):
         "digest": hashlib.sha256(blob).hexdigest(),
         "size_bytes": len(blob),
     }
-
-
-def _is_embedded_media_member(member_name):
-    """Return whether a ZIP member is an independently recoverable asset."""
-    normalized = member_name.replace("\\", "/").lstrip("/")
-    return normalized.startswith("ppt/media/") and not normalized.endswith("/")
-
-
-def _validate_zip_members(package_blob):
-    """Return corrupt ZIP member names, validating every member's CRC."""
-    corrupt = []
-    try:
-        with zipfile.ZipFile(io.BytesIO(package_blob)) as archive:
-            for member in archive.infolist():
-                try:
-                    with archive.open(member) as stream:
-                        while stream.read(1024 * 1024):
-                            pass
-                except (zipfile.BadZipFile, ZlibError):
-                    corrupt.append(member.filename)
-    except zipfile.BadZipFile as e:
-        raise ValueError("invalid PPTX ZIP container") from e
-    return corrupt
-
-
-def _presentation_with_media_recovery(package_blob):
-    """Load a presentation, substituting only corrupt embedded media.
-
-    XML, relationships, and other structural package parts are not safe to
-    discard. A corrupt non-media member therefore remains a hard error, while
-    corrupt assets under ppt/media are replaced in an in-memory copy so the
-    rest of the deck can still be cataloged.
-    """
-    corrupt_names = _validate_zip_members(package_blob)
-    if not corrupt_names:
-        return Presentation(io.BytesIO(package_blob)), []
-
-    unsafe = [name for name in corrupt_names if not _is_embedded_media_member(name)]
-    if unsafe:
-        joined = ", ".join(sorted(unsafe))
-        raise ValueError(f"corrupt structural PPTX member(s): {joined}")
-
-    recovered_package = io.BytesIO()
-    corrupt_set = set(corrupt_names)
-    try:
-        with (
-            zipfile.ZipFile(io.BytesIO(package_blob)) as source,
-            zipfile.ZipFile(recovered_package, "w") as destination,
-        ):
-            for member in source.infolist():
-                if member.filename in corrupt_set:
-                    payload = _RECOVERY_IMAGE_BYTES
-                else:
-                    payload = source.read(member)
-                destination.writestr(member, payload)
-    except (zipfile.BadZipFile, ZlibError) as e:
-        raise ValueError("could not recover corrupt PPTX media") from e
-
-    recovered_package.seek(0)
-    assets = [
-        {
-            "part_name": name,
-            "error_type": "crc_mismatch",
-            "status": "recovered_with_placeholder",
-        }
-        for name in sorted(corrupt_names)
-    ]
-    return Presentation(recovered_package), assets
 
 
 def picture_area_ratio(shape, prs):
@@ -331,15 +300,42 @@ def normalize_ocr_text(text):
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _ocr_text_and_confidence(data):
+    """Pair each retained Tesseract token with only its own confidence."""
+    tokens = []
+    confidences = []
+    for token, raw_confidence in zip(
+        data.get("text", []), data.get("conf", [])
+    ):
+        normalized = normalize_ocr_text(token)
+        if not normalized:
+            continue
+        tokens.append(normalized)
+        try:
+            confidence = float(raw_confidence)
+        except (TypeError, ValueError):
+            continue
+        normalized_confidence = finite_confidence(confidence)
+        if normalized_confidence is not None:
+            confidences.append(normalized_confidence)
+    text = normalize_ocr_text(" ".join(tokens))[:_OCR_TEXT_MAX_CHARS]
+    confidence = (
+        round(sum(confidences) / len(confidences), 3)
+        if confidences
+        else None
+    )
+    return text, confidence
+
+
 def _require_tesseract():
     """Ensure tesseract + bindings are available; cache the result per process.
 
     Raises OcrUnavailableError when missing. Subsequent calls in the same
     process do not re-spawn the version check.
     """
-    global _tesseract_available
+    global _tesseract_available, _tesseract_version
     if _tesseract_available is True:
-        return
+        return _tesseract_version
     if _tesseract_available is False:
         raise OcrUnavailableError(
             "tesseract binary not found; install tesseract-ocr (apt) or "
@@ -355,7 +351,7 @@ def _require_tesseract():
         ) from e
 
     try:
-        pytesseract.get_tesseract_version()
+        version = pytesseract.get_tesseract_version()
     except pytesseract.TesseractNotFoundError as e:
         _tesseract_available = False
         raise OcrUnavailableError(
@@ -364,48 +360,109 @@ def _require_tesseract():
         ) from e
 
     _tesseract_available = True
+    _tesseract_version = str(version)[:128]
+    return _tesseract_version
 
 
-def ocr_image_bytes(blob):
-    """OCR a single image blob. Returns normalized text (maybe empty).
-
-    Raises OcrUnavailableError when the engine or its binding is missing.
-    Unreadable blobs and per-image OCR failures return "" so one bad picture
-    does not abort the deck.
-    """
+def _ocr_image_result(blob):
+    """OCR one image and return an outcome distinct from asset provenance."""
     global _tesseract_available
-    _require_tesseract()
+    engine_version = _require_tesseract()
 
     try:
         import pytesseract
-        from PIL import Image
+        from PIL import Image, UnidentifiedImageError
     except ImportError as e:
         raise OcrUnavailableError(
             "OCR requires Pillow and pytesseract; install project dependencies"
         ) from e
+    pillow_errors = (
+        UnidentifiedImageError,
+        Image.DecompressionBombError,
+        OSError,
+    )
 
     try:
         img = Image.open(io.BytesIO(blob))
-    except OSError as e:
-        sys.stderr.write(f"WARN: OCR skipped unreadable image blob: {e}\n")
-        return ""
-
-    if img.mode not in ("RGB", "L"):
-        img = img.convert("RGB")
+    except pillow_errors as e:
+        error_code = f"image_decode_error:{type(e).__name__}"[:512]
+        sys.stderr.write(f"WARN: OCR skipped image blob ({error_code})\n")
+        return {
+            "attempted": True,
+            "engine": "tesseract",
+            "engine_version": engine_version,
+            "result_status": "failed",
+            "result_confidence": None,
+            "error": error_code,
+            "recovered_text": "",
+            "trustworthy_text": False,
+        }
 
     try:
-        raw = pytesseract.image_to_string(img)
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        data = pytesseract.image_to_data(
+            img,
+            output_type=pytesseract.Output.DICT,
+        )
     except pytesseract.TesseractNotFoundError as e:
         _tesseract_available = False
         raise OcrUnavailableError(
             "tesseract binary not found; install tesseract-ocr (apt) or "
             "tesseract (brew)"
         ) from e
+    except pillow_errors as e:
+        error_code = f"image_decode_error:{type(e).__name__}"[:512]
+        sys.stderr.write(f"WARN: OCR failed on image blob ({error_code})\n")
+        return {
+            "attempted": True,
+            "engine": "tesseract",
+            "engine_version": engine_version,
+            "result_status": "failed",
+            "result_confidence": None,
+            "error": error_code,
+            "recovered_text": "",
+            "trustworthy_text": False,
+        }
     except pytesseract.TesseractError as e:
-        sys.stderr.write(f"WARN: OCR failed on image blob: {e}\n")
-        return ""
+        error_code = f"engine_error:{type(e).__name__}"[:512]
+        sys.stderr.write(f"WARN: OCR failed on image blob ({error_code})\n")
+        return {
+            "attempted": True,
+            "engine": "tesseract",
+            "engine_version": engine_version,
+            "result_status": "failed",
+            "result_confidence": None,
+            "error": error_code,
+            "recovered_text": "",
+            "trustworthy_text": False,
+        }
 
-    return normalize_ocr_text(raw)
+    text, confidence = _ocr_text_and_confidence(data)
+    trustworthy = bool(
+        text and confidence is not None and confidence >= _OCR_TRUST_CONFIDENCE
+    )
+    if not text:
+        status = "genuine_empty"
+    elif trustworthy:
+        status = "text_recovered"
+    else:
+        status = "low_confidence_text"
+    return {
+        "attempted": True,
+        "engine": "tesseract",
+        "engine_version": engine_version,
+        "result_status": status,
+        "result_confidence": confidence,
+        "error": None,
+        "recovered_text": text,
+        "trustworthy_text": trustworthy,
+    }
+
+
+def ocr_image_bytes(blob):
+    """OCR one image and return recovered text for legacy callers."""
+    return _ocr_image_result(blob)["recovered_text"]
 
 
 def ocr_picture_blobs(blobs):
@@ -435,45 +492,201 @@ def _append_ocr_text(slide_data, text):
 
 
 def _run_ocr_channel(
-    slide_data, blobs, *, channel, provenance, ocr=True, ocr_fn=None,
+    slide_data, assets, *, channel, provenance, ocr=True, ocr_fn=None,
 ):
-    """OCR one image source and emit channel-level provenance/confidence."""
+    """OCR image assets and emit one outcome receipt for every exact blob."""
     record = {
         "channel": channel,
         "text": "",
         "confidence": "low",
-        "status": "unavailable" if not blobs else "pending",
+        "result_confidence": None,
+        "status": "unavailable" if not assets else "pending",
+        "attempted": False,
+        "engine": "tesseract",
+        "engine_version": None,
+        "reason": "no_readable_asset" if not assets else None,
         "provenance": provenance,
+        "ocr_receipts": [],
     }
     slide_data["text_channels"].append(record)
 
-    if not blobs:
+    if not assets:
         return
     if not ocr:
         record["status"] = "skipped"
+        record["reason"] = "ocr_disabled"
+        for asset in assets:
+            record["ocr_receipts"].append({
+                "attempted": False,
+                "engine": "tesseract",
+                "engine_version": None,
+                "result_status": "skipped",
+                "result_confidence": None,
+                "error": "ocr_disabled",
+                "part_name": asset.get("part_name"),
+                "asset_sha256": sha256_bytes(asset["blob"]),
+                "shape_path": list(asset.get("shape_path") or []),
+                "recovered_text": "",
+                "trustworthy_text": False,
+            })
         return
 
-    run_ocr = ocr_fn if ocr_fn is not None else ocr_picture_blobs
     global _ocr_unavailable_warned
-    try:
-        text = normalize_ocr_text(run_ocr(blobs))
-        record["text"] = text
-        record["status"] = "extracted" if text else "empty"
-        _append_ocr_text(slide_data, text)
-        slide_data["text_extraction_method"] = "shapes+ocr"
-    except OcrUnavailableError as e:
+    for asset in assets:
+        blob = asset["blob"]
+        try:
+            if ocr_fn is None:
+                outcome = _ocr_image_result(blob)
+            else:
+                injected = ocr_fn([blob])
+                if isinstance(injected, dict):
+                    recovered_text = normalize_ocr_text(
+                        injected.get("recovered_text", "")
+                    )[:_OCR_TEXT_MAX_CHARS]
+                    injected_engine = injected.get("engine", "injected")
+                    injected_version = injected.get("engine_version")
+                    injected_error = injected.get("error")
+                    outcome = {
+                        "attempted": injected.get("attempted", True) is True,
+                        "engine": (
+                            injected_engine[:128]
+                            if isinstance(injected_engine, str)
+                            else "injected"
+                        ),
+                        "engine_version": (
+                            injected_version[:128]
+                            if isinstance(injected_version, str)
+                            else None
+                        ),
+                        "result_status": injected.get("result_status") or (
+                            "text_recovered" if recovered_text else "genuine_empty"
+                        ),
+                        "result_confidence": finite_confidence(
+                            injected.get("result_confidence")
+                        ),
+                        "error": (
+                            injected_error[:512]
+                            if isinstance(injected_error, str)
+                            else None
+                        ),
+                        "recovered_text": recovered_text,
+                        "trustworthy_text": (
+                            injected.get("trustworthy_text", bool(recovered_text))
+                            is True
+                        ),
+                    }
+                else:
+                    text = normalize_ocr_text(injected)[:_OCR_TEXT_MAX_CHARS]
+                    outcome = {
+                        "attempted": True,
+                        "engine": "injected",
+                        "engine_version": None,
+                        "result_status": (
+                            "text_recovered" if text else "genuine_empty"
+                        ),
+                        "result_confidence": None,
+                        "error": None,
+                        "recovered_text": text,
+                        "trustworthy_text": bool(text),
+                    }
+        except OcrUnavailableError as e:
+            outcome = {
+                "attempted": False,
+                "engine": "tesseract",
+                "engine_version": None,
+                "result_status": "unavailable",
+                "result_confidence": None,
+                "error": str(e)[:512],
+                "recovered_text": "",
+                "trustworthy_text": False,
+            }
+            if not _ocr_unavailable_warned:
+                sys.stderr.write(
+                    f"WARN: OCR unavailable ({e}); low-confidence slides will "
+                    "retain per-asset unavailable receipts. Install tesseract "
+                    "to enable OCR.\n"
+                )
+                _ocr_unavailable_warned = True
+        record["ocr_receipts"].append({
+            **outcome,
+            "part_name": asset.get("part_name"),
+            "asset_sha256": sha256_bytes(blob),
+            "shape_path": list(asset.get("shape_path") or []),
+        })
+
+    recovered = [
+        receipt["recovered_text"]
+        for receipt in record["ocr_receipts"]
+        if receipt["recovered_text"]
+    ]
+    text = normalize_ocr_text(" | ".join(recovered))[:_OCR_TEXT_MAX_CHARS]
+    record["text"] = text
+    confidences = [
+        receipt["result_confidence"]
+        for receipt in record["ocr_receipts"]
+        if receipt["result_confidence"] is not None
+    ]
+    if confidences:
+        record["result_confidence"] = round(
+            sum(confidences) / len(confidences), 3
+        )
+    statuses = {
+        receipt["result_status"] for receipt in record["ocr_receipts"]
+    }
+    record["attempted"] = any(
+        receipt["attempted"] for receipt in record["ocr_receipts"]
+    )
+    engines = {
+        receipt["engine"]
+        for receipt in record["ocr_receipts"]
+        if isinstance(receipt.get("engine"), str) and receipt["engine"]
+    }
+    record["engine"] = next(iter(engines)) if len(engines) == 1 else None
+    versions = {
+        receipt["engine_version"]
+        for receipt in record["ocr_receipts"]
+        if isinstance(receipt.get("engine_version"), str)
+        and receipt["engine_version"]
+    }
+    record["engine_version"] = (
+        next(iter(versions)) if len(versions) == 1 else None
+    )
+    all_recovered_text_trustworthy = all(
+        receipt["trustworthy_text"] is True
+        for receipt in record["ocr_receipts"]
+        if receipt["recovered_text"]
+    )
+    if (
+        text
+        and statuses == {"text_recovered"}
+        and all_recovered_text_trustworthy
+    ):
+        record["status"] = "extracted"
+    elif text:
+        record["status"] = "partial"
+    elif statuses == {"genuine_empty"}:
+        record["status"] = "empty"
+    elif "failed" in statuses:
+        record["status"] = "failed"
+    elif statuses == {"unavailable"}:
         record["status"] = "unavailable"
+        record["reason"] = "ocr_engine_unavailable"
+    else:
+        record["status"] = "partial"
+    if record["status"] == "failed":
+        record["reason"] = "ocr_failed"
+    elif record["status"] == "partial":
+        record["reason"] = "partial_ocr_results"
+    _append_ocr_text(slide_data, text)
+    if any(receipt["attempted"] for receipt in record["ocr_receipts"]):
+        slide_data["text_extraction_method"] = "shapes+ocr"
+    elif statuses == {"unavailable"}:
         slide_data["text_extraction_method"] = "shapes+ocr_unavailable"
-        if not _ocr_unavailable_warned:
-            sys.stderr.write(
-                f"WARN: OCR unavailable ({e}); low-confidence slides will "
-                f"have empty OCR channels. Install tesseract to enable.\n"
-            )
-            _ocr_unavailable_warned = True
 
 
 def apply_ocr_to_slide(
     slide_data, picture_blobs, *, ocr=True, ocr_fn=None, shape_paths=None,
+    part_names=None,
 ):
     """Fill picture OCR fields on a per-slide dict.
 
@@ -481,17 +694,35 @@ def apply_ocr_to_slide(
     available. Image-background slides with no PICTURE shapes have no blob to
     OCR here (rendering the page is out of this script's scope).
 
-    ocr_fn is injectable for tests (signature: list[bytes] -> str). Default
-    is ocr_picture_blobs.
+    ocr_fn is injectable for tests (signature: list[bytes] -> str|dict). The
+    production path runs Tesseract independently for each asset.
     """
     if slide_data.get("text_extraction_confidence") != "low":
         return slide_data
     if not picture_blobs:
+        if slide_data.get("has_image") is True:
+            _run_ocr_channel(
+                slide_data,
+                [],
+                channel="picture_ocr",
+                provenance={
+                    "source": "embedded_picture_blobs",
+                    "shape_paths": shape_paths or [],
+                },
+                ocr=ocr,
+                ocr_fn=ocr_fn,
+            )
         return slide_data
 
+    paths = shape_paths or [[] for _blob in picture_blobs]
+    names = part_names or [None for _blob in picture_blobs]
+    assets = [
+        {"blob": blob, "shape_path": path, "part_name": part_name}
+        for blob, path, part_name in zip(picture_blobs, paths, names)
+    ]
     _run_ocr_channel(
         slide_data,
-        picture_blobs,
+        assets,
         channel="picture_ocr",
         provenance={
             "source": "embedded_picture_blobs",
@@ -512,11 +743,16 @@ def apply_background_ocr(slide_data, background_image, *, ocr=True, ocr_fn=None)
             "provenance": {"source": "pptx_background_image"},
         }
     blob = background_image.get("blob")
+    provenance = background_image["provenance"]
     _run_ocr_channel(
         slide_data,
-        [blob] if blob else [],
+        ([{
+            "blob": blob,
+            "shape_path": [],
+            "part_name": provenance.get("part_name"),
+        }] if blob else []),
         channel="background_image_ocr",
-        provenance=background_image["provenance"],
+        provenance=provenance,
         ocr=ocr,
         ocr_fn=ocr_fn,
     )
@@ -902,16 +1138,26 @@ def extract_template_layouts(prs):
     return layouts
 
 
-def extract_pptx(pptx_path, *, ocr=True, ocr_fn=None):
+def extract_pptx(
+    pptx_path,
+    *,
+    ocr=True,
+    ocr_fn=None,
+    rendered_pdf_path=None,
+    inspected_page_ranges=None,
+):
     """Main extraction function.
 
     ocr: when True (default), low-confidence image channels get an OCR
          inventory in ocr_text and text_channels.
     ocr_fn: optional callable(list[bytes]) -> str for tests; default uses
             tesseract via ocr_picture_blobs.
+    rendered_pdf_path/inspected_page_ranges: optional exact rendered artifact
+            plus the page ranges actually inspected for the native-deck audit.
     """
-    package_blob = Path(pptx_path).read_bytes()
-    prs, corrupt_assets = _presentation_with_media_recovery(package_blob)
+    package_blob = snapshot_regular_file(pptx_path, label="PPTX artifact")
+    source_fingerprint = _input_fingerprint(package_blob)
+    prs, archive_recovery = presentation_with_media_recovery(package_blob)
     slide_width = prs.slide_width
     slide_height = prs.slide_height
     if slide_width is None or slide_height is None:
@@ -921,11 +1167,13 @@ def extract_pptx(pptx_path, *, ocr=True, ocr_fn=None):
     if slide_width_value <= 0 or slide_height_value <= 0:
         raise ValueError("PPTX presentation has invalid slide dimensions")
     ratio_divisor = gcd(slide_width_value, slide_height_value)
-    corrupt_part_names = {asset["part_name"] for asset in corrupt_assets}
+    corrupt_part_names = {
+        str(record["part_name"]) for record in archive_recovery
+    }
     result = {
         "schema_version": SCHEMA_VERSION,
         "pipeline_version": PIPELINE_VERSION,
-        "input_fingerprint": _input_fingerprint(package_blob),
+        "input_fingerprint": source_fingerprint,
         "pptx_path": os.fspath(pptx_path),
         "slide_count": len(prs.slides),
         "slide_width_inches": round(slide_width_value / 914400, 2),
@@ -934,7 +1182,15 @@ def extract_pptx(pptx_path, *, ocr=True, ocr_fn=None):
             f"{slide_width_value // ratio_divisor}:"
             f"{slide_height_value // ratio_divisor}"
         ),
-        "corrupt_assets": corrupt_assets,
+        "corrupt_assets": [
+            {
+                "part_name": record["part_name"],
+                "error_type": record["error_type"],
+                "status": "recovered_with_placeholder",
+            }
+            for record in archive_recovery
+        ],
+        "archive_recovery": archive_recovery,
         "template_layouts": extract_template_layouts(prs),
         "per_slide_visual": [],
         "global_design": {
@@ -1125,12 +1381,14 @@ def extract_pptx(pptx_path, *, ocr=True, ocr_fn=None):
         picture_entries.sort(key=lambda item: item[0], reverse=True)
         picture_blobs = [entry[1] for entry in picture_entries]
         picture_paths = [entry[2] for entry in picture_entries]
+        picture_part_names = [entry[3] for entry in picture_entries]
         apply_ocr_to_slide(
             slide_data,
             picture_blobs,
             ocr=ocr,
             ocr_fn=ocr_fn,
             shape_paths=picture_paths,
+            part_names=picture_part_names,
         )
 
         if bg_type == "image":
@@ -1173,7 +1431,35 @@ def extract_pptx(pptx_path, *, ocr=True, ocr_fn=None):
             result["global_design"]["background_colors"][bg_hex] += 1
         result["global_design"]["color_sequence"].append(bg_hex or "unknown")
 
+        slide_data["render_required_reasons"].sort()
         result["per_slide_visual"].append(slide_data)
+
+    required_reasons = {
+        slide_data["slide_number"]: slide_data["render_required_reasons"]
+        for slide_data in result["per_slide_visual"]
+        if slide_data["render_required"]
+    }
+    if inspected_page_ranges and rendered_pdf_path is None:
+        raise PptxEvidenceError(
+            "inspected_page_ranges requires rendered_pdf_path so the assertion "
+            "can be identity-bound"
+        )
+    render_receipt = None
+    if rendered_pdf_path is not None:
+        render_receipt = build_rendered_page_inspection(
+            source_pptx_sha256=source_fingerprint["digest"],
+            rendered_pdf_path=rendered_pdf_path,
+            inspected_page_ranges=inspected_page_ranges or [],
+            required_slide_numbers=sorted(required_reasons),
+            slide_count=len(prs.slides),
+        )
+    result["native_deck_audit"] = build_native_deck_audit(
+        source_pptx_sha256=source_fingerprint["digest"],
+        source_pptx_size_bytes=source_fingerprint["size_bytes"],
+        slide_count=len(prs.slides),
+        render_required_reasons=required_reasons,
+        rendered_page_inspection=render_receipt,
+    )
 
     # Convert Counters to dicts for JSON serialization
     result["global_design"]["fonts_used"] = dict(result["global_design"]["fonts_used"])
@@ -1218,9 +1504,9 @@ def batch_extract(directory, skip_patterns, *, ocr=True):
             data = extract_pptx(pptx_path, ocr=ocr)
             results.append(data)
             print(f"OK:   {pptx_path} ({data['slide_count']} slides)", file=sys.stderr)
-        except Exception as e:
-            skipped.append({"path": pptx_path, "reason": f"error: {e}"})
-            print(f"FAIL: {pptx_path}: {e}", file=sys.stderr)
+        except (PptxEvidenceError, OSError, ValueError, KeyError, AttributeError) as exc:
+            skipped.append({"path": pptx_path, "reason": f"error: {exc}"})
+            print(f"FAIL: {pptx_path}: {exc}", file=sys.stderr)
 
     return results, skipped
 
@@ -1242,6 +1528,17 @@ def main(argv=None):
         help="Skip OCR on low-confidence slides (shape walk only)",
     )
     parser.add_argument(
+        "--rendered-pdf",
+        help="PDF rendered from the exact input PPTX for identity-bound review",
+    )
+    parser.add_argument(
+        "--inspected-pages",
+        action="append",
+        default=[],
+        metavar="PAGE|START-END",
+        help="Rendered pages actually inspected; repeat or comma-separate values",
+    )
+    parser.add_argument(
         "--version",
         action="store_true",
         help="Print extractor schema and pipeline versions as JSON",
@@ -1256,18 +1553,39 @@ def main(argv=None):
     if args.path is None:
         parser.error("path is required unless --version is used")
     ocr = not args.no_ocr
+    try:
+        inspected_page_ranges = parse_page_range_arguments(args.inspected_pages)
+    except PptxEvidenceError as exc:
+        parser.error(str(exc))
 
     if os.path.isfile(args.path):
-        result = extract_pptx(args.path, ocr=ocr)
+        try:
+            result = extract_pptx(
+                args.path,
+                ocr=ocr,
+                rendered_pdf_path=args.rendered_pdf,
+                inspected_page_ranges=inspected_page_ranges,
+            )
+        # The preflight caller treats an invalid/nonzero process result as the
+        # silent-failure shape; emit one concise diagnostic so propagation does
+        # not replace the contract with an unstructured traceback.
+        except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
+            print(f"ERROR: cannot extract PPTX {args.path}: {exc}", file=sys.stderr)
+            return 1
         print(json.dumps(result, indent=2))
     elif os.path.isdir(args.path):
+        if args.rendered_pdf or inspected_page_ranges:
+            parser.error(
+                "--rendered-pdf/--inspected-pages require a single PPTX input"
+            )
         results, skipped = batch_extract(args.path, args.skip, ocr=ocr)
         output = {"results": results, "skipped": skipped}
         print(json.dumps(output, indent=2))
     else:
         print(f"Error: {args.path} is not a file or directory", file=sys.stderr)
-        sys.exit(1)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

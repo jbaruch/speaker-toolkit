@@ -237,13 +237,15 @@ Checks apply to a record with a declared transcript, slide, or video capability
   provenance is blocking for completed records and a warning for requeued/pending
   work.
 
-The seven stable slide-contract fault classes are:
+The nine stable slide-contract fault classes are:
 
 | Code | Meaning |
 |---|---|
 | `slide_source_unsupported` | Explicit source is outside the enum |
 | `slide_pptx_reference_missing` | `pptx`/`both` has no `pptx_path` |
 | `slide_pptx_artifact_missing` | Resolved PPTX does not exist |
+| `slide_pptx_artifact_unreadable` | Resolved PPTX exists but its container or structural members cannot be parsed safely |
+| `slide_pptx_artifact_degraded` | Resolved PPTX required loss-reporting placeholder recovery for damaged media |
 | `slide_pdf_reference_missing` | `pdf`/`both` has no Drive ID |
 | `slide_pdf_artifact_missing` | Drive-ID PDF does not exist |
 | `slide_video_reference_missing` | Video extraction has no valid YouTube identity |
@@ -258,8 +260,8 @@ A claimed source missing from a completed record is blocking, except for a valid
 manifest-backed unpromoted `processed_partial` video result. The same absence on
 a pending/processable record is a warning because acquisition has not yet run.
 
-The preflight checks only artifact identity and existence. It never opens a PDF,
-never counts PDF pages, and never derives or validates authored `slide_count`
+The preflight opens declared PPTX artifacts through the shared loss-reporting
+probe; it never opens a PDF, never counts PDF pages, and never derives or validates authored `slide_count`
 from `structured_data.video_extraction.unique_slides_count`. A video extraction
 can produce multiple captured states for one authored slide; those are different
 measurements by contract.

@@ -221,10 +221,14 @@ fuzzy-match to `talks[]` entries. Report counts, then persist each reviewed resu
 the talk's exact prior `pptx_path` expectation. See [references/schemas-db.md](references/schemas-db.md)
 for the PPTX extraction output schema (per-slide visual data, shape types, global design stats).
 Run `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py"` for extraction.
-Consume current schema v2 for timing/build evidence. A v0/v1 record has unknown
-timing, not zero timing, and must be regenerated; an unknown future schema is
-unusable until this reader is updated. The vault-profile layout-only consumer is
-the documented v1/v2 exception for the unchanged `template_layouts` field.
+Consume current schema v3. A v0/v1 record has unknown timing, not zero timing;
+v2 has the pre-build timing lanes but lacks raw build-list evidence,
+archive-recovery, and exact native/render audit receipts. Regenerate v0-v2
+output for current analysis. An unknown future
+schema is unusable until this reader is updated. The vault-profile layout-only
+consumer is the documented v1/v2/v3 exception for the unchanged
+`template_layouts` field. Non-empty `archive_recovery` is degraded evidence:
+restore or re-export a required native deck before claiming or returning it.
 
 **Pattern taxonomy recovery:** See [references/processing-rules.md](references/processing-rules.md) for the queue-owned
 contract. Step 2 normalization deterministically routes processed results outside
@@ -641,8 +645,12 @@ Process PPTX files not yet extracted during Step 3: unmatched catalog entries, t
 that used PDF as primary but have a PPTX available, or entries with
 `pptx_visual_status: "pending"`. Skip if already `"extracted"`.
 Run `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py" <path.pptx>` for each file.
-Require schema v2 before using native timing fields. Regenerate v0/v1 output and
-stop on an unknown future schema rather than interpreting missing fields as zero.
+Require schema v3 for current analysis. Regenerate v0-v2 output and stop on an
+unknown future schema rather than interpreting missing fields as zero. When
+rendered pages were inspected, rerun with `--rendered-pdf <path.pdf>` and one or
+more `--inspected-pages <PAGE|START-END>` arguments so the extraction receipt
+binds the exact artifacts and covered pages. A non-empty `archive_recovery`
+blocks a required native-deck claim until the source is restored or re-exported.
 
 **PPTX matching rules:** The .pptx files are in `Conference/Year/TalkName.pptx` and
 shownotes entries have `conference` and `title` fields. Fuzzy-match by: normalize
