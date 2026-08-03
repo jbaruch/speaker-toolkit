@@ -82,9 +82,14 @@ from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissin
     decode_json_object,
     snapshot_tracking_database,
 )
+from vault_root_authority import (  # noqa: E402
+    VaultRootAuthorityError,
+    materialize_native_authority,
+    resolve_vault_root_authority,
+)
 
 
-DEFAULT_VAULT = "~/.claude/rhetoric-knowledge-vault"
+DEFAULT_VAULT = pathlib.Path.home() / ".claude" / "rhetoric-knowledge-vault"
 
 # Talks processed on or after this date used the current extractor generation.
 # This partition supports extractor- and pacing-sensitive analysis only. Pattern
@@ -153,8 +158,11 @@ def _parse_args(argv: list[str]) -> tuple[pathlib.Path, str | None]:
             raise ValueError(f"unexpected extra argument {arg!r}")
         index += 1
 
+    raw_vault_root: object = (
+        DEFAULT_VAULT if vault_root_arg is None else vault_root_arg
+    )
     return (
-        pathlib.Path(vault_root_arg or DEFAULT_VAULT).expanduser().resolve(),
+        materialize_native_authority(raw_vault_root, authority="cli_root"),
         as_of,
     )
 
@@ -198,6 +206,15 @@ def main(argv: list[str]) -> int:
             + ", ".join(database_assessment.reason_codes),
             file=sys.stderr,
         )
+        return 1
+    try:
+        vault_root = resolve_vault_root_authority(
+            database_path=db_path,
+            config=db.get("config"),
+            cli_vault_root=vault_root,
+        )
+    except VaultRootAuthorityError as exc:
+        print(f"ERROR: trusted vault root is invalid: {exc}", file=sys.stderr)
         return 1
 
     summary_path = vault_root / "rhetoric-style-summary.md"

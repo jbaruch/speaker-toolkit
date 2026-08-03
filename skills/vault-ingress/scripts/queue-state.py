@@ -61,11 +61,9 @@ without deleting the generation record.
 import argparse
 import copy
 import json
-import os
 import re
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import cast
 from urllib.parse import parse_qs, urlparse
 
@@ -118,6 +116,11 @@ from tracking_database_io import (
     snapshot_tracking_database,
     unchanged_write_result,
     write_json_object,
+)
+from vault_root_authority import (
+    VaultRootAuthorityError,
+    materialize_native_authority,
+    resolve_vault_root_authority,
 )
 
 
@@ -217,11 +220,9 @@ def evidence_roots(database, path):
         if isinstance(database.get("config"), dict)
         else {}
     )
-    configured_vault = source_roots.get("vault_storage_path")
-    vault_root = (
-        Path(configured_vault).expanduser().resolve()
-        if isinstance(configured_vault, str) and configured_vault.strip()
-        else path.parent.resolve()
+    vault_root = resolve_vault_root_authority(
+        database_path=path,
+        config=database.get("config"),
     )
     return vault_root, source_roots
 
@@ -977,11 +978,18 @@ def main(argv=None):
     parser = build_parser()
     try:
         args = parser.parse_args(argv)
-        path = Path(os.path.abspath(Path(args.database).expanduser()))
+        path = materialize_native_authority(
+            args.database,
+            authority="database_path",
+        )
         database, snapshot = load_database_snapshot(
             path,
             allow_claim_status_drift=args.action == "recover",
             require_current=args.action not in {"inspect", "recover"},
+        )
+        resolve_vault_root_authority(
+            database_path=path,
+            config=database.get("config"),
         )
         commands = {
             "normalize": command_normalize,
@@ -995,7 +1003,7 @@ def main(argv=None):
             args,
             expected_snapshot=snapshot,
         )
-    except QueueStateError as exc:
+    except (QueueStateError, VaultRootAuthorityError) as exc:
         payload = {"ok": False, "error": str(exc)}
         print(str(exc), file=sys.stderr)
         print(json.dumps(payload, ensure_ascii=False))

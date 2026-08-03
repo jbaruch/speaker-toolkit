@@ -37,6 +37,10 @@ from return_validation import (  # noqa: E402
     assess_current_persisted_pattern_evidence_freshness,
     load_catalog,
 )
+from vault_root_authority import (  # noqa: E402
+    VaultRootAuthorityError,
+    resolve_vault_root_authority,
+)
 
 
 class PatternCohortSnapshotError(ValueError):
@@ -62,12 +66,14 @@ def configured_evidence_freshness_assessor(
 ) -> EvidenceFreshnessAssessor:
     """Bind the shared evidence-freshness check to trusted live source roots."""
     source_roots = dict(config) if isinstance(config, Mapping) else {}
-    configured_vault = source_roots.get("vault_storage_path")
-    evidence_vault_root = (
-        pathlib.Path(configured_vault).expanduser().resolve()
-        if isinstance(configured_vault, str) and configured_vault.strip()
-        else vault_root.resolve()
-    )
+    try:
+        evidence_vault_root = resolve_vault_root_authority(
+            database_path=vault_root / "tracking-database.json",
+            config=config,
+            cli_vault_root=vault_root,
+        )
+    except VaultRootAuthorityError as exc:
+        raise PatternCohortSnapshotError(str(exc)) from exc
     freshness_cache: dict[int, tuple[str, ...]] = {}
 
     def assess(talk: Mapping[str, object]) -> tuple[str, ...]:

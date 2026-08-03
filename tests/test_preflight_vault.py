@@ -381,6 +381,296 @@ def test_preflight_input_and_finding_paths_are_lexical(
     assert validator.findings[0]["artifact_path"] == str(vault / "slides" / "talk.pptx")
 
 
+@pytest.mark.parametrize(
+    ("raw_root", "locator_reason_code"),
+    [
+        ("relative-vault", "artifact_root_not_native_absolute"),
+        ("~/vault", "artifact_locator_home_expansion_unsupported"),
+        (
+            foreign_absolute_locator("vault"),
+            "artifact_locator_foreign_absolute",
+        ),
+        (r"\\?\C:\vault", "artifact_locator_windows_device_namespace"),
+    ],
+)
+def test_preflight_rejects_direct_root_before_database_snapshot(
+    preflight_vault,
+    monkeypatch: pytest.MonkeyPatch,
+    raw_root: str,
+    locator_reason_code: str,
+) -> None:
+    monkeypatch.setattr(
+        preflight_vault,
+        "snapshot_tracking_database",
+        lambda *_args, **_kwargs: pytest.fail(
+            "invalid direct root reached the database snapshot boundary"
+        ),
+    )
+
+    report = preflight_vault.run_preflight(raw_root)
+
+    assert report["database"] is None
+    assert report["vault_root"] is None
+    assert report["blocking_count"] == 1
+    finding = report["findings"][0]
+    assert finding["code"] == "vault_root_cli_invalid"
+    assert finding["field"] == "cli.vault_root"
+    assert finding["actual"] == {
+        "reason_code": "vault_root_cli_invalid",
+        "locator_reason_code": locator_reason_code,
+    }
+    assert raw_root not in json.dumps(report, sort_keys=True)
+
+
+def test_preflight_labels_relative_direct_database_before_snapshot(
+    preflight_vault,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_database = "private-vault/tracking-database.json"
+    monkeypatch.setattr(
+        preflight_vault,
+        "snapshot_tracking_database",
+        lambda *_args, **_kwargs: pytest.fail(
+            "invalid direct database reached the snapshot boundary"
+        ),
+    )
+
+    report = preflight_vault.run_preflight(raw_database)
+
+    assert report["database"] is None
+    assert report["vault_root"] is None
+    assert report["blocking_count"] == 1
+    finding = report["findings"][0]
+    assert finding["code"] == "vault_root_database_path_invalid"
+    assert finding["field"] == "database.path"
+    assert finding["actual"] == {
+        "reason_code": "vault_root_database_path_invalid",
+        "locator_reason_code": "artifact_root_not_native_absolute",
+    }
+    assert raw_database not in json.dumps(report, sort_keys=True)
+
+
+@pytest.mark.parametrize(
+    ("configured_root", "expected_code", "expected_locator_reason"),
+    [
+        (
+            "",
+            "vault_root_config_invalid",
+            "artifact_locator_empty_or_whitespace",
+        ),
+        (
+            " ",
+            "vault_root_config_invalid",
+            "artifact_locator_empty_or_whitespace",
+        ),
+        (
+            "relative-vault",
+            "vault_root_config_invalid",
+            "artifact_root_not_native_absolute",
+        ),
+        (
+            "C:vault",
+            "vault_root_config_invalid",
+            "artifact_locator_windows_drive_relative",
+        ),
+        (
+            r"\vault",
+            "vault_root_config_invalid",
+            "artifact_locator_windows_current_drive_rooted",
+        ),
+        (
+            r"C:\trusted\other\..\vault"
+            if os.name == "nt"
+            else "/trusted/other/../vault",
+            "vault_root_config_invalid",
+            "artifact_locator_dot_segment",
+        ),
+        (
+            "~/vault",
+            "vault_root_config_invalid",
+            "artifact_locator_home_expansion_unsupported",
+        ),
+        (
+            foreign_absolute_locator("vault"),
+            "vault_root_config_invalid",
+            "artifact_locator_foreign_absolute",
+        ),
+        (
+            r"\\?\C:\vault",
+            "vault_root_config_invalid",
+            "artifact_locator_windows_device_namespace",
+        ),
+    ],
+)
+def test_preflight_rejects_invalid_configured_vault_root_before_catalog_checks(
+    preflight_vault,
+    vault_fixture,
+    monkeypatch: pytest.MonkeyPatch,
+    configured_root: str,
+    expected_code: str,
+    expected_locator_reason: str,
+) -> None:
+    write_database(
+        vault_fixture,
+        [],
+        config={
+            "speaker_name": "Baruch Sadogursky",
+            "vault_storage_path": configured_root,
+        },
+    )
+    monkeypatch.setattr(
+        preflight_vault.VaultPreflight,
+        "_validate_filenames",
+        lambda *_args, **_kwargs: pytest.fail(
+            "invalid configured vault root reached catalog checks"
+        ),
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["blocking_count"] == 1
+    finding = report["findings"][0]
+    assert finding["code"] == expected_code
+    assert finding["field"] == "config.vault_storage_path"
+    assert finding["actual"] == {
+        "reason_code": expected_code,
+        "locator_reason_code": expected_locator_reason,
+    }
+    if configured_root.strip():
+        assert configured_root not in json.dumps(finding, sort_keys=True)
+
+
+def test_preflight_rejects_configured_vault_authority_mismatch_before_catalog_checks(
+    preflight_vault,
+    vault_fixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configured_root = vault_fixture["root"].parent / "different-vault"
+    write_database(
+        vault_fixture,
+        [],
+        config={
+            "speaker_name": "Baruch Sadogursky",
+            "vault_storage_path": str(configured_root),
+        },
+    )
+    monkeypatch.setattr(
+        preflight_vault.VaultPreflight,
+        "_validate_filenames",
+        lambda *_args, **_kwargs: pytest.fail(
+            "mismatched vault root reached catalog checks"
+        ),
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["blocking_count"] == 1
+    finding = report["findings"][0]
+    assert finding["code"] == "vault_root_authority_mismatch"
+    assert finding["field"] == "config.vault_storage_path"
+    assert finding["actual"] == {
+        "reason_code": "vault_root_authority_mismatch",
+        "authorities": ["database_path", "config_root"],
+    }
+    assert str(configured_root) not in json.dumps(finding, sort_keys=True)
+
+
+def test_preflight_names_cli_authority_when_database_parent_disagrees(
+    preflight_vault,
+    tmp_path: Path,
+) -> None:
+    cli_root = tmp_path / "cli-vault"
+    database_path = tmp_path / "database-vault" / "tracking-database.json"
+    validator = preflight_vault.VaultPreflight(
+        {"config": {}, "talks": []},
+        cli_root,
+        database_path,
+    )
+
+    report = validator.run()
+
+    assert report["blocking_count"] == 1
+    finding = report["findings"][0]
+    assert finding["code"] == "vault_root_authority_mismatch"
+    assert finding["field"] == "cli.vault_root"
+    assert finding["actual"] == {
+        "reason_code": "vault_root_authority_mismatch",
+        "authorities": ["database_path", "cli_root"],
+    }
+    diagnostic = json.dumps(finding, sort_keys=True)
+    assert str(cli_root) not in diagnostic
+    assert str(database_path) not in diagnostic
+
+
+@pytest.mark.parametrize("configured", [None, "same"])
+def test_preflight_accepts_null_or_matching_configured_vault_authority(
+    preflight_vault,
+    vault_fixture,
+    configured: str | None,
+) -> None:
+    configured_value = str(vault_fixture["root"]) if configured == "same" else None
+    write_database(
+        vault_fixture,
+        [],
+        config={
+            "speaker_name": "Baruch Sadogursky",
+            "vault_storage_path": configured_value,
+        },
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["blocking_count"] == 0
+    assert not any(
+        finding["code"].startswith("vault_root_") for finding in report["findings"]
+    )
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="directory symlink setup is privileged",
+)
+@pytest.mark.parametrize("configured_identity", ["alias", "physical"])
+def test_preflight_compares_symlinked_vault_roots_by_lexical_identity(
+    preflight_vault,
+    vault_fixture,
+    tmp_path: Path,
+    configured_identity: str,
+) -> None:
+    physical_root = vault_fixture["root"]
+    alias_root = tmp_path / "alias-vault"
+    alias_root.symlink_to(physical_root, target_is_directory=True)
+    configured_root = (
+        alias_root if configured_identity == "alias" else physical_root
+    )
+    write_database(
+        vault_fixture,
+        [],
+        config={
+            "speaker_name": "Baruch Sadogursky",
+            "vault_storage_path": str(configured_root),
+        },
+    )
+
+    report = preflight_vault.run_preflight(alias_root)
+
+    if configured_identity == "alias":
+        assert report["blocking_count"] == 0
+        assert report["vault_root"] == str(alias_root)
+        assert report["database"] == str(alias_root / "tracking-database.json")
+    else:
+        assert report["blocking_count"] == 1
+        finding = report["findings"][0]
+        assert finding["code"] == "vault_root_authority_mismatch"
+        assert finding["actual"] == {
+            "reason_code": "vault_root_authority_mismatch",
+            "authorities": ["database_path", "config_root"],
+        }
+        diagnostic = json.dumps(finding, sort_keys=True)
+        assert str(alias_root) not in diagnostic
+        assert str(physical_root) not in diagnostic
+
+
 def test_pptx_artifact_validation_never_calls_parent_is_file(
     preflight_vault,
     vault_fixture,

@@ -32,7 +32,7 @@ ask the speaker.
   "config": {
     "schema_version": 1,
     "vault_root": "~/.claude/rhetoric-knowledge-vault",
-    "vault_storage_path": "/actual/path/if/custom (null when using default location)",
+    "vault_storage_path": "/native/absolute/database-parent (optional; null/absent uses that parent)",
     "pptx_source_dir": "/path/to/Presentations",
     "python_path": "/path/to/python3",
     "template_skip_patterns": ["template"],
@@ -65,6 +65,22 @@ ask the speaker.
   }
 }
 ```
+
+### Trusted vault storage root
+
+`vault_storage_path` is an optional assertion about the vault that contains
+`tracking-database.json`; it is not a redirect. Absent or JSON null uses the
+database parent. Every other present value must be a host-native absolute path
+lexically equal to that parent. Readers do not expand `~`, rebase relative,
+drive-relative (`C:vault`), or current-drive-rooted (`\vault`) values, translate
+foreign path flavors, collapse dot segments, or resolve symlinks to manufacture
+equality. Empty/blank and invalid locator forms fail closed before evidence
+freshness or profile cohort construction.
+
+Profile readers never repair this field. Use vault-ingress's expectation-bound
+owner mutation and rerun preflight before regenerating a profile; the concrete
+dry-run/apply/re-read sequence is documented in
+[source-identity-preflight.md](../../vault-ingress/references/source-identity-preflight.md#repair-a-stored-root-assertion).
 
 ## Shownotes Config — Field Reference
 

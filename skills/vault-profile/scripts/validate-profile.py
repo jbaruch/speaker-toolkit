@@ -50,6 +50,7 @@ from profile_pattern_provenance import (  # noqa: E402
 )
 from pattern_cohort_snapshot import (  # noqa: E402
     PatternCohortSnapshot,
+    PatternCohortSnapshotError,
     build_current_pattern_snapshot,
     configured_evidence_freshness_assessor,
 )
@@ -63,6 +64,10 @@ from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissin
     TrackingDatabaseIOError,
     decode_json_object,
     snapshot_tracking_database,
+)
+from vault_root_authority import (  # noqa: E402
+    materialize_native_authority,
+    resolve_vault_root_authority,
 )
 
 
@@ -148,7 +153,10 @@ def _parse_args(argv: list[str]) -> tuple[pathlib.Path | None, pathlib.Path | No
             index += 1
             if index >= len(argv):
                 raise ValueError("--vault-root requires a path")
-            vault_root = pathlib.Path(argv[index]).expanduser().resolve()
+            vault_root = materialize_native_authority(
+                argv[index],
+                authority="cli_root",
+            )
         elif arg.startswith("-"):
             raise ValueError(f"unknown option {arg!r}")
         elif profile_path is None:
@@ -185,6 +193,11 @@ def _load_live_pattern_snapshot(
             "tracking-database.json has no usable prior state for this reader: "
             + ", ".join(assessment.reason_codes)
         )
+    vault_root = resolve_vault_root_authority(
+        database_path=database_path,
+        config=database.get("config"),
+        cli_vault_root=vault_root,
+    )
     talks = database.get("talks")
     if not isinstance(talks, list) or any(
         not isinstance(talk, Mapping) for talk in talks
@@ -399,10 +412,10 @@ def main(argv: list[str]) -> int:
     if vault_root is not None and isinstance(profile, Mapping):
         try:
             live_snapshot = _load_live_pattern_snapshot(vault_root, profile)
+        except PatternCohortSnapshotError as exc:
+            live_error = f"could not recompute the live pattern cohort: {exc}"
         except (json.JSONDecodeError, OSError, ValueError) as exc:
-            live_error = (
-                f"could not recompute the live pattern cohort from {vault_root}: {exc}"
-            )
+            live_error = f"could not recompute the live pattern cohort: {exc}"
 
     missing, errors, schema_version = validate_profile(
         profile,

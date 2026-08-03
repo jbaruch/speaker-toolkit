@@ -77,7 +77,6 @@ Example:
 
 import copy
 import json
-import os
 import sys
 from datetime import datetime, timezone
 
@@ -134,6 +133,11 @@ from tracking_database_io import (
     decode_json_object,
     snapshot_tracking_database,
     write_json_object,
+)
+from vault_root_authority import (
+    VaultRootAuthorityError,
+    materialize_native_authority,
+    resolve_vault_root_authority,
 )
 
 
@@ -842,23 +846,34 @@ def parse_args(argv):
 def main():
     db_path, batch_path, run_date = parse_args(sys.argv[1:])
 
+    try:
+        db_path = str(
+            materialize_native_authority(
+                db_path,
+                authority="database_path",
+            )
+        )
+    except VaultRootAuthorityError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
     db, database_snapshot = load_tracking_database(db_path)
+    raw_config = db.get("config")
+    source_roots: dict[str, object] = (
+        copy.deepcopy(raw_config) if isinstance(raw_config, dict) else {})
+    try:
+        vault_root = resolve_vault_root_authority(
+            database_path=db_path,
+            config=source_roots,
+        )
+    except VaultRootAuthorityError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
     returns = load_json(batch_path, "batch-returns")
     try:
         catalog = validate_batch(returns)
     except ReturnValidationError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
-
-    raw_config = db.get("config")
-    source_roots: dict[str, object] = (
-        copy.deepcopy(raw_config) if isinstance(raw_config, dict) else {})
-    configured_vault = source_roots.get("vault_storage_path")
-    vault_root = (
-        os.path.abspath(os.path.expanduser(configured_vault))
-        if isinstance(configured_vault, str) and configured_vault.strip()
-        else os.path.dirname(os.path.abspath(db_path))
-    )
     artifact_capabilities_by_filename = assess_batch_artifact_capabilities(
         db["talks"],
         {

@@ -104,6 +104,7 @@ jobs:
       - run: >-
           pytest -v --tb=short
           tests/test_artifact_locator.py
+          tests/test_vault_root_authority.py
           tests/test_artifact_supervisor.py
           tests/test_artifact_metadata.py
           tests/test_pdf_evidence.py

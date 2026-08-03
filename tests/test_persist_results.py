@@ -1388,6 +1388,243 @@ def test_cli_writes_db_and_reports(persist_results, tmp_path):
     assert "slide_count" in report["talks"][0]["promoted"]
 
 
+@pytest.mark.parametrize("config_mode", ["absent", "null", "exact"])
+def test_cli_accepts_database_bound_vault_root_authority(
+    persist_results,
+    tmp_path,
+    config_mode,
+):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    database = {"talks": [_talk()]}
+    _db_json(database)
+    if config_mode == "null":
+        database["config"]["vault_storage_path"] = None
+    elif config_mode == "exact":
+        database["config"]["vault_storage_path"] = str(tmp_path)
+    db.write_text(json.dumps(database), encoding="utf-8")
+    batch.write_text(json.dumps([_return()]), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(db.read_text(encoding="utf-8"))["talks"][0]["status"] == (
+        "processed"
+    )
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="directory symlink setup is privileged",
+)
+@pytest.mark.parametrize("configured_identity", ["alias", "physical"])
+def test_cli_compares_symlinked_vault_roots_by_lexical_identity_before_persistence(
+    persist_results,
+    tmp_path,
+    configured_identity,
+):
+    physical_root = tmp_path / "physical-vault"
+    physical_root.mkdir()
+    alias_root = tmp_path / "alias-vault"
+    alias_root.symlink_to(physical_root, target_is_directory=True)
+    db = physical_root / "tracking-database.json"
+    alias_db = alias_root / db.name
+    batch = tmp_path / "batch-returns.json"
+    database = {"talks": [_talk()]}
+    _db_json(database)
+    configured_root = (
+        alias_root if configured_identity == "alias" else physical_root
+    )
+    database["config"]["vault_storage_path"] = str(configured_root)
+    db.write_text(json.dumps(database), encoding="utf-8")
+    batch.write_text(json.dumps([_return()]), encoding="utf-8")
+    before = db.read_bytes()
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(alias_db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    if configured_identity == "alias":
+        assert result.returncode == 0, result.stderr
+        assert json.loads(db.read_text(encoding="utf-8"))["talks"][0][
+            "status"
+        ] == "processed"
+    else:
+        assert result.returncode == 1
+        assert result.stderr == (
+            "ERROR: vault_root_authority_mismatch:database_path:config_root\n"
+        )
+        assert db.read_bytes() == before
+
+
+FOREIGN_ABSOLUTE_VAULT_ROOT = (
+    "/foreign/vault" if sys.platform == "win32" else r"C:\foreign\vault"
+)
+NATIVE_DOT_VAULT_ROOT = (
+    r"C:\trusted\other\..\vault"
+    if sys.platform == "win32"
+    else "/trusted/other/../vault"
+)
+
+
+@pytest.mark.parametrize(
+    ("configured_root", "locator_reason"),
+    [
+        ("", "artifact_locator_empty_or_whitespace"),
+        (" ", "artifact_locator_empty_or_whitespace"),
+        ("relative/vault", "artifact_root_not_native_absolute"),
+        ("C:vault", "artifact_locator_windows_drive_relative"),
+        (r"\vault", "artifact_locator_windows_current_drive_rooted"),
+        (NATIVE_DOT_VAULT_ROOT, "artifact_locator_dot_segment"),
+        ("~/private-vault", "artifact_locator_home_expansion_unsupported"),
+        (FOREIGN_ABSOLUTE_VAULT_ROOT, "artifact_locator_foreign_absolute"),
+        (r"\\?\C:\private-vault", "artifact_locator_windows_device_namespace"),
+    ],
+)
+def test_cli_rejects_invalid_configured_vault_root_before_persistence(
+    persist_results,
+    tmp_path,
+    configured_root,
+    locator_reason,
+):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    database = {"talks": [_talk()]}
+    _db_json(database)
+    database["config"]["vault_storage_path"] = configured_root
+    original = json.dumps(database)
+    db.write_text(original, encoding="utf-8")
+    batch.write_text(json.dumps([_return()]), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == (
+        f"ERROR: vault_root_config_invalid:{locator_reason}\n"
+    )
+    assert "Traceback" not in result.stderr
+    if configured_root.strip():
+        assert configured_root not in result.stderr
+    assert db.read_text(encoding="utf-8") == original
+
+
+def test_cli_rejects_configured_vault_root_authority_mismatch(
+    persist_results,
+    tmp_path,
+):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    database = {"talks": [_talk()]}
+    _db_json(database)
+    mismatched_root = tmp_path / "other-vault"
+    database["config"]["vault_storage_path"] = str(mismatched_root)
+    original = json.dumps(database)
+    db.write_text(original, encoding="utf-8")
+    batch.write_text(json.dumps([_return()]), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == (
+        "ERROR: vault_root_authority_mismatch:database_path:config_root\n"
+    )
+    assert str(mismatched_root) not in result.stderr
+    assert db.read_text(encoding="utf-8") == original
+
+
+def test_cli_rejects_relative_database_authority_before_open(
+    persist_results,
+    tmp_path,
+):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    database = {"talks": [_talk()]}
+    original = _db_json(database)
+    db.write_text(original, encoding="utf-8")
+    batch.write_text(json.dumps([_return()]), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, db.name, str(batch)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == (
+        "ERROR: vault_root_database_path_invalid:"
+        "artifact_root_not_native_absolute\n"
+    )
+    assert db.name not in result.stderr
+    assert db.read_text(encoding="utf-8") == original
+
+
+def test_root_authority_rejection_precedes_every_artifact_and_write_boundary(
+    persist_results,
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    database = {"talks": [_talk()]}
+    _db_json(database)
+    database["config"]["vault_storage_path"] = "~/private-vault"
+    original = json.dumps(database)
+    db.write_text(original, encoding="utf-8")
+    batch.write_text(json.dumps([_return()]), encoding="utf-8")
+    called = []
+
+    def forbidden(name):
+        def invoke(*_args, **_kwargs):
+            called.append(name)
+            raise AssertionError(f"{name} ran after root-authority rejection")
+
+        return invoke
+
+    for name in (
+        "load_json",
+        "validate_batch",
+        "assess_batch_artifact_capabilities",
+        "validate_batch_claims_against_talks",
+        "admit_return_artifacts",
+        "canonicalize_return_evidence",
+        "assess_current_persisted_pattern_evidence_freshness",
+        "atomic_write_json",
+    ):
+        monkeypatch.setattr(persist_results, name, forbidden(name))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [persist_results.__file__, str(db), str(batch)],
+    )
+
+    with pytest.raises(SystemExit) as caught:
+        persist_results.main()
+
+    assert caught.value.code == 1
+    assert called == []
+    assert capsys.readouterr().err == (
+        "ERROR: vault_root_config_invalid:"
+        "artifact_locator_home_expansion_unsupported\n"
+    )
+    assert db.read_text(encoding="utf-8") == original
+
+
 def test_cli_fails_visibly_on_filename_mismatch(persist_results, tmp_path):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
