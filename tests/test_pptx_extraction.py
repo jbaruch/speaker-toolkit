@@ -1362,7 +1362,7 @@ def test_area_ratio_is_not_rounded_across_the_threshold(pptx_extraction):
         height = 10000
 
     ratio = pptx_extraction.picture_area_ratio(_Shape(), _Prs())
-    assert ratio < pptx_extraction._TEXT_BEARING_IMAGE_AREA_RATIO
+    assert ratio < pptx_extraction.PPTX_TEXT_BEARING_IMAGE_AREA_RATIO
     assert ratio == pytest.approx(0.4996)
 
 

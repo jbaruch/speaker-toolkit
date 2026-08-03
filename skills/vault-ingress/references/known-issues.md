@@ -55,9 +55,10 @@ scored as wordless backdrops (#116).
 **Mitigations:**
 
 - The extractor no longer asserts absence: it emits
-  `text_extraction_confidence` per slide. What trips it to `"low"` is the
-  script's to decide — see `skills/vault-ingress/scripts/pptx-extraction.py`,
-  the `_TEXT_BEARING_IMAGE_AREA_RATIO` constant comment.
+  `text_extraction_confidence` per slide. The trigger is script-owned—see
+  `PPTX_TEXT_BEARING_IMAGE_AREA_RATIO` in
+  `skills/vault-ingress/scripts/pptx_evidence.py`, consumed by
+  `pptx-extraction.py`.
 - **OCR inventory (#129).** On low-confidence slides with usable PICTURE or
   background-image blobs, the same script emits provenance-bearing
   `picture_ocr` / `background_image_ocr` channels, aggregates their text into

@@ -2064,6 +2064,10 @@ def test_near_threshold_picture_uses_reported_ratio_for_render_decision(
     extraction = pptx_extraction._extract_pptx_in_process(deck, ocr=False)
     slide_result = extraction["per_slide_visual"][0]
 
+    assert (
+        pptx_extraction.PPTX_TEXT_BEARING_IMAGE_AREA_RATIO
+        == pptx_evidence.PPTX_TEXT_BEARING_IMAGE_AREA_RATIO
+    )
     assert slide_result["image_area_ratio"] == 0.5
     assert "large_picture" in slide_result["render_required_reasons"]
     assert (

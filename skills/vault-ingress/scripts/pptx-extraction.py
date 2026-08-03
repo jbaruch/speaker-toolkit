@@ -60,6 +60,7 @@ from pptx_evidence import (
     PPTX_EXTRACTION_PIPELINE_VERSION,
     PPTX_EXTRACTION_SCHEMA_VERSION,
     PPTX_OCR_TRUST_CONFIDENCE,
+    PPTX_TEXT_BEARING_IMAGE_AREA_RATIO,
     PptxEvidenceError,
     build_native_deck_audit,
     build_rendered_page_inspection,
@@ -112,16 +113,6 @@ _TIMING_PROVENANCE = {
 _GRAPHIC_DATA_URI_TABLE = "http://schemas.openxmlformats.org/drawingml/2006/table"
 _GRAPHIC_DATA_URI_CHART = "http://schemas.openxmlformats.org/drawingml/2006/chart"
 _GRAPHIC_DATA_URI_OLE = "http://schemas.openxmlformats.org/presentationml/2006/ole"
-
-# A picture covering at least this fraction of the slide is large enough to be
-# carrying rendered text — AI-generated illustration decks bake titles, callout
-# labels, and annotations into the image, where python-pptx cannot see them.
-# Below this, a picture reads as decorative and the extractable text is the
-# whole story. Tuned to catch full-bleed and near-full-bleed layouts; a slide
-# at or above it gets text_extraction_confidence "low" whether or not text
-# frames are also present, since a text overlay does not prove the picture
-# underneath is wordless.
-_TEXT_BEARING_IMAGE_AREA_RATIO = 0.5
 
 # Cap so one dense manual page cannot blow out the JSON. Inventory is for
 # cites and transcript cross-checks, not a full document dump.
@@ -1597,7 +1588,7 @@ def _extract_pptx_in_process(
         # covers the whole slide by definition), can both be hiding rendered
         # text the shape walk never sees.
         if (
-            slide_data["image_area_ratio"] >= _TEXT_BEARING_IMAGE_AREA_RATIO
+            slide_data["image_area_ratio"] >= PPTX_TEXT_BEARING_IMAGE_AREA_RATIO
             or bg_type == "image"
         ):
             reason = "background_image" if bg_type == "image" else "large_picture"

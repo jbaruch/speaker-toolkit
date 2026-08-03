@@ -47,6 +47,10 @@ RENDER_INSPECTION_SCHEMA_VERSION = 1
 PPTX_ARTIFACT_PROBE_SCHEMA_VERSION = 1
 PPTX_ARTIFACT_PROBE_TIMEOUT_SECONDS = 15
 PPTX_OCR_TRUST_CONFIDENCE = 50.0
+# A reported picture-area ratio at or above this boundary requires rendered
+# inspection because the picture can carry text invisible to the shape walk.
+# Producer and validator both consume this one authority so they cannot drift.
+PPTX_TEXT_BEARING_IMAGE_AREA_RATIO = 0.5
 PPTX_ARTIFACT_PROBE_MAX_RESULT_BYTES = 64 * 1024
 PPTX_ARTIFACT_PROBE_MAX_RECOVERY_RECORDS = 64
 PPTX_ARCHIVE_MAX_MEMBERS = 65_536
@@ -3958,7 +3962,7 @@ def _valid_slide_visual(
     expected_reasons = {cast(str, item["content_type"]) for item in typed_unsupported}
     if value["background_type"] == "image":
         expected_reasons.add("background_image")
-    if cast(float, value["image_area_ratio"]) >= 0.5:
+    if cast(float, value["image_area_ratio"]) >= PPTX_TEXT_BEARING_IMAGE_AREA_RATIO:
         expected_reasons.add("large_picture")
     if any(shape["shape_type"] == "GROUP (6)" for shape in typed_shapes):
         expected_reasons.add("grouped_shapes")
