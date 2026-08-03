@@ -13,6 +13,7 @@ import copy
 import hashlib
 import json
 import math
+import ntpath
 import os
 import re
 import subprocess
@@ -268,6 +269,33 @@ def _lexical_absolute(value: str | Path) -> Path:
     return Path(os.path.abspath(os.fspath(Path(value).expanduser())))
 
 
+def _reject_ambiguous_path_segments(value: str, *, label: str) -> None:
+    """Reject raw dot segments before pathlib or abspath can erase them."""
+
+    expanded = os.path.expanduser(value)
+    windows_drive, windows_tail = ntpath.splitdrive(expanded)
+    separators = [os.sep]
+    if os.altsep is not None and os.altsep not in separators:
+        separators.append(os.altsep)
+    if windows_drive:
+        for separator in ("\\", "/"):
+            if separator not in separators:
+                separators.append(separator)
+    # Scan the full locator so ambiguous UNC share components cannot disappear
+    # into splitdrive(), and scan the tail as well so drive-relative C:.. forms
+    # expose the dot segment that is attached to the drive prefix.
+    segments = [expanded]
+    if windows_drive:
+        segments.append(windows_tail)
+    for separator in separators:
+        segments = [piece for segment in segments for piece in segment.split(separator)]
+    if any(segment in {".", ".."} for segment in segments):
+        raise PatternEvidenceError(
+            f"{label} contains an ambiguous '.' or '..' path segment; "
+            "pass a normalized path with all dot segments removed"
+        )
+
+
 def _resolve_local_pptx_artifact(
     trusted_root: str | Path,
     value: object,
@@ -279,15 +307,12 @@ def _resolve_local_pptx_artifact(
         raise PatternEvidenceError(f"{label} must be a non-empty path")
     if "\x00" in value:
         raise PatternEvidenceError(f"{label} must not contain a NUL byte")
+    _reject_ambiguous_path_segments(value, label=label)
     root = _lexical_absolute(trusted_root)
     supplied = Path(value).expanduser()
     if supplied.is_absolute():
         candidate = _lexical_absolute(supplied)
     else:
-        if any(part in {".", ".."} for part in supplied.parts):
-            raise PatternEvidenceError(
-                f"{label} resolves outside the trusted root: {value!r}"
-            )
         candidate = _lexical_absolute(root / supplied)
     try:
         relative = candidate.relative_to(root)
@@ -416,6 +441,7 @@ def _resolve_preclaim_artifact(
     if not isinstance(value, str) or not value.strip():
         raise PatternEvidenceError(f"{field} must be a non-empty path")
     if field == "pptx_path":
+        _reject_ambiguous_path_segments(value, label=field)
         vault = _lexical_absolute(vault_root)
         supplied = Path(value).expanduser()
         configured_root: Path | None = None

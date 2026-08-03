@@ -343,6 +343,16 @@ def test_preflight_input_and_finding_paths_are_lexical(
 
     assert preflight_vault.resolve_input(vault) == (vault, database)
     assert preflight_vault.resolve_input(database) == (vault, database)
+    json_named_vault = vault / "conference-catalog.json"
+    assert preflight_vault.resolve_input(json_named_vault) == (
+        json_named_vault,
+        json_named_vault / "tracking-database.json",
+    )
+    case_variant_database = vault / "TRACKING-DATABASE.JSON"
+    assert preflight_vault.resolve_input(case_variant_database) == (
+        vault,
+        case_variant_database,
+    )
     validator = preflight_vault.VaultPreflight({}, vault, database)
     validator.add(
         "warning",

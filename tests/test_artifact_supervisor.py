@@ -7,11 +7,11 @@ import importlib.util
 import io
 import json
 import os
+import select
 import struct
 import subprocess
 import sys
 import threading
-import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -44,7 +44,7 @@ import os
 import struct
 import subprocess
 import sys
-import time
+import threading
 sys.path.insert(0, {str(SCRIPT_DIR)!r})
 import artifact_supervisor as supervisor
 
@@ -253,33 +253,52 @@ elif mode == "worker_error":
         stream=protocol,
     )
 elif mode == "timeout":
-    time.sleep(30)
+    threading.Event().wait()
 elif mode == "spawn_tree":
     child = subprocess.Popen(
-        [sys.executable, "-c", "import time; time.sleep(30)"],
+        [
+            sys.executable,
+            "-c",
+            "import threading; threading.Event().wait()",
+        ],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
     with open(request.payload["pid_receipt"], "w", encoding="ascii") as receipt:
         receipt.write(str(child.pid))
-    time.sleep(30)
+    with open(request.payload["ready_fifo"], "wb", buffering=0) as ready:
+        ready.write(b"1")
+    threading.Event().wait()
 elif mode == "spawn_group_success":
     child = subprocess.Popen(
-        [sys.executable, "-c", "import time; time.sleep(30)"],
+        [
+            sys.executable,
+            "-c",
+            "import threading; threading.Event().wait()",
+        ],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
     with open(request.payload["pid_receipt"], "w", encoding="ascii") as receipt:
         receipt.write(str(child.pid))
+    with open(request.payload["ready_fifo"], "wb", buffering=0) as ready:
+        ready.write(b"1")
+    with open(request.payload["release_fifo"], "rb", buffering=0) as release:
+        if release.read(1) != b"1":
+            raise RuntimeError("test release handshake failed")
     supervisor.write_worker_response(
         request,
         payload={{"child_pid": child.pid}},
         observed_generations=request.expected_generations,
         stream=protocol,
     )
-    time.sleep(0.2)
+    protocol.flush()
+    protocol.close()
+    with open(request.payload["done_fifo"], "wb", buffering=0) as done:
+        done.write(b"1")
+    raise SystemExit(0)
 elif mode == "fast_exit":
     raise RuntimeError("synthetic worker failure")
 else:
@@ -340,7 +359,26 @@ def _limits(**overrides):
     return artifact_supervisor.SupervisorLimits(**values)
 
 
-def _run(mode, *, limits=None, payload=None, monitor_factory=None):
+def _read_fifo_signal(fd: int) -> None:
+    # The byte is the success condition; this timeout only prevents a broken
+    # fixture from hanging the whole CI job before the injected clock can run.
+    readable, _, _ = select.select([fd], [], [], 5.0)
+    if not readable:
+        pytest.fail("worker did not complete the FIFO handshake")
+    assert os.read(fd, 1) == b"1"
+
+
+def _run(
+    mode,
+    *,
+    limits=None,
+    payload=None,
+    monitor_factory=None,
+    process_backend=None,
+    credentials=None,
+    clock=None,
+    sleeper=None,
+):
     request_payload = {"mode": mode}
     if payload:
         request_payload.update(payload)
@@ -350,9 +388,13 @@ def _run(mode, *, limits=None, payload=None, monitor_factory=None):
         {"pptx": _generation()},
         request_payload,
         limits or _limits(),
+        credentials=credentials,
         schema_generation=3,
         pipeline_generation="1.2.0",
+        process_backend=process_backend,
         monitor_factory=monitor_factory or PermissiveMonitor,
+        clock=clock,
+        sleeper=sleeper,
     )
 
 
@@ -508,33 +550,153 @@ def test_worker_error_redacts_paths_and_authentication_key(tmp_path):
     } == {"artifact-key", "secret-key"}
 
 
-def test_wall_limit_terminates_worker():
-    started = time.monotonic()
-    with pytest.raises(artifact_supervisor.SupervisorError) as caught:
-        _run("timeout", limits=_limits(wall_seconds=0.2))
+def test_wall_limit_terminates_worker_with_controlled_clock(monkeypatch):
+    class Clock:
+        value = 0.0
 
-    assert caught.value.reason_code == "worker_timeout"
-    assert time.monotonic() - started < 3
+        def monotonic(self):
+            return self.value
 
+    class Process:
+        pid = 4242
+        returncode = None
 
-@pytest.mark.skipif(os.name != "posix", reason="POSIX process-group assertion")
-def test_timeout_kills_descendant_process_group(tmp_path):
-    receipt = tmp_path / "child.pid"
+        def __init__(self):
+            self.stdin = io.BytesIO()
+            self.stdout = io.BytesIO()
+            self.stderr = io.BytesIO()
+            self.killed = False
+
+        def poll(self):
+            return self.returncode
+
+        def kill(self):
+            self.killed = True
+            self.returncode = -9
+
+        def wait(self, timeout=None):
+            assert timeout is not None
+            return self.returncode
+
+    class Controller:
+        instances = []
+
+        def __init__(self, process, _limits):
+            self.process = process
+            self.established = False
+            self.terminated = False
+            self.closed = False
+            self.instances.append(self)
+
+        def establish(self):
+            self.established = True
+
+        def terminate(self):
+            self.terminated = True
+            self.process.kill()
+
+        def close(self):
+            self.closed = True
+
+    class Monitor(PermissiveMonitor):
+        instance = None
+
+        def __init__(self, _pid, _limits):
+            self.killed = False
+            type(self).instance = self
+
+        def sample(self):
+            clock.value = 1.0
+            return (1, 1)
+
+        def kill_seen(self, _timeout=0.5):
+            self.killed = True
+
+    clock = Clock()
+    process = Process()
+    monkeypatch.setattr(artifact_supervisor, "_ProcessController", Controller)
+
     with pytest.raises(artifact_supervisor.SupervisorError) as caught:
         _run(
-            "spawn_tree",
-            limits=_limits(wall_seconds=0.4),
-            payload={"pid_receipt": str(receipt)},
+            "timeout",
+            limits=_limits(wall_seconds=0.5),
+            process_backend=lambda *_args, **_kwargs: process,
+            monitor_factory=Monitor,
+            credentials=artifact_supervisor.WorkerCredentials(b"k" * 32),
+            clock=clock.monotonic,
+            sleeper=lambda _seconds: None,
         )
 
     assert caught.value.reason_code == "worker_timeout"
-    child_pid = int(receipt.read_text(encoding="ascii"))
-    deadline = time.monotonic() + 2
-    while time.monotonic() < deadline and psutil.pid_exists(child_pid):
-        time.sleep(0.02)
-    if psutil.pid_exists(child_pid):
-        child = psutil.Process(child_pid)
-        assert child.status() == psutil.STATUS_ZOMBIE
+    assert process.killed is True
+    assert Controller.instances[0].established is True
+    assert Controller.instances[0].terminated is True
+    assert Controller.instances[0].closed is True
+    assert Monitor.instance is not None and Monitor.instance.killed is True
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process-group assertion")
+def test_timeout_kills_descendant_process_group_without_polling(tmp_path):
+    receipt = tmp_path / "child.pid"
+    ready_fifo = tmp_path / "ready.fifo"
+    os.mkfifo(ready_fifo)
+    ready_fd = os.open(ready_fifo, os.O_RDWR | os.O_NONBLOCK)
+
+    class Clock:
+        def __init__(self):
+            self._value = 0.0
+            self._lock = threading.Lock()
+
+        def monotonic(self):
+            with self._lock:
+                return self._value
+
+        def expire(self):
+            with self._lock:
+                self._value = 1.0
+
+    clock = Clock()
+    monitors = []
+
+    class HandshakeMonitor(artifact_supervisor._ProcessTreeMonitor):
+        def __init__(self, pid, limits):
+            super().__init__(pid, limits)
+            self._baseline_sampled = False
+            self.handshake_complete = False
+            monitors.append(self)
+
+        def sample(self):
+            if not self._baseline_sampled:
+                observed = super().sample()
+                self._baseline_sampled = True
+                return observed
+            _read_fifo_signal(ready_fd)
+            observed = super().sample()
+            self.handshake_complete = True
+            clock.expire()
+            return observed
+
+    try:
+        with pytest.raises(artifact_supervisor.SupervisorError) as caught:
+            _run(
+                "spawn_tree",
+                limits=_limits(wall_seconds=0.5),
+                payload={
+                    "pid_receipt": str(receipt),
+                    "ready_fifo": str(ready_fifo),
+                },
+                monitor_factory=HandshakeMonitor,
+                credentials=artifact_supervisor.WorkerCredentials(b"k" * 32),
+                clock=clock.monotonic,
+                sleeper=lambda _seconds: None,
+            )
+    finally:
+        os.close(ready_fd)
+
+    assert caught.value.reason_code == "worker_timeout"
+    assert int(receipt.read_text(encoding="ascii")) > 0
+    assert monitors[0].handshake_complete is True
+    assert monitors[0].any_seen_alive() is False
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX process-group assertion")
@@ -593,24 +755,73 @@ def test_group_kill_winning_pid_kill_race_is_successful_cleanup(monkeypatch):
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX process-tree assertion")
-def test_clean_exit_reports_and_kills_known_same_group_descendant(tmp_path):
+def test_clean_exit_reports_and_kills_known_descendant_with_handshake(tmp_path):
     receipt = tmp_path / "child.pid"
+    ready_fifo = tmp_path / "ready.fifo"
+    release_fifo = tmp_path / "release.fifo"
+    done_fifo = tmp_path / "done.fifo"
+    os.mkfifo(ready_fifo)
+    os.mkfifo(release_fifo)
+    os.mkfifo(done_fifo)
+    ready_fd = os.open(ready_fifo, os.O_RDWR | os.O_NONBLOCK)
+    release_fd = os.open(release_fifo, os.O_RDWR | os.O_NONBLOCK)
+    done_fd = os.open(done_fifo, os.O_RDWR | os.O_NONBLOCK)
+    monitors = []
+    processes = []
 
-    with pytest.raises(artifact_supervisor.SupervisorError) as caught:
-        _run(
-            "spawn_group_success",
-            payload={"pid_receipt": str(receipt)},
-            monitor_factory=artifact_supervisor._ProcessTreeMonitor,
-        )
+    def spawn_process(*args, **kwargs):
+        process = subprocess.Popen(*args, **kwargs)
+        processes.append(process)
+        return process
 
-    child_pid = int(receipt.read_text(encoding="ascii"))
+    class HandshakeMonitor(artifact_supervisor._ProcessTreeMonitor):
+        def __init__(self, pid, limits):
+            super().__init__(pid, limits)
+            self._baseline_sampled = False
+            self.handshake_complete = False
+            monitors.append(self)
+
+        def sample(self):
+            if not self._baseline_sampled:
+                observed = super().sample()
+                self._baseline_sampled = True
+                return observed
+            if not self.handshake_complete:
+                _read_fifo_signal(ready_fd)
+                observed = super().sample()
+                assert os.write(release_fd, b"1") == 1
+                _read_fifo_signal(done_fd)
+                assert processes[0].wait(timeout=5.0) == 0
+                self.handshake_complete = True
+                return observed
+            return super().sample()
+
+    try:
+        with pytest.raises(artifact_supervisor.SupervisorError) as caught:
+            _run(
+                "spawn_group_success",
+                payload={
+                    "pid_receipt": str(receipt),
+                    "ready_fifo": str(ready_fifo),
+                    "release_fifo": str(release_fifo),
+                    "done_fifo": str(done_fifo),
+                },
+                limits=_limits(wall_seconds=0.5),
+                monitor_factory=HandshakeMonitor,
+                process_backend=spawn_process,
+                credentials=artifact_supervisor.WorkerCredentials(b"k" * 32),
+                clock=lambda: 0.0,
+                sleeper=lambda _seconds: None,
+            )
+    finally:
+        os.close(ready_fd)
+        os.close(release_fd)
+        os.close(done_fd)
+
     assert caught.value.reason_code == "worker_process_tree_leak"
-    deadline = time.monotonic() + 2
-    while time.monotonic() < deadline and psutil.pid_exists(child_pid):
-        time.sleep(0.02)
-    if psutil.pid_exists(child_pid):
-        child = psutil.Process(child_pid)
-        assert child.status() == psutil.STATUS_ZOMBIE
+    assert int(receipt.read_text(encoding="ascii")) > 0
+    assert monitors[0].handshake_complete is True
+    assert monitors[0].any_seen_alive() is False
 
 
 def test_monitor_barrier_fails_before_request_delivery():
@@ -637,6 +848,70 @@ def test_monitor_barrier_fails_before_request_delivery():
         _run("success", monitor_factory=FailingMonitor)
 
     assert caught.value.reason_code == "worker_monitor_unavailable"
+
+
+def test_monitor_barrier_failure_closes_all_raw_pipes(monkeypatch):
+    class Stream(io.BytesIO):
+        def __init__(self):
+            super().__init__()
+            self.write_count = 0
+
+        def write(self, data):
+            self.write_count += 1
+            return super().write(data)
+
+    class Process:
+        pid = 4242
+        returncode = None
+
+        def __init__(self):
+            self.stdin = Stream()
+            self.stdout = Stream()
+            self.stderr = Stream()
+
+        def poll(self):
+            return self.returncode
+
+        def kill(self):
+            self.returncode = -9
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+    class Controller:
+        def __init__(self, process, _limits):
+            self.process = process
+
+        def establish(self):
+            return None
+
+        def terminate(self):
+            self.process.kill()
+
+        def close(self):
+            return None
+
+    class FailingMonitor(PermissiveMonitor):
+        def establish(self):
+            raise artifact_supervisor.SupervisorError("worker_monitor_unavailable")
+
+    process = Process()
+    monkeypatch.setattr(artifact_supervisor, "_ProcessController", Controller)
+
+    with pytest.raises(artifact_supervisor.SupervisorError) as caught:
+        _run(
+            "success",
+            process_backend=lambda *_args, **_kwargs: process,
+            monitor_factory=FailingMonitor,
+            credentials=artifact_supervisor.WorkerCredentials(b"k" * 32),
+            clock=lambda: 0.0,
+        )
+
+    assert caught.value.reason_code == "worker_monitor_unavailable"
+    assert process.stdin.write_count == 0
+    assert process.stdin.closed is True
+    assert process.stdout.closed is True
+    assert process.stderr.closed is True
 
 
 def test_fast_exit_race_is_confirmed_by_popen_and_cleanup_does_not_mask(tmp_path):
@@ -689,7 +964,7 @@ def test_cleanup_failure_overrides_signed_success(tmp_path):
             return False
 
         def kill_seen(self, _timeout=0.5):
-            raise RuntimeError("synthetic cleanup failure")
+            raise artifact_supervisor.SupervisorError("worker_cleanup_failed")
 
         def any_seen_alive(self):
             return False
@@ -706,7 +981,7 @@ def test_cleanup_failure_overrides_signed_success(tmp_path):
     assert caught.value.details == {"prior_reason_code": None}
 
 
-def test_cleanup_steps_share_one_absolute_timeout_budget(monkeypatch):
+def test_cleanup_steps_share_one_absolute_timeout_budget():
     observed: dict[str, float] = {}
 
     class Clock:
@@ -723,7 +998,6 @@ def test_cleanup_steps_share_one_absolute_timeout_budget(monkeypatch):
                 self._value += seconds
 
     clock = Clock()
-    monkeypatch.setattr(artifact_supervisor.time, "monotonic", clock.monotonic)
 
     class Process:
         pid = 123
@@ -771,6 +1045,7 @@ def test_cleanup_steps_share_one_absolute_timeout_budget(monkeypatch):
         None,
         None,
         0.1,
+        clock=clock.monotonic,
     )
 
     assert failure is None
@@ -779,9 +1054,27 @@ def test_cleanup_steps_share_one_absolute_timeout_budget(monkeypatch):
     assert observed["join"] == pytest.approx(0.08)
 
 
-def test_cleanup_deadline_bounds_a_blocking_cleanup_step():
+def test_cleanup_deadline_reports_a_still_running_cleanup_thread(monkeypatch):
     entered = threading.Event()
     release = threading.Event()
+    created_threads = []
+    real_thread = threading.Thread
+    main_thread_id = threading.get_ident()
+
+    class Clock:
+        main_calls = 0
+
+        def monotonic(self):
+            if threading.get_ident() != main_thread_id:
+                return 0.0
+            self.main_calls += 1
+            if self.main_calls == 1:
+                return 0.0
+            if not entered.wait(5.0):
+                raise AssertionError(
+                    "cleanup thread did not enter containment teardown"
+                )
+            return 1.0
 
     class Process:
         def poll(self):
@@ -793,30 +1086,153 @@ def test_cleanup_deadline_bounds_a_blocking_cleanup_step():
     class Controller:
         def terminate(self):
             entered.set()
-            release.wait(1.0)
+            release.wait()
 
         def close(self):
             return None
 
-    started = time.monotonic()
-    failure = artifact_supervisor._cleanup_invocation(
-        Process(),
-        Controller(),
-        None,
-        None,
-        None,
-        None,
-        0.05,
+    def thread_factory(*args, **kwargs):
+        worker = real_thread(*args, **kwargs)
+        created_threads.append(worker)
+        return worker
+
+    monkeypatch.setattr(
+        artifact_supervisor,
+        "threading",
+        SimpleNamespace(Thread=thread_factory),
     )
-    elapsed = time.monotonic() - started
-    assert entered.wait(0.5)
-    release.set()
+    clock = Clock()
+    try:
+        failure = artifact_supervisor._cleanup_invocation(
+            Process(),
+            Controller(),
+            None,
+            None,
+            None,
+            None,
+            0.05,
+            clock=clock.monotonic,
+        )
+    finally:
+        release.set()
+        for worker in created_threads:
+            worker.join(timeout=5.0)
+            assert worker.is_alive() is False
 
     assert isinstance(failure, TimeoutError)
-    assert elapsed < 0.5
+    assert entered.is_set()
+    assert created_threads
 
 
-def test_cleanup_thread_does_not_swallow_keyboard_interrupt():
+@pytest.mark.parametrize("interrupt_type", [KeyboardInterrupt, SystemExit])
+def test_cleanup_join_propagates_main_thread_interrupt(monkeypatch, interrupt_type):
+    class InterruptingThread:
+        def __init__(self, *, target, name, daemon):
+            pass
+
+        def start(self):
+            return None
+
+        def join(self, _timeout):
+            raise interrupt_type
+
+        def is_alive(self):
+            return False
+
+    monkeypatch.setattr(
+        artifact_supervisor,
+        "threading",
+        SimpleNamespace(Thread=InterruptingThread),
+    )
+    with pytest.raises(interrupt_type):
+        artifact_supervisor._cleanup_invocation(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.5,
+            clock=lambda: 0.0,
+        )
+
+
+def test_cleanup_thread_start_failure_still_terminates_and_closes(monkeypatch):
+    class FailingThread:
+        def __init__(self, *, target, name, daemon):
+            pass
+
+        def start(self):
+            raise RuntimeError("synthetic thread start failure")
+
+    class Process:
+        def __init__(self):
+            self.killed = False
+
+        def poll(self):
+            return None
+
+        def kill(self):
+            self.killed = True
+
+    class Controller:
+        def __init__(self, process):
+            self.process = process
+            self.terminated = False
+            self.closed = False
+
+        def terminate(self):
+            self.terminated = True
+            self.process.kill()
+
+        def close(self):
+            self.closed = True
+
+    class Monitor:
+        def __init__(self):
+            self.killed = False
+
+        def kill_seen(self, timeout):
+            assert timeout == 0.0
+            self.killed = True
+
+    class Pipe:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    process = Process()
+    controller = Controller(process)
+    monitor = Monitor()
+    pipe = Pipe()
+    monkeypatch.setattr(
+        artifact_supervisor,
+        "threading",
+        SimpleNamespace(Thread=FailingThread),
+    )
+
+    failure = artifact_supervisor._cleanup_invocation(
+        process,
+        controller,
+        monitor,
+        pipe,
+        None,
+        None,
+        0.5,
+        clock=lambda: 0.0,
+    )
+
+    assert isinstance(failure, RuntimeError)
+    assert process.killed is True
+    assert controller.terminated is True
+    assert controller.closed is True
+    assert monitor.killed is True
+    assert pipe.closed is True
+
+
+def test_unexpected_cleanup_programming_error_propagates():
     class Process:
         def poll(self):
             return 0
@@ -826,20 +1242,18 @@ def test_cleanup_thread_does_not_swallow_keyboard_interrupt():
 
     class Controller:
         def terminate(self):
-            raise KeyboardInterrupt
+            raise RuntimeError("synthetic programming error")
 
-        def close(self):
-            return None
-
-    with pytest.raises(KeyboardInterrupt):
-        artifact_supervisor._cleanup_invocation(
+    with pytest.raises(RuntimeError, match="synthetic programming error"):
+        artifact_supervisor._cleanup_invocation_before_deadline(
             Process(),
             Controller(),
             None,
             None,
             None,
             None,
-            0.5,
+            1.0,
+            clock=lambda: 0.0,
         )
 
 
@@ -857,6 +1271,8 @@ def test_late_pipe_overflow_after_cleanup_rejects_signed_success(
         stdout_reader,
         stderr_reader,
         timeout,
+        *,
+        clock=None,
     ):
         result = real_cleanup(
             process,
@@ -866,6 +1282,7 @@ def test_late_pipe_overflow_after_cleanup_rejects_signed_success(
             stdout_reader,
             stderr_reader,
             timeout,
+            clock=clock,
         )
         assert stdout_reader is not None
         stdout_reader._overflow.set()
@@ -1279,6 +1696,108 @@ def test_protocol_duplicate_fd_is_explicitly_non_inheritable(monkeypatch):
     assert inheritable_calls == [(duplicated_fd, False)]
 
 
+@pytest.mark.parametrize(
+    ("failure_point", "failure_type"),
+    [
+        ("set_inheritable", OSError),
+        ("dup2", OSError),
+        ("fdopen", OSError),
+        ("set_inheritable", KeyboardInterrupt),
+        ("dup2", SystemExit),
+    ],
+)
+def test_protocol_duplicate_fd_closes_on_setup_failure(
+    monkeypatch,
+    failure_point,
+    failure_type,
+):
+    duplicated_fd = 987
+    closed = []
+
+    def maybe_fail(point):
+        if failure_point == point:
+            raise failure_type("synthetic protocol setup failure")
+
+    monkeypatch.setattr(artifact_supervisor.os, "dup", lambda _fd: duplicated_fd)
+    monkeypatch.setattr(
+        artifact_supervisor.os,
+        "set_inheritable",
+        lambda _fd, _inheritable: maybe_fail("set_inheritable"),
+    )
+    monkeypatch.setattr(
+        artifact_supervisor.os,
+        "dup2",
+        lambda _source, _target: maybe_fail("dup2"),
+    )
+
+    def open_protocol(_fd, _mode, buffering=0):
+        maybe_fail("fdopen")
+        return io.BytesIO()
+
+    monkeypatch.setattr(artifact_supervisor.os, "fdopen", open_protocol)
+    monkeypatch.setattr(
+        artifact_supervisor.os,
+        "close",
+        lambda fd: closed.append(fd),
+    )
+
+    try:
+        if issubclass(failure_type, OSError):
+            with pytest.raises(artifact_supervisor.SupervisorError) as caught:
+                artifact_supervisor.isolate_protocol_output()
+            assert caught.value.reason_code == "protocol_isolation_failed"
+        else:
+            with pytest.raises(failure_type):
+                artifact_supervisor.isolate_protocol_output()
+    finally:
+        # os is a shared process module; restore descriptor operations before
+        # pytest's own output-capture teardown runs.
+        monkeypatch.undo()
+
+    assert closed == [duplicated_fd]
+
+
+@pytest.mark.parametrize(
+    ("failure_type", "expected_type"),
+    [
+        (OSError, artifact_supervisor.SupervisorError),
+        (KeyboardInterrupt, KeyboardInterrupt),
+        (SystemExit, SystemExit),
+    ],
+)
+def test_windows_job_assignment_failure_closes_and_propagates_expected_type(
+    monkeypatch,
+    failure_type,
+    expected_type,
+):
+    jobs = []
+
+    class Job:
+        def __init__(self, _limits):
+            self.closed = False
+            jobs.append(self)
+
+        def assign(self, _pid):
+            raise failure_type("synthetic assignment failure")
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(artifact_supervisor.os, "name", "nt")
+    monkeypatch.setattr(artifact_supervisor, "_WindowsJob", Job)
+    controller = artifact_supervisor._ProcessController(
+        SimpleNamespace(pid=42),
+        _limits(),
+    )
+
+    with pytest.raises(expected_type) as caught:
+        controller.establish()
+
+    if expected_type is artifact_supervisor.SupervisorError:
+        assert caught.value.reason_code == "worker_containment_unavailable"
+    assert jobs[0].closed is True
+
+
 def test_windows_creation_flags_never_request_breakaway(monkeypatch):
     monkeypatch.setattr(
         artifact_supervisor.subprocess, "CREATE_NEW_PROCESS_GROUP", 512, raising=False
@@ -1331,3 +1850,84 @@ def test_windows_job_api_uses_pointer_width_handles_and_verifies_assignment():
     assert requested_rights & job._PROCESS_QUERY_LIMITED_INFORMATION
     assert kernel.AssignProcessToJobObject.calls == [(5678, 1234)]
     assert len(kernel.IsProcessInJob.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "configuration_failure",
+    [None, KeyboardInterrupt, SystemExit],
+    ids=["windows-error", "keyboard-interrupt", "system-exit"],
+)
+def test_windows_job_configuration_failure_closes_handle(
+    monkeypatch,
+    configuration_failure,
+):
+    class Function:
+        def __init__(self, implementation=lambda *_args: 1):
+            self.implementation = implementation
+            self.argtypes = None
+            self.restype = None
+            self.calls = []
+
+        def __call__(self, *args):
+            self.calls.append(args)
+            return self.implementation(*args)
+
+    def configure(*_args):
+        if configuration_failure is not None:
+            raise configuration_failure("synthetic configuration failure")
+        return 0
+
+    class Kernel:
+        def __init__(self):
+            self.CreateJobObjectW = Function(lambda *_args: 5678)
+            self.SetInformationJobObject = Function(configure)
+            self.OpenProcess = Function()
+            self.AssignProcessToJobObject = Function()
+            self.IsProcessInJob = Function()
+            self.TerminateJobObject = Function()
+            self.CloseHandle = Function()
+
+    kernel = Kernel()
+    monkeypatch.setattr(artifact_supervisor.os, "name", "nt")
+    monkeypatch.setattr(
+        artifact_supervisor.ctypes,
+        "WinDLL",
+        lambda *_args, **_kwargs: kernel,
+        raising=False,
+    )
+    job = object.__new__(artifact_supervisor._WindowsJob)
+    expected = OSError if configuration_failure is None else configuration_failure
+
+    with pytest.raises(expected):
+        job.__init__(_limits())
+
+    assert kernel.CloseHandle.calls == [(5678,)]
+    assert job._handle is None
+
+
+def test_windows_job_process_handle_close_failure_is_visible():
+    class Function:
+        def __init__(self, implementation=lambda *_args: 1):
+            self.implementation = implementation
+            self.argtypes = None
+            self.restype = None
+
+        def __call__(self, *args):
+            return self.implementation(*args)
+
+    def mark_assigned(_process, _job, output):
+        ctypes.cast(output, ctypes.POINTER(ctypes.c_int)).contents.value = 1
+        return 1
+
+    class Kernel:
+        OpenProcess = Function(lambda *_args: 1234)
+        AssignProcessToJobObject = Function()
+        IsProcessInJob = Function(mark_assigned)
+        CloseHandle = Function(lambda *_args: 0)
+
+    job = object.__new__(artifact_supervisor._WindowsJob)
+    job._kernel32 = Kernel()
+    job._handle = 5678
+
+    with pytest.raises(OSError):
+        job.assign(99)

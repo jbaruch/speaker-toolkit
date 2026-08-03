@@ -397,16 +397,19 @@ def isolate_protocol_output() -> BinaryIO:
     """
 
     try:
-        sys.stdout.flush()
-        sys.stderr.flush()
-        protocol_fd = os.dup(sys.stdout.fileno())
+        protocol_fd: int | None = None
         try:
+            sys.stdout.flush()
+            sys.stderr.flush()
+            protocol_fd = os.dup(sys.stdout.fileno())
             os.set_inheritable(protocol_fd, False)
             os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
-        except BaseException:
-            os.close(protocol_fd)
-            raise
-        return os.fdopen(protocol_fd, "wb", buffering=0)
+            stream = os.fdopen(protocol_fd, "wb", buffering=0)
+            protocol_fd = None
+            return stream
+        finally:
+            if protocol_fd is not None:
+                os.close(protocol_fd)
     except (OSError, ValueError) as exc:
         raise SupervisorError("protocol_isolation_failed") from exc
 
@@ -425,6 +428,8 @@ def run_authenticated_worker(
     process_backend: Callable[..., subprocess.Popen[bytes]] | None = None,
     monitor_factory: Callable[[int, SupervisorLimits], _ProcessTreeMonitor]
     | None = None,
+    clock: Callable[[], float] | None = None,
+    sleeper: Callable[[float], None] | None = None,
 ) -> WorkerResult:
     """Run one authenticated worker behind protocol and platform process bounds.
 
@@ -464,7 +469,9 @@ def run_authenticated_worker(
         Callable[..., subprocess.Popen[bytes]], subprocess.Popen
     )
     monitor_builder = monitor_factory or _ProcessTreeMonitor
-    started = time.monotonic()
+    clock_fn = clock if clock is not None else time.monotonic
+    sleep_fn = sleeper if sleeper is not None else time.sleep
+    started = clock_fn()
     process: subprocess.Popen[bytes] | None = None
     controller: _ProcessController | None = None
     monitor: _ProcessTreeMonitor | None = None
@@ -499,6 +506,18 @@ def run_authenticated_worker(
         if process.stdin is None or process.stdout is None or process.stderr is None:
             raise SupervisorError("worker_pipe_setup_failed")
 
+        # Own every raw Popen pipe before a containment barrier can fail. The
+        # wrappers are started only after both barriers succeed, but cleanup can
+        # already close the underlying descriptors on every earlier exit.
+        stdout_reader = _PipeDrainer(
+            cast(BinaryIO, process.stdout),
+            limits.max_output_bytes + _FRAME_HEADER_BYTES,
+        )
+        stderr_reader = _PipeDrainer(
+            cast(BinaryIO, process.stderr), limits.max_diagnostic_bytes
+        )
+        stdin_writer = _PipeWriter(cast(BinaryIO, process.stdin), request_frame)
+
         # The child has no request yet.  Establish every containment/monitoring
         # mechanism before allowing it to learn the artifact path or key.
         controller = _ProcessController(process, limits)
@@ -515,19 +534,11 @@ def run_authenticated_worker(
             raise
 
         deadline = started + limits.wall_seconds
-        if time.monotonic() >= deadline:
+        if clock_fn() >= deadline:
             raise SupervisorError("worker_timeout")
 
-        stdout_reader = _PipeDrainer(
-            cast(BinaryIO, process.stdout),
-            limits.max_output_bytes + _FRAME_HEADER_BYTES,
-        )
-        stderr_reader = _PipeDrainer(
-            cast(BinaryIO, process.stderr), limits.max_diagnostic_bytes
-        )
         stdout_reader.start()
         stderr_reader.start()
-        stdin_writer = _PipeWriter(cast(BinaryIO, process.stdin), request_frame)
         stdin_writer.start()
 
         while process.poll() is None:
@@ -537,7 +548,7 @@ def run_authenticated_worker(
                 raise SupervisorError("worker_diagnostic_limit_exceeded")
             if stdin_writer.failed:
                 raise SupervisorError("worker_request_write_failed")
-            now = time.monotonic()
+            now = clock_fn()
             if now >= deadline:
                 raise SupervisorError("worker_timeout")
             try:
@@ -550,7 +561,7 @@ def run_authenticated_worker(
                 if exc.reason_code == "worker_monitor_identity_changed":
                     settle_timeout = min(
                         limits.sample_interval_seconds,
-                        max(0.0, deadline - time.monotonic()),
+                        max(0.0, deadline - clock_fn()),
                     )
                     if settle_timeout > 0:
                         try:
@@ -560,14 +571,15 @@ def run_authenticated_worker(
                         else:
                             break
                 raise
-            time.sleep(min(limits.sample_interval_seconds, max(0.0, deadline - now)))
+            sleep_fn(min(limits.sample_interval_seconds, max(0.0, deadline - now)))
 
         exit_code = process.wait(timeout=0)
         _join_io_threads(
             stdin_writer,
             stdout_reader,
             stderr_reader,
-            timeout=min(0.5, max(0.0, deadline - time.monotonic())),
+            timeout=min(0.5, max(0.0, deadline - clock_fn())),
+            clock=clock_fn,
         )
         if stdin_writer.failed:
             raise SupervisorError("worker_request_write_failed")
@@ -596,6 +608,7 @@ def run_authenticated_worker(
             stdout_reader,
             stderr_reader,
             limits.cleanup_seconds,
+            clock=clock_fn,
         )
         if stdout_reader is not None:
             response_bytes = stdout_reader.data
@@ -1132,7 +1145,10 @@ class _ProcessTreeMonitor:
                 OSError,
             ) as exc:
                 raise SupervisorError("worker_cleanup_failed") from exc
-        _, alive = psutil_module.wait_procs(processes, timeout=max(0.0, timeout))
+        try:
+            _, alive = psutil_module.wait_procs(processes, timeout=max(0.0, timeout))
+        except (psutil_module.Error, OSError) as exc:
+            raise SupervisorError("worker_cleanup_failed") from exc
         if any(_same_process_is_alive(process, psutil_module) for process in alive):
             raise SupervisorError("worker_cleanup_failed")
 
@@ -1160,11 +1176,15 @@ class _ProcessController:
         if os.name == "nt":
             try:
                 job = _WindowsJob(self._limits)
-                job.assign(self._process.pid)
                 self._windows_job = job
-            except BaseException as exc:
-                if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-                    raise
+                retained = False
+                try:
+                    job.assign(self._process.pid)
+                    retained = True
+                finally:
+                    if not retained:
+                        self.close()
+            except OSError as exc:
                 raise SupervisorError("worker_containment_unavailable") from exc
         elif os.name != "posix":
             raise SupervisorError("worker_containment_unavailable")
@@ -1229,6 +1249,7 @@ class _WindowsJob:
         self._handle = kernel32.CreateJobObjectW(None, None)
         if not self._handle:
             raise _windows_error()
+        configured = False
         try:
             information = _JobObjectExtendedLimitInformation()
             information.BasicLimitInformation.LimitFlags = (
@@ -1246,10 +1267,10 @@ class _WindowsJob:
             )
             if not ok:
                 raise _windows_error()
-        except BaseException:
-            kernel32.CloseHandle(self._handle)
-            self._handle = None
-            raise
+            configured = True
+        finally:
+            if not configured:
+                self.close()
 
     def assign(self, pid: int) -> None:
         process_handle = self._kernel32.OpenProcess(
@@ -1274,7 +1295,8 @@ class _WindowsJob:
             if assigned.value != 1:
                 raise OSError("worker process was not assigned to its Job Object")
         finally:
-            self._kernel32.CloseHandle(process_handle)
+            if not self._kernel32.CloseHandle(process_handle):
+                raise _windows_error()
 
     def terminate(self) -> None:
         if self._handle and not self._kernel32.TerminateJobObject(self._handle, 1):
@@ -1367,27 +1389,26 @@ def _cleanup_invocation(
     stdout_reader: _PipeDrainer | None,
     stderr_reader: _PipeDrainer | None,
     timeout: float,
-) -> BaseException | None:
-    deadline = time.monotonic() + max(0.0, timeout)
-    outcome: list[BaseException | None] = []
+    *,
+    clock: Callable[[], float] | None = None,
+) -> Exception | None:
+    clock_fn = clock if clock is not None else time.monotonic
+    deadline = clock_fn() + max(0.0, timeout)
+    outcome: list[Exception | None] = []
 
     def cleanup() -> None:
-        try:
-            outcome.append(
-                _cleanup_invocation_before_deadline(
-                    process,
-                    controller,
-                    monitor,
-                    writer,
-                    stdout_reader,
-                    stderr_reader,
-                    deadline,
-                )
+        outcome.append(
+            _cleanup_invocation_before_deadline(
+                process,
+                controller,
+                monitor,
+                writer,
+                stdout_reader,
+                stderr_reader,
+                deadline,
+                clock=clock_fn,
             )
-        except BaseException as exc:
-            # Thread exceptions cannot propagate to the joining thread.  Keep
-            # killability by relaying interpreter/user interrupts below.
-            outcome.append(exc)
+        )
 
     cleanup_thread = threading.Thread(
         target=cleanup,
@@ -1397,16 +1418,56 @@ def _cleanup_invocation(
     try:
         cleanup_thread.start()
     except RuntimeError as exc:
-        return exc
-    cleanup_thread.join(max(0.0, deadline - time.monotonic()))
+        emergency_error = _emergency_cleanup_after_thread_start_failure(
+            process,
+            controller,
+            monitor,
+            writer,
+            stdout_reader,
+            stderr_reader,
+        )
+        return emergency_error or exc
+    cleanup_thread.join(max(0.0, deadline - clock_fn()))
     if cleanup_thread.is_alive():
         return TimeoutError("worker cleanup deadline exceeded")
     if not outcome:
         return RuntimeError("worker cleanup did not report an outcome")
-    cleanup_error = outcome[0]
-    if cleanup_error is not None and not isinstance(cleanup_error, Exception):
-        raise cleanup_error
-    return cleanup_error
+    return outcome[0]
+
+
+def _emergency_cleanup_after_thread_start_failure(
+    process: subprocess.Popen[bytes] | None,
+    controller: _ProcessController | None,
+    monitor: _ProcessTreeMonitor | None,
+    writer: _PipeWriter | None,
+    stdout_reader: _PipeDrainer | None,
+    stderr_reader: _PipeDrainer | None,
+) -> Exception | None:
+    """Make one non-waiting kill/close pass when cleanup cannot be scheduled."""
+
+    failures: list[Exception] = []
+    if process is not None:
+        try:
+            if controller is not None:
+                controller.terminate()
+            elif process.poll() is None:
+                process.kill()
+        except (OSError, SupervisorError) as exc:
+            failures.append(exc)
+        if monitor is not None:
+            try:
+                monitor.kill_seen(0.0)
+            except SupervisorError as exc:
+                failures.append(exc)
+    for pipe in (writer, stdout_reader, stderr_reader):
+        if pipe is not None:
+            pipe.close()
+    if controller is not None:
+        try:
+            controller.close()
+        except OSError as exc:
+            failures.append(exc)
+    return failures[0] if failures else None
 
 
 def _cleanup_invocation_before_deadline(
@@ -1417,13 +1478,16 @@ def _cleanup_invocation_before_deadline(
     stdout_reader: _PipeDrainer | None,
     stderr_reader: _PipeDrainer | None,
     deadline: float,
-) -> BaseException | None:
+    *,
+    clock: Callable[[], float] | None = None,
+) -> Exception | None:
     """Run ordered cleanup while one outer thread enforces the hard deadline."""
 
     failures: list[Exception] = []
+    clock_fn = clock if clock is not None else time.monotonic
 
     def remaining() -> float:
-        return max(0.0, deadline - time.monotonic())
+        return max(0.0, deadline - clock_fn())
 
     def deadline_failure() -> TimeoutError:
         return TimeoutError("worker cleanup deadline exceeded")
@@ -1440,20 +1504,20 @@ def _cleanup_invocation_before_deadline(
                 controller.terminate()
             elif process.poll() is None:
                 process.kill()
-        except Exception as exc:
+        except (OSError, SupervisorError) as exc:
             failures.append(exc)
         if remaining() <= 0:
             return deadline_failure()
         try:
             process.wait(timeout=remaining())
-        except Exception as exc:
+        except (OSError, subprocess.TimeoutExpired) as exc:
             failures.append(exc)
         if monitor is not None:
             if remaining() <= 0:
                 return deadline_failure()
             try:
                 monitor.kill_seen(remaining())
-            except Exception as exc:
+            except SupervisorError as exc:
                 failures.append(exc)
 
     for pipe in (writer, stdout_reader, stderr_reader):
@@ -1463,7 +1527,13 @@ def _cleanup_invocation_before_deadline(
             pipe.close()
     if remaining() <= 0:
         return deadline_failure()
-    _join_io_threads(writer, stdout_reader, stderr_reader, timeout=remaining())
+    _join_io_threads(
+        writer,
+        stdout_reader,
+        stderr_reader,
+        timeout=remaining(),
+        clock=clock_fn,
+    )
     if remaining() <= 0:
         return deadline_failure()
     if any(
@@ -1476,7 +1546,7 @@ def _cleanup_invocation_before_deadline(
             return deadline_failure()
         try:
             controller.close()
-        except Exception as exc:
+        except OSError as exc:
             failures.append(exc)
     if remaining() <= 0:
         return deadline_failure()
@@ -1488,7 +1558,7 @@ def _cleanup_invocation_before_deadline(
         try:
             if monitor.any_seen_alive():
                 failures.append(RuntimeError("worker process tree did not terminate"))
-        except Exception as exc:
+        except SupervisorError as exc:
             failures.append(exc)
     return failures[0] if failures else None
 
@@ -1519,11 +1589,13 @@ def _join_io_threads(
     stderr_reader: _PipeDrainer | None,
     *,
     timeout: float,
+    clock: Callable[[], float] | None = None,
 ) -> None:
-    deadline = time.monotonic() + timeout
+    clock_fn = clock if clock is not None else time.monotonic
+    deadline = clock_fn() + timeout
     for pipe in (writer, stdout_reader, stderr_reader):
         if pipe is not None and pipe.alive:
-            pipe.join(max(0.0, deadline - time.monotonic()))
+            pipe.join(max(0.0, deadline - clock_fn()))
 
 
 def _write_frame(

@@ -7,6 +7,7 @@ import copy
 import hashlib
 import importlib
 import json
+import os
 import struct
 import sys
 import zipfile
@@ -351,6 +352,70 @@ def test_pptx_preclaim_is_lexical_until_bounded_probe(
     }
 
 
+def test_pptx_preclaim_rejects_raw_dot_segments_before_normalization(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    source_root = tmp_path / "pptx-source"
+
+    def bounded_probe_forbidden(*_args: Any, **_kwargs: Any):
+        pytest.fail("ambiguous PPTX locator reached the bounded probe")
+
+    monkeypatch.setattr(
+        pattern_evidence,
+        "probe_pptx_artifact",
+        bounded_probe_forbidden,
+    )
+    locators = (
+        os.path.join("conference", ".", "talk.pptx"),
+        os.path.join("conference", "..", "talk.pptx"),
+        os.path.join(str(source_root), "conference", ".", "talk.pptx"),
+        os.path.join(str(source_root), "conference", "..", "talk.pptx"),
+    )
+
+    for locator in locators:
+        context = pattern_evidence.build_evidence_context(
+            vault,
+            {"pptx_path": locator, "slide_source": "pptx"},
+            source_roots={"pptx_source_dir": str(source_root)},
+        )
+
+        assert "native_deck" not in context["verified_evidence_sources"]
+        assert "ambiguous" in context["source_reasons"]["native_deck"]
+        assert "path segment" in context["source_reasons"]["native_deck"]
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
+        r"conference\.\talk.pptx",
+        r"conference\..\talk.pptx",
+        "conference/./talk.pptx",
+        "conference/../talk.pptx",
+        r"conference\track/../talk.pptx",
+        r"C:.\talk.pptx",
+        r"C:..\talk.pptx",
+        r"C:folder/../talk.pptx",
+        r"\\server\share\..\talk.pptx",
+        r"\\server\..\talk.pptx",
+        "//server/../talk.pptx",
+    ],
+)
+def test_pptx_dot_segment_guard_covers_windows_alternate_separator(
+    monkeypatch: pytest.MonkeyPatch,
+    locator: str,
+) -> None:
+    with monkeypatch.context() as patch:
+        patch.setattr(pattern_evidence.os, "sep", "\\")
+        patch.setattr(pattern_evidence.os, "altsep", "/")
+        with pytest.raises(pattern_evidence.PatternEvidenceError, match="ambiguous"):
+            pattern_evidence._reject_ambiguous_path_segments(
+                locator,
+                label="pptx_path",
+            )
+
+
 def test_traversal_and_symlinked_artifacts_never_become_sources(
     tmp_path: Path,
 ) -> None:
@@ -371,7 +436,7 @@ def test_traversal_and_symlinked_artifacts_never_become_sources(
         source_roots={"pptx_source_dir": str(source_root)},
     )
     assert "native_deck" not in traversal["verified_evidence_sources"]
-    assert "outside" in traversal["source_reasons"]["native_deck"]
+    assert "ambiguous" in traversal["source_reasons"]["native_deck"]
 
     source_root.mkdir(parents=True, exist_ok=True)
     real = source_root / "real.pptx"
@@ -1862,7 +1927,7 @@ def test_invalid_deck_cannot_hide_an_independent_valid_transcript(
     assert assessment["verified_capabilities"] == ("transcript",)
     assert assessment["verified_evidence_sources"] == ("transcript",)
     assert assessment["repair_capabilities"] == ()
-    assert "outside" in assessment["source_reasons"]["native_deck"]
+    assert "ambiguous" in assessment["source_reasons"]["native_deck"]
 
 
 def test_unprobeable_video_is_not_hashed_or_allowed_to_hide_other_lanes(

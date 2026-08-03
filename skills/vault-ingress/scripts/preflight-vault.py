@@ -1676,7 +1676,7 @@ def relation_from(talk: dict[str, Any]) -> tuple[Any, Any] | None:
 def resolve_input(value: str | Path) -> tuple[Path, Path]:
     """Return ``(vault_root, database_path)`` without requiring either to exist."""
     path = Path(value).expanduser()
-    if path.suffix.casefold() != ".json":
+    if path.name.casefold() != "tracking-database.json":
         return path, path / "tracking-database.json"
     return path.parent, path
 
