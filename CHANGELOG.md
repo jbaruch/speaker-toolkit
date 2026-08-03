@@ -29,6 +29,9 @@ normal NTFS metadata settlement cannot impersonate a PDF/PPTX leaf race.
 Windows leaf receipts also canonicalize path- and handle-based snapshots to
 their shared creation-time semantic; CPython's incompatible `st_ctime_ns`
 meanings can no longer reject a valid same-path replacement (#201).
+The PDF worker's outer CLI boundary now emits one closed, path-neutral stderr
+diagnostic before returning a nonzero failure instead of failing silently
+(#202).
 
 Contained PPTX render inspection reuses the same PDF ceilings, full page-tree
 walk, and repair-diagnostic policy without nesting a second supervisor. PPTX

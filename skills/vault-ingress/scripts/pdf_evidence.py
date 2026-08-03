@@ -1761,12 +1761,23 @@ def _main() -> int:
         raise SystemExit("pdf_evidence.py is a library")
     try:
         return _run_supervised_worker_child()
-    except SupervisorError:
+    except SupervisorError as exc:
+        print(
+            f"pdf supervised worker failed: {exc.reason_code}",
+            file=sys.stderr,
+            flush=True,
+        )
         return 2
-    # The caller treats a silent nonzero child as a bounded crash; a traceback
-    # could leak paths and violate its authenticated one-frame response shape.
-    # outer-boundary-process-contract: emit exit 2 for that caller-visible failure.
+    # The supervisor treats a nonzero child without an authenticated response
+    # as a bounded crash. Emit a path-neutral stderr diagnostic plus exit 2
+    # because propagation would leak a traceback and violate the one-frame
+    # response contract. outer-boundary-process-contract.
     except Exception:  # noqa: BLE001
+        print(
+            "pdf supervised worker failed: unexpected_error",
+            file=sys.stderr,
+            flush=True,
+        )
         return 2
 
 

@@ -1124,6 +1124,42 @@ def test_child_dispatch_attributes_root_identity_mismatch(
     assert caught.value.details == {"generation_names": ["pdf_root"]}
 
 
+@pytest.mark.parametrize(
+    ("error", "expected_diagnostic"),
+    [
+        (
+            pdf_evidence.SupervisorError("protocol_isolation_failed"),
+            "pdf supervised worker failed: protocol_isolation_failed\n",
+        ),
+        (
+            RuntimeError("failure at /private/vault/source.pdf"),
+            "pdf supervised worker failed: unexpected_error\n",
+        ),
+    ],
+)
+def test_worker_main_reports_closed_outer_failures(
+    error: Exception,
+    expected_diagnostic: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail() -> int:
+        raise error
+
+    monkeypatch.setattr(
+        pdf_evidence.sys,
+        "argv",
+        [os.fspath(SCRIPT), pdf_evidence.PDF_SUPERVISED_WORKER_FLAG],
+    )
+    monkeypatch.setattr(pdf_evidence, "_run_supervised_worker_child", fail)
+
+    assert pdf_evidence._main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == expected_diagnostic
+    assert "/private/vault/source.pdf" not in captured.err
+
+
 def test_deadline_is_validated_and_clamps_worker_profile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
