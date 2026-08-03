@@ -16,6 +16,7 @@ import signal
 import stat as stat_module
 import sys
 import time
+import unicodedata
 import xml.etree.ElementTree as ElementTree
 import zipfile
 from bisect import bisect_left
@@ -4903,23 +4904,107 @@ def _run_supervised_pptx_extraction_impl(
     return extraction
 
 
+_INSPECTED_PAGES_GRAMMAR_ERROR = (
+    "--inspected-pages values must be PAGE or START-END"
+)
+_INSPECTED_PAGES_LIMIT_ERROR = (
+    "--inspected-pages page numbers must not exceed the bounded PPTX "
+    f"page limit {PPTX_ARCHIVE_MAX_MEMBERS}"
+)
+_INSPECTED_PAGES_COUNT_ERROR = (
+    "--inspected-pages must contain no more than "
+    f"{PPTX_ARCHIVE_MAX_MEMBERS} ranges"
+)
+
+
+def _parse_cli_page_number(
+    value: str,
+    start_index: int,
+    end_index: int,
+    *,
+    stop_at_hyphen: bool,
+) -> tuple[int, int]:
+    """Parse a Unicode decimal integer span with bounded auxiliary memory."""
+    index = start_index
+    number = 0
+    digit_seen = False
+    significant_digit_seen = False
+    while index < end_index:
+        character = value[index]
+        if stop_at_hyphen and character == "-":
+            break
+        digit = unicodedata.decimal(character, None)
+        if digit is None:
+            raise PptxEvidenceError(_INSPECTED_PAGES_GRAMMAR_ERROR)
+        digit_seen = True
+        if significant_digit_seen or digit != 0:
+            significant_digit_seen = True
+            if number > (PPTX_ARCHIVE_MAX_MEMBERS - digit) // 10:
+                raise PptxEvidenceError(_INSPECTED_PAGES_LIMIT_ERROR)
+            number = (number * 10) + digit
+        index += 1
+    if not digit_seen:
+        raise PptxEvidenceError(_INSPECTED_PAGES_GRAMMAR_ERROR)
+    return number, index
+
+
+def _parse_cli_page_range(
+    value: str,
+    start_index: int,
+    end_index: int,
+) -> list[int]:
+    """Parse one trimmed PAGE or START-END span without slicing it."""
+    start, index = _parse_cli_page_number(
+        value,
+        start_index,
+        end_index,
+        stop_at_hyphen=True,
+    )
+    if start < 1:
+        raise PptxEvidenceError(
+            "--inspected-pages page numbers must be at least 1"
+        )
+    if index == end_index:
+        return [start, start]
+
+    end, index = _parse_cli_page_number(
+        value,
+        index + 1,
+        end_index,
+        stop_at_hyphen=False,
+    )
+    if index != end_index:
+        raise PptxEvidenceError(_INSPECTED_PAGES_GRAMMAR_ERROR)
+    if end < start:
+        raise PptxEvidenceError(
+            "--inspected-pages range end must not be less than its start"
+        )
+    return [start, end]
+
+
 def parse_page_range_arguments(values: list[str] | None) -> list[list[int]]:
-    """Parse repeated CLI PAGE or START-END values."""
+    """Parse repeated CLI PAGE or START-END values before artifact work."""
     if not values:
         return []
     parsed: list[list[int]] = []
     for value in values:
-        for token in value.split(","):
-            candidate = token.strip()
-            match = re.fullmatch(r"(\d+)(?:-(\d+))?", candidate)
-            if match is None:
-                raise PptxEvidenceError(
-                    "--inspected-pages values must be PAGE or START-END, "
-                    f"got {candidate!r}"
-                )
-            start = int(match.group(1))
-            end = int(match.group(2) or match.group(1))
-            parsed.append([start, end])
+        span_start = 0
+        value_end = len(value)
+        while True:
+            if len(parsed) >= PPTX_ARCHIVE_MAX_MEMBERS:
+                raise PptxEvidenceError(_INSPECTED_PAGES_COUNT_ERROR)
+
+            comma_index = value.find(",", span_start)
+            span_end = value_end if comma_index < 0 else comma_index
+            while span_start < span_end and value[span_start].isspace():
+                span_start += 1
+            while span_end > span_start and value[span_end - 1].isspace():
+                span_end -= 1
+            parsed.append(_parse_cli_page_range(value, span_start, span_end))
+
+            if comma_index < 0:
+                break
+            span_start = comma_index + 1
     return parsed
 
 
