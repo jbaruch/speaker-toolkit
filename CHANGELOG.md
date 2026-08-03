@@ -77,6 +77,8 @@ kernel hard-allocation cap. Raw parser diagnostics never escape—only a
 byte-count/hash/truncation receipt is retained.
 Private PPTX and directory workers emit one closed, path-neutral stderr
 diagnostic for outer failures instead of exiting silently (partial #203).
+The dedicated PPTX preclaim resolver no longer leaves unreachable legacy
+source-root branches in the generic PDF and source-inspection paths (#208).
 The picture-area render decision has one script-owned threshold shared by the
 producer and validator; schema prose points to that authority instead of
 copying its predicate (#205).
