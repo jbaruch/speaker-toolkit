@@ -2517,12 +2517,13 @@ def main(argv=None):
                 rendered_pdf_path=args.rendered_pdf,
                 inspected_page_ranges=inspected_page_ranges,
             )
-        # The preflight caller treats an invalid/nonzero process result as the
-        # silent-failure shape; emit one concise diagnostic so propagation does
-        # not replace the contract with an unstructured traceback.
         except PptxEvidenceError as exc:
             print(f"ERROR: {exc.reason_code}", file=sys.stderr)
             return 1
+        # outer-boundary-process-contract: the preflight caller treats an
+        # invalid/nonzero process result as its silent-failure shape; this catch
+        # emits one concise diagnostic because propagation would replace that
+        # contract with an unstructured traceback.
         except Exception:  # noqa: BLE001 - outer-boundary-process-contract
             print("ERROR: pptx_extraction_failed", file=sys.stderr)
             return 1
