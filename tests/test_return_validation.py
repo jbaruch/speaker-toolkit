@@ -1849,16 +1849,25 @@ def test_ungated_pattern_cannot_be_recorded_as_not_evaluable(return_validation):
             "reason": "No reason can override available transcript evidence.",
         }
     ]
-    catalog = return_validation.load_catalog()
-    catalog.entries["narrative-arc"] = replace(
-        catalog.entries["narrative-arc"],
+    bundled = return_validation.load_catalog()
+    original_entry = bundled.entries["narrative-arc"]
+    entries = dict(bundled.entries)
+    entries["narrative-arc"] = replace(
+        original_entry,
         evaluable_from=None,
         strong_evaluable_from=None,
         absence_evaluable_from=None,
     )
+    catalog = return_validation.PatternCatalog(
+        entries=entries,
+        fingerprint=bundled.fingerprint,
+    )
     with pytest.raises(return_validation.ReturnValidationError) as excinfo:
         return_validation.validate_batch([value], catalog)
     assert "has no source-aware evidence gate" in str(excinfo.value)
+    # Persistence derives outcomes from this session cache before its subprocess
+    # reloads the bundled catalog, so the two views must stay aligned.
+    assert return_validation.load_catalog().entries["narrative-arc"] == original_entry
 
 
 def test_detected_pattern_cannot_also_be_not_evaluable(return_validation):
