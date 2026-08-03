@@ -1189,7 +1189,7 @@ class _ProcessController:
         elif os.name != "posix":
             raise SupervisorError("worker_containment_unavailable")
 
-    def terminate(self) -> None:
+    def terminate(self, timeout: float | None = None) -> None:
         failures: list[OSError] = []
         if self._windows_job is not None:
             try:
@@ -1206,6 +1206,32 @@ class _ProcessController:
                 os.killpg(self._process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+            except PermissionError as exc:
+                # Darwin reports EPERM for a group whose only member exited
+                # after poll() but remains an unreaped zombie. Confirm that
+                # exit through a bounded Popen wait charged to the caller's
+                # cleanup budget. A live root keeps EPERM fatal, and monitor
+                # cleanup still proves no sampled descendant survives.
+                darwin_group_gone = False
+                if sys.platform == "darwin":
+                    settle_budget = (
+                        self._limits.cleanup_seconds
+                        if timeout is None
+                        else max(0.0, timeout)
+                    )
+                    settle_timeout = min(
+                        self._limits.sample_interval_seconds,
+                        settle_budget,
+                    )
+                    if settle_timeout > 0:
+                        try:
+                            self._process.wait(timeout=settle_timeout)
+                        except (OSError, subprocess.TimeoutExpired):
+                            pass
+                        else:
+                            darwin_group_gone = True
+                if not darwin_group_gone:
+                    failures.append(exc)
             except OSError as exc:
                 failures.append(exc)
         if self._process.poll() is None:
@@ -1449,7 +1475,7 @@ def _emergency_cleanup_after_thread_start_failure(
     if process is not None:
         try:
             if controller is not None:
-                controller.terminate()
+                controller.terminate(0.0)
             elif process.poll() is None:
                 process.kill()
         except (OSError, SupervisorError) as exc:
@@ -1501,7 +1527,7 @@ def _cleanup_invocation_before_deadline(
             return deadline_failure()
         try:
             if controller is not None:
-                controller.terminate()
+                controller.terminate(remaining())
             elif process.poll() is None:
                 process.kill()
         except (OSError, SupervisorError) as exc:

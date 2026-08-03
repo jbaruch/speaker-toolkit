@@ -591,7 +591,7 @@ def test_wall_limit_terminates_worker_with_controlled_clock(monkeypatch):
         def establish(self):
             self.established = True
 
-        def terminate(self):
+        def terminate(self, _timeout=None):
             self.terminated = True
             self.process.kill()
 
@@ -754,6 +754,80 @@ def test_group_kill_winning_pid_kill_race_is_successful_cleanup(monkeypatch):
     assert attempted_groups == [(12345, artifact_supervisor.signal.SIGKILL)]
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process-group assertion")
+def test_group_kill_permission_race_after_root_exit_is_successful(monkeypatch):
+    attempted_groups: list[tuple[int, int]] = []
+
+    def deny_disappearing_group(process_group: int, signal_number: int) -> None:
+        attempted_groups.append((process_group, signal_number))
+        raise PermissionError("the child exited before its group was signalled")
+
+    class ExitedDuringGroupKill:
+        pid = 12345
+
+        def __init__(self) -> None:
+            self.returncode = None
+            self.wait_timeouts: list[float] = []
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, *, timeout):
+            self.wait_timeouts.append(timeout)
+            self.returncode = 0
+            return self.returncode
+
+        def kill(self):
+            raise AssertionError("a confirmed exited worker must not be killed")
+
+    monkeypatch.setattr(artifact_supervisor.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        artifact_supervisor.os,
+        "killpg",
+        deny_disappearing_group,
+    )
+
+    process = ExitedDuringGroupKill()
+    limits = _limits()
+    settle_budget = limits.sample_interval_seconds / 2
+    artifact_supervisor._ProcessController(process, limits).terminate(settle_budget)
+
+    assert attempted_groups == [(12345, artifact_supervisor.signal.SIGKILL)]
+    assert process.wait_timeouts == [settle_budget]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process-group assertion")
+def test_group_kill_permission_error_for_live_root_remains_visible(monkeypatch):
+    def deny_live_group(_process_group: int, _signal_number: int) -> None:
+        raise PermissionError("live group cannot be signalled")
+
+    class LiveProcess:
+        pid = 12345
+
+        def __init__(self) -> None:
+            self.killed = False
+
+        def poll(self):
+            return None
+
+        def wait(self, *, timeout):
+            raise subprocess.TimeoutExpired("worker", timeout)
+
+        def kill(self):
+            self.killed = True
+
+    process = LiveProcess()
+    monkeypatch.setattr(artifact_supervisor.sys, "platform", "darwin")
+    monkeypatch.setattr(artifact_supervisor.os, "killpg", deny_live_group)
+
+    with pytest.raises(artifact_supervisor.SupervisorError) as caught:
+        artifact_supervisor._ProcessController(process, _limits()).terminate()
+
+    assert caught.value.reason_code == "worker_cleanup_failed"
+    assert isinstance(caught.value.__cause__, PermissionError)
+    assert process.killed is True
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX process-tree assertion")
 def test_clean_exit_reports_and_kills_known_descendant_with_handshake(tmp_path):
     receipt = tmp_path / "child.pid"
@@ -885,7 +959,7 @@ def test_monitor_barrier_failure_closes_all_raw_pipes(monkeypatch):
         def establish(self):
             return None
 
-        def terminate(self):
+        def terminate(self, _timeout=None):
             self.process.kill()
 
         def close(self):
@@ -1011,7 +1085,8 @@ def test_cleanup_steps_share_one_absolute_timeout_budget():
             return 0
 
     class Controller:
-        def terminate(self):
+        def terminate(self, timeout: float = 0.0):
+            observed["terminate"] = timeout
             return None
 
         def close(self):
@@ -1049,6 +1124,7 @@ def test_cleanup_steps_share_one_absolute_timeout_budget():
     )
 
     assert failure is None
+    assert observed["terminate"] == pytest.approx(0.1)
     assert observed["wait"] == pytest.approx(0.1)
     assert observed["kill"] == pytest.approx(0.09)
     assert observed["join"] == pytest.approx(0.08)
@@ -1084,7 +1160,7 @@ def test_cleanup_deadline_reports_a_still_running_cleanup_thread(monkeypatch):
             return 0
 
     class Controller:
-        def terminate(self):
+        def terminate(self, _timeout=None):
             entered.set()
             release.wait()
 
@@ -1181,7 +1257,7 @@ def test_cleanup_thread_start_failure_still_terminates_and_closes(monkeypatch):
             self.terminated = False
             self.closed = False
 
-        def terminate(self):
+        def terminate(self, _timeout=None):
             self.terminated = True
             self.process.kill()
 
@@ -1241,7 +1317,7 @@ def test_unexpected_cleanup_programming_error_propagates():
             return 0
 
     class Controller:
-        def terminate(self):
+        def terminate(self, _timeout=None):
             raise RuntimeError("synthetic programming error")
 
     with pytest.raises(RuntimeError, match="synthetic programming error"):
@@ -1638,7 +1714,7 @@ def test_cleanup_always_terminates_containment_after_clean_root_exit():
         terminated = False
         closed = False
 
-        def terminate(self):
+        def terminate(self, _timeout=None):
             self.terminated = True
 
         def close(self):
