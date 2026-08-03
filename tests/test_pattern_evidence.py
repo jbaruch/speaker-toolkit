@@ -290,6 +290,22 @@ def test_artifact_root_kinds_are_canonical_and_owner_bound(tmp_path: Path) -> No
     )
 
 
+def test_artifact_identity_names_the_actual_trusted_root(tmp_path: Path) -> None:
+    source_root = tmp_path / "pptx-source"
+    outside = tmp_path / "outside" / "deck.pptx"
+
+    with pytest.raises(pattern_evidence.PatternEvidenceError) as caught:
+        pattern_evidence._artifact_identity(
+            source_root,
+            outside,
+            root_kind="pptx_source",
+        )
+
+    message = str(caught.value)
+    assert "'pptx_source' artifact root" in message
+    assert "vault root" not in message
+
+
 def test_pptx_preclaim_is_lexical_until_bounded_probe(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1815,8 +1831,8 @@ def test_native_deck_audit_is_recomputed_and_bound_to_canonical_render(
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     slide.shapes.add_picture(
         str(image_path),
-        0,
-        0,
+        Inches(0),
+        Inches(0),
         width=presentation.slide_width,
         height=presentation.slide_height,
     )

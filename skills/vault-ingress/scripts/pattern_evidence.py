@@ -417,7 +417,7 @@ def _artifact_identity(
         relative = resolved.relative_to(root)
     except ValueError as exc:
         raise PatternEvidenceError(
-            f"artifact resolves outside the vault root: {path}"
+            f"artifact resolves outside the {root_kind!r} artifact root: {path}"
         ) from exc
     return {
         "artifact_root": root_kind,
