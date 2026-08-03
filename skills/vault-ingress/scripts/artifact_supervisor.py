@@ -1627,15 +1627,29 @@ def _join_io_threads(
 def _write_frame(
     stream: BinaryIO, document: Mapping[str, JsonValue], limit: int
 ) -> None:
-    frame = _encode_frame(document, limit)
+    frame = _encode_frame(
+        document,
+        limit,
+        limit_reason="worker_output_limit_exceeded",
+    )
     stream.write(frame)
     stream.flush()
 
 
-def _encode_frame(document: Mapping[str, JsonValue], limit: int) -> bytes:
+def _encode_frame(
+    document: Mapping[str, JsonValue],
+    limit: int,
+    *,
+    limit_reason: str = "worker_input_limit_exceeded",
+) -> bytes:
+    if limit_reason not in {
+        "worker_input_limit_exceeded",
+        "worker_output_limit_exceeded",
+    }:
+        raise ValueError("frame limit reason must identify input or output")
     payload = _canonical_json(_normalize_json(document))
     if not payload or len(payload) > limit:
-        raise SupervisorError("worker_input_limit_exceeded", {"limit_bytes": limit})
+        raise SupervisorError(limit_reason, {"limit_bytes": limit})
     return struct.pack(">I", len(payload)) + payload
 
 

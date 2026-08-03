@@ -26,7 +26,8 @@ identity, containment, and configured resource-limit causes with
 operation-neutral diagnostics (#188). Successful evidence is unchanged, so no
 schema/pipeline migration is required. Ambiguous historical failure/skip
 receipts remain readable but are never relabeled; rerun ingress to regenerate
-them under the current mapping.
+them under the current mapping. Response-frame encoding now reports an output
+limit rather than mislabeling it as an oversized request.
 Supervisor tests now reuse the canonical imported module instead of replacing
 it during collection, preserving dataclass and exception identity across test
 orders (#206).
