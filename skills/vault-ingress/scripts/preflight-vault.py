@@ -1674,7 +1674,11 @@ def relation_from(talk: dict[str, Any]) -> tuple[Any, Any] | None:
 
 
 def resolve_input(value: str | Path) -> tuple[Path, Path]:
-    """Return ``(vault_root, database_path)`` without requiring either to exist."""
+    """Bind a vault root to its canonical database without filesystem probes.
+
+    Only a case-insensitive ``tracking-database.json`` basename is a direct
+    database locator; every other value is the vault root.
+    """
     path = Path(value).expanduser()
     if path.name.casefold() != "tracking-database.json":
         return path, path / "tracking-database.json"
