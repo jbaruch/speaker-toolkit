@@ -345,7 +345,9 @@ notes which named patterns and antipatterns are detected per talk.
   source timing is retained in a hash-bound sidecar when available
 - Slides come from native PPTX files, local or Drive-acquired static PDFs, or
   provenance-gated video-derived artifacts; each source keeps its own evidence
-  capabilities instead of aliasing one format to another
+  capabilities instead of aliasing one format to another. Every manifest PDF
+  is generation-bound before persistence, including context-only artifacts,
+  and a configured symlinked vault root does not weaken descendant path checks
 - Each talk is scored against the taxonomy's 81 observable entries (62 patterns + 19 antipatterns),
   with source-located evidence restricted to the artifact channels each entry permits
 - Each batch updates the summary, per-talk analysis files, and triggers profile regeneration
@@ -354,8 +356,9 @@ notes which named patterns and antipatterns are detected per talk.
 ### Prerequisites
 
 - Python 3.10+ at the vault's configured `python_path`, with core `PyYAML`;
-  `pypdf` for PDF evidence; and `python-pptx` + exactly `psutil==7.2.2` for
-  resource-supervised native-deck evidence
+  `pypdf` + exactly `psutil==7.2.2` for supervised PDF evidence; and
+  `python-pptx` + the same exact psutil version for resource-supervised
+  native-deck evidence
 - Lane-specific runtime: importable `gdown` for Google Drive acquisition,
   `youtube-transcript-api` for captions, `yt-dlp` for provider probing/audio
   download, `pdftoppm` for rendered-PDF inspection, Pillow + `imagehash` +
@@ -517,6 +520,8 @@ speaker-toolkit/
     +-- vault-ingress/
     |   +-- SKILL.md                          # Main vault workflow (9 steps)
     |   +-- scripts/
+    |   |   +-- artifact_metadata.py          # shared bounded metadata + cloud/reparse policy
+    |   |   +-- pdf_evidence.py               # supervised exact-generation PDF evidence
     |   |   +-- pptx-extraction.py            # supervised PPTX extraction + bounded discovery
     |   |   +-- video-slide-extraction.py     # Video-to-slides via ffmpeg + perceptual dedup
     |   |   +-- vtt-cleanup.py                # WebVTT to plain text

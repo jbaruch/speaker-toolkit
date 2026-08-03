@@ -1,5 +1,47 @@
 # Changelog
 
+### fix(vault-ingress) — supervise exact-generation PDF evidence (#183)
+
+Static-slide PDFs now use a dedicated authenticated metadata/probe worker with
+fixed wall, memory, process, input, output, diagnostic, and page-count ceilings.
+The worker copies and hashes one exact regular-file generation, requires a PDF
+header, walks the complete strict pypdf page tree, and returns only a closed
+identity/page-count receipt. Offline cloud placeholders, parser repairs,
+materialization races, protocol faults, and infrastructure failures remain
+distinct, lane-local reasons; only repeatable artifact damage is cached.
+
+Pattern evidence, freshness checks, preflight, video-extraction provenance, and
+public rendered-PDF inspection consume the bounded receipt instead of opening,
+hashing, resolving, or statting PDF leaves in the owner process. Every
+manifest-declared video PDF is independently verified against its recorded page
+count before a current return can be persisted, and a promoted video-slide PDF
+must have the exact digest of its trusted manifest `slide_region` artifact.
+Manifest paths reject NUL and ambiguous dot segments, preserved source videos
+must remain root-confined and non-symlinked, and the documented symlinked
+canonical vault root is mapped to its configured storage root without weakening
+descendant-link checks. A shared platform metadata decoder keeps PDF and PPTX
+cloud/reparse classification identical while preserving the older PPTX
+compatibility seams.
+
+Contained PPTX render inspection reuses the same PDF ceilings, full page-tree
+walk, and repair-diagnostic policy without nesting a second supervisor. PPTX
+extraction behavior advances to pipeline 1.5.0 so older render receipts cannot
+inherit the stronger trust claim. The PDF runtime lane now requires the exact
+psutil supervision pin, and native macOS/Windows CI executes the complete PDF
+worker suite.
+
+Persisted native-deck freshness now requeues missing, obsolete, wrong-lane, or
+artifact-disconnected audits and binds any rendered-page receipt to the current
+bounded PDF generation plus its canonical inspection ranges (#195). Persisted
+preflight also rejects `video_extraction` provenance outside the
+`video_extracted` slide lane, matching return validation and atomic artifact
+admission (#194).
+
+Rendered-PDF pre-admission now uses the PDF lane's input ceiling and stable
+missing, root/symlink, cloud, size, and resource failure family. Authenticated
+generation receipts distinguish source-deck drift from `pdf_artifact_changed`
+without introducing parent-process PDF leaf I/O (#196).
+
 ### fix(vault-ingress) — supervise every native-deck parser boundary (#182)
 
 PPTX probe, native-audit, and full extraction now run behind one private,

@@ -26,6 +26,8 @@ from ingress_contract import (
     has_remote_slide_acquisition,
     has_remote_video_acquisition,
 )
+from artifact_metadata import canonicalize_trusted_artifact_locator
+from pdf_evidence import PdfArtifactProbe, PdfEvidenceError, probe_pdf_artifact
 from transcript_quality import validate_transcript
 from transcript_timing import (
     load_verified_quality_receipt,
@@ -38,10 +40,10 @@ from transcript_timing import (
 from pptx_evidence import (
     PPTX_EXTRACTION_PIPELINE_VERSION,
     PPTX_EXTRACTION_SCHEMA_VERSION,
+    PptxArtifactProbe,
     PptxEvidenceError,
     probe_pptx_artifact,
     recompute_native_deck_audit,
-    snapshot_rendered_pdf,
     validate_native_deck_audit,
 )
 
@@ -237,7 +239,15 @@ def _resolve_local_artifact(
 ) -> Path:
     if not isinstance(value, str) or not value.strip() or value != value.strip():
         raise PatternEvidenceError(f"{label} must be a non-empty path")
+    if "\x00" in value:
+        raise PatternEvidenceError(f"{label} must not contain a NUL byte")
+    _reject_ambiguous_path_segments(value, label=label)
     supplied = Path(value)
+    suffixes = frozenset({suffix}) if isinstance(suffix, str) else suffix
+    if supplied.suffix.casefold() not in suffixes:
+        raise PatternEvidenceError(
+            f"{label} must use one of {sorted(suffixes)}, got {value!r}"
+        )
     root = Path(vault_root).resolve()
     candidate = supplied if supplied.is_absolute() else root / supplied
     lexical = Path(os.path.abspath(candidate))
@@ -252,11 +262,6 @@ def _resolve_local_artifact(
         raise PatternEvidenceError(
             f"{label} must not traverse a symbolic link: {value!r}"
         )
-    suffixes = frozenset({suffix}) if isinstance(suffix, str) else suffix
-    if resolved.suffix.casefold() not in suffixes:
-        raise PatternEvidenceError(
-            f"{label} must use one of {sorted(suffixes)}, got {value!r}"
-        )
     if not resolved.is_file():
         raise PatternEvidenceError(
             f"{label} artifact is missing or unreadable: {resolved}"
@@ -267,6 +272,16 @@ def _resolve_local_artifact(
 def _lexical_absolute(value: str | Path) -> Path:
     """Return an absolute locator without touching the filesystem."""
     return Path(os.path.abspath(os.fspath(Path(value).expanduser())))
+
+
+def _canonical_pdf_root(value: str | Path) -> Path:
+    """Map a trusted configured PDF root without resolving a PDF leaf."""
+    locator = _lexical_absolute(value)
+    _mapped_locator, canonical_root = canonicalize_trusted_artifact_locator(
+        locator,
+        locator,
+    )
+    return canonical_root or locator
 
 
 def _reject_ambiguous_path_segments(value: str, *, label: str) -> None:
@@ -293,33 +308,73 @@ def _reject_ambiguous_path_segments(value: str, *, label: str) -> None:
         )
 
 
+def _resolve_local_bounded_artifact(
+    trusted_root: str | Path,
+    value: object,
+    *,
+    suffix: str,
+    label: str,
+    canonicalize_root: bool = False,
+) -> Path:
+    """Validate a locator lexically; its bounded probe owns filesystem I/O."""
+    if not isinstance(value, str) or not value.strip() or value != value.strip():
+        raise PatternEvidenceError(f"{label} must be a non-empty path")
+    if "\x00" in value:
+        raise PatternEvidenceError(f"{label} must not contain a NUL byte")
+    _reject_ambiguous_path_segments(value, label=label)
+    root_locator = _lexical_absolute(trusted_root)
+    supplied = Path(value).expanduser()
+    if supplied.is_absolute():
+        candidate = _lexical_absolute(supplied)
+    else:
+        candidate = _lexical_absolute(root_locator / supplied)
+    canonical_root = root_locator
+    if canonicalize_root:
+        candidate, admitted_root = canonicalize_trusted_artifact_locator(
+            candidate,
+            root_locator,
+        )
+        if admitted_root is None:  # pragma: no cover - trusted_root is required
+            raise PatternEvidenceError(f"{label} has no trusted root")
+        canonical_root = admitted_root
+    try:
+        relative = candidate.relative_to(canonical_root)
+    except ValueError as exc:
+        raise PatternEvidenceError(
+            f"{label} resolves outside the trusted root: {value!r}"
+        ) from exc
+    if not relative.parts or candidate.suffix.casefold() != suffix:
+        raise PatternEvidenceError(f"{label} must use the {suffix} suffix")
+    return candidate
+
+
 def _resolve_local_pptx_artifact(
     trusted_root: str | Path,
     value: object,
     *,
     label: str,
 ) -> Path:
-    """Validate a PPTX locator lexically; the bounded probe owns filesystem I/O."""
-    if not isinstance(value, str) or not value.strip() or value != value.strip():
-        raise PatternEvidenceError(f"{label} must be a non-empty path")
-    if "\x00" in value:
-        raise PatternEvidenceError(f"{label} must not contain a NUL byte")
-    _reject_ambiguous_path_segments(value, label=label)
-    root = _lexical_absolute(trusted_root)
-    supplied = Path(value).expanduser()
-    if supplied.is_absolute():
-        candidate = _lexical_absolute(supplied)
-    else:
-        candidate = _lexical_absolute(root / supplied)
-    try:
-        relative = candidate.relative_to(root)
-    except ValueError as exc:
-        raise PatternEvidenceError(
-            f"{label} resolves outside the trusted root: {value!r}"
-        ) from exc
-    if not relative.parts or candidate.suffix.casefold() != ".pptx":
-        raise PatternEvidenceError(f"{label} must use the .pptx suffix")
-    return candidate
+    return _resolve_local_bounded_artifact(
+        trusted_root,
+        value,
+        suffix=".pptx",
+        label=label,
+    )
+
+
+def _resolve_local_pdf_artifact(
+    trusted_root: str | Path,
+    value: object,
+    *,
+    label: str,
+) -> Path:
+    return _resolve_local_bounded_artifact(
+        trusted_root,
+        value,
+        suffix=".pdf",
+        label=label,
+        canonicalize_root=True,
+    )
 
 
 def _sha256_file(path: Path) -> str:
@@ -437,15 +492,20 @@ def _resolve_preclaim_artifact(
     value = owner.get(field)
     if not isinstance(value, str) or not value.strip():
         raise PatternEvidenceError(f"{field} must be a non-empty path")
-    if field == "pptx_path":
+    if suffix in {".pptx", ".pdf"}:
         _reject_ambiguous_path_segments(value, label=field)
         vault = _lexical_absolute(vault_root)
         supplied = Path(value).expanduser()
         configured_root: Path | None = None
-        if isinstance(source_roots, Mapping):
+        if field == "pptx_path" and isinstance(source_roots, Mapping):
             configured = source_roots.get("pptx_source_dir")
             if isinstance(configured, str) and configured.strip():
                 configured_root = _lexical_absolute(configured)
+        resolver = (
+            _resolve_local_pptx_artifact
+            if suffix == ".pptx"
+            else _resolve_local_pdf_artifact
+        )
         if supplied.is_absolute():
             absolute = _lexical_absolute(supplied)
             for root, root_kind in (
@@ -458,26 +518,29 @@ def _resolve_preclaim_artifact(
                     candidate = absolute.relative_to(root).as_posix()
                 except ValueError:
                     continue
+                admitted_root = _canonical_pdf_root(root) if suffix == ".pdf" else root
                 return (
-                    _resolve_local_pptx_artifact(
+                    resolver(
                         root,
                         candidate,
                         label=field,
                     ),
-                    root,
+                    admitted_root,
                     root_kind,
                 )
             root = _lexical_absolute(supplied.parent)
+            admitted_root = _canonical_pdf_root(root) if suffix == ".pdf" else root
             return (
-                _resolve_local_pptx_artifact(root, supplied.name, label=field),
-                root,
+                resolver(root, supplied.name, label=field),
+                admitted_root,
                 f"preclaim:{field}",
             )
         root = configured_root or vault
         root_kind = "pptx_source" if configured_root is not None else "vault"
+        admitted_root = _canonical_pdf_root(root) if suffix == ".pdf" else root
         return (
-            _resolve_local_pptx_artifact(root, value, label=field),
-            root,
+            resolver(root, value, label=field),
+            admitted_root,
             root_kind,
         )
 
@@ -544,25 +607,6 @@ def _pptx_locator_count(
     return count
 
 
-def _pdf_locator_count(path: Path) -> int:
-    """Read the PDF page tree through pypdf, never by token counting."""
-    try:
-        from pypdf import PdfReader
-        from pypdf.errors import PdfReadError
-    except ImportError as exc:  # pragma: no cover - packaging owns installation
-        raise PatternEvidenceError(
-            "PDF evidence requires the declared pypdf runtime dependency; "
-            "install the speaker-toolkit project dependencies"
-        ) from exc
-    try:
-        count = len(PdfReader(str(path), strict=True).pages)
-    except (PdfReadError, OSError, ValueError, KeyError, EOFError) as exc:
-        raise PatternEvidenceError(f"cannot read PDF page tree {path}: {exc}") from exc
-    if count < 1:
-        raise PatternEvidenceError(f"PDF artifact has no pages: {path}")
-    return count
-
-
 def _video_duration(path: Path) -> float:
     try:
         completed = subprocess.run(
@@ -603,6 +647,11 @@ def _declared_pdf_path(talk: Mapping[str, object]) -> tuple[str, object] | None:
     for field in ("slides_local_path", "slides_pdf_path", "pdf_path"):
         if _nonempty(talk.get(field)):
             return field, talk[field]
+    slide_source = talk.get("slide_source")
+    if isinstance(slide_source, str) and slide_source in {"pdf", "both"}:
+        drive_id = talk.get("google_drive_id")
+        if isinstance(drive_id, str) and drive_id.strip() == drive_id and drive_id:
+            return "google_drive_id", f"slides/{drive_id}.pdf"
     return None
 
 
@@ -667,24 +716,95 @@ def _local_video_binding(
     ):
         return None, "video_extraction manifest is not bound to the claimed video id"
     try:
-        source_path = _resolve_local_artifact(
+        source_path = resolve_video_extraction_source(
             vault_root,
-            manifest.get("source_video_path"),
-            suffix=".mp4",
-            label="video_extraction.source_video_path",
+            manifest,
+            youtube_id,
         )
     except PatternEvidenceError as exc:
         return None, str(exc)
-    if source_path.stem != youtube_id:
-        return None, "local source-video filename is not bound to youtube_id"
     return source_path, f"identity-bound local source video {source_path}"
 
 
-def _trusted_video_slide_count(
+def resolve_video_extraction_source(
+    vault_root: str | Path,
+    manifest: Mapping[str, object],
+    youtube_id: str,
+) -> Path:
+    """Resolve one manifest MP4 under the vault without following leaf links."""
+    source_path = _resolve_local_artifact(
+        vault_root,
+        manifest.get("source_video_path"),
+        suffix=".mp4",
+        label="video_extraction.source_video_path",
+    )
+    if source_path.stem != youtube_id:
+        raise PatternEvidenceError(
+            "local source-video filename is not bound to youtube_id"
+        )
+    return source_path
+
+
+def _probe_video_manifest_artifacts(
+    vault_root: str | Path,
+    manifest: Mapping[str, object],
+    youtube_id: str,
+) -> dict[str, tuple[PdfArtifactProbe, Path]]:
+    """Bound every current manifest PDF before any part can be persisted."""
+    artifacts = manifest.get("artifacts")
+    count = manifest.get("unique_frame_count")
+    if (
+        not isinstance(artifacts, list)
+        or isinstance(count, bool)
+        or not isinstance(count, int)
+        or count < 1
+    ):
+        raise PatternEvidenceError(
+            "video_extraction artifacts have no valid shared page count"
+        )
+    artifact_root = _canonical_pdf_root(vault_root)
+    probes: dict[str, tuple[PdfArtifactProbe, Path]] = {}
+    for index, artifact in enumerate(artifacts):
+        if not isinstance(artifact, Mapping):
+            raise PatternEvidenceError(
+                f"video_extraction artifact {index} must be an object"
+            )
+        scope = artifact.get("artifact_scope")
+        if scope not in {"slide_region", "full_frame_context"} or scope in probes:
+            raise PatternEvidenceError(
+                f"video_extraction artifact {index} has an invalid scope"
+            )
+        if (
+            artifact.get("source_video_id") != youtube_id
+            or artifact.get("page_count") != count
+        ):
+            raise PatternEvidenceError(
+                f"video_extraction {scope} artifact is not identity/count bound"
+            )
+        artifact_path = _resolve_local_pdf_artifact(
+            vault_root,
+            artifact.get("path"),
+            label=f"video_extraction {scope} artifact",
+        )
+        artifact_probe = probe_pdf_artifact(
+            artifact_path,
+            trusted_root=artifact_root,
+        )
+        if artifact_probe.page_count != count:
+            raise PatternEvidenceError(
+                f"video_extraction {scope} artifact page count is not verified"
+            )
+        probes[scope] = (artifact_probe, artifact_path)
+    return probes
+
+
+def _trusted_video_slide_probe(
     vault_root: str | Path,
     owner: Mapping[str, object],
     youtube_id: str,
-) -> tuple[int | None, str, Path | None]:
+    *,
+    artifact_probes: Mapping[str, tuple[PdfArtifactProbe, Path]] | None = None,
+) -> tuple[PdfArtifactProbe | None, str, Path | None]:
     structured = owner.get("structured_data")
     manifest = (
         structured.get("video_extraction") if isinstance(structured, Mapping) else None
@@ -692,6 +812,20 @@ def _trusted_video_slide_count(
     if not isinstance(manifest, Mapping):
         return None, "no video_extraction manifest", None
     count = manifest.get("unique_frame_count")
+    if (
+        artifact_probes is None
+        and not isinstance(count, bool)
+        and isinstance(count, int)
+        and count > 0
+    ):
+        try:
+            artifact_probes = _probe_video_manifest_artifacts(
+                vault_root,
+                manifest,
+                youtube_id,
+            )
+        except PatternEvidenceError as exc:
+            return None, str(exc), None
     trusted = (
         manifest.get("schema_version") == 3
         and manifest.get("source_video_id") == youtube_id
@@ -729,31 +863,42 @@ def _trusted_video_slide_count(
         or artifact.get("page_count") != count
     ):
         return None, "slide_region artifact is not identity/count bound", None
-    try:
-        artifact_path = _resolve_local_artifact(
-            vault_root,
-            artifact.get("path"),
-            suffix=".pdf",
-            label="video_extraction slide_region artifact",
-        )
-        artifact_count = _pdf_locator_count(artifact_path)
-        if artifact_count != count:
-            return None, "slide_region artifact page count is not verified", None
-    except PatternEvidenceError as exc:
-        return None, str(exc), None
+    artifact_root = _canonical_pdf_root(vault_root)
+    if artifact_probes is not None:
+        admitted = artifact_probes.get("slide_region")
+        if admitted is None:
+            return None, "trusted video extraction has no slide_region probe", None
+        artifact_probe, artifact_path = admitted
+    else:
+        try:
+            artifact_path = _resolve_local_pdf_artifact(
+                vault_root,
+                artifact.get("path"),
+                label="video_extraction slide_region artifact",
+            )
+            artifact_probe = probe_pdf_artifact(
+                artifact_path,
+                trusted_root=artifact_root,
+            )
+            if artifact_probe.page_count != count:
+                return None, "slide_region artifact page count is not verified", None
+        except PatternEvidenceError as exc:
+            return None, str(exc), None
     promoted = owner.get("slides_local_path")
     if _nonempty(promoted):
         try:
-            path = _resolve_local_artifact(
+            path = _resolve_local_pdf_artifact(
                 vault_root,
                 promoted,
-                suffix=".pdf",
                 label="slides_local_path",
             )
-            actual_count = _pdf_locator_count(path)
+            promoted_probe = probe_pdf_artifact(
+                path,
+                trusted_root=artifact_root,
+            )
         except PatternEvidenceError as exc:
             return None, str(exc), None
-        if actual_count != count:
+        if promoted_probe.page_count != count:
             return (
                 None,
                 (
@@ -762,8 +907,17 @@ def _trusted_video_slide_count(
                 ),
                 None,
             )
+        if promoted_probe.source_sha256 != artifact_probe.source_sha256:
+            return (
+                None,
+                (
+                    "trusted video slide-region content digest disagrees with the "
+                    "local promoted PDF"
+                ),
+                None,
+            )
         return (
-            actual_count,
+            promoted_probe,
             f"trusted promoted video slide-region PDF {path}",
             path,
         )
@@ -771,7 +925,7 @@ def _trusted_video_slide_count(
     # unpromoted. The manifest-owned slide_region PDF is still identity-, crop-,
     # and count-bound evidence and is safe for citations.
     return (
-        artifact_count,
+        artifact_probe,
         f"trusted unpromoted video slide-region PDF {artifact_path}",
         artifact_path,
     )
@@ -781,7 +935,7 @@ def _returned_slide_artifact(
     vault_root: str | Path,
     talk: Mapping[str, object],
     ret: Mapping[str, object],
-) -> tuple[int | None, str, Path | None, Path | None]:
+) -> tuple[PdfArtifactProbe | None, str, Path | None, Path | None]:
     """Admit only a current-run artifact at a path fixed by preclaim identity."""
     slide_source = ret.get("slide_source")
     returned_path = ret.get("slides_local_path")
@@ -793,24 +947,41 @@ def _returned_slide_artifact(
                 None,
                 None,
             )
-        drive_id = talk.get("google_drive_id")
-        if not isinstance(drive_id, str) or not drive_id.strip():
-            raise PatternEvidenceError(
-                "return PDF cannot be identity-bound without preclaim google_drive_id"
+        declared_pdf = _declared_pdf_path(talk)
+        if declared_pdf is not None and declared_pdf[0] != "google_drive_id":
+            field, expected = declared_pdf
+            if returned_path != expected:
+                raise PatternEvidenceError(
+                    f"return PDF path must match the exact {field} preclaim "
+                    f"{expected!r}"
+                )
+            path, artifact_root, _root_kind = _resolve_preclaim_artifact(
+                vault_root,
+                talk,
+                field,
+                suffix=".pdf",
+                source_roots=None,
             )
-        expected = f"slides/{drive_id}.pdf"
-        if returned_path != expected:
-            raise PatternEvidenceError(
-                f"return PDF path must be the identity-derived {expected!r}"
+        else:
+            drive_id = talk.get("google_drive_id")
+            if not isinstance(drive_id, str) or not drive_id.strip():
+                raise PatternEvidenceError(
+                    "return PDF cannot be identity-bound without a local PDF "
+                    "preclaim or preclaim google_drive_id"
+                )
+            expected = f"slides/{drive_id}.pdf"
+            if returned_path != expected:
+                raise PatternEvidenceError(
+                    f"return PDF path must be the identity-derived {expected!r}"
+                )
+            artifact_root = _canonical_pdf_root(vault_root)
+            path = _resolve_local_pdf_artifact(
+                vault_root,
+                expected,
+                label="return slides_local_path",
             )
-        path = _resolve_local_artifact(
-            vault_root,
-            returned_path,
-            suffix=".pdf",
-            label="return slides_local_path",
-        )
         return (
-            _pdf_locator_count(path),
+            probe_pdf_artifact(path, trusted_root=artifact_root),
             f"read identity-bound PDF {path}",
             path,
             None,
@@ -826,22 +997,69 @@ def _returned_slide_artifact(
             raise PatternEvidenceError(
                 f"return video slide path must be the identity-derived {expected!r}"
             )
-        count, reason, slide_path = _trusted_video_slide_count(
-            vault_root, ret, youtube_id
+        structured = ret.get("structured_data")
+        manifest = (
+            structured.get("video_extraction")
+            if isinstance(structured, Mapping)
+            else None
         )
-        local_path, _ = _local_video_binding(vault_root, ret, youtube_id)
+        if not isinstance(manifest, Mapping):
+            raise PatternEvidenceError(
+                "return video slides have no video_extraction manifest"
+            )
+        artifact_probes = _probe_video_manifest_artifacts(
+            vault_root,
+            manifest,
+            youtube_id,
+        )
+        probe, reason, slide_path = _trusted_video_slide_probe(
+            vault_root,
+            ret,
+            youtube_id,
+            artifact_probes=artifact_probes,
+        )
+        local_path, local_reason = _local_video_binding(vault_root, ret, youtube_id)
+        if local_path is None:
+            raise PatternEvidenceError(
+                "return video extraction source is unavailable: " + local_reason
+            )
         observations = ret.get("pattern_observations")
         claimed_static = (
             "static_slides" in (observations.get("evidence_sources") or [])
             if isinstance(observations, Mapping)
             else False
         )
-        if count is None or slide_path is None:
+        if probe is None or slide_path is None:
             if _nonempty(returned_path) or claimed_static:
                 raise PatternEvidenceError(reason)
             return None, reason, None, local_path
-        return count, reason, slide_path, local_path
+        return probe, reason, slide_path, local_path
     return None, "return declares no deterministic local slide artifact", None, None
+
+
+def admit_return_artifacts(
+    vault_root: str | Path,
+    talk: Mapping[str, object],
+    ret: Mapping[str, object],
+) -> None:
+    """Bound current-return slide artifacts for every supported return schema."""
+    structured = ret.get("structured_data")
+    if (
+        isinstance(structured, Mapping)
+        and "video_extraction" in structured
+        and ret.get("slide_source") != "video_extracted"
+    ):
+        raise PatternEvidenceError(
+            "return video_extraction provenance requires slide_source 'video_extracted'"
+        )
+    if ret.get("slide_source") not in {"pdf", "both", "video_extracted"}:
+        return
+    try:
+        _returned_slide_artifact(vault_root, talk, ret)
+    except PdfEvidenceError as exc:
+        raise PatternEvidenceError(
+            f"cannot admit returned PDF artifact ({exc.reason_code}): {exc}"
+        ) from exc
 
 
 def resolve_transcript_artifact(
@@ -1357,6 +1575,7 @@ def build_evidence_context(
     slide_artifact_paths: dict[str, Path] = {}
     slide_artifact_roots: dict[str, tuple[Path, str]] = {}
     slide_artifact_sha256s: dict[str, str] = {}
+    slide_artifact_probes: dict[str, PdfArtifactProbe | PptxArtifactProbe] = {}
     source_reasons: dict[str, str] = {}
     source_degradations: dict[str, dict[str, object]] = {}
     source_unavailable: dict[str, dict[str, object]] = {}
@@ -1365,7 +1584,7 @@ def build_evidence_context(
     pptx_path: Path | None = None
     pdf_path: Path | None = None
     pptx_root = _lexical_absolute(vault_root)
-    pdf_root = _lexical_absolute(vault_root)
+    pdf_root = _canonical_pdf_root(vault_root)
     pptx_root_kind = "vault"
     pdf_root_kind = "vault"
     static_slides_absence_complete = False
@@ -1412,6 +1631,7 @@ def build_evidence_context(
                     pptx_root_kind,
                 )
                 slide_artifact_sha256s["native_deck"] = pptx_probe.source_sha256
+                slide_artifact_probes["native_deck"] = pptx_probe
                 source_reasons["native_deck"] = f"read local PPTX {pptx_path}"
         except PptxEvidenceError as exc:
             source_reasons["native_deck"] = str(exc)
@@ -1432,17 +1652,38 @@ def build_evidence_context(
     if declared_pdf is not None:
         pdf_field, pdf_value = declared_pdf
         try:
-            pdf_path, pdf_root, pdf_root_kind = _resolve_preclaim_artifact(
-                vault_root,
-                talk,
-                pdf_field,
-                suffix=".pdf",
-                source_roots=source_roots,
-            )
-            pdf_sha256, _pdf_size, pdf_count = snapshot_rendered_pdf(pdf_path)
-            slide_artifact_sha256s["static_slides"] = pdf_sha256
+            if pdf_field == "google_drive_id":
+                pdf_root = _canonical_pdf_root(vault_root)
+                pdf_root_kind = "vault"
+                pdf_path = _resolve_local_pdf_artifact(
+                    pdf_root,
+                    pdf_value,
+                    label="google_drive_id-derived slide PDF",
+                )
+            else:
+                pdf_path, pdf_root, pdf_root_kind = _resolve_preclaim_artifact(
+                    vault_root,
+                    talk,
+                    pdf_field,
+                    suffix=".pdf",
+                    source_roots=source_roots,
+                )
+            pdf_probe = probe_pdf_artifact(pdf_path, trusted_root=pdf_root)
+            pdf_count = pdf_probe.page_count
+            slide_artifact_sha256s["static_slides"] = pdf_probe.source_sha256
+            slide_artifact_probes["static_slides"] = pdf_probe
             source_reasons["static_slides"] = f"read local PDF {pdf_path}"
-        except (PatternEvidenceError, PptxEvidenceError) as exc:
+        except PdfEvidenceError as exc:
+            source_reasons["static_slides"] = str(exc)
+            source_unavailable["static_slides"] = {
+                "schema_version": 1,
+                "status": "unavailable",
+                "reason_code": exc.reason_code,
+                "reason": str(exc),
+                "details": copy.deepcopy(exc.details),
+                "artifact_path": str(pdf_path) if pdf_path is not None else None,
+            }
+        except PatternEvidenceError as exc:
             source_reasons["static_slides"] = str(exc)
 
     slide_source = talk.get("slide_source")
@@ -1451,35 +1692,58 @@ def build_evidence_context(
         # video extraction. Bind path/count/digest together below, or leave the
         # static-slide lane unavailable without disturbing independent sources.
         slide_artifact_sha256s.pop("static_slides", None)
+        slide_artifact_probes.pop("static_slides", None)
         youtube_id = talk.get("youtube_id")
         if isinstance(youtube_id, str) and _YOUTUBE_ID.fullmatch(youtube_id):
-            video_slide_count, video_slide_reason, video_slide_path = (
-                _trusted_video_slide_count(vault_root, talk, youtube_id)
-            )
-            source_reasons["static_slides"] = video_slide_reason
-            if video_slide_count is not None and video_slide_path is not None:
-                try:
-                    video_slide_sha256, _video_pdf_size, snapshot_count = (
-                        snapshot_rendered_pdf(video_slide_path)
+            video_slide_path: Path | None = None
+            try:
+                video_probe, video_slide_reason, video_slide_path = (
+                    _trusted_video_slide_probe(vault_root, talk, youtube_id)
+                )
+            except PdfEvidenceError as exc:
+                source_reasons["static_slides"] = str(exc)
+                source_unavailable["static_slides"] = {
+                    "schema_version": 1,
+                    "status": "unavailable",
+                    "reason_code": exc.reason_code,
+                    "reason": str(exc),
+                    "details": copy.deepcopy(exc.details),
+                    "artifact_path": (
+                        str(video_slide_path) if video_slide_path is not None else None
+                    ),
+                }
+            else:
+                source_reasons["static_slides"] = video_slide_reason
+                if video_probe is not None and video_slide_path is not None:
+                    source_unavailable.pop("static_slides", None)
+                    slide_counts["static_slides"] = video_probe.page_count
+                    slide_artifact_paths["static_slides"] = video_slide_path
+                    slide_artifact_roots["static_slides"] = (
+                        _canonical_pdf_root(vault_root),
+                        "vault",
                     )
-                except PptxEvidenceError as exc:
-                    source_reasons["static_slides"] = (
-                        f"cannot snapshot trusted video slides: {exc}"
+                    slide_artifact_sha256s["static_slides"] = video_probe.source_sha256
+                    slide_artifact_probes["static_slides"] = video_probe
+                elif declared_pdf is None and talk.get("status") != "processed_partial":
+                    expected_path = _resolve_local_pdf_artifact(
+                        _canonical_pdf_root(vault_root),
+                        f"slides/{youtube_id}.pdf",
+                        label="youtube_id-derived video slide PDF",
                     )
-                else:
-                    if snapshot_count != video_slide_count:
-                        source_reasons["static_slides"] = (
-                            "trusted video slide PDF changed while its identity "
-                            "was bound"
+                    try:
+                        probe_pdf_artifact(
+                            expected_path,
+                            trusted_root=_canonical_pdf_root(vault_root),
                         )
-                    else:
-                        slide_counts["static_slides"] = snapshot_count
-                        slide_artifact_paths["static_slides"] = video_slide_path
-                        slide_artifact_roots["static_slides"] = (
-                            Path(vault_root).resolve(),
-                            "vault",
-                        )
-                        slide_artifact_sha256s["static_slides"] = video_slide_sha256
+                    except PdfEvidenceError as exc:
+                        source_unavailable["static_slides"] = {
+                            "schema_version": 1,
+                            "status": "unavailable",
+                            "reason_code": exc.reason_code,
+                            "reason": str(exc),
+                            "details": copy.deepcopy(exc.details),
+                            "artifact_path": str(expected_path),
+                        }
             static_slides_absence_complete = False
         else:
             source_reasons["static_slides"] = (
@@ -1536,36 +1800,31 @@ def build_evidence_context(
 
     current_video_path: Path | None = None
     if isinstance(ret, Mapping):
-        returned_count, returned_reason, returned_slide_path, current_video_path = (
-            _returned_slide_artifact(vault_root, talk, ret)
-        )
+        try:
+            returned_probe, returned_reason, returned_slide_path, current_video_path = (
+                _returned_slide_artifact(vault_root, talk, ret)
+            )
+        except PdfEvidenceError as exc:
+            raise PatternEvidenceError(
+                f"cannot inspect returned static slides: {exc}"
+            ) from exc
         returned_source = ret.get("slide_source")
-        if returned_count is not None:
+        if returned_probe is not None:
             if returned_slide_path is None:
                 raise PatternEvidenceError(
-                    "returned static-slide count has no identity-bound PDF path"
-                )
-            try:
-                returned_sha256, _returned_size, snapshot_count = snapshot_rendered_pdf(
-                    returned_slide_path
-                )
-            except PptxEvidenceError as exc:
-                raise PatternEvidenceError(
-                    f"cannot snapshot returned static slides: {exc}"
-                ) from exc
-            if snapshot_count != returned_count:
-                raise PatternEvidenceError(
-                    "returned static-slide PDF changed while its identity was bound"
+                    "returned static-slide probe has no identity-bound PDF path"
                 )
             static_slides_absence_complete = returned_source in {"pdf", "both"}
-            slide_counts["static_slides"] = snapshot_count
+            slide_counts["static_slides"] = returned_probe.page_count
             source_reasons["static_slides"] = returned_reason
             slide_artifact_paths["static_slides"] = returned_slide_path
             slide_artifact_roots["static_slides"] = (
-                Path(vault_root).resolve(),
+                _canonical_pdf_root(vault_root),
                 "vault",
             )
-            slide_artifact_sha256s["static_slides"] = returned_sha256
+            slide_artifact_sha256s["static_slides"] = returned_probe.source_sha256
+            slide_artifact_probes["static_slides"] = returned_probe
+            source_unavailable.pop("static_slides", None)
         elif returned_source in {"pdf", "both", "video_extracted"}:
             # No explicit current-run artifact assertion: retain any verified
             # preclaim artifact instead of silently deleting its capability.
@@ -1686,7 +1945,7 @@ def build_evidence_context(
             path,
             root_kind=root_kind,
             artifact_sha256=slide_artifact_sha256s.get(source),
-            lexical=source == "native_deck",
+            lexical=source in {"native_deck", "static_slides"},
         )
     video_artifact_identity: dict[str, str] = {}
     if (
@@ -1732,6 +1991,7 @@ def build_evidence_context(
         "slide_counts": slide_counts,
         "slide_artifact_paths": slide_artifact_paths,
         "slide_artifact_roots": slide_artifact_roots,
+        "slide_artifact_probes": slide_artifact_probes,
         "transcript_path": transcript_path,
         "transcript_line_count": (
             len(transcript_text.splitlines()) if transcript_text is not None else None
@@ -2930,25 +3190,18 @@ def _canonicalize_native_deck_audit(
             "rendered_page_inspection is not bound to the canonical static_slides "
             f"artifact and inspected ranges: {mismatches}"
         )
-    static_path = (
-        slide_paths.get("static_slides") if isinstance(slide_paths, Mapping) else None
+    slide_probes = context.get("slide_artifact_probes")
+    static_probe = (
+        slide_probes.get("static_slides") if isinstance(slide_probes, Mapping) else None
     )
-    if not isinstance(static_path, Path):
+    if not isinstance(static_probe, PdfArtifactProbe):
         raise PatternEvidenceError(
-            "rendered_page_inspection has no canonical static_slides artifact"
+            "rendered_page_inspection has no canonical bounded static_slides receipt"
         )
-    try:
-        current_sha, current_size, current_page_count = snapshot_rendered_pdf(
-            static_path
-        )
-    except PptxEvidenceError as exc:
-        raise PatternEvidenceError(
-            f"cannot snapshot canonical rendered PDF {static_path}: {exc}"
-        ) from exc
     current_identity = {
-        "rendered_pdf_sha256": current_sha,
-        "rendered_pdf_size_bytes": current_size,
-        "rendered_page_count": current_page_count,
+        "rendered_pdf_sha256": static_probe.source_sha256,
+        "rendered_pdf_size_bytes": static_probe.source_size_bytes,
+        "rendered_page_count": static_probe.page_count,
     }
     current_mismatches = sorted(
         field
@@ -3531,6 +3784,48 @@ def _v5_projection_freshness_reasons(
     return reasons
 
 
+def _declares_persisted_native_deck(
+    talk: Mapping[str, object],
+    observations: Mapping[str, object],
+) -> bool:
+    """Return whether persisted claims depend on the native-deck lane."""
+    slide_source = talk.get("slide_source")
+    if isinstance(slide_source, str) and slide_source in {"pptx", "both"}:
+        return True
+    evidence_sources = observations.get("evidence_sources")
+    if isinstance(evidence_sources, list) and any(
+        source == "native_deck" for source in evidence_sources
+    ):
+        return True
+    inspection = observations.get("source_inspection")
+    if isinstance(inspection, list) and any(
+        isinstance(record, Mapping) and record.get("source") == "native_deck"
+        for record in inspection
+    ):
+        return True
+    for lane in (
+        "patterns_detected",
+        "antipatterns_detected",
+        "applicability_assessments",
+    ):
+        detections = observations.get(lane)
+        if not isinstance(detections, list):
+            continue
+        for detection in detections:
+            if not isinstance(detection, Mapping):
+                continue
+            if detection.get("evidence_source") == "native_deck":
+                return True
+            citations = detection.get("evidence_citations")
+            if isinstance(citations, list) and any(
+                isinstance(citation, Mapping)
+                and citation.get("source") == "native_deck"
+                for citation in citations
+            ):
+                return True
+    return False
+
+
 def assess_persisted_pattern_evidence_freshness(
     talk: Mapping[str, object],
     *,
@@ -3556,6 +3851,7 @@ def assess_persisted_pattern_evidence_freshness(
     if evidence_schema_version == PATTERN_EVIDENCE_SCHEMA_VERSION:
         reasons.update(_v5_projection_freshness_reasons(talk, observations))
     vault = _lexical_absolute(vault_root)
+    bounded_vault = _canonical_pdf_root(vault_root)
     current_context: Mapping[str, object] = {}
     try:
         current_context = build_evidence_context(
@@ -3569,10 +3865,14 @@ def assess_persisted_pattern_evidence_freshness(
         kind: object,
         label: str,
         *,
-        bounded_pptx: bool = False,
+        bounded_suffix: str | None = None,
     ) -> Path | None:
         if kind == "vault":
-            return vault if bounded_pptx else Path(vault_root).resolve()
+            if bounded_suffix == ".pdf":
+                return bounded_vault
+            if bounded_suffix == ".pptx":
+                return vault
+            return Path(vault_root).resolve()
         if kind == "pptx_source":
             configured = (
                 source_roots.get("pptx_source_dir")
@@ -3582,7 +3882,7 @@ def assess_persisted_pattern_evidence_freshness(
             if isinstance(configured, str) and configured.strip():
                 return (
                     _lexical_absolute(configured)
-                    if bounded_pptx
+                    if bounded_suffix is not None
                     else Path(configured).expanduser().resolve()
                 )
             reasons.add(f"{label}:artifact_root_unconfigured")
@@ -3592,7 +3892,11 @@ def assess_persisted_pattern_evidence_freshness(
             declared = talk.get(field)
             if isinstance(declared, str) and Path(declared).expanduser().is_absolute():
                 parent = Path(declared).expanduser().parent
-                return _lexical_absolute(parent) if bounded_pptx else parent.resolve()
+                if bounded_suffix == ".pdf":
+                    return _canonical_pdf_root(parent)
+                if bounded_suffix == ".pptx":
+                    return _lexical_absolute(parent)
+                return parent.resolve()
             reasons.add(f"{label}:artifact_root_preclaim_missing")
             return None
         reasons.add(f"{label}:artifact_root_invalid")
@@ -3605,7 +3909,7 @@ def assess_persisted_pattern_evidence_freshness(
         timing: bool = False,
         quality: bool = False,
         bounded_current_digest: str | None = None,
-        require_bounded_digest: bool = False,
+        bounded_suffix: str | None = None,
     ) -> Path | None:
         if timing and quality:  # pragma: no cover - internal API guard
             raise ValueError("an identity cannot be both timing and quality")
@@ -3621,7 +3925,7 @@ def assess_persisted_pattern_evidence_freshness(
         root = identity_root(
             owner.get(f"{prefix}_root"),
             label,
-            bounded_pptx=require_bounded_digest,
+            bounded_suffix=bounded_suffix,
         )
         if (
             root is None
@@ -3635,12 +3939,19 @@ def assess_persisted_pattern_evidence_freshness(
         ):
             reasons.add(f"{label}:{prefix}_identity_incomplete")
             return None
+        if timing and not raw_path.endswith(".segments.json"):
+            reasons.add(f"{label}:{prefix}_path_invalid")
+            return None
+        if quality and not raw_path.endswith(".quality.json"):
+            reasons.add(f"{label}:{prefix}_path_invalid")
+            return None
         lexical = Path(os.path.abspath(root.joinpath(*PurePosixPath(raw_path).parts)))
-        if require_bounded_digest:
+        if bounded_suffix is not None:
             try:
-                resolved = _resolve_local_pptx_artifact(
+                resolved = _resolve_local_bounded_artifact(
                     root,
                     raw_path,
+                    suffix=bounded_suffix,
                     label=f"{label}:{prefix}",
                 )
             except PatternEvidenceError:
@@ -3661,7 +3972,7 @@ def assess_persisted_pattern_evidence_freshness(
                 return None
         if bounded_current_digest is not None:
             current_digest = bounded_current_digest
-        elif require_bounded_digest:
+        elif bounded_suffix is not None:
             reasons.add(f"{label}:{prefix}_bounded_digest_unavailable")
             return resolved
         else:
@@ -3691,35 +4002,130 @@ def assess_persisted_pattern_evidence_freshness(
         and re.fullmatch(r"[0-9a-f]{64}", candidate_native_digest) is not None
         else None
     )
+    current_artifact_probes = current_context.get("slide_artifact_probes")
+    current_native_probe = (
+        current_artifact_probes.get("native_deck")
+        if isinstance(current_artifact_probes, Mapping)
+        else None
+    )
+    current_static_probe = (
+        current_artifact_probes.get("static_slides")
+        if isinstance(current_artifact_probes, Mapping)
+        else None
+    )
+    bounded_static_digest = (
+        current_static_probe.source_sha256
+        if isinstance(current_static_probe, PdfArtifactProbe)
+        else None
+    )
+    bounded_static_page_count = (
+        current_static_probe.page_count
+        if isinstance(current_static_probe, PdfArtifactProbe)
+        else None
+    )
+    native_declared = _declares_persisted_native_deck(talk, observations)
+    structured = talk.get("structured_data")
+    raw_native_audit = (
+        structured.get("native_deck_audit") if isinstance(structured, Mapping) else None
+    )
+    validated_native_audit: dict[str, object] | None = None
+    slide_source = talk.get("slide_source")
+    if raw_native_audit is not None and (
+        not isinstance(slide_source, str) or slide_source not in {"pptx", "both"}
+    ):
+        reasons.add("native_deck_audit_unexpected")
+    if native_declared:
+        if raw_native_audit is None:
+            reasons.add("native_deck_audit_missing")
+        else:
+            if isinstance(raw_native_audit, Mapping) and (
+                raw_native_audit.get("extraction_schema_version")
+                != PPTX_EXTRACTION_SCHEMA_VERSION
+                or raw_native_audit.get("extraction_pipeline_version")
+                != PPTX_EXTRACTION_PIPELINE_VERSION
+            ):
+                reasons.add("native_deck_audit_generation_drift")
+            expected_count = (
+                current_native_probe.slide_count
+                if isinstance(current_native_probe, PptxArtifactProbe)
+                else None
+            )
+            try:
+                validated_native_audit = validate_native_deck_audit(
+                    raw_native_audit,
+                    slide_count=expected_count,
+                )
+            except PptxEvidenceError:
+                reasons.add("native_deck_audit_invalid")
+            else:
+                if not isinstance(current_native_probe, PptxArtifactProbe):
+                    reasons.add("native_deck_audit_source_unavailable")
+                elif (
+                    validated_native_audit["source_pptx_sha256"]
+                    != current_native_probe.source_sha256
+                    or validated_native_audit["source_pptx_size_bytes"]
+                    != current_native_probe.source_size_bytes
+                    or validated_native_audit["slide_count"]
+                    != current_native_probe.slide_count
+                ):
+                    reasons.add("native_deck_audit_source_generation_drift")
+                structured_slide_count = (
+                    structured.get("slide_count")
+                    if isinstance(structured, Mapping)
+                    else None
+                )
+                if structured_slide_count != validated_native_audit["slide_count"]:
+                    reasons.add("native_deck_audit_structured_slide_count_drift")
 
     def check_source_identity(
         owner: Mapping[str, object],
         label: str,
-        source: object,
+        source: str,
     ) -> Path | None:
         """Check one source identity without parent-process PPTX reads."""
+        allowed_suffixes = {
+            "transcript": frozenset({".txt"}),
+            "static_slides": frozenset({".pdf"}),
+            "native_deck": frozenset({".pptx"}),
+            "delivery_video": frozenset({".mp4", ".webm", ".mkv", ".mov"}),
+        }.get(source, frozenset())
+        raw_path = owner.get("artifact_path")
+        if (
+            not isinstance(raw_path, str)
+            or PurePosixPath(raw_path).suffix.casefold() not in allowed_suffixes
+        ):
+            reasons.add(f"{label}:source_role_suffix_mismatch")
+            return None
         return check_identity(
             owner,
             label,
             bounded_current_digest=(
-                bounded_native_digest if source == "native_deck" else None
+                bounded_native_digest
+                if source == "native_deck"
+                else bounded_static_digest
+                if source == "static_slides"
+                else None
             ),
-            require_bounded_digest=source == "native_deck",
+            bounded_suffix=(
+                ".pptx"
+                if source == "native_deck"
+                else ".pdf"
+                if source == "static_slides"
+                else None
+            ),
         )
 
     def owner_candidates(source: str) -> list[Path]:
-        if source == "native_deck":
-            try:
-                path, _root, _root_kind = _resolve_preclaim_artifact(
-                    vault_root,
-                    talk,
-                    "pptx_path",
-                    suffix=".pptx",
-                    source_roots=source_roots,
-                )
-            except PatternEvidenceError:
-                return []
-            return [path]
+        if source in {"native_deck", "static_slides"}:
+            role_paths = current_context.get("slide_artifact_paths")
+            current_path = (
+                role_paths.get(source) if isinstance(role_paths, Mapping) else None
+            )
+            return (
+                [_lexical_absolute(current_path)]
+                if isinstance(current_path, Path)
+                else []
+            )
         values: list[tuple[str | None, object]] = []
         if source == "transcript":
             explicit = talk.get("transcript_path")
@@ -3729,22 +4135,6 @@ def assess_persisted_pattern_evidence_freshness(
                 youtube_id = talk.get("youtube_id")
                 if isinstance(youtube_id, str) and _YOUTUBE_ID.fullmatch(youtube_id):
                     values.append(("transcript_path", f"transcripts/{youtube_id}.txt"))
-        elif source == "static_slides":
-            for field in (
-                "slides_local_path",
-                "slides_pdf_path",
-                "pdf_path",
-            ):
-                if _nonempty(talk.get(field)):
-                    values.append((field, talk[field]))
-            artifacts = _dig(talk, "structured_data.video_extraction.artifacts")
-            if isinstance(artifacts, list):
-                values.extend(
-                    (None, artifact.get("path"))
-                    for artifact in artifacts
-                    if isinstance(artifact, Mapping)
-                    and artifact.get("artifact_scope") == "slide_region"
-                )
         elif source == "delivery_video":
             for field in ("video_local_path", "video_path"):
                 if _nonempty(talk.get(field)):
@@ -3755,20 +4145,19 @@ def assess_persisted_pattern_evidence_freshness(
             if _nonempty(manifest_path):
                 values.append((None, manifest_path))
         candidates: list[Path] = []
+        allowed_suffixes = (
+            frozenset({".txt"})
+            if source == "transcript"
+            else frozenset({".mp4", ".webm", ".mkv", ".mov"})
+        )
         for field, value in values:
             if not isinstance(value, str):
                 continue
             supplied = Path(value).expanduser()
+            if supplied.suffix.casefold() not in allowed_suffixes:
+                continue
             if supplied.is_absolute():
                 candidates.append(supplied.resolve(strict=False))
-            elif field == "pptx_path" and isinstance(source_roots, Mapping):
-                configured = source_roots.get("pptx_source_dir")
-                base = (
-                    Path(configured).expanduser().resolve()
-                    if isinstance(configured, str) and configured.strip()
-                    else vault
-                )
-                candidates.append((base / supplied).resolve(strict=False))
             else:
                 candidates.append((vault / supplied).resolve(strict=False))
         return candidates
@@ -3820,7 +4209,8 @@ def assess_persisted_pattern_evidence_freshness(
                 expected_role_path = current_context.get("local_video_path")
             expected_role_identity = (
                 _lexical_absolute(expected_role_path)
-                if source == "native_deck" and isinstance(expected_role_path, Path)
+                if source in {"native_deck", "static_slides"}
+                and isinstance(expected_role_path, Path)
                 else (
                     expected_role_path.resolve(strict=False)
                     if isinstance(expected_role_path, Path)
@@ -3901,7 +4291,7 @@ def assess_persisted_pattern_evidence_freshness(
                         else identity_root(
                             record.get("artifact_root"),
                             label,
-                            bounded_pptx=True,
+                            bounded_suffix=".pptx",
                         )
                     )
                     count = _pptx_locator_count(
@@ -3909,7 +4299,10 @@ def assess_persisted_pattern_evidence_freshness(
                         trusted_root=trusted_root,
                     )
                 else:
-                    count = _pdf_locator_count(path)
+                    if bounded_static_page_count is None:
+                        reasons.add(f"{label}:bounded_page_count_unavailable")
+                        continue
+                    count = bounded_static_page_count
                 _, complete = _validate_discrete_ranges(
                     record.get("page_ranges"), upper=count, label="page_ranges"
                 )
@@ -3964,6 +4357,41 @@ def assess_persisted_pattern_evidence_freshness(
                     reasons.add(f"{label}:absence_capability_reason_drift")
         except (OSError, UnicodeError, PatternEvidenceError) as exc:
             reasons.add(f"{label}:coverage_unverifiable:{type(exc).__name__}")
+
+    if validated_native_audit is not None:
+        native_inspection = underlying.get("native_deck")
+        if (
+            not isinstance(native_inspection, Mapping)
+            or native_inspection.get("artifact_sha256")
+            != validated_native_audit["source_pptx_sha256"]
+            or native_inspection.get("page_count")
+            != validated_native_audit["slide_count"]
+        ):
+            reasons.add("native_deck_audit_source_inspection_drift")
+        rendered_receipt = validated_native_audit.get("rendered_page_inspection")
+        if isinstance(rendered_receipt, Mapping):
+            static_inspection = underlying.get("static_slides")
+            if (
+                not isinstance(static_inspection, Mapping)
+                or static_inspection.get("artifact_sha256")
+                != rendered_receipt.get("rendered_pdf_sha256")
+                or static_inspection.get("page_count")
+                != rendered_receipt.get("rendered_page_count")
+                or static_inspection.get("page_ranges")
+                != rendered_receipt.get("inspected_page_ranges")
+            ):
+                reasons.add("native_deck_audit_rendered_pdf_inspection_drift")
+            if not isinstance(current_static_probe, PdfArtifactProbe):
+                reasons.add("native_deck_audit_rendered_pdf_unavailable")
+            elif (
+                rendered_receipt.get("rendered_pdf_sha256")
+                != current_static_probe.source_sha256
+                or rendered_receipt.get("rendered_pdf_size_bytes")
+                != current_static_probe.source_size_bytes
+                or rendered_receipt.get("rendered_page_count")
+                != current_static_probe.page_count
+            ):
+                reasons.add("native_deck_audit_rendered_pdf_generation_drift")
 
     seen_groups: set[frozenset[str]] = set()
     for index, record in enumerate(comparison_records):
@@ -4066,7 +4494,10 @@ def assess_persisted_pattern_evidence_freshness(
                         reasons.add(f"{citation_label}:metadata_value_drift")
                     continue
                 source = citation.get("source")
-                expected_record = underlying.get(str(source))
+                if not isinstance(source, str):
+                    reasons.add(f"{citation_label}:source_uninspected")
+                    continue
+                expected_record = underlying.get(source)
                 if expected_record is None:
                     reasons.add(f"{citation_label}:source_uninspected")
                     continue

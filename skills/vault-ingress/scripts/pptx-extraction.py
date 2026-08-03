@@ -47,6 +47,7 @@ from pathlib import Path
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.oxml.ns import qn
 
+import artifact_metadata
 from artifact_supervisor import (
     SupervisorError,
     SupervisorLimits,
@@ -62,7 +63,7 @@ from pptx_evidence import (
     PPTX_OCR_TRUST_CONFIDENCE,
     PptxEvidenceError,
     build_native_deck_audit,
-    build_rendered_page_inspection,
+    _build_rendered_page_inspection_in_process,
     finite_confidence,
     parse_page_range_arguments,
     presentation_with_media_recovery,
@@ -156,18 +157,16 @@ _BATCH_MAX_RELATIVE_PATH_CHARS = 4_096
 _BATCH_MAX_INPUT_BYTES = 16 * 1024 * 1024 * 1024
 _BATCH_MAX_OUTPUT_BYTES = 512 * 1024 * 1024
 _BATCH_MAX_WALL_SECONDS = 3_600
-_WINDOWS_REPARSE_POINT_ATTRIBUTE = 0x00000400
-_WINDOWS_OFFLINE_ATTRIBUTE = 0x00001000
-_WINDOWS_RECALL_ON_OPEN_ATTRIBUTE = 0x00040000
-_WINDOWS_RECALL_ON_DATA_ACCESS_ATTRIBUTE = 0x00400000
+_WINDOWS_REPARSE_POINT_ATTRIBUTE = artifact_metadata.WINDOWS_REPARSE_POINT_ATTRIBUTE
+_WINDOWS_OFFLINE_ATTRIBUTE = artifact_metadata.WINDOWS_OFFLINE_ATTRIBUTE
+_WINDOWS_RECALL_ON_OPEN_ATTRIBUTE = artifact_metadata.WINDOWS_RECALL_ON_OPEN_ATTRIBUTE
+_WINDOWS_RECALL_ON_DATA_ACCESS_ATTRIBUTE = (
+    artifact_metadata.WINDOWS_RECALL_ON_DATA_ACCESS_ATTRIBUTE
+)
 _WINDOWS_UNAVAILABLE_CLOUD_ATTRIBUTES = (
-    _WINDOWS_OFFLINE_ATTRIBUTE
-    | _WINDOWS_RECALL_ON_OPEN_ATTRIBUTE
-    | _WINDOWS_RECALL_ON_DATA_ACCESS_ATTRIBUTE
+    artifact_metadata.WINDOWS_UNAVAILABLE_CLOUD_ATTRIBUTES
 )
-_WINDOWS_CLOUD_REPARSE_TAGS = frozenset(
-    0x9000001A | (variant << 12) for variant in range(16)
-)
+_WINDOWS_CLOUD_REPARSE_TAGS = artifact_metadata.WINDOWS_CLOUD_REPARSE_TAGS
 _BATCH_MAX_ROOT_PATH_CHARS = 4_096
 _BATCH_MAX_SKIP_PATTERNS = 64
 _BATCH_MAX_SKIP_PATTERN_CHARS = 256
@@ -1341,6 +1340,7 @@ def _extract_pptx_in_process(
     ocr_fn=None,
     rendered_pdf_path=None,
     inspected_page_ranges=None,
+    rendered_pdf_generation=None,
 ):
     """Extract one deck inside an already-contained worker process.
 
@@ -1351,6 +1351,7 @@ def _extract_pptx_in_process(
             tesseract via ocr_picture_blobs.
     rendered_pdf_path/inspected_page_ranges: optional exact rendered artifact
             plus the page ranges actually inspected for the native-deck audit.
+    rendered_pdf_generation: supervisor-owned identity for that rendered PDF.
     """
     package_blob = snapshot_regular_file(pptx_path, label="PPTX artifact")
     source_fingerprint = _input_fingerprint(package_blob)
@@ -1679,12 +1680,13 @@ def _extract_pptx_in_process(
         )
     render_receipt = None
     if rendered_pdf_path is not None:
-        render_receipt = build_rendered_page_inspection(
+        render_receipt = _build_rendered_page_inspection_in_process(
             source_pptx_sha256=source_fingerprint["digest"],
             rendered_pdf_path=rendered_pdf_path,
             inspected_page_ranges=inspected_page_ranges or [],
             required_slide_numbers=sorted(required_reasons),
             slide_count=len(prs.slides),
+            rendered_pdf_generation=rendered_pdf_generation,
         )
     result["native_deck_audit"] = build_native_deck_audit(
         source_pptx_sha256=source_fingerprint["digest"],

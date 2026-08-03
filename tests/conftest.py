@@ -10,20 +10,32 @@ from pptx import Presentation
 # ── Script import helper ──────────────────────────────────────────────
 
 SCRIPTS_PC = os.path.join(
-    os.path.dirname(__file__), os.pardir,
-    "skills", "presentation-creator", "scripts",
+    os.path.dirname(__file__),
+    os.pardir,
+    "skills",
+    "presentation-creator",
+    "scripts",
 )
 SCRIPTS_VI = os.path.join(
-    os.path.dirname(__file__), os.pardir,
-    "skills", "vault-ingress", "scripts",
+    os.path.dirname(__file__),
+    os.pardir,
+    "skills",
+    "vault-ingress",
+    "scripts",
 )
 SCRIPTS_ILL = os.path.join(
-    os.path.dirname(__file__), os.pardir,
-    "skills", "illustrations", "scripts",
+    os.path.dirname(__file__),
+    os.pardir,
+    "skills",
+    "illustrations",
+    "scripts",
 )
 SCRIPTS_VP = os.path.join(
-    os.path.dirname(__file__), os.pardir,
-    "skills", "vault-profile", "scripts",
+    os.path.dirname(__file__),
+    os.pardir,
+    "skills",
+    "vault-profile",
+    "scripts",
 )
 
 
@@ -53,9 +65,12 @@ def _import_script(path, name):
 
 # ── Session-scoped script modules ────────────────────────────────────
 
+
 @pytest.fixture(scope="session")
 def validate_deckops():
-    return _import_script(os.path.join(SCRIPTS_PC, "validate-deckops.py"), "validate_deckops")
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "validate-deckops.py"), "validate_deckops"
+    )
 
 
 @pytest.fixture(scope="session")
@@ -80,12 +95,26 @@ def generate_qr():
 
 @pytest.fixture(scope="session")
 def pptx_extraction():
-    return _import_script(os.path.join(SCRIPTS_VI, "pptx-extraction.py"), "pptx_extraction")
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "pptx-extraction.py"), "pptx_extraction"
+    )
 
 
 @pytest.fixture(scope="session")
 def pptx_evidence():
     return _import_script(os.path.join(SCRIPTS_VI, "pptx_evidence.py"), "pptx_evidence")
+
+
+@pytest.fixture(scope="session")
+def artifact_metadata():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "artifact_metadata.py"), "artifact_metadata"
+    )
+
+
+@pytest.fixture(scope="session")
+def pdf_evidence():
+    return _import_script(os.path.join(SCRIPTS_VI, "pdf_evidence.py"), "pdf_evidence")
 
 
 @pytest.fixture(scope="session")
@@ -95,7 +124,9 @@ def vtt_cleanup():
 
 @pytest.fixture(scope="session")
 def persist_results():
-    return _import_script(os.path.join(SCRIPTS_VI, "persist-results.py"), "persist_results")
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "persist-results.py"), "persist_results"
+    )
 
 
 @pytest.fixture(scope="session")
@@ -156,17 +187,22 @@ def migrate_tracking_database():
 @pytest.fixture(scope="session")
 def return_validation():
     return _import_script(
-        os.path.join(SCRIPTS_VI, "return_validation.py"), "return_validation")
+        os.path.join(SCRIPTS_VI, "return_validation.py"), "return_validation"
+    )
 
 
 @pytest.fixture(scope="session")
 def write_analysis():
-    return _import_script(os.path.join(SCRIPTS_VI, "write-analysis.py"), "write_analysis")
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "write-analysis.py"), "write_analysis"
+    )
 
 
 @pytest.fixture(scope="session")
 def fetch_transcript():
-    return _import_script(os.path.join(SCRIPTS_VI, "fetch-transcript.py"), "fetch_transcript")
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "fetch-transcript.py"), "fetch_transcript"
+    )
 
 
 @pytest.fixture(scope="session")
@@ -225,69 +261,89 @@ def extract_resources():
 
 @pytest.fixture(scope="session")
 def guardrail_check():
-    return _import_script(os.path.join(SCRIPTS_PC, "guardrail-check.py"), "guardrail_check")
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "guardrail-check.py"), "guardrail_check"
+    )
 
 
 @pytest.fixture(scope="session")
 def outline_schema():
-    return _import_script(os.path.join(SCRIPTS_PC, "outline_schema.py"), "outline_schema")
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "outline_schema.py"), "outline_schema"
+    )
 
 
 @pytest.fixture(scope="session")
 def extract_script():
-    return _import_script(os.path.join(SCRIPTS_PC, "extract-script.py"), "extract_script")
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "extract-script.py"), "extract_script"
+    )
 
 
 @pytest.fixture(scope="session")
 def extract_slides():
-    return _import_script(os.path.join(SCRIPTS_PC, "extract-slides.py"), "extract_slides")
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "extract-slides.py"), "extract_slides"
+    )
 
 
 @pytest.fixture(scope="session")
 def extract_narrative():
-    return _import_script(os.path.join(SCRIPTS_PC, "extract-narrative.py"), "extract_narrative")
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "extract-narrative.py"), "extract_narrative"
+    )
 
 
 @pytest.fixture(scope="session")
 def check_rhetorical():
-    return _import_script(os.path.join(SCRIPTS_PC, "check-rhetorical.py"), "check_rhetorical")
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "check-rhetorical.py"), "check_rhetorical"
+    )
 
 
 @pytest.fixture(scope="session")
 def model_registry():
-    return _import_script(os.path.join(SCRIPTS_ILL, "model_registry.py"), "model_registry")
+    return _import_script(
+        os.path.join(SCRIPTS_ILL, "model_registry.py"), "model_registry"
+    )
 
 
 @pytest.fixture(scope="session")
 def validate_profile():
-    return _import_script(os.path.join(SCRIPTS_VP, "validate-profile.py"), "validate_profile")
+    return _import_script(
+        os.path.join(SCRIPTS_VP, "validate-profile.py"), "validate_profile"
+    )
 
 
 @pytest.fixture(scope="session")
 def compute_pacing_adherence():
     return _import_script(
-        os.path.join(SCRIPTS_VP, "compute-pacing-adherence.py"), "compute_pacing_adherence"
+        os.path.join(SCRIPTS_VP, "compute-pacing-adherence.py"),
+        "compute_pacing_adherence",
     )
 
 
 @pytest.fixture(scope="session")
 def build_expansion_manifest():
     return _import_script(
-        os.path.join(SCRIPTS_ILL, "build-expansion-manifest.py"), "build_expansion_manifest"
+        os.path.join(SCRIPTS_ILL, "build-expansion-manifest.py"),
+        "build_expansion_manifest",
     )
 
 
 @pytest.fixture(scope="session")
 def build_expansion_to_packed():
     return _import_script(
-        os.path.join(SCRIPTS_PC, "build-expansion-to-packed.py"), "build_expansion_to_packed"
+        os.path.join(SCRIPTS_PC, "build-expansion-to-packed.py"),
+        "build_expansion_to_packed",
     )
 
 
 @pytest.fixture(scope="session")
 def stage_images_into_container():
     return _import_script(
-        os.path.join(SCRIPTS_PC, "stage-images-into-container.py"), "stage_images_into_container"
+        os.path.join(SCRIPTS_PC, "stage-images-into-container.py"),
+        "stage_images_into_container",
     )
 
 
@@ -327,7 +383,8 @@ def export_pdf():
 @pytest.fixture(scope="session")
 def apply_illustrations():
     return _import_script(
-        os.path.join(SCRIPTS_ILL, "apply-illustrations-to-deck.py"), "apply_illustrations"
+        os.path.join(SCRIPTS_ILL, "apply-illustrations-to-deck.py"),
+        "apply_illustrations",
     )
 
 

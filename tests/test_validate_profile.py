@@ -785,6 +785,16 @@ def test_load_vault_passes_configured_source_roots_to_freshness_assessor(
         scoring_schema=load_vault.PATTERN_SCORING_SCHEMA_VERSION,
     )
     talk["pptx_path"] = deck.name
+    talk["slide_source"] = "pptx"
+    talk["structured_data"] = {
+        "slide_count": 1,
+        "native_deck_audit": importlib.import_module(
+            "pptx_evidence"
+        ).recompute_native_deck_audit(
+            deck,
+            trusted_root=source_root,
+        ),
+    }
     talk["pattern_observations"].update(
         {
             "evidence_schema_version": 2,

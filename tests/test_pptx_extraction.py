@@ -1,6 +1,7 @@
 """Tests for pptx-extraction.py — PPTX visual data extraction."""
 
 import io
+import importlib
 import json
 import struct
 import subprocess
@@ -9,6 +10,7 @@ import zipfile
 from types import SimpleNamespace
 
 import pytest
+from pypdf import PdfWriter
 from pptx import Presentation
 from pptx.oxml import parse_xml
 from pptx.oxml.ns import nsdecls
@@ -88,6 +90,83 @@ def test_public_extractor_rejects_in_process_callable(
         )
 
     assert caught.value.reason_code == "pptx_evidence_invalid"
+
+
+def test_contained_extraction_never_nests_the_pdf_supervisor(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    deck_path = tmp_path / "deck.pptx"
+    make_deck(1).save(str(deck_path))
+    rendered_path = tmp_path / "deck.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=640, height=480)
+    with rendered_path.open("wb") as stream:
+        writer.write(stream)
+    pdf_evidence = importlib.import_module("pdf_evidence")
+    monkeypatch.setattr(
+        pdf_evidence,
+        "run_authenticated_worker",
+        lambda *_args, **_kwargs: pytest.fail("nested PDF supervisor started"),
+    )
+
+    result = pptx_extraction._extract_pptx_in_process(
+        deck_path,
+        ocr=False,
+        rendered_pdf_path=rendered_path,
+        inspected_page_ranges=[[1, 1]],
+    )
+
+    receipt = result["native_deck_audit"]["rendered_page_inspection"]
+    assert receipt["rendered_page_count"] == 1
+    assert receipt["inspected_page_ranges"] == [[1, 1]]
+
+
+def test_contained_extraction_rejects_rendered_pdf_repair_diagnostics(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    deck_path = tmp_path / "deck.pptx"
+    make_deck(1).save(str(deck_path))
+    rendered_path = tmp_path / "deck.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=640, height=480)
+    with rendered_path.open("wb") as stream:
+        writer.write(stream)
+    pdf_evidence = importlib.import_module("pdf_evidence")
+    pptx_evidence = importlib.import_module("pptx_evidence")
+
+    def repair_required(*_args, **_kwargs):
+        raise pdf_evidence.PdfEvidenceError(
+            "synthetic repair diagnostics",
+            reason_code="pdf_parser_repair_required",
+            details={
+                "diagnostic_receipt": {
+                    "byte_count": 1,
+                    "sha256": "f" * 64,
+                    "truncated": False,
+                }
+            },
+        )
+
+    monkeypatch.setattr(
+        pptx_evidence,
+        "_inspect_pdf_in_contained_worker",
+        repair_required,
+    )
+
+    with pytest.raises(pptx_evidence.PptxEvidenceError) as caught:
+        pptx_extraction._extract_pptx_in_process(
+            deck_path,
+            ocr=False,
+            rendered_pdf_path=rendered_path,
+            inspected_page_ranges=[[1, 1]],
+        )
+
+    assert caught.value.reason_code == "pdf_parser_repair_required"
+    assert caught.value.details["diagnostic_receipt"]["byte_count"] == 1
 
 
 def test_slide_dimensions(pptx_extraction, tmp_path):
@@ -2457,7 +2536,7 @@ def test_versions_and_input_fingerprint_are_stable_and_content_addressed(
     changed = pptx_extraction._extract_pptx_in_process(str(modified), ocr=False)
 
     assert pptx_extraction.SCHEMA_VERSION == 4
-    assert pptx_extraction.PIPELINE_VERSION == "1.4.0"
+    assert pptx_extraction.PIPELINE_VERSION == "1.5.0"
     assert first["schema_version"] == pptx_extraction.SCHEMA_VERSION
     assert first["pipeline_version"] == pptx_extraction.PIPELINE_VERSION
     assert first["input_fingerprint"] == second["input_fingerprint"]
