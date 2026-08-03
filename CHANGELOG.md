@@ -79,6 +79,9 @@ Private PPTX and directory workers emit one closed, path-neutral stderr
 diagnostic for outer failures instead of exiting silently (partial #203).
 The dedicated PPTX preclaim resolver no longer leaves unreachable legacy
 source-root branches in the generic PDF and source-inspection paths (#208).
+PPTX preclaims now reject Windows current-drive/per-drive-relative locators and
+device namespaces before host path normalization, preventing a saved locator
+from selecting bytes through process-specific drive state (#209).
 The picture-area render decision has one script-owned threshold shared by the
 producer and validator; schema prose points to that authority instead of
 copying its predicate (#205).

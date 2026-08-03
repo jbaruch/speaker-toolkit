@@ -213,6 +213,10 @@ Checks apply to a record with a declared transcript, slide, or video capability
   `transcript_only` is unsupported; represent that state as `none`.
 - Relative `pptx_path` is resolved from `config.pptx_source_dir`, falling back
   to the vault root.
+- PPTX locators reject raw dot segments, Windows current-drive/per-drive-relative
+  forms, and Windows device namespaces before host path normalization. Use a
+  trusted-root-relative locator or, on Windows, an ordinary fully qualified
+  drive/UNC path.
 - A recorded local PDF path is authoritative only after its exact generation
   passes the bounded metadata, copy/hash, strict container, and complete page-tree
   probe.
