@@ -270,10 +270,30 @@ def _lexical_absolute(value: str | Path) -> Path:
 
 
 def _reject_ambiguous_path_segments(value: str, *, label: str) -> None:
-    """Reject raw dot segments before pathlib or abspath can erase them."""
+    """Reject ambiguous Windows forms and dot segments before normalization."""
 
     expanded = os.path.expanduser(value)
+    windows_normalized = expanded.replace("/", "\\")
+    if windows_normalized.startswith(("\\\\?\\", "\\\\.\\", "\\??\\", "\\\\??\\")):
+        raise PatternEvidenceError(
+            f"{label} uses an unsupported Windows device namespace; pass an "
+            "ordinary trusted-root-relative path or a fully qualified drive/UNC path"
+        )
     windows_drive, windows_tail = ntpath.splitdrive(expanded)
+    drive_relative = re.fullmatch(
+        r"[A-Za-z]:", windows_drive
+    ) is not None and not windows_tail.startswith(("/", "\\"))
+    root_relative = (
+        windows_normalized.startswith("\\")
+        and not windows_normalized.startswith("\\\\")
+        and (expanded.startswith("\\") or os.name == "nt")
+    )
+    if drive_relative or root_relative:
+        raise PatternEvidenceError(
+            f"{label} is an ambiguous Windows path whose target depends on the "
+            "current drive or per-drive working directory; pass a "
+            "trusted-root-relative path or a fully qualified drive/UNC path"
+        )
     separators: list[str] = []
     for separator in (os.sep, os.altsep, "/", "\\"):
         if separator is not None and separator not in separators:

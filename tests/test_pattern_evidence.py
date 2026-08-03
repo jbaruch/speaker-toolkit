@@ -446,13 +446,121 @@ def test_pptx_dot_segment_guard_is_platform_independent(locator: str) -> None:
 @pytest.mark.parametrize(
     "locator",
     [
+        r"C:talk.pptx",
+        r"c:conference\talk.pptx",
+        r"D:conference/mixed\talk.pptx",
+        "E:",
+        r"\conference\talk.pptx",
+        r"\conference/mixed\talk.pptx",
+    ],
+)
+def test_pptx_windows_cwd_dependent_guard_is_platform_independent(
+    locator: str,
+) -> None:
+    with pytest.raises(
+        pattern_evidence.PatternEvidenceError,
+        match="ambiguous Windows path",
+    ) as caught:
+        pattern_evidence._reject_ambiguous_path_segments(
+            locator,
+            label="pptx_path",
+        )
+
+    assert locator not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
+        r"\\?\C:\conference\talk.pptx",
+        r"\\?\UNC\server\share\talk.pptx",
+        r"\\.\pipe\talk.pptx",
+        r"\??\C:\conference\talk.pptx",
+        "//?/C:/conference/talk.pptx",
+    ],
+)
+def test_pptx_windows_device_namespace_guard_is_platform_independent(
+    locator: str,
+) -> None:
+    with pytest.raises(
+        pattern_evidence.PatternEvidenceError,
+        match="device namespace",
+    ) as caught:
+        pattern_evidence._reject_ambiguous_path_segments(
+            locator,
+            label="pptx_path",
+        )
+
+    assert locator not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
         r"conference\track\talk.pptx",
         "conference/track/talk.pptx",
         r"conference\track/mixed/talk.pptx",
+        r"C:\conference\talk.pptx",
+        "C:/conference/talk.pptx",
+        r"C:\conference/mixed\talk.pptx",
+        r"\\server\share\conference\talk.pptx",
+        "//server/share/conference/talk.pptx",
+        r"\\server\share/conference\talk.pptx",
     ],
 )
 def test_pptx_dot_segment_guard_accepts_clean_mixed_separators(locator: str) -> None:
     pattern_evidence._reject_ambiguous_path_segments(locator, label="pptx_path")
+
+
+def test_forward_slash_root_uses_native_absolute_path_semantics() -> None:
+    locator = "/conference/talk.pptx"
+    if os.name == "nt":
+        with pytest.raises(
+            pattern_evidence.PatternEvidenceError,
+            match="ambiguous Windows path",
+        ):
+            pattern_evidence._reject_ambiguous_path_segments(
+                locator,
+                label="pptx_path",
+            )
+    else:
+        pattern_evidence._reject_ambiguous_path_segments(
+            locator,
+            label="pptx_path",
+        )
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
+        r"C:conference\talk.pptx",
+        r"\conference\talk.pptx",
+    ],
+)
+def test_pptx_cwd_dependent_preclaim_never_reaches_bounded_probe(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    locator: str,
+) -> None:
+    monkeypatch.setattr(
+        pattern_evidence,
+        "probe_pptx_artifact",
+        lambda *_args, **_kwargs: pytest.fail("ambiguous locator reached probe"),
+    )
+    context = pattern_evidence.build_evidence_context(
+        tmp_path / "vault",
+        {"pptx_path": locator, "slide_source": "pptx"},
+        source_roots={"pptx_source_dir": str(tmp_path / "pptx-source")},
+    )
+
+    assert "native_deck" not in context["verified_evidence_sources"]
+    reason = context["source_reasons"]["native_deck"]
+    assert reason == (
+        "pptx_path is an ambiguous Windows path whose target depends on the "
+        "current drive or per-drive working directory; pass a "
+        "trusted-root-relative path or a fully qualified drive/UNC path"
+    )
+    assert locator not in reason
 
 
 def test_traversal_and_symlinked_artifacts_never_become_sources(
