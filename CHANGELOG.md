@@ -16,6 +16,8 @@ committed-memory and active-process limits. `psutil==7.2.2` supplies fail-closed
 sampled aggregate-RSS monitoring on all platforms; macOS does not overclaim a
 kernel hard-allocation cap. Raw parser diagnostics never escape—only a
 byte-count/hash/truncation receipt is retained.
+Private PPTX and directory workers emit one closed, path-neutral stderr
+diagnostic for outer failures instead of exiting silently (partial #203).
 If psutil observes a root identity disappearing during a normal fast exit, Popen
 gets at most the remaining sample interval to confirm and reap that exact child;
 a still-live child, descendant leak, or non-ESRCH cleanup failure remains fatal.

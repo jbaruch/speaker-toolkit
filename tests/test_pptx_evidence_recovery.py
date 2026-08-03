@@ -3483,7 +3483,74 @@ def test_finite_confidence_rejects_nonfinite_or_out_of_domain(
     assert pptx_evidence.finite_confidence(value) is None
 
 
-def test_extractor_has_no_inner_broad_exception_handler(
+def test_supervised_worker_main_reports_closed_supervisor_failure(
+    pptx_evidence,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail() -> int:
+        raise pptx_evidence.SupervisorError("worker_output_limit_exceeded")
+
+    monkeypatch.setattr(pptx_evidence, "_run_supervised_worker_child", fail)
+    monkeypatch.setattr(
+        pptx_evidence.sys,
+        "argv",
+        [pptx_evidence.__file__, pptx_evidence.PPTX_SUPERVISED_WORKER_FLAG],
+    )
+
+    assert pptx_evidence._main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert (
+        captured.err == "pptx supervised worker failed: worker_output_limit_exceeded\n"
+    )
+    assert "Traceback" not in captured.err
+
+
+def test_supervised_worker_main_closes_unexpected_failure_diagnostic(
+    pptx_evidence,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    leaked_path = "/private/vault/source.pptx"
+
+    def fail() -> int:
+        raise RuntimeError(f"failure at {leaked_path}")
+
+    monkeypatch.setattr(pptx_evidence, "_run_supervised_worker_child", fail)
+    monkeypatch.setattr(
+        pptx_evidence.sys,
+        "argv",
+        [pptx_evidence.__file__, pptx_evidence.PPTX_SUPERVISED_WORKER_FLAG],
+    )
+
+    assert pptx_evidence._main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "pptx supervised worker failed: unexpected_error\n"
+    assert leaked_path not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_supervised_worker_main_preserves_success_output_contract(
+    pptx_evidence,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(pptx_evidence, "_run_supervised_worker_child", lambda: 0)
+    monkeypatch.setattr(
+        pptx_evidence.sys,
+        "argv",
+        [pptx_evidence.__file__, pptx_evidence.PPTX_SUPERVISED_WORKER_FLAG],
+    )
+
+    assert pptx_evidence._main() == 0
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_extractor_confines_broad_handlers_to_process_boundaries(
     pptx_extraction,
 ) -> None:
     tree = ast.parse(Path(pptx_extraction.__file__).read_text(encoding="utf-8"))
@@ -3497,8 +3564,7 @@ def test_extractor_has_no_inner_broad_exception_handler(
             if isinstance(node.type, ast.Name) and node.type.id == "Exception":
                 broad_handlers.append((function.name, node.lineno))
 
-    assert len(broad_handlers) == 1
-    assert broad_handlers[0][0] == "main"
+    assert sorted(name for name, _line in broad_handlers) == ["_main", "main"]
 
 
 def test_single_file_cli_reports_parser_failure_without_traceback(

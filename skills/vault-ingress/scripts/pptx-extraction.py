@@ -2534,10 +2534,30 @@ def main(argv=None):
     return 0
 
 
-if __name__ == "__main__":
+def _main():
     if sys.argv[1:] == [_DIRECTORY_WORKER_FLAG]:
         try:
-            raise SystemExit(_run_directory_worker_child())
-        except SupervisorError:
-            raise SystemExit(2) from None
-    raise SystemExit(main())
+            return _run_directory_worker_child()
+        except SupervisorError as exc:
+            print(
+                f"pptx directory worker failed: {exc.reason_code}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 2
+        # The supervisor treats a nonzero child without an authenticated
+        # response as a bounded crash. Emit a path-neutral stderr diagnostic
+        # plus exit 2 because propagation would leak a traceback and violate
+        # the one-frame response contract. outer-boundary-process-contract.
+        except Exception:  # noqa: BLE001
+            print(
+                "pptx directory worker failed: unexpected_error",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 2
+    return main()
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())
