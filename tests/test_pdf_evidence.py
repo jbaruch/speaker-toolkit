@@ -616,36 +616,136 @@ def test_probe_uses_only_fixed_child_command_and_bound_request(
     assert pdf_evidence.probe_pdf_artifact(artifact).page_count == 1
 
 
+_SUPERVISOR_PUBLIC_MESSAGES = {
+    "pdf_artifact_changed": "PDF artifact changed during bounded inspection",
+    "pdf_dependency_unavailable": (
+        "PDF evidence requires its declared runtime dependencies; install the "
+        "speaker-toolkit project dependencies"
+    ),
+    "pdf_probe_containment_unavailable": (
+        "Bounded PDF evidence worker could not establish or preserve "
+        "process-tree containment"
+    ),
+    "pdf_probe_crash": "Bounded PDF evidence worker terminated unexpectedly",
+    "pdf_probe_malformed_result": (
+        "Bounded PDF evidence worker returned an invalid authenticated result"
+    ),
+    "pdf_probe_monitor_identity_changed": (
+        "Bounded PDF evidence worker process identity changed during inspection"
+    ),
+    "pdf_probe_monitor_unavailable": (
+        "Bounded PDF evidence worker could not inspect its process tree"
+    ),
+    "pdf_probe_request_oversized": (
+        "Bounded PDF evidence worker request exceeded its input contract"
+    ),
+    "pdf_probe_resource_unavailable": (
+        "PDF evidence exceeded a configured worker resource limit"
+    ),
+    "pdf_probe_result_oversized": (
+        "Bounded PDF evidence worker result exceeded its output contract"
+    ),
+    "pdf_probe_start_failure": "Could not start the bounded PDF evidence worker",
+    "pdf_probe_timeout": "Bounded PDF evidence operation exceeded its wall limit",
+}
+
+_SUPERVISOR_FAILURE_CASES = [
+    ("worker_generation_changed", {}, "pdf_artifact_changed"),
+    ("worker_generation_binding_mismatch", {}, "pdf_probe_malformed_result"),
+    ("worker_timeout", {}, "pdf_probe_timeout"),
+    ("worker_memory_limit_exceeded", {}, "pdf_probe_resource_unavailable"),
+    ("worker_process_limit_exceeded", {}, "pdf_probe_resource_unavailable"),
+    ("worker_diagnostic_limit_exceeded", {}, "pdf_probe_resource_unavailable"),
+    (
+        "worker_monitor_unavailable",
+        {
+            "dependency": "psutil",
+            "required_version": "7.2.2",
+            "actual_version": "7.2.1",
+        },
+        "pdf_dependency_unavailable",
+    ),
+    ("worker_monitor_unavailable", {}, "pdf_probe_monitor_unavailable"),
+    (
+        "worker_monitor_unavailable",
+        {"dependency": "pypdf"},
+        "pdf_probe_monitor_unavailable",
+    ),
+    (
+        "worker_monitor_identity_changed",
+        {},
+        "pdf_probe_monitor_identity_changed",
+    ),
+    (
+        "worker_containment_unavailable",
+        {},
+        "pdf_probe_containment_unavailable",
+    ),
+    ("worker_process_tree_leak", {}, "pdf_probe_containment_unavailable"),
+    ("worker_cleanup_failed", {}, "pdf_probe_containment_unavailable"),
+    ("worker_input_limit_exceeded", {}, "pdf_probe_request_oversized"),
+    ("worker_output_limit_exceeded", {}, "pdf_probe_result_oversized"),
+    ("worker_start_failed", {}, "pdf_probe_start_failure"),
+    ("worker_pipe_setup_failed", {}, "pdf_probe_start_failure"),
+    ("worker_exit_before_barrier", {}, "pdf_probe_start_failure"),
+    ("worker_request_write_failed", {}, "pdf_probe_start_failure"),
+    ("invalid_worker_command", {}, "pdf_probe_start_failure"),
+    ("unsafe_worker_process_metadata", {}, "pdf_probe_start_failure"),
+    ("worker_exit", {}, "pdf_probe_crash"),
+    ("worker_diagnostic_read_failed", {}, "pdf_probe_crash"),
+    ("worker_output_read_failed", {}, "pdf_probe_crash"),
+    ("invalid_worker_response", {}, "pdf_probe_malformed_result"),
+    ("worker_response_authentication_failed", {}, "pdf_probe_malformed_result"),
+    ("worker_response_binding_mismatch", {}, "pdf_probe_malformed_result"),
+    ("invalid_worker_response_bindings", {}, "pdf_probe_malformed_result"),
+    ("worker_response_bindings_mismatch", {}, "pdf_probe_malformed_result"),
+    ("worker_response_body_mismatch", {}, "pdf_probe_malformed_result"),
+    ("invalid_worker_response_body", {}, "pdf_probe_malformed_result"),
+    ("invalid_worker_request", {}, "pdf_probe_malformed_result"),
+    ("invalid_worker_operation", {}, "pdf_probe_malformed_result"),
+    ("worker_operation_failed", {}, "pdf_probe_malformed_result"),
+    ("protocol_isolation_failed", {}, "pdf_probe_malformed_result"),
+    ("future_supervisor_fault", {}, "pdf_probe_malformed_result"),
+]
+
+
 @pytest.mark.parametrize(
-    ("supervisor_reason", "public_reason"),
-    [
-        ("worker_generation_changed", "pdf_artifact_changed"),
-        ("worker_timeout", "pdf_probe_timeout"),
-        ("worker_memory_limit_exceeded", "pdf_probe_resource_unavailable"),
-        ("worker_monitor_unavailable", "pdf_probe_resource_unavailable"),
-        ("worker_start_failed", "pdf_probe_start_failure"),
-        ("worker_output_limit_exceeded", "pdf_probe_result_oversized"),
-        ("worker_input_limit_exceeded", "pdf_probe_request_oversized"),
-        ("worker_generation_binding_mismatch", "pdf_probe_malformed_result"),
-        ("worker_exit", "pdf_probe_crash"),
-        ("invalid_worker_response", "pdf_probe_malformed_result"),
-        ("worker_response_authentication_failed", "pdf_probe_malformed_result"),
-    ],
+    ("supervisor_reason", "supervisor_details", "public_reason"),
+    _SUPERVISOR_FAILURE_CASES,
 )
-def test_supervisor_failures_have_closed_public_mapping(
+def test_supervisor_failures_have_cause_correct_path_free_public_mapping(
     supervisor_reason: str,
+    supervisor_details: dict[str, object],
     public_reason: str,
 ) -> None:
+    leaked_values = (
+        "/private/vault/source.pdf",
+        "parser exploded while reading a secret document",
+        "credential-value-should-never-escape",
+    )
     mapped = pdf_evidence._supervisor_failure(
-        pdf_evidence.SupervisorError(supervisor_reason),
+        pdf_evidence.SupervisorError(
+            supervisor_reason,
+            {
+                **supervisor_details,
+                "path": leaked_values[0],
+                "parser_output": leaked_values[1],
+                "credential": leaked_values[2],
+            },
+        ),
         timeout_seconds=3.5,
     )
+
     assert mapped.reason_code == public_reason
-    assert set(mapped.details) <= {
-        "generation_names",
-        "timeout_seconds",
-        "supervisor_reason_code",
-    }
+    assert str(mapped) == _SUPERVISOR_PUBLIC_MESSAGES[public_reason]
+    if public_reason == "pdf_artifact_changed":
+        assert mapped.details == {}
+    elif public_reason == "pdf_probe_timeout":
+        assert mapped.details == {"timeout_seconds": 3.5}
+    else:
+        assert mapped.details == {"supervisor_reason_code": supervisor_reason}
+    rendered = str(mapped) + repr(mapped.details)
+    assert all(value not in rendered for value in leaked_values)
 
 
 def test_generation_failure_preserves_only_closed_path_free_names() -> None:

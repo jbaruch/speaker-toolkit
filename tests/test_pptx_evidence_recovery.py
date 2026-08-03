@@ -1469,10 +1469,43 @@ def test_rendered_pdf_uses_pdf_size_ceiling_before_extraction(
     assert caught.value.details["limit_bytes"] == pptx_evidence.PDF_MAX_INPUT_BYTES
 
 
-def test_rendered_pdf_metadata_resource_failure_keeps_pdf_reason_and_redaction(
+@pytest.mark.parametrize(
+    ("supervisor_reason", "supervisor_details", "pdf_reason"),
+    [
+        (
+            "worker_memory_limit_exceeded",
+            {},
+            "pdf_probe_resource_unavailable",
+        ),
+        (
+            "worker_monitor_unavailable",
+            {"dependency": "psutil"},
+            "pdf_dependency_unavailable",
+        ),
+        (
+            "worker_monitor_unavailable",
+            {},
+            "pdf_probe_monitor_unavailable",
+        ),
+        (
+            "worker_monitor_identity_changed",
+            {},
+            "pdf_probe_monitor_identity_changed",
+        ),
+        (
+            "worker_containment_unavailable",
+            {},
+            "pdf_probe_containment_unavailable",
+        ),
+    ],
+)
+def test_rendered_pdf_metadata_supervisor_failure_keeps_pdf_reason_and_redaction(
     pptx_evidence,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    supervisor_reason: str,
+    supervisor_details: dict[str, object],
+    pdf_reason: str,
 ) -> None:
     deck = tmp_path / "source.pptx"
     _write_deck(deck, with_image=False)
@@ -1481,7 +1514,10 @@ def test_rendered_pdf_metadata_resource_failure_keeps_pdf_reason_and_redaction(
 
     def metadata(command, payload, sensitive_values, limits):
         if payload["pptx_path"] == str(rendered):
-            raise pptx_evidence.SupervisorError("worker_memory_limit_exceeded")
+            raise pptx_evidence.SupervisorError(
+                supervisor_reason,
+                supervisor_details,
+            )
         return bounded_metadata(command, payload, sensitive_values, limits)
 
     monkeypatch.setattr(pptx_evidence, "_invoke_metadata_worker", metadata)
@@ -1493,10 +1529,8 @@ def test_rendered_pdf_metadata_resource_failure_keeps_pdf_reason_and_redaction(
             rendered_pdf_path=rendered,
         )
 
-    assert caught.value.reason_code == "pdf_probe_resource_unavailable"
-    assert (
-        caught.value.details["supervisor_reason_code"] == "worker_memory_limit_exceeded"
-    )
+    assert caught.value.reason_code == pdf_reason
+    assert caught.value.details["supervisor_reason_code"] == supervisor_reason
     assert caught.value.details["admitted_source_size_bytes"] == deck.stat().st_size
     assert str(rendered) not in str(caught.value)
     assert str(rendered) not in repr(caught.value.details)

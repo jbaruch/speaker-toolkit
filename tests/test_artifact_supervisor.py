@@ -398,6 +398,20 @@ def _run(
     )
 
 
+def test_artifact_consumers_reuse_one_supervisor_module_identity(
+    artifact_metadata,
+    pdf_evidence,
+    pptx_evidence,
+) -> None:
+    assert artifact_supervisor is sys.modules["artifact_supervisor"]
+    assert artifact_metadata.FileGeneration is artifact_supervisor.FileGeneration
+    assert pdf_evidence.FileGeneration is artifact_supervisor.FileGeneration
+    assert pptx_evidence.FileGeneration is artifact_supervisor.FileGeneration
+    assert pdf_evidence.DiagnosticReceipt is artifact_supervisor.DiagnosticReceipt
+    assert pdf_evidence.SupervisorError is artifact_supervisor.SupervisorError
+    assert pptx_evidence.SupervisorError is artifact_supervisor.SupervisorError
+
+
 def test_success_is_private_bound_and_returns_only_diagnostic_receipt(tmp_path):
     artifact = tmp_path / "private deck.pptx"
     result = _run("success", payload={"artifact": str(artifact)})

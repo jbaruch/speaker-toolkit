@@ -1582,6 +1582,11 @@ def test_malformed_pdf_is_reported_without_erasing_independent_sources(
     [
         ("pdf_cloud_placeholder_unavailable", "slide_pdf_artifact_unavailable"),
         ("pdf_probe_timeout", "slide_pdf_artifact_unreadable"),
+        ("pdf_dependency_unavailable", "slide_pdf_artifact_unreadable"),
+        ("pdf_probe_monitor_unavailable", "slide_pdf_artifact_unreadable"),
+        ("pdf_probe_monitor_identity_changed", "slide_pdf_artifact_unreadable"),
+        ("pdf_probe_containment_unavailable", "slide_pdf_artifact_unreadable"),
+        ("pdf_probe_resource_unavailable", "slide_pdf_artifact_unreadable"),
     ],
 )
 def test_pdf_probe_failures_are_lane_local_and_structured(
@@ -1623,6 +1628,10 @@ def test_pdf_probe_failures_are_lane_local_and_structured(
     report = preflight_vault.run_preflight(vault_fixture["root"])
 
     finding = next(item for item in report["findings"] if item["code"] == expected_code)
+    if expected_code == "slide_pdf_artifact_unreadable":
+        assert finding["message"] == (
+            "declared slide PDF could not complete bounded evidence inspection"
+        )
     capability = finding["capability_fact"]
     assert set(capability["verified_evidence_sources"]) == {
         "native_deck",

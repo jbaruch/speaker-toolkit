@@ -260,11 +260,11 @@ The thirteen stable slide-contract fault classes are:
 | `slide_pdf_reference_missing` | `pdf`/`both` has no Drive ID |
 | `slide_pdf_artifact_missing` | Explicit or Drive-ID PDF does not exist |
 | `slide_pdf_artifact_unavailable` | PDF is an offline cloud placeholder |
-| `slide_pdf_artifact_unreadable` | PDF failed its bounded copy/container/page-tree probe |
+| `slide_pdf_artifact_unreadable` | PDF could not complete bounded evidence inspection; use the nested reason code to distinguish parse, dependency, monitor, identity, containment, and resource causes |
 | `slide_video_reference_missing` | Video extraction has no valid YouTube identity |
 | `slide_video_artifact_missing` | Required explicit/processed YouTube-ID PDF does not exist |
 | `slide_video_artifact_unavailable` | Video-derived PDF is an offline cloud placeholder |
-| `slide_video_artifact_unreadable` | Video-derived PDF failed its bounded copy/container/page-tree probe |
+| `slide_video_artifact_unreadable` | Video-derived PDF could not complete bounded evidence inspection; use the nested reason code to select remediation |
 
 `status_source_reachability_conflict` is a separate queue-state integrity
 fault. It is blocking when `skipped_no_sources` or legacy `skipped_no_video`

@@ -741,7 +741,7 @@ class VaultPreflight:
             else:
                 suffix = "unreadable"
                 message = (
-                    "declared slide PDF cannot be parsed inside the bounded worker"
+                    "declared slide PDF could not complete bounded evidence inspection"
                 )
             self.talk_add(
                 index,

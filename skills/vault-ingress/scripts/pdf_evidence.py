@@ -206,7 +206,10 @@ def _failure(
         ),
         "pdf_artifact_unavailable": "PDF artifact is unavailable",
         "pdf_batch_wall_limit": "PDF batch wall deadline expired",
-        "pdf_dependency_unavailable": "PDF parser dependency is unavailable",
+        "pdf_dependency_unavailable": (
+            "PDF evidence requires its declared runtime dependencies; install the "
+            "speaker-toolkit project dependencies"
+        ),
         "pdf_evidence_invalid": "PDF evidence request is invalid",
         "pdf_invalid_container": "PDF artifact is not a valid PDF container",
         "pdf_no_pages": "PDF artifact has no pages",
@@ -219,19 +222,31 @@ def _failure(
             "PDF artifact produced inconsistent bounded reads while materialization "
             "was changing; retry after the file is fully local"
         ),
-        "pdf_probe_crash": "PDF artifact probe terminated inside its worker",
+        "pdf_probe_crash": "Bounded PDF evidence worker terminated unexpectedly",
+        "pdf_probe_containment_unavailable": (
+            "Bounded PDF evidence worker could not establish or preserve "
+            "process-tree containment"
+        ),
         "pdf_probe_malformed_result": (
-            "PDF artifact probe returned an invalid authenticated result"
+            "Bounded PDF evidence worker returned an invalid authenticated result"
+        ),
+        "pdf_probe_monitor_identity_changed": (
+            "Bounded PDF evidence worker process identity changed during inspection"
+        ),
+        "pdf_probe_monitor_unavailable": (
+            "Bounded PDF evidence worker could not inspect its process tree"
         ),
         "pdf_probe_resource_unavailable": (
-            "PDF artifact exceeds the bounded probe resources"
+            "PDF evidence exceeded a configured worker resource limit"
         ),
         "pdf_probe_request_oversized": (
-            "PDF worker request exceeded its authenticated protocol limit"
+            "Bounded PDF evidence worker request exceeded its input contract"
         ),
-        "pdf_probe_result_oversized": "PDF artifact probe result exceeded its limit",
-        "pdf_probe_start_failure": "Could not start the bounded PDF artifact probe",
-        "pdf_probe_timeout": "PDF artifact probe exceeded its wall limit",
+        "pdf_probe_result_oversized": (
+            "Bounded PDF evidence worker result exceeded its output contract"
+        ),
+        "pdf_probe_start_failure": "Could not start the bounded PDF evidence worker",
+        "pdf_probe_timeout": "Bounded PDF evidence operation exceeded its wall limit",
     }
     return PdfEvidenceError(
         messages.get(reason_code, "PDF artifact is unavailable"),
@@ -1282,17 +1297,36 @@ def _supervisor_failure(
             "pdf_probe_timeout",
             details=details(timeout_seconds=timeout_seconds),
         )
+    closed_details = details(supervisor_reason_code=reason)
+    if reason == "worker_monitor_unavailable":
+        public_reason = (
+            "pdf_dependency_unavailable"
+            if exc.details.get("dependency") == "psutil"
+            else "pdf_probe_monitor_unavailable"
+        )
+        return _failure(public_reason, details=closed_details)
+    if reason == "worker_monitor_identity_changed":
+        return _failure(
+            "pdf_probe_monitor_identity_changed",
+            details=closed_details,
+        )
+    if reason in {
+        "worker_containment_unavailable",
+        "worker_process_tree_leak",
+        "worker_cleanup_failed",
+    }:
+        return _failure(
+            "pdf_probe_containment_unavailable",
+            details=closed_details,
+        )
     if reason in {
         "worker_memory_limit_exceeded",
         "worker_process_limit_exceeded",
-        "worker_monitor_unavailable",
-        "worker_monitor_identity_changed",
-        "worker_containment_unavailable",
         "worker_diagnostic_limit_exceeded",
     }:
         return _failure(
             "pdf_probe_resource_unavailable",
-            details=details(supervisor_reason_code=reason),
+            details=closed_details,
         )
     if reason in {
         "worker_start_failed",
@@ -1304,32 +1338,30 @@ def _supervisor_failure(
     }:
         return _failure(
             "pdf_probe_start_failure",
-            details=details(supervisor_reason_code=reason),
+            details=closed_details,
         )
     if reason == "worker_output_limit_exceeded":
         return _failure(
             "pdf_probe_result_oversized",
-            details=details(supervisor_reason_code=reason),
+            details=closed_details,
         )
     if reason == "worker_input_limit_exceeded":
         return _failure(
             "pdf_probe_request_oversized",
-            details=details(supervisor_reason_code=reason),
+            details=closed_details,
         )
     if reason in {
         "worker_exit",
-        "worker_process_tree_leak",
-        "worker_cleanup_failed",
         "worker_diagnostic_read_failed",
         "worker_output_read_failed",
     }:
         return _failure(
             "pdf_probe_crash",
-            details=details(supervisor_reason_code=reason),
+            details=closed_details,
         )
     return _failure(
         "pdf_probe_malformed_result",
-        details=details(supervisor_reason_code=reason),
+        details=closed_details,
     )
 
 

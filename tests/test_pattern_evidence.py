@@ -2628,9 +2628,42 @@ def test_missing_python_pptx_dependency_is_local_to_the_pptx_lane(
     assert "python-pptx" in assessment["source_reasons"]["native_deck"]
 
 
-def test_missing_pypdf_dependency_is_local_to_the_pdf_lane(
+@pytest.mark.parametrize(
+    ("supervisor_reason", "supervisor_details", "public_reason"),
+    [
+        (
+            "worker_monitor_unavailable",
+            {"dependency": "psutil"},
+            "pdf_dependency_unavailable",
+        ),
+        (
+            "worker_monitor_unavailable",
+            {},
+            "pdf_probe_monitor_unavailable",
+        ),
+        (
+            "worker_monitor_identity_changed",
+            {},
+            "pdf_probe_monitor_identity_changed",
+        ),
+        (
+            "worker_containment_unavailable",
+            {},
+            "pdf_probe_containment_unavailable",
+        ),
+        (
+            "worker_memory_limit_exceeded",
+            {},
+            "pdf_probe_resource_unavailable",
+        ),
+    ],
+)
+def test_pdf_supervisor_failure_is_local_and_cause_correct_in_catalog_context(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    supervisor_reason: str,
+    supervisor_details: dict[str, object],
+    public_reason: str,
 ) -> None:
     vault = tmp_path / "vault"
     transcript, _ = _write_transcript(vault, timed=False)
@@ -2640,10 +2673,12 @@ def test_missing_pypdf_dependency_is_local_to_the_pdf_lane(
     _write_pdf(slides)
 
     def unavailable_pdf(*_args: Any, **_kwargs: Any):
-        raise pdf_evidence.PdfEvidenceError(
-            "PDF parser dependency is unavailable",
-            reason_code="pdf_dependency_unavailable",
-            details={"exception_type": "ImportError"},
+        raise pdf_evidence._supervisor_failure(
+            pdf_evidence.SupervisorError(
+                supervisor_reason,
+                supervisor_details,
+            ),
+            timeout_seconds=3.5,
         )
 
     monkeypatch.setattr(pattern_evidence, "probe_pdf_artifact", unavailable_pdf)
@@ -2662,7 +2697,46 @@ def test_missing_pypdf_dependency_is_local_to_the_pdf_lane(
     assert assessment["verified_capabilities"] == ("slides", "transcript")
     assert set(assessment["verified_evidence_sources"]) == {"native_deck", "transcript"}
     unavailable = assessment["unavailable_evidence_sources"]["static_slides"]
+    assert unavailable["reason_code"] == public_reason
+    assert unavailable["details"] == {"supervisor_reason_code": supervisor_reason}
+
+
+def test_missing_pypdf_dependency_is_local_to_the_pdf_lane(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    transcript, _ = _write_transcript(vault, timed=False)
+    deck = vault / "decks" / "talk.pptx"
+    slides = vault / "slides" / "talk.pdf"
+    _write_pptx(deck)
+    _write_pdf(slides)
+
+    def unavailable_pdf(*_args: Any, **_kwargs: Any):
+        raise pdf_evidence.PdfEvidenceError(
+            "PDF evidence requires its declared runtime dependencies; install the "
+            "speaker-toolkit project dependencies",
+            reason_code="pdf_dependency_unavailable",
+            details={"exception_type": "ImportError"},
+        )
+
+    monkeypatch.setattr(pattern_evidence, "probe_pdf_artifact", unavailable_pdf)
+    assessment = pattern_evidence.assess_talk_artifact_capabilities(
+        {
+            "filename": "talk.md",
+            "transcript_path": transcript.relative_to(vault).as_posix(),
+            "transcript_source": "manual",
+            "pptx_path": deck.relative_to(vault).as_posix(),
+            "slides_local_path": slides.relative_to(vault).as_posix(),
+            "slide_source": "both",
+        },
+        vault_root=vault,
+    )
+
+    assert set(assessment["verified_evidence_sources"]) == {"native_deck", "transcript"}
+    unavailable = assessment["unavailable_evidence_sources"]["static_slides"]
     assert unavailable["reason_code"] == "pdf_dependency_unavailable"
+    assert unavailable["details"] == {"exception_type": "ImportError"}
 
 
 @pytest.mark.parametrize(

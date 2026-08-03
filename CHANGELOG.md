@@ -32,6 +32,13 @@ meanings can no longer reject a valid same-path replacement (#201).
 The PDF worker's outer CLI boundary now emits one closed, path-neutral stderr
 diagnostic before returning a nonzero failure instead of failing silently
 (#202).
+PDF supervisor receipts now distinguish dependency, monitor, identity,
+containment, and configured resource-limit causes while retaining the existing
+request, result, timeout, generation, start, crash, and protocol families
+(#207). Public diagnostics are operation-neutral and forward no worker details.
+Successful PDF evidence is unchanged, so no schema or pipeline migration is
+required. Ambiguous historical failure/skip receipts remain readable but are
+never relabeled; rerun ingress to regenerate them under the current mapping.
 
 Contained PPTX render inspection reuses the same PDF ceilings, full page-tree
 walk, and repair-diagnostic policy without nesting a second supervisor. PPTX
@@ -82,7 +89,7 @@ them under the current mapping. Response-frame encoding now reports an output
 limit rather than mislabeling it as an oversized request.
 Supervisor tests now reuse the canonical imported module instead of replacing
 it during collection, preserving dataclass and exception identity across test
-orders (#206).
+orders; PDF, PPTX, and metadata consumers assert the shared identity (#206).
 If psutil observes a root identity disappearing during a normal fast exit, Popen
 gets at most the remaining sample interval to confirm and reap that exact child;
 a still-live child, descendant leak, or non-ESRCH cleanup failure remains fatal.
