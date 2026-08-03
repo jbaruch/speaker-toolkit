@@ -19,7 +19,9 @@ must have the exact digest of its trusted manifest `slide_region` artifact.
 Manifest paths reject NUL and ambiguous dot segments, preserved source videos
 must remain root-confined and non-symlinked, and the documented symlinked
 canonical vault root is mapped to its configured storage root without weakening
-descendant-link checks. A shared platform metadata decoder keeps PDF and PPTX
+descendant-link checks. Source-video preflight failures now keep their nested
+diagnostic path-neutral instead of interpolating a lower-level exception (#199).
+A shared platform metadata decoder keeps PDF and PPTX
 cloud/reparse classification identical while preserving the older PPTX
 compatibility seams. Trusted-root receipts bind stable directory identity and
 policy attributes while excluding mutable child-content size and timestamps, so

@@ -646,6 +646,39 @@ def test_video_manifest_rejects_source_video_outside_vault(
     assert "video_extraction_provenance_invalid" in finding_codes(report)
 
 
+def test_missing_source_video_reports_closed_path_neutral_error(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    manifest = trusted_video_manifest(vault_fixture)
+    source = Path(manifest["source_video_path"])
+    source.unlink()
+    talk = base_talk(
+        status="processed_partial",
+        transcript_source="none",
+        slide_source="video_extracted",
+        structured_data={"video_extraction": manifest},
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "video_extraction_provenance_invalid"
+    )
+    diagnostic = json.dumps(
+        {"message": finding["message"], "actual": finding["actual"]},
+        sort_keys=True,
+    )
+    assert str(source) not in diagnostic
+    assert finding["actual"] == [
+        "source_video_path must name a root-confined, non-symlinked preserved "
+        "source video"
+    ]
+
+
 def test_video_manifest_rejects_symlinked_source_video(
     preflight_vault,
     vault_fixture,

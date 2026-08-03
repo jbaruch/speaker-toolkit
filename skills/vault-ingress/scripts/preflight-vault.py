@@ -1137,10 +1137,10 @@ class VaultPreflight:
                 extraction,
                 state.source_video_id,
             )
-        except PatternEvidenceError as exc:
+        except PatternEvidenceError:
             errors.append(
                 "source_video_path must name a root-confined, non-symlinked "
-                f"preserved source video ({exc})"
+                "preserved source video"
             )
 
         artifacts = extraction.get("artifacts")
