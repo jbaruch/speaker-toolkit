@@ -302,6 +302,206 @@ def _claim(path, *, run_id="run-1", batch_id="batch-1", limit=5, filenames=()):
     return _run(path, *arguments)
 
 
+@pytest.mark.parametrize(
+    "configured_root",
+    (None, "matching"),
+)
+def test_queue_uses_database_parent_as_the_single_vault_authority(
+    tmp_path,
+    configured_root,
+):
+    config = (
+        {"vault_storage_path": str(tmp_path)}
+        if configured_root == "matching"
+        else {"vault_storage_path": None}
+    )
+    path = _write_db(tmp_path, [], config=config)
+
+    result = _run(path, "normalize")
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["normalizations"] == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="directory symlink setup is privileged")
+@pytest.mark.parametrize("configured_identity", ["alias", "physical"])
+def test_queue_compares_symlinked_vault_roots_by_lexical_identity(
+    tmp_path,
+    configured_identity,
+):
+    physical_root = tmp_path / "physical-vault"
+    physical_root.mkdir()
+    alias_root = tmp_path / "alias-vault"
+    alias_root.symlink_to(physical_root, target_is_directory=True)
+    configured_root = (
+        alias_root if configured_identity == "alias" else physical_root
+    )
+    database = _write_db(
+        physical_root,
+        [],
+        config={"vault_storage_path": str(configured_root)},
+    )
+    alias_database = alias_root / database.name
+    before = database.read_bytes()
+
+    result = _run(alias_database, "normalize")
+
+    if configured_identity == "alias":
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["normalizations"] == []
+    else:
+        assert result.returncode == 2
+        assert json.loads(result.stdout)["error"] == (
+            "vault_root_authority_mismatch:database_path:config_root"
+        )
+        assert database.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    ("configured_root", "locator_reason"),
+    (
+        ("", "artifact_locator_empty_or_whitespace"),
+        (" ", "artifact_locator_empty_or_whitespace"),
+        ("relative/credential-bearing-vault", "artifact_root_not_native_absolute"),
+        ("C:vault", "artifact_locator_windows_drive_relative"),
+        (r"\vault", "artifact_locator_windows_current_drive_rooted"),
+        (
+            r"C:\trusted\other\..\vault"
+            if os.name == "nt"
+            else "/trusted/other/../vault",
+            "artifact_locator_dot_segment",
+        ),
+        ("~/credential-bearing-vault", "artifact_locator_home_expansion_unsupported"),
+        (
+            r"\\?\C:\credential-bearing\vault",
+            "artifact_locator_windows_device_namespace",
+        ),
+    ),
+)
+def test_queue_rejects_invalid_configured_root_without_mutation_or_path_leak(
+    tmp_path,
+    configured_root,
+    locator_reason,
+):
+    path = _write_db(
+        tmp_path,
+        [],
+        config={"vault_storage_path": configured_root},
+    )
+    before = path.read_bytes()
+
+    result = _run(path, "normalize")
+
+    assert result.returncode == 2
+    expected = f"vault_root_config_invalid:{locator_reason}"
+    assert json.loads(result.stdout) == {"ok": False, "error": expected}
+    assert result.stderr.strip() == expected
+    assert "credential-bearing" not in result.stdout
+    assert "credential-bearing" not in result.stderr
+    assert path.read_bytes() == before
+
+
+def test_queue_rejects_foreign_configured_root_without_mutation(tmp_path):
+    configured_root = (
+        "/foreign/credential-bearing-vault"
+        if os.name == "nt"
+        else r"C:\foreign\credential-bearing-vault"
+    )
+    path = _write_db(
+        tmp_path,
+        [],
+        config={"vault_storage_path": configured_root},
+    )
+    before = path.read_bytes()
+
+    result = _run(path, "normalize")
+
+    assert result.returncode == 2
+    expected = "vault_root_config_invalid:artifact_locator_foreign_absolute"
+    assert json.loads(result.stdout) == {"ok": False, "error": expected}
+    assert configured_root not in result.stdout
+    assert configured_root not in result.stderr
+    assert path.read_bytes() == before
+
+
+def test_queue_rejects_lexically_different_configured_root(tmp_path):
+    other_root = tmp_path / "other-credential-bearing-vault"
+    path = _write_db(
+        tmp_path,
+        [],
+        config={"vault_storage_path": str(other_root)},
+    )
+    before = path.read_bytes()
+
+    result = _run(path, "normalize")
+
+    assert result.returncode == 2
+    expected = "vault_root_authority_mismatch:database_path:config_root"
+    assert json.loads(result.stdout) == {"ok": False, "error": expected}
+    assert result.stderr.strip() == expected
+    assert str(other_root) not in result.stdout
+    assert str(other_root) not in result.stderr
+    assert path.read_bytes() == before
+
+
+def test_queue_classifies_database_path_before_snapshot(
+    queue_state,
+    monkeypatch,
+    capsys,
+):
+    def forbidden_snapshot(*_args, **_kwargs):
+        raise AssertionError("snapshot must not run for an invalid database authority")
+
+    monkeypatch.setattr(queue_state, "load_database_snapshot", forbidden_snapshot)
+
+    result = queue_state.main(
+        [
+            "relative/credential-bearing/tracking-database.json",
+            "inspect",
+            "--run-id",
+            "run-1",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    expected = "vault_root_database_path_invalid:artifact_root_not_native_absolute"
+    assert result == 2
+    assert json.loads(captured.out) == {"ok": False, "error": expected}
+    assert captured.err.strip() == expected
+    assert "credential-bearing" not in captured.out
+    assert "credential-bearing" not in captured.err
+
+
+def test_invalid_root_stops_before_queue_assessors(
+    tmp_path,
+    queue_state,
+    monkeypatch,
+    capsys,
+):
+    path = _write_db(
+        tmp_path,
+        [],
+        config={"vault_storage_path": "relative/vault"},
+    )
+
+    def forbidden_assessor(*_args, **_kwargs):
+        raise AssertionError("artifact assessor must not run for an invalid root")
+
+    monkeypatch.setattr(
+        queue_state,
+        "artifact_capability_assessor",
+        forbidden_assessor,
+    )
+
+    result = queue_state.main([str(path), "normalize"])
+
+    captured = capsys.readouterr()
+    expected = "vault_root_config_invalid:artifact_root_not_native_absolute"
+    assert result == 2
+    assert json.loads(captured.out) == {"ok": False, "error": expected}
+    assert captured.err.strip() == expected
+
+
 def test_claim_recovers_the_two_stranded_transcript_statuses(tmp_path):
     """The two real vault rows with videos must re-enter the processable queue."""
     talks = [

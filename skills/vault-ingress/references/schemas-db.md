@@ -82,13 +82,24 @@ needed for current pattern-goal verification. Talks v1-v5 remain readable under
 the current root and are promoted only when the talk-domain writer legitimately
 persists that exact talk.
 
+`config.vault_storage_path` is a root assertion, not a redirect. When present
+and non-null it must be a native absolute locator lexically equal to the parent
+of `tracking-database.json`; absent/null uses that database parent. Readers do
+not expand `~`, rebase relative values, translate foreign path flavors, resolve
+symlinks to establish equivalence, or silently repair a mismatch. Empty/blank,
+drive-relative forms such as `C:vault`, current-drive-rooted forms such as
+`\vault`, dot-segment roots, device namespaces, and every other non-native or
+non-absolute value fail closed. Repair an invalid stored assertion with the
+expectation-bound `set_config` dry-run/apply/re-read/preflight sequence in
+[source-identity-preflight.md](source-identity-preflight.md#repair-a-stored-root-assertion).
+
 ```json
 {
   "schema_version": 1,
   "config": {
     "schema_version": 1,
     "vault_root": "~/.claude/rhetoric-knowledge-vault",
-    "vault_storage_path": "/actual/path/if/custom (null when using default location)",
+    "vault_storage_path": "/native/absolute/vault/root (optional; must match the tracking-database parent; null/absent uses that parent)",
     "pptx_source_dir": "/native/absolute/path/to/Presentations (optional; null/absent falls back to the vault root)",
     "python_path": "/path/to/python3",
     "template_skip_patterns": ["template"],

@@ -924,6 +924,292 @@ def test_cli_uses_persisted_stamp_when_return_omits_processed_date(
     assert "**Processed:** 2026-07-27T14:03:22+00:00" in (out / "talk.md").read_text()
 
 
+@pytest.mark.parametrize("config_mode", ["absent", "null", "exact"])
+def test_cli_accepts_database_bound_vault_root_authority(
+    write_analysis,
+    tmp_path,
+    config_mode,
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return()
+    batch.write_text(json.dumps([ret]), encoding="utf-8")
+    db = _write_tracking_db(tmp_path, [ret])
+    database = json.loads(db.read_text(encoding="utf-8"))
+    if config_mode == "null":
+        database["config"]["vault_storage_path"] = None
+    elif config_mode == "exact":
+        database["config"]["vault_storage_path"] = str(tmp_path)
+    db.write_text(json.dumps(database), encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (out / "talk.md").is_file()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="directory symlink setup is privileged",
+)
+@pytest.mark.parametrize("configured_identity", ["alias", "physical"])
+def test_cli_compares_symlinked_vault_roots_by_lexical_identity_before_write(
+    write_analysis,
+    tmp_path,
+    configured_identity,
+):
+    physical_root = tmp_path / "physical-vault"
+    physical_root.mkdir()
+    alias_root = tmp_path / "alias-vault"
+    alias_root.symlink_to(physical_root, target_is_directory=True)
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return()
+    batch.write_text(json.dumps([ret]), encoding="utf-8")
+    db = _write_tracking_db(
+        physical_root,
+        [ret],
+        name="tracking-database.json",
+    )
+    alias_db = alias_root / db.name
+    database = json.loads(db.read_text(encoding="utf-8"))
+    configured_root = (
+        alias_root if configured_identity == "alias" else physical_root
+    )
+    database["config"]["vault_storage_path"] = str(configured_root)
+    db.write_text(json.dumps(database), encoding="utf-8")
+    before = db.read_bytes()
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(alias_db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    if configured_identity == "alias":
+        assert result.returncode == 0, result.stderr
+        assert (out / "talk.md").is_file()
+    else:
+        assert result.returncode == 1
+        assert result.stderr == (
+            "ERROR: vault_root_authority_mismatch:database_path:config_root\n"
+        )
+        assert db.read_bytes() == before
+        assert not out.exists()
+
+
+FOREIGN_ABSOLUTE_VAULT_ROOT = (
+    "/foreign/vault" if sys.platform == "win32" else r"C:\foreign\vault"
+)
+NATIVE_DOT_VAULT_ROOT = (
+    r"C:\trusted\other\..\vault"
+    if sys.platform == "win32"
+    else "/trusted/other/../vault"
+)
+
+
+@pytest.mark.parametrize(
+    ("configured_root", "locator_reason"),
+    [
+        ("", "artifact_locator_empty_or_whitespace"),
+        (" ", "artifact_locator_empty_or_whitespace"),
+        ("relative/vault", "artifact_root_not_native_absolute"),
+        ("C:vault", "artifact_locator_windows_drive_relative"),
+        (r"\vault", "artifact_locator_windows_current_drive_rooted"),
+        (NATIVE_DOT_VAULT_ROOT, "artifact_locator_dot_segment"),
+        ("~/private-vault", "artifact_locator_home_expansion_unsupported"),
+        (FOREIGN_ABSOLUTE_VAULT_ROOT, "artifact_locator_foreign_absolute"),
+        (r"\\?\C:\private-vault", "artifact_locator_windows_device_namespace"),
+    ],
+)
+def test_cli_rejects_invalid_configured_vault_root_before_analysis_write(
+    write_analysis,
+    tmp_path,
+    configured_root,
+    locator_reason,
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return()
+    batch.write_text(json.dumps([ret]), encoding="utf-8")
+    db = _write_tracking_db(tmp_path, [ret])
+    database = json.loads(db.read_text(encoding="utf-8"))
+    database["config"]["vault_storage_path"] = configured_root
+    original = json.dumps(database)
+    db.write_text(original, encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == (
+        f"ERROR: vault_root_config_invalid:{locator_reason}\n"
+    )
+    assert "Traceback" not in result.stderr
+    if configured_root.strip():
+        assert configured_root not in result.stderr
+    assert db.read_text(encoding="utf-8") == original
+    assert not out.exists()
+
+
+def test_cli_rejects_configured_vault_root_authority_mismatch_before_write(
+    write_analysis,
+    tmp_path,
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return()
+    batch.write_text(json.dumps([ret]), encoding="utf-8")
+    db = _write_tracking_db(tmp_path, [ret])
+    database = json.loads(db.read_text(encoding="utf-8"))
+    mismatched_root = tmp_path / "other-vault"
+    database["config"]["vault_storage_path"] = str(mismatched_root)
+    original = json.dumps(database)
+    db.write_text(original, encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == (
+        "ERROR: vault_root_authority_mismatch:database_path:config_root\n"
+    )
+    assert str(mismatched_root) not in result.stderr
+    assert db.read_text(encoding="utf-8") == original
+    assert not out.exists()
+
+
+def test_cli_rejects_relative_database_authority_before_open_or_write(
+    write_analysis,
+    tmp_path,
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return()
+    batch.write_text(json.dumps([ret]), encoding="utf-8")
+    db = _write_tracking_db(tmp_path, [ret])
+    original = db.read_text(encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            db.name,
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == (
+        "ERROR: vault_root_database_path_invalid:"
+        "artifact_root_not_native_absolute\n"
+    )
+    assert db.name not in result.stderr
+    assert db.read_text(encoding="utf-8") == original
+    assert not out.exists()
+
+
+def test_root_authority_rejection_precedes_artifact_and_analysis_boundaries(
+    write_analysis,
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    batch = tmp_path / "batch-returns.json"
+    out = tmp_path / "analyses"
+    ret = _return()
+    batch.write_text(json.dumps([ret]), encoding="utf-8")
+    db = _write_tracking_db(tmp_path, [ret])
+    database = json.loads(db.read_text(encoding="utf-8"))
+    database["config"]["vault_storage_path"] = "~/private-vault"
+    original = json.dumps(database)
+    db.write_text(original, encoding="utf-8")
+    called = []
+
+    def forbidden(name):
+        def invoke(*_args, **_kwargs):
+            called.append(name)
+            raise AssertionError(f"{name} ran after root-authority rejection")
+
+        return invoke
+
+    for name in (
+        "load_json",
+        "validate_batch",
+        "assess_batch_artifact_capabilities",
+        "validate_batch_claims_against_talks",
+        "assess_current_persisted_pattern_evidence_freshness",
+        "atomic_write_batch",
+    ):
+        monkeypatch.setattr(write_analysis, name, forbidden(name))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as caught:
+        write_analysis.main()
+
+    assert caught.value.code == 1
+    assert called == []
+    assert capsys.readouterr().err == (
+        "ERROR: vault_root_config_invalid:"
+        "artifact_locator_home_expansion_unsupported\n"
+    )
+    assert db.read_text(encoding="utf-8") == original
+    assert not out.exists()
+
+
 def test_cli_rejects_noncanonical_persisted_stamp_before_write(
     write_analysis, tmp_path
 ):
@@ -1353,11 +1639,19 @@ def test_cli_uses_titles_from_tracking_db(write_analysis, tmp_path):
 
 def test_cli_fails_visibly_on_return_without_filename(write_analysis, tmp_path):
     batch = tmp_path / "batch-returns.json"
+    db = _write_tracking_db(tmp_path, [_return()])
     ret = _return()
     del ret["filename"]
     batch.write_text(json.dumps([ret]))
     result = subprocess.run(
-        [sys.executable, write_analysis.__file__, str(batch), str(tmp_path / "a")],
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(tmp_path / "a"),
+            "--talks",
+            str(db),
+        ],
         capture_output=True,
         text=True,
     )
@@ -1367,9 +1661,17 @@ def test_cli_fails_visibly_on_return_without_filename(write_analysis, tmp_path):
 
 def test_cli_non_array_batch_is_actionable(write_analysis, tmp_path):
     batch = tmp_path / "batch-returns.json"
+    db = _write_tracking_db(tmp_path, [_return()])
     batch.write_text(json.dumps({"filename": "talk.md"}))
     result = subprocess.run(
-        [sys.executable, write_analysis.__file__, str(batch), str(tmp_path / "a")],
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(tmp_path / "a"),
+            "--talks",
+            str(db),
+        ],
         capture_output=True,
         text=True,
     )
@@ -1486,9 +1788,17 @@ def test_cli_non_object_return_entry_is_actionable(write_analysis, tmp_path):
     """An array of filenames is the plausible operator mistake — it passes the
     is-a-list check and then dies on .get()."""
     batch = tmp_path / "batch-returns.json"
+    db = _write_tracking_db(tmp_path, [_return()])
     batch.write_text(json.dumps(["talk.md", "other.md"]))
     result = subprocess.run(
-        [sys.executable, write_analysis.__file__, str(batch), str(tmp_path / "a")],
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(tmp_path / "a"),
+            "--talks",
+            str(db),
+        ],
         capture_output=True,
         text=True,
     )
@@ -1558,9 +1868,17 @@ def test_return_without_status_is_rejected_before_writing(write_analysis, tmp_pa
     del ret["status"]
     batch = tmp_path / "batch-returns.json"
     out = tmp_path / "analyses"
+    db = _write_tracking_db(tmp_path, [_return()])
     batch.write_text(json.dumps([ret]))
     result = subprocess.run(
-        [sys.executable, write_analysis.__file__, str(batch), str(out)],
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(out),
+            "--talks",
+            str(db),
+        ],
         capture_output=True,
         text=True,
     )
@@ -2568,12 +2886,15 @@ def test_none_valued_structured_fields_are_omitted(write_analysis):
 
 
 def test_cli_missing_input_file_is_actionable(write_analysis, tmp_path):
+    db = _write_tracking_db(tmp_path, [_return()])
     result = subprocess.run(
         [
             sys.executable,
             write_analysis.__file__,
             str(tmp_path / "nope.json"),
             str(tmp_path / "a"),
+            "--talks",
+            str(db),
         ],
         capture_output=True,
         text=True,

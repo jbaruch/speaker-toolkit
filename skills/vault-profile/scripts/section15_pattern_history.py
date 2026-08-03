@@ -68,6 +68,11 @@ from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissin
     decode_json_object,
     snapshot_tracking_database,
 )
+from vault_root_authority import (  # noqa: E402
+    VaultRootAuthorityError,
+    materialize_native_authority,
+    resolve_vault_root_authority,
+)
 
 
 BLOCK_SCHEMA_VERSION = 2
@@ -694,7 +699,7 @@ def _parser() -> argparse.ArgumentParser:
     replace_parser = subparsers.add_parser("replace")
     replace_parser.add_argument("summary", type=Path)
     replace_parser.add_argument("pattern_profile", type=Path)
-    replace_parser.add_argument("tracking_database", type=Path)
+    replace_parser.add_argument("tracking_database")
     return parser
 
 
@@ -708,24 +713,34 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(assessment.as_status_dict(), sort_keys=True))
             return 0 if assessment.current_contract else 1
 
+        tracking_database_path = materialize_native_authority(
+            args.tracking_database,
+            authority="database_path",
+        )
+        tracking_database = _load_tracking_database(tracking_database_path)
+        vault_root = resolve_vault_root_authority(
+            database_path=tracking_database_path,
+            config=tracking_database.get("config"),
+        )
         candidate = _pattern_profile_candidate(_load_json(args.pattern_profile))
-        tracking_database = _load_tracking_database(args.tracking_database)
         result = replace_section15_current_block(
             args.summary,
             candidate,
             tracking_database,
             evidence_freshness_assessor=configured_evidence_freshness_assessor(
-                args.tracking_database.expanduser().resolve().parent,
-                (
-                    tracking_database.get("config")
-                    if isinstance(tracking_database, Mapping)
-                    else None
-                ),
+                vault_root,
+                tracking_database.get("config"),
             ),
         )
         print(json.dumps(result.as_dict(), sort_keys=True))
         return 0
-    except (OSError, UnicodeDecodeError, Section15PatternHistoryError) as exc:
+    except (
+        OSError,
+        UnicodeDecodeError,
+        PatternCohortSnapshotError,
+        Section15PatternHistoryError,
+        VaultRootAuthorityError,
+    ) as exc:
         print(str(exc), file=sys.stderr)
         return 1
 

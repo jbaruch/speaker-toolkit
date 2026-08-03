@@ -2,7 +2,8 @@
 
 `skills/vault-ingress/scripts/preflight-vault.py` is the read-only integrity
 gate before ingress selection or re-analysis. It accepts either the vault root
-or `tracking-database.json`, performs no network access and makes no writes:
+or `tracking-database.json` as a native absolute locator, performs no network
+access and makes no writes:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/preflight-vault.py" \
@@ -14,6 +15,82 @@ report may contain warnings); exit `1` means at least one integrity finding is
 blocking. Invocation errors use argparse's exit `2` and still emit a blocking
 JSON report. A missing, unreadable, malformed, or structurally invalid tracking
 database is itself a blocking integrity finding.
+
+## Trusted vault-root authority
+
+Every ingress reader derives the same artifact root before it assesses,
+caches, persists, or renders evidence. The native absolute parent of
+`tracking-database.json` is the primary authority. When preflight is invoked
+with a vault root, that CLI root must be lexically equal to the database parent.
+`config.vault_storage_path` may be absent or null, in which case the database
+parent is used; every other present value must be a native absolute root and
+must be lexically equal to that parent.
+
+Preflight labels a raw input by its final basename before any `Path`
+materialization or filesystem access. A case-insensitive exact
+`tracking-database.json` basename is a `database_path` authority; every other
+input is a `cli_root` authority. The same lexical decision controls how the
+validated native absolute path is interpreted, so a relative direct database
+locator fails as `vault_root_database_path_invalid` rather than being relabeled
+as a vault directory.
+
+Root comparison is lexical and host-native. It does not expand `~`, rebase a
+relative value from the process cwd, translate a foreign absolute flavor,
+resolve symlinks, stat the filesystem, or infer that two different locators
+reach the same storage. Invalid database, CLI, and config authorities fail with
+closed path-neutral reasons; a disagreement names only the authority pair.
+Repair the invocation/config explicitly before reprocessing. No reader silently
+migrates or rewrites a stored root.
+
+### Repair a stored root assertion
+
+Read the database through its owner command before constructing a repair. For
+example, if that read reports the exact stored value `"C:vault"`, remove the
+invalid assertion and let the database parent remain authoritative with this
+expectation-bound mutation plan:
+
+```json
+{
+  "schema_version": 1,
+  "mutations": [{
+    "kind": "set_config",
+    "path": ["vault_storage_path"],
+    "expect": "C:vault",
+    "delete": true
+  }]
+}
+```
+
+Use the exact decoded value from the owner read in `expect`; JSON null and an
+absent key are different expectations. If the assertion should remain explicit,
+replace `"delete": true` with `"value": "<native-absolute-database-parent>"`.
+That value must be the lexical native parent of `tracking-database.json`, not a
+symlink-resolved alias.
+
+Run the plan as a dry run, review its `changes`, then bind apply to the dry
+run's exact `input_sha256`:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/read-tracking-database.py" \
+  "{vault_root}/tracking-database.json"
+
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/mutate-tracking-database.py" \
+  "{vault_root}/tracking-database.json" vault-root-repair-plan.json
+
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/mutate-tracking-database.py" \
+  "{vault_root}/tracking-database.json" vault-root-repair-plan.json \
+  --apply --expected-sha256 "<input_sha256-from-dry-run>"
+
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/read-tracking-database.py" \
+  "{vault_root}/tracking-database.json"
+
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/preflight-vault.py" \
+  "{vault_root}"
+```
+
+The second owner read must show the applied generation. Preflight must then
+report no trusted-root blocking finding before queue normalization, claiming,
+persistence, analysis rendering, or profile generation resumes.
 
 Use `scripts/apply-source-repairs.py` for catalog metadata fixes. Its plan
 requires an exact `expect` map for every record, permits only source/queue
@@ -81,6 +158,28 @@ All finding keys are always present. Findings and `summary.by_code` are sorted,
 so the same filesystem state produces byte-for-byte equivalent decoded data.
 Paths are absolute. Consumers route on `severity` and `code`, never on message
 text.
+
+`database` and `vault_root` are nullable authority fields. When raw database or
+CLI input is rejected before admission, both are null, `talk_count` is zero,
+and the report contains one path-neutral blocking finding. Once the direct
+input is admitted, they remain its lexical native absolute database/root paths,
+including when a later configured-root mismatch blocks the run.
+
+Trusted-root findings use this closed reason family:
+
+| Code | Field | Safe `actual` detail |
+|---|---|---|
+| `vault_root_database_path_invalid` | `database.path` | `reason_code` plus closed `locator_reason_code` |
+| `vault_root_cli_invalid` | `cli.vault_root` | `reason_code` plus closed `locator_reason_code` |
+| `vault_root_config_invalid` | `config.vault_storage_path` | `reason_code` plus closed `locator_reason_code` |
+| `vault_root_authority_mismatch` | disagreeing CLI/config field | `reason_code` plus `authorities` (`database_path` and `cli_root` or `config_root`) |
+
+These findings never echo a rejected locator. Empty/blank, relative,
+drive-relative (`C:vault`), current-drive-rooted (`\vault`), dot-segment,
+home-relative, foreign-absolute, and device-namespace config values all route
+through the config-invalid family. Lexically different symlink aliases remain
+different authorities even when the filesystem would resolve them to one
+directory.
 
 ## Recorded source identity (v1)
 

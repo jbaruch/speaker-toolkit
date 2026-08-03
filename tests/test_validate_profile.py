@@ -8,6 +8,7 @@ optional/additive and not part of REQUIRED_KEYS.
 import hashlib
 import importlib
 import json
+import os
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -18,6 +19,30 @@ from pptx import Presentation
 CATALOG = "c" * 64
 OTHER_CATALOG = "d" * 64
 AS_OF = "2026-07-31T13:30:45.987654-05:00"
+
+
+def foreign_absolute_locator(name: str) -> str:
+    if os.name == "nt":
+        return f"/foreign/{name}"
+    return rf"C:\foreign\{name}"
+
+
+DOT_SEGMENT_VAULT_ROOT = (
+    r"C:\trusted\other\..\vault"
+    if os.name == "nt"
+    else "/trusted/other/../vault"
+)
+INVALID_VAULT_ROOT_LOCATORS = (
+    ("", "artifact_locator_empty_or_whitespace"),
+    ("   ", "artifact_locator_empty_or_whitespace"),
+    ("relative-vault", "artifact_root_not_native_absolute"),
+    ("C:vault", "artifact_locator_windows_drive_relative"),
+    ("~/vault", "artifact_locator_home_expansion_unsupported"),
+    (foreign_absolute_locator("vault"), "artifact_locator_foreign_absolute"),
+    (r"\\?\C:\vault", "artifact_locator_windows_device_namespace"),
+    (r"\vault", "artifact_locator_windows_current_drive_rooted"),
+    (DOT_SEGMENT_VAULT_ROOT, "artifact_locator_dot_segment"),
+)
 
 
 def _catalog_projection(source: str | None = "transcript"):
@@ -833,7 +858,7 @@ def test_load_vault_passes_configured_source_roots_to_freshness_assessor(
     assert payload["pattern_scoring_exclusions"] == []
 
 
-def test_load_vault_uses_configured_vault_storage_root_for_freshness(
+def test_load_vault_rejects_mismatched_vault_storage_root_before_freshness(
     load_vault,
     tmp_path,
     monkeypatch,
@@ -900,14 +925,446 @@ def test_load_vault_uses_configured_vault_storage_root_for_freshness(
         [talk],
         config={"vault_storage_path": str(evidence_root)},
     )
+    cohort_snapshot = importlib.import_module("pattern_cohort_snapshot")
+    monkeypatch.setattr(
+        cohort_snapshot,
+        "assess_current_persisted_pattern_evidence_freshness",
+        lambda *_args, **_kwargs: pytest.fail(
+            "mismatched root reached the evidence freshness assessor"
+        ),
+    )
 
     rc, payload, error = _run_load_vault(load_vault, database_root, monkeypatch, capsys)
 
-    assert rc == 0
-    assert error == ""
-    assert [talk["filename"] for talk in payload["baseline_talks"]] == [
-        "configured-vault.md"
-    ], json.dumps(payload["pattern_scoring_exclusions"], indent=2)
+    assert rc == 1
+    assert payload is None
+    assert "vault_root_authority_mismatch:database_path:config_root" in error
+    assert str(evidence_root) not in error
+
+
+def test_load_vault_default_is_an_already_native_absolute_path(load_vault):
+    vault_root, as_of = load_vault._parse_args(["load-vault.py"])
+
+    assert as_of is None
+    assert vault_root == load_vault.DEFAULT_VAULT
+    assert vault_root.is_absolute()
+    assert "~" not in str(vault_root)
+
+
+@pytest.mark.parametrize(
+    ("cli_root", "locator_reason"),
+    INVALID_VAULT_ROOT_LOCATORS,
+)
+def test_load_vault_rejects_invalid_explicit_root_before_any_vault_io(
+    load_vault,
+    monkeypatch,
+    capsys,
+    cli_root,
+    locator_reason,
+):
+    io_calls = []
+
+    def forbidden_io(*_args, **_kwargs):
+        io_calls.append("vault_io")
+        pytest.fail("invalid CLI root reached vault I/O")
+
+    monkeypatch.setattr(load_vault.pathlib.Path, "exists", forbidden_io)
+    monkeypatch.setattr(load_vault, "snapshot_tracking_database", forbidden_io)
+
+    rc = load_vault.main(["load-vault.py", cli_root])
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert captured.out == ""
+    assert (
+        f"vault_root_cli_invalid:{locator_reason}" in captured.err
+    )
+    assert io_calls == []
+    if cli_root.strip():
+        assert cli_root not in captured.err
+
+
+@pytest.mark.parametrize(
+    ("configured_root", "locator_reason"),
+    INVALID_VAULT_ROOT_LOCATORS,
+)
+def test_load_vault_rejects_invalid_config_before_summary_or_freshness_io(
+    load_vault,
+    tmp_path,
+    monkeypatch,
+    capsys,
+    configured_root,
+    locator_reason,
+):
+    (tmp_path / "tracking-database.json").write_text(
+        json.dumps(
+            {
+                "config": {"vault_storage_path": configured_root},
+                "talks": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        load_vault,
+        "configured_evidence_freshness_assessor",
+        lambda *_args, **_kwargs: pytest.fail(
+            "invalid configured root reached freshness assessment"
+        ),
+    )
+
+    rc = load_vault.main(["load-vault.py", str(tmp_path), "--as-of", AS_OF])
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert captured.out == ""
+    assert not (tmp_path / "rhetoric-style-summary.md").exists()
+    assert (
+        f"vault_root_config_invalid:{locator_reason}" in captured.err
+    )
+    if configured_root.strip():
+        assert configured_root not in captured.err
+
+
+def _directory_symlink(link, target):
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory policy does not permit symlink creation")
+
+
+def test_load_vault_accepts_one_matching_lexical_symlink_authority(
+    load_vault,
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    storage = tmp_path / "storage"
+    storage.mkdir()
+    locator = tmp_path / "vault-alias"
+    _directory_symlink(locator, storage)
+    _write_vault(storage, [], config={"vault_storage_path": str(locator)})
+
+    rc, payload, error = _run_load_vault(
+        load_vault,
+        locator,
+        monkeypatch,
+        capsys,
+    )
+
+    assert rc == 0, error
+    assert payload["vault_root"] == str(locator)
+
+
+def test_load_vault_rejects_symlink_target_and_locator_authority_mismatch(
+    load_vault,
+    tmp_path,
+    capsys,
+):
+    storage = tmp_path / "credential-bearing-storage"
+    storage.mkdir()
+    locator = tmp_path / "credential-bearing-alias"
+    _directory_symlink(locator, storage)
+    (storage / "tracking-database.json").write_text(
+        json.dumps(
+            {
+                "config": {"vault_storage_path": str(storage)},
+                "talks": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rc = load_vault.main(["load-vault.py", str(locator), "--as-of", AS_OF])
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert captured.out == ""
+    assert (
+        "vault_root_authority_mismatch:database_path:config_root"
+        in captured.err
+    )
+    assert str(storage) not in captured.err
+    assert str(locator) not in captured.err
+
+
+@pytest.mark.parametrize(
+    ("configured_root", "locator_reason"),
+    INVALID_VAULT_ROOT_LOCATORS,
+)
+def test_profile_cohort_rejects_invalid_configured_vault_before_freshness(
+    validate_profile,
+    tmp_path,
+    monkeypatch,
+    configured_root,
+    locator_reason,
+):
+    del validate_profile
+    cohort_snapshot = importlib.import_module("pattern_cohort_snapshot")
+    monkeypatch.setattr(
+        cohort_snapshot,
+        "assess_current_persisted_pattern_evidence_freshness",
+        lambda *_args, **_kwargs: pytest.fail(
+            "invalid root reached the evidence freshness assessor"
+        ),
+    )
+
+    with pytest.raises(cohort_snapshot.PatternCohortSnapshotError) as caught:
+        cohort_snapshot.configured_evidence_freshness_assessor(
+            tmp_path,
+            {"vault_storage_path": configured_root},
+        )
+
+    assert str(caught.value) == f"vault_root_config_invalid:{locator_reason}"
+    if configured_root.strip():
+        assert configured_root not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "config_factory",
+    [
+        lambda _root: {},
+        lambda _root: {"vault_storage_path": None},
+        lambda root: {"vault_storage_path": str(root)},
+    ],
+    ids=["absent", "null", "matching"],
+)
+def test_profile_cohort_uses_database_root_for_every_valid_authority_form(
+    validate_profile,
+    tmp_path,
+    monkeypatch,
+    config_factory,
+):
+    del validate_profile
+    cohort_snapshot = importlib.import_module("pattern_cohort_snapshot")
+    observed = []
+
+    def assess(_talk, **kwargs):
+        observed.append(kwargs)
+        return ()
+
+    monkeypatch.setattr(
+        cohort_snapshot,
+        "assess_current_persisted_pattern_evidence_freshness",
+        assess,
+    )
+    config = config_factory(tmp_path)
+
+    assessor = cohort_snapshot.configured_evidence_freshness_assessor(
+        tmp_path,
+        config,
+    )
+
+    assert assessor({}) == ()
+    assert observed == [
+        {
+            "vault_root": tmp_path,
+            "source_roots": config,
+            "catalog": None,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("cli_root", "locator_reason"),
+    INVALID_VAULT_ROOT_LOCATORS,
+)
+def test_validate_profile_rejects_invalid_cli_root_before_profile_or_database_io(
+    validate_profile,
+    monkeypatch,
+    capsys,
+    cli_root,
+    locator_reason,
+):
+    io_calls = []
+
+    def forbidden_io(*_args, **_kwargs):
+        io_calls.append("profile_or_database_io")
+        pytest.fail("invalid CLI root reached profile or database I/O")
+
+    monkeypatch.setattr(validate_profile, "_load_input", forbidden_io)
+    monkeypatch.setattr(validate_profile, "snapshot_tracking_database", forbidden_io)
+
+    rc = validate_profile.main(
+        ["validate-profile.py", "--vault-root", cli_root]
+    )
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert io_calls == []
+    assert f"vault_root_cli_invalid:{locator_reason}" in captured.err
+    if cli_root.strip():
+        assert cli_root not in captured.err
+
+
+@pytest.mark.parametrize(
+    ("configured_root", "locator_reason"),
+    INVALID_VAULT_ROOT_LOCATORS,
+)
+def test_validate_profile_rejects_invalid_config_before_freshness(
+    validate_profile,
+    tmp_path,
+    monkeypatch,
+    capsys,
+    configured_root,
+    locator_reason,
+):
+    profile = _minimal_profile(validate_profile)
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+    (tmp_path / "tracking-database.json").write_text(
+        json.dumps(
+            {
+                "config": {"vault_storage_path": configured_root},
+                "talks": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        validate_profile,
+        "configured_evidence_freshness_assessor",
+        lambda *_args, **_kwargs: pytest.fail(
+            "invalid configured root reached freshness assessment"
+        ),
+    )
+
+    rc = validate_profile.main(
+        [
+            "validate-profile.py",
+            str(profile_path),
+            "--vault-root",
+            str(tmp_path),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert f"vault_root_config_invalid:{locator_reason}" in captured.err
+    if configured_root.strip():
+        assert configured_root not in captured.err
+
+
+def test_validate_profile_accepts_matching_symlink_lexical_authority(
+    validate_profile,
+    tmp_path,
+    capsys,
+):
+    storage = tmp_path / "storage"
+    storage.mkdir()
+    locator = tmp_path / "vault-alias"
+    _directory_symlink(locator, storage)
+    profile = _minimal_profile(validate_profile)
+    profile_path = storage / "profile.json"
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+    (storage / "tracking-database.json").write_text(
+        json.dumps(
+            {
+                "config": {"vault_storage_path": str(locator)},
+                "talks": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rc = validate_profile.main(
+        [
+            "validate-profile.py",
+            str(profile_path),
+            "--vault-root",
+            str(locator),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert rc == 0, captured.err
+    assert json.loads(captured.out)["valid"] is True
+
+
+def test_validate_profile_rejects_symlink_target_locator_mismatch_without_paths(
+    validate_profile,
+    tmp_path,
+    capsys,
+):
+    storage = tmp_path / "credential-bearing-storage"
+    storage.mkdir()
+    locator = tmp_path / "credential-bearing-alias"
+    _directory_symlink(locator, storage)
+    profile_path = storage / "profile.json"
+    profile_path.write_text(
+        json.dumps(_minimal_profile(validate_profile)),
+        encoding="utf-8",
+    )
+    (storage / "tracking-database.json").write_text(
+        json.dumps(
+            {
+                "config": {"vault_storage_path": str(storage)},
+                "talks": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rc = validate_profile.main(
+        [
+            "validate-profile.py",
+            str(profile_path),
+            "--vault-root",
+            str(locator),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert (
+        "vault_root_authority_mismatch:database_path:config_root"
+        in captured.err
+    )
+    assert str(storage) not in captured.err
+    assert str(locator) not in captured.err
+
+
+def test_validate_profile_catches_cohort_authority_error_without_raw_root_prefix(
+    validate_profile,
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(
+        json.dumps(_minimal_profile(validate_profile)),
+        encoding="utf-8",
+    )
+    (tmp_path / "tracking-database.json").write_text(
+        json.dumps({"config": {}, "talks": []}),
+        encoding="utf-8",
+    )
+
+    def fail_cohort(*_args, **_kwargs):
+        raise validate_profile.PatternCohortSnapshotError(
+            "vault_root_config_invalid:artifact_locator_dot_segment"
+        )
+
+    monkeypatch.setattr(
+        validate_profile,
+        "configured_evidence_freshness_assessor",
+        fail_cohort,
+    )
+
+    rc = validate_profile.main(
+        [
+            "validate-profile.py",
+            str(profile_path),
+            "--vault-root",
+            str(tmp_path),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert "vault_root_config_invalid:artifact_locator_dot_segment" in captured.err
+    assert str(tmp_path) not in captured.err
+    assert "Traceback" not in captured.err
 
 
 def test_default_as_of_uses_injected_time_and_canonical_whole_seconds(load_vault):

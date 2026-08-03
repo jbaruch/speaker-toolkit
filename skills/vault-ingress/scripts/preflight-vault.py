@@ -69,6 +69,11 @@ from tracking_database_io import (
     decode_json_object,
     snapshot_tracking_database,
 )
+from vault_root_authority import (
+    VaultRootAuthorityError,
+    materialize_native_authority,
+    resolve_vault_root_authority,
+)
 
 
 REPORT_SCHEMA_VERSION = 1
@@ -101,6 +106,42 @@ SLIDE_CONTRACT_CODES = frozenset(
 )
 
 WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
+
+
+def _vault_root_authority_finding(
+    error: VaultRootAuthorityError,
+) -> dict[str, Any]:
+    """Build one closed, path-neutral authority finding."""
+    actual: dict[str, object] = {"reason_code": error.reason_code}
+    if error.locator_reason_code is not None:
+        actual["locator_reason_code"] = error.locator_reason_code
+    authorities = getattr(error, "authorities", ())
+    if authorities:
+        actual["authorities"] = list(authorities)
+    if error.reason_code == "vault_root_authority_mismatch":
+        field = (
+            "cli.vault_root"
+            if authorities == ("database_path", "cli_root")
+            else "config.vault_storage_path"
+        )
+    else:
+        field = {
+            "vault_root_cli_invalid": "cli.vault_root",
+            "vault_root_database_path_invalid": "database.path",
+            "vault_root_config_invalid": "config.vault_storage_path",
+        }[error.reason_code]
+    return {
+        "severity": "blocking",
+        "code": error.reason_code,
+        "talk_index": None,
+        "filename": None,
+        "field": field,
+        "message": str(error),
+        "expected": "one lexically identical native absolute vault root",
+        "actual": actual,
+        "artifact_path": None,
+        "capability_fact": None,
+    }
 
 
 def _reportable_artifact_path(value: Path | str | None) -> str | None:
@@ -152,8 +193,8 @@ class VaultPreflight:
 
     def __init__(self, database: Any, vault_root: Path, database_path: Path):
         self.database = database
-        self.vault_root = Path(os.path.abspath(os.fspath(vault_root)))
-        self.database_path = Path(os.path.abspath(os.fspath(database_path)))
+        self.vault_root = Path(vault_root)
+        self.database_path = Path(database_path)
         self.findings: list[dict[str, Any]] = []
         self.talks: list[dict[str, Any]] = []
         self.source_indexes: list[int] = []
@@ -256,6 +297,16 @@ class VaultPreflight:
                 return self.report(0)
 
         config = self.database.get("config", {})
+        try:
+            self.vault_root = resolve_vault_root_authority(
+                database_path=self.database_path,
+                config=config,
+                cli_vault_root=self.vault_root,
+            )
+        except VaultRootAuthorityError as exc:
+            self._add_vault_root_authority_error(exc)
+            return self.report(0)
+
         if isinstance(config, dict):
             self.config = config
             self._validate_config_artifact_roots()
@@ -309,6 +360,13 @@ class VaultPreflight:
         self._validate_relations()
         self._validate_duplicate_youtube_ids()
         return self.report(len(talks))
+
+    def _add_vault_root_authority_error(
+        self,
+        error: VaultRootAuthorityError,
+    ) -> None:
+        """Record one path-neutral authority failure before artifact checks."""
+        self.findings.append(_vault_root_authority_finding(error))
 
     def _validate_config_artifact_roots(self) -> None:
         """Report each invalid configured source root once, even without talks."""
@@ -1943,14 +2001,32 @@ def relation_from(talk: dict[str, Any]) -> tuple[Any, Any] | None:
     return None
 
 
+def _is_direct_database_locator(value: object) -> bool:
+    """Recognize the raw final basename without materializing or probing it."""
+    if not isinstance(value, (str, os.PathLike)):
+        return False
+    try:
+        raw = os.fspath(value)
+    except TypeError:
+        return False
+    if not isinstance(raw, str):
+        return False
+    final_separator = max(raw.rfind("/"), raw.rfind("\\"))
+    return raw[final_separator + 1 :].casefold() == "tracking-database.json"
+
+
 def resolve_input(value: str | Path) -> tuple[Path, Path]:
     """Bind a vault root to its canonical database without filesystem probes.
 
     Only a case-insensitive ``tracking-database.json`` basename is a direct
     database locator; every other value is the vault root.
     """
-    path = Path(value).expanduser()
-    if path.name.casefold() != "tracking-database.json":
+    is_database = _is_direct_database_locator(value)
+    path = materialize_native_authority(
+        value,
+        authority="database_path" if is_database else "cli_root",
+    )
+    if not is_database:
         return path, path / "tracking-database.json"
     return path.parent, path
 
@@ -1963,9 +2039,33 @@ def error_report(
     return validator.report(0)
 
 
+def vault_root_authority_error_report(
+    error: VaultRootAuthorityError,
+) -> dict[str, Any]:
+    """Return one path-neutral report when no input root was admitted."""
+    finding = _vault_root_authority_finding(error)
+    return {
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "ok": False,
+        "database": None,
+        "vault_root": None,
+        "talk_count": 0,
+        "blocking_count": 1,
+        "warning_count": 0,
+        "summary": {
+            "by_severity": {"blocking": 1, "warning": 0},
+            "by_code": {error.reason_code: 1},
+        },
+        "findings": [finding],
+    }
+
+
 def run_preflight(value: str | Path) -> dict[str, Any]:
     """Load and validate a vault, returning a report without mutating it."""
-    vault_root, database_path = resolve_input(value)
+    try:
+        vault_root, database_path = resolve_input(value)
+    except VaultRootAuthorityError as exc:
+        return vault_root_authority_error_report(exc)
     try:
         snapshot = snapshot_tracking_database(database_path)
         database = decode_json_object(snapshot)

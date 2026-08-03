@@ -97,6 +97,11 @@ from tracking_database_io import (
     decode_json_object,
     snapshot_tracking_database,
 )
+from vault_root_authority import (
+    VaultRootAuthorityError,
+    materialize_native_authority,
+    resolve_vault_root_authority,
+)
 
 # structured_data keys rendered as their own table rather than inline, because
 # they are per-slide row collections and read as noise in a bullet list.
@@ -1085,13 +1090,6 @@ def parse_args(argv):
 def main():
     batch_path, out_dir, run_date, talks_path = parse_args(sys.argv[1:])
 
-    returns = load_json(batch_path, "batch-returns")
-    try:
-        catalog = validate_batch(returns)
-    except ReturnValidationError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        sys.exit(1)
-
     if not talks_path:
         print(
             "ERROR: --talks <tracking-database.json> is required so queue "
@@ -1099,6 +1097,17 @@ def main():
             file=sys.stderr,
         )
         sys.exit(1)
+    try:
+        talks_path = str(
+            materialize_native_authority(
+                talks_path,
+                authority="database_path",
+            )
+        )
+    except VaultRootAuthorityError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+
     db = load_tracking_database(talks_path)
     if not isinstance(db.get("talks"), list):
         print(
@@ -1112,12 +1121,20 @@ def main():
     source_roots: dict[str, object] = (
         copy.deepcopy(raw_config) if isinstance(raw_config, dict) else {}
     )
-    configured_vault = source_roots.get("vault_storage_path")
-    vault_root = (
-        os.path.abspath(os.path.expanduser(configured_vault))
-        if isinstance(configured_vault, str) and configured_vault.strip()
-        else os.path.dirname(os.path.abspath(talks_path))
-    )
+    try:
+        vault_root = resolve_vault_root_authority(
+            database_path=talks_path,
+            config=source_roots,
+        )
+    except VaultRootAuthorityError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+    returns = load_json(batch_path, "batch-returns")
+    try:
+        catalog = validate_batch(returns)
+    except ReturnValidationError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
     artifact_capabilities_by_filename = assess_batch_artifact_capabilities(
         db["talks"],
         {

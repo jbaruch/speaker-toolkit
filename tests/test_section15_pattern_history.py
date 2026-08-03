@@ -30,6 +30,28 @@ adherence_baseline = importlib.import_module("adherence_baseline")
 transcript_timing = importlib.import_module("transcript_timing")
 
 
+def _foreign_absolute_vault_root() -> str:
+    return "/foreign/vault" if sys.platform == "win32" else r"C:\foreign\vault"
+
+
+DOT_SEGMENT_VAULT_ROOT = (
+    r"C:\trusted\other\..\vault"
+    if sys.platform == "win32"
+    else "/trusted/other/../vault"
+)
+INVALID_VAULT_ROOT_LOCATORS = (
+    ("", "artifact_locator_empty_or_whitespace"),
+    ("   ", "artifact_locator_empty_or_whitespace"),
+    ("relative-vault", "artifact_root_not_native_absolute"),
+    ("C:vault", "artifact_locator_windows_drive_relative"),
+    ("~/vault", "artifact_locator_home_expansion_unsupported"),
+    (_foreign_absolute_vault_root(), "artifact_locator_foreign_absolute"),
+    (r"\\?\C:\vault", "artifact_locator_windows_device_namespace"),
+    (r"\vault", "artifact_locator_windows_current_drive_rooted"),
+    (DOT_SEGMENT_VAULT_ROOT, "artifact_locator_dot_segment"),
+)
+
+
 def _fresh_evidence(_talk: object) -> tuple[str, ...]:
     return ()
 
@@ -714,6 +736,261 @@ def test_section15_replace_cli_binds_real_vault_freshness(
     assert return_code == 0
     assert payload["changed"] is True
     assert section15.BLOCK_START in summary_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("database_locator", "locator_reason"),
+    INVALID_VAULT_ROOT_LOCATORS,
+)
+def test_replace_cli_rejects_invalid_database_locator_before_any_input_io(
+    tmp_path,
+    monkeypatch,
+    capsys,
+    database_locator,
+    locator_reason,
+):
+    input_calls = []
+
+    def forbidden_input(*_args, **_kwargs):
+        input_calls.append("input_io")
+        pytest.fail("invalid tracking-database locator reached input I/O")
+
+    monkeypatch.setattr(section15, "_load_json", forbidden_input)
+    monkeypatch.setattr(section15, "_load_tracking_database", forbidden_input)
+
+    return_code = section15.main(
+        [
+            "replace",
+            str(tmp_path / "missing-summary.md"),
+            str(tmp_path / "missing-profile.json"),
+            database_locator,
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert return_code == 1
+    assert captured.out == ""
+    assert input_calls == []
+    assert (
+        f"vault_root_database_path_invalid:{locator_reason}" in captured.err
+    )
+    if database_locator.strip():
+        assert database_locator not in captured.err
+
+
+@pytest.mark.parametrize(
+    ("configured_root", "locator_reason"),
+    INVALID_VAULT_ROOT_LOCATORS,
+)
+def test_replace_cli_rejects_invalid_config_before_freshness_or_summary_io(
+    tmp_path,
+    monkeypatch,
+    capsys,
+    configured_root,
+    locator_reason,
+):
+    profile_path = tmp_path / "pattern-profile.json"
+    profile_path.write_text(json.dumps(_pattern_profile()), encoding="utf-8")
+    database_path = tmp_path / "tracking-database.json"
+    database_path.write_text(
+        json.dumps(
+            {
+                "config": {"vault_storage_path": configured_root},
+                "talks": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    summary_path = tmp_path / "missing-summary.md"
+    monkeypatch.setattr(
+        section15,
+        "_load_json",
+        lambda *_args, **_kwargs: pytest.fail(
+            "invalid configured root reached profile input I/O"
+        ),
+    )
+    monkeypatch.setattr(
+        section15,
+        "configured_evidence_freshness_assessor",
+        lambda *_args, **_kwargs: pytest.fail(
+            "invalid configured root reached freshness assessment"
+        ),
+    )
+
+    return_code = section15.main(
+        [
+            "replace",
+            str(summary_path),
+            str(profile_path),
+            str(database_path),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert return_code == 1
+    assert captured.out == ""
+    assert not summary_path.exists()
+    assert f"vault_root_config_invalid:{locator_reason}" in captured.err
+    if configured_root.strip():
+        assert configured_root not in captured.err
+
+
+def _section15_directory_symlink(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory policy does not permit symlink creation")
+
+
+def test_replace_cli_accepts_matching_symlink_lexical_authority(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    storage = tmp_path / "storage"
+    storage.mkdir()
+    locator = tmp_path / "vault-alias"
+    _section15_directory_symlink(locator, storage)
+    profile_path = tmp_path / "pattern-profile.json"
+    profile_path.write_text("{}", encoding="utf-8")
+    database_path = storage / "tracking-database.json"
+    database_path.write_text(
+        json.dumps(
+            {
+                "config": {"vault_storage_path": str(locator)},
+                "talks": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    observed = {}
+
+    def capture_freshness(vault_root, config):
+        observed.update(vault_root=vault_root, config=config)
+        return _fresh_evidence
+
+    monkeypatch.setattr(
+        section15,
+        "configured_evidence_freshness_assessor",
+        capture_freshness,
+    )
+    monkeypatch.setattr(
+        section15,
+        "replace_section15_current_block",
+        lambda summary, *_args, **_kwargs: section15.Section15WriteResult(
+            path=str(summary),
+            changed=False,
+            scored_talk_count=0,
+            eligible_talk_count=0,
+            catalog_fields_available=True,
+        ),
+    )
+
+    return_code = section15.main(
+        [
+            "replace",
+            str(tmp_path / "unused-summary.md"),
+            str(profile_path),
+            str(locator / "tracking-database.json"),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert return_code == 0, captured.err
+    assert observed == {
+        "vault_root": locator,
+        "config": {"vault_storage_path": str(locator)},
+    }
+
+
+def test_replace_cli_rejects_symlink_target_locator_mismatch_without_paths(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    storage = tmp_path / "credential-bearing-storage"
+    storage.mkdir()
+    locator = tmp_path / "credential-bearing-alias"
+    _section15_directory_symlink(locator, storage)
+    profile_path = tmp_path / "pattern-profile.json"
+    profile_path.write_text("{}", encoding="utf-8")
+    database_path = storage / "tracking-database.json"
+    database_path.write_text(
+        json.dumps(
+            {
+                "config": {"vault_storage_path": str(storage)},
+                "talks": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        section15,
+        "configured_evidence_freshness_assessor",
+        lambda *_args, **_kwargs: pytest.fail(
+            "mismatched root reached freshness assessment"
+        ),
+    )
+
+    return_code = section15.main(
+        [
+            "replace",
+            str(tmp_path / "missing-summary.md"),
+            str(profile_path),
+            str(locator / "tracking-database.json"),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert return_code == 1
+    assert captured.out == ""
+    assert (
+        "vault_root_authority_mismatch:database_path:config_root"
+        in captured.err
+    )
+    assert str(storage) not in captured.err
+    assert str(locator) not in captured.err
+
+
+def test_replace_cli_catches_freshness_authority_error_without_traceback(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    profile_path = tmp_path / "pattern-profile.json"
+    profile_path.write_text("{}", encoding="utf-8")
+    database_path = tmp_path / "tracking-database.json"
+    database_path.write_text(
+        json.dumps({"config": {}, "talks": []}),
+        encoding="utf-8",
+    )
+
+    def fail_freshness(*_args, **_kwargs):
+        raise section15.PatternCohortSnapshotError(
+            "vault_root_config_invalid:artifact_locator_dot_segment"
+        )
+
+    monkeypatch.setattr(
+        section15,
+        "configured_evidence_freshness_assessor",
+        fail_freshness,
+    )
+
+    return_code = section15.main(
+        [
+            "replace",
+            str(tmp_path / "missing-summary.md"),
+            str(profile_path),
+            str(database_path),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert return_code == 1
+    assert captured.out == ""
+    assert "vault_root_config_invalid:artifact_locator_dot_segment" in captured.err
+    assert str(tmp_path) not in captured.err
+    assert "Traceback" not in captured.err
 
 
 def test_replace_cli_gates_future_database_before_config_path_semantics(

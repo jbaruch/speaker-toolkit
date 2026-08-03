@@ -1,5 +1,24 @@
 # Changelog
 
+### fix(vault-ingress) — unify trusted vault-root authority (#212)
+
+Queue selection, persistence, analysis rendering, preflight, and profile cohort
+freshness now use one stdlib-only vault-root authority resolver. The native
+absolute parent of `tracking-database.json` is primary; a supplied CLI vault
+root and a present `config.vault_storage_path` must be lexically equal to it.
+An absent or null configured root falls back to the database parent. Empty,
+relative, home-expanded, foreign, device, and ambient-drive forms fail closed
+before artifact assessment, freshness caching, persistence, rendering, or
+preflight artifact I/O.
+
+The resolver performs no `expanduser`, cwd rebasing, symlink resolution, stat,
+or equivalence-by-filesystem lookup. It reports only closed, path-neutral
+database/CLI/config authority reasons. Existing mismatched or noncanonical
+configuration requires explicit operator repair; no database migration or
+stored-root rewrite is performed. The ingress references now document the
+expectation-bound `set_config` dry-run/apply/re-read/preflight sequence for
+removing or replacing an invalid stored assertion.
+
 ## 0.20.7 — 2026-08-03
 
 ### fix(vault-ingress) — validate video owner identity before output derivation (#214)
