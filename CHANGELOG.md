@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.6 — 2026-08-03
+
 ### fix(vault-ingress) — supervise exact-generation PDF evidence (#183)
 
 Static-slide PDFs now use a dedicated authenticated metadata/probe worker with
