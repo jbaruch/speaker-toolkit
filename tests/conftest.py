@@ -84,6 +84,11 @@ def pptx_extraction():
 
 
 @pytest.fixture(scope="session")
+def pptx_evidence():
+    return _import_script(os.path.join(SCRIPTS_VI, "pptx_evidence.py"), "pptx_evidence")
+
+
+@pytest.fixture(scope="session")
 def vtt_cleanup():
     return _import_script(os.path.join(SCRIPTS_VI, "vtt-cleanup.py"), "vtt_cleanup")
 

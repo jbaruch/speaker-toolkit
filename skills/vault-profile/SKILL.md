@@ -159,7 +159,7 @@ this extraction but must not be replaced with another interpreter:
 - Exit non-zero with stderr message if the file is missing, unreadable, or not a valid `.pptx`.
 
 Check the extraction root's `schema_version` before reading layouts. This
-layout-only consumer accepts v1 and v2 for `template_layouts` only.
+layout-only consumer accepts v1, v2, and v3 for `template_layouts` only.
 Missing/legacy v0 or an unknown future version is not
 usable prior output: rerun the current extractor and read that result. Do not
 interpret a v1 record as carrying zero timing; it carries no timing contract.

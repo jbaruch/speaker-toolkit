@@ -1,5 +1,38 @@
 # Changelog
 
+### fix(vault-ingress) — make damaged native-deck evidence fail closed (#151)
+
+PPTX extraction schema v3 validates every archive member and reports bad-CRC
+embedded media through a closed `archive_recovery` record. Recovery replaces
+only the damaged media in memory so healthy structure remains inspectable;
+malformed containers and damaged XML, relationships, or other structural parts
+remain unavailable with an actionable error. The source deck is never rewritten.
+
+The shared capability probe now uses the same recovery contract as extraction,
+so offline preflight reports `slide_pptx_artifact_degraded` or
+`slide_pptx_artifact_unreadable` instead of leaking `BadZipFile`. A required
+`pptx`/`both` source with placeholder recovery cannot receive a fresh claim or
+persist current analysis. An unused optional degraded deck beside an independent
+source remains diagnostic.
+
+Each extraction also emits a closed `native_deck_audit` bound to the exact PPTX
+bytes, extractor generation, slide count, and derived render requirements. The
+optional rendered-page receipt binds an equal-page-count PDF and the exact pages
+inspected. Return validation and owner-side canonicalization require complete,
+identity-matched rendered inspection for native-deck design findings that need a
+rendered page. Single-file extractor failures now return one concise diagnostic
+without a parser traceback.
+
+Grouped shapes and tables are walked recursively, while SmartArt, graphic
+frames, unreadable pictures, and other unsupported visual containers remain
+explicit render requirements. Picture/background OCR emits one bounded receipt
+per exact asset, including engine/result confidence and trustworthy-text status,
+so a missing engine or corrupt image cannot masquerade as a wordless slide or
+abort the whole deck. Raw native timing stays split into animation behaviors,
+visibility actions, transitions, media timing, and build-list entries; every
+lane records package structure only and explicitly declines to claim observed
+playback.
+
 ## 0.20.3 — 2026-08-01
 
 ### fix(vault-ingress) — suppress presentation-only shownotes conflicts

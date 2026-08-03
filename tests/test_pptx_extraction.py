@@ -1,10 +1,12 @@
 """Tests for pptx-extraction.py — PPTX visual data extraction."""
 
+import io
 import json
 import struct
 import subprocess
 import sys
 import zipfile
+from types import SimpleNamespace
 
 import pytest
 from pptx import Presentation
@@ -390,6 +392,15 @@ def test_normalize_ocr_text(pptx_extraction):
     assert pptx_extraction.normalize_ocr_text(None) == ""
 
 
+def test_ocr_confidence_is_paired_only_with_retained_token(pptx_extraction):
+    text, confidence = pptx_extraction._ocr_text_and_confidence({
+        "text": ["", "VISIBLE"],
+        "conf": [99.0, 12.0],
+    })
+    assert text == "VISIBLE"
+    assert confidence == 12.0
+
+
 def test_high_confidence_slide_method_is_shapes_only(pptx_extraction, tmp_path):
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[5])
@@ -423,6 +434,211 @@ def test_full_bleed_runs_ocr_fn_and_records_inventory(
     assert data["text_extraction_method"] == "shapes+ocr"
 
 
+def test_multi_image_ocr_emits_one_identity_and_outcome_receipt_per_asset(
+    pptx_extraction, tmp_path,
+):
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    slide.shapes.add_picture(
+        _png_with_text(tmp_path / "left.png", text="LEFT LABEL"),
+        0,
+        0,
+        width=int(prs.slide_width / 2),
+        height=prs.slide_height,
+    )
+    slide.shapes.add_picture(
+        _png_with_text(tmp_path / "right.png", text="RIGHT LABEL"),
+        int(prs.slide_width / 2),
+        0,
+        width=int(prs.slide_width / 2),
+        height=prs.slide_height,
+    )
+    path = tmp_path / "multi-image.pptx"
+    prs.save(path)
+    outcomes = iter([
+        {
+            "engine": "fixture-ocr",
+            "engine_version": "1.0",
+            "result_status": "text_recovered",
+            "result_confidence": 94.5,
+            "recovered_text": "LEFT LABEL",
+            "trustworthy_text": True,
+            "error": None,
+        },
+        {
+            "engine": "fixture-ocr",
+            "engine_version": "1.0",
+            "result_status": "low_confidence_text",
+            "result_confidence": 31.0,
+            "recovered_text": "RIGHT LAB3L",
+            "trustworthy_text": False,
+            "error": None,
+        },
+    ])
+
+    data = pptx_extraction.extract_pptx(
+        str(path), ocr_fn=lambda _blobs: next(outcomes),
+    )["per_slide_visual"][0]
+    channel = next(
+        item
+        for item in data["text_channels"]
+        if item["channel"] == "picture_ocr"
+    )
+
+    assert channel["status"] == "partial"
+    assert channel["reason"] == "partial_ocr_results"
+    assert channel["text"] == "LEFT LABEL | RIGHT LAB3L"
+    assert channel["result_confidence"] == pytest.approx(62.75)
+    receipts = channel["ocr_receipts"]
+    assert len(receipts) == 2
+    assert [receipt["result_status"] for receipt in receipts] == [
+        "text_recovered",
+        "low_confidence_text",
+    ]
+    assert [receipt["part_name"] for receipt in receipts] == [
+        "ppt/media/image1.png",
+        "ppt/media/image2.png",
+    ]
+    assert all(len(receipt["asset_sha256"]) == 64 for receipt in receipts)
+    assert receipts[0]["asset_sha256"] != receipts[1]["asset_sha256"]
+    assert all(receipt["shape_path"] for receipt in receipts)
+    assert receipts[1]["recovered_text"] == "RIGHT LAB3L"
+    assert receipts[1]["trustworthy_text"] is False
+
+
+def test_genuine_empty_ocr_is_distinct_from_asset_failure(
+    pptx_extraction, tmp_path,
+):
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    for index in range(2):
+        slide.shapes.add_picture(
+            _png(tmp_path / f"asset-{index}.png", w=16 + index),
+            int(prs.slide_width * index / 2),
+            0,
+            width=int(prs.slide_width / 2),
+            height=prs.slide_height,
+        )
+    path = tmp_path / "empty-vs-failure.pptx"
+    prs.save(path)
+    outcomes = iter([
+        {
+            "engine": "fixture-ocr",
+            "engine_version": "1.0",
+            "result_status": "genuine_empty",
+            "result_confidence": None,
+            "recovered_text": "",
+            "trustworthy_text": False,
+            "error": None,
+        },
+        {
+            "engine": "fixture-ocr",
+            "engine_version": "1.0",
+            "result_status": "failed",
+            "result_confidence": None,
+            "recovered_text": "",
+            "trustworthy_text": False,
+            "error": "engine_error: synthetic failure",
+        },
+    ])
+
+    data = pptx_extraction.extract_pptx(
+        str(path), ocr_fn=lambda _blobs: next(outcomes),
+    )["per_slide_visual"][0]
+    channel = next(
+        item
+        for item in data["text_channels"]
+        if item["channel"] == "picture_ocr"
+    )
+
+    assert channel["text"] == ""
+    assert channel["status"] == "failed"
+    assert [item["result_status"] for item in channel["ocr_receipts"]] == [
+        "genuine_empty",
+        "failed",
+    ]
+    assert channel["ocr_receipts"][0]["error"] is None
+    assert "synthetic failure" in channel["ocr_receipts"][1]["error"]
+
+
+def test_truncated_picture_is_one_failed_receipt_not_a_deck_abort(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    slide.shapes.add_picture(
+        _png(tmp_path / "healthy.png", w=64),
+        0,
+        0,
+        width=int(prs.slide_width / 2),
+        height=prs.slide_height,
+    )
+    slide.shapes.add_picture(
+        _png(tmp_path / "truncated.png", w=65),
+        int(prs.slide_width / 2),
+        0,
+        width=int(prs.slide_width / 2),
+        height=prs.slide_height,
+    )
+    path = tmp_path / "mixed-assets.pptx"
+    prs.save(path)
+    source = io.BytesIO(path.read_bytes())
+    rewritten = io.BytesIO()
+    with (
+        zipfile.ZipFile(source) as archive,
+        zipfile.ZipFile(rewritten, "w") as destination,
+    ):
+        for member in archive.infolist():
+            payload = archive.read(member)
+            if member.filename == "ppt/media/image2.png":
+                payload = payload[:40]
+            destination.writestr(member, payload)
+    path.write_bytes(rewritten.getvalue())
+
+    class FakeTesseractError(Exception):
+        pass
+
+    def image_to_data(image, *, output_type):
+        assert output_type == "DICT"
+        image.load()
+        return {"text": ["HEALTHY"], "conf": ["93"]}
+
+    fake_pytesseract = SimpleNamespace(
+        Output=SimpleNamespace(DICT="DICT"),
+        TesseractNotFoundError=FakeTesseractError,
+        TesseractError=FakeTesseractError,
+        image_to_data=image_to_data,
+    )
+    monkeypatch.setitem(sys.modules, "pytesseract", fake_pytesseract)
+    monkeypatch.setattr(pptx_extraction, "_tesseract_available", True)
+    monkeypatch.setattr(pptx_extraction, "_tesseract_version", "fixture-1")
+
+    data = pptx_extraction.extract_pptx(path)["per_slide_visual"][0]
+    channel = next(
+        item
+        for item in data["text_channels"]
+        if item["channel"] == "picture_ocr"
+    )
+
+    assert channel["status"] == "partial"
+    assert channel["text"] == "HEALTHY"
+    assert [item["result_status"] for item in channel["ocr_receipts"]] == [
+        "text_recovered",
+        "failed",
+    ]
+    assert [item["part_name"] for item in channel["ocr_receipts"]] == [
+        "ppt/media/image1.png",
+        "ppt/media/image2.png",
+    ]
+    failed = channel["ocr_receipts"][1]
+    assert failed["attempted"] is True
+    assert failed["trustworthy_text"] is False
+    assert failed["error"].startswith("image_decode_error:")
+    assert "/" not in failed["error"]
+
+
 def test_no_ocr_flag_skips_inventory(pptx_extraction, tmp_path):
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[6])
@@ -447,6 +663,15 @@ def test_no_ocr_flag_skips_inventory(pptx_extraction, tmp_path):
     assert data["ocr_text"] == ""
     assert data["text_extraction_method"] == "shapes"
     assert data["text_extraction_confidence"] == "low"
+    channel = next(
+        item
+        for item in data["text_channels"]
+        if item["channel"] == "picture_ocr"
+    )
+    assert channel["status"] == "skipped"
+    assert channel["ocr_receipts"][0]["attempted"] is False
+    assert channel["ocr_receipts"][0]["result_status"] == "skipped"
+    assert channel["ocr_receipts"][0]["part_name"] == "ppt/media/image1.png"
 
 
 def test_small_decorative_image_does_not_ocr(pptx_extraction, tmp_path):
@@ -489,6 +714,17 @@ def test_ocr_unavailable_records_method_not_crash(pptx_extraction, tmp_path):
     assert data["ocr_text"] == ""
     assert data["text_extraction_method"] == "shapes+ocr_unavailable"
     assert data["text_extraction_confidence"] == "low"
+    channel = next(
+        item
+        for item in data["text_channels"]
+        if item["channel"] == "picture_ocr"
+    )
+    assert channel["attempted"] is False
+    assert channel["engine"] == "tesseract"
+    assert channel["engine_version"] is None
+    assert channel["status"] == "unavailable"
+    assert channel["reason"] == "ocr_engine_unavailable"
+    assert channel["ocr_receipts"][0]["attempted"] is False
 
 
 def test_reported_image_background_without_blob_does_not_claim_ocr(
@@ -512,6 +748,18 @@ def test_reported_image_background_without_blob_does_not_claim_ocr(
     assert called == []
     assert data["ocr_text"] == ""
     assert data["text_extraction_method"] == "shapes"
+    channel = next(
+        item
+        for item in data["text_channels"]
+        if item["channel"] == "background_image_ocr"
+    )
+    assert channel["attempted"] is False
+    assert channel["engine"] == "tesseract"
+    assert channel["engine_version"] is None
+    assert channel["status"] == "unavailable"
+    assert channel["reason"] == "no_readable_asset"
+    assert channel["ocr_receipts"] == []
+    assert data["render_required"] is True
 
 
 def test_ocr_text_capped(pptx_extraction, monkeypatch):
@@ -520,6 +768,74 @@ def test_ocr_text_capped(pptx_extraction, monkeypatch):
     )
     out = pptx_extraction.ocr_picture_blobs([b"x"])
     assert len(out) == pptx_extraction._OCR_TEXT_MAX_CHARS
+
+
+@pytest.mark.parametrize(
+    "injected",
+    [
+        "A" * 9000,
+        {
+            "engine": "fixture",
+            "engine_version": "1",
+            "result_status": "text_recovered",
+            "result_confidence": 90.0,
+            "recovered_text": "A" * 9000,
+            "trustworthy_text": True,
+            "error": None,
+        },
+    ],
+)
+def test_each_ocr_receipt_text_is_capped(pptx_extraction, injected):
+    slide_data = {
+        "text_channels": [],
+        "ocr_text": "",
+        "text_extraction_method": "shapes",
+    }
+    pptx_extraction._run_ocr_channel(
+        slide_data,
+        [{
+            "blob": b"exact-asset",
+            "shape_path": ["Picture 1"],
+            "part_name": "ppt/media/image1.png",
+        }],
+        channel="picture_ocr",
+        provenance={"source": "embedded_picture_blobs"},
+        ocr_fn=lambda _blobs: injected,
+    )
+    receipt = slide_data["text_channels"][0]["ocr_receipts"][0]
+    assert len(receipt["recovered_text"]) == pptx_extraction._OCR_TEXT_MAX_CHARS
+    assert len(slide_data["ocr_text"]) == pptx_extraction._OCR_TEXT_MAX_CHARS
+
+
+def test_untrustworthy_recovered_receipt_keeps_channel_partial(pptx_extraction):
+    slide_data = {
+        "text_channels": [],
+        "ocr_text": "",
+        "text_extraction_method": "shapes",
+    }
+    pptx_extraction._run_ocr_channel(
+        slide_data,
+        [{
+            "blob": b"exact-asset",
+            "shape_path": ["Picture 1"],
+            "part_name": "ppt/media/image1.png",
+        }],
+        channel="picture_ocr",
+        provenance={"source": "embedded_picture_blobs"},
+        ocr_fn=lambda _blobs: {
+            "engine": "fixture",
+            "engine_version": "1",
+            "result_status": "text_recovered",
+            "result_confidence": 10.0,
+            "recovered_text": "UNCERTAIN",
+            "trustworthy_text": False,
+            "error": None,
+        },
+    )
+    channel = slide_data["text_channels"][0]
+    assert channel["text"] == "UNCERTAIN"
+    assert channel["status"] == "partial"
+    assert channel["reason"] == "partial_ocr_results"
 
 
 def test_ocr_image_bytes_reads_clear_text(pptx_extraction, tmp_path):
@@ -809,6 +1125,16 @@ def test_bad_crc_media_is_recovered_without_losing_the_deck(
         item["content_type"] == "corrupt_embedded_asset"
         for item in data["unsupported_content"]
     )
+    channel = next(
+        item
+        for item in data["text_channels"]
+        if item["channel"] == "picture_ocr"
+    )
+    assert channel["attempted"] is False
+    assert channel["status"] == "unavailable"
+    assert channel["reason"] == "no_readable_asset"
+    assert channel["ocr_receipts"] == []
+    assert data["render_required"] is True
 
 
 # ── native timing/build structure (issue #151) ──────────────────────
@@ -832,6 +1158,19 @@ def _append_transition_xml(slide):
     ))
 
 
+def _append_build_list_xml(slide):
+    """Append real PresentationML build entries without inferring playback."""
+    timing = slide.element.xpath("./p:timing")[0]
+    timing.append(parse_xml(
+        f'<p:bldLst {nsdecls("p")}>'
+        '<p:bldP spid="2" grpId="0"/>'
+        '<p:bldDgm spid="3" grpId="1"/>'
+        '<p:bldOleChart spid="4" grpId="2"/>'
+        '<p:bldGraphic spid="5" grpId="3"/>'
+        '</p:bldLst>'
+    ))
+
+
 def test_native_timing_categories_and_deck_totals_stay_distinct(
         pptx_extraction, tmp_path):
     prs = Presentation()
@@ -849,6 +1188,7 @@ def test_native_timing_categories_and_deck_totals_stay_distinct(
         '<p:audio><p:cMediaNode><p:cTn id="4"/></p:cMediaNode></p:audio>'
         '<p:video><p:cMediaNode><p:cTn id="5"/></p:cMediaNode></p:video>'
     ))
+    _append_build_list_xml(animated)
 
     media_only = prs.slides.add_slide(prs.slide_layouts[6])
     _append_timing_xml(media_only, (
@@ -880,6 +1220,16 @@ def test_native_timing_categories_and_deck_totals_stay_distinct(
     }
     assert first["media_timing_counts"] == {
         "audio": 1, "video": 1, "total": 2}
+    assert first["build_list_present"] is True
+    assert first["build_list_count"] == 1
+    assert first["build_entry_counts"] == {
+        "paragraph": 1,
+        "diagram": 1,
+        "ole_chart": 1,
+        "graphic": 1,
+        "total": 4,
+    }
+    assert first["has_build_entries"] is True
     assert first["has_animation_behaviors"] is True
     assert first["has_media_timing"] is True
     assert first["provenance"] == {
@@ -899,6 +1249,16 @@ def test_native_timing_categories_and_deck_totals_stay_distinct(
     assert second["has_media_timing"] is True
     assert second["media_timing_counts"] == {
         "audio": 1, "video": 0, "total": 1}
+    assert second["build_list_present"] is False
+    assert second["build_list_count"] == 0
+    assert second["build_entry_counts"] == {
+        "paragraph": 0,
+        "diagram": 0,
+        "ole_chart": 0,
+        "graphic": 0,
+        "total": 0,
+    }
+    assert second["has_build_entries"] is False
 
     third = slides[2]["native_timing"]
     assert third["timing_element_present"] is False
@@ -911,10 +1271,13 @@ def test_native_timing_categories_and_deck_totals_stay_distinct(
         "slides_with_transitions": 2,
         "slides_with_animation_behaviors": 1,
         "slides_with_media_timing": 2,
+        "slides_with_build_lists": 1,
+        "slides_with_build_entries": 1,
         "timing_element_count": 2,
         "transition_count": 2,
         "set_action_count": 2,
         "visibility_set_action_count": 1,
+        "build_list_count": 1,
         "animation_behavior_counts": {
             "general": 1,
             "color": 1,
@@ -925,6 +1288,13 @@ def test_native_timing_categories_and_deck_totals_stay_distinct(
             "total": 7,
         },
         "media_timing_counts": {"audio": 2, "video": 1, "total": 3},
+        "build_entry_counts": {
+            "paragraph": 1,
+            "diagram": 1,
+            "ole_chart": 1,
+            "graphic": 1,
+            "total": 4,
+        },
         "provenance": {
             "source": "pptx_package_xml",
             "measurement": "raw_ooxml_element_counts",
@@ -959,6 +1329,12 @@ def test_adjacent_static_progressive_builds_do_not_invent_native_timing(
     )
     assert result["native_timing_summary"]["animation_behavior_counts"]["total"] == 0
     assert result["native_timing_summary"]["media_timing_counts"]["total"] == 0
+    assert all(
+        slide["native_timing"]["build_list_present"] is False
+        and slide["native_timing"]["build_entry_counts"]["total"] == 0
+        for slide in result["per_slide_visual"]
+    )
+    assert result["native_timing_summary"]["build_entry_counts"]["total"] == 0
 
 
 def test_versions_and_input_fingerprint_are_stable_and_content_addressed(
@@ -977,8 +1353,8 @@ def test_versions_and_input_fingerprint_are_stable_and_content_addressed(
     copied = pptx_extraction.extract_pptx(str(copy), ocr=False)
     changed = pptx_extraction.extract_pptx(str(modified), ocr=False)
 
-    assert pptx_extraction.SCHEMA_VERSION == 2
-    assert pptx_extraction.PIPELINE_VERSION == "1.1.0"
+    assert pptx_extraction.SCHEMA_VERSION == 3
+    assert pptx_extraction.PIPELINE_VERSION == "1.2.0"
     assert first["schema_version"] == pptx_extraction.SCHEMA_VERSION
     assert first["pipeline_version"] == pptx_extraction.PIPELINE_VERSION
     assert first["input_fingerprint"] == second["input_fingerprint"]

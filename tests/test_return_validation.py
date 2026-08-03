@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 import pytest
+from pypdf import PdfWriter
 
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -99,6 +100,30 @@ def _canonical_visual_rows():
             "has_footer": False,
         },
     ]
+
+
+def _native_deck_audit_fixture(pptx_evidence, tmp_path, *, inspected=True):
+    rendered = tmp_path / "rendered.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=96, height=54)
+    writer.add_blank_page(width=96, height=54)
+    with rendered.open("wb") as stream:
+        writer.write(stream)
+    source_sha = "a" * 64
+    receipt = pptx_evidence.build_rendered_page_inspection(
+        source_pptx_sha256=source_sha,
+        rendered_pdf_path=rendered,
+        inspected_page_ranges=[[1, 1]] if inspected else [],
+        required_slide_numbers=[1],
+        slide_count=2,
+    )
+    return pptx_evidence.build_native_deck_audit(
+        source_pptx_sha256=source_sha,
+        source_pptx_size_bytes=1234,
+        slide_count=2,
+        render_required_reasons={1: ["large_picture"]},
+        rendered_page_inspection=receipt,
+    )
 
 
 def _return_with_canonical_visuals():
@@ -274,6 +299,29 @@ def _claimed_talk(ret, **overrides):
     return talk
 
 
+def _degraded_native_capabilities():
+    return {
+        "verified_capabilities": ("slides",),
+        "verified_evidence_sources": ("native_deck",),
+        "acquisition_capabilities": (),
+        "repair_capabilities": (),
+        "source_reasons": {"native_deck": "read degraded local PPTX"},
+        "degraded_evidence_sources": {
+            "native_deck": {
+                "schema_version": 1,
+                "status": "degraded_recoverable",
+                "reason_code": "pptx_archive_recovery_required",
+                "archive_recovery": [
+                    {
+                        "part_name": "ppt/media/image1.png",
+                        "status": "recovered_with_placeholder_asset",
+                    }
+                ],
+            },
+        },
+    }
+
+
 def _adherence_baseline(return_validation, *, count, filenames=("talk.md",)):
     return {
         "schema_version": 1,
@@ -303,6 +351,28 @@ def _v3_claimed_talk(return_validation, ret, *, baseline_count):
             count=baseline_count,
             filenames=(ret["filename"],),
         ),
+    })
+    return talk
+
+
+def _current_claimed_talk(return_validation, ret, **overrides):
+    import adherence_baseline
+
+    talk = _claimed_talk(ret, **overrides)
+    baseline = adherence_baseline.build_adherence_baseline(
+        [],
+        selected_filenames=[ret["filename"]],
+        as_of=talk["_queue_claim"]["claimed_at"],
+        pattern_catalog_fingerprint=return_validation.load_catalog().fingerprint,
+        pattern_scoring_schema_version=(
+            return_validation.PATTERN_SCORING_SCHEMA_VERSION
+        ),
+        evidence_freshness_assessor=lambda _talk: (),
+    )
+    talk["_queue_claim"].update({
+        "schema_version": return_validation.QUEUE_CLAIM_SCHEMA_VERSION,
+        "required_return_schema_version": return_validation.RETURN_SCHEMA_VERSION,
+        "adherence_baseline": baseline,
     })
     return talk
 
@@ -520,6 +590,53 @@ def test_completed_receiptless_v1_claim_cannot_authorize_analysis_replay(
             match="predates the return-payload receipt"):
         return_validation.validate_claim_against_talk(
             talk, ret, require_completed=True)
+
+
+def test_required_degraded_pptx_cannot_persist_current_analysis(
+    return_validation,
+):
+    ret = _return(return_schema_version=return_validation.RETURN_SCHEMA_VERSION)
+    talk = _current_claimed_talk(
+        return_validation,
+        ret,
+        slide_source="pptx",
+    )
+
+    with pytest.raises(
+        return_validation.ReturnValidationError,
+        match="cannot persist current analysis.*placeholder archive recovery",
+    ):
+        return_validation.validate_claim_against_talk(
+            talk,
+            ret,
+            artifact_capabilities=_degraded_native_capabilities(),
+        )
+
+
+def test_unused_optional_degraded_pptx_does_not_block_pdf_analysis(
+    return_validation,
+):
+    ret = _return(
+        return_schema_version=return_validation.RETURN_SCHEMA_VERSION,
+        slide_source="pdf",
+    )
+    ret["pattern_observations"]["evidence_sources"] = [
+        source
+        for source in ret["pattern_observations"]["evidence_sources"]
+        if source != "native_deck"
+    ]
+    talk = _current_claimed_talk(
+        return_validation,
+        ret,
+        slide_source="pdf",
+        slides_local_path="Conference/Talk.pdf",
+    )
+
+    return_validation.validate_claim_against_talk(
+        talk,
+        ret,
+        artifact_capabilities=_degraded_native_capabilities(),
+    )
 
 
 def test_trusted_video_return_requires_complete_manifest_and_promoted_path(
@@ -1590,6 +1707,280 @@ def test_delivery_language_requires_a_code(return_validation):
     value = _return()
     value["structured_data"]["delivery_language"] = "English"
     assert "lowercase language code" in _error(return_validation, value)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("slide_count", 2),
+        ("per_slide_visual", _canonical_visual_rows()),
+        ("slide_design_style", "mixed"),
+    ],
+)
+def test_slide_source_none_rejects_authored_slide_fields(
+    return_validation,
+    field,
+    value,
+):
+    ret = _return(status="processed_partial", slide_source="none")
+    ret["structured_data"][field] = value
+    if field == "per_slide_visual":
+        ret["structured_data"]["slide_count"] = 2
+    assert "cannot return authored-slide evidence" in _error(
+        return_validation, ret
+    )
+
+
+def test_transcript_only_partial_remains_valid_without_slide_fields(
+    return_validation,
+):
+    return_validation.validate_authored_slide_fields_against_source(
+        {"delivery_language": "en", "co_presenter": False},
+        "none",
+    )
+
+
+def test_native_deck_design_findings_fail_closed_without_current_audit(
+    return_validation,
+):
+    structured = {"slide_count": 2, "slide_design_style": "mixed"}
+    observations = {
+        "evidence_sources": ["native_deck"],
+        "source_inspection": [
+            {"source": "native_deck", "page_ranges": [[1, 2]]},
+        ],
+    }
+
+    with pytest.raises(
+        return_validation.ReturnValidationError,
+        match="requires the current.*native_deck_audit",
+    ):
+        return_validation.validate_native_deck_design_receipt(
+            structured=structured,
+            observations=observations,
+            slide_source="pptx",
+            detections=[],
+        )
+
+
+def test_native_deck_use_requires_current_audit_even_without_findings(
+    return_validation,
+):
+    with pytest.raises(
+        return_validation.ReturnValidationError,
+        match="requires the current.*native_deck_audit",
+    ):
+        return_validation.validate_native_deck_design_receipt(
+            structured={"slide_count": 2},
+            observations={
+                "evidence_sources": ["native_deck"],
+                "source_inspection": [
+                    {"source": "native_deck", "page_ranges": [[1, 2]]},
+                ],
+            },
+            slide_source="pptx",
+            detections=[],
+        )
+
+
+def test_native_deck_design_findings_require_complete_render_receipt(
+    return_validation,
+    pptx_evidence,
+    tmp_path,
+):
+    audit = _native_deck_audit_fixture(
+        pptx_evidence,
+        tmp_path,
+        inspected=False,
+    )
+    structured = {
+        "slide_count": 2,
+        "slide_design_style": "mixed",
+        "native_deck_audit": audit,
+    }
+    observations = {
+        "evidence_sources": ["native_deck", "static_slides"],
+        "source_inspection": [
+            {"source": "native_deck", "page_ranges": [[1, 2]]},
+            {"source": "static_slides", "page_ranges": [[1, 2]]},
+        ],
+    }
+
+    with pytest.raises(
+        return_validation.ReturnValidationError,
+        match="does not cover every render-required slide",
+    ):
+        return_validation.validate_native_deck_design_receipt(
+            structured=structured,
+            observations=observations,
+            slide_source="pptx",
+            detections=[],
+        )
+
+
+def test_native_deck_design_receipt_requires_matching_static_page_coverage(
+    return_validation,
+    pptx_evidence,
+    tmp_path,
+):
+    audit = _native_deck_audit_fixture(pptx_evidence, tmp_path)
+    structured = {
+        "slide_count": 2,
+        "slide_design_style": "mixed",
+        "native_deck_audit": audit,
+    }
+    observations = {
+        "evidence_sources": ["native_deck", "static_slides"],
+        "source_inspection": [
+            {"source": "native_deck", "page_ranges": [[1, 2]]},
+            {"source": "static_slides", "page_ranges": [[2, 2]]},
+        ],
+    }
+
+    with pytest.raises(
+        return_validation.ReturnValidationError,
+        match="cover every render-required",
+    ):
+        return_validation.validate_native_deck_design_receipt(
+            structured=structured,
+            observations=observations,
+            slide_source="pptx",
+            detections=[],
+        )
+
+    observations["source_inspection"][1]["page_ranges"] = [[1, 1]]
+    return_validation.validate_native_deck_design_receipt(
+        structured=structured,
+        observations=observations,
+        slide_source="pptx",
+        detections=[],
+    )
+
+
+def test_clean_native_citation_does_not_require_unrelated_render_page(
+    return_validation,
+    pptx_evidence,
+    tmp_path,
+):
+    audit = _native_deck_audit_fixture(
+        pptx_evidence,
+        tmp_path,
+        inspected=False,
+    )
+    return_validation.validate_native_deck_design_receipt(
+        structured={"slide_count": 2, "native_deck_audit": audit},
+        observations={
+            "evidence_sources": ["native_deck"],
+            "source_inspection": [
+                {"source": "native_deck", "page_ranges": [[2, 2]]},
+            ],
+        },
+        slide_source="pptx",
+        detections=[{
+            "evidence_citations": [{
+                "source": "native_deck",
+                "channel": "slide_sequence",
+                "slide_numbers": [2],
+            }],
+        }],
+    )
+
+
+def test_render_required_native_citation_requires_that_rendered_page(
+    return_validation,
+    pptx_evidence,
+    tmp_path,
+):
+    audit = _native_deck_audit_fixture(
+        pptx_evidence,
+        tmp_path,
+        inspected=False,
+    )
+    with pytest.raises(
+        return_validation.ReturnValidationError,
+        match="does not cover every render-required slide",
+    ):
+        return_validation.validate_native_deck_design_receipt(
+            structured={"slide_count": 2, "native_deck_audit": audit},
+            observations={
+                "evidence_sources": ["native_deck"],
+                "source_inspection": [
+                    {"source": "native_deck", "page_ranges": [[1, 1]]},
+                ],
+            },
+            slide_source="pptx",
+            detections=[{
+                "evidence_citations": [{
+                    "source": "native_deck",
+                    "channel": "slide_sequence",
+                    "slide_numbers": [1],
+                }],
+            }],
+        )
+
+
+def test_render_required_applicability_citation_is_included_in_render_gate(
+    return_validation,
+    pptx_evidence,
+    monkeypatch,
+):
+    audit = pptx_evidence.build_native_deck_audit(
+        source_pptx_sha256="a" * 64,
+        source_pptx_size_bytes=1234,
+        slide_count=2,
+        render_required_reasons={1: ["large_picture"]},
+    )
+    ret = _return(
+        return_schema_version=return_validation.RETURN_SCHEMA_VERSION,
+        slide_source="pptx",
+    )
+    ret["structured_data"].update({
+        "slide_count": 2,
+        "native_deck_audit": audit,
+    })
+    ret["pattern_observations"].update({
+        "evidence_sources": ["native_deck"],
+        "source_inspection": [
+            {"source": "native_deck", "page_ranges": [[1, 2]]},
+        ],
+        "applicability_assessments": [],
+    })
+    applicability = [{
+        "evidence_citations": [{
+            "source": "native_deck",
+            "channel": "slide_sequence",
+            "slide_numbers": [1],
+        }],
+    }]
+    monkeypatch.setattr(
+        return_validation,
+        "_validate_available_sources",
+        lambda *_args, **_kwargs: {"native_deck"},
+    )
+    monkeypatch.setattr(
+        return_validation,
+        "_validate_source_inspection",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        return_validation,
+        "_validate_detection_list",
+        lambda *_args, **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        return_validation,
+        "_validate_applicability_assessments",
+        lambda *_args, **_kwargs: applicability,
+    )
+
+    with pytest.raises(
+        return_validation.ReturnValidationError,
+        match="identity-bound rendered_page_inspection receipt",
+    ):
+        return_validation.validate_return(
+            ret,
+            return_validation.load_catalog(),
+        )
 
 
 @pytest.mark.parametrize("field", [

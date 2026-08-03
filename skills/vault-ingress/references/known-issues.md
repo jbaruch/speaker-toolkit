@@ -21,9 +21,11 @@ one produces code that runs clean against data nothing consumes.
 
 ## Native Timing Metadata Is Not Playback Evidence
 
-PPTX schema v2 exposes timing containers, exact animation behavior elements,
-visibility set actions, transitions, and audio/video timing nodes directly from
-slide-part XML. The lanes are separate because `<p:timing>` can contain media
+PPTX schema v3 extends the schema-v2 timing model with a distinct raw build-list
+lane. Timing containers, exact animation behavior elements, visibility set
+actions, transitions, audio/video timing nodes, and build entries come directly
+from slide-part XML. The lanes are
+separate because `<p:timing>` can contain media
 playback or other time nodes without any shape motion, and a stored behavior can
 exist without executing in the delivered talk.
 
@@ -60,10 +62,14 @@ scored as wordless backdrops (#116).
   background-image blobs, the same script emits provenance-bearing
   `picture_ocr` / `background_image_ocr` channels, aggregates their text into
   `ocr_text`, and sets `text_extraction_method` to `shapes+ocr` (or
-  `shapes+ocr_unavailable` if tesseract is missing). Use `text_channels` for
-  source/confidence and `ocr_text` for a combined word list. Empty
+  `shapes+ocr_unavailable` if tesseract is missing). OCR channels record whether
+  an attempt occurred, engine/version, numeric result confidence, and one
+  package-part/SHA-bound receipt per readable asset. `--no-ocr`, missing blobs,
+  unavailable engines, genuine empty results, and failures are distinct. Use
+  only `trustworthy_text: true` receipts as affirmative evidence; preserved
+  low-confidence text is review inventory, not a native-text claim. Empty
   `text_content_preview` still means *native channels could not read it*, not
-  *the slide is blank*.
+  *the slide is blank*, and empty/failed/unavailable OCR remains render-required.
 - **Read the confidence, never `image_area_ratio`.** The two are independent: a
   slide can be `"low"` with a ratio of `0.0`. Deriving your own trigger from the
   ratio reproduces the bug this entry exists to prevent.
@@ -83,8 +89,10 @@ scored as wordless backdrops (#116).
   rendered-page or specialized-parser pass.
 - Bad-CRC members under `ppt/media/` are replaced in memory with a transparent
   placeholder so healthy slides and text survive extraction. Read
-  `corrupt_assets` and `render_required_reasons`; the source PPTX is never
-  rewritten, and corrupt structural members remain hard errors.
+  `archive_recovery`, the compatibility `corrupt_assets` projection, and
+  `render_required_reasons`; the source PPTX is never rewritten, and corrupt
+  structural members remain hard errors. Placeholder recovery is degraded
+  evidence and blocks a fresh claim/return when the native deck is required.
 - `has_text_frame_shapes` (formerly `has_text_placeholder`) names what it
   measures: shapes with text frames. It is not a claim about on-screen text.
 

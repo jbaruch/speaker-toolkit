@@ -6,14 +6,19 @@ import builtins
 import copy
 import hashlib
 import importlib
+import json
+import struct
 import sys
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from PIL import Image
 from pypdf import PdfWriter
 from pptx import Presentation
+from pptx.util import Inches
 
 
 SCRIPTS = Path(__file__).parents[1] / "skills" / "vault-ingress" / "scripts"
@@ -21,6 +26,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 pattern_evidence = importlib.import_module("pattern_evidence")
+pptx_evidence = importlib.import_module("pptx_evidence")
 return_validation = importlib.import_module("return_validation")
 transcript_timing = importlib.import_module("transcript_timing")
 SYNTHETIC_VIDEO_ID = "abcdefghijk"
@@ -51,6 +57,31 @@ def _write_pptx(path: Path, slide_count: int = 2) -> None:
     for _ in range(slide_count):
         deck.slides.add_slide(layout)
     deck.save(str(path))
+
+
+def _write_crc_damaged_media_pptx(path: Path) -> str:
+    """Create a deck whose embedded image follows the live BadZipFile path."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image_path = path.with_suffix(".png")
+    Image.new("RGB", (64, 64), "navy").save(image_path)
+    deck = Presentation()
+    slide = deck.slides.add_slide(deck.slide_layouts[6])
+    slide.shapes.add_picture(str(image_path), Inches(1), Inches(1))
+    deck.save(str(path))
+    with zipfile.ZipFile(path) as archive:
+        member = next(
+            item
+            for item in archive.infolist()
+            if item.filename.startswith("ppt/media/") and item.file_size
+        )
+    package = bytearray(path.read_bytes())
+    name_size, extra_size = struct.unpack_from(
+        "<HH", package, member.header_offset + 26
+    )
+    payload_offset = member.header_offset + 30 + name_size + extra_size
+    package[payload_offset + (member.compress_size // 2)] ^= 0xFF
+    path.write_bytes(package)
+    return member.filename
 
 
 def _transcript_lines() -> list[str]:
@@ -237,6 +268,18 @@ def test_artifact_root_kinds_are_canonical_and_owner_bound(tmp_path: Path) -> No
         == "pptx_source"
     )
 
+    configured_absolute = pattern_evidence.build_evidence_context(
+        vault,
+        {"pptx_path": str(configured_deck), "slide_source": "pptx"},
+        source_roots={"pptx_source_dir": str(source_root)},
+    )
+    assert configured_absolute["slide_counts"] == {"native_deck": 2}
+    assert (
+        configured_absolute["slide_artifact_identities"]["native_deck"]
+        ["artifact_path"]
+        == "configured.pptx"
+    )
+
     absolute = pattern_evidence.build_evidence_context(
         vault,
         {"pptx_path": str(absolute_deck), "slide_source": "pptx"},
@@ -284,6 +327,14 @@ def test_traversal_and_symlinked_artifacts_never_become_sources(
     )
     assert "native_deck" not in linked["verified_evidence_sources"]
     assert "symbolic link" in linked["source_reasons"]["native_deck"]
+
+    absolute_linked = pattern_evidence.build_evidence_context(
+        vault,
+        {"pptx_path": str(link), "slide_source": "pptx"},
+        source_roots={"pptx_source_dir": str(source_root)},
+    )
+    assert "native_deck" not in absolute_linked["verified_evidence_sources"]
+    assert "symbolic link" in absolute_linked["source_reasons"]["native_deck"]
 
 
 @pytest.mark.parametrize(
@@ -362,6 +413,97 @@ def test_video_extracted_static_pages_support_positive_inspection_not_absence() 
     assert records[0]["absence_capability_complete"] is False
     assert records[0]["absence_capability_reason"] == ("nonexhaustive_video_extraction")
     assert "static_slides" not in complete_sources
+
+
+def test_video_extracted_pdf_path_and_digest_replace_predeclared_pdf_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    declared = vault / "slides" / "declared.pdf"
+    extracted = vault / "slides-rebuild" / "video.pdf"
+    _write_pdf(declared, page_count=2)
+    _write_pdf(extracted, page_count=2)
+    extracted_bytes = extracted.read_bytes()
+    assert b"pypdf" in extracted_bytes
+    extracted.write_bytes(extracted_bytes.replace(b"pypdf", b"qypdf", 1))
+    assert declared.read_bytes() != extracted.read_bytes()
+    monkeypatch.setattr(
+        pattern_evidence,
+        "_trusted_video_slide_count",
+        lambda *_args, **_kwargs: (2, "trusted extracted PDF", extracted),
+    )
+    talk = {
+        "filename": "video-talk.md",
+        "youtube_id": SYNTHETIC_VIDEO_ID,
+        "slides_pdf_path": declared.relative_to(vault).as_posix(),
+        "slide_source": "video_extracted",
+    }
+
+    context = pattern_evidence.build_evidence_context(vault, talk)
+    identity = context["slide_artifact_identities"]["static_slides"]
+
+    assert identity["artifact_path"] == extracted.relative_to(vault).as_posix()
+    assert identity["artifact_sha256"] == hashlib.sha256(
+        extracted.read_bytes()
+    ).hexdigest()
+    assert identity["artifact_sha256"] != hashlib.sha256(
+        declared.read_bytes()
+    ).hexdigest()
+
+
+def test_unreadable_video_extracted_pdf_does_not_hide_independent_sources(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    transcript, _ = _write_transcript(vault, name=SYNTHETIC_VIDEO_ID)
+    deck = vault / "decks" / "talk.pptx"
+    extracted = vault / "slides-rebuild" / "video.pdf"
+    _write_pptx(deck, slide_count=2)
+    _write_pdf(extracted, page_count=2)
+    monkeypatch.setattr(
+        pattern_evidence,
+        "_trusted_video_slide_count",
+        lambda *_args, **_kwargs: (2, "trusted extracted PDF", extracted),
+    )
+    original_snapshot = pattern_evidence.snapshot_rendered_pdf
+
+    def fail_video_snapshot(path: str | Path):
+        if Path(path) == extracted:
+            raise pptx_evidence.PptxEvidenceError(
+                "synthetic video PDF generation changed"
+            )
+        return original_snapshot(path)
+
+    monkeypatch.setattr(
+        pattern_evidence,
+        "snapshot_rendered_pdf",
+        fail_video_snapshot,
+    )
+    talk = {
+        "filename": "video-talk.md",
+        "youtube_id": SYNTHETIC_VIDEO_ID,
+        "transcript_path": transcript.relative_to(vault).as_posix(),
+        "transcript_source": "manual",
+        "pptx_path": deck.relative_to(vault).as_posix(),
+        "slide_source": "video_extracted",
+    }
+
+    assessment = pattern_evidence.assess_talk_artifact_capabilities(
+        talk,
+        vault_root=vault,
+    )
+
+    assert assessment["verified_capabilities"] == ("slides", "transcript")
+    assert assessment["verified_evidence_sources"] == (
+        "native_deck",
+        "transcript",
+    )
+    assert "static_slides" not in assessment["verified_evidence_sources"]
+    assert "cannot snapshot trusted video slides" in (
+        assessment["source_reasons"]["static_slides"]
+    )
 
 
 def test_pptx_preserves_a_separately_declared_rendered_pdf(
@@ -524,6 +666,7 @@ def test_non_english_transcript_citations_require_an_english_translation(
 
 def test_relative_pptx_native_deck_evidence_is_immediately_fresh(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     vault = tmp_path / "vault"
     source_root = tmp_path / "pptx-source"
@@ -570,6 +713,14 @@ def test_relative_pptx_native_deck_evidence_is_immediately_fresh(
         channels=frozenset({"slides"}),
     )
     roots = {"pptx_source_dir": str(source_root)}
+    original_hash = pattern_evidence._sha256_file
+
+    def no_parent_pptx_hash(path: Path) -> str:
+        if path.suffix.casefold() == ".pptx":
+            raise AssertionError("native PPTX bytes were hashed in the parent")
+        return original_hash(path)
+
+    monkeypatch.setattr(pattern_evidence, "_sha256_file", no_parent_pptx_hash)
     canonical = pattern_evidence.canonicalize_return_evidence(
         raw, talk, vault, _catalog(entry), source_roots=roots
     )
@@ -584,6 +735,34 @@ def test_relative_pptx_native_deck_evidence_is_immediately_fresh(
             source_roots=roots,
         )
         == ()
+    )
+
+    _write_crc_damaged_media_pptx(deck)
+    pptx_evidence.clear_pptx_artifact_probe_cache()
+    degraded_reasons = (
+        pattern_evidence.assess_persisted_pattern_evidence_freshness(
+            persisted,
+            vault_root=vault,
+            source_roots=roots,
+        )
+    )
+    assert any(
+        reason.endswith(":artifact_bounded_digest_unavailable")
+        for reason in degraded_reasons
+    )
+
+    deck.write_bytes(b"not a PPTX")
+    pptx_evidence.clear_pptx_artifact_probe_cache()
+    unavailable_reasons = (
+        pattern_evidence.assess_persisted_pattern_evidence_freshness(
+            persisted,
+            vault_root=vault,
+            source_roots=roots,
+        )
+    )
+    assert any(
+        reason.endswith(":artifact_bounded_digest_unavailable")
+        for reason in unavailable_reasons
     )
 
 
@@ -1385,6 +1564,224 @@ def test_invalid_utf8_transcript_cannot_hide_an_independent_valid_deck(
     assert "not valid UTF-8" in assessment["source_reasons"]["transcript"]
 
 
+def test_crc_damaged_pptx_is_a_structured_degraded_capability(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    deck = vault / "decks" / "talk.pptx"
+    damaged_part = _write_crc_damaged_media_pptx(deck)
+
+    assessment = pattern_evidence.assess_talk_artifact_capabilities(
+        {
+            "filename": "talk.md",
+            "pptx_path": deck.relative_to(vault).as_posix(),
+            "slide_source": "pptx",
+        },
+        vault_root=vault,
+    )
+
+    assert assessment["verified_capabilities"] == ()
+    assert assessment["verified_evidence_sources"] == ()
+    degradation = assessment["degraded_evidence_sources"]["native_deck"]
+    assert degradation["schema_version"] == 1
+    assert degradation["status"] == "degraded_recoverable"
+    assert degradation["reason_code"] == "pptx_archive_recovery_required"
+    assert degradation["archive_recovery"][0]["part_name"] == damaged_part
+    assert "read degraded local PPTX" in assessment["source_reasons"]["native_deck"]
+    json.dumps(assessment)
+
+
+@pytest.mark.parametrize("slide_source", [None, "none"])
+def test_degraded_deck_is_not_native_evidence_when_slide_source_is_absent(
+    tmp_path: Path,
+    slide_source: str | None,
+) -> None:
+    vault = tmp_path / "vault"
+    deck = vault / "decks" / "talk.pptx"
+    _write_crc_damaged_media_pptx(deck)
+    talk: dict[str, object] = {
+        "filename": "talk.md",
+        "pptx_path": deck.relative_to(vault).as_posix(),
+    }
+    if slide_source is not None:
+        talk["slide_source"] = slide_source
+
+    context = pattern_evidence.build_evidence_context(vault, talk)
+    assessment = pattern_evidence.assess_talk_artifact_capabilities(
+        talk,
+        vault_root=vault,
+    )
+
+    assert "native_deck" not in context["slide_counts"]
+    assert "native_deck" not in context["slide_artifact_identities"]
+    assert assessment["verified_capabilities"] == ()
+    assert assessment["verified_evidence_sources"] == ()
+    assert "native_deck" in assessment["degraded_evidence_sources"]
+
+
+def test_optional_degraded_deck_keeps_independent_static_slides(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    deck = vault / "decks" / "talk.pptx"
+    slides = vault / "slides" / "talk.pdf"
+    _write_crc_damaged_media_pptx(deck)
+    _write_pdf(slides)
+
+    assessment = pattern_evidence.assess_talk_artifact_capabilities(
+        {
+            "filename": "talk.md",
+            "pptx_path": deck.relative_to(vault).as_posix(),
+            "slides_local_path": slides.relative_to(vault).as_posix(),
+            "slide_source": "pdf",
+        },
+        vault_root=vault,
+    )
+
+    assert assessment["verified_capabilities"] == ("slides",)
+    assert assessment["verified_evidence_sources"] == ("static_slides",)
+    assert "native_deck" in assessment["degraded_evidence_sources"]
+
+
+def test_structural_pptx_damage_is_unavailable_without_erasing_transcript(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    transcript, _lines = _write_transcript(vault, timed=False)
+    deck = vault / "decks" / "talk.pptx"
+    _write_pptx(deck, slide_count=1)
+    with zipfile.ZipFile(deck) as archive:
+        member = archive.getinfo("ppt/slides/slide1.xml")
+    package = bytearray(deck.read_bytes())
+    name_size, extra_size = struct.unpack_from(
+        "<HH", package, member.header_offset + 26
+    )
+    payload_offset = member.header_offset + 30 + name_size + extra_size
+    package[payload_offset + (member.compress_size // 2)] ^= 0xFF
+    deck.write_bytes(package)
+
+    assessment = pattern_evidence.assess_talk_artifact_capabilities(
+        {
+            "filename": "talk.md",
+            "transcript_path": transcript.relative_to(vault).as_posix(),
+            "transcript_source": "manual",
+            "pptx_path": deck.relative_to(vault).as_posix(),
+            "slide_source": "pptx",
+        },
+        vault_root=vault,
+    )
+
+    assert assessment["verified_capabilities"] == ("transcript",)
+    assert assessment["verified_evidence_sources"] == ("transcript",)
+    assert "structural PPTX member" in assessment["source_reasons"]["native_deck"]
+    assert assessment["degraded_evidence_sources"] == {}
+
+
+def test_native_deck_audit_is_recomputed_and_bound_to_canonical_render(
+    pptx_extraction,
+    pptx_evidence,
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    deck = vault / "decks" / "talk.pptx"
+    image_path = vault / "decks" / "full-bleed.png"
+    deck.parent.mkdir(parents=True)
+    Image.new("RGB", (640, 480), "navy").save(image_path)
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    slide.shapes.add_picture(
+        str(image_path),
+        0,
+        0,
+        width=presentation.slide_width,
+        height=presentation.slide_height,
+    )
+    presentation.save(str(deck))
+    rendered = vault / "slides" / "talk.pdf"
+    _write_pdf(rendered, page_count=1)
+    extraction = pptx_extraction.extract_pptx(
+        deck,
+        ocr=False,
+        rendered_pdf_path=rendered,
+        inspected_page_ranges=[[1, 1]],
+    )
+    talk = {
+        "filename": "talk.md",
+        "pptx_path": deck.relative_to(vault).as_posix(),
+        "slides_local_path": rendered.relative_to(vault).as_posix(),
+        "slide_source": "both",
+    }
+    raw = {
+        "filename": "talk.md",
+        "return_schema_version": 4,
+        "status": "processed_partial",
+        "slide_source": "both",
+        "transcript_source": "none",
+        "structured_data": {
+            "slide_count": 1,
+            "native_deck_audit": extraction["native_deck_audit"],
+        },
+        "pattern_observations": {
+            "evidence_sources": ["native_deck", "static_slides"],
+            "source_inspection": [
+                {"source": "native_deck", "page_ranges": [[1, 1]]},
+                {"source": "static_slides", "page_ranges": [[1, 1]]},
+            ],
+            "patterns_detected": [],
+            "antipatterns_detected": [],
+            "not_evaluable": [],
+            "pattern_score": 0,
+        },
+    }
+    original = copy.deepcopy(raw)
+    canonical = pattern_evidence.canonicalize_return_evidence(
+        raw,
+        talk,
+        vault,
+        _catalog(),
+    )
+    assert raw == original
+    assert canonical["structured_data"]["native_deck_audit"] == (
+        extraction["native_deck_audit"]
+    )
+
+    forged = copy.deepcopy(raw)
+    forged["structured_data"]["native_deck_audit"] = (
+        pptx_evidence.build_native_deck_audit(
+            source_pptx_sha256=extraction["input_fingerprint"]["digest"],
+            source_pptx_size_bytes=extraction["input_fingerprint"]["size_bytes"],
+            slide_count=1,
+            render_required_reasons={},
+        )
+    )
+    with pytest.raises(
+        pattern_evidence.PatternEvidenceError,
+        match="disagrees with a fresh extraction",
+    ):
+        pattern_evidence.canonicalize_return_evidence(
+            forged,
+            talk,
+            vault,
+            _catalog(),
+        )
+
+    original_render = rendered.read_bytes()
+    assert b"pypdf" in original_render
+    changed_render = original_render.replace(b"pypdf", b"qypdf", 1)
+    assert len(changed_render) == len(original_render)
+    rendered.write_bytes(changed_render)
+    with pytest.raises(
+        pattern_evidence.PatternEvidenceError,
+        match="rendered_page_inspection.*(canonical static_slides|PDF generation)",
+    ):
+        pattern_evidence.canonicalize_return_evidence(
+            raw,
+            talk,
+            vault,
+            _catalog(),
+        )
+
+
 def test_invalid_deck_cannot_hide_an_independent_valid_transcript(
     tmp_path: Path,
 ) -> None:
@@ -1547,14 +1944,17 @@ def test_missing_python_pptx_dependency_is_local_to_the_pptx_lane(
     slides = vault / "slides" / "talk.pdf"
     _write_pptx(deck)
     _write_pdf(slides)
-    original_import = builtins.__import__
+    def unavailable_pptx(_path: Path) -> Any:
+        raise pattern_evidence.PptxEvidenceError(
+            "PPTX evidence requires the declared python-pptx runtime dependency",
+            reason_code="pptx_dependency_unavailable",
+        )
 
-    def without_pptx(name: str, *args: Any, **kwargs: Any) -> Any:
-        if name == "pptx" or name.startswith("pptx."):
-            raise ImportError("synthetic missing python-pptx")
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", without_pptx)
+    monkeypatch.setattr(
+        pattern_evidence,
+        "probe_pptx_artifact",
+        unavailable_pptx,
+    )
     assessment = pattern_evidence.assess_talk_artifact_capabilities(
         {
             "filename": "talk.md",

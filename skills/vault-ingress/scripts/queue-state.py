@@ -100,6 +100,7 @@ from adherence_baseline import (
 )
 from pattern_evidence import (
     assess_talk_artifact_capabilities,
+    required_pptx_evidence_blocking_reason,
 )
 from return_validation import (
     PATTERN_SCORING_SCHEMA_VERSION,
@@ -244,19 +245,20 @@ def evidence_freshness_assessor(database, path):
 
 
 def artifact_capability_assessor(database, path):
-    """Bind and memoize root-aware local/acquisition capability checks."""
+    """Bind root-aware local/acquisition capability checks.
+
+    The bounded PPTX probe owns generation-aware memoization.  Keeping a
+    second filename-only cache here could authorize a claim after its deck had
+    changed between eligibility selection and the final claim boundary.
+    """
     vault_root, source_roots = evidence_roots(database, path)
-    cache = {}
 
     def assess(talk):
-        filename = talk.get("filename")
-        if filename not in cache:
-            cache[filename] = assess_talk_artifact_capabilities(
-                talk,
-                vault_root=vault_root,
-                source_roots=source_roots,
-            )
-        return cache[filename]
+        return assess_talk_artifact_capabilities(
+            talk,
+            vault_root=vault_root,
+            source_roots=source_roots,
+        )
 
     return assess
 
@@ -296,6 +298,34 @@ def has_processable_source(talk, *, capability_assessor):
             talk,
             capability_assessor=capability_assessor,
         )
+    )
+
+
+def claim_blocking_artifact_reason(talk, *, capability_assessor):
+    """Return a live artifact reason that forbids a fresh current claim."""
+    assessment = capability_assessor(talk)
+    if not isinstance(assessment, dict):
+        raise QueueStateError(
+            f"{talk.get('filename')}: artifact capability assessor returned "
+            "a non-object result"
+        )
+    return required_pptx_evidence_blocking_reason(talk, assessment)
+
+
+def has_claimable_source(talk, *, capability_assessor):
+    """Require a processable lane and no mandatory degraded native deck."""
+    assessment = capability_assessor(talk)
+
+    def provisional_assessor(_talk):
+        return assessment
+
+    return (
+        has_processable_source(talk, capability_assessor=provisional_assessor)
+        and claim_blocking_artifact_reason(
+            talk,
+            capability_assessor=provisional_assessor,
+        )
+        is None
     )
 
 
@@ -583,9 +613,22 @@ def claim_talk(
         raise QueueStateError(
             f"{talk['filename']}: cannot transition {previous!r} to {INFLIGHT_STATUS}"
         )
+    # Reassess exactly once at the mutation boundary.  Selection is only a
+    # provisional filter: a deck may have changed after it was found eligible.
+    final_assessment = capability_assessor(talk)
+
+    def final_capability_assessor(_talk):
+        return final_assessment
+
+    blocking_reason = claim_blocking_artifact_reason(
+        talk,
+        capability_assessor=final_capability_assessor,
+    )
+    if blocking_reason is not None:
+        raise QueueStateError(f"{talk['filename']}: cannot claim: {blocking_reason}")
     if not has_processable_source(
         talk,
-        capability_assessor=capability_assessor,
+        capability_assessor=final_capability_assessor,
     ):
         raise QueueStateError(
             f"{talk['filename']}: cannot claim a talk without a usable transcript, "
@@ -722,9 +765,22 @@ def command_claim(database, path, args, *, expected_snapshot):
                 raise QueueStateError(
                     f"{talk['filename']}: cannot claim status {talk['status']!r}"
                 )
+            provisional_assessment = capability_assessor(talk)
+
+            def provisional_assessor(_talk):
+                return provisional_assessment
+
+            blocking_reason = claim_blocking_artifact_reason(
+                talk,
+                capability_assessor=provisional_assessor,
+            )
+            if blocking_reason is not None:
+                raise QueueStateError(
+                    f"{talk['filename']}: cannot claim: {blocking_reason}"
+                )
             if not has_processable_source(
                 talk,
-                capability_assessor=capability_assessor,
+                capability_assessor=provisional_assessor,
             ):
                 raise QueueStateError(
                     f"{talk['filename']}: cannot claim a talk without a usable "
@@ -734,7 +790,7 @@ def command_claim(database, path, args, *, expected_snapshot):
         eligible = [
             talk for talk in candidate["talks"]
             if talk["status"] in CLAIMABLE_STATUSES
-            and has_processable_source(
+            and has_claimable_source(
                 talk,
                 capability_assessor=capability_assessor,
             )
@@ -771,7 +827,7 @@ def command_claim(database, path, args, *, expected_snapshot):
     ]
     remaining = sum(
         talk["status"] in CLAIMABLE_STATUSES
-        and has_processable_source(
+        and has_claimable_source(
             talk,
             capability_assessor=capability_assessor,
         )

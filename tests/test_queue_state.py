@@ -9,12 +9,16 @@ import hashlib
 import json
 import os
 import shutil
+import struct
 import subprocess
 import sys
 from pathlib import Path
+import zipfile
 
 import pytest
+from PIL import Image
 from pptx import Presentation
+from pptx.util import Inches
 from pypdf import PdfWriter
 
 
@@ -243,6 +247,31 @@ def _write_verified_transcript(tmp_path, name="talk"):
         encoding="utf-8",
     )
     return transcript
+
+
+def _write_crc_damaged_media_pptx(path):
+    """Create a deck whose media needs loss-reporting placeholder recovery."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image_path = path.with_suffix(".png")
+    Image.new("RGB", (64, 64), "navy").save(image_path)
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    slide.shapes.add_picture(str(image_path), Inches(1), Inches(1))
+    presentation.save(path)
+    with zipfile.ZipFile(path) as archive:
+        member = next(
+            item
+            for item in archive.infolist()
+            if item.filename.startswith("ppt/media/") and item.file_size
+        )
+    package = bytearray(path.read_bytes())
+    name_size, extra_size = struct.unpack_from(
+        "<HH", package, member.header_offset + 26
+    )
+    payload_offset = member.header_offset + 30 + name_size + extra_size
+    package[payload_offset + (member.compress_size // 2)] ^= 0xFF
+    path.write_bytes(package)
+    return member.filename
 
 
 def _read_db(path):
@@ -636,6 +665,161 @@ def test_retry_status_with_only_a_missing_local_artifact_is_not_claimed(tmp_path
     assert payload["claimed"] == []
     assert payload["remaining_eligible"] == 0
     assert _read_db(path)["talks"][0]["status"] == "skipped_download_failed"
+
+
+def test_required_degraded_pptx_cannot_create_a_fresh_current_claim(tmp_path):
+    deck = tmp_path / "decks" / "damaged.pptx"
+    damaged_part = _write_crc_damaged_media_pptx(deck)
+    talk = _talk(
+        "abcdefghijk",
+        filename="required-damaged-deck.md",
+    )
+    talk.update({
+        "pptx_path": "decks/damaged.pptx",
+        "slide_source": "pptx",
+    })
+    path = _write_db(tmp_path, [talk])
+    before = path.read_bytes()
+
+    result = _claim(path, filenames=(str(talk["filename"]),))
+
+    assert result.returncode == 2
+    payload = json.loads(result.stdout)
+    assert "placeholder archive recovery" in payload["error"]
+    assert damaged_part in payload["error"]
+    assert "restore or re-export" in payload["error"]
+    assert path.read_bytes() == before
+    persisted = _read_db(path)["talks"][0]
+    assert persisted["status"] == "pending"
+    assert "_queue_claim" not in persisted
+
+
+def test_claim_reassesses_after_eligibility_and_refuses_mutated_deck(
+    queue_state,
+):
+    talk = _talk("abcdefghijk", filename="changed-after-selection.md")
+    talk.update({"pptx_path": "decks/talk.pptx", "slide_source": "pptx"})
+    clean = {
+        "verified_capabilities": ("slides",),
+        "verified_evidence_sources": ("native_deck",),
+        "acquisition_capabilities": (),
+        "repair_capabilities": (),
+        "degraded_evidence_sources": {},
+    }
+    degraded = {
+        "verified_capabilities": (),
+        "verified_evidence_sources": (),
+        "acquisition_capabilities": (),
+        "repair_capabilities": (),
+        "degraded_evidence_sources": {
+            "native_deck": {
+                "reason_code": "pptx_archive_recovery_required",
+                "archive_recovery": [
+                    {
+                        "part_name": "ppt/media/image1.png",
+                        "status": "recovered_with_placeholder_asset",
+                    }
+                ],
+            }
+        },
+    }
+    assessments = iter([clean, degraded])
+
+    def assessor(_talk):
+        return next(assessments)
+
+    assert queue_state.has_claimable_source(
+        talk, capability_assessor=assessor
+    ) is True
+    before = copy.deepcopy(talk)
+    with pytest.raises(queue_state.QueueStateError, match="cannot claim"):
+        queue_state.claim_talk(
+            talk,
+            "run",
+            "batch",
+            NOW,
+            {},
+            capability_assessor=assessor,
+        )
+    assert talk == before
+
+
+def test_unused_optional_degraded_pptx_does_not_block_independent_source(
+    tmp_path,
+):
+    deck = tmp_path / "decks" / "optional-damaged.pptx"
+    _write_crc_damaged_media_pptx(deck)
+    talk = _talk(
+        "abcdefghijk",
+        filename="optional-damaged-deck.md",
+    )
+    talk.update({
+        "pptx_path": "decks/optional-damaged.pptx",
+        "slide_source": "pdf",
+    })
+    path = _write_db(tmp_path, [talk])
+
+    result = _claim(path, filenames=(str(talk["filename"]),))
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert [item["filename"] for item in payload["claimed"]] == [
+        "optional-damaged-deck.md"
+    ]
+
+
+@pytest.mark.parametrize("slide_source", [None, "none"])
+def test_degraded_deck_without_declared_or_independent_lane_is_not_claimed(
+    tmp_path,
+    slide_source,
+):
+    deck = tmp_path / "decks" / "undeclared-damaged.pptx"
+    _write_crc_damaged_media_pptx(deck)
+    talk = _talk(
+        "abcdefghijk",
+        filename="undeclared-damaged-deck.md",
+        video=False,
+        youtube_identity=False,
+    )
+    talk["pptx_path"] = "decks/undeclared-damaged.pptx"
+    if slide_source is not None:
+        talk["slide_source"] = slide_source
+    path = _write_db(tmp_path, [talk])
+    before = path.read_bytes()
+
+    result = _claim(path)
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["claimed"] == []
+    assert path.read_bytes() == before
+
+
+def test_optional_degraded_deck_allows_an_independent_healthy_transcript(
+    tmp_path,
+):
+    deck = tmp_path / "decks" / "optional-damaged.pptx"
+    _write_crc_damaged_media_pptx(deck)
+    transcript = _write_verified_transcript(tmp_path, "independent")
+    talk = _talk(
+        "abcdefghijk",
+        filename="independent-transcript.md",
+        video=False,
+        youtube_identity=False,
+    )
+    talk.update({
+        "pptx_path": "decks/optional-damaged.pptx",
+        "slide_source": "none",
+        "transcript_path": transcript.relative_to(tmp_path).as_posix(),
+        "transcript_source": "manual",
+    })
+    path = _write_db(tmp_path, [talk])
+
+    result = _claim(path, filenames=(str(talk["filename"]),))
+
+    assert result.returncode == 0, result.stderr
+    assert [item["filename"] for item in json.loads(result.stdout)["claimed"]] == [
+        "independent-transcript.md"
+    ]
 
 
 def test_manual_provenance_label_without_artifact_is_not_a_capability(tmp_path):

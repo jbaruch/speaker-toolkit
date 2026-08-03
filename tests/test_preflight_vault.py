@@ -4,11 +4,16 @@ from copy import deepcopy
 import importlib
 import json
 from pathlib import Path
+import struct
 import subprocess
 import sys
 from typing import Any
+import zipfile
 
 import pytest
+from PIL import Image
+from pptx import Presentation
+from pptx.util import Inches
 
 
 VIDEO_ID = "AbCdEfGhI_1"
@@ -140,6 +145,59 @@ def materialize_transcript(fixture, video_id=VIDEO_ID):
     return path
 
 
+def materialize_crc_damaged_pptx(fixture):
+    """Create a deck with one CRC-damaged media member under the source root."""
+    image_path = fixture["pptx_source"] / "asset.png"
+    Image.new("RGB", (64, 64), "navy").save(image_path)
+    path = fixture["pptx_source"] / "damaged.pptx"
+    deck = Presentation()
+    slide = deck.slides.add_slide(deck.slide_layouts[6])
+    slide.shapes.add_picture(str(image_path), Inches(1), Inches(1))
+    deck.save(str(path))
+    with zipfile.ZipFile(path) as archive:
+        member = next(
+            item
+            for item in archive.infolist()
+            if item.filename.startswith("ppt/media/") and item.file_size
+        )
+    package = bytearray(path.read_bytes())
+    name_size, extra_size = struct.unpack_from(
+        "<HH", package, member.header_offset + 26
+    )
+    payload_offset = member.header_offset + 30 + name_size + extra_size
+    package[payload_offset + (member.compress_size // 2)] ^= 0xFF
+    path.write_bytes(package)
+    return path, member.filename
+
+
+def materialize_shared_crc_damaged_tiff_pptx(fixture, *, slide_count=73):
+    """Model the stable multi-owner vault deck without retaining private bytes."""
+    image_path = fixture["pptx_source"] / "shared-asset.tiff"
+    Image.new("RGB", (64, 64), "navy").save(image_path, format="TIFF")
+    path = fixture["pptx_source"] / "shared-damaged-73-slides.pptx"
+    deck = Presentation()
+    for index in range(slide_count):
+        slide = deck.slides.add_slide(deck.slide_layouts[6])
+        if index == 0:
+            slide.shapes.add_picture(str(image_path), Inches(1), Inches(1))
+    deck.save(str(path))
+    with zipfile.ZipFile(path) as archive:
+        member = next(
+            item
+            for item in archive.infolist()
+            if item.filename.startswith("ppt/media/") and item.file_size
+        )
+    assert member.filename.endswith(".tiff")
+    package = bytearray(path.read_bytes())
+    name_size, extra_size = struct.unpack_from(
+        "<HH", package, member.header_offset + 26
+    )
+    payload_offset = member.header_offset + 30 + name_size + extra_size
+    package[payload_offset + (member.compress_size // 2)] ^= 0xFF
+    path.write_bytes(package)
+    return path, member.filename
+
+
 def trusted_video_manifest(fixture, page_count=1):
     rebuild = fixture["root"] / "slides-rebuild" / VIDEO_ID
     rebuild.mkdir(parents=True, exist_ok=True)
@@ -245,7 +303,9 @@ def test_clean_record_has_no_findings(preflight_vault, vault_fixture):
     (vault_fixture["slides"] / f"{DRIVE_ID}.pdf").write_bytes(b"%PDF fixture")
     pptx = vault_fixture["pptx_source"] / "Conf" / "Perfect.pptx"
     pptx.parent.mkdir()
-    pptx.write_bytes(b"PPTX fixture")
+    deck = Presentation()
+    deck.slides.add_slide(deck.slide_layouts[6])
+    deck.save(str(pptx))
     talk = base_talk(
         slide_source="both",
         google_drive_id=DRIVE_ID,
@@ -343,6 +403,7 @@ def test_legacy_quality_warning_allows_normalize_to_requeue(
         text=True,
         capture_output=True,
         check=False,
+        timeout=30,
     )
 
     assert completed.returncode == 0, completed.stderr
@@ -724,6 +785,134 @@ def test_legacy_missing_remote_pdf_is_a_reacquisition_warning(
     )
     assert finding["severity"] == "warning"
     assert finding["capability_fact"]["acquisition_capabilities"] == ["slides"]
+
+
+def test_crc_damaged_pptx_preflight_is_structured_and_severity_is_current_aware(
+    preflight_vault,
+    vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    deck, damaged_part = materialize_crc_damaged_pptx(vault_fixture)
+    legacy = base_talk(
+        slide_source="pptx",
+        pptx_path=deck.name,
+    )
+    write_database(vault_fixture, [legacy])
+
+    warning_report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    warning = next(
+        item
+        for item in warning_report["findings"]
+        if item["code"] == "slide_pptx_artifact_degraded"
+    )
+    assert warning["severity"] == "warning"
+    assert warning["actual"]["archive_recovery"][0]["part_name"] == damaged_part
+
+    current = current_v5_talk(
+        preflight_vault,
+        slide_source="pptx",
+        pptx_path=deck.name,
+    )
+    write_database(vault_fixture, [current])
+    cli_run = subprocess.run(
+        [sys.executable, preflight_vault.__file__, str(vault_fixture["root"])],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+    blocking_report = json.loads(cli_run.stdout)
+    blocking = next(
+        item
+        for item in blocking_report["findings"]
+        if item["code"] == "slide_pptx_artifact_degraded"
+    )
+    assert cli_run.returncode == 1
+    assert "Traceback" not in cli_run.stderr
+    assert blocking["severity"] == "blocking"
+    assert blocking["actual"]["status"] == "degraded_recoverable"
+
+
+def test_shared_73_slide_damaged_tiff_deck_reports_both_owners_without_promotion(
+    preflight_vault,
+    vault_fixture,
+):
+    deck, damaged_part = materialize_shared_crc_damaged_tiff_pptx(vault_fixture)
+    talks = []
+    for filename, video_id in (
+        ("2018-01-01-shared-deck-a.md", VIDEO_ID),
+        ("2018-01-02-shared-deck-b.md", OTHER_VIDEO_ID),
+    ):
+        talks.append(base_talk(
+            filename=filename,
+            title=f"Shared damaged deck {filename[-4]}",
+            video_url=f"https://www.youtube.com/watch?v={video_id}",
+            youtube_id=video_id,
+            transcript_source="none",
+            slide_source="pptx",
+            pptx_path=deck.name,
+        ))
+    write_database(vault_fixture, talks)
+
+    cli_run = subprocess.run(
+        [sys.executable, preflight_vault.__file__, str(vault_fixture["root"])],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+    report = json.loads(cli_run.stdout)
+    findings = [
+        item
+        for item in report["findings"]
+        if item["code"] == "slide_pptx_artifact_degraded"
+    ]
+    assert cli_run.returncode == 0
+    assert "Traceback" not in cli_run.stderr
+    assert [item["filename"] for item in findings] == [
+        "2018-01-01-shared-deck-a.md",
+        "2018-01-02-shared-deck-b.md",
+    ]
+    assert all(item["severity"] == "warning" for item in findings)
+    assert all(
+        item["actual"]["archive_recovery"][0]["part_name"] == damaged_part
+        for item in findings
+    )
+    assert all(
+        "native_deck"
+        not in item["capability_fact"]["verified_evidence_sources"]
+        for item in findings
+    )
+
+
+def test_unrecoverable_pptx_preflight_is_a_structured_unavailable_finding(
+    preflight_vault,
+    vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    deck = vault_fixture["pptx_source"] / "unrecoverable.pptx"
+    deck.write_bytes(b"not an OOXML ZIP package")
+    write_database(
+        vault_fixture,
+        [base_talk(slide_source="pptx", pptx_path=deck.name)],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "slide_pptx_artifact_unreadable"
+    )
+    assert finding["severity"] == "warning"
+    assert finding["actual"]["reason_code"] == "pptx_invalid_container"
+    assert "invalid PPTX ZIP container" in finding["actual"]["reason"]
+    assert "native_deck" not in finding["capability_fact"][
+        "verified_evidence_sources"
+    ]
 
 
 def test_transcript_only_partial_record_can_repair_a_missing_slide_lane(
@@ -1287,6 +1476,7 @@ def test_cli_emits_json_and_only_blocks_on_integrity_errors(
         capture_output=True,
         text=True,
         check=False,
+        timeout=30,
     )
     warning_report = json.loads(warning_run.stdout)
     assert warning_run.returncode == 0
@@ -1299,6 +1489,7 @@ def test_cli_emits_json_and_only_blocks_on_integrity_errors(
         capture_output=True,
         text=True,
         check=False,
+        timeout=30,
     )
     blocking_report = json.loads(blocking_run.stdout)
     assert blocking_run.returncode == 1
