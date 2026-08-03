@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.8 — 2026-08-03
+
 ### fix(vault-ingress) — unify trusted vault-root authority (#212)
 
 Queue selection, persistence, analysis rendering, preflight, and profile cohort
