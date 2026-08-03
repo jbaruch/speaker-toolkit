@@ -418,18 +418,24 @@ def test_pptx_preclaim_rejects_raw_dot_segments_before_normalization(
         "//server/../talk.pptx",
     ],
 )
-def test_pptx_dot_segment_guard_covers_windows_alternate_separator(
-    monkeypatch: pytest.MonkeyPatch,
-    locator: str,
-) -> None:
-    with monkeypatch.context() as patch:
-        patch.setattr(pattern_evidence.os, "sep", "\\")
-        patch.setattr(pattern_evidence.os, "altsep", "/")
-        with pytest.raises(pattern_evidence.PatternEvidenceError, match="ambiguous"):
-            pattern_evidence._reject_ambiguous_path_segments(
-                locator,
-                label="pptx_path",
-            )
+def test_pptx_dot_segment_guard_is_platform_independent(locator: str) -> None:
+    with pytest.raises(pattern_evidence.PatternEvidenceError, match="ambiguous"):
+        pattern_evidence._reject_ambiguous_path_segments(
+            locator,
+            label="pptx_path",
+        )
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
+        r"conference\track\talk.pptx",
+        "conference/track/talk.pptx",
+        r"conference\track/mixed/talk.pptx",
+    ],
+)
+def test_pptx_dot_segment_guard_accepts_clean_mixed_separators(locator: str) -> None:
+    pattern_evidence._reject_ambiguous_path_segments(locator, label="pptx_path")
 
 
 def test_traversal_and_symlinked_artifacts_never_become_sources(

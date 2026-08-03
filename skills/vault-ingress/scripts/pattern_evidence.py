@@ -274,13 +274,10 @@ def _reject_ambiguous_path_segments(value: str, *, label: str) -> None:
 
     expanded = os.path.expanduser(value)
     windows_drive, windows_tail = ntpath.splitdrive(expanded)
-    separators = [os.sep]
-    if os.altsep is not None and os.altsep not in separators:
-        separators.append(os.altsep)
-    if windows_drive:
-        for separator in ("\\", "/"):
-            if separator not in separators:
-                separators.append(separator)
+    separators: list[str] = []
+    for separator in (os.sep, os.altsep, "/", "\\"):
+        if separator is not None and separator not in separators:
+            separators.append(separator)
     # Scan the full locator so ambiguous UNC share components cannot disappear
     # into splitdrive(), and scan the tail as well so drive-relative C:.. forms
     # expose the dot segment that is attached to the drive prefix.

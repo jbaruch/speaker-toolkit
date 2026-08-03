@@ -1694,9 +1694,10 @@ adversarial session-containment claim. Sampled aggregate RSS monitoring requires
 exactly `psutil==7.2.2` and is fail-closed, but is not described as a kernel
 hard-allocation limit on macOS.
 Raw worker diagnostics are discarded after producing a bounded count/hash/
-truncation receipt. A hard 2 GiB source-artifact ceiling admits large hydrated
-authored decks (including known ~1.045 GB decks) without allowing unbounded
-reads; operation-specific memory and wall profiles still fail closed. Directory
+truncation receipt. Source-artifact and operation resource limits are script-owned;
+see `skills/vault-ingress/scripts/pptx_evidence.py` — `PPTX_MAX_INPUT_BYTES` and
+the top-level `SupervisorLimits` profiles. Exceeding a configured limit fails
+closed. Directory
 extraction is selected only with `--directory`. The owner performs no root stat,
 type probe, or recursive enumeration: an authenticated worker with fixed input,
 output, memory, process, and wall limits validates and scans the root, then returns
