@@ -1475,6 +1475,48 @@ def test_preflight_never_strips_a_transcript_locator_before_artifact_io(
     assert raw_locator not in json.dumps(finding, sort_keys=True)
 
 
+def test_preflight_never_reads_a_transcript_owned_by_another_youtube_id(
+    preflight_vault,
+    vault_fixture,
+    monkeypatch,
+) -> None:
+    transcript = vault_fixture["transcripts"] / "other-owner.txt"
+    transcript.write_text("substantive transcript evidence " * 600, encoding="utf-8")
+    raw_locator = "transcripts/other-owner.txt"
+    talk = base_talk(
+        status="pending",
+        transcript_source="manual",
+        transcript_path=raw_locator,
+        slide_source="none",
+    )
+    write_database(vault_fixture, [talk])
+    original_is_file = Path.is_file
+    original_read_text = Path.read_text
+
+    def guarded_is_file(path: Path) -> bool:
+        if path == transcript:
+            pytest.fail("mismatched transcript owner reached is_file")
+        return original_is_file(path)
+
+    def guarded_read_text(path: Path, *args, **kwargs) -> str:
+        if path == transcript:
+            pytest.fail("mismatched transcript owner reached read_text")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "is_file", guarded_is_file)
+    monkeypatch.setattr(Path, "read_text", guarded_read_text)
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "transcript_reference_missing"
+    )
+    assert finding["artifact_path"] is None
+    assert raw_locator not in json.dumps(finding, sort_keys=True)
+
+
 def test_preflight_path_helpers_never_strip_raw_locator_grammar(
     preflight_vault,
     vault_fixture,

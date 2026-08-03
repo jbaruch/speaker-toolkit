@@ -1064,8 +1064,7 @@ def resolve_transcript_artifact(
             expected = PurePosixPath("transcripts") / f"{youtube_id}.txt"
             if relative != expected:
                 raise PatternEvidenceError(
-                    f"transcript_path {str(relative)!r} does not match the "
-                    f"claimed talk's youtube_id; expected {str(expected)!r}"
+                    "transcript_path does not match the claimed talk's youtube_id"
                 )
         resolved = bound(root.joinpath(*relative.parts))
         return resolved, f"resolved transcript_path {relative}"

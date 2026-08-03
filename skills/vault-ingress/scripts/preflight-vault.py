@@ -1026,6 +1026,13 @@ class VaultPreflight:
         if explicit:
             try:
                 relative = validate_transcript_path(explicit)
+                youtube_id = _nonempty_string(talk.get("youtube_id"))
+                if (
+                    youtube_id
+                    and YOUTUBE_ID_RE.fullmatch(youtube_id)
+                    and relative.as_posix() != f"transcripts/{youtube_id}.txt"
+                ):
+                    return None
                 return materialize_artifact_locator(
                     relative.as_posix(),
                     trusted_root=self.vault_root,
