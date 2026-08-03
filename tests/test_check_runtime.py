@@ -7,10 +7,12 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import runpy
 import signal
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -26,6 +28,17 @@ SPEC = importlib.util.spec_from_file_location("check_runtime", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 check_runtime = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(check_runtime)
+
+SUPERVISOR_SCRIPT = SCRIPT.with_name("artifact_supervisor.py")
+SUPERVISOR_SPEC = importlib.util.spec_from_file_location(
+    "artifact_supervisor_runtime_contract",
+    SUPERVISOR_SCRIPT,
+)
+assert SUPERVISOR_SPEC is not None and SUPERVISOR_SPEC.loader is not None
+artifact_supervisor = importlib.util.module_from_spec(SUPERVISOR_SPEC)
+sys.modules[SUPERVISOR_SPEC.name] = artifact_supervisor
+SUPERVISOR_SPEC.loader.exec_module(artifact_supervisor)
+PYPROJECT = SCRIPT.parents[3] / "pyproject.toml"
 
 
 def _available_probe() -> dict[str, object]:
@@ -98,6 +111,7 @@ def _run_child_probe(
             text=True,
             check=False,
             env=env,
+            timeout=check_runtime.MODULE_PROBE_TIMEOUT_SECONDS + 5,
         )
 
 
@@ -122,6 +136,57 @@ def test_optional_lane_failure_degrades_without_blocking_core(monkeypatch) -> No
     assert report["lanes"]["pptx"]["module_failures"] == {
         "python-pptx": {"reason": "unavailable_import"}
     }
+
+
+def test_missing_psutil_blocks_only_the_required_pptx_lane(monkeypatch) -> None:
+    def probe(name: str) -> dict[str, object]:
+        if name == "psutil":
+            return _failed_probe("unavailable_import")
+        return _available_probe()
+
+    monkeypatch.setattr(check_runtime, "_probe_module", probe)
+    monkeypatch.setattr(check_runtime, "_command_available", lambda _name: True)
+
+    report = check_runtime.build_report(
+        ("core", "pdf", "pptx"),
+        ("core", "pptx"),
+    )
+
+    assert report["ok"] is False
+    assert report["blocking_lanes"] == ["pptx"]
+    assert report["degraded_lanes"] == []
+    assert report["lanes"]["pdf"]["available"] is True
+    assert report["lanes"]["pptx"]["missing_modules"] == ["psutil"]
+    assert report["lanes"]["pptx"]["module_failures"] == {
+        "psutil": {"reason": "unavailable_import"}
+    }
+    assert report["lanes"]["pptx"]["required_module_versions"] == {"psutil": "7.2.2"}
+
+
+def test_incompatible_psutil_reports_exact_required_version(monkeypatch) -> None:
+    def probe(name: str) -> dict[str, object]:
+        if name == "psutil":
+            return _failed_probe(
+                "incompatible_version",
+                required_version="7.2.2",
+                actual_version="7.2.1",
+            )
+        return _available_probe()
+
+    monkeypatch.setattr(check_runtime, "_probe_module", probe)
+    monkeypatch.setattr(check_runtime, "_command_available", lambda _name: True)
+
+    report = check_runtime.build_report(("pptx",), ("core", "pptx"))
+
+    assert report["ok"] is False
+    assert report["blocking_lanes"] == ["pptx"]
+    assert report["lanes"]["pptx"]["missing_modules"] == ["psutil"]
+    assert report["lanes"]["pptx"]["module_failures"]["psutil"] == {
+        "reason": "incompatible_version",
+        "required_version": "7.2.2",
+        "actual_version": "7.2.1",
+    }
+    assert report["lanes"]["pptx"]["required_module_versions"] == {"psutil": "7.2.2"}
 
 
 def test_explicitly_required_lane_failure_is_blocking(monkeypatch) -> None:
@@ -183,6 +248,35 @@ def test_module_probe_child_contains_expected_import_failures(
         "failure_reason": "unavailable_import",
         "schema_version": 1,
     }
+
+
+@pytest.mark.parametrize(
+    ("actual_version", "available"),
+    [("7.2.2", True), ("7.2.1", False), (None, False)],
+)
+def test_module_probe_child_requires_exact_psutil_version(
+    actual_version: str | None,
+    available: bool,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        check_runtime.importlib,
+        "import_module",
+        lambda _name: SimpleNamespace(__version__=actual_version),
+    )
+
+    result = check_runtime._module_probe_child("psutil")
+
+    if available:
+        assert result == {"available": True, "schema_version": 1}
+    else:
+        assert result == {
+            "actual_version": actual_version,
+            "available": False,
+            "failure_reason": "incompatible_version",
+            "required_version": "7.2.2",
+            "schema_version": 1,
+        }
 
 
 def test_module_probe_child_quarantines_dependency_output(
@@ -335,7 +429,7 @@ def test_module_probe_preserves_child_failure_reason(
                 "available": False,
                 "failure_reason": failure_reason,
                 "exception_type": exception_type,
-            }
+            },
         )
 
     result = check_runtime._probe_module("mlx_whisper", runner=runner)
@@ -343,6 +437,30 @@ def test_module_probe_preserves_child_failure_reason(
     assert result == _failed_probe(
         failure_reason,
         exception_type=exception_type,
+    )
+
+
+def test_module_probe_preserves_incompatible_version_report() -> None:
+    def runner(
+        command: list[str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[object]:
+        return _completed_probe(
+            command,
+            {
+                "schema_version": 1,
+                "available": False,
+                "failure_reason": "incompatible_version",
+                "required_version": "7.2.2",
+                "actual_version": "7.2.1",
+            },
+        )
+
+    result = check_runtime._probe_module("psutil", runner=runner)
+
+    assert result == _failed_probe(
+        "incompatible_version",
+        required_version="7.2.2",
+        actual_version="7.2.1",
     )
 
 
@@ -419,6 +537,12 @@ def test_module_probe_classifies_nonzero_native_style_exit() -> None:
         (
             '{"available": false, "exception_type": "ValueError", '
             '"failure_reason": [], "schema_version": 1}\n',
+            "invalid_payload",
+        ),
+        (
+            '{"actual_version": "7.2.1", "available": false, '
+            '"failure_reason": "incompatible_version", '
+            '"required_version": "7.2.1", "schema_version": 1}\n',
             "invalid_payload",
         ),
         ('{"available": true, "schema_version": 1}\nextra\n', "multiple_lines"),
@@ -504,9 +628,7 @@ def test_module_probe_bounds_retained_descriptor_read(monkeypatch) -> None:
         "malformed_child_output",
         malformation="oversized",
     )
-    assert observed_payload_lengths == [
-        check_runtime.MODULE_PROBE_MAX_OUTPUT_BYTES + 1
-    ]
+    assert observed_payload_lengths == [check_runtime.MODULE_PROBE_MAX_OUTPUT_BYTES + 1]
 
 
 @pytest.mark.skipif(
@@ -769,9 +891,7 @@ def test_module_probe_discards_large_process_fd_output(
 ) -> None:
     module_name = "speaker_toolkit_test_large_fd_output"
     (tmp_path / f"{module_name}.py").write_text(
-        "import os\n"
-        'os.write(1, b"x" * 1_000_000)\n'
-        'os.write(2, b"y" * 1_000_000)\n',
+        'import os\nos.write(1, b"x" * 1_000_000)\nos.write(2, b"y" * 1_000_000)\n',
         encoding="utf-8",
     )
     existing_pythonpath = os.environ.get("PYTHONPATH")
@@ -927,7 +1047,30 @@ def test_outer_boundary_emits_one_json_failure_for_unexpected_probe_fault(
 def test_lane_requirements_match_the_configured_interpreter_contract() -> None:
     requirements = check_runtime.LANE_REQUIREMENTS
 
+    assert check_runtime.REPORT_SCHEMA_VERSION == 2
+    assert check_runtime.MODULE_PROBE_SCHEMA_VERSION == 1
+    assert check_runtime.PSUTIL_REQUIRED_VERSION == "7.2.2"
+    assert check_runtime.REQUIRED_MODULE_VERSIONS == {"psutil": "7.2.2"}
+    assert requirements["pptx"]["modules"] == {
+        "python-pptx": "pptx",
+        "psutil": "psutil",
+    }
     assert requirements["google-drive"]["modules"] == {"gdown": "gdown"}
     assert requirements["captions"]["commands"] == {}
     assert requirements["youtube-download"]["commands"] == {"yt-dlp": "yt-dlp"}
     assert requirements["pdf-render"]["commands"] == {"pdftoppm": "pdftoppm"}
+
+
+def test_psutil_version_authorities_are_synchronized() -> None:
+    manifest = PYPROJECT.read_text(encoding="utf-8")
+    manifest_versions = re.findall(
+        r'^\s*"psutil==([^"\s]+)",\s*$',
+        manifest,
+        flags=re.MULTILINE,
+    )
+
+    assert manifest_versions == [check_runtime.PSUTIL_REQUIRED_VERSION]
+    assert (
+        artifact_supervisor.PSUTIL_REQUIRED_VERSION
+        == check_runtime.PSUTIL_REQUIRED_VERSION
+    )

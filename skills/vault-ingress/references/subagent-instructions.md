@@ -136,10 +136,10 @@ explicitly authorizes full transcript/receipt replacement.
 
 - **`pptx` / `both`** — run
   `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py" <path.pptx>`.
-  Require extraction schema v3 for current analysis. Missing/v0/v1 output has
+  Require extraction schema v4 for current analysis. Missing/v0/v1 output has
   unknown timing; v2 has the pre-build timing lanes but lacks raw build-list
-  evidence, archive-recovery, and native/render audit receipts. Re-extract
-  v0-v2; an unknown future version
+  evidence, archive-recovery, and native/render audit receipts; v3 lacks required
+  shape/image capability bindings. Re-extract v0-v3; an unknown future version
   is unusable until the reader contract is updated. A non-empty
   `archive_recovery` is degraded input, not permission to score the surviving
   slides: restore or re-export a required native deck before returning evidence.
@@ -248,8 +248,12 @@ backward-compatible `ocr_text` aggregate via tesseract
 (`text_extraction_method: "shapes+ocr"`).
 
 **An empty `text_content_preview` on a low-confidence slide is not evidence of
-a wordless slide.** It means shapes could not read the text. Prefer `ocr_text`
-for the word inventory; inspect `text_channels` to learn which source was read.
+a wordless slide.** It means shapes could not read the text. For affirmative OCR
+inventory, read only each receipt's `recovered_text` when that same receipt has
+`trustworthy_text: true`; inspect `text_channels` to learn which source was read.
+Never authorize a word, citation, language finding, or pattern from `ocr_text` or
+an OCR channel's aggregate `text` alone: both intentionally preserve untrustworthy
+low-confidence recovery for human review.
 If OCR is also empty (engine missing, unavailable/corrupt image blob, unsupported
 SmartArt/chart/graphic frame, or genuinely blank art), still do not treat
 absence as proof — look at the rendered page. Reading shape emptiness as
@@ -261,7 +265,7 @@ Into Images".
 
 | Job | Source |
 |---|---|
-| Word inventory, transcript cross-check, slide-text language policy, citational pattern evidence (`second-look` labels, buried jokes) | `text_channels` first; `ocr_text` and `text_content_preview` are compatibility aggregates |
+| Word inventory, transcript cross-check, slide-text language policy, citational pattern evidence (`second-look` labels, buried jokes) | Native channel text plus OCR receipt `recovered_text` only where that receipt has `trustworthy_text: true`; aggregates are review/compatibility fields, not authority |
 | Density / two-layer legibility / composition / Dim 8–13 design judgment | **Rendered page images** (OCR is not a layout oracle) |
 
 When any slide in a deck reports `text_extraction_confidence: "low"`:
@@ -269,11 +273,14 @@ When any slide in a deck reports `text_extraction_confidence: "low"`:
 1. Read `text_channels`, `unsupported_content`, and
    `render_required_reasons` from the extraction JSON first. Each channel names
    its source, confidence, and status. `ocr_text` remains a convenient combined
-   inventory. For OCR channels, read channel-level `attempted`, engine/version,
+   review field, but never affirmative evidence. For OCR channels, read
+   channel-level `attempted`, engine/version,
    result confidence, reason, and every `ocr_receipts[]` record: each receipt
    binds one exact package `part_name` and asset SHA-256 to its outcome.
-   `trustworthy_text: false`, `failed`, `unavailable`, or `genuine_empty` never
-   proves visible-text absence. `--no-ocr` and missing blobs are explicit
+   Only a receipt with `trustworthy_text: true` authorizes its own
+   `recovered_text`; `trustworthy_text: false`, `failed`, `unavailable`, or
+   `genuine_empty` never authorizes a word or proves visible-text absence.
+   `--no-ocr` and missing blobs are explicit
    `attempted: false` outcomes. `shapes+ocr_unavailable` means install tesseract
    next time; an `unsupported` or `unavailable` channel needs rendering or a
    specialized parser. Do not invent words.
@@ -309,10 +316,10 @@ When any slide in a deck reports `text_extraction_confidence: "low"`:
    return the affected catalog outcomes as `not_evaluable` with missing source
    coverage. There is no confidence carrier for those structured fields, so do
    not put a guessed "low-confidence" value into them. Preserve only structural
-   observations that the native audit actually supports. Still use any
-   trustworthy, receipt-bearing `ocr_text` inventory that the extractor
-   produced from healthy picture blobs; low-confidence, failed, unavailable, or
-   empty OCR is not affirmative text evidence.
+   observations that the native audit actually supports. Still use
+   `recovered_text` from healthy-picture receipts whose own
+   `trustworthy_text` is true; channel/`ocr_text` aggregates and low-confidence,
+   failed, unavailable, or empty OCR are not affirmative text evidence.
 
 3. Render the pages and read them for design:
 
@@ -340,9 +347,11 @@ When any slide in a deck reports `text_extraction_confidence: "low"`:
 
 4. Judge **Dimension 8** structure (dense vs minimal, room vs reward layer) and
    **Dimension 13** (Slide Design) from the rendered images. Cross-check the
-   spoken word against `ocr_text` where the inventory exists.
+   spoken word only against native channel text and per-receipt OCR
+   `recovered_text` authorized by `trustworthy_text: true`.
 5. Count `image_only_slide_count` from what the rendered slide *shows* (and
-   from non-empty `ocr_text`), not from empty shape text alone. A slide
+   from non-empty trustworthy OCR receipts), never from an aggregate alone or
+   from empty shape text. A slide
    carrying baked-in text is not image-only.
 
 Structural fields stay authoritative for what they actually measure —
@@ -351,7 +360,7 @@ Structural fields stay authoritative for what they actually measure —
 
 ### Native timing is structure, not observed playback
 
-Schema-v3 PPTX extraction extends the schema-v2 timing model with a fifth raw
+Schema-v3 PPTX extraction introduced the fifth raw
 build-list lane and keeps all five evidence lanes distinct on every slide:
 exact animation behavior elements, visibility-targeting `<p:set>` actions,
 slide transitions, audio/video timing nodes, and raw `<p:bldLst>` build entries.

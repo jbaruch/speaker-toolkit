@@ -1,5 +1,57 @@
 # Changelog
 
+### fix(vault-ingress) — supervise every native-deck parser boundary (#182)
+
+PPTX probe, native-audit, and full extraction now run behind one private,
+authenticated worker protocol. Artifact paths and per-invocation credentials
+travel over bounded stdin only; signed responses bind the request, operation,
+limit profile, extractor schema/pipeline, and exact pre/worker/post file
+generations. Duplicate, non-finite, partial, trailing, oversized, unauthenticated,
+or generation-mismatched results fail closed before their nested payload is used.
+
+Workers receive fixed wall, input, output, process-count, and process-tree memory
+budgets. POSIX cleanup terminates the trusted worker's process group plus sampled
+descendants; Windows uses a kill-on-close Job Object with aggregate
+committed-memory and active-process limits. `psutil==7.2.2` supplies fail-closed
+sampled aggregate-RSS monitoring on all platforms; macOS does not overclaim a
+kernel hard-allocation cap. Raw parser diagnostics never escape—only a
+byte-count/hash/truncation receipt is retained.
+
+The stdlib-only runtime checker advances to report schema v2, publishes each
+lane's `required_module_versions`, and rejects any PPTX supervision runtime that
+does not provide exactly `psutil==7.2.2`.
+
+The public extractor can no longer fall back to owner-process parsing, including
+OCR and rendered-PDF inspection. A hard 2 GiB source ceiling admits known large
+hydrated decks while preserving an explicit per-artifact bound. Directory mode
+is explicit (`--directory`) and moves root validation plus recursive enumeration
+behind a separate authenticated, termination-safe worker, so the owner never stats
+or scans the supplied root. Its strict root-relative manifest rejects symlinks,
+directory reparse points, unknown Windows redirects, offline/recall Cloud Files,
+unusable/colliding directory identities, and `~$` Office locks while admitting
+supported hydrated Cloud Files leaves. File-cap truncation emits a root-level
+incomplete-scan receipt; discovery and extraction share one deadline and final JSON
+accounting includes the exact wrapper/newline. Race-free root/leaf handle binding is
+tracked separately by #176. Extraction behavior advances from pipeline 1.2.0 to
+1.4.0 and field schema v4 makes native text-frame, graphic-frame, picture-asset,
+and background-asset obligations explicit so partial worker output cannot silently
+downgrade catalog evidence. Known shape/graphic types are cross-bound to their
+capabilities and DrawingML URIs; picture/background OCR and recovery receipts bind
+the exact package part and digest; slide ordinals bind canonical slide parts and
+timing provenance; and duplicate, ASCII-case-equivalent, or segment-prefix
+package-part names, noncanonical OPC escapes/segments, and duplicate relationship
+IDs are rejected before parsing. Content-type defaults/overrides and presentation
+slide identities are likewise required to be unambiguous.
+Names, URIs, relationship IDs, nesting, member counts, and expanded archive bytes
+are normalized or stopped at documented bounds before entering the catalog.
+Empty image parts now produce self-consistent unavailable-asset evidence. Consumer
+instructions authorize affirmative OCR only from each receipt whose own
+`trustworthy_text` is true; compatibility aggregates remain review-only.
+Graphic frames with a missing/empty URI remain visible as generic unsupported
+evidence instead of producing an internally invalid extraction record.
+Repeated references to one package asset must agree on a single SHA-256 across
+picture, background, and recovery bindings.
+
 ### fix(vault-ingress) — make damaged native-deck evidence fail closed (#151)
 
 PPTX extraction schema v3 validates every archive member and reports bad-CRC

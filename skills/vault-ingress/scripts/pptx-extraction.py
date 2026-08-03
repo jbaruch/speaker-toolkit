@@ -16,49 +16,66 @@ Those are raw package counts with explicit non-playback provenance, not claims
 about observed motion, concurrency, or delivered behavior.
 
 Usage:
-    pptx-extraction.py <path> [--skip template] [--no-ocr]
+    pptx-extraction.py <file.pptx> [--no-ocr]
         [--rendered-pdf <path>] [--inspected-pages <PAGE|START-END>]
+    pptx-extraction.py --directory <directory> [--skip template] [--no-ocr]
     pptx-extraction.py --version
 
-    <path>       Path to a single .pptx file or a directory to scan recursively
+    <path>       Path to one .pptx, or a root when --directory is explicit
     --skip       Additional skip patterns (case-insensitive substring match on filename)
     --no-ocr     Skip OCR even on low-confidence slides (shape walk only)
 
 Examples:
     pptx-extraction.py /path/to/talk.pptx
-    pptx-extraction.py /path/to/Presentations --skip template --skip draft
+    pptx-extraction.py --directory /path/to/Presentations --skip template --skip draft
 """
 
 import argparse
-import glob
 import hashlib
 import io
 import json
+import math
 import os
 import re
+import stat
 import sys
+import time
 from collections import Counter
+from dataclasses import replace
 from math import gcd
+from pathlib import Path
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.oxml.ns import qn
 
+from artifact_supervisor import (
+    SupervisorError,
+    SupervisorLimits,
+    WorkerRequest,
+    isolate_protocol_output,
+    read_worker_request,
+    run_authenticated_worker,
+    write_worker_response,
+)
 from pptx_evidence import (
     PPTX_EXTRACTION_PIPELINE_VERSION,
     PPTX_EXTRACTION_SCHEMA_VERSION,
+    PPTX_OCR_TRUST_CONFIDENCE,
     PptxEvidenceError,
     build_native_deck_audit,
     build_rendered_page_inspection,
     finite_confidence,
     parse_page_range_arguments,
     presentation_with_media_recovery,
+    run_supervised_pptx_extraction,
     sha256_bytes,
     snapshot_regular_file,
 )
 
 # Field-shape and behavior versions are deliberately separate. A missing
 # schema_version/pipeline_version identifies the legacy extractor output.
-# v2 added fixed-shape native timing. V3 adds a raw build-list lane, a closed
-# native-deck audit, and an exact rendered-page inspection receipt.
+# v2 added fixed-shape native timing. V3 added a raw build-list lane, a closed
+# native-deck audit, and an exact rendered-page inspection receipt. V4 makes
+# shape, picture, and background capability/asset bindings non-optional.
 SCHEMA_VERSION = PPTX_EXTRACTION_SCHEMA_VERSION
 PIPELINE_VERSION = PPTX_EXTRACTION_PIPELINE_VERSION
 
@@ -92,15 +109,9 @@ _TIMING_PROVENANCE = {
 # DrawingML graphic-frame URIs. python-pptx exposes chart/table helpers, but
 # returns shape_type=None for SmartArt and other graphic frames, so the URI is
 # the only reliable discriminator for those objects.
-_GRAPHIC_DATA_URI_TABLE = (
-    "http://schemas.openxmlformats.org/drawingml/2006/table"
-)
-_GRAPHIC_DATA_URI_CHART = (
-    "http://schemas.openxmlformats.org/drawingml/2006/chart"
-)
-_GRAPHIC_DATA_URI_OLE = (
-    "http://schemas.openxmlformats.org/presentationml/2006/ole"
-)
+_GRAPHIC_DATA_URI_TABLE = "http://schemas.openxmlformats.org/drawingml/2006/table"
+_GRAPHIC_DATA_URI_CHART = "http://schemas.openxmlformats.org/drawingml/2006/chart"
+_GRAPHIC_DATA_URI_OLE = "http://schemas.openxmlformats.org/presentationml/2006/ole"
 
 # A picture covering at least this fraction of the slide is large enough to be
 # carrying rendered text — AI-generated illustration decks bake titles, callout
@@ -115,11 +126,165 @@ _TEXT_BEARING_IMAGE_AREA_RATIO = 0.5
 # Cap so one dense manual page cannot blow out the JSON. Inventory is for
 # cites and transcript cross-checks, not a full document dump.
 _OCR_TEXT_MAX_CHARS = 8000
+_NATIVE_TEXT_MAX_CHARS = 8000
+_SHAPE_PATH_COMPONENT_MAX_CHARS = 4096
+_PACKAGE_PART_NAME_MAX_CHARS = 2048
+
+
+def _bounded_package_part_name(value):
+    part_name = str(value).lstrip("/")
+    if (
+        not part_name
+        or "\x00" in part_name
+        or len(part_name) > _PACKAGE_PART_NAME_MAX_CHARS
+    ):
+        raise PptxEvidenceError(
+            "PPTX package part name exceeds the bounded evidence contract",
+            reason_code="pptx_probe_resource_unavailable",
+        )
+    return part_name
+
+
+# Directory mode is intentionally a fixed, non-user-expandable batch contract.
+# It discovers only local, non-symlink regular files and stops before launching
+# more workers once any aggregate budget is exhausted.
+_BATCH_MAX_DEPTH = 32
+_BATCH_MAX_DIRECTORIES = 5_000
+_BATCH_MAX_ENTRIES = 50_000
+_BATCH_MAX_FILES = 256
+_BATCH_MAX_RELATIVE_PATH_CHARS = 4_096
+_BATCH_MAX_INPUT_BYTES = 16 * 1024 * 1024 * 1024
+_BATCH_MAX_OUTPUT_BYTES = 512 * 1024 * 1024
+_BATCH_MAX_WALL_SECONDS = 3_600
+_WINDOWS_REPARSE_POINT_ATTRIBUTE = 0x00000400
+_WINDOWS_OFFLINE_ATTRIBUTE = 0x00001000
+_WINDOWS_RECALL_ON_OPEN_ATTRIBUTE = 0x00040000
+_WINDOWS_RECALL_ON_DATA_ACCESS_ATTRIBUTE = 0x00400000
+_WINDOWS_UNAVAILABLE_CLOUD_ATTRIBUTES = (
+    _WINDOWS_OFFLINE_ATTRIBUTE
+    | _WINDOWS_RECALL_ON_OPEN_ATTRIBUTE
+    | _WINDOWS_RECALL_ON_DATA_ACCESS_ATTRIBUTE
+)
+_WINDOWS_CLOUD_REPARSE_TAGS = frozenset(
+    0x9000001A | (variant << 12) for variant in range(16)
+)
+_BATCH_MAX_ROOT_PATH_CHARS = 4_096
+_BATCH_MAX_SKIP_PATTERNS = 64
+_BATCH_MAX_SKIP_PATTERN_CHARS = 256
+_DIRECTORY_MANIFEST_SCHEMA_VERSION = 1
+_DIRECTORY_WORKER_FLAG = "--directory-worker"
+_DIRECTORY_OPERATION = "pptx_resolve_input"
+_DIRECTORY_MANIFEST_SKIP_REASONS = frozenset(
+    {
+        "pptx_batch_cloud_placeholder_unavailable",
+        "pptx_batch_conflict_copy",
+        "pptx_batch_depth_limit",
+        "pptx_batch_directory_changed",
+        "pptx_batch_directory_identity_collision",
+        "pptx_batch_directory_identity_unavailable",
+        "pptx_batch_directory_limit",
+        "pptx_batch_directory_unavailable",
+        "pptx_batch_entry_limit",
+        "pptx_batch_entry_unavailable",
+        "pptx_batch_file_limit",
+        "pptx_batch_office_lock_file",
+        "pptx_batch_path_invalid",
+        "pptx_batch_path_limit",
+        "pptx_batch_reparse_point_rejected",
+        "pptx_batch_scan_incomplete_file_limit",
+        "pptx_batch_skip_pattern",
+        "pptx_batch_static_export",
+        "pptx_batch_symlink_rejected",
+        "pptx_batch_wall_limit",
+    }
+)
+_BATCH_EXTRACTION_FAILURE_REASONS = frozenset(
+    {
+        "pptx_archive_recovery_required",
+        "pptx_artifact_changed",
+        "pptx_artifact_unavailable",
+        "pptx_batch_input_limit",
+        "pptx_batch_wall_limit",
+        "pptx_cloud_placeholder_unavailable",
+        "pptx_dependency_unavailable",
+        "pptx_evidence_invalid",
+        "pptx_invalid_container",
+        "pptx_no_slides",
+        "pptx_parse_failure",
+        "pptx_probe_crash",
+        "pptx_probe_exception",
+        "pptx_probe_malformed_result",
+        "pptx_probe_materialization_changed",
+        "pptx_probe_resource_unavailable",
+        "pptx_probe_result_oversized",
+        "pptx_probe_start_failure",
+        "pptx_probe_timeout",
+        "pptx_recovery_failure",
+        "pptx_structural_damage",
+    }
+)
+_DIRECTORY_RESOURCE_FAILURES = frozenset(
+    {
+        "worker_containment_unavailable",
+        "worker_diagnostic_limit_exceeded",
+        "worker_input_limit_exceeded",
+        "worker_memory_limit_exceeded",
+        "worker_monitor_identity_changed",
+        "worker_monitor_unavailable",
+        "worker_process_limit_exceeded",
+    }
+)
+_DIRECTORY_START_FAILURES = frozenset(
+    {
+        "invalid_worker_command",
+        "unsafe_worker_process_metadata",
+        "worker_pipe_setup_failed",
+        "worker_request_write_failed",
+        "worker_start_failed",
+    }
+)
+_DIRECTORY_WORKER_FAILURES = frozenset(
+    {
+        "worker_cleanup_failed",
+        "worker_diagnostic_read_failed",
+        "worker_exit",
+        "worker_exit_before_barrier",
+        "worker_output_read_failed",
+        "worker_process_tree_leak",
+    }
+)
+_DIRECTORY_CHILD_FAILURES = frozenset(
+    {
+        "pptx_batch_request_invalid",
+        "pptx_batch_root_invalid",
+        "pptx_batch_root_unavailable",
+    }
+)
+_DIRECTORY_BATCH_FAILURE_REASONS = frozenset(
+    {
+        *_DIRECTORY_CHILD_FAILURES,
+        "pptx_batch_discovery_output_limit",
+        "pptx_batch_discovery_protocol_invalid",
+        "pptx_batch_discovery_resource_unavailable",
+        "pptx_batch_discovery_start_failure",
+        "pptx_batch_discovery_timeout",
+        "pptx_batch_discovery_worker_failure",
+        "pptx_batch_wall_limit",
+    }
+)
+_DIRECTORY_LIMITS = SupervisorLimits(
+    profile_id="pptx-directory-discovery-v1",
+    wall_seconds=60,
+    max_memory_bytes=512 * 1024 * 1024,
+    max_input_bytes=64 * 1024,
+    max_output_bytes=16 * 1024 * 1024,
+    max_processes=1,
+)
 
 # Mean Tesseract token confidence uses the engine's documented 0..100 scale.
 # Text below this floor remains visible for spelling review but is not marked
 # trustworthy evidence.
-_OCR_TRUST_CONFIDENCE = 50.0
+_OCR_TRUST_CONFIDENCE = PPTX_OCR_TRUST_CONFIDENCE
 
 # One stderr warning per process when the OCR engine is missing — not once
 # per slide on a 100-slide deck.
@@ -140,11 +305,7 @@ class OcrUnavailableError(Exception):
 def _count_in_containers(containers, qualified_name):
     """Count exact descendants across selected PresentationML containers."""
     tag = qn(qualified_name)
-    return sum(
-        1
-        for container in containers
-        for _element in container.iter(tag)
-    )
+    return sum(1 for container in containers for _element in container.iter(tag))
 
 
 def _is_visibility_set_action(set_element):
@@ -167,9 +328,7 @@ def extract_native_timing(slide):
     timing_elements = list(root.iter(qn("p:timing")))
     build_lists = list(root.iter(qn("p:bldLst")))
     set_actions = [
-        element
-        for timing in timing_elements
-        for element in timing.iter(qn("p:set"))
+        element for timing in timing_elements for element in timing.iter(qn("p:set"))
     ]
     animation_counts = {
         name: _count_in_containers(timing_elements, qualified_name)
@@ -186,7 +345,7 @@ def extract_native_timing(slide):
         for name, qualified_name in _BUILD_ENTRY_ELEMENTS.items()
     }
     build_counts["total"] = sum(build_counts.values())
-    part_name = str(slide.part.partname).lstrip("/")
+    part_name = _bounded_package_part_name(slide.part.partname)
     return {
         "timing_element_present": bool(timing_elements),
         "timing_element_count": len(timing_elements),
@@ -212,9 +371,7 @@ def extract_native_timing(slide):
 
 def summarize_native_timing(per_slide_visual):
     """Aggregate fixed-key deck totals from per-slide structural metadata."""
-    animation_counts = {
-        name: 0 for name in _ANIMATION_BEHAVIOR_ELEMENTS
-    }
+    animation_counts = {name: 0 for name in _ANIMATION_BEHAVIOR_ELEMENTS}
     media_counts = {name: 0 for name in _MEDIA_TIMING_ELEMENTS}
     build_counts = {name: 0 for name in _BUILD_ENTRY_ELEMENTS}
     summary = {
@@ -232,18 +389,14 @@ def summarize_native_timing(per_slide_visual):
     }
     for slide_data in per_slide_visual:
         timing = slide_data["native_timing"]
-        summary["slides_with_timing_elements"] += int(
-            timing["timing_element_present"])
-        summary["slides_with_transitions"] += int(
-            timing["transition_count"] > 0)
+        summary["slides_with_timing_elements"] += int(timing["timing_element_present"])
+        summary["slides_with_transitions"] += int(timing["transition_count"] > 0)
         summary["slides_with_animation_behaviors"] += int(
-            timing["has_animation_behaviors"])
-        summary["slides_with_media_timing"] += int(
-            timing["has_media_timing"])
-        summary["slides_with_build_lists"] += int(
-            timing["build_list_present"])
-        summary["slides_with_build_entries"] += int(
-            timing["has_build_entries"])
+            timing["has_animation_behaviors"]
+        )
+        summary["slides_with_media_timing"] += int(timing["has_media_timing"])
+        summary["slides_with_build_lists"] += int(timing["build_list_present"])
+        summary["slides_with_build_entries"] += int(timing["has_build_entries"])
         for field in (
             "timing_element_count",
             "transition_count",
@@ -304,9 +457,7 @@ def _ocr_text_and_confidence(data):
     """Pair each retained Tesseract token with only its own confidence."""
     tokens = []
     confidences = []
-    for token, raw_confidence in zip(
-        data.get("text", []), data.get("conf", [])
-    ):
+    for token, raw_confidence in zip(data.get("text", []), data.get("conf", [])):
         normalized = normalize_ocr_text(token)
         if not normalized:
             continue
@@ -319,11 +470,7 @@ def _ocr_text_and_confidence(data):
         if normalized_confidence is not None:
             confidences.append(normalized_confidence)
     text = normalize_ocr_text(" ".join(tokens))[:_OCR_TEXT_MAX_CHARS]
-    confidence = (
-        round(sum(confidences) / len(confidences), 3)
-        if confidences
-        else None
-    )
+    confidence = round(sum(confidences) / len(confidences), 3) if confidences else None
     return text, confidence
 
 
@@ -492,7 +639,13 @@ def _append_ocr_text(slide_data, text):
 
 
 def _run_ocr_channel(
-    slide_data, assets, *, channel, provenance, ocr=True, ocr_fn=None,
+    slide_data,
+    assets,
+    *,
+    channel,
+    provenance,
+    ocr=True,
+    ocr_fn=None,
 ):
     """OCR image assets and emit one outcome receipt for every exact blob."""
     record = {
@@ -516,19 +669,21 @@ def _run_ocr_channel(
         record["status"] = "skipped"
         record["reason"] = "ocr_disabled"
         for asset in assets:
-            record["ocr_receipts"].append({
-                "attempted": False,
-                "engine": "tesseract",
-                "engine_version": None,
-                "result_status": "skipped",
-                "result_confidence": None,
-                "error": "ocr_disabled",
-                "part_name": asset.get("part_name"),
-                "asset_sha256": sha256_bytes(asset["blob"]),
-                "shape_path": list(asset.get("shape_path") or []),
-                "recovered_text": "",
-                "trustworthy_text": False,
-            })
+            record["ocr_receipts"].append(
+                {
+                    "attempted": False,
+                    "engine": "tesseract",
+                    "engine_version": None,
+                    "result_status": "skipped",
+                    "result_confidence": None,
+                    "error": "ocr_disabled",
+                    "part_name": asset.get("part_name"),
+                    "asset_sha256": sha256_bytes(asset["blob"]),
+                    "shape_path": list(asset.get("shape_path") or []),
+                    "recovered_text": "",
+                    "trustworthy_text": False,
+                }
+            )
         return
 
     global _ocr_unavailable_warned
@@ -558,9 +713,8 @@ def _run_ocr_channel(
                             if isinstance(injected_version, str)
                             else None
                         ),
-                        "result_status": injected.get("result_status") or (
-                            "text_recovered" if recovered_text else "genuine_empty"
-                        ),
+                        "result_status": injected.get("result_status")
+                        or ("text_recovered" if recovered_text else "genuine_empty"),
                         "result_confidence": finite_confidence(
                             injected.get("result_confidence")
                         ),
@@ -607,12 +761,14 @@ def _run_ocr_channel(
                     "to enable OCR.\n"
                 )
                 _ocr_unavailable_warned = True
-        record["ocr_receipts"].append({
-            **outcome,
-            "part_name": asset.get("part_name"),
-            "asset_sha256": sha256_bytes(blob),
-            "shape_path": list(asset.get("shape_path") or []),
-        })
+        record["ocr_receipts"].append(
+            {
+                **outcome,
+                "part_name": asset.get("part_name"),
+                "asset_sha256": sha256_bytes(blob),
+                "shape_path": list(asset.get("shape_path") or []),
+            }
+        )
 
     recovered = [
         receipt["recovered_text"]
@@ -627,12 +783,8 @@ def _run_ocr_channel(
         if receipt["result_confidence"] is not None
     ]
     if confidences:
-        record["result_confidence"] = round(
-            sum(confidences) / len(confidences), 3
-        )
-    statuses = {
-        receipt["result_status"] for receipt in record["ocr_receipts"]
-    }
+        record["result_confidence"] = round(sum(confidences) / len(confidences), 3)
+    statuses = {receipt["result_status"] for receipt in record["ocr_receipts"]}
     record["attempted"] = any(
         receipt["attempted"] for receipt in record["ocr_receipts"]
     )
@@ -645,22 +797,15 @@ def _run_ocr_channel(
     versions = {
         receipt["engine_version"]
         for receipt in record["ocr_receipts"]
-        if isinstance(receipt.get("engine_version"), str)
-        and receipt["engine_version"]
+        if isinstance(receipt.get("engine_version"), str) and receipt["engine_version"]
     }
-    record["engine_version"] = (
-        next(iter(versions)) if len(versions) == 1 else None
-    )
+    record["engine_version"] = next(iter(versions)) if len(versions) == 1 else None
     all_recovered_text_trustworthy = all(
         receipt["trustworthy_text"] is True
         for receipt in record["ocr_receipts"]
         if receipt["recovered_text"]
     )
-    if (
-        text
-        and statuses == {"text_recovered"}
-        and all_recovered_text_trustworthy
-    ):
+    if text and statuses == {"text_recovered"} and all_recovered_text_trustworthy:
         record["status"] = "extracted"
     elif text:
         record["status"] = "partial"
@@ -685,7 +830,12 @@ def _run_ocr_channel(
 
 
 def apply_ocr_to_slide(
-    slide_data, picture_blobs, *, ocr=True, ocr_fn=None, shape_paths=None,
+    slide_data,
+    picture_blobs,
+    *,
+    ocr=True,
+    ocr_fn=None,
+    shape_paths=None,
     part_names=None,
 ):
     """Fill picture OCR fields on a per-slide dict.
@@ -746,11 +896,17 @@ def apply_background_ocr(slide_data, background_image, *, ocr=True, ocr_fn=None)
     provenance = background_image["provenance"]
     _run_ocr_channel(
         slide_data,
-        ([{
-            "blob": blob,
-            "shape_path": [],
-            "part_name": provenance.get("part_name"),
-        }] if blob else []),
+        (
+            [
+                {
+                    "blob": blob,
+                    "shape_path": [],
+                    "part_name": provenance.get("part_name"),
+                }
+            ]
+            if blob
+            else []
+        ),
         channel="background_image_ocr",
         provenance=provenance,
         ocr=ocr,
@@ -881,13 +1037,15 @@ def get_background_image(slide):
     if not r_id:
         return {"blob": None, "status": "unavailable", "provenance": provenance}
 
-    provenance["relationship_id"] = r_id
+    provenance["relationship_id"] = r_id[:_SHAPE_PATH_COMPONENT_MAX_CHARS]
     try:
         image_part = owner.part.related_part(r_id)
         blob = image_part.blob
     except (KeyError, ValueError, AttributeError):
         return {"blob": None, "status": "unavailable", "provenance": provenance}
-    provenance["part_name"] = str(image_part.partname).lstrip("/")
+    if not blob:
+        return {"blob": None, "status": "unavailable", "provenance": provenance}
+    provenance["part_name"] = _bounded_package_part_name(image_part.partname)
     return {"blob": blob, "status": "available", "provenance": provenance}
 
 
@@ -897,7 +1055,18 @@ def _picture_payload(shape):
     if not r_id:
         raise ValueError("picture has no embedded image relationship")
     image_part = shape.part.related_part(r_id)
-    return image_part.blob, str(image_part.partname).lstrip("/")
+    blob = image_part.blob
+    if not blob:
+        raise ValueError("picture has an empty embedded image part")
+    return blob, _bounded_package_part_name(image_part.partname)
+
+
+def _is_picture_shape(shape):
+    """Include inserted picture placeholders, but not movie poster frames."""
+    return shape.shape_type == MSO_SHAPE_TYPE.PICTURE or (
+        shape.shape_type == MSO_SHAPE_TYPE.PLACEHOLDER
+        and _local_name(shape.element) == "pic"
+    )
 
 
 def extract_shape_info(shape):
@@ -905,6 +1074,11 @@ def extract_shape_info(shape):
     info = {
         "name": shape.name,
         "shape_type": str(shape.shape_type),
+        "has_text_frame": bool(shape.has_text_frame),
+        "is_picture": _is_picture_shape(shape),
+        "is_graphic_frame": _local_name(shape.element) == "graphicFrame",
+        "graphic_frame_type": None,
+        "graphic_data_uri": None,
         "left": round(shape.left / 914400, 2) if shape.left else None,
         "top": round(shape.top / 914400, 2) if shape.top else None,
         "width": round(shape.width / 914400, 2) if shape.width else None,
@@ -914,14 +1088,20 @@ def extract_shape_info(shape):
     # Text properties
     if shape.has_text_frame:
         tf = shape.text_frame
-        info["text_preview"] = tf.text[:100] if tf.text else ""
+        info["text_preview"] = tf.text[:_NATIVE_TEXT_MAX_CHARS] if tf.text else ""
         for para in tf.paragraphs:
             for run in para.runs:
                 if run.font:
                     info["font_name"] = run.font.name
+                    if info["font_name"]:
+                        info["font_name"] = info["font_name"][
+                            :_SHAPE_PATH_COMPONENT_MAX_CHARS
+                        ]
                     info["font_size"] = run.font.size.pt if run.font.size else None
                     try:
-                        info["font_color"] = rgb_to_hex(run.font.color.rgb) if run.font.color else None
+                        info["font_color"] = (
+                            rgb_to_hex(run.font.color.rgb) if run.font.color else None
+                        )
                     except AttributeError:
                         info["font_color"] = None
                     info["bold"] = run.font.bold
@@ -954,7 +1134,7 @@ def extract_shape_info(shape):
         try:
             info["auto_shape_type"] = str(shape.auto_shape_type)
         except (AttributeError, ValueError):
-            pass
+            info["auto_shape_type"] = "UNKNOWN"
 
     return info
 
@@ -962,10 +1142,15 @@ def extract_shape_info(shape):
 def walk_shapes(shapes, parent_path=()):
     """Yield every shape recursively with a stable, human-readable path."""
     for index, shape in enumerate(shapes):
-        name = shape.name or f"shape_{index + 1}"
+        name = (shape.name or f"shape_{index + 1}")[:_SHAPE_PATH_COMPONENT_MAX_CHARS]
         path = parent_path + (name,)
         yield shape, path
         if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+            if len(path) >= 64 and len(shape.shapes):
+                raise PptxEvidenceError(
+                    "PPTX group nesting exceeds the bounded evidence contract",
+                    reason_code="pptx_probe_resource_unavailable",
+                )
             yield from walk_shapes(shape.shapes, path)
 
 
@@ -974,14 +1159,17 @@ def _graphic_data_uri(shape):
     element = shape.element
     if _local_name(element) != "graphicFrame":
         return None
-    return element.graphicData_uri or None
+    uri = element.graphicData_uri
+    return uri[:_SHAPE_PATH_COMPONENT_MAX_CHARS] if uri else None
 
 
 def _classify_graphic_frame(shape):
     """Classify a DrawingML graphic frame from its URI."""
+    if _local_name(shape.element) != "graphicFrame":
+        return None
     uri = _graphic_data_uri(shape)
     if uri is None:
-        return None
+        return "graphic_frame"
     if uri == _GRAPHIC_DATA_URI_TABLE:
         return "table"
     if uri == _GRAPHIC_DATA_URI_CHART:
@@ -1006,16 +1194,18 @@ def _extract_table_channel(shape, shape_path):
                 continue
             text = cell.text.strip()
             if text:
-                cell_text.append({
-                    "cell": f"R{row_index + 1}C{column_index + 1}",
-                    "text": text,
-                })
+                cell_text.append(
+                    {
+                        "cell": f"R{row_index + 1}C{column_index + 1}",
+                        "text": text,
+                    }
+                )
             for paragraph in cell.text_frame.paragraphs:
                 for run in paragraph.runs:
                     if run.font.name:
-                        fonts[run.font.name] += 1
+                        fonts[run.font.name[:_SHAPE_PATH_COMPONENT_MAX_CHARS]] += 1
 
-    combined = " | ".join(item["text"] for item in cell_text)
+    combined = " | ".join(item["text"] for item in cell_text)[:_NATIVE_TEXT_MAX_CHARS]
     channel = {
         "channel": "table_cell_text",
         "text": combined,
@@ -1030,7 +1220,7 @@ def _extract_table_channel(shape, shape_path):
     details = {
         "table_rows": len(table.rows),
         "table_columns": len(table.columns),
-        "table_text_preview": combined[:200],
+        "table_text_preview": combined,
         "table_fonts": dict(fonts),
     }
     return channel, details
@@ -1038,7 +1228,7 @@ def _extract_table_channel(shape, shape_path):
 
 def _shape_text_channel(shape, shape_path, *, in_group):
     """Return a provenance-bearing channel for one shape text frame."""
-    text = shape.text_frame.text
+    text = shape.text_frame.text[:_NATIVE_TEXT_MAX_CHARS]
     return {
         "channel": "shape_text",
         "text": text,
@@ -1067,16 +1257,18 @@ def _record_unsupported(slide_data, kind, shape, shape_path, *, uri=None):
     }
     if uri:
         provenance["graphic_data_uri"] = uri
-    slide_data["text_channels"].append({
-        "channel": f"{kind}_text",
-        "text": "",
-        "confidence": "low",
-        "status": "unsupported",
-        "provenance": provenance,
-    })
+    slide_data["text_channels"].append(
+        {
+            "channel": f"{kind}_text",
+            "text": "",
+            "confidence": "low",
+            "status": "unsupported",
+            "provenance": provenance,
+        }
+    )
     entry = {
         "content_type": kind,
-        "shape_name": shape.name,
+        "shape_name": shape_path[-1],
         "shape_path": list(shape_path),
         "reason": "visible text or labels may not be represented in PPTX text frames",
         "render_required": True,
@@ -1118,27 +1310,31 @@ def extract_template_layouts(prs):
                     pf = ph.placeholder_format
                     pt = pf.type
                     type_name = getattr(pt, "name", None) or str(pt).split(" ", 1)[0]
-                    placeholders.append({
-                        "idx": pf.idx,
-                        "type": type_name,
-                    })
+                    placeholders.append(
+                        {
+                            "idx": pf.idx,
+                            "type": type_name,
+                        }
+                    )
                 except AttributeError as e:
                     # Malformed placeholder — record skip with context, continue.
                     sys.stderr.write(
                         f"WARN: skipping placeholder in layout "
                         f"master={master_index} '{layout.name}': {e}\n"
                     )
-            layouts.append({
-                "index": index,
-                "master_index": master_index,
-                "name": layout.name,
-                "placeholders": placeholders,
-            })
+            layouts.append(
+                {
+                    "index": index,
+                    "master_index": master_index,
+                    "name": layout.name[:_SHAPE_PATH_COMPONENT_MAX_CHARS],
+                    "placeholders": placeholders,
+                }
+            )
             index += 1
     return layouts
 
 
-def extract_pptx(
+def _extract_pptx_in_process(
     pptx_path,
     *,
     ocr=True,
@@ -1146,10 +1342,11 @@ def extract_pptx(
     rendered_pdf_path=None,
     inspected_page_ranges=None,
 ):
-    """Main extraction function.
+    """Extract one deck inside an already-contained worker process.
 
-    ocr: when True (default), low-confidence image channels get an OCR
-         inventory in ocr_text and text_channels.
+    ocr: when True (default), low-confidence image channels get an OCR review
+         inventory in ocr_text/text_channels; affirmative text is gated by each
+         receipt's trustworthy_text field.
     ocr_fn: optional callable(list[bytes]) -> str for tests; default uses
             tesseract via ocr_picture_blobs.
     rendered_pdf_path/inspected_page_ranges: optional exact rendered artifact
@@ -1167,9 +1364,7 @@ def extract_pptx(
     if slide_width_value <= 0 or slide_height_value <= 0:
         raise ValueError("PPTX presentation has invalid slide dimensions")
     ratio_divisor = gcd(slide_width_value, slide_height_value)
-    corrupt_part_names = {
-        str(record["part_name"]) for record in archive_recovery
-    }
+    corrupt_part_names = {str(record["part_name"]) for record in archive_recovery}
     result = {
         "schema_version": SCHEMA_VERSION,
         "pipeline_version": PIPELINE_VERSION,
@@ -1198,7 +1393,7 @@ def extract_pptx(
             "background_colors": Counter(),
             "shape_types_used": Counter(),
             "color_sequence": [],
-        }
+        },
     }
 
     for i, slide in enumerate(prs.slides):
@@ -1206,9 +1401,19 @@ def extract_pptx(
 
         slide_data = {
             "slide_number": i + 1,
+            "slide_part_name": _bounded_package_part_name(slide.part.partname),
             "background_color_hex": bg_hex,
             "background_type": bg_type,
-            "layout_name": slide.slide_layout.name if slide.slide_layout else None,
+            "background_asset_status": (
+                "unavailable" if bg_type == "image" else "not_applicable"
+            ),
+            "background_part_name": None,
+            "background_asset_sha256": None,
+            "layout_name": (
+                slide.slide_layout.name[:_SHAPE_PATH_COMPONENT_MAX_CHARS]
+                if slide.slide_layout
+                else None
+            ),
             "shape_count": len(slide.shapes),
             # True when at least one shape carries a text frame. Names what it
             # measures — shapes the extractor can read text out of. It is NOT
@@ -1238,12 +1443,13 @@ def extract_pptx(
             # shapes | shapes+ocr | shapes+ocr_unavailable
             "text_extraction_method": "shapes",
             "footer_text": "",
-            "shapes_summary": []
+            "shapes_summary": [],
         }
 
         text_parts = []
-        # Unrounded — the threshold compares against true geometry; the
-        # reported value is rounded only for readability.
+        # Retain the maximum raw geometry until the closed, reported value is
+        # derived below. The render decision uses that same reported value so
+        # a near-threshold deck cannot disagree with its own evidence record.
         max_image_ratio = 0.0
         # (ratio, blob, path, package-part) entries — sorted largest-first
         # before OCR so the primary full-bleed image is inventoried first.
@@ -1252,6 +1458,7 @@ def extract_pptx(
         for shape, shape_path in walk_shapes(slide.shapes):
             recursive_shape_count += 1
             shape_info = extract_shape_info(shape)
+            shape_info["name"] = shape_path[-1]
             shape_info["shape_path"] = list(shape_path)
             shape_info["group_depth"] = len(shape_path) - 1
             slide_data["shapes_summary"].append(shape_info)
@@ -1262,30 +1469,42 @@ def extract_pptx(
 
             # Track shape types
             if "auto_shape_type" in shape_info:
-                result["global_design"]["shape_types_used"][shape_info["auto_shape_type"]] += 1
+                result["global_design"]["shape_types_used"][
+                    shape_info["auto_shape_type"]
+                ] += 1
 
             if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
                 _mark_render_required(slide_data, "grouped_shapes")
-                slide_data["text_channels"].append({
-                    "channel": "group_container_text",
-                    "text": "",
-                    "confidence": "low",
-                    "status": "requires_render",
-                    "provenance": {
-                        "source": "pptx_group_container",
-                        "shape_path": list(shape_path),
-                    },
-                })
+                slide_data["text_channels"].append(
+                    {
+                        "channel": "group_container_text",
+                        "text": "",
+                        "confidence": "low",
+                        "status": "requires_render",
+                        "provenance": {
+                            "source": "pptx_group_container",
+                            "shape_path": list(shape_path),
+                        },
+                    }
+                )
 
             # Check for images
-            if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+            if _is_picture_shape(shape):
                 slide_data["has_image"] = True
+                shape_info["picture_asset_status"] = "unavailable"
+                shape_info["picture_part_name"] = None
+                shape_info["picture_asset_sha256"] = None
                 ratio = picture_area_ratio(shape, prs)
                 if ratio > max_image_ratio:
                     max_image_ratio = ratio
                 try:
                     blob, part_name = _picture_payload(shape)
+                    shape_info["picture_part_name"] = part_name
+                    shape_info["picture_asset_sha256"] = hashlib.sha256(
+                        blob
+                    ).hexdigest()
                     if part_name in corrupt_part_names:
+                        shape_info["picture_asset_status"] = "corrupt"
                         _record_unsupported(
                             slide_data,
                             "corrupt_embedded_asset",
@@ -1293,23 +1512,28 @@ def extract_pptx(
                             shape_path,
                         )
                     else:
+                        shape_info["picture_asset_status"] = "available"
                         picture_entries.append(
                             (ratio, blob, list(shape_path), part_name)
                         )
                 except (KeyError, ValueError, AttributeError) as e:
                     _record_unsupported(
-                        slide_data, "unreadable_picture", shape, shape_path,
+                        slide_data,
+                        "unreadable_picture",
+                        shape,
+                        shape_path,
                     )
                     sys.stderr.write(
-                        f"WARN: could not read picture blob on slide "
-                        f"{i + 1}: {e}\n"
+                        f"WARN: could not read picture blob on slide {i + 1}: {e}\n"
                     )
 
             # Check for text-frame shapes
             if shape.has_text_frame:
                 slide_data["has_text_frame_shapes"] = True
                 channel = _shape_text_channel(
-                    shape, shape_path, in_group=len(shape_path) > 1,
+                    shape,
+                    shape_path,
+                    in_group=len(shape_path) > 1,
                 )
                 slide_data["text_channels"].append(channel)
                 text_parts.append(channel["text"])
@@ -1317,8 +1541,8 @@ def extract_pptx(
                 # Detect footer by position (bottom 15% of slide) and small font
                 if (
                     len(shape_path) == 1
-                    and shape.top
-                    and shape.top > slide_height_value * 0.85
+                    and shape_info["top"] is not None
+                    and shape_info["top"] > result["slide_height_inches"] * 0.85
                 ):
                     slide_data["footer_text"] = channel["text"]
 
@@ -1329,7 +1553,8 @@ def extract_pptx(
                 shape_info["graphic_data_uri"] = uri
                 if graphic_kind == "table":
                     table_channel, table_details = _extract_table_channel(
-                        shape, shape_path,
+                        shape,
+                        shape_path,
                     )
                     shape_info.update(table_details)
                     slide_data["text_channels"].append(table_channel)
@@ -1372,7 +1597,7 @@ def extract_pptx(
         # covers the whole slide by definition), can both be hiding rendered
         # text the shape walk never sees.
         if (
-            max_image_ratio >= _TEXT_BEARING_IMAGE_AREA_RATIO
+            slide_data["image_area_ratio"] >= _TEXT_BEARING_IMAGE_AREA_RATIO
             or bg_type == "image"
         ):
             reason = "background_image" if bg_type == "image" else "large_picture"
@@ -1393,24 +1618,35 @@ def extract_pptx(
 
         if bg_type == "image":
             background_image = get_background_image(slide)
+            if background_image is not None and background_image.get("blob"):
+                slide_data["background_asset_status"] = "available"
+                slide_data["background_part_name"] = background_image["provenance"].get(
+                    "part_name"
+                )
+                slide_data["background_asset_sha256"] = hashlib.sha256(
+                    background_image["blob"]
+                ).hexdigest()
             if (
                 background_image is not None
                 and background_image["provenance"].get("part_name")
                 in corrupt_part_names
             ):
                 _mark_render_required(slide_data, "corrupt_embedded_asset")
+                slide_data["background_asset_status"] = "corrupt"
                 background_image["blob"] = None
                 background_image["status"] = "recovered_with_placeholder"
                 background_image["provenance"]["asset_status"] = (
                     "recovered_with_placeholder"
                 )
-                slide_data["unsupported_content"].append({
-                    "content_type": "corrupt_embedded_asset",
-                    "shape_name": None,
-                    "shape_path": [],
-                    "reason": "background image bytes failed package CRC validation",
-                    "render_required": True,
-                })
+                slide_data["unsupported_content"].append(
+                    {
+                        "content_type": "corrupt_embedded_asset",
+                        "shape_name": None,
+                        "shape_path": [],
+                        "reason": "background image bytes failed package CRC validation",
+                        "render_required": True,
+                    }
+                )
             apply_background_ocr(
                 slide_data,
                 background_image,
@@ -1419,12 +1655,9 @@ def extract_pptx(
             )
 
         slide_data["has_extracted_text"] = any(
-            channel["text"].strip()
-            for channel in slide_data["text_channels"]
+            channel["text"].strip() for channel in slide_data["text_channels"]
         )
-        slide_data["has_unsupported_content"] = bool(
-            slide_data["unsupported_content"]
-        )
+        slide_data["has_unsupported_content"] = bool(slide_data["unsupported_content"])
 
         # Track background colors
         if bg_hex:
@@ -1463,22 +1696,65 @@ def extract_pptx(
 
     # Convert Counters to dicts for JSON serialization
     result["global_design"]["fonts_used"] = dict(result["global_design"]["fonts_used"])
-    result["global_design"]["background_colors"] = dict(result["global_design"]["background_colors"])
-    result["global_design"]["shape_types_used"] = dict(result["global_design"]["shape_types_used"])
+    result["global_design"]["background_colors"] = dict(
+        result["global_design"]["background_colors"]
+    )
+    result["global_design"]["shape_types_used"] = dict(
+        result["global_design"]["shape_types_used"]
+    )
     result["native_timing_summary"] = summarize_native_timing(
-        result["per_slide_visual"])
+        result["per_slide_visual"]
+    )
 
     return result
+
+
+def extract_pptx(
+    pptx_path,
+    *,
+    trusted_root=None,
+    ocr=True,
+    ocr_fn=None,
+    rendered_pdf_path=None,
+    inspected_page_ranges=None,
+    source_size_limit_bytes=None,
+    deadline_monotonic=None,
+):
+    """Extract one deck through the authenticated resource supervisor.
+
+    ``ocr_fn`` is deliberately confined to ``_extract_pptx_in_process`` as a
+    unit-test seam; callables cannot cross the private worker protocol.
+    """
+    if ocr_fn is not None:
+        raise PptxEvidenceError(
+            "ocr_fn is available only inside an already-contained worker",
+            reason_code="pptx_evidence_invalid",
+        )
+    options = {
+        "trusted_root": trusted_root,
+        "ocr": ocr,
+        "rendered_pdf_path": rendered_pdf_path,
+        "inspected_page_ranges": inspected_page_ranges,
+    }
+    if source_size_limit_bytes is not None:
+        options["source_size_limit_bytes"] = source_size_limit_bytes
+    if deadline_monotonic is not None:
+        options["deadline_monotonic"] = deadline_monotonic
+    if trusted_root is None:
+        options.pop("trusted_root")
+    return run_supervised_pptx_extraction(pptx_path, **options)
 
 
 def should_skip(basename, skip_patterns):
     """Check if a .pptx file should be skipped."""
     lower = basename.lower()
+    if basename.startswith("~$"):
+        return True, "Office lock file"
     # Skip static exports
     if "static" in lower:
         return True, "static export"
     # Skip Google Drive conflict copies: (N).pptx
-    if re.search(r'\(\d+\)\.pptx$', basename):
+    if re.search(r"\(\d+\)\.pptx$", basename):
         return True, "conflict copy"
     # Skip files matching user-provided skip patterns (case-insensitive)
     for pat in skip_patterns:
@@ -1487,27 +1763,680 @@ def should_skip(basename, skip_patterns):
     return False, None
 
 
-def batch_extract(directory, skip_patterns, *, ocr=True):
-    """Extract from all .pptx files in a directory, skipping unwanted files."""
-    results = []
+def _batch_skip_reason(reason):
+    """Collapse human-facing skip prose to a bounded stable reason code."""
+    if reason == "Office lock file":
+        return "pptx_batch_office_lock_file"
+    if reason == "static export":
+        return "pptx_batch_static_export"
+    if reason == "conflict copy":
+        return "pptx_batch_conflict_copy"
+    return "pptx_batch_skip_pattern"
+
+
+def _batch_error_reason(exc):
+    """Return a path-free reason code for one failed supervised extraction."""
+    reason_code = getattr(exc, "reason_code", None)
+    if (
+        isinstance(reason_code, str)
+        and reason_code in _BATCH_EXTRACTION_FAILURE_REASONS
+    ):
+        return reason_code
+    return "pptx_extraction_failed"
+
+
+def _is_windows_reparse_point(stat_result):
+    attributes = getattr(stat_result, "st_file_attributes", 0)
+    return bool(
+        isinstance(attributes, int)
+        and not isinstance(attributes, bool)
+        and attributes & _WINDOWS_REPARSE_POINT_ATTRIBUTE
+    )
+
+
+def _windows_leaf_rejection_reason(stat_result):
+    """Reject unavailable Cloud Files and every unsupported redirecting leaf."""
+    attributes = getattr(stat_result, "st_file_attributes", 0)
+    if (
+        not isinstance(attributes, int)
+        or isinstance(attributes, bool)
+        or attributes < 0
+    ):
+        return "pptx_batch_reparse_point_rejected"
+    if attributes & _WINDOWS_UNAVAILABLE_CLOUD_ATTRIBUTES:
+        return "pptx_batch_cloud_placeholder_unavailable"
+    if not _is_windows_reparse_point(stat_result):
+        return None
+    tag = getattr(stat_result, "st_reparse_tag", None)
+    if (
+        isinstance(tag, int)
+        and not isinstance(tag, bool)
+        and tag in _WINDOWS_CLOUD_REPARSE_TAGS
+    ):
+        # A hydrated Cloud Files leaf can retain its supported Cloud tag after
+        # its data is local. Offline/recall attributes above remain fail-closed.
+        return None
+    return "pptx_batch_reparse_point_rejected"
+
+
+def _usable_directory_identity(stat_result):
+    device = getattr(stat_result, "st_dev", None)
+    inode = getattr(stat_result, "st_ino", None)
+    if (
+        isinstance(device, bool)
+        or not isinstance(device, int)
+        or device <= 0
+        or isinstance(inode, bool)
+        or not isinstance(inode, int)
+        or inode <= 0
+    ):
+        return None
+    return (device, inode)
+
+
+def _discover_pptx_files(directory, skip_patterns):
+    """Discover a deterministic, bounded set inside the contained worker."""
+    root = Path(directory)
+    try:
+        root_stat = root.lstat()
+    except OSError as exc:
+        raise PptxEvidenceError(
+            "PPTX batch root is unavailable",
+            reason_code="pptx_batch_root_unavailable",
+            details={"exception_type": type(exc).__name__},
+        ) from exc
+    if (
+        stat.S_ISLNK(root_stat.st_mode)
+        or _is_windows_reparse_point(root_stat)
+        or not stat.S_ISDIR(root_stat.st_mode)
+    ):
+        raise PptxEvidenceError(
+            "PPTX batch root must be a non-symlink directory",
+            reason_code="pptx_batch_root_invalid",
+        )
+
+    started = time.monotonic()
+    discovered = []
     skipped = []
+    skip_receipts = set()
 
-    for pptx_path in sorted(glob.glob(f"{directory}/**/*.pptx", recursive=True)):
-        basename = os.path.basename(pptx_path)
-        skip, reason = should_skip(basename, skip_patterns)
-        if skip:
-            skipped.append({"path": pptx_path, "reason": reason})
-            print(f"SKIP: {pptx_path} ({reason})", file=sys.stderr)
-            continue
+    def record_skip(path, reason):
+        """Keep the worker's own closed manifest self-compatible."""
+        receipt = (path, reason)
+        if receipt not in skip_receipts:
+            skip_receipts.add(receipt)
+            skipped.append({"path": path, "reason": reason})
 
+    stack = [(root, "", 0)]
+    visited = set()
+    directory_count = 0
+    entry_count = 0
+
+    while stack:
+        if time.monotonic() - started > _BATCH_MAX_WALL_SECONDS:
+            record_skip(".", "pptx_batch_wall_limit")
+            break
+        current, relative_directory, depth = stack.pop()
         try:
-            data = extract_pptx(pptx_path, ocr=ocr)
-            results.append(data)
-            print(f"OK:   {pptx_path} ({data['slide_count']} slides)", file=sys.stderr)
-        except (PptxEvidenceError, OSError, ValueError, KeyError, AttributeError) as exc:
-            skipped.append({"path": pptx_path, "reason": f"error: {exc}"})
-            print(f"FAIL: {pptx_path}: {exc}", file=sys.stderr)
+            current_stat = current.lstat()
+        except OSError:
+            record_skip(
+                relative_directory or ".",
+                "pptx_batch_directory_unavailable",
+            )
+            continue
+        if (
+            stat.S_ISLNK(current_stat.st_mode)
+            or _is_windows_reparse_point(current_stat)
+            or not stat.S_ISDIR(current_stat.st_mode)
+        ):
+            record_skip(
+                relative_directory or ".",
+                "pptx_batch_directory_changed",
+            )
+            continue
+        identity = _usable_directory_identity(current_stat)
+        if identity is None:
+            record_skip(
+                relative_directory or ".",
+                "pptx_batch_directory_identity_unavailable",
+            )
+            continue
+        if identity in visited:
+            record_skip(
+                relative_directory or ".",
+                "pptx_batch_directory_identity_collision",
+            )
+            continue
+        visited.add(identity)
+        directory_count += 1
+        if directory_count > _BATCH_MAX_DIRECTORIES:
+            record_skip(".", "pptx_batch_directory_limit")
+            break
+        try:
+            entries = []
+            entry_limit_hit = False
+            with os.scandir(current) as iterator:
+                for entry in iterator:
+                    if entry_count >= _BATCH_MAX_ENTRIES:
+                        entry_limit_hit = True
+                        break
+                    entries.append(entry)
+                    entry_count += 1
+        except OSError:
+            record_skip(
+                relative_directory or ".",
+                "pptx_batch_directory_unavailable",
+            )
+            continue
+        if entry_limit_hit:
+            record_skip(".", "pptx_batch_entry_limit")
+            break
+        entries.sort(key=lambda item: item.name)
 
+        child_directories = []
+        limit_hit = False
+        for entry in entries:
+            relative = (
+                f"{relative_directory}/{entry.name}"
+                if relative_directory
+                else entry.name
+            )
+            if entry.name in {"", ".", ".."} or "\\" in entry.name:
+                record_skip(".", "pptx_batch_path_invalid")
+                continue
+            if len(relative) > _BATCH_MAX_RELATIVE_PATH_CHARS:
+                record_skip(
+                    relative[:_BATCH_MAX_RELATIVE_PATH_CHARS],
+                    "pptx_batch_path_limit",
+                )
+                continue
+            try:
+                entry_stat = entry.stat(follow_symlinks=False)
+                entry_is_directory = entry.is_dir(follow_symlinks=False)
+                leaf_rejection = _windows_leaf_rejection_reason(entry_stat)
+                if leaf_rejection is not None and not entry_is_directory:
+                    record_skip(relative, leaf_rejection)
+                    continue
+                if entry_is_directory and _is_windows_reparse_point(entry_stat):
+                    record_skip(
+                        relative,
+                        "pptx_batch_reparse_point_rejected",
+                    )
+                    continue
+                if entry.is_symlink():
+                    record_skip(
+                        relative,
+                        "pptx_batch_symlink_rejected",
+                    )
+                    continue
+                if entry_is_directory:
+                    if depth >= _BATCH_MAX_DEPTH:
+                        record_skip(relative, "pptx_batch_depth_limit")
+                    else:
+                        child_directories.append(
+                            (Path(entry.path), relative, depth + 1)
+                        )
+                    continue
+                if not entry.is_file(
+                    follow_symlinks=False
+                ) or not entry.name.lower().endswith(".pptx"):
+                    continue
+                skip, reason = should_skip(entry.name, skip_patterns)
+                if skip:
+                    record_skip(relative, _batch_skip_reason(reason))
+                    continue
+            except OSError:
+                record_skip(relative, "pptx_batch_entry_unavailable")
+                continue
+            if len(discovered) >= _BATCH_MAX_FILES:
+                record_skip(
+                    relative,
+                    "pptx_batch_file_limit",
+                )
+                record_skip(
+                    ".",
+                    "pptx_batch_scan_incomplete_file_limit",
+                )
+                stack.clear()
+                limit_hit = True
+                break
+            # Do not retain discovery-time size as budget authority. Cloud
+            # hydration or replacement can change it before worker admission;
+            # the supervisor snapshots and enforces the exact launched generation.
+            discovered.append((Path(entry.path), relative))
+        if not limit_hit:
+            stack.extend(reversed(child_directories))
+
+    return discovered, skipped, started
+
+
+def _validated_directory_root(value):
+    if (
+        not isinstance(value, str)
+        or not value
+        or "\x00" in value
+        or len(value) > _BATCH_MAX_ROOT_PATH_CHARS
+        or not os.path.isabs(value)
+        or os.path.abspath(value) != value
+    ):
+        raise PptxEvidenceError(
+            "directory root must be a bounded path string",
+            reason_code="pptx_batch_root_invalid",
+        )
+    return value
+
+
+def _validated_skip_patterns(value):
+    if not isinstance(value, (list, tuple)) or len(value) > _BATCH_MAX_SKIP_PATTERNS:
+        raise PptxEvidenceError(
+            "directory skip patterns exceed their bounded contract",
+            reason_code="pptx_batch_request_invalid",
+        )
+    normalized = []
+    for pattern in value:
+        if (
+            not isinstance(pattern, str)
+            or not pattern
+            or "\x00" in pattern
+            or len(pattern) > _BATCH_MAX_SKIP_PATTERN_CHARS
+        ):
+            raise PptxEvidenceError(
+                "directory skip pattern is invalid",
+                reason_code="pptx_batch_request_invalid",
+            )
+        normalized.append(pattern)
+    return normalized
+
+
+def _validated_relative_manifest_path(value, *, allow_root=False):
+    if allow_root and value == ".":
+        return value
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > _BATCH_MAX_RELATIVE_PATH_CHARS
+        or "\x00" in value
+        or "\\" in value
+        or value.startswith("/")
+        or re.match(r"^[A-Za-z]:", value)
+    ):
+        raise PptxEvidenceError(
+            "directory worker returned a noncanonical relative path",
+            reason_code="pptx_batch_manifest_invalid",
+        )
+    components = value.split("/")
+    if any(component in {"", ".", ".."} for component in components):
+        raise PptxEvidenceError(
+            "directory worker returned a noncanonical relative path",
+            reason_code="pptx_batch_manifest_invalid",
+        )
+    return value
+
+
+def _decode_directory_manifest(value):
+    """Decode only the closed, authenticated directory-worker body."""
+    if not isinstance(value, dict) or set(value) != {
+        "schema_version",
+        "kind",
+        "files",
+        "skipped",
+    }:
+        raise PptxEvidenceError(
+            "directory worker returned an invalid manifest",
+            reason_code="pptx_batch_manifest_invalid",
+        )
+    if (
+        type(value.get("schema_version")) is not int
+        or value.get("schema_version") != _DIRECTORY_MANIFEST_SCHEMA_VERSION
+        or value.get("kind") != "directory"
+    ):
+        raise PptxEvidenceError(
+            "directory worker returned an unsupported manifest",
+            reason_code="pptx_batch_manifest_invalid",
+        )
+    raw_files = value.get("files")
+    raw_skipped = value.get("skipped")
+    if (
+        not isinstance(raw_files, list)
+        or len(raw_files) > _BATCH_MAX_FILES
+        or not isinstance(raw_skipped, list)
+        or len(raw_skipped) > _BATCH_MAX_ENTRIES + _BATCH_MAX_DIRECTORIES + 1
+    ):
+        raise PptxEvidenceError(
+            "directory worker manifest exceeds its collection bounds",
+            reason_code="pptx_batch_manifest_invalid",
+        )
+
+    files = []
+    seen_paths = set()
+    for item in raw_files:
+        if not isinstance(item, dict) or set(item) != {"path"}:
+            raise PptxEvidenceError(
+                "directory worker file binding is invalid",
+                reason_code="pptx_batch_manifest_invalid",
+            )
+        relative = _validated_relative_manifest_path(item.get("path"))
+        basename = relative.rsplit("/", 1)[-1]
+        if (
+            relative in seen_paths
+            or not relative.casefold().endswith(".pptx")
+            or basename.startswith("~$")
+        ):
+            raise PptxEvidenceError(
+                "directory worker returned duplicate file bindings",
+                reason_code="pptx_batch_manifest_invalid",
+            )
+        seen_paths.add(relative)
+        files.append(relative)
+
+    skipped = []
+    seen_skip_receipts = set()
+    seen_nonroot_skip_paths = set()
+    for item in raw_skipped:
+        if not isinstance(item, dict) or set(item) != {"path", "reason"}:
+            raise PptxEvidenceError(
+                "directory worker skip receipt is invalid",
+                reason_code="pptx_batch_manifest_invalid",
+            )
+        path = _validated_relative_manifest_path(item.get("path"), allow_root=True)
+        reason = item.get("reason")
+        if (
+            not isinstance(reason, str)
+            or reason not in _DIRECTORY_MANIFEST_SKIP_REASONS
+        ):
+            raise PptxEvidenceError(
+                "directory worker skip reason is invalid",
+                reason_code="pptx_batch_manifest_invalid",
+            )
+        receipt = (path, reason)
+        if (
+            receipt in seen_skip_receipts
+            or path in seen_paths
+            or (path != "." and path in seen_nonroot_skip_paths)
+        ):
+            raise PptxEvidenceError(
+                "directory worker returned duplicate skip receipts",
+                reason_code="pptx_batch_manifest_invalid",
+            )
+        seen_skip_receipts.add(receipt)
+        if path != ".":
+            seen_nonroot_skip_paths.add(path)
+        skipped.append({"path": path, "reason": reason})
+    return files, skipped
+
+
+def _directory_limits_before_deadline(deadline_monotonic):
+    if (
+        isinstance(deadline_monotonic, bool)
+        or not isinstance(deadline_monotonic, (int, float))
+        or not math.isfinite(float(deadline_monotonic))
+    ):
+        raise PptxEvidenceError(
+            "directory deadline must be a finite monotonic timestamp",
+            reason_code="pptx_batch_request_invalid",
+        )
+    remaining = (
+        float(deadline_monotonic) - time.monotonic() - _DIRECTORY_LIMITS.cleanup_seconds
+    )
+    if remaining <= 0:
+        raise PptxEvidenceError(
+            "batch deadline expired before directory discovery",
+            reason_code="pptx_batch_wall_limit",
+        )
+    if remaining >= _DIRECTORY_LIMITS.wall_seconds:
+        return _DIRECTORY_LIMITS, False
+    return replace(_DIRECTORY_LIMITS, wall_seconds=remaining), True
+
+
+def _run_supervised_directory_discovery(directory, skip_patterns, *, deadline):
+    """Resolve one directory only through the authenticated bounded worker."""
+    root = _validated_directory_root(os.path.abspath(os.fspath(directory)))
+    patterns = _validated_skip_patterns(skip_patterns)
+    limits, deadline_limited = _directory_limits_before_deadline(deadline)
+    command = [sys.executable, os.path.abspath(__file__), _DIRECTORY_WORKER_FLAG]
+    try:
+        result = run_authenticated_worker(
+            command,
+            _DIRECTORY_OPERATION,
+            {},
+            {"root_path": root, "skip_patterns": patterns},
+            limits,
+            sensitive_values=(root,),
+            schema_generation=SCHEMA_VERSION,
+            pipeline_generation=PIPELINE_VERSION,
+        )
+    except SupervisorError as exc:
+        if exc.reason_code == "worker_timeout":
+            reason = (
+                "pptx_batch_wall_limit"
+                if deadline_limited
+                else "pptx_batch_discovery_timeout"
+            )
+        elif exc.reason_code == "worker_output_limit_exceeded":
+            reason = "pptx_batch_discovery_output_limit"
+        elif exc.reason_code in _DIRECTORY_CHILD_FAILURES:
+            reason = exc.reason_code
+        elif exc.reason_code in _DIRECTORY_RESOURCE_FAILURES:
+            reason = "pptx_batch_discovery_resource_unavailable"
+        elif exc.reason_code in _DIRECTORY_START_FAILURES:
+            reason = "pptx_batch_discovery_start_failure"
+        elif exc.reason_code in _DIRECTORY_WORKER_FAILURES:
+            reason = "pptx_batch_discovery_worker_failure"
+        else:
+            reason = "pptx_batch_discovery_protocol_invalid"
+        raise PptxEvidenceError(
+            "bounded directory discovery failed",
+            reason_code=reason,
+        ) from exc
+    return _decode_directory_manifest(result.payload)
+
+
+def _dispatch_directory_worker(request: WorkerRequest):
+    if (
+        request.operation != _DIRECTORY_OPERATION
+        or request.limit_profile_id != _DIRECTORY_LIMITS.profile_id
+        or request.schema_generation != SCHEMA_VERSION
+        or request.pipeline_generation != PIPELINE_VERSION
+        or request.expected_generations
+        or not isinstance(request.payload, dict)
+        or set(request.payload) != {"root_path", "skip_patterns"}
+    ):
+        raise SupervisorError("invalid_worker_request")
+    try:
+        root = _validated_directory_root(request.payload.get("root_path"))
+        patterns = _validated_skip_patterns(request.payload.get("skip_patterns"))
+        discovered, skipped, _started = _discover_pptx_files(root, patterns)
+    except PptxEvidenceError as exc:
+        raise SupervisorError(exc.reason_code) from exc
+    return {
+        "schema_version": _DIRECTORY_MANIFEST_SCHEMA_VERSION,
+        "kind": "directory",
+        "files": [{"path": relative} for _path, relative in discovered],
+        "skipped": skipped,
+    }
+
+
+def _run_directory_worker_child():
+    request = read_worker_request(max_input_bytes=_DIRECTORY_LIMITS.max_input_bytes)
+    protocol_output = isolate_protocol_output()
+    try:
+        try:
+            payload = _dispatch_directory_worker(request)
+            write_worker_response(
+                request,
+                payload=payload,
+                observed_generations={},
+                stream=protocol_output,
+                max_output_bytes=_DIRECTORY_LIMITS.max_output_bytes,
+            )
+        except SupervisorError as exc:
+            write_worker_response(
+                request,
+                error=SupervisorError(exc.reason_code, exc.details),
+                observed_generations={},
+                stream=protocol_output,
+                max_output_bytes=_DIRECTORY_LIMITS.max_output_bytes,
+            )
+    finally:
+        protocol_output.close()
+    return 0
+
+
+def _encode_batch_output(results, skipped):
+    """Encode the exact compact JSON emitted by directory mode."""
+    return json.dumps(
+        {"results": results, "skipped": skipped},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def _encoded_json_size(value):
+    return len(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
+
+
+def _batch_output_size(result_sizes, skip_sizes):
+    """Return exact compact wrapper size from pre-encoded element sizes."""
+    return (
+        len(b'{"results":[')
+        + sum(result_sizes)
+        + max(0, len(result_sizes) - 1)
+        + len(b'],"skipped":[')
+        + sum(skip_sizes)
+        + max(0, len(skip_sizes) - 1)
+        + len(b"]}")
+    )
+
+
+def batch_extract(directory, skip_patterns, *, ocr=True):
+    """Extract a bounded deterministic directory batch through the supervisor."""
+    results = []
+    started = time.monotonic()
+    deadline = started + _BATCH_MAX_WALL_SECONDS
+    root = Path(_validated_directory_root(os.path.abspath(os.fspath(directory))))
+    try:
+        relative_files, skipped = _run_supervised_directory_discovery(
+            root,
+            skip_patterns,
+            deadline=deadline,
+        )
+    except PptxEvidenceError as exc:
+        if exc.reason_code in _DIRECTORY_BATCH_FAILURE_REASONS:
+            return [], [{"path": ".", "reason": exc.reason_code}]
+        raise
+    discovered = [
+        (root.joinpath(*relative.split("/")), relative) for relative in relative_files
+    ]
+    input_bytes = 0
+    result_sizes = []
+    skip_sizes = [_encoded_json_size(item) for item in skipped]
+
+    def append_skip(path, reason):
+        record = {"path": path, "reason": reason}
+        skipped.append(record)
+        skip_sizes.append(_encoded_json_size(record))
+
+    def skip_remaining(index, reason):
+        for remaining in discovered[index:]:
+            append_skip(remaining[1], reason)
+
+    for index, (pptx_path, relative) in enumerate(discovered):
+        if time.monotonic() >= deadline:
+            skip_remaining(index, "pptx_batch_wall_limit")
+            break
+        remaining_input_bytes = _BATCH_MAX_INPUT_BYTES - input_bytes
+        if remaining_input_bytes <= 0:
+            skip_remaining(index, "pptx_batch_input_limit")
+            break
+        try:
+            data = extract_pptx(
+                pptx_path,
+                trusted_root=root,
+                ocr=ocr,
+                source_size_limit_bytes=remaining_input_bytes,
+                deadline_monotonic=deadline,
+            )
+            if time.monotonic() >= deadline:
+                skip_remaining(index, "pptx_batch_wall_limit")
+                break
+            fingerprint = data.get("input_fingerprint")
+            exact_size = (
+                fingerprint.get("size_bytes") if isinstance(fingerprint, dict) else None
+            )
+            if (
+                isinstance(exact_size, bool)
+                or not isinstance(exact_size, int)
+                or exact_size < 1
+                or exact_size > remaining_input_bytes
+            ):
+                raise PptxEvidenceError(
+                    "supervised extraction returned an invalid source size",
+                    reason_code="pptx_evidence_invalid",
+                )
+            # Directory output is relocatable and never exposes the root path.
+            data["pptx_path"] = relative
+            encoded_size = _encoded_json_size(data)
+            # Reserve a maximum-length stable reason for every deck not yet
+            # launched. This guarantees later per-file failures still fit the
+            # same compact wrapper without retroactively dropping results.
+            future_skip_sizes = [
+                _encoded_json_size({"path": remaining[1], "reason": "x" * 96})
+                for remaining in discovered[index + 1 :]
+            ]
+            if (
+                _batch_output_size(
+                    [*result_sizes, encoded_size],
+                    [*skip_sizes, *future_skip_sizes],
+                )
+                + 1
+                > _BATCH_MAX_OUTPUT_BYTES
+            ):
+                skip_remaining(index, "pptx_batch_output_limit")
+                break
+            results.append(data)
+            result_sizes.append(encoded_size)
+            input_bytes += exact_size
+        except (
+            PptxEvidenceError,
+            OSError,
+            ValueError,
+            KeyError,
+            AttributeError,
+        ) as exc:
+            # The evidence boundary reports the exact generation admitted for
+            # a launched parse. Discovery metadata is intentionally not a
+            # substitute: hydration or replacement can change the generation
+            # before admission.
+            admitted_size = getattr(exc, "details", {}).get(
+                "admitted_source_size_bytes"
+            )
+            if (
+                isinstance(admitted_size, int)
+                and not isinstance(admitted_size, bool)
+                and 0 < admitted_size <= remaining_input_bytes
+            ):
+                input_bytes += admitted_size
+            reason = _batch_error_reason(exc)
+            if reason in {"pptx_batch_input_limit", "pptx_batch_wall_limit"}:
+                skip_remaining(index, reason)
+                break
+            append_skip(relative, reason)
+            if (
+                _batch_output_size(result_sizes, skip_sizes) + 1
+                > _BATCH_MAX_OUTPUT_BYTES
+            ):
+                return [], [{"path": ".", "reason": "pptx_batch_output_limit"}]
+
+    encoded_batch = _encode_batch_output(results, skipped)
+    if len(encoded_batch) + 1 > _BATCH_MAX_OUTPUT_BYTES:
+        return [], [{"path": ".", "reason": "pptx_batch_output_limit"}]
     return results, skipped
 
 
@@ -1518,10 +2447,19 @@ def main(argv=None):
     parser.add_argument(
         "path",
         nargs="?",
-        help="Single .pptx file or directory to scan recursively",
+        help="Single .pptx file, or a directory root with --directory",
     )
-    parser.add_argument("--skip", action="append", default=["template"],
-                        help="Skip patterns (case-insensitive, default: template)")
+    parser.add_argument(
+        "--directory",
+        action="store_true",
+        help="Treat path as a bounded recursive directory root",
+    )
+    parser.add_argument(
+        "--skip",
+        action="append",
+        default=["template"],
+        help="Skip patterns (case-insensitive, default: template)",
+    )
     parser.add_argument(
         "--no-ocr",
         action="store_true",
@@ -1545,10 +2483,14 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
     if args.version:
-        print(json.dumps({
-            "schema_version": SCHEMA_VERSION,
-            "pipeline_version": PIPELINE_VERSION,
-        }))
+        print(
+            json.dumps(
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "pipeline_version": PIPELINE_VERSION,
+                }
+            )
+        )
         return
     if args.path is None:
         parser.error("path is required unless --version is used")
@@ -1558,7 +2500,16 @@ def main(argv=None):
     except PptxEvidenceError as exc:
         parser.error(str(exc))
 
-    if os.path.isfile(args.path):
+    if args.directory:
+        if args.rendered_pdf or inspected_page_ranges:
+            parser.error("--rendered-pdf/--inspected-pages require a single PPTX input")
+        try:
+            results, skipped = batch_extract(args.path, args.skip, ocr=ocr)
+        except PptxEvidenceError as exc:
+            print(f"ERROR: {exc.reason_code}", file=sys.stderr)
+            return 1
+        sys.stdout.write(_encode_batch_output(results, skipped).decode("utf-8") + "\n")
+    else:
         try:
             result = extract_pptx(
                 args.path,
@@ -1569,23 +2520,20 @@ def main(argv=None):
         # The preflight caller treats an invalid/nonzero process result as the
         # silent-failure shape; emit one concise diagnostic so propagation does
         # not replace the contract with an unstructured traceback.
-        except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
-            print(f"ERROR: cannot extract PPTX {args.path}: {exc}", file=sys.stderr)
+        except PptxEvidenceError as exc:
+            print(f"ERROR: {exc.reason_code}", file=sys.stderr)
+            return 1
+        except Exception:  # noqa: BLE001 - outer-boundary-process-contract
+            print("ERROR: pptx_extraction_failed", file=sys.stderr)
             return 1
         print(json.dumps(result, indent=2))
-    elif os.path.isdir(args.path):
-        if args.rendered_pdf or inspected_page_ranges:
-            parser.error(
-                "--rendered-pdf/--inspected-pages require a single PPTX input"
-            )
-        results, skipped = batch_extract(args.path, args.skip, ocr=ocr)
-        output = {"results": results, "skipped": skipped}
-        print(json.dumps(output, indent=2))
-    else:
-        print(f"Error: {args.path} is not a file or directory", file=sys.stderr)
-        return 1
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    if sys.argv[1:] == [_DIRECTORY_WORKER_FLAG]:
+        try:
+            raise SystemExit(_run_directory_worker_child())
+        except SupervisorError:
+            raise SystemExit(2) from None
+    raise SystemExit(main())

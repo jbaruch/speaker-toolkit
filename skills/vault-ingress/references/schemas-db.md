@@ -1421,8 +1421,8 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
 
 ```json
 {
-  "schema_version": 3,
-  "pipeline_version": "1.2.0",
+  "schema_version": 4,
+  "pipeline_version": "1.4.0",
   "input_fingerprint": {
     "algorithm": "sha256",
     "digest": "64 lowercase hex characters",
@@ -1451,11 +1451,23 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
       "replacement_sha256": "64 lowercase hex characters"
     }
   ],
+  "template_layouts": [
+    {
+      "index": 0,
+      "master_index": 0,
+      "name": "Title Slide",
+      "placeholders": [{"idx": 0, "type": "CENTER_TITLE"}]
+    }
+  ],
   "per_slide_visual": [
     {
       "slide_number": 1,
+      "slide_part_name": "ppt/slides/slide1.xml",
       "background_color_hex": "#5B2C6F",
       "background_type": "solid|pattern|image|gradient|solid_from_layout|solid_from_master|unknown",
+      "background_asset_status": "not_applicable|available|corrupt|unavailable",
+      "background_part_name": null,
+      "background_asset_sha256": null,
       "layout_name": "Title Slide  (free text from slide.slide_layout.name — not an enum)",
       "shape_count": 3,
       "shape_count_recursive": 5,
@@ -1560,8 +1572,9 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
         }
       },
       "shapes_summary": [
-        {"name": "Title 1", "shape_type": "PLACEHOLDER (14)", "shape_path": ["Title 1"], "group_depth": 0, "font_name": "Bangers", "font_size": 36, "font_color": "#FFFFFF", "bold": true},
-        {"name": "Cloud 2", "shape_type": "AUTO_SHAPE (1)", "shape_path": ["Cloud 2"], "group_depth": 0, "auto_shape_type": "CLOUD_CALLOUT (108)", "fill_color": "#FFFFFF", "line_color": "#000000"}
+        {"name": "Title 1", "shape_type": "PLACEHOLDER (14)", "has_text_frame": true, "is_picture": false, "is_graphic_frame": false, "graphic_frame_type": null, "graphic_data_uri": null, "left": 1.0, "top": 0.5, "width": 10.0, "height": 1.0, "shape_path": ["Title 1"], "group_depth": 0, "text_preview": "Talk Title", "font_name": "Bangers", "font_size": 36, "font_color": "#FFFFFF", "bold": true, "italic": false},
+        {"name": "Cloud 2", "shape_type": "AUTO_SHAPE (1)", "has_text_frame": true, "is_picture": false, "is_graphic_frame": false, "graphic_frame_type": null, "graphic_data_uri": null, "left": 2.0, "top": 2.0, "width": 3.0, "height": 2.0, "shape_path": ["Cloud 2"], "group_depth": 0, "text_preview": "", "auto_shape_type": "CLOUD_CALLOUT (108)", "fill_color": "#FFFFFF", "line_color": "#000000"},
+        {"name": "Picture 3", "shape_type": "PICTURE (13)", "has_text_frame": false, "is_picture": true, "is_graphic_frame": false, "graphic_frame_type": null, "graphic_data_uri": null, "left": 6.0, "top": 2.0, "width": 4.0, "height": 3.0, "shape_path": ["Picture 3"], "group_depth": 0, "picture_asset_status": "available", "picture_part_name": "ppt/media/image3.png", "picture_asset_sha256": "64 lowercase hex characters"}
       ]
     }
   ],
@@ -1602,8 +1615,8 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
   },
   "native_deck_audit": {
     "schema_version": 1,
-    "extraction_schema_version": 3,
-    "extraction_pipeline_version": "1.2.0",
+    "extraction_schema_version": 4,
+    "extraction_pipeline_version": "1.4.0",
     "source_pptx_sha256": "64 lowercase hex characters",
     "source_pptx_size_bytes": 123456,
     "slide_count": 60,
@@ -1633,13 +1646,14 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
 
 `schema_version` tracks this JSON field shape. Missing means legacy shape `0`;
 v1 added the version/fingerprint, v2 added `native_timing` to every slide plus
-`native_timing_summary`, and current v3 adds the raw build-list timing lane plus
-closed `archive_recovery` and `native_deck_audit` records. `pipeline_version`
+`native_timing_summary`; v3 added the raw build-list timing lane plus closed
+`archive_recovery` and `native_deck_audit` records; and current v4 makes shape,
+picture, and background capability/asset bindings required. `pipeline_version`
 tracks extraction behavior and
 changes when the walk, classification, confidence, OCR, recovery, timing, or
-receipt behavior changes; current is `1.2.0`.
+receipt behavior changes; current is `1.4.0`.
 
-Extractor schema v3 is independent of persisted pattern-evidence schema v2,
+Extractor schema v4 is independent of persisted pattern-evidence schema v2,
 return schema v5, queue-claim schema v5, and tracking-database schema v1. Those
 downstream generations do not advance here; their current readers bind or
 validate the new nested records inside their existing contracts.
@@ -1648,14 +1662,53 @@ These records are transient per-invocation output, not a persisted artifact with
 an in-place migration. Regenerate old output with the current extractor. A timing
 reader must treat v0/v1 as **timing unknown**, never as all-zero. Schema v2 has
 the pre-build timing shape but lacks raw build-list evidence and cannot satisfy
-archive-recovery or audit-receipt requirements, so current analysis reruns it
-too. An unknown future schema version
-is no usable prior output. The vault-profile layout reader may read v1/v2/v3
+archive-recovery or audit-receipt requirements. Schema v3 lacks the required
+capability/asset bindings, so current analysis reruns it too. An unknown future schema version
+is no usable prior output. The vault-profile layout reader may read v1/v2/v3/v4
 because `template_layouts` is unchanged, but it also
 rejects missing/unknown versions and reruns instead of guessing. This is the only
 declared cross-pipeline compatibility exception.
 `input_fingerprint` hashes the exact source PPTX bytes before any in-memory
 media recovery; identical bytes have the same fingerprint regardless of path.
+
+Every slide binds its ordinal to the canonical python-pptx part name
+`ppt/slides/slide{slide_number}.xml`; native-timing provenance must name that
+same part. Every shape carries explicit `has_text_frame`, `is_picture`, and
+`is_graphic_frame` capabilities. Text preview and its five-field font bundle
+exist only for a text frame; table dimensions/text/fonts exist only for a table
+graphic frame; and picture asset status/part/digest exist only when
+`is_picture: true`. Graphic type is derived from and cross-bound to the exact
+DrawingML URI when present; a graphic frame with a missing/empty URI is retained
+as generic `graphic_frame` unsupported evidence with a null URI. Available
+picture and background OCR receipts must exactly match
+their part name and digest, while corrupt asset bindings must match the closed
+archive-recovery record.
+
+Every public PPTX probe, native-audit recomputation, and extraction is executed
+in a separate authenticated worker. The request and response bind the exact
+file generation (including platform availability flags), operation, fixed limit
+profile, and extractor schema/pipeline. POSIX process groups and Windows Job
+Objects provide process-tree cleanup for the trusted worker boundary; on POSIX,
+cleanup covers the worker process group plus sampled descendants and is not an
+adversarial session-containment claim. Sampled aggregate RSS monitoring requires
+exactly `psutil==7.2.2` and is fail-closed, but is not described as a kernel
+hard-allocation limit on macOS.
+Raw worker diagnostics are discarded after producing a bounded count/hash/
+truncation receipt. A hard 2 GiB source-artifact ceiling admits large hydrated
+authored decks (including known ~1.045 GB decks) without allowing unbounded
+reads; operation-specific memory and wall profiles still fail closed. Directory
+extraction is selected only with `--directory`. The owner performs no root stat,
+type probe, or recursive enumeration: an authenticated worker with fixed input,
+output, memory, process, and wall limits validates and scans the root, then returns
+a closed root-relative manifest. It rejects symlinks, directory reparse points,
+unusable or colliding directory identities, unknown redirecting Windows reparse
+tags, unavailable Cloud Files (offline/recall), and `~$` Office locks; supported
+hydrated Cloud Files leaves remain eligible. A root-level receipt marks a scan
+truncated by the file cap. Discovery and extraction share one enclosing deadline,
+and final compact-JSON accounting includes its wrapper and newline. Stronger
+root/leaf handle binding and handle-relative traversal remain tracked by #176;
+until then all recursive filesystem contact is at least confined to the
+termination-safe discovery worker rather than occurring in the owner.
 
 `archive_recovery` is empty on a healthy package. A bad-CRC member under
 `ppt/media/` is replaced only in an in-memory package with a transparent
@@ -1745,14 +1798,16 @@ summary fields require complete coverage of every render-required slide.
 Persistence recomputes the audit in a bounded worker and matches the receipt to
 owner-canonical native-deck and static-slide identities.
 
-`image_area_ratio` is the **largest** PICTURE shape's area as a fraction of the
-slide, rounded to 3 decimals; always present. `0.0` means no picture, unreadable
-picture geometry, **or** a picture small enough to round down — it is not proof
-that the slide has no picture. The confidence threshold
-compares against the unrounded value, so a reported ratio equal to the
-threshold is not proof of which way the slide was classified.
+`image_area_ratio` is the **largest** `is_picture: true` shape's area as a
+fraction of the slide, rounded to 3 decimals; always present. `0.0` means no
+picture, unreadable picture geometry, **or** a picture small enough to round
+down — it is not proof that the slide has no picture. The render/confidence
+threshold uses that same reported value: `image_area_ratio >= 0.5`
+deterministically adds `large_picture`.
 
-It measures picture **shapes** only. A slide whose image is a *background*
+It measures picture **shapes** only, including an inserted picture placeholder
+whose OOXML element is a picture; media poster frames are not picture evidence.
+A slide whose image is a *background*
 reports `background_type: "image"` and `text_extraction_confidence: "low"`
 while `image_area_ratio` stays `0.0` — the background covers the canvas by
 definition and has no picture geometry to measure. When its relationship and

@@ -21,7 +21,7 @@ one produces code that runs clean against data nothing consumes.
 
 ## Native Timing Metadata Is Not Playback Evidence
 
-PPTX schema v3 extends the schema-v2 timing model with a distinct raw build-list
+PPTX schema v3 introduced a distinct raw build-list
 lane. Timing containers, exact animation behavior elements, visibility set
 actions, transitions, audio/video timing nodes, and build entries come directly
 from slide-part XML. The lanes are
