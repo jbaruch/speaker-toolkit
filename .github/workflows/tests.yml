@@ -104,5 +104,7 @@ jobs:
       - run: >-
           pytest -v --tb=short
           tests/test_artifact_supervisor.py
+          tests/test_artifact_metadata.py
+          tests/test_pdf_evidence.py
           tests/test_pattern_evidence.py::test_forward_slash_root_uses_native_absolute_path_semantics
           tests/test_check_runtime.py::test_psutil_version_authorities_are_synchronized

@@ -38,7 +38,7 @@ LANE_REQUIREMENTS: dict[str, dict[str, dict[str, str]]] = {
         "commands": {},
     },
     "pdf": {
-        "modules": {"pypdf": "pypdf"},
+        "modules": {"pypdf": "pypdf", "psutil": "psutil"},
         "commands": {},
     },
     "pptx": {

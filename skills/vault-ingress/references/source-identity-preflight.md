@@ -217,7 +217,9 @@ Checks apply to a record with a declared transcript, slide, or video capability
   forms, and Windows device namespaces before host path normalization. Use a
   trusted-root-relative locator or, on Windows, an ordinary fully qualified
   drive/UNC path.
-- A recorded local PDF path is authoritative for offline artifact existence.
+- A recorded local PDF path is authoritative only after its exact generation
+  passes the bounded metadata, copy/hash, strict container, and complete page-tree
+  probe.
   The current field is `slides_local_path`; the legacy `slides_pdf_path` and
   `pdf_path` aliases remain readable so old, descriptively named artifacts do
   not acquire invented Drive provenance merely to pass the gate. Relative
@@ -232,7 +234,16 @@ Checks apply to a record with a declared transcript, slide, or video capability
   completed record also requires a complete schema-v3
   `structured_data.video_extraction` manifest, preserved source video and
   artifact paths, and internally consistent frame/page, scope, crop, and trust
-  provenance. A promoted PDF additionally requires `review_required: false` and
+  provenance. That manifest is valid only when `slide_source` is
+  `video_extracted`; persisted preflight blocks it in every other slide lane
+  before inspecting any of its paths. Every manifest PDF is independently
+  probed and its bounded page count must match the manifest before either
+  preflight or current-return persistence accepts the referential unit. Manifest
+  paths reject NUL/dot
+  ambiguity; the preserved source MP4 must be a root-confined regular file and
+  cannot be reached through a descendant symlink. A promoted PDF must have the
+  exact bounded SHA-256 digest of the manifest's trusted `slide_region` artifact
+  and additionally requires `review_required: false` and
   a manually cropped, visually verified `slide_region` artifact marked
   `trusted_for_authored_slide_analysis: true`. A valid unpromoted
   `processed_partial` manifest may be trusted or context-only; full-frame context
@@ -241,7 +252,7 @@ Checks apply to a record with a declared transcript, slide, or video capability
   provenance is blocking for completed records and a warning for requeued/pending
   work.
 
-The nine stable slide-contract fault classes are:
+The thirteen stable slide-contract fault classes are:
 
 | Code | Meaning |
 |---|---|
@@ -251,9 +262,13 @@ The nine stable slide-contract fault classes are:
 | `slide_pptx_artifact_unreadable` | Resolved PPTX exists but its container or structural members cannot be parsed safely |
 | `slide_pptx_artifact_degraded` | Resolved PPTX required loss-reporting placeholder recovery for damaged media |
 | `slide_pdf_reference_missing` | `pdf`/`both` has no Drive ID |
-| `slide_pdf_artifact_missing` | Drive-ID PDF does not exist |
+| `slide_pdf_artifact_missing` | Explicit or Drive-ID PDF does not exist |
+| `slide_pdf_artifact_unavailable` | PDF is an offline cloud placeholder |
+| `slide_pdf_artifact_unreadable` | PDF could not complete bounded evidence inspection; use the nested reason code to distinguish parse, dependency, monitor, identity, containment, and resource causes |
 | `slide_video_reference_missing` | Video extraction has no valid YouTube identity |
 | `slide_video_artifact_missing` | Required explicit/processed YouTube-ID PDF does not exist |
+| `slide_video_artifact_unavailable` | Video-derived PDF is an offline cloud placeholder |
+| `slide_video_artifact_unreadable` | Video-derived PDF could not complete bounded evidence inspection; use the nested reason code to select remediation |
 
 `status_source_reachability_conflict` is a separate queue-state integrity
 fault. It is blocking when `skipped_no_sources` or legacy `skipped_no_video`
@@ -264,8 +279,13 @@ A claimed source missing from a completed record is blocking, except for a valid
 manifest-backed unpromoted `processed_partial` video result. The same absence on
 a pending/processable record is a warning because acquisition has not yet run.
 
-The preflight opens declared PPTX artifacts through the shared loss-reporting
-probe; it never opens a PDF, never counts PDF pages, and never derives or validates authored `slide_count`
+The preflight opens declared PPTX and PDF artifacts only through their shared
+bounded probes. PDF page counts validate container integrity, citation bounds,
+and manifest consistency; they never derive or validate authored `slide_count`
 from `structured_data.video_extraction.unique_slides_count`. A video extraction
 can produce multiple captured states for one authored slide; those are different
 measurements by contract.
+
+The canonical vault locator may itself be the documented configuration symlink.
+PDF admission maps that trusted locator to its storage root once, then rejects
+symlinks and unsupported reparse points in every descendant artifact component.

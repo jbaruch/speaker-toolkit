@@ -101,12 +101,27 @@ class FileGeneration:
         return cls(
             size=int(value.st_size),
             mtime_ns=int(value.st_mtime_ns),
-            ctime_ns=int(value.st_ctime_ns),
+            ctime_ns=_generation_ctime_ns(value),
             device=int(value.st_dev),
             inode=int(value.st_ino),
             mode=int(value.st_mode),
             flags=_optional_stat_int(value, "st_flags"),
             file_attributes=_optional_stat_int(value, "st_file_attributes"),
+        )
+
+    @classmethod
+    def from_directory_identity(cls, value: os.stat_result) -> FileGeneration:
+        """Bind a directory object without binding its mutable child state."""
+        generation = cls.from_stat(value)
+        return cls(
+            size=0,
+            mtime_ns=0,
+            ctime_ns=0,
+            device=generation.device,
+            inode=generation.inode,
+            mode=generation.mode,
+            flags=generation.flags,
+            file_attributes=generation.file_attributes,
         )
 
     @classmethod
@@ -858,8 +873,21 @@ def _verify_response(
         raise SupervisorError(
             "worker_generation_binding_mismatch", diagnostics=diagnostics
         )
-    if any(observed[name] != request.expected_generations[name] for name in observed):
-        raise SupervisorError("worker_generation_changed", diagnostics=diagnostics)
+    changed_generations = sorted(
+        name
+        for name in observed
+        if observed[name] != request.expected_generations[name]
+    )
+    if changed_generations:
+        generation_names: list[JsonValue] = list(changed_generations)
+        generation_details: dict[str, JsonValue] = {
+            "generation_names": generation_names
+        }
+        raise SupervisorError(
+            "worker_generation_changed",
+            generation_details,
+            diagnostics,
+        )
 
     # The potentially large, deeply nested worker payload remains opaque until
     # authentication and every request/profile/schema/file-generation binding
@@ -1934,6 +1962,15 @@ def _optional_stat_int(value: os.stat_result, name: str) -> int | None:
         if isinstance(result, int) and not isinstance(result, bool)
         else None
     )
+
+
+def _generation_ctime_ns(value: os.stat_result) -> int:
+    """Return one comparable path/handle timestamp semantic per platform."""
+    if os.name == "nt":
+        birthtime_ns = _optional_stat_int(value, "st_birthtime_ns")
+        if birthtime_ns is not None:
+            return birthtime_ns
+    return int(value.st_ctime_ns)
 
 
 def _strict_int(value: object, name: str) -> int:

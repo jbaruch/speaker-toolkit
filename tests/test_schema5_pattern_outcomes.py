@@ -642,9 +642,7 @@ def test_bare_native_deck_is_fail_closed_for_applicability_and_fresh_with_root(
     raw["slide_source"] = "pptx"
     raw["structured_data"] = {
         "slide_count": 1,
-        "native_deck_audit": pptx_evidence.recompute_native_deck_audit(
-            deck_path
-        ),
+        "native_deck_audit": pptx_evidence.recompute_native_deck_audit(deck_path),
     }
     raw["pattern_observations"].update(
         {
@@ -688,6 +686,7 @@ def test_bare_native_deck_is_fail_closed_for_applicability_and_fresh_with_root(
     persisted.update(
         {
             "status": "processed_partial",
+            "structured_data": copy.deepcopy(canonical["structured_data"]),
             "pattern_catalog_fingerprint": catalog.fingerprint,
             "pattern_scoring_schema_version": 5,
             "pattern_score": observations["pattern_score"],

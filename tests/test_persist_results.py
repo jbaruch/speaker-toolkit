@@ -448,6 +448,181 @@ def test_legacy_deep_merge_is_additive(persist_results):
     assert acts["named_acts"] is True  # new data merged in
 
 
+@pytest.mark.parametrize(
+    "field", ["slides_local_path", "slides_pdf_path", "pdf_path"])
+def test_legacy_return_persists_exact_local_pdf_preclaim_before_drive(
+        persist_results, return_validation, tmp_path, field):
+    local_path = "slides/descriptive-name.pdf"
+    pdf_path = tmp_path / local_path
+    pdf_path.parent.mkdir()
+    writer = PdfWriter()
+    writer.add_blank_page(width=96, height=54)
+    with pdf_path.open("wb") as stream:
+        writer.write(stream)
+    talk = _talk(
+        slide_source="pdf",
+        google_drive_id="slides-id",
+        **{field: local_path},
+    )
+    ret = _return(slide_source="pdf", slides_local_path=local_path)
+    ret["pattern_observations"]["evidence_sources"] = [
+        "transcript", "static_slides", "delivery_video"]
+    _complete_unavailable_source_gates(return_validation, ret)
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(_db_json({"talks": [talk]}))
+    batch.write_text(json.dumps([ret]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    assert stored["slides_local_path"] == local_path
+
+
+def test_nonvideo_return_cannot_persist_video_extraction_manifest(
+        persist_results, tmp_path):
+    ret = _return(slide_source="pptx")
+    ret["structured_data"]["video_extraction"] = {
+        "schema_version": 3,
+        "artifacts": [{"path": "/outside/untrusted.pdf"}],
+    }
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    original = _db_json({"talks": [_talk()]})
+    db.write_text(original)
+    batch.write_text(json.dumps([ret]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "allowed only when slide_source is 'video_extracted'" in result.stderr
+    assert db.read_text() == original
+
+
+@pytest.mark.parametrize(
+    ("fault", "expected_error"),
+    [
+        ("missing_context", "cannot admit returned PDF artifact"),
+        ("outside_source", "return video extraction source is unavailable"),
+        ("mismatched_promoted", "content digest disagrees"),
+    ],
+)
+def test_legacy_video_return_bounds_every_manifest_artifact_before_merge(
+        persist_results, return_validation, tmp_path, fault, expected_error):
+    video_id = "AbCdEfGhI_1"
+    rebuild = tmp_path / "slides-rebuild" / video_id
+    rebuild.mkdir(parents=True)
+    source_video = rebuild / f"{video_id}.mp4"
+    if fault == "outside_source":
+        source_video = (
+            tmp_path.parent / f"{tmp_path.name}-outside" / f"{video_id}.mp4"
+        )
+        source_video.parent.mkdir()
+    source_video.write_bytes(b"synthetic video")
+    slide_region = rebuild / f"{video_id}.slide-region.pdf"
+    promoted = tmp_path / "slides" / f"{video_id}.pdf"
+    promoted.parent.mkdir()
+    for path in (slide_region, promoted):
+        writer = PdfWriter()
+        writer.add_blank_page(width=96, height=54)
+        with path.open("wb") as stream:
+            writer.write(stream)
+    if fault == "mismatched_promoted":
+        writer = PdfWriter()
+        writer.add_blank_page(width=96, height=54)
+        writer.add_metadata({"/Title": "Different valid one-page PDF"})
+        with promoted.open("wb") as stream:
+            writer.write(stream)
+    missing_context = rebuild / f"{video_id}.context.pdf"
+    if fault != "missing_context":
+        writer = PdfWriter()
+        writer.add_blank_page(width=96, height=54)
+        with missing_context.open("wb") as stream:
+            writer.write(stream)
+    shared = {
+        "page_count": 1,
+        "source_video_id": video_id,
+        "source_video_path": str(source_video),
+    }
+    manifest = {
+        "slide_source": "video_extracted",
+        "schema_version": 3,
+        "pipeline_version": "0.10.0",
+        "source_video_id": video_id,
+        "source_video_path": str(source_video),
+        "total_frames_extracted": 1,
+        "unique_frame_count": 1,
+        "authored_slide_count": None,
+        "hash_threshold_used": 8,
+        "slide_region_detected": False,
+        "slide_region_applied": True,
+        "slide_region_method": "manual",
+        "slide_region_verified": True,
+        "slide_region": [0.05, 0.02, 0.78, 0.98],
+        "fps_used": 0.5,
+        "retained_frames": [
+            {"page_number": 1, "frame_index": 0, "timestamp_seconds": 0.0}
+        ],
+        "review_required": False,
+        "review_reason": None,
+        "artifacts": [
+            {
+                "path": str(slide_region),
+                "artifact_scope": "slide_region",
+                "crop_method": "manual",
+                "crop_verified": True,
+                "trusted_for_authored_slide_analysis": True,
+                **shared,
+            },
+            {
+                "path": str(missing_context),
+                "artifact_scope": "full_frame_context",
+                "crop_method": "none",
+                "crop_verified": False,
+                "trusted_for_authored_slide_analysis": False,
+                **shared,
+            },
+        ],
+    }
+    talk = _talk()
+    ret = _return(
+        return_schema_version=2,
+        slide_source="video_extracted",
+        slides_local_path=f"slides/{video_id}.pdf",
+    )
+    ret["pattern_observations"]["evidence_sources"] = [
+        "transcript",
+        "static_slides",
+        "delivery_video",
+    ]
+    _complete_unavailable_source_gates(return_validation, ret)
+    ret["structured_data"]["video_extraction"] = manifest
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(_db_json({"talks": [talk]}))
+    original = db.read_bytes()
+    batch.write_text(json.dumps([ret]))
+
+    result = subprocess.run(
+        [sys.executable, persist_results.__file__, str(db), str(batch)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert expected_error in result.stderr
+    assert db.read_bytes() == original
+
+
 def test_v2_adds_only_inside_registered_extension_namespace(persist_results):
     talk = _talk(structured_data={
         "extensions": {"argument_map": {"act_count": 4}},

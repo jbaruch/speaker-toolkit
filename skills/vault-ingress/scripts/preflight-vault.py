@@ -5,9 +5,9 @@ Accept either a vault directory or its tracking-database JSON file.  The script
 prints exactly one JSON report to stdout and exits 1 only when the report has a
 blocking integrity finding.  Warnings (including legacy metadata gaps) exit 0.
 
-This preflight deliberately does not fetch source metadata and does not inspect
-PDF page counts.  In particular, a video-extracted PDF proves that a slide
-artifact exists; its page count is not evidence for the authored ``slide_count``.
+This preflight deliberately does not fetch source metadata. It verifies PDF
+container/page-tree integrity inside bounded workers, but a delivered PDF page
+count is never evidence for the authored ``slide_count``.
 
 The optional ``source_identity`` evidence shape and finding taxonomy are
 documented in ``references/source-identity-preflight.md``.
@@ -31,6 +31,7 @@ from ingress_contract import (
     is_youtube_url,
     parse_google_drive_id,
     parse_youtube_id,
+    source_capabilities,
 )
 
 from return_validation import (
@@ -41,9 +42,12 @@ from return_validation import (
 )
 from pattern_evidence import (
     PATTERN_EVIDENCE_SCHEMA_VERSION,
+    PatternEvidenceError,
     assess_talk_artifact_capabilities,
+    resolve_video_extraction_source,
     validate_transcript_quality_for_owner,
 )
+from pdf_evidence import PdfArtifactProbe, PdfEvidenceError, probe_pdf_artifact
 from source_identity_matching import (
     EventAlias,
     event_agreement,
@@ -81,8 +85,12 @@ SLIDE_CONTRACT_CODES = frozenset(
         "slide_pptx_artifact_degraded",
         "slide_pdf_reference_missing",
         "slide_pdf_artifact_missing",
+        "slide_pdf_artifact_unavailable",
+        "slide_pdf_artifact_unreadable",
         "slide_video_reference_missing",
         "slide_video_artifact_missing",
+        "slide_video_artifact_unavailable",
+        "slide_video_artifact_unreadable",
     }
 )
 
@@ -367,6 +375,22 @@ class VaultPreflight:
                 actual=None,
             )
 
+        structured = talk.get("structured_data")
+        if (
+            isinstance(structured, dict)
+            and "video_extraction" in structured
+            and slide_source != "video_extracted"
+        ):
+            self.talk_add(
+                index,
+                "blocking",
+                "video_extraction_slide_source_mismatch",
+                "persisted video extraction provenance is outside its slide lane",
+                field="structured_data.video_extraction",
+                expected="present only when slide_source is 'video_extracted'",
+                actual=slide_source,
+            )
+
         video_url = talk.get("video_url")
         stored_id = talk.get("youtube_id")
         parsed_id = parse_youtube_id(video_url)
@@ -423,8 +447,19 @@ class VaultPreflight:
             self.youtube_ids[index] = identity_id
 
     def _needs_artifact_checks(self, talk: dict[str, Any]) -> bool:
-        return bool(_nonempty_string(talk.get("video_url"))) or (
+        transcript_source = talk.get("transcript_source")
+        slide_source = talk.get("slide_source")
+        return (
             talk.get("status") in COMPLETED_STATUSES
+            or bool(source_capabilities(talk))
+            or (
+                isinstance(transcript_source, str)
+                and transcript_source in TRANSCRIPT_SOURCES - {"none"}
+            )
+            or (
+                isinstance(slide_source, str)
+                and slide_source in SLIDE_SOURCES - {"none"}
+            )
         )
 
     def _validate_source_status_reachability(self, index: int) -> None:
@@ -653,6 +688,73 @@ class VaultPreflight:
             return
         severity = self._artifact_severity(index, talk, declared=True)
 
+        def require_static_pdf_capability(
+            *,
+            code_prefix: str,
+            field: str,
+            artifact_path: Path,
+        ) -> bool:
+            capabilities = self._capabilities(index)
+            raw_verified = capabilities.get("verified_evidence_sources")
+            if (
+                isinstance(raw_verified, (tuple, list, set, frozenset))
+                and "static_slides" in raw_verified
+            ):
+                return True
+            raw_unavailable = capabilities.get("unavailable_evidence_sources")
+            unavailable = (
+                raw_unavailable.get("static_slides")
+                if isinstance(raw_unavailable, dict)
+                else None
+            )
+            if code_prefix == "slide_video" and not isinstance(unavailable, dict):
+                # A readable video-derived PDF is still withheld from verified
+                # evidence until the separate crop/provenance validator runs.
+                return True
+            raw_reasons = capabilities.get("source_reasons")
+            reason = (
+                unavailable
+                if isinstance(unavailable, dict)
+                else (
+                    raw_reasons.get("static_slides")
+                    if isinstance(raw_reasons, dict)
+                    else "PDF probe returned no static-slide capability"
+                )
+            )
+            details = (
+                unavailable.get("details") if isinstance(unavailable, dict) else None
+            )
+            failure_kind = (
+                details.get("failure_kind") if isinstance(details, dict) else None
+            )
+            reason_code = (
+                unavailable.get("reason_code")
+                if isinstance(unavailable, dict)
+                else None
+            )
+            if failure_kind == "missing":
+                suffix = "missing"
+                message = "declared slide PDF artifact does not exist"
+            elif reason_code == "pdf_cloud_placeholder_unavailable":
+                suffix = "unavailable"
+                message = "declared slide PDF is not hydrated for local inspection"
+            else:
+                suffix = "unreadable"
+                message = (
+                    "declared slide PDF could not complete bounded evidence inspection"
+                )
+            self.talk_add(
+                index,
+                severity,
+                f"{code_prefix}_artifact_{suffix}",
+                message,
+                field=field,
+                actual=reason,
+                artifact_path=artifact_path,
+                capability_fact=capabilities,
+            )
+            return False
+
         if slide_source in {"pptx", "both"}:
             pptx_path = self._pptx_path(talk)
             if pptx_path is None:
@@ -737,16 +839,11 @@ class VaultPreflight:
         if slide_source in {"pdf", "both"}:
             explicit_pdf = self._slide_pdf_path(talk)
             if explicit_pdf is not None:
-                if not explicit_pdf.is_file():
-                    self.talk_add(
-                        index,
-                        severity,
-                        "slide_pdf_artifact_missing",
-                        "declared slide PDF artifact does not exist",
-                        field=self._slide_pdf_path_field(talk),
-                        actual=talk.get(self._slide_pdf_path_field(talk)),
-                        artifact_path=explicit_pdf,
-                    )
+                require_static_pdf_capability(
+                    code_prefix="slide_pdf",
+                    field=self._slide_pdf_path_field(talk),
+                    artifact_path=explicit_pdf,
+                )
                 # An explicit local artifact is a complete offline reference.
                 # Legacy imports often predate Drive IDs and use descriptive
                 # filenames; requiring a made-up Drive ID would corrupt their
@@ -765,31 +862,20 @@ class VaultPreflight:
                 )
             else:
                 pdf_path = self.vault_root / "slides" / f"{drive_id}.pdf"
-                if not pdf_path.is_file():
-                    self.talk_add(
-                        index,
-                        severity,
-                        "slide_pdf_artifact_missing",
-                        "declared Google Drive PDF artifact does not exist",
-                        field="google_drive_id",
-                        actual=drive_id,
-                        artifact_path=pdf_path,
-                    )
+                require_static_pdf_capability(
+                    code_prefix="slide_pdf",
+                    field="google_drive_id",
+                    artifact_path=pdf_path,
+                )
 
         if slide_source == "video_extracted":
             explicit_pdf = self._slide_pdf_path(talk)
             if explicit_pdf is not None:
-                if not explicit_pdf.is_file():
-                    self.talk_add(
-                        index,
-                        severity,
-                        "slide_video_artifact_missing",
-                        "declared video-extracted PDF artifact does not exist",
-                        field=self._slide_pdf_path_field(talk),
-                        actual=talk.get(self._slide_pdf_path_field(talk)),
-                        artifact_path=explicit_pdf,
-                    )
-                else:
+                if require_static_pdf_capability(
+                    code_prefix="slide_video",
+                    field=self._slide_pdf_path_field(talk),
+                    artifact_path=explicit_pdf,
+                ):
                     self._validate_video_extraction_provenance(
                         index,
                         explicit_pdf,
@@ -810,14 +896,74 @@ class VaultPreflight:
                 )
             else:
                 pdf_path = self.vault_root / "slides" / f"{youtube_id}.pdf"
-                if pdf_path.is_file():
+                if talk.get("status") == "processed_partial":
+                    self._validate_video_extraction_provenance(
+                        index,
+                        None,
+                        severity,
+                        require_trusted=False,
+                    )
+                    return
+                static_pdf_available = require_static_pdf_capability(
+                    code_prefix="slide_video",
+                    field="slide_source",
+                    artifact_path=pdf_path,
+                )
+                promoted_pdf_available = False
+                if static_pdf_available:
+                    try:
+                        probe_pdf_artifact(
+                            pdf_path,
+                            trusted_root=self.vault_root,
+                        )
+                    except PdfEvidenceError as exc:
+                        failure_kind = exc.details.get("failure_kind")
+                        promoted_pdf_missing = failure_kind == "missing"
+                        if promoted_pdf_missing:
+                            if talk.get("status") != "processed_partial":
+                                self.talk_add(
+                                    index,
+                                    severity,
+                                    "slide_video_artifact_missing",
+                                    "processed video extraction has no promoted "
+                                    "canonical slide PDF",
+                                    field="slide_source",
+                                    actual={
+                                        "reason_code": exc.reason_code,
+                                        "details": dict(exc.details),
+                                    },
+                                    artifact_path=pdf_path,
+                                )
+                        else:
+                            suffix = (
+                                "unavailable"
+                                if exc.reason_code
+                                == "pdf_cloud_placeholder_unavailable"
+                                else "unreadable"
+                            )
+                            self.talk_add(
+                                index,
+                                severity,
+                                f"slide_video_artifact_{suffix}",
+                                "implicit promoted video-slide PDF failed its "
+                                "bounded integrity probe",
+                                field="slide_source",
+                                actual={
+                                    "reason_code": exc.reason_code,
+                                    "details": dict(exc.details),
+                                },
+                                artifact_path=pdf_path,
+                            )
+                    else:
+                        promoted_pdf_available = True
+                if static_pdf_available and promoted_pdf_available:
                     self._validate_video_extraction_provenance(
                         index,
                         pdf_path,
                         severity,
                         require_trusted=True,
                     )
-                elif talk.get("status") == "processed_partial":
+                elif static_pdf_available:
                     # A partial result may intentionally retain only a trusted
                     # unpromoted crop candidate or full-frame context. Validate
                     # its complete manifest and preserved artifacts, but do not
@@ -827,16 +973,6 @@ class VaultPreflight:
                         None,
                         severity,
                         require_trusted=False,
-                    )
-                else:
-                    self.talk_add(
-                        index,
-                        severity,
-                        "slide_video_artifact_missing",
-                        "declared video-extracted PDF artifact does not exist",
-                        field="slide_source",
-                        actual="video_extracted",
-                        artifact_path=pdf_path,
                     )
 
     def _transcript_path(self, talk: dict[str, Any]) -> Path | None:
@@ -991,12 +1127,21 @@ class VaultPreflight:
             return
 
         errors: list[str] = []
+        trusted_slide_region_probe: PdfArtifactProbe | None = None
         expected_id = self.youtube_ids.get(index)
         if state.source_video_id != expected_id:
             errors.append("source_video_id must match the talk's YouTube identity")
-        source_video = _nonempty_string(extraction.get("source_video_path"))
-        if source_video is None or not Path(source_video).expanduser().is_file():
-            errors.append("source_video_path must name the preserved source video")
+        try:
+            resolve_video_extraction_source(
+                self.vault_root,
+                extraction,
+                state.source_video_id,
+            )
+        except PatternEvidenceError:
+            errors.append(
+                "source_video_path must name a root-confined, non-symlinked "
+                "preserved source video"
+            )
 
         artifacts = extraction.get("artifacts")
         # Shared schema validation proved this is a list of artifact objects.
@@ -1004,8 +1149,55 @@ class VaultPreflight:
         for artifact in artifacts:
             assert isinstance(artifact, dict)
             artifact_path = _nonempty_string(artifact.get("path"))
-            if artifact_path is None or not Path(artifact_path).expanduser().is_file():
+            if artifact_path is None:
                 errors.append("every artifact path must exist")
+                continue
+            try:
+                artifact_probe = probe_pdf_artifact(
+                    Path(artifact_path).expanduser(),
+                    trusted_root=self.vault_root,
+                )
+            except PdfEvidenceError as exc:
+                errors.append(
+                    "every artifact PDF must pass the bounded integrity probe "
+                    f"({exc.reason_code})"
+                )
+                continue
+            if artifact_probe.page_count != artifact.get("page_count"):
+                errors.append(
+                    "every artifact page_count must match the bounded PDF probe"
+                )
+            if artifact.get("artifact_scope") == "slide_region":
+                trusted_slide_region_probe = artifact_probe
+        if (
+            promoted_pdf is not None
+            and state.trusted_slide_region
+            and trusted_slide_region_probe is not None
+        ):
+            try:
+                promoted_probe = probe_pdf_artifact(
+                    promoted_pdf,
+                    trusted_root=self.vault_root,
+                )
+            except PdfEvidenceError as exc:
+                errors.append(
+                    "the promoted slide PDF must pass the bounded integrity probe "
+                    f"({exc.reason_code})"
+                )
+            else:
+                if promoted_probe.page_count != trusted_slide_region_probe.page_count:
+                    errors.append(
+                        "the promoted slide PDF page count must match the trusted "
+                        "slide_region artifact"
+                    )
+                if (
+                    promoted_probe.source_sha256
+                    != trusted_slide_region_probe.source_sha256
+                ):
+                    errors.append(
+                        "the promoted slide PDF digest must match the trusted "
+                        "slide_region artifact"
+                    )
         if errors:
             self.talk_add(
                 index,

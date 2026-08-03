@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import importlib
 import json
 import struct
 import subprocess
@@ -221,6 +222,63 @@ def test_unhashable_worker_reason_enums_fail_as_malformed_results(
         with pytest.raises(pptx_evidence.PptxEvidenceError) as caught:
             call()
         assert caught.value.reason_code == "pptx_probe_malformed_result"
+
+
+def test_rendered_pdf_failure_reason_requires_a_render_request(
+    pptx_evidence,
+) -> None:
+    unavailable = {
+        "schema_version": 1,
+        "status": "unavailable",
+        "reason_code": "pdf_parser_repair_required",
+        "details": {
+            "diagnostic_receipt": {
+                "byte_count": 1,
+                "sha256": "f" * 64,
+                "truncated": False,
+            }
+        },
+    }
+
+    with pytest.raises(pptx_evidence.PptxEvidenceError) as caught:
+        pptx_evidence._decode_extraction_worker_payload(unavailable)
+    assert caught.value.reason_code == "pptx_probe_malformed_result"
+
+    with pytest.raises(pptx_evidence.PptxEvidenceError) as caught:
+        pptx_evidence._decode_extraction_worker_payload(
+            unavailable,
+            rendered_pdf_requested=True,
+        )
+    assert caught.value.reason_code == "pdf_parser_repair_required"
+
+    unavailable["details"] = {"exception_type": "PdfReadError"}
+    with pytest.raises(pptx_evidence.PptxEvidenceError) as caught:
+        pptx_evidence._decode_extraction_worker_payload(
+            unavailable,
+            rendered_pdf_requested=True,
+        )
+    assert caught.value.reason_code == "pptx_probe_malformed_result"
+
+
+@pytest.mark.parametrize("invalid_kind", [[], {}])
+def test_rendered_pdf_capture_failure_kind_must_be_a_closed_string(
+    pptx_evidence,
+    invalid_kind: object,
+) -> None:
+    unavailable = {
+        "schema_version": 1,
+        "status": "unavailable",
+        "reason_code": "pdf_probe_resource_unavailable",
+        "details": {"capture_failure_kind": invalid_kind},
+    }
+
+    with pytest.raises(pptx_evidence.PptxEvidenceError) as caught:
+        pptx_evidence._decode_extraction_worker_payload(
+            unavailable,
+            rendered_pdf_requested=True,
+        )
+
+    assert caught.value.reason_code == "pptx_probe_malformed_result"
 
 
 _SUPERVISOR_PUBLIC_MESSAGES = {
@@ -479,10 +537,10 @@ def test_parser_worker_rejects_trusted_root_generation_swap(
     deck = root / "deck.pptx"
     _write_deck(deck, with_image=False)
     generation = pptx_evidence.FileGeneration.from_stat(deck.stat())
-    root_generation = pptx_evidence.FileGeneration.from_stat(root.stat())
+    root_generation = pptx_evidence.FileGeneration.from_directory_identity(root.stat())
     replaced_root = pptx_evidence.replace(
         root_generation,
-        ctime_ns=root_generation.ctime_ns + 1,
+        inode=root_generation.inode + 1,
     )
     root_reads = iter((root_generation, replaced_root))
     monkeypatch.setattr(
@@ -956,37 +1014,31 @@ def test_snapshot_generation_change_has_nonsticky_changed_code(
     assert caught.value.reason_code == "pptx_artifact_changed"
 
 
-def test_rendered_pdf_same_size_generation_replacement_fails_closed(
+def test_rendered_pdf_compatibility_wrapper_never_reads_in_owner_process(
     pptx_evidence,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     rendered = tmp_path / "rendered.pdf"
     _write_pdf(rendered, page_count=1)
-    actual = rendered.lstat()
-    original_lstat = Path.lstat
-    calls = 0
+    pdf_evidence = importlib.import_module("pdf_evidence")
+    expected = ("a" * 64, rendered.stat().st_size, 1)
+    monkeypatch.setattr(
+        pdf_evidence,
+        "probe_pdf_artifact",
+        lambda _path: SimpleNamespace(
+            source_sha256=expected[0],
+            source_size_bytes=expected[1],
+            page_count=expected[2],
+        ),
+    )
 
-    def replaced_lstat(path: Path):
-        nonlocal calls
-        if path != rendered:
-            return original_lstat(path)
-        calls += 1
-        if calls == 1:
-            return actual
-        return SimpleNamespace(
-            st_mode=actual.st_mode,
-            st_dev=actual.st_dev,
-            st_ino=actual.st_ino,
-            st_size=actual.st_size,
-            st_mtime_ns=actual.st_mtime_ns + 1,
-            st_ctime_ns=actual.st_ctime_ns,
-            st_flags=getattr(actual, "st_flags", 0),
-        )
-
-    monkeypatch.setattr(Path, "lstat", replaced_lstat)
-    with pytest.raises(pptx_evidence.PptxEvidenceError, match="changed"):
-        pptx_evidence.snapshot_rendered_pdf(rendered)
+    monkeypatch.setattr(
+        Path,
+        "lstat",
+        lambda _path: pytest.fail("owner process called lstat for a PDF"),
+    )
+    assert pptx_evidence.snapshot_rendered_pdf(rendered) == expected
 
 
 def test_native_audit_recomputation_timeout_is_structured(
@@ -1168,8 +1220,12 @@ def test_hydrated_gigabyte_deck_fits_explicit_artifact_cap(
     )
     monkeypatch.setattr(
         pptx_evidence,
-        "_supervised_file_generation",
-        lambda _path, **_kwargs: generation,
+        "_run_bounded_metadata_worker",
+        lambda _path, **_kwargs: pptx_evidence.ArtifactMetadataReceipt(
+            generation=generation,
+            root_generation=None,
+            reparse_tag=None,
+        ),
     )
 
     artifact, admitted, root_generation = pptx_evidence._admit_supervised_input(
@@ -1210,8 +1266,12 @@ def test_artifact_larger_than_explicit_cap_fails_before_worker(
     )
     monkeypatch.setattr(
         pptx_evidence,
-        "_supervised_file_generation",
-        lambda _path, **_kwargs: generation,
+        "_run_bounded_metadata_worker",
+        lambda _path, **_kwargs: pptx_evidence.ArtifactMetadataReceipt(
+            generation=generation,
+            root_generation=None,
+            reparse_tag=None,
+        ),
     )
     monkeypatch.setattr(
         pptx_evidence,
@@ -1226,6 +1286,254 @@ def test_artifact_larger_than_explicit_cap_fails_before_worker(
         )
 
     assert caught.value.reason_code == "pptx_probe_resource_unavailable"
+
+
+def test_missing_rendered_pdf_keeps_pdf_admission_reason(
+    pptx_evidence,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    deck = tmp_path / "source.pptx"
+    _write_deck(deck, with_image=False)
+    rendered = tmp_path / "missing.pdf"
+    monkeypatch.setattr(
+        pptx_evidence,
+        "run_authenticated_worker",
+        lambda *_args, **_kwargs: pytest.fail(
+            "missing rendered PDF started extraction worker"
+        ),
+    )
+
+    with pytest.raises(pptx_evidence.PptxEvidenceError) as caught:
+        pptx_evidence.run_supervised_pptx_extraction(
+            deck,
+            ocr=False,
+            rendered_pdf_path=rendered,
+        )
+
+    assert caught.value.reason_code == "pdf_artifact_unavailable"
+    assert caught.value.details["failure_kind"] == "missing"
+    assert str(rendered) not in str(caught.value)
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="this deterministic link rejection uses a POSIX file symlink",
+)
+def test_symlinked_rendered_pdf_keeps_pdf_admission_reason(
+    pptx_evidence,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    deck = tmp_path / "source.pptx"
+    _write_deck(deck, with_image=False)
+    target = tmp_path / "target.pdf"
+    _write_pdf(target, page_count=1)
+    rendered = tmp_path / "rendered.pdf"
+    rendered.symlink_to(target)
+    monkeypatch.setattr(
+        pptx_evidence,
+        "run_authenticated_worker",
+        lambda *_args, **_kwargs: pytest.fail(
+            "symlinked rendered PDF started extraction worker"
+        ),
+    )
+
+    with pytest.raises(pptx_evidence.PptxEvidenceError) as caught:
+        pptx_evidence.run_supervised_pptx_extraction(
+            deck,
+            ocr=False,
+            rendered_pdf_path=rendered,
+        )
+
+    assert caught.value.reason_code == "pdf_artifact_unavailable"
+    assert caught.value.details["failure_kind"] == "symlink_or_reparse"
+
+
+def test_rendered_pdf_root_escape_keeps_pdf_admission_reason(
+    pptx_evidence,
+    tmp_path: Path,
+) -> None:
+    trusted_root = tmp_path / "trusted"
+    trusted_root.mkdir()
+    rendered = tmp_path / "outside.pdf"
+    _write_pdf(rendered, page_count=1)
+
+    with pytest.raises(pptx_evidence.PptxEvidenceError) as caught:
+        pptx_evidence._admit_supervised_input(
+            rendered,
+            label="rendered PDF",
+            trusted_root=trusted_root,
+            artifact_kind=pptx_evidence._RENDERED_PDF_ADMISSION_KIND,
+        )
+
+    assert caught.value.reason_code == "pdf_artifact_unavailable"
+    assert caught.value.details["failure_kind"] == "root_escape"
+
+
+def test_rendered_pdf_cloud_placeholder_keeps_pdf_admission_reason(
+    pptx_evidence,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    dataless_flag = 0x40000000
+    generation = pptx_evidence.FileGeneration(
+        size=123,
+        mtime_ns=1,
+        ctime_ns=1,
+        device=1,
+        inode=1,
+        mode=0o100644,
+        flags=dataless_flag,
+        file_attributes=0,
+    )
+    monkeypatch.setattr(
+        pptx_evidence,
+        "PDF_MACOS_DATALESS_FLAG",
+        dataless_flag,
+    )
+    monkeypatch.setattr(
+        pptx_evidence,
+        "_run_bounded_metadata_worker",
+        lambda _path, **_kwargs: pptx_evidence.ArtifactMetadataReceipt(
+            generation=generation,
+            root_generation=None,
+            reparse_tag=None,
+        ),
+    )
+
+    with pytest.raises(pptx_evidence.PptxEvidenceError) as caught:
+        pptx_evidence._admit_supervised_input(
+            tmp_path / "offline.pdf",
+            label="rendered PDF",
+            artifact_kind=pptx_evidence._RENDERED_PDF_ADMISSION_KIND,
+        )
+
+    assert caught.value.reason_code == "pdf_cloud_placeholder_unavailable"
+    assert caught.value.details["availability"] == {
+        "state": "unavailable",
+        "macos_dataless": True,
+        "windows_offline": False,
+        "windows_recall_on_open": False,
+        "windows_recall_on_data_access": False,
+    }
+
+
+def test_rendered_pdf_uses_pdf_size_ceiling_before_extraction(
+    pptx_evidence,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    deck = tmp_path / "source.pptx"
+    _write_deck(deck, with_image=False)
+    rendered = tmp_path / "oversized.pdf"
+    original_metadata = pptx_evidence._run_bounded_metadata_worker
+    oversized = pptx_evidence.FileGeneration(
+        size=pptx_evidence.PDF_MAX_INPUT_BYTES + 1,
+        mtime_ns=1,
+        ctime_ns=1,
+        device=1,
+        inode=1,
+        mode=0o100644,
+        flags=0,
+        file_attributes=0,
+    )
+
+    def metadata(path: Path, **kwargs):
+        if path == rendered:
+            return pptx_evidence.ArtifactMetadataReceipt(
+                generation=oversized,
+                root_generation=None,
+                reparse_tag=None,
+            )
+        return original_metadata(path, **kwargs)
+
+    monkeypatch.setattr(pptx_evidence, "_run_bounded_metadata_worker", metadata)
+    monkeypatch.setattr(
+        pptx_evidence,
+        "run_authenticated_worker",
+        lambda *_args, **_kwargs: pytest.fail(
+            "oversized rendered PDF started extraction worker"
+        ),
+    )
+
+    with pytest.raises(pptx_evidence.PptxEvidenceError) as caught:
+        pptx_evidence.run_supervised_pptx_extraction(
+            deck,
+            ocr=False,
+            rendered_pdf_path=rendered,
+        )
+
+    assert pptx_evidence.PDF_MAX_INPUT_BYTES == 512 * 1024 * 1024
+    assert caught.value.reason_code == "pdf_artifact_too_large"
+    assert caught.value.details["limit_bytes"] == pptx_evidence.PDF_MAX_INPUT_BYTES
+
+
+@pytest.mark.parametrize(
+    ("supervisor_reason", "supervisor_details", "pdf_reason"),
+    [
+        (
+            "worker_memory_limit_exceeded",
+            {},
+            "pdf_probe_resource_unavailable",
+        ),
+        (
+            "worker_monitor_unavailable",
+            {"dependency": "psutil"},
+            "pdf_dependency_unavailable",
+        ),
+        (
+            "worker_monitor_unavailable",
+            {},
+            "pdf_probe_monitor_unavailable",
+        ),
+        (
+            "worker_monitor_identity_changed",
+            {},
+            "pdf_probe_monitor_identity_changed",
+        ),
+        (
+            "worker_containment_unavailable",
+            {},
+            "pdf_probe_containment_unavailable",
+        ),
+    ],
+)
+def test_rendered_pdf_metadata_supervisor_failure_keeps_pdf_reason_and_redaction(
+    pptx_evidence,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    supervisor_reason: str,
+    supervisor_details: dict[str, object],
+    pdf_reason: str,
+) -> None:
+    deck = tmp_path / "source.pptx"
+    _write_deck(deck, with_image=False)
+    rendered = tmp_path / "resource-bound.pdf"
+    bounded_metadata = pptx_evidence._invoke_metadata_worker
+
+    def metadata(command, payload, sensitive_values, limits):
+        if payload["pptx_path"] == str(rendered):
+            raise pptx_evidence.SupervisorError(
+                supervisor_reason,
+                supervisor_details,
+            )
+        return bounded_metadata(command, payload, sensitive_values, limits)
+
+    monkeypatch.setattr(pptx_evidence, "_invoke_metadata_worker", metadata)
+
+    with pytest.raises(pptx_evidence.PptxEvidenceError) as caught:
+        pptx_evidence.run_supervised_pptx_extraction(
+            deck,
+            ocr=False,
+            rendered_pdf_path=rendered,
+        )
+
+    assert caught.value.reason_code == pdf_reason
+    assert caught.value.details["supervisor_reason_code"] == supervisor_reason
+    assert caught.value.details["admitted_source_size_bytes"] == deck.stat().st_size
+    assert str(rendered) not in str(caught.value)
+    assert str(rendered) not in repr(caught.value.details)
 
 
 def test_structural_crc_damage_is_unavailable_not_placeholder_recovered(
@@ -1512,7 +1820,7 @@ def test_extractor_reports_recovered_media_and_keeps_schema_versions_distinct(
     result = pptx_extraction._extract_pptx_in_process(deck, ocr=False)
 
     assert result["schema_version"] == 4
-    assert result["pipeline_version"] == "1.4.0"
+    assert result["pipeline_version"] == "1.5.0"
     assert result["archive_recovery"][0]["part_name"] == damaged_part
     assert result["corrupt_assets"] == [
         {
@@ -1699,10 +2007,10 @@ def test_full_extraction_request_binds_options_generations_and_limit_profile(
         "rendered_pdf_path": str(rendered),
         "inspected_page_ranges": [[1, 1]],
         "extraction_schema_version": 4,
-        "extraction_pipeline_version": "1.4.0",
+        "extraction_pipeline_version": "1.5.0",
     }
     assert captured["kwargs"]["schema_generation"] == 4
-    assert captured["kwargs"]["pipeline_generation"] == "1.4.0"
+    assert captured["kwargs"]["pipeline_generation"] == "1.5.0"
     command_text = "\n".join(str(item) for item in captured["command"])
     assert str(deck) not in command_text
     assert str(rendered) not in command_text
@@ -3434,7 +3742,7 @@ def test_public_extractor_runs_healthy_deck_through_real_worker(
     result = pptx_extraction.extract_pptx(deck, ocr=False)
 
     assert result["schema_version"] == 4
-    assert result["pipeline_version"] == "1.4.0"
+    assert result["pipeline_version"] == "1.5.0"
     assert result["slide_count"] == 1
     assert result["pptx_path"] == str(deck)
 
@@ -3481,7 +3789,93 @@ def test_full_extraction_rejects_render_generation_change(
             inspected_page_ranges=[[1, 1]],
         )
 
-    assert caught.value.reason_code == "pptx_artifact_changed"
+    assert caught.value.reason_code == "pdf_artifact_changed"
+
+
+@pytest.mark.parametrize(
+    ("generation_names", "reason_code"),
+    [
+        (["pptx"], "pptx_artifact_changed"),
+        (["rendered_pdf"], "pdf_artifact_changed"),
+    ],
+)
+def test_full_extraction_maps_authenticated_generation_change_to_artifact_family(
+    pptx_evidence,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    generation_names: list[str],
+    reason_code: str,
+) -> None:
+    deck = tmp_path / "source.pptx"
+    _write_deck(deck, with_image=False)
+    rendered = tmp_path / "rendered.pdf"
+    _write_pdf(rendered, page_count=1)
+
+    def changed_worker(*_args, **_kwargs):
+        raise pptx_evidence.SupervisorError(
+            "worker_generation_changed",
+            {"generation_names": generation_names},
+        )
+
+    monkeypatch.setattr(pptx_evidence, "run_authenticated_worker", changed_worker)
+
+    with pytest.raises(pptx_evidence.PptxEvidenceError) as caught:
+        pptx_evidence.run_supervised_pptx_extraction(
+            deck,
+            ocr=False,
+            rendered_pdf_path=rendered,
+        )
+
+    assert caught.value.reason_code == reason_code
+
+
+def test_extraction_worker_identifies_contained_render_generation_change(
+    pptx_evidence,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    deck = tmp_path / "source.pptx"
+    _write_deck(deck, with_image=False)
+    rendered = tmp_path / "rendered.pdf"
+    _write_pdf(rendered, page_count=1)
+    source_generation = pptx_evidence.FileGeneration.from_stat(deck.stat())
+    rendered_generation = pptx_evidence.FileGeneration.from_stat(rendered.stat())
+
+    def changed_extract(*_args, **_kwargs):
+        raise pptx_evidence.SupervisorError("worker_generation_changed")
+
+    monkeypatch.setattr(
+        pptx_evidence,
+        "_extract_child",
+        changed_extract,
+    )
+    request = SimpleNamespace(
+        operation=pptx_evidence.PPTX_EXTRACT_OPERATION,
+        limit_profile_id=pptx_evidence.PPTX_EXTRACT_NO_OCR_LIMITS.profile_id,
+        schema_generation=pptx_evidence.PPTX_EXTRACTION_SCHEMA_VERSION,
+        pipeline_generation=pptx_evidence.PPTX_EXTRACTION_PIPELINE_VERSION,
+        expected_generations={
+            "pptx": source_generation,
+            "rendered_pdf": rendered_generation,
+        },
+        payload={
+            "pptx_path": str(deck),
+            "trusted_root": None,
+            "ocr": False,
+            "rendered_pdf_path": str(rendered),
+            "inspected_page_ranges": [],
+            "extraction_schema_version": (pptx_evidence.PPTX_EXTRACTION_SCHEMA_VERSION),
+            "extraction_pipeline_version": (
+                pptx_evidence.PPTX_EXTRACTION_PIPELINE_VERSION
+            ),
+        },
+    )
+
+    with pytest.raises(pptx_evidence.SupervisorError) as caught:
+        pptx_evidence._dispatch_supervised_worker(request)
+
+    assert caught.value.reason_code == "worker_generation_changed"
+    assert caught.value.details == {"generation_names": ["rendered_pdf"]}
 
 
 @pytest.mark.parametrize(

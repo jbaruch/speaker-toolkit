@@ -12,6 +12,7 @@ import zipfile
 
 import pytest
 from PIL import Image
+from pypdf import PdfWriter
 from pptx import Presentation
 from pptx.util import Inches
 
@@ -148,6 +149,16 @@ def materialize_transcript(fixture, video_id=VIDEO_ID):
     return path
 
 
+def write_pdf(path: Path, *, page_count: int = 1) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    writer = PdfWriter()
+    for _index in range(page_count):
+        writer.add_blank_page(width=640, height=480)
+    with path.open("wb") as stream:
+        writer.write(stream)
+    return path
+
+
 def materialize_crc_damaged_pptx(fixture):
     """Create a deck with one CRC-damaged media member under the source root."""
     image_path = fixture["pptx_source"] / "asset.png"
@@ -207,7 +218,7 @@ def trusted_video_manifest(fixture, page_count=1):
     source_video = rebuild / f"{VIDEO_ID}.mp4"
     source_video.write_bytes(b"video fixture")
     candidate = rebuild / f"{VIDEO_ID}.slide-region.pdf"
-    candidate.write_bytes(b"%PDF cropped fixture")
+    write_pdf(candidate, page_count=page_count)
     retained = [
         {
             "page_number": page,
@@ -254,7 +265,7 @@ def context_video_manifest(fixture, page_count=1):
     manifest = trusted_video_manifest(fixture, page_count)
     rebuild = fixture["root"] / "slides-rebuild" / VIDEO_ID
     context = rebuild / f"{VIDEO_ID}.context.pdf"
-    context.write_bytes(b"%PDF context fixture")
+    write_pdf(context, page_count=page_count)
     source_video = manifest["source_video_path"]
     manifest.update(
         {
@@ -405,9 +416,334 @@ def test_pptx_artifact_validation_never_calls_parent_is_file(
     }.intersection(finding_codes(report))
 
 
+@pytest.mark.parametrize(
+    "manifest_factory",
+    [trusted_video_manifest, context_video_manifest],
+    ids=["slide-region", "full-frame-context"],
+)
+def test_video_pdf_validation_never_touches_pdf_leaf_in_parent(
+    preflight_vault,
+    vault_fixture,
+    monkeypatch: pytest.MonkeyPatch,
+    manifest_factory,
+) -> None:
+    manifest = manifest_factory(vault_fixture)
+    talk = base_talk(
+        status="processed_partial",
+        transcript_source="none",
+        slide_source="video_extracted",
+        structured_data={"video_extraction": manifest},
+    )
+    write_database(vault_fixture, [talk])
+    pattern_evidence = importlib.import_module("pattern_evidence")
+
+    for method_name in (
+        "is_file",
+        "resolve",
+        "stat",
+        "lstat",
+        "open",
+        "read_bytes",
+    ):
+        original = getattr(Path, method_name)
+
+        def guarded(
+            path: Path,
+            *args,
+            _original=original,
+            _method_name=method_name,
+            **kwargs,
+        ):
+            if path.suffix.casefold() == ".pdf":
+                pytest.fail(f"preflight called {_method_name} for a PDF artifact")
+            return _original(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, method_name, guarded)
+
+    original_hash = pattern_evidence._sha256_file
+
+    def guarded_hash(path: Path) -> str:
+        if path.suffix.casefold() == ".pdf":
+            pytest.fail("preflight hashed a PDF artifact in the owner")
+        return original_hash(path)
+
+    monkeypatch.setattr(pattern_evidence, "_sha256_file", guarded_hash)
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "video_extraction_provenance_invalid" not in finding_codes(report)
+
+
+def test_processed_video_extraction_requires_promoted_canonical_pdf(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    manifest = trusted_video_manifest(vault_fixture)
+    talk = base_talk(
+        status="processed",
+        transcript_source="none",
+        slide_source="video_extracted",
+        structured_data={"video_extraction": manifest},
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "slide_video_artifact_missing" in finding_codes(report)
+
+
+def test_promoted_video_pdf_must_match_trusted_slide_region_digest(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    manifest = trusted_video_manifest(vault_fixture)
+    promoted = vault_fixture["slides"] / f"{VIDEO_ID}.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=640, height=480)
+    writer.add_metadata({"/Title": "Different valid one-page PDF"})
+    with promoted.open("wb") as stream:
+        writer.write(stream)
+    talk = base_talk(
+        status="processed",
+        transcript_source="none",
+        slide_source="video_extracted",
+        slides_local_path=promoted.relative_to(vault_fixture["root"]).as_posix(),
+        structured_data={"video_extraction": manifest},
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "video_extraction_provenance_invalid"
+    )
+    assert finding["severity"] == "blocking"
+    assert any("digest must match" in error for error in finding["actual"])
+
+
+def test_video_extraction_manifest_is_rejected_outside_video_slide_lane(
+    preflight_vault,
+    vault_fixture,
+    monkeypatch,
+) -> None:
+    def reject_probe(*_args, **_kwargs):
+        raise AssertionError("wrong-lane video artifacts must not be probed")
+
+    monkeypatch.setattr(preflight_vault, "probe_pdf_artifact", reject_probe)
+    talk = base_talk(
+        status="pending",
+        video_url=None,
+        youtube_id=None,
+        transcript_source="none",
+        slide_source="none",
+        structured_data={
+            "video_extraction": {
+                "artifacts": [{"path": "/outside/untrusted.pdf"}],
+            }
+        },
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "video_extraction_slide_source_mismatch"
+    )
+    assert finding["severity"] == "blocking"
+    assert finding["field"] == "structured_data.video_extraction"
+    assert finding["actual"] == "none"
+
+
+@pytest.mark.parametrize(
+    "manifest_factory",
+    [trusted_video_manifest, context_video_manifest],
+    ids=["slide-region", "full-frame-context"],
+)
+def test_video_manifest_pdf_page_count_is_bounded_and_verified(
+    preflight_vault,
+    vault_fixture,
+    manifest_factory,
+) -> None:
+    manifest = manifest_factory(vault_fixture, page_count=2)
+    artifact = Path(manifest["artifacts"][0]["path"])
+    write_pdf(artifact, page_count=1)
+    talk = base_talk(
+        status="processed_partial",
+        transcript_source="none",
+        slide_source="video_extracted",
+        structured_data={"video_extraction": manifest},
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "video_extraction_provenance_invalid"
+    )
+    assert any(
+        "page_count must match the bounded PDF probe" in error
+        for error in finding["actual"]
+    )
+
+
+def test_video_manifest_rejects_pdf_spoofed_as_source_video_before_is_file(
+    preflight_vault,
+    vault_fixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = trusted_video_manifest(vault_fixture)
+    spoofed = manifest["artifacts"][0]["path"]
+    manifest["source_video_path"] = spoofed
+    manifest["artifacts"][0]["source_video_path"] = spoofed
+    talk = base_talk(
+        status="processed_partial",
+        transcript_source="none",
+        slide_source="video_extracted",
+        structured_data={"video_extraction": manifest},
+    )
+    write_database(vault_fixture, [talk])
+    original_is_file = Path.is_file
+
+    def guarded_is_file(path: Path) -> bool:
+        if path.suffix.casefold() == ".pdf":
+            pytest.fail("preflight statted a PDF spoofed as source video")
+        return original_is_file(path)
+
+    monkeypatch.setattr(Path, "is_file", guarded_is_file)
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "video_extraction_provenance_invalid" in finding_codes(report)
+
+
+def test_video_manifest_rejects_source_video_outside_vault(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    manifest = trusted_video_manifest(vault_fixture)
+    outside = vault_fixture["root"].parent / "outside" / f"{VIDEO_ID}.mp4"
+    outside.parent.mkdir()
+    outside.write_bytes(b"outside video")
+    manifest["source_video_path"] = str(outside)
+    for artifact in manifest["artifacts"]:
+        artifact["source_video_path"] = str(outside)
+    talk = base_talk(
+        status="processed_partial",
+        transcript_source="none",
+        slide_source="video_extracted",
+        structured_data={"video_extraction": manifest},
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "video_extraction_provenance_invalid" in finding_codes(report)
+
+
+def test_missing_source_video_reports_closed_path_neutral_error(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    manifest = trusted_video_manifest(vault_fixture)
+    source = Path(manifest["source_video_path"])
+    source.unlink()
+    talk = base_talk(
+        status="processed_partial",
+        transcript_source="none",
+        slide_source="video_extracted",
+        structured_data={"video_extraction": manifest},
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "video_extraction_provenance_invalid"
+    )
+    diagnostic = json.dumps(
+        {"message": finding["message"], "actual": finding["actual"]},
+        sort_keys=True,
+    )
+    assert str(source) not in diagnostic
+    assert finding["actual"] == [
+        "source_video_path must name a root-confined, non-symlinked preserved "
+        "source video"
+    ]
+
+
+def test_video_manifest_rejects_symlinked_source_video(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    manifest = trusted_video_manifest(vault_fixture)
+    source = Path(manifest["source_video_path"])
+    outside = vault_fixture["root"].parent / "outside" / source.name
+    outside.parent.mkdir()
+    outside.write_bytes(b"outside video")
+    source.unlink()
+    try:
+        source.symlink_to(outside)
+    except OSError:
+        pytest.skip("directory policy does not permit symlink creation")
+    talk = base_talk(
+        status="processed_partial",
+        transcript_source="none",
+        slide_source="video_extracted",
+        structured_data={"video_extraction": manifest},
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "video_extraction_provenance_invalid" in finding_codes(report)
+
+
+def test_video_manifest_pdf_probes_accept_documented_symlink_vault_root(
+    preflight_vault,
+    vault_fixture,
+    tmp_path: Path,
+) -> None:
+    manifest = context_video_manifest(vault_fixture)
+    talk = base_talk(
+        status="processed_partial",
+        transcript_source="none",
+        slide_source="video_extracted",
+        structured_data={"video_extraction": manifest},
+    )
+    write_database(vault_fixture, [talk])
+    locator = tmp_path / "canonical-vault"
+    try:
+        locator.symlink_to(vault_fixture["root"], target_is_directory=True)
+    except OSError:
+        pytest.skip("directory policy does not permit symlink creation")
+
+    report = preflight_vault.run_preflight(locator)
+
+    assert "video_extraction_provenance_invalid" not in finding_codes(report)
+
+
+def test_slide_contract_taxonomy_includes_bounded_pdf_failures(
+    preflight_vault,
+) -> None:
+    assert {
+        "slide_pdf_artifact_unavailable",
+        "slide_pdf_artifact_unreadable",
+        "slide_video_artifact_unavailable",
+        "slide_video_artifact_unreadable",
+    } <= preflight_vault.SLIDE_CONTRACT_CODES
+
+
 def test_clean_record_has_no_findings(preflight_vault, vault_fixture):
     materialize_transcript(vault_fixture)
-    (vault_fixture["slides"] / f"{DRIVE_ID}.pdf").write_bytes(b"%PDF fixture")
+    write_pdf(vault_fixture["slides"] / f"{DRIVE_ID}.pdf")
     pptx = vault_fixture["pptx_source"] / "Conf" / "Perfect.pptx"
     pptx.parent.mkdir()
     deck = Presentation()
@@ -883,6 +1219,88 @@ def test_pending_artifact_gaps_are_warnings_not_blockers(
     } <= finding_codes(report, "warning")
 
 
+@pytest.mark.parametrize(
+    ("source_fields", "expected_code"),
+    [
+        (
+            {
+                "transcript_source": "none",
+                "slide_source": "pdf",
+                "slides_local_path": "slides/missing.pdf",
+            },
+            "slide_pdf_artifact_missing",
+        ),
+        (
+            {
+                "transcript_source": "none",
+                "slide_source": "pptx",
+                "pptx_path": "missing.pptx",
+            },
+            "slide_pptx_artifact_missing",
+        ),
+        (
+            {
+                "transcript_source": "manual",
+                "transcript_path": "transcripts/missing.txt",
+                "slide_source": "none",
+            },
+            "transcript_artifact_missing",
+        ),
+    ],
+)
+def test_pending_nonvideo_sources_still_run_artifact_preflight(
+    preflight_vault,
+    vault_fixture,
+    source_fields,
+    expected_code,
+):
+    talk = base_talk(
+        status="pending",
+        video_url=None,
+        youtube_id=None,
+        **source_fields,
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["blocking_count"] == 0
+    assert report["ok"] is True
+    assert expected_code in finding_codes(report, "warning")
+
+
+@pytest.mark.parametrize(
+    ("source_fields", "expected_code"),
+    [
+        (
+            {"transcript_source": [], "slide_source": "none"},
+            "transcript_source_unsupported",
+        ),
+        (
+            {"transcript_source": "none", "slide_source": {}},
+            "slide_source_unsupported",
+        ),
+    ],
+)
+def test_pending_unhashable_source_enums_report_instead_of_crashing(
+    preflight_vault,
+    vault_fixture,
+    source_fields,
+    expected_code,
+):
+    talk = base_talk(
+        status="pending",
+        video_url=None,
+        youtube_id=None,
+        **source_fields,
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert expected_code in finding_codes(report, "blocking")
+
+
 def test_recoverable_legacy_processed_artifact_gaps_are_warnings(
     preflight_vault,
     vault_fixture,
@@ -1099,7 +1517,7 @@ def test_explicit_local_pdf_path_satisfies_legacy_artifact_contract(
 ):
     materialize_transcript(vault_fixture)
     artifact = vault_fixture["slides"] / "descriptive-legacy-name.pdf"
-    artifact.write_bytes(b"%PDF fixture")
+    write_pdf(artifact)
     talk = base_talk(
         status=(
             "needs-reprocessing" if slide_source == "video_extracted" else "processed"
@@ -1121,6 +1539,108 @@ def test_explicit_local_pdf_path_satisfies_legacy_artifact_contract(
         assert not finding_codes(report)
 
 
+def test_malformed_pdf_is_reported_without_erasing_independent_sources(
+    preflight_vault,
+    vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    artifact = vault_fixture["slides"] / "malformed.pdf"
+    artifact.write_bytes(b"not a PDF")
+    deck_path = vault_fixture["pptx_source"] / "independent.pptx"
+    deck = Presentation()
+    deck.slides.add_slide(deck.slide_layouts[6])
+    deck.save(str(deck_path))
+    write_database(
+        vault_fixture,
+        [
+            base_talk(
+                slide_source="both",
+                slides_local_path="slides/malformed.pdf",
+                pptx_path="independent.pptx",
+            )
+        ],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "slide_pdf_artifact_unreadable"
+    )
+    capability = finding["capability_fact"]
+    assert set(capability["verified_evidence_sources"]) == {
+        "native_deck",
+        "transcript",
+    }
+    unavailable = capability["unavailable_evidence_sources"]["static_slides"]
+    assert unavailable["reason_code"] == "pdf_invalid_container"
+
+
+@pytest.mark.parametrize(
+    ("reason_code", "expected_code"),
+    [
+        ("pdf_cloud_placeholder_unavailable", "slide_pdf_artifact_unavailable"),
+        ("pdf_probe_timeout", "slide_pdf_artifact_unreadable"),
+        ("pdf_dependency_unavailable", "slide_pdf_artifact_unreadable"),
+        ("pdf_probe_monitor_unavailable", "slide_pdf_artifact_unreadable"),
+        ("pdf_probe_monitor_identity_changed", "slide_pdf_artifact_unreadable"),
+        ("pdf_probe_containment_unavailable", "slide_pdf_artifact_unreadable"),
+        ("pdf_probe_resource_unavailable", "slide_pdf_artifact_unreadable"),
+    ],
+)
+def test_pdf_probe_failures_are_lane_local_and_structured(
+    preflight_vault,
+    vault_fixture,
+    monkeypatch,
+    reason_code,
+    expected_code,
+):
+    materialize_transcript(vault_fixture)
+    artifact = write_pdf(vault_fixture["slides"] / "bounded.pdf")
+    deck_path = vault_fixture["pptx_source"] / "independent.pptx"
+    deck = Presentation()
+    deck.slides.add_slide(deck.slide_layouts[6])
+    deck.save(str(deck_path))
+    pattern_evidence = importlib.import_module("pattern_evidence")
+    pdf_evidence = importlib.import_module("pdf_evidence")
+
+    def fail_pdf_probe(*_args, **_kwargs):
+        raise pdf_evidence.PdfEvidenceError(
+            "synthetic bounded PDF failure",
+            reason_code=reason_code,
+        )
+
+    monkeypatch.setattr(pattern_evidence, "probe_pdf_artifact", fail_pdf_probe)
+    write_database(
+        vault_fixture,
+        [
+            base_talk(
+                slide_source="both",
+                slides_local_path=artifact.relative_to(
+                    vault_fixture["root"]
+                ).as_posix(),
+                pptx_path="independent.pptx",
+            )
+        ],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(item for item in report["findings"] if item["code"] == expected_code)
+    if expected_code == "slide_pdf_artifact_unreadable":
+        assert finding["message"] == (
+            "declared slide PDF could not complete bounded evidence inspection"
+        )
+    capability = finding["capability_fact"]
+    assert set(capability["verified_evidence_sources"]) == {
+        "native_deck",
+        "transcript",
+    }
+    unavailable = capability["unavailable_evidence_sources"]["static_slides"]
+    assert unavailable["reason_code"] == reason_code
+
+
 @pytest.mark.parametrize(
     ("slide_source", "expected_code"),
     [
@@ -1135,8 +1655,8 @@ def test_missing_explicit_local_pdf_does_not_fall_back_to_another_identity(
     expected_code,
 ):
     materialize_transcript(vault_fixture)
-    (vault_fixture["slides"] / f"{VIDEO_ID}.pdf").write_bytes(b"%PDF fixture")
-    (vault_fixture["slides"] / f"{DRIVE_ID}.pdf").write_bytes(b"%PDF fixture")
+    write_pdf(vault_fixture["slides"] / f"{VIDEO_ID}.pdf")
+    write_pdf(vault_fixture["slides"] / f"{DRIVE_ID}.pdf")
     talk = base_talk(
         slide_source=slide_source,
         google_drive_id=DRIVE_ID,
@@ -1154,11 +1674,9 @@ def test_video_pdf_page_count_is_never_treated_as_authored_slide_count(
     vault_fixture,
 ):
     materialize_transcript(vault_fixture)
-    # It only has to exist: the preflight never imports a PDF parser or counts
-    # pages, and never compares either count with the authored slide_count.
-    (vault_fixture["slides"] / f"{VIDEO_ID}.pdf").write_bytes(
-        b"%PDF-1.4 fake fixture /Count 99"
-    )
+    # The bounded probe verifies the real page tree, but that delivered-frame
+    # count is never reinterpreted as authored slide_count metadata.
+    write_pdf(vault_fixture["slides"] / f"{VIDEO_ID}.pdf", page_count=99)
     talk = base_talk(
         slide_source="video_extracted",
         slide_count=3,
@@ -1211,7 +1729,7 @@ def test_context_video_manifest_cannot_back_a_promoted_deck(
 ):
     materialize_transcript(vault_fixture)
     promoted = vault_fixture["slides"] / f"{VIDEO_ID}.pdf"
-    promoted.write_bytes(b"%PDF context copied into slides by mistake")
+    write_pdf(promoted)
     manifest = context_video_manifest(vault_fixture)
     write_database(
         vault_fixture,
@@ -1235,7 +1753,7 @@ def test_completed_legacy_video_pdf_without_provenance_is_repairable(
     vault_fixture,
 ):
     materialize_transcript(vault_fixture)
-    (vault_fixture["slides"] / f"{VIDEO_ID}.pdf").write_bytes(b"%PDF fixture")
+    write_pdf(vault_fixture["slides"] / f"{VIDEO_ID}.pdf")
     write_database(
         vault_fixture,
         [base_talk(slide_source="video_extracted")],
@@ -1251,7 +1769,7 @@ def test_requeued_legacy_video_pdf_without_provenance_is_a_warning(
     vault_fixture,
 ):
     materialize_transcript(vault_fixture)
-    (vault_fixture["slides"] / f"{VIDEO_ID}.pdf").write_bytes(b"%PDF fixture")
+    write_pdf(vault_fixture["slides"] / f"{VIDEO_ID}.pdf")
     write_database(
         vault_fixture,
         [base_talk(status="needs-reprocessing", slide_source="video_extracted")],
@@ -1268,11 +1786,11 @@ def test_unverified_video_crop_cannot_support_completed_deck_analysis(
     vault_fixture,
 ):
     materialize_transcript(vault_fixture)
-    (vault_fixture["slides"] / f"{VIDEO_ID}.pdf").write_bytes(b"%PDF fixture")
+    write_pdf(vault_fixture["slides"] / f"{VIDEO_ID}.pdf")
     manifest = trusted_video_manifest(vault_fixture)
     rebuild = vault_fixture["root"] / "slides-rebuild" / VIDEO_ID
     context = rebuild / f"{VIDEO_ID}.context.pdf"
-    context.write_bytes(b"%PDF context fixture")
+    write_pdf(context)
     manifest.update(
         {
             "slide_region_detected": True,

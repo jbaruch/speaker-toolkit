@@ -15,7 +15,6 @@ import re
 import signal
 import stat as stat_module
 import sys
-import tempfile
 import time
 import xml.etree.ElementTree as ElementTree
 import zipfile
@@ -29,6 +28,7 @@ from zlib import error as ZlibError
 
 from artifact_supervisor import (
     FileGeneration,
+    JsonValue,
     SupervisorError,
     SupervisorLimits,
     WorkerRequest,
@@ -37,10 +37,37 @@ from artifact_supervisor import (
     run_authenticated_worker,
     write_worker_response,
 )
+from artifact_metadata import (
+    ArtifactAvailability,
+    ArtifactMetadataMalformed,
+    ArtifactMetadataReceipt,
+    ArtifactMetadataUnavailable,
+    MACOS_DATALESS_FLAG,
+    METADATA_SCHEMA_VERSION,
+    METADATA_FAILURE_KINDS,
+    WINDOWS_CLOUD_REPARSE_TAGS,
+    WINDOWS_REPARSE_POINT_ATTRIBUTE,
+    WINDOWS_UNAVAILABLE_CLOUD_ATTRIBUTES,
+    cloud_placeholder_details,
+    decode_artifact_metadata_payload,
+    generation_cloud_placeholder_details,
+    inspect_metadata_generation,
+    is_unsupported_reparse,
+    reparse_tag,
+)
+from pdf_evidence import (
+    PDF_MACOS_DATALESS_FLAG,
+    PDF_MAX_INPUT_BYTES,
+    PDF_WINDOWS_CLOUD_FILE_ATTRIBUTES,
+    PdfEvidenceError,
+    _inspect_pdf_in_contained_worker,
+    _supervisor_failure as _pdf_supervisor_failure,
+    _validated_contained_pdf_failure_details,
+)
 
 
 PPTX_EXTRACTION_SCHEMA_VERSION = 4
-PPTX_EXTRACTION_PIPELINE_VERSION = "1.4.0"
+PPTX_EXTRACTION_PIPELINE_VERSION = "1.5.0"
 ARCHIVE_RECOVERY_SCHEMA_VERSION = 1
 NATIVE_DECK_AUDIT_SCHEMA_VERSION = 1
 RENDER_INSPECTION_SCHEMA_VERSION = 1
@@ -103,26 +130,16 @@ PPTX_EXTRACT_OCR_LIMITS = SupervisorLimits(
     max_input_bytes=64 * 1024,
     max_output_bytes=128 * 1024 * 1024,
 )
-PPTX_MACOS_DATALESS_FLAG = int(
-    getattr(
-        stat_module,
-        "SF_DATALESS",
-        0x40000000 if sys.platform == "darwin" else 0,
-    )
-)
-_WINDOWS_OFFLINE_FILE_ATTRIBUTES = 0x001000 | 0x040000 | 0x400000
+PPTX_MACOS_DATALESS_FLAG = MACOS_DATALESS_FLAG
+_WINDOWS_OFFLINE_FILE_ATTRIBUTES = WINDOWS_UNAVAILABLE_CLOUD_ATTRIBUTES
 PPTX_WINDOWS_CLOUD_FILE_ATTRIBUTES = (
     _WINDOWS_OFFLINE_FILE_ATTRIBUTES if os.name == "nt" else 0
 )
-PPTX_WINDOWS_REPARSE_POINT_ATTRIBUTE = 0x000400
-PPTX_WINDOWS_CLOUD_REPARSE_TAGS = frozenset(
-    0x9000001A + (suffix << 12) for suffix in range(16)
-)
+PPTX_WINDOWS_REPARSE_POINT_ATTRIBUTE = WINDOWS_REPARSE_POINT_ATTRIBUTE
+PPTX_WINDOWS_CLOUD_REPARSE_TAGS = WINDOWS_CLOUD_REPARSE_TAGS
 
-_METADATA_SCHEMA_VERSION = 1
-_METADATA_FAILURE_KINDS = frozenset(
-    {"io", "missing", "not_regular", "root_escape", "symlink_or_reparse"}
-)
+_METADATA_SCHEMA_VERSION = METADATA_SCHEMA_VERSION
+_METADATA_FAILURE_KINDS = METADATA_FAILURE_KINDS
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _OPC_ASCII_CASE_FOLD = str.maketrans(
@@ -383,11 +400,7 @@ class PptxArtifactProbe:
     archive_recovery: tuple[dict[str, object], ...]
 
 
-@dataclass(frozen=True)
-class _MetadataReceipt:
-    generation: FileGeneration
-    root_generation: FileGeneration | None
-    reparse_tag: int | None
+_MetadataReceipt = ArtifactMetadataReceipt
 
 
 _PPTX_ARTIFACT_PROBE_CACHE: dict[
@@ -914,6 +927,41 @@ _CHILD_PROBE_REASON_CODES = frozenset(
         "pptx_structural_damage",
     }
 )
+_CONTAINED_RENDERED_PDF_FAILURE_REASON_CODES = frozenset(
+    {
+        "pdf_artifact_too_large",
+        "pdf_artifact_unavailable",
+        "pdf_dependency_unavailable",
+        "pdf_invalid_container",
+        "pdf_no_pages",
+        "pdf_page_limit",
+        "pdf_parser_rejected",
+        "pdf_parser_repair_required",
+        "pdf_probe_malformed_result",
+        "pdf_probe_resource_unavailable",
+    }
+)
+_RENDERED_PDF_FAILURE_REASON_CODES = (
+    _CONTAINED_RENDERED_PDF_FAILURE_REASON_CODES
+    | frozenset(
+        {
+            "pdf_artifact_changed",
+            "pdf_cloud_placeholder_unavailable",
+            "pdf_probe_crash",
+            "pdf_probe_containment_unavailable",
+            "pdf_probe_monitor_identity_changed",
+            "pdf_probe_monitor_unavailable",
+            "pdf_probe_request_oversized",
+            "pdf_probe_result_oversized",
+            "pdf_probe_start_failure",
+            "pdf_probe_timeout",
+        }
+    )
+)
+
+_PPTX_ADMISSION_KIND = "pptx"
+_RENDERED_PDF_ADMISSION_KIND = "rendered_pdf"
+_ADMISSION_KINDS = frozenset({_PPTX_ADMISSION_KIND, _RENDERED_PDF_ADMISSION_KIND})
 
 _ARCHIVE_INTEGRITY_CONFIRMATION_REASON_CODES = frozenset(
     {
@@ -1028,6 +1076,32 @@ def _probe_failure(
             "PPTX artifact is an offline cloud placeholder; download the file "
             "locally before using native-deck evidence"
         ),
+        "pdf_artifact_too_large": (
+            "rendered PDF exceeds the bounded PDF input-size ceiling"
+        ),
+        "pdf_artifact_changed": ("rendered PDF changed during bounded inspection"),
+        "pdf_artifact_unavailable": "rendered PDF is unavailable",
+        "pdf_cloud_placeholder_unavailable": (
+            "rendered PDF is an offline cloud placeholder; download it locally "
+            "before using rendered-page evidence"
+        ),
+        "pdf_dependency_unavailable": (
+            "rendered-PDF inspection requires the declared parser dependency"
+        ),
+        "pdf_invalid_container": "rendered artifact is not a valid PDF container",
+        "pdf_no_pages": "rendered PDF has no pages",
+        "pdf_page_limit": "rendered PDF exceeds the bounded page-count ceiling",
+        "pdf_parser_rejected": "strict PDF parsing rejected the rendered artifact",
+        "pdf_parser_repair_required": (
+            "rendered PDF emitted parser repair diagnostics and cannot authorize "
+            "a native-deck render receipt"
+        ),
+        "pdf_probe_malformed_result": (
+            "contained rendered-PDF inspection returned an invalid result"
+        ),
+        "pdf_probe_resource_unavailable": (
+            "contained rendered-PDF inspection exhausted bounded resources"
+        ),
     }
     return PptxEvidenceError(
         messages.get(reason_code, "PPTX artifact is unavailable"),
@@ -1038,6 +1112,14 @@ def _probe_failure(
 
 def _probe_child_failure_details(exc: PptxEvidenceError) -> dict[str, object]:
     """Copy only closed, bounded diagnostic fields into the child result."""
+    if exc.reason_code in _CONTAINED_RENDERED_PDF_FAILURE_REASON_CODES:
+        try:
+            return _validated_contained_pdf_failure_details(
+                exc.reason_code,
+                exc.details,
+            )
+        except PdfEvidenceError as validation_error:
+            raise SupervisorError("worker_operation_failed") from validation_error
     details: dict[str, object] = {}
     raw_names = exc.details.get("part_names")
     if isinstance(raw_names, list):
@@ -1281,14 +1363,9 @@ def _metadata_failure(
 
 
 def _reparse_tag(snapshot: os.stat_result) -> int | None:
-    attributes = int(getattr(snapshot, "st_file_attributes", 0))
-    if not attributes & PPTX_WINDOWS_REPARSE_POINT_ATTRIBUTE:
-        return None
-    raw_tag = getattr(snapshot, "st_reparse_tag", None)
-    return (
-        int(raw_tag)
-        if isinstance(raw_tag, int) and not isinstance(raw_tag, bool)
-        else -1
+    return reparse_tag(
+        snapshot,
+        reparse_point_attribute=PPTX_WINDOWS_REPARSE_POINT_ATTRIBUTE,
     )
 
 
@@ -1297,10 +1374,12 @@ def _is_unsupported_reparse(
     *,
     allow_hydrated_cloud_file: bool,
 ) -> bool:
-    tag = _reparse_tag(snapshot)
-    if tag is None:
-        return False
-    return not (allow_hydrated_cloud_file and tag in PPTX_WINDOWS_CLOUD_REPARSE_TAGS)
+    return is_unsupported_reparse(
+        snapshot,
+        allow_hydrated_cloud_file=allow_hydrated_cloud_file,
+        reparse_point_attribute=PPTX_WINDOWS_REPARSE_POINT_ATTRIBUTE,
+        cloud_reparse_tags=PPTX_WINDOWS_CLOUD_REPARSE_TAGS,
+    )
 
 
 def _metadata_generation_in_worker(
@@ -1309,85 +1388,21 @@ def _metadata_generation_in_worker(
     trusted_root: Path | None,
 ) -> tuple[FileGeneration, FileGeneration | None, int | None]:
     """Inspect one file only inside the bounded metadata worker."""
-    if not path.is_absolute() or Path(os.path.abspath(path)) != path:
-        raise SupervisorError("invalid_worker_request")
-
-    target = path
-    snapshot: os.stat_result | None = None
-    root_generation: FileGeneration | None = None
-    if trusted_root is not None:
-        if (
-            not trusted_root.is_absolute()
-            or Path(os.path.abspath(trusted_root)) != trusted_root
-        ):
-            raise SupervisorError("invalid_worker_request")
-        try:
-            relative = path.relative_to(trusted_root)
-        except ValueError as exc:
-            raise _metadata_failure("root_escape") from exc
-        if not relative.parts or any(
-            part in {"", ".", ".."} for part in relative.parts
-        ):
-            raise _metadata_failure("root_escape")
-        try:
-            root_snapshot = trusted_root.lstat()
-        except FileNotFoundError as exc:
-            raise _metadata_failure(
-                "missing", exception_type=type(exc).__name__
-            ) from exc
-        except (OSError, RuntimeError) as exc:
-            raise _metadata_failure("io", exception_type=type(exc).__name__) from exc
-        if (
-            stat_module.S_ISLNK(root_snapshot.st_mode)
-            or _is_unsupported_reparse(
-                root_snapshot,
-                allow_hydrated_cloud_file=False,
-            )
-            or not stat_module.S_ISDIR(root_snapshot.st_mode)
-        ):
-            raise _metadata_failure("root_escape")
-        root_generation = FileGeneration.from_stat(root_snapshot)
-        target = trusted_root
-        for index, component in enumerate(relative.parts):
-            target = target / component
-            try:
-                snapshot = target.lstat()
-            except FileNotFoundError as exc:
-                raise _metadata_failure(
-                    "missing", exception_type=type(exc).__name__
-                ) from exc
-            except OSError as exc:
-                raise _metadata_failure(
-                    "io", exception_type=type(exc).__name__
-                ) from exc
-            is_leaf = index == len(relative.parts) - 1
-            if stat_module.S_ISLNK(snapshot.st_mode) or _is_unsupported_reparse(
-                snapshot,
-                allow_hydrated_cloud_file=is_leaf,
-            ):
-                raise _metadata_failure("symlink_or_reparse")
-            if not is_leaf and not stat_module.S_ISDIR(snapshot.st_mode):
-                raise _metadata_failure("not_regular")
-    else:
-        try:
-            snapshot = target.lstat()
-        except FileNotFoundError as exc:
-            raise _metadata_failure(
-                "missing", exception_type=type(exc).__name__
-            ) from exc
-        except OSError as exc:
-            raise _metadata_failure("io", exception_type=type(exc).__name__) from exc
-
-    if snapshot is None:  # pragma: no cover - guarded by non-empty relative parts
-        raise SupervisorError("invalid_worker_request")
-    if stat_module.S_ISLNK(snapshot.st_mode) or _is_unsupported_reparse(
-        snapshot,
-        allow_hydrated_cloud_file=True,
-    ):
-        raise _metadata_failure("symlink_or_reparse")
-    if not stat_module.S_ISREG(snapshot.st_mode):
-        raise _metadata_failure("not_regular")
-    return FileGeneration.from_stat(snapshot), root_generation, _reparse_tag(snapshot)
+    try:
+        receipt = inspect_metadata_generation(
+            path,
+            trusted_root=trusted_root,
+            reparse_point_attribute=PPTX_WINDOWS_REPARSE_POINT_ATTRIBUTE,
+            cloud_reparse_tags=PPTX_WINDOWS_CLOUD_REPARSE_TAGS,
+        )
+    except ArtifactMetadataMalformed as exc:
+        raise SupervisorError("invalid_worker_request") from exc
+    except ArtifactMetadataUnavailable as exc:
+        raise _metadata_failure(
+            exc.failure_kind,
+            exception_type=exc.exception_type,
+        ) from exc
+    return receipt.generation, receipt.root_generation, receipt.reparse_tag
 
 
 def _metadata_child(payload: Mapping[str, object]) -> dict[str, object]:
@@ -1421,80 +1436,44 @@ def _metadata_child(payload: Mapping[str, object]) -> dict[str, object]:
     }
 
 
-def _decode_metadata_payload(payload: object) -> _MetadataReceipt:
-    if not isinstance(payload, Mapping):
+def _decode_metadata_payload(
+    payload: object,
+    *,
+    artifact_kind: str = _PPTX_ADMISSION_KIND,
+) -> _MetadataReceipt:
+    if artifact_kind not in _ADMISSION_KINDS:
         raise _probe_failure("pptx_probe_malformed_result")
-    status = payload.get("status")
-    if payload.get("schema_version") != _METADATA_SCHEMA_VERSION:
-        raise _probe_failure("pptx_probe_malformed_result")
-    if status == "unavailable":
-        if set(payload) != {"schema_version", "status", "reason_code", "details"}:
-            raise _probe_failure("pptx_probe_malformed_result")
-        details = payload.get("details")
-        if (
-            payload.get("reason_code") != "pptx_artifact_unavailable"
-            or not isinstance(details, Mapping)
-            or set(details) - {"failure_kind", "exception_type"}
-            or not isinstance(details.get("failure_kind"), str)
-            or details.get("failure_kind") not in _METADATA_FAILURE_KINDS
-        ):
-            raise _probe_failure("pptx_probe_malformed_result")
-        exception_type = details.get("exception_type")
-        if exception_type is not None and (
-            not isinstance(exception_type, str)
-            or not exception_type
-            or len(exception_type) > 128
-        ):
-            raise _probe_failure("pptx_probe_malformed_result")
-        raise _probe_failure(
-            "pptx_artifact_unavailable",
-            details=dict(details),
-        )
-    if status != "available" or set(payload) != {
-        "schema_version",
-        "status",
-        "generation",
-        "root_generation",
-        "reparse_tag",
-    }:
-        raise _probe_failure("pptx_probe_malformed_result")
-    raw_generation = payload.get("generation")
-    if not isinstance(raw_generation, Mapping):
-        raise _probe_failure("pptx_probe_malformed_result")
+    unavailable_reason = (
+        "pdf_artifact_unavailable"
+        if artifact_kind == _RENDERED_PDF_ADMISSION_KIND
+        else "pptx_artifact_unavailable"
+    )
+    malformed_reason = (
+        "pdf_probe_malformed_result"
+        if artifact_kind == _RENDERED_PDF_ADMISSION_KIND
+        else "pptx_probe_malformed_result"
+    )
     try:
-        generation = FileGeneration.from_dict(raw_generation)
-    except (TypeError, ValueError) as exc:
-        raise _probe_failure("pptx_probe_malformed_result") from exc
-    raw_root_generation = payload.get("root_generation")
-    if raw_root_generation is None:
-        root_generation = None
-    elif isinstance(raw_root_generation, Mapping):
-        try:
-            root_generation = FileGeneration.from_dict(raw_root_generation)
-        except (TypeError, ValueError) as exc:
-            raise _probe_failure("pptx_probe_malformed_result") from exc
-        if not stat_module.S_ISDIR(root_generation.mode):
-            raise _probe_failure("pptx_probe_malformed_result")
-    else:
-        raise _probe_failure("pptx_probe_malformed_result")
-    reparse_tag = payload.get("reparse_tag")
-    if reparse_tag is not None and (
-        isinstance(reparse_tag, bool) or not isinstance(reparse_tag, int)
-    ):
-        raise _probe_failure("pptx_probe_malformed_result")
-    attributes = generation.file_attributes or 0
-    has_reparse_attribute = bool(attributes & PPTX_WINDOWS_REPARSE_POINT_ATTRIBUTE)
-    if (
-        generation.size < 0
-        or not stat_module.S_ISREG(generation.mode)
-        or has_reparse_attribute != (reparse_tag is not None)
-        or (
-            reparse_tag is not None
-            and (reparse_tag not in PPTX_WINDOWS_CLOUD_REPARSE_TAGS)
+        # PPTX_METADATA_OPERATION owns this authenticated envelope. Its child
+        # reason stays protocol-local; the caller assigns the public artifact
+        # family only after the closed payload has been decoded.
+        return decode_artifact_metadata_payload(
+            payload,
+            unavailable_reason_code="pptx_artifact_unavailable",
+            reparse_point_attribute=PPTX_WINDOWS_REPARSE_POINT_ATTRIBUTE,
+            cloud_reparse_tags=PPTX_WINDOWS_CLOUD_REPARSE_TAGS,
         )
-    ):
-        raise _probe_failure("pptx_probe_malformed_result")
-    return _MetadataReceipt(generation, root_generation, reparse_tag)
+    except ArtifactMetadataUnavailable as exc:
+        details: dict[str, object] = {"failure_kind": exc.failure_kind}
+        if exc.exception_type is not None:
+            details["exception_type"] = exc.exception_type
+        raise _probe_failure(
+            unavailable_reason,
+            details=details,
+        ) from exc
+    except ArtifactMetadataMalformed as exc:
+        raise _probe_failure(malformed_reason) from exc
+    raise AssertionError("unreachable metadata decoder state")
 
 
 def _invoke_metadata_worker(
@@ -1521,7 +1500,10 @@ def _run_bounded_metadata_worker(
     *,
     trusted_root: Path | None = None,
     deadline_monotonic: float | None = None,
+    artifact_kind: str = _PPTX_ADMISSION_KIND,
 ) -> _MetadataReceipt:
+    if artifact_kind not in _ADMISSION_KINDS:
+        raise _probe_failure("pptx_probe_malformed_result")
     artifact = Path(os.path.abspath(os.fspath(path)))
     root = (
         Path(os.path.abspath(os.fspath(trusted_root)))
@@ -1549,11 +1531,21 @@ def _run_bounded_metadata_worker(
                 reason_code="pptx_batch_wall_limit",
             ) from exc
         raise _supervisor_probe_failure(
-            exc, timeout_seconds=limits.wall_seconds
+            exc,
+            timeout_seconds=limits.wall_seconds,
+            artifact_kind=artifact_kind,
         ) from exc
-    receipt = _decode_metadata_payload(result.payload)
+    receipt = _decode_metadata_payload(
+        result.payload,
+        artifact_kind=artifact_kind,
+    )
     if (root is None) != (receipt.root_generation is None):
-        raise _probe_failure("pptx_probe_malformed_result")
+        reason_code = (
+            "pdf_probe_malformed_result"
+            if artifact_kind == _RENDERED_PDF_ADMISSION_KIND
+            else "pptx_probe_malformed_result"
+        )
+        raise _probe_failure(reason_code)
     return receipt
 
 
@@ -1664,20 +1656,49 @@ def _supervised_file_generation(
     label: str,
     trusted_root: Path | None = None,
     deadline_monotonic: float | None = None,
+    artifact_kind: str = _PPTX_ADMISSION_KIND,
 ) -> FileGeneration:
     del label  # Failure text is deliberately path- and artifact-label-free.
     return _run_bounded_metadata_worker(
         path,
         trusted_root=trusted_root,
         deadline_monotonic=deadline_monotonic,
+        artifact_kind=artifact_kind,
     ).generation
+
+
+def _supervisor_failure_artifact_kind(exc: SupervisorError) -> str:
+    if exc.reason_code != "worker_generation_changed":
+        return _PPTX_ADMISSION_KIND
+    generation_names = exc.details.get("generation_names")
+    if isinstance(generation_names, list) and generation_names == ["rendered_pdf"]:
+        return _RENDERED_PDF_ADMISSION_KIND
+    return _PPTX_ADMISSION_KIND
 
 
 def _supervisor_probe_failure(
     exc: SupervisorError,
     *,
     timeout_seconds: float,
+    artifact_kind: str = _PPTX_ADMISSION_KIND,
 ) -> PptxEvidenceError:
+    if artifact_kind not in _ADMISSION_KINDS:
+        return _probe_failure("pptx_probe_malformed_result")
+    if artifact_kind == _RENDERED_PDF_ADMISSION_KIND:
+        pdf_error = _pdf_supervisor_failure(
+            exc,
+            timeout_seconds=timeout_seconds,
+        )
+        if pdf_error.reason_code not in _RENDERED_PDF_FAILURE_REASON_CODES:
+            return _probe_failure(
+                "pdf_probe_malformed_result",
+                details={"supervisor_reason_code": exc.reason_code},
+            )
+        return PptxEvidenceError(
+            str(pdf_error),
+            reason_code=pdf_error.reason_code,
+            details=pdf_error.details,
+        )
     reason = exc.reason_code
     if reason in {"worker_generation_changed", "worker_generation_binding_mismatch"}:
         return _probe_failure("pptx_artifact_changed")
@@ -1853,18 +1874,16 @@ def _cloud_placeholder_failure(
 ) -> PptxEvidenceError | None:
     macos_flags = key[-4]
     file_attributes = key[-3]
-    if PPTX_MACOS_DATALESS_FLAG and macos_flags & PPTX_MACOS_DATALESS_FLAG:
+    details = cloud_placeholder_details(
+        flags=macos_flags,
+        file_attributes=file_attributes,
+        macos_dataless_flag=PPTX_MACOS_DATALESS_FLAG,
+        windows_cloud_file_attributes=PPTX_WINDOWS_CLOUD_FILE_ATTRIBUTES,
+    )
+    if details is not None:
         return _probe_failure(
             "pptx_cloud_placeholder_unavailable",
-            details={"st_flags": macos_flags},
-        )
-    if (
-        PPTX_WINDOWS_CLOUD_FILE_ATTRIBUTES
-        and file_attributes & PPTX_WINDOWS_CLOUD_FILE_ATTRIBUTES
-    ):
-        return _probe_failure(
-            "pptx_cloud_placeholder_unavailable",
-            details={"file_attributes": file_attributes},
+            details=details,
         )
     return None
 
@@ -2176,93 +2195,71 @@ def build_native_deck_audit(
     }
 
 
-def _pdf_page_count(path: Path) -> int:
-    pdf_read_error: type[Exception] = ValueError
+def _snapshot_rendered_pdf_in_process(
+    path: str | Path,
+    *,
+    expected_generation: FileGeneration | None = None,
+) -> tuple[str, int, int]:
+    """Inspect one rendered PDF inside an already-contained PPTX worker."""
+    artifact = Path(path)
+    generation = expected_generation
+    if generation is None:
+        try:
+            initial = artifact.lstat()
+        except OSError as exc:
+            raise PptxEvidenceError(
+                "rendered PDF is unavailable inside the contained worker",
+                reason_code="pdf_artifact_unavailable",
+            ) from exc
+        generation = FileGeneration.from_stat(initial)
     try:
-        from pypdf import PdfReader
-        from pypdf.errors import PdfReadError as ImportedPdfReadError
-
-        pdf_read_error = ImportedPdfReadError
-
-        count = len(PdfReader(os.fspath(path), strict=True).pages)
-    except ImportError as exc:
+        return _inspect_pdf_in_contained_worker(
+            artifact,
+            expected_generation=generation,
+        )
+    except PdfEvidenceError as exc:
+        try:
+            details = _validated_contained_pdf_failure_details(
+                exc.reason_code,
+                exc.details,
+            )
+        except PdfEvidenceError as validation_error:
+            raise PptxEvidenceError(
+                str(validation_error),
+                reason_code="pdf_probe_malformed_result",
+            ) from validation_error
         raise PptxEvidenceError(
-            "render receipt validation requires the declared pypdf dependency; "
-            "install the speaker-toolkit project dependencies"
+            str(exc),
+            reason_code=exc.reason_code,
+            details=details,
         ) from exc
-    except (pdf_read_error, OSError, ValueError, KeyError, EOFError) as exc:
-        raise PptxEvidenceError(
-            f"rendered PDF is unreadable at {path}: {type(exc).__name__}"
-        ) from exc
-    if not 1 <= count <= PPTX_ARCHIVE_MAX_MEMBERS:
-        raise PptxEvidenceError(f"rendered PDF has no pages at {path}")
-    return count
 
 
 def snapshot_rendered_pdf(path: str | Path) -> tuple[str, int, int]:
-    """Copy, hash, and page-count one exact rendered-PDF generation."""
-    artifact = Path(path)
+    """Return a bounded compatibility tuple for one exact PDF generation."""
+    from pdf_evidence import PdfEvidenceError, probe_pdf_artifact
+
     try:
-        initial = artifact.lstat()
-    except OSError as exc:
+        probe = probe_pdf_artifact(path)
+    except PdfEvidenceError as exc:
         raise PptxEvidenceError(
-            f"rendered PDF is unavailable at {artifact}: {exc}"
+            str(exc),
+            reason_code=exc.reason_code,
+            details=exc.details,
         ) from exc
-    if stat_module.S_ISLNK(initial.st_mode) or not stat_module.S_ISREG(initial.st_mode):
-        raise PptxEvidenceError(
-            f"rendered PDF must be a non-symlink regular file: {artifact}"
-        )
-    generation = _file_generation(initial)
-    digest = hashlib.sha256()
-    copied_size = 0
-    with tempfile.TemporaryDirectory(prefix="speaker-toolkit-render-") as temp_dir:
-        snapshot = Path(temp_dir) / "rendered.pdf"
-        try:
-            with artifact.open("rb") as source, snapshot.open("xb") as target:
-                opened = os.fstat(source.fileno())
-                if _file_generation(opened) != generation:
-                    raise PptxEvidenceError(
-                        f"rendered PDF changed while opening: {artifact}"
-                    )
-                while True:
-                    chunk = source.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    digest.update(chunk)
-                    target.write(chunk)
-                    copied_size += len(chunk)
-                after_read = os.fstat(source.fileno())
-        except PptxEvidenceError:
-            raise
-        except OSError as exc:
-            raise PptxEvidenceError(
-                f"cannot snapshot rendered PDF at {artifact}: {exc}"
-            ) from exc
-        try:
-            current = artifact.lstat()
-        except OSError as exc:
-            raise PptxEvidenceError(
-                f"rendered PDF changed while it was read at {artifact}: {exc}"
-            ) from exc
-        if (
-            _file_generation(after_read) != generation
-            or _file_generation(current) != generation
-            or copied_size != initial.st_size
-        ):
-            raise PptxEvidenceError(f"rendered PDF changed while reading: {artifact}")
-        page_count = _pdf_page_count(snapshot)
-    return digest.hexdigest(), copied_size, page_count
+    return probe.source_sha256, probe.source_size_bytes, probe.page_count
 
 
-def build_rendered_page_inspection(
+def _build_rendered_page_inspection_from_identity(
     *,
     source_pptx_sha256: str,
-    rendered_pdf_path: str | Path,
+    pdf_sha256: str,
+    pdf_size: int,
+    page_count: int,
     inspected_page_ranges: object,
     required_slide_numbers: list[int],
     slide_count: int,
 ) -> dict[str, object]:
-    """Bind asserted page inspection to exact PPTX and rendered-PDF identities."""
     _require_sha256(source_pptx_sha256, "source_pptx_sha256")
     if (
         isinstance(slide_count, bool)
@@ -2273,7 +2270,6 @@ def build_rendered_page_inspection(
     required = _normalize_required_slides(
         required_slide_numbers, slide_count=slide_count
     )
-    pdf_sha256, pdf_size, page_count = snapshot_rendered_pdf(Path(rendered_pdf_path))
     if page_count != slide_count:
         raise PptxEvidenceError(
             "rendered PDF page count must equal the source deck slide count; "
@@ -2296,6 +2292,66 @@ def build_rendered_page_inspection(
         "complete": inspected_required == required,
     }
     return {**identity, "binding_sha256": _canonical_sha256(identity)}
+
+
+def build_rendered_page_inspection(
+    *,
+    source_pptx_sha256: str,
+    rendered_pdf_path: str | Path,
+    inspected_page_ranges: object,
+    required_slide_numbers: list[int],
+    slide_count: int,
+) -> dict[str, object]:
+    """Bind review assertions to a separately supervised rendered PDF."""
+    _require_sha256(source_pptx_sha256, "source_pptx_sha256")
+    if (
+        isinstance(slide_count, bool)
+        or not isinstance(slide_count, int)
+        or not 1 <= slide_count <= PPTX_ARCHIVE_MAX_MEMBERS
+    ):
+        raise PptxEvidenceError("slide_count must be a positive integer")
+    pdf_sha256, pdf_size, page_count = snapshot_rendered_pdf(rendered_pdf_path)
+    return _build_rendered_page_inspection_from_identity(
+        source_pptx_sha256=source_pptx_sha256,
+        pdf_sha256=pdf_sha256,
+        pdf_size=pdf_size,
+        page_count=page_count,
+        inspected_page_ranges=inspected_page_ranges,
+        required_slide_numbers=required_slide_numbers,
+        slide_count=slide_count,
+    )
+
+
+def _build_rendered_page_inspection_in_process(
+    *,
+    source_pptx_sha256: str,
+    rendered_pdf_path: str | Path,
+    inspected_page_ranges: object,
+    required_slide_numbers: list[int],
+    slide_count: int,
+    rendered_pdf_generation: FileGeneration | None = None,
+) -> dict[str, object]:
+    """Build the receipt inside the already-contained PPTX extraction child."""
+    _require_sha256(source_pptx_sha256, "source_pptx_sha256")
+    if (
+        isinstance(slide_count, bool)
+        or not isinstance(slide_count, int)
+        or not 1 <= slide_count <= PPTX_ARCHIVE_MAX_MEMBERS
+    ):
+        raise PptxEvidenceError("slide_count must be a positive integer")
+    pdf_sha256, pdf_size, page_count = _snapshot_rendered_pdf_in_process(
+        rendered_pdf_path,
+        expected_generation=rendered_pdf_generation,
+    )
+    return _build_rendered_page_inspection_from_identity(
+        source_pptx_sha256=source_pptx_sha256,
+        pdf_sha256=pdf_sha256,
+        pdf_size=pdf_size,
+        page_count=page_count,
+        inspected_page_ranges=inspected_page_ranges,
+        required_slide_numbers=required_slide_numbers,
+        slide_count=slide_count,
+    )
 
 
 def validate_native_deck_audit(
@@ -2746,19 +2802,11 @@ def recompute_native_deck_audit(
 def _generation_cloud_placeholder_details(
     generation: FileGeneration,
 ) -> dict[str, object] | None:
-    if (
-        PPTX_MACOS_DATALESS_FLAG
-        and generation.flags is not None
-        and generation.flags & PPTX_MACOS_DATALESS_FLAG
-    ):
-        return {"st_flags": generation.flags}
-    if (
-        PPTX_WINDOWS_CLOUD_FILE_ATTRIBUTES
-        and generation.file_attributes is not None
-        and generation.file_attributes & PPTX_WINDOWS_CLOUD_FILE_ATTRIBUTES
-    ):
-        return {"file_attributes": generation.file_attributes}
-    return None
+    return generation_cloud_placeholder_details(
+        generation,
+        macos_dataless_flag=PPTX_MACOS_DATALESS_FLAG,
+        windows_cloud_file_attributes=PPTX_WINDOWS_CLOUD_FILE_ATTRIBUTES,
+    )
 
 
 def _admit_supervised_input(
@@ -2767,42 +2815,56 @@ def _admit_supervised_input(
     label: str,
     trusted_root: str | Path | None = None,
     deadline_monotonic: float | None = None,
+    artifact_kind: str = _PPTX_ADMISSION_KIND,
 ) -> tuple[Path, FileGeneration, FileGeneration | None]:
+    del label  # Failure text is deliberately path- and artifact-label-free.
+    if artifact_kind not in _ADMISSION_KINDS:
+        raise _probe_failure("pptx_probe_malformed_result")
     artifact = Path(os.path.abspath(os.fspath(path)))
     root = (
         Path(os.path.abspath(os.fspath(trusted_root)))
         if trusted_root is not None
         else None
     )
-    root_generation: FileGeneration | None = None
-    if root is None:
-        generation = _supervised_file_generation(
-            artifact,
-            label=label,
-            deadline_monotonic=deadline_monotonic,
+    receipt = _run_bounded_metadata_worker(
+        artifact,
+        trusted_root=root,
+        deadline_monotonic=deadline_monotonic,
+        artifact_kind=artifact_kind,
+    )
+    generation = receipt.generation
+    if artifact_kind == _RENDERED_PDF_ADMISSION_KIND:
+        availability = ArtifactAvailability.from_generation(
+            generation,
+            macos_dataless_flag=PDF_MACOS_DATALESS_FLAG,
+            windows_cloud_file_attributes=PDF_WINDOWS_CLOUD_FILE_ATTRIBUTES,
         )
+        if availability.state != "local":
+            raise _probe_failure(
+                "pdf_cloud_placeholder_unavailable",
+                details={
+                    "availability": availability.to_dict(),
+                    "reparse_tag": receipt.reparse_tag,
+                },
+            )
+        if generation.size > PDF_MAX_INPUT_BYTES:
+            raise _probe_failure(
+                "pdf_artifact_too_large",
+                details={"limit_bytes": PDF_MAX_INPUT_BYTES},
+            )
     else:
-        receipt = _run_bounded_metadata_worker(
-            artifact,
-            trusted_root=root,
-            deadline_monotonic=deadline_monotonic,
-        )
-        generation = receipt.generation
-        root_generation = receipt.root_generation
-        if root_generation is None:
-            raise _probe_failure("pptx_probe_malformed_result")
-    placeholder = _generation_cloud_placeholder_details(generation)
-    if placeholder is not None:
-        raise _probe_failure(
-            "pptx_cloud_placeholder_unavailable",
-            details=placeholder,
-        )
-    if generation.size > PPTX_MAX_INPUT_BYTES:
-        raise _probe_failure(
-            "pptx_probe_resource_unavailable",
-            details={"limit_bytes": PPTX_MAX_INPUT_BYTES},
-        )
-    return artifact, generation, root_generation
+        placeholder = _generation_cloud_placeholder_details(generation)
+        if placeholder is not None:
+            raise _probe_failure(
+                "pptx_cloud_placeholder_unavailable",
+                details=placeholder,
+            )
+        if generation.size > PPTX_MAX_INPUT_BYTES:
+            raise _probe_failure(
+                "pptx_probe_resource_unavailable",
+                details={"limit_bytes": PPTX_MAX_INPUT_BYTES},
+            )
+    return artifact, generation, receipt.root_generation
 
 
 def _limits_before_deadline(
@@ -4450,6 +4512,7 @@ def _decode_extraction_worker_payload(
     value: object,
     *,
     expected_ocr: bool | None = None,
+    rendered_pdf_requested: bool = False,
 ) -> dict[str, object]:
     if not isinstance(value, dict):
         raise _probe_failure("pptx_probe_malformed_result")
@@ -4460,12 +4523,26 @@ def _decode_extraction_worker_payload(
             raise _probe_failure("pptx_probe_malformed_result")
         reason = value.get("reason_code")
         details = value.get("details")
+        allowed_reasons = _CHILD_PROBE_REASON_CODES | (
+            _CONTAINED_RENDERED_PDF_FAILURE_REASON_CODES
+            if rendered_pdf_requested
+            else frozenset()
+        )
         if (
             not isinstance(reason, str)
-            or reason not in _CHILD_PROBE_REASON_CODES
+            or reason not in allowed_reasons
             or not isinstance(details, dict)
         ):
             raise _probe_failure("pptx_probe_malformed_result")
+        if reason in _CONTAINED_RENDERED_PDF_FAILURE_REASON_CODES:
+            try:
+                normalized_pdf_details = _validated_contained_pdf_failure_details(
+                    reason,
+                    details,
+                )
+            except PdfEvidenceError as exc:
+                raise _probe_failure("pptx_probe_malformed_result") from exc
+            raise _probe_failure(reason, details=normalized_pdf_details)
         if set(details) - {"part_names", "exception_type"}:
             raise _probe_failure("pptx_probe_malformed_result")
         part_names = details.get("part_names")
@@ -4660,6 +4737,7 @@ def _run_supervised_pptx_extraction_impl(
                 rendered_pdf_path,
                 label="rendered PDF",
                 deadline_monotonic=deadline_monotonic,
+                artifact_kind=_RENDERED_PDF_ADMISSION_KIND,
             )
         )
         if rendered_root_generation is not None:  # pragma: no cover - no root given
@@ -4709,6 +4787,7 @@ def _run_supervised_pptx_extraction_impl(
         extraction = _decode_extraction_worker_payload(
             worker_result.payload,
             expected_ocr=ocr,
+            rendered_pdf_requested=rendered_generation is not None,
         )
         _validate_extraction_render_binding(
             extraction,
@@ -4722,7 +4801,9 @@ def _run_supervised_pptx_extraction_impl(
                 reason_code="pptx_batch_wall_limit",
             ) from exc
         raise _supervisor_probe_failure(
-            exc, timeout_seconds=limits.wall_seconds
+            exc,
+            timeout_seconds=limits.wall_seconds,
+            artifact_kind=_supervisor_failure_artifact_kind(exc),
         ) from exc
     except PptxEvidenceError as exc:
         if exc.reason_code in _ARCHIVE_INTEGRITY_CONFIRMATION_REASON_CODES:
@@ -4763,9 +4844,10 @@ def _run_supervised_pptx_extraction_impl(
             rendered_artifact,
             label="rendered PDF",
             deadline_monotonic=deadline_monotonic,
+            artifact_kind=_RENDERED_PDF_ADMISSION_KIND,
         )
         if rendered_current != rendered_generation:
-            raise _probe_failure("pptx_artifact_changed")
+            raise _probe_failure("pdf_artifact_changed")
     fingerprint = extraction["input_fingerprint"]
     if (
         not isinstance(fingerprint, dict)
@@ -4882,7 +4964,50 @@ def _worker_root_generation(path: Path) -> FileGeneration:
         or not stat_module.S_ISDIR(snapshot.st_mode)
     ):
         raise SupervisorError("worker_generation_changed")
-    return FileGeneration.from_stat(snapshot)
+    return FileGeneration.from_directory_identity(snapshot)
+
+
+def _worker_generation_change(names: list[str]) -> SupervisorError:
+    details: dict[str, JsonValue] = {"generation_names": list(names)}
+    return SupervisorError(
+        "worker_generation_changed",
+        details,
+    )
+
+
+def _observed_worker_generations(
+    paths: Mapping[str, tuple[Path, Path | None]],
+    *,
+    trusted_root: Path | None,
+) -> dict[str, FileGeneration]:
+    observed: dict[str, FileGeneration] = {}
+    for name in sorted(paths):
+        path, root = paths[name]
+        try:
+            observed[name] = _worker_generation(path, trusted_root=root)
+        except SupervisorError as exc:
+            if exc.reason_code != "worker_generation_changed":
+                raise
+            raise _worker_generation_change([name]) from exc
+    if trusted_root is not None:
+        try:
+            observed["pptx_root"] = _worker_root_generation(trusted_root)
+        except SupervisorError as exc:
+            if exc.reason_code != "worker_generation_changed":
+                raise
+            raise _worker_generation_change(["pptx_root"]) from exc
+    return observed
+
+
+def _generation_mismatch_names(
+    observed: Mapping[str, FileGeneration],
+    expected: Mapping[str, FileGeneration],
+) -> list[str]:
+    return sorted(
+        name
+        for name in set(observed) | set(expected)
+        if observed.get(name) != expected.get(name)
+    )
 
 
 def _load_pptx_extractor() -> Any:
@@ -4944,7 +5069,11 @@ def _validated_extract_worker_payload(
     return pptx_path, trusted_root, rendered_value, ranges
 
 
-def _extract_child(payload: Mapping[str, object]) -> dict[str, object]:
+def _extract_child(
+    payload: Mapping[str, object],
+    *,
+    rendered_pdf_generation: FileGeneration | None,
+) -> dict[str, object]:
     pptx_path, _trusted_root, rendered_value, ranges = (
         _validated_extract_worker_payload(payload)
     )
@@ -4963,6 +5092,7 @@ def _extract_child(payload: Mapping[str, object]) -> dict[str, object]:
                 Path(rendered_value) if rendered_value is not None else None
             ),
             inspected_page_ranges=ranges,
+            rendered_pdf_generation=rendered_pdf_generation,
         )
     except MemoryError:
         return {
@@ -4972,9 +5102,14 @@ def _extract_child(payload: Mapping[str, object]) -> dict[str, object]:
             "details": {},
         }
     except PptxEvidenceError as exc:
+        allowed_reasons = _CHILD_PROBE_REASON_CODES | (
+            _CONTAINED_RENDERED_PDF_FAILURE_REASON_CODES
+            if rendered_pdf_generation is not None
+            else frozenset()
+        )
         reason_code = (
             exc.reason_code
-            if exc.reason_code in _CHILD_PROBE_REASON_CODES
+            if exc.reason_code in allowed_reasons
             else "pptx_evidence_invalid"
         )
         return {
@@ -5053,31 +5188,37 @@ def _dispatch_supervised_worker(
         expected_names.add("pptx_root")
     if expected_names != set(request.expected_generations):
         raise SupervisorError("invalid_worker_request")
-    before = {
-        name: _worker_generation(path, trusted_root=root)
-        for name, (path, root) in paths.items()
-    }
-    if trusted_root is not None:
-        before["pptx_root"] = _worker_root_generation(trusted_root)
+    before = _observed_worker_generations(paths, trusted_root=trusted_root)
     if before != dict(request.expected_generations):
-        raise SupervisorError("worker_generation_changed")
+        raise _worker_generation_change(
+            _generation_mismatch_names(
+                before,
+                request.expected_generations,
+            )
+        )
 
     if request.operation == PPTX_PROBE_OPERATION:
         result = _pptx_probe_child(pptx_path)
     elif request.operation == PPTX_NATIVE_AUDIT_OPERATION:
         result = _native_audit_child(pptx_path)
     elif request.operation == PPTX_EXTRACT_OPERATION:
-        result = _extract_child(payload)
+        try:
+            result = _extract_child(
+                payload,
+                rendered_pdf_generation=before.get("rendered_pdf"),
+            )
+        except SupervisorError as exc:
+            if (
+                exc.reason_code != "worker_generation_changed"
+                or "rendered_pdf" not in before
+            ):
+                raise
+            raise _worker_generation_change(["rendered_pdf"]) from exc
     else:
         raise SupervisorError("invalid_worker_operation")
-    after = {
-        name: _worker_generation(path, trusted_root=root)
-        for name, (path, root) in paths.items()
-    }
-    if trusted_root is not None:
-        after["pptx_root"] = _worker_root_generation(trusted_root)
+    after = _observed_worker_generations(paths, trusted_root=trusted_root)
     if after != before:
-        raise SupervisorError("worker_generation_changed")
+        raise _worker_generation_change(_generation_mismatch_names(after, before))
     return result, after
 
 

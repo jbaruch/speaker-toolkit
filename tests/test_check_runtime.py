@@ -138,7 +138,7 @@ def test_optional_lane_failure_degrades_without_blocking_core(monkeypatch) -> No
     }
 
 
-def test_missing_psutil_blocks_only_the_required_pptx_lane(monkeypatch) -> None:
+def test_missing_psutil_blocks_required_pdf_and_pptx_lanes(monkeypatch) -> None:
     def probe(name: str) -> dict[str, object]:
         if name == "psutil":
             return _failed_probe("unavailable_import")
@@ -149,13 +149,17 @@ def test_missing_psutil_blocks_only_the_required_pptx_lane(monkeypatch) -> None:
 
     report = check_runtime.build_report(
         ("core", "pdf", "pptx"),
-        ("core", "pptx"),
+        ("core", "pdf", "pptx"),
     )
 
     assert report["ok"] is False
-    assert report["blocking_lanes"] == ["pptx"]
+    assert report["blocking_lanes"] == ["pdf", "pptx"]
     assert report["degraded_lanes"] == []
-    assert report["lanes"]["pdf"]["available"] is True
+    assert report["lanes"]["pdf"]["missing_modules"] == ["psutil"]
+    assert report["lanes"]["pdf"]["module_failures"] == {
+        "psutil": {"reason": "unavailable_import"}
+    }
+    assert report["lanes"]["pdf"]["required_module_versions"] == {"psutil": "7.2.2"}
     assert report["lanes"]["pptx"]["missing_modules"] == ["psutil"]
     assert report["lanes"]["pptx"]["module_failures"] == {
         "psutil": {"reason": "unavailable_import"}
@@ -163,7 +167,9 @@ def test_missing_psutil_blocks_only_the_required_pptx_lane(monkeypatch) -> None:
     assert report["lanes"]["pptx"]["required_module_versions"] == {"psutil": "7.2.2"}
 
 
-def test_incompatible_psutil_reports_exact_required_version(monkeypatch) -> None:
+def test_incompatible_psutil_reports_exact_version_for_supervised_lanes(
+    monkeypatch,
+) -> None:
     def probe(name: str) -> dict[str, object]:
         if name == "psutil":
             return _failed_probe(
@@ -176,17 +182,21 @@ def test_incompatible_psutil_reports_exact_required_version(monkeypatch) -> None
     monkeypatch.setattr(check_runtime, "_probe_module", probe)
     monkeypatch.setattr(check_runtime, "_command_available", lambda _name: True)
 
-    report = check_runtime.build_report(("pptx",), ("core", "pptx"))
+    report = check_runtime.build_report(
+        ("pdf", "pptx"),
+        ("core", "pdf", "pptx"),
+    )
 
     assert report["ok"] is False
-    assert report["blocking_lanes"] == ["pptx"]
-    assert report["lanes"]["pptx"]["missing_modules"] == ["psutil"]
-    assert report["lanes"]["pptx"]["module_failures"]["psutil"] == {
-        "reason": "incompatible_version",
-        "required_version": "7.2.2",
-        "actual_version": "7.2.1",
-    }
-    assert report["lanes"]["pptx"]["required_module_versions"] == {"psutil": "7.2.2"}
+    assert report["blocking_lanes"] == ["pdf", "pptx"]
+    for lane in ("pdf", "pptx"):
+        assert report["lanes"][lane]["missing_modules"] == ["psutil"]
+        assert report["lanes"][lane]["module_failures"]["psutil"] == {
+            "reason": "incompatible_version",
+            "required_version": "7.2.2",
+            "actual_version": "7.2.1",
+        }
+        assert report["lanes"][lane]["required_module_versions"] == {"psutil": "7.2.2"}
 
 
 def test_explicitly_required_lane_failure_is_blocking(monkeypatch) -> None:
@@ -1051,6 +1061,10 @@ def test_lane_requirements_match_the_configured_interpreter_contract() -> None:
     assert check_runtime.MODULE_PROBE_SCHEMA_VERSION == 1
     assert check_runtime.PSUTIL_REQUIRED_VERSION == "7.2.2"
     assert check_runtime.REQUIRED_MODULE_VERSIONS == {"psutil": "7.2.2"}
+    assert requirements["pdf"]["modules"] == {
+        "pypdf": "pypdf",
+        "psutil": "psutil",
+    }
     assert requirements["pptx"]["modules"] == {
         "python-pptx": "pptx",
         "psutil": "psutil",

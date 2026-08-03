@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import builtins
 import copy
 import hashlib
 import importlib
@@ -27,6 +26,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 pattern_evidence = importlib.import_module("pattern_evidence")
+pdf_evidence = importlib.import_module("pdf_evidence")
 pptx_evidence = importlib.import_module("pptx_evidence")
 return_validation = importlib.import_module("return_validation")
 transcript_timing = importlib.import_module("transcript_timing")
@@ -213,6 +213,40 @@ def _raw_transcript_return(
     }
 
 
+def _raw_static_pdf_return(page_count: int) -> dict[str, Any]:
+    return {
+        "filename": "synthetic-talk.md",
+        "return_schema_version": 4,
+        "status": "processed",
+        "slide_source": "pdf",
+        "structured_data": {},
+        "pattern_observations": {
+            "evidence_sources": ["static_slides"],
+            "source_inspection": [
+                {"source": "static_slides", "page_ranges": [[1, page_count]]}
+            ],
+            "patterns_detected": [
+                {
+                    "pattern_id": "slide-pattern",
+                    "confidence": "moderate",
+                    "evidence_source": "static_slides",
+                    "evidence": "The rendered slides establish the pattern.",
+                    "evidence_citations": [
+                        {
+                            "source": "static_slides",
+                            "channel": "slides",
+                            "slide_numbers": [min(2, page_count)],
+                        }
+                    ],
+                }
+            ],
+            "antipatterns_detected": [],
+            "not_evaluable": [],
+            "pattern_score": 1,
+        },
+    }
+
+
 def _canonical_transcript_talk(
     tmp_path: Path,
 ) -> tuple[Path, dict[str, Any], dict[str, Any]]:
@@ -321,6 +355,37 @@ def test_artifact_identity_names_the_actual_trusted_root(tmp_path: Path) -> None
     message = str(caught.value)
     assert "'pptx_source' artifact root" in message
     assert "vault root" not in message
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["slides_local_path", "slides_pdf_path", "pdf_path"],
+)
+def test_return_pdf_admission_accepts_only_the_exact_local_preclaim(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    vault = tmp_path / "vault"
+    _write_pdf(vault / "slides" / "named.pdf")
+    talk = {
+        field: "slides/named.pdf",
+        "google_drive_id": "different-drive-id",
+        "slide_source": "pdf",
+    }
+    returned = {
+        "slides_local_path": "slides/named.pdf",
+        "slide_source": "pdf",
+    }
+
+    pattern_evidence.admit_return_artifacts(vault, talk, returned)
+
+    redirected = copy.deepcopy(returned)
+    redirected["slides_local_path"] = "slides/different-drive-id.pdf"
+    with pytest.raises(
+        pattern_evidence.PatternEvidenceError,
+        match=f"exact {field} preclaim",
+    ):
+        pattern_evidence.admit_return_artifacts(vault, talk, redirected)
 
 
 def test_pptx_preclaim_is_lexical_until_bounded_probe(
@@ -701,10 +766,18 @@ def test_video_extracted_pdf_path_and_digest_replace_predeclared_pdf_identity(
     assert b"pypdf" in extracted_bytes
     extracted.write_bytes(extracted_bytes.replace(b"pypdf", b"qypdf", 1))
     assert declared.read_bytes() != extracted.read_bytes()
+    extracted_probe = pattern_evidence.probe_pdf_artifact(
+        extracted,
+        trusted_root=vault,
+    )
     monkeypatch.setattr(
         pattern_evidence,
-        "_trusted_video_slide_count",
-        lambda *_args, **_kwargs: (2, "trusted extracted PDF", extracted),
+        "_trusted_video_slide_probe",
+        lambda *_args, **_kwargs: (
+            extracted_probe,
+            "trusted extracted PDF",
+            extracted,
+        ),
     )
     talk = {
         "filename": "video-talk.md",
@@ -736,24 +809,17 @@ def test_unreadable_video_extracted_pdf_does_not_hide_independent_sources(
     extracted = vault / "slides-rebuild" / "video.pdf"
     _write_pptx(deck, slide_count=2)
     _write_pdf(extracted, page_count=2)
-    monkeypatch.setattr(
-        pattern_evidence,
-        "_trusted_video_slide_count",
-        lambda *_args, **_kwargs: (2, "trusted extracted PDF", extracted),
-    )
-    original_snapshot = pattern_evidence.snapshot_rendered_pdf
 
-    def fail_video_snapshot(path: str | Path):
-        if Path(path) == extracted:
-            raise pptx_evidence.PptxEvidenceError(
-                "synthetic video PDF generation changed"
-            )
-        return original_snapshot(path)
+    def unavailable_video_pdf(*_args: Any, **_kwargs: Any):
+        raise pdf_evidence.PdfEvidenceError(
+            "synthetic video PDF generation changed",
+            reason_code="pdf_artifact_changed",
+        )
 
     monkeypatch.setattr(
         pattern_evidence,
-        "snapshot_rendered_pdf",
-        fail_video_snapshot,
+        "_trusted_video_slide_probe",
+        unavailable_video_pdf,
     )
     talk = {
         "filename": "video-talk.md",
@@ -776,9 +842,223 @@ def test_unreadable_video_extracted_pdf_does_not_hide_independent_sources(
     )
     assert "static_slides" not in assessment["verified_evidence_sources"]
     assert (
-        "cannot snapshot trusted video slides"
-        in (assessment["source_reasons"]["static_slides"])
+        "synthetic video PDF generation changed"
+        in assessment["source_reasons"]["static_slides"]
     )
+    unavailable = assessment["unavailable_evidence_sources"]["static_slides"]
+    assert unavailable["reason_code"] == "pdf_artifact_changed"
+
+
+def test_current_video_manifest_bounds_bad_second_context_pdf_before_persistence(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    rebuild = vault / "slides-rebuild" / SYNTHETIC_VIDEO_ID
+    slide_region = rebuild / f"{SYNTHETIC_VIDEO_ID}.slide-region.pdf"
+    missing_context = rebuild / f"{SYNTHETIC_VIDEO_ID}.context.pdf"
+    _write_pdf(slide_region, page_count=1)
+    source_video = rebuild / f"{SYNTHETIC_VIDEO_ID}.mp4"
+    source_video.write_bytes(b"synthetic video")
+    shared = {
+        "page_count": 1,
+        "source_video_id": SYNTHETIC_VIDEO_ID,
+        "source_video_path": os.fspath(source_video),
+    }
+    manifest = {
+        "schema_version": 3,
+        "source_video_id": SYNTHETIC_VIDEO_ID,
+        "source_video_path": os.fspath(source_video),
+        "unique_frame_count": 1,
+        "slide_region_method": "manual",
+        "slide_region_applied": True,
+        "slide_region_verified": True,
+        "review_required": False,
+        "review_reason": None,
+        "artifacts": [
+            {
+                "path": os.fspath(slide_region),
+                "artifact_scope": "slide_region",
+                "crop_verified": True,
+                "trusted_for_authored_slide_analysis": True,
+                **shared,
+            },
+            {
+                "path": os.fspath(missing_context),
+                "artifact_scope": "full_frame_context",
+                "crop_verified": False,
+                "trusted_for_authored_slide_analysis": False,
+                **shared,
+            },
+        ],
+    }
+    ret = {
+        "youtube_id": SYNTHETIC_VIDEO_ID,
+        "slide_source": "video_extracted",
+        "structured_data": {"video_extraction": manifest},
+    }
+
+    with pytest.raises(pdf_evidence.PdfEvidenceError) as caught:
+        pattern_evidence._returned_slide_artifact(
+            vault,
+            {"youtube_id": SYNTHETIC_VIDEO_ID},
+            ret,
+        )
+
+    assert caught.value.reason_code == "pdf_artifact_unavailable"
+    assert caught.value.details["failure_kind"] == "missing"
+
+
+def test_promoted_video_pdf_must_match_trusted_slide_region_digest(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    rebuild = vault / "slides-rebuild" / SYNTHETIC_VIDEO_ID
+    source_video = rebuild / f"{SYNTHETIC_VIDEO_ID}.mp4"
+    source_video.parent.mkdir(parents=True)
+    source_video.write_bytes(b"synthetic video")
+    slide_region = rebuild / f"{SYNTHETIC_VIDEO_ID}.slide-region.pdf"
+    promoted = vault / "slides" / f"{SYNTHETIC_VIDEO_ID}.pdf"
+    _write_pdf(slide_region, page_count=1)
+    promoted.parent.mkdir(parents=True)
+    writer = PdfWriter()
+    writer.add_blank_page(width=640, height=480)
+    writer.add_metadata({"/Title": "Different valid one-page PDF"})
+    with promoted.open("wb") as stream:
+        writer.write(stream)
+    source_path = source_video.relative_to(vault).as_posix()
+    manifest = {
+        "schema_version": 3,
+        "source_video_id": SYNTHETIC_VIDEO_ID,
+        "source_video_path": source_path,
+        "unique_frame_count": 1,
+        "slide_region_method": "manual",
+        "slide_region_applied": True,
+        "slide_region_verified": True,
+        "review_required": False,
+        "review_reason": None,
+        "artifacts": [
+            {
+                "path": slide_region.relative_to(vault).as_posix(),
+                "artifact_scope": "slide_region",
+                "page_count": 1,
+                "source_video_id": SYNTHETIC_VIDEO_ID,
+                "source_video_path": source_path,
+                "crop_verified": True,
+                "trusted_for_authored_slide_analysis": True,
+            }
+        ],
+    }
+    returned = {
+        "youtube_id": SYNTHETIC_VIDEO_ID,
+        "slide_source": "video_extracted",
+        "slides_local_path": promoted.relative_to(vault).as_posix(),
+        "structured_data": {"video_extraction": manifest},
+    }
+
+    with pytest.raises(
+        pattern_evidence.PatternEvidenceError,
+        match="content digest disagrees",
+    ):
+        pattern_evidence.admit_return_artifacts(
+            vault,
+            {"youtube_id": SYNTHETIC_VIDEO_ID},
+            returned,
+        )
+
+
+def test_artifact_admission_rejects_video_manifest_outside_video_lane(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(
+        pattern_evidence.PatternEvidenceError,
+        match="requires slide_source 'video_extracted'",
+    ):
+        pattern_evidence.admit_return_artifacts(
+            tmp_path,
+            {},
+            {
+                "slide_source": "pptx",
+                "structured_data": {
+                    "video_extraction": {
+                        "artifacts": [{"path": "/outside/untrusted.pdf"}]
+                    }
+                },
+            },
+        )
+
+
+def test_persisted_context_manifest_reanalysis_never_touches_pdf_in_owner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    vault = tmp_path / "vault"
+    rebuild = vault / "slides-rebuild" / SYNTHETIC_VIDEO_ID
+    context = rebuild / f"{SYNTHETIC_VIDEO_ID}.context.pdf"
+    _write_pdf(context, page_count=1)
+    source_video = rebuild / f"{SYNTHETIC_VIDEO_ID}.mp4"
+    source_video.write_bytes(b"synthetic video")
+    manifest = {
+        "schema_version": 3,
+        "source_video_id": SYNTHETIC_VIDEO_ID,
+        "source_video_path": os.fspath(source_video),
+        "unique_frame_count": 1,
+        "slide_region_method": "none",
+        "slide_region_applied": False,
+        "slide_region_verified": False,
+        "review_required": True,
+        "review_reason": "Context only",
+        "artifacts": [
+            {
+                "path": os.fspath(context),
+                "artifact_scope": "full_frame_context",
+                "page_count": 1,
+                "source_video_id": SYNTHETIC_VIDEO_ID,
+                "source_video_path": os.fspath(source_video),
+                "crop_verified": False,
+                "trusted_for_authored_slide_analysis": False,
+            }
+        ],
+    }
+    for method_name in (
+        "is_file",
+        "resolve",
+        "stat",
+        "lstat",
+        "open",
+        "read_bytes",
+    ):
+        original = getattr(Path, method_name)
+
+        def guarded(
+            path: Path,
+            *args: Any,
+            _original=original,
+            _method_name=method_name,
+            **kwargs: Any,
+        ) -> Any:
+            if path.suffix.casefold() == ".pdf":
+                pytest.fail(f"reanalysis called {_method_name} for a PDF artifact")
+            return _original(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, method_name, guarded)
+    original_hash = pattern_evidence._sha256_file
+
+    def guarded_hash(path: Path) -> str:
+        if path.suffix.casefold() == ".pdf":
+            pytest.fail("reanalysis hashed a PDF artifact in the owner")
+        return original_hash(path)
+
+    monkeypatch.setattr(pattern_evidence, "_sha256_file", guarded_hash)
+
+    probe, reason, path = pattern_evidence._trusted_video_slide_probe(
+        vault,
+        {"structured_data": {"video_extraction": manifest}},
+        SYNTHETIC_VIDEO_ID,
+    )
+
+    assert probe is None
+    assert path is None
+    assert reason == "video slide-region provenance is not trusted"
 
 
 def test_pptx_preserves_a_separately_declared_rendered_pdf(
@@ -953,12 +1233,19 @@ def test_relative_pptx_native_deck_evidence_is_immediately_fresh(
         "pptx_path": deck.name,
         "slide_source": "pptx",
     }
+    native_audit = pptx_evidence.recompute_native_deck_audit(
+        deck,
+        trusted_root=source_root,
+    )
     raw: dict[str, Any] = {
         "filename": "synthetic-talk.md",
         "return_schema_version": 4,
         "status": "processed",
         "slide_source": "pptx",
-        "structured_data": {},
+        "structured_data": {
+            "slide_count": 3,
+            "native_deck_audit": native_audit,
+        },
         "pattern_observations": {
             "evidence_sources": ["native_deck"],
             "source_inspection": [{"source": "native_deck", "page_ranges": [[1, 3]]}],
@@ -1012,6 +1299,38 @@ def test_relative_pptx_native_deck_evidence_is_immediately_fresh(
         == ()
     )
 
+    missing_audit = copy.deepcopy(persisted)
+    missing_audit["structured_data"].pop("native_deck_audit")
+    assert "native_deck_audit_missing" in (
+        pattern_evidence.assess_persisted_pattern_evidence_freshness(
+            missing_audit,
+            vault_root=vault,
+            source_roots=roots,
+        )
+    )
+
+    old_generation = copy.deepcopy(persisted)
+    old_generation["structured_data"]["native_deck_audit"][
+        "extraction_pipeline_version"
+    ] = "1.4.0"
+    assert "native_deck_audit_generation_drift" in (
+        pattern_evidence.assess_persisted_pattern_evidence_freshness(
+            old_generation,
+            vault_root=vault,
+            source_roots=roots,
+        )
+    )
+
+    wrong_lane = copy.deepcopy(persisted)
+    wrong_lane["slide_source"] = "none"
+    assert "native_deck_audit_unexpected" in (
+        pattern_evidence.assess_persisted_pattern_evidence_freshness(
+            wrong_lane,
+            vault_root=vault,
+            source_roots=roots,
+        )
+    )
+
     _write_crc_damaged_media_pptx(deck)
     pptx_evidence.clear_pptx_artifact_probe_cache()
     degraded_reasons = pattern_evidence.assess_persisted_pattern_evidence_freshness(
@@ -1034,6 +1353,138 @@ def test_relative_pptx_native_deck_evidence_is_immediately_fresh(
     assert any(
         reason.endswith(":artifact_bounded_digest_unavailable")
         for reason in unavailable_reasons
+    )
+
+
+@pytest.mark.parametrize("absolute_path", [False, True], ids=["relative", "absolute"])
+@pytest.mark.parametrize(
+    "symlink_root",
+    [False, True],
+    ids=["storage-root", "canonical-symlink-root"],
+)
+def test_static_pdf_freshness_never_touches_the_leaf_in_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    absolute_path: bool,
+    symlink_root: bool,
+) -> None:
+    storage = tmp_path / "vault-storage"
+    vault = storage
+    if symlink_root:
+        vault = tmp_path / "canonical-vault"
+        storage.mkdir()
+        try:
+            vault.symlink_to(storage, target_is_directory=True)
+        except OSError:
+            pytest.skip("directory policy does not permit symlink creation")
+    rendered = storage / "slides" / "talk.pdf"
+    _write_pdf(rendered, page_count=3)
+    talk: dict[str, Any] = {
+        "filename": "synthetic-talk.md",
+        "title": "Synthetic Talk",
+        "slides_local_path": (
+            os.fspath(rendered)
+            if absolute_path
+            else rendered.relative_to(storage).as_posix()
+        ),
+        "slide_source": "pdf",
+    }
+    raw = _raw_static_pdf_return(3)
+    entry = _entry(
+        "slide-pattern",
+        absence_gate=(frozenset({"static_slides"}),),
+        channels=frozenset({"slides"}),
+    )
+    canonical = pattern_evidence.canonicalize_return_evidence(
+        raw,
+        talk,
+        vault,
+        _catalog(entry),
+    )
+    persisted = copy.deepcopy(talk)
+    persisted.update(copy.deepcopy(canonical))
+    for method_name in (
+        "is_file",
+        "resolve",
+        "stat",
+        "lstat",
+        "open",
+        "read_bytes",
+    ):
+        original = getattr(Path, method_name)
+
+        def guarded(
+            path: Path,
+            *args: Any,
+            _original=original,
+            _method_name=method_name,
+            **kwargs: Any,
+        ) -> Any:
+            if path.suffix.casefold() == ".pdf":
+                pytest.fail(f"freshness called {_method_name} for a PDF artifact")
+            return _original(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, method_name, guarded)
+
+    original_hash = pattern_evidence._sha256_file
+
+    def guarded_hash(path: Path) -> str:
+        if path.suffix.casefold() == ".pdf":
+            pytest.fail("freshness hashed a PDF artifact in the owner process")
+        return original_hash(path)
+
+    monkeypatch.setattr(pattern_evidence, "_sha256_file", guarded_hash)
+
+    assert (
+        pattern_evidence.assess_persisted_pattern_evidence_freshness(
+            persisted,
+            vault_root=vault,
+        )
+        == ()
+    )
+
+
+def test_external_static_pdf_symlink_parent_stays_fresh(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    storage = tmp_path / "external-storage"
+    locator = tmp_path / "configured-slides"
+    storage.mkdir()
+    try:
+        locator.symlink_to(storage, target_is_directory=True)
+    except OSError as exc:  # pragma: no cover - unusual restricted platform
+        pytest.skip(f"symlinks unavailable: {exc}")
+    rendered = storage / "talk.pdf"
+    _write_pdf(rendered, page_count=3)
+    talk: dict[str, Any] = {
+        "filename": "synthetic-talk.md",
+        "title": "Synthetic Talk",
+        "slides_local_path": os.fspath(locator / rendered.name),
+        "slide_source": "pdf",
+    }
+    canonical = pattern_evidence.canonicalize_return_evidence(
+        _raw_static_pdf_return(3),
+        talk,
+        vault,
+        _catalog(
+            _entry(
+                "slide-pattern",
+                absence_gate=(frozenset({"static_slides"}),),
+                channels=frozenset({"slides"}),
+            )
+        ),
+    )
+    persisted = copy.deepcopy(talk)
+    persisted.update(copy.deepcopy(canonical))
+
+    inspection = persisted["pattern_observations"]["source_inspection"][0]
+    assert inspection["artifact_root"] == "preclaim:slides_local_path"
+    assert inspection["artifact_path"] == rendered.name
+    assert (
+        pattern_evidence.assess_persisted_pattern_evidence_freshness(
+            persisted,
+            vault_root=vault,
+        )
+        == ()
     )
 
 
@@ -2016,6 +2467,53 @@ def test_native_deck_audit_is_recomputed_and_bound_to_canonical_render(
         canonical["structured_data"]["native_deck_audit"]
         == (extraction["native_deck_audit"])
     )
+    persisted: dict[str, Any] = copy.deepcopy(talk)
+    persisted.update(copy.deepcopy(canonical))
+    assert (
+        pattern_evidence.assess_persisted_pattern_evidence_freshness(
+            persisted,
+            vault_root=vault,
+        )
+        == ()
+    )
+
+    rendered_inspection_drift: dict[str, Any] = copy.deepcopy(persisted)
+    static_inspection = next(
+        record
+        for record in rendered_inspection_drift["pattern_observations"][
+            "source_inspection"
+        ]
+        if record["source"] == "static_slides"
+    )
+    static_inspection["page_ranges"] = []
+    assert "native_deck_audit_rendered_pdf_inspection_drift" in (
+        pattern_evidence.assess_persisted_pattern_evidence_freshness(
+            rendered_inspection_drift,
+            vault_root=vault,
+        )
+    )
+
+    source_drift: dict[str, Any] = copy.deepcopy(persisted)
+    current_audit = source_drift["structured_data"]["native_deck_audit"]
+    source_drift["structured_data"]["native_deck_audit"] = (
+        pptx_evidence.build_native_deck_audit(
+            source_pptx_sha256="b" * 64,
+            source_pptx_size_bytes=current_audit["source_pptx_size_bytes"],
+            slide_count=1,
+            render_required_reasons={
+                int(slide_number): reasons
+                for slide_number, reasons in current_audit[
+                    "render_required_reasons"
+                ].items()
+            },
+        )
+    )
+    assert "native_deck_audit_source_generation_drift" in (
+        pattern_evidence.assess_persisted_pattern_evidence_freshness(
+            source_drift,
+            vault_root=vault,
+        )
+    )
 
     forged = copy.deepcopy(raw)
     forged["structured_data"]["native_deck_audit"] = (
@@ -2042,6 +2540,13 @@ def test_native_deck_audit_is_recomputed_and_bound_to_canonical_render(
     changed_render = original_render.replace(b"pypdf", b"qypdf", 1)
     assert len(changed_render) == len(original_render)
     rendered.write_bytes(changed_render)
+    pdf_evidence.clear_pdf_artifact_probe_cache()
+    assert "native_deck_audit_rendered_pdf_generation_drift" in (
+        pattern_evidence.assess_persisted_pattern_evidence_freshness(
+            persisted,
+            vault_root=vault,
+        )
+    )
     with pytest.raises(
         pattern_evidence.PatternEvidenceError,
         match="rendered_page_inspection.*(canonical static_slides|PDF generation)",
@@ -2248,9 +2753,42 @@ def test_missing_python_pptx_dependency_is_local_to_the_pptx_lane(
     assert "python-pptx" in assessment["source_reasons"]["native_deck"]
 
 
-def test_missing_pypdf_dependency_is_local_to_the_pdf_lane(
+@pytest.mark.parametrize(
+    ("supervisor_reason", "supervisor_details", "public_reason"),
+    [
+        (
+            "worker_monitor_unavailable",
+            {"dependency": "psutil"},
+            "pdf_dependency_unavailable",
+        ),
+        (
+            "worker_monitor_unavailable",
+            {},
+            "pdf_probe_monitor_unavailable",
+        ),
+        (
+            "worker_monitor_identity_changed",
+            {},
+            "pdf_probe_monitor_identity_changed",
+        ),
+        (
+            "worker_containment_unavailable",
+            {},
+            "pdf_probe_containment_unavailable",
+        ),
+        (
+            "worker_memory_limit_exceeded",
+            {},
+            "pdf_probe_resource_unavailable",
+        ),
+    ],
+)
+def test_pdf_supervisor_failure_is_local_and_cause_correct_in_catalog_context(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    supervisor_reason: str,
+    supervisor_details: dict[str, object],
+    public_reason: str,
 ) -> None:
     vault = tmp_path / "vault"
     transcript, _ = _write_transcript(vault, timed=False)
@@ -2258,14 +2796,17 @@ def test_missing_pypdf_dependency_is_local_to_the_pdf_lane(
     slides = vault / "slides" / "talk.pdf"
     _write_pptx(deck)
     _write_pdf(slides)
-    original_import = builtins.__import__
 
-    def without_pypdf(name: str, *args: Any, **kwargs: Any) -> Any:
-        if name == "pypdf" or name.startswith("pypdf."):
-            raise ImportError("synthetic missing pypdf")
-        return original_import(name, *args, **kwargs)
+    def unavailable_pdf(*_args: Any, **_kwargs: Any):
+        raise pdf_evidence._supervisor_failure(
+            pdf_evidence.SupervisorError(
+                supervisor_reason,
+                supervisor_details,
+            ),
+            timeout_seconds=3.5,
+        )
 
-    monkeypatch.setattr(builtins, "__import__", without_pypdf)
+    monkeypatch.setattr(pattern_evidence, "probe_pdf_artifact", unavailable_pdf)
     assessment = pattern_evidence.assess_talk_artifact_capabilities(
         {
             "filename": "talk.md",
@@ -2280,7 +2821,47 @@ def test_missing_pypdf_dependency_is_local_to_the_pdf_lane(
 
     assert assessment["verified_capabilities"] == ("slides", "transcript")
     assert set(assessment["verified_evidence_sources"]) == {"native_deck", "transcript"}
-    assert "pypdf" in assessment["source_reasons"]["static_slides"]
+    unavailable = assessment["unavailable_evidence_sources"]["static_slides"]
+    assert unavailable["reason_code"] == public_reason
+    assert unavailable["details"] == {"supervisor_reason_code": supervisor_reason}
+
+
+def test_missing_pypdf_dependency_is_local_to_the_pdf_lane(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    transcript, _ = _write_transcript(vault, timed=False)
+    deck = vault / "decks" / "talk.pptx"
+    slides = vault / "slides" / "talk.pdf"
+    _write_pptx(deck)
+    _write_pdf(slides)
+
+    def unavailable_pdf(*_args: Any, **_kwargs: Any):
+        raise pdf_evidence.PdfEvidenceError(
+            "PDF evidence requires its declared runtime dependencies; install the "
+            "speaker-toolkit project dependencies",
+            reason_code="pdf_dependency_unavailable",
+            details={"exception_type": "ImportError"},
+        )
+
+    monkeypatch.setattr(pattern_evidence, "probe_pdf_artifact", unavailable_pdf)
+    assessment = pattern_evidence.assess_talk_artifact_capabilities(
+        {
+            "filename": "talk.md",
+            "transcript_path": transcript.relative_to(vault).as_posix(),
+            "transcript_source": "manual",
+            "pptx_path": deck.relative_to(vault).as_posix(),
+            "slides_local_path": slides.relative_to(vault).as_posix(),
+            "slide_source": "both",
+        },
+        vault_root=vault,
+    )
+
+    assert set(assessment["verified_evidence_sources"]) == {"native_deck", "transcript"}
+    unavailable = assessment["unavailable_evidence_sources"]["static_slides"]
+    assert unavailable["reason_code"] == "pdf_dependency_unavailable"
+    assert unavailable["details"] == {"exception_type": "ImportError"}
 
 
 @pytest.mark.parametrize(

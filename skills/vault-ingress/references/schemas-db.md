@@ -1062,6 +1062,11 @@ relocated, or owner-path-drifted evidence closed. Transcript freshness also
 re-runs the hash-bound quality policy against the current owner/provider duration;
 a material identity-duration change yields `transcript_quality_context_drift`
 even when the transcript and sidecar bytes themselves did not change.
+Native-deck freshness likewise requires a current `native_deck_audit`, binds its
+PPTX digest, size, and slide count to the current bounded probe and canonical
+inspection, and binds any rendered-page receipt to the current bounded PDF plus
+the exact persisted static-slide inspection ranges. Missing, obsolete,
+wrong-lane, or artifact-disconnected audits requeue the talk.
 
 ### Pattern Evidence Citation Schema
 
@@ -1347,6 +1352,12 @@ is still required before treating an old crop as verified.
 
 Version 3 separates derived artifacts by provenance and scope. `artifacts[].path` and
 `source_video_path` are absolute, symlink-resolved paths at extraction time.
+They must remain within the configured vault storage root, contain no NUL or raw
+dot segments, and name non-symlink descendants. Before a current return is
+persisted, every manifest PDF—not only the trusted `slide_region`—must pass the
+bounded exact-generation PDF probe and match its recorded page count. A
+configured canonical vault symlink is admitted as the trusted root locator and
+mapped to its storage target; descendant symlinks remain forbidden.
 `artifact_scope` is one of:
 
 - `slide_region` — pages are physically cropped to the selected region. This is trusted
@@ -1422,7 +1433,7 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
 ```json
 {
   "schema_version": 4,
-  "pipeline_version": "1.4.0",
+  "pipeline_version": "1.5.0",
   "input_fingerprint": {
     "algorithm": "sha256",
     "digest": "64 lowercase hex characters",
@@ -1616,7 +1627,7 @@ Produced by `skills/vault-ingress/scripts/pptx-extraction.py`.
   "native_deck_audit": {
     "schema_version": 1,
     "extraction_schema_version": 4,
-    "extraction_pipeline_version": "1.4.0",
+    "extraction_pipeline_version": "1.5.0",
     "source_pptx_sha256": "64 lowercase hex characters",
     "source_pptx_size_bytes": 123456,
     "slide_count": 60,
@@ -1651,7 +1662,9 @@ v1 added the version/fingerprint, v2 added `native_timing` to every slide plus
 picture, and background capability/asset bindings required. `pipeline_version`
 tracks extraction behavior and
 changes when the walk, classification, confidence, OCR, recovery, timing, or
-receipt behavior changes; current is `1.4.0`.
+receipt behavior changes; current is `1.5.0`. Pipeline 1.5 applies the shared
+bounded PDF ceiling, complete page-tree walk, and repair-diagnostic rejection to
+render receipts produced inside the already-contained PPTX extraction worker.
 
 Extractor schema v4 is independent of persisted pattern-evidence schema v2,
 return schema v5, queue-claim schema v5, and tracking-database schema v1. Those
@@ -1799,13 +1812,14 @@ summary fields require complete coverage of every render-required slide.
 Persistence recomputes the audit in a bounded worker and matches the receipt to
 owner-canonical native-deck and static-slide identities.
 
-Current supervisor receipts preserve request, result, dependency, monitor,
-identity, containment, and resource-limit causes through the mapping owned by
-`pptx_evidence.py`. Successful extraction evidence is unchanged, so this does
-not advance the extraction schema or pipeline. Previously persisted ambiguous
-failure/skip receipts remain readable and must not be relabeled: their closed
-details do not prove a narrower historical cause. Rerun ingress to regenerate
-them under the current mapping before relying on remediation advice.
+Current PDF and PPTX supervisor receipts preserve request, result, dependency,
+monitor, identity, containment, and resource-limit causes through the mappings
+owned by `pdf_evidence.py` and `pptx_evidence.py`. Successful evidence is
+unchanged, so this does not advance either extraction schema or pipeline.
+Previously persisted ambiguous failure/skip receipts remain readable and must
+not be relabeled: their closed details do not prove a narrower historical cause.
+Rerun ingress to regenerate them under the current mappings before relying on
+remediation advice.
 
 `image_area_ratio` is the **largest** `is_picture: true` shape's area as a
 fraction of the slide as emitted by `pptx-extraction.py` and validated by

@@ -92,6 +92,7 @@ from ingress_contract import (
 from tracking_database import TrackingDatabaseError, require_current_tracking_database
 from pattern_evidence import (
     PatternEvidenceError,
+    admit_return_artifacts,
     assess_batch_artifact_capabilities,
     canonicalize_return_evidence,
     return_evidence_claim,
@@ -883,6 +884,8 @@ def main():
     for ret in returns:
         name = ret["filename"]
         try:
+            if ret.get("status") in ANALYSIS_STATUSES:
+                admit_return_artifacts(vault_root, by_name[name], ret)
             if (ret.get("status") in ANALYSIS_STATUSES and
                     resolve_return_schema_version(ret) in
                     SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS):
