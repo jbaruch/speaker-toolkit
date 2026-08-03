@@ -494,12 +494,18 @@ def test_worker_error_redacts_paths_and_authentication_key(tmp_path):
 
     assert caught.value.reason_code == "pptx_worker_unavailable"
     assert str(artifact) not in json.dumps(caught.value.details)
-    assert caught.value.details == {
-        "artifact": "<redacted>",
-        "secret": "<redacted>",
-        "<redacted>": "artifact-key",
-        "<redacted>#2": "secret-key",
+    assert caught.value.details.get("artifact") == "<redacted>"
+    assert caught.value.details.get("secret") == "<redacted>"
+    assert set(caught.value.details) == {
+        "artifact",
+        "secret",
+        "<redacted>",
+        "<redacted>#2",
     }
+    assert {
+        caught.value.details["<redacted>"],
+        caught.value.details["<redacted>#2"],
+    } == {"artifact-key", "secret-key"}
 
 
 def test_wall_limit_terminates_worker():
@@ -560,6 +566,32 @@ def test_reaped_workers_never_signal_a_stale_numeric_process_group(monkeypatch):
     assert attempted_groups == []
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process-group assertion")
+def test_group_kill_winning_pid_kill_race_is_successful_cleanup(monkeypatch):
+    attempted_groups: list[tuple[int, int]] = []
+
+    def kill_group(process_group: int, signal_number: int) -> None:
+        attempted_groups.append((process_group, signal_number))
+
+    class ExitedAfterGroupKill:
+        pid = 12345
+
+        def poll(self):
+            return None
+
+        def kill(self):
+            raise ProcessLookupError("group kill already reaped the child")
+
+    monkeypatch.setattr(artifact_supervisor.os, "killpg", kill_group)
+
+    artifact_supervisor._ProcessController(
+        ExitedAfterGroupKill(),
+        _limits(),
+    ).terminate()
+
+    assert attempted_groups == [(12345, artifact_supervisor.signal.SIGKILL)]
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX process-tree assertion")
 def test_clean_exit_reports_and_kills_known_same_group_descendant(tmp_path):
     receipt = tmp_path / "child.pid"
@@ -610,20 +642,36 @@ def test_monitor_barrier_fails_before_request_delivery():
 def test_fast_exit_race_is_confirmed_by_popen_and_cleanup_does_not_mask(tmp_path):
     class ZombieRaceMonitor(PermissiveMonitor):
         def sample(self):
-            time.sleep(0.1)
             raise artifact_supervisor.SupervisorError("worker_monitor_identity_changed")
 
     artifact = tmp_path / "tiny-malformed.pptx"
+    limits = _limits(sample_interval_seconds=0.5)
     result = _run(
         "success",
+        limits=limits,
         payload={"artifact": str(artifact)},
         monitor_factory=ZombieRaceMonitor,
     )
     assert result.payload["leaked"] is False
 
     with pytest.raises(artifact_supervisor.SupervisorError) as caught:
-        _run("fast_exit", monitor_factory=ZombieRaceMonitor)
+        _run("fast_exit", limits=limits, monitor_factory=ZombieRaceMonitor)
     assert caught.value.reason_code == "worker_exit"
+
+
+def test_monitor_identity_loss_does_not_accept_a_still_live_worker():
+    class IdentityLossMonitor(PermissiveMonitor):
+        def sample(self):
+            raise artifact_supervisor.SupervisorError("worker_monitor_identity_changed")
+
+    with pytest.raises(artifact_supervisor.SupervisorError) as caught:
+        _run(
+            "timeout",
+            limits=_limits(wall_seconds=0.5, sample_interval_seconds=0.02),
+            monitor_factory=IdentityLossMonitor,
+        )
+
+    assert caught.value.reason_code == "worker_monitor_identity_changed"
 
 
 def test_cleanup_failure_overrides_signed_success(tmp_path):
@@ -658,8 +706,24 @@ def test_cleanup_failure_overrides_signed_success(tmp_path):
     assert caught.value.details == {"prior_reason_code": None}
 
 
-def test_cleanup_steps_share_one_absolute_timeout_budget():
+def test_cleanup_steps_share_one_absolute_timeout_budget(monkeypatch):
     observed: dict[str, float] = {}
+
+    class Clock:
+        def __init__(self):
+            self._value = 0.0
+            self._lock = threading.Lock()
+
+        def monotonic(self):
+            with self._lock:
+                return self._value
+
+        def advance(self, seconds):
+            with self._lock:
+                self._value += seconds
+
+    clock = Clock()
+    monkeypatch.setattr(artifact_supervisor.time, "monotonic", clock.monotonic)
 
     class Process:
         pid = 123
@@ -669,7 +733,7 @@ def test_cleanup_steps_share_one_absolute_timeout_budget():
 
         def wait(self, *, timeout):
             observed["wait"] = timeout
-            time.sleep(min(0.01, timeout))
+            clock.advance(min(0.01, timeout))
             return 0
 
     class Controller:
@@ -682,7 +746,7 @@ def test_cleanup_steps_share_one_absolute_timeout_budget():
     class Monitor:
         def kill_seen(self, timeout):
             observed["kill"] = timeout
-            time.sleep(min(0.01, timeout))
+            clock.advance(min(0.01, timeout))
 
         def any_seen_alive(self):
             return False
@@ -695,11 +759,10 @@ def test_cleanup_steps_share_one_absolute_timeout_budget():
 
         def join(self, timeout):
             observed["join"] = timeout
-            time.sleep(min(0.01, timeout))
+            clock.advance(min(0.01, timeout))
             self.alive = False
 
     pipe = Pipe()
-    started = time.monotonic()
     failure = artifact_supervisor._cleanup_invocation(
         Process(),
         Controller(),
@@ -709,12 +772,11 @@ def test_cleanup_steps_share_one_absolute_timeout_budget():
         None,
         0.1,
     )
-    elapsed = time.monotonic() - started
 
     assert failure is None
-    assert 0 < observed["kill"] < observed["wait"] <= 0.1
-    assert 0 < observed["join"] < observed["kill"]
-    assert elapsed < 0.15
+    assert observed["wait"] == pytest.approx(0.1)
+    assert observed["kill"] == pytest.approx(0.09)
+    assert observed["join"] == pytest.approx(0.08)
 
 
 def test_cleanup_deadline_bounds_a_blocking_cleanup_step():
@@ -832,7 +894,7 @@ def test_memory_limit_is_established_before_stdin_is_written():
     with pytest.raises(artifact_supervisor.SupervisorError) as caught:
         _run(
             "success",
-            limits=_limits(max_memory_bytes=1),
+            limits=_limits(),
             monitor_factory=MemoryFailingMonitor,
         )
 
@@ -919,7 +981,7 @@ def test_file_generation_round_trip_and_limit_validation(tmp_path):
         artifact_supervisor.WorkerCredentials(bytearray(32))
 
 
-def test_shared_ingress_imports_do_not_require_optional_psutil():
+def test_shared_pptx_imports_do_not_require_optional_psutil():
     code = f"""
 import importlib.abc
 import importlib.util
@@ -937,16 +999,7 @@ script_dir = Path({str(SCRIPT_DIR)!r})
 sys.path.insert(0, str(script_dir))
 for module_name in ("artifact_supervisor", "pptx_evidence", "pattern_evidence"):
     __import__(module_name)
-for module_name, filename in (
-    ("queue_state_import_probe", "queue-state.py"),
-    ("preflight_vault_import_probe", "preflight-vault.py"),
-):
-    spec = importlib.util.spec_from_file_location(module_name, script_dir / filename)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-print("shared-ingress-imports-ok")
+print("shared-pptx-imports-ok")
 """
     completed = subprocess.run(
         [sys.executable, "-I", "-c", code],
@@ -957,7 +1010,50 @@ print("shared-ingress-imports-ok")
     )
 
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout == "shared-ingress-imports-ok\n"
+    assert completed.stdout == "shared-pptx-imports-ok\n"
+
+
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="vault transaction entrypoints use POSIX tracking-database locking",
+)
+def test_posix_ingress_entrypoint_imports_do_not_require_optional_psutil():
+    code = f"""
+import importlib.abc
+import importlib.util
+import sys
+from pathlib import Path
+
+class BlockPsutil(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "psutil" or fullname.startswith("psutil."):
+            raise ModuleNotFoundError("synthetic missing psutil")
+        return None
+
+sys.meta_path.insert(0, BlockPsutil())
+script_dir = Path({str(SCRIPT_DIR)!r})
+sys.path.insert(0, str(script_dir))
+for module_name, filename in (
+    ("queue_state_import_probe", "queue-state.py"),
+    ("preflight_vault_import_probe", "preflight-vault.py"),
+):
+    spec = importlib.util.spec_from_file_location(module_name, script_dir / filename)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+print("posix-ingress-entrypoint-imports-ok")
+"""
+    completed = subprocess.run(
+        [sys.executable, "-I", "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout == "posix-ingress-entrypoint-imports-ok\n"
 
 
 def test_monitor_fails_closed_only_when_optional_psutil_is_needed(monkeypatch):

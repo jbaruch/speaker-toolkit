@@ -542,12 +542,23 @@ def run_authenticated_worker(
                 raise SupervisorError("worker_timeout")
             try:
                 monitor.sample()
-            except SupervisorError:
+            except SupervisorError as exc:
                 # The direct child can become a zombie after poll() above and
-                # before psutil walks it.  Popen is the root-process authority:
-                # re-poll and accept that race only when it confirms exit.
+                # before psutil walks it. Popen is the root-process authority.
                 if process.poll() is not None:
                     break
+                if exc.reason_code == "worker_monitor_identity_changed":
+                    settle_timeout = min(
+                        limits.sample_interval_seconds,
+                        max(0.0, deadline - time.monotonic()),
+                    )
+                    if settle_timeout > 0:
+                        try:
+                            process.wait(timeout=settle_timeout)
+                        except subprocess.TimeoutExpired:
+                            pass
+                        else:
+                            break
                 raise
             time.sleep(min(limits.sample_interval_seconds, max(0.0, deadline - now)))
 
@@ -1159,12 +1170,12 @@ class _ProcessController:
             raise SupervisorError("worker_containment_unavailable")
 
     def terminate(self) -> None:
-        failures = 0
+        failures: list[OSError] = []
         if self._windows_job is not None:
             try:
                 self._windows_job.terminate()
-            except OSError:
-                failures += 1
+            except OSError as exc:
+                failures.append(exc)
         elif os.name == "posix" and self._process.poll() is None:
             # poll() reaps an exited child.  Never address a process group by
             # that stale numeric identity: the PID/PGID may already belong to
@@ -1175,15 +1186,20 @@ class _ProcessController:
                 os.killpg(self._process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            except OSError:
-                failures += 1
+            except OSError as exc:
+                failures.append(exc)
         if self._process.poll() is None:
             try:
                 self._process.kill()
-            except (OSError, ProcessLookupError):
-                failures += 1
+            except ProcessLookupError:
+                # The process group kill can win the race after poll() but
+                # before this direct-child fallback. ESRCH means the cleanup
+                # already achieved its goal; other OS failures remain fatal.
+                pass
+            except OSError as exc:
+                failures.append(exc)
         if failures:
-            raise SupervisorError("worker_cleanup_failed")
+            raise SupervisorError("worker_cleanup_failed") from failures[0]
 
     def close(self) -> None:
         if self._windows_job is not None:
