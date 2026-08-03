@@ -222,9 +222,14 @@ for the complete report and mutation contract.
 directory extraction, which owns deterministic discovery, symlink/reparse-point
 rejection, and aggregate file/input/output/wall budgets:
 
+Read the exact `config.template_skip_patterns` array from the strict owner-read
+result. Set `{template_skip_arguments}` to one separately shell-quoted
+`--skip=<exact-value>` argument per array entry, preserving its order. An empty
+array produces zero arguments; never add an implicit default.
+
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py" \
-  --directory "{pptx_source_dir}"
+  --directory "{pptx_source_dir}" {template_skip_arguments}
 ```
 
 Use root-relative `results[].pptx_path` identities to fuzzy-match `talks[]` entries
@@ -664,8 +669,9 @@ that used PDF as primary but have a PPTX available, or entries with
 `pptx_visual_status: "pending"`. Skip if already `"extracted"`. Use the bounded
 directory invocation from the scan step and select the root-relative results that
 remain pending; do not replace it with `**/*.pptx` or a shell/per-file extraction
-loop. Keep the explicit `--directory` flag, preserve every bounded skip receipt, and
-never admit a `~$` Office lock file.
+loop. Reuse the exact config-derived `{template_skip_arguments}` (including zero
+arguments for an empty array), keep the explicit `--directory` flag, preserve every
+bounded skip receipt, and never admit a `~$` Office lock file.
 Require schema v4 for current analysis. Regenerate v0-v3 output and stop on an
 unknown future schema rather than interpreting missing fields as zero. When
 rendered pages were inspected, rerun that selected deck as one supervised

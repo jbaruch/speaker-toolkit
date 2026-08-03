@@ -35,7 +35,10 @@ unusable/colliding directory identities, and `~$` Office locks while admitting
 supported hydrated Cloud Files leaves. File-cap truncation emits a root-level
 incomplete-scan receipt; discovery and extraction share one deadline and final JSON
 accounting includes the exact wrapper/newline. Race-free root/leaf handle binding is
-tracked separately by #176. Extraction behavior advances from pipeline 1.2.0 to
+tracked separately by #176. The directory CLI now accepts the exact configured
+template-skip array, including an empty array, without injecting a hard-coded
+`template` pattern; vault-ingress forwards that database configuration explicitly.
+Extraction behavior advances from pipeline 1.2.0 to
 1.4.0 and field schema v4 makes native text-frame, graphic-frame, picture-asset,
 and background-asset obligations explicit so partial worker output cannot silently
 downgrade catalog evidence. Known shape/graphic types are cross-bound to their

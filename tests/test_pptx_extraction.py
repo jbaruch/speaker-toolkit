@@ -476,10 +476,57 @@ def test_directory_owner_never_touches_root_before_authenticated_manifest(
     ]
     assert operation == "pptx_resolve_input"
     assert generations == {}
-    assert payload == {"root_path": root, "skip_patterns": ["template"]}
+    assert payload == {"root_path": root, "skip_patterns": []}
     assert limits.profile_id == "pptx-directory-discovery-v1"
     assert kwargs["schema_generation"] == pptx_extraction.SCHEMA_VERSION
     assert kwargs["pipeline_generation"] == pptx_extraction.PIPELINE_VERSION
+
+
+def test_directory_cli_passes_only_the_exact_configured_skip_patterns(
+    pptx_extraction,
+    monkeypatch,
+    capsys,
+):
+    root = "/untrusted/root-that-need-not-exist"
+    captured_payload = {}
+
+    def authenticated_worker(
+        _command, _operation, _generations, payload, _limits, **_kwargs
+    ):
+        captured_payload.update(payload)
+        return SimpleNamespace(
+            payload={
+                "schema_version": 1,
+                "kind": "directory",
+                "files": [],
+                "skipped": [],
+            }
+        )
+
+    monkeypatch.setattr(
+        pptx_extraction, "run_authenticated_worker", authenticated_worker
+    )
+
+    assert (
+        pptx_extraction.main(
+            [
+                "--directory",
+                root,
+                "--skip=draft",
+                "--skip=-speaker-master",
+                "--no-ocr",
+            ]
+        )
+        == 0
+    )
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert json.loads(captured.out) == {"results": [], "skipped": []}
+    assert captured_payload == {
+        "root_path": root,
+        "skip_patterns": ["draft", "-speaker-master"],
+    }
 
 
 def test_directory_relative_root_is_lexically_absolutized_before_supervision(

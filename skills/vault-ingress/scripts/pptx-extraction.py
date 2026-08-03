@@ -2,7 +2,7 @@
 """Extract visual design data from .pptx files using python-pptx.
 
 Produces per-slide visual data and global design statistics as JSON.
-Skips static exports, conflict copies, and template files.
+Skips static exports, conflict copies, and configured filename patterns.
 
 Text is collected recursively from shape frames and native table cells, with
 source/confidence recorded per channel. Low-confidence picture and background
@@ -18,11 +18,11 @@ about observed motion, concurrency, or delivered behavior.
 Usage:
     pptx-extraction.py <file.pptx> [--no-ocr]
         [--rendered-pdf <path>] [--inspected-pages <PAGE|START-END>]
-    pptx-extraction.py --directory <directory> [--skip template] [--no-ocr]
+    pptx-extraction.py --directory <directory> [--skip pattern ...] [--no-ocr]
     pptx-extraction.py --version
 
     <path>       Path to one .pptx, or a root when --directory is explicit
-    --skip       Additional skip patterns (case-insensitive substring match on filename)
+    --skip       One configured skip pattern; repeat for each pattern and omit for none
     --no-ocr     Skip OCR even on low-confidence slides (shape walk only)
 
 Examples:
@@ -2457,8 +2457,11 @@ def main(argv=None):
     parser.add_argument(
         "--skip",
         action="append",
-        default=["template"],
-        help="Skip patterns (case-insensitive, default: template)",
+        default=None,
+        help=(
+            "Configured skip pattern (case-insensitive); repeat for each pattern "
+            "and omit all --skip flags for an empty set"
+        ),
     )
     parser.add_argument(
         "--no-ocr",
@@ -2504,7 +2507,7 @@ def main(argv=None):
         if args.rendered_pdf or inspected_page_ranges:
             parser.error("--rendered-pdf/--inspected-pages require a single PPTX input")
         try:
-            results, skipped = batch_extract(args.path, args.skip, ocr=ocr)
+            results, skipped = batch_extract(args.path, args.skip or [], ocr=ocr)
         except PptxEvidenceError as exc:
             print(f"ERROR: {exc.reason_code}", file=sys.stderr)
             return 1
