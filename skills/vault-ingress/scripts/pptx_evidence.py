@@ -5213,10 +5213,30 @@ def _run_supervised_worker_child() -> int:
     return 0
 
 
+def _main() -> int:
+    if sys.argv[1:] != [PPTX_SUPERVISED_WORKER_FLAG]:
+        raise SystemExit("pptx_evidence.py is a library; run pptx-extraction.py")
+    try:
+        return _run_supervised_worker_child()
+    except SupervisorError as exc:
+        print(
+            f"pptx supervised worker failed: {exc.reason_code}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 2
+    # The supervisor treats a nonzero child without an authenticated response
+    # as a bounded crash. Emit a path-neutral stderr diagnostic plus exit 2
+    # because propagation would leak a traceback and violate the one-frame
+    # response contract. outer-boundary-process-contract.
+    except Exception:  # noqa: BLE001
+        print(
+            "pptx supervised worker failed: unexpected_error",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 2
+
+
 if __name__ == "__main__":
-    if sys.argv[1:] == [PPTX_SUPERVISED_WORKER_FLAG]:
-        try:
-            raise SystemExit(_run_supervised_worker_child())
-        except SupervisorError:
-            raise SystemExit(2) from None
-    raise SystemExit("pptx_evidence.py is a library; run pptx-extraction.py")
+    raise SystemExit(_main())

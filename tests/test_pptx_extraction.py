@@ -2559,3 +2559,70 @@ def test_version_flag_is_machine_readable(pptx_extraction):
         "schema_version": pptx_extraction.SCHEMA_VERSION,
         "pipeline_version": pptx_extraction.PIPELINE_VERSION,
     }
+
+
+def test_directory_worker_main_reports_closed_supervisor_failure(
+    pptx_extraction,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail():
+        raise pptx_extraction.SupervisorError("worker_output_limit_exceeded")
+
+    monkeypatch.setattr(pptx_extraction, "_run_directory_worker_child", fail)
+    monkeypatch.setattr(
+        pptx_extraction.sys,
+        "argv",
+        [pptx_extraction.__file__, pptx_extraction._DIRECTORY_WORKER_FLAG],
+    )
+
+    assert pptx_extraction._main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert (
+        captured.err == "pptx directory worker failed: worker_output_limit_exceeded\n"
+    )
+    assert "Traceback" not in captured.err
+
+
+def test_directory_worker_main_closes_unexpected_failure_diagnostic(
+    pptx_extraction,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    leaked_path = "/private/vault/source.pptx"
+
+    def fail():
+        raise RuntimeError(f"failure at {leaked_path}")
+
+    monkeypatch.setattr(pptx_extraction, "_run_directory_worker_child", fail)
+    monkeypatch.setattr(
+        pptx_extraction.sys,
+        "argv",
+        [pptx_extraction.__file__, pptx_extraction._DIRECTORY_WORKER_FLAG],
+    )
+
+    assert pptx_extraction._main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "pptx directory worker failed: unexpected_error\n"
+    assert leaked_path not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_directory_worker_main_preserves_success_output_contract(
+    pptx_extraction,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(pptx_extraction, "_run_directory_worker_child", lambda: 0)
+    monkeypatch.setattr(
+        pptx_extraction.sys,
+        "argv",
+        [pptx_extraction.__file__, pptx_extraction._DIRECTORY_WORKER_FLAG],
+    )
+
+    assert pptx_extraction._main() == 0
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
