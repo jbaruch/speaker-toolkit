@@ -1,5 +1,83 @@
 # Changelog
 
+### fix(vault-ingress) — supervise every native-deck parser boundary (#182)
+
+PPTX probe, native-audit, and full extraction now run behind one private,
+authenticated worker protocol. Artifact paths and per-invocation credentials
+travel over bounded stdin only; signed responses bind the request, operation,
+limit profile, extractor schema/pipeline, and exact pre/worker/post file
+generations. Duplicate, non-finite, partial, trailing, oversized, unauthenticated,
+or generation-mismatched results fail closed before their nested payload is used.
+
+Workers receive fixed wall, input, output, process-count, and process-tree memory
+budgets. POSIX cleanup terminates the trusted worker's process group plus sampled
+descendants; Windows uses a kill-on-close Job Object with aggregate
+committed-memory and active-process limits. `psutil==7.2.2` supplies fail-closed
+sampled aggregate-RSS monitoring on all platforms; macOS does not overclaim a
+kernel hard-allocation cap. Raw parser diagnostics never escape—only a
+byte-count/hash/truncation receipt is retained.
+Private PPTX and directory workers emit one closed, path-neutral stderr
+diagnostic for outer failures instead of exiting silently (partial #203).
+The dedicated PPTX preclaim resolver no longer leaves unreachable legacy
+source-root branches in the generic PDF and source-inspection paths (#208).
+PPTX preclaims now reject Windows current-drive/per-drive-relative locators and
+device namespaces before host path normalization, preventing a saved locator
+from selecting bytes through process-specific drive state (#209).
+The picture-area render decision has one script-owned threshold shared by the
+producer and validator; schema prose points to that authority instead of
+copying its predicate (#205).
+Supervisor receipts now distinguish request, result, dependency, monitor,
+identity, containment, and configured resource-limit causes with
+operation-neutral diagnostics (#188). Successful evidence is unchanged, so no
+schema/pipeline migration is required. Ambiguous historical failure/skip
+receipts remain readable but are never relabeled; rerun ingress to regenerate
+them under the current mapping. Response-frame encoding now reports an output
+limit rather than mislabeling it as an oversized request.
+Supervisor tests now reuse the canonical imported module instead of replacing
+it during collection, preserving dataclass and exception identity across test
+orders (#206).
+If psutil observes a root identity disappearing during a normal fast exit, Popen
+gets at most the remaining sample interval to confirm and reap that exact child;
+a still-live child, descendant leak, or non-ESRCH cleanup failure remains fatal.
+
+The stdlib-only runtime checker advances to report schema v2, publishes each
+lane's `required_module_versions`, and rejects any PPTX supervision runtime that
+does not provide exactly `psutil==7.2.2`.
+
+The public extractor can no longer fall back to owner-process parsing, including
+OCR and rendered-PDF inspection. A hard 2 GiB source ceiling admits known large
+hydrated decks while preserving an explicit per-artifact bound. Directory mode
+is explicit (`--directory`) and moves root validation plus recursive enumeration
+behind a separate authenticated, termination-safe worker, so the owner never stats
+or scans the supplied root. Its strict root-relative manifest rejects symlinks,
+directory reparse points, unknown Windows redirects, offline/recall Cloud Files,
+unusable/colliding directory identities, and `~$` Office locks while admitting
+supported hydrated Cloud Files leaves. File-cap truncation emits a root-level
+incomplete-scan receipt; discovery and extraction share one deadline and final JSON
+accounting includes the exact wrapper/newline. Race-free root/leaf handle binding is
+tracked separately by #176. The directory CLI now accepts the exact configured
+template-skip array, including an empty array, without injecting a hard-coded
+`template` pattern; vault-ingress forwards that database configuration explicitly.
+Extraction behavior advances from pipeline 1.2.0 to
+1.4.0 and field schema v4 makes native text-frame, graphic-frame, picture-asset,
+and background-asset obligations explicit so partial worker output cannot silently
+downgrade catalog evidence. Known shape/graphic types are cross-bound to their
+capabilities and DrawingML URIs; picture/background OCR and recovery receipts bind
+the exact package part and digest; slide ordinals bind canonical slide parts and
+timing provenance; and duplicate, ASCII-case-equivalent, or segment-prefix
+package-part names, noncanonical OPC escapes/segments, and duplicate relationship
+IDs are rejected before parsing. Content-type defaults/overrides and presentation
+slide identities are likewise required to be unambiguous.
+Names, URIs, relationship IDs, nesting, member counts, and expanded archive bytes
+are normalized or stopped at documented bounds before entering the catalog.
+Empty image parts now produce self-consistent unavailable-asset evidence. Consumer
+instructions authorize affirmative OCR only from each receipt whose own
+`trustworthy_text` is true; compatibility aggregates remain review-only.
+Graphic frames with a missing/empty URI remain visible as generic unsupported
+evidence instead of producing an internally invalid extraction record.
+Repeated references to one package asset must agree on a single SHA-256 across
+picture, background, and recovery bindings.
+
 ## 0.20.4 — 2026-08-03
 
 ### fix(vault-ingress) — make damaged native-deck evidence fail closed (#151)

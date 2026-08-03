@@ -17,13 +17,77 @@ from pptx.util import Inches, Pt
 from conftest import make_deck
 
 
+def _use_in_process_directory_discovery(pptx_extraction, monkeypatch):
+    """Keep batch unit tests fast while production discovery stays supervised."""
+
+    def discover(directory, patterns, *, deadline):
+        assert deadline > 0
+        files, skipped, _started = pptx_extraction._discover_pptx_files(
+            directory, patterns
+        )
+        return [relative for _path, relative in files], skipped
+
+    monkeypatch.setattr(
+        pptx_extraction,
+        "_run_supervised_directory_discovery",
+        discover,
+    )
+
+
 def test_slide_count(pptx_extraction, tmp_path):
     prs = make_deck(5)
     path = str(tmp_path / "deck.pptx")
     prs.save(path)
 
-    result = pptx_extraction.extract_pptx(path)
+    result = pptx_extraction._extract_pptx_in_process(path)
     assert result["slide_count"] == 5
+
+
+def test_public_extractor_routes_only_through_supervisor(
+    pptx_extraction,
+    monkeypatch,
+):
+    calls = []
+
+    def supervised(path, **options):
+        calls.append((path, options))
+        return {"slide_count": 7}
+
+    monkeypatch.setattr(
+        pptx_extraction,
+        "run_supervised_pptx_extraction",
+        supervised,
+    )
+    result = pptx_extraction.extract_pptx(
+        "deck.pptx",
+        ocr=False,
+        rendered_pdf_path="deck.pdf",
+        inspected_page_ranges=[[1, 2]],
+    )
+
+    assert result == {"slide_count": 7}
+    assert calls == [
+        (
+            "deck.pptx",
+            {
+                "ocr": False,
+                "rendered_pdf_path": "deck.pdf",
+                "inspected_page_ranges": [[1, 2]],
+            },
+        )
+    ]
+
+
+def test_public_extractor_rejects_in_process_callable(
+    pptx_extraction,
+):
+    with pytest.raises(pptx_extraction.PptxEvidenceError) as caught:
+        pptx_extraction.extract_pptx(
+            "deck.pptx",
+            ocr_fn=lambda _blobs: "not serializable",
+        )
+
+    assert caught.value.reason_code == "pptx_evidence_invalid"
 
 
 def test_slide_dimensions(pptx_extraction, tmp_path):
@@ -31,7 +95,7 @@ def test_slide_dimensions(pptx_extraction, tmp_path):
     path = str(tmp_path / "deck.pptx")
     prs.save(path)
 
-    result = pptx_extraction.extract_pptx(path)
+    result = pptx_extraction._extract_pptx_in_process(path)
     # Default slide dimensions should be reasonable
     assert result["slide_width_inches"] > 0
     assert result["slide_height_inches"] > 0
@@ -45,7 +109,7 @@ def test_shape_text_extraction(pptx_extraction, tmp_path):
     path = str(tmp_path / "deck.pptx")
     prs.save(path)
 
-    result = pptx_extraction.extract_pptx(path)
+    result = pptx_extraction._extract_pptx_in_process(path)
     slide_data = result["per_slide_visual"][0]
     assert "Hello World" in slide_data["text_content_preview"]
 
@@ -63,7 +127,7 @@ def test_font_tracking(pptx_extraction, tmp_path):
     path = str(tmp_path / "deck.pptx")
     prs.save(path)
 
-    result = pptx_extraction.extract_pptx(path)
+    result = pptx_extraction._extract_pptx_in_process(path)
     assert "Arial" in result["global_design"]["fonts_used"]
 
 
@@ -79,6 +143,33 @@ def test_skip_conflict_copy(pptx_extraction):
     assert "conflict" in reason
 
 
+@pytest.mark.parametrize(
+    "reason_code",
+    [
+        "pptx_artifact_changed",
+        "pptx_dependency_unavailable",
+        "pptx_probe_containment_unavailable",
+        "pptx_probe_crash",
+        "pptx_probe_malformed_result",
+        "pptx_probe_monitor_identity_changed",
+        "pptx_probe_monitor_unavailable",
+        "pptx_probe_request_oversized",
+        "pptx_probe_resource_unavailable",
+        "pptx_probe_result_oversized",
+        "pptx_probe_start_failure",
+        "pptx_probe_timeout",
+    ],
+)
+def test_batch_preserves_current_and_legacy_supervisor_reasons(
+    pptx_extraction,
+    reason_code: str,
+) -> None:
+    assert (
+        pptx_extraction._batch_error_reason(SimpleNamespace(reason_code=reason_code))
+        == reason_code
+    )
+
+
 def test_skip_custom_pattern(pptx_extraction):
     skip, reason = pptx_extraction.should_skip("my-template.pptx", ["template"])
     assert skip is True
@@ -89,12 +180,949 @@ def test_no_skip_normal_file(pptx_extraction):
     assert skip is False
 
 
+def test_skip_office_lock_file(pptx_extraction):
+    skip, reason = pptx_extraction.should_skip("~$great-talk.pptx", [])
+    assert skip is True
+    assert reason == "Office lock file"
+
+
+def test_bounded_discovery_rejects_symlinks_and_is_deterministic(
+    pptx_extraction,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    nested = root / "nested"
+    nested.mkdir(parents=True)
+    (root / "z.pptx").write_bytes(b"z")
+    (nested / "a.pptx").write_bytes(b"a")
+    outside = tmp_path / "outside.pptx"
+    outside.write_bytes(b"outside")
+    (root / "linked.pptx").symlink_to(outside)
+    (root / "linked-directory").symlink_to(tmp_path, target_is_directory=True)
+
+    first, first_skipped, _started = pptx_extraction._discover_pptx_files(root, [])
+    second, second_skipped, _started = pptx_extraction._discover_pptx_files(root, [])
+
+    assert [item[1] for item in first] == ["z.pptx", "nested/a.pptx"]
+    assert [item[1] for item in second] == ["z.pptx", "nested/a.pptx"]
+    assert (
+        first_skipped
+        == second_skipped
+        == [
+            {
+                "path": "linked-directory",
+                "reason": "pptx_batch_symlink_rejected",
+            },
+            {
+                "path": "linked.pptx",
+                "reason": "pptx_batch_symlink_rejected",
+            },
+        ]
+    )
+
+
+def test_bounded_discovery_rejects_symlink_root(pptx_extraction, tmp_path):
+    root = tmp_path / "decks"
+    root.mkdir()
+    linked_root = tmp_path / "linked-root"
+    linked_root.symlink_to(root, target_is_directory=True)
+
+    with pytest.raises(pptx_extraction.PptxEvidenceError) as caught:
+        pptx_extraction._discover_pptx_files(linked_root, [])
+
+    assert caught.value.reason_code == "pptx_batch_root_invalid"
+
+
+def test_bounded_discovery_rejects_windows_reparse_root(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    root.mkdir()
+    root_inode = root.lstat().st_ino
+    monkeypatch.setattr(
+        pptx_extraction,
+        "_is_windows_reparse_point",
+        lambda value: value.st_ino == root_inode,
+    )
+
+    with pytest.raises(pptx_extraction.PptxEvidenceError) as caught:
+        pptx_extraction._discover_pptx_files(root, [])
+
+    assert caught.value.reason_code == "pptx_batch_root_invalid"
+
+
+def test_bounded_discovery_rejects_reparse_directory_and_leaf(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    junction = root / "junction"
+    junction.mkdir(parents=True)
+    leaf = root / "cloud.pptx"
+    leaf.write_bytes(b"cloud")
+    rejected_inodes = {junction.lstat().st_ino, leaf.lstat().st_ino}
+    monkeypatch.setattr(
+        pptx_extraction,
+        "_is_windows_reparse_point",
+        lambda value: value.st_ino in rejected_inodes,
+    )
+
+    discovered, skipped, _started = pptx_extraction._discover_pptx_files(root, [])
+
+    assert discovered == []
+    assert skipped == [
+        {"path": "cloud.pptx", "reason": "pptx_batch_reparse_point_rejected"},
+        {"path": "junction", "reason": "pptx_batch_reparse_point_rejected"},
+    ]
+
+
+def test_windows_leaf_policy_accepts_only_hydrated_supported_cloud_tags(
+    pptx_extraction,
+):
+    hydrated = SimpleNamespace(
+        st_file_attributes=pptx_extraction._WINDOWS_REPARSE_POINT_ATTRIBUTE,
+        st_reparse_tag=next(iter(pptx_extraction._WINDOWS_CLOUD_REPARSE_TAGS)),
+    )
+    offline = SimpleNamespace(
+        st_file_attributes=(
+            pptx_extraction._WINDOWS_REPARSE_POINT_ATTRIBUTE
+            | pptx_extraction._WINDOWS_OFFLINE_ATTRIBUTE
+        ),
+        st_reparse_tag=hydrated.st_reparse_tag,
+    )
+    recalling = SimpleNamespace(
+        st_file_attributes=(
+            pptx_extraction._WINDOWS_REPARSE_POINT_ATTRIBUTE
+            | pptx_extraction._WINDOWS_RECALL_ON_DATA_ACCESS_ATTRIBUTE
+        ),
+        st_reparse_tag=hydrated.st_reparse_tag,
+    )
+    unknown_redirect = SimpleNamespace(
+        st_file_attributes=pptx_extraction._WINDOWS_REPARSE_POINT_ATTRIBUTE,
+        st_reparse_tag=0xA0000003,
+    )
+
+    assert pptx_extraction._windows_leaf_rejection_reason(hydrated) is None
+    assert (
+        pptx_extraction._windows_leaf_rejection_reason(offline)
+        == "pptx_batch_cloud_placeholder_unavailable"
+    )
+    assert (
+        pptx_extraction._windows_leaf_rejection_reason(recalling)
+        == "pptx_batch_cloud_placeholder_unavailable"
+    )
+    assert (
+        pptx_extraction._windows_leaf_rejection_reason(unknown_redirect)
+        == "pptx_batch_reparse_point_rejected"
+    )
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        {
+            "schema_version": 1,
+            "kind": "directory",
+            "files": [],
+            "skipped": [],
+            "unexpected": True,
+        },
+        {
+            "schema_version": True,
+            "kind": "directory",
+            "files": [],
+            "skipped": [],
+        },
+        {
+            "schema_version": 1,
+            "kind": "directory",
+            "files": [{"path": "deck.pptx"}, {"path": "deck.pptx"}],
+            "skipped": [],
+        },
+        {
+            "schema_version": 1,
+            "kind": "directory",
+            "files": [{"path": "../deck.pptx"}],
+            "skipped": [],
+        },
+        {
+            "schema_version": 1,
+            "kind": "directory",
+            "files": [{"path": "/outside/deck.pptx"}],
+            "skipped": [],
+        },
+        {
+            "schema_version": 1,
+            "kind": "directory",
+            "files": [{"path": "not-a-deck.txt"}],
+            "skipped": [],
+        },
+        {
+            "schema_version": 1,
+            "kind": "directory",
+            "files": [{"path": "~$locked.pptx"}],
+            "skipped": [],
+        },
+        {
+            "schema_version": 1,
+            "kind": "directory",
+            "files": [],
+            "skipped": [{"path": ".", "reason": "pptx_batch_unknown_typo"}],
+        },
+        {
+            "schema_version": 1,
+            "kind": "directory",
+            "files": [],
+            "skipped": [{"path": ".", "reason": []}],
+        },
+        {
+            "schema_version": 1,
+            "kind": "directory",
+            "files": [{"path": "deck.pptx"}],
+            "skipped": [{"path": "deck.pptx", "reason": "pptx_batch_skip_pattern"}],
+        },
+        {
+            "schema_version": 1,
+            "kind": "directory",
+            "files": [],
+            "skipped": [
+                {"path": ".", "reason": "pptx_batch_wall_limit"},
+                {"path": ".", "reason": "pptx_batch_wall_limit"},
+            ],
+        },
+    ],
+)
+def test_directory_manifest_rejects_malformed_duplicate_or_noncanonical_data(
+    pptx_extraction,
+    manifest,
+):
+    with pytest.raises(pptx_extraction.PptxEvidenceError) as caught:
+        pptx_extraction._decode_directory_manifest(manifest)
+
+    assert caught.value.reason_code == "pptx_batch_manifest_invalid"
+
+
+def test_directory_manifest_allows_distinct_root_findings(pptx_extraction):
+    manifest = {
+        "schema_version": 1,
+        "kind": "directory",
+        "files": [],
+        "skipped": [
+            {"path": ".", "reason": "pptx_batch_wall_limit"},
+            {"path": ".", "reason": "pptx_batch_entry_limit"},
+        ],
+    }
+
+    assert pptx_extraction._decode_directory_manifest(manifest) == (
+        [],
+        manifest["skipped"],
+    )
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="backslash is a path separator rather than a legal filename",
+)
+def test_directory_discovery_deduplicates_collapsed_invalid_path_receipts(
+    pptx_extraction,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    root.mkdir()
+    (root / "one\\bad.pptx").write_bytes(b"one")
+    (root / "two\\bad.pptx").write_bytes(b"two")
+
+    files, skipped, _started = pptx_extraction._discover_pptx_files(root, [])
+    manifest = {
+        "schema_version": 1,
+        "kind": "directory",
+        "files": [{"path": relative} for _path, relative in files],
+        "skipped": skipped,
+    }
+
+    assert files == []
+    assert skipped == [{"path": ".", "reason": "pptx_batch_path_invalid"}]
+    assert pptx_extraction._decode_directory_manifest(manifest) == ([], skipped)
+
+
+def test_directory_owner_never_touches_root_before_authenticated_manifest(
+    pptx_extraction,
+    monkeypatch,
+    capsys,
+):
+    root = "/untrusted/root-that-need-not-exist"
+    calls = []
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("directory owner touched the filesystem")
+
+    for name in ("lstat", "stat", "is_dir", "is_file", "resolve"):
+        monkeypatch.setattr(pptx_extraction.Path, name, forbidden)
+    monkeypatch.setattr(pptx_extraction.os, "scandir", forbidden)
+    monkeypatch.setattr(pptx_extraction.os, "lstat", forbidden)
+
+    def authenticated_worker(
+        command, operation, generations, payload, limits, **kwargs
+    ):
+        calls.append((command, operation, generations, payload, limits, kwargs))
+        return SimpleNamespace(
+            payload={
+                "schema_version": 1,
+                "kind": "directory",
+                "files": [{"path": "nested/deck.pptx"}],
+                "skipped": [],
+            }
+        )
+
+    monkeypatch.setattr(
+        pptx_extraction, "run_authenticated_worker", authenticated_worker
+    )
+    monkeypatch.setattr(
+        pptx_extraction,
+        "extract_pptx",
+        lambda path, **_options: {
+            "pptx_path": str(path),
+            "slide_count": 1,
+            "input_fingerprint": {"size_bytes": 1},
+        },
+    )
+
+    assert pptx_extraction.main(["--directory", root, "--no-ocr"]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert json.loads(captured.out)["results"][0]["pptx_path"] == "nested/deck.pptx"
+    command, operation, generations, payload, limits, kwargs = calls[0]
+    assert command == [
+        sys.executable,
+        pptx_extraction.os.path.abspath(pptx_extraction.__file__),
+        pptx_extraction._DIRECTORY_WORKER_FLAG,
+    ]
+    assert operation == "pptx_resolve_input"
+    assert generations == {}
+    assert payload == {"root_path": root, "skip_patterns": []}
+    assert limits.profile_id == "pptx-directory-discovery-v1"
+    assert kwargs["schema_generation"] == pptx_extraction.SCHEMA_VERSION
+    assert kwargs["pipeline_generation"] == pptx_extraction.PIPELINE_VERSION
+
+
+def test_directory_cli_passes_only_the_exact_configured_skip_patterns(
+    pptx_extraction,
+    monkeypatch,
+    capsys,
+):
+    root = "/untrusted/root-that-need-not-exist"
+    captured_payload = {}
+
+    def authenticated_worker(
+        _command, _operation, _generations, payload, _limits, **_kwargs
+    ):
+        captured_payload.update(payload)
+        return SimpleNamespace(
+            payload={
+                "schema_version": 1,
+                "kind": "directory",
+                "files": [],
+                "skipped": [],
+            }
+        )
+
+    monkeypatch.setattr(
+        pptx_extraction, "run_authenticated_worker", authenticated_worker
+    )
+
+    assert (
+        pptx_extraction.main(
+            [
+                "--directory",
+                root,
+                "--skip=draft",
+                "--skip=-speaker-master",
+                "--no-ocr",
+            ]
+        )
+        == 0
+    )
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert json.loads(captured.out) == {"results": [], "skipped": []}
+    assert captured_payload == {
+        "root_path": root,
+        "skip_patterns": ["draft", "-speaker-master"],
+    }
+
+
+def test_directory_relative_root_is_lexically_absolutized_before_supervision(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.chdir(tmp_path)
+    captured = {}
+
+    def authenticated_worker(
+        _command, _operation, _generations, payload, _limits, **kwargs
+    ):
+        captured["payload"] = payload
+        captured["sensitive_values"] = kwargs["sensitive_values"]
+        return SimpleNamespace(
+            payload={
+                "schema_version": 1,
+                "kind": "directory",
+                "files": [],
+                "skipped": [],
+            }
+        )
+
+    monkeypatch.setattr(
+        pptx_extraction,
+        "run_authenticated_worker",
+        authenticated_worker,
+    )
+
+    files, skipped = pptx_extraction._run_supervised_directory_discovery(
+        ".",
+        [],
+        deadline=pptx_extraction.time.monotonic() + 30,
+    )
+
+    assert files == []
+    assert skipped == []
+    assert captured["payload"]["root_path"] == str(tmp_path)
+    assert captured["sensitive_values"] == (str(tmp_path),)
+
+
+def test_batch_reuses_canonical_root_if_working_directory_changes(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    original = tmp_path / "original"
+    root = original / "decks"
+    other = tmp_path / "other"
+    root.mkdir(parents=True)
+    other.mkdir()
+    monkeypatch.chdir(original)
+
+    def discover(directory, _patterns, *, deadline):
+        assert directory == root
+        assert deadline > 0
+        monkeypatch.chdir(other)
+        return ["deck.pptx"], []
+
+    observed = []
+
+    def extract(path, **_options):
+        observed.append(path)
+        return {
+            "pptx_path": str(path),
+            "slide_count": 1,
+            "input_fingerprint": {"size_bytes": 1},
+        }
+
+    monkeypatch.setattr(
+        pptx_extraction,
+        "_run_supervised_directory_discovery",
+        discover,
+    )
+    monkeypatch.setattr(pptx_extraction, "extract_pptx", extract)
+
+    results, skipped = pptx_extraction.batch_extract("decks", [], ocr=False)
+
+    assert skipped == []
+    assert observed == [root / "deck.pptx"]
+    assert results[0]["pptx_path"] == "deck.pptx"
+
+
+def test_directory_skip_pattern_iterators_are_rejected_without_consumption(
+    pptx_extraction,
+    monkeypatch,
+):
+    class ExplodingIterator:
+        def __iter__(self):
+            raise AssertionError("owner consumed an unbounded iterator")
+
+    monkeypatch.setattr(
+        pptx_extraction,
+        "run_authenticated_worker",
+        lambda *_args, **_kwargs: pytest.fail("invalid request started worker"),
+    )
+
+    with pytest.raises(pptx_extraction.PptxEvidenceError) as caught:
+        pptx_extraction._run_supervised_directory_discovery(
+            "/lexical/root",
+            ExplodingIterator(),
+            deadline=pptx_extraction.time.monotonic() + 30,
+        )
+
+    assert caught.value.reason_code == "pptx_batch_request_invalid"
+
+
+def test_directory_discovery_timeout_blocks_every_extraction(
+    pptx_extraction,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        pptx_extraction,
+        "run_authenticated_worker",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            pptx_extraction.SupervisorError("worker_timeout")
+        ),
+    )
+    monkeypatch.setattr(
+        pptx_extraction,
+        "extract_pptx",
+        lambda *_args, **_kwargs: pytest.fail("timeout launched an extractor"),
+    )
+
+    results, skipped = pptx_extraction.batch_extract(
+        "/blocked/discovery", [], ocr=False
+    )
+
+    assert results == []
+    assert skipped == [{"path": ".", "reason": "pptx_batch_discovery_timeout"}]
+
+
+@pytest.mark.parametrize(
+    ("supervisor_reason", "expected_reason"),
+    [
+        ("worker_memory_limit_exceeded", "pptx_batch_discovery_resource_unavailable"),
+        ("worker_start_failed", "pptx_batch_discovery_start_failure"),
+        ("worker_exit", "pptx_batch_discovery_worker_failure"),
+        (
+            "worker_response_authentication_failed",
+            "pptx_batch_discovery_protocol_invalid",
+        ),
+    ],
+)
+def test_directory_supervisor_failures_keep_closed_reason_distinctions(
+    pptx_extraction,
+    monkeypatch,
+    supervisor_reason,
+    expected_reason,
+):
+    monkeypatch.setattr(
+        pptx_extraction,
+        "run_authenticated_worker",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            pptx_extraction.SupervisorError(supervisor_reason)
+        ),
+    )
+
+    results, skipped = pptx_extraction.batch_extract(
+        "/lexical/root",
+        [],
+        ocr=False,
+    )
+
+    assert results == []
+    assert skipped == [{"path": ".", "reason": expected_reason}]
+
+
+def test_directory_identity_zero_is_reported_instead_of_silently_deduplicated(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    root.mkdir()
+    monkeypatch.setattr(
+        pptx_extraction,
+        "_usable_directory_identity",
+        lambda _value: None,
+    )
+
+    discovered, skipped, _started = pptx_extraction._discover_pptx_files(root, [])
+
+    assert discovered == []
+    assert skipped == [
+        {"path": ".", "reason": "pptx_batch_directory_identity_unavailable"}
+    ]
+
+
+def test_directory_identity_collision_is_reported_not_silently_omitted(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    nested = root / "nested"
+    nested.mkdir(parents=True)
+    root_identity = (root.lstat().st_dev, root.lstat().st_ino)
+    original = pptx_extraction._usable_directory_identity
+
+    def colliding_identity(value):
+        identity = original(value)
+        if identity == (nested.lstat().st_dev, nested.lstat().st_ino):
+            return root_identity
+        return identity
+
+    monkeypatch.setattr(
+        pptx_extraction,
+        "_usable_directory_identity",
+        colliding_identity,
+    )
+
+    discovered, skipped, _started = pptx_extraction._discover_pptx_files(root, [])
+
+    assert discovered == []
+    assert skipped == [
+        {
+            "path": "nested",
+            "reason": "pptx_batch_directory_identity_collision",
+        }
+    ]
+
+
+def test_batch_continues_after_one_supervised_failure_with_relative_paths(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    root.mkdir()
+    (root / "a-bad.pptx").write_bytes(b"bad")
+    (root / "b-good.pptx").write_bytes(b"good")
+    _use_in_process_directory_discovery(pptx_extraction, monkeypatch)
+
+    def fake_extract(
+        path,
+        *,
+        trusted_root,
+        ocr,
+        source_size_limit_bytes,
+        deadline_monotonic,
+    ):
+        assert trusted_root == root
+        assert ocr is False
+        assert source_size_limit_bytes > 0
+        assert deadline_monotonic > 0
+        if path.name == "a-bad.pptx":
+            raise pptx_extraction.PptxEvidenceError(
+                "synthetic path must stay private",
+                reason_code="pptx_probe_timeout",
+            )
+        return {
+            "pptx_path": str(path),
+            "slide_count": 1,
+            "input_fingerprint": {"size_bytes": path.stat().st_size},
+        }
+
+    monkeypatch.setattr(pptx_extraction, "extract_pptx", fake_extract)
+    results, skipped = pptx_extraction.batch_extract(root, [], ocr=False)
+
+    assert results == [
+        {
+            "pptx_path": "b-good.pptx",
+            "slide_count": 1,
+            "input_fingerprint": {"size_bytes": 4},
+        }
+    ]
+    assert skipped == [
+        {
+            "path": "a-bad.pptx",
+            "reason": "pptx_probe_timeout",
+        }
+    ]
+    assert str(root) not in json.dumps({"results": results, "skipped": skipped})
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="this deterministic swap uses POSIX directory symlinks",
+)
+def test_batch_rejects_intermediate_directory_swapped_after_discovery(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    nested = root / "nested"
+    nested.mkdir(parents=True)
+    make_deck(1).save(nested / "deck.pptx")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    make_deck(2).save(outside / "deck.pptx")
+    parked = tmp_path / "original-nested"
+
+    def discover(directory, _patterns, *, deadline):
+        assert directory == root
+        assert deadline > 0
+        nested.rename(parked)
+        nested.symlink_to(outside, target_is_directory=True)
+        return ["nested/deck.pptx"], []
+
+    monkeypatch.setattr(
+        pptx_extraction,
+        "_run_supervised_directory_discovery",
+        discover,
+    )
+
+    results, skipped = pptx_extraction.batch_extract(root, [], ocr=False)
+
+    assert results == []
+    assert skipped == [
+        {
+            "path": "nested/deck.pptx",
+            "reason": "pptx_artifact_unavailable",
+        }
+    ]
+
+
+def test_batch_file_budget_stops_before_extra_worker(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    root.mkdir()
+    (root / "a.pptx").write_bytes(b"a")
+    (root / "b.pptx").write_bytes(b"b")
+    monkeypatch.setattr(pptx_extraction, "_BATCH_MAX_FILES", 1)
+    _use_in_process_directory_discovery(pptx_extraction, monkeypatch)
+    calls = []
+
+    def fake_extract(
+        path,
+        *,
+        trusted_root,
+        ocr,
+        source_size_limit_bytes,
+        deadline_monotonic,
+    ):
+        assert trusted_root == root
+        calls.append(path.name)
+        return {
+            "pptx_path": str(path),
+            "slide_count": 1,
+            "input_fingerprint": {"size_bytes": path.stat().st_size},
+        }
+
+    monkeypatch.setattr(pptx_extraction, "extract_pptx", fake_extract)
+    results, skipped = pptx_extraction.batch_extract(root, [], ocr=False)
+
+    assert calls == ["a.pptx"]
+    assert results[0]["pptx_path"] == "a.pptx"
+    assert skipped == [
+        {
+            "path": "b.pptx",
+            "reason": "pptx_batch_file_limit",
+        },
+        {
+            "path": ".",
+            "reason": "pptx_batch_scan_incomplete_file_limit",
+        },
+    ]
+
+
+def test_directory_entry_budget_stops_before_sorting_unbounded_listing(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    root.mkdir()
+    (root / "a.pptx").write_bytes(b"a")
+    (root / "b.pptx").write_bytes(b"b")
+    monkeypatch.setattr(pptx_extraction, "_BATCH_MAX_ENTRIES", 1)
+
+    discovered, skipped, _started = pptx_extraction._discover_pptx_files(root, [])
+
+    assert discovered == []
+    assert skipped == [{"path": ".", "reason": "pptx_batch_entry_limit"}]
+
+
+def test_batch_input_budget_uses_launched_generation_not_discovery_size(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    root.mkdir()
+    for name in ("a.pptx", "b.pptx", "c.pptx"):
+        (root / name).write_bytes(b"x")
+    monkeypatch.setattr(pptx_extraction, "_BATCH_MAX_INPUT_BYTES", 5)
+    _use_in_process_directory_discovery(pptx_extraction, monkeypatch)
+    calls = []
+
+    def fake_extract(
+        path,
+        *,
+        trusted_root,
+        ocr,
+        source_size_limit_bytes,
+        deadline_monotonic,
+    ):
+        assert trusted_root == root
+        calls.append((path.name, source_size_limit_bytes))
+        if path.name == "a.pptx":
+            # The admitted generation grew after discovery; charge the exact
+            # worker-bound size rather than the stale one-byte directory stat.
+            return {
+                "pptx_path": str(path),
+                "slide_count": 1,
+                "input_fingerprint": {"size_bytes": 4},
+            }
+        raise pptx_extraction.PptxEvidenceError(
+            "source no longer fits the exact remaining bytes",
+            reason_code="pptx_batch_input_limit",
+        )
+
+    monkeypatch.setattr(pptx_extraction, "extract_pptx", fake_extract)
+    results, skipped = pptx_extraction.batch_extract(root, [], ocr=False)
+
+    assert calls == [("a.pptx", 5), ("b.pptx", 1)]
+    assert results[0]["input_fingerprint"]["size_bytes"] == 4
+    assert skipped == [
+        {"path": "b.pptx", "reason": "pptx_batch_input_limit"},
+        {"path": "c.pptx", "reason": "pptx_batch_input_limit"},
+    ]
+
+
+def test_batch_charges_admitted_generation_reported_by_failed_launch(
+    pptx_extraction,
+    monkeypatch,
+):
+    monkeypatch.setattr(pptx_extraction, "_BATCH_MAX_INPUT_BYTES", 5)
+    monkeypatch.setattr(
+        pptx_extraction,
+        "_run_supervised_directory_discovery",
+        lambda _root, _patterns, *, deadline: (
+            ["a.pptx", "b.pptx", "c.pptx"],
+            [],
+        ),
+    )
+    calls = []
+
+    def fake_extract(path, **options):
+        calls.append((path.name, options["source_size_limit_bytes"]))
+        if path.name == "a.pptx":
+            raise pptx_extraction.PptxEvidenceError(
+                "parse failed after admission",
+                reason_code="pptx_evidence_invalid",
+                details={"admitted_source_size_bytes": 4},
+            )
+        raise pptx_extraction.PptxEvidenceError(
+            "remaining byte budget is smaller than the admitted generation",
+            reason_code="pptx_batch_input_limit",
+        )
+
+    monkeypatch.setattr(pptx_extraction, "extract_pptx", fake_extract)
+
+    results, skipped = pptx_extraction.batch_extract("/lexical/root", [], ocr=False)
+
+    assert results == []
+    assert calls == [("a.pptx", 5), ("b.pptx", 1)]
+    assert skipped == [
+        {"path": "a.pptx", "reason": "pptx_evidence_invalid"},
+        {"path": "b.pptx", "reason": "pptx_batch_input_limit"},
+        {"path": "c.pptx", "reason": "pptx_batch_input_limit"},
+    ]
+
+
+def test_batch_passes_one_absolute_deadline_and_stops_after_wall_exhaustion(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    root.mkdir()
+    first = root / "a.pptx"
+    second = root / "b.pptx"
+    first.write_bytes(b"a")
+    second.write_bytes(b"b")
+    monkeypatch.setattr(pptx_extraction, "_BATCH_MAX_WALL_SECONDS", 10)
+    deadlines = []
+
+    def discover(_directory, _patterns, *, deadline):
+        deadlines.append(deadline)
+        return ["a.pptx", "b.pptx"], []
+
+    monkeypatch.setattr(
+        pptx_extraction, "_run_supervised_directory_discovery", discover
+    )
+    monkeypatch.setattr(pptx_extraction.time, "monotonic", lambda: 100.0)
+    calls = []
+
+    def fake_extract(path, **options):
+        calls.append((path.name, options["deadline_monotonic"]))
+        raise pptx_extraction.PptxEvidenceError(
+            "deadline exhausted",
+            reason_code="pptx_batch_wall_limit",
+        )
+
+    monkeypatch.setattr(pptx_extraction, "extract_pptx", fake_extract)
+    results, skipped = pptx_extraction.batch_extract(root, [], ocr=False)
+
+    assert results == []
+    assert deadlines == [110.0]
+    assert calls == [("a.pptx", 110.0)]
+    assert skipped == [
+        {"path": "a.pptx", "reason": "pptx_batch_wall_limit"},
+        {"path": "b.pptx", "reason": "pptx_batch_wall_limit"},
+    ]
+
+
+def test_batch_compact_output_budget_includes_wrapper_and_skips(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    root.mkdir()
+    lock = root / "~$locked.pptx"
+    lock.write_bytes(b"lock")
+    expected_skips = [
+        {"path": "~$locked.pptx", "reason": "pptx_batch_office_lock_file"}
+    ]
+    exact = pptx_extraction._encode_batch_output([], expected_skips) + b"\n"
+    monkeypatch.setattr(pptx_extraction, "_BATCH_MAX_OUTPUT_BYTES", len(exact))
+    _use_in_process_directory_discovery(pptx_extraction, monkeypatch)
+
+    results, skipped = pptx_extraction.batch_extract(root, [], ocr=False)
+
+    assert results == []
+    assert skipped == expected_skips
+    assert len(pptx_extraction._encode_batch_output(results, skipped)) + 1 == len(exact)
+
+
+def test_directory_cli_emits_the_same_compact_bytes_budgeted_by_batch(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    root = tmp_path / "decks"
+    root.mkdir()
+    (root / "~$locked.pptx").write_bytes(b"lock")
+    expected = (
+        pptx_extraction._encode_batch_output(
+            [],
+            [{"path": "~$locked.pptx", "reason": "pptx_batch_office_lock_file"}],
+        )
+        + b"\n"
+    )
+    monkeypatch.setattr(pptx_extraction, "_BATCH_MAX_OUTPUT_BYTES", len(expected))
+    _use_in_process_directory_discovery(pptx_extraction, monkeypatch)
+
+    assert pptx_extraction.main(["--directory", str(root), "--no-ocr"]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out.encode("utf-8") == expected
+    assert len(captured.out.encode("utf-8")) <= pptx_extraction._BATCH_MAX_OUTPUT_BYTES
+
+
 def test_per_slide_visual_count(pptx_extraction, tmp_path):
     prs = make_deck(3)
     path = str(tmp_path / "deck.pptx")
     prs.save(path)
 
-    result = pptx_extraction.extract_pptx(path)
+    result = pptx_extraction._extract_pptx_in_process(path)
     assert len(result["per_slide_visual"]) == 3
 
 
@@ -104,7 +1132,7 @@ def test_template_layouts_emitted(pptx_extraction, tmp_path):
     path = str(tmp_path / "deck.pptx")
     prs.save(path)
 
-    result = pptx_extraction.extract_pptx(path)
+    result = pptx_extraction._extract_pptx_in_process(path)
     assert "template_layouts" in result
     assert isinstance(result["template_layouts"], list)
 
@@ -144,7 +1172,8 @@ def test_template_layouts_placeholder_shape(pptx_extraction):
     layouts = pptx_extraction.extract_template_layouts(prs)
     # python-pptx stock template has at least one layout with a TITLE placeholder.
     title_layouts = [
-        layout for layout in layouts
+        layout
+        for layout in layouts
         if any(p.get("type") == "TITLE" for p in layout["placeholders"])
     ]
     assert title_layouts, "expected at least one layout with a TITLE placeholder"
@@ -201,15 +1230,18 @@ def _png(path, w=16, h=16):
 def _first_slide(pptx_extraction, prs, tmp_path):
     path = str(tmp_path / "deck.pptx")
     prs.save(path)
-    return pptx_extraction.extract_pptx(path)["per_slide_visual"][0]
+    return pptx_extraction._extract_pptx_in_process(path)["per_slide_visual"][0]
 
 
 def test_picture_area_ratio_full_bleed(pptx_extraction, tmp_path):
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide.shapes.add_picture(
-        _png(tmp_path / "i.png"), 0, 0,
-        width=prs.slide_width, height=prs.slide_height,
+        _png(tmp_path / "i.png"),
+        0,
+        0,
+        width=prs.slide_width,
+        height=prs.slide_height,
     )
     data = _first_slide(pptx_extraction, prs, tmp_path)
     assert data["image_area_ratio"] > 0.99
@@ -217,6 +1249,7 @@ def test_picture_area_ratio_full_bleed(pptx_extraction, tmp_path):
 
 def test_picture_area_ratio_missing_geometry_is_zero(pptx_extraction):
     """Unknown size is not evidence of a large picture."""
+
     class _Shape:
         width = None
         height = None
@@ -229,14 +1262,18 @@ def test_picture_area_ratio_missing_geometry_is_zero(pptx_extraction):
 
 
 def test_full_bleed_image_slide_does_not_assert_absence(
-    pptx_extraction, tmp_path,
+    pptx_extraction,
+    tmp_path,
 ):
     """Issue #116: a full-bleed image slide must not read as 'no text'."""
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide.shapes.add_picture(
-        _png(tmp_path / "i.png"), 0, 0,
-        width=prs.slide_width, height=prs.slide_height,
+        _png(tmp_path / "i.png"),
+        0,
+        0,
+        width=prs.slide_width,
+        height=prs.slide_height,
     )
     data = _first_slide(pptx_extraction, prs, tmp_path)
 
@@ -259,15 +1296,19 @@ def test_text_slide_is_high_confidence(pptx_extraction, tmp_path):
 
 
 def test_small_decorative_image_stays_high_confidence(
-    pptx_extraction, tmp_path,
+    pptx_extraction,
+    tmp_path,
 ):
     """A logo-sized picture cannot be hiding the slide's content."""
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[5])
     slide.shapes.title.text = "Title"
     slide.shapes.add_picture(
-        _png(tmp_path / "i.png"), 0, 0,
-        width=int(prs.slide_width * 0.1), height=int(prs.slide_height * 0.1),
+        _png(tmp_path / "i.png"),
+        0,
+        0,
+        width=int(prs.slide_width * 0.1),
+        height=int(prs.slide_height * 0.1),
     )
     data = _first_slide(pptx_extraction, prs, tmp_path)
     assert data["has_image"] is True
@@ -276,15 +1317,19 @@ def test_small_decorative_image_stays_high_confidence(
 
 
 def test_text_overlay_over_full_bleed_is_still_low_confidence(
-    pptx_extraction, tmp_path,
+    pptx_extraction,
+    tmp_path,
 ):
     """Extracting *some* text is not evidence of extracting *all* of it."""
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[5])
     slide.shapes.title.text = "Overlay"
     slide.shapes.add_picture(
-        _png(tmp_path / "i.png"), 0, 0,
-        width=prs.slide_width, height=prs.slide_height,
+        _png(tmp_path / "i.png"),
+        0,
+        0,
+        width=prs.slide_width,
+        height=prs.slide_height,
     )
     data = _first_slide(pptx_extraction, prs, tmp_path)
     assert data["has_text_frame_shapes"] is True
@@ -301,7 +1346,9 @@ def test_retired_field_is_gone(pptx_extraction, tmp_path):
 
 
 def test_image_background_slide_is_low_confidence(
-    pptx_extraction, tmp_path, monkeypatch,
+    pptx_extraction,
+    tmp_path,
+    monkeypatch,
 ):
     """An image *background* covers the slide and can carry baked-in text.
 
@@ -311,15 +1358,17 @@ def test_image_background_slide_is_low_confidence(
     extraction is covered by the synthetic background fixture below.
     """
     monkeypatch.setattr(
-        pptx_extraction, "get_background_color", lambda slide: (None, "image"),
+        pptx_extraction,
+        "get_background_color",
+        lambda slide: (None, "image"),
     )
     prs = Presentation()
     prs.slides.add_slide(prs.slide_layouts[6])  # no pictures, no text
     data = _first_slide(pptx_extraction, prs, tmp_path)
 
     assert data["background_type"] == "image"
-    assert data["has_image"] is False        # not a PICTURE shape
-    assert data["image_area_ratio"] == 0.0   # no picture geometry at all
+    assert data["has_image"] is False  # not a PICTURE shape
+    assert data["image_area_ratio"] == 0.0  # no picture geometry at all
     assert data["text_extraction_confidence"] == "low"
 
 
@@ -329,6 +1378,7 @@ def test_area_ratio_is_not_rounded_across_the_threshold(pptx_extraction):
     A picture at 0.4996 of the slide is below the threshold; rounding it to
     0.5 first would flip it and make the threshold depend on the rounding.
     """
+
     class _Prs:
         slide_width = 10000
         slide_height = 10000
@@ -339,7 +1389,7 @@ def test_area_ratio_is_not_rounded_across_the_threshold(pptx_extraction):
         height = 10000
 
     ratio = pptx_extraction.picture_area_ratio(_Shape(), _Prs())
-    assert ratio < pptx_extraction._TEXT_BEARING_IMAGE_AREA_RATIO
+    assert ratio < pptx_extraction.PPTX_TEXT_BEARING_IMAGE_AREA_RATIO
     assert ratio == pytest.approx(0.4996)
 
 
@@ -362,7 +1412,7 @@ def _png_with_text(path, text="VENUE PREPARATION", w=800, h=200):
     font = None
     for candidate in (
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  # CI (Ubuntu)
-        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",     # macOS
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",  # macOS
         "/Library/Fonts/Arial Bold.ttf",
     ):
         try:
@@ -375,7 +1425,10 @@ def _png_with_text(path, text="VENUE PREPARATION", w=800, h=200):
         scale = 8
         small = Image.new("RGB", (max(w // scale, 100), max(h // scale, 40)), "white")
         ImageDraw.Draw(small).text(
-            (2, 2), text, fill="black", font=ImageFont.load_default(),
+            (2, 2),
+            text,
+            fill="black",
+            font=ImageFont.load_default(),
         )
         img = small.resize((w, h), Image.Resampling.NEAREST)
     else:
@@ -393,10 +1446,12 @@ def test_normalize_ocr_text(pptx_extraction):
 
 
 def test_ocr_confidence_is_paired_only_with_retained_token(pptx_extraction):
-    text, confidence = pptx_extraction._ocr_text_and_confidence({
-        "text": ["", "VISIBLE"],
-        "conf": [99.0, 12.0],
-    })
+    text, confidence = pptx_extraction._ocr_text_and_confidence(
+        {
+            "text": ["", "VISIBLE"],
+            "conf": [99.0, 12.0],
+        }
+    )
     assert text == "VISIBLE"
     assert confidence == 12.0
 
@@ -412,20 +1467,25 @@ def test_high_confidence_slide_method_is_shapes_only(pptx_extraction, tmp_path):
 
 
 def test_full_bleed_runs_ocr_fn_and_records_inventory(
-    pptx_extraction, tmp_path,
+    pptx_extraction,
+    tmp_path,
 ):
     """Low-confidence picture slide gets ocr_text from the OCR path."""
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide.shapes.add_picture(
-        _png_with_text(tmp_path / "labeled.png"), 0, 0,
-        width=prs.slide_width, height=prs.slide_height,
+        _png_with_text(tmp_path / "labeled.png"),
+        0,
+        0,
+        width=prs.slide_width,
+        height=prs.slide_height,
     )
     path = str(tmp_path / "deck.pptx")
     prs.save(path)
 
-    data = pptx_extraction.extract_pptx(
-        path, ocr_fn=lambda blobs: "VENUE PREPARATION",
+    data = pptx_extraction._extract_pptx_in_process(
+        path,
+        ocr_fn=lambda blobs: "VENUE PREPARATION",
     )["per_slide_visual"][0]
 
     assert data["text_extraction_confidence"] == "low"
@@ -435,7 +1495,8 @@ def test_full_bleed_runs_ocr_fn_and_records_inventory(
 
 
 def test_multi_image_ocr_emits_one_identity_and_outcome_receipt_per_asset(
-    pptx_extraction, tmp_path,
+    pptx_extraction,
+    tmp_path,
 ):
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[6])
@@ -455,34 +1516,35 @@ def test_multi_image_ocr_emits_one_identity_and_outcome_receipt_per_asset(
     )
     path = tmp_path / "multi-image.pptx"
     prs.save(path)
-    outcomes = iter([
-        {
-            "engine": "fixture-ocr",
-            "engine_version": "1.0",
-            "result_status": "text_recovered",
-            "result_confidence": 94.5,
-            "recovered_text": "LEFT LABEL",
-            "trustworthy_text": True,
-            "error": None,
-        },
-        {
-            "engine": "fixture-ocr",
-            "engine_version": "1.0",
-            "result_status": "low_confidence_text",
-            "result_confidence": 31.0,
-            "recovered_text": "RIGHT LAB3L",
-            "trustworthy_text": False,
-            "error": None,
-        },
-    ])
+    outcomes = iter(
+        [
+            {
+                "engine": "fixture-ocr",
+                "engine_version": "1.0",
+                "result_status": "text_recovered",
+                "result_confidence": 94.5,
+                "recovered_text": "LEFT LABEL",
+                "trustworthy_text": True,
+                "error": None,
+            },
+            {
+                "engine": "fixture-ocr",
+                "engine_version": "1.0",
+                "result_status": "low_confidence_text",
+                "result_confidence": 31.0,
+                "recovered_text": "RIGHT LAB3L",
+                "trustworthy_text": False,
+                "error": None,
+            },
+        ]
+    )
 
-    data = pptx_extraction.extract_pptx(
-        str(path), ocr_fn=lambda _blobs: next(outcomes),
+    data = pptx_extraction._extract_pptx_in_process(
+        str(path),
+        ocr_fn=lambda _blobs: next(outcomes),
     )["per_slide_visual"][0]
     channel = next(
-        item
-        for item in data["text_channels"]
-        if item["channel"] == "picture_ocr"
+        item for item in data["text_channels"] if item["channel"] == "picture_ocr"
     )
 
     assert channel["status"] == "partial"
@@ -507,7 +1569,8 @@ def test_multi_image_ocr_emits_one_identity_and_outcome_receipt_per_asset(
 
 
 def test_genuine_empty_ocr_is_distinct_from_asset_failure(
-    pptx_extraction, tmp_path,
+    pptx_extraction,
+    tmp_path,
 ):
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[6])
@@ -521,34 +1584,35 @@ def test_genuine_empty_ocr_is_distinct_from_asset_failure(
         )
     path = tmp_path / "empty-vs-failure.pptx"
     prs.save(path)
-    outcomes = iter([
-        {
-            "engine": "fixture-ocr",
-            "engine_version": "1.0",
-            "result_status": "genuine_empty",
-            "result_confidence": None,
-            "recovered_text": "",
-            "trustworthy_text": False,
-            "error": None,
-        },
-        {
-            "engine": "fixture-ocr",
-            "engine_version": "1.0",
-            "result_status": "failed",
-            "result_confidence": None,
-            "recovered_text": "",
-            "trustworthy_text": False,
-            "error": "engine_error: synthetic failure",
-        },
-    ])
+    outcomes = iter(
+        [
+            {
+                "engine": "fixture-ocr",
+                "engine_version": "1.0",
+                "result_status": "genuine_empty",
+                "result_confidence": None,
+                "recovered_text": "",
+                "trustworthy_text": False,
+                "error": None,
+            },
+            {
+                "engine": "fixture-ocr",
+                "engine_version": "1.0",
+                "result_status": "failed",
+                "result_confidence": None,
+                "recovered_text": "",
+                "trustworthy_text": False,
+                "error": "engine_error: synthetic failure",
+            },
+        ]
+    )
 
-    data = pptx_extraction.extract_pptx(
-        str(path), ocr_fn=lambda _blobs: next(outcomes),
+    data = pptx_extraction._extract_pptx_in_process(
+        str(path),
+        ocr_fn=lambda _blobs: next(outcomes),
     )["per_slide_visual"][0]
     channel = next(
-        item
-        for item in data["text_channels"]
-        if item["channel"] == "picture_ocr"
+        item for item in data["text_channels"] if item["channel"] == "picture_ocr"
     )
 
     assert channel["text"] == ""
@@ -615,11 +1679,9 @@ def test_truncated_picture_is_one_failed_receipt_not_a_deck_abort(
     monkeypatch.setattr(pptx_extraction, "_tesseract_available", True)
     monkeypatch.setattr(pptx_extraction, "_tesseract_version", "fixture-1")
 
-    data = pptx_extraction.extract_pptx(path)["per_slide_visual"][0]
+    data = pptx_extraction._extract_pptx_in_process(path)["per_slide_visual"][0]
     channel = next(
-        item
-        for item in data["text_channels"]
-        if item["channel"] == "picture_ocr"
+        item for item in data["text_channels"] if item["channel"] == "picture_ocr"
     )
 
     assert channel["status"] == "partial"
@@ -643,8 +1705,11 @@ def test_no_ocr_flag_skips_inventory(pptx_extraction, tmp_path):
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide.shapes.add_picture(
-        _png_with_text(tmp_path / "labeled.png"), 0, 0,
-        width=prs.slide_width, height=prs.slide_height,
+        _png_with_text(tmp_path / "labeled.png"),
+        0,
+        0,
+        width=prs.slide_width,
+        height=prs.slide_height,
     )
     path = str(tmp_path / "deck.pptx")
     prs.save(path)
@@ -655,8 +1720,10 @@ def test_no_ocr_flag_skips_inventory(pptx_extraction, tmp_path):
         called.append(blobs)
         return "SHOULD NOT APPEAR"
 
-    data = pptx_extraction.extract_pptx(
-        path, ocr=False, ocr_fn=spy,
+    data = pptx_extraction._extract_pptx_in_process(
+        path,
+        ocr=False,
+        ocr_fn=spy,
     )["per_slide_visual"][0]
 
     assert called == []
@@ -664,9 +1731,7 @@ def test_no_ocr_flag_skips_inventory(pptx_extraction, tmp_path):
     assert data["text_extraction_method"] == "shapes"
     assert data["text_extraction_confidence"] == "low"
     channel = next(
-        item
-        for item in data["text_channels"]
-        if item["channel"] == "picture_ocr"
+        item for item in data["text_channels"] if item["channel"] == "picture_ocr"
     )
     assert channel["status"] == "skipped"
     assert channel["ocr_receipts"][0]["attempted"] is False
@@ -680,15 +1745,19 @@ def test_small_decorative_image_does_not_ocr(pptx_extraction, tmp_path):
     slide = prs.slides.add_slide(prs.slide_layouts[5])
     slide.shapes.title.text = "Title"
     slide.shapes.add_picture(
-        _png_with_text(tmp_path / "logo.png", text="LOGO"), 0, 0,
-        width=int(prs.slide_width * 0.1), height=int(prs.slide_height * 0.1),
+        _png_with_text(tmp_path / "logo.png", text="LOGO"),
+        0,
+        0,
+        width=int(prs.slide_width * 0.1),
+        height=int(prs.slide_height * 0.1),
     )
     path = str(tmp_path / "deck.pptx")
     prs.save(path)
 
     called = []
-    data = pptx_extraction.extract_pptx(
-        path, ocr_fn=lambda blobs: called.append(blobs) or "X",
+    data = pptx_extraction._extract_pptx_in_process(
+        path,
+        ocr_fn=lambda blobs: called.append(blobs) or "X",
     )["per_slide_visual"][0]
 
     assert data["text_extraction_confidence"] == "high"
@@ -701,8 +1770,11 @@ def test_ocr_unavailable_records_method_not_crash(pptx_extraction, tmp_path):
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide.shapes.add_picture(
-        _png(tmp_path / "i.png"), 0, 0,
-        width=prs.slide_width, height=prs.slide_height,
+        _png(tmp_path / "i.png"),
+        0,
+        0,
+        width=prs.slide_width,
+        height=prs.slide_height,
     )
     path = str(tmp_path / "deck.pptx")
     prs.save(path)
@@ -710,14 +1782,14 @@ def test_ocr_unavailable_records_method_not_crash(pptx_extraction, tmp_path):
     def boom(_blobs):
         raise pptx_extraction.OcrUnavailableError("no engine")
 
-    data = pptx_extraction.extract_pptx(path, ocr_fn=boom)["per_slide_visual"][0]
+    data = pptx_extraction._extract_pptx_in_process(path, ocr_fn=boom)[
+        "per_slide_visual"
+    ][0]
     assert data["ocr_text"] == ""
     assert data["text_extraction_method"] == "shapes+ocr_unavailable"
     assert data["text_extraction_confidence"] == "low"
     channel = next(
-        item
-        for item in data["text_channels"]
-        if item["channel"] == "picture_ocr"
+        item for item in data["text_channels"] if item["channel"] == "picture_ocr"
     )
     assert channel["attempted"] is False
     assert channel["engine"] == "tesseract"
@@ -728,11 +1800,15 @@ def test_ocr_unavailable_records_method_not_crash(pptx_extraction, tmp_path):
 
 
 def test_reported_image_background_without_blob_does_not_claim_ocr(
-    pptx_extraction, tmp_path, monkeypatch,
+    pptx_extraction,
+    tmp_path,
+    monkeypatch,
 ):
     """A reported background without actual XML/blob never claims OCR ran."""
     monkeypatch.setattr(
-        pptx_extraction, "get_background_color", lambda slide: (None, "image"),
+        pptx_extraction,
+        "get_background_color",
+        lambda slide: (None, "image"),
     )
     prs = Presentation()
     prs.slides.add_slide(prs.slide_layouts[6])
@@ -740,8 +1816,9 @@ def test_reported_image_background_without_blob_does_not_claim_ocr(
     prs.save(path)
 
     called = []
-    data = pptx_extraction.extract_pptx(
-        path, ocr_fn=lambda blobs: called.append(blobs) or "X",
+    data = pptx_extraction._extract_pptx_in_process(
+        path,
+        ocr_fn=lambda blobs: called.append(blobs) or "X",
     )["per_slide_visual"][0]
 
     assert data["text_extraction_confidence"] == "low"
@@ -764,7 +1841,9 @@ def test_reported_image_background_without_blob_does_not_claim_ocr(
 
 def test_ocr_text_capped(pptx_extraction, monkeypatch):
     monkeypatch.setattr(
-        pptx_extraction, "ocr_image_bytes", lambda blob: "A" * 9000,
+        pptx_extraction,
+        "ocr_image_bytes",
+        lambda blob: "A" * 9000,
     )
     out = pptx_extraction.ocr_picture_blobs([b"x"])
     assert len(out) == pptx_extraction._OCR_TEXT_MAX_CHARS
@@ -793,11 +1872,13 @@ def test_each_ocr_receipt_text_is_capped(pptx_extraction, injected):
     }
     pptx_extraction._run_ocr_channel(
         slide_data,
-        [{
-            "blob": b"exact-asset",
-            "shape_path": ["Picture 1"],
-            "part_name": "ppt/media/image1.png",
-        }],
+        [
+            {
+                "blob": b"exact-asset",
+                "shape_path": ["Picture 1"],
+                "part_name": "ppt/media/image1.png",
+            }
+        ],
         channel="picture_ocr",
         provenance={"source": "embedded_picture_blobs"},
         ocr_fn=lambda _blobs: injected,
@@ -815,11 +1896,13 @@ def test_untrustworthy_recovered_receipt_keeps_channel_partial(pptx_extraction):
     }
     pptx_extraction._run_ocr_channel(
         slide_data,
-        [{
-            "blob": b"exact-asset",
-            "shape_path": ["Picture 1"],
-            "part_name": "ppt/media/image1.png",
-        }],
+        [
+            {
+                "blob": b"exact-asset",
+                "shape_path": ["Picture 1"],
+                "part_name": "ppt/media/image1.png",
+            }
+        ],
         channel="picture_ocr",
         provenance={"source": "embedded_picture_blobs"},
         ocr_fn=lambda _blobs: {
@@ -865,12 +1948,15 @@ def test_full_bleed_with_baked_text_end_to_end(pptx_extraction, tmp_path):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide.shapes.add_picture(
         _png_with_text(tmp_path / "labeled.png", text="VENUE PREPARATION"),
-        0, 0, width=prs.slide_width, height=prs.slide_height,
+        0,
+        0,
+        width=prs.slide_width,
+        height=prs.slide_height,
     )
     path = str(tmp_path / "deck.pptx")
     prs.save(path)
 
-    data = pptx_extraction.extract_pptx(path)["per_slide_visual"][0]
+    data = pptx_extraction._extract_pptx_in_process(path)["per_slide_visual"][0]
     assert data["text_extraction_confidence"] == "low"
     assert data["text_content_preview"] == ""
     assert data["text_extraction_method"] == "shapes+ocr"
@@ -882,18 +1968,25 @@ def test_full_bleed_with_baked_text_end_to_end(pptx_extraction, tmp_path):
 
 
 def test_grouped_shapes_are_walked_recursively_and_lower_confidence(
-    pptx_extraction, tmp_path,
+    pptx_extraction,
+    tmp_path,
 ):
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     outer = slide.shapes.add_group_shape()
     outer_text = outer.shapes.add_textbox(
-        Inches(1), Inches(1), Inches(4), Inches(1),
+        Inches(1),
+        Inches(1),
+        Inches(4),
+        Inches(1),
     )
     outer_text.text_frame.text = "Text inside outer group"
     inner = outer.shapes.add_group_shape()
     inner_text = inner.shapes.add_textbox(
-        Inches(2), Inches(2), Inches(4), Inches(1),
+        Inches(2),
+        Inches(2),
+        Inches(4),
+        Inches(1),
     )
     inner_text.text_frame.text = "Text inside nested group"
 
@@ -908,7 +2001,8 @@ def test_grouped_shapes_are_walked_recursively_and_lower_confidence(
     assert "grouped_shapes" in data["render_required_reasons"]
 
     nested = next(
-        channel for channel in data["text_channels"]
+        channel
+        for channel in data["text_channels"]
         if channel["text"] == "Text inside nested group"
     )
     assert nested["confidence"] == "medium"
@@ -917,12 +2011,18 @@ def test_grouped_shapes_are_walked_recursively_and_lower_confidence(
 
 
 def test_table_cell_text_has_its_own_provenance_channel(
-    pptx_extraction, tmp_path,
+    pptx_extraction,
+    tmp_path,
 ):
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     table_shape = slide.shapes.add_table(
-        2, 2, Inches(1), Inches(1), Inches(6), Inches(2),
+        2,
+        2,
+        Inches(1),
+        Inches(1),
+        Inches(6),
+        Inches(2),
     )
     table_shape.table.cell(0, 0).text = "Name"
     table_shape.table.cell(0, 1).text = "Count"
@@ -933,8 +2033,7 @@ def test_table_cell_text_has_its_own_provenance_channel(
 
     assert "Hooks" in data["text_content_preview"]
     channel = next(
-        item for item in data["text_channels"]
-        if item["channel"] == "table_cell_text"
+        item for item in data["text_channels"] if item["channel"] == "table_cell_text"
     )
     assert channel["confidence"] == "medium"
     assert channel["status"] == "extracted"
@@ -943,7 +2042,8 @@ def test_table_cell_text_has_its_own_provenance_channel(
     assert data["text_extraction_confidence"] == "low"
     assert "table" in data["render_required_reasons"]
     summary = next(
-        item for item in data["shapes_summary"]
+        item
+        for item in data["shapes_summary"]
         if item.get("graphic_frame_type") == "table"
     )
     assert summary["table_rows"] == 2
@@ -951,18 +2051,29 @@ def test_table_cell_text_has_its_own_provenance_channel(
 
 
 def test_smartart_and_unknown_graphic_frames_are_explicitly_unsupported(
-    pptx_extraction, tmp_path,
+    pptx_extraction,
+    tmp_path,
 ):
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     smartart = slide.shapes.add_table(
-        1, 1, Inches(1), Inches(1), Inches(3), Inches(1),
+        1,
+        1,
+        Inches(1),
+        Inches(1),
+        Inches(3),
+        Inches(1),
     )
     smartart.element.graphic.graphicData.uri = (
         "http://schemas.openxmlformats.org/drawingml/2006/diagram"
     )
     other = slide.shapes.add_table(
-        1, 1, Inches(1), Inches(3), Inches(3), Inches(1),
+        1,
+        1,
+        Inches(1),
+        Inches(3),
+        Inches(3),
+        Inches(1),
     )
     other.element.graphic.graphicData.uri = "urn:example:unsupported-graphic"
 
@@ -974,13 +2085,11 @@ def test_smartart_and_unknown_graphic_frames_are_explicitly_unsupported(
     kinds = {item["content_type"] for item in data["unsupported_content"]}
     assert kinds == {"smartart", "graphic_frame"}
     assert {
-        item["channel"] for item in data["text_channels"]
+        item["channel"]
+        for item in data["text_channels"]
         if item["status"] == "unsupported"
     } == {"smartart_text", "graphic_frame_text"}
-    assert all(
-        item["graphic_data_uri"]
-        for item in data["unsupported_content"]
-    )
+    assert all(item["graphic_data_uri"] for item in data["unsupported_content"])
 
 
 def _set_background_image(slide, image_path):
@@ -991,17 +2100,18 @@ def _set_background_image(slide, image_path):
     if existing_fill is not None:
         bg_pr.remove(existing_fill)
     blip_fill = parse_xml(
-        f'<a:blipFill {nsdecls("a", "r")}>'
+        f"<a:blipFill {nsdecls('a', 'r')}>"
         f'<a:blip r:embed="{r_id}"/>'
-        '<a:stretch><a:fillRect/></a:stretch>'
-        '</a:blipFill>'
+        "<a:stretch><a:fillRect/></a:stretch>"
+        "</a:blipFill>"
     )
     bg_pr.insert(0, blip_fill)
     return r_id
 
 
 def test_background_image_blob_is_ocrd_with_distinct_provenance(
-    pptx_extraction, tmp_path,
+    pptx_extraction,
+    tmp_path,
 ):
     image_path = tmp_path / "background.png"
     _png_with_text(image_path, text="BACKGROUND LABEL")
@@ -1012,7 +2122,7 @@ def test_background_image_blob_is_ocrd_with_distinct_provenance(
     prs.save(path)
 
     seen = []
-    data = pptx_extraction.extract_pptx(
+    data = pptx_extraction._extract_pptx_in_process(
         path,
         ocr_fn=lambda blobs: seen.append(blobs) or "BACKGROUND LABEL",
     )["per_slide_visual"][0]
@@ -1024,7 +2134,8 @@ def test_background_image_blob_is_ocrd_with_distinct_provenance(
     assert "background_image" in data["render_required_reasons"]
     assert len(seen) == 1 and seen[0][0].startswith(b"\x89PNG")
     channel = next(
-        item for item in data["text_channels"]
+        item
+        for item in data["text_channels"]
         if item["channel"] == "background_image_ocr"
     )
     assert channel["status"] == "extracted"
@@ -1048,24 +2159,28 @@ def test_background_inspection_does_not_break_inheritance(pptx_extraction):
 
 
 def test_missing_background_blob_requires_render_without_claiming_ocr(
-    pptx_extraction, tmp_path,
+    pptx_extraction,
+    tmp_path,
 ):
     image_path = tmp_path / "background.png"
     _png(image_path)
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _set_background_image(slide, image_path)
-    blip = next(iter(
-        slide.element.cSld.bg.bgPr.eg_fillProperties.iter(
-            pptx_extraction.qn("a:blip")
+    blip = next(
+        iter(
+            slide.element.cSld.bg.bgPr.eg_fillProperties.iter(
+                pptx_extraction.qn("a:blip")
+            )
         )
-    ))
+    )
     blip.set(pptx_extraction.qn("r:embed"), "rIdMissing")
 
     data = _first_slide(pptx_extraction, prs, tmp_path)
 
     channel = next(
-        item for item in data["text_channels"]
+        item
+        for item in data["text_channels"]
         if item["channel"] == "background_image_ocr"
     )
     assert channel["status"] == "unavailable"
@@ -1079,12 +2194,15 @@ def _damage_first_media_member(path):
     """Flip a compressed payload byte without updating its recorded CRC."""
     with zipfile.ZipFile(path) as archive:
         member = next(
-            item for item in archive.infolist()
+            item
+            for item in archive.infolist()
             if item.filename.startswith("ppt/media/") and item.file_size
         )
     package = bytearray(path.read_bytes())
     name_size, extra_size = struct.unpack_from(
-        "<HH", package, member.header_offset + 26,
+        "<HH",
+        package,
+        member.header_offset + 26,
     )
     payload_offset = member.header_offset + 30 + name_size + extra_size
     package[payload_offset + (member.compress_size // 2)] ^= 0xFF
@@ -1093,7 +2211,8 @@ def _damage_first_media_member(path):
 
 
 def test_bad_crc_media_is_recovered_without_losing_the_deck(
-    pptx_extraction, tmp_path,
+    pptx_extraction,
+    tmp_path,
 ):
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[6])
@@ -1101,22 +2220,27 @@ def test_bad_crc_media_is_recovered_without_losing_the_deck(
     box.text_frame.text = "Healthy native text"
     slide.shapes.add_picture(
         _png(tmp_path / "asset.png"),
-        Inches(1), Inches(2), Inches(2), Inches(2),
+        Inches(1),
+        Inches(2),
+        Inches(2),
+        Inches(2),
     )
     _append_timing_xml(slide, "<p:animEffect/>")
     path = tmp_path / "corrupt-media.pptx"
     prs.save(path)
     damaged_name = _damage_first_media_member(path)
 
-    result = pptx_extraction.extract_pptx(str(path), ocr=False)
+    result = pptx_extraction._extract_pptx_in_process(str(path), ocr=False)
     data = result["per_slide_visual"][0]
 
     assert result["slide_count"] == 1
-    assert result["corrupt_assets"] == [{
-        "part_name": damaged_name,
-        "error_type": "crc_mismatch",
-        "status": "recovered_with_placeholder",
-    }]
+    assert result["corrupt_assets"] == [
+        {
+            "part_name": damaged_name,
+            "error_type": "crc_mismatch",
+            "status": "recovered_with_placeholder",
+        }
+    ]
     assert "Healthy native text" in data["text_content_preview"]
     assert data["native_timing"]["animation_behavior_counts"]["effect"] == 1
     assert data["text_extraction_confidence"] == "low"
@@ -1126,9 +2250,7 @@ def test_bad_crc_media_is_recovered_without_losing_the_deck(
         for item in data["unsupported_content"]
     )
     channel = next(
-        item
-        for item in data["text_channels"]
-        if item["channel"] == "picture_ocr"
+        item for item in data["text_channels"] if item["channel"] == "picture_ocr"
     )
     assert channel["attempted"] is False
     assert channel["status"] == "unavailable"
@@ -1143,64 +2265,70 @@ def test_bad_crc_media_is_recovered_without_losing_the_deck(
 def _append_timing_xml(slide, behavior_xml):
     """Append a synthetic but package-native PresentationML timing tree."""
     timing = parse_xml(
-        f'<p:timing {nsdecls("p")}>'
+        f"<p:timing {nsdecls('p')}>"
         '<p:tnLst><p:par><p:cTn id="1"><p:childTnLst>'
-        f'{behavior_xml}'
-        '</p:childTnLst></p:cTn></p:par></p:tnLst>'
-        '</p:timing>'
+        f"{behavior_xml}"
+        "</p:childTnLst></p:cTn></p:par></p:tnLst>"
+        "</p:timing>"
     )
     slide.element.append(timing)
 
 
 def _append_transition_xml(slide):
-    slide.element.append(parse_xml(
-        f'<p:transition {nsdecls("p")}><p:fade/></p:transition>'
-    ))
+    slide.element.append(
+        parse_xml(f"<p:transition {nsdecls('p')}><p:fade/></p:transition>")
+    )
 
 
 def _append_build_list_xml(slide):
     """Append real PresentationML build entries without inferring playback."""
     timing = slide.element.xpath("./p:timing")[0]
-    timing.append(parse_xml(
-        f'<p:bldLst {nsdecls("p")}>'
-        '<p:bldP spid="2" grpId="0"/>'
-        '<p:bldDgm spid="3" grpId="1"/>'
-        '<p:bldOleChart spid="4" grpId="2"/>'
-        '<p:bldGraphic spid="5" grpId="3"/>'
-        '</p:bldLst>'
-    ))
+    timing.append(
+        parse_xml(
+            f"<p:bldLst {nsdecls('p')}>"
+            '<p:bldP spid="2" grpId="0"/>'
+            '<p:bldDgm spid="3" grpId="1"/>'
+            '<p:bldOleChart spid="4" grpId="2"/>'
+            '<p:bldGraphic spid="5" grpId="3"/>'
+            "</p:bldLst>"
+        )
+    )
 
 
 def test_native_timing_categories_and_deck_totals_stay_distinct(
-        pptx_extraction, tmp_path):
+    pptx_extraction, tmp_path
+):
     prs = Presentation()
     animated = prs.slides.add_slide(prs.slide_layouts[6])
     _append_transition_xml(animated)
-    _append_timing_xml(animated, (
-        '<p:set><p:cBhvr><p:cTn id="2"/><p:attrNameLst>'
-        '<p:attrName>style.visibility</p:attrName>'
-        '</p:attrNameLst></p:cBhvr><p:to><p:strVal val="visible"/></p:to></p:set>'
-        '<p:set><p:cBhvr><p:cTn id="3"/><p:attrNameLst>'
-        '<p:attrName>style.opacity</p:attrName>'
-        '</p:attrNameLst></p:cBhvr><p:to><p:fltVal val="1"/></p:to></p:set>'
-        '<p:anim/><p:animClr/><p:animEffect/><p:animEffect/>'
-        '<p:animMotion/><p:animRot/><p:animScale/>'
-        '<p:audio><p:cMediaNode><p:cTn id="4"/></p:cMediaNode></p:audio>'
-        '<p:video><p:cMediaNode><p:cTn id="5"/></p:cMediaNode></p:video>'
-    ))
+    _append_timing_xml(
+        animated,
+        (
+            '<p:set><p:cBhvr><p:cTn id="2"/><p:attrNameLst>'
+            "<p:attrName>style.visibility</p:attrName>"
+            '</p:attrNameLst></p:cBhvr><p:to><p:strVal val="visible"/></p:to></p:set>'
+            '<p:set><p:cBhvr><p:cTn id="3"/><p:attrNameLst>'
+            "<p:attrName>style.opacity</p:attrName>"
+            '</p:attrNameLst></p:cBhvr><p:to><p:fltVal val="1"/></p:to></p:set>'
+            "<p:anim/><p:animClr/><p:animEffect/><p:animEffect/>"
+            "<p:animMotion/><p:animRot/><p:animScale/>"
+            '<p:audio><p:cMediaNode><p:cTn id="4"/></p:cMediaNode></p:audio>'
+            '<p:video><p:cMediaNode><p:cTn id="5"/></p:cMediaNode></p:video>'
+        ),
+    )
     _append_build_list_xml(animated)
 
     media_only = prs.slides.add_slide(prs.slide_layouts[6])
-    _append_timing_xml(media_only, (
-        '<p:audio><p:cMediaNode><p:cTn id="6"/></p:cMediaNode></p:audio>'
-    ))
+    _append_timing_xml(
+        media_only, ('<p:audio><p:cMediaNode><p:cTn id="6"/></p:cMediaNode></p:audio>')
+    )
 
     transition_only = prs.slides.add_slide(prs.slide_layouts[6])
     _append_transition_xml(transition_only)
 
     path = tmp_path / "timing-structure.pptx"
     prs.save(path)
-    result = pptx_extraction.extract_pptx(str(path), ocr=False)
+    result = pptx_extraction._extract_pptx_in_process(str(path), ocr=False)
     slides = result["per_slide_visual"]
 
     first = slides[0]["native_timing"]
@@ -1218,8 +2346,7 @@ def test_native_timing_categories_and_deck_totals_stay_distinct(
         "scale": 1,
         "total": 7,
     }
-    assert first["media_timing_counts"] == {
-        "audio": 1, "video": 1, "total": 2}
+    assert first["media_timing_counts"] == {"audio": 1, "video": 1, "total": 2}
     assert first["build_list_present"] is True
     assert first["build_list_count"] == 1
     assert first["build_entry_counts"] == {
@@ -1247,8 +2374,7 @@ def test_native_timing_categories_and_deck_totals_stay_distinct(
     assert second["animation_behavior_counts"]["motion"] == 0
     assert second["animation_behavior_counts"]["total"] == 0
     assert second["has_media_timing"] is True
-    assert second["media_timing_counts"] == {
-        "audio": 1, "video": 0, "total": 1}
+    assert second["media_timing_counts"] == {"audio": 1, "video": 0, "total": 1}
     assert second["build_list_present"] is False
     assert second["build_list_count"] == 0
     assert second["build_entry_counts"] == {
@@ -1304,25 +2430,28 @@ def test_native_timing_categories_and_deck_totals_stay_distinct(
 
 
 def test_adjacent_static_progressive_builds_do_not_invent_native_timing(
-        pptx_extraction, tmp_path):
+    pptx_extraction, tmp_path
+):
     """Duplicate-slide builds stay visible states, not inferred animation."""
     prs = Presentation()
     first = prs.slides.add_slide(prs.slide_layouts[6])
     first.shapes.add_textbox(
-        Inches(1), Inches(1), Inches(5), Inches(1)).text_frame.text = "Base diagram"
+        Inches(1), Inches(1), Inches(5), Inches(1)
+    ).text_frame.text = "Base diagram"
     second = prs.slides.add_slide(prs.slide_layouts[6])
     second.shapes.add_textbox(
-        Inches(1), Inches(1), Inches(5), Inches(1)).text_frame.text = "Base diagram"
+        Inches(1), Inches(1), Inches(5), Inches(1)
+    ).text_frame.text = "Base diagram"
     second.shapes.add_textbox(
-        Inches(1), Inches(2), Inches(5), Inches(1)).text_frame.text = "Step 2 annotation"
+        Inches(1), Inches(2), Inches(5), Inches(1)
+    ).text_frame.text = "Step 2 annotation"
     path = tmp_path / "static-progressive-build.pptx"
     prs.save(path)
 
-    result = pptx_extraction.extract_pptx(str(path), ocr=False)
+    result = pptx_extraction._extract_pptx_in_process(str(path), ocr=False)
 
     assert "Base diagram" in result["per_slide_visual"][0]["text_content_preview"]
-    assert "Step 2 annotation" in \
-        result["per_slide_visual"][1]["text_content_preview"]
+    assert "Step 2 annotation" in result["per_slide_visual"][1]["text_content_preview"]
     assert all(
         not slide["native_timing"]["timing_element_present"]
         for slide in result["per_slide_visual"]
@@ -1338,7 +2467,8 @@ def test_adjacent_static_progressive_builds_do_not_invent_native_timing(
 
 
 def test_versions_and_input_fingerprint_are_stable_and_content_addressed(
-    pptx_extraction, tmp_path,
+    pptx_extraction,
+    tmp_path,
 ):
     prs = make_deck(1)
     source = tmp_path / "source.pptx"
@@ -1348,13 +2478,13 @@ def test_versions_and_input_fingerprint_are_stable_and_content_addressed(
     modified = tmp_path / "modified.pptx"
     modified.write_bytes(source.read_bytes() + b"\x00")
 
-    first = pptx_extraction.extract_pptx(str(source), ocr=False)
-    second = pptx_extraction.extract_pptx(str(source), ocr=False)
-    copied = pptx_extraction.extract_pptx(str(copy), ocr=False)
-    changed = pptx_extraction.extract_pptx(str(modified), ocr=False)
+    first = pptx_extraction._extract_pptx_in_process(str(source), ocr=False)
+    second = pptx_extraction._extract_pptx_in_process(str(source), ocr=False)
+    copied = pptx_extraction._extract_pptx_in_process(str(copy), ocr=False)
+    changed = pptx_extraction._extract_pptx_in_process(str(modified), ocr=False)
 
-    assert pptx_extraction.SCHEMA_VERSION == 3
-    assert pptx_extraction.PIPELINE_VERSION == "1.2.0"
+    assert pptx_extraction.SCHEMA_VERSION == 4
+    assert pptx_extraction.PIPELINE_VERSION == "1.4.0"
     assert first["schema_version"] == pptx_extraction.SCHEMA_VERSION
     assert first["pipeline_version"] == pptx_extraction.PIPELINE_VERSION
     assert first["input_fingerprint"] == second["input_fingerprint"]
@@ -1371,8 +2501,76 @@ def test_version_flag_is_machine_readable(pptx_extraction):
         capture_output=True,
         text=True,
         check=True,
+        timeout=30,
     )
     assert json.loads(proc.stdout) == {
         "schema_version": pptx_extraction.SCHEMA_VERSION,
         "pipeline_version": pptx_extraction.PIPELINE_VERSION,
     }
+
+
+def test_directory_worker_main_reports_closed_supervisor_failure(
+    pptx_extraction,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail():
+        raise pptx_extraction.SupervisorError("worker_output_limit_exceeded")
+
+    monkeypatch.setattr(pptx_extraction, "_run_directory_worker_child", fail)
+    monkeypatch.setattr(
+        pptx_extraction.sys,
+        "argv",
+        [pptx_extraction.__file__, pptx_extraction._DIRECTORY_WORKER_FLAG],
+    )
+
+    assert pptx_extraction._main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert (
+        captured.err == "pptx directory worker failed: worker_output_limit_exceeded\n"
+    )
+    assert "Traceback" not in captured.err
+
+
+def test_directory_worker_main_closes_unexpected_failure_diagnostic(
+    pptx_extraction,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    leaked_path = "/private/vault/source.pptx"
+
+    def fail():
+        raise RuntimeError(f"failure at {leaked_path}")
+
+    monkeypatch.setattr(pptx_extraction, "_run_directory_worker_child", fail)
+    monkeypatch.setattr(
+        pptx_extraction.sys,
+        "argv",
+        [pptx_extraction.__file__, pptx_extraction._DIRECTORY_WORKER_FLAG],
+    )
+
+    assert pptx_extraction._main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "pptx directory worker failed: unexpected_error\n"
+    assert leaked_path not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_directory_worker_main_preserves_success_output_contract(
+    pptx_extraction,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(pptx_extraction, "_run_directory_worker_child", lambda: 0)
+    monkeypatch.setattr(
+        pptx_extraction.sys,
+        "argv",
+        [pptx_extraction.__file__, pptx_extraction._DIRECTORY_WORKER_FLAG],
+    )
+
+    assert pptx_extraction._main() == 0
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""

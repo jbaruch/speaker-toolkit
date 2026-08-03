@@ -24,12 +24,14 @@ from pathlib import Path
 from typing import Any, BinaryIO, Callable, TypedDict
 
 
-REPORT_SCHEMA_VERSION = 1
+REPORT_SCHEMA_VERSION = 2
 MODULE_PROBE_SCHEMA_VERSION = 1
 MODULE_PROBE_TIMEOUT_SECONDS = 30
 MODULE_PROBE_MAX_OUTPUT_BYTES = 4096
 MODULE_PROBE_CHILD_FLAG = "--module-probe-child"
 MINIMUM_PYTHON = (3, 10)
+PSUTIL_REQUIRED_VERSION = "7.2.2"
+REQUIRED_MODULE_VERSIONS = {"psutil": PSUTIL_REQUIRED_VERSION}
 LANE_REQUIREMENTS: dict[str, dict[str, dict[str, str]]] = {
     "core": {
         "modules": {"PyYAML": "yaml"},
@@ -40,7 +42,7 @@ LANE_REQUIREMENTS: dict[str, dict[str, dict[str, str]]] = {
         "commands": {},
     },
     "pptx": {
-        "modules": {"python-pptx": "pptx"},
+        "modules": {"python-pptx": "pptx", "psutil": "psutil"},
         "commands": {},
     },
     "google-drive": {
@@ -107,7 +109,7 @@ def _write_module_probe_result(
 def _module_probe_child(import_name: str) -> dict[str, object]:
     """Import one module and return the private child-process payload."""
     try:
-        importlib.import_module(import_name)
+        module = importlib.import_module(import_name)
     except ImportError as exc:
         return {
             "schema_version": MODULE_PROBE_SCHEMA_VERSION,
@@ -115,6 +117,21 @@ def _module_probe_child(import_name: str) -> dict[str, object]:
             "failure_reason": "unavailable_import",
             "exception_type": type(exc).__name__,
         }
+    required_version = REQUIRED_MODULE_VERSIONS.get(import_name)
+    if required_version is not None:
+        actual_version = getattr(module, "__version__", None)
+        if actual_version != required_version:
+            return {
+                "schema_version": MODULE_PROBE_SCHEMA_VERSION,
+                "available": False,
+                "failure_reason": "incompatible_version",
+                "required_version": required_version,
+                "actual_version": (
+                    actual_version
+                    if isinstance(actual_version, str) and len(actual_version) <= 64
+                    else None
+                ),
+            }
     return {
         "schema_version": MODULE_PROBE_SCHEMA_VERSION,
         "available": True,
@@ -164,10 +181,7 @@ def _decode_module_probe_child(raw: bytes) -> ModuleProbeResult:
     if not isinstance(payload, dict):
         return _malformed_child_output("invalid_payload")
     schema_version = payload.get("schema_version")
-    if (
-        type(schema_version) is not int
-        or schema_version != MODULE_PROBE_SCHEMA_VERSION
-    ):
+    if type(schema_version) is not int or schema_version != MODULE_PROBE_SCHEMA_VERSION:
         return _malformed_child_output("invalid_payload")
     available = payload.get("available")
     if available is True and set(payload) == {"schema_version", "available"}:
@@ -191,6 +205,30 @@ def _decode_module_probe_child(raw: bytes) -> ModuleProbeResult:
         return _failed_module_probe(
             str(failure_reason),
             exception_type=exception_type,
+        )
+    expected_version_failure_keys = {
+        "schema_version",
+        "available",
+        "failure_reason",
+        "required_version",
+        "actual_version",
+    }
+    required_version = payload.get("required_version")
+    actual_version = payload.get("actual_version")
+    if (
+        available is False
+        and set(payload) == expected_version_failure_keys
+        and failure_reason == "incompatible_version"
+        and required_version == PSUTIL_REQUIRED_VERSION
+        and (
+            actual_version is None
+            or (isinstance(actual_version, str) and len(actual_version) <= 64)
+        )
+    ):
+        return _failed_module_probe(
+            "incompatible_version",
+            required_version=required_version,
+            actual_version=actual_version,
         )
     return _malformed_child_output("invalid_payload")
 
@@ -337,6 +375,11 @@ def build_report(
             "required": lane in required,
             "modules": modules,
             "module_failures": module_failures,
+            "required_module_versions": {
+                distribution: REQUIRED_MODULE_VERSIONS[import_name]
+                for distribution, import_name in requirements["modules"].items()
+                if import_name in REQUIRED_MODULE_VERSIONS
+            },
             "commands": commands,
             "missing_modules": missing_modules,
             "missing_commands": missing_commands,
@@ -384,7 +427,8 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "vault-ingress runtime is unavailable for required lanes "
             f"{blocking}; use Python {MINIMUM_PYTHON[0]}.{MINIMUM_PYTHON[1]}+ "
-            "and install the missing modules or commands, or repair failed "
+            "and install the missing modules or commands at their required "
+            "versions, or repair failed "
             f"dependency initialization, listed in the JSON in {sys.executable}, "
             "then rerun this check",
             file=sys.stderr,
@@ -393,7 +437,8 @@ def main(argv: list[str] | None = None) -> int:
         degraded = ", ".join(report["degraded_lanes"])
         print(
             "vault-ingress runtime is degraded for optional lanes "
-            f"{degraded}; install the missing modules or commands, or repair "
+            f"{degraded}; install the missing modules or commands at their "
+            "required versions, or repair "
             "failed dependency initialization, listed in the JSON in "
             f"{sys.executable}, then rerun this check",
             file=sys.stderr,

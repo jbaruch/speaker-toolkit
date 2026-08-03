@@ -354,7 +354,8 @@ notes which named patterns and antipatterns are detected per talk.
 ### Prerequisites
 
 - Python 3.10+ at the vault's configured `python_path`, with core `PyYAML`;
-  `pypdf` for PDF evidence; and `python-pptx` for native-deck evidence
+  `pypdf` for PDF evidence; and `python-pptx` + exactly `psutil==7.2.2` for
+  resource-supervised native-deck evidence
 - Lane-specific runtime: importable `gdown` for Google Drive acquisition,
   `youtube-transcript-api` for captions, `yt-dlp` for provider probing/audio
   download, `pdftoppm` for rendered-PDF inspection, Pillow + `imagehash` +
@@ -369,6 +370,9 @@ dependency absence is isolated: missing pypdf cannot erase transcript/PPTX
 capability, and missing python-pptx cannot erase transcript/PDF capability.
 Dependency initializer exceptions, native crashes, timeouts, and invalid child
 results remain lane-local and carry machine-readable failure reasons.
+The checker emits report schema v2; each lane's `required_module_versions`
+declares exact runtime pins, and an incompatible installed version is unavailable
+rather than silently accepted.
 
 ## Generation & Publishing Skills Details
 
@@ -473,7 +477,8 @@ If the speaker profile doesn't exist yet (fewer than 10 talks parsed), the creat
 
 ### For the Vault Skills (vault-ingress, vault-clarification, vault-profile)
 - Configured Python 3.10+ environment with PyYAML; add pypdf, python-pptx,
-  gdown, and youtube-transcript-api for the source lanes actually used
+  exactly `psutil==7.2.2`, gdown, and youtube-transcript-api for the source lanes
+  actually used
 - `yt-dlp`, `pdftoppm`, `ffmpeg`, and `ffprobe` for the provider/download,
   rendered-PDF, and video lanes that require them; optional `mlx-whisper` for
   local Whisper fallback
@@ -512,7 +517,7 @@ speaker-toolkit/
     +-- vault-ingress/
     |   +-- SKILL.md                          # Main vault workflow (9 steps)
     |   +-- scripts/
-    |   |   +-- pptx-extraction.py            # python-pptx visual extraction
+    |   |   +-- pptx-extraction.py            # supervised PPTX extraction + bounded discovery
     |   |   +-- video-slide-extraction.py     # Video-to-slides via ffmpeg + perceptual dedup
     |   |   +-- vtt-cleanup.py                # WebVTT to plain text
     |   |   +-- batch-download-videos.sh      # Parallel video download for batch processing

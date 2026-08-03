@@ -44,8 +44,11 @@ How do slides complement the spoken word? Are slides dense or minimal? Does the 
 
 Answer this dimension from the **rendered slides** whenever any slide reports
 `text_extraction_confidence: low`. Shape-level extraction cannot see text baked
-into a picture; use `ocr_text` for the word inventory and transcript
-cross-check, but density / two-layer structure still need the rendered page.
+into a picture; use native channels plus only `ocr_receipts[].recovered_text`
+whose same receipt has `trustworthy_text: true` for word inventory and transcript
+cross-check. The `ocr_text` and OCR channel aggregates preserve untrustworthy
+review text and cannot authorize a cite. Density / two-layer structure still
+needs the rendered page.
 Slides can carry far more than the narration does — that excess is a Dimension 8
 finding, not an absence.
 

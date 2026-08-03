@@ -83,3 +83,26 @@ jobs:
             tesseract-ocr=5.3.4-1build5 2>&1 | stamp
       - run: pip install ".[test]"
       - run: pytest -v --tb=short
+
+  # Exercise Windows Job containment and POSIX trusted-worker process-group
+  # cleanup plus sampled descendant monitoring, including a non-injected psutil
+  # monitor smoke test, on native hosts; Ubuntu already runs the full suite.
+  supervisor-platform:
+    name: Artifact supervisor (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ".[test]"
+      - run: >-
+          pytest -v --tb=short
+          tests/test_artifact_supervisor.py
+          tests/test_pattern_evidence.py::test_forward_slash_root_uses_native_absolute_path_semantics
+          tests/test_check_runtime.py::test_psutil_version_authorities_are_synchronized

@@ -67,6 +67,13 @@ def test_threshold_and_structured_comparison_contract_is_documented() -> None:
     assert '"return_schema_version": 5' in docs["worker"]
 
 
+def test_native_picture_render_threshold_is_script_owned() -> None:
+    schemas = _docs()["schemas"]
+
+    assert "`PPTX_TEXT_BEARING_IMAGE_AREA_RATIO`" in schemas
+    assert "image_area_ratio >= 0.5" not in schemas
+
+
 def test_post_batch_cohort_and_section_15_filter_are_explicit() -> None:
     docs = _docs()
     for name in ("skill", "processing", "schemas"):

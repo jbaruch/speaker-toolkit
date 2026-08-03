@@ -170,9 +170,12 @@ candidate before installing it. Only `migrate-tracking-database.py` may move
 schema 0 to schema 1; its hash precondition binds replacement to the exact input
 bytes as documented above.
 
-Core requires Python 3.10+ and PyYAML and is blocking. The PDF and PPTX lanes
-require pypdf and python-pptx respectively; a missing optional lane is reported
-as degraded and must not erase a healthy transcript or alternate slide lane.
+Core requires Python 3.10+ and PyYAML and is blocking. The PDF lane requires
+pypdf; the PPTX lane requires python-pptx plus exactly `psutil==7.2.2` for worker
+supervision. The checker emits report schema v2 and records exact pins under each
+lane's `required_module_versions`; a mismatched version is unavailable. A missing
+optional lane is reported as degraded and must not erase a healthy transcript or
+alternate slide lane.
 Require a lane before using it, for example `--require-lanes core,pdf`. Remote
 Drive acquisition additionally needs the `gdown` module; captions need
 `youtube-transcript-api`; audio download fallback needs `yt-dlp`; rendered PDF
@@ -215,18 +218,38 @@ atomic and rejects a tracking-database symlink. See
 [references/schemas-db.md](references/schemas-db.md#shownotes-scanimport-report)
 for the complete report and mutation contract.
 
-**Scan for .pptx files:** Recursively glob `**/*.pptx` in `pptx_source_dir`;
-fuzzy-match to `talks[]` entries. Report counts, then persist each reviewed result with a
-`record_pptx` mutation and `schema_version: 1`, including the exact prior catalog record and, for a match,
-the talk's exact prior `pptx_path` expectation. See [references/schemas-db.md](references/schemas-db.md)
-for the PPTX extraction output schema (per-slide visual data, shape types, global design stats).
-Run `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py"` for extraction.
-Consume current schema v3. A v0/v1 record has unknown timing, not zero timing;
+**Scan for .pptx files:** Do not recursively glob the source tree. Run one bounded
+directory extraction, which owns deterministic discovery, symlink/reparse-point
+rejection, and aggregate file/input/output/wall budgets:
+
+Read the exact `config.template_skip_patterns` array from the strict owner-read
+result. Set `{template_skip_arguments}` to one separately shell-quoted
+`--skip=<exact-value>` argument per array entry, preserving its order. An empty
+array produces zero arguments; never add an implicit default.
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py" \
+  --directory "{pptx_source_dir}" {template_skip_arguments}
+```
+
+Use root-relative `results[].pptx_path` identities to fuzzy-match `talks[]` entries
+and retain every `skipped[]` receipt. `pptx_batch_office_lock_file` is an explicit
+exclusion: never catalog or extract an Office temporary file whose basename starts
+with `~$`. Directory intent must remain explicit: do not omit `--directory` or
+pre-probe the root with `find`, a recursive glob, or a per-file loop. The bounded
+authenticated discovery worker owns root validation and enumeration. Report counts,
+then persist each reviewed result with a `record_pptx`
+mutation and `schema_version: 1`, including the exact prior catalog record and, for
+a match, the talk's exact prior `pptx_path` expectation. See
+[references/schemas-db.md](references/schemas-db.md) for the PPTX extraction output
+schema (per-slide visual data, shape types, global design stats).
+Consume current schema v4. A v0/v1 record has unknown timing, not zero timing;
 v2 has the pre-build timing lanes but lacks raw build-list evidence,
-archive-recovery, and exact native/render audit receipts. Regenerate v0-v2
+archive-recovery, and exact native/render audit receipts; v3 lacks required
+shape/image capability bindings. Regenerate v0-v3
 output for current analysis. An unknown future
 schema is unusable until this reader is updated. The vault-profile layout-only
-consumer is the documented v1/v2/v3 exception for the unchanged
+consumer is the documented v1/v2/v3/v4 exception for the unchanged
 `template_layouts` field. Non-empty `archive_recovery` is degraded evidence:
 restore or re-export a required native deck before claiming or returning it.
 
@@ -643,20 +666,30 @@ Runs once after all Step 3 batches have completed.
 
 Process PPTX files not yet extracted during Step 3: unmatched catalog entries, talks
 that used PDF as primary but have a PPTX available, or entries with
-`pptx_visual_status: "pending"`. Skip if already `"extracted"`.
-Run `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py" <path.pptx>` for each file.
-Require schema v3 for current analysis. Regenerate v0-v2 output and stop on an
+`pptx_visual_status: "pending"`. Skip if already `"extracted"`. Use the bounded
+directory invocation from the scan step and select the root-relative results that
+remain pending; do not replace it with `**/*.pptx` or a shell/per-file extraction
+loop. Reuse the exact config-derived `{template_skip_arguments}` (including zero
+arguments for an empty array), keep the explicit `--directory` flag, preserve every
+bounded skip receipt, and never admit a `~$` Office lock file.
+Require schema v4 for current analysis. Regenerate v0-v3 output and stop on an
 unknown future schema rather than interpreting missing fields as zero. When
-rendered pages were inspected, rerun with `--rendered-pdf <path.pdf>` and one or
-more `--inspected-pages <PAGE|START-END>` arguments so the extraction receipt
-binds the exact artifacts and covered pages. A non-empty `archive_recovery`
+rendered pages were inspected, rerun that selected deck as one supervised
+single-artifact invocation with `--rendered-pdf <path.pdf>` and one or more
+`--inspected-pages <PAGE|START-END>` arguments so the extraction receipt binds the
+exact artifacts and covered pages. A non-empty `archive_recovery`
 blocks a required native-deck claim until the source is restored or re-exported.
+For every catalog finding or citation, OCR is affirmative only at the individual
+receipt level: use `recovered_text` only when that same receipt has
+`trustworthy_text: true`. Never promote `ocr_text` or an OCR channel's aggregate
+`text` directly; both retain low-confidence text for review.
 
 **PPTX matching rules:** The .pptx files are in `Conference/Year/TalkName.pptx` and
 shownotes entries have `conference` and `title` fields. Fuzzy-match by: normalize
 conference names (strip year, "Days", "Conference"), match by date proximity and title
-substring. Skip files with "static" in name, conflict copies matching `(N).pptx`, and
-files matching `config.template_skip_patterns`. Some talks have multiple .pptx files
+substring. Skip Office locks beginning `~$`, files with "static" in name, conflict
+copies matching `(N).pptx`, and files matching `config.template_skip_patterns`.
+Some talks have multiple .pptx files
 (one per delivery) — match to the closest date.
 
 After 3+ extractions, populate `slide-design-spec.md`; after 5+, analyze cross-talk

@@ -20,6 +20,7 @@ from collections import Counter, defaultdict
 from datetime import date, datetime
 import json
 import math
+import os
 from pathlib import Path
 import re
 import sys
@@ -71,17 +72,19 @@ SOURCELESS_STATUSES = frozenset({"skipped_no_sources", "skipped_no_video"})
 
 # These are intentionally a closed, documented set.  Tests exercise every
 # class so callers can route fixes without parsing prose.
-SLIDE_CONTRACT_CODES = frozenset({
-    "slide_source_unsupported",
-    "slide_pptx_reference_missing",
-    "slide_pptx_artifact_missing",
-    "slide_pptx_artifact_unreadable",
-    "slide_pptx_artifact_degraded",
-    "slide_pdf_reference_missing",
-    "slide_pdf_artifact_missing",
-    "slide_video_reference_missing",
-    "slide_video_artifact_missing",
-})
+SLIDE_CONTRACT_CODES = frozenset(
+    {
+        "slide_source_unsupported",
+        "slide_pptx_reference_missing",
+        "slide_pptx_artifact_missing",
+        "slide_pptx_artifact_unreadable",
+        "slide_pptx_artifact_degraded",
+        "slide_pdf_reference_missing",
+        "slide_pdf_artifact_missing",
+        "slide_video_reference_missing",
+        "slide_video_artifact_missing",
+    }
+)
 
 WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
 
@@ -120,8 +123,8 @@ class VaultPreflight:
 
     def __init__(self, database: Any, vault_root: Path, database_path: Path):
         self.database = database
-        self.vault_root = vault_root.resolve(strict=False)
-        self.database_path = database_path.resolve(strict=False)
+        self.vault_root = Path(os.path.abspath(os.fspath(vault_root)))
+        self.database_path = Path(os.path.abspath(os.fspath(database_path)))
         self.findings: list[dict[str, Any]] = []
         self.talks: list[dict[str, Any]] = []
         self.source_indexes: list[int] = []
@@ -146,21 +149,24 @@ class VaultPreflight:
         artifact_path: Path | str | None = None,
         capability_fact: Any = None,
     ) -> None:
-        self.findings.append({
-            "severity": severity,
-            "code": code,
-            "talk_index": talk_index,
-            "filename": filename,
-            "field": field,
-            "message": message,
-            "expected": _json_value(expected),
-            "actual": _json_value(actual),
-            "artifact_path": (
-                str(Path(artifact_path).resolve(strict=False))
-                if artifact_path is not None else None
-            ),
-            "capability_fact": _json_value(capability_fact),
-        })
+        self.findings.append(
+            {
+                "severity": severity,
+                "code": code,
+                "talk_index": talk_index,
+                "filename": filename,
+                "field": field,
+                "message": message,
+                "expected": _json_value(expected),
+                "actual": _json_value(actual),
+                "artifact_path": (
+                    os.path.abspath(os.fspath(artifact_path))
+                    if artifact_path is not None
+                    else None
+                ),
+                "capability_fact": _json_value(capability_fact),
+            }
+        )
 
     def talk_add(
         self,
@@ -195,9 +201,11 @@ class VaultPreflight:
     def run(self) -> dict[str, Any]:
         if not isinstance(self.database, dict):
             self.add(
-                "blocking", "database_shape_invalid",
+                "blocking",
+                "database_shape_invalid",
                 "tracking database must be a JSON object",
-                expected="object", actual=type(self.database).__name__,
+                expected="object",
+                actual=type(self.database).__name__,
             )
             return self.report(0)
 
@@ -227,26 +235,34 @@ class VaultPreflight:
             self.config = config
         else:
             self.add(
-                "warning", "config_shape_invalid",
+                "warning",
+                "config_shape_invalid",
                 "config is not an object; config-backed checks were skipped",
-                field="config", expected="object", actual=type(config).__name__,
+                field="config",
+                expected="object",
+                actual=type(config).__name__,
             )
 
         talks = self.database.get("talks")
         if not isinstance(talks, list):
             self.add(
-                "blocking", "talks_shape_invalid",
+                "blocking",
+                "talks_shape_invalid",
                 "tracking database talks must be an array",
-                field="talks", expected="array", actual=type(talks).__name__,
+                field="talks",
+                expected="array",
+                actual=type(talks).__name__,
             )
             return self.report(0)
 
         for index, talk in enumerate(talks):
             if not isinstance(talk, dict):
                 self.add(
-                    "blocking", "talk_shape_invalid",
+                    "blocking",
+                    "talk_shape_invalid",
                     "each talks entry must be an object",
-                    talk_index=index, expected="object",
+                    talk_index=index,
+                    expected="object",
                     actual=type(talk).__name__,
                 )
                 continue
@@ -275,16 +291,24 @@ class VaultPreflight:
             filename = _nonempty_string(value)
             if filename is None:
                 self.talk_add(
-                    index, "blocking", "filename_missing",
+                    index,
+                    "blocking",
+                    "filename_missing",
                     "talk filename must be a nonempty string",
-                    field="filename", expected="nonempty string", actual=value,
+                    field="filename",
+                    expected="nonempty string",
+                    actual=value,
                 )
                 continue
             if value != filename:
                 self.talk_add(
-                    index, "blocking", "filename_not_normalized",
+                    index,
+                    "blocking",
+                    "filename_not_normalized",
                     "talk filename must not have surrounding whitespace",
-                    field="filename", expected=filename, actual=value,
+                    field="filename",
+                    expected=filename,
+                    actual=value,
                 )
             occurrences[filename].append(index)
             self.filenames.setdefault(filename, index)
@@ -292,9 +316,11 @@ class VaultPreflight:
         for filename, indexes in sorted(occurrences.items()):
             if len(indexes) > 1:
                 self.add(
-                    "blocking", "duplicate_filename",
+                    "blocking",
+                    "duplicate_filename",
                     "talk filenames must be unique",
-                    filename=filename, field="filename",
+                    filename=filename,
+                    field="filename",
                     expected="one record",
                     actual=[self.source_indexes[index] for index in indexes],
                 )
@@ -307,29 +333,38 @@ class VaultPreflight:
             or transcript_source not in TRANSCRIPT_SOURCES
         ):
             self.talk_add(
-                index, "blocking", "transcript_source_unsupported",
+                index,
+                "blocking",
+                "transcript_source_unsupported",
                 "transcript_source is outside the supported enum",
-                field="transcript_source", expected=sorted(TRANSCRIPT_SOURCES),
+                field="transcript_source",
+                expected=sorted(TRANSCRIPT_SOURCES),
                 actual=transcript_source,
             )
 
         slide_source = talk.get("slide_source")
         if slide_source is not None and (
-            not isinstance(slide_source, str)
-            or slide_source not in SLIDE_SOURCES
+            not isinstance(slide_source, str) or slide_source not in SLIDE_SOURCES
         ):
             self.talk_add(
-                index, "blocking", "slide_source_unsupported",
+                index,
+                "blocking",
+                "slide_source_unsupported",
                 "slide_source is outside the supported enum; transcript_only is "
                 "represented by slide_source 'none'",
-                field="slide_source", expected=sorted(SLIDE_SOURCES),
+                field="slide_source",
+                expected=sorted(SLIDE_SOURCES),
                 actual=slide_source,
             )
         elif slide_source is None and self._needs_artifact_checks(talk):
             self.talk_add(
-                index, "warning", "slide_source_missing",
+                index,
+                "warning",
+                "slide_source_missing",
                 "processable or completed talk has no slide_source provenance",
-                field="slide_source", expected=sorted(SLIDE_SOURCES), actual=None,
+                field="slide_source",
+                expected=sorted(SLIDE_SOURCES),
+                actual=None,
             )
 
         video_url = talk.get("video_url")
@@ -341,9 +376,12 @@ class VaultPreflight:
         if stored_id is not None and stored_id != "":
             if not isinstance(stored_id, str) or not YOUTUBE_ID_RE.fullmatch(stored_id):
                 self.talk_add(
-                    index, "blocking", "youtube_id_invalid",
+                    index,
+                    "blocking",
+                    "youtube_id_invalid",
                     "stored youtube_id must be exactly 11 URL-safe characters",
-                    field="youtube_id", expected="11-character YouTube ID",
+                    field="youtube_id",
+                    expected="11-character YouTube ID",
                     actual=stored_id,
                 )
             else:
@@ -351,7 +389,9 @@ class VaultPreflight:
 
         if youtube_url and parsed_id is None:
             self.talk_add(
-                index, "blocking", "youtube_url_invalid",
+                index,
+                "blocking",
+                "youtube_url_invalid",
                 "YouTube URL does not contain a valid ID in a supported URL form",
                 field="video_url",
                 expected="watch, youtu.be, shorts, or embed URL with an 11-character ID",
@@ -359,15 +399,23 @@ class VaultPreflight:
             )
         elif parsed_id is not None and valid_stored_id is None:
             self.talk_add(
-                index, "blocking", "youtube_id_missing",
+                index,
+                "blocking",
+                "youtube_id_missing",
                 "YouTube URL has an ID but the stored youtube_id is missing or invalid",
-                field="youtube_id", expected=parsed_id, actual=stored_id,
+                field="youtube_id",
+                expected=parsed_id,
+                actual=stored_id,
             )
         elif parsed_id is not None and valid_stored_id != parsed_id:
             self.talk_add(
-                index, "blocking", "youtube_id_mismatch",
+                index,
+                "blocking",
+                "youtube_id_mismatch",
                 "video_url and stored youtube_id identify different recordings",
-                field="youtube_id", expected=parsed_id, actual=valid_stored_id,
+                field="youtube_id",
+                expected=parsed_id,
+                actual=valid_stored_id,
             )
 
         identity_id = parsed_id or valid_stored_id
@@ -421,9 +469,12 @@ class VaultPreflight:
         rejections = talk.get("source_rejections")
         if not isinstance(rejections, list):
             self.talk_add(
-                index, "blocking", "source_rejections_shape_invalid",
+                index,
+                "blocking",
+                "source_rejections_shape_invalid",
                 "source_rejections must be an array",
-                field="source_rejections", expected="array",
+                field="source_rejections",
+                expected="array",
                 actual=type(rejections).__name__,
             )
             return
@@ -432,9 +483,12 @@ class VaultPreflight:
             field = f"source_rejections[{position}]"
             if not isinstance(rejection, dict):
                 self.talk_add(
-                    index, "blocking", "source_rejection_invalid",
+                    index,
+                    "blocking",
+                    "source_rejection_invalid",
                     "each source rejection must be an object",
-                    field=field, expected="object",
+                    field=field,
+                    expected="object",
                     actual=type(rejection).__name__,
                 )
                 continue
@@ -458,14 +512,18 @@ class VaultPreflight:
                 or not valid_timestamp
             ):
                 self.talk_add(
-                    index, "blocking", "source_rejection_invalid",
+                    index,
+                    "blocking",
+                    "source_rejection_invalid",
                     "source rejection requires video type, URL, reason, evidence, "
                     "and a timezone-aware verified_at timestamp",
                     field=field,
                     expected={
                         "source_type": sorted(REJECTABLE_SOURCE_TYPES),
-                        "url": "...", "reason": "...",
-                        "evidence": "...", "verified_at": "ISO-8601 with timezone",
+                        "url": "...",
+                        "reason": "...",
+                        "evidence": "...",
+                        "verified_at": "ISO-8601 with timezone",
                     },
                     actual=rejection,
                 )
@@ -473,7 +531,9 @@ class VaultPreflight:
 
             active_field = "video_url" if source_type == "video" else "slides_url"
             active_url = _nonempty_string(talk.get(active_field))
-            parser = parse_youtube_id if source_type == "video" else parse_google_drive_id
+            parser = (
+                parse_youtube_id if source_type == "video" else parse_google_drive_id
+            )
             active_id = parser(active_url) if active_url else None
             rejected_id = parser(url)
             same_source = active_url == url or (
@@ -481,9 +541,12 @@ class VaultPreflight:
             )
             if same_source:
                 self.talk_add(
-                    index, "blocking", "rejected_source_reactivated",
+                    index,
+                    "blocking",
+                    "rejected_source_reactivated",
                     f"an active {active_field} is recorded as a known-bad source",
-                    field=active_field, expected="a source not in source_rejections",
+                    field=active_field,
+                    expected="a source not in source_rejections",
                     actual=active_url,
                 )
 
@@ -494,10 +557,10 @@ class VaultPreflight:
             and talk.get("pattern_scoring_generation_status") == "current"
             and talk.get("pattern_scoring_generation_reasons") == []
             and talk.get("pattern_scoring_schema_version")
-                == PATTERN_SCORING_SCHEMA_VERSION
+            == PATTERN_SCORING_SCHEMA_VERSION
             and isinstance(observations, dict)
             and observations.get("evidence_schema_version")
-                == PATTERN_EVIDENCE_SCHEMA_VERSION
+            == PATTERN_EVIDENCE_SCHEMA_VERSION
         )
 
     def _capabilities(self, index: int) -> dict[str, object]:
@@ -552,28 +615,34 @@ class VaultPreflight:
         )
         if transcript_source != "none" and source_is_known:
             transcript_path = self._transcript_path(talk)
-            declared = (
-                isinstance(transcript_source, str)
-                and transcript_source in TRANSCRIPT_SOURCES - {"none"}
-            )
+            declared = isinstance(
+                transcript_source, str
+            ) and transcript_source in TRANSCRIPT_SOURCES - {"none"}
             severity = self._artifact_severity(index, talk, declared=declared)
             if transcript_path is None:
                 self.talk_add(
-                    index, severity, "transcript_reference_missing",
+                    index,
+                    severity,
+                    "transcript_reference_missing",
                     "expected transcript cannot be resolved without youtube_id or transcript_path",
-                    field="youtube_id", expected="youtube_id or transcript_path",
+                    field="youtube_id",
+                    expected="youtube_id or transcript_path",
                     actual=talk.get("youtube_id"),
                 )
             elif not transcript_path.is_file():
                 self.talk_add(
-                    index, severity, "transcript_artifact_missing",
+                    index,
+                    severity,
+                    "transcript_artifact_missing",
                     "expected transcript file does not exist",
-                    field="transcript_source", actual=transcript_source,
+                    field="transcript_source",
+                    actual=transcript_source,
                     artifact_path=transcript_path,
                 )
             else:
                 self._validate_transcript_quality(
-                    index, talk, transcript_path, severity)
+                    index, talk, transcript_path, severity
+                )
 
         slide_source = talk.get("slide_source")
         if (
@@ -588,17 +657,13 @@ class VaultPreflight:
             pptx_path = self._pptx_path(talk)
             if pptx_path is None:
                 self.talk_add(
-                    index, severity, "slide_pptx_reference_missing",
+                    index,
+                    severity,
+                    "slide_pptx_reference_missing",
                     "slide_source requires a nonempty pptx_path",
-                    field="pptx_path", expected="PPTX path",
+                    field="pptx_path",
+                    expected="PPTX path",
                     actual=talk.get("pptx_path"),
-                )
-            elif not pptx_path.is_file():
-                self.talk_add(
-                    index, severity, "slide_pptx_artifact_missing",
-                    "declared PPTX artifact does not exist",
-                    field="pptx_path", actual=talk.get("pptx_path"),
-                    artifact_path=pptx_path,
                 )
             else:
                 capabilities = self._capabilities(index)
@@ -609,9 +674,10 @@ class VaultPreflight:
                     else None
                 )
                 raw_verified = capabilities.get("verified_evidence_sources")
-                native_verified = isinstance(
-                    raw_verified, (tuple, list, set, frozenset)
-                ) and "native_deck" in raw_verified
+                native_verified = (
+                    isinstance(raw_verified, (tuple, list, set, frozenset))
+                    and "native_deck" in raw_verified
+                )
                 if isinstance(degradation, dict):
                     self.talk_add(
                         index,
@@ -625,9 +691,7 @@ class VaultPreflight:
                         capability_fact=capabilities,
                     )
                 elif not native_verified:
-                    raw_unavailable = capabilities.get(
-                        "unavailable_evidence_sources"
-                    )
+                    raw_unavailable = capabilities.get("unavailable_evidence_sources")
                     unavailable = (
                         raw_unavailable.get("native_deck")
                         if isinstance(raw_unavailable, dict)
@@ -643,11 +707,27 @@ class VaultPreflight:
                             else "PPTX parser returned no native-deck capability"
                         )
                     )
+                    failure_kind = (
+                        unavailable.get("details", {}).get("failure_kind")
+                        if isinstance(unavailable, dict)
+                        and isinstance(unavailable.get("details"), dict)
+                        else None
+                    )
+                    code = (
+                        "slide_pptx_artifact_missing"
+                        if failure_kind == "missing"
+                        else "slide_pptx_artifact_unreadable"
+                    )
+                    message = (
+                        "declared PPTX artifact does not exist"
+                        if failure_kind == "missing"
+                        else "declared PPTX cannot be parsed or safely recovered"
+                    )
                     self.talk_add(
                         index,
                         severity,
-                        "slide_pptx_artifact_unreadable",
-                        "declared PPTX exists but cannot be parsed or safely recovered",
+                        code,
+                        message,
                         field="pptx_path",
                         actual=reason,
                         artifact_path=pptx_path,
@@ -659,7 +739,9 @@ class VaultPreflight:
             if explicit_pdf is not None:
                 if not explicit_pdf.is_file():
                     self.talk_add(
-                        index, severity, "slide_pdf_artifact_missing",
+                        index,
+                        severity,
+                        "slide_pdf_artifact_missing",
                         "declared slide PDF artifact does not exist",
                         field=self._slide_pdf_path_field(talk),
                         actual=talk.get(self._slide_pdf_path_field(talk)),
@@ -673,18 +755,24 @@ class VaultPreflight:
             drive_id = _nonempty_string(talk.get("google_drive_id"))
             if drive_id is None:
                 self.talk_add(
-                    index, severity, "slide_pdf_reference_missing",
+                    index,
+                    severity,
+                    "slide_pdf_reference_missing",
                     "slide_source requires a nonempty google_drive_id",
-                    field="google_drive_id", expected="Google Drive file ID",
+                    field="google_drive_id",
+                    expected="Google Drive file ID",
                     actual=talk.get("google_drive_id"),
                 )
             else:
                 pdf_path = self.vault_root / "slides" / f"{drive_id}.pdf"
                 if not pdf_path.is_file():
                     self.talk_add(
-                        index, severity, "slide_pdf_artifact_missing",
+                        index,
+                        severity,
+                        "slide_pdf_artifact_missing",
                         "declared Google Drive PDF artifact does not exist",
-                        field="google_drive_id", actual=drive_id,
+                        field="google_drive_id",
+                        actual=drive_id,
                         artifact_path=pdf_path,
                     )
 
@@ -693,7 +781,9 @@ class VaultPreflight:
             if explicit_pdf is not None:
                 if not explicit_pdf.is_file():
                     self.talk_add(
-                        index, severity, "slide_video_artifact_missing",
+                        index,
+                        severity,
+                        "slide_video_artifact_missing",
                         "declared video-extracted PDF artifact does not exist",
                         field=self._slide_pdf_path_field(talk),
                         actual=talk.get(self._slide_pdf_path_field(talk)),
@@ -701,22 +791,31 @@ class VaultPreflight:
                     )
                 else:
                     self._validate_video_extraction_provenance(
-                        index, explicit_pdf, severity, require_trusted=True,
+                        index,
+                        explicit_pdf,
+                        severity,
+                        require_trusted=True,
                     )
                 return
             youtube_id = self.youtube_ids.get(index)
             if youtube_id is None:
                 self.talk_add(
-                    index, severity, "slide_video_reference_missing",
+                    index,
+                    severity,
+                    "slide_video_reference_missing",
                     "video_extracted source requires a valid YouTube identity",
-                    field="youtube_id", expected="valid YouTube ID",
+                    field="youtube_id",
+                    expected="valid YouTube ID",
                     actual=talk.get("youtube_id"),
                 )
             else:
                 pdf_path = self.vault_root / "slides" / f"{youtube_id}.pdf"
                 if pdf_path.is_file():
                     self._validate_video_extraction_provenance(
-                        index, pdf_path, severity, require_trusted=True,
+                        index,
+                        pdf_path,
+                        severity,
+                        require_trusted=True,
                     )
                 elif talk.get("status") == "processed_partial":
                     # A partial result may intentionally retain only a trusted
@@ -724,13 +823,19 @@ class VaultPreflight:
                     # its complete manifest and preserved artifacts, but do not
                     # invent a promoted authored deck.
                     self._validate_video_extraction_provenance(
-                        index, None, severity, require_trusted=False,
+                        index,
+                        None,
+                        severity,
+                        require_trusted=False,
                     )
                 else:
                     self.talk_add(
-                        index, severity, "slide_video_artifact_missing",
+                        index,
+                        severity,
+                        "slide_video_artifact_missing",
                         "declared video-extracted PDF artifact does not exist",
-                        field="slide_source", actual="video_extracted",
+                        field="slide_source",
+                        actual="video_extracted",
                         artifact_path=pdf_path,
                     )
 
@@ -755,9 +860,13 @@ class VaultPreflight:
             text = transcript_path.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as exc:
             self.talk_add(
-                index, severity, "transcript_artifact_unreadable",
+                index,
+                severity,
+                "transcript_artifact_unreadable",
                 "transcript artifact cannot be decoded as UTF-8 speech text",
-                artifact_path=transcript_path, actual=str(exc))
+                artifact_path=transcript_path,
+                actual=str(exc),
+            )
             return
         valid, reason, receipt_reason, receipt_bound = (
             validate_transcript_quality_for_owner(
@@ -840,23 +949,29 @@ class VaultPreflight:
         return path if path.is_absolute() else self.vault_root / path
 
     def _validate_video_extraction_provenance(
-        self, index: int, promoted_pdf: Path | None, severity: str,
-        *, require_trusted: bool,
+        self,
+        index: int,
+        promoted_pdf: Path | None,
+        severity: str,
+        *,
+        require_trusted: bool,
     ) -> None:
         """Validate schema-v3 provenance and any claimed authored-deck trust."""
         talk = self.talks[index]
         structured = talk.get("structured_data")
         extraction = (
-            structured.get("video_extraction")
-            if isinstance(structured, dict) else None
+            structured.get("video_extraction") if isinstance(structured, dict) else None
         )
         if not isinstance(extraction, dict):
             self.talk_add(
-                index, severity, "video_extraction_provenance_missing",
+                index,
+                severity,
+                "video_extraction_provenance_missing",
                 "video-extracted slides have no structured extraction manifest",
                 field="structured_data.video_extraction",
                 expected=f"schema {VIDEO_EXTRACTION_SCHEMA_VERSION} manifest",
-                actual=extraction, artifact_path=promoted_pdf,
+                actual=extraction,
+                artifact_path=promoted_pdf,
             )
             return
 
@@ -864,11 +979,14 @@ class VaultPreflight:
             state = validate_video_extraction_manifest({"video_extraction": extraction})
         except ReturnValidationError as exc:
             self.talk_add(
-                index, "blocking", "video_extraction_provenance_invalid",
+                index,
+                "blocking",
+                "video_extraction_provenance_invalid",
                 "video extraction manifest violates the schema-v3 artifact contract",
                 field="structured_data.video_extraction",
                 expected="complete, internally consistent schema-v3 manifest",
-                actual=str(exc), artifact_path=promoted_pdf,
+                actual=str(exc),
+                artifact_path=promoted_pdf,
             )
             return
 
@@ -890,16 +1008,21 @@ class VaultPreflight:
                 errors.append("every artifact path must exist")
         if errors:
             self.talk_add(
-                index, "blocking", "video_extraction_provenance_invalid",
+                index,
+                "blocking",
+                "video_extraction_provenance_invalid",
                 "video extraction manifest is structurally or referentially invalid",
                 field="structured_data.video_extraction",
                 expected="complete schema-v3 manifest with existing source/artifacts",
-                actual=errors, artifact_path=promoted_pdf,
+                actual=errors,
+                artifact_path=promoted_pdf,
             )
             return
         if require_trusted and not state.trusted_slide_region:
             self.talk_add(
-                index, "blocking", "video_extraction_untrusted",
+                index,
+                "blocking",
+                "video_extraction_untrusted",
                 "video frames have not passed verified manual crop review",
                 field="structured_data.video_extraction.review_required",
                 expected=False,
@@ -914,9 +1037,12 @@ class VaultPreflight:
         evidence = talk.get("source_identity")
         if not isinstance(evidence, dict):
             self.talk_add(
-                index, "blocking", "source_identity_shape_invalid",
+                index,
+                "blocking",
+                "source_identity_shape_invalid",
                 "source_identity must be an object",
-                field="source_identity", expected="object",
+                field="source_identity",
+                expected="object",
                 actual=type(evidence).__name__,
             )
             return
@@ -924,47 +1050,65 @@ class VaultPreflight:
         schema_version = evidence.get("schema_version")
         if schema_version is None:
             self.talk_add(
-                index, "warning", "source_identity_schema_missing",
+                index,
+                "warning",
+                "source_identity_schema_missing",
                 "source_identity has no schema_version; validating known fields",
                 field="source_identity.schema_version",
-                expected=SOURCE_IDENTITY_SCHEMA_VERSION, actual=None,
+                expected=SOURCE_IDENTITY_SCHEMA_VERSION,
+                actual=None,
             )
         elif (
             type(schema_version) is not int
             or schema_version != SOURCE_IDENTITY_SCHEMA_VERSION
         ):
             self.talk_add(
-                index, "warning", "source_identity_schema_unsupported",
+                index,
+                "warning",
+                "source_identity_schema_unsupported",
                 "source_identity schema version is not the version this preflight owns; "
                 "validating known fields only",
                 field="source_identity.schema_version",
-                expected=SOURCE_IDENTITY_SCHEMA_VERSION, actual=schema_version,
+                expected=SOURCE_IDENTITY_SCHEMA_VERSION,
+                actual=schema_version,
             )
 
         provider = evidence.get("provider")
         if provider is not None and provider != "youtube":
             self.talk_add(
-                index, "warning", "source_identity_provider_unknown",
+                index,
+                "warning",
+                "source_identity_provider_unknown",
                 "source_identity provider is not currently understood",
-                field="source_identity.provider", expected="youtube", actual=provider,
+                field="source_identity.provider",
+                expected="youtube",
+                actual=provider,
             )
 
         evidence_id = evidence.get("video_id")
         expected_id = self.youtube_ids.get(index)
         if evidence_id is None:
             self._identity_gap(index, "video_id")
-        elif not isinstance(evidence_id, str) or not YOUTUBE_ID_RE.fullmatch(evidence_id):
+        elif not isinstance(evidence_id, str) or not YOUTUBE_ID_RE.fullmatch(
+            evidence_id
+        ):
             self.talk_add(
-                index, "blocking", "source_identity_video_id_invalid",
+                index,
+                "blocking",
+                "source_identity_video_id_invalid",
                 "source_identity video_id must be an 11-character YouTube ID",
                 field="source_identity.video_id",
-                expected="11-character YouTube ID", actual=evidence_id,
+                expected="11-character YouTube ID",
+                actual=evidence_id,
             )
         elif expected_id is not None and evidence_id != expected_id:
             self.talk_add(
-                index, "blocking", "source_identity_video_id_mismatch",
+                index,
+                "blocking",
+                "source_identity_video_id_mismatch",
                 "recorded identity evidence names a different video",
-                field="source_identity.video_id", expected=expected_id,
+                field="source_identity.video_id",
+                expected=expected_id,
                 actual=evidence_id,
             )
 
@@ -1031,9 +1175,8 @@ class VaultPreflight:
 
         webpage_video_id = evidence.get("webpage_video_id")
         if webpage_video_id is not None:
-            if (
-                not isinstance(webpage_video_id, str)
-                or not YOUTUBE_ID_RE.fullmatch(webpage_video_id)
+            if not isinstance(webpage_video_id, str) or not YOUTUBE_ID_RE.fullmatch(
+                webpage_video_id
             ):
                 self.talk_add(
                     index,
@@ -1071,9 +1214,12 @@ class VaultPreflight:
 
     def _identity_gap(self, index: int, field: str) -> None:
         self.talk_add(
-            index, "warning", f"source_identity_{field}_missing",
+            index,
+            "warning",
+            f"source_identity_{field}_missing",
             f"source_identity has no {field} evidence",
-            field=f"source_identity.{field}", expected=f"recorded {field} evidence",
+            field=f"source_identity.{field}",
+            expected=f"recorded {field} evidence",
             actual=None,
         )
 
@@ -1086,33 +1232,47 @@ class VaultPreflight:
         observed_title = _nonempty_string(observed)
         if observed_title is None:
             self.talk_add(
-                index, "blocking", "source_identity_title_invalid",
+                index,
+                "blocking",
+                "source_identity_title_invalid",
                 "source_identity title must be a nonempty string",
-                field="source_identity.title", expected="nonempty title", actual=observed,
+                field="source_identity.title",
+                expected="nonempty title",
+                actual=observed,
             )
             return
         expected_title = _nonempty_string(expected)
         if expected_title is None:
             self.talk_add(
-                index, "warning", "source_identity_title_uncheckable",
+                index,
+                "warning",
+                "source_identity_title_uncheckable",
                 "talk has no title to compare with recorded title evidence",
-                field="title", expected="talk title", actual=expected,
+                field="title",
+                expected="talk title",
+                actual=expected,
             )
             return
         if not titles_agree(expected_title, observed_title):
             self.talk_add(
-                index, "blocking", "source_identity_title_mismatch",
+                index,
+                "blocking",
+                "source_identity_title_mismatch",
                 "recorded video title does not materially overlap the catalog title",
-                field="source_identity.title", expected=expected_title,
+                field="source_identity.title",
+                expected=expected_title,
                 actual=observed_title,
             )
         event_agrees, catalog_event, provider_events = event_agreement(
-            self.talks[index].get("conference"), observed_title,
+            self.talks[index].get("conference"),
+            observed_title,
             self.event_aliases,
         )
         if event_agrees is False:
             self.talk_add(
-                index, "blocking", "source_identity_event_mismatch",
+                index,
+                "blocking",
+                "source_identity_event_mismatch",
                 "recorded video title explicitly names a different catalog event",
                 field="source_identity.title",
                 expected={
@@ -1121,9 +1281,7 @@ class VaultPreflight:
                 },
                 actual={
                     "title": observed_title,
-                    "event_aliases": [
-                        " ".join(alias) for alias in provider_events
-                    ],
+                    "event_aliases": [" ".join(alias) for alias in provider_events],
                 },
             )
 
@@ -1138,26 +1296,37 @@ class VaultPreflight:
             or any(not _nonempty_string(item) for item in observed)
         ):
             self.talk_add(
-                index, "blocking", "source_identity_speakers_invalid",
+                index,
+                "blocking",
+                "source_identity_speakers_invalid",
                 "source_identity speakers must be a nonempty array of nonempty names",
                 field="source_identity.speakers",
-                expected="nonempty string array", actual=observed,
+                expected="nonempty string array",
+                actual=observed,
             )
             return
 
         expected = expected_speakers(self.talks[index], self.config)
         if not expected:
             self.talk_add(
-                index, "warning", "source_identity_speakers_uncheckable",
+                index,
+                "warning",
+                "source_identity_speakers_uncheckable",
                 "catalog and config have no expected speaker name",
-                field="speaker", expected="catalog or config speaker", actual=None,
+                field="speaker",
+                expected="catalog or config speaker",
+                actual=None,
             )
             return
         if not any(names_agree(left, right) for left in expected for right in observed):
             self.talk_add(
-                index, "blocking", "source_identity_speaker_mismatch",
+                index,
+                "blocking",
+                "source_identity_speaker_mismatch",
                 "recorded speaker evidence does not name an expected speaker",
-                field="source_identity.speakers", expected=expected, actual=observed,
+                field="source_identity.speakers",
+                expected=expected,
+                actual=observed,
             )
 
     def _validate_identity_dates(self, index: int, evidence: dict[str, Any]) -> None:
@@ -1172,9 +1341,12 @@ class VaultPreflight:
         upload = self._parse_evidence_date(index, "upload_date", upload_raw)
         if talk_date is None:
             self.talk_add(
-                index, "warning", "source_identity_date_uncheckable",
+                index,
+                "warning",
+                "source_identity_date_uncheckable",
                 "catalog date is absent or not YYYY/ISO-8601; source dates cannot be compared",
-                field="date", expected="YYYY or YYYY-MM-DD",
+                field="date",
+                expected="YYYY or YYYY-MM-DD",
                 actual=self.talks[index].get("date"),
             )
             return
@@ -1183,58 +1355,84 @@ class VaultPreflight:
         if recorded is not None:
             if recorded.year != catalog_year:
                 self.talk_add(
-                    index, "blocking", "source_identity_recorded_year_mismatch",
+                    index,
+                    "blocking",
+                    "source_identity_recorded_year_mismatch",
                     "recorded date and catalog date are in different years",
                     field="source_identity.recorded_date",
-                    expected=catalog_year, actual=recorded.isoformat(),
+                    expected=catalog_year,
+                    actual=recorded.isoformat(),
                 )
             elif catalog_day is not None and recorded != catalog_day:
                 self.talk_add(
-                    index, "warning", "source_identity_recorded_date_differs",
+                    index,
+                    "warning",
+                    "source_identity_recorded_date_differs",
                     "recorded date differs from the catalog day within the same year",
                     field="source_identity.recorded_date",
-                    expected=catalog_day.isoformat(), actual=recorded.isoformat(),
+                    expected=catalog_day.isoformat(),
+                    actual=recorded.isoformat(),
                 )
         if upload is not None:
             predates = (
-                upload < catalog_day if catalog_day is not None
+                upload < catalog_day
+                if catalog_day is not None
                 else upload.year < catalog_year
             )
             if predates:
                 self.talk_add(
-                    index, "blocking", "source_identity_upload_predates_talk",
+                    index,
+                    "blocking",
+                    "source_identity_upload_predates_talk",
                     "recorded upload date predates the cataloged delivery",
                     field="source_identity.upload_date",
-                    expected=(catalog_day.isoformat() if catalog_day else f">={catalog_year}"),
+                    expected=(
+                        catalog_day.isoformat() if catalog_day else f">={catalog_year}"
+                    ),
                     actual=upload.isoformat(),
                 )
 
     def _parse_evidence_date(
-        self, index: int, field: str, value: Any,
+        self,
+        index: int,
+        field: str,
+        value: Any,
     ) -> date | None:
         if value is None:
             return None
         if not isinstance(value, str):
             self.talk_add(
-                index, "blocking", "source_identity_date_invalid",
+                index,
+                "blocking",
+                "source_identity_date_invalid",
                 f"source_identity {field} must be an ISO-8601 calendar date",
-                field=f"source_identity.{field}", expected="YYYY-MM-DD", actual=value,
+                field=f"source_identity.{field}",
+                expected="YYYY-MM-DD",
+                actual=value,
             )
             return None
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
             self.talk_add(
-                index, "blocking", "source_identity_date_invalid",
+                index,
+                "blocking",
+                "source_identity_date_invalid",
                 f"source_identity {field} must be an ISO-8601 calendar date",
-                field=f"source_identity.{field}", expected="YYYY-MM-DD", actual=value,
+                field=f"source_identity.{field}",
+                expected="YYYY-MM-DD",
+                actual=value,
             )
             return None
         try:
             return date.fromisoformat(value)
         except ValueError:
             self.talk_add(
-                index, "blocking", "source_identity_date_invalid",
+                index,
+                "blocking",
+                "source_identity_date_invalid",
                 f"source_identity {field} must be an ISO-8601 calendar date",
-                field=f"source_identity.{field}", expected="YYYY-MM-DD", actual=value,
+                field=f"source_identity.{field}",
+                expected="YYYY-MM-DD",
+                actual=value,
             )
             return None
 
@@ -1250,10 +1448,13 @@ class VaultPreflight:
             or observed <= 0
         ):
             self.talk_add(
-                index, "blocking", "source_identity_duration_invalid",
+                index,
+                "blocking",
+                "source_identity_duration_invalid",
                 "source_identity duration_seconds must be a positive number",
                 field="source_identity.duration_seconds",
-                expected="positive seconds", actual=observed,
+                expected="positive seconds",
+                actual=observed,
             )
             return
 
@@ -1263,9 +1464,12 @@ class VaultPreflight:
         tolerance = max(60.0, expected * 0.05)
         if abs(float(observed) - expected) > tolerance:
             self.talk_add(
-                index, "blocking", "source_identity_duration_mismatch",
+                index,
+                "blocking",
+                "source_identity_duration_mismatch",
                 "recorded duration differs from catalog duration beyond 60 seconds or 5%",
-                field="source_identity.duration_seconds", expected=expected,
+                field="source_identity.duration_seconds",
+                expected=expected,
                 actual=observed,
             )
 
@@ -1281,7 +1485,9 @@ class VaultPreflight:
                 or not _nonempty_string(target)
             ):
                 self.talk_add(
-                    index, "blocking", "source_relation_invalid",
+                    index,
+                    "blocking",
+                    "source_relation_invalid",
                     "source relation must have type duplicate|borrowed_recording and a target filename",
                     field="source_relation",
                     expected={"type": sorted(RELATION_TYPES), "target_filename": "..."},
@@ -1292,10 +1498,13 @@ class VaultPreflight:
             target_index = self.filenames.get(target)
             if target_index is None or target_index == index:
                 self.talk_add(
-                    index, "blocking", "source_relation_invalid",
+                    index,
+                    "blocking",
+                    "source_relation_invalid",
                     "source relation target must name another catalog record",
                     field="source_relation.target_filename",
-                    expected="another existing filename", actual=target,
+                    expected="another existing filename",
+                    actual=target,
                 )
                 continue
             source_id = self.youtube_ids.get(index)
@@ -1307,10 +1516,13 @@ class VaultPreflight:
                 # corrupt.  The explicit v1 source_relation shape is narrower.
                 if "source_relation" in talk or relation_type == "borrowed_recording":
                     self.talk_add(
-                        index, "blocking", "source_relation_identity_mismatch",
+                        index,
+                        "blocking",
+                        "source_relation_identity_mismatch",
                         "duplicate/borrowed relation target must carry the same YouTube identity",
                         field="source_relation.target_filename",
-                        expected=source_id, actual=target_id,
+                        expected=source_id,
+                        actual=target_id,
                     )
                 continue
             self.valid_relations[index] = (relation_type, target)
@@ -1326,27 +1538,30 @@ class VaultPreflight:
             if len(roots) <= 1:
                 continue
             filenames = [
-                _nonempty_string(self.talks[index].get("filename"))
-                or f"talk[{index}]"
+                _nonempty_string(self.talks[index].get("filename")) or f"talk[{index}]"
                 for index in indexes
             ]
             self.add(
-                "blocking", "duplicate_youtube_id",
+                "blocking",
+                "duplicate_youtube_id",
                 "YouTube ID is used by multiple talks without an explicit "
                 "duplicate/borrowed-recording relation",
-                field="youtube_id", expected="one canonical record plus explicit relations",
+                field="youtube_id",
+                expected="one canonical record plus explicit relations",
                 actual={"youtube_id": video_id, "filenames": filenames},
             )
 
     def report(self, talk_count: int) -> dict[str, Any]:
         severity_order = {"blocking": 0, "warning": 1}
-        self.findings.sort(key=lambda finding: (
-            severity_order.get(finding["severity"], 9),
-            finding["filename"] or "",
-            finding["talk_index"] if finding["talk_index"] is not None else -1,
-            finding["code"],
-            finding["message"],
-        ))
+        self.findings.sort(
+            key=lambda finding: (
+                severity_order.get(finding["severity"], 9),
+                finding["filename"] or "",
+                finding["talk_index"] if finding["talk_index"] is not None else -1,
+                finding["code"],
+                finding["message"],
+            )
+        )
         by_severity = Counter(item["severity"] for item in self.findings)
         by_code = Counter(item["code"] for item in self.findings)
         blocking = by_severity["blocking"]
@@ -1423,19 +1638,17 @@ def expected_duration_seconds(talk: dict[str, Any]) -> float | None:
     ]
     structured = talk.get("structured_data")
     if isinstance(structured, dict):
-        candidates.extend([
-            structured.get("video_duration_seconds"),
-            structured.get("recording_duration_seconds"),
-            structured.get("duration_seconds"),
-        ])
+        candidates.extend(
+            [
+                structured.get("video_duration_seconds"),
+                structured.get("recording_duration_seconds"),
+                structured.get("duration_seconds"),
+            ]
+        )
     for value in candidates:
         if isinstance(value, bool):
             continue
-        if (
-            isinstance(value, (int, float))
-            and math.isfinite(value)
-            and value > 0
-        ):
+        if isinstance(value, (int, float)) and math.isfinite(value) and value > 0:
             return float(value)
     return None
 
@@ -1461,14 +1674,20 @@ def relation_from(talk: dict[str, Any]) -> tuple[Any, Any] | None:
 
 
 def resolve_input(value: str | Path) -> tuple[Path, Path]:
-    """Return ``(vault_root, database_path)`` without requiring either to exist."""
+    """Bind a vault root to its canonical database without filesystem probes.
+
+    Only a case-insensitive ``tracking-database.json`` basename is a direct
+    database locator; every other value is the vault root.
+    """
     path = Path(value).expanduser()
-    if path.is_dir() or (not path.exists() and path.suffix.casefold() != ".json"):
+    if path.name.casefold() != "tracking-database.json":
         return path, path / "tracking-database.json"
     return path.parent, path
 
 
-def error_report(vault_root: Path, database_path: Path, code: str, message: str) -> dict[str, Any]:
+def error_report(
+    vault_root: Path, database_path: Path, code: str, message: str
+) -> dict[str, Any]:
     validator = VaultPreflight({}, vault_root, database_path)
     validator.add("blocking", code, message)
     return validator.report(0)
@@ -1484,9 +1703,12 @@ def run_preflight(value: str | Path) -> dict[str, Any]:
         message = str(exc)
         if "not valid UTF-8" in message:
             code = "database_encoding_invalid"
-        elif "not valid JSON" in message or "duplicate object key" in message or (
-            "non-standard JSON number" in message
-        ) or "root must be a JSON object" in message:
+        elif (
+            "not valid JSON" in message
+            or "duplicate object key" in message
+            or ("non-standard JSON number" in message)
+            or "root must be a JSON object" in message
+        ):
             code = "database_json_invalid"
         else:
             code = "database_unreadable"
@@ -1510,8 +1732,10 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit as exc:
         if exc.code:
             report = error_report(
-                Path.cwd(), Path.cwd() / "tracking-database.json",
-                "invalid_arguments", "expected one vault directory or database path",
+                Path.cwd(),
+                Path.cwd() / "tracking-database.json",
+                "invalid_arguments",
+                "expected one vault directory or database path",
             )
             print(json.dumps(report, indent=2, sort_keys=True))
         raise
