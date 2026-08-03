@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.9 — 2026-08-03
+
 ### fix(vault-ingress) — reject impossible inspected-page ranges before PPTX work (#204)
 
 The PPTX CLI now rejects page zero, descending ranges, page numbers beyond the
