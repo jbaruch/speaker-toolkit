@@ -222,6 +222,33 @@ def test_skip_conflict_copy(pptx_extraction):
     assert "conflict" in reason
 
 
+@pytest.mark.parametrize(
+    "reason_code",
+    [
+        "pptx_artifact_changed",
+        "pptx_dependency_unavailable",
+        "pptx_probe_containment_unavailable",
+        "pptx_probe_crash",
+        "pptx_probe_malformed_result",
+        "pptx_probe_monitor_identity_changed",
+        "pptx_probe_monitor_unavailable",
+        "pptx_probe_request_oversized",
+        "pptx_probe_resource_unavailable",
+        "pptx_probe_result_oversized",
+        "pptx_probe_start_failure",
+        "pptx_probe_timeout",
+    ],
+)
+def test_batch_preserves_current_and_legacy_supervisor_reasons(
+    pptx_extraction,
+    reason_code: str,
+) -> None:
+    assert (
+        pptx_extraction._batch_error_reason(SimpleNamespace(reason_code=reason_code))
+        == reason_code
+    )
+
+
 def test_skip_custom_pattern(pptx_extraction):
     skip, reason = pptx_extraction.should_skip("my-template.pptx", ["template"])
     assert skip is True
@@ -1441,7 +1468,7 @@ def test_area_ratio_is_not_rounded_across_the_threshold(pptx_extraction):
         height = 10000
 
     ratio = pptx_extraction.picture_area_ratio(_Shape(), _Prs())
-    assert ratio < pptx_extraction._TEXT_BEARING_IMAGE_AREA_RATIO
+    assert ratio < pptx_extraction.PPTX_TEXT_BEARING_IMAGE_AREA_RATIO
     assert ratio == pytest.approx(0.4996)
 
 

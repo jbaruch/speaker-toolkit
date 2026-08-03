@@ -281,27 +281,133 @@ def test_rendered_pdf_capture_failure_kind_must_be_a_closed_string(
     assert caught.value.reason_code == "pptx_probe_malformed_result"
 
 
+_SUPERVISOR_PUBLIC_MESSAGES = {
+    "pptx_artifact_changed": (
+        "PPTX artifact changed during bounded evidence inspection"
+    ),
+    "pptx_probe_timeout": (
+        "bounded PPTX evidence operation timed out after 7 seconds; use an "
+        "independent healthy evidence lane or repair/re-export the deck"
+    ),
+    "pptx_probe_resource_unavailable": (
+        "PPTX evidence exceeded a configured worker resource limit"
+    ),
+    "pptx_dependency_unavailable": (
+        "PPTX evidence requires its declared runtime dependencies; install the "
+        "speaker-toolkit project dependencies"
+    ),
+    "pptx_probe_monitor_unavailable": (
+        "bounded PPTX evidence worker could not inspect its process tree"
+    ),
+    "pptx_probe_monitor_identity_changed": (
+        "bounded PPTX evidence worker process identity changed during inspection"
+    ),
+    "pptx_probe_containment_unavailable": (
+        "bounded PPTX evidence worker could not establish or preserve "
+        "process-tree containment"
+    ),
+    "pptx_probe_request_oversized": (
+        "bounded PPTX evidence worker request exceeded its input contract"
+    ),
+    "pptx_probe_result_oversized": (
+        "bounded PPTX evidence worker result exceeded its output contract"
+    ),
+    "pptx_probe_start_failure": "could not start the bounded PPTX evidence worker",
+    "pptx_probe_crash": "bounded PPTX evidence worker terminated unexpectedly",
+    "pptx_probe_malformed_result": (
+        "bounded PPTX evidence worker returned an invalid protocol result"
+    ),
+}
+
+_SUPERVISOR_FAILURE_CASES = [
+    ("worker_generation_changed", {}, "pptx_artifact_changed"),
+    ("worker_generation_binding_mismatch", {}, "pptx_artifact_changed"),
+    ("worker_timeout", {}, "pptx_probe_timeout"),
+    ("worker_memory_limit_exceeded", {}, "pptx_probe_resource_unavailable"),
+    ("worker_process_limit_exceeded", {}, "pptx_probe_resource_unavailable"),
+    ("worker_diagnostic_limit_exceeded", {}, "pptx_probe_resource_unavailable"),
+    (
+        "worker_monitor_unavailable",
+        {"dependency": "psutil"},
+        "pptx_dependency_unavailable",
+    ),
+    ("worker_monitor_unavailable", {}, "pptx_probe_monitor_unavailable"),
+    (
+        "worker_monitor_identity_changed",
+        {},
+        "pptx_probe_monitor_identity_changed",
+    ),
+    (
+        "worker_containment_unavailable",
+        {},
+        "pptx_probe_containment_unavailable",
+    ),
+    ("worker_process_tree_leak", {}, "pptx_probe_containment_unavailable"),
+    ("worker_cleanup_failed", {}, "pptx_probe_containment_unavailable"),
+    ("worker_input_limit_exceeded", {}, "pptx_probe_request_oversized"),
+    ("worker_output_limit_exceeded", {}, "pptx_probe_result_oversized"),
+    ("worker_start_failed", {}, "pptx_probe_start_failure"),
+    ("worker_pipe_setup_failed", {}, "pptx_probe_start_failure"),
+    ("worker_exit_before_barrier", {}, "pptx_probe_start_failure"),
+    ("worker_request_write_failed", {}, "pptx_probe_start_failure"),
+    ("invalid_worker_command", {}, "pptx_probe_start_failure"),
+    ("unsafe_worker_process_metadata", {}, "pptx_probe_start_failure"),
+    ("worker_exit", {}, "pptx_probe_crash"),
+    ("worker_diagnostic_read_failed", {}, "pptx_probe_crash"),
+    ("worker_output_read_failed", {}, "pptx_probe_crash"),
+    ("invalid_worker_response", {}, "pptx_probe_malformed_result"),
+    ("worker_response_authentication_failed", {}, "pptx_probe_malformed_result"),
+    ("worker_response_binding_mismatch", {}, "pptx_probe_malformed_result"),
+    ("invalid_worker_response_bindings", {}, "pptx_probe_malformed_result"),
+    ("worker_response_bindings_mismatch", {}, "pptx_probe_malformed_result"),
+    ("worker_response_body_mismatch", {}, "pptx_probe_malformed_result"),
+    ("invalid_worker_response_body", {}, "pptx_probe_malformed_result"),
+    ("invalid_worker_request", {}, "pptx_probe_malformed_result"),
+    ("invalid_worker_operation", {}, "pptx_probe_malformed_result"),
+    ("worker_operation_failed", {}, "pptx_probe_malformed_result"),
+    ("protocol_isolation_failed", {}, "pptx_probe_malformed_result"),
+    ("future_supervisor_fault", {}, "pptx_probe_malformed_result"),
+]
+
+
 @pytest.mark.parametrize(
-    ("supervisor_reason", "evidence_reason"),
-    [
-        ("worker_exit_before_barrier", "pptx_probe_start_failure"),
-        ("worker_request_write_failed", "pptx_probe_start_failure"),
-        ("worker_output_read_failed", "pptx_probe_crash"),
-        ("worker_diagnostic_read_failed", "pptx_probe_crash"),
-        ("worker_generation_binding_mismatch", "pptx_artifact_changed"),
-    ],
+    ("supervisor_reason", "supervisor_details", "evidence_reason"),
+    _SUPERVISOR_FAILURE_CASES,
 )
-def test_supervisor_failures_keep_stable_evidence_distinctions(
+def test_supervisor_failures_keep_cause_correct_path_free_diagnostics(
     pptx_evidence,
     supervisor_reason: str,
+    supervisor_details: dict[str, object],
     evidence_reason: str,
 ) -> None:
+    leaked_values = (
+        "/private/vault/source.pptx",
+        "parser exploded while reading a secret deck",
+        "credential-value-should-never-escape",
+    )
     error = pptx_evidence._supervisor_probe_failure(
-        pptx_evidence.SupervisorError(supervisor_reason),
-        timeout_seconds=1,
+        pptx_evidence.SupervisorError(
+            supervisor_reason,
+            {
+                **supervisor_details,
+                "path": leaked_values[0],
+                "parser_output": leaked_values[1],
+                "credential": leaked_values[2],
+            },
+        ),
+        timeout_seconds=7,
     )
 
     assert error.reason_code == evidence_reason
+    assert str(error) == _SUPERVISOR_PUBLIC_MESSAGES[evidence_reason]
+    if evidence_reason == "pptx_artifact_changed":
+        assert error.details == {}
+    elif evidence_reason == "pptx_probe_timeout":
+        assert error.details == {"timeout_seconds": 7}
+    else:
+        assert error.details == {"supervisor_reason_code": supervisor_reason}
+    rendered = str(error) + json.dumps(error.details, sort_keys=True)
+    assert all(value not in rendered for value in leaked_values)
 
 
 def test_blocked_metadata_child_timeout_is_bounded_and_path_free(
@@ -2338,6 +2444,10 @@ def test_near_threshold_picture_uses_reported_ratio_for_render_decision(
     extraction = pptx_extraction._extract_pptx_in_process(deck, ocr=False)
     slide_result = extraction["per_slide_visual"][0]
 
+    assert (
+        pptx_extraction.PPTX_TEXT_BEARING_IMAGE_AREA_RATIO
+        == pptx_evidence.PPTX_TEXT_BEARING_IMAGE_AREA_RATIO
+    )
     assert slide_result["image_area_ratio"] == 0.5
     assert "large_picture" in slide_result["render_required_reasons"]
     assert (

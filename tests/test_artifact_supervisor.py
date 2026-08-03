@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ctypes
-import importlib.util
+import importlib
 import io
 import json
 import os
@@ -28,11 +28,10 @@ SCRIPT = (
     / "artifact_supervisor.py"
 )
 SCRIPT_DIR = SCRIPT.parent
-SPEC = importlib.util.spec_from_file_location("artifact_supervisor", SCRIPT)
-assert SPEC is not None and SPEC.loader is not None
-artifact_supervisor = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = artifact_supervisor
-SPEC.loader.exec_module(artifact_supervisor)
+script_dir = os.fspath(SCRIPT_DIR)
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+artifact_supervisor = importlib.import_module("artifact_supervisor")
 
 
 WORKER_CODE = f"""
@@ -1697,6 +1696,28 @@ def test_null_is_a_valid_authenticated_success_payload():
         (),
     )
     assert result.payload is None
+
+
+def test_response_frame_limit_reports_output_not_request_cause():
+    request = artifact_supervisor.build_worker_request(
+        "probe",
+        {},
+        {},
+        credentials=artifact_supervisor.WorkerCredentials(b"k" * 32),
+        request_id="1" * 64,
+    )
+
+    with pytest.raises(artifact_supervisor.SupervisorError) as caught:
+        artifact_supervisor.write_worker_response(
+            request,
+            payload={"value": "x" * 4096},
+            observed_generations={},
+            stream=io.BytesIO(),
+            max_output_bytes=512,
+        )
+
+    assert caught.value.reason_code == "worker_output_limit_exceeded"
+    assert caught.value.details == {"limit_bytes": 512}
 
 
 def test_psutil_monitor_aggregates_tree_rss_and_binds_root_identity(monkeypatch):

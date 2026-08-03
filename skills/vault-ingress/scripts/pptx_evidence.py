@@ -74,6 +74,10 @@ RENDER_INSPECTION_SCHEMA_VERSION = 1
 PPTX_ARTIFACT_PROBE_SCHEMA_VERSION = 1
 PPTX_ARTIFACT_PROBE_TIMEOUT_SECONDS = 15
 PPTX_OCR_TRUST_CONFIDENCE = 50.0
+# A reported picture-area ratio at or above this boundary requires rendered
+# inspection because the picture can carry text invisible to the shape walk.
+# Producer and validator both consume this one authority so they cannot drift.
+PPTX_TEXT_BEARING_IMAGE_AREA_RATIO = 0.5
 PPTX_ARTIFACT_PROBE_MAX_RESULT_BYTES = 64 * 1024
 PPTX_ARTIFACT_PROBE_MAX_RECOVERY_RECORDS = 64
 PPTX_ARCHIVE_MAX_MEMBERS = 65_536
@@ -1004,8 +1008,8 @@ def _probe_failure(
             + "; restore or re-export the source deck"
         ),
         "pptx_dependency_unavailable": (
-            "PPTX evidence requires the declared python-pptx and lxml runtime "
-            "dependencies; install the speaker-toolkit project dependencies"
+            "PPTX evidence requires its declared runtime dependencies; install "
+            "the speaker-toolkit project dependencies"
         ),
         "pptx_evidence_invalid": (
             "PPTX artifact violates the evidence contract; restore or re-export "
@@ -1022,11 +1026,23 @@ def _probe_failure(
             "PPTX artifact probe failed unexpectedly inside its bounded worker"
         ),
         "pptx_probe_resource_unavailable": (
-            "PPTX artifact probe exhausted worker resources"
+            "PPTX evidence exceeded a configured worker resource limit"
+        ),
+        "pptx_probe_request_oversized": (
+            "bounded PPTX evidence worker request exceeded its input contract"
         ),
         "pptx_probe_result_oversized": (
-            "PPTX artifact probe produced more recovery metadata than the bounded "
-            "result contract permits"
+            "bounded PPTX evidence worker result exceeded its output contract"
+        ),
+        "pptx_probe_monitor_unavailable": (
+            "bounded PPTX evidence worker could not inspect its process tree"
+        ),
+        "pptx_probe_monitor_identity_changed": (
+            "bounded PPTX evidence worker process identity changed during inspection"
+        ),
+        "pptx_probe_containment_unavailable": (
+            "bounded PPTX evidence worker could not establish or preserve "
+            "process-tree containment"
         ),
         "pptx_recovery_failure": (
             "could not recover corrupt PPTX media; restore or re-export the source deck"
@@ -1037,22 +1053,22 @@ def _probe_failure(
             + "; restore or re-export the source deck"
         ),
         "pptx_probe_timeout": (
-            "PPTX artifact probe timed out after "
+            "bounded PPTX evidence operation timed out after "
             f"{timeout_seconds} seconds; use an independent "
             "healthy evidence lane or repair/re-export the deck"
         ),
-        "pptx_probe_start_failure": "could not start the bounded PPTX artifact probe",
-        "pptx_probe_crash": (
-            "PPTX artifact probe terminated inside its bounded worker"
-        ),
+        "pptx_probe_start_failure": "could not start the bounded PPTX evidence worker",
+        "pptx_probe_crash": "bounded PPTX evidence worker terminated unexpectedly",
         "pptx_probe_malformed_result": (
-            "PPTX artifact probe returned an invalid bounded result"
+            "bounded PPTX evidence worker returned an invalid protocol result"
         ),
         "pptx_probe_materialization_changed": (
             "PPTX artifact produced inconsistent bounded reads while cloud "
             "materialization was changing; retry after the file is fully local"
         ),
-        "pptx_artifact_changed": "PPTX artifact changed while it was being probed",
+        "pptx_artifact_changed": (
+            "PPTX artifact changed during bounded evidence inspection"
+        ),
         "pptx_cloud_placeholder_unavailable": (
             "PPTX artifact is an offline cloud placeholder; download the file "
             "locally before using native-deck evidence"
@@ -1688,17 +1704,46 @@ def _supervisor_probe_failure(
             "pptx_probe_timeout",
             details={"timeout_seconds": timeout_seconds},
         )
+    closed_details = {"supervisor_reason_code": reason}
+    if reason == "worker_input_limit_exceeded":
+        return _probe_failure(
+            "pptx_probe_request_oversized",
+            details=closed_details,
+        )
+    if reason == "worker_output_limit_exceeded":
+        return _probe_failure(
+            "pptx_probe_result_oversized",
+            details=closed_details,
+        )
+    if reason == "worker_monitor_unavailable":
+        public_reason = (
+            "pptx_dependency_unavailable"
+            if exc.details.get("dependency") == "psutil"
+            else "pptx_probe_monitor_unavailable"
+        )
+        return _probe_failure(public_reason, details=closed_details)
+    if reason == "worker_monitor_identity_changed":
+        return _probe_failure(
+            "pptx_probe_monitor_identity_changed",
+            details=closed_details,
+        )
+    if reason in {
+        "worker_containment_unavailable",
+        "worker_process_tree_leak",
+        "worker_cleanup_failed",
+    }:
+        return _probe_failure(
+            "pptx_probe_containment_unavailable",
+            details=closed_details,
+        )
     if reason in {
         "worker_memory_limit_exceeded",
         "worker_process_limit_exceeded",
-        "worker_monitor_unavailable",
-        "worker_monitor_identity_changed",
-        "worker_containment_unavailable",
         "worker_diagnostic_limit_exceeded",
     }:
         return _probe_failure(
             "pptx_probe_resource_unavailable",
-            details={"supervisor_reason_code": reason},
+            details=closed_details,
         )
     if reason in {
         "worker_start_failed",
@@ -1710,30 +1755,20 @@ def _supervisor_probe_failure(
     }:
         return _probe_failure(
             "pptx_probe_start_failure",
-            details={"supervisor_reason_code": reason},
-        )
-    if reason in {
-        "worker_output_limit_exceeded",
-        "worker_input_limit_exceeded",
-    }:
-        return _probe_failure(
-            "pptx_probe_result_oversized",
-            details={"supervisor_reason_code": reason},
+            details=closed_details,
         )
     if reason in {
         "worker_exit",
-        "worker_process_tree_leak",
-        "worker_cleanup_failed",
         "worker_diagnostic_read_failed",
         "worker_output_read_failed",
     }:
         return _probe_failure(
             "pptx_probe_crash",
-            details={"supervisor_reason_code": reason},
+            details=closed_details,
         )
     return _probe_failure(
         "pptx_probe_malformed_result",
-        details={"supervisor_reason_code": reason},
+        details=closed_details,
     )
 
 
@@ -4017,7 +4052,7 @@ def _valid_slide_visual(
     expected_reasons = {cast(str, item["content_type"]) for item in typed_unsupported}
     if value["background_type"] == "image":
         expected_reasons.add("background_image")
-    if cast(float, value["image_area_ratio"]) >= 0.5:
+    if cast(float, value["image_area_ratio"]) >= PPTX_TEXT_BEARING_IMAGE_AREA_RATIO:
         expected_reasons.add("large_picture")
     if any(shape["shape_type"] == "GROUP (6)" for shape in typed_shapes):
         expected_reasons.add("grouped_shapes")

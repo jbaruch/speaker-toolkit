@@ -1812,12 +1812,22 @@ summary fields require complete coverage of every render-required slide.
 Persistence recomputes the audit in a bounded worker and matches the receipt to
 owner-canonical native-deck and static-slide identities.
 
+Current supervisor receipts preserve request, result, dependency, monitor,
+identity, containment, and resource-limit causes through the mapping owned by
+`pptx_evidence.py`. Successful extraction evidence is unchanged, so this does
+not advance the extraction schema or pipeline. Previously persisted ambiguous
+failure/skip receipts remain readable and must not be relabeled: their closed
+details do not prove a narrower historical cause. Rerun ingress to regenerate
+them under the current mapping before relying on remediation advice.
+
 `image_area_ratio` is the **largest** `is_picture: true` shape's area as a
-fraction of the slide, rounded to 3 decimals; always present. `0.0` means no
-picture, unreadable picture geometry, **or** a picture small enough to round
-down — it is not proof that the slide has no picture. The render/confidence
-threshold uses that same reported value: `image_area_ratio >= 0.5`
-deterministically adds `large_picture`.
+fraction of the slide as emitted by `pptx-extraction.py` and validated by
+`pptx_evidence.py`; it is always present. Script-owned normalization can make
+an extremely small picture report `0.0`, so that value is not proof that the
+slide has no picture. `PPTX_TEXT_BEARING_IMAGE_AREA_RATIO` in
+`pptx_evidence.py` is the sole authority for when the reported value adds
+`large_picture`; prose and downstream consumers must not reproduce its
+predicate.
 
 It measures picture **shapes** only, including an inserted picture placeholder
 whose OOXML element is a picture; media poster frames are not picture evidence.
