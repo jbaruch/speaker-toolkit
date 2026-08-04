@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.10 — 2026-08-04
+
 ### fix(vault-ingress) — isolate video frame workspaces from stale evidence (#213)
 
 Every video extraction now uses a fresh private temporary frame workspace for
