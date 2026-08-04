@@ -215,6 +215,131 @@ def _signature_combination_fixture() -> tuple[dict[str, Any], list[dict[str, str
     )
 
 
+def _window_evidence(*, detected: int) -> dict[str, Any]:
+    return {
+        "applicable_count": 5,
+        "evaluable_count": 5,
+        "detected_count": detected,
+        "unevaluable_count": 0,
+        "applicable_coverage": 1.0,
+        "lower": detected / 5,
+        "upper": detected / 5,
+    }
+
+
+def _trend_validation_fixture(
+    reason: str | None = None,
+) -> tuple[dict[str, Any], list[dict[str, str]], list[dict[str, str]]]:
+    filenames = [f"talk-{index:02d}.md" for index in range(10)]
+    positive_rows = [{"pattern_id": "p1"}]
+    antipattern_rows = [{"pattern_id": "a1"}]
+    if reason is None:
+        status = "available"
+        reasons: list[str] = []
+        score = {
+            "status": "improving",
+            "prior_average": 0.0,
+            "recent_average": 1.0,
+            "delta": 1.0,
+        }
+        breadth = {
+            "status": "widening",
+            "prior_average": 0.0,
+            "recent_average": 1.0,
+            "delta": 1.0,
+        }
+        pattern_movements = [
+            {
+                "pattern_id": "p1",
+                "movement": "increasing",
+                "prior_evidence": _window_evidence(detected=0),
+                "recent_evidence": _window_evidence(detected=1),
+                "reason_codes": ["conservative_interval_increase"],
+            }
+        ]
+        antipattern_movements = [
+            {
+                "pattern_id": "a1",
+                "movement": "decreasing",
+                "prior_evidence": _window_evidence(detected=1),
+                "recent_evidence": _window_evidence(detected=0),
+                "reason_codes": ["conservative_interval_decrease"],
+            }
+        ]
+        valid_date_count = 10
+        invalid_filenames: list[str] = []
+        selected_filenames = filenames
+        identity: str | None = "a" * 64
+        score_drivers = {
+            "direction": "improving",
+            "pattern_drivers": ["p1"],
+            "antipattern_drivers": ["a1"],
+        }
+    else:
+        status = "unavailable"
+        reasons = [reason]
+        score = {
+            "status": "unavailable",
+            "prior_average": None,
+            "recent_average": None,
+            "delta": None,
+        }
+        breadth = copy.deepcopy(score)
+        pattern_movements = []
+        antipattern_movements = []
+        insufficient = reason == "insufficient_valid_date_sample"
+        valid_date_count = 9 if insufficient else 10
+        invalid_filenames = [filenames[-1]] if insufficient else []
+        selected_filenames = [] if insufficient else filenames
+        identity = "a" * 64 if reason == "no_evaluable_pattern_opportunities" else None
+        score_drivers = {
+            "direction": "unavailable",
+            "pattern_drivers": [],
+            "antipattern_drivers": [],
+        }
+    profile = {
+        "baseline_talk_filenames": filenames,
+        "classification_availability": {
+            "trends": {"status": status, "reason_codes": reasons}
+        },
+        "trend_analysis": {
+            "status": status,
+            "reason_codes": reasons,
+            "sample": {
+                "required_talk_count": 10,
+                "valid_date_talk_count": valid_date_count,
+                "invalid_date_filenames": invalid_filenames,
+                "selected_filenames": selected_filenames,
+                "opportunity_coverage_identity": identity,
+            },
+            "score": score,
+            "breadth": breadth,
+            "pattern_movements": pattern_movements,
+            "antipattern_movements": antipattern_movements,
+        },
+        "score_trend": score["status"],
+        "pattern_breadth": {"trend": breadth["status"]},
+        "score_drivers": score_drivers,
+    }
+    return profile, positive_rows, antipattern_rows
+
+
+def _trend_validation_errors(
+    provenance,
+    profile: dict[str, Any],
+    positive_rows: list[dict[str, str]],
+    antipattern_rows: list[dict[str, str]],
+) -> list[str]:
+    return provenance._validate_trend_analysis(
+        profile,
+        positive_rows,
+        antipattern_rows,
+        eligible_talk_count=10,
+        required_talk_count=10,
+        window_size=5,
+    )
+
+
 def _run(validate_profile, profile, tmp_path, capsys, *, extra_talks=None):
     fingerprint, scoring_schema = validate_profile.active_pattern_generation_identity()
     opportunities = importlib.import_module("pattern_opportunities")
@@ -815,6 +940,252 @@ def test_signature_combination_requires_reason_codes(validate_profile):
     )
 
     assert any("reason_codes must not be empty" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        None,
+        "insufficient_valid_date_sample",
+        "opportunity_identity_unavailable",
+        "incomparable_opportunity_identities",
+        "no_evaluable_pattern_opportunities",
+    ],
+)
+def test_trend_validator_accepts_every_canonical_variant(validate_profile, reason):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    profile, positive_rows, antipattern_rows = _trend_validation_fixture(reason)
+
+    errors = _trend_validation_errors(
+        provenance, profile, positive_rows, antipattern_rows
+    )
+
+    assert errors == []
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "unknown_analysis_field",
+        "unknown_sample_field",
+        "unknown_metric_field",
+        "boolean_valid_date_count",
+        "duplicate_selected_filename",
+        "availability_reason_mismatch",
+        "uppercase_identity",
+    ],
+)
+def test_trend_validator_rejects_noncanonical_sample_and_availability(
+    validate_profile, case
+):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    profile, positive_rows, antipattern_rows = _trend_validation_fixture()
+    sample = profile["trend_analysis"]["sample"]
+    if case == "unknown_analysis_field":
+        profile["trend_analysis"]["unexpected"] = True
+    elif case == "unknown_sample_field":
+        sample["unexpected"] = True
+    elif case == "unknown_metric_field":
+        profile["trend_analysis"]["score"]["unexpected"] = True
+    elif case == "boolean_valid_date_count":
+        sample["valid_date_talk_count"] = True
+    elif case == "duplicate_selected_filename":
+        sample["selected_filenames"][-1] = sample["selected_filenames"][0]
+    elif case == "availability_reason_mismatch":
+        profile["classification_availability"]["trends"]["reason_codes"] = [
+            "insufficient_valid_date_sample"
+        ]
+    else:
+        sample["opportunity_coverage_identity"] = "A" * 64
+
+    errors = _trend_validation_errors(
+        provenance, profile, positive_rows, antipattern_rows
+    )
+
+    assert errors
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "boolean_metric",
+        "nonfinite_metric",
+        "delta_mismatch",
+        "direction_projection",
+        "driver_projection",
+    ],
+)
+def test_trend_validator_rejects_invalid_metrics_and_projections(
+    validate_profile, case
+):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    profile, positive_rows, antipattern_rows = _trend_validation_fixture()
+    if case == "boolean_metric":
+        profile["trend_analysis"]["score"]["prior_average"] = True
+    elif case == "nonfinite_metric":
+        profile["trend_analysis"]["breadth"]["recent_average"] = float("inf")
+    elif case == "delta_mismatch":
+        profile["trend_analysis"]["score"]["delta"] = 0.5
+    elif case == "direction_projection":
+        profile["score_drivers"]["direction"] = "stable"
+    else:
+        profile["score_drivers"]["pattern_drivers"] = []
+
+    errors = _trend_validation_errors(
+        provenance, profile, positive_rows, antipattern_rows
+    )
+
+    assert errors
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "boolean_evidence_bound",
+        "inconsistent_evidence_counts",
+        "incomplete_available_movement",
+        "wrong_reason",
+        "wrong_pattern_id",
+        "unknown_movement_field",
+    ],
+)
+def test_trend_validator_rejects_invalid_movement_rows(validate_profile, case):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    profile, positive_rows, antipattern_rows = _trend_validation_fixture()
+    movement = profile["trend_analysis"]["pattern_movements"][0]
+    prior = movement["prior_evidence"]
+    if case == "boolean_evidence_bound":
+        prior["lower"] = False
+    elif case == "inconsistent_evidence_counts":
+        prior["unevaluable_count"] = 1
+    elif case == "incomplete_available_movement":
+        prior.update(
+            {
+                "applicable_count": 4,
+                "evaluable_count": 4,
+                "detected_count": 0,
+                "unevaluable_count": 0,
+                "applicable_coverage": 1.0,
+                "lower": 0.0,
+                "upper": 0.0,
+            }
+        )
+    elif case == "wrong_reason":
+        movement["reason_codes"] = ["conservative_interval_stable"]
+    elif case == "wrong_pattern_id":
+        movement["pattern_id"] = "wrong"
+    else:
+        movement["unexpected"] = True
+
+    errors = _trend_validation_errors(
+        provenance, profile, positive_rows, antipattern_rows
+    )
+
+    assert errors
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "insufficient_with_selection",
+        "resolved_sample_without_identity",
+        "non_null_metric",
+        "nonempty_movements",
+    ],
+)
+def test_trend_validator_enforces_unavailable_sentinels(validate_profile, case):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    reason = (
+        "insufficient_valid_date_sample"
+        if case == "insufficient_with_selection"
+        else "no_evaluable_pattern_opportunities"
+    )
+    profile, positive_rows, antipattern_rows = _trend_validation_fixture(reason)
+    trend = profile["trend_analysis"]
+    if case == "insufficient_with_selection":
+        trend["sample"]["selected_filenames"] = ["talk-00.md"]
+    elif case == "resolved_sample_without_identity":
+        trend["sample"]["opportunity_coverage_identity"] = None
+    elif case == "non_null_metric":
+        trend["score"]["prior_average"] = 0.0
+    else:
+        trend["pattern_movements"] = [
+            {
+                "pattern_id": "p1",
+                "movement": "stable",
+                "prior_evidence": _window_evidence(detected=0),
+                "recent_evidence": _window_evidence(detected=0),
+                "reason_codes": ["conservative_interval_stable"],
+            }
+        ]
+
+    errors = _trend_validation_errors(
+        provenance, profile, positive_rows, antipattern_rows
+    )
+
+    assert errors
+
+
+def test_v5_assessment_rejects_arbitrary_trend_sample_shape(validate_profile):
+    pattern_profile = _v5_pattern_profile(validate_profile)
+    pattern_profile["trend_analysis"]["sample"] = {
+        "required_talk_count": True,
+        "unexpected": "previously accepted",
+    }
+
+    assessment = validate_profile.assess_pattern_profile(
+        pattern_profile, expected_contract_version=5
+    )
+
+    assert assessment.current_contract is False
+    assert any("trend_analysis.sample" in error for error in assessment.errors)
+
+
+def test_v5_assessment_fails_closed_on_huge_self_consistent_counts(validate_profile):
+    pattern_profile = _v5_pattern_profile(validate_profile)
+    classified = pattern_profile["pattern_classifications"][0]
+    huge = 10**1000
+    classified["evidence"] = {
+        "applicable_count": huge,
+        "evaluable_count": huge,
+        "detected_count": huge,
+        "unevaluable_count": 0,
+        "applicable_coverage": 1.0,
+        "lower": 1.0,
+        "upper": 1.0,
+    }
+
+    assessment = validate_profile.assess_pattern_profile(
+        pattern_profile, expected_contract_version=5
+    )
+
+    assert assessment.current_contract is False
+    assert assessment.errors
+
+
+def test_expected_evidence_handles_huge_canonical_counts(validate_profile):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    huge = 10**1000
+
+    evidence = provenance._expected_evidence(
+        {
+            "eligible_cohort_count": huge,
+            "not_applicable_count": 0,
+            "evaluable_count": huge,
+            "detected_count": huge,
+            "unevaluable_count": 0,
+        }
+    )
+
+    assert evidence == {
+        "applicable_count": huge,
+        "evaluable_count": huge,
+        "detected_count": huge,
+        "unevaluable_count": 0,
+        "applicable_coverage": 1.0,
+        "lower": 1.0,
+        "upper": 1.0,
+    }
 
 
 def test_mixed_opportunity_identity_keeps_occurrences_and_suppresses_raw_average(

@@ -14,6 +14,7 @@ import pathlib
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import TypeGuard
 
 
@@ -173,6 +174,48 @@ _EVIDENCE_FIELDS = frozenset((*_EVIDENCE_COUNT_FIELDS, *_EVIDENCE_RATE_FIELDS))
 _COMBINATION_FIELDS = frozenset(
     {"combination_id", "pattern_ids", "evidence", "reason_codes"}
 )
+_TREND_ANALYSIS_FIELDS = frozenset(
+    {
+        "status",
+        "reason_codes",
+        "sample",
+        "score",
+        "breadth",
+        "pattern_movements",
+        "antipattern_movements",
+    }
+)
+_TREND_SAMPLE_FIELDS = frozenset(
+    {
+        "required_talk_count",
+        "valid_date_talk_count",
+        "invalid_date_filenames",
+        "selected_filenames",
+        "opportunity_coverage_identity",
+    }
+)
+_TREND_METRIC_FIELDS = frozenset({"status", "prior_average", "recent_average", "delta"})
+_TREND_MOVEMENT_FIELDS = frozenset(
+    {"pattern_id", "movement", "prior_evidence", "recent_evidence", "reason_codes"}
+)
+_TREND_UNAVAILABLE_REASONS = frozenset(
+    {
+        "insufficient_valid_date_sample",
+        "opportunity_identity_unavailable",
+        "incomparable_opportunity_identities",
+        "no_evaluable_pattern_opportunities",
+    }
+)
+_MOVEMENT_REASON_CODES = {
+    "increasing": ("conservative_interval_increase",),
+    "decreasing": ("conservative_interval_decrease",),
+    "stable": ("conservative_interval_stable",),
+    "indeterminate": ("uncertainty_spans_movement_threshold",),
+}
+_UNAVAILABLE_MOVEMENT_REASON_CODES = frozenset(
+    {"incomplete_window_applicability", "window_bounds_unavailable"}
+)
+_LOWER_HEX_CHARS = frozenset("0123456789abcdef")
 
 
 @dataclass(frozen=True)
@@ -220,6 +263,24 @@ def _is_optional_unit_interval(value: object) -> bool:
         and 0 <= value <= 1
         and math.isfinite(value)
     )
+
+
+def _is_finite_number(value: object) -> TypeGuard[int | float]:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return not isinstance(value, float) or math.isfinite(value)
+
+
+def _is_lower_hex64(value: object) -> TypeGuard[str]:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in _LOWER_HEX_CHARS for character in value)
+    )
+
+
+def _unit_ratio(numerator: int, denominator: int) -> float:
+    return float(Fraction(numerator, denominator))
 
 
 def _append_reason(reason_codes: list[str], reason_code: str) -> None:
@@ -480,7 +541,7 @@ def _expected_evidence(raw: Mapping[str, object]) -> dict[str, object] | None:
     counts: dict[str, int] = {}
     for field in fields:
         value = raw.get(field)
-        if not _is_integer(value):
+        if not _is_integer(value) or value < 0:
             return None
         counts[field] = value
     eligible = counts["eligible_cohort_count"]
@@ -494,9 +555,9 @@ def _expected_evidence(raw: Mapping[str, object]) -> dict[str, object] | None:
     if applicable == 0:
         coverage = lower = upper = None
     else:
-        coverage = evaluable / applicable
-        lower = detected / applicable
-        upper = (detected + unevaluable) / applicable
+        coverage = _unit_ratio(evaluable, applicable)
+        lower = _unit_ratio(detected, applicable)
+        upper = _unit_ratio(detected + unevaluable, applicable)
     return {
         "applicable_count": applicable,
         "evaluable_count": evaluable,
@@ -546,9 +607,9 @@ def _validate_evidence(value: Mapping[object, object], *, path: str) -> list[str
         }
     else:
         expected_rates = {
-            "applicable_coverage": evaluable / applicable,
-            "lower": detected / applicable,
-            "upper": (detected + unevaluable) / applicable,
+            "applicable_coverage": _unit_ratio(evaluable, applicable),
+            "lower": _unit_ratio(detected, applicable),
+            "upper": _unit_ratio(detected + unevaluable, applicable),
         }
     for field, expected in expected_rates.items():
         actual = value.get(field)
@@ -750,6 +811,458 @@ def _validate_combinations(
     return errors
 
 
+def _validate_trend_metric(
+    value: object,
+    *,
+    path: str,
+    available: bool,
+    allowed_statuses: frozenset[str],
+) -> tuple[object, list[str]]:
+    if not isinstance(value, Mapping):
+        return None, [f"{path} must be an object"]
+    errors = _exact_fields(value, _TREND_METRIC_FIELDS, path=path)
+    status = value.get("status")
+    if not available:
+        expected = {
+            "status": "unavailable",
+            "prior_average": None,
+            "recent_average": None,
+            "delta": None,
+        }
+        if dict(value) != expected:
+            errors.append(f"{path} must use the unavailable null sentinel")
+        return status, errors
+
+    if status not in allowed_statuses:
+        errors.append(f"{path}.status is invalid: {status!r}")
+    numbers: dict[str, int | float] = {}
+    for field in ("prior_average", "recent_average", "delta"):
+        raw = value.get(field)
+        if not _is_finite_number(raw):
+            errors.append(f"{path}.{field} must be a finite number")
+        else:
+            numbers[field] = raw
+    if len(numbers) == 3:
+        try:
+            delta_matches = math.isclose(
+                float(numbers["delta"]),
+                float(numbers["recent_average"]) - float(numbers["prior_average"]),
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            )
+        except OverflowError:
+            delta_matches = False
+        if not delta_matches:
+            errors.append(f"{path}.delta must equal recent_average - prior_average")
+    return status, errors
+
+
+def _validate_trend_movement_lane(
+    value: object,
+    *,
+    path: str,
+    expected_ids: list[str],
+    window_size: int | None,
+) -> tuple[list[Mapping[str, object]], list[str]]:
+    if not isinstance(value, list):
+        return [], [f"{path} must be an array"]
+    rows: list[Mapping[str, object]] = []
+    observed_ids: list[str] = []
+    errors: list[str] = []
+    for index, item in enumerate(value):
+        row_path = f"{path}[{index}]"
+        if not isinstance(item, Mapping):
+            errors.append(f"{row_path} must be an object")
+            continue
+        errors.extend(_exact_fields(item, _TREND_MOVEMENT_FIELDS, path=row_path))
+        pattern_id = item.get("pattern_id")
+        if not isinstance(pattern_id, str) or not pattern_id:
+            errors.append(f"{row_path}.pattern_id must be a non-empty string")
+        else:
+            observed_ids.append(pattern_id)
+            rows.append(item)
+
+        movement = item.get("movement")
+        reason_codes = item.get("reason_codes")
+        errors.extend(_string_array(reason_codes, path=f"{row_path}.reason_codes"))
+        normalized_reasons = (
+            tuple(reason_codes)
+            if isinstance(reason_codes, list)
+            and all(isinstance(reason, str) for reason in reason_codes)
+            else ()
+        )
+        if movement == "unavailable":
+            if (
+                len(normalized_reasons) != 1
+                or normalized_reasons[0] not in _UNAVAILABLE_MOVEMENT_REASON_CODES
+            ):
+                errors.append(
+                    f"{row_path}.reason_codes must explain unavailable movement"
+                )
+        elif movement in _MOVEMENT_REASON_CODES:
+            if normalized_reasons != _MOVEMENT_REASON_CODES[movement]:
+                errors.append(
+                    f"{row_path}.reason_codes must match movement {movement!r}"
+                )
+        else:
+            errors.append(f"{row_path}.movement is invalid: {movement!r}")
+
+        evidence_by_window: dict[str, Mapping[object, object]] = {}
+        evidence_errors_by_window: dict[str, list[str]] = {}
+        for field in ("prior_evidence", "recent_evidence"):
+            evidence = item.get(field)
+            evidence_path = f"{row_path}.{field}"
+            if not isinstance(evidence, Mapping):
+                errors.append(f"{evidence_path} must be an object")
+                continue
+            evidence_errors = _validate_evidence(evidence, path=evidence_path)
+            errors.extend(evidence_errors)
+            evidence_by_window[field] = evidence
+            evidence_errors_by_window[field] = evidence_errors
+
+        if window_size is not None and len(evidence_by_window) == 2:
+            applicable_counts = [
+                evidence_by_window[field].get("applicable_count")
+                for field in ("prior_evidence", "recent_evidence")
+            ]
+            for field, applicable in zip(
+                ("prior_evidence", "recent_evidence"),
+                applicable_counts,
+                strict=True,
+            ):
+                if _is_integer(applicable) and applicable > window_size:
+                    errors.append(
+                        f"{row_path}.{field}.applicable_count cannot exceed "
+                        f"trend window size {window_size}"
+                    )
+            complete_windows = all(
+                _is_integer(applicable) and applicable == window_size
+                for applicable in applicable_counts
+            )
+            if movement == "unavailable":
+                reason = normalized_reasons[0] if len(normalized_reasons) == 1 else None
+                if reason == "incomplete_window_applicability" and complete_windows:
+                    errors.append(
+                        f"{row_path}.movement cannot report incomplete applicability "
+                        "for complete windows"
+                    )
+                if reason == "window_bounds_unavailable" and not any(
+                    evidence_errors_by_window.values()
+                ):
+                    errors.append(
+                        f"{row_path}.movement cannot report unavailable bounds for "
+                        "valid evidence"
+                    )
+            elif movement in _MOVEMENT_REASON_CODES and not complete_windows:
+                errors.append(
+                    f"{row_path}.movement must be unavailable unless both windows "
+                    f"have {window_size} applicable talks"
+                )
+
+    if observed_ids != expected_ids:
+        errors.append(
+            f"{path} must be sorted and exhaustive; "
+            f"expected={expected_ids}, got={observed_ids}"
+        )
+    return rows, errors
+
+
+def _validate_trend_analysis(
+    pattern_profile: Mapping[str, object],
+    positive_rows: Sequence[Mapping[str, object]],
+    antipattern_rows: Sequence[Mapping[str, object]],
+    *,
+    eligible_talk_count: int,
+    required_talk_count: int | None,
+    window_size: int | None,
+) -> list[str]:
+    value = pattern_profile.get("trend_analysis")
+    if not isinstance(value, Mapping):
+        return ["pattern_profile.trend_analysis must be an object"]
+    path = "pattern_profile.trend_analysis"
+    errors = _exact_fields(value, _TREND_ANALYSIS_FIELDS, path=path)
+    status = value.get("status")
+    reason_codes = value.get("reason_codes")
+    errors.extend(_string_array(reason_codes, path=f"{path}.reason_codes"))
+    reasons = (
+        list(reason_codes)
+        if isinstance(reason_codes, list)
+        and all(isinstance(reason, str) for reason in reason_codes)
+        else []
+    )
+    available = status == "available"
+    unavailable_reason: str | None = None
+    if available:
+        if reasons != []:
+            errors.append(f"{path}.reason_codes must be [] when available")
+    elif status == "unavailable":
+        if len(reasons) != 1 or reasons[0] not in _TREND_UNAVAILABLE_REASONS:
+            errors.append(
+                f"{path}.reason_codes must contain one supported unavailability reason"
+            )
+        else:
+            unavailable_reason = reasons[0]
+    else:
+        errors.append(f"{path}.status must be available or unavailable")
+
+    availability = pattern_profile.get("classification_availability")
+    trend_availability = (
+        availability.get("trends") if isinstance(availability, Mapping) else None
+    )
+    expected_availability = {"status": status, "reason_codes": reasons}
+    if (
+        not isinstance(trend_availability, Mapping)
+        or dict(trend_availability) != expected_availability
+    ):
+        errors.append(
+            "pattern_profile.classification_availability.trends must exactly mirror "
+            "trend_analysis status and reasons"
+        )
+
+    baseline_value = pattern_profile.get("baseline_talk_filenames")
+    baseline_filenames = (
+        list(baseline_value)
+        if isinstance(baseline_value, list)
+        and all(isinstance(filename, str) for filename in baseline_value)
+        else []
+    )
+    baseline_set = set(baseline_filenames)
+    sample = value.get("sample")
+    sample_required: int | None = None
+    valid_date_count: int | None = None
+    invalid_filenames: list[str] | None = None
+    selected_filenames: list[str] | None = None
+    identity: object = None
+    if not isinstance(sample, Mapping):
+        errors.append(f"{path}.sample must be an object")
+    else:
+        sample_path = f"{path}.sample"
+        errors.extend(_exact_fields(sample, _TREND_SAMPLE_FIELDS, path=sample_path))
+        raw_required = sample.get("required_talk_count")
+        if not _is_integer(raw_required) or raw_required < 1:
+            errors.append(
+                f"{sample_path}.required_talk_count must be a positive integer"
+            )
+        else:
+            sample_required = raw_required
+            if (
+                required_talk_count is not None
+                and sample_required != required_talk_count
+            ):
+                errors.append(
+                    f"{sample_path}.required_talk_count must equal the applied policy "
+                    f"value {required_talk_count}"
+                )
+        raw_valid = sample.get("valid_date_talk_count")
+        if not _is_integer(raw_valid) or raw_valid < 0:
+            errors.append(
+                f"{sample_path}.valid_date_talk_count must be a non-negative integer"
+            )
+        else:
+            valid_date_count = raw_valid
+
+        raw_invalid = sample.get("invalid_date_filenames")
+        invalid_errors = _string_array(
+            raw_invalid,
+            path=f"{sample_path}.invalid_date_filenames",
+            sorted_required=True,
+        )
+        errors.extend(invalid_errors)
+        if not invalid_errors and isinstance(raw_invalid, list):
+            invalid_filenames = list(raw_invalid)
+        raw_selected = sample.get("selected_filenames")
+        selected_errors = _string_array(
+            raw_selected, path=f"{sample_path}.selected_filenames"
+        )
+        errors.extend(selected_errors)
+        if not selected_errors and isinstance(raw_selected, list):
+            selected_filenames = list(raw_selected)
+
+        for field, filenames in (
+            ("invalid_date_filenames", invalid_filenames),
+            ("selected_filenames", selected_filenames),
+        ):
+            if filenames is not None:
+                unknown = sorted(set(filenames) - baseline_set)
+                if unknown:
+                    errors.append(
+                        f"{sample_path}.{field} contains filenames outside the "
+                        f"baseline: {unknown}"
+                    )
+        if (
+            invalid_filenames is not None
+            and selected_filenames is not None
+            and set(invalid_filenames).intersection(selected_filenames)
+        ):
+            errors.append(
+                f"{sample_path}.selected_filenames cannot include invalid-date talks"
+            )
+        if valid_date_count is not None and invalid_filenames is not None:
+            if valid_date_count + len(invalid_filenames) != eligible_talk_count:
+                errors.append(
+                    f"{sample_path} valid and invalid date counts must equal the "
+                    f"eligible talk count {eligible_talk_count}"
+                )
+        identity = sample.get("opportunity_coverage_identity")
+
+    if available:
+        if (
+            sample_required is not None
+            and selected_filenames is not None
+            and len(selected_filenames) != sample_required
+        ):
+            errors.append(
+                f"{path}.sample.selected_filenames must contain exactly "
+                f"{sample_required} talks when trends are available"
+            )
+        if valid_date_count is not None and sample_required is not None:
+            if valid_date_count < sample_required:
+                errors.append(
+                    f"{path}.sample does not have enough valid dated talks for trends"
+                )
+        if not _is_lower_hex64(identity):
+            errors.append(
+                f"{path}.sample.opportunity_coverage_identity must be lowercase hex64 "
+                "when trends are available"
+            )
+    elif unavailable_reason == "insufficient_valid_date_sample":
+        if valid_date_count is not None and sample_required is not None:
+            if valid_date_count >= sample_required:
+                errors.append(
+                    f"{path}.sample must have fewer valid talks than required for "
+                    "insufficient_valid_date_sample"
+                )
+        if selected_filenames not in (None, []):
+            errors.append(
+                f"{path}.sample.selected_filenames must be [] for an insufficient sample"
+            )
+        if identity is not None:
+            errors.append(
+                f"{path}.sample.opportunity_coverage_identity must be null for an "
+                "insufficient sample"
+            )
+    elif unavailable_reason in {
+        "opportunity_identity_unavailable",
+        "incomparable_opportunity_identities",
+        "no_evaluable_pattern_opportunities",
+    }:
+        if (
+            sample_required is not None
+            and selected_filenames is not None
+            and len(selected_filenames) != sample_required
+        ):
+            errors.append(
+                f"{path}.sample.selected_filenames must contain exactly "
+                f"{sample_required} talks after sample selection"
+            )
+        if valid_date_count is not None and sample_required is not None:
+            if valid_date_count < sample_required:
+                errors.append(f"{path}.sample must have enough valid dated talks")
+        if unavailable_reason == "no_evaluable_pattern_opportunities":
+            if not _is_lower_hex64(identity):
+                errors.append(
+                    f"{path}.sample.opportunity_coverage_identity must be lowercase "
+                    "hex64 after identity resolution"
+                )
+        elif identity is not None:
+            errors.append(
+                f"{path}.sample.opportunity_coverage_identity must be null while "
+                "identity resolution is unavailable"
+            )
+
+    score_status, metric_errors = _validate_trend_metric(
+        value.get("score"),
+        path=f"{path}.score",
+        available=available,
+        allowed_statuses=frozenset({"improving", "declining", "stable"}),
+    )
+    errors.extend(metric_errors)
+    breadth_status, metric_errors = _validate_trend_metric(
+        value.get("breadth"),
+        path=f"{path}.breadth",
+        available=available,
+        allowed_statuses=frozenset({"widening", "narrowing", "stable"}),
+    )
+    errors.extend(metric_errors)
+
+    pattern_rows: list[Mapping[str, object]] = []
+    antipattern_movement_rows: list[Mapping[str, object]] = []
+    if available:
+        pattern_rows, movement_errors = _validate_trend_movement_lane(
+            value.get("pattern_movements"),
+            path=f"{path}.pattern_movements",
+            expected_ids=[
+                str(row["pattern_id"])
+                for row in positive_rows
+                if isinstance(row.get("pattern_id"), str)
+            ],
+            window_size=window_size,
+        )
+        errors.extend(movement_errors)
+        antipattern_movement_rows, movement_errors = _validate_trend_movement_lane(
+            value.get("antipattern_movements"),
+            path=f"{path}.antipattern_movements",
+            expected_ids=[
+                str(row["pattern_id"])
+                for row in antipattern_rows
+                if isinstance(row.get("pattern_id"), str)
+            ],
+            window_size=window_size,
+        )
+        errors.extend(movement_errors)
+    else:
+        for field in ("pattern_movements", "antipattern_movements"):
+            if value.get(field) != []:
+                errors.append(f"{path}.{field} must be [] when trends are unavailable")
+
+    if pattern_profile.get("score_trend") != score_status:
+        errors.append(
+            "pattern_profile.score_trend must project trend_analysis.score.status"
+        )
+    profile_breadth = pattern_profile.get("pattern_breadth")
+    if (
+        not isinstance(profile_breadth, Mapping)
+        or profile_breadth.get("trend") != breadth_status
+    ):
+        errors.append(
+            "pattern_profile.pattern_breadth.trend must project "
+            "trend_analysis.breadth.status"
+        )
+
+    expected_pattern_drivers = sorted(
+        str(row["pattern_id"])
+        for row in pattern_rows
+        if row.get("movement") in {"increasing", "decreasing"}
+        and isinstance(row.get("pattern_id"), str)
+    )
+    expected_antipattern_drivers = sorted(
+        str(row["pattern_id"])
+        for row in antipattern_movement_rows
+        if row.get("movement") in {"increasing", "decreasing"}
+        and isinstance(row.get("pattern_id"), str)
+    )
+    score_drivers = pattern_profile.get("score_drivers")
+    if not isinstance(score_drivers, Mapping):
+        errors.append("pattern_profile.score_drivers must be an object")
+    else:
+        if score_drivers.get("direction") != score_status:
+            errors.append(
+                "pattern_profile.score_drivers.direction must project "
+                "trend_analysis.score.status"
+            )
+        if score_drivers.get("pattern_drivers") != expected_pattern_drivers:
+            errors.append(
+                "pattern_profile.score_drivers.pattern_drivers must project "
+                "pattern trend movements"
+            )
+        if score_drivers.get("antipattern_drivers") != expected_antipattern_drivers:
+            errors.append(
+                "pattern_profile.score_drivers.antipattern_drivers must project "
+                "antipattern trend movements"
+            )
+    return errors
+
+
 def _validate_v5_policy_fields(
     pattern_profile: Mapping[str, object],
     active_catalog: object,
@@ -757,6 +1270,8 @@ def _validate_v5_policy_fields(
     eligible_talk_count: int,
 ) -> tuple[frozenset[str], str | None, list[str]]:
     errors: list[str] = []
+    required_talk_count: int | None = None
+    window_size: int | None = None
     classification_schema_version = pattern_profile.get("classification_schema_version")
     if (
         not _is_integer(classification_schema_version)
@@ -766,6 +1281,19 @@ def _validate_v5_policy_fields(
     try:
         stamp = validate_policy_stamp(pattern_profile.get("classification_policy"))
         digest = str(stamp["semantic_sha256"])
+        semantic_policy = stamp.get("semantic_policy")
+        trend_policy = (
+            semantic_policy.get("trends")
+            if isinstance(semantic_policy, Mapping)
+            else None
+        )
+        if isinstance(trend_policy, Mapping):
+            raw_required = trend_policy.get("minimum_comparable_talks")
+            raw_window = trend_policy.get("window_size")
+            if _is_integer(raw_required):
+                required_talk_count = raw_required
+            if _is_integer(raw_window):
+                window_size = raw_window
     except (RuntimeError, ValueError) as exc:
         errors.append(f"pattern_profile.classification_policy is invalid: {exc}")
         digest = None
@@ -829,33 +1357,16 @@ def _validate_v5_policy_fields(
             "pattern_profile.by_mode must be [] while talk mode assignments are unavailable"
         )
 
-    trend_analysis = pattern_profile.get("trend_analysis")
-    if not isinstance(trend_analysis, Mapping):
-        errors.append("pattern_profile.trend_analysis must be an object")
-    else:
-        score = trend_analysis.get("score")
-        breadth = trend_analysis.get("breadth")
-        if not isinstance(score, Mapping) or pattern_profile.get(
-            "score_trend"
-        ) != score.get("status"):
-            errors.append(
-                "pattern_profile.score_trend must project trend_analysis.score.status"
-            )
-        profile_breadth = pattern_profile.get("pattern_breadth")
-        if (
-            not isinstance(breadth, Mapping)
-            or not isinstance(profile_breadth, Mapping)
-            or profile_breadth.get("trend") != breadth.get("status")
-        ):
-            errors.append(
-                "pattern_profile.pattern_breadth.trend must project "
-                "trend_analysis.breadth.status"
-            )
-        trend_available = "trends" in domains
-        if trend_available != (trend_analysis.get("status") == "available"):
-            errors.append(
-                "pattern_profile trend availability must match trend_analysis.status"
-            )
+    errors.extend(
+        _validate_trend_analysis(
+            pattern_profile,
+            positive_rows,
+            antipattern_rows,
+            eligible_talk_count=eligible_talk_count,
+            required_talk_count=required_talk_count,
+            window_size=window_size,
+        )
+    )
     if "antipattern_recurrence" not in domains:
         actionable = {
             row.get("classification")
