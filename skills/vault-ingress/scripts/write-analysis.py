@@ -77,6 +77,7 @@ from pattern_evidence import (
     assess_batch_artifact_capabilities,
     return_evidence_claim,
 )
+from video_evidence import VideoEvidenceAssessment
 from return_validation import (
     ANALYSIS_STATUSES,
     LEGACY_UNBASELINEABLE_SCORING_STATUS,
@@ -1129,6 +1130,7 @@ def main():
     except VaultRootAuthorityError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
+    video_evidence_assessment = VideoEvidenceAssessment()
     returns = load_json(batch_path, "batch-returns")
     try:
         catalog = validate_batch(returns)
@@ -1144,6 +1146,7 @@ def main():
         },
         vault_root=vault_root,
         source_roots=source_roots,
+        video_evidence_assessment=video_evidence_assessment,
     )
     try:
         talks_by_name = validate_batch_claims_against_talks(
@@ -1225,6 +1228,7 @@ def main():
                     talks_by_name[name],
                     vault_root=vault_root,
                     source_roots=source_roots,
+                    video_evidence_assessment=video_evidence_assessment,
                 )
                 if freshness_reasons:
                     raise PatternEvidenceError(

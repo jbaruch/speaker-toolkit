@@ -1108,6 +1108,11 @@ def test_profile_cohort_rejects_invalid_configured_vault_before_freshness(
             "invalid root reached the evidence freshness assessor"
         ),
     )
+    monkeypatch.setattr(
+        cohort_snapshot,
+        "VideoEvidenceAssessment",
+        lambda: pytest.fail("invalid root created a video evidence assessment"),
+    )
 
     with pytest.raises(cohort_snapshot.PatternCohortSnapshotError) as caught:
         cohort_snapshot.configured_evidence_freshness_assessor(
@@ -1138,6 +1143,12 @@ def test_profile_cohort_uses_database_root_for_every_valid_authority_form(
     del validate_profile
     cohort_snapshot = importlib.import_module("pattern_cohort_snapshot")
     observed = []
+    assessment = object()
+    created = []
+
+    def create_assessment():
+        created.append(assessment)
+        return assessment
 
     def assess(_talk, **kwargs):
         observed.append(kwargs)
@@ -1148,6 +1159,11 @@ def test_profile_cohort_uses_database_root_for_every_valid_authority_form(
         "assess_current_persisted_pattern_evidence_freshness",
         assess,
     )
+    monkeypatch.setattr(
+        cohort_snapshot,
+        "VideoEvidenceAssessment",
+        create_assessment,
+    )
     config = config_factory(tmp_path)
 
     assessor = cohort_snapshot.configured_evidence_freshness_assessor(
@@ -1155,13 +1171,24 @@ def test_profile_cohort_uses_database_root_for_every_valid_authority_form(
         config,
     )
 
-    assert assessor({}) == ()
+    first_talk = {}
+    second_talk = {"filename": "second.md"}
+    assert assessor(first_talk) == ()
+    assert assessor(second_talk) == ()
+    assert created == [assessment]
     assert observed == [
         {
             "vault_root": tmp_path,
             "source_roots": config,
             "catalog": None,
-        }
+            "video_evidence_assessment": assessment,
+        },
+        {
+            "vault_root": tmp_path,
+            "source_roots": config,
+            "catalog": None,
+            "video_evidence_assessment": assessment,
+        },
     ]
 
 

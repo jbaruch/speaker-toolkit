@@ -100,6 +100,7 @@ from pattern_evidence import (
     assess_talk_artifact_capabilities,
     required_pptx_evidence_blocking_reason,
 )
+from video_evidence import VideoEvidenceAssessment
 from return_validation import (
     PATTERN_SCORING_SCHEMA_VERSION,
     QUEUE_CLAIM_SCHEMA_VERSION,
@@ -227,7 +228,8 @@ def evidence_roots(database, path):
     return vault_root, source_roots
 
 
-def evidence_freshness_assessor(database, path):
+def evidence_freshness_assessor(
+        database, path, *, video_evidence_assessment: VideoEvidenceAssessment):
     """Bind the shared read-only assessor to this database's trusted roots."""
     vault_root, source_roots = evidence_roots(database, path)
     cache = {}
@@ -239,13 +241,15 @@ def evidence_freshness_assessor(database, path):
                 talk,
                 vault_root=vault_root,
                 source_roots=source_roots,
+                video_evidence_assessment=video_evidence_assessment,
             )
         return cache[identity]
 
     return assess
 
 
-def artifact_capability_assessor(database, path):
+def artifact_capability_assessor(
+        database, path, *, video_evidence_assessment: VideoEvidenceAssessment):
     """Bind root-aware local/acquisition capability checks.
 
     The bounded PPTX probe owns generation-aware memoization.  Keeping a
@@ -259,6 +263,7 @@ def artifact_capability_assessor(database, path):
             talk,
             vault_root=vault_root,
             source_roots=source_roots,
+            video_evidence_assessment=video_evidence_assessment,
         )
 
     return assess
@@ -657,9 +662,13 @@ def claim_talk(
     return item
 
 
-def command_normalize(database, path, _args, *, expected_snapshot):
+def command_normalize(
+        database, path, _args, *, expected_snapshot,
+        video_evidence_assessment: VideoEvidenceAssessment):
     candidate = copy.deepcopy(database)
-    capability_assessor = artifact_capability_assessor(candidate, path)
+    capability_assessor = artifact_capability_assessor(
+        candidate, path,
+        video_evidence_assessment=video_evidence_assessment)
     normalizations = normalize_legacy_statuses(
         candidate,
         capability_assessor=capability_assessor,
@@ -668,7 +677,8 @@ def command_normalize(database, path, _args, *, expected_snapshot):
         normalize_pattern_scoring_generations(
             candidate,
             evidence_freshness_assessor=evidence_freshness_assessor(
-                candidate, path
+                candidate, path,
+                video_evidence_assessment=video_evidence_assessment,
             ),
         )
     )
@@ -691,7 +701,9 @@ def command_normalize(database, path, _args, *, expected_snapshot):
     }
 
 
-def command_claim(database, path, args, *, expected_snapshot):
+def command_claim(
+        database, path, args, *, expected_snapshot,
+        video_evidence_assessment: VideoEvidenceAssessment):
     run_id = require_identifier(args.run_id, "run_id")
     batch_id = require_identifier(args.batch_id, "batch_id")
     now_text = timestamp_text(parse_timestamp(args.now, "--now"))
@@ -746,7 +758,9 @@ def command_claim(database, path, args, *, expected_snapshot):
             )
 
     candidate = copy.deepcopy(database)
-    capability_assessor = artifact_capability_assessor(candidate, path)
+    capability_assessor = artifact_capability_assessor(
+        candidate, path,
+        video_evidence_assessment=video_evidence_assessment)
     normalizations = normalize_legacy_statuses(
         candidate,
         capability_assessor=capability_assessor,
@@ -808,7 +822,8 @@ def command_claim(database, path, args, *, expected_snapshot):
             pattern_catalog_fingerprint=catalog.fingerprint,
             pattern_scoring_schema_version=PATTERN_SCORING_SCHEMA_VERSION,
             evidence_freshness_assessor=evidence_freshness_assessor(
-                database, path
+                database, path,
+                video_evidence_assessment=video_evidence_assessment,
             ),
         )
     except (AdherenceBaselineError, ReturnValidationError, OSError) as exc:
@@ -997,12 +1012,22 @@ def main(argv=None):
             "recover": command_recover,
             "inspect": command_inspect,
         }
-        payload = commands[args.action](
-            database,
-            path,
-            args,
-            expected_snapshot=snapshot,
-        )
+        command = commands[args.action]
+        if args.action in {"normalize", "claim"}:
+            payload = command(
+                database,
+                path,
+                args,
+                expected_snapshot=snapshot,
+                video_evidence_assessment=VideoEvidenceAssessment(),
+            )
+        else:
+            payload = command(
+                database,
+                path,
+                args,
+                expected_snapshot=snapshot,
+            )
     except (QueueStateError, VaultRootAuthorityError) as exc:
         payload = {"ok": False, "error": str(exc)}
         print(str(exc), file=sys.stderr)

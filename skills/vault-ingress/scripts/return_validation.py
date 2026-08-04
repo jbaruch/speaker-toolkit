@@ -76,6 +76,7 @@ from pptx_evidence import (
     ranges_cover_pages,
     validate_native_deck_audit,
 )
+from video_evidence import VideoEvidenceAssessment
 
 
 ANALYSIS_STATUSES = frozenset({"processed", "processed_partial"})
@@ -1967,6 +1968,7 @@ def assess_current_persisted_pattern_evidence_freshness(
     vault_root: str | Path,
     source_roots: Mapping[str, object] | None = None,
     catalog: PatternCatalog | None = None,
+    video_evidence_assessment: VideoEvidenceAssessment | None = None,
 ) -> tuple[str, ...]:
     """Combine artifact freshness with active-catalog v5 projection replay."""
     reasons = set(
@@ -1974,6 +1976,7 @@ def assess_current_persisted_pattern_evidence_freshness(
             talk,
             vault_root=vault_root,
             source_roots=source_roots,
+            video_evidence_assessment=video_evidence_assessment,
         )
     )
     observations = talk.get("pattern_observations")

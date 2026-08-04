@@ -14,7 +14,6 @@ import hashlib
 import json
 import math
 import re
-import subprocess
 from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -49,6 +48,11 @@ from pptx_evidence import (
     probe_pptx_artifact,
     recompute_native_deck_audit,
     validate_native_deck_audit,
+)
+from video_evidence import (
+    VideoArtifactProbe,
+    VideoEvidenceAssessment,
+    VideoEvidenceError,
 )
 
 
@@ -150,18 +154,11 @@ TRANSCRIPT_BUNDLE_SNAPSHOT_ATTEMPTS = 3
 
 _WORD = re.compile(r"[^\W\d_]+", re.UNICODE)
 _YOUTUBE_ID = re.compile(r"[A-Za-z0-9_-]{11}")
+_VIDEO_SUFFIXES = frozenset({".mp4", ".webm", ".mkv", ".mov"})
 
 
 class PatternEvidenceError(ValueError):
     """A detection cannot be bound to the claimed talk's source artifacts."""
-
-
-@dataclass(frozen=True)
-class _VideoArtifactSnapshot:
-    """Duration and digest proven against one unchanged local-file generation."""
-
-    duration_seconds: float
-    artifact_sha256: str
 
 
 @dataclass(frozen=True)
@@ -304,6 +301,16 @@ def _canonical_pdf_root(value: str | Path) -> Path:
     return canonical_root or locator
 
 
+def _canonical_video_root(value: str | Path) -> Path:
+    """Map a trusted configured video root without resolving a video leaf."""
+    locator = _lexical_absolute(value)
+    _mapped_locator, canonical_root = canonicalize_trusted_artifact_locator(
+        locator,
+        locator,
+    )
+    return canonical_root or locator
+
+
 def _reject_ambiguous_path_segments(value: str, *, label: str) -> None:
     """Apply the shared host-independent lexical locator classifier."""
     try:
@@ -316,7 +323,7 @@ def _resolve_local_bounded_artifact(
     trusted_root: str | Path,
     value: object,
     *,
-    suffix: str,
+    suffix: str | frozenset[str],
     label: str,
     canonicalize_root: bool = False,
 ) -> Path:
@@ -347,8 +354,9 @@ def _resolve_local_bounded_artifact(
         raise PatternEvidenceError(
             f"{label} resolves outside the trusted root"
         ) from exc
-    if not relative.parts or candidate.suffix.casefold() != suffix:
-        raise PatternEvidenceError(f"{label} must use the {suffix} suffix")
+    suffixes = frozenset({suffix}) if isinstance(suffix, str) else suffix
+    if not relative.parts or candidate.suffix.casefold() not in suffixes:
+        raise PatternEvidenceError(f"{label} must use one of {sorted(suffixes)}")
     return candidate
 
 
@@ -381,6 +389,23 @@ def _resolve_local_pdf_artifact(
     )
 
 
+def _resolve_local_video_artifact(
+    trusted_root: str | Path,
+    value: object,
+    *,
+    label: str,
+    suffixes: frozenset[str] = _VIDEO_SUFFIXES,
+) -> Path:
+    """Resolve one video locator lexically; the bounded probe owns leaf I/O."""
+    return _resolve_local_bounded_artifact(
+        trusted_root,
+        value,
+        suffix=suffixes,
+        label=label,
+        canonicalize_root=True,
+    )
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     try:
@@ -390,51 +415,6 @@ def _sha256_file(path: Path) -> str:
     except OSError as exc:
         raise PatternEvidenceError(f"cannot hash artifact {path}: {exc}") from exc
     return digest.hexdigest()
-
-
-def _file_generation(path: Path) -> tuple[int, int, int, int, int]:
-    """Return fields that change when local file bytes or identity change."""
-
-    try:
-        status = path.stat()
-    except OSError as exc:
-        raise PatternEvidenceError(
-            f"cannot inspect artifact generation {path}: {exc}"
-        ) from exc
-    return (
-        status.st_dev,
-        status.st_ino,
-        status.st_size,
-        status.st_mtime_ns,
-        status.st_ctime_ns,
-    )
-
-
-def _verified_video_snapshot(path: Path) -> _VideoArtifactSnapshot:
-    """Bind ffprobe output and digest to one unchanged file generation.
-
-    Probe first so an unreadable video is never hashed. Generation checks before
-    and after both operations reject replacement, truncation, or in-place writes
-    instead of combining a duration from one generation with another's digest.
-    """
-
-    before_probe = _file_generation(path)
-    duration = _video_duration(path)
-    after_probe = _file_generation(path)
-    if after_probe != before_probe:
-        raise PatternEvidenceError(
-            f"local video artifact changed while ffprobe inspected it: {path}"
-        )
-    digest = _sha256_file(path)
-    after_digest = _file_generation(path)
-    if after_digest != before_probe:
-        raise PatternEvidenceError(
-            f"local video artifact changed while its digest was computed: {path}"
-        )
-    return _VideoArtifactSnapshot(
-        duration_seconds=duration,
-        artifact_sha256=digest,
-    )
 
 
 def _capture_transcript_bundle(path: Path) -> _TranscriptBundleSnapshot:
@@ -571,42 +551,6 @@ def _pptx_locator_count(
     return count
 
 
-def _video_duration(path: Path) -> float:
-    try:
-        completed = subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "default=nw=1:nk=1",
-                str(path),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise PatternEvidenceError(
-            f"cannot inspect video duration {path} with ffprobe: {exc}"
-        ) from exc
-    try:
-        duration = float(completed.stdout.strip())
-    except ValueError as exc:
-        raise PatternEvidenceError(
-            f"ffprobe returned no numeric duration for {path}"
-        ) from exc
-    if completed.returncode != 0 or not math.isfinite(duration) or duration <= 0:
-        raise PatternEvidenceError(
-            f"ffprobe rejected video artifact {path}: "
-            f"{completed.stderr.strip() or 'invalid duration'}"
-        )
-    return duration
-
-
 def _declared_pdf_path(talk: Mapping[str, object]) -> tuple[str, object] | None:
     for field in ("slides_local_path", "slides_pdf_path", "pdf_path"):
         if _nonempty(talk.get(field)):
@@ -647,19 +591,68 @@ def _catalog_duration(talk: Mapping[str, object]) -> float | None:
     return None
 
 
+def _selected_video_assessment(
+    assessment: VideoEvidenceAssessment | None,
+) -> VideoEvidenceAssessment:
+    """Resolve one operation-local assessment without hiding nested probes."""
+    return assessment if assessment is not None else VideoEvidenceAssessment()
+
+
+def _video_failure_reason(error: VideoEvidenceError) -> str:
+    return f"{error.reason_code}: {error}"
+
+
+def _video_unavailable_record(
+    error: VideoEvidenceError,
+    path: Path | None,
+) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "status": "unavailable",
+        "reason_code": error.reason_code,
+        "reason": str(error),
+        "details": copy.deepcopy(error.details),
+        "artifact_path": str(path) if path is not None else None,
+    }
+
+
 def _local_video_binding(
     vault_root: str | Path,
     owner: Mapping[str, object],
     youtube_id: str | None,
 ) -> tuple[Path | None, str]:
+    structured = owner.get("structured_data")
+    manifest = (
+        structured.get("video_extraction") if isinstance(structured, Mapping) else None
+    )
+    if isinstance(manifest, Mapping):
+        if youtube_id is None:
+            return None, "video_extraction manifest has no claimed video id"
+        if (
+            manifest.get("schema_version") != 3
+            or manifest.get("source_video_id") != youtube_id
+        ):
+            return (
+                None,
+                "video_extraction manifest is not bound to the claimed video id",
+            )
+        try:
+            source_path = resolve_video_extraction_source(
+                vault_root,
+                manifest,
+                youtube_id,
+            )
+        except PatternEvidenceError as exc:
+            return None, str(exc)
+        return source_path, f"identity-bound local source video {source_path}"
+
     for field in ("video_local_path", "video_path"):
         if not _nonempty(owner.get(field)):
             continue
         try:
-            source_path = _resolve_local_artifact(
+            source_path = _resolve_local_video_artifact(
                 vault_root,
                 owner[field],
-                suffix=frozenset({".mp4", ".webm", ".mkv", ".mov"}),
                 label=field,
             )
         except PatternEvidenceError as exc:
@@ -667,27 +660,7 @@ def _local_video_binding(
         if youtube_id is not None and source_path.stem != youtube_id:
             return None, f"{field} filename is not bound to youtube_id"
         return source_path, f"pre-registered local source video {source_path}"
-
-    structured = owner.get("structured_data")
-    manifest = (
-        structured.get("video_extraction") if isinstance(structured, Mapping) else None
-    )
-    if not isinstance(manifest, Mapping) or youtube_id is None:
-        return None, "no predeclared local video artifact"
-    if (
-        manifest.get("schema_version") != 3
-        or manifest.get("source_video_id") != youtube_id
-    ):
-        return None, "video_extraction manifest is not bound to the claimed video id"
-    try:
-        source_path = resolve_video_extraction_source(
-            vault_root,
-            manifest,
-            youtube_id,
-        )
-    except PatternEvidenceError as exc:
-        return None, str(exc)
-    return source_path, f"identity-bound local source video {source_path}"
+    return None, "no predeclared local video artifact"
 
 
 def resolve_video_extraction_source(
@@ -695,14 +668,14 @@ def resolve_video_extraction_source(
     manifest: Mapping[str, object],
     youtube_id: str,
 ) -> Path:
-    """Resolve one manifest MP4 under the vault without following leaf links."""
-    source_path = _resolve_local_artifact(
+    """Resolve one manifest MP4 lexically; the bounded probe owns leaf I/O."""
+    source_path = _resolve_local_video_artifact(
         vault_root,
         manifest.get("source_video_path"),
-        suffix=".mp4",
         label="video_extraction.source_video_path",
+        suffixes=frozenset({".mp4"}),
     )
-    if source_path.stem != youtube_id:
+    if source_path.name != f"{youtube_id}.mp4":
         raise PatternEvidenceError(
             "local source-video filename is not bound to youtube_id"
         )
@@ -768,6 +741,8 @@ def _trusted_video_slide_probe(
     youtube_id: str,
     *,
     artifact_probes: Mapping[str, tuple[PdfArtifactProbe, Path]] | None = None,
+    source_video_probe: VideoArtifactProbe | None = None,
+    video_evidence_assessment: VideoEvidenceAssessment | None = None,
 ) -> tuple[PdfArtifactProbe | None, str, Path | None]:
     structured = owner.get("structured_data")
     manifest = (
@@ -807,6 +782,16 @@ def _trusted_video_slide_probe(
     local_path, local_reason = _local_video_binding(vault_root, owner, youtube_id)
     if local_path is None:
         return None, local_reason, None
+    if source_video_probe is None:
+        try:
+            source_video_probe = _selected_video_assessment(
+                video_evidence_assessment
+            ).probe(
+                local_path,
+                trusted_root=_canonical_video_root(vault_root),
+            )
+        except VideoEvidenceError as exc:
+            return None, _video_failure_reason(exc), None
     artifacts = manifest.get("artifacts")
     if not isinstance(artifacts, list):
         return None, "video_extraction artifacts must be an array", None
@@ -899,7 +884,15 @@ def _returned_slide_artifact(
     vault_root: str | Path,
     talk: Mapping[str, object],
     ret: Mapping[str, object],
-) -> tuple[PdfArtifactProbe | None, str, Path | None, Path | None]:
+    *,
+    video_evidence_assessment: VideoEvidenceAssessment | None = None,
+) -> tuple[
+    PdfArtifactProbe | None,
+    str,
+    Path | None,
+    Path | None,
+    VideoArtifactProbe | None,
+]:
     """Admit only a current-run artifact at a path fixed by preclaim identity."""
     slide_source = ret.get("slide_source")
     returned_path = ret.get("slides_local_path")
@@ -908,6 +901,7 @@ def _returned_slide_artifact(
             return (
                 None,
                 "return makes no explicit current-run PDF artifact assertion",
+                None,
                 None,
                 None,
             )
@@ -948,6 +942,7 @@ def _returned_slide_artifact(
             f"read identity-bound PDF {path}",
             path,
             None,
+            None,
         )
     if slide_source == "video_extracted":
         youtube_id = talk.get("youtube_id")
@@ -970,6 +965,23 @@ def _returned_slide_artifact(
             raise PatternEvidenceError(
                 "return video slides have no video_extraction manifest"
             )
+        local_path, local_reason = _local_video_binding(vault_root, ret, youtube_id)
+        if local_path is None:
+            raise PatternEvidenceError(
+                "return video extraction source is unavailable: " + local_reason
+            )
+        try:
+            source_video_probe = _selected_video_assessment(
+                video_evidence_assessment
+            ).probe(
+                local_path,
+                trusted_root=_canonical_video_root(vault_root),
+            )
+        except VideoEvidenceError as exc:
+            raise PatternEvidenceError(
+                "return video extraction source is unavailable: "
+                + _video_failure_reason(exc)
+            ) from exc
         artifact_probes = _probe_video_manifest_artifacts(
             vault_root,
             manifest,
@@ -980,12 +992,9 @@ def _returned_slide_artifact(
             ret,
             youtube_id,
             artifact_probes=artifact_probes,
+            source_video_probe=source_video_probe,
+            video_evidence_assessment=video_evidence_assessment,
         )
-        local_path, local_reason = _local_video_binding(vault_root, ret, youtube_id)
-        if local_path is None:
-            raise PatternEvidenceError(
-                "return video extraction source is unavailable: " + local_reason
-            )
         observations = ret.get("pattern_observations")
         claimed_static = (
             "static_slides" in (observations.get("evidence_sources") or [])
@@ -995,15 +1004,23 @@ def _returned_slide_artifact(
         if probe is None or slide_path is None:
             if _nonempty(returned_path) or claimed_static:
                 raise PatternEvidenceError(reason)
-            return None, reason, None, local_path
-        return probe, reason, slide_path, local_path
-    return None, "return declares no deterministic local slide artifact", None, None
+            return None, reason, None, local_path, source_video_probe
+        return probe, reason, slide_path, local_path, source_video_probe
+    return (
+        None,
+        "return declares no deterministic local slide artifact",
+        None,
+        None,
+        None,
+    )
 
 
 def admit_return_artifacts(
     vault_root: str | Path,
     talk: Mapping[str, object],
     ret: Mapping[str, object],
+    *,
+    video_evidence_assessment: VideoEvidenceAssessment | None = None,
 ) -> None:
     """Bound current-return slide artifacts for every supported return schema."""
     structured = ret.get("structured_data")
@@ -1018,7 +1035,14 @@ def admit_return_artifacts(
     if ret.get("slide_source") not in {"pdf", "both", "video_extracted"}:
         return
     try:
-        _returned_slide_artifact(vault_root, talk, ret)
+        _returned_slide_artifact(
+            vault_root,
+            talk,
+            ret,
+            video_evidence_assessment=_selected_video_assessment(
+                video_evidence_assessment
+            ),
+        )
     except PdfEvidenceError as exc:
         raise PatternEvidenceError(
             f"cannot admit returned PDF artifact ({exc.reason_code}): {exc}"
@@ -1200,6 +1224,7 @@ def validate_transcript_quality_for_owner(
     talk: Mapping[str, object],
     *,
     vault_root: str | Path,
+    video_evidence_assessment: VideoEvidenceAssessment | None = None,
 ) -> tuple[bool, str, str, bool]:
     """Validate one transcript against its full receipt and current owner.
 
@@ -1221,12 +1246,17 @@ def validate_transcript_quality_for_owner(
     local_media_sha256: str | None = None
     if local_media_path is not None:
         try:
-            local_media_snapshot = _verified_video_snapshot(local_media_path)
-        except PatternEvidenceError:
+            local_media_probe = _selected_video_assessment(
+                video_evidence_assessment
+            ).probe(
+                local_media_path,
+                trusted_root=_canonical_video_root(vault_root),
+            )
+        except VideoEvidenceError:
             pass
         else:
-            local_media_duration = local_media_snapshot.duration_seconds
-            local_media_sha256 = local_media_snapshot.artifact_sha256
+            local_media_duration = local_media_probe.duration_seconds
+            local_media_sha256 = local_media_probe.source_sha256
     unstable_reason = (
         "transcript bundle changed during quality validation; retry after "
         "acquisition or cloud sync completes"
@@ -1280,7 +1310,7 @@ def _load_verified_transcript_snapshot(
     owner_video_id: str | None,
     owner_media_sha256: str | None,
     owner_duration_seconds: float | None,
-    local_media_snapshot: _VideoArtifactSnapshot | None,
+    local_media_probe: VideoArtifactProbe | None,
 ) -> _VerifiedTranscriptSnapshot:
     """Load text and both receipts from one stable bundle generation.
 
@@ -1351,13 +1381,13 @@ def _load_verified_transcript_snapshot(
             transcript_text,
             talk,
             trusted_fallback_duration=(
-                local_media_snapshot.duration_seconds
-                if local_media_snapshot is not None
+                local_media_probe.duration_seconds
+                if local_media_probe is not None
                 else None
             ),
             trusted_local_media_sha256=(
-                local_media_snapshot.artifact_sha256
-                if local_media_snapshot is not None
+                local_media_probe.source_sha256
+                if local_media_probe is not None
                 else None
             ),
         )
@@ -1427,8 +1457,11 @@ def build_evidence_context(
     talk: Mapping[str, object],
     ret: Mapping[str, object] | None = None,
     source_roots: Mapping[str, object] | None = None,
+    *,
+    video_evidence_assessment: VideoEvidenceAssessment | None = None,
 ) -> dict[str, object]:
     """Resolve preclaim sources plus identity-derived current-run artifacts."""
+    selected_video_assessment = _selected_video_assessment(video_evidence_assessment)
     raw_youtube_id = talk.get("youtube_id")
     bound_youtube_id = (
         raw_youtube_id
@@ -1439,16 +1472,19 @@ def build_evidence_context(
         vault_root, talk, bound_youtube_id
     )
     predeclared_video_duration: float | None = None
-    predeclared_video_snapshot: _VideoArtifactSnapshot | None = None
+    predeclared_video_probe: VideoArtifactProbe | None = None
+    predeclared_video_error: VideoEvidenceError | None = None
     if predeclared_video_path is not None:
         try:
-            predeclared_video_snapshot = _verified_video_snapshot(
-                predeclared_video_path
+            predeclared_video_probe = selected_video_assessment.probe(
+                predeclared_video_path,
+                trusted_root=_canonical_video_root(vault_root),
             )
-        except PatternEvidenceError as exc:
-            predeclared_video_reason = str(exc)
+        except VideoEvidenceError as exc:
+            predeclared_video_error = exc
+            predeclared_video_reason = _video_failure_reason(exc)
         else:
-            predeclared_video_duration = predeclared_video_snapshot.duration_seconds
+            predeclared_video_duration = predeclared_video_probe.duration_seconds
 
     transcript_text: str | None = None
     transcript_policy_bound = False
@@ -1461,8 +1497,8 @@ def build_evidence_context(
     if timing_owner_duration is None:
         timing_owner_duration = predeclared_video_duration
     timing_owner_media_sha256 = (
-        predeclared_video_snapshot.artifact_sha256
-        if predeclared_video_snapshot is not None
+        predeclared_video_probe.source_sha256
+        if predeclared_video_probe is not None
         else None
     )
     timed_segments: list[dict[str, object]] = []
@@ -1477,7 +1513,7 @@ def build_evidence_context(
             owner_video_id=bound_youtube_id,
             owner_media_sha256=timing_owner_media_sha256,
             owner_duration_seconds=timing_owner_duration,
-            local_media_snapshot=predeclared_video_snapshot,
+            local_media_probe=predeclared_video_probe,
         )
         transcript_text = verified_transcript.text
         transcript_reason = verified_transcript.transcript_reason
@@ -1544,6 +1580,11 @@ def build_evidence_context(
     source_reasons: dict[str, str] = {}
     source_degradations: dict[str, dict[str, object]] = {}
     source_unavailable: dict[str, dict[str, object]] = {}
+    if predeclared_video_error is not None:
+        source_unavailable["delivery_video"] = _video_unavailable_record(
+            predeclared_video_error,
+            predeclared_video_path,
+        )
     pptx_count: int | None = None
     pdf_count: int | None = None
     pptx_path: Path | None = None
@@ -1663,7 +1704,13 @@ def build_evidence_context(
             video_slide_path: Path | None = None
             try:
                 video_probe, video_slide_reason, video_slide_path = (
-                    _trusted_video_slide_probe(vault_root, talk, youtube_id)
+                    _trusted_video_slide_probe(
+                        vault_root,
+                        talk,
+                        youtube_id,
+                        source_video_probe=predeclared_video_probe,
+                        video_evidence_assessment=selected_video_assessment,
+                    )
                 )
             except PdfEvidenceError as exc:
                 source_reasons["static_slides"] = str(exc)
@@ -1764,10 +1811,20 @@ def build_evidence_context(
         )
 
     current_video_path: Path | None = None
+    current_video_probe: VideoArtifactProbe | None = None
     if isinstance(ret, Mapping):
         try:
-            returned_probe, returned_reason, returned_slide_path, current_video_path = (
-                _returned_slide_artifact(vault_root, talk, ret)
+            (
+                returned_probe,
+                returned_reason,
+                returned_slide_path,
+                current_video_path,
+                current_video_probe,
+            ) = _returned_slide_artifact(
+                vault_root,
+                talk,
+                ret,
+                video_evidence_assessment=selected_video_assessment,
             )
         except PdfEvidenceError as exc:
             raise PatternEvidenceError(
@@ -1819,21 +1876,17 @@ def build_evidence_context(
     video_artifact_bound = False
     video_timing_bound = False
     video_binding_reason = "no identity-bound timed video artifact"
-    local_video_path: Path | None = None
-    local_video_path = predeclared_video_path
-    local_video_reason = predeclared_video_reason
-    video_snapshot = predeclared_video_snapshot
+    local_video_path = current_video_path or predeclared_video_path
+    local_video_reason = (
+        f"identity-bound current-return source video {current_video_path}"
+        if current_video_path is not None
+        else predeclared_video_reason
+    )
+    video_probe = current_video_probe or predeclared_video_probe
     if local_video_path is not None or bound_youtube_id is not None:
-        if local_video_path is None and current_video_path is not None:
-            local_video_path = current_video_path
-            local_video_reason = f"identity-bound local source video {local_video_path}"
-            try:
-                video_snapshot = _verified_video_snapshot(local_video_path)
-            except PatternEvidenceError as exc:
-                video_binding_reason = str(exc)
         if local_video_path is not None:
-            if video_snapshot is not None:
-                probed_duration = video_snapshot.duration_seconds
+            if video_probe is not None:
+                probed_duration = video_probe.duration_seconds
                 identity_duration = (
                     _identity_duration(talk, bound_youtube_id)
                     if bound_youtube_id is not None
@@ -1857,6 +1910,7 @@ def build_evidence_context(
                     video_duration = probed_duration
                     video_artifact_bound = True
                     video_binding_reason = local_video_reason
+                    source_unavailable.pop("delivery_video", None)
             elif video_binding_reason == "no identity-bound timed video artifact":
                 video_binding_reason = local_video_reason
         elif local_video_reason:
@@ -1917,31 +1971,19 @@ def build_evidence_context(
     if (
         video_artifact_bound
         and local_video_path is not None
-        and video_snapshot is not None
+        and video_probe is not None
     ):
-        try:
-            local_video_path.resolve(strict=False).relative_to(
-                _native_artifact_root(vault_root, label="vault_root")
-            )
-        except ValueError:
-            video_root = _native_artifact_root(
-                local_video_path.parent,
-                label="video artifact parent",
-            )
-            video_root_kind = "preclaim:video_local_path"
-        else:
-            video_root = _native_artifact_root(vault_root, label="vault_root")
-            video_root_kind = "vault"
         try:
             video_artifact_identity.update(
                 _artifact_identity(
-                    video_root,
+                    _canonical_video_root(vault_root),
                     local_video_path,
-                    root_kind=video_root_kind,
-                    artifact_sha256=video_snapshot.artifact_sha256,
+                    root_kind="vault",
+                    artifact_sha256=video_probe.source_sha256,
+                    lexical=True,
                 )
             )
-        except (OSError, PatternEvidenceError) as exc:
+        except PatternEvidenceError as exc:
             # A video that cannot be identity-bound is unavailable video
             # evidence, not a reason to erase an independent transcript/deck.
             video_artifact_bound = False
@@ -1966,6 +2008,7 @@ def build_evidence_context(
             len(transcript_text.splitlines()) if transcript_text is not None else None
         ),
         "local_video_path": local_video_path,
+        "video_artifact_probe": video_probe,
         "transcript_artifact_identity": transcript_artifact_identity,
         "timing_artifact_identity": timing_artifact_identity,
         "quality_artifact_identity": quality_artifact_identity,
@@ -1991,6 +2034,7 @@ def assess_talk_artifact_capabilities(
     *,
     vault_root: str | Path,
     source_roots: Mapping[str, object] | None = None,
+    video_evidence_assessment: VideoEvidenceAssessment | None = None,
 ) -> dict[str, object]:
     """Return root-aware verified-local vs acquisition capabilities.
 
@@ -2000,8 +2044,14 @@ def assess_talk_artifact_capabilities(
     """
     context: dict[str, object] | None = None
     contract_error: str | None = None
+    selected_video_assessment = _selected_video_assessment(video_evidence_assessment)
     try:
-        context = build_evidence_context(vault_root, talk, source_roots=source_roots)
+        context = build_evidence_context(
+            vault_root,
+            talk,
+            source_roots=source_roots,
+            video_evidence_assessment=selected_video_assessment,
+        )
     except PatternEvidenceError as exc:
         # Transcript identity/path errors are intentionally fail-closed for the
         # transcript, but they must not erase an independent deck/video. Retry
@@ -2021,6 +2071,7 @@ def assess_talk_artifact_capabilities(
                 vault_root,
                 isolated_talk,
                 source_roots=source_roots,
+                video_evidence_assessment=selected_video_assessment,
             )
         except PatternEvidenceError as isolated_exc:
             verified_sources = set()
@@ -2173,8 +2224,10 @@ def assess_batch_artifact_capabilities(
     *,
     vault_root: str | Path,
     source_roots: Mapping[str, object] | None = None,
+    video_evidence_assessment: VideoEvidenceAssessment | None = None,
 ) -> dict[str, dict[str, object]]:
     """Assess only talks named by one supplied return batch."""
+    selected_video_assessment = _selected_video_assessment(video_evidence_assessment)
     requested = set(filenames)
     assessed: dict[str, dict[str, object]] = {}
     for talk in talks:
@@ -2187,6 +2240,7 @@ def assess_batch_artifact_capabilities(
             talk,
             vault_root=vault_root,
             source_roots=source_roots,
+            video_evidence_assessment=selected_video_assessment,
         )
     return assessed
 
@@ -3193,6 +3247,7 @@ def canonicalize_return_evidence(
     source_roots: Mapping[str, object] | None = None,
     *,
     pattern_scoring_schema_version: int = CURRENT_PATTERN_SCORING_SCHEMA_VERSION,
+    video_evidence_assessment: VideoEvidenceAssessment | None = None,
 ) -> dict[str, object]:
     """Return a v4/v5 payload with source claims canonically located."""
     canonical = copy.deepcopy(dict(ret))
@@ -3210,7 +3265,11 @@ def canonicalize_return_evidence(
             "pattern_observations is required for evidence canonicalization"
         )
     context = build_evidence_context(
-        vault_root, talk, canonical, source_roots=source_roots
+        vault_root,
+        talk,
+        canonical,
+        source_roots=source_roots,
+        video_evidence_assessment=_selected_video_assessment(video_evidence_assessment),
     )
     if context.get("transcript_text") is not None:
         canonical_transcript_source = context.get("canonical_transcript_source")
@@ -3800,6 +3859,7 @@ def assess_persisted_pattern_evidence_freshness(
     *,
     vault_root: str | Path,
     source_roots: Mapping[str, object] | None = None,
+    video_evidence_assessment: VideoEvidenceAssessment | None = None,
 ) -> tuple[str, ...]:
     """Return stable reason codes for any persisted evidence drift.
 
@@ -3821,10 +3881,15 @@ def assess_persisted_pattern_evidence_freshness(
         reasons.update(_v5_projection_freshness_reasons(talk, observations))
     vault = _lexical_absolute(vault_root)
     bounded_vault = _canonical_pdf_root(vault_root)
+    bounded_video_vault = _canonical_video_root(vault_root)
+    selected_video_assessment = _selected_video_assessment(video_evidence_assessment)
     current_context: Mapping[str, object] = {}
     try:
         current_context = build_evidence_context(
-            vault_root, talk, source_roots=source_roots
+            vault_root,
+            talk,
+            source_roots=source_roots,
+            video_evidence_assessment=selected_video_assessment,
         )
     except PatternEvidenceError:
         if evidence_schema_version == PATTERN_EVIDENCE_SCHEMA_VERSION:
@@ -3834,13 +3899,15 @@ def assess_persisted_pattern_evidence_freshness(
         kind: object,
         label: str,
         *,
-        bounded_suffix: str | None = None,
+        bounded_suffix: str | frozenset[str] | None = None,
     ) -> Path | None:
         if kind == "vault":
             if bounded_suffix == ".pdf":
                 return bounded_vault
             if bounded_suffix == ".pptx":
                 return vault
+            if bounded_suffix == _VIDEO_SUFFIXES:
+                return bounded_video_vault
             return vault
         if kind == "pptx_source":
             configured = (
@@ -3863,6 +3930,21 @@ def assess_persisted_pattern_evidence_freshness(
             )
         if isinstance(kind, str) and kind.startswith("preclaim:"):
             field = kind.removeprefix("preclaim:")
+            if field == "video_local_path" and bounded_suffix == _VIDEO_SUFFIXES:
+                raw_youtube_id = talk.get("youtube_id")
+                bound_youtube_id = (
+                    raw_youtube_id
+                    if isinstance(raw_youtube_id, str)
+                    and _YOUTUBE_ID.fullmatch(raw_youtube_id)
+                    else None
+                )
+                legacy_video_path, _reason = _local_video_binding(
+                    vault_root,
+                    talk,
+                    bound_youtube_id,
+                )
+                if legacy_video_path is not None:
+                    return legacy_video_path.parent
             declared = talk.get(field)
             try:
                 locator_kind = classify_artifact_locator(declared)
@@ -3891,7 +3973,7 @@ def assess_persisted_pattern_evidence_freshness(
         timing: bool = False,
         quality: bool = False,
         bounded_current_digest: str | None = None,
-        bounded_suffix: str | None = None,
+        bounded_suffix: str | frozenset[str] | None = None,
     ) -> Path | None:
         if timing and quality:  # pragma: no cover - internal API guard
             raise ValueError("an identity cannot be both timing and quality")
@@ -4009,6 +4091,12 @@ def assess_persisted_pattern_evidence_freshness(
         if isinstance(current_static_probe, PdfArtifactProbe)
         else None
     )
+    current_video_probe = current_context.get("video_artifact_probe")
+    bounded_video_digest = (
+        current_video_probe.source_sha256
+        if isinstance(current_video_probe, VideoArtifactProbe)
+        else None
+    )
     native_declared = _declares_persisted_native_deck(talk, observations)
     structured = talk.get("structured_data")
     raw_native_audit = (
@@ -4090,6 +4178,8 @@ def assess_persisted_pattern_evidence_freshness(
                 if source == "native_deck"
                 else bounded_static_digest
                 if source == "static_slides"
+                else bounded_video_digest
+                if source == "delivery_video"
                 else None
             ),
             bounded_suffix=(
@@ -4097,6 +4187,8 @@ def assess_persisted_pattern_evidence_freshness(
                 if source == "native_deck"
                 else ".pdf"
                 if source == "static_slides"
+                else _VIDEO_SUFFIXES
+                if source == "delivery_video"
                 else None
             ),
         )
@@ -4122,14 +4214,20 @@ def assess_persisted_pattern_evidence_freshness(
                 if isinstance(youtube_id, str) and _YOUTUBE_ID.fullmatch(youtube_id):
                     values.append(f"transcripts/{youtube_id}.txt")
         elif source == "delivery_video":
-            for field in ("video_local_path", "video_path"):
-                if _nonempty(talk.get(field)):
-                    values.append(talk[field])
-            manifest_path = _dig(
-                talk, "structured_data.video_extraction.source_video_path"
+            owner_youtube_id = talk.get("youtube_id")
+            bound_youtube_id = (
+                owner_youtube_id
+                if isinstance(owner_youtube_id, str)
+                and _YOUTUBE_ID.fullmatch(owner_youtube_id)
+                else None
             )
-            if _nonempty(manifest_path):
-                values.append(manifest_path)
+            bound_path, _reason = _local_video_binding(
+                vault_root,
+                talk,
+                bound_youtube_id,
+            )
+            if bound_path is not None:
+                return [_lexical_absolute(bound_path)]
         candidates: list[Path] = []
         allowed_suffixes = (
             frozenset({".txt"})
@@ -4142,7 +4240,7 @@ def assess_persisted_pattern_evidence_freshness(
             except ArtifactLocatorError:
                 continue
             if supplied.suffix.casefold() in allowed_suffixes:
-                candidates.append(supplied.resolve(strict=False))
+                candidates.append(_lexical_absolute(supplied))
         return candidates
 
     inspection = observations.get("source_inspection")
@@ -4192,7 +4290,7 @@ def assess_persisted_pattern_evidence_freshness(
                 expected_role_path = current_context.get("local_video_path")
             expected_role_identity = (
                 _lexical_absolute(expected_role_path)
-                if source in {"native_deck", "static_slides"}
+                if source in {"native_deck", "static_slides", "delivery_video"}
                 and isinstance(expected_role_path, Path)
                 else (
                     expected_role_path.resolve(strict=False)
@@ -4204,45 +4302,10 @@ def assess_persisted_pattern_evidence_freshness(
                 reasons.add(f"{label}:source_role_provenance_drift")
         coherent_transcript_text: str | None = None
         if source == "transcript":
-            owner_youtube_id = talk.get("youtube_id")
-            bound_youtube_id = (
-                owner_youtube_id
-                if isinstance(owner_youtube_id, str)
-                and _YOUTUBE_ID.fullmatch(owner_youtube_id)
-                else None
+            context_transcript = current_context.get("transcript_text")
+            coherent_transcript_text = (
+                context_transcript if isinstance(context_transcript, str) else None
             )
-            local_media_path, _ = _local_video_binding(
-                vault_root, talk, bound_youtube_id
-            )
-            local_media_snapshot: _VideoArtifactSnapshot | None = None
-            if local_media_path is not None:
-                try:
-                    local_media_snapshot = _verified_video_snapshot(local_media_path)
-                except PatternEvidenceError:
-                    pass
-            owner_duration = _catalog_duration(talk)
-            if owner_duration is None and local_media_snapshot is not None:
-                owner_duration = local_media_snapshot.duration_seconds
-            recorded_source = talk.get("transcript_source")
-            owner_source = (
-                cast(str, recorded_source)
-                if recorded_source in {"youtube_auto", "whisper", "manual"}
-                else "unknown"
-            )
-            verified_transcript = _load_verified_transcript_snapshot(
-                path,
-                talk,
-                owner_source=owner_source,
-                owner_video_id=bound_youtube_id,
-                owner_media_sha256=(
-                    local_media_snapshot.artifact_sha256
-                    if local_media_snapshot is not None
-                    else None
-                ),
-                owner_duration_seconds=owner_duration,
-                local_media_snapshot=local_media_snapshot,
-            )
-            coherent_transcript_text = verified_transcript.text
             if coherent_transcript_text is None:
                 reasons.add(f"{label}:transcript_quality_context_drift")
         current_candidates = owner_candidates(source)
@@ -4292,11 +4355,12 @@ def assess_persisted_pattern_evidence_freshness(
                 if record.get("page_count") != count:
                     reasons.add(f"{label}:page_count_drift")
             elif source == "delivery_video":
-                current_video_snapshot = _verified_video_snapshot(path)
-                duration = current_video_snapshot.duration_seconds
-                if current_video_snapshot.artifact_sha256 != record.get(
-                    "artifact_sha256"
-                ):
+                if not isinstance(current_video_probe, VideoArtifactProbe):
+                    raise PatternEvidenceError(
+                        "bounded current video receipt is unavailable"
+                    )
+                duration = current_video_probe.duration_seconds
+                if current_video_probe.source_sha256 != record.get("artifact_sha256"):
                     reasons.add(f"{label}:artifact_digest_mismatch")
                 _, complete = _validate_time_ranges(
                     record.get("time_ranges"), duration=duration
@@ -4539,10 +4603,17 @@ def assess_persisted_pattern_evidence_freshness(
 
 
 def assess_persisted_evidence_freshness(
-    talk: Mapping[str, object], vault_root: str | Path
+    talk: Mapping[str, object],
+    vault_root: str | Path,
+    *,
+    video_evidence_assessment: VideoEvidenceAssessment | None = None,
 ) -> tuple[str, ...]:
     """Compatibility wrapper for callers that have only a vault root."""
-    return assess_persisted_pattern_evidence_freshness(talk, vault_root=vault_root)
+    return assess_persisted_pattern_evidence_freshness(
+        talk,
+        vault_root=vault_root,
+        video_evidence_assessment=video_evidence_assessment,
+    )
 
 
 def return_evidence_claim(ret: Mapping[str, object]) -> dict[str, object]:

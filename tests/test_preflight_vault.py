@@ -5,6 +5,7 @@ import importlib
 import json
 import os
 from pathlib import Path
+import shutil
 import struct
 import subprocess
 import sys
@@ -28,6 +29,7 @@ QUEUE_STATE_SCRIPT = (
     / "scripts"
     / "queue-state.py"
 )
+_TINY_VIDEO_BYTES: bytes | None = None
 
 
 def foreign_absolute_locator(name: str) -> str:
@@ -166,6 +168,50 @@ def write_pdf(path: Path, *, page_count: int = 1) -> Path:
     return path
 
 
+def write_tiny_video(path: Path) -> Path:
+    """Materialize one valid MP4 while keeping ffmpeg local to video tests."""
+    global _TINY_VIDEO_BYTES
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if _TINY_VIDEO_BYTES is not None:
+        path.write_bytes(_TINY_VIDEO_BYTES)
+        return path
+
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None or shutil.which("ffprobe") is None:
+        pytest.skip("source-video manifest tests require ffmpeg and ffprobe")
+    assert ffmpeg is not None
+    created = subprocess.run(
+        [
+            ffmpeg,
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=160x90:r=1",
+            "-t",
+            "1",
+            "-an",
+            "-c:v",
+            "mpeg4",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            "-y",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert created.returncode == 0, created.stderr
+    _TINY_VIDEO_BYTES = path.read_bytes()
+    return path
+
+
 def materialize_crc_damaged_pptx(fixture):
     """Create a deck with one CRC-damaged media member under the source root."""
     image_path = fixture["pptx_source"] / "asset.png"
@@ -223,7 +269,7 @@ def trusted_video_manifest(fixture, page_count=1):
     rebuild = fixture["root"] / "slides-rebuild" / VIDEO_ID
     rebuild.mkdir(parents=True, exist_ok=True)
     source_video = rebuild / f"{VIDEO_ID}.mp4"
-    source_video.write_bytes(b"video fixture")
+    write_tiny_video(source_video)
     candidate = rebuild / f"{VIDEO_ID}.slide-region.pdf"
     write_pdf(candidate, page_count=page_count)
     retained = [
@@ -640,9 +686,7 @@ def test_preflight_compares_symlinked_vault_roots_by_lexical_identity(
     physical_root = vault_fixture["root"]
     alias_root = tmp_path / "alias-vault"
     alias_root.symlink_to(physical_root, target_is_directory=True)
-    configured_root = (
-        alias_root if configured_identity == "alias" else physical_root
-    )
+    configured_root = alias_root if configured_identity == "alias" else physical_root
     write_database(
         vault_fixture,
         [],
@@ -963,17 +1007,18 @@ def test_missing_source_video_reports_closed_path_neutral_error(
     finding = next(
         item
         for item in report["findings"]
-        if item["code"] == "video_extraction_provenance_invalid"
+        if item["code"] == "source_video_artifact_missing"
     )
     diagnostic = json.dumps(
         {"message": finding["message"], "actual": finding["actual"]},
         sort_keys=True,
     )
     assert str(source) not in diagnostic
-    assert finding["actual"] == [
-        "source_video_path must name a root-confined, non-symlinked preserved "
-        "source video"
-    ]
+    assert finding["severity"] == "warning"
+    assert finding["field"] == ("structured_data.video_extraction.source_video_path")
+    assert finding["actual"]["reason_code"] == "video_artifact_unavailable"
+    assert finding["actual"]["details"]["failure_kind"] == "missing"
+    assert "video_extraction_provenance_invalid" not in finding_codes(report)
 
 
 def test_video_manifest_rejects_symlinked_source_video(
@@ -1036,6 +1081,185 @@ def test_slide_contract_taxonomy_includes_bounded_pdf_failures(
         "slide_video_artifact_unavailable",
         "slide_video_artifact_unreadable",
     } <= preflight_vault.SLIDE_CONTRACT_CODES
+
+
+def test_source_video_contract_taxonomy_is_separate_and_closed(
+    preflight_vault,
+) -> None:
+    assert preflight_vault.SOURCE_VIDEO_CONTRACT_CODES == {
+        "source_video_artifact_missing",
+        "source_video_artifact_unavailable",
+        "source_video_artifact_unreadable",
+    }
+    assert not (
+        preflight_vault.SOURCE_VIDEO_CONTRACT_CODES
+        & preflight_vault.SLIDE_CONTRACT_CODES
+    )
+
+
+@pytest.mark.parametrize(
+    ("reason_code", "details", "expected_code"),
+    [
+        (
+            "video_artifact_unavailable",
+            {"failure_kind": "missing"},
+            "source_video_artifact_missing",
+        ),
+        (
+            "video_cloud_placeholder_unavailable",
+            {"availability": {"state": "offline"}},
+            "source_video_artifact_unavailable",
+        ),
+        *[
+            (reason, {}, "source_video_artifact_unreadable")
+            for reason in (
+                "video_artifact_changed",
+                "video_artifact_too_large",
+                "video_batch_wall_limit",
+                "video_dependency_unavailable",
+                "video_duration_unavailable",
+                "video_evidence_invalid",
+                "video_invalid_container",
+                "video_no_video_stream",
+                "video_parser_rejected",
+                "video_parser_repair_required",
+                "video_probe_containment_unavailable",
+                "video_probe_crash",
+                "video_probe_malformed_result",
+                "video_probe_monitor_identity_changed",
+                "video_probe_monitor_unavailable",
+                "video_probe_request_oversized",
+                "video_probe_resource_unavailable",
+                "video_probe_result_oversized",
+                "video_probe_start_failure",
+                "video_probe_timeout",
+                "video_stream_limit",
+            )
+        ],
+        (
+            "video_artifact_unavailable",
+            {"failure_kind": "io"},
+            "source_video_artifact_unreadable",
+        ),
+        (
+            "video_artifact_unavailable",
+            {},
+            "source_video_artifact_unreadable",
+        ),
+        *[
+            (
+                "video_artifact_unavailable",
+                {"failure_kind": failure_kind},
+                "video_extraction_provenance_invalid",
+            )
+            for failure_kind in (
+                "not_regular",
+                "root_escape",
+                "symlink_or_reparse",
+            )
+        ],
+        (
+            "video_evidence_invalid",
+            {"locator_failure": "artifact_locator_dot_segment"},
+            "video_extraction_provenance_invalid",
+        ),
+    ],
+)
+def test_source_video_failure_mapping_is_closed(
+    preflight_vault,
+    reason_code: str,
+    details: dict[str, object],
+    expected_code: str,
+) -> None:
+    video_evidence = importlib.import_module("video_evidence")
+    error = video_evidence.VideoEvidenceError(
+        "synthetic bounded video failure",
+        reason_code=reason_code,
+        details=details,
+    )
+
+    assert preflight_vault._source_video_failure_code(error) == expected_code
+
+
+@pytest.mark.parametrize(
+    ("reason_code", "details", "expected_code", "current", "severity"),
+    [
+        (
+            "video_artifact_unavailable",
+            {"failure_kind": "missing", "exception_type": "FileNotFoundError"},
+            "source_video_artifact_missing",
+            False,
+            "warning",
+        ),
+        (
+            "video_cloud_placeholder_unavailable",
+            {"availability": {"state": "offline"}, "reparse_tag": None},
+            "source_video_artifact_unavailable",
+            False,
+            "warning",
+        ),
+        (
+            "video_invalid_container",
+            {},
+            "source_video_artifact_unreadable",
+            False,
+            "warning",
+        ),
+        (
+            "video_invalid_container",
+            {},
+            "source_video_artifact_unreadable",
+            True,
+            "blocking",
+        ),
+    ],
+)
+def test_source_video_probe_failure_is_structured_current_aware_and_not_duplicated(
+    preflight_vault,
+    vault_fixture,
+    monkeypatch: pytest.MonkeyPatch,
+    reason_code: str,
+    details: dict[str, object],
+    expected_code: str,
+    current: bool,
+    severity: str,
+) -> None:
+    video_evidence = importlib.import_module("video_evidence")
+    manifest = trusted_video_manifest(vault_fixture)
+
+    def fail_probe(*_args, **_kwargs):
+        raise video_evidence.VideoEvidenceError(
+            "synthetic bounded video failure",
+            reason_code=reason_code,
+            details=details,
+        )
+
+    monkeypatch.setattr(video_evidence.VideoEvidenceAssessment, "probe", fail_probe)
+    talk_updates = {
+        "status": "processed_partial",
+        "transcript_source": "none",
+        "slide_source": "video_extracted",
+        "structured_data": {"video_extraction": manifest},
+    }
+    talk = (
+        current_v5_talk(preflight_vault, **talk_updates)
+        if current
+        else base_talk(**talk_updates)
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    findings = [item for item in report["findings"] if item["code"] == expected_code]
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["severity"] == severity
+    assert finding["field"] == ("structured_data.video_extraction.source_video_path")
+    assert finding["actual"] == {
+        "reason_code": reason_code,
+        "details": details,
+    }
+    assert "video_extraction_provenance_invalid" not in finding_codes(report)
 
 
 def test_clean_record_has_no_findings(preflight_vault, vault_fixture):

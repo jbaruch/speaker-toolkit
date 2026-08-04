@@ -685,8 +685,8 @@ def test_transcript_receipt_docs_keep_quality_separate_from_timing(
 ):
     repo = Path(fetch_transcript.__file__).resolve().parents[3]
     ingress = repo / "skills" / "vault-ingress"
+    skill = (ingress / "SKILL.md").read_text(encoding="utf-8")
     documents = {
-        "skill": (ingress / "SKILL.md").read_text(encoding="utf-8"),
         "processing": (ingress / "references" / "processing-rules.md").read_text(
             encoding="utf-8"
         ),
@@ -704,6 +704,7 @@ def test_transcript_receipt_docs_keep_quality_separate_from_timing(
     for text in documents.values():
         assert ".segments.json" in text
         assert ".quality.json" in text
+    assert "references/subagent-instructions.md" in skill
     assert "fixed_default" in documents["schemas"]
     assert "youtube_duration" in documents["schemas"]
     assert "local_media_duration" in documents["schemas"]
