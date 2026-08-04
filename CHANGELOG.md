@@ -1,5 +1,21 @@
 # Changelog
 
+### fix(vault-ingress) — isolate video frame workspaces from stale evidence (#213)
+
+Every video extraction now uses a fresh private temporary frame workspace for
+ffmpeg, region selection, deduplication, and PDF construction, then removes it
+after normal completion or a Python failure. Frame discovery uses literal
+directory entries and accepts only numbered JPEG outputs, so stale frames, glob
+metacharacters, and parallel runs cannot contaminate the current PDF or
+retained-frame manifest. Each PDF is completed in a deterministic adjacent stage
+before atomic replacement; a failed build preserves the prior derivative, and
+the next run reclaims a stage left by abrupt process loss. A cross-platform
+per-video advisory lock in local OS temporary storage prevents two cooperative
+reruns from interleaving their slide-region and context PDF pair without adding
+Google Drive lock artifacts. The video extraction pipeline advances to `0.12.0`;
+its record schema remains v3. The documented video dependency set is pinned to
+the exact tested versions and renewed weekly through Dependabot.
+
 ## 0.20.9 — 2026-08-03
 
 ### fix(vault-ingress) — reject impossible inspected-page ranges before PPTX work (#204)

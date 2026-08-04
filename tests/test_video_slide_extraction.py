@@ -1,14 +1,19 @@
 """Tests for video-slide-extraction.py — frame extraction, dedup, PDF output."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
+import threading
 
 import pytest
+from filelock import FileLock, Timeout
 from PIL import Image
+from pypdf import PdfReader
 
 SCRIPT_PATH = os.path.join(
     os.path.dirname(__file__),
@@ -27,6 +32,7 @@ SCHEMA_PATH = os.path.join(
     "schemas-db.md",
 )
 YOUTUBE_ID = "AbCdEfGhI_1"
+SECOND_YOUTUBE_ID = "ZyXwVuTsR_2"
 
 
 def _artifact(result, scope):
@@ -41,6 +47,19 @@ def _artifact(result, scope):
 
 def _pdf_contains(raw, text):
     return text.encode() in raw or text.encode("utf-16-be") in raw
+
+
+@pytest.fixture(autouse=True)
+def _isolate_video_temporary_storage(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr(
+        video_slide_extraction.tempfile,
+        "gettempdir",
+        lambda: str(tmp_path),
+    )
 
 
 def test_crop_frame_none_region(video_slide_extraction):
@@ -186,9 +205,6 @@ def test_extract_frames_passes_adversarial_paths_as_argv_data(
         return subprocess.CompletedProcess(argv, 0)
 
     monkeypatch.setattr(video_slide_extraction.subprocess, "run", run)
-    monkeypatch.setattr(video_slide_extraction.os, "makedirs", lambda *_a, **_k: None)
-    monkeypatch.setattr(video_slide_extraction.glob, "glob", lambda _pattern: [])
-
     assert video_slide_extraction.extract_frames(video, frames_dir, fps=0.25) == []
 
     assert calls == [
@@ -229,8 +245,6 @@ def test_extract_frames_cannot_create_a_shell_side_effect_sentinel(
         "run",
         lambda argv, **_kwargs: subprocess.CompletedProcess(argv, 0),
     )
-    monkeypatch.setattr(video_slide_extraction.glob, "glob", lambda _pattern: [])
-
     video_slide_extraction.extract_frames(str(video), str(frames_dir))
 
     assert not sentinel.exists()
@@ -254,6 +268,67 @@ def test_extract_frames_reports_closed_process_exit_status(
 
     assert str(caught.value) == "ffmpeg failed with exit status 17"
     assert str(video) not in str(caught.value)
+
+
+def test_extract_frames_refuses_a_nonempty_workspace_before_ffmpeg(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    frames_dir = tmp_path / "frames"
+    frames_dir.mkdir()
+    stale = frames_dir / "frame_99999.jpg"
+    stale.write_bytes(b"older extraction")
+    monkeypatch.setattr(
+        video_slide_extraction.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("nonempty workspace reached ffmpeg"),
+    )
+
+    with pytest.raises(RuntimeError, match="frame workspace is not empty"):
+        video_slide_extraction.extract_frames(
+            str(tmp_path / "source.mp4"),
+            str(frames_dir),
+        )
+
+    assert stale.read_bytes() == b"older extraction"
+
+
+def test_extract_frames_enumerates_only_literal_numbered_jpegs(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    frames_dir = tmp_path / "frames[literal]"
+
+    def run(argv, **_kwargs):
+        workspace = os.path.dirname(argv[7])
+        for name in (
+            "frame_00002.jpg",
+            "frame_00001.jpg",
+            "frame_100000.jpg",
+            "frame_99999.jpg",
+            "frame_not-a-number.jpg",
+            "frame_00003.png",
+            "other.jpg",
+        ):
+            with open(os.path.join(workspace, name), "wb") as output:
+                output.write(b"frame")
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(video_slide_extraction.subprocess, "run", run)
+
+    frames = video_slide_extraction.extract_frames(
+        str(tmp_path / "source.mp4"),
+        str(frames_dir),
+    )
+
+    assert [os.path.basename(frame) for frame in frames] == [
+        "frame_00001.jpg",
+        "frame_00002.jpg",
+        "frame_99999.jpg",
+        "frame_100000.jpg",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -306,7 +381,6 @@ def test_video_pipeline_rejects_noncanonical_youtube_id_before_io(
 @pytest.mark.parametrize(
     "derived_name",
     [
-        "frames",
         f"{YOUTUBE_ID}.slide-region.pdf",
         f"{YOUTUBE_ID}.context.pdf",
     ],
@@ -321,9 +395,7 @@ def test_video_pipeline_rejects_existing_output_symlink_escape_before_ffmpeg(
     output.mkdir()
     target = tmp_path / "outside"
     try:
-        (output / derived_name).symlink_to(
-            target, target_is_directory=derived_name == "frames"
-        )
+        (output / derived_name).symlink_to(target)
     except (NotImplementedError, OSError):
         pytest.skip("symlinks are not available to this test process")
     monkeypatch.setattr(
@@ -338,6 +410,282 @@ def test_video_pipeline_rejects_existing_output_symlink_escape_before_ffmpeg(
             output,
             YOUTUBE_ID,
         )
+
+
+def test_video_pipeline_rejects_a_directory_at_a_pdf_destination_before_ffmpeg(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    output = tmp_path / "output"
+    output.mkdir()
+    (output / f"{YOUTUBE_ID}.context.pdf").mkdir()
+    monkeypatch.setattr(
+        video_slide_extraction,
+        "extract_frames",
+        lambda *_args, **_kwargs: pytest.fail("invalid PDF leaf reached ffmpeg"),
+    )
+
+    with pytest.raises(ValueError, match="video_output_leaf_invalid"):
+        video_slide_extraction.extract_slides_from_video(
+            tmp_path / "source.mp4",
+            output,
+            YOUTUBE_ID,
+        )
+
+
+def test_pipeline_ignores_and_preserves_legacy_stale_frames(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    output = tmp_path / "output[literal]"
+    legacy_workspace = output / "frames"
+    legacy_workspace.mkdir(parents=True)
+    stale = legacy_workspace / "frame_99999.jpg"
+    Image.new("RGB", (320, 180), (255, 0, 0)).save(stale)
+    stale_pdf_stage = video_slide_extraction._pdf_stage_path(
+        str(output / f"{YOUTUBE_ID}.slide-region.pdf")
+    )
+    with open(stale_pdf_stage, "wb") as staged:
+        staged.write(b"partial prior PDF")
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"source")
+    workspaces = []
+    consumed = []
+
+    def extract(_video_path, frames_dir, fps):
+        del fps
+        assert os.path.realpath(frames_dir) != os.path.realpath(legacy_workspace)
+        workspaces.append(frames_dir)
+        current = os.path.join(frames_dir, "frame_00001.jpg")
+        Image.new("RGB", (320, 180), (0, 0, 255)).save(current)
+        return [current]
+
+    def deduplicate(frames, _region, _threshold):
+        consumed.extend(frames)
+        return [(frames[0], 0)]
+
+    monkeypatch.setattr(video_slide_extraction, "extract_frames", extract)
+    monkeypatch.setattr(video_slide_extraction, "deduplicate_frames", deduplicate)
+
+    result = video_slide_extraction.extract_slides_from_video(
+        str(video),
+        str(output),
+        YOUTUBE_ID,
+        slide_region="none",
+    )
+
+    assert len(workspaces) == 1
+    assert consumed == [os.path.join(workspaces[0], "frame_00001.jpg")]
+    assert not os.path.exists(workspaces[0])
+    assert stale.is_file()
+    assert result["total_frames_extracted"] == 1
+    assert result["unique_frame_count"] == 1
+    assert result["retained_frames"] == [
+        {"page_number": 1, "frame_index": 0, "timestamp_seconds": 0.0}
+    ]
+    context = _artifact(result, "full_frame_context")
+    assert context["page_count"] == 1
+    assert len(PdfReader(context["path"], strict=True).pages) == 1
+    assert list(output.glob("*.video-extraction.lock")) == []
+    assert not os.path.exists(stale_pdf_stage)
+
+
+def test_pipeline_removes_its_private_workspace_after_failure(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    output = tmp_path / "output"
+    legacy_workspace = output / "frames"
+    legacy_workspace.mkdir(parents=True)
+    stale = legacy_workspace / "frame_99999.jpg"
+    stale.write_bytes(b"older extraction")
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"source")
+    workspaces = []
+
+    def extract(_video_path, frames_dir, fps):
+        del fps
+        workspaces.append(frames_dir)
+        current = os.path.join(frames_dir, "frame_00001.jpg")
+        Image.new("RGB", (320, 180), (0, 0, 255)).save(current)
+        return [current]
+
+    def fail_deduplication(*_args):
+        raise RuntimeError("synthetic failure")
+
+    monkeypatch.setattr(video_slide_extraction, "extract_frames", extract)
+    monkeypatch.setattr(
+        video_slide_extraction,
+        "deduplicate_frames",
+        fail_deduplication,
+    )
+
+    with pytest.raises(RuntimeError, match="synthetic failure"):
+        video_slide_extraction.extract_slides_from_video(
+            str(video),
+            str(output),
+            YOUTUBE_ID,
+            slide_region="none",
+        )
+
+    assert len(workspaces) == 1
+    assert not os.path.exists(workspaces[0])
+    assert stale.read_bytes() == b"older extraction"
+
+
+def test_pipeline_closes_an_open_frame_before_failure_cleanup(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    output = tmp_path / "output"
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"source")
+    workspaces = []
+
+    def extract(_video_path, frames_dir, fps):
+        del fps
+        workspaces.append(frames_dir)
+        frame = os.path.join(frames_dir, "frame_00001.jpg")
+        Image.new("RGB", (320, 180), (0, 0, 255)).save(frame)
+        return [frame]
+
+    def fail_hashing(*_args, **_kwargs):
+        raise RuntimeError("synthetic hash failure")
+
+    monkeypatch.setattr(video_slide_extraction, "extract_frames", extract)
+    monkeypatch.setattr(video_slide_extraction.imagehash, "phash", fail_hashing)
+
+    with pytest.raises(RuntimeError, match="synthetic hash failure"):
+        video_slide_extraction.extract_slides_from_video(
+            str(video),
+            str(output),
+            YOUTUBE_ID,
+            slide_region="none",
+        )
+
+    assert len(workspaces) == 1
+    assert not os.path.exists(workspaces[0])
+
+
+def test_existing_unlocked_run_lock_file_does_not_block_a_rerun(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    output = tmp_path / "output"
+    output.mkdir()
+    run_lock = video_slide_extraction._video_run_lock_path(
+        os.path.realpath(output),
+        YOUTUBE_ID,
+    )
+    with open(run_lock, "wb") as lock_file:
+        lock_file.write(b"left by an interrupted process")
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"source")
+
+    def extract(_video_path, frames_dir, fps):
+        del fps
+        frame = os.path.join(frames_dir, "frame_00001.jpg")
+        Image.new("RGB", (320, 180), (0, 0, 255)).save(frame)
+        return [frame]
+
+    monkeypatch.setattr(video_slide_extraction, "extract_frames", extract)
+
+    result = video_slide_extraction.extract_slides_from_video(
+        str(video),
+        str(output),
+        YOUTUBE_ID,
+        slide_region="none",
+    )
+
+    assert result["unique_frame_count"] == 1
+    assert (output / f"{YOUTUBE_ID}.context.pdf").read_bytes().startswith(b"%PDF")
+
+
+def test_same_video_run_waits_for_the_existing_cooperative_lock(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    output = tmp_path / "output"
+    output.mkdir()
+    run_lock = video_slide_extraction._video_run_lock_path(
+        os.path.realpath(output),
+        YOUTUBE_ID,
+    )
+    monkeypatch.setattr(
+        video_slide_extraction,
+        "_video_run_lock",
+        lambda path: FileLock(path, timeout=0),
+    )
+    monkeypatch.setattr(
+        video_slide_extraction,
+        "extract_frames",
+        lambda *_args, **_kwargs: pytest.fail("locked rerun reached ffmpeg"),
+    )
+
+    with FileLock(run_lock):
+        with pytest.raises(Timeout):
+            video_slide_extraction.extract_slides_from_video(
+                str(tmp_path / "source.mp4"),
+                str(output),
+                YOUTUBE_ID,
+                slide_region="none",
+            )
+
+
+def test_parallel_pipeline_runs_use_distinct_workspaces_and_publish_complete_pdf(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    output = tmp_path / "output"
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"source")
+    barrier = threading.Barrier(2)
+    workspaces = []
+    workspaces_lock = threading.Lock()
+
+    def extract(_video_path, frames_dir, fps):
+        del fps
+        with workspaces_lock:
+            color = 60 + len(workspaces) * 120
+            workspaces.append(frames_dir)
+        frame = os.path.join(frames_dir, "frame_00001.jpg")
+        Image.new("RGB", (320, 180), (color, 0, 0)).save(frame)
+        barrier.wait(timeout=10)
+        return [frame]
+
+    monkeypatch.setattr(video_slide_extraction, "extract_frames", extract)
+
+    def run(youtube_id):
+        return video_slide_extraction.extract_slides_from_video(
+            str(video),
+            str(output),
+            youtube_id,
+            slide_region="none",
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = [
+            future.result()
+            for future in (
+                executor.submit(run, YOUTUBE_ID),
+                executor.submit(run, SECOND_YOUTUBE_ID),
+            )
+        ]
+
+    assert len(set(workspaces)) == 2
+    assert all(not os.path.exists(workspace) for workspace in workspaces)
+    assert [result["unique_frame_count"] for result in results] == [1, 1]
+    for youtube_id in (YOUTUBE_ID, SECOND_YOUTUBE_ID):
+        published = output / f"{youtube_id}.context.pdf"
+        assert published.read_bytes().startswith(b"%PDF")
+        assert len(PdfReader(published, strict=True).pages) == 1
 
 
 def test_deduplicate_identical_frames(video_slide_extraction, tmp_path):
@@ -419,6 +767,136 @@ def test_combine_to_pdf(video_slide_extraction, tmp_path):
     assert result == output
     assert os.path.isfile(output)
     assert os.path.getsize(output) > 100
+    assert list(tmp_path.glob(".slides.pdf.*.tmp")) == []
+
+
+def test_combine_to_pdf_preserves_prior_pdf_when_staging_fails(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    frame = tmp_path / "frame.jpg"
+    Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
+    output = tmp_path / "slides.pdf"
+    prior = b"prior completed derivative"
+    output.write_bytes(prior)
+
+    def fail_after_partial_write(_image, stream, **_kwargs):
+        stream.write(b"%PDF-partial")
+        raise OSError("synthetic staging failure")
+
+    monkeypatch.setattr(
+        video_slide_extraction.Image.Image, "save", fail_after_partial_write
+    )
+
+    with pytest.raises(OSError, match="synthetic staging failure"):
+        video_slide_extraction.combine_to_pdf([(str(frame), 0)], str(output))
+
+    assert output.read_bytes() == prior
+    assert list(tmp_path.glob(".slides.pdf.*.tmp")) == []
+
+
+def test_combine_to_pdf_preserves_prior_pdf_when_atomic_replace_fails(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    frame = tmp_path / "frame.jpg"
+    Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
+    output = tmp_path / "slides.pdf"
+    prior = b"prior completed derivative"
+    output.write_bytes(prior)
+
+    def fail_replace(*_args):
+        raise OSError("synthetic replace failure")
+
+    monkeypatch.setattr(
+        video_slide_extraction.os,
+        "replace",
+        fail_replace,
+    )
+
+    with pytest.raises(OSError, match="synthetic replace failure"):
+        video_slide_extraction.combine_to_pdf([(str(frame), 0)], str(output))
+
+    assert output.read_bytes() == prior
+    assert list(tmp_path.glob(".slides.pdf.*.tmp")) == []
+
+
+def test_combine_to_pdf_cleans_stage_when_mode_preservation_fails(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    frame = tmp_path / "frame.jpg"
+    Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
+    output = tmp_path / "slides.pdf"
+    prior = b"prior completed derivative"
+    output.write_bytes(prior)
+    stage = video_slide_extraction._pdf_stage_path(str(output))
+
+    def fail_chmod(*_args):
+        raise OSError("synthetic chmod failure")
+
+    monkeypatch.setattr(video_slide_extraction.os, "chmod", fail_chmod)
+
+    with pytest.raises(OSError, match="synthetic chmod failure"):
+        video_slide_extraction.combine_to_pdf([(str(frame), 0)], str(output))
+
+    assert output.read_bytes() == prior
+    assert not os.path.exists(stage)
+
+
+def test_combine_to_pdf_reclaims_an_interrupted_deterministic_stage(
+    video_slide_extraction,
+    tmp_path,
+):
+    frame = tmp_path / "frame.jpg"
+    Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
+    output = tmp_path / "slides.pdf"
+    stage = video_slide_extraction._pdf_stage_path(str(output))
+    with open(stage, "wb") as staged:
+        staged.write(b"%PDF-left-by-interrupted-run")
+
+    video_slide_extraction.combine_to_pdf([(str(frame), 0)], str(output))
+
+    assert not os.path.exists(stage)
+    assert len(PdfReader(output, strict=True).pages) == 1
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission contract")
+def test_combine_to_pdf_preserves_an_existing_destination_mode(
+    video_slide_extraction,
+    tmp_path,
+):
+    frame = tmp_path / "frame.jpg"
+    Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
+    output = tmp_path / "slides.pdf"
+    output.write_bytes(b"prior")
+    os.chmod(output, 0o640)
+
+    video_slide_extraction.combine_to_pdf([(str(frame), 0)], str(output))
+
+    assert stat.S_IMODE(os.stat(output).st_mode) == 0o640
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission contract")
+def test_new_pdf_uses_the_process_umask_creation_mode(
+    video_slide_extraction,
+    tmp_path,
+):
+    frame = tmp_path / "frame.jpg"
+    Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
+    reference = tmp_path / "reference"
+    with open(reference, "xb"):
+        pass
+    output = tmp_path / "slides.pdf"
+
+    video_slide_extraction.combine_to_pdf([(str(frame), 0)], str(output))
+
+    assert stat.S_IMODE(os.stat(output).st_mode) == stat.S_IMODE(
+        os.stat(reference).st_mode
+    )
 
 
 def test_combine_to_pdf_applies_crop_to_saved_pages(video_slide_extraction, tmp_path):
@@ -439,6 +917,42 @@ def test_combine_to_pdf_applies_crop_to_saved_pages(video_slide_extraction, tmp_
 
     raw = output.read_bytes()
     assert b"/MediaBox [ 0 0 500.0 250.0 ]" in raw
+
+
+def test_combine_to_pdf_closes_cropped_intermediate_images(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    frame = tmp_path / "broadcast-frame.png"
+    Image.new("RGB", (1000, 500), (80, 40, 20)).save(frame)
+    output = tmp_path / "slide-region.pdf"
+    cropped_images = []
+    closed_image_ids = set()
+    original_crop = video_slide_extraction.crop_frame
+    original_close = video_slide_extraction.Image.Image.close
+
+    def track_crop(source, region):
+        cropped = original_crop(source, region)
+        cropped_images.append(cropped)
+        return cropped
+
+    def track_close(image):
+        closed_image_ids.add(id(image))
+        return original_close(image)
+
+    monkeypatch.setattr(video_slide_extraction, "crop_frame", track_crop)
+    monkeypatch.setattr(video_slide_extraction.Image.Image, "close", track_close)
+
+    video_slide_extraction.combine_to_pdf(
+        [(str(frame), 0)],
+        str(output),
+        slide_region=(0.25, 0.25, 0.75, 0.75),
+        artifact_scope="slide_region",
+    )
+
+    assert len(cropped_images) == 1
+    assert id(cropped_images[0]) in closed_image_ids
 
 
 def test_combine_to_pdf_empty(video_slide_extraction, tmp_path, capsys):
@@ -586,6 +1100,46 @@ def test_cli_rejects_noncanonical_youtube_id_before_pipeline_io(
     captured = capsys.readouterr()
     assert "youtube_id_invalid" in captured.err
     assert youtube_id not in captured.err
+
+
+def test_cli_reports_missing_video_dependencies_as_one_json_error(
+    video_slide_extraction,
+    monkeypatch,
+    capsys,
+):
+    monkeypatch.setattr(
+        video_slide_extraction,
+        "_DEPS_ERROR",
+        ImportError("synthetic missing dependency"),
+    )
+    monkeypatch.setattr(
+        video_slide_extraction,
+        "extract_slides_from_video",
+        lambda *_args, **_kwargs: pytest.fail("missing dependency reached pipeline"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            video_slide_extraction.__file__,
+            "/native/source.mp4",
+            "/native/output",
+            YOUTUBE_ID,
+        ],
+    )
+
+    with pytest.raises(SystemExit) as caught:
+        video_slide_extraction.main()
+
+    assert caught.value.code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err) == {
+        "error": (
+            'Install dependencies: pip install "ImageHash==4.3.2" '
+            '"numpy==2.2.6" "Pillow==12.3.0" "filelock==3.32.2"'
+        )
+    }
 
 
 def test_ingress_scripts_have_no_shell_artifact_process_boundary():

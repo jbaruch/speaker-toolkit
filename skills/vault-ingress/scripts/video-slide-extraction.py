@@ -31,11 +31,13 @@ Examples:
 """
 
 import argparse
-import glob
+import hashlib
 import json
 import os
+import stat
 import subprocess
 import sys
+import tempfile
 
 from artifact_locator import ArtifactLocatorError, materialize_native_root
 from ingress_contract import YOUTUBE_ID_RE
@@ -46,7 +48,7 @@ from ingress_contract import YOUTUBE_ID_RE
 # the download tier, region-detection logic, dedup hashing, or PDF assembly.
 # See skills/vault-ingress/references/video-slide-extraction.md ("Pipeline
 # Versioning") for the policy.
-PIPELINE_VERSION = "0.11.0"
+PIPELINE_VERSION = "0.12.0"
 
 # Shape version of the structured_data.video_extraction record (distinct from
 # PIPELINE_VERSION, which tracks extractor behavior — this tracks the record's
@@ -55,17 +57,25 @@ PIPELINE_VERSION = "0.11.0"
 # See skills/vault-ingress/references/schemas-db.md ("Video Extraction Output Schema").
 SCHEMA_VERSION = 3
 
+VIDEO_DEPENDENCY_INSTALL = (
+    'pip install "ImageHash==4.3.2" "numpy==2.2.6" "Pillow==12.3.0" "filelock==3.32.2"'
+)
+
 # Heavy deps are only needed for the extraction pipeline itself. Import them
 # without exiting on failure so the module stays importable (and --version /
 # --help stay answerable) in a minimal environment. main() enforces presence
 # before any extraction runs.
 try:
     import imagehash
+    import numpy as _numpy_dependency
+    from filelock import FileLock
     from PIL import Image
 
     _DEPS_ERROR = None
 except ImportError as exc:
     imagehash = None
+    _numpy_dependency = None
+    FileLock = None
     Image = None
     _DEPS_ERROR = exc
 
@@ -82,23 +92,48 @@ def validate_youtube_id(value: object) -> str:
 
 def _confined_output_path(output_root: str, filename: str) -> str:
     """Return a derived output that remains under the canonical authorized root."""
-    candidate = os.path.realpath(os.path.join(output_root, filename))
+    lexical_path = os.path.join(output_root, filename)
+    candidate = os.path.realpath(lexical_path)
     try:
         common = os.path.commonpath((output_root, candidate))
     except ValueError:
         common = ""
     if os.path.normcase(common) != os.path.normcase(output_root):
         raise ValueError("video_output_path_escape")
+    if os.path.lexists(lexical_path) and (
+        os.path.islink(lexical_path) or not os.path.isfile(lexical_path)
+    ):
+        raise ValueError("video_output_leaf_invalid")
     return candidate
 
 
 def _require_image_dependencies():
     """Return imported image modules or fail clearly for direct callers."""
-    if Image is None or imagehash is None:
-        raise RuntimeError(
-            "Install dependencies: pip install imagehash Pillow"
-        ) from _DEPS_ERROR
+    if Image is None or imagehash is None or _numpy_dependency is None:
+        raise RuntimeError(f"Install dependencies: {VIDEO_DEPENDENCY_INSTALL}") from (
+            _DEPS_ERROR
+        )
     return Image, imagehash
+
+
+def _video_run_lock(path):
+    """Return the declared cross-platform lock without burdening --version."""
+    if FileLock is None:
+        raise RuntimeError(f"Install dependencies: {VIDEO_DEPENDENCY_INSTALL}") from (
+            _DEPS_ERROR
+        )
+    return FileLock(path)
+
+
+def _video_run_lock_path(output_dir: str, youtube_id: str) -> str:
+    """Map one local output identity to a stable OS-temporary lock file."""
+    identity = (
+        os.fsencode(os.path.normcase(output_dir)) + b"\0" + youtube_id.encode("ascii")
+    )
+    lock_name = f"{hashlib.sha256(identity).hexdigest()}.lock"
+    lock_root = os.path.join(tempfile.gettempdir(), "speaker-toolkit-video-locks")
+    os.makedirs(lock_root, exist_ok=True)
+    return os.path.join(lock_root, lock_name)
 
 
 def validate_slide_region(region) -> NormalizedSlideRegion:
@@ -144,10 +179,13 @@ def parse_slide_region(value: str) -> str | NormalizedSlideRegion:
 
 
 def extract_frames(video_path, frames_dir, fps=0.5):
-    """Extract frames from video at specified fps."""
+    """Extract frames into one empty workspace and enumerate them literally."""
     video_path = canonical_path(video_path)
     frames_dir = canonical_path(frames_dir)
     os.makedirs(frames_dir, exist_ok=True)
+    with os.scandir(frames_dir) as entries:
+        if next(entries, None) is not None:
+            raise RuntimeError("frame workspace is not empty")
     output_pattern = os.path.join(frames_dir, "frame_%05d.jpg")
     completed = subprocess.run(
         [
@@ -168,7 +206,18 @@ def extract_frames(video_path, frames_dir, fps=0.5):
     )
     if completed.returncode != 0:
         raise RuntimeError(f"ffmpeg failed with exit status {completed.returncode}")
-    frames = sorted(glob.glob(os.path.join(frames_dir, "frame_*.jpg")))
+    numbered_frames = []
+    with os.scandir(frames_dir) as entries:
+        for entry in entries:
+            frame_number = entry.name[len("frame_") : -len(".jpg")]
+            if (
+                entry.is_file(follow_symlinks=False)
+                and entry.name.startswith("frame_")
+                and entry.name.endswith(".jpg")
+                and frame_number.isdigit()
+            ):
+                numbered_frames.append((int(frame_number), entry.name, entry.path))
+    frames = [path for _, _, path in sorted(numbered_frames)]
     print(f"  Extracted {len(frames)} frames", file=sys.stderr)
     return frames
 
@@ -299,10 +348,14 @@ def detect_slide_region(frames, sample_size=10) -> NormalizedSlideRegion | None:
     diffs = []
 
     for i in range(0, len(frames) - step, step):
-        img1 = np.array(pil_image.open(frames[i]).convert("L").resize((320, 180)))
-        img2 = np.array(
-            pil_image.open(frames[i + step]).convert("L").resize((320, 180))
-        )
+        with pil_image.open(frames[i]) as source1:
+            with source1.convert("L") as gray1:
+                with gray1.resize((320, 180)) as resized1:
+                    img1 = np.array(resized1)
+        with pil_image.open(frames[i + step]) as source2:
+            with source2.convert("L") as gray2:
+                with gray2.resize((320, 180)) as resized2:
+                    img2 = np.array(resized2)
         diff = np.abs(img1.astype(float) - img2.astype(float))
         diffs.append(diff)
 
@@ -397,10 +450,14 @@ def deduplicate_frames(frames, slide_region=None, hash_threshold=8):
     pil_image, perceptual_hash = _require_image_dependencies()
 
     for i, frame_path in enumerate(frames):
-        img = pil_image.open(frame_path)
-        # Hash the CROPPED region (slide only, not speaker PiP)
-        cropped = crop_frame(img, slide_region)
-        h = perceptual_hash.phash(cropped, hash_size=16)
+        with pil_image.open(frame_path) as source:
+            # Hash the CROPPED region (slide only, not speaker PiP).
+            cropped = crop_frame(source, slide_region)
+            try:
+                h = perceptual_hash.phash(cropped, hash_size=16)
+            finally:
+                if cropped is not source:
+                    cropped.close()
 
         if prev_hash is None or abs(h - prev_hash) > hash_threshold:
             unique_frames.append((frame_path, i))
@@ -479,6 +536,52 @@ def review_reason_for_region(region, provenance):
     )
 
 
+_PDF_STAGE_SUFFIX = ".speaker-toolkit-stage.tmp"
+
+
+def _pdf_stage_path(output_pdf: str) -> str:
+    """Return the deterministic stage owned by one locked PDF destination."""
+    return os.path.join(
+        os.path.dirname(output_pdf),
+        f".{os.path.basename(output_pdf)}{_PDF_STAGE_SUFFIX}",
+    )
+
+
+def _remove_stale_pdf_stage(output_pdf: str) -> None:
+    """Reclaim the exact stage left by an interrupted prior run."""
+    try:
+        os.unlink(_pdf_stage_path(output_pdf))
+    except FileNotFoundError:
+        pass
+    except IsADirectoryError:
+        raise ValueError("video_pdf_stage_invalid") from None
+
+
+def _open_pdf_stage(output_pdf: str):
+    """Open a fresh stage with normal umask mode or the prior PDF's mode."""
+    prior_mode = None
+    try:
+        metadata = os.stat(output_pdf, follow_symlinks=False)
+    except FileNotFoundError:
+        pass
+    else:
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("video_output_leaf_invalid")
+        prior_mode = stat.S_IMODE(metadata.st_mode)
+
+    _remove_stale_pdf_stage(output_pdf)
+    staged_path = _pdf_stage_path(output_pdf)
+    staged = open(staged_path, "x+b")
+    if prior_mode is not None:
+        try:
+            os.chmod(staged_path, prior_mode)
+        except OSError:
+            staged.close()
+            _remove_stale_pdf_stage(output_pdf)
+            raise
+    return staged_path, staged
+
+
 def combine_to_pdf(
     unique_frames,
     output_pdf,
@@ -508,48 +611,73 @@ def combine_to_pdf(
     if source_video_id is not None:
         source_video_id = validate_youtube_id(source_video_id)
 
-    images = []
     if not unique_frames:
         print("  WARNING: No unique frames found", file=sys.stderr)
         return None
+
+    images = []
     pil_image, _ = _require_image_dependencies()
-    for frame_path, _ in unique_frames:
-        with pil_image.open(frame_path) as source:
-            images.append(crop_frame(source, slide_region).convert("RGB"))
+    staged_path = None
+    try:
+        for frame_path, _ in unique_frames:
+            with pil_image.open(frame_path) as source:
+                cropped = crop_frame(source, slide_region)
+                try:
+                    images.append(cropped.convert("RGB"))
+                finally:
+                    if cropped is not source:
+                        cropped.close()
 
-    if not images:
-        print("  WARNING: No unique frames found", file=sys.stderr)
-        return None
+        if not images:
+            print("  WARNING: No unique frames found", file=sys.stderr)
+            return None
 
-    output_pdf = canonical_path(output_pdf)
-    os.makedirs(os.path.dirname(output_pdf), exist_ok=True)
-    producer = f"speaker-toolkit/video-slide-extraction {PIPELINE_VERSION}"
-    if artifact_scope == "full_frame_context":
-        title = f"{source_video_id or 'video'} full-frame context"
-        subject = "Full-frame video context; not authored slides"
-    else:
-        title = f"{source_video_id or 'video'} cropped slide region"
-        trust = "verified" if crop_verified else "unverified; review required"
-        subject = (
-            f"Cropped slide-region frames from video; crop method={crop_method}; "
-            f"{trust}"
+        output_pdf = canonical_path(output_pdf)
+        output_parent = os.path.dirname(output_pdf)
+        os.makedirs(output_parent, exist_ok=True)
+        producer = f"speaker-toolkit/video-slide-extraction {PIPELINE_VERSION}"
+        if artifact_scope == "full_frame_context":
+            title = f"{source_video_id or 'video'} full-frame context"
+            subject = "Full-frame video context; not authored slides"
+        else:
+            title = f"{source_video_id or 'video'} cropped slide region"
+            trust = "verified" if crop_verified else "unverified; review required"
+            subject = (
+                f"Cropped slide-region frames from video; crop method={crop_method}; "
+                f"{trust}"
+            )
+
+        staged_path, staged = _open_pdf_stage(output_pdf)
+        with staged:
+            images[0].save(
+                staged,
+                format="PDF",
+                save_all=True,
+                append_images=images[1:],
+                producer=producer,
+                creator=producer,
+                title=title,
+                subject=subject,
+            )
+            staged.flush()
+
+        os.replace(staged_path, output_pdf)
+        staged_path = None
+        size_mb = os.path.getsize(output_pdf) / (1024 * 1024)
+        print(
+            f"  Saved {artifact_scope} PDF: {output_pdf} "
+            f"({len(images)} pages, {size_mb:.1f} MB)",
+            file=sys.stderr,
         )
-    images[0].save(
-        output_pdf,
-        save_all=True,
-        append_images=images[1:],
-        producer=producer,
-        creator=producer,
-        title=title,
-        subject=subject,
-    )
-    size_mb = os.path.getsize(output_pdf) / (1024 * 1024)
-    print(
-        f"  Saved {artifact_scope} PDF: {output_pdf} "
-        f"({len(images)} pages, {size_mb:.1f} MB)",
-        file=sys.stderr,
-    )
-    return output_pdf
+        return output_pdf
+    finally:
+        if staged_path is not None:
+            try:
+                os.unlink(staged_path)
+            except FileNotFoundError:
+                pass
+        for image in images:
+            image.close()
 
 
 def retained_frame_provenance(unique_frames, fps):
@@ -604,10 +732,11 @@ def artifact_record(
     }
 
 
-def extract_slides_from_video(
+def _extract_slides_in_workspace(
     video_path,
     output_dir,
     youtube_id,
+    frames_dir,
     fps=0.5,
     hash_threshold=8,
     slide_region: str | NormalizedSlideRegion = "auto",
@@ -638,7 +767,6 @@ def extract_slides_from_video(
         raise ValueError("fps must be greater than zero")
     output_dir = canonical_path(output_dir)
     source_video_path = canonical_path(video_path)
-    frames_dir = _confined_output_path(output_dir, "frames")
     slide_pdf = _confined_output_path(
         output_dir,
         f"{youtube_id}.slide-region.pdf",
@@ -730,14 +858,6 @@ def extract_slides_from_video(
                 )
             )
 
-    # Cleanup: remove frame JPEGs to save space (keep PDF)
-    for f in frames:
-        os.remove(f)
-    try:
-        os.rmdir(frames_dir)
-    except OSError:
-        pass
-
     result = {
         "slide_source": "video_extracted",
         "schema_version": SCHEMA_VERSION,
@@ -761,6 +881,47 @@ def extract_slides_from_video(
 
     print(f"  Done: {len(unique_frames)} unique frames retained", file=sys.stderr)
     return result
+
+
+def extract_slides_from_video(
+    video_path,
+    output_dir,
+    youtube_id,
+    fps=0.5,
+    hash_threshold=8,
+    slide_region: str | NormalizedSlideRegion = "auto",
+    slide_region_verified=False,
+    include_context_pdf=True,
+):
+    """Run one extraction in a fresh frame workspace that is always removed."""
+    youtube_id = validate_youtube_id(youtube_id)
+    if fps <= 0:
+        raise ValueError("fps must be greater than zero")
+    output_dir = canonical_path(output_dir)
+    source_video_path = canonical_path(video_path)
+    os.makedirs(output_dir, exist_ok=True)
+    run_lock = _video_run_lock_path(output_dir, youtube_id)
+
+    with _video_run_lock(run_lock):
+        for filename in (
+            f"{youtube_id}.slide-region.pdf",
+            f"{youtube_id}.context.pdf",
+        ):
+            _remove_stale_pdf_stage(_confined_output_path(output_dir, filename))
+        with tempfile.TemporaryDirectory(
+            prefix="speaker-toolkit-video-frames-"
+        ) as frames_dir:
+            return _extract_slides_in_workspace(
+                source_video_path,
+                output_dir,
+                youtube_id,
+                frames_dir,
+                fps=fps,
+                hash_threshold=hash_threshold,
+                slide_region=slide_region,
+                slide_region_verified=slide_region_verified,
+                include_context_pdf=include_context_pdf,
+            )
 
 
 def main():
@@ -831,7 +992,7 @@ def main():
 
     if _DEPS_ERROR is not None:
         print(
-            json.dumps({"error": "Install dependencies: pip install imagehash Pillow"}),
+            json.dumps({"error": f"Install dependencies: {VIDEO_DEPENDENCY_INSTALL}"}),
             file=sys.stderr,
         )
         sys.exit(1)

@@ -31,7 +31,17 @@ MODULE_PROBE_MAX_OUTPUT_BYTES = 4096
 MODULE_PROBE_CHILD_FLAG = "--module-probe-child"
 MINIMUM_PYTHON = (3, 10)
 PSUTIL_REQUIRED_VERSION = "7.2.2"
-REQUIRED_MODULE_VERSIONS = {"psutil": PSUTIL_REQUIRED_VERSION}
+FILELOCK_REQUIRED_VERSION = "3.32.2"
+IMAGEHASH_REQUIRED_VERSION = "4.3.2"
+NUMPY_REQUIRED_VERSION = "2.2.6"
+PILLOW_REQUIRED_VERSION = "12.3.0"
+REQUIRED_MODULE_VERSIONS = {
+    "PIL": PILLOW_REQUIRED_VERSION,
+    "filelock": FILELOCK_REQUIRED_VERSION,
+    "imagehash": IMAGEHASH_REQUIRED_VERSION,
+    "numpy": NUMPY_REQUIRED_VERSION,
+    "psutil": PSUTIL_REQUIRED_VERSION,
+}
 LANE_REQUIREMENTS: dict[str, dict[str, dict[str, str]]] = {
     "core": {
         "modules": {"PyYAML": "yaml"},
@@ -64,7 +74,12 @@ LANE_REQUIREMENTS: dict[str, dict[str, dict[str, str]]] = {
         "commands": {"ffprobe": "ffprobe"},
     },
     "video": {
-        "modules": {"imagehash": "imagehash", "Pillow": "PIL"},
+        "modules": {
+            "filelock": "filelock",
+            "imagehash": "imagehash",
+            "numpy": "numpy",
+            "Pillow": "PIL",
+        },
         "commands": {"ffmpeg": "ffmpeg", "ffprobe": "ffprobe"},
     },
     "pdf-render": {
@@ -219,7 +234,7 @@ def _decode_module_probe_child(raw: bytes) -> ModuleProbeResult:
         available is False
         and set(payload) == expected_version_failure_keys
         and failure_reason == "incompatible_version"
-        and required_version == PSUTIL_REQUIRED_VERSION
+        and required_version in REQUIRED_MODULE_VERSIONS.values()
         and (
             actual_version is None
             or (isinstance(actual_version, str) and len(actual_version) <= 64)

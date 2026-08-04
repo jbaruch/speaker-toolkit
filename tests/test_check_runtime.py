@@ -450,7 +450,18 @@ def test_module_probe_preserves_child_failure_reason(
     )
 
 
-def test_module_probe_preserves_incompatible_version_report() -> None:
+@pytest.mark.parametrize(
+    ("module_name", "required_version", "actual_version"),
+    [
+        ("psutil", "7.2.2", "7.2.1"),
+        ("filelock", "3.32.2", "3.25.0"),
+    ],
+)
+def test_module_probe_preserves_incompatible_version_report(
+    module_name: str,
+    required_version: str,
+    actual_version: str,
+) -> None:
     def runner(
         command: list[str], **_kwargs: object
     ) -> subprocess.CompletedProcess[object]:
@@ -460,17 +471,17 @@ def test_module_probe_preserves_incompatible_version_report() -> None:
                 "schema_version": 1,
                 "available": False,
                 "failure_reason": "incompatible_version",
-                "required_version": "7.2.2",
-                "actual_version": "7.2.1",
+                "required_version": required_version,
+                "actual_version": actual_version,
             },
         )
 
-    result = check_runtime._probe_module("psutil", runner=runner)
+    result = check_runtime._probe_module(module_name, runner=runner)
 
     assert result == _failed_probe(
         "incompatible_version",
-        required_version="7.2.2",
-        actual_version="7.2.1",
+        required_version=required_version,
+        actual_version=actual_version,
     )
 
 
@@ -1060,7 +1071,17 @@ def test_lane_requirements_match_the_configured_interpreter_contract() -> None:
     assert check_runtime.REPORT_SCHEMA_VERSION == 2
     assert check_runtime.MODULE_PROBE_SCHEMA_VERSION == 1
     assert check_runtime.PSUTIL_REQUIRED_VERSION == "7.2.2"
-    assert check_runtime.REQUIRED_MODULE_VERSIONS == {"psutil": "7.2.2"}
+    assert check_runtime.FILELOCK_REQUIRED_VERSION == "3.32.2"
+    assert check_runtime.IMAGEHASH_REQUIRED_VERSION == "4.3.2"
+    assert check_runtime.NUMPY_REQUIRED_VERSION == "2.2.6"
+    assert check_runtime.PILLOW_REQUIRED_VERSION == "12.3.0"
+    assert check_runtime.REQUIRED_MODULE_VERSIONS == {
+        "PIL": "12.3.0",
+        "filelock": "3.32.2",
+        "imagehash": "4.3.2",
+        "numpy": "2.2.6",
+        "psutil": "7.2.2",
+    }
     assert requirements["pdf"]["modules"] == {
         "pypdf": "pypdf",
         "psutil": "psutil",
@@ -1072,6 +1093,12 @@ def test_lane_requirements_match_the_configured_interpreter_contract() -> None:
     assert requirements["google-drive"]["modules"] == {"gdown": "gdown"}
     assert requirements["captions"]["commands"] == {}
     assert requirements["youtube-download"]["commands"] == {"yt-dlp": "yt-dlp"}
+    assert requirements["video"]["modules"] == {
+        "filelock": "filelock",
+        "imagehash": "imagehash",
+        "numpy": "numpy",
+        "Pillow": "PIL",
+    }
     assert requirements["pdf-render"]["commands"] == {"pdftoppm": "pdftoppm"}
 
 
@@ -1088,3 +1115,29 @@ def test_psutil_version_authorities_are_synchronized() -> None:
         artifact_supervisor.PSUTIL_REQUIRED_VERSION
         == check_runtime.PSUTIL_REQUIRED_VERSION
     )
+
+
+def test_video_dependency_version_authorities_are_synchronized() -> None:
+    manifest = PYPROJECT.read_text(encoding="utf-8")
+    reference = (
+        PYPROJECT.parent
+        / "skills"
+        / "vault-ingress"
+        / "references"
+        / "video-slide-extraction.md"
+    ).read_text(encoding="utf-8")
+
+    expected_versions = {
+        "filelock": check_runtime.FILELOCK_REQUIRED_VERSION,
+        "ImageHash": check_runtime.IMAGEHASH_REQUIRED_VERSION,
+        "numpy": check_runtime.NUMPY_REQUIRED_VERSION,
+        "Pillow": check_runtime.PILLOW_REQUIRED_VERSION,
+    }
+    for package, required_version in expected_versions.items():
+        manifest_versions = re.findall(
+            rf'^\s*"{package}==([^"\s]+)",\s*$',
+            manifest,
+            flags=re.MULTILINE,
+        )
+        assert manifest_versions == [required_version]
+        assert f'"{package}=={required_version}"' in reference
