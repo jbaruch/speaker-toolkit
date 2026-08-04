@@ -217,7 +217,8 @@ Proceed to Step 9.
 If no talk was processed, finish. Otherwise compute candidate topics and follow
 [Clarification Handoff](references/clarification-handoff.md).
 
-- **≤7 days:** offer to run `vault-clarification` inline and invoke it on acceptance.
+- **≤7 days:** offer to run `Skill(skill: "vault-clarification")` inline; on
+  acceptance, invoke it with the candidate topics as handoff context.
 - **7–30 days:** recommend the full session with topics; do not auto-invoke.
 - **30+ days:** recommend the compressed session; do not auto-invoke.
 
