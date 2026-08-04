@@ -19,6 +19,8 @@ dependencies = [
     "pytesseract==0.3.13",
     "imagehash",
     "numpy",
+    # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
+    "filelock==3.32.2",
     "pydantic==2.13.4",
     "PyYAML==6.0.3",
     # Pinned deliberately, not by habit: 1.0 removed the `get_transcript`

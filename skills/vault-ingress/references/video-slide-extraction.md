@@ -8,11 +8,12 @@ This is the fourth slide acquisition path — used when a talk has `video_url` b
 
 - `yt-dlp` (video download)
 - `ffmpeg` (frame extraction)
-- Python packages: `imagehash`, `Pillow` (perceptual deduplication)
+- Python packages: `imagehash`, NumPy, `Pillow` (perceptual deduplication), and
+  `filelock` (same-video run coordination)
 
 Install Python dependencies:
 ```bash
-"{python_path}" -m pip install imagehash Pillow
+"{python_path}" -m pip install imagehash numpy Pillow "filelock==3.32.2"
 ```
 
 ## When to Use
@@ -51,12 +52,15 @@ For talks where 720p is unavailable, yt-dlp will fall back to the best available
 Extract one frame every 2 seconds. This captures slide transitions without
 generating excessive frames (~1500 frames for a 50-min talk).
 
-```bash
-mkdir -p "{vault_root}/slides-rebuild/{youtube_id}/frames"
-ffmpeg -i "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
-  -vf "fps=0.5" -q:v 2 \
-  "{vault_root}/slides-rebuild/{youtube_id}/frames/frame_%05d.jpg"
-```
+The extractor creates a new private system-temporary workspace for each run and
+keeps it through region selection, deduplication, and PDF construction. It asks
+ffmpeg to write `frame_%05d.jpg` there, enumerates numbered JPEGs with literal
+directory operations, and removes that workspace after normal completion or a
+Python exception. An abrupt process or host stop may leave disposable data in
+the operating system's temporary area, never in the vault or catalog inputs.
+The extractor never reads from or deletes a previous run's `frames` directory,
+so an interrupted, older, or parallel extraction cannot add pages to the
+current result.
 
 ## Step 3: Detect Slide Region and Crop
 
@@ -82,6 +86,16 @@ When a region is applied, assemble the retained frames twice by default:
 With no region, only the context PDF is written. Review-required runs always retain
 context. `--no-context-pdf` may omit the extra context derivative only after a verified
 manual crop; it never deletes the source video.
+
+Each PDF is first completed in a dedicated stage beside its final destination
+and then installed with one atomic replacement. If PDF construction fails, the
+prior completed derivative remains unchanged. A later run reclaims the exact
+stage left by an abruptly stopped process. Concurrent completed runs for
+different videos remain independent. Runs for the same video and output
+directory share an advisory lock for the whole extraction, so their slide-region
+and context PDFs cannot interleave. The stable lock lives in the local operating
+system temporary area; it coordinates processes on this machine and never
+becomes a Google Drive artifact. Process exit releases its lock state.
 
 ## Usage
 
@@ -305,7 +319,9 @@ After extraction is complete:
 - Keep the full-frame context PDF unless the operator explicitly used
   `--no-context-pdf` with a verified manual crop. Unverified candidates always retain
   context for review.
-- Delete only the intermediate JPEG frame directory; the script already does this.
+- Intermediate JPEGs live in a run-private temporary workspace that the script
+  removes on success and failure. Legacy `slides-rebuild/{youtube_id}/frames`
+  directories are ignored and left for explicit operator cleanup.
 - Keep the trusted promoted slide-region PDF in `slides/{youtube_id}.pdf` and its
   original artifact/manifest in `slides-rebuild/{youtube_id}/`.
 
