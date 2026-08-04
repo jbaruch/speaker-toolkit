@@ -162,17 +162,14 @@ _CLASSIFICATION_ROW_FIELDS = frozenset(
         "reason_codes",
     }
 )
-_EVIDENCE_FIELDS = frozenset(
-    {
-        "applicable_count",
-        "evaluable_count",
-        "detected_count",
-        "unevaluable_count",
-        "applicable_coverage",
-        "lower",
-        "upper",
-    }
+_EVIDENCE_COUNT_FIELDS = (
+    "applicable_count",
+    "evaluable_count",
+    "detected_count",
+    "unevaluable_count",
 )
+_EVIDENCE_RATE_FIELDS = ("applicable_coverage", "lower", "upper")
+_EVIDENCE_FIELDS = frozenset((*_EVIDENCE_COUNT_FIELDS, *_EVIDENCE_RATE_FIELDS))
 _COMBINATION_FIELDS = frozenset(
     {"combination_id", "pattern_ids", "evidence", "reason_codes"}
 )
@@ -214,6 +211,15 @@ def unavailable_classification_availability() -> dict[str, object]:
 
 def _is_integer(value: object) -> TypeGuard[int]:
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_optional_unit_interval(value: object) -> bool:
+    return value is None or (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and 0 <= value <= 1
+        and math.isfinite(value)
+    )
 
 
 def _append_reason(reason_codes: list[str], reason_code: str) -> None:
@@ -483,6 +489,8 @@ def _expected_evidence(raw: Mapping[str, object]) -> dict[str, object] | None:
     detected = counts["detected_count"]
     unevaluable = counts["unevaluable_count"]
     applicable = eligible - not_applicable
+    if applicable < 0 or evaluable + unevaluable != applicable or detected > evaluable:
+        return None
     if applicable == 0:
         coverage = lower = upper = None
     else:
@@ -498,6 +506,58 @@ def _expected_evidence(raw: Mapping[str, object]) -> dict[str, object] | None:
         "lower": lower,
         "upper": upper,
     }
+
+
+def _validate_evidence(value: Mapping[object, object], *, path: str) -> list[str]:
+    errors = _exact_fields(value, _EVIDENCE_FIELDS, path=path)
+    counts: dict[str, int] = {}
+    for field in _EVIDENCE_COUNT_FIELDS:
+        count = value.get(field)
+        if not _is_integer(count) or count < 0:
+            errors.append(f"{path}.{field} must be a non-negative integer")
+        else:
+            counts[field] = count
+
+    for field in _EVIDENCE_RATE_FIELDS:
+        if not _is_optional_unit_interval(value.get(field)):
+            errors.append(
+                f"{path}.{field} must be null or a finite number between zero and one"
+            )
+
+    if len(counts) != len(_EVIDENCE_COUNT_FIELDS):
+        return errors
+    applicable = counts["applicable_count"]
+    evaluable = counts["evaluable_count"]
+    detected = counts["detected_count"]
+    unevaluable = counts["unevaluable_count"]
+    if evaluable + unevaluable != applicable:
+        errors.append(f"{path} must satisfy applicable_count = E + U")
+        return errors
+    if detected > evaluable:
+        errors.append(f"{path}.detected_count cannot exceed evaluable_count")
+        return errors
+
+    expected_rates: dict[str, float | None]
+    if applicable == 0:
+        expected_rates = {
+            "applicable_coverage": None,
+            "lower": None,
+            "upper": None,
+        }
+    else:
+        expected_rates = {
+            "applicable_coverage": evaluable / applicable,
+            "lower": detected / applicable,
+            "upper": (detected + unevaluable) / applicable,
+        }
+    for field, expected in expected_rates.items():
+        actual = value.get(field)
+        if _is_optional_unit_interval(actual) and actual != expected:
+            errors.append(
+                f"{path}.{field} must equal the canonical ratio {expected!r}, "
+                f"got {actual!r}"
+            )
+    return errors
 
 
 def _validate_classification_lane(
@@ -559,20 +619,7 @@ def _validate_classification_lane(
         if not isinstance(evidence, Mapping):
             errors.append(f"{path}.evidence must be an object")
         else:
-            errors.extend(
-                _exact_fields(evidence, _EVIDENCE_FIELDS, path=f"{path}.evidence")
-            )
-            for field in (
-                "applicable_count",
-                "evaluable_count",
-                "detected_count",
-                "unevaluable_count",
-            ):
-                count = evidence.get(field)
-                if not _is_integer(count) or count < 0:
-                    errors.append(
-                        f"{path}.evidence.{field} must be a non-negative integer"
-                    )
+            errors.extend(_validate_evidence(evidence, path=f"{path}.evidence"))
             applicable_count = evidence.get("applicable_count")
             detected_count = evidence.get("detected_count")
             raw = raw_by_id.get(pattern_id)
@@ -624,7 +671,10 @@ def _validate_classification_lane(
 
 
 def _validate_combinations(
-    value: object, positive_rows: Sequence[Mapping[str, object]]
+    value: object,
+    positive_rows: Sequence[Mapping[str, object]],
+    *,
+    eligible_talk_count: int,
 ) -> list[str]:
     if not isinstance(value, list):
         return ["pattern_profile.signature_combinations must be an array"]
@@ -661,17 +711,23 @@ def _validate_combinations(
         if not isinstance(evidence, Mapping):
             errors.append(f"{path}.evidence must be an object")
             continue
-        errors.extend(
-            _exact_fields(evidence, _EVIDENCE_FIELDS, path=f"{path}.evidence")
-        )
+        evidence_errors = _validate_evidence(evidence, path=f"{path}.evidence")
+        errors.extend(evidence_errors)
         lower = evidence.get("lower")
         detected = evidence.get("detected_count")
+        applicable = evidence.get("applicable_count")
+        if evidence_errors:
+            continue
+        assert _is_integer(applicable)
+        if applicable > eligible_talk_count:
+            errors.append(
+                f"{path}.evidence.applicable_count cannot exceed the eligible "
+                f"talk count {eligible_talk_count}"
+            )
         if not isinstance(lower, (int, float)) or isinstance(lower, bool):
             errors.append(f"{path}.evidence.lower must be numeric")
             continue
-        if not _is_integer(detected):
-            errors.append(f"{path}.evidence.detected_count must be an integer")
-            continue
+        assert _is_integer(detected)
         sort_key = (-float(lower), -detected, tuple(str(member) for member in members))
         if previous_sort_key is not None and sort_key < previous_sort_key:
             errors.append(
@@ -693,7 +749,10 @@ def _validate_combinations(
 
 
 def _validate_v5_policy_fields(
-    pattern_profile: Mapping[str, object], active_catalog: object
+    pattern_profile: Mapping[str, object],
+    active_catalog: object,
+    *,
+    eligible_talk_count: int,
 ) -> tuple[frozenset[str], str | None, list[str]]:
     errors: list[str] = []
     if pattern_profile.get(
@@ -758,7 +817,9 @@ def _validate_v5_policy_fields(
         )
     errors.extend(
         _validate_combinations(
-            pattern_profile.get("signature_combinations"), positive_rows
+            pattern_profile.get("signature_combinations"),
+            positive_rows,
+            eligible_talk_count=eligible_talk_count,
         )
     )
     if pattern_profile.get("by_mode") != []:
@@ -985,7 +1046,9 @@ def assess_pattern_profile(
         errors.extend(_validate_v4_unavailable(pattern_profile))
     elif active_catalog is not None:
         domains, policy_digest, policy_errors = _validate_v5_policy_fields(
-            pattern_profile, active_catalog
+            pattern_profile,
+            active_catalog,
+            eligible_talk_count=eligible_count,
         )
         errors.extend(policy_errors)
         if policy_digest is None:

@@ -192,6 +192,29 @@ def _v5_pattern_profile(validate_profile, *, count: int = 2) -> dict[str, Any]:
     return profile
 
 
+def _signature_combination_fixture() -> tuple[dict[str, Any], list[dict[str, str]]]:
+    return (
+        {
+            "combination_id": "p1+p2",
+            "pattern_ids": ["p1", "p2"],
+            "evidence": {
+                "applicable_count": 10,
+                "evaluable_count": 10,
+                "detected_count": 5,
+                "unevaluable_count": 0,
+                "applicable_coverage": 1.0,
+                "lower": 0.5,
+                "upper": 0.5,
+            },
+            "reason_codes": ["meets_signature_combination_thresholds"],
+        },
+        [
+            {"pattern_id": "p1", "classification": "regular"},
+            {"pattern_id": "p2", "classification": "signature"},
+        ],
+    )
+
+
 def _run(validate_profile, profile, tmp_path, capsys, *, extra_talks=None):
     fingerprint, scoring_schema = validate_profile.active_pattern_generation_identity()
     opportunities = importlib.import_module("pattern_opportunities")
@@ -528,6 +551,143 @@ def test_v5_classification_evidence_rejects_boolean_counts(
         f".evidence.{field} must be a non-negative integer" in error
         for error in assessment.errors
     )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("applicable_coverage", True),
+        ("applicable_coverage", False),
+        ("lower", True),
+        ("lower", False),
+        ("upper", True),
+        ("upper", False),
+    ],
+)
+def test_v5_classification_evidence_rejects_boolean_bounds(
+    validate_profile,
+    field,
+    value,
+):
+    pattern_profile = _v5_pattern_profile(validate_profile)
+    row = pattern_profile["pattern_classifications"][0]
+    row["evidence"][field] = value
+
+    assessment = validate_profile.assess_pattern_profile(
+        pattern_profile, expected_contract_version=5
+    )
+
+    assert assessment.current_contract is False
+    assert any(
+        f".evidence.{field} must be null or a finite number "
+        "between zero and one" in error
+        for error in assessment.errors
+    )
+
+
+@pytest.mark.parametrize("field", ["applicable_coverage", "lower", "upper"])
+@pytest.mark.parametrize(
+    "value",
+    [-0.01, 1.01, float("nan"), float("inf"), "0.5", 10**1000],
+)
+def test_v5_classification_evidence_rejects_invalid_bounds(
+    validate_profile,
+    field,
+    value,
+):
+    pattern_profile = _v5_pattern_profile(validate_profile)
+    row = pattern_profile["pattern_classifications"][0]
+    row["evidence"][field] = value
+
+    assessment = validate_profile.assess_pattern_profile(
+        pattern_profile, expected_contract_version=5
+    )
+
+    assert assessment.current_contract is False
+    assert any(
+        f".evidence.{field} must be null or a finite number "
+        "between zero and one" in error
+        for error in assessment.errors
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_error"),
+    [
+        ("applicable_count", True, "must be a non-negative integer"),
+        ("evaluable_count", "ten", "must be a non-negative integer"),
+        ("unevaluable_count", -1, "must be a non-negative integer"),
+        (
+            "applicable_coverage",
+            True,
+            "must be null or a finite number between zero and one",
+        ),
+        ("lower", float("inf"), "must be null or a finite number between zero and one"),
+        ("upper", "one", "must be null or a finite number between zero and one"),
+    ],
+)
+def test_signature_combination_rejects_malformed_evidence(
+    validate_profile,
+    field,
+    value,
+    expected_error,
+):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    row, positive_rows = _signature_combination_fixture()
+    row["evidence"][field] = value
+
+    errors = provenance._validate_combinations(
+        [row], positive_rows, eligible_talk_count=10
+    )
+
+    assert any(f".evidence.{field} {expected_error}" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_error"),
+    [
+        ("applicable_count", 9, "must satisfy applicable_count = E + U"),
+        ("applicable_count", 11, "cannot exceed the eligible talk count 10"),
+        ("detected_count", 11, "detected_count cannot exceed evaluable_count"),
+        ("lower", 0.4, "must equal the canonical ratio 0.5"),
+    ],
+)
+def test_signature_combination_rejects_inconsistent_evidence(
+    validate_profile,
+    field,
+    value,
+    expected_error,
+):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    row, positive_rows = _signature_combination_fixture()
+    row["evidence"][field] = value
+
+    if field == "applicable_count" and value == 11:
+        row["evidence"].update(
+            {
+                "evaluable_count": 11,
+                "applicable_coverage": 1.0,
+                "lower": 5 / 11,
+                "upper": 5 / 11,
+            }
+        )
+
+    errors = provenance._validate_combinations(
+        [row], positive_rows, eligible_talk_count=10
+    )
+
+    assert any(expected_error in error for error in errors)
+
+
+def test_signature_combination_accepts_canonical_evidence(validate_profile):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    row, positive_rows = _signature_combination_fixture()
+
+    errors = provenance._validate_combinations(
+        [row], positive_rows, eligible_talk_count=10
+    )
+
+    assert errors == []
 
 
 def test_mixed_opportunity_identity_keeps_occurrences_and_suppresses_raw_average(
