@@ -776,10 +776,10 @@ def test_status_cli_reports_current_rows_without_authorizing_classifications(
     profile_path = tmp_path / "speaker-profile.json"
     profile_path.write_text(
         json.dumps(
-                {
-                    "schema_version": 4,
-                    "pattern_profile": _legacy_pattern_profile(),
-                }
+            {
+                "schema_version": 4,
+                "pattern_profile": _legacy_pattern_profile(),
+            }
         ),
         encoding="utf-8",
     )
@@ -1470,8 +1470,9 @@ def test_guardrail_uses_policy_bound_section15_without_inventing_recurrence(
     assert return_code == 0
     assert "policy-bound domains enabled" in checks["Pattern history"]["detail"]
     assert report["pattern_history"]["history_source"] == "section15_current_block"
-    assert "antipattern_recurrence" in (
-        report["pattern_history"]["available_classification_domains"]
+    assert (
+        "antipattern_recurrence"
+        in (report["pattern_history"]["available_classification_domains"])
     )
     assert report["recurring_antipatterns"] == []
 

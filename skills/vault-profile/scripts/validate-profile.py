@@ -73,6 +73,7 @@ from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissin
     decode_json_object,
     snapshot_tracking_database,
 )
+
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from vault_root_authority import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     materialize_native_authority,

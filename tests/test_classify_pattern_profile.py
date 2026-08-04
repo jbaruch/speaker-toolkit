@@ -221,14 +221,10 @@ def test_rare_coverage_threshold_is_inclusive_and_enforced(
     def widen_rare_band(policy):
         policy["positive_patterns"]["rare"]["maximum_upper_exclusive"] = 0.4
         policy["positive_patterns"]["occasional"]["minimum_lower"] = 0.4
-        policy["positive_patterns"]["occasional"][
-            "maximum_upper_exclusive"
-        ] = 0.5
+        policy["positive_patterns"]["occasional"]["maximum_upper_exclusive"] = 0.5
         policy["positive_patterns"]["regular"]["minimum_lower"] = 0.5
 
-    policy = _override_policy(
-        classify_pattern_profile, tmp_path, widen_rare_band
-    )
+    policy = _override_policy(classify_pattern_profile, tmp_path, widen_rare_band)
     exact = _classify_positive(
         classify_pattern_profile,
         policy,
@@ -490,10 +486,7 @@ def test_joint_denominator_distinguishes_not_applicable_and_unevaluable(
         ("not_evaluable", "detected"),
         ("detected", "not_evaluable"),
     ]
-    talks = [
-        _talk(index, p1=p1, p2=p2)
-        for index, (p1, p2) in enumerate(outcome_pairs)
-    ]
+    talks = [_talk(index, p1=p1, p2=p2) for index, (p1, p2) in enumerate(outcome_pairs)]
 
     result = classify_pattern_profile.classify_pattern_profile(
         talks,
@@ -531,10 +524,7 @@ def test_combination_thresholds_cover_exact_and_fail_sides(
     def rows(*, total, detected):
         outcomes = [
             *[{"p1": "detected", "p2": "detected"} for _ in range(detected)],
-            *[
-                {"p1": "undetected", "p2": "detected"}
-                for _ in range(total - detected)
-            ],
+            *[{"p1": "undetected", "p2": "detected"} for _ in range(total - detected)],
         ]
         return classify_pattern_profile._combination_rows(
             [{} for _ in range(total)], outcomes, positive, policy=policy
@@ -640,7 +630,10 @@ def test_score_and_breadth_thresholds_bracket_and_include_the_boundary(
         talks = [
             *[_talk(index, p1="undetected") for index in range(5)],
             *[
-                _talk(index, p1="detected" if index - 5 < detected_recent else "undetected")
+                _talk(
+                    index,
+                    p1="detected" if index - 5 < detected_recent else "undetected",
+                )
                 for index in range(5, 10)
             ],
         ]
@@ -675,8 +668,7 @@ def test_trends_require_at_least_one_evaluable_opportunity(
     classify_pattern_profile, tmp_path
 ):
     talks = [
-        _talk(index, p1="not_evaluable", p2="not_evaluable")
-        for index in range(10)
+        _talk(index, p1="not_evaluable", p2="not_evaluable") for index in range(10)
     ]
 
     result = classify_pattern_profile.classify_pattern_profile(
@@ -836,9 +828,7 @@ def test_schema_v1_override_cannot_change_combination_result_cap(
         _policy(classify_pattern_profile, tmp_path)
 
 
-def test_override_rejects_unknown_semantic_fields(
-    classify_pattern_profile, tmp_path
-):
+def test_override_rejects_unknown_semantic_fields(classify_pattern_profile, tmp_path):
     policy = copy.deepcopy(
         _policy(classify_pattern_profile, tmp_path)["semantic_policy"]
     )

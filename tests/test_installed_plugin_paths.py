@@ -291,14 +291,8 @@ def test_profile_construction_rules_are_linked_and_shipped() -> None:
         / "vault-profile"
         / "references"
         / "pattern-classification-policy-v1.json",
-        SKILLS_ROOT
-        / "vault-profile"
-        / "scripts"
-        / "classify-pattern-profile.py",
-        SKILLS_ROOT
-        / "vault-profile"
-        / "scripts"
-        / "pattern_classification_runtime.py",
+        SKILLS_ROOT / "vault-profile" / "scripts" / "classify-pattern-profile.py",
+        SKILLS_ROOT / "vault-profile" / "scripts" / "pattern_classification_runtime.py",
     )
     for path in shipped:
         assert path.is_file(), path

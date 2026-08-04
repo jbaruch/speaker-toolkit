@@ -254,16 +254,20 @@ def _run(validate_profile, profile, tmp_path, capsys, *, extra_talks=None):
                 "timing_artifact_sha256": timing_digest,
             }
             if channel == "timed_transcript":
-                citation.update({
-                    "start_seconds": 0.0,
-                    "end_seconds": 10.0,
-                })
-            located_assessments.append({
-                **assessment,
-                "evidence_source": "transcript",
-                "evidence": "The complete transcript establishes applicability.",
-                "evidence_citations": [citation],
-            })
+                citation.update(
+                    {
+                        "start_seconds": 0.0,
+                        "end_seconds": 10.0,
+                    }
+                )
+            located_assessments.append(
+                {
+                    **assessment,
+                    "evidence_source": "transcript",
+                    "evidence": "The complete transcript establishes applicability.",
+                    "evidence_citations": [citation],
+                }
+            )
         talks.append(
             {
                 "filename": filename,
@@ -448,9 +452,10 @@ def test_v5_assessment_enables_independent_policy_domains(validate_profile):
     )
     assert assessment.domain_available("trends") is False
     assert assessment.domain_available("modes") is False
-    assert assessment.policy_semantic_sha256 == pattern_profile[
-        "classification_policy"
-    ]["semantic_sha256"]
+    assert (
+        assessment.policy_semantic_sha256
+        == pattern_profile["classification_policy"]["semantic_sha256"]
+    )
 
 
 def test_v5_assessment_rejects_policy_digest_tampering(validate_profile):
@@ -753,9 +758,7 @@ def test_nonempty_cohort_rejects_unconfigured_trend_claim(
     return_code, report = _run(validate_profile, profile, tmp_path, capsys)
 
     assert return_code == 1
-    assert any(
-        "score_trend must project" in error for error in report["errors"]
-    )
+    assert any("score_trend must project" in error for error in report["errors"])
 
 
 def test_nested_out_of_denominator_cannot_use_another_cohort(
@@ -863,9 +866,7 @@ def test_empty_current_cohort_rejects_legacy_pattern_fallback(
     return_code, report = _run(validate_profile, profile, tmp_path, capsys)
 
     assert return_code == 1
-    assert any(
-        "score_trend must project" in error for error in report["errors"]
-    )
+    assert any("score_trend must project" in error for error in report["errors"])
     assert any(
         "mastery_levels is not the deterministic projection" in error
         for error in report["errors"]

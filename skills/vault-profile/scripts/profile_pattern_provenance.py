@@ -33,6 +33,7 @@ from pattern_opportunities import (  # noqa: E402
     PatternOpportunityError,
     validate_pattern_opportunity_rows,
 )
+
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from return_validation import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     PATTERN_SCORING_SCHEMA_VERSION,
@@ -224,9 +225,7 @@ def _exact_fields(
     value: Mapping[object, object], expected: frozenset[str], *, path: str
 ) -> list[str]:
     missing = sorted(field for field in expected if field not in value)
-    unknown = sorted(
-        (field for field in value if field not in expected), key=str
-    )
+    unknown = sorted((field for field in value if field not in expected), key=str)
     if not missing and not unknown:
         return []
     return [

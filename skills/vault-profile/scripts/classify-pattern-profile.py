@@ -54,6 +54,7 @@ from pattern_opportunities import (  # noqa: E402
     build_pattern_opportunity_rows,
     canonical_talk_outcomes,
 )
+
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from return_validation import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     load_catalog,
@@ -721,8 +722,7 @@ def _classify_positive(
         reason_codes = ["no_applicable_talks"]
     elif (
         detected > 0
-        and
-        applicable >= int(signature["minimum_applicable"])
+        and applicable >= int(signature["minimum_applicable"])
         and isinstance(lower, (int, float))
         and lower >= float(signature["minimum_lower"])
     ):
@@ -730,8 +730,7 @@ def _classify_positive(
         reason_codes = ["meets_signature_thresholds"]
     elif (
         detected > 0
-        and
-        evaluable >= int(regular["minimum_evaluable"])
+        and evaluable >= int(regular["minimum_evaluable"])
         and isinstance(coverage, (int, float))
         and coverage >= float(regular["minimum_applicable_coverage"])
         and isinstance(lower, (int, float))
@@ -743,8 +742,7 @@ def _classify_positive(
         reason_codes = ["meets_regular_thresholds"]
     elif (
         detected > 0
-        and
-        evaluable >= int(occasional["minimum_evaluable"])
+        and evaluable >= int(occasional["minimum_evaluable"])
         and isinstance(coverage, (int, float))
         and coverage >= float(occasional["minimum_applicable_coverage"])
         and isinstance(lower, (int, float))

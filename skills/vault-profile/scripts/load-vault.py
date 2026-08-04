@@ -72,23 +72,27 @@ from pattern_classification_runtime import (  # noqa: E402
     classify_pattern_profile,
     resolve_classification_policy,
 )
+
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from return_validation import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     PATTERN_SCORING_SCHEMA_VERSION,
     ReturnValidationError,
     load_catalog,
 )
+
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseError,
     assess_tracking_database,
 )
+
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseIOError,
     decode_json_object,
     snapshot_tracking_database,
 )
+
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from vault_root_authority import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     VaultRootAuthorityError,
@@ -137,11 +141,13 @@ def project_confirmed_intents(records):
     """Remove tracking-storage metadata from the public profile projection."""
     projected = []
     for record in records:
-        projected.append({
-            field: record[field]
-            for field in _CONFIRMED_INTENT_PROFILE_FIELDS
-            if field in record
-        })
+        projected.append(
+            {
+                field: record[field]
+                for field in _CONFIRMED_INTENT_PROFILE_FIELDS
+                if field in record
+            }
+        )
     return projected
 
 
@@ -166,9 +172,7 @@ def _parse_args(argv: list[str]) -> tuple[pathlib.Path, str | None]:
             raise ValueError(f"unexpected extra argument {arg!r}")
         index += 1
 
-    raw_vault_root: object = (
-        DEFAULT_VAULT if vault_root_arg is None else vault_root_arg
-    )
+    raw_vault_root: object = DEFAULT_VAULT if vault_root_arg is None else vault_root_arg
     return (
         materialize_native_authority(raw_vault_root, authority="cli_root"),
         as_of,
@@ -298,9 +302,7 @@ def main(argv: list[str]) -> int:
     payload = {
         "vault_root": str(vault_root),
         "config": db.get("config", {}),
-        "confirmed_intents": project_confirmed_intents(
-            db.get("confirmed_intents", [])
-        ),
+        "confirmed_intents": project_confirmed_intents(db.get("confirmed_intents", [])),
         "talks": talks,
         "processed_talks": processed_talks,
         "baseline_talks": baseline_talks,
