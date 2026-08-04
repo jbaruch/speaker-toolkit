@@ -179,9 +179,13 @@ def timestamp_text(moment):
 
 def require_identifier(value, label):
     if not isinstance(value, str) or not value or value.strip() != value:
-        raise QueueStateError(f"{label} must be a non-empty string without edge whitespace")
+        raise QueueStateError(
+            f"{label} must be a non-empty string without edge whitespace"
+        )
     if any(char.isspace() for char in value):
-        raise QueueStateError(f"{label} {value!r} contains whitespace — use a stable token")
+        raise QueueStateError(
+            f"{label} {value!r} contains whitespace — use a stable token"
+        )
     return value
 
 
@@ -217,9 +221,7 @@ def has_video(talk):
 def evidence_roots(database, path):
     """Return the database-bound vault root and configured source roots."""
     source_roots = (
-        database.get("config")
-        if isinstance(database.get("config"), dict)
-        else {}
+        database.get("config") if isinstance(database.get("config"), dict) else {}
     )
     vault_root = resolve_vault_root_authority(
         database_path=path,
@@ -229,7 +231,8 @@ def evidence_roots(database, path):
 
 
 def evidence_freshness_assessor(
-        database, path, *, video_evidence_assessment: VideoEvidenceAssessment):
+    database, path, *, video_evidence_assessment: VideoEvidenceAssessment
+):
     """Bind the shared read-only assessor to this database's trusted roots."""
     vault_root, source_roots = evidence_roots(database, path)
     cache = {}
@@ -249,7 +252,8 @@ def evidence_freshness_assessor(
 
 
 def artifact_capability_assessor(
-        database, path, *, video_evidence_assessment: VideoEvidenceAssessment):
+    database, path, *, video_evidence_assessment: VideoEvidenceAssessment
+):
     """Bind root-aware local/acquisition capability checks.
 
     The bounded PPTX probe owns generation-aware memoization.  Keeping a
@@ -368,7 +372,9 @@ def validate_talk(talk, index, *, allow_claim_status_drift=False):
     if explicit_id in (None, ""):
         explicit_id = None
     elif not isinstance(explicit_id, str) or not YOUTUBE_ID.fullmatch(explicit_id):
-        raise QueueStateError(f"{filename}: youtube_id {explicit_id!r} is not 11 characters")
+        raise QueueStateError(
+            f"{filename}: youtube_id {explicit_id!r} is not 11 characters"
+        )
     url_id = youtube_id_from_url(talk.get("video_url"))
     if url_id and explicit_id is None:
         raise QueueStateError(
@@ -392,6 +398,7 @@ def validate_talk(talk, index, *, allow_claim_status_drift=False):
                 f"{filename}: filename id {filename_id} disagrees with "
                 f"youtube_id {explicit_id}"
             )
+
 
 def validate_database(database, *, allow_claim_status_drift=False):
     try:
@@ -506,19 +513,19 @@ def normalize_legacy_statuses(database, *, capability_assessor):
         )
         current = "pending" if capabilities else "skipped_no_sources"
         talk["status"] = current
-        changes.append({
-            "filename": talk["filename"],
-            "previous_status": previous,
-            "status": current,
-            "video_present": has_video(talk),
-            "source_capabilities": capabilities,
-        })
+        changes.append(
+            {
+                "filename": talk["filename"],
+                "previous_status": previous,
+                "status": current,
+                "video_present": has_video(talk),
+                "source_capabilities": capabilities,
+            }
+        )
     return changes
 
 
-def normalize_pattern_scoring_generations(
-    database, *, evidence_freshness_assessor
-):
+def normalize_pattern_scoring_generations(database, *, evidence_freshness_assessor):
     """Requeue every valid processed talk outside the active score generation."""
     try:
         catalog = load_catalog()
@@ -544,13 +551,15 @@ def normalize_pattern_scoring_generations(
         reprocess_reason = pattern_scoring_reprocess_reason(reason_codes)
         talk["status"] = "needs-reprocessing"
         talk["reprocess_reason"] = reprocess_reason
-        changes.append({
-            "filename": talk["filename"],
-            "previous_status": previous,
-            "status": talk["status"],
-            "reprocess_reason": reprocess_reason,
-            **detail,
-        })
+        changes.append(
+            {
+                "filename": talk["filename"],
+                "previous_status": previous,
+                "status": talk["status"],
+                "reprocess_reason": reprocess_reason,
+                **detail,
+            }
+        )
     return changes
 
 
@@ -574,9 +583,14 @@ def claims_for_run(database, run_id, batch_id=None):
             item["filename"] = talk["filename"]
             item["current_status"] = talk["status"]
             found.append(item)
-    return sorted(found, key=lambda item: (
-        item["batch_id"], item["filename"], item["reprocess_generation"]
-    ))
+    return sorted(
+        found,
+        key=lambda item: (
+            item["batch_id"],
+            item["filename"],
+            item["reprocess_generation"],
+        ),
+    )
 
 
 def reconstruct_run(database, run_id):
@@ -588,8 +602,12 @@ def reconstruct_run(database, run_id):
         {"batch_id": batch_id, "filenames": sorted(filenames)}
         for batch_id, filenames in sorted(grouped.items())
     ]
-    return {"run_id": run_id, "claim_count": len(claims),
-            "batches": batches, "claims": claims}
+    return {
+        "run_id": run_id,
+        "claim_count": len(claims),
+        "batches": batches,
+        "claims": claims,
+    }
 
 
 def archive_current_claim(talk, now_text):
@@ -663,12 +681,17 @@ def claim_talk(
 
 
 def command_normalize(
-        database, path, _args, *, expected_snapshot,
-        video_evidence_assessment: VideoEvidenceAssessment):
+    database,
+    path,
+    _args,
+    *,
+    expected_snapshot,
+    video_evidence_assessment: VideoEvidenceAssessment,
+):
     candidate = copy.deepcopy(database)
     capability_assessor = artifact_capability_assessor(
-        candidate, path,
-        video_evidence_assessment=video_evidence_assessment)
+        candidate, path, video_evidence_assessment=video_evidence_assessment
+    )
     normalizations = normalize_legacy_statuses(
         candidate,
         capability_assessor=capability_assessor,
@@ -677,7 +700,8 @@ def command_normalize(
         normalize_pattern_scoring_generations(
             candidate,
             evidence_freshness_assessor=evidence_freshness_assessor(
-                candidate, path,
+                candidate,
+                path,
                 video_evidence_assessment=video_evidence_assessment,
             ),
         )
@@ -702,8 +726,13 @@ def command_normalize(
 
 
 def command_claim(
-        database, path, args, *, expected_snapshot,
-        video_evidence_assessment: VideoEvidenceAssessment):
+    database,
+    path,
+    args,
+    *,
+    expected_snapshot,
+    video_evidence_assessment: VideoEvidenceAssessment,
+):
     run_id = require_identifier(args.run_id, "run_id")
     batch_id = require_identifier(args.batch_id, "batch_id")
     now_text = timestamp_text(parse_timestamp(args.now, "--now"))
@@ -716,11 +745,12 @@ def command_claim(
         for item in existing:
             filename = item["filename"]
             prior = latest_by_filename.get(filename)
-            if (prior is None or item["reprocess_generation"] >
-                    prior["reprocess_generation"]):
+            if (
+                prior is None
+                or item["reprocess_generation"] > prior["reprocess_generation"]
+            ):
                 latest_by_filename[filename] = item
-        latest = sorted(
-            latest_by_filename.values(), key=lambda item: item["filename"])
+        latest = sorted(latest_by_filename.values(), key=lambda item: item["filename"])
         existing_names = set(latest_by_filename)
         if requested and set(requested) != existing_names:
             raise QueueStateError(
@@ -748,9 +778,7 @@ def command_claim(
             # not replay a closed lease and leave the batch silently idle.
             requested = sorted(existing_names)
         else:
-            states_by_filename = {
-                item["filename"]: item["state"] for item in latest
-            }
+            states_by_filename = {item["filename"]: item["state"] for item in latest}
             raise QueueStateError(
                 f"run {run_id!r} batch {batch_id!r} has non-replayable mixed "
                 f"claim states {states_by_filename}; retry only recovered talks "
@@ -759,8 +787,8 @@ def command_claim(
 
     candidate = copy.deepcopy(database)
     capability_assessor = artifact_capability_assessor(
-        candidate, path,
-        video_evidence_assessment=video_evidence_assessment)
+        candidate, path, video_evidence_assessment=video_evidence_assessment
+    )
     normalizations = normalize_legacy_statuses(
         candidate,
         capability_assessor=capability_assessor,
@@ -769,7 +797,9 @@ def command_claim(
     if requested:
         missing = sorted(set(requested) - set(by_filename))
         if missing:
-            raise QueueStateError(f"requested filenames are not in the database: {missing}")
+            raise QueueStateError(
+                f"requested filenames are not in the database: {missing}"
+            )
         if len(requested) > args.limit:
             raise QueueStateError(
                 f"requested {len(requested)} filenames exceeds --limit {args.limit}"
@@ -803,14 +833,15 @@ def command_claim(
                 )
     else:
         eligible = [
-            talk for talk in candidate["talks"]
+            talk
+            for talk in candidate["talks"]
             if talk["status"] in CLAIMABLE_STATUSES
             and has_claimable_source(
                 talk,
                 capability_assessor=capability_assessor,
             )
         ]
-        selected = sorted(eligible, key=lambda talk: talk["filename"])[:args.limit]
+        selected = sorted(eligible, key=lambda talk: talk["filename"])[: args.limit]
 
     selected_filenames = [talk["filename"] for talk in selected]
     try:
@@ -822,7 +853,8 @@ def command_claim(
             pattern_catalog_fingerprint=catalog.fingerprint,
             pattern_scoring_schema_version=PATTERN_SCORING_SCHEMA_VERSION,
             evidence_freshness_assessor=evidence_freshness_assessor(
-                database, path,
+                database,
+                path,
                 video_evidence_assessment=video_evidence_assessment,
             ),
         )
@@ -912,10 +944,12 @@ def command_recover(database, path, args, *, expected_snapshot):
             "age_seconds": age_seconds,
         }
         if status_drift:
-            recovered_item.update({
-                "status_before": status_before,
-                "release_reason": "state_status_drift",
-            })
+            recovered_item.update(
+                {
+                    "status_before": status_before,
+                    "release_reason": "state_status_drift",
+                }
+            )
         recovered.append(recovered_item)
     if recovered:
         validate_database(database)
@@ -962,8 +996,9 @@ def positive_integer(value):
 def build_parser():
     parser = JsonArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("database", help="tracking-database.json path")
-    actions = parser.add_subparsers(dest="action", required=True,
-                                    parser_class=JsonArgumentParser)
+    actions = parser.add_subparsers(
+        dest="action", required=True, parser_class=JsonArgumentParser
+    )
     actions.add_parser(
         "normalize",
         help="normalize legacy source statuses and stale scoring generations",
@@ -972,15 +1007,20 @@ def build_parser():
     claim = actions.add_parser("claim", help="claim a deterministic batch")
     claim.add_argument("--run-id", required=True)
     claim.add_argument("--batch-id", required=True)
-    claim.add_argument("--now", required=True,
-                       help="timezone-aware ISO-8601 claim time")
+    claim.add_argument(
+        "--now", required=True, help="timezone-aware ISO-8601 claim time"
+    )
     claim.add_argument("--limit", type=positive_integer, default=5)
-    claim.add_argument("--filename", action="append",
-                       help="claim this filename; repeat for an exact batch")
+    claim.add_argument(
+        "--filename",
+        action="append",
+        help="claim this filename; repeat for an exact batch",
+    )
 
     recover = actions.add_parser("recover", help="recover expired inflight leases")
-    recover.add_argument("--now", required=True,
-                         help="timezone-aware ISO-8601 reference time")
+    recover.add_argument(
+        "--now", required=True, help="timezone-aware ISO-8601 reference time"
+    )
     recover.add_argument("--stale-after-seconds", type=positive_integer, required=True)
     recover.add_argument("--run-id", help="recover only this run's expired claims")
 
