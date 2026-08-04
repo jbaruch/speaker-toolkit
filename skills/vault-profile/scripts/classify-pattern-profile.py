@@ -996,13 +996,30 @@ def _combination_rows(
                         "reason_codes": ["meets_signature_combination_thresholds"],
                     }
                 )
-    candidates.sort(
-        key=lambda item: (
-            -float(item["evidence"]["lower"]),  # type: ignore[index]
-            -int(item["evidence"]["detected_count"]),  # type: ignore[index]
-            tuple(item["pattern_ids"]),  # type: ignore[arg-type]
-        )
-    )
+
+    def candidate_sort_key(
+        item: Mapping[str, object],
+    ) -> tuple[float, int, tuple[str, ...]]:
+        evidence = item.get("evidence")
+        pattern_ids = item.get("pattern_ids")
+        if not isinstance(evidence, Mapping) or not isinstance(pattern_ids, list):
+            raise PatternClassificationError(
+                "classifier produced an invalid signature-combination row"
+            )
+        lower = evidence.get("lower")
+        detected = evidence.get("detected_count")
+        if (
+            isinstance(lower, bool)
+            or not isinstance(lower, (int, float))
+            or not _is_integer(detected)
+            or any(not isinstance(pattern_id, str) for pattern_id in pattern_ids)
+        ):
+            raise PatternClassificationError(
+                "classifier produced invalid signature-combination evidence"
+            )
+        return -float(lower), -detected, tuple(pattern_ids)
+
+    candidates.sort(key=candidate_sort_key)
     return candidates[: int(combination_policy["maximum_results"])]
 
 
