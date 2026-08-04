@@ -48,10 +48,9 @@ jobs:
       - name: Install system dependencies (ffmpeg, libreoffice-impress, tesseract)
         # ffmpeg drives the video-slide-extraction tests; libreoffice-impress
         # drives the PPTX->PDF export tests; tesseract drives OCR of baked-in
-        # picture text in pptx-extraction. Video/PDF groups skipif their binary
-        # is absent; OCR unit tests inject a fake engine, integration tests
-        # skipif tesseract is missing — install hiccup degrades coverage
-        # rather than red-failing the suite.
+        # picture text in pptx-extraction. Source-video evidence tests require
+        # ffmpeg/ffprobe and fail if either is absent. OCR unit tests inject a
+        # fake engine; integration tests skipif tesseract is missing.
         #
         # Why this is verbose instead of a plain `apt-get install`: the plain
         # form intermittently wedged for the full 6h job limit (the identical
@@ -99,6 +98,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install Windows media evidence dependencies
+        if: runner.os == 'Windows'
+        # Chocolatey package pin. No Dependabot ecosystem for Chocolatey;
+        # renew quarterly or when the approved package advances.
+        run: choco install ffmpeg --version=8.1.2 --no-progress -y
       - run: pip install ".[test]"
       - run: >-
           pytest -v --tb=short

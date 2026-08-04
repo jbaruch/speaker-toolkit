@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import importlib
 import os
-import shutil
 import subprocess
 import sys
 import threading
@@ -239,10 +238,6 @@ def test_metadata_child_closes_root_escape_symlink_and_nonregular_failures(
         assert os.fspath(artifact) not in repr(payload)
 
 
-@pytest.mark.skipif(
-    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
-    reason="real media probe requires ffmpeg and ffprobe",
-)
 def test_real_worker_probes_tiny_mp4_and_reuses_only_same_generation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -276,10 +271,6 @@ def test_real_worker_probes_tiny_mp4_and_reuses_only_same_generation(
     assert second == first
 
 
-@pytest.mark.skipif(
-    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
-    reason="real media probe requires ffmpeg and ffprobe",
-)
 @pytest.mark.parametrize(
     ("suffix", "codec", "expected_family"),
     [
@@ -319,11 +310,7 @@ def test_real_worker_accepts_each_declared_container_family(
         capture_output=True,
         check=False,
     )
-    if created.returncode != 0:
-        pytest.skip(
-            f"local ffmpeg does not provide the {codec} test encoder: "
-            + created.stderr.decode("utf-8", errors="replace")
-        )
+    assert created.returncode == 0, created.stderr.decode("utf-8", errors="replace")
 
     probe = video_evidence.VideoEvidenceAssessment().probe(
         artifact.name,
@@ -1327,10 +1314,6 @@ def test_transient_leader_failure_is_shared_with_waiter_in_same_assessment(
     assert probe_calls == 1
 
 
-@pytest.mark.skipif(
-    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
-    reason="real media rejection requires ffmpeg and ffprobe",
-)
 def test_real_worker_rejects_audio_only_wrong_container_and_corrupt_inputs(
     tmp_path: Path,
 ) -> None:

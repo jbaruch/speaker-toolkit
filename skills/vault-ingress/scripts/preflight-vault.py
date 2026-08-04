@@ -1297,7 +1297,7 @@ class VaultPreflight:
             )
             return
 
-        errors: list[object] = []
+        errors: list[str] = []
         trusted_slide_region_probe: PdfArtifactProbe | None = None
         expected_id = self.youtube_ids.get(index)
         if state.source_video_id != expected_id:
@@ -1327,7 +1327,12 @@ class VaultPreflight:
                         "details": dict(exc.details),
                     }
                     if finding_code == "video_extraction_provenance_invalid":
-                        errors.append(failure)
+                        closed_reason = exc.details.get("locator_failure")
+                        if not isinstance(closed_reason, str):
+                            closed_reason = exc.details.get("failure_kind")
+                        if not isinstance(closed_reason, str):
+                            closed_reason = exc.reason_code
+                        errors.append(f"source_video_path: {closed_reason}")
                     elif index not in self.reported_source_video_failures:
                         self.reported_source_video_failures.add(index)
                         message = {

@@ -177,9 +177,10 @@ def write_tiny_video(path: Path) -> Path:
         return path
 
     ffmpeg = shutil.which("ffmpeg")
-    if ffmpeg is None or shutil.which("ffprobe") is None:
-        pytest.skip("source-video manifest tests require ffmpeg and ffprobe")
-    assert ffmpeg is not None
+    assert ffmpeg is not None, "source-video manifest tests require ffmpeg"
+    assert shutil.which("ffprobe") is not None, (
+        "source-video manifest tests require ffprobe"
+    )
     created = subprocess.run(
         [
             ffmpeg,
@@ -1179,6 +1180,63 @@ def test_source_video_failure_mapping_is_closed(
     )
 
     assert preflight_vault._source_video_failure_code(error) == expected_code
+
+
+@pytest.mark.parametrize(
+    ("reason_code", "details", "expected_reason"),
+    [
+        (
+            "video_evidence_invalid",
+            {"locator_failure": "artifact_locator_dot_segment"},
+            "source_video_path: artifact_locator_dot_segment",
+        ),
+        (
+            "video_artifact_unavailable",
+            {"failure_kind": "root_escape"},
+            "source_video_path: root_escape",
+        ),
+    ],
+)
+def test_source_video_provenance_failures_keep_string_reason_list(
+    preflight_vault,
+    vault_fixture,
+    monkeypatch: pytest.MonkeyPatch,
+    reason_code: str,
+    details: dict[str, object],
+    expected_reason: str,
+) -> None:
+    video_evidence = importlib.import_module("video_evidence")
+    manifest = trusted_video_manifest(vault_fixture)
+
+    def fail_probe(*_args, **_kwargs):
+        raise video_evidence.VideoEvidenceError(
+            "synthetic bounded video provenance failure",
+            reason_code=reason_code,
+            details=details,
+        )
+
+    monkeypatch.setattr(video_evidence.VideoEvidenceAssessment, "probe", fail_probe)
+    write_database(
+        vault_fixture,
+        [
+            base_talk(
+                status="processed_partial",
+                transcript_source="none",
+                slide_source="video_extracted",
+                structured_data={"video_extraction": manifest},
+            )
+        ],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "video_extraction_provenance_invalid"
+    )
+    assert finding["actual"] == [expected_reason]
+    assert all(isinstance(reason, str) for reason in finding["actual"])
 
 
 @pytest.mark.parametrize(

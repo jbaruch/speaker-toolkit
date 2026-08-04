@@ -132,8 +132,10 @@ def _talk(**overrides):
 
 def _write_tiny_mp4(path):
     ffmpeg = shutil.which("ffmpeg")
-    if ffmpeg is None or shutil.which("ffprobe") is None:
-        pytest.skip("source-video persistence test requires ffmpeg and ffprobe")
+    assert ffmpeg is not None, "source-video persistence test requires ffmpeg"
+    assert shutil.which("ffprobe") is not None, (
+        "source-video persistence test requires ffprobe"
+    )
     created = subprocess.run(
         [
             ffmpeg,
