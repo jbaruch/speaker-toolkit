@@ -83,7 +83,7 @@ Use `-` for the profile path in summary-only mode. The command emits
 eligible_talk_count, opportunity_rows_available,
 classification_fields_available, available_classification_domains,
 policy_semantic_sha256, reason_codes, reasons, warning}`. `history_enabled` means at
-least one policy-bound domain is available; it is not permission to consume every
+least one policy-bound domain is available. It is not permission to consume every
 derived field. In JSON, require membership in `available_classification_domains` for
 each use (Python consumers call `domain_available(domain)`). The domain contracts are:
 
@@ -93,32 +93,32 @@ each use (Python consumers call `domain_available(domain)`). The domain contract
 - `underuse`: `underused_patterns`.
 - `signature_combinations`: `signature_combinations`.
 - `antipattern_recurrence`: `[RECURRING]` only for `antipattern_classifications`
-  rows classified `high_frequency` or `moderate_frequency`; these labels describe
+  rows classified `high_frequency` or `moderate_frequency`. These labels describe
   recurrence frequency, not harm severity.
 - `trends`: pattern and antipattern movements, score/breadth trend, and score drivers.
   A recurrence claim may be available without a trend claim.
 - `modes`: `by_mode` history.
 
-A policy-bound profile with any available domain wins as the sole history source; the
+A policy-bound profile with any available domain wins as the sole history source. The
 summary is considered only when profile history is disabled and is never merged with
 profile history. Surface a disabled result's `warning` verbatim and recommend profile
-regeneration; continue using independent non-pattern fields such as pacing, visual
+regeneration. Continue using independent non-pattern fields such as pacing, visual
 rules, presentation modes, infrastructure, publishing config, and confirmed intents.
 Exact occurrence rows may remain auditable when `opportunity_rows_available` is true,
 but that status never authorizes a classification. Stored profile schemas v1/v2/v3
-remain readable for non-pattern fields only. Schema v4 is occurrence-only; schema v5
+remain readable for non-pattern fields only. Schema v4 is occurrence-only. Schema v5
 binds derived classifications to a versioned policy.
 
-Suppress each catalog-derived historical field when its required domain is absent;
-do not collapse the available domains behind the global history flag. Top-level
+Suppress each catalog-derived historical field when its required domain is absent.
+Do not collapse the available domains behind the global history flag. Top-level
 recurring issues and badges in schema-v4/v5 profiles remain usable only when their
-entries explicitly declare `source_lane: "non_pattern"`; legacy or ambiguous entries
+entries explicitly declare `source_lane: "non_pattern"`. Legacy or ambiguous entries
 do not authorize history. Current-taxonomy scans of the new outline remain enabled.
 If no profile exists, run in **summary-only mode**: use default guardrail thresholds (1.5
 slides/min, 45% Act 1 cap) and ask for template/publishing data interactively. Section
 15 v3 classifications are usable only when its uniquely delimited current block passes
 `"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py"`
-and the same strict pattern-profile assessment; require the relevant domain just as
+and the same strict pattern-profile assessment. Require the relevant domain just as
 for profile history.
 Section 15 v2 is occurrence-only. Ordinary, stale, or occurrence-only Section 15 data
 authorizes taxonomy-only recommendations, never speaker-history claims.

@@ -17,8 +17,8 @@ cohort by implication.
 declare explicit evidence gates, but only 16 permit an absence conclusion from a
 complete transcript or separately declared rendered PDF. Profile schema v5 preserves
 each pattern's exact denominator and automatically applies the bundled
-`speaker-toolkit-default@1` thresholds. A vault may provide a strict optional override;
-if that file is present but invalid, profile generation stops instead of silently
+`speaker-toolkit-default@1` thresholds. A vault may provide a strict optional override.
+If that file is present but invalid, profile generation stops instead of silently
 falling back. Mastery/novelty, antipattern recurrence, underuse, combinations, trends,
 and modes report availability independently. Section 15 readers still accept
 occurrence-only v2 blocks, while every replacement writes a policy-bound v3 block.
@@ -162,7 +162,7 @@ The toolkit is built on six skills connected by a shared **rhetoric vault** — 
 - **vault-profile** generates a schema-v5 speaker profile with source-exact opportunity rows, a self-contained policy stamp, and independently gated classifications after enough talks are analyzed.
 
 **Creator skills (generation):**
-- **presentation-creator** reads the vault at runtime and uses your documented rhetoric as a constitutional style guide to build new presentations. It follows a 7-phase process from intent distillation through slide generation, with a current-taxonomy Pattern Strategy and a go-live checklist before delivery. It uses each available profile domain independently—for example, mastery for the four history tiers and antipattern recurrence for recurring warnings—and falls back to a flat taxonomy when that domain is unavailable. Delegates the visual layer to the illustrations skill.
+- **presentation-creator** reads the vault at runtime and uses your documented rhetoric as a constitutional style guide to build new presentations. It follows a 7-phase process from intent distillation through slide generation, with a current-taxonomy Pattern Strategy and a go-live checklist before delivery. It uses each available profile domain independently. Mastery drives the four history tiers. Antipattern recurrence drives recurring warnings. When either domain is unavailable, the creator falls back to the corresponding current-taxonomy behavior. The skill delegates the visual layer to the illustrations skill.
 - **illustrations** owns the deck illustration strategy, generation, build chains, and YouTube thumbnails. Invoked by presentation-creator at the relevant phases (Phase 2 strategy, Phase 5 application, Phase 7 thumbnail).
 - **shownotes-publisher** writes talk pages into a Jekyll-based shownotes site (e.g., `speaking.jbaru.ch`). Encodes the custom parser's format contract so authored content actually renders: abstract is one paragraph, video field absent = "coming soon" badge, slides/video URLs must be markdown links, no frontmatter title, etc. Invoked after the talk is delivered (or pre-talk for slides-only publish).
 
@@ -253,7 +253,7 @@ rhetoric-knowledge-vault/
 
 **rhetoric-style-summary.md** is the constitution — rich prose covering presentation modes, opening patterns, humor techniques, audience interaction styles, closing patterns, verbal signatures, persuasion techniques, and more. It grows every time you parse new talks.
 
-**speaker-profile.json** is the specification — structured data that the creator reads at runtime: presentation modes with quantitative thresholds, instrument catalogs, guardrail rules, pacing data, design rules, the publishing workflow, and a `pattern_profile` with exact positive/negative occurrence rows, per-pattern denominators, source cohort provenance, exhaustive classifications, and independent availability by domain. Schema v5 uses the bundled `speaker-toolkit-default@1` policy automatically and embeds the full policy plus its semantic digest. An optional `pattern-classification-policy.json` overrides it only when the file passes strict validation; schema-v4 profiles remain readable as occurrence-only history.
+**speaker-profile.json** is the structured specification that the creator reads at runtime. It contains presentation modes with quantitative thresholds, instrument catalogs, guardrail rules, pacing data, design rules, the publishing workflow, and a `pattern_profile` with exact positive/negative occurrence rows, per-pattern denominators, source cohort provenance, exhaustive classifications, and independent availability by domain. Schema v5 uses the bundled `speaker-toolkit-default@1` policy automatically and embeds the full policy plus its semantic digest. An optional `pattern-classification-policy.json` overrides it only when the file passes strict validation. Schema-v4 profiles remain readable as occurrence-only history.
 
 **slide-design-spec.md** captures visual design rules extracted from both PDF inspection and programmatic .pptx analysis: background colors, typography, footer specs, shape vocabulary, and template layout catalog.
 

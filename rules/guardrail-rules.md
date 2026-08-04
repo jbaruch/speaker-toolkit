@@ -18,17 +18,21 @@ three-outcome PASS/WARN/FAIL logic:
 The script checks pattern-history authorization, slide budget, Act 1 ratio, closing
 completeness, cut lines, data attribution, profanity, and branding. It emits historical
 recurring antipattern lines only when `antipattern_recurrence` appears in
-`available_classification_domains`; it adds movement only when `trends` also appears.
+`available_classification_domains`. It adds movement only when `trends` also appears.
 Add the remaining checks (time-sensitive, current-outline contextual antipatterns,
 illustration coverage, pattern strategy) to the report manually.
 
 A disabled pattern-history result affects only catalog-derived speaker history. Keep
 independent profile configuration and guardrails enabled. When history is partially
-available, require the exact domain for each derived field: `mastery_and_novelty` for
-tiers, strengths, and novelty; `underuse` for underuse; `signature_combinations` for
-combinations; `antipattern_recurrence` for historical recurring labels; `trends` for
-movements and score/breadth trend; and `modes` for by-mode history. Always retain the
-current-taxonomy scan of the new outline.
+available, require the exact domain for each derived field:
+
+- Use `mastery_and_novelty` for tiers, strengths, and novelty.
+- Use `underuse` for underuse.
+- Use `signature_combinations` for combinations.
+- Use `antipattern_recurrence` for historical recurring labels.
+- Use `trends` for movements and score/breadth trend.
+- Use `modes` for by-mode history.
+- Always retain the current-taxonomy scan of the new outline.
 
 Schema-v4/v5 top-level `guardrail_sources.recurring_issues[]` and `badges[]` are usable
 only when each consumed entry explicitly declares `source_lane: "non_pattern"`.
@@ -56,13 +60,13 @@ Never use generic unlabeled antipattern warnings.
 When `pattern_history_status.py` reports the `mastery_and_novelty` domain, organize
 recommendations into exactly four tiers:
 
-1. **Signature** — current-cohort `mastery_levels.signature` patterns
-2. **Contextual history** — current-cohort regular/occasional patterns worth
-   considering here
-3. **New to You** — exactly `mastery_levels.never_tried` /
+1. **Signature.** Use current-cohort `mastery_levels.signature` patterns.
+2. **Contextual history.** Use current-cohort regular/occasional patterns worth
+   considering here.
+3. **New to You.** Use exactly `mastery_levels.never_tried` /
    `never_used_patterns` entries that fit this talk. A first detection in the newest
    talk or `not_yet_observed` never counts as New-to-You.
-4. **Shake It Up** — exactly 1-2 wild card patterns for experimentation. Never 0,
+4. **Shake It Up.** Use exactly 1-2 wild card patterns for experimentation. Never 0,
    never 3+.
 
 When the mastery domain is unavailable, do not manufacture those tiers from legacy
