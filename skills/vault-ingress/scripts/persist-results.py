@@ -96,6 +96,7 @@ from pattern_evidence import (
     canonicalize_return_evidence,
     return_evidence_claim,
 )
+from video_evidence import VideoEvidenceAssessment
 from return_validation import (
     ADDITIVE_MAP,
     ANALYSIS_STATUSES,
@@ -868,6 +869,7 @@ def main():
     except VaultRootAuthorityError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
+    video_evidence_assessment = VideoEvidenceAssessment()
     returns = load_json(batch_path, "batch-returns")
     try:
         catalog = validate_batch(returns)
@@ -882,6 +884,7 @@ def main():
         },
         vault_root=vault_root,
         source_roots=source_roots,
+        video_evidence_assessment=video_evidence_assessment,
     )
     try:
         by_name = validate_batch_claims_against_talks(
@@ -900,7 +903,12 @@ def main():
         name = ret["filename"]
         try:
             if ret.get("status") in ANALYSIS_STATUSES:
-                admit_return_artifacts(vault_root, by_name[name], ret)
+                admit_return_artifacts(
+                    vault_root,
+                    by_name[name],
+                    ret,
+                    video_evidence_assessment=video_evidence_assessment,
+                )
             if (ret.get("status") in ANALYSIS_STATUSES and
                     resolve_return_schema_version(ret) in
                     SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS):
@@ -910,6 +918,7 @@ def main():
                     pattern_scoring_schema_version=(
                         PATTERN_SCORING_SCHEMA_VERSION
                     ),
+                    video_evidence_assessment=video_evidence_assessment,
                 )
             else:
                 canonical = copy.deepcopy(ret)
@@ -963,7 +972,8 @@ def main():
             pattern_scoring_schema_version=PATTERN_SCORING_SCHEMA_VERSION,
             evidence_freshness_assessor=lambda talk: (
                 assess_current_persisted_pattern_evidence_freshness(
-                    talk, vault_root=vault_root, source_roots=source_roots)
+                    talk, vault_root=vault_root, source_roots=source_roots,
+                    video_evidence_assessment=video_evidence_assessment)
             ),
         )
     except AdherenceBaselineError as exc:

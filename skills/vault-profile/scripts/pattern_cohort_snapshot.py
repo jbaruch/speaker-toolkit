@@ -37,6 +37,7 @@ from return_validation import (  # noqa: E402
     assess_current_persisted_pattern_evidence_freshness,
     load_catalog,
 )
+from video_evidence import VideoEvidenceAssessment  # noqa: E402
 from vault_root_authority import (  # noqa: E402
     VaultRootAuthorityError,
     resolve_vault_root_authority,
@@ -74,6 +75,7 @@ def configured_evidence_freshness_assessor(
         )
     except VaultRootAuthorityError as exc:
         raise PatternCohortSnapshotError(str(exc)) from exc
+    video_evidence_assessment = VideoEvidenceAssessment()
     freshness_cache: dict[int, tuple[str, ...]] = {}
 
     def assess(talk: Mapping[str, object]) -> tuple[str, ...]:
@@ -85,6 +87,7 @@ def configured_evidence_freshness_assessor(
                     vault_root=evidence_vault_root,
                     source_roots=source_roots,
                     catalog=catalog,
+                    video_evidence_assessment=video_evidence_assessment,
                 )
             )
         return freshness_cache[identity]

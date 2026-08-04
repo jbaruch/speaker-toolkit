@@ -1,0 +1,262 @@
+# Vault Bootstrap and Preflight
+
+This is the complete normative Step 1 contract for `vault-ingress`. Execute
+each section in order; later sections assume every earlier gate succeeded.
+
+**Vault discovery** — canonical path is always `~/.claude/rhetoric-knowledge-vault/`.
+
+1. **Path exists** — use as `vault_root`, then load the database with the strict
+   owner read command in
+   [schemas-db.md](schemas-db.md#owner-read-and-mutation-contract).
+2. **Path missing** — first-time setup: ask preferred location via `AskUserQuestion`,
+   create the directory (and symlink if a custom path was chosen), then use a sole
+   `initialize_database` mutation. Include database `schema_version: 1`, config
+   `schema_version: 1`, and empty `talks`, `pptx_catalog`, `qr_codes`, `resources`,
+   `thumbnails`, `confirmed_intents`, and `improvement_goals` arrays. Review the
+   dry-run and apply it with `--expected-sha256 missing`; never create the JSON
+   file directly.
+
+**Schema gate** — vault-ingress owns the tracking database shape and migrations.
+The stdlib-only strict reader may use the host interpreter for the initial
+bootstrap read only. Read `config.python_path` from an existing database, or ask
+for the interpreter path without writing the database when that field is absent.
+Immediately re-read the same canonical path with that configured interpreter and
+require the same SHA-256; restart discovery if the generation changed. Use the
+configured interpreter for migration, queue commands, and every later toolkit
+command. Run the owner migration before any other database mutation:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/migrate-tracking-database.py" \
+  "{vault_root}/tracking-database.json"
+```
+
+Exit 0 writes one dry-run JSON report with `input_sha256`, source and target
+schema versions, `output_sha256`, `record_counts`, `changed`,
+`database_written: false`, `warnings`, and the deterministic backup path. A
+changed report authorizes this exact apply command:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/migrate-tracking-database.py" \
+  "{vault_root}/tracking-database.json" --apply --expected-sha256 "{input_sha256}"
+```
+
+Exit 0 from apply writes one JSON report with `database_written: true`, preserves
+the complete original bytes under `{vault_root}/.backups/`, and atomically
+installs database schema v1. A non-empty `warnings` array means replacement
+completed with a durability warning and must not be reported as a failed/no-write
+run. Exit 2 writes one error object to stdout plus a diagnostic to stderr and
+leaves the database unchanged. Recover or
+complete every active queue claim named by the diagnostic. For an unversioned
+database, use `queue-state.py ... inspect` to identify the lease and
+`queue-state.py ... recover` to close it. Those two commands accept schema 0;
+recovery changes only queue-lease/status state and does not stamp or migrate the
+database or talk record. The existing queue transition may advance a recovered
+legacy claim receipt from schema v1 to v2 while adding its release fields. Rerun
+migration dry-run, then apply its new exact digest. Do not copy a digest across
+runs. `queue-state.py ... normalize` and `queue-state.py ... claim` require
+database schema 1.
+
+**Config bootstrapping** — ask once per missing field and persist to the tracking
+database with expectation-bound `set_config` mutations. Re-read after every
+successful apply and use the new hash for the next plan. Core fields: `shownotes` (enabled, source.type, source.path_or_url,
+source.talks_subdir, url.base, url.template, thumbnail_path_template,
+slug_convention), `pptx_source_dir`, `python_path`, `template_skip_patterns`.
+See [schemas-db.md](schemas-db.md) for the full schema and
+[schemas-config.md](../../vault-profile/references/schemas-config.md) for
+field-by-field semantics and migration notes.
+
+`python_path` is the interpreter authority for every operational command below;
+never fall back to whichever `python3` happens to be on `PATH`. Installed plugin
+bundles do not include `pyproject.toml`, so immediately probe the configured
+runtime with the shipped stdlib-only checker:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/check-runtime.py" \
+  --lanes core,pdf,pptx
+```
+
+All owner-authored tracking writes below require database schema 1 after this
+gate. Preserve every independent record version and validate the complete
+candidate before installing it. Only `migrate-tracking-database.py` may move
+schema 0 to schema 1; its hash precondition binds replacement to the exact input
+bytes as documented above.
+
+Core requires Python 3.10+ and PyYAML and is blocking. The PDF lane requires
+pypdf plus exactly `psutil==7.2.2`; the PPTX lane requires python-pptx plus the
+same exact psutil version. Both parser lanes run behind bounded worker
+supervision. Preserved source-video evidence has its own narrow `source-video`
+lane requiring exactly `psutil==7.2.2` plus `ffprobe`; require that lane before
+preflight, persistence, queue, or profile work will inspect a local recording
+declared by `structured_data.video_extraction.source_video_path`,
+`video_local_path`, or `video_path`.
+The canonical vault locator may be the configured symlink; the PDF
+boundary maps that trusted root to storage while still rejecting every
+descendant symlink/reparse redirect. Trusted-root bindings retain the directory
+object's stable identity and policy attributes, not mutable child-content size or
+timestamps; PDF and PPTX leaf generations remain exact. The checker emits report
+schema v2 and records exact pins under
+each lane's `required_module_versions`; a mismatched version is unavailable. A
+missing optional lane is reported as degraded and must not erase a healthy
+transcript or alternate slide lane.
+Require a lane before using it, for example `--require-lanes core,pdf`. Remote
+Drive acquisition additionally needs the `gdown` module; captions need
+`youtube-transcript-api`; audio download fallback needs `yt-dlp`; rendered PDF
+inspection needs `pdftoppm`; video extraction needs exactly `Pillow==12.3.0`,
+`ImageHash==4.3.2`, `numpy==2.2.6`, and `filelock==3.32.2`, plus `ffmpeg` and
+`ffprobe`; local Whisper needs `mlx-whisper` and `ffprobe`.
+Inspect those with the checker's `google-drive`, `captions`,
+`youtube-download`, `pdf-render`, `video`, and `whisper` lanes as selected talks
+require; use `source-video` for evidence over an already-preserved recording and
+`video` for frame extraction. Each lane is independent: a failed optional
+import/tool disables only that lane. Import failure details appear under the
+lane's `module_failures`;
+dependency absence, initializer exceptions, native crashes, timeouts, and
+invalid child results degrade an optional lane or block a required lane without
+breaking the one-JSON contract. The checker writes a recovery instruction to
+stderr whenever a lane is unavailable.
+
+**Scan for new talks:** run the deterministic scanner in its default read-only
+mode:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/scan-shownotes.py" \
+  "{vault_root}/tracking-database.json"
+```
+
+Read the structured report before any mutation. `add` and `update` entries are
+safe deterministic proposals; `review_required` entries need a human decision.
+The scanner uses exact filename identity, derives supported YouTube and Google
+Drive IDs, and keeps every matching `source_rejections` identity inactive.
+For comparison only, title equality applies Unicode NFC and maps straight/curly
+single and double quote glyphs to the same narrow equivalents; it preserves
+case, other punctuation, and wording. Conference equality applies NFC plus
+casefold only and preserves whitespace. The scanner never writes these
+comparison transforms back to the database or report. Incomplete metadata,
+substantive conflicts, and normalized filename collisions remain proposals.
+Disabled, `remote_url`, and `none` sources return a structured no-op.
+
+Apply the reviewed deterministic proposals with the same command plus
+`--apply`. Only `add` and `update` entries mutate the tracking database. New
+records receive current `schema_version` and status `"pending"`; exact-filename
+updates fill empty fields without overwriting established values. The write is
+atomic and rejects a tracking-database symlink. See
+[schemas-db.md](schemas-db.md#shownotes-scanimport-report)
+for the complete report and mutation contract.
+
+**Scan for .pptx files:** Do not recursively glob the source tree. Run one bounded
+directory extraction, which owns deterministic discovery, symlink/reparse-point
+rejection, and aggregate file/input/output/wall budgets:
+
+Read the exact `config.template_skip_patterns` array from the strict owner-read
+result. Set `{template_skip_arguments}` to one separately shell-quoted
+`--skip=<exact-value>` argument per array entry, preserving its order. An empty
+array produces zero arguments; never add an implicit default.
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py" \
+  --directory "{pptx_source_dir}" {template_skip_arguments}
+```
+
+Use root-relative `results[].pptx_path` identities to fuzzy-match `talks[]` entries
+and retain every `skipped[]` receipt. `pptx_batch_office_lock_file` is an explicit
+exclusion: never catalog or extract an Office temporary file whose basename starts
+with `~$`. Directory intent must remain explicit: do not omit `--directory` or
+pre-probe the root with `find`, a recursive glob, or a per-file loop. The bounded
+authenticated discovery worker owns root validation and enumeration. Report counts,
+then persist each reviewed result with a `record_pptx`
+mutation and `schema_version: 1`, including the exact prior catalog record and, for
+a match, the talk's exact prior `pptx_path` expectation. See
+[schemas-db.md](schemas-db.md) for the PPTX extraction output
+schema (per-slide visual data, shape types, global design stats).
+Consume current schema v4. A v0/v1 record has unknown timing, not zero timing;
+v2 has the pre-build timing lanes but lacks raw build-list evidence,
+archive-recovery, and exact native/render audit receipts; v3 lacks required
+shape/image capability bindings. Regenerate v0-v3
+output for current analysis. An unknown future
+schema is unusable until this reader is updated. The vault-profile layout-only
+consumer is the documented v1/v2/v3/v4 exception for the unchanged
+`template_layouts` field. Non-empty `archive_recovery` is degraded evidence:
+restore or re-export a required native deck before claiming or returning it.
+
+**Pattern taxonomy recovery:** See [processing-rules.md](processing-rules.md) for the queue-owned
+contract. Step 2 normalization deterministically routes processed results outside
+the active pattern-scoring generation back to `needs-reprocessing`; do not infer
+generation currency from processing date or hand-edit those statuses.
+
+**Pattern catalog preflight:** Before source selection or re-analysis, run:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/audit-pattern-catalog.py"
+```
+
+Stdout is stable JSON. Exit 1 means structural catalog errors: stop before
+scoring. Exit 0 may include `semantic_debts`; present those for human review and
+do not auto-edit names, aliases, definitions, or graph relationships. The input,
+report, and no-write contracts are defined in
+[pattern-catalog-contract.md](pattern-catalog-contract.md).
+
+**Conditional source-video runtime gate:** Use only the strict owner-read database
+payload to determine whether the upcoming source preflight may inspect any
+preserved local recording declared by
+`structured_data.video_extraction.source_video_path`, `video_local_path`, or
+`video_path`. When it may, require the configured runtime before invoking
+preflight:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/check-runtime.py" \
+  --lanes core,source-video --require-lanes core,source-video
+```
+
+Do not pre-open, hash, hydrate, or invoke `ffprobe` directly on the recording.
+The supervised source-video assessor owns availability, exact-generation hashing,
+media inspection, caching, and diagnostics. Repair a failed required lane before
+allowing preflight to inspect that recording. An unavailable or unreadable video
+disables only source-video evidence; it must not erase or invalidate independently
+verified transcript, rendered-PDF, or native-PPTX evidence.
+
+**Source/identity preflight:** After bootstrapping and scanning, and before talk
+selection or re-analysis, run the read-only offline gate:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/preflight-vault.py" {vault_root}
+```
+
+Exit 1 means one or more blocking integrity errors (identity disagreement,
+unqualified duplicate recording, invalid source claim, or a claimed completed
+artifact that is missing): stop and repair those records/artifacts before
+processing. Exit 0 may still carry warnings for legacy evidence gaps or pending
+artifacts; report them, but they do not make the vault unusable. The stable JSON
+report and evidence shape are defined in
+[source-identity-preflight.md](source-identity-preflight.md).
+
+After the offline gate, capture and compare live YouTube provider evidence:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/audit-source-identities.py" {vault_root}
+```
+
+This networked audit invokes `yt-dlp` once per distinct active YouTube ID and
+prints deterministic JSON without changing the vault. Review every proposed
+`source_identity` block and finding, especially `likely_non_delivery_clip` and
+`same_id_cross_talk_collision`. Provider uploader is not speaker evidence,
+upload date is not recorded date, and the provider webpage URL must never be
+auto-applied as an active source. See
+[source-identity-audit.md](source-identity-audit.md).
+
+Only after that human review, write a source-repair plan containing supported
+facts and exact old-value preconditions, then dry-run it before applying:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/apply-source-repairs.py" \
+  {vault_root}/tracking-database.json source-repair-plan.json
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/apply-source-repairs.py" \
+  {vault_root}/tracking-database.json source-repair-plan.json --apply
+```
+
+The apply command validates the whole plan before mutation, refuses active queue
+claims, writes a byte-for-byte backup under `{vault_root}/.backups/`, and replaces
+the DB atomically. Re-run the preflight after applying; do not claim work until
+blocking findings reach zero.
+
+Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
+"X processed, Y remaining. PPTX: A cataloged, B matched, C extracted."

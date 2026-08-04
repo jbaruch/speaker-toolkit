@@ -118,6 +118,14 @@ def pdf_evidence():
 
 
 @pytest.fixture(scope="session")
+def video_evidence():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "video_evidence.py"),
+        "video_evidence",
+    )
+
+
+@pytest.fixture(scope="session")
 def vtt_cleanup():
     return _import_script(os.path.join(SCRIPTS_VI, "vtt-cleanup.py"), "vtt_cleanup")
 

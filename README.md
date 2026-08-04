@@ -348,6 +348,12 @@ notes which named patterns and antipatterns are detected per talk.
   capabilities instead of aliasing one format to another. Every manifest PDF
   is generation-bound before persistence, including context-only artifacts,
   and a configured symlinked vault root does not weaken descendant path checks
+- Preserved source recordings are inspected through a bounded, exact-generation
+  probe before they contribute local-media digest or duration evidence to
+  transcript validation, authorize delivery-video citations, support
+  video-derived slide provenance, or participate in freshness checks. If a
+  recording cannot be verified, only source-video capability is removed;
+  independently verified transcript, PDF, and PPTX evidence remains
 - Each talk is scored against the taxonomy's 81 observable entries (62 patterns + 19 antipatterns),
   with source-located evidence restricted to the artifact channels each entry permits
 - Each batch updates the summary, per-talk analysis files, and triggers profile regeneration
@@ -358,7 +364,8 @@ notes which named patterns and antipatterns are detected per talk.
 - Python 3.10+ at the vault's configured `python_path`, with core `PyYAML`;
   `pypdf` + exactly `psutil==7.2.2` for supervised PDF evidence; and
   `python-pptx` + the same exact psutil version for resource-supervised
-  native-deck evidence
+  native-deck evidence. Preserved source-video evidence uses the separate
+  `source-video` runtime lane with exactly `psutil==7.2.2` plus `ffprobe`
 - Lane-specific runtime: importable `gdown` for Google Drive acquisition,
   `youtube-transcript-api` for captions, `yt-dlp` for provider probing/audio
   download, `pdftoppm` for rendered-PDF inspection, Pillow + `imagehash` +
@@ -522,15 +529,26 @@ speaker-toolkit/
     |   +-- scripts/
     |   |   +-- artifact_metadata.py          # shared bounded metadata + cloud/reparse policy
     |   |   +-- pdf_evidence.py               # supervised exact-generation PDF evidence
+    |   |   +-- video_evidence.py             # supervised exact-generation source-video evidence
     |   |   +-- pptx-extraction.py            # supervised PPTX extraction + bounded discovery
     |   |   +-- video-slide-extraction.py     # Video-to-slides via ffmpeg + perceptual dedup
     |   |   +-- vtt-cleanup.py                # WebVTT to plain text
     |   |   +-- batch-download-videos.sh      # Parallel video download for batch processing
     |   +-- references/
+    |       +-- bootstrap-and-preflight.md     # Runtime, discovery, migration, and preflight contract
+    |       +-- queue-selection.md             # Deterministic selection, claim, and lease contract
+    |       +-- batch-persistence.md           # Batch validation, atomic persistence, and rendering order
+    |       +-- pptx-followup.md               # Native-deck extraction and catalog follow-up
+    |       +-- clarification-handoff.md       # Post-processing clarification handoff
+    |       +-- source-identity-preflight.md   # Source ownership, artifact authority, and repair routing
     |       +-- rhetoric-dimensions.md        # 14 analysis dimensions + pattern cross-refs
     |       +-- schemas-db.md                 # DB, subagent, and extraction output schemas
     |       +-- video-slide-extraction.md     # Layout heuristics, tuning tables, limitations
     |       +-- processing-rules.md           # Language policy, pattern migration logic
+    +-- vault-profile/
+    |   +-- SKILL.md                          # Machine-readable speaker profile workflow
+    |   +-- references/
+    |       +-- profile-construction-rules.md  # Cohort, merge, trend, and diff authority
     +-- presentation-creator/
     |   +-- SKILL.md                          # Main creator workflow (7 phases)
     |   +-- scripts/

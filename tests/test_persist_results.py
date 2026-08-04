@@ -7,6 +7,7 @@ the tracking DB, with the declared queryable scalars promoted to the talk top le
 import copy
 import importlib
 import json
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -127,6 +128,41 @@ def _talk(**overrides):
     }
     talk.update(overrides)
     return talk
+
+
+def _write_tiny_mp4(path):
+    ffmpeg = shutil.which("ffmpeg")
+    assert ffmpeg is not None, "source-video persistence test requires ffmpeg"
+    assert shutil.which("ffprobe") is not None, (
+        "source-video persistence test requires ffprobe"
+    )
+    created = subprocess.run(
+        [
+            ffmpeg,
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=160x90:r=2",
+            "-t",
+            "0.25",
+            "-an",
+            "-c:v",
+            "mpeg4",
+            "-pix_fmt",
+            "yuv420p",
+            "-y",
+            str(path),
+        ],
+        capture_output=True,
+        check=False,
+    )
+    assert created.returncode == 0, created.stderr.decode(
+        "utf-8", errors="replace"
+    )
 
 
 def _db_json(database):
@@ -527,7 +563,7 @@ def test_legacy_video_return_bounds_every_manifest_artifact_before_merge(
             tmp_path.parent / f"{tmp_path.name}-outside" / f"{video_id}.mp4"
         )
         source_video.parent.mkdir()
-    source_video.write_bytes(b"synthetic video")
+    _write_tiny_mp4(source_video)
     slide_region = rebuild / f"{video_id}.slide-region.pdf"
     promoted = tmp_path / "slides" / f"{video_id}.pdf"
     promoted.parent.mkdir()

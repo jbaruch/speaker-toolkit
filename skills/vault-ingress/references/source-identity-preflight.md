@@ -346,9 +346,11 @@ Checks apply to a record with a declared transcript, slide, or video capability
   before inspecting any of its paths. Every manifest PDF is independently
   probed and its bounded page count must match the manifest before either
   preflight or current-return persistence accepts the referential unit. Manifest
-  paths reject NUL/dot
-  ambiguity; the preserved source MP4 must be a root-confined regular file and
-  cannot be reached through a descendant symlink. A promoted PDF must have the
+  paths reject NUL/dot ambiguity. The schema-v3 source is exactly
+  `<youtube_id>.mp4`; it takes precedence over legacy top-level video path
+  fields and must pass the bounded `source-video` evidence probe as a
+  root-confined regular ISO-BMFF recording with a usable video stream and
+  positive duration. A promoted PDF must have the
   exact bounded SHA-256 digest of the manifest's trusted `slide_region` artifact
   and additionally requires `review_required: false` and
   a manually cropped, visually verified `slide_region` artifact marked
@@ -358,6 +360,25 @@ Checks apply to a record with a declared transcript, slide, or video capability
   authored-slide evidence. Missing, legacy, invalid, or falsely promoted
   provenance is blocking for completed records and a warning for requeued/pending
   work.
+
+Source-video artifact availability is reported separately from manifest
+ownership or locator faults:
+
+| Code | Meaning |
+|---|---|
+| `source_video_artifact_missing` | The exact manifest-owned source recording is absent |
+| `source_video_artifact_unavailable` | The recording exists as an offline cloud placeholder and must be hydrated locally |
+| `source_video_artifact_unreadable` | The recording could not complete bounded media inspection; the nested reason distinguishes container, stream, parser, dependency, generation-change, timeout, monitor, and resource causes |
+
+These outcomes disable only source-video evidence. They do not invalidate an
+independently verified transcript, rendered PDF, or native PPTX. A locator,
+root-containment, symlink/reparse, manifest-ID, or exact-basename mismatch
+remains `video_extraction_provenance_invalid`. For a completed record that
+claims the source, an unavailable source is blocking until repaired or the
+record is requeued; independent evidence remains valid. Introducing this probe
+does not itself change schema v3 or force a reparse. Requeue or reparse only when
+a current persisted claim depends on source-video evidence that can no longer be
+verified.
 
 The thirteen stable slide-contract fault classes are:
 

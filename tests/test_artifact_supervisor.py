@@ -402,12 +402,15 @@ def test_artifact_consumers_reuse_one_supervisor_module_identity(
     artifact_metadata,
     pdf_evidence,
     pptx_evidence,
+    video_evidence,
 ) -> None:
     assert artifact_supervisor is sys.modules["artifact_supervisor"]
     assert artifact_metadata.FileGeneration is artifact_supervisor.FileGeneration
     assert pdf_evidence.FileGeneration is artifact_supervisor.FileGeneration
     assert pptx_evidence.FileGeneration is artifact_supervisor.FileGeneration
+    assert video_evidence.FileGeneration is artifact_supervisor.FileGeneration
     assert pdf_evidence.DiagnosticReceipt is artifact_supervisor.DiagnosticReceipt
+    assert video_evidence.DiagnosticReceipt is artifact_supervisor.DiagnosticReceipt
     assert pdf_evidence.SupervisorError is artifact_supervisor.SupervisorError
     assert pptx_evidence.SupervisorError is artifact_supervisor.SupervisorError
 
@@ -1584,7 +1587,12 @@ class BlockPsutil(importlib.abc.MetaPathFinder):
 sys.meta_path.insert(0, BlockPsutil())
 script_dir = Path({str(SCRIPT_DIR)!r})
 sys.path.insert(0, str(script_dir))
-for module_name in ("artifact_supervisor", "pptx_evidence", "pattern_evidence"):
+for module_name in (
+    "artifact_supervisor",
+    "pptx_evidence",
+    "video_evidence",
+    "pattern_evidence",
+):
     __import__(module_name)
 print("shared-pptx-imports-ok")
 """

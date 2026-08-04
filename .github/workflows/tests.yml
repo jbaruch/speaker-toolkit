@@ -48,10 +48,9 @@ jobs:
       - name: Install system dependencies (ffmpeg, libreoffice-impress, tesseract)
         # ffmpeg drives the video-slide-extraction tests; libreoffice-impress
         # drives the PPTX->PDF export tests; tesseract drives OCR of baked-in
-        # picture text in pptx-extraction. Video/PDF groups skipif their binary
-        # is absent; OCR unit tests inject a fake engine, integration tests
-        # skipif tesseract is missing — install hiccup degrades coverage
-        # rather than red-failing the suite.
+        # picture text in pptx-extraction. Source-video evidence tests require
+        # ffmpeg/ffprobe and fail if either is absent. OCR unit tests inject a
+        # fake engine; integration tests skipif tesseract is missing.
         #
         # Why this is verbose instead of a plain `apt-get install`: the plain
         # form intermittently wedged for the full 6h job limit (the identical
@@ -93,12 +92,50 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-26-intel, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install macOS media evidence dependencies
+        if: runner.os == 'macOS'
+        shell: bash
+        # Immutable FFmpeg 8.1.2 Intel archives. Renew the URLs and checksums
+        # quarterly, or when the approved media-tool version advances.
+        env:
+          FFMPEG_URL: https://evermeet.cx/ffmpeg/ffmpeg-8.1.2.zip
+          FFMPEG_SHA256: e91df72a1ee7c26606f90dd2dd4dcccc6a75140ff9ea6fdd50faae828b82ba69
+          FFPROBE_URL: https://evermeet.cx/ffmpeg/ffprobe-8.1.2.zip
+          FFPROBE_SHA256: 399b93f0b9862f69767afa343e90c2f48d7e7958cadbb6deb76a012d0e3b7ce3
+        run: |
+          set -euo pipefail
+          media_dir="$RUNNER_TEMP/speaker-toolkit-ffmpeg-8.1.2"
+          mkdir -p "$media_dir/bin"
+          curl -fL --retry 3 --output "$media_dir/ffmpeg.zip" "$FFMPEG_URL"
+          curl -fL --retry 3 --output "$media_dir/ffprobe.zip" "$FFPROBE_URL"
+          printf '%s  %s\n' "$FFMPEG_SHA256" "$media_dir/ffmpeg.zip" \
+            | shasum -a 256 -c -
+          printf '%s  %s\n' "$FFPROBE_SHA256" "$media_dir/ffprobe.zip" \
+            | shasum -a 256 -c -
+          unzip -q "$media_dir/ffmpeg.zip" -d "$media_dir/bin"
+          unzip -q "$media_dir/ffprobe.zip" -d "$media_dir/bin"
+          chmod +x "$media_dir/bin/ffmpeg" "$media_dir/bin/ffprobe"
+          printf '%s\n' "$media_dir/bin" >> "$GITHUB_PATH"
+      - name: Install Windows media evidence dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        # Chocolatey package pin. No Dependabot ecosystem for Chocolatey;
+        # renew quarterly or when the approved package advances. Put the real
+        # binaries ahead of Chocolatey's process-spawning shims: the supervised
+        # worker intentionally permits only itself plus one ffprobe child.
+        run: |
+          choco install ffmpeg --version=8.1.2 --no-progress -y
+          $ffmpegBin = 'C:\ProgramData\chocolatey\lib\ffmpeg\tools\ffmpeg\bin'
+          if (-not (Test-Path "$ffmpegBin\ffprobe.exe" -PathType Leaf)) {
+            throw "Chocolatey ffprobe binary was not installed at the pinned path"
+          }
+          $ffmpegBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - run: pip install ".[test]"
       - run: >-
           pytest -v --tb=short
@@ -107,6 +144,7 @@ jobs:
           tests/test_artifact_supervisor.py
           tests/test_artifact_metadata.py
           tests/test_pdf_evidence.py
+          tests/test_video_evidence.py
           tests/test_video_slide_extraction.py
           tests/test_pattern_evidence.py::test_forward_slash_root_is_classified_without_host_reinterpretation
           tests/test_check_runtime.py::test_psutil_version_authorities_are_synchronized

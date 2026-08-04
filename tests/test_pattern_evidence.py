@@ -34,6 +34,73 @@ SYNTHETIC_VIDEO_ID = "abcdefghijk"
 SYNTHETIC_DURATION = 600.0
 
 
+def _video_probe(path: Path, *, duration: float = SYNTHETIC_DURATION) -> Any:
+    raw = path.read_bytes()
+    return pattern_evidence.VideoArtifactProbe(
+        generation=SimpleNamespace(),
+        root_generation=None,
+        availability=SimpleNamespace(state="local"),
+        source_sha256=hashlib.sha256(raw).hexdigest(),
+        source_size_bytes=len(raw),
+        duration_seconds=duration,
+        duration_source="format",
+        container_family="iso_bmff",
+        stream_count=1,
+        video_stream_count=1,
+        audio_stream_count=0,
+        attached_picture_count=0,
+        other_stream_count=0,
+        parser_diagnostics=SimpleNamespace(byte_count=0),
+    )
+
+
+class _TestVideoAssessment:
+    def __init__(
+        self,
+        *,
+        duration: float = SYNTHETIC_DURATION,
+        failure: Exception | None = None,
+    ) -> None:
+        self.duration = duration
+        self.failure = failure
+        self.calls: list[Path] = []
+
+    def probe(self, path: str | os.PathLike[str], **_kwargs: object) -> Any:
+        video_path = Path(os.fspath(path))
+        self.calls.append(video_path)
+        if self.failure is not None:
+            raise self.failure
+        return _video_probe(video_path, duration=self.duration)
+
+
+def _untrusted_video_manifest(vault: Path, source_video: Path) -> dict[str, Any]:
+    context_pdf = source_video.with_suffix(".context.pdf")
+    _write_pdf(context_pdf, page_count=1)
+    source_path = source_video.relative_to(vault).as_posix()
+    return {
+        "schema_version": 3,
+        "source_video_id": SYNTHETIC_VIDEO_ID,
+        "source_video_path": source_path,
+        "unique_frame_count": 1,
+        "slide_region_method": "none",
+        "slide_region_applied": False,
+        "slide_region_verified": False,
+        "review_required": True,
+        "review_reason": "context only",
+        "artifacts": [
+            {
+                "path": context_pdf.relative_to(vault).as_posix(),
+                "artifact_scope": "full_frame_context",
+                "page_count": 1,
+                "source_video_id": SYNTHETIC_VIDEO_ID,
+                "source_video_path": source_path,
+                "crop_verified": False,
+                "trusted_for_authored_slide_analysis": False,
+            }
+        ],
+    }
+
+
 def _foreign_absolute_locator(name: str) -> str:
     if os.name == "nt":
         return f"/foreign/{name}"
@@ -820,12 +887,6 @@ def test_foreign_pdf_and_video_locators_fail_only_their_independent_lanes(
         "probe_pdf_artifact",
         lambda *_args, **_kwargs: pytest.fail("foreign PDF reached probe"),
     )
-    monkeypatch.setattr(
-        pattern_evidence,
-        "_verified_video_snapshot",
-        lambda *_args, **_kwargs: pytest.fail("foreign video reached probe"),
-    )
-
     context = pattern_evidence.build_evidence_context(
         vault,
         {
@@ -881,6 +942,263 @@ def test_foreign_video_manifest_pdf_never_reaches_current_context_probe(
         )
 
     assert foreign_pdf not in str(caught.value)
+
+
+def test_schema_v3_manifest_source_takes_precedence_over_top_level_video_path(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    legacy_video = vault / "videos" / f"{SYNTHETIC_VIDEO_ID}.mp4"
+    manifest_video = (
+        vault / "slides-rebuild" / SYNTHETIC_VIDEO_ID / f"{SYNTHETIC_VIDEO_ID}.mp4"
+    )
+    legacy_video.parent.mkdir(parents=True)
+    manifest_video.parent.mkdir(parents=True)
+    legacy_video.write_bytes(b"legacy top-level bytes")
+    manifest_video.write_bytes(b"manifest-owned bytes")
+    assessment = _TestVideoAssessment()
+
+    context = pattern_evidence.build_evidence_context(
+        vault,
+        {
+            "youtube_id": SYNTHETIC_VIDEO_ID,
+            "video_local_path": legacy_video.relative_to(vault).as_posix(),
+            "structured_data": {
+                "video_extraction": {
+                    "schema_version": 3,
+                    "source_video_id": SYNTHETIC_VIDEO_ID,
+                    "source_video_path": manifest_video.relative_to(vault).as_posix(),
+                }
+            },
+        },
+        video_evidence_assessment=assessment,
+    )
+
+    assert context["local_video_path"] == manifest_video
+    assert (
+        context["video_artifact_identity"]["artifact_sha256"]
+        == hashlib.sha256(manifest_video.read_bytes()).hexdigest()
+    )
+    assert assessment.calls == [manifest_video]
+
+
+def test_schema_v3_video_identity_stays_fresh_through_a_symlinked_vault_root(
+    tmp_path: Path,
+) -> None:
+    storage = tmp_path / "vault-storage"
+    storage.mkdir()
+    vault = tmp_path / "vault"
+    try:
+        vault.symlink_to(storage, target_is_directory=True)
+    except OSError as exc:  # pragma: no cover - unusual restricted platform
+        pytest.skip(f"symlinks unavailable: {exc}")
+    source_video = (
+        storage / "slides-rebuild" / SYNTHETIC_VIDEO_ID / f"{SYNTHETIC_VIDEO_ID}.mp4"
+    )
+    source_video.parent.mkdir(parents=True)
+    source_video.write_bytes(b"canonical storage video bytes")
+    manifest = {
+        "schema_version": 3,
+        "source_video_id": SYNTHETIC_VIDEO_ID,
+        "source_video_path": os.fspath(source_video),
+    }
+    assessment = _TestVideoAssessment()
+    talk: dict[str, Any] = {
+        "youtube_id": SYNTHETIC_VIDEO_ID,
+        "structured_data": {"video_extraction": manifest},
+    }
+
+    context = pattern_evidence.build_evidence_context(
+        vault,
+        talk,
+        video_evidence_assessment=assessment,
+    )
+
+    assert context["local_video_path"] == source_video
+    assert context["video_artifact_identity"] == {
+        "artifact_root": "vault",
+        "artifact_path": (
+            f"slides-rebuild/{SYNTHETIC_VIDEO_ID}/{SYNTHETIC_VIDEO_ID}.mp4"
+        ),
+        "artifact_sha256": hashlib.sha256(source_video.read_bytes()).hexdigest(),
+    }
+    talk["pattern_observations"] = {
+        "evidence_schema_version": 1,
+        "evidence_sources": ["delivery_video"],
+        "source_inspection": [
+            {
+                "source": "delivery_video",
+                **context["video_artifact_identity"],
+                "time_ranges": [[0.0, SYNTHETIC_DURATION]],
+                "duration_seconds": SYNTHETIC_DURATION,
+                "coverage_complete": True,
+            }
+        ],
+        "patterns_detected": [],
+        "antipatterns_detected": [],
+    }
+    freshness_assessment = _TestVideoAssessment()
+
+    assert (
+        pattern_evidence.assess_persisted_pattern_evidence_freshness(
+            talk,
+            vault_root=vault,
+            video_evidence_assessment=freshness_assessment,
+        )
+        == ()
+    )
+    assert assessment.calls == [source_video]
+    assert freshness_assessment.calls == [source_video]
+
+    # Older canonicalization represented a video reached through a symlinked
+    # vault as a parent-rooted preclaim identity. Keep that exact persisted
+    # receipt readable so installing the bounded probe alone does not require
+    # reprocessing otherwise-current evidence.
+    legacy_record = talk["pattern_observations"]["source_inspection"][0]
+    legacy_record["artifact_root"] = "preclaim:video_local_path"
+    legacy_record["artifact_path"] = source_video.name
+    legacy_assessment = _TestVideoAssessment()
+    assert (
+        pattern_evidence.assess_persisted_pattern_evidence_freshness(
+            talk,
+            vault_root=vault,
+            video_evidence_assessment=legacy_assessment,
+        )
+        == ()
+    )
+    assert legacy_assessment.calls == [source_video]
+
+
+def test_current_return_video_does_not_retroactively_authorize_transcript(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    transcript, _ = _write_transcript(
+        vault,
+        name=SYNTHETIC_VIDEO_ID,
+        timed=False,
+    )
+    source_video = (
+        vault / "slides-rebuild" / SYNTHETIC_VIDEO_ID / f"{SYNTHETIC_VIDEO_ID}.mp4"
+    )
+    source_video.parent.mkdir(parents=True)
+    source_video.write_bytes(b"current-return video bytes")
+    text = transcript.read_text(encoding="utf-8")
+    transcript_timing.write_quality_receipt(
+        transcript,
+        text,
+        transcript_timing.build_quality_policy(
+            400,
+            trusted_duration_seconds=SYNTHETIC_DURATION,
+        ),
+        {
+            "kind": "local_media_duration",
+            "media_sha256": hashlib.sha256(source_video.read_bytes()).hexdigest(),
+            "duration_seconds": SYNTHETIC_DURATION,
+        },
+    )
+    ret = {
+        "youtube_id": SYNTHETIC_VIDEO_ID,
+        "slide_source": "video_extracted",
+        "structured_data": {
+            "video_extraction": _untrusted_video_manifest(vault, source_video)
+        },
+    }
+
+    context = pattern_evidence.build_evidence_context(
+        vault,
+        {
+            "youtube_id": SYNTHETIC_VIDEO_ID,
+            "transcript_path": transcript.relative_to(vault).as_posix(),
+            "transcript_source": "manual",
+        },
+        ret,
+        video_evidence_assessment=_TestVideoAssessment(),
+    )
+
+    assert "transcript" not in context["verified_evidence_sources"]
+    assert "not bound to the claimed talk" in context["transcript_reason"]
+    assert "delivery_video" in context["verified_evidence_sources"]
+
+
+def test_current_return_video_receipt_is_preferred_for_delivery_evidence(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    preclaim_video = vault / "videos" / f"{SYNTHETIC_VIDEO_ID}.mp4"
+    returned_video = (
+        vault / "slides-rebuild" / SYNTHETIC_VIDEO_ID / f"{SYNTHETIC_VIDEO_ID}.mp4"
+    )
+    preclaim_video.parent.mkdir(parents=True)
+    returned_video.parent.mkdir(parents=True)
+    preclaim_video.write_bytes(b"preclaim video bytes")
+    returned_video.write_bytes(b"current-return video bytes")
+    assessment = _TestVideoAssessment()
+    ret = {
+        "youtube_id": SYNTHETIC_VIDEO_ID,
+        "slide_source": "video_extracted",
+        "structured_data": {
+            "video_extraction": _untrusted_video_manifest(vault, returned_video)
+        },
+    }
+
+    context = pattern_evidence.build_evidence_context(
+        vault,
+        {
+            "youtube_id": SYNTHETIC_VIDEO_ID,
+            "video_local_path": preclaim_video.relative_to(vault).as_posix(),
+        },
+        ret,
+        video_evidence_assessment=assessment,
+    )
+
+    assert context["local_video_path"] == returned_video
+    assert (
+        context["video_artifact_identity"]["artifact_sha256"]
+        == hashlib.sha256(returned_video.read_bytes()).hexdigest()
+    )
+    assert assessment.calls == [preclaim_video, returned_video]
+
+
+def test_video_freshness_reuses_the_context_receipt_without_a_second_probe(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    video = vault / "videos" / f"{SYNTHETIC_VIDEO_ID}.mp4"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"one exact persisted video generation")
+    digest = hashlib.sha256(video.read_bytes()).hexdigest()
+    assessment = _TestVideoAssessment()
+    talk = {
+        "youtube_id": SYNTHETIC_VIDEO_ID,
+        "video_local_path": video.relative_to(vault).as_posix(),
+        "pattern_observations": {
+            "evidence_schema_version": 1,
+            "evidence_sources": ["delivery_video"],
+            "source_inspection": [
+                {
+                    "source": "delivery_video",
+                    "artifact_root": "vault",
+                    "artifact_path": video.relative_to(vault).as_posix(),
+                    "artifact_sha256": digest,
+                    "time_ranges": [[0.0, SYNTHETIC_DURATION]],
+                    "duration_seconds": SYNTHETIC_DURATION,
+                    "coverage_complete": True,
+                }
+            ],
+            "patterns_detected": [],
+            "antipatterns_detected": [],
+        },
+    }
+
+    reasons = pattern_evidence.assess_persisted_pattern_evidence_freshness(
+        talk,
+        vault_root=vault,
+        video_evidence_assessment=assessment,
+    )
+
+    assert reasons == ()
+    assert assessment.calls == [video]
 
 
 def test_traversal_and_symlinked_artifacts_never_become_sources(
@@ -1159,6 +1477,7 @@ def test_current_video_manifest_bounds_bad_second_context_pdf_before_persistence
             vault,
             {"youtube_id": SYNTHETIC_VIDEO_ID},
             ret,
+            video_evidence_assessment=_TestVideoAssessment(),
         )
 
     assert caught.value.reason_code == "pdf_artifact_unavailable"
@@ -1220,6 +1539,7 @@ def test_promoted_video_pdf_must_match_trusted_slide_region_digest(
             vault,
             {"youtube_id": SYNTHETIC_VIDEO_ID},
             returned,
+            video_evidence_assessment=_TestVideoAssessment(),
         )
 
 
@@ -1871,7 +2191,6 @@ def test_fixed_default_receipt_is_valid_for_an_existing_youtube_artifact(
 
 
 def test_local_media_quality_provenance_binds_exact_video_bytes(
-    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     vault = tmp_path / "vault"
@@ -1891,7 +2210,6 @@ def test_local_media_quality_provenance_binds_exact_video_bytes(
             "duration_seconds": duration,
         },
     )
-    monkeypatch.setattr(pattern_evidence, "_video_duration", lambda _: duration)
     talk = {
         "filename": "synthetic-talk.md",
         "title": "Synthetic Talk",
@@ -1901,14 +2219,22 @@ def test_local_media_quality_provenance_binds_exact_video_bytes(
         "video_local_path": video.relative_to(vault).as_posix(),
     }
 
-    context = pattern_evidence.build_evidence_context(vault, talk)
+    context = pattern_evidence.build_evidence_context(
+        vault,
+        talk,
+        video_evidence_assessment=_TestVideoAssessment(duration=duration),
+    )
     assert "transcript" in context["verified_evidence_sources"]
     assert context["quality_artifact_identity"]["quality_artifact_path"] == (
         "transcripts/talk.quality.json"
     )
 
     video.write_bytes(b"different video bytes")
-    drifted = pattern_evidence.build_evidence_context(vault, talk)
+    drifted = pattern_evidence.build_evidence_context(
+        vault,
+        talk,
+        video_evidence_assessment=_TestVideoAssessment(duration=duration),
+    )
     assert "transcript" not in drifted["verified_evidence_sources"]
     assert "digest does not match" in str(drifted["transcript_reason"])
 
@@ -2487,8 +2813,9 @@ def test_batch_capability_preflight_does_not_touch_unrelated_talks(
         *,
         vault_root: str | Path,
         source_roots: dict[str, object] | None = None,
+        video_evidence_assessment: object | None = None,
     ) -> dict[str, object]:
-        del vault_root, source_roots
+        del vault_root, source_roots, video_evidence_assessment
         filename = str(talk["filename"])
         calls.append(filename)
         if filename == "unrelated.md":
@@ -2875,16 +3202,18 @@ def test_unprobeable_video_is_not_hashed_or_allowed_to_hide_other_lanes(
     video.write_bytes(b"not a probeable video")
     original_hash = pattern_evidence._sha256_file
 
-    def fail_video_probe(_path: Path) -> float:
-        raise pattern_evidence.PatternEvidenceError("synthetic ffprobe failure")
-
     def reject_video_hash(path: Path) -> str:
         if path == video:
             raise AssertionError("an unverified video must not be hashed")
         return original_hash(path)
 
-    monkeypatch.setattr(pattern_evidence, "_video_duration", fail_video_probe)
     monkeypatch.setattr(pattern_evidence, "_sha256_file", reject_video_hash)
+    video_assessment = _TestVideoAssessment(
+        failure=pattern_evidence.VideoEvidenceError(
+            "synthetic ffprobe failure",
+            reason_code="video_parser_rejected",
+        )
+    )
     assessment = pattern_evidence.assess_talk_artifact_capabilities(
         {
             "filename": "talk.md",
@@ -2895,15 +3224,23 @@ def test_unprobeable_video_is_not_hashed_or_allowed_to_hide_other_lanes(
             "video_local_path": video.relative_to(vault).as_posix(),
         },
         vault_root=vault,
+        video_evidence_assessment=video_assessment,
     )
 
     assert assessment["verified_capabilities"] == ("slides", "transcript")
     assert "delivery_video" not in assessment["verified_evidence_sources"]
     assert "synthetic ffprobe failure" in assessment["source_reasons"]["delivery_video"]
+    assert assessment["unavailable_evidence_sources"]["delivery_video"] == {
+        "schema_version": 1,
+        "status": "unavailable",
+        "reason_code": "video_parser_rejected",
+        "reason": "synthetic ffprobe failure",
+        "details": {},
+        "artifact_path": str(video),
+    }
 
 
 def test_video_mutation_between_probe_and_digest_rejects_only_video_lane(
-    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     vault = tmp_path / "vault"
@@ -2913,20 +3250,11 @@ def test_video_mutation_between_probe_and_digest_rejects_only_video_lane(
     video = vault / "videos" / "talk.mp4"
     video.parent.mkdir(parents=True)
     video.write_bytes(b"first synthetic video generation")
-    original_hash = pattern_evidence._sha256_file
-
-    def mutate_during_digest(path: Path) -> str:
-        if path != video:
-            return original_hash(path)
-        replacement = b"second, longer synthetic video generation created after ffprobe"
-        path.write_bytes(replacement)
-        return hashlib.sha256(replacement).hexdigest()
-
-    monkeypatch.setattr(pattern_evidence, "_video_duration", lambda _: 60.0)
-    monkeypatch.setattr(
-        pattern_evidence,
-        "_sha256_file",
-        mutate_during_digest,
+    video_assessment = _TestVideoAssessment(
+        failure=pattern_evidence.VideoEvidenceError(
+            "synthetic video changed during supervised inspection",
+            reason_code="video_artifact_changed",
+        )
     )
 
     context = pattern_evidence.build_evidence_context(
@@ -2939,6 +3267,7 @@ def test_video_mutation_between_probe_and_digest_rejects_only_video_lane(
             "slide_source": "pptx",
             "video_local_path": video.relative_to(vault).as_posix(),
         },
+        video_evidence_assessment=video_assessment,
     )
 
     assert context["verified_evidence_sources"] == {
@@ -2947,7 +3276,7 @@ def test_video_mutation_between_probe_and_digest_rejects_only_video_lane(
     }
     assert context["video_artifact_identity"] == {}
     assert (
-        "changed while its digest was computed"
+        "changed during supervised inspection"
         in context["source_reasons"]["delivery_video"]
     )
 
@@ -2965,13 +3294,18 @@ def test_unhashable_video_cannot_hide_independent_transcript_and_deck(
     video.write_bytes(b"synthetic video bytes")
     original_hash = pattern_evidence._sha256_file
 
-    def fail_video_hash(path: Path) -> str:
+    def reject_video_hash(path: Path) -> str:
         if path == video:
-            raise pattern_evidence.PatternEvidenceError("synthetic video hash failure")
+            raise AssertionError("video digest must stay inside the bounded probe")
         return original_hash(path)
 
-    monkeypatch.setattr(pattern_evidence, "_video_duration", lambda _: 60.0)
-    monkeypatch.setattr(pattern_evidence, "_sha256_file", fail_video_hash)
+    monkeypatch.setattr(pattern_evidence, "_sha256_file", reject_video_hash)
+    video_assessment = _TestVideoAssessment(
+        failure=pattern_evidence.VideoEvidenceError(
+            "synthetic video digest worker failure",
+            reason_code="video_probe_resource_unavailable",
+        )
+    )
     assessment = pattern_evidence.assess_talk_artifact_capabilities(
         {
             "filename": "talk.md",
@@ -2982,12 +3316,13 @@ def test_unhashable_video_cannot_hide_independent_transcript_and_deck(
             "video_local_path": video.relative_to(vault).as_posix(),
         },
         vault_root=vault,
+        video_evidence_assessment=video_assessment,
     )
 
     assert assessment["verified_capabilities"] == ("slides", "transcript")
     assert "delivery_video" not in assessment["verified_evidence_sources"]
     assert assessment["source_reasons"]["delivery_video"].endswith(
-        "synthetic video hash failure"
+        "synthetic video digest worker failure"
     )
 
 

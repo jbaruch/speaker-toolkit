@@ -1,5 +1,42 @@
 # Changelog
 
+### fix(vault-ingress) — supervise preserved source-video evidence (#190)
+
+Preserved source recordings now pass one bounded metadata/media/digest probe
+before they can contribute local-media digest or duration evidence to transcript
+validation, authorize delivery-video citations, support video-derived slide
+provenance, or participate in persisted freshness. The probe accepts the
+declared MP4/MOV/WebM/Matroska container families, requires a usable video
+stream and positive duration, limits input size and stream count, and binds the
+result to one unchanged local-file generation. Media parsing and SHA-256 use one
+private snapshot copied from a verified no-follow descriptor, so a sync-time
+path replacement cannot combine facts from two files. Corrupt or incomplete
+media, cloud placeholders, parser diagnostics, sync-time replacement, missing
+`ffprobe`, and worker/resource failures remain structured, operation-local
+outcomes; a caller's transient deadline is never published to unrelated
+operations. These failures disable only the video lane and do not erase an
+independent transcript, PDF, or PPTX.
+
+Schema-v3 extraction manifests now own their exact `<youtube_id>.mp4` source
+even when a conflicting legacy top-level video path is present. Preflight
+separates a missing source (`source_video_artifact_missing`), an unhydrated
+placeholder (`source_video_artifact_unavailable`), and unreadable media
+(`source_video_artifact_unreadable`) from locator/ownership faults. Persistence,
+analysis rendering, queue normalization/claiming, preflight, and profile
+freshness share one assessment per top-level operation, so one transient result
+cannot be silently contradicted by a later nested retry. A returned recording
+may support current delivery evidence but cannot retroactively authorize the
+pre-return transcript. No tracking, return, evidence, scoring, or extraction
+schema changes, and existing records do not require reprocessing solely for
+this release.
+
+Ingress and direct profile workflows now require the narrow `source-video`
+runtime lane before an operation inspects a preserved recording. The executable
+skill workflows remain concise while their bootstrap, queue, persistence,
+profile-construction, PPTX follow-up, and clarification contracts live in named
+references. This keeps the operational order visible without weakening any
+validation or evidence rule.
+
 ## 0.20.10 — 2026-08-04
 
 ### fix(vault-ingress) — isolate video frame workspaces from stale evidence (#213)

@@ -1093,6 +1093,10 @@ def test_lane_requirements_match_the_configured_interpreter_contract() -> None:
     assert requirements["google-drive"]["modules"] == {"gdown": "gdown"}
     assert requirements["captions"]["commands"] == {}
     assert requirements["youtube-download"]["commands"] == {"yt-dlp": "yt-dlp"}
+    assert requirements["source-video"] == {
+        "modules": {"psutil": "psutil"},
+        "commands": {"ffprobe": "ffprobe"},
+    }
     assert requirements["video"]["modules"] == {
         "filelock": "filelock",
         "imagehash": "imagehash",

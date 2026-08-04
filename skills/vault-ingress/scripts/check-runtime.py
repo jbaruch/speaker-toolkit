@@ -73,6 +73,10 @@ LANE_REQUIREMENTS: dict[str, dict[str, dict[str, str]]] = {
         "modules": {"mlx-whisper": "mlx_whisper"},
         "commands": {"ffprobe": "ffprobe"},
     },
+    "source-video": {
+        "modules": {"psutil": "psutil"},
+        "commands": {"ffprobe": "ffprobe"},
+    },
     "video": {
         "modules": {
             "filelock": "filelock",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -227,6 +228,9 @@ def test_interpreter_bound_workflows_use_the_configured_interpreter() -> None:
 def test_profile_interpreter_authority_survives_the_ingress_handoff() -> None:
     profile = (SKILLS_ROOT / "vault-profile" / "SKILL.md").read_text(encoding="utf-8")
     ingress = (SKILLS_ROOT / "vault-ingress" / "SKILL.md").read_text(encoding="utf-8")
+    bootstrap = (
+        SKILLS_ROOT / "vault-ingress" / "references" / "bootstrap-and-preflight.md"
+    ).read_text(encoding="utf-8")
 
     assert "read `config.python_path` from that tracking\ndatabase" in profile
     assert "interpreter\nauthority for every operational command" in profile
@@ -240,5 +244,51 @@ def test_profile_interpreter_authority_survives_the_ingress_handoff() -> None:
     assert "rejects a missing or mismatched interpreter" in ingress
     assert (
         '"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/'
-        'scan-shownotes.py"' in ingress
+        'scan-shownotes.py"' in bootstrap
+    )
+
+
+def test_profile_requires_source_video_lane_before_freshness_work() -> None:
+    profile = (SKILLS_ROOT / "vault-profile" / "SKILL.md").read_text(encoding="utf-8")
+
+    runtime_gate = "--lanes core,source-video --require-lanes core,source-video"
+    assert runtime_gate in profile
+    assert profile.index(runtime_gate) < profile.index("## Step 1 — Load Vault Sources")
+    for field in (
+        "structured_data.video_extraction.source_video_path",
+        "video_local_path",
+        "video_path",
+    ):
+        assert field in profile
+    assert "do not pre-open, hash, hydrate, or invoke\n`ffprobe`" in profile
+    assert (
+        "independently verified transcript, PDF, and PPTX evidence remains valid"
+        in profile
+    )
+
+
+def test_profile_construction_rules_are_linked_and_shipped() -> None:
+    skill_path = SKILLS_ROOT / "vault-profile" / "SKILL.md"
+    reference = (
+        SKILLS_ROOT / "vault-profile" / "references" / "profile-construction-rules.md"
+    )
+    skill = skill_path.read_text(encoding="utf-8")
+    rules = reference.read_text(encoding="utf-8")
+
+    assert len(skill.splitlines()) <= 250
+    assert (
+        "[profile-construction-rules.md]"
+        "(references/profile-construction-rules.md)" in skill
+    )
+    assert "owner-policy-unconfigured" in rules
+    assert "pattern-generation\nreset" in rules
+
+    relative_reference = reference.relative_to(REPO_ROOT)
+    ignore_check = subprocess.run(
+        ["git", "check-ignore", "--no-index", "--quiet", "--", str(relative_reference)],
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    assert ignore_check.returncode == 1, (
+        f"{relative_reference} is excluded from the published plugin"
     )

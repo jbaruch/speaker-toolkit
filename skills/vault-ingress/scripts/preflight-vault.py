@@ -31,6 +31,7 @@ from artifact_locator import (
     materialize_artifact_locator,
     materialize_native_root,
 )
+from artifact_metadata import canonicalize_trusted_artifact_locator
 from ingress_contract import (
     YOUTUBE_ID_RE,
     is_youtube_url,
@@ -54,6 +55,7 @@ from pattern_evidence import (
     validate_transcript_quality_for_owner,
 )
 from pdf_evidence import PdfArtifactProbe, PdfEvidenceError, probe_pdf_artifact
+from video_evidence import VideoEvidenceAssessment, VideoEvidenceError
 from source_identity_matching import (
     EventAlias,
     event_agreement,
@@ -103,6 +105,17 @@ SLIDE_CONTRACT_CODES = frozenset(
         "slide_video_artifact_unavailable",
         "slide_video_artifact_unreadable",
     }
+)
+SOURCE_VIDEO_CONTRACT_CODES = frozenset(
+    {
+        "source_video_artifact_missing",
+        "source_video_artifact_unavailable",
+        "source_video_artifact_unreadable",
+    }
+)
+
+_SOURCE_VIDEO_PROVENANCE_FAILURE_KINDS = frozenset(
+    {"not_regular", "root_escape", "symlink_or_reparse"}
 )
 
 WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
@@ -188,12 +201,31 @@ def _json_value(value: Any) -> Any:
     return repr(value)
 
 
+def _source_video_failure_code(error: VideoEvidenceError) -> str:
+    """Map bounded-video failures without conflating bytes with provenance."""
+    reason_code = error.reason_code
+    failure_kind = error.details.get("failure_kind")
+    if reason_code == "video_evidence_invalid" and isinstance(
+        error.details.get("locator_failure"), str
+    ):
+        return "video_extraction_provenance_invalid"
+    if reason_code == "video_artifact_unavailable":
+        if failure_kind == "missing":
+            return "source_video_artifact_missing"
+        if failure_kind in _SOURCE_VIDEO_PROVENANCE_FAILURE_KINDS:
+            return "video_extraction_provenance_invalid"
+    if reason_code == "video_cloud_placeholder_unavailable":
+        return "source_video_artifact_unavailable"
+    return "source_video_artifact_unreadable"
+
+
 class VaultPreflight:
     """Accumulate deterministic findings for one already-loaded database."""
 
     def __init__(self, database: Any, vault_root: Path, database_path: Path):
         self.database = database
         self.vault_root = Path(vault_root)
+        self._artifact_root: Path | None = None
         self.database_path = Path(database_path)
         self.findings: list[dict[str, Any]] = []
         self.talks: list[dict[str, Any]] = []
@@ -204,6 +236,18 @@ class VaultPreflight:
         self.valid_relations: dict[int, tuple[str, str]] = {}
         self.event_aliases: set[EventAlias] = set()
         self.artifact_capabilities: dict[int, dict[str, object]] = {}
+        self.video_evidence_assessment = VideoEvidenceAssessment()
+        self.reported_source_video_failures: set[int] = set()
+
+    def artifact_root(self) -> Path:
+        """Map the trusted configured root lazily, without probing CLI input."""
+        if self._artifact_root is None:
+            _artifact, admitted_root = canonicalize_trusted_artifact_locator(
+                self.vault_root,
+                self.vault_root,
+            )
+            self._artifact_root = admitted_root or self.vault_root
+        return self._artifact_root
 
     def add(
         self,
@@ -705,8 +749,9 @@ class VaultPreflight:
         )
         assessed = assess_talk_artifact_capabilities(
             self.talks[index],
-            vault_root=self.vault_root,
+            vault_root=self.artifact_root(),
             source_roots=source_roots,
+            video_evidence_assessment=self.video_evidence_assessment,
         )
         self.artifact_capabilities[index] = assessed
         return assessed
@@ -1126,7 +1171,8 @@ class VaultPreflight:
                 transcript_path,
                 text,
                 talk,
-                vault_root=self.vault_root,
+                vault_root=self.artifact_root(),
+                video_evidence_assessment=self.video_evidence_assessment,
             )
         )
         if valid:
@@ -1256,17 +1302,64 @@ class VaultPreflight:
         expected_id = self.youtube_ids.get(index)
         if state.source_video_id != expected_id:
             errors.append("source_video_id must match the talk's YouTube identity")
-        try:
-            resolve_video_extraction_source(
-                self.vault_root,
-                extraction,
-                state.source_video_id,
-            )
-        except PatternEvidenceError:
-            errors.append(
-                "source_video_path must name a root-confined, non-symlinked "
-                "preserved source video"
-            )
+        else:
+            try:
+                source_video_path = resolve_video_extraction_source(
+                    self.artifact_root(),
+                    extraction,
+                    state.source_video_id,
+                )
+            except PatternEvidenceError:
+                errors.append(
+                    "source_video_path must name a root-confined, non-symlinked "
+                    "preserved source video"
+                )
+            else:
+                try:
+                    self.video_evidence_assessment.probe(
+                        source_video_path,
+                        trusted_root=self.artifact_root(),
+                    )
+                except VideoEvidenceError as exc:
+                    finding_code = _source_video_failure_code(exc)
+                    failure = {
+                        "reason_code": exc.reason_code,
+                        "details": dict(exc.details),
+                    }
+                    if finding_code == "video_extraction_provenance_invalid":
+                        closed_reason = exc.details.get("locator_failure")
+                        if not isinstance(closed_reason, str):
+                            closed_reason = exc.details.get("failure_kind")
+                        if not isinstance(closed_reason, str):
+                            closed_reason = exc.reason_code
+                        errors.append(f"source_video_path: {closed_reason}")
+                    elif index not in self.reported_source_video_failures:
+                        self.reported_source_video_failures.add(index)
+                        message = {
+                            "source_video_artifact_missing": (
+                                "preserved source video artifact does not exist"
+                            ),
+                            "source_video_artifact_unavailable": (
+                                "preserved source video is not hydrated for local "
+                                "inspection"
+                            ),
+                            "source_video_artifact_unreadable": (
+                                "preserved source video could not complete bounded "
+                                "evidence inspection"
+                            ),
+                        }[finding_code]
+                        self.talk_add(
+                            index,
+                            severity,
+                            finding_code,
+                            message,
+                            field=(
+                                "structured_data.video_extraction.source_video_path"
+                            ),
+                            actual=failure,
+                            artifact_path=source_video_path,
+                            capability_fact=self._capabilities(index),
+                        )
 
         artifacts = extraction.get("artifacts")
         # Shared schema validation proved this is a list of artifact objects.
