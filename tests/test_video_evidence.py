@@ -8,7 +8,6 @@ import os
 import subprocess
 import sys
 import threading
-import time
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 from typing import Any
@@ -1132,6 +1131,9 @@ def test_singleflight_waiter_deadline_does_not_cancel_leader(
     monkeypatch.setattr(video_evidence, "_run_bounded_video_probe", slow_probe)
     leader_assessment = video_evidence.VideoEvidenceAssessment()
     waiter_assessment = video_evidence.VideoEvidenceAssessment()
+    clock = [100.0]
+    waiter_deadline = 100.1
+    monkeypatch.setattr(video_evidence.time, "monotonic", lambda: clock[0])
 
     def lead() -> None:
         try:
@@ -1145,11 +1147,12 @@ def test_singleflight_waiter_deadline_does_not_cancel_leader(
     thread.start()
     assert leader_started.wait(timeout=1)
 
+    clock[0] = waiter_deadline
     with pytest.raises(video_evidence.VideoEvidenceError) as caught:
         waiter_assessment.probe(
             "talk.mp4",
             trusted_root=tmp_path,
-            deadline_monotonic=time.monotonic() + 0.03,
+            deadline_monotonic=waiter_deadline,
         )
     assert caught.value.reason_code == "video_batch_wall_limit"
     assert thread.is_alive()
@@ -1191,10 +1194,14 @@ def test_transient_short_deadline_leader_does_not_poison_unrelated_waiter(
         nonlocal probe_calls
         probe_calls += 1
         if probe_calls == 1:
-            assert kwargs["deadline_monotonic"] is not None
+            assert kwargs["deadline_monotonic"] == leader_deadline
             leader_started.set()
             assert release_leader.wait(timeout=2)
-            raise video_evidence._failure("video_batch_wall_limit")
+            video_evidence._limits_before_deadline(
+                video_evidence.VIDEO_PROBE_LIMITS,
+                leader_deadline,
+            )
+            raise AssertionError("expired controlled deadline was accepted")
         assert kwargs["deadline_monotonic"] is None
         return _probe(generation, root_generation=receipt.root_generation)
 
@@ -1208,13 +1215,16 @@ def test_transient_short_deadline_leader_does_not_poison_unrelated_waiter(
     monkeypatch.setattr(video_evidence, "_wait_for_flight", observed_wait)
     leader_assessment = video_evidence.VideoEvidenceAssessment()
     waiter_assessment = video_evidence.VideoEvidenceAssessment()
+    clock = [100.0]
+    leader_deadline = clock[0] + video_evidence.VIDEO_PROBE_LIMITS.cleanup_seconds + 1.0
+    monkeypatch.setattr(video_evidence.time, "monotonic", lambda: clock[0])
 
     def lead() -> None:
         try:
             leader_assessment.probe(
                 "talk.mp4",
                 trusted_root=tmp_path,
-                deadline_monotonic=time.monotonic() + 0.1,
+                deadline_monotonic=leader_deadline,
             )
         except video_evidence.VideoEvidenceError as exc:
             leader_errors.append(exc.reason_code)
@@ -1234,6 +1244,7 @@ def test_transient_short_deadline_leader_does_not_poison_unrelated_waiter(
     waiter_thread.start()
     try:
         assert waiter_joined.wait(timeout=1)
+        clock[0] = leader_deadline
     finally:
         release_leader.set()
     leader_thread.join(timeout=2)
