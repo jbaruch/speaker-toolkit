@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.11 — 2026-08-04
+
 ### fix(vault-ingress) — supervise preserved source-video evidence (#190)
 
 Preserved source recordings now pass one bounded metadata/media/digest probe
