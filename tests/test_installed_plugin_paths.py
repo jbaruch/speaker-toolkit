@@ -318,3 +318,18 @@ def test_profile_schema_delegates_policy_arithmetic_to_classifier() -> None:
     assert "Bundled Default Thresholds" not in schema
     assert "`E/A`" not in schema
     assert "`D/A`" not in schema
+
+
+def test_profile_construction_rules_delegate_availability_to_classifier() -> None:
+    rules = (
+        SKILLS_ROOT / "vault-profile" / "references" / "profile-construction-rules.md"
+    ).read_text(encoding="utf-8")
+
+    assert "skills/vault-profile/scripts/classify-pattern-profile.py" in rules
+    assert "`classification_availability` output unchanged" in rules
+    for duplicated_predicate in (
+        "their exact opportunity bounds",
+        "shared non-null opportunity identity",
+        "selected ten talks",
+    ):
+        assert duplicated_predicate not in rules

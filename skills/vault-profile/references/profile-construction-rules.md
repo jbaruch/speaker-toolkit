@@ -136,23 +136,20 @@ derived projections. Those projections are `score_trend`, `pattern_breadth`,
 `underused_patterns`, `score_drivers`, `by_mode`, `strengths`, `strengths_note`,
 `never_used_patterns`, `signature_combinations`, and `mastery_levels`.
 
-Availability is per domain, never one global switch. Under the bundled policy,
-mastery/novelty, antipattern recurrence, underuse, and combinations are available from
-their exact opportunity bounds; trends remain unavailable until their comparable dated
-sample gate passes, including a shared non-null opportunity identity and at least one
-evaluable opportunity in the selected ten talks, and modes remain unavailable until
-talk-mode assignments exist.
+`skills/vault-profile/scripts/classify-pattern-profile.py` is the sole authority for
+domain availability, thresholds, and classification arithmetic. Copy its
+`classification_availability` output unchanged. Never reconstruct availability from
+raw rows or restate the classifier's predicates in profile-construction guidance.
 Consumers must honor each domain's own `{status, reason_codes}` and each row's evidence
 and reason codes. In particular, `not_yet_observed` is not `never_tried`, and an
 unclassified antipattern is not recurring or confirmed absent.
 
-The classifier is the sole owner of thresholds and arithmetic. Do not relabel rows,
-derive tiers from raw rates, truncate exhaustive classification arrays, or infer an
-absence where `absence_conclusion_capable` is false. Profile regeneration re-analyzes
-already persisted current-generation outcomes; it does not reparse talks and does not
-modify the raw `pattern_usage`, `antipattern_frequency`, or tracking-database rows. See
-the generated profile's embedded semantic policy when the applied values must be
-inspected.
+Do not relabel rows, derive tiers from raw rates, truncate exhaustive classification
+arrays, or infer an absence where `absence_conclusion_capable` is false. Profile
+regeneration re-analyzes already persisted current-generation outcomes. It does not
+reparse talks or modify the raw `pattern_usage`, `antipattern_frequency`, or
+tracking-database rows. See the generated profile's embedded semantic policy when the
+applied values must be inspected.
 
 ## Empty-Cohort Behavior
 
