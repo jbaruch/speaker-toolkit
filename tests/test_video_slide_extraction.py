@@ -306,6 +306,8 @@ def test_extract_frames_enumerates_only_literal_numbered_jpegs(
         for name in (
             "frame_00002.jpg",
             "frame_00001.jpg",
+            "frame_100000.jpg",
+            "frame_99999.jpg",
             "frame_not-a-number.jpg",
             "frame_00003.png",
             "other.jpg",
@@ -324,6 +326,8 @@ def test_extract_frames_enumerates_only_literal_numbered_jpegs(
     assert [os.path.basename(frame) for frame in frames] == [
         "frame_00001.jpg",
         "frame_00002.jpg",
+        "frame_99999.jpg",
+        "frame_100000.jpg",
     ]
 
 
@@ -913,6 +917,42 @@ def test_combine_to_pdf_applies_crop_to_saved_pages(video_slide_extraction, tmp_
 
     raw = output.read_bytes()
     assert b"/MediaBox [ 0 0 500.0 250.0 ]" in raw
+
+
+def test_combine_to_pdf_closes_cropped_intermediate_images(
+    video_slide_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    frame = tmp_path / "broadcast-frame.png"
+    Image.new("RGB", (1000, 500), (80, 40, 20)).save(frame)
+    output = tmp_path / "slide-region.pdf"
+    cropped_images = []
+    closed_image_ids = set()
+    original_crop = video_slide_extraction.crop_frame
+    original_close = video_slide_extraction.Image.Image.close
+
+    def track_crop(source, region):
+        cropped = original_crop(source, region)
+        cropped_images.append(cropped)
+        return cropped
+
+    def track_close(image):
+        closed_image_ids.add(id(image))
+        return original_close(image)
+
+    monkeypatch.setattr(video_slide_extraction, "crop_frame", track_crop)
+    monkeypatch.setattr(video_slide_extraction.Image.Image, "close", track_close)
+
+    video_slide_extraction.combine_to_pdf(
+        [(str(frame), 0)],
+        str(output),
+        slide_region=(0.25, 0.25, 0.75, 0.75),
+        artifact_scope="slide_region",
+    )
+
+    assert len(cropped_images) == 1
+    assert id(cropped_images[0]) in closed_image_ids
 
 
 def test_combine_to_pdf_empty(video_slide_extraction, tmp_path, capsys):

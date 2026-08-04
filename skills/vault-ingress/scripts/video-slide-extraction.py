@@ -206,15 +206,18 @@ def extract_frames(video_path, frames_dir, fps=0.5):
     )
     if completed.returncode != 0:
         raise RuntimeError(f"ffmpeg failed with exit status {completed.returncode}")
+    numbered_frames = []
     with os.scandir(frames_dir) as entries:
-        frames = sorted(
-            entry.path
-            for entry in entries
-            if entry.is_file(follow_symlinks=False)
-            and entry.name.startswith("frame_")
-            and entry.name.endswith(".jpg")
-            and entry.name[len("frame_") : -len(".jpg")].isdigit()
-        )
+        for entry in entries:
+            frame_number = entry.name[len("frame_") : -len(".jpg")]
+            if (
+                entry.is_file(follow_symlinks=False)
+                and entry.name.startswith("frame_")
+                and entry.name.endswith(".jpg")
+                and frame_number.isdigit()
+            ):
+                numbered_frames.append((int(frame_number), entry.name, entry.path))
+    frames = [path for _, _, path in sorted(numbered_frames)]
     print(f"  Extracted {len(frames)} frames", file=sys.stderr)
     return frames
 
@@ -618,7 +621,12 @@ def combine_to_pdf(
     try:
         for frame_path, _ in unique_frames:
             with pil_image.open(frame_path) as source:
-                images.append(crop_frame(source, slide_region).convert("RGB"))
+                cropped = crop_frame(source, slide_region)
+                try:
+                    images.append(cropped.convert("RGB"))
+                finally:
+                    if cropped is not source:
+                        cropped.close()
 
         if not images:
             print("  WARNING: No unique frames found", file=sys.stderr)
