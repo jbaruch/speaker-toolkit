@@ -19,10 +19,10 @@ freshest-possible clarification window: memory of the delivery is sharpest right
 the talk, and verbal beats that didn't appear in auto-captions (bilingual jokes rendered
 in a non-primary language, improvised asides, fly-bys that weren't in the deck) are only
 recoverable now. Do NOT bury this as a closing recommendation. Use `AskUserQuestion` to
-**offer to run `vault-clarification` right now**, showing the candidate topics you
-computed so the speaker sees exactly what the session would cover. If they accept, invoke
-`Skill(skill: "vault-clarification")` immediately, carrying those candidate topics as the
-session's seed agenda. If they decline, note it and finish.
+offer an immediate session through `Skill(skill: "vault-clarification")`, showing the
+candidate topics you computed so the speaker sees exactly what the session would cover.
+If they accept, invoke that typed call immediately, carrying those candidate topics as
+the session's seed agenda. If they decline, note it and finish.
 
 **7–30 days — recommend the full session.** Recommend running
 `Skill(skill: "vault-clarification")`, listing the candidate topics, but note that some

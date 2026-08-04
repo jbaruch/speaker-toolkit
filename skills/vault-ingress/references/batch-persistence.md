@@ -23,39 +23,18 @@ whether to run the gate.
 
 - **Validate the whole batch before any write.** Run
   `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/validate-returns.py" batch-returns.json`.
-  Stop on a non-zero exit and repair the named return. The validator enforces the
-  terminal status, return field types, catalog ID and polarity, observability,
-  confidence and evidence, score arithmetic, co-presenter shape, language code,
-  all catalog-feedback lanes, source-gated `not_evaluable` coverage, and the
-  schema-v3 video-artifact trust boundary. V4/v5 `not_evaluable` entries contain
-  only `pattern_id` plus the exact reason code derived by the contract. An
-  observable catalog entry still awaiting an owner-approved source gate fails
-  closed: it cannot be detected or silently counted as absent and must use
-  `source_gate_pending_owner_review`. For `video_extracted`, the enum alone
-  never creates `static_slides`: that source exists only when the complete manifest
-  proves a verified manual `slide_region`. `status: "processed"` additionally
-  requires its promoted `slides_local_path`. Both writers import this same validator,
-  so bypassing the standalone command cannot weaken the boundary.
-  For v5, an N/A-capable nondetected entry is assessed only after its complete
-  `applicability_evaluable_from` gate is proven. Complete coverage requires
-  exactly one source-located `applicability_assessments` row; incomplete
-  coverage forbids a row and yields `not_evaluable`. Catalog-authorized
-  `not_applicable`, applicable-then-undetected, positive-only absence, and
-  missing-coverage states remain distinct.
-  Range-complete does not mean modality-complete. Bare `native_deck`, bare
-  `delivery_video`, video-extracted static pages, and current source-comparison
-  receipts remain positive-only; they cannot authorize absence or force an
-  applicability assessment until a canonical modality/alignment receipt exists.
-  Canonical inspection rows expose this with engine-owned
-  `absence_capability_complete` and `absence_capability_reason` alongside the
-  independent `coverage_complete` locator receipt.
-  For newly emitted work, exit 0 is necessary but not sufficient: every
-  processed entry in `pattern_scoring_generations` must report
-  `status: current`. `legacy_unbaselineable` exists only so saved v1–v4 artifacts remain
-  replayable and must be repaired before accepting new analysis.
-  A v5 analysis additionally carries one sorted engine-owned `pattern_outcomes`
-  row per observable catalog entry plus `opportunity_coverage_identity`. Raw
-  returns cannot supply either field.
+  The command accepts one return object, an array, a directory of JSON returns,
+  or multiple such inputs. Exit 0 emits one structured JSON validation report on
+  stdout and authorizes the next step; exit 1 emits concise diagnostics on stderr,
+  authorizes no write, and requires repairing the named return before rerunning.
+  The complete field, catalog, source, evidence, scoring, and artifact predicates
+  are owned by `skills/vault-ingress/scripts/validate-returns.py` (top-of-file
+  input/output/exit contract) and
+  `skills/vault-ingress/scripts/return_validation.py` (shared validator). Both
+  persistence writers import that validator; do not restate, infer, or bypass its
+  internal predicates and allowlists here. Reports may surface stable machine
+  reason codes such as `source_gate_pending_owner_review`; their triggering
+  predicates remain script-owned.
 - **Update tracking DB — deterministic merge, NOT hand-mapping.** Collect the
   batch's subagent JSON returns into an array file (`batch-returns.json`) and run
   `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/persist-results.py" {vault_root}/tracking-database.json batch-returns.json`.
