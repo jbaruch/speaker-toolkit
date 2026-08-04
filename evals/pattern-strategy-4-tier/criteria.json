@@ -20,7 +20,7 @@
     {
       "name": "No catalog recurrence from raw rows",
       "max_score": 13,
-      "description": "The report emits no catalog [RECURRING] label and does not treat shortchanged or bullet-riddled-corpse as habitual based on stale antipattern_frequency rows; recurrence requires an available antipattern_recurrence domain plus a derived antipattern_classifications row classified high_frequency or moderate_frequency"
+      "description": "The report emits no catalog [RECURRING] label and does not treat shortchanged or bullet-riddled-corpse as habitual based on stale antipattern_frequency rows. Catalog recurrence labels relay guardrail-check.py recurring_antipatterns records, and this Phase 2 task has no such emitted record"
     },
     {
       "name": "Current taxonomy remains useful",

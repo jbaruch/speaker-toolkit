@@ -31,11 +31,10 @@ Produce a pattern strategy report saved to `pattern-strategy.md` containing:
    authorized only by an available `mastery_and_novelty` domain and an exact
    `never_tried` classification—never by `not_yet_observed`, a raw zero, or the stale
    `never_used_patterns` array supplied here.
-3. Flag risks detected in the draft as `[CONTEXTUAL]`. A catalog `[RECURRING]` label
-   requires an available `antipattern_recurrence` domain and a derived
-   `antipattern_classifications` row classified `high_frequency` or
-   `moderate_frequency`; never derive it from the stale raw `antipattern_frequency`
-   rows.
+3. Flag risks detected in the draft as `[CONTEXTUAL]`. Do not emit a catalog
+   `[RECURRING]` label. Those labels relay `guardrail-check.py` `recurring_antipatterns`
+   records, and this Phase 2 task has no such emitted record. Never derive one from the
+   stale raw `antipattern_frequency` rows.
 4. Preserve the explicitly independent `long_context_ramp` guardrail because it carries
    `source_lane: "non_pattern"`. Report it at its declared severity, but do not present
    it as catalog-derived recurrence.

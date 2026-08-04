@@ -7,17 +7,10 @@ Phase 4 runs two complementary checkers against `outline.yaml`:
 | `scripts/check-rhetorical.py outline.yaml` | Closed pattern taxonomy — opening PUNCH, big-idea singleton, thesis preview/payoff, sparkline elements, register coverage or match, master-story threading, callback ledger, inoculation count, progressive-list contiguity, running gags, duration accounting | `rhetorical-review.md` |
 | `scripts/guardrail-check.py outline.yaml <speaker-profile.json\|-> [rhetoric-style-summary.md]` | Profile-aware rules — pattern-history authorization, slide budget, Act 1 ratio, branding, profanity, data attribution, closing completeness, cut-line availability (conditional on `modular_design`) | schema-v1 JSON on stdout |
 
-`guardrail-check.py` imports the vault-profile provenance assessor through
-`scripts/pattern_history_status.py`. A policy-bound profile with any available domain
-wins as the sole history source. Otherwise, the optional summary path can authorize
-only the unique current block parsed by
-`skills/vault-profile/scripts/section15_pattern_history.py`; sources are never merged.
-The guardrail emits current-cohort recurring antipattern records only while the
-`antipattern_recurrence` domain is available and only from derived
-`antipattern_classifications` rows classified `high_frequency` or
-`moderate_frequency`. Those classes describe recurrence frequency, not harm severity.
-A record carries movement only when the independent `trends` domain is available.
-Exact raw occurrence rows alone never authorize recurrence.
+Treat the emitted `pattern_history.history_source` as the sole selected source. Treat
+`recurring_antipatterns` as the final filtered catalog recurrence contract.
+`guardrail-check.py` `recurring_pattern_history_items()` owns recurrence selection and
+optional movement attachment. Do not reproduce either decision in prose.
 `pattern_history.suppressed_fields` records each unavailable history-derived field.
 Current-outline contextual taxonomy scanning and illustration coverage (checks 9B and
 10 below) remain agent-run checks alongside the script output.
@@ -44,12 +37,10 @@ how it's wired to schema fields, and how results are reported.
 - Confirmed intents → `speaker-profile.json` → `confirmed_intents[]`
 
 If the speaker profile is not available, Section 16 remains usable for confirmed
-intent. Section 15 history is usable only when its current block carries an explicit
-provenance contract matching the bundled catalog/scoring generation and accepted by
-the shared assessor. Section 15 v3 is policy-bound, but each use still requires the
-matching entry in `available_classification_domains`; Section 15 v2 is occurrence-only.
-Otherwise use Section 15 only as narrative/audit context and run the current taxonomy
-scan without historical labels.
+intent. Do not resolve Section 15 catalog history manually. Use the guardrail report's
+emitted `history_source`, `available_classification_domains`, and reasons. When the
+report selects no catalog-history source, use Section 15 only as narrative/audit
+context and run the current taxonomy scan without historical labels.
 
 If `policy_semantic_sha256` changes within one catalog/scoring generation, treat
 classification differences as a comparison reset, never as speaker improvement or
@@ -249,14 +240,11 @@ Read [references/patterns/_index.md](patterns/_index.md) (Phase 4 section of the
 phase-grouped lookup table) and classification-derived profile history only when the
 Phase 0 pattern-history status lists the domain required for that claim.
 
-**Speaker-specific antipatterns** — emit `[RECURRING]` only when
-`antipattern_recurrence` is available and a derived
-`pattern_profile.antipattern_classifications` row is `high_frequency` or
-`moderate_frequency`. Do not treat `occasional` as recurring, and do not treat a
-frequency class as harm severity. Never derive recurrence or trend from raw
-`antipattern_frequency` occurrence rows. Append a movement only when `trends` is also
-available; recurrence remains usable without it. Missing, occurrence-only, malformed,
-mismatched, or empty-current-cohort inputs produce no `[RECURRING]` label.
+**Speaker-specific antipatterns.** Emit one `[RECURRING]` line per
+`recurring_antipatterns` record in the guardrail report. Preserve each record's
+`pattern_id`, `recurrence_classification`, `evidence`, and optional `trend`. Do not
+re-open profile rows or re-filter the emitted records. An empty array produces no
+`[RECURRING]` line.
 
 **Contextual antipatterns** — scan the outline against ALL antipatterns from the taxonomy.
 For each match, read the individual pattern file for detection heuristics and scoring
@@ -278,14 +266,14 @@ Contextual detection rules:
 
 Report format:
 ```
-[RECURRING] Going Meta (high frequency; D=12, A=24, E=24, U=0; decreasing) — remove preparation/equipment apologies
+[RECURRING] {pattern_id} ({recurrence_classification} | {evidence} | {optional trend})
 [CONTEXTUAL] Meme accretion — Act 1 meme ratio at 55%
 [CONTEXTUAL] Bullet-Riddled Corpse — slides 14, 22 have 6+ bullet points
 [CONTEXTUAL] Dual-Headed Monster — co-presented talk, handoff points not defined
 ```
 
-When recurrence is unavailable, omit recurring lines and keep contextual lines. If all
-history is disabled, also include the exact status warning. Do not relabel a contextual
+When `recurring_antipatterns` is empty, omit recurring lines and keep contextual lines.
+If all history is disabled, also include the exact status warning. Do not relabel a contextual
 detection as recurring because Section 15 mentions a similar phrase.
 
 ---
@@ -440,7 +428,7 @@ GUARDRAIL CHECK — {talk title} — {date}
 [PASS/FAIL] Closing: summary={y/n} CTA={y/n} social={y/n}
 [PASS/FAIL] Cut lines: {present/missing}
 [INFO/SKIP] Historical anti-patterns: {authorized recurring issues or suppressed}
-[RECURRING] Presentation Patterns: {authorized recurrence flags; omit when recurrence domain unavailable}
+[RECURRING] Presentation Patterns: {recurring_antipatterns records | omit when empty}
 [CONTEXTUAL] Presentation Patterns: {current-outline taxonomy flags; always enabled}
 [PASS/FAIL/SKIP] Illustrations: {coverage ratio} | {format tags} | {prompt quality}
 [PASS/SKIP] Builds: {N} defined, {M} images generated

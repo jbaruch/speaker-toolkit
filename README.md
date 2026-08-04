@@ -14,8 +14,8 @@ Older generations remain readable history but cannot enter the current scoring
 cohort by implication.
 
 **Defensible absence and ready-to-use classification** — all observable entries
-declare explicit evidence gates, but only 16 permit an absence conclusion from a
-complete transcript or separately declared rendered PDF. Profile schema v5 preserves
+declare explicit evidence gates, and the catalog keeps absence decisions source-bound.
+Profile schema v5 preserves
 each pattern's exact denominator and automatically applies the bundled
 `speaker-toolkit-default@1` thresholds. A vault may provide a strict optional override.
 If that file is present but invalid, profile generation stops instead of silently

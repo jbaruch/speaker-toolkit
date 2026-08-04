@@ -44,18 +44,25 @@ require its name in `available_classification_domains` (Python consumers use
 `domain_available(domain)`). The domains are `mastery_and_novelty`, `underuse`,
 `signature_combinations`, `antipattern_recurrence`, `trends`, and `modes`.
 `opportunity_rows_available: true` means only that exact raw occurrence rows are
-auditable; it does not authorize history tiers or labels. A policy-bound profile with
-any available domain wins as the sole history source; otherwise the summary is a
-fallback and never merges with profile history. A disabled history lane does not
-invalidate the whole profile. Keep using independent pacing, visual, infrastructure,
-publishing, presentation-mode, instrument-catalog, and confirmed-intent fields.
+auditable. It does not authorize history tiers or labels. Treat the emitted
+`history_source` as the sole source selector. Read only the named source and never merge
+catalog history inputs. Source resolution is owned by
+`pattern_history_status.py` `resolve_creator_pattern_history()`. A disabled history
+lane does not invalidate the whole profile. Keep using independent pacing, visual,
+infrastructure, publishing, presentation-mode, instrument-catalog, and confirmed-intent
+fields.
 
-Gate each historical claim independently: mastery tiers, strengths, and exact
-never-tried New-to-You claims require `mastery_and_novelty`; underuse requires
-`underuse`; combinations require `signature_combinations`; `[RECURRING]` requires
-`antipattern_recurrence`; movements and score/breadth trend require `trends`; and
-`by_mode` requires `modes`. A recurrence claim does not imply a trend claim. The
-current pattern taxonomy remains available for analyzing the new outline. Profile
+Gate each historical claim independently:
+
+- Mastery tiers, strengths, and exact never-tried New-to-You claims require
+  `mastery_and_novelty`.
+- Underuse requires `underuse`.
+- Combinations require `signature_combinations`.
+- Movements and score/breadth trend require `trends`.
+- By-mode history requires `modes`.
+- Catalog recurrence comes only from Phase 4's emitted `recurring_antipatterns`.
+
+The current pattern taxonomy remains available for analyzing the new outline. Profile
 schemas v1/v2/v3 are non-pattern compatibility inputs; schema v4 has auditable
 occurrence rows only; schema v5 binds classifications to a versioned policy.
 Schema-v4/v5 top-level `guardrail_sources.recurring_issues[]` and `badges[]` are separate:

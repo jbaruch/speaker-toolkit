@@ -16,9 +16,9 @@ three-outcome PASS/WARN/FAIL logic:
 - `[PASS]` — value is under the limit by more than 5 percentage points
 
 The script checks pattern-history authorization, slide budget, Act 1 ratio, closing
-completeness, cut lines, data attribution, profanity, and branding. It emits historical
-recurring antipattern lines only when `antipattern_recurrence` appears in
-`available_classification_domains`. It adds movement only when `trends` also appears.
+completeness, cut lines, data attribution, profanity, and branding. Its
+`recurring_antipatterns` array is the complete catalog recurrence output. Render those
+records without re-filtering them or adding movement data.
 Add the remaining checks (time-sensitive, current-outline contextual antipatterns,
 illustration coverage, pattern strategy) to the report manually.
 
@@ -29,7 +29,8 @@ available, require the exact domain for each derived field:
 - Use `mastery_and_novelty` for tiers, strengths, and novelty.
 - Use `underuse` for underuse.
 - Use `signature_combinations` for combinations.
-- Use `antipattern_recurrence` for historical recurring labels.
+- Use the `antipattern_recurrence` domain only through the script's
+  `recurring_antipatterns` output.
 - Use `trends` for movements and score/breadth trend.
 - Use `modes` for by-mode history.
 - Always retain the current-taxonomy scan of the new outline.
@@ -43,12 +44,9 @@ only from authorized `pattern_profile` history.
 
 Every antipattern flag MUST be tagged as one of:
 
-- `[RECURRING]` — matches an authorized current-generation pattern in the speaker's
-  derived `antipattern_classifications` history. Use this label only when
-  `antipattern_recurrence` is available and the row is classified `high_frequency` or
-  `moderate_frequency`. These are frequency classes, not harm severities. Raw
-  `antipattern_frequency`, `occasional`, and pattern-derived top-level duplicates do
-  not authorize the tag. Add a movement only when `trends` is independently available.
+- `[RECURRING]`. Render one `guardrail-check.py` `recurring_antipatterns` record.
+  Preserve its `recurrence_classification`, `evidence`, and optional `trend` fields.
+  Do not reclassify the record.
 - `[CONTEXTUAL]` — detected in the current outline but NOT in the speaker's
   authorized historical profile. It is a current-outline finding, not necessarily a
   first-time issue when history is unavailable.

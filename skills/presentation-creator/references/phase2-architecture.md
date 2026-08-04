@@ -95,9 +95,9 @@ This is an architecture-phase concern (not a content-phase one) because the asks
 
 ### Decision #11: Pattern Strategy
 
-Read [patterns/_index.md](patterns/_index.md) for the current taxonomy. Read
-the resolved `pattern_profile` only when Phase 0's `pattern_history_status.py` result
-has `history_enabled: true`, then authorize each derived lane independently through
+Read [patterns/_index.md](patterns/_index.md) for the current taxonomy. Use only the
+catalog-history source selected by Phase 0's emitted `history_source`. When its status
+has `history_enabled: true`, authorize each derived lane independently through
 `available_classification_domains` / `domain_available(domain)`. Never infer a domain
 from profile recency, schema tolerance, Section 15 prose,
 `classification_fields_available: true`, or `opportunity_rows_available: true`.
@@ -127,8 +127,6 @@ SHAKE IT UP:
   ⚡ [WILD CARD] Cave Painting — one giant canvas instead of slides
 
 WARNINGS:
-  ⚠ [RECURRING] Going Meta (high frequency; D=12, A=24, E=24, U=0) — script
-      clean handoffs without preparation or equipment apologies
   ⚠ [CONTEXTUAL] Dual-Headed Monster — co-presented talk, define handoff points
 ===================================
 ```
@@ -150,16 +148,13 @@ Current-cohort `strengths` requires `mastery_and_novelty`;
 movements, score/breadth trend, and score drivers require `trends`. Never infer one
 domain from another.
 
-**Antipattern warnings** — merge speaker's recurring antipatterns (from
-`pattern_profile.antipattern_classifications`) + contextual warnings derived from the
-spec (co-presented → Dual-Headed Monster, dense content → Bullet-Riddled Corpse,
-new format → Shortchanged, etc.). Historical matches receive `[RECURRING]` only
-when `antipattern_recurrence` is available and the derived classification is
-`high_frequency` or `moderate_frequency`. Those classes describe frequency, not harm
-severity. Add movement only when `trends` is independently available. Raw
-`antipattern_frequency` never authorizes `[RECURRING]`. Current-outline detections
-always receive `[CONTEXTUAL]` and remain available without history. Explicit
-`source_lane: "non_pattern"` guardrails remain independent of this catalog lane.
+**Antipattern warnings.** Derive contextual warnings from the spec (co-presented →
+Dual-Headed Monster, dense content → Bullet-Riddled Corpse, new format → Shortchanged,
+etc.). Catalog recurrence filtering and `[RECURRING]` labels belong to Phase 4's
+emitted `recurring_antipatterns` output. Do not recreate them during
+architecture. Current-outline detections always receive `[CONTEXTUAL]` and remain
+available without history. Explicit `source_lane: "non_pattern"` guardrails remain
+independent of this catalog lane.
 
 **Mastery-domain-disabled / summary-only mode:** Pattern taxonomy still works —
 patterns come from the reference files alone. Present a flat relevant-patterns list

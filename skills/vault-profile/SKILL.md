@@ -194,11 +194,9 @@ Proceed immediately to Step 5.
 
 Pipe the constructed profile dict through
 `"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/validate-profile.py" --vault-root "$VAULT_ROOT"`.
-Schema-v5 owner validation rereads the live tracking database with the same shared
-cohort/classification builders as Step 1 and rejects any candidate baseline, filename
-set, opportunity row, policy stamp/digest, availability domain, or derived row that is
-not source-exact. This is database re-analysis, not talk reparsing; raw persisted talk
-rows remain unchanged.
+Treat `validate-profile.py` as the sole owner-validation contract. Do not reproduce or
+summarize its live-source checks in this skill. It reads existing persisted sources for
+validation. It does not reparse talks or mutate the tracking database.
 
 ```bash
 echo "$PROFILE_JSON" | "{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/validate-profile.py" --vault-root "$VAULT_ROOT"
@@ -211,8 +209,9 @@ echo "$PROFILE_JSON" | "{python_path}" "{speaker_toolkit_root}/skills/vault-prof
 - Stdout (JSON): `{valid, schema_version, missing_keys, errors}`.
 - Exit code: `0` on valid, `1` on invalid.
 
-If exit code is `1`, report every `missing_keys` and `errors` entry and abort without
-writing. Fix the offending fields in Step 4 and rerun this step.
+Write nothing unless the command exits `0` and stdout reports `valid: true`. On exit
+`1`, report every `missing_keys` and `errors` entry, fix the offending fields in Step 4,
+and rerun validation.
 
 Proceed immediately to Step 6.
 

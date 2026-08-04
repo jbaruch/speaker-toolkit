@@ -639,18 +639,29 @@ def test_docs_suppress_history_tiers_and_cross_generation_diffs():
     assert "Neither reset is\never evidence" in docs["rules"]
 
 
-def test_docs_define_exact_novelty_and_recurrence_sources():
+def test_docs_define_exact_novelty_and_delegate_recurrence_filtering():
     docs = _creator_docs()
 
     for name in ("skill", "phase2", "rules", "index"):
         assert "never_tried" in docs[name]
         assert "not_yet_observed" in docs[name]
-        assert "antipattern_classifications" in docs[name]
-        assert "high_frequency" in docs[name]
-        assert "moderate_frequency" in docs[name]
-    assert "frequency, not harm severity" in _normalized_doc(docs["phase2"])
-    assert "Raw `antipattern_frequency` never authorizes" in _normalized_doc(
-        docs["phase2"]
+    for name in ("skill", "phase2", "phase4", "rules", "index"):
+        assert "recurring_antipatterns" in docs[name]
+        assert "high_frequency" not in docs[name]
+        assert "moderate_frequency" not in docs[name]
+    assert "recurring_pattern_history_items()" in docs["phase4"]
+    assert "{action}" not in docs["phase4"]
+
+
+def test_docs_delegate_history_source_precedence_once():
+    docs = _creator_docs()
+
+    for name in ("skill", "phase0", "phase2", "phase4"):
+        assert "history_source" in docs[name]
+    assert "resolve_creator_pattern_history()" in docs["phase0"]
+    assert (
+        sum(text.count("resolve_creator_pattern_history()") for text in docs.values())
+        == 1
     )
 
 

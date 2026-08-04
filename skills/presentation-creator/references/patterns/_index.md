@@ -29,12 +29,9 @@ combinatorics are needed.
    `not_evaluable` rather than guessing or treating it as absent. A polished outcome is
    not evidence that a named preparation process occurred.
 3. **During creator Phase 4 (Guardrails):** Read all antipatterns and compare against
-   the outline. Flag matches as `[RECURRING]` only from `high_frequency` or
-   `moderate_frequency` derived classifications while `pattern_history_status.py`
-   authorizes `antipattern_recurrence`; raw occurrence rows never suffice. Add a
-   movement only when `trends` is separately available. Use `[CONTEXTUAL]` for the
-   current-outline scan, which remains enabled without history. Skip unobservable
-   antipatterns.
+   the outline. Render `[RECURRING]` lines only from Phase 4's emitted
+   `recurring_antipatterns` records. Use `[CONTEXTUAL]` for the current-outline scan,
+   which remains enabled without history. Skip unobservable antipatterns.
 4. **During creator Phase 6 (Publishing / Go-Live):** Surface unobservable patterns as
    a go-live preparation checklist — these are actions to take before, during, and after
    delivery that the vault cannot score retroactively.
@@ -363,9 +360,7 @@ Build patterns — applied during outline writing.
 Antipatterns as warnings — scanned against the outline.
 
 **All 28 antipatterns**, with two flag types:
-- `[RECURRING]` — from authorized `pattern_profile.antipattern_classifications`
-  `high_frequency` / `moderate_frequency` rows only; omit when
-  `antipattern_recurrence` is unavailable
+- `[RECURRING]`. Emit one line per Phase 4 `recurring_antipatterns` record.
 - `[CONTEXTUAL]` — detected in the current outline; always enabled and not a claim that
   the issue is historically new
 

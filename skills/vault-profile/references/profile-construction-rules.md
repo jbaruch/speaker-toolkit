@@ -36,13 +36,8 @@ availability, exhaustive classifications, trend audit, and derived projections. 
 both payloads rather than recalculating them. `pattern_scoring_exclusions` explains every
 otherwise eligible talk omitted from the cohort, including artifact drift.
 
-The loader selects the bundled `speaker-toolkit-default@1` policy automatically when
-`{vault_root}/pattern-classification-policy.json` is absent. A present override is
-optional but strict: it must be a regular, valid policy file, and any read, syntax,
-schema, size, or semantic error aborts loading instead of falling back
-to the default. The classification stamp embeds the normalized semantic policy and its
-canonical SHA-256, so a profile is self-contained and formatting-only policy edits keep
-the same digest.
+Copy the loader's complete `classification_policy` stamp unchanged. Do not construct or
+repair any field in that stamp during profile assembly.
 
 `current_instrumentation_talks` and `stale_instrumentation_talks` form a separate
 extractor cohort for pacing-sensitive analysis. Instrumentation membership never
@@ -182,13 +177,11 @@ reset: do not describe catalog-derived score, trend, usage, mastery, or strength
 differences across it as speaker improvement or regression.
 
 Within one exact generation, do not report raw-score movement across a changed or
-unavailable `opportunity_coverage_identity`. Compare the classification policy's
-`semantic_sha256` next. A changed semantic digest is a derived-classification reset:
-raw occurrence rows remain comparable, but do not attribute tier, severity,
-combination, underuse, or trend changes to the speaker. A formatting-only override edit
-does not reset comparisons because its canonical semantic digest is unchanged. Within
-one policy digest, report a derived change only when its own availability domain is
-`available` in both profiles.
+unavailable `opportunity_coverage_identity`. Compare the classifier-emitted
+`semantic_sha256` next. A changed digest is a derived-classification reset. Raw
+occurrence rows remain comparable, but do not attribute tier, severity, combination,
+underuse, or trend changes to the speaker. Within one unchanged policy identity, report
+a derived change only when its own availability domain is `available` in both profiles.
 
 Report these same-generation non-pattern changes:
 

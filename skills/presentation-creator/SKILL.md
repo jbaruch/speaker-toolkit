@@ -92,16 +92,15 @@ each use (Python consumers call `domain_available(domain)`). The domain contract
   newest talk or a `not_yet_observed` classification.
 - `underuse`: `underused_patterns`.
 - `signature_combinations`: `signature_combinations`.
-- `antipattern_recurrence`: `[RECURRING]` only for `antipattern_classifications`
-  rows classified `high_frequency` or `moderate_frequency`. These labels describe
-  recurrence frequency, not harm severity.
+- `antipattern_recurrence`: consume historical recurrence only through Phase 4's
+  emitted `recurring_antipatterns` output.
 - `trends`: pattern and antipattern movements, score/breadth trend, and score drivers.
   A recurrence claim may be available without a trend claim.
 - `modes`: `by_mode` history.
 
-A policy-bound profile with any available domain wins as the sole history source. The
-summary is considered only when profile history is disabled and is never merged with
-profile history. Surface a disabled result's `warning` verbatim and recommend profile
+A non-null `history_source` selects the sole catalog-history input. Use the emitted
+value without reproducing source-selection logic or merging inputs. Surface a disabled
+result's `warning` verbatim and recommend profile
 regeneration. Continue using independent non-pattern fields such as pacing, visual
 rules, presentation modes, infrastructure, publishing config, and confirmed intents.
 Exact occurrence rows may remain auditable when `opportunity_rows_available` is true,
@@ -435,11 +434,9 @@ per check.
 `guardrail-check.py` enforces **speaker-profile-aware rules** that depend on
 runtime profile data: pattern-history authorization, slide budget, Act 1 ratio
 limits, branding, profanity register, data attribution, closing completeness, and
-cut-line availability (conditional on `modular_design`). It emits historical
-`recurring_antipatterns` records only when the `antipattern_recurrence` domain is
-available, and adds a movement only when the independent `trends` domain is also
-available. Records come from derived `antipattern_classifications`, never raw
-occurrence frequency.
+cut-line availability (conditional on `modular_design`). Its report contains the
+resolved `pattern_history` contract and final `recurring_antipatterns` records. Render
+those records unchanged. Do not inspect profile rows to recreate them.
 
 `contextual_taxonomy_scan.enabled` remains true for the current outline. Illustration
 coverage and the contextual scan still live in `phase4-guardrails.md` as additional

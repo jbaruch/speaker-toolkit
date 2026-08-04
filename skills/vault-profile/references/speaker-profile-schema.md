@@ -355,7 +355,7 @@ Current `schema_version`: **5**. The validator (`scripts/validate-profile.py`,
       "direction": "improving",
       "antipattern_drivers": ["going-meta"],
       "pattern_drivers": [],
-      "note": "Drivers include only catalog IDs whose conservative 5+5 interval crossed the policy movement threshold."
+      "note": "Classifier-produced drivers for the available trend domain."
     },
     "by_mode": [],
     "strengths": ["narrative-arc"],
@@ -407,39 +407,9 @@ Current `schema_version`: **5**. The validator (`scripts/validate-profile.py`,
       "policy_id": "speaker-toolkit-default",
       "policy_version": 1,
       "source": "bundled_default",
-      "semantic_sha256": "ab327a0418794df3905a31794c6e079f12dae3abda66dbcc58be9b55e28d1f77",
+      "semantic_sha256": "<classifier-produced 64-character lowercase hex digest>",
       "semantic_policy": {
-        "schema_version": 1,
-        "policy_id": "speaker-toolkit-default",
-        "policy_version": 1,
-        "positive_patterns": {
-          "signature": {"minimum_applicable": 8, "minimum_lower": 0.7},
-          "regular": {"minimum_evaluable": 8, "minimum_applicable_coverage": 0.8, "minimum_lower": 0.4, "maximum_upper_exclusive": 0.7},
-          "occasional": {"minimum_evaluable": 8, "minimum_applicable_coverage": 0.8, "minimum_lower": 0.15, "maximum_upper_exclusive": 0.4},
-          "rare": {"minimum_evaluable": 8, "minimum_applicable_coverage": 0.8, "minimum_detections": 1, "maximum_upper_exclusive": 0.15},
-          "never_tried": {"minimum_applicable": 8, "require_complete_evaluation": true, "maximum_detections": 0}
-        },
-        "antipattern_recurrence": {
-          "high_frequency": {"minimum_applicable": 8, "minimum_detections": 4, "minimum_lower": 0.5},
-          "moderate_frequency": {"minimum_evaluable": 8, "minimum_applicable_coverage": 0.8, "minimum_detections": 3, "minimum_lower": 0.25, "maximum_upper_exclusive": 0.5},
-          "occasional": {"minimum_evaluable": 8, "minimum_applicable_coverage": 0.8, "minimum_detections": 1, "maximum_upper_exclusive": 0.25},
-          "confirmed_none": {"minimum_applicable": 8, "require_complete_evaluation": true, "maximum_detections": 0}
-        },
-        "signature_combinations": {
-          "eligible_member_classifications": ["regular", "signature"],
-          "member_counts": [2, 3],
-          "minimum_applicable": 8,
-          "minimum_detections": 4,
-          "minimum_lower": 0.4,
-          "maximum_results": 10
-        },
-        "trends": {
-          "minimum_comparable_talks": 10,
-          "window_size": 5,
-          "score_delta": 0.5,
-          "breadth_delta": 0.5,
-          "pattern_movement_delta": 0.2
-        }
+        // Complete classifier-produced object omitted from this illustrative profile.
       }
     },
     "classification_availability": {
@@ -489,14 +459,16 @@ Current `schema_version`: **5**. The validator (`scripts/validate-profile.py`,
         "reason_codes": ["meets_moderate_frequency_thresholds"]
       }
     ],
+    // Angle-bracket values in trend_analysis document output shape only.
+    // Copy the classifier-produced values unchanged.
     "trend_analysis": {
       "status": "available",
       "reason_codes": [],
       "sample": {
-        "required_talk_count": 10,
-        "valid_date_talk_count": 24,
+        "required_talk_count": "<classifier-produced integer>",
+        "valid_date_talk_count": "<integer>",
         "invalid_date_filenames": [],
-        "selected_filenames": ["example-15.md", "example-16.md", "example-17.md", "example-18.md", "example-19.md", "example-20.md", "example-21.md", "example-22.md", "example-23.md", "example-24.md"],
+        "selected_filenames": ["<classifier-selected filename>", "..."],
         "opportunity_coverage_identity": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
       },
       "score": {"status": "improving", "prior_average": 6.0, "recent_average": 7.0, "delta": 1.0},
@@ -507,8 +479,8 @@ Current `schema_version`: **5**. The validator (`scripts/validate-profile.py`,
         {
           "pattern_id": "narrative-arc",
           "movement": "indeterminate",
-          "prior_evidence": {"applicable_count": 5, "evaluable_count": 4, "detected_count": 4, "unevaluable_count": 1, "applicable_coverage": 0.8, "lower": 0.8, "upper": 1.0},
-          "recent_evidence": {"applicable_count": 5, "evaluable_count": 4, "detected_count": 4, "unevaluable_count": 1, "applicable_coverage": 0.8, "lower": 0.8, "upper": 1.0},
+          "prior_evidence": {"applicable_count": "<integer>", "evaluable_count": "<integer>", "detected_count": "<integer>", "unevaluable_count": "<integer>", "applicable_coverage": "<number or null>", "lower": "<number or null>", "upper": "<number or null>"},
+          "recent_evidence": {"applicable_count": "<integer>", "evaluable_count": "<integer>", "detected_count": "<integer>", "unevaluable_count": "<integer>", "applicable_coverage": "<number or null>", "lower": "<number or null>", "upper": "<number or null>"},
           "reason_codes": ["uncertainty_spans_movement_threshold"]
         }
       ],
@@ -516,8 +488,8 @@ Current `schema_version`: **5**. The validator (`scripts/validate-profile.py`,
         {
           "pattern_id": "going-meta",
           "movement": "decreasing",
-          "prior_evidence": {"applicable_count": 5, "evaluable_count": 5, "detected_count": 3, "unevaluable_count": 0, "applicable_coverage": 1.0, "lower": 0.6, "upper": 0.6},
-          "recent_evidence": {"applicable_count": 5, "evaluable_count": 5, "detected_count": 1, "unevaluable_count": 0, "applicable_coverage": 1.0, "lower": 0.2, "upper": 0.2},
+          "prior_evidence": {"applicable_count": "<integer>", "evaluable_count": "<integer>", "detected_count": "<integer>", "unevaluable_count": "<integer>", "applicable_coverage": "<number or null>", "lower": "<number or null>", "upper": "<number or null>"},
+          "recent_evidence": {"applicable_count": "<integer>", "evaluable_count": "<integer>", "detected_count": "<integer>", "unevaluable_count": "<integer>", "applicable_coverage": "<number or null>", "lower": "<number or null>", "upper": "<number or null>"},
           "reason_codes": ["conservative_interval_decrease"]
         }
       ]
@@ -647,12 +619,10 @@ override is strict and fail-closed: an unreadable file, duplicate key, non-finit
 number, unknown/missing field, unsupported version, oversized file, or invalid
 threshold aborts profile generation rather than silently selecting the default.
 
-`classification_policy` is self-contained. `semantic_policy` is the complete normalized
-policy used for the run, and `semantic_sha256` is the SHA-256 of its canonical sorted
-JSON. `policy_id`, `policy_version`, and `source` identify it for humans, but the digest
-is the comparison identity; whitespace and object-key order do not change it. The
-bundled file is `references/pattern-classification-policy-v1.json`. A vault override
-uses the same closed schema and records `source: "vault_override"`.
+`classification_policy` is self-contained. Copy `semantic_policy` and
+`semantic_sha256` from classifier output unchanged. Treat the digest as an opaque
+comparison identity. `policy_id`, `policy_version`, and `source` identify the applied
+policy for humans.
 
 `pattern_classifications` and `antipattern_classifications` contain one sorted row for
 every observable catalog entry of the matching polarity. Each row preserves the exact
@@ -686,11 +656,9 @@ remains non-recurring unless the classifier says otherwise.
 
 `classification_availability` is schema v2 and independent per domain. Mastery/novelty,
 antipattern recurrence, underuse, combinations, trends, and modes each carry their own
-`{status, reason_codes}`. The default policy makes the first four domains evaluable from
-opportunity rows; the classifier determines trend availability from its policy and
-input evidence. Modes remain unavailable until talk-mode assignments exist. A consumer
-must gate only the requested domain and retain row-level unclassified results; one
-unavailable domain never erases another available one.
+`{status, reason_codes}`. The classifier output is the only authority for those values.
+A consumer must gate only the requested domain and retain row-level unclassified
+results. One unavailable domain never erases another available one.
 `trend_analysis` retains the complete selected sample, metric values, exhaustive
 pattern movements, and reasons behind those projections.
 

@@ -11,23 +11,21 @@ The vault is located at `./vault/` and all the data is provided below. Your job 
 Generate `vault/speaker-profile.json` — a complete speaker profile synthesizing all available vault data.
 
 The profile should capture Taylor's defaults and infrastructure in a structured form
-that another tool can consume programmatically. The supplied talk rows predate
-source-located scoring-v5 outcomes and therefore cannot authorize a current pattern
-cohort. Emit the canonical schema-v5 empty-current-cohort contract instead of migrating
-legacy IDs, scores, or Section 15 prose into classifications. Because no override file
-is supplied, stamp the self-contained bundled `speaker-toolkit-default@1` policy and use
-classification-availability schema v2. Keep each domain independent: the classifier's
-mastery/novelty, antipattern-recurrence, underuse, and combination domains remain
-available as contracts, but their exhaustive zero-cohort rows are unclassified and
-produce no mastery, New-to-You, recurring, strength, underuse, or combination claims;
-trends and modes remain explicitly unavailable for their own reasons.
+that another tool can consume programmatically. After extracting the supplied files,
+run the installed vault-profile `scripts/load-vault.py` against `./vault/`. Treat its
+`pattern_baseline`, `pattern_opportunities`, and `pattern_classification` objects as an
+opaque fixture: copy them into `pattern_profile` according to the profile-construction
+contract without predicting or rewriting any policy stamp, domain status,
+classification, absence result, trend, or derived projection. A nonzero loader exit is
+a task failure, not permission to synthesize fallback catalog history.
 
-The supplied Section 15 is ordinary narrative, not a machine-readable current block,
-and cannot fill the empty cohort. Compatibility readers may inspect an actual v2 block
-as occurrence-only history, while the Section 15 writer emits only policy-bound v3;
-this task writes only `speaker-profile.json` and must not invent or edit either block.
-Include only non-pattern badges, each marked `source_lane: "non_pattern"`, grounded in
-independent talk-count, pacing, visual, publishing, or confirmed-intent data.
+The supplied legacy observations and ordinary Section 15 prose must not be imported by
+hand. This task writes only `speaker-profile.json`. Do not create or edit a Section 15
+current block. Include only non-pattern badges, each marked
+`source_lane: "non_pattern"`, grounded in independent talk-count, pacing, visual,
+publishing, or confirmed-intent data. Before saving, run the installed
+`scripts/validate-profile.py --vault-root ./vault`. Save only when it exits `0` and
+reports `valid: true`.
 
 ## Input Files
 

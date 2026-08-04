@@ -280,9 +280,9 @@ def test_profile_construction_rules_are_linked_and_shipped() -> None:
         "[profile-construction-rules.md]"
         "(references/profile-construction-rules.md)" in skill
     )
-    assert "speaker-toolkit-default@1" in rules
-    assert "pattern-classification-policy.json" in rules
-    assert "canonical SHA-256" in rules
+    assert "Copy the loader's complete `classification_policy` stamp unchanged" in rules
+    assert "policy-comparison identity" not in rules
+    assert "canonical SHA-256" not in rules
     assert "pattern-generation\nreset" in rules
 
     shipped = (
@@ -318,6 +318,32 @@ def test_profile_schema_delegates_policy_arithmetic_to_classifier() -> None:
     assert "Bundled Default Thresholds" not in schema
     assert "`E/A`" not in schema
     assert "`D/A`" not in schema
+    assert "5+5" not in schema
+    assert "canonical sorted" not in schema
+    assert (
+        '"semantic_sha256": "<classifier-produced 64-character lowercase hex digest>"'
+        in schema
+    )
+    assert (
+        '"semantic_sha256": '
+        '"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"'
+        not in schema
+    )
+    for classifier_owned_field in (
+        '"minimum_applicable"',
+        '"minimum_evaluable"',
+        '"minimum_lower"',
+        '"minimum_detections"',
+        '"maximum_upper_exclusive"',
+        '"member_counts"',
+        '"maximum_results"',
+        '"minimum_comparable_talks"',
+        '"window_size"',
+        '"score_delta"',
+        '"breadth_delta"',
+        '"pattern_movement_delta"',
+    ):
+        assert classifier_owned_field not in schema
 
 
 def test_profile_construction_rules_delegate_availability_to_classifier() -> None:
