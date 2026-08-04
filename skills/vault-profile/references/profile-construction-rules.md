@@ -39,7 +39,7 @@ otherwise eligible talk omitted from the cohort, including artifact drift.
 The loader selects the bundled `speaker-toolkit-default@1` policy automatically when
 `{vault_root}/pattern-classification-policy.json` is absent. A present override is
 optional but strict: it must be a regular, valid policy file, and any read, syntax,
-schema, size (maximum 64 KiB), or semantic error aborts loading instead of falling back
+schema, size, or semantic error aborts loading instead of falling back
 to the default. The classification stamp embeds the normalized semantic policy and its
 canonical SHA-256, so a profile is self-contained and formatting-only policy edits keep
 the same digest.
@@ -151,8 +151,8 @@ derive tiers from raw rates, truncate exhaustive classification arrays, or infer
 absence where `absence_conclusion_capable` is false. Profile regeneration re-analyzes
 already persisted current-generation outcomes; it does not reparse talks and does not
 modify the raw `pattern_usage`, `antipattern_frequency`, or tracking-database rows. See
-[Bundled Default Thresholds](speaker-profile-schema.md#bundled-default-thresholds) for a
-plain-language explanation of the default labels and gates.
+the generated profile's embedded semantic policy when the applied values must be
+inspected.
 
 ## Empty-Cohort Behavior
 

@@ -644,7 +644,7 @@ All `pattern_profile` fields in the schema are required in v5. If the vault has 
 `pattern-classification-policy.json`, the loader automatically applies the bundled
 `speaker-toolkit-default@1` policy; users are not asked to invent thresholds. A present
 override is strict and fail-closed: an unreadable file, duplicate key, non-finite
-number, unknown/missing field, unsupported version, file over 64 KiB, or invalid
+number, unknown/missing field, unsupported version, oversized file, or invalid
 threshold aborts profile generation rather than silently selecting the default.
 
 `classification_policy` is self-contained. `semantic_policy` is the complete normalized
@@ -656,86 +656,41 @@ uses the same closed schema and records `source: "vault_override"`.
 
 `pattern_classifications` and `antipattern_classifications` contain one sorted row for
 every observable catalog entry of the matching polarity. Each row preserves the exact
-evaluable denominator and also gives conservative opportunity bounds: for applicable
-count `A`, evaluable count `E`, detections `D`, and unevaluable count `U`, coverage is
-`E/A`, `lower` is `D/A`, and `upper` is `(D+U)/A`; all three ratios are null when
-`A == 0`. Positive classifications are `signature`, `regular`, `occasional`, `rare`,
-`never_tried`, `not_yet_observed`, or `unclassified`. Antipattern classifications are
-`high_frequency`, `moderate_frequency`, `occasional`, `confirmed_none`, or
-`unclassified`. The embedded semantic policy is authoritative; the bundled defaults
-are summarized below in plain language.
+evaluable denominator and exposes classifier-produced evidence counts, coverage, and
+conservative bounds. Positive and antipattern rows use the label vocabularies shown in
+the schema example; row-level `unclassified` results remain part of the exhaustive
+output.
 
-#### Bundled Default Thresholds
+#### Classifier-Owned Policy Semantics
 
-In the tables below, `A` is the number of applicable talks, `E` the number actually
-evaluable, `D` the number with a detection, and `U` the applicable talks left
-unevaluable. “Definitely detected” is the conservative lower bound `D/A`; the upper
-bound `(D+U)/A` shows how high the rate could be if every unknown became a detection.
-Coverage is `E/A`.
+Thresholds, formulas, tier predicates, combination selection, trend windows, and
+movement decisions are not restated in this reference. See
+`references/pattern-classification-policy-v1.json` for the complete bundled semantic
+policy and `scripts/classify-pattern-profile.py` — `validate_policy()` and
+`classify_pattern_profile()` — for its executable contract. Each generated profile
+embeds the normalized policy that was actually applied, plus its semantic digest.
+Consumers copy the classifier's rows and projections unchanged.
 
-For positive patterns, `speaker-toolkit-default@1` uses these labels:
+`mastery_levels`, `strengths`, `underused_patterns`, `never_used_patterns`, signature
+combinations, and trend analysis are deterministic classifier projections. Consumers
+must not reconstruct them from raw rates or from the prose summary.
 
-| Label | Plain-language gate |
-|---|---|
-| `signature` | At least 8 applicable talks, with definite detections in at least 70% (`A >= 8`, lower `>= 0.70`). |
-| `regular` | At least 8 evaluable talks and 80% coverage; definitely present in at least 40%, but below 70% even if every unknown were positive (`E >= 8`, coverage `>= 0.80`, lower `>= 0.40`, upper `< 0.70`). |
-| `occasional` | The same sample and coverage gates; definitely present in at least 15%, but below 40% even under the unknown-positive upper bound (lower `>= 0.15`, upper `< 0.40`). |
-| `rare` | The same sample and coverage gates, at least one detection, and below 15% even under the upper bound (`D >= 1`, upper `< 0.15`). |
-| `never_tried` | The catalog permits an absence conclusion, at least 8 talks are applicable, every one is evaluable, and none contains the pattern (`A >= 8`, `E == A`, `D == 0`). |
-
-`mastery_levels` mirrors those five named tiers. `strengths` is the sorted union of
-`signature` and `regular`; `underused_patterns` is the sorted union of `rare` and
-`never_tried`; `never_used_patterns` contains only evidence-backed `never_tried` IDs.
-
-For antipattern recurrence, the default uses:
-
-| Label | Plain-language gate |
-|---|---|
-| `high_frequency` | At least 8 applicable talks, at least 4 detections, and definite detections in at least half (`A >= 8`, `D >= 4`, lower `>= 0.50`). |
-| `moderate_frequency` | At least 8 evaluable talks and 80% coverage, at least 3 detections, a definite rate of at least 25%, and a rate below 50% even if every unknown were positive (lower `>= 0.25`, upper `< 0.50`). |
-| `occasional` | At least 8 evaluable talks and 80% coverage, at least one detection, and an upper bound below 25% (`D >= 1`, upper `< 0.25`). |
-| `confirmed_none` | The catalog permits an absence conclusion, at least 8 talks are applicable, every one is evaluable, and none contains the antipattern (`A >= 8`, `E == A`, `D == 0`). |
-
-Signature combinations and trends have separate gates:
-
-- A combination contains exactly two or three positive patterns already classified
-  `regular` or `signature`. All members must be detected together in at least 4 of at
-  least 8 applicable talks, with a conservative joint rate of at least 40%. At most 10
-  combinations are retained, ordered by stronger lower bound, more detections, then ID.
-- Trends require at least 10 talks with valid dates. The newest 10, ordered by date and
-  filename, must share one non-null `opportunity_coverage_identity` and contain at
-  least one evaluable (`detected` or `undetected`) opportunity; the older five are
-  compared with the newer five. Otherwise the entire trend domain is unavailable.
-- A score change of at least `+0.5` is `improving`; at most `-0.5` is `declining`;
-  anything between is `stable`. Breadth—the number of detected positive patterns per
-  talk—uses the same `0.5` threshold for `widening`, `narrowing`, or `stable`.
-- A catalog-entry movement is `increasing` or `decreasing` only when its conservative
-  five-talk intervals prove a change of at least `0.20`; all five talks in each window
-  must be applicable to that entry. It is `stable` when the whole possible change stays
-  inside that band, and `indeterminate` when uncertainty crosses a boundary.
-
-`never_tried` and `not_yet_observed` are deliberately not synonyms. `never_tried` is an
-evidence-backed absence: the catalog says the available artifact can prove absence, the
-sample has at least eight applicable talks, every applicable talk was evaluated, and
-all eight or more were negative. `not_yet_observed` says only that this corpus has no
-positive detection while absence itself is still unknown—for example, the catalog
-permits positive detection but not absence, or coverage is incomplete. A smaller but
-fully evaluated absence-capable sample is instead `unclassified` with observation
-status `confirmed_absent`: absence is known, but the sample is too small for the
-`never_tried` tier. Neither state may appear in `never_used_patterns` or be presented
-as a policy-backed fact that the speaker has never tried the technique. With no
-applicable talks at all, the row is `unclassified` with observation status
-`unavailable`. The antipattern equivalent is `confirmed_none`; a zero-detection
-antipattern without the same absence gates remains `unclassified`, not “resolved.”
+`never_tried` and `not_yet_observed` are deliberately not synonyms. `never_tried` is a
+policy-backed absence classification. `not_yet_observed` says that this corpus has no
+positive detection while absence remains unknown. A conclusive absence that does not
+reach a named tier remains `unclassified` with observation status `confirmed_absent`.
+Only classifier-emitted `never_tried` IDs enter `never_used_patterns`; no other zero
+state may be presented as proof that the speaker has never tried the technique. The
+antipattern equivalent is `confirmed_none`; every other zero-detection antipattern
+remains non-recurring unless the classifier says otherwise.
 
 `classification_availability` is schema v2 and independent per domain. Mastery/novelty,
 antipattern recurrence, underuse, combinations, trends, and modes each carry their own
 `{status, reason_codes}`. The default policy makes the first four domains evaluable from
-opportunity rows; trends additionally require ten valid dated talks, two five-talk
-windows, one non-null shared opportunity identity, and at least one evaluable
-opportunity in the selected sample. Modes remain unavailable until talk-mode
-assignments exist. A consumer must gate only the requested domain and retain row-level
-unclassified results; one unavailable domain never erases another available one.
+opportunity rows; the classifier determines trend availability from its policy and
+input evidence. Modes remain unavailable until talk-mode assignments exist. A consumer
+must gate only the requested domain and retain row-level unclassified results; one
+unavailable domain never erases another available one.
 `trend_analysis` retains the complete selected sample, metric values, exhaustive
 pattern movements, and reasons behind those projections.
 

@@ -305,3 +305,16 @@ def test_profile_construction_rules_are_linked_and_shipped() -> None:
         assert ignore_check.returncode == 1, (
             f"{relative} is excluded from the published plugin"
         )
+
+
+def test_profile_schema_delegates_policy_arithmetic_to_classifier() -> None:
+    schema = (
+        SKILLS_ROOT / "vault-profile" / "references" / "speaker-profile-schema.md"
+    ).read_text(encoding="utf-8")
+
+    assert "#### Classifier-Owned Policy Semantics" in schema
+    assert "references/pattern-classification-policy-v1.json" in schema
+    assert "scripts/classify-pattern-profile.py" in schema
+    assert "Bundled Default Thresholds" not in schema
+    assert "`E/A`" not in schema
+    assert "`D/A`" not in schema
