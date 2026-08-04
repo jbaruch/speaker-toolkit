@@ -493,6 +493,43 @@ def test_v5_assessment_rejects_missing_classification_id_without_crashing(
     )
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("applicable_count", True),
+        ("applicable_count", False),
+        ("evaluable_count", True),
+        ("evaluable_count", False),
+        ("detected_count", True),
+        ("detected_count", False),
+        ("unevaluable_count", True),
+        ("unevaluable_count", False),
+    ],
+)
+def test_v5_classification_evidence_rejects_boolean_counts(
+    validate_profile,
+    field,
+    value,
+):
+    pattern_profile = _v5_pattern_profile(validate_profile, count=0)
+    row = next(
+        item
+        for item in pattern_profile["pattern_classifications"]
+        if item["absence_conclusion_capable"] is False
+    )
+    row["evidence"][field] = value
+
+    assessment = validate_profile.assess_pattern_profile(
+        pattern_profile, expected_contract_version=5
+    )
+
+    assert assessment.current_contract is False
+    assert any(
+        f".evidence.{field} must be a non-negative integer" in error
+        for error in assessment.errors
+    )
+
+
 def test_mixed_opportunity_identity_keeps_occurrences_and_suppresses_raw_average(
     validate_profile,
 ):

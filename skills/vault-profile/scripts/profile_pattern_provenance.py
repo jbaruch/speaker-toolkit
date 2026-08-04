@@ -554,12 +554,27 @@ def _validate_classification_lane(
                 f"{path}.absence_conclusion_capable must match active catalog metadata"
             )
         evidence = item.get("evidence")
+        applicable_count: object = None
+        detected_count: object = None
         if not isinstance(evidence, Mapping):
             errors.append(f"{path}.evidence must be an object")
         else:
             errors.extend(
                 _exact_fields(evidence, _EVIDENCE_FIELDS, path=f"{path}.evidence")
             )
+            for field in (
+                "applicable_count",
+                "evaluable_count",
+                "detected_count",
+                "unevaluable_count",
+            ):
+                count = evidence.get(field)
+                if not _is_integer(count) or count < 0:
+                    errors.append(
+                        f"{path}.evidence.{field} must be a non-negative integer"
+                    )
+            applicable_count = evidence.get("applicable_count")
+            detected_count = evidence.get("detected_count")
             raw = raw_by_id.get(pattern_id)
             expected_evidence = (
                 _expected_evidence(raw) if isinstance(raw, Mapping) else None
@@ -582,10 +597,10 @@ def _validate_classification_lane(
             )
         if (
             absence_capable is False
-            and isinstance(evidence, Mapping)
-            and isinstance(evidence.get("applicable_count"), int)
-            and evidence.get("applicable_count", 0) > 0
-            and evidence.get("detected_count") == 0
+            and _is_integer(applicable_count)
+            and applicable_count > 0
+            and _is_integer(detected_count)
+            and detected_count == 0
         ):
             required_classification = (
                 "not_yet_observed"
