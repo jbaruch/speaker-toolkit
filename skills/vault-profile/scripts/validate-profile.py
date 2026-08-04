@@ -239,10 +239,15 @@ def _load_live_pattern_snapshot(
             database.get("config"),
         ),
     )
-    classification = classify_pattern_profile(
-        snapshot["baseline_talks"],
-        resolve_classification_policy(vault_root),
-    )
+    try:
+        classification = classify_pattern_profile(
+            snapshot["baseline_talks"],
+            resolve_classification_policy(vault_root),
+        )
+    except RuntimeError as exc:
+        raise ValueError(
+            f"pattern classification runtime is unavailable: {exc}"
+        ) from exc
     return {**snapshot, "pattern_classification": classification}
 
 

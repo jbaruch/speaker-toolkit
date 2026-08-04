@@ -241,6 +241,30 @@ def test_present_invalid_classification_override_aborts_owner_validation(
     assert any("policy fields are noncanonical" in error for error in report["errors"])
 
 
+def test_owner_reports_classification_runtime_failure_as_structured_validation(
+    validate_profile, tmp_path, capsys, monkeypatch
+):
+    profile = _minimal_profile(validate_profile)
+
+    def unavailable_runtime(_vault_root):
+        raise RuntimeError("classification runtime export is unavailable")
+
+    monkeypatch.setattr(
+        validate_profile, "resolve_classification_policy", unavailable_runtime
+    )
+
+    rc = _run(validate_profile, profile, tmp_path)
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)
+
+    assert rc == 1
+    assert report["valid"] is False
+    assert any(
+        "pattern classification runtime is unavailable" in error
+        for error in report["errors"]
+    )
+
+
 def test_valid_override_is_stamped_and_recomputed_without_talk_reparse(
     validate_profile, tmp_path, capsys
 ):
