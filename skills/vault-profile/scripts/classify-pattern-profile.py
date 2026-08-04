@@ -204,8 +204,10 @@ def _validate_threshold_rule(
 def validate_policy(value: object) -> dict[str, object]:
     """Return a normalized strict schema-v1 policy or raise."""
     policy = _exact_fields(value, _POLICY_TOP_LEVEL_FIELDS, path="policy")
-    if policy.get("schema_version") != POLICY_SCHEMA_VERSION or isinstance(
-        policy.get("schema_version"), bool
+    policy_schema_version = policy.get("schema_version")
+    if (
+        not _is_integer(policy_schema_version)
+        or policy_schema_version != POLICY_SCHEMA_VERSION
     ):
         raise PatternClassificationError(
             f"policy.schema_version must be {POLICY_SCHEMA_VERSION}"
@@ -363,9 +365,15 @@ def validate_policy(value: object) -> dict[str, object]:
             "policy.signature_combinations.eligible_member_classifications must "
             "equal ['regular', 'signature']"
         )
-    if combinations.get("member_counts") != [2, 3]:
+    member_counts = combinations.get("member_counts")
+    if (
+        not isinstance(member_counts, list)
+        or any(not _is_integer(item) for item in member_counts)
+        or member_counts != [2, 3]
+    ):
         raise PatternClassificationError(
-            "policy.signature_combinations.member_counts must equal [2, 3]"
+            "policy.signature_combinations.member_counts must equal the integer "
+            "list [2, 3]"
         )
     normalized_combinations: dict[str, object] = {
         "eligible_member_classifications": ["regular", "signature"],
@@ -567,8 +575,10 @@ def resolve_classification_policy(
 def validate_policy_stamp(value: object) -> dict[str, object]:
     """Validate a self-contained profile policy stamp and its semantic digest."""
     stamp = _exact_fields(value, _POLICY_STAMP_FIELDS, path="classification_policy")
-    if stamp.get("schema_version") != POLICY_STAMP_SCHEMA_VERSION or isinstance(
-        stamp.get("schema_version"), bool
+    stamp_schema_version = stamp.get("schema_version")
+    if (
+        not _is_integer(stamp_schema_version)
+        or stamp_schema_version != POLICY_STAMP_SCHEMA_VERSION
     ):
         raise PatternClassificationError(
             f"classification_policy.schema_version must be {POLICY_STAMP_SCHEMA_VERSION}"
@@ -583,7 +593,12 @@ def validate_policy_stamp(value: object) -> dict[str, object]:
         raise PatternClassificationError(
             "classification_policy.policy_id does not match semantic_policy"
         )
-    if stamp.get("policy_version") != policy["policy_version"]:
+    stamp_policy_version = stamp.get("policy_version")
+    if not _is_integer(stamp_policy_version) or stamp_policy_version < 1:
+        raise PatternClassificationError(
+            "classification_policy.policy_version must be a positive integer"
+        )
+    if stamp_policy_version != policy["policy_version"]:
         raise PatternClassificationError(
             "classification_policy.policy_version does not match semantic_policy"
         )

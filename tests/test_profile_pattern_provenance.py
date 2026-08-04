@@ -498,6 +498,121 @@ def test_v5_assessment_rejects_policy_digest_tampering(validate_profile):
     assert any("semantic_sha256" in error for error in assessment.errors)
 
 
+@pytest.mark.parametrize(
+    ("path", "value", "expected_error"),
+    [
+        (
+            ("classification_schema_version",),
+            True,
+            "pattern_profile.classification_schema_version must be 1",
+        ),
+        (
+            ("classification_schema_version",),
+            1.0,
+            "pattern_profile.classification_schema_version must be 1",
+        ),
+        (
+            ("classification_availability", "schema_version"),
+            True,
+            "pattern_profile.classification_availability.schema_version must be 2",
+        ),
+        (
+            ("classification_availability", "schema_version"),
+            2.0,
+            "pattern_profile.classification_availability.schema_version must be 2",
+        ),
+        (
+            ("classification_policy", "schema_version"),
+            True,
+            "classification_policy.schema_version must be 1",
+        ),
+        (
+            ("classification_policy", "schema_version"),
+            1.0,
+            "classification_policy.schema_version must be 1",
+        ),
+        (
+            ("classification_policy", "policy_version"),
+            True,
+            "classification_policy.policy_version must be a positive integer",
+        ),
+        (
+            ("classification_policy", "policy_version"),
+            1.0,
+            "classification_policy.policy_version must be a positive integer",
+        ),
+        (
+            ("classification_policy", "semantic_policy", "schema_version"),
+            True,
+            "policy.schema_version must be 1",
+        ),
+        (
+            ("classification_policy", "semantic_policy", "schema_version"),
+            1.0,
+            "policy.schema_version must be 1",
+        ),
+        (
+            (
+                "classification_policy",
+                "semantic_policy",
+                "signature_combinations",
+                "member_counts",
+            ),
+            [2.0, 3],
+            "policy.signature_combinations.member_counts must equal the integer list",
+        ),
+        (
+            (
+                "classification_policy",
+                "semantic_policy",
+                "signature_combinations",
+                "member_counts",
+            ),
+            [2, 3.0],
+            "policy.signature_combinations.member_counts must equal the integer list",
+        ),
+        (
+            (
+                "classification_policy",
+                "semantic_policy",
+                "signature_combinations",
+                "member_counts",
+            ),
+            [True, 3],
+            "policy.signature_combinations.member_counts must equal the integer list",
+        ),
+        (
+            (
+                "classification_policy",
+                "semantic_policy",
+                "signature_combinations",
+                "member_counts",
+            ),
+            [2, True],
+            "policy.signature_combinations.member_counts must equal the integer list",
+        ),
+    ],
+)
+def test_v5_assessment_rejects_type_confused_policy_integers(
+    validate_profile,
+    path,
+    value,
+    expected_error,
+):
+    pattern_profile = _v5_pattern_profile(validate_profile)
+    target = pattern_profile
+    for field in path[:-1]:
+        target = target[field]
+    target[path[-1]] = value
+
+    assessment = validate_profile.assess_pattern_profile(
+        pattern_profile, expected_contract_version=5
+    )
+
+    assert assessment.current_contract is False
+    assert any(expected_error in error for error in assessment.errors)
+
+
 def test_v5_assessment_rejects_missing_classification_id_without_crashing(
     validate_profile,
 ):
@@ -688,6 +803,18 @@ def test_signature_combination_accepts_canonical_evidence(validate_profile):
     )
 
     assert errors == []
+
+
+def test_signature_combination_requires_reason_codes(validate_profile):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    row, positive_rows = _signature_combination_fixture()
+    row["reason_codes"] = []
+
+    errors = provenance._validate_combinations(
+        [row], positive_rows, eligible_talk_count=10
+    )
+
+    assert any("reason_codes must not be empty" in error for error in errors)
 
 
 def test_mixed_opportunity_identity_keeps_occurrences_and_suppresses_raw_average(

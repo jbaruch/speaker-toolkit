@@ -332,6 +332,22 @@ def test_profile_with_outdated_schema_version_is_invalid(
     assert out["schema_version"] == 1
 
 
+@pytest.mark.parametrize("schema_version", [True, 5.0])
+def test_profile_with_type_confused_current_schema_version_is_invalid(
+    validate_profile, schema_version
+):
+    profile = _minimal_profile(validate_profile)
+    profile["schema_version"] = schema_version
+
+    missing, errors, observed_schema_version = validate_profile.validate_profile(
+        profile
+    )
+
+    assert missing == []
+    assert errors == [f"schema_version is {schema_version!r} (expected 5)"]
+    assert observed_schema_version == schema_version
+
+
 # --- load-vault instrumentation partitioning -------------------------------
 
 

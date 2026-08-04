@@ -430,10 +430,10 @@ def _validate_availability_v2(
         _AVAILABILITY_V2_FIELDS,
         path="pattern_profile.classification_availability",
     )
-    if value.get(
-        "schema_version"
-    ) != CLASSIFICATION_AVAILABILITY_SCHEMA_VERSION or isinstance(
-        value.get("schema_version"), bool
+    availability_schema_version = value.get("schema_version")
+    if (
+        not _is_integer(availability_schema_version)
+        or availability_schema_version != CLASSIFICATION_AVAILABILITY_SCHEMA_VERSION
     ):
         errors.append(
             "pattern_profile.classification_availability.schema_version must be 2"
@@ -737,6 +737,8 @@ def _validate_combinations(
         errors.extend(
             _string_array(item.get("reason_codes"), path=f"{path}.reason_codes")
         )
+        if item.get("reason_codes") == []:
+            errors.append(f"{path}.reason_codes must not be empty")
     if len(ids) != len(set(ids)):
         errors.append(
             "pattern_profile.signature_combinations duplicates a canonical ID"
@@ -755,10 +757,10 @@ def _validate_v5_policy_fields(
     eligible_talk_count: int,
 ) -> tuple[frozenset[str], str | None, list[str]]:
     errors: list[str] = []
-    if pattern_profile.get(
-        "classification_schema_version"
-    ) != CLASSIFICATION_SCHEMA_VERSION or isinstance(
-        pattern_profile.get("classification_schema_version"), bool
+    classification_schema_version = pattern_profile.get("classification_schema_version")
+    if (
+        not _is_integer(classification_schema_version)
+        or classification_schema_version != CLASSIFICATION_SCHEMA_VERSION
     ):
         errors.append("pattern_profile.classification_schema_version must be 1")
     try:

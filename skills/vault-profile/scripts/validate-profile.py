@@ -388,11 +388,16 @@ def validate_profile(
     missing = [key for key in REQUIRED_KEYS if key not in profile]
     schema_version = profile.get("schema_version")
     errors: list[str] = []
-    if schema_version != CURRENT_SCHEMA_VERSION:
+    schema_is_current = (
+        isinstance(schema_version, int)
+        and not isinstance(schema_version, bool)
+        and schema_version == CURRENT_SCHEMA_VERSION
+    )
+    if not schema_is_current:
         errors.append(
             f"schema_version is {schema_version!r} (expected {CURRENT_SCHEMA_VERSION})"
         )
-    if not missing and schema_version == CURRENT_SCHEMA_VERSION:
+    if not missing and schema_is_current:
         assessment = assess_pattern_profile(
             profile["pattern_profile"], expected_contract_version=5
         )
