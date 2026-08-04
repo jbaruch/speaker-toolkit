@@ -1072,8 +1072,14 @@ def test_lane_requirements_match_the_configured_interpreter_contract() -> None:
     assert check_runtime.MODULE_PROBE_SCHEMA_VERSION == 1
     assert check_runtime.PSUTIL_REQUIRED_VERSION == "7.2.2"
     assert check_runtime.FILELOCK_REQUIRED_VERSION == "3.32.2"
+    assert check_runtime.IMAGEHASH_REQUIRED_VERSION == "4.3.2"
+    assert check_runtime.NUMPY_REQUIRED_VERSION == "2.2.6"
+    assert check_runtime.PILLOW_REQUIRED_VERSION == "12.3.0"
     assert check_runtime.REQUIRED_MODULE_VERSIONS == {
+        "PIL": "12.3.0",
         "filelock": "3.32.2",
+        "imagehash": "4.3.2",
+        "numpy": "2.2.6",
         "psutil": "7.2.2",
     }
     assert requirements["pdf"]["modules"] == {
@@ -1111,13 +1117,8 @@ def test_psutil_version_authorities_are_synchronized() -> None:
     )
 
 
-def test_filelock_version_authorities_are_synchronized() -> None:
+def test_video_dependency_version_authorities_are_synchronized() -> None:
     manifest = PYPROJECT.read_text(encoding="utf-8")
-    manifest_versions = re.findall(
-        r'^\s*"filelock==([^"\s]+)",\s*$',
-        manifest,
-        flags=re.MULTILINE,
-    )
     reference = (
         PYPROJECT.parent
         / "skills"
@@ -1126,5 +1127,17 @@ def test_filelock_version_authorities_are_synchronized() -> None:
         / "video-slide-extraction.md"
     ).read_text(encoding="utf-8")
 
-    assert manifest_versions == [check_runtime.FILELOCK_REQUIRED_VERSION]
-    assert f'"filelock=={check_runtime.FILELOCK_REQUIRED_VERSION}"' in reference
+    expected_versions = {
+        "filelock": check_runtime.FILELOCK_REQUIRED_VERSION,
+        "ImageHash": check_runtime.IMAGEHASH_REQUIRED_VERSION,
+        "numpy": check_runtime.NUMPY_REQUIRED_VERSION,
+        "Pillow": check_runtime.PILLOW_REQUIRED_VERSION,
+    }
+    for package, required_version in expected_versions.items():
+        manifest_versions = re.findall(
+            rf'^\s*"{package}==([^"\s]+)",\s*$',
+            manifest,
+            flags=re.MULTILINE,
+        )
+        assert manifest_versions == [required_version]
+        assert f'"{package}=={required_version}"' in reference

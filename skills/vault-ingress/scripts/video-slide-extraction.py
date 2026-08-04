@@ -57,6 +57,10 @@ PIPELINE_VERSION = "0.12.0"
 # See skills/vault-ingress/references/schemas-db.md ("Video Extraction Output Schema").
 SCHEMA_VERSION = 3
 
+VIDEO_DEPENDENCY_INSTALL = (
+    'pip install "ImageHash==4.3.2" "numpy==2.2.6" "Pillow==12.3.0" "filelock==3.32.2"'
+)
+
 # Heavy deps are only needed for the extraction pipeline itself. Import them
 # without exiting on failure so the module stays importable (and --version /
 # --help stay answerable) in a minimal environment. main() enforces presence
@@ -106,20 +110,18 @@ def _confined_output_path(output_root: str, filename: str) -> str:
 def _require_image_dependencies():
     """Return imported image modules or fail clearly for direct callers."""
     if Image is None or imagehash is None or _numpy_dependency is None:
-        raise RuntimeError(
-            "Install dependencies: pip install imagehash numpy Pillow "
-            '"filelock==3.32.2"'
-        ) from _DEPS_ERROR
+        raise RuntimeError(f"Install dependencies: {VIDEO_DEPENDENCY_INSTALL}") from (
+            _DEPS_ERROR
+        )
     return Image, imagehash
 
 
 def _video_run_lock(path):
     """Return the declared cross-platform lock without burdening --version."""
     if FileLock is None:
-        raise RuntimeError(
-            "Install dependencies: pip install imagehash numpy Pillow "
-            '"filelock==3.32.2"'
-        ) from _DEPS_ERROR
+        raise RuntimeError(f"Install dependencies: {VIDEO_DEPENDENCY_INSTALL}") from (
+            _DEPS_ERROR
+        )
     return FileLock(path)
 
 
@@ -982,14 +984,7 @@ def main():
 
     if _DEPS_ERROR is not None:
         print(
-            json.dumps(
-                {
-                    "error": (
-                        "Install dependencies: pip install imagehash numpy Pillow "
-                        '"filelock==3.32.2"'
-                    )
-                }
-            ),
+            json.dumps({"error": f"Install dependencies: {VIDEO_DEPENDENCY_INSTALL}"}),
             file=sys.stderr,
         )
         sys.exit(1)

@@ -185,9 +185,9 @@ transcript or alternate slide lane.
 Require a lane before using it, for example `--require-lanes core,pdf`. Remote
 Drive acquisition additionally needs the `gdown` module; captions need
 `youtube-transcript-api`; audio download fallback needs `yt-dlp`; rendered PDF
-inspection needs `pdftoppm`; video extraction needs Pillow, `imagehash`, NumPy,
-exactly `filelock==3.32.2`, `ffmpeg`, and `ffprobe`; local Whisper needs
-`mlx-whisper` and `ffprobe`.
+inspection needs `pdftoppm`; video extraction needs exactly `Pillow==12.3.0`,
+`ImageHash==4.3.2`, `numpy==2.2.6`, and `filelock==3.32.2`, plus `ffmpeg` and
+`ffprobe`; local Whisper needs `mlx-whisper` and `ffprobe`.
 Inspect those with the checker's `google-drive`, `captions`,
 `youtube-download`, `pdf-render`, `video`, and `whisper` lanes as selected talks
 require. Each lane is independent: a failed optional import/tool disables only

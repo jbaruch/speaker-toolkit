@@ -1096,8 +1096,8 @@ def test_cli_reports_missing_video_dependencies_as_one_json_error(
     assert captured.out == ""
     assert json.loads(captured.err) == {
         "error": (
-            "Install dependencies: pip install imagehash numpy Pillow "
-            '"filelock==3.32.2"'
+            'Install dependencies: pip install "ImageHash==4.3.2" '
+            '"numpy==2.2.6" "Pillow==12.3.0" "filelock==3.32.2"'
         )
     }
 

@@ -13,7 +13,8 @@ the next run reclaims a stage left by abrupt process loss. A cross-platform
 per-video advisory lock in local OS temporary storage prevents two cooperative
 reruns from interleaving their slide-region and context PDF pair without adding
 Google Drive lock artifacts. The video extraction pipeline advances to `0.12.0`;
-its record schema remains v3.
+its record schema remains v3. The documented video dependency set is pinned to
+the exact tested versions and renewed weekly through Dependabot.
 
 ## 0.20.9 — 2026-08-03
 
