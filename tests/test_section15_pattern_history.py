@@ -1348,7 +1348,10 @@ def test_ingress_docs_require_live_database_for_current_block_replace():
         encoding="utf-8"
     )
 
-    for text in (skill, processing):
-        assert "section15_pattern_history.py replace" in text
-        assert "tracking-database.json" in text
-        assert "stale" in text
+    assert "references/processing-rules.md" in skill
+    assert "section15_pattern_history.py" in skill
+    assert "tracking-database.json" in skill
+    assert "stale" in skill
+    assert "section15_pattern_history.py replace" in processing
+    assert "tracking-database.json" in processing
+    assert "stale" in processing

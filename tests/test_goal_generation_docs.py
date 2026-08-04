@@ -37,7 +37,7 @@ def test_reader_runs_mechanical_gate_and_never_scores_mismatch():
     assert script in INGRESS
     assert '`"{python_path}"' in SKILL
     assert '"{python_path}"' in INGRESS
-    assert "needs_rebaseline" in INGRESS
+    assert "needs_rebaseline" in PROCESSING
     assert "must not set `status` to\n  `achieved`" in PROCESSING
 
 

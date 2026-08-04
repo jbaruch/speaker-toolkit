@@ -7,6 +7,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 INGRESS = REPO_ROOT / "skills" / "vault-ingress"
 DOC_PATHS = {
     "skill": INGRESS / "SKILL.md",
+    "bootstrap": INGRESS / "references" / "bootstrap-and-preflight.md",
+    "persistence": INGRESS / "references" / "batch-persistence.md",
+    "selection": INGRESS / "references" / "queue-selection.md",
     "processing": INGRESS / "references" / "processing-rules.md",
     "schemas": INGRESS / "references" / "schemas-db.md",
     "worker": INGRESS / "references" / "subagent-instructions.md",
@@ -32,15 +35,57 @@ def test_claim_issuance_is_live_and_version_bound() -> None:
         "Saved claim schemas v1/v2 authorize only return schemas v1/v2"
         in docs["schemas"]
     )
-    assert "schema v3 authorizes only v3; schema v4 authorizes only archival v4" in docs[
-        "schemas"
-    ]
+    assert (
+        "schema v3 authorizes only v3; schema v4 authorizes only archival v4"
+        in docs["schemas"]
+    )
     assert "Recover a live legacy lease" in docs["worker"]
+
+
+def test_source_video_preflight_requires_the_supervised_runtime_lane() -> None:
+    docs = _docs()
+    bootstrap = docs["bootstrap"]
+
+    runtime_gate = "--lanes core,source-video --require-lanes core,source-video"
+    assert runtime_gate in bootstrap
+    assert bootstrap.index(runtime_gate) < bootstrap.index("scripts/preflight-vault.py")
+    assert "Do not pre-open, hash, hydrate, or invoke `ffprobe` directly" in bootstrap
+    assert "disables only source-video evidence" in bootstrap
+    for field in (
+        "structured_data.video_extraction.source_video_path",
+        "video_local_path",
+        "video_path",
+    ):
+        assert field in bootstrap
+        assert field in docs["skill"]
+    assert (
+        "independently\nverified transcript, rendered-PDF, or native-PPTX evidence"
+        in bootstrap
+    )
+    assert "references/bootstrap-and-preflight.md" in docs["skill"]
+
+
+def test_returned_source_video_requires_runtime_gate_before_persistence() -> None:
+    docs = _docs()
+    persistence = docs["persistence"]
+
+    runtime_gate = "--lanes core,source-video --require-lanes core,source-video"
+    assert runtime_gate in persistence
+    assert persistence.index(runtime_gate) < persistence.index("persist-results.py")
+    for field in (
+        "structured_data.video_extraction.source_video_path",
+        "video_local_path",
+        "video_path",
+    ):
+        assert field in persistence
+        assert field in docs["skill"]
+    assert "validation, persistence, and analysis rendering" in persistence
+    assert "references/batch-persistence.md" in docs["skill"]
 
 
 def test_workers_use_the_immutable_claim_baseline_not_section_15() -> None:
     docs = _docs()
-    assert "MUST NOT\nparse Section 15 for numeric adherence" in docs["skill"]
+    assert "references/subagent-instructions.md" in docs["skill"]
     assert "MUST NOT be\nparsed for numeric adherence" in docs["worker"]
     assert "the claim baseline remains immutable" in docs["processing"]
     assert "Workers MUST\nNOT parse Section 15" in docs["processing"]
@@ -53,9 +98,10 @@ def test_workers_use_the_immutable_claim_baseline_not_section_15() -> None:
 
 def test_threshold_and_structured_comparison_contract_is_documented() -> None:
     docs = _docs()
-    for name in ("skill", "processing", "schemas", "worker"):
+    for name in ("processing", "schemas", "worker"):
         assert "adherence_comparison" in docs[name]
         assert "legacy-unverified" in docs[name]
+    assert "references/processing-rules.md" in docs["skill"]
 
     assert "fewer than 10 `scored_talk_count`" in docs["processing"]
     assert "at least 10 scored talks" in docs["processing"]
@@ -76,14 +122,14 @@ def test_native_picture_render_threshold_is_script_owned() -> None:
 
 def test_post_batch_cohort_and_section_15_filter_are_explicit() -> None:
     docs = _docs()
-    for name in ("skill", "processing", "schemas"):
+    for name in ("persistence", "processing", "schemas"):
         assert "current_adherence_baseline" in docs[name]
         assert "active_batch_excluded: false" in docs[name]
 
     assert "only after every merge succeeds" in docs["processing"]
     assert "Never approximate this cohort by\n`processed_date`" in docs["processing"]
     assert "after the entire batch has persisted successfully" in docs["processing"]
-    assert "never rebuild after member 1" in docs["skill"]
+    assert "never update it after an\nindividual member merge" in docs["processing"]
     assert "must not recompute after member 1" in docs["schemas"]
 
 
@@ -94,11 +140,9 @@ def test_claim_replay_recovery_and_closure_matrix_are_documented() -> None:
         in docs["schemas"]
     )
     assert "Recovery never rewrites a claim snapshot" in docs["schemas"]
-    assert (
-        "closes v1 as v2 and closes v2–v5 at\ntheir own versions" in docs["schemas"]
-    )
-    assert "receiptless completed v1 claim" in docs["skill"]
-    assert "takes a fresh pre-mutation snapshot" in docs["skill"]
+    assert "closes v1 as v2 and closes v2–v5 at\ntheir own versions" in docs["schemas"]
+    assert "receiptless completed v1 claim" in docs["persistence"]
+    assert "takes a fresh pre-mutation snapshot" in docs["selection"]
 
 
 def test_archival_v4_and_current_v5_evidence_generations_are_distinct() -> None:
@@ -106,13 +150,12 @@ def test_archival_v4_and_current_v5_evidence_generations_are_distinct() -> None:
     assert "Two incompatible v3 lineages were emitted" in docs["schemas"]
     assert "v4 is their source-located union and remains archival" in docs["schemas"]
 
-
     assert '"pattern_scoring_schema_version": 5' in docs["schemas"]
     assert '"evidence_schema_version": 2' in docs["schemas"]
     assert "pattern_outcomes" in docs["worker"]
     assert "opportunity_coverage_identity" in docs["worker"]
 
-    for name in ("skill", "processing", "schemas", "worker"):
+    for name in ("persistence", "processing", "schemas", "worker"):
         assert "evidence_source" in docs[name]
         assert "evidence_citations" in docs[name]
 
@@ -145,16 +188,16 @@ def test_canonical_coverage_alone_never_authorizes_current_absence() -> None:
 
 def test_current_v5_cohort_requires_live_artifact_freshness() -> None:
     docs = _docs()
-    assert "shared freshness assessor" in docs["skill"]
-    assert "configured source roots" in docs["skill"]
+    assert "shared freshness assessor" in docs["selection"]
+    assert "configured source roots" in docs["selection"]
     assert "artifact freshness against the vault" in docs["processing"]
-    assert "shared root-aware assessor" in docs["skill"]
-    assert "remote video/slide acquisition remains eligible" in docs["skill"]
+    assert "shared root-aware assessor" in docs["selection"]
+    assert "remote video/slide acquisition remains eligible" in docs["selection"]
 
 
 def test_source_located_receipt_is_public_and_range_bound() -> None:
     docs = _docs()
-    for name in ("skill", "processing", "schemas", "worker"):
+    for name in ("processing", "schemas", "worker"):
         assert "source_inspection" in docs[name]
 
     for field in ("line_ranges", "page_ranges", "time_ranges"):
@@ -173,20 +216,27 @@ def test_source_located_worker_and_engine_evidence_ownership_is_explicit() -> No
     assert "Those are the complete worker-side shapes" in docs["schemas"]
     assert "must not copy `line_start`, `line_end`" in docs["schemas"]
     assert "metadata `value`/`owner_value_after_return`" in docs["worker"]
-    assert "persistence derives" in docs["skill"]
-    assert "artifact roots/paths/hashes" in docs["skill"]
-    assert "raw-return receipt remains the\nhash of exactly what the worker sent" in docs[
-        "schemas"
-    ]
+    assert "persistence derives" in docs["worker"]
+    assert "artifact root/path/hash fields" in docs["worker"]
+    assert (
+        "raw-return receipt remains the\nhash of exactly what the worker sent"
+        in docs["schemas"]
+    )
     assert "non-English `delivery_language`" in docs["worker"]
     assert "non-empty\nEnglish `translation` is required" in docs["schemas"]
 
-    schema_example = docs["schemas"].split(
-        "Each subagent returns this JSON after processing one talk:", 1
-    )[1].split("```json", 1)[1].split("```", 1)[0]
-    worker_example = docs["worker"].split(
-        "Minimal processed structure for a fresh v5 claim", 1
-    )[1].split("```json", 1)[1].split("```", 1)[0]
+    schema_example = (
+        docs["schemas"]
+        .split("Each subagent returns this JSON after processing one talk:", 1)[1]
+        .split("```json", 1)[1]
+        .split("```", 1)[0]
+    )
+    worker_example = (
+        docs["worker"]
+        .split("Minimal processed structure for a fresh v5 claim", 1)[1]
+        .split("```json", 1)[1]
+        .split("```", 1)[0]
+    )
     for raw_example in (schema_example, worker_example):
         for engine_field in (
             '"artifact_root"',
@@ -207,7 +257,7 @@ def test_source_located_worker_and_engine_evidence_ownership_is_explicit() -> No
 
 def test_source_located_not_evaluable_is_reason_code_only_and_fail_closed() -> None:
     docs = _docs()
-    for name in ("skill", "processing", "schemas", "worker"):
+    for name in ("persistence", "processing", "schemas", "worker"):
         assert "source_gate_pending_owner_review" in docs[name]
     for name in ("processing", "schemas", "worker"):
         assert "missing_required_source_coverage" in docs[name]
@@ -215,32 +265,32 @@ def test_source_located_not_evaluable_is_reason_code_only_and_fail_closed() -> N
     assert "fail-closed" in docs["schemas"]
     assert "fails closed" in docs["worker"]
 
-    assert "contains exactly `pattern_id` and `reason_code`" in docs[
-        "processing"
-    ]
+    assert "contains exactly `pattern_id` and `reason_code`" in docs["processing"]
     assert "prose-bearing" in docs["processing"]
 
 
 def test_claim_return_talk_and_scoring_axes_preserve_archival_v4() -> None:
     docs = _docs()
     assert "The four version axes are deliberately explicit" in docs["schemas"]
-    assert "| v4 | v4 only | archival source-located v4 | never current v5 |" in docs[
-        "schemas"
-    ]
-    assert "| v5 | v5 only | v5 | v5 when canonical evidence/outcomes are fresh |" in docs[
-        "schemas"
-    ]
-    assert "Saved claim schemas\nv1–v4 authorize only their same-numbered return schemas" in docs[
-        "skill"
-    ]
-    assert "only return generation eligible for pattern-scoring schema v5" in docs[
-        "skill"
-    ]
+    assert (
+        "| v4 | v4 only | archival source-located v4 | never current v5 |"
+        in docs["schemas"]
+    )
+    assert (
+        "| v5 | v5 only | v5 | v5 when canonical evidence/outcomes are fresh |"
+        in docs["schemas"]
+    )
+    assert "Fresh queue work uses claim schema v5" in docs["selection"]
+    assert (
+        "only return generation eligible for pattern-scoring schema v5"
+        in docs["worker"]
+    )
 
 
 def test_transcript_freshness_revalidates_quality_provenance() -> None:
     docs = _docs()
-    assert "hash-bound quality policy against current owner/provider duration" in docs[
-        "skill"
-    ]
+    assert (
+        "hash-bound quality policy against current owner/provider duration"
+        in docs["selection"]
+    )
     assert "transcript_quality_context_drift" in docs["schemas"]

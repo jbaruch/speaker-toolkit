@@ -383,6 +383,8 @@ that block remains explicitly historical/non-baseline; ordinary Section 15 prose
 can never restore pattern-history authorization.
 `section15_pattern_history.py replace` is the only supported current-block
 replacement operation and must receive the live tracking database.
+Recount status from the tracking database every time; never increment it
+manually.
 
 ### Section 16 — Speaker-Confirmed Intent
 

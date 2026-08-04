@@ -6,6 +6,9 @@ returns the JSON shape in [schemas-db.md](schemas-db.md). The summary supports
 qualitative rhetoric analysis, but Section 15 is human narrative and MUST NOT be
 parsed for numeric adherence. The active claim's immutable
 `adherence_baseline` is the sole numeric authority.
+A successfully persisted v5 return is the only return generation eligible for pattern-scoring schema v5;
+saved legacy claims remain replayable only with their
+same-numbered archival return generation.
 
 ## A. Acquire Transcript and Slides
 
