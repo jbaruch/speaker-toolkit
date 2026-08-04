@@ -29,6 +29,7 @@ Stdout (JSON):
       "pattern_scoring_exclusions": [ ... ] # deterministic per-talk reasons
       "pattern_baseline":  { ... }   # exact-cohort count/sum/average + provenance
       "pattern_opportunities": { ... } # deterministic exhaustive per-pattern rows
+      "pattern_classification": { ... } # policy-bound deterministic derived fields
       "current_instrumentation_talks": [ ... ]  # current extractor cohort
       "stale_instrumentation_talks": [ ... ]    # pre-epoch extractor cohort
       "baseline_note":     "...",    # exact pattern-cohort semantics
@@ -57,7 +58,8 @@ INGRESS_SCRIPTS = (
 if str(INGRESS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(INGRESS_SCRIPTS))
 
-from adherence_baseline import (  # noqa: E402
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
+from adherence_baseline import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     AdherenceBaselineError,
     normalize_as_of,
 )
@@ -66,7 +68,12 @@ from pattern_cohort_snapshot import (  # noqa: E402
     build_current_pattern_snapshot,
     configured_evidence_freshness_assessor,
 )
-from return_validation import (  # noqa: E402
+from pattern_classification_runtime import (  # noqa: E402
+    classify_pattern_profile,
+    resolve_classification_policy,
+)
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
+from return_validation import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     PATTERN_SCORING_SCHEMA_VERSION,
     ReturnValidationError,
     load_catalog,
@@ -82,7 +89,8 @@ from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissin
     decode_json_object,
     snapshot_tracking_database,
 )
-from vault_root_authority import (  # noqa: E402
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
+from vault_root_authority import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     VaultRootAuthorityError,
     materialize_native_authority,
     resolve_vault_root_authority,
@@ -267,13 +275,22 @@ def main(argv: list[str]) -> int:
         pattern_scoring_exclusions = snapshot["pattern_scoring_exclusions"]
         pattern_baseline = snapshot["pattern_baseline"]
         pattern_opportunities = snapshot["pattern_opportunities"]
+        policy_stamp = resolve_classification_policy(vault_root)
+        pattern_classification = classify_pattern_profile(
+            baseline_talks,
+            policy_stamp,
+            catalog=catalog,
+        )
     except (
         AdherenceBaselineError,
         PatternCohortSnapshotError,
         ReturnValidationError,
+        RuntimeError,
+        ValueError,
     ) as exc:
         print(
-            f"ERROR: cannot build current pattern-scoring cohort: {exc}",
+            "ERROR: cannot build current pattern-scoring/classification "
+            f"payload: {exc}",
             file=sys.stderr,
         )
         return 1
@@ -291,6 +308,7 @@ def main(argv: list[str]) -> int:
         "pattern_scoring_exclusions": pattern_scoring_exclusions,
         "pattern_baseline": pattern_baseline,
         "pattern_opportunities": pattern_opportunities,
+        "pattern_classification": pattern_classification,
         "current_instrumentation_talks": current_instrumentation,
         "stale_instrumentation_talks": stale_instrumentation,
         "baseline_note": (

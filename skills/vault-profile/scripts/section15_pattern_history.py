@@ -2,8 +2,9 @@
 """Validate and atomically replace Section 15 pattern-history provenance.
 
 The human narrative in ``rhetoric-style-summary.md`` is never a machine
-baseline.  This module recognizes only one versioned, uniquely delimited JSON
-block inside Markdown Section 15.  The block carries a complete
+baseline. This module reads the occurrence-only v2 block and the policy-bound
+v3 block, while writing only v3. Exactly one uniquely delimited JSON block may
+exist inside Markdown Section 15. The block carries a complete
 ``pattern_profile`` plus redundant generation/cohort identity.  The shared
 ``profile_pattern_provenance`` assessor remains the authority for the payload.
 
@@ -44,7 +45,8 @@ from profile_pattern_provenance import (  # noqa: E402
     PatternProfileAssessment,
     assess_pattern_profile,
 )
-from adherence_baseline import (  # noqa: E402
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
+from adherence_baseline import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     AdherenceBaselineError,
     EvidenceFreshnessAssessor,
 )
@@ -54,30 +56,43 @@ from pattern_cohort_snapshot import (  # noqa: E402
     configured_evidence_freshness_assessor,
 )
 from pattern_opportunities import PatternOpportunityError  # noqa: E402
-from return_validation import (  # noqa: E402
+from pattern_classification_runtime import (  # noqa: E402
+    classify_pattern_profile,
+    resolve_classification_policy,
+    validate_policy_stamp,
+)
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
+from return_validation import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     ReturnValidationError,
 )
+
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseError,
     assess_tracking_database,
 )
+
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseIOError,
     decode_json_object,
     snapshot_tracking_database,
 )
-from vault_root_authority import (  # noqa: E402
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
+from vault_root_authority import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     VaultRootAuthorityError,
     materialize_native_authority,
     resolve_vault_root_authority,
 )
 
 
-BLOCK_SCHEMA_VERSION = 2
+LEGACY_BLOCK_SCHEMA_VERSION = 2
+BLOCK_SCHEMA_VERSION = 3
 BLOCK_SOURCE_LANE = "current_pattern_history"
-BLOCK_TOKEN = "speaker-toolkit:section15-current-pattern-history:v2"
+LEGACY_BLOCK_TOKEN = "speaker-toolkit:section15-current-pattern-history:v2"
+BLOCK_TOKEN = "speaker-toolkit:section15-current-pattern-history:v3"
+LEGACY_BLOCK_START = f"<!-- {LEGACY_BLOCK_TOKEN}:start -->"
+LEGACY_BLOCK_END = f"<!-- {LEGACY_BLOCK_TOKEN}:end -->"
 BLOCK_START = f"<!-- {BLOCK_TOKEN}:start -->"
 BLOCK_END = f"<!-- {BLOCK_TOKEN}:end -->"
 NON_BASELINE_NOTICE = (
@@ -94,14 +109,27 @@ _SECTION_15_HEADING = re.compile(
     re.MULTILINE,
 )
 _NEXT_H2_HEADING = re.compile(r"^##[ \t]+", re.MULTILINE)
-_BLOCK_BODY = re.compile(
-    re.escape(BLOCK_START)
-    + r"\n```json\n(?P<payload>.*?)\n```\n\n"
-    + re.escape(NON_BASELINE_NOTICE)
-    + r"\n"
-    + re.escape(BLOCK_END),
-    re.DOTALL,
-)
+_BLOCK_MARKERS = {
+    LEGACY_BLOCK_SCHEMA_VERSION: (
+        LEGACY_BLOCK_TOKEN,
+        LEGACY_BLOCK_START,
+        LEGACY_BLOCK_END,
+    ),
+    BLOCK_SCHEMA_VERSION: (BLOCK_TOKEN, BLOCK_START, BLOCK_END),
+}
+
+
+def _block_body_pattern(start: str, end: str) -> re.Pattern[str]:
+    return re.compile(
+        re.escape(start)
+        + r"\n```json\n(?P<payload>.*?)\n```\n\n"
+        + re.escape(NON_BASELINE_NOTICE)
+        + r"\n"
+        + re.escape(end),
+        re.DOTALL,
+    )
+
+
 _REQUIRED_BLOCK_FIELDS = frozenset(
     {
         "schema_version",
@@ -138,6 +166,9 @@ class Section15PatternHistoryAssessment:
     errors: tuple[str, ...]
     pattern_profile: dict[str, object] | None
     classification_fields_available: bool = False
+    available_classification_domains: frozenset[str] = frozenset()
+    block_schema_version: int | None = None
+    policy_semantic_sha256: str | None = None
 
     def as_status_dict(self) -> dict[str, object]:
         """Return status without echoing the potentially large history payload."""
@@ -145,6 +176,11 @@ class Section15PatternHistoryAssessment:
             "current_contract": self.current_contract,
             "catalog_fields_available": self.catalog_fields_available,
             "classification_fields_available": (self.classification_fields_available),
+            "available_classification_domains": sorted(
+                self.available_classification_domains
+            ),
+            "block_schema_version": self.block_schema_version,
+            "policy_semantic_sha256": self.policy_semantic_sha256,
             "scored_talk_count": self.scored_talk_count,
             "eligible_talk_count": self.eligible_talk_count,
             "reason_codes": self.reason_codes,
@@ -219,59 +255,94 @@ def _section_15_bounds(summary: str) -> tuple[re.Match[str], int] | None:
 
 def _extract_payload_text(
     summary: str,
-) -> tuple[str | None, Section15PatternHistoryAssessment | None]:
+) -> tuple[str | None, int | None, Section15PatternHistoryAssessment | None]:
     section = _section_15_bounds(summary)
     if section is None:
-        return None, _invalid_assessment(
-            REASON_BLOCK_INVALID,
-            "rhetoric summary must contain exactly one Markdown H2 Section 15",
+        return (
+            None,
+            None,
+            _invalid_assessment(
+                REASON_BLOCK_INVALID,
+                "rhetoric summary must contain exactly one Markdown H2 Section 15",
+            ),
         )
     heading, section_end = section
 
-    start_count = summary.count(BLOCK_START)
-    end_count = summary.count(BLOCK_END)
-    token_count = summary.count(BLOCK_TOKEN)
-    if start_count == 0 and end_count == 0:
-        if token_count:
-            return None, _invalid_assessment(
+    marker_counts = {
+        version: (
+            summary.count(token),
+            summary.count(start),
+            summary.count(end),
+        )
+        for version, (token, start, end) in _BLOCK_MARKERS.items()
+    }
+    if all(counts == (0, 0, 0) for counts in marker_counts.values()):
+        return (
+            None,
+            None,
+            _invalid_assessment(
+                REASON_BLOCK_MISSING,
+                "Section 15 has no machine-readable current pattern-history block",
+            ),
+        )
+    if (
+        sum(counts[1] for counts in marker_counts.values()) > 1
+        or sum(counts[2] for counts in marker_counts.values()) > 1
+    ):
+        return (
+            None,
+            None,
+            _invalid_assessment(
+                REASON_BLOCK_DUPLICATE,
+                "Section 15 must contain exactly one v2 or v3 current block",
+            ),
+        )
+    valid_versions = [
+        version for version, counts in marker_counts.items() if counts == (2, 1, 1)
+    ]
+    if len(valid_versions) != 1 or any(
+        counts != (0, 0, 0) and counts != (2, 1, 1) for counts in marker_counts.values()
+    ):
+        return (
+            None,
+            None,
+            _invalid_assessment(
                 REASON_BLOCK_INVALID,
-                "Section 15 current-block marker is torn or malformed",
-            )
-        return None, _invalid_assessment(
-            REASON_BLOCK_MISSING,
-            "Section 15 has no machine-readable current pattern-history block",
+                "Section 15 v2/v3 current-block markers are mixed, torn, or malformed",
+            ),
         )
-    if start_count > 1 or end_count > 1:
-        return None, _invalid_assessment(
-            REASON_BLOCK_DUPLICATE,
-            "Section 15 must contain exactly one current pattern-history block",
-        )
-    if start_count != 1 or end_count != 1 or token_count != 2:
-        return None, _invalid_assessment(
-            REASON_BLOCK_INVALID,
-            "Section 15 current-block markers are incomplete or malformed",
-        )
-
-    start = summary.index(BLOCK_START)
-    end_marker_start = summary.index(BLOCK_END)
-    end = end_marker_start + len(BLOCK_END)
+    block_version = valid_versions[0]
+    _, block_start, block_end = _BLOCK_MARKERS[block_version]
+    start = summary.index(block_start)
+    end_marker_start = summary.index(block_end)
+    end = end_marker_start + len(block_end)
     if start < heading.end() or end > section_end or end_marker_start <= start:
-        return None, _invalid_assessment(
-            REASON_BLOCK_INVALID,
-            "the current pattern-history block must be wholly inside Section 15",
+        return (
+            None,
+            None,
+            _invalid_assessment(
+                REASON_BLOCK_INVALID,
+                "the current pattern-history block must be wholly inside Section 15",
+            ),
         )
 
     block = summary[start:end].replace("\r\n", "\n")
-    match = _BLOCK_BODY.fullmatch(block)
+    match = _block_body_pattern(block_start, block_end).fullmatch(block)
     if match is None:
-        return None, _invalid_assessment(
-            REASON_BLOCK_INVALID,
-            "Section 15 current block has a torn fence, marker, or notice",
+        return (
+            None,
+            None,
+            _invalid_assessment(
+                REASON_BLOCK_INVALID,
+                "Section 15 current block has a torn fence, marker, or notice",
+            ),
         )
-    return match.group("payload"), None
+    return match.group("payload"), block_version, None
 
 
-def _assess_payload(payload: object) -> Section15PatternHistoryAssessment:
+def _assess_payload(
+    payload: object, *, block_schema_version: int
+) -> Section15PatternHistoryAssessment:
     if not isinstance(payload, Mapping):
         return _invalid_assessment(
             REASON_BLOCK_INVALID,
@@ -291,11 +362,12 @@ def _assess_payload(payload: object) -> Section15PatternHistoryAssessment:
             "Section 15 current block has unknown fields: "
             + ", ".join(str(field) for field in unknown)
         )
-    if payload.get("schema_version") != BLOCK_SCHEMA_VERSION or isinstance(
+    if payload.get("schema_version") != block_schema_version or isinstance(
         payload.get("schema_version"), bool
     ):
         errors.append(
-            f"Section 15 current block schema_version must be {BLOCK_SCHEMA_VERSION}"
+            "Section 15 current block schema_version must match its marker "
+            f"version {block_schema_version}"
         )
     if payload.get("source_lane") != BLOCK_SOURCE_LANE:
         errors.append(
@@ -304,7 +376,10 @@ def _assess_payload(payload: object) -> Section15PatternHistoryAssessment:
 
     raw_pattern_profile = payload.get("pattern_profile")
     profile_assessment: PatternProfileAssessment = assess_pattern_profile(
-        raw_pattern_profile
+        raw_pattern_profile,
+        expected_contract_version=(
+            4 if block_schema_version == LEGACY_BLOCK_SCHEMA_VERSION else 5
+        ),
     )
     errors.extend(profile_assessment.errors)
 
@@ -354,6 +429,7 @@ def _assess_payload(payload: object) -> Section15PatternHistoryAssessment:
             errors=_dedupe(errors),
             pattern_profile=None,
             classification_fields_available=False,
+            block_schema_version=block_schema_version,
         )
 
     assert isinstance(raw_pattern_profile, Mapping)
@@ -369,6 +445,11 @@ def _assess_payload(payload: object) -> Section15PatternHistoryAssessment:
         classification_fields_available=(
             profile_assessment.classification_fields_available
         ),
+        available_classification_domains=(
+            profile_assessment.available_classification_domains
+        ),
+        block_schema_version=block_schema_version,
+        policy_semantic_sha256=profile_assessment.policy_semantic_sha256,
     )
 
 
@@ -376,10 +457,13 @@ def assess_section15_pattern_history(
     summary: str,
 ) -> Section15PatternHistoryAssessment:
     """Assess only the uniquely delimited Section 15 current block."""
-    payload_text, structural_error = _extract_payload_text(summary)
+    payload_text, block_schema_version, structural_error = _extract_payload_text(
+        summary
+    )
     if structural_error is not None:
         return structural_error
     assert payload_text is not None
+    assert block_schema_version is not None
     try:
         payload = _strict_json_loads(payload_text)
     except (
@@ -391,12 +475,12 @@ def assess_section15_pattern_history(
             REASON_BLOCK_INVALID,
             f"Section 15 current-block JSON is invalid: {exc}",
         )
-    return _assess_payload(payload)
+    return _assess_payload(payload, block_schema_version=block_schema_version)
 
 
 def render_section15_current_block(pattern_profile: object) -> str:
     """Render a canonical block from a complete shared-assessor payload."""
-    assessment = assess_pattern_profile(pattern_profile)
+    assessment = assess_pattern_profile(pattern_profile, expected_contract_version=5)
     if not assessment.current_contract:
         details = "; ".join(assessment.errors or assessment.reason_codes)
         raise Section15PatternHistoryError(
@@ -443,10 +527,15 @@ def _replace_block_text(summary: str, rendered_block: str) -> str:
         )
     heading, section_end = section
 
-    start_count = summary.count(BLOCK_START)
-    end_count = summary.count(BLOCK_END)
-    token_count = summary.count(BLOCK_TOKEN)
-    if start_count == 0 and end_count == 0 and token_count == 0:
+    marker_counts = {
+        version: (
+            summary.count(token),
+            summary.count(start),
+            summary.count(end),
+        )
+        for version, (token, start, end) in _BLOCK_MARKERS.items()
+    }
+    if all(counts == (0, 0, 0) for counts in marker_counts.values()):
         newline = "\r\n" if "\r\n" in summary else "\n"
         rendered = rendered_block.replace("\n", newline)
         suffix = summary[heading.end() :]
@@ -459,20 +548,30 @@ def _replace_block_text(summary: str, rendered_block: str) -> str:
             + after_block
             + suffix
         )
-    if start_count > 1 or end_count > 1:
+    if (
+        sum(counts[1] for counts in marker_counts.values()) > 1
+        or sum(counts[2] for counts in marker_counts.values()) > 1
+    ):
         raise Section15PatternHistoryError(
-            "Section 15 has duplicate current-block markers; repair it before "
+            "Section 15 has duplicate v2/v3 current-block markers; repair it before "
             "replacement"
         )
-    if start_count != 1 or end_count != 1 or token_count != 2:
+    valid_versions = [
+        version for version, counts in marker_counts.items() if counts == (2, 1, 1)
+    ]
+    if len(valid_versions) != 1 or any(
+        counts != (0, 0, 0) and counts != (2, 1, 1) for counts in marker_counts.values()
+    ):
         raise Section15PatternHistoryError(
-            "Section 15 current-block markers are torn or malformed; repair them "
-            "before replacement"
+            "Section 15 v2/v3 current-block markers are mixed, torn, or malformed; "
+            "repair them before replacement"
         )
 
-    start = summary.index(BLOCK_START)
-    end_marker_start = summary.index(BLOCK_END)
-    end = end_marker_start + len(BLOCK_END)
+    existing_version = valid_versions[0]
+    _, existing_start, existing_end = _BLOCK_MARKERS[existing_version]
+    start = summary.index(existing_start)
+    end_marker_start = summary.index(existing_end)
+    end = end_marker_start + len(existing_end)
     if start < heading.end() or end > section_end or end_marker_start <= start:
         raise Section15PatternHistoryError(
             "the sole current-block markers must be ordered wholly inside Section 15"
@@ -488,6 +587,7 @@ def replace_section15_current_block(
     tracking_database: object,
     *,
     evidence_freshness_assessor: EvidenceFreshnessAssessor,
+    classification_policy_stamp: object | None = None,
 ) -> Section15WriteResult:
     """Validate a complete candidate, then atomically replace only its block."""
     if not isinstance(pattern_profile, Mapping):
@@ -498,6 +598,7 @@ def replace_section15_current_block(
         canonical_input,
         tracking_database,
         evidence_freshness_assessor=evidence_freshness_assessor,
+        classification_policy_stamp=classification_policy_stamp,
     )
     try:
         original_bytes = summary_path.read_bytes()
@@ -625,6 +726,7 @@ def _validate_complete_tracking_cohort(
     tracking_database: object,
     *,
     evidence_freshness_assessor: EvidenceFreshnessAssessor,
+    classification_policy_stamp: object | None = None,
 ) -> None:
     """Bind a write candidate to the complete live scoring cohort."""
     _require_usable_tracking_database(tracking_database)
@@ -689,6 +791,25 @@ def _validate_complete_tracking_cohort(
             "pattern_profile.antipattern_frequency does not equal deterministic "
             "rows recomputed from the complete tracking-database scoring cohort"
         )
+    try:
+        policy_stamp = (
+            validate_policy_stamp(pattern_profile.get("classification_policy"))
+            if classification_policy_stamp is None
+            else validate_policy_stamp(classification_policy_stamp)
+        )
+        expected_classification = classify_pattern_profile(
+            snapshot["baseline_talks"], policy_stamp
+        )
+    except (RuntimeError, ValueError) as exc:
+        raise Section15PatternHistoryError(
+            f"cannot recompute policy-bound classifications: {exc}"
+        ) from exc
+    for field, expected in expected_classification.items():
+        if pattern_profile.get(field) != expected:
+            raise Section15PatternHistoryError(
+                f"pattern_profile.{field} does not equal deterministic "
+                "classifications recomputed from the complete tracking cohort"
+            )
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -731,6 +852,7 @@ def main(argv: list[str] | None = None) -> int:
                 vault_root,
                 tracking_database.get("config"),
             ),
+            classification_policy_stamp=resolve_classification_policy(vault_root),
         )
         print(json.dumps(result.as_dict(), sort_keys=True))
         return 0
@@ -740,6 +862,7 @@ def main(argv: list[str] | None = None) -> int:
         PatternCohortSnapshotError,
         Section15PatternHistoryError,
         VaultRootAuthorityError,
+        ValueError,
     ) as exc:
         print(str(exc), file=sys.stderr)
         return 1

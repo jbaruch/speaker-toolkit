@@ -1,11 +1,11 @@
 {
-  "context": "Tests whether the agent fails closed on a deliberately legacy schema-v3/scoring-v4 profile, preserves the current taxonomy lane, and suppresses historical classifications.",
+  "context": "Tests whether the agent evaluates each schema-v5 classification domain independently, fails closed on a deliberately stale schema-v4/scoring-v4 pattern profile, preserves explicit non-pattern guardrails, and keeps the current taxonomy useful without inventing history.",
   "type": "weighted_checklist",
   "checklist": [
     {
       "name": "Legacy provenance fails closed",
-      "max_score": 15,
-      "description": "The report treats the supplied speaker-profile schema 3 / scoring schema 4 payload as history-disabled under the installed schema 4 / scoring schema 5 contract, regardless of its internally consistent legacy counts"
+      "max_score": 12,
+      "description": "The report treats the supplied speaker-profile schema 4 / scoring schema 4 pattern payload as history-disabled under the installed policy-bound schema 5 / scoring schema 5 contract, regardless of its internally consistent legacy counts; it does not mistake schema-v4 occurrence compatibility or its readable non-pattern lane for permission to use legacy derived pattern claims"
     },
     {
       "name": "No historical four-tier structure",
@@ -13,14 +13,14 @@
       "description": "The report uses one flat relevant-pattern list and does not emit Signature, Contextual History, New to You, or Shake It Up as speaker-history tiers"
     },
     {
-      "name": "Legacy classification claims suppressed",
-      "max_score": 15,
-      "description": "The report does not repeat usage rates, mastery levels, never-used/New-to-You claims, strengths, underuse, severity, or trend from the stale profile"
+      "name": "Per-domain classification claims suppressed",
+      "max_score": 13,
+      "description": "Because the legacy profile has no classification-availability-v2 domains or policy stamp, the report does not repeat usage rates, mastery, strengths, underuse, combinations, modes, severity, or trend from it. It emits no New-to-You/[NEW] claim: that tier is exactly an authorized never_tried classification, never not_yet_observed, a raw zero, or this stale never_used_patterns array"
     },
     {
-      "name": "No recurring labels",
-      "max_score": 15,
-      "description": "The report emits no [RECURRING] label and does not treat shortchanged or bullet-riddled-corpse as habitual based on the stale antipattern_frequency rows"
+      "name": "No catalog recurrence from raw rows",
+      "max_score": 13,
+      "description": "The report emits no catalog [RECURRING] label and does not treat shortchanged or bullet-riddled-corpse as habitual based on stale antipattern_frequency rows; recurrence requires an available antipattern_recurrence domain plus a derived antipattern_classifications row classified high_frequency or moderate_frequency"
     },
     {
       "name": "Current taxonomy remains useful",
@@ -29,13 +29,18 @@
     },
     {
       "name": "Contextual findings retained",
-      "max_score": 15,
+      "max_score": 12,
       "description": "At least one antipattern detection is labeled [CONTEXTUAL] — a current-outline risk found by the current taxonomy rather than a historical claim (e.g., the meme-heavy opening sequence)"
     },
     {
       "name": "Actionable recovery warning",
       "max_score": 10,
-      "description": "The report explains that pattern history is disabled and recommends regenerating/reprocessing with the current profile and scoring contract"
+      "description": "The report explains that the relevant classification domains are unavailable, recommends reprocessing the stale scoring generation as needed and regenerating schema v5, and says the bundled speaker-toolkit-default@1 policy applies automatically rather than asking Morgan to supply thresholds"
+    },
+    {
+      "name": "Explicit non-pattern recurring issue preserved",
+      "max_score": 10,
+      "description": "The report applies the long_context_ramp warning at its declared severity because it carries source_lane non_pattern, while keeping it separate from catalog-derived [RECURRING] labels and stale pattern history"
     },
     {
       "name": "Actionable recommendations",

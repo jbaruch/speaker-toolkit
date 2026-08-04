@@ -2,13 +2,20 @@
 
 ## Background
 
-Morgan Lee is preparing a 45-minute talk for DevRelCon 2025 about "Developer Relations in the Age of AI Assistants." Morgan has a legacy profile containing historical pattern classifications, but it predates the current opportunity-aware contract and cannot authorize those claims.
+Morgan Lee is preparing a 45-minute talk for DevRelCon 2025 about "Developer
+Relations in the Age of AI Assistants." Morgan has a legacy profile containing
+historical pattern classifications, but it predates the current opportunity-aware
+contract and cannot authorize those claims.
 
 For this fixed synthetic case, the installed creator requires speaker-profile schema
-`4` and pattern-scoring schema `5`. The supplied profile is deliberately stale:
-speaker-profile schema `3` with pattern-scoring schema `4`. Its old mastery, novelty,
-frequency, severity, and trend fields must fail closed even though they are internally
-consistent.
+`5` and pattern-scoring schema `5` for policy-derived history. Schema v5 uses
+classification-availability v2 and the bundled `speaker-toolkit-default@1` policy when
+there is no strict vault override; schema v4 remains occurrence-only. The supplied
+profile uses the occurrence-compatible speaker-profile schema `4`, but its
+pattern-scoring schema is the stale schema `4`. It has neither a self-contained policy
+stamp nor independently authorized domains, so its old mastery, novelty, frequency,
+severity, and trend fields must fail closed even though they are internally
+consistent. Its explicitly non-pattern guardrail lane remains independently readable.
 
 Given Morgan's stale pattern profile and the draft outline below, produce a taxonomy-grounded pattern strategy for this talk without treating the legacy fields as speaker history.
 
@@ -16,10 +23,23 @@ Given Morgan's stale pattern profile and the draft outline below, produce a taxo
 
 Produce a pattern strategy report saved to `pattern-strategy.md` containing:
 
-1. Surface the pattern-history-disabled warning and recommend regenerating the profile.
-2. Present one flat relevant-pattern list from the current taxonomy. Do not emit the four historical tiers, usage/novelty/mastery/trend claims, or `[NEW]` labels.
-3. Flag risks detected in the draft as `[CONTEXTUAL]`. Do not emit `[RECURRING]` from the stale profile.
-4. Include specific recommendations for this talk.
+1. Surface the pattern-history-disabled warning and recommend reprocessing the stale
+   scoring generation as needed, then regenerating schema v5. The bundled policy applies
+   automatically; Morgan does not need to invent thresholds.
+2. Present one flat relevant-pattern list from the current taxonomy. Do not emit the
+   four historical tiers, usage/mastery/trend claims, or `[NEW]` labels. New-to-You is
+   authorized only by an available `mastery_and_novelty` domain and an exact
+   `never_tried` classification—never by `not_yet_observed`, a raw zero, or the stale
+   `never_used_patterns` array supplied here.
+3. Flag risks detected in the draft as `[CONTEXTUAL]`. A catalog `[RECURRING]` label
+   requires an available `antipattern_recurrence` domain and a derived
+   `antipattern_classifications` row classified `high_frequency` or
+   `moderate_frequency`; never derive it from the stale raw `antipattern_frequency`
+   rows.
+4. Preserve the explicitly independent `long_context_ramp` guardrail because it carries
+   `source_lane: "non_pattern"`. Report it at its declared severity, but do not present
+   it as catalog-derived recurrence.
+5. Include specific recommendations for this talk.
 
 Use the speaker profile and draft outline provided below.
 
@@ -29,11 +49,22 @@ The following files are provided as inputs. Extract them before beginning.
 
 =============== FILE: inputs/speaker-profile.json ===============
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "generated_date": "2025-02-15",
   "speaker": {
     "name": "Morgan Lee",
     "handle": "@mlee_devrel"
+  },
+  "guardrail_sources": {
+    "recurring_issues": [
+      {
+        "id": "long_context_ramp",
+        "source_lane": "non_pattern",
+        "description": "Delays the first concrete example with historical framing",
+        "guardrail": "Reach a concrete audience example within the first 10% of the talk",
+        "severity": "warning"
+      }
+    ]
   },
   "pattern_profile": {
     "pattern_baseline": {

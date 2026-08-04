@@ -9,6 +9,7 @@ import hashlib
 import importlib
 import json
 import os
+import pathlib
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -28,9 +29,7 @@ def foreign_absolute_locator(name: str) -> str:
 
 
 DOT_SEGMENT_VAULT_ROOT = (
-    r"C:\trusted\other\..\vault"
-    if os.name == "nt"
-    else "/trusted/other/../vault"
+    r"C:\trusted\other\..\vault" if os.name == "nt" else "/trusted/other/../vault"
 )
 INVALID_VAULT_ROOT_LOCATORS = (
     ("", "artifact_locator_empty_or_whitespace"),
@@ -49,9 +48,7 @@ def _catalog_projection(source: str | None = "transcript"):
     """Return exhaustive outcomes for one absence-capable singleton source."""
     catalog = importlib.import_module("pattern_opportunities").load_catalog()
     complete_source = (
-        frozenset({source})
-        if source in {"transcript", "static_slides"}
-        else None
+        frozenset({source}) if source in {"transcript", "static_slides"} else None
     )
     outcomes = []
     not_evaluable = []
@@ -84,20 +81,24 @@ def _catalog_projection(source: str | None = "transcript"):
 def _set_projection(talk, source: str | None) -> None:
     _, outcomes, not_evaluable, assessments = _catalog_projection(source)
     observations = talk["pattern_observations"]
-    observations.update({
-        "pattern_outcomes": outcomes,
-        "not_evaluable": not_evaluable,
-        "applicability_assessments": assessments,
-        "opportunity_coverage_identity": (
-            importlib.import_module("pattern_evidence").opportunity_coverage_identity(
-                outcomes,
-                pattern_catalog_fingerprint=talk["pattern_catalog_fingerprint"],
-                pattern_scoring_schema_version=talk[
-                    "pattern_scoring_schema_version"
-                ],
-            )
-        ),
-    })
+    observations.update(
+        {
+            "pattern_outcomes": outcomes,
+            "not_evaluable": not_evaluable,
+            "applicability_assessments": assessments,
+            "opportunity_coverage_identity": (
+                importlib.import_module(
+                    "pattern_evidence"
+                ).opportunity_coverage_identity(
+                    outcomes,
+                    pattern_catalog_fingerprint=talk["pattern_catalog_fingerprint"],
+                    pattern_scoring_schema_version=talk[
+                        "pattern_scoring_schema_version"
+                    ],
+                )
+            ),
+        }
+    )
 
 
 # Built programmatically per testing-standards (no fixture file). A current
@@ -108,8 +109,14 @@ def _minimal_profile(validate_profile):
         validate_profile.active_pattern_generation_identity()
     )
     opportunities = importlib.import_module("pattern_opportunities")
-    provenance = importlib.import_module("profile_pattern_provenance")
+    classification_runtime = importlib.import_module("pattern_classification_runtime")
     rows = opportunities.build_pattern_opportunity_rows([])
+    classification = classification_runtime.classify_pattern_profile(
+        [],
+        classification_runtime.resolve_classification_policy(
+            pathlib.Path(__file__).resolve().parent / "__no_policy_override__"
+        ),
+    )
     profile = {
         k: []
         for k in (
@@ -129,7 +136,7 @@ def _minimal_profile(validate_profile):
             "design_rules",
             "badges",
         )
-    } | {"schema_version": 4}
+    } | {"schema_version": 5}
     profile["pattern_profile"] = {
         "pattern_baseline": {
             "schema_version": 2,
@@ -154,37 +161,10 @@ def _minimal_profile(validate_profile):
         "eligible_talk_count": 0,
         "talks_scored": 0,
         "average_pattern_score": None,
-        "score_trend": "unavailable",
-        "pattern_breadth": {
-            "avg_distinct_patterns_per_talk": None,
-            "trend": "unavailable",
-            "note": "No current pattern cohort.",
-        },
-        "underused_patterns": [],
-        "score_drivers": {
-            "direction": "unavailable",
-            "antipattern_drivers": [],
-            "pattern_drivers": [],
-            "note": "No current pattern cohort.",
-        },
-        "by_mode": [],
-        "strengths": [],
-        "strengths_note": "No current pattern cohort.",
         "note": "Only current observable patterns are included.",
         "pattern_usage": rows["pattern_usage"],
         "antipattern_frequency": rows["antipattern_frequency"],
-        "never_used_patterns": [],
-        "signature_combinations": [],
-        "mastery_levels": {
-            "signature": [],
-            "regular": [],
-            "occasional": [],
-            "rare": [],
-            "never_tried": [],
-        },
-        "classification_availability": (
-            provenance.unavailable_classification_availability()
-        ),
+        **classification,
     }
     profile["rhetoric_defaults"] = {}
     profile["guardrail_sources"] = {"recurring_issues": []}
@@ -193,9 +173,7 @@ def _minimal_profile(validate_profile):
 
 def _run(validate_profile, profile, tmp_path, *, database=None):
     (tmp_path / "tracking-database.json").write_text(
-        json.dumps(
-            {"config": {}, "talks": []} if database is None else database
-        ),
+        json.dumps({"config": {}, "talks": []} if database is None else database),
         encoding="utf-8",
     )
     path = tmp_path / "profile.json"
@@ -246,6 +224,65 @@ def test_profile_with_engines_validates(validate_profile, tmp_path, capsys):
     out = json.loads(capsys.readouterr().out)
     assert rc == 0
     assert out["valid"] is True
+
+
+def test_present_invalid_classification_override_aborts_owner_validation(
+    validate_profile, tmp_path, capsys
+):
+    profile = _minimal_profile(validate_profile)
+    (tmp_path / "pattern-classification-policy.json").write_text(
+        '{"schema_version": 1}', encoding="utf-8"
+    )
+
+    rc = _run(validate_profile, profile, tmp_path)
+    report = json.loads(capsys.readouterr().out)
+
+    assert rc == 1
+    assert any("policy fields are noncanonical" in error for error in report["errors"])
+
+
+def test_valid_override_is_stamped_and_recomputed_without_talk_reparse(
+    validate_profile, tmp_path, capsys
+):
+    profile = _minimal_profile(validate_profile)
+    runtime = importlib.import_module("pattern_classification_runtime")
+    policy = profile["pattern_profile"]["classification_policy"]["semantic_policy"]
+    override = json.loads(json.dumps(policy))
+    override["policy_id"] = "speaker-custom"
+    (tmp_path / "pattern-classification-policy.json").write_text(
+        json.dumps(override), encoding="utf-8"
+    )
+    profile["pattern_profile"].update(
+        runtime.classify_pattern_profile(
+            [], runtime.resolve_classification_policy(tmp_path)
+        )
+    )
+
+    rc = _run(validate_profile, profile, tmp_path)
+    report = json.loads(capsys.readouterr().out)
+
+    assert rc == 0, report
+    assert profile["pattern_profile"]["classification_policy"]["source"] == (
+        "vault_override"
+    )
+
+
+def test_owner_recomputes_derived_fields_instead_of_trusting_self_consistency(
+    validate_profile, tmp_path, capsys
+):
+    profile = _minimal_profile(validate_profile)
+    profile["pattern_profile"]["pattern_classifications"][0]["reason_codes"] = [
+        "plausible_but_not_canonical"
+    ]
+
+    rc = _run(validate_profile, profile, tmp_path)
+    report = json.loads(capsys.readouterr().out)
+
+    assert rc == 1
+    assert any(
+        "does not equal the live deterministic classification output" in error
+        for error in report["errors"]
+    )
 
 
 def test_profile_missing_required_key_is_invalid(validate_profile, tmp_path, capsys):
@@ -444,7 +481,9 @@ def _write_vault(vault_root, talks, *, config=None):
             )
             raw_assessments = observations.get("applicability_assessments")
             if record is not None and isinstance(raw_assessments, list):
-                catalog = importlib.import_module("pattern_opportunities").load_catalog()
+                catalog = importlib.import_module(
+                    "pattern_opportunities"
+                ).load_catalog()
                 located = []
                 for assessment in raw_assessments:
                     if not isinstance(assessment, dict):
@@ -463,26 +502,35 @@ def _write_vault(vault_root, talks, *, config=None):
                         "line_end": 1,
                     }
                     for identity_field in (
-                        "artifact_root", "artifact_path", "artifact_sha256",
-                        "timing_artifact_root", "timing_artifact_path",
-                        "timing_artifact_sha256", "quality_artifact_root",
-                        "quality_artifact_path", "quality_artifact_sha256",
+                        "artifact_root",
+                        "artifact_path",
+                        "artifact_sha256",
+                        "timing_artifact_root",
+                        "timing_artifact_path",
+                        "timing_artifact_sha256",
+                        "quality_artifact_root",
+                        "quality_artifact_path",
+                        "quality_artifact_sha256",
                     ):
                         if identity_field in record:
                             citation[identity_field] = record[identity_field]
                     if channel == "timed_transcript":
-                        citation.update({
-                            "start_seconds": 0.0,
-                            "end_seconds": 10.0,
-                        })
-                    located.append({
-                        **assessment,
-                        "evidence_source": "transcript",
-                        "evidence": (
-                            "The complete transcript establishes applicability."
-                        ),
-                        "evidence_citations": [citation],
-                    })
+                        citation.update(
+                            {
+                                "start_seconds": 0.0,
+                                "end_seconds": 10.0,
+                            }
+                        )
+                    located.append(
+                        {
+                            **assessment,
+                            "evidence_source": "transcript",
+                            "evidence": (
+                                "The complete transcript establishes applicability."
+                            ),
+                            "evidence_citations": [citation],
+                        }
+                    )
                 observations["applicability_assessments"] = located
     (vault_root / "tracking-database.json").write_text(
         json.dumps(
@@ -657,34 +705,39 @@ def test_load_vault_projects_confirmed_intents_without_storage_metadata(
         "qr_codes": [],
         "resources": [],
         "thumbnails": [],
-        "confirmed_intents": [{
-            "schema_version": 1,
-            "pattern": "delayed_self_introduction",
-            "intent": "deliberate",
-            "rule": "Use the two-phase introduction",
-            "note": "Speaker-confirmed",
-            "confirmed_date": "2026-08-01",
-            "source_talk": "example.md",
-        }],
+        "confirmed_intents": [
+            {
+                "schema_version": 1,
+                "pattern": "delayed_self_introduction",
+                "intent": "deliberate",
+                "rule": "Use the two-phase introduction",
+                "note": "Speaker-confirmed",
+                "confirmed_date": "2026-08-01",
+                "source_talk": "example.md",
+            }
+        ],
         "improvement_goals": [],
     }
     raw = (json.dumps(database, indent=2) + "\n").encode()
     database_path.write_bytes(raw)
 
-    rc, payload, error = _run_load_vault(
-        load_vault, tmp_path, monkeypatch, capsys
-    )
+    rc, payload, error = _run_load_vault(load_vault, tmp_path, monkeypatch, capsys)
 
     assert rc == 0
     assert error == ""
-    assert payload["confirmed_intents"] == [{
-        "pattern": "delayed_self_introduction",
-        "intent": "deliberate",
-        "rule": "Use the two-phase introduction",
-        "note": "Speaker-confirmed",
-    }]
+    assert payload["confirmed_intents"] == [
+        {
+            "pattern": "delayed_self_introduction",
+            "intent": "deliberate",
+            "rule": "Use the two-phase introduction",
+            "note": "Speaker-confirmed",
+        }
+    ]
     assert list(payload["confirmed_intents"][0]) == [
-        "pattern", "intent", "rule", "note",
+        "pattern",
+        "intent",
+        "rule",
+        "note",
     ]
     assert database_path.read_bytes() == raw
 
@@ -976,9 +1029,7 @@ def test_load_vault_rejects_invalid_explicit_root_before_any_vault_io(
 
     assert rc == 1
     assert captured.out == ""
-    assert (
-        f"vault_root_cli_invalid:{locator_reason}" in captured.err
-    )
+    assert f"vault_root_cli_invalid:{locator_reason}" in captured.err
     assert io_calls == []
     if cli_root.strip():
         assert cli_root not in captured.err
@@ -1019,9 +1070,7 @@ def test_load_vault_rejects_invalid_config_before_summary_or_freshness_io(
     assert rc == 1
     assert captured.out == ""
     assert not (tmp_path / "rhetoric-style-summary.md").exists()
-    assert (
-        f"vault_root_config_invalid:{locator_reason}" in captured.err
-    )
+    assert f"vault_root_config_invalid:{locator_reason}" in captured.err
     if configured_root.strip():
         assert configured_root not in captured.err
 
@@ -1080,10 +1129,7 @@ def test_load_vault_rejects_symlink_target_and_locator_authority_mismatch(
 
     assert rc == 1
     assert captured.out == ""
-    assert (
-        "vault_root_authority_mismatch:database_path:config_root"
-        in captured.err
-    )
+    assert "vault_root_authority_mismatch:database_path:config_root" in captured.err
     assert str(storage) not in captured.err
     assert str(locator) not in captured.err
 
@@ -1212,9 +1258,7 @@ def test_validate_profile_rejects_invalid_cli_root_before_profile_or_database_io
     monkeypatch.setattr(validate_profile, "_load_input", forbidden_io)
     monkeypatch.setattr(validate_profile, "snapshot_tracking_database", forbidden_io)
 
-    rc = validate_profile.main(
-        ["validate-profile.py", "--vault-root", cli_root]
-    )
+    rc = validate_profile.main(["validate-profile.py", "--vault-root", cli_root])
     captured = capsys.readouterr()
 
     assert rc == 1
@@ -1343,10 +1387,7 @@ def test_validate_profile_rejects_symlink_target_locator_mismatch_without_paths(
     captured = capsys.readouterr()
 
     assert rc == 1
-    assert (
-        "vault_root_authority_mismatch:database_path:config_root"
-        in captured.err
-    )
+    assert "vault_root_authority_mismatch:database_path:config_root" in captured.err
     assert str(storage) not in captured.err
     assert str(locator) not in captured.err
 

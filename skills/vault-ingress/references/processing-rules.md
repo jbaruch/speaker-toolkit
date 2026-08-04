@@ -329,12 +329,19 @@ individual member merge.
 Section 15 is a human-readable account of the verified current cohort, not the
 numeric authority for a worker. `persist-results.py` stdout supplies the
 post-batch `current_adherence_baseline` only after every merge succeeds. That
-schema-v2 payload is all-inclusive (`active_batch_excluded: false`,
+adherence-baseline schema-v2 payload is all-inclusive (`active_batch_excluded: false`,
 `excluded_filenames: []`). `eligible_talk_count` is the complete fresh-v5
 candidate. `scored_talk_count`, sum, and ROUND_HALF_EVEN average describe only
 one exact `opportunity_coverage_identity`; mixed identities make raw-score
 comparison unavailable with zero/null score aggregates while retaining the
 per-pattern opportunity cohort.
+
+The independently versioned Section 15 current block has read-v2/write-v3
+compatibility. A reader may validate an occurrence-only v2 block, but it must keep every
+classification-derived claim unavailable: v2 has no policy identity and the existence
+of a new default cannot retroactively classify it. Every replacement writes v3 and
+embeds the complete validated schema-v5 `pattern_profile`, including the normalized
+classification policy and its canonical semantic digest.
 
 For every Section 15 current-block count, read only talks with status
 `processed`/`processed_partial`, `pattern_scoring_generation_status: current`,
@@ -346,19 +353,24 @@ machine-readable block has three audit lanes:
 
 1. **Occurrence rows** — copy the exhaustive `pattern_usage` and
    `antipattern_frequency` rows generated from v5 outcomes. Each row retains its
-   own opportunity denominator, detection count, undetected count, coverage, and
-   null-rate sentinel. These are observations, not frequency classifications.
+   own opportunity denominator; detected, evaluable, unevaluable, and not-applicable
+   counts; coverage; and null-rate sentinel. The v3 writer copies these raw rows
+   unchanged.
 2. **Raw-score availability** — copy the global comparison status, exact
    opportunity identity, scored count, sum, and `average_pattern_score` from the
    post-batch baseline. Mixed identities or no evaluable opportunities keep this
    lane explicitly unavailable; do not calculate a trajectory or substitute the
    broader eligible count.
-3. **Classification availability** — copy the exact
-   `owner-policy-unconfigured` sentinel. Until the speaker owns a versioned
-   classification policy, score/breadth trends and driver direction are
-   `unavailable`; recurring/resolved severity, novelty, mastery, signatures,
-   strengths, underuse, combinations, and mode splits remain empty. A zero count
-   does not mean “never used,” and a positive rate does not mean “recurring.”
+3. **Policy-derived history** — copy the classifier's self-contained policy stamp,
+   per-domain availability, exhaustive positive and antipattern classification rows,
+   trend audit, and derived projections. With no vault override, use bundled
+   `speaker-toolkit-default@1` automatically; do not ask the speaker to choose
+   thresholds. If `{vault_root}/pattern-classification-policy.json` exists, validate it
+   strictly and abort on any error rather than falling back. Mastery/novelty,
+   antipattern recurrence, underuse, combinations, trends, and modes are independently
+   gated. Honor row-level bounds and absence capability: zero detections become
+   `never_tried` or `confirmed_none` only when the catalog and complete-evaluation gates
+   permit an absence conclusion.
 
 Old recurring/signature/underuse/resolved prose may remain outside the delimited
 block only when explicitly labeled historical or manually curated. It is
@@ -366,7 +378,7 @@ non-baseline narrative and must not be regenerated from occurrence rates or
 consumed as current catalog classification.
 
 Section 15 is the human-readable mirror of the profile's validated
-`pattern_profile` occurrence/audit lanes (see
+`pattern_profile` occurrence, policy, classification, and audit lanes (see
 [../../vault-profile/references/speaker-profile-schema.md](../../vault-profile/references/speaker-profile-schema.md));
 keep the two consistent when both update. Profile generation must independently
 apply the same exact current-generation filter; Section 15 prose and legacy
@@ -374,13 +386,14 @@ adherence text are not machine-readable numeric inputs.
 
 After the complete post-batch narrative and `pattern_profile` candidate are
 ready, run `"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py" replace`
-with the summary, candidate, and live `tracking-database.json`. The helper
-recomputes the full current cohort from the database, rejects stale candidates,
-checks scoring-v5 artifact freshness against the vault and configured source
-roots, delegates the full payload to the shared profile provenance assessor, and
-atomically replaces only the uniquely delimited current block. All prose outside
-that block remains explicitly historical/non-baseline; ordinary Section 15 prose
-can never restore pattern-history authorization.
+with the summary, candidate, and live `tracking-database.json`. The helper reads v2 or
+v3, writes only v3, recomputes the full current cohort from the database, rejects stale
+or policy-mismatched candidates, checks scoring-v5 artifact freshness against the vault
+and configured source roots, and atomically replaces only the uniquely delimited
+current block. Classification is a re-analysis of persisted outcomes: no talk is
+reparsed, and neither tracking records nor raw opportunity rows are mutated. All prose
+outside that block remains explicitly historical/non-baseline; ordinary Section 15
+prose can never restore pattern-history authorization.
 `section15_pattern_history.py replace` is the only supported current-block
 replacement operation and must receive the live tracking database.
 Recount status from the tracking database every time; never increment it
@@ -429,10 +442,12 @@ Section 15 prose as its baseline.
 For each comparable goal with `status` not in (`achieved`, `retired`):
 - Compute `current_value` for the goal's `metric` from the current Section 15
   cohort data — and, for `pacing` and mode-specific goals, from the freshly regenerated
-  speaker profile (this step runs after Step 7, so `pacing.adherence` and
-  `pattern_profile.by_mode` are current). Examples by `kind`: `antipattern` → the
-  antipattern's frequency over recent talks; `underuse` → the pattern's recent usage
-  or distinct-pattern breadth; `pacing` → `pacing.adherence.over_budget_rate`.
+  speaker profile. Freshness alone is not availability: require the matching
+  `classification_availability` domain before using antipattern recurrence, underuse,
+  trends, or `by_mode`; an unavailable domain yields an unverifiable/report-only result,
+  not a zero. Examples by `kind`: `antipattern` → the antipattern's policy-classified
+  frequency; `underuse` → the pattern's classification or available breadth trend;
+  `pacing` → `pacing.adherence.over_budget_rate`.
   For schema v1, write only `current_value`, `last_checked` (today),
   `checked_by: "vault-ingress"`, and `status`. For schema v2, write those
   fields plus `verification_state: "current"` and empty

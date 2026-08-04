@@ -1,11 +1,11 @@
 {
-  "context": "Tests whether the agent generates a schema-v4 speaker profile while failing closed on legacy, non-source-located pattern rows and preserving independently grounded non-pattern profile data.",
+  "context": "Tests whether the agent generates a schema-v5 speaker profile with the bundled default policy while keeping legacy, non-source-located rows out of the current cohort and preserving independently grounded non-pattern profile data.",
   "type": "weighted_checklist",
   "checklist": [
     {
-      "name": "Schema-v4 top-level contract",
+      "name": "Schema-v5 top-level contract",
       "max_score": 10,
-      "description": "speaker-profile.json uses schema_version 4 and contains the required speaker, infrastructure, presentation_modes, rhetoric_defaults, instrument_catalog, guardrail_sources, pacing, pattern_profile, confirmed_intents, and badges lanes"
+      "description": "speaker-profile.json uses schema_version 5 and contains the required speaker, infrastructure, presentation_modes, rhetoric_defaults, instrument_catalog, guardrail_sources, pacing, pattern_profile, confirmed_intents, and badges lanes"
     },
     {
       "name": "Speaker fields from config",
@@ -18,14 +18,14 @@
       "description": "The top-level badges array contains independently grounded achievements and every entry declares source_lane 'non_pattern'; no badge is derived from pattern IDs, scores, mastery, absence, or frequency"
     },
     {
-      "name": "Legacy pattern cohort fails closed",
+      "name": "Legacy pattern cohort remains empty",
       "max_score": 18,
-      "description": "pattern_profile uses the current schema-v4 empty-cohort form because all supplied pattern observations lack scoring-v5 generation/evidence/outcome receipts: eligible_talk_count and talks_scored are 0, average_pattern_score is null, baseline filenames are empty, and exhaustive opportunity rows use zero/null sentinels"
+      "description": "pattern_profile uses the schema-v5 empty-current-cohort form because all supplied observations lack scoring-v5 generation/evidence/outcome receipts: eligible_talk_count and talks_scored are 0, average_pattern_score is null, baseline filenames are empty, and exhaustive raw opportunity rows use zero/null sentinels; legacy IDs, scores, and ordinary Section 15 prose are not imported"
     },
     {
-      "name": "Classification fields use exact unavailable sentinels",
+      "name": "Bundled policy and per-domain classification",
       "max_score": 15,
-      "description": "classification_availability reports owner_policy_unconfigured; mastery tiers, never_used_patterns, strengths, underuse, combinations, by-mode history, and driver arrays are empty, while trend/direction fields are unavailable and breadth average is null"
+      "description": "pattern_profile contains classification_schema_version 1; a complete classification_policy stamp for speaker-toolkit-default version 1 with source bundled_default, semantic policy, and matching digest; and classification_availability schema 2. Mastery/novelty, antipattern recurrence, underuse, and combinations are available domains with exhaustive unclassified zero-cohort rows, while trends is unavailable for insufficient dated sample and modes for unavailable assignments. Derived mastery, never-used/New-to-You, recurring, strengths, underuse, combinations, by-mode, and driver arrays remain empty; trend/direction fields are unavailable and breadth average is null"
     },
     {
       "name": "guardrail_sources.slide_budgets is array",

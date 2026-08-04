@@ -32,18 +32,23 @@ _PROFILE_SCRIPTS = Path(__file__).resolve().parents[2] / "vault-profile" / "scri
 if str(_PROFILE_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_PROFILE_SCRIPTS))
 
-from profile_pattern_provenance import (  # noqa: E402
+# Pyright cannot resolve these sibling skill modules added to sys.path at runtime.
+from profile_pattern_provenance import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     REASON_CLASSIFICATION_POLICY_UNAVAILABLE,
     REASON_EMPTY_CURRENT_COHORT,
     assess_pattern_profile,
 )
-from section15_pattern_history import (  # noqa: E402
+from section15_pattern_history import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     Section15PatternHistoryAssessment,
     assess_section15_pattern_history,
 )
 
 
-CURRENT_PROFILE_SCHEMA_VERSION = 4
+CURRENT_PROFILE_SCHEMA_VERSION = 5
+OCCURRENCE_ONLY_PROFILE_SCHEMA_VERSION = 4
+SUPPORTED_PROFILE_SCHEMA_VERSIONS = frozenset(
+    {OCCURRENCE_ONLY_PROFILE_SCHEMA_VERSION, CURRENT_PROFILE_SCHEMA_VERSION}
+)
 REASON_INVALID_PROFILE = "invalid_speaker_profile_contract"
 REASON_PROFILE_SCHEMA_MISMATCH = "profile_schema_version_mismatch"
 
@@ -61,10 +66,16 @@ class CreatorPatternHistoryStatus:
     eligible_talk_count: int | None = None
     opportunity_rows_available: bool = False
     classification_fields_available: bool = False
+    available_classification_domains: tuple[str, ...] = ()
+    policy_semantic_sha256: str | None = None
 
     def as_dict(self) -> dict[str, object]:
         """Return a stable JSON-serializable status payload."""
         return asdict(self)
+
+    def domain_available(self, domain: str) -> bool:
+        """Return whether this resolution authorizes one derived history domain."""
+        return self.history_enabled and domain in self.available_classification_domains
 
 
 @dataclass(frozen=True)
@@ -78,7 +89,7 @@ class CreatorPatternHistoryResolution:
 def _assess_profile_pattern_history(
     profile: object,
 ) -> CreatorPatternHistoryStatus:
-    """Authorize classifications only for a current schema-v4 profile and policy.
+    """Assess schema-v4 occurrence history or schema-v5 policy-bound history.
 
     The shared vault-profile assessor owns every pattern-specific invariant.  This
     wrapper adds only the outer profile-version gate required by the creator.
@@ -97,7 +108,7 @@ def _assess_profile_pattern_history(
     if (
         not isinstance(schema_version, int)
         or isinstance(schema_version, bool)
-        or schema_version != CURRENT_PROFILE_SCHEMA_VERSION
+        or schema_version not in SUPPORTED_PROFILE_SCHEMA_VERSIONS
     ):
         return CreatorPatternHistoryStatus(
             history_enabled=False,
@@ -108,11 +119,13 @@ def _assess_profile_pattern_history(
             reasons=(
                 "speaker profile schema_version "
                 f"{schema_version!r} does not authorize pattern history; "
-                f"expected {CURRENT_PROFILE_SCHEMA_VERSION}",
+                "expected supported occurrence-only v4 or policy-bound v5",
             ),
         )
 
-    assessment = assess_pattern_profile(profile.get("pattern_profile"))
+    assessment = assess_pattern_profile(
+        profile.get("pattern_profile"), expected_contract_version=schema_version
+    )
     reasons = list(assessment.errors)
     if REASON_EMPTY_CURRENT_COHORT in assessment.reason_codes:
         reasons.append(
@@ -120,34 +133,32 @@ def _assess_profile_pattern_history(
         )
     if REASON_CLASSIFICATION_POLICY_UNAVAILABLE in assessment.reason_codes:
         reasons.append(
-            "pattern occurrence rows are current, but owner thresholds for "
-            "never-used, mastery, recurring severity, and trends are not configured"
+            "schema-v4 pattern occurrence rows are current but occurrence-only; "
+            "regenerate schema v5 to apply the toolkit's versioned default policy"
         )
 
+    occurrence_rows_available = (
+        assessment.current_contract and assessment.catalog_fields_available
+    )
+    available_domains = (
+        tuple(sorted(assessment.available_classification_domains))
+        if occurrence_rows_available
+        else ()
+    )
+    classification_fields_available = bool(available_domains)
+
     return CreatorPatternHistoryStatus(
-        history_enabled=(
-            assessment.current_contract
-            and assessment.catalog_fields_available
-            and assessment.classification_fields_available
-        ),
-        history_source=(
-            "profile"
-            if assessment.current_contract
-            and assessment.catalog_fields_available
-            and assessment.classification_fields_available
-            else None
-        ),
+        history_enabled=classification_fields_available,
+        history_source=("profile" if classification_fields_available else None),
         profile_schema_version=schema_version,
         scored_talk_count=assessment.scored_talk_count,
         reason_codes=assessment.reason_codes,
         reasons=tuple(reasons),
         eligible_talk_count=assessment.eligible_talk_count,
-        opportunity_rows_available=(
-            assessment.current_contract and assessment.catalog_fields_available
-        ),
-        classification_fields_available=(
-            assessment.current_contract and assessment.classification_fields_available
-        ),
+        opportunity_rows_available=occurrence_rows_available,
+        classification_fields_available=classification_fields_available,
+        available_classification_domains=available_domains,
+        policy_semantic_sha256=assessment.policy_semantic_sha256,
     )
 
 
@@ -159,11 +170,16 @@ def _fallback_status(
     profile_status: CreatorPatternHistoryStatus,
     summary_assessment: Section15PatternHistoryAssessment,
 ) -> CreatorPatternHistoryStatus:
-    if (
+    summary_rows_available = (
         summary_assessment.current_contract
         and summary_assessment.catalog_fields_available
-        and summary_assessment.classification_fields_available
-    ):
+    )
+    available_domains = (
+        tuple(sorted(summary_assessment.available_classification_domains))
+        if summary_rows_available
+        else ()
+    )
+    if available_domains:
         return CreatorPatternHistoryStatus(
             history_enabled=True,
             history_source="section15_current_block",
@@ -174,6 +190,8 @@ def _fallback_status(
             eligible_talk_count=summary_assessment.eligible_talk_count,
             opportunity_rows_available=True,
             classification_fields_available=True,
+            available_classification_domains=available_domains,
+            policy_semantic_sha256=summary_assessment.policy_semantic_sha256,
         )
 
     reasons = list(summary_assessment.errors)
@@ -184,8 +202,8 @@ def _fallback_status(
         )
     if REASON_CLASSIFICATION_POLICY_UNAVAILABLE in (summary_assessment.reason_codes):
         reasons.append(
-            "Section 15 occurrence rows are current, but owner classification "
-            "thresholds are not configured"
+            "Section 15 v2 occurrence rows are current but occurrence-only; "
+            "regenerate Section 15 v3 to apply the toolkit's versioned default policy"
         )
     return CreatorPatternHistoryStatus(
         history_enabled=False,
@@ -197,11 +215,10 @@ def _fallback_status(
         ),
         reasons=_dedupe(profile_status.reasons + tuple(reasons)),
         eligible_talk_count=summary_assessment.eligible_talk_count,
-        opportunity_rows_available=(
-            summary_assessment.current_contract
-            and summary_assessment.catalog_fields_available
-        ),
+        opportunity_rows_available=summary_rows_available,
         classification_fields_available=False,
+        available_classification_domains=(),
+        policy_semantic_sha256=summary_assessment.policy_semantic_sha256,
     )
 
 
@@ -211,8 +228,9 @@ def resolve_creator_pattern_history(
 ) -> CreatorPatternHistoryResolution:
     """Resolve one authorized history payload without merging source lanes.
 
-    A valid current profile always wins. Section 15 is consulted only when the
-    profile lane is disabled and only its explicit current block is eligible.
+    A policy-bound profile with any available domain wins. Section 15 is consulted
+    only when the profile lane is disabled and only its explicit current block is
+    eligible.
     """
     profile_status = _assess_profile_pattern_history(profile)
     if profile_status.history_enabled:
@@ -260,8 +278,9 @@ def disabled_history_warning(status: CreatorPatternHistoryStatus) -> str:
             "Pattern classifications disabled "
             f"({', '.join(status.reason_codes)}): {details}. Current occurrence "
             "rows remain auditable, but do not emit signature, New-to-You, "
-            "underuse, recurring-severity, mastery, or trend claims until the "
-            "speaker owns a versioned classification policy."
+            "underuse, recurrence, mastery, or trend claims. Regenerate the profile "
+            "with the current vault-profile skill; the bundled default policy applies "
+            "automatically and requires no threshold setup."
         )
     else:
         warning = (

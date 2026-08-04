@@ -87,8 +87,10 @@ recognize, vault-ingress treats it as read-only and skips verification.
 
 Schema v2 binds every catalog-derived goal to the exact pattern-scoring generation
 accepted by the speaker. The full baseline snapshot is copied from a validated
-schema-v4 `speaker-profile.json`; Section 15 is narrative context, never the machine
-source. The helper at `scripts/goal_generation_provenance.py` makes the mechanical
+schema-v4 or schema-v5 `speaker-profile.json`; Section 15 is narrative context, never
+the machine source. Schema-v5 derived labels may inform the offered goals only when
+their exact classification domain is available; schema v4 remains occurrence-only.
+The helper at `scripts/goal_generation_provenance.py` makes the mechanical
 comparability decision for both the owner and reader.
 
 ```json

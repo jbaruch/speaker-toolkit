@@ -13,12 +13,15 @@ catalog and to owner-validated transcript, slide, video, or metadata evidence.
 Older generations remain readable history but cannot enter the current scoring
 cohort by implication.
 
-**Defensible absence and opportunity-aware profiles** — all observable entries
+**Defensible absence and ready-to-use classification** — all observable entries
 declare explicit evidence gates, but only 16 permit an absence conclusion from a
-complete transcript or separately declared rendered PDF. Speaker profiles retain
-each pattern's exact evaluable denominator and fail closed on mastery, novelty,
-recurring severity, combinations, and trends until a speaker-owned classification
-policy exists.
+complete transcript or separately declared rendered PDF. Profile schema v5 preserves
+each pattern's exact denominator and automatically applies the bundled
+`speaker-toolkit-default@1` thresholds. A vault may provide a strict optional override;
+if that file is present but invalid, profile generation stops instead of silently
+falling back. Mastery/novelty, antipattern recurrence, underuse, combinations, trends,
+and modes report availability independently. Section 15 readers still accept
+occurrence-only v2 blocks, while every replacement writes a policy-bound v3 block.
 
 **Safer installed operation** — toolkit commands resolve from the installed
 plugin root and use the vault's configured Python interpreter. A stdlib-only
@@ -156,10 +159,10 @@ The toolkit is built on six skills connected by a shared **rhetoric vault** — 
 **Vault skills (analysis):**
 - **vault-ingress** parses recorded talks from transcripts, native decks, PDFs, or video and extracts rhetoric patterns across 14 dimensions — opening hooks, humor style, audience interaction, slide design, pacing, transitions, verbal signatures, and more. Before scoring, deterministic catalog and source-identity gates verify the evidence; video-derived slide claims require a provenance-bound, manually verified slide-region artifact. Recoverable queue leases and validated returns keep interrupted or stale batches from corrupting the vault.
 - **vault-clarification** runs interactive sessions to validate findings and capture deliberate intent.
-- **vault-profile** generates a structured speaker profile with source-exact per-pattern opportunity rows and explicit classification availability after enough talks are analyzed.
+- **vault-profile** generates a schema-v5 speaker profile with source-exact opportunity rows, a self-contained policy stamp, and independently gated classifications after enough talks are analyzed.
 
 **Creator skills (generation):**
-- **presentation-creator** reads the vault at runtime and uses your documented rhetoric as a constitutional style guide to build new presentations. It follows a 7-phase process from intent distillation through slide generation, with a current-taxonomy Pattern Strategy and a go-live checklist before delivery. The four historical tiers and recurring labels appear only when the profile explicitly authorizes classification fields; otherwise the creator stays on a flat taxonomy path. Delegates the visual layer to the illustrations skill.
+- **presentation-creator** reads the vault at runtime and uses your documented rhetoric as a constitutional style guide to build new presentations. It follows a 7-phase process from intent distillation through slide generation, with a current-taxonomy Pattern Strategy and a go-live checklist before delivery. It uses each available profile domain independently—for example, mastery for the four history tiers and antipattern recurrence for recurring warnings—and falls back to a flat taxonomy when that domain is unavailable. Delegates the visual layer to the illustrations skill.
 - **illustrations** owns the deck illustration strategy, generation, build chains, and YouTube thumbnails. Invoked by presentation-creator at the relevant phases (Phase 2 strategy, Phase 5 application, Phase 7 thumbnail).
 - **shownotes-publisher** writes talk pages into a Jekyll-based shownotes site (e.g., `speaking.jbaru.ch`). Encodes the custom parser's format contract so authored content actually renders: abstract is one paragraph, video field absent = "coming soon" badge, slides/video URLs must be markdown links, no frontmatter title, etc. Invoked after the talk is delivered (or pre-talk for slides-only publish).
 
@@ -199,7 +202,7 @@ The vault skill will:
    source-located, channel-permitted evidence
 6. Build a running narrative summary and slide design spec
 7. Run an interactive clarification session to validate findings and capture your intent
-8. Generate a structured speaker profile with auditable pattern opportunities and explicit classification availability (after 10+ talks)
+8. Generate a schema-v5 speaker profile with auditable opportunities and automatic, per-domain classification (after 10+ talks)
 
 ### Phase 2: Create Presentations
 
@@ -211,7 +214,7 @@ create a presentation about [topic] for [conference]
 The creator will:
 1. Load your vault (summary, design spec, profile) and the pattern taxonomy
 2. Walk you through intent distillation (purpose, audience, constraints)
-3. Jointly select rhetorical instruments, using a flat current-taxonomy Pattern Strategy unless validated classification history explicitly enables the four historical tiers
+3. Jointly select rhetorical instruments, using the available schema-v5 mastery history for the four tiers or a flat current-taxonomy strategy when that domain is unavailable
 4. Write a section-by-section outline with speaker notes in your voice
 5. Run guardrail checks (slide budget, Act 1 ratio, profanity, branding, pattern-based antipattern scan)
 6. Generate a .pptx deck from your template
@@ -250,7 +253,7 @@ rhetoric-knowledge-vault/
 
 **rhetoric-style-summary.md** is the constitution — rich prose covering presentation modes, opening patterns, humor techniques, audience interaction styles, closing patterns, verbal signatures, persuasion techniques, and more. It grows every time you parse new talks.
 
-**speaker-profile.json** is the specification — structured data that the creator reads at runtime: presentation modes with quantitative thresholds, instrument catalogs, guardrail rules, pacing data, design rules, the publishing workflow, and a `pattern_profile` with exact positive/negative occurrence rows, per-pattern opportunity denominators, source cohort provenance, and explicit classification availability. Current schema-v4 profiles fail closed on mastery, novelty, recurring severity, combinations, and trends until the speaker owns a versioned classification policy.
+**speaker-profile.json** is the specification — structured data that the creator reads at runtime: presentation modes with quantitative thresholds, instrument catalogs, guardrail rules, pacing data, design rules, the publishing workflow, and a `pattern_profile` with exact positive/negative occurrence rows, per-pattern denominators, source cohort provenance, exhaustive classifications, and independent availability by domain. Schema v5 uses the bundled `speaker-toolkit-default@1` policy automatically and embeds the full policy plus its semantic digest. An optional `pattern-classification-policy.json` overrides it only when the file passes strict validation; schema-v4 profiles remain readable as occurrence-only history.
 
 **slide-design-spec.md** captures visual design rules extracted from both PDF inspection and programmatic .pptx analysis: background colors, typography, footer specs, shape vocabulary, and template layout catalog.
 
@@ -430,7 +433,7 @@ two are invoked via typed `Skill(...)` handoffs.
 8. **Modular cut lines** — present for shorter/longer adaptation
 9. **Anti-pattern flags** — current-outline taxonomy findings plus independently sourced non-pattern guardrails
    - **9A:** Profile-based non-pattern recurring issues (`source_lane: "non_pattern"`)
-   - **9B:** Taxonomy-based antipattern scan — `[CONTEXTUAL]` always; `[RECURRING]` only when the shared profile gate explicitly authorizes classification history
+   - **9B:** Taxonomy-based antipattern scan — `[CONTEXTUAL]` always; `[RECURRING]` only when the profile's antipattern-recurrence domain is available
 10. **Illustration coverage** — format tags, EXCEPTION justifications, style anchor references, prompt quality (when illustration strategy is defined; `[SKIP]` otherwise)
 
 ### Presentation Patterns Taxonomy
@@ -467,10 +470,10 @@ remain outside absence denominators until versioned capability/alignment receipt
 | Integration point | Observable entries (81: 62 patterns + 19 antipatterns) | Unobservable entries (30: 21 patterns + 9 antipatterns) |
 |---|---|---|
 | **Vault scoring** (Step 3 B2) | Exhaustive per-talk outcomes aggregate into source-exact `pattern_profile` occurrence rows | Excluded from scoring |
-| **Creator Phase 2** | Flat current-taxonomy strategy by default; four historical tiers only when classification history is explicitly authorized | Included in recommendations |
-| **Creator Phase 4** | `[CONTEXTUAL]` flags always; `[RECURRING]` only from explicitly authorized classification history | Excluded from scan |
+| **Creator Phase 2** | Four history tiers from an available mastery/novelty domain; flat current taxonomy for an older, missing, or unavailable domain | Included in recommendations |
+| **Creator Phase 4** | `[CONTEXTUAL]` flags always; `[RECURRING]` only when the antipattern-recurrence domain is available | Excluded from scan |
 | **Creator Phase 6** | — | Go-live preparation checklist |
-| **Speaker profile** | `pattern_profile` with opportunity-aware occurrence rows and explicit classification availability | Not in profile |
+| **Speaker profile** | Schema-v5 `pattern_profile` with opportunity-aware occurrence rows, a self-contained policy stamp, exhaustive classifications, and per-domain availability | Not in profile |
 | **Summary-only mode** | Flat relevant-patterns list from reference files | Go-live checklist still applies |
 
 ### Special Workflows

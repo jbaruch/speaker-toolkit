@@ -8,13 +8,17 @@ Phase 4 runs two complementary checkers against `outline.yaml`:
 | `scripts/guardrail-check.py outline.yaml <speaker-profile.json\|-> [rhetoric-style-summary.md]` | Profile-aware rules — pattern-history authorization, slide budget, Act 1 ratio, branding, profanity, data attribution, closing completeness, cut-line availability (conditional on `modular_design`) | schema-v1 JSON on stdout |
 
 `guardrail-check.py` imports the vault-profile provenance assessor through
-`scripts/pattern_history_status.py`. A valid profile always wins. When its history is
-disabled, the optional summary path can authorize only the unique current block parsed
-by `skills/vault-profile/scripts/section15_pattern_history.py`; sources are never
-merged. The guardrail emits current-cohort recurring antipattern records only while
-`history_enabled` and `classification_fields_available` are both true. Exact raw
-occurrence rows alone never authorize recurring severity. Otherwise its
-`pattern_history.suppressed_fields` records the unavailable history-derived fields.
+`scripts/pattern_history_status.py`. A policy-bound profile with any available domain
+wins as the sole history source. Otherwise, the optional summary path can authorize
+only the unique current block parsed by
+`skills/vault-profile/scripts/section15_pattern_history.py`; sources are never merged.
+The guardrail emits current-cohort recurring antipattern records only while the
+`antipattern_recurrence` domain is available and only from derived
+`antipattern_classifications` rows classified `high_frequency` or
+`moderate_frequency`. Those classes describe recurrence frequency, not harm severity.
+A record carries movement only when the independent `trends` domain is available.
+Exact raw occurrence rows alone never authorize recurrence.
+`pattern_history.suppressed_fields` records each unavailable history-derived field.
 Current-outline contextual taxonomy scanning and illustration coverage (checks 9B and
 10 below) remain agent-run checks alongside the script output.
 
@@ -42,9 +46,14 @@ how it's wired to schema fields, and how results are reported.
 If the speaker profile is not available, Section 16 remains usable for confirmed
 intent. Section 15 history is usable only when its current block carries an explicit
 provenance contract matching the bundled catalog/scoring generation and accepted by
-the shared assessor with `classification_fields_available: true`. Otherwise use
-Section 15 only as narrative/audit context and run the current taxonomy scan without
-historical labels.
+the shared assessor. Section 15 v3 is policy-bound, but each use still requires the
+matching entry in `available_classification_domains`; Section 15 v2 is occurrence-only.
+Otherwise use Section 15 only as narrative/audit context and run the current taxonomy
+scan without historical labels.
+
+If `policy_semantic_sha256` changes within one catalog/scoring generation, treat
+classification differences as a comparison reset, never as speaker improvement or
+regression.
 
 Run these checks after Phase 3 delivery and after each Phase 4 revision.
 
@@ -221,12 +230,12 @@ taxonomy-based antipattern scanning from the Presentation Patterns reference.
 Read `guardrail_sources.recurring_issues[]` from the speaker profile. Each entry
 describes a known weakness and its specific guardrail check.
 
-Schema-v4 top-level entries are an independent lane: use an entry only when it carries
-exact `source_lane: "non_pattern"`. Suppress a legacy or ambiguous entry instead of
-guessing its provenance. Catalog-derived recurring warnings live only in the guarded
-`pattern_profile.antipattern_frequency` lane below; do not duplicate them here. For
-each authorized non-pattern entry, run the check described in its `guardrail` field
-and report at the severity level in its `severity` field.
+Schema-v4/v5 top-level entries are an independent lane: use an entry only when it
+carries exact `source_lane: "non_pattern"`. Suppress a legacy or ambiguous entry
+instead of guessing its provenance. Catalog-derived recurring warnings live only in
+the guarded `pattern_profile.antipattern_classifications` lane below; do not duplicate
+them here. For each authorized non-pattern entry, run the check described in its
+`guardrail` field and report at the severity level in its `severity` field.
 
 Common anti-patterns (may or may not apply to a given speaker):
 - **Meme accretion**: If Act 1 has more than 60% meme/image-only slides, flag it
@@ -236,15 +245,18 @@ Common anti-patterns (may or may not apply to a given speaker):
 
 ### 9B. Presentation Patterns Taxonomy Scan
 
-Read [references/patterns/_index.md](patterns/_index.md) (Phase 4 section of the phase-grouped lookup table)
-and classification-derived profile history only when the Phase 0 pattern-history
-status is enabled.
+Read [references/patterns/_index.md](patterns/_index.md) (Phase 4 section of the
+phase-grouped lookup table) and classification-derived profile history only when the
+Phase 0 pattern-history status lists the domain required for that claim.
 
-**Speaker-specific antipatterns** — emit `[RECURRING]` only from a future
-classification-authorized payload accepted by the shared status gate. Never derive
-recurring severity or trend from raw `antipattern_frequency` occurrence rows. Current
-schema-v4 owner-policy-unconfigured profiles, plus missing, legacy, malformed,
-mismatched, or empty-current-cohort inputs, produce no `[RECURRING]` label.
+**Speaker-specific antipatterns** — emit `[RECURRING]` only when
+`antipattern_recurrence` is available and a derived
+`pattern_profile.antipattern_classifications` row is `high_frequency` or
+`moderate_frequency`. Do not treat `occasional` as recurring, and do not treat a
+frequency class as harm severity. Never derive recurrence or trend from raw
+`antipattern_frequency` occurrence rows. Append a movement only when `trends` is also
+available; recurrence remains usable without it. Missing, occurrence-only, malformed,
+mismatched, or empty-current-cohort inputs produce no `[RECURRING]` label.
 
 **Contextual antipatterns** — scan the outline against ALL antipatterns from the taxonomy.
 For each match, read the individual pattern file for detection heuristics and scoring
@@ -266,15 +278,15 @@ Contextual detection rules:
 
 Report format:
 ```
-[RECURRING] Shortchanged (8/24, decreasing) — plan cut lines for the 20-min slot
-[RECURRING] Meme accretion (5/24, stable) — Act 1 meme ratio at 55%
+[RECURRING] Going Meta (high frequency; D=12, A=24, E=24, U=0; decreasing) — remove preparation/equipment apologies
+[CONTEXTUAL] Meme accretion — Act 1 meme ratio at 55%
 [CONTEXTUAL] Bullet-Riddled Corpse — slides 14, 22 have 6+ bullet points
 [CONTEXTUAL] Dual-Headed Monster — co-presented talk, handoff points not defined
 ```
 
-When history is disabled, the report contains only contextual lines and the exact
-status warning. Do not relabel a contextual detection as recurring because Section 15
-mentions a similar phrase.
+When recurrence is unavailable, omit recurring lines and keep contextual lines. If all
+history is disabled, also include the exact status warning. Do not relabel a contextual
+detection as recurring because Section 15 mentions a similar phrase.
 
 ---
 
@@ -418,7 +430,7 @@ This template is not the script's stdout contract.
 ```
 GUARDRAIL CHECK — {talk title} — {date}
 ================================================
-[PASS/WARN] Pattern history: {enabled for exact generation / disabled with exact reasons}
+[PASS/WARN] Pattern history: {available domains / disabled with exact reasons}
 [PASS] Slide budget: {actual}/{max} for {duration}-min slot
 [PASS/WARN/FAIL] Act 1 ratio: {%} (limit: {max}%)
 [PASS/FAIL] Branding: {status}
@@ -428,7 +440,7 @@ GUARDRAIL CHECK — {talk title} — {date}
 [PASS/FAIL] Closing: summary={y/n} CTA={y/n} social={y/n}
 [PASS/FAIL] Cut lines: {present/missing}
 [INFO/SKIP] Historical anti-patterns: {authorized recurring issues or suppressed}
-[RECURRING] Presentation Patterns: {authorized historical flags; omit when disabled}
+[RECURRING] Presentation Patterns: {authorized recurrence flags; omit when recurrence domain unavailable}
 [CONTEXTUAL] Presentation Patterns: {current-outline taxonomy flags; always enabled}
 [PASS/FAIL/SKIP] Illustrations: {coverage ratio} | {format tags} | {prompt quality}
 [PASS/SKIP] Builds: {N} defined, {M} images generated

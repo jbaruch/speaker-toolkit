@@ -1,5 +1,25 @@
 # Changelog
 
+### feat(vault-profile) — ship default pattern classification policy (#222)
+
+Speaker profiles now classify current scoring-v5 opportunity rows with the
+bundled, versioned `speaker-toolkit-default@1` policy instead of waiting for
+every speaker to invent thresholds. Schema-v5 profiles embed the exact policy,
+its canonical semantic SHA-256, exhaustive positive and antipattern
+classifications, combinations, trend evidence, and independent availability
+for each derived domain. A present `pattern-classification-policy.json` may
+override the default only when it passes the strict schema-v1 contract; an
+invalid override aborts rather than silently falling back.
+
+Section 15 writes the policy-bound v3 block while retaining read-only v2
+occurrence compatibility. Presentation creation consumes each available domain
+independently: New-to-You comes only from `never_tried`, recurring warnings come
+only from high/moderate derived antipattern classifications, and unsupported
+mode history remains unavailable. Raw opportunity rows stay unchanged, and the
+upgrade requires profile/summary regeneration but no talk reparse. Goal-setting
+accepts validated schema-v4 and schema-v5 raw baselines; it uses a v5 derived label
+only when that label's own classification domain is available.
+
 ## 0.20.11 — 2026-08-04
 
 ### fix(vault-ingress) — supervise preserved source-video evidence (#190)

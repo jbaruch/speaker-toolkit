@@ -10,7 +10,24 @@ The vault is located at `./vault/` and all the data is provided below. Your job 
 
 Generate `vault/speaker-profile.json` — a complete speaker profile synthesizing all available vault data.
 
-The profile should capture Taylor's defaults and infrastructure in a structured form that another tool can consume programmatically. The supplied talk rows predate source-located scoring-v5 outcomes and therefore cannot authorize a current pattern cohort: emit the canonical schema-v4 empty-current-cohort pattern contract instead of migrating the legacy pattern IDs, scores, or Section 15 prose into mastery, novelty, recurring severity, trends, or badges. Include only non-pattern badges, each marked `source_lane: "non_pattern"`, grounded in independent talk-count, pacing, visual, publishing, or confirmed-intent data.
+The profile should capture Taylor's defaults and infrastructure in a structured form
+that another tool can consume programmatically. The supplied talk rows predate
+source-located scoring-v5 outcomes and therefore cannot authorize a current pattern
+cohort. Emit the canonical schema-v5 empty-current-cohort contract instead of migrating
+legacy IDs, scores, or Section 15 prose into classifications. Because no override file
+is supplied, stamp the self-contained bundled `speaker-toolkit-default@1` policy and use
+classification-availability schema v2. Keep each domain independent: the classifier's
+mastery/novelty, antipattern-recurrence, underuse, and combination domains remain
+available as contracts, but their exhaustive zero-cohort rows are unclassified and
+produce no mastery, New-to-You, recurring, strength, underuse, or combination claims;
+trends and modes remain explicitly unavailable for their own reasons.
+
+The supplied Section 15 is ordinary narrative, not a machine-readable current block,
+and cannot fill the empty cohort. Compatibility readers may inspect an actual v2 block
+as occurrence-only history, while the Section 15 writer emits only policy-bound v3;
+this task writes only `speaker-profile.json` and must not invent or edit either block.
+Include only non-pattern badges, each marked `source_lane: "non_pattern"`, grounded in
+independent talk-count, pacing, visual, publishing, or confirmed-intent data.
 
 ## Input Files
 

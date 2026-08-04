@@ -406,10 +406,12 @@ def check_pattern_history(
 ) -> tuple[str, str]:
     """Report the independent authorization state for catalog history."""
     if status.history_enabled:
+        domains = ", ".join(status.available_classification_domains)
         return (
             "PASS",
-            "enabled for the exact current catalog/scoring generation "
-            f"({status.scored_talk_count} talks; source={status.history_source})",
+            "policy-bound domains enabled for the exact current catalog/scoring "
+            f"generation ({status.scored_talk_count} talks; "
+            f"source={status.history_source}; domains={domains})",
         )
     return "WARN", disabled_history_warning(status)
 
@@ -418,40 +420,77 @@ def recurring_pattern_history_items(
     pattern_profile: Mapping[str, object] | None,
     status: CreatorPatternHistoryStatus,
 ) -> list[dict[str, object]]:
-    """Return recurring records only from authorized current-generation history."""
-    if not status.history_enabled:
+    """Return high/moderate recurrence rows from the authorized derived lane."""
+    if not status.domain_available("antipattern_recurrence"):
         return []
 
     assert isinstance(pattern_profile, Mapping)  # shared assessment postcondition
-    raw_frequency = pattern_profile.get("antipattern_frequency")
-    assert isinstance(raw_frequency, list)  # shared assessment postcondition
+    classifications = pattern_profile.get("antipattern_classifications")
+    assert isinstance(classifications, list)  # shared assessment postcondition
+
+    trends: dict[str, str] = {}
+    if status.domain_available("trends"):
+        trend_analysis = pattern_profile.get("trend_analysis")
+        if isinstance(trend_analysis, Mapping):
+            movements = trend_analysis.get("antipattern_movements")
+            if isinstance(movements, list):
+                for movement in movements:
+                    if not isinstance(movement, Mapping):
+                        continue
+                    pattern_id = movement.get("pattern_id")
+                    direction = movement.get("movement")
+                    if isinstance(pattern_id, str) and direction in {
+                        "increasing",
+                        "decreasing",
+                        "stable",
+                        "indeterminate",
+                    }:
+                        trends[pattern_id] = str(direction)
 
     items: list[dict[str, object]] = []
-    for item in raw_frequency:
-        if not isinstance(item, Mapping) or item.get("severity") != "recurring":
+    for item in classifications:
+        if not isinstance(item, Mapping) or item.get("classification") not in {
+            "high_frequency",
+            "moderate_frequency",
+        }:
             continue
         pattern_id = item.get("pattern_id")
         if not isinstance(pattern_id, str) or not pattern_id:
             continue
-        count = item.get("times_detected")
-        out_of = item.get("out_of")
-        if (
-            not isinstance(count, int)
-            or isinstance(count, bool)
-            or not isinstance(out_of, int)
-            or isinstance(out_of, bool)
-        ):
+        evidence = item.get("evidence")
+        if not isinstance(evidence, Mapping):
             continue
-        trend = item.get("trend")
         record: dict[str, object] = {
             "pattern_id": pattern_id,
-            "times_detected": count,
-            "out_of": out_of,
+            "recurrence_classification": item["classification"],
+            "evidence": dict(evidence),
         }
-        if isinstance(trend, str) and trend:
-            record["trend"] = trend
+        if pattern_id in trends:
+            record["trend"] = trends[pattern_id]
         items.append(record)
     return items
+
+
+def suppressed_pattern_history_fields(
+    status: CreatorPatternHistoryStatus,
+) -> list[str]:
+    """List each unavailable derived field family without collapsing domains."""
+    suppressed = ["legacy_pattern_guardrails", "legacy_pattern_badges"]
+    if not status.domain_available("mastery_and_novelty"):
+        suppressed.extend(
+            ["mastery_levels", "never_used_patterns", "strengths", "new_to_you"]
+        )
+    if not status.domain_available("underuse"):
+        suppressed.append("underused_patterns")
+    if not status.domain_available("signature_combinations"):
+        suppressed.append("signature_combinations")
+    if not status.domain_available("antipattern_recurrence"):
+        suppressed.append("recurring_antipatterns")
+    if not status.domain_available("trends"):
+        suppressed.extend(["score_trend", "pattern_breadth.trend", "score_drivers"])
+    if not status.domain_available("modes"):
+        suppressed.append("by_mode")
+    return suppressed
 
 
 # ── Main ─────────────────────────────────────────────────────────────
@@ -517,17 +556,7 @@ def main(argv: list[str]) -> int:
         ("Cut lines", check_cut_lines(outline, profile)),
     ]
 
-    suppressed_fields = []
-    if not history_status.history_enabled:
-        suppressed_fields = [
-            "tiers",
-            "labels",
-            "strengths",
-            "underuse",
-            "by_mode",
-            "legacy_pattern_guardrails",
-            "legacy_pattern_badges",
-        ]
+    suppressed_fields = suppressed_pattern_history_fields(history_status)
     report = {
         "schema_version": 1,
         "talk_title": outline.talk.title,

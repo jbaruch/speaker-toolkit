@@ -178,12 +178,14 @@ today, `set_by: "vault-clarification"`, `current_value: ""`, `last_checked: null
 `supersedes_goal_id: null`, and `schema_version: 2`.
 
 For speaker-chosen `antipattern` and `underuse` goals, the baseline is
-catalog-derived. Read the exact occurrence metric only from a validated schema-v4
-profile whose pattern provenance matches the active catalog and scoring-v5 contract,
-copy `pattern_profile.pattern_baseline` unchanged into
+catalog-derived. Read the exact occurrence metric only from a validated schema-v4 or
+schema-v5 profile whose pattern provenance matches the active catalog and scoring-v5
+contract, copy `pattern_profile.pattern_baseline` unchanged into
 `baseline_provenance.pattern_baseline`, and set the lane to `pattern_scoring`. Raw
 occurrence rows do not themselves classify a pattern as recurring, underused, or a
-signature; the speaker must explicitly choose the target without those labels. Never
+signature. A schema-v5 derived label may inform the choices only when its exact
+classification domain is `available`; schema v4 supplies no derived labels. The
+speaker must explicitly choose the target. Never
 parse the numeric baseline or generation identity from Section 15 prose. If no
 matching non-empty raw-score-comparable current pattern cohort exists, explain that
 the pattern goal has no verifiable baseline yet and do not create it. `pacing` uses the separate `pacing`

@@ -280,15 +280,34 @@ def test_profile_construction_rules_are_linked_and_shipped() -> None:
         "[profile-construction-rules.md]"
         "(references/profile-construction-rules.md)" in skill
     )
-    assert "owner-policy-unconfigured" in rules
+    assert "speaker-toolkit-default@1" in rules
+    assert "pattern-classification-policy.json" in rules
+    assert "canonical SHA-256" in rules
     assert "pattern-generation\nreset" in rules
 
-    relative_reference = reference.relative_to(REPO_ROOT)
-    ignore_check = subprocess.run(
-        ["git", "check-ignore", "--no-index", "--quiet", "--", str(relative_reference)],
-        cwd=REPO_ROOT,
-        check=False,
+    shipped = (
+        reference,
+        SKILLS_ROOT
+        / "vault-profile"
+        / "references"
+        / "pattern-classification-policy-v1.json",
+        SKILLS_ROOT
+        / "vault-profile"
+        / "scripts"
+        / "classify-pattern-profile.py",
+        SKILLS_ROOT
+        / "vault-profile"
+        / "scripts"
+        / "pattern_classification_runtime.py",
     )
-    assert ignore_check.returncode == 1, (
-        f"{relative_reference} is excluded from the published plugin"
-    )
+    for path in shipped:
+        assert path.is_file(), path
+        relative = path.relative_to(REPO_ROOT)
+        ignore_check = subprocess.run(
+            ["git", "check-ignore", "--no-index", "--quiet", "--", str(relative)],
+            cwd=REPO_ROOT,
+            check=False,
+        )
+        assert ignore_check.returncode == 1, (
+            f"{relative} is excluded from the published plugin"
+        )

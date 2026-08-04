@@ -62,8 +62,8 @@ configuration. Never fall back to whichever `python3` happens to be on `PATH`.
   JSON shape and [schemas-config.md](references/schemas-config.md) for config and
   confirmed intents.
 - Treat `tracking-database.json` as source of truth and `speaker-profile.json` as the
-  output. Toolkit scripts, not prose, own cohort, opportunity, pacing, and validation
-  arithmetic.
+  output. Toolkit scripts, not prose, own cohort, opportunity, classification, pacing,
+  and validation arithmetic.
 
 ## Prerequisites
 
@@ -105,11 +105,12 @@ Load `tracking-database.json`, `rhetoric-style-summary.md`, and
   defaults are documented in the script's top-of-file contract.
 - Stdout (JSON): `{vault_root, config, confirmed_intents, talks, processed_talks,
   baseline_talks, excluded_pattern_scoring_talks, pattern_scoring_exclusions,
-  pattern_baseline, pattern_opportunities, current_instrumentation_talks,
+  pattern_baseline, pattern_opportunities, pattern_classification,
+  current_instrumentation_talks,
   stale_instrumentation_talks, baseline_note, instrumentation_note, summary,
   design_spec}`.
-- Exit non-zero with stderr message if arguments, vault sources, catalog identity, or
-  scoring-generation metadata are missing or malformed.
+- Exit non-zero with stderr message if arguments, vault sources, catalog identity,
+  scoring-generation metadata, or a present classification-policy override is invalid.
 
 Apply the loader and missing-source rules in the construction reference.
 
@@ -119,8 +120,8 @@ Proceed immediately to Step 2.
 
 Aggregate the three named cohorts exactly as defined in
 [profile-construction-rules.md](references/profile-construction-rules.md). Keep
-catalog, non-catalog, and pacing sources separate; never recalculate the deterministic
-`pattern_opportunities` payload.
+catalog, non-catalog, and pacing sources separate. Copy the deterministic
+`pattern_opportunities` and `pattern_classification` payloads; never recalculate either.
 
 Proceed immediately to Step 3.
 
@@ -159,8 +160,9 @@ Read [profile-construction-rules.md](references/profile-construction-rules.md) i
 then construct `speaker-profile.json` with the exact field ownership, cohort,
 classification, empty-cohort, and non-pattern provenance rules there. Use
 [speaker-profile-schema.md](references/speaker-profile-schema.md) for the complete
-schema. Copy deterministic baseline and opportunity data; do not infer or recalculate
-catalog history.
+schema. Copy deterministic baseline, opportunity, policy stamp, availability, and
+derived classification data; do not infer or recalculate catalog history. Regenerating
+these profile fields reads existing tracking rows and does not reparse any talk.
 
 Compute `pacing.adherence` by running `"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/compute-pacing-adherence.py"`. The
 deterministic arithmetic — duration parsing, slides-per-minute, budget-band
@@ -184,7 +186,7 @@ echo "$PACING_INPUT" | "{python_path}" "{speaker_toolkit_root}/skills/vault-prof
   (as elsewhere in the schema) and is not emitted by the script.
 - Exit non-zero on malformed input.
 
-Set `schema_version` to `4` and `generated_date` to today's date in `YYYY-MM-DD` form.
+Set `schema_version` to `5` and `generated_date` to today's date in `YYYY-MM-DD` form.
 
 Proceed immediately to Step 5.
 
@@ -192,9 +194,11 @@ Proceed immediately to Step 5.
 
 Pipe the constructed profile dict through
 `"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/validate-profile.py" --vault-root "$VAULT_ROOT"`.
-Schema-v4 owner validation reparses the live tracking database with the same shared
-cohort builder as Step 1 and rejects any candidate baseline, filename set, eligible
-count, or opportunity row that is not source-exact.
+Schema-v5 owner validation rereads the live tracking database with the same shared
+cohort/classification builders as Step 1 and rejects any candidate baseline, filename
+set, opportunity row, policy stamp/digest, availability domain, or derived row that is
+not source-exact. This is database re-analysis, not talk reparsing; raw persisted talk
+rows remain unchanged.
 
 ```bash
 echo "$PROFILE_JSON" | "{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/validate-profile.py" --vault-root "$VAULT_ROOT"

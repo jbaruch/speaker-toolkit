@@ -6,6 +6,7 @@ import copy
 import hashlib
 import importlib
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -141,7 +142,7 @@ def _pattern_profile(validate_profile, *, count: int = 2) -> dict[str, Any]:
 
 def _profile(validate_profile, *, count: int = 2) -> dict[str, Any]:
     return {
-        "schema_version": 4,
+        "schema_version": 5,
         "generated_date": "2025-01-02",
         "talks_analyzed": 4,
         "speaker": {},
@@ -152,12 +153,43 @@ def _profile(validate_profile, *, count: int = 2) -> dict[str, Any]:
         "confirmed_intents": [],
         "guardrail_sources": {"recurring_issues": []},
         "pacing": {},
-        "pattern_profile": _pattern_profile(validate_profile, count=count),
+        "pattern_profile": _v5_pattern_profile(validate_profile, count=count),
         "visual_style_history": {},
         "publishing_process": {},
         "design_rules": {},
         "badges": [],
     }
+
+
+def _v5_pattern_profile(validate_profile, *, count: int = 2) -> dict[str, Any]:
+    profile = _pattern_profile(validate_profile, count=count)
+    filenames = profile["baseline_talk_filenames"]
+    catalog = importlib.import_module("pattern_opportunities").load_catalog()
+    pattern_outcomes, _, _ = _transcript_projection(catalog)
+    talks = [
+        {
+            "filename": filename,
+            "pattern_score": 0,
+            "pattern_observations": {
+                "pattern_score": 0,
+                "patterns_detected": [],
+                "antipatterns_detected": [],
+                "pattern_outcomes": copy.deepcopy(pattern_outcomes),
+            },
+        }
+        for filename in filenames
+    ]
+    runtime = importlib.import_module("pattern_classification_runtime")
+    profile.update(
+        runtime.classify_pattern_profile(
+            talks,
+            runtime.resolve_classification_policy(
+                Path(__file__).resolve().parent / "__no_policy_override__"
+            ),
+            catalog=catalog,
+        )
+    )
+    return profile
 
 
 def _run(validate_profile, profile, tmp_path, capsys, *, extra_talks=None):
@@ -325,7 +357,7 @@ def test_current_profile_binds_every_pattern_denominator_to_one_cohort(
     assert return_code == 0, "\n".join(report["errors"])
     assert report == {
         "valid": True,
-        "schema_version": 4,
+        "schema_version": 5,
         "missing_keys": [],
         "errors": [],
     }
@@ -395,6 +427,47 @@ def test_reusable_assessment_distinguishes_current_empty_and_stale_history(
         "pattern_catalog_fingerprint_mismatch",
         "invalid_pattern_profile_contract",
     )
+
+
+def test_v5_assessment_enables_independent_policy_domains(validate_profile):
+    pattern_profile = _v5_pattern_profile(validate_profile)
+
+    assessment = validate_profile.assess_pattern_profile(
+        pattern_profile, expected_contract_version=5
+    )
+
+    assert assessment.current_contract is True
+    assert assessment.classification_fields_available is True
+    assert assessment.available_classification_domains == frozenset(
+        {
+            "mastery_and_novelty",
+            "antipattern_recurrence",
+            "underuse",
+            "signature_combinations",
+        }
+    )
+    assert assessment.domain_available("trends") is False
+    assert assessment.domain_available("modes") is False
+    assert assessment.policy_semantic_sha256 == pattern_profile[
+        "classification_policy"
+    ]["semantic_sha256"]
+
+
+def test_v5_assessment_rejects_policy_digest_tampering(validate_profile):
+    pattern_profile = _v5_pattern_profile(validate_profile)
+    pattern_profile["classification_policy"]["semantic_sha256"] = "0" * 64
+
+    assessment = validate_profile.assess_pattern_profile(
+        pattern_profile, expected_contract_version=5
+    )
+
+    provenance_module = importlib.import_module("profile_pattern_provenance")
+    assert assessment.current_contract is False
+    assert (
+        provenance_module.REASON_CLASSIFICATION_POLICY_INVALID
+        in assessment.reason_codes
+    )
+    assert any("semantic_sha256" in error for error in assessment.errors)
 
 
 def test_mixed_opportunity_identity_keeps_occurrences_and_suppresses_raw_average(
@@ -492,7 +565,7 @@ def test_profile_v3_is_noncurrent_and_rejected(validate_profile, tmp_path, capsy
 
     assert return_code == 1
     assert report["valid"] is False
-    assert report["errors"] == ["schema_version is 3 (expected 4)"]
+    assert report["errors"] == ["schema_version is 3 (expected 5)"]
 
 
 def test_missing_pattern_baseline_is_rejected(validate_profile, tmp_path, capsys):
@@ -644,7 +717,7 @@ def test_nonempty_profile_requires_complete_nested_schema(
 
     assert return_code == 1
     assert any(
-        "missing required schema-v4 fields" in error for error in report["errors"]
+        "missing required schema-v5 fields" in error for error in report["errors"]
     )
     assert any(
         "pattern_breadth is missing required fields" in error
@@ -664,7 +737,7 @@ def test_current_profile_rejects_unknown_nested_shape(
     return_code, report = _run(validate_profile, profile, tmp_path, capsys)
 
     assert return_code == 1
-    assert any("unknown schema-v4 fields" in error for error in report["errors"])
+    assert any("unknown schema-v5 fields" in error for error in report["errors"])
     assert any("unknown tiers" in error for error in report["errors"])
 
 
@@ -681,7 +754,7 @@ def test_nonempty_cohort_rejects_unconfigured_trend_claim(
 
     assert return_code == 1
     assert any(
-        "score_trend must be 'unavailable'" in error for error in report["errors"]
+        "score_trend must project" in error for error in report["errors"]
     )
 
 
@@ -791,10 +864,11 @@ def test_empty_current_cohort_rejects_legacy_pattern_fallback(
 
     assert return_code == 1
     assert any(
-        "score_trend must be 'unavailable'" in error for error in report["errors"]
+        "score_trend must project" in error for error in report["errors"]
     )
     assert any(
-        "mastery_levels.signature must be []" in error for error in report["errors"]
+        "mastery_levels is not the deterministic projection" in error
+        for error in report["errors"]
     )
 
 
