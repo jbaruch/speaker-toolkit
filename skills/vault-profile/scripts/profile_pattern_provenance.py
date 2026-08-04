@@ -527,12 +527,12 @@ def _validate_classification_lane(
         if not isinstance(item, Mapping):
             errors.append(f"{path} must be an object")
             continue
-        canonical.append(item)
         errors.extend(_exact_fields(item, _CLASSIFICATION_ROW_FIELDS, path=path))
         pattern_id = item.get("pattern_id")
         if not isinstance(pattern_id, str) or not pattern_id:
             errors.append(f"{path}.pattern_id must be a non-empty string")
             continue
+        canonical.append(item)
         observed_ids.append(pattern_id)
         classification = item.get("classification")
         if classification not in allowed_classifications:

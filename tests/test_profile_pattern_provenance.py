@@ -475,6 +475,24 @@ def test_v5_assessment_rejects_policy_digest_tampering(validate_profile):
     assert any("semantic_sha256" in error for error in assessment.errors)
 
 
+def test_v5_assessment_rejects_missing_classification_id_without_crashing(
+    validate_profile,
+):
+    pattern_profile = _v5_pattern_profile(validate_profile)
+    row = pattern_profile["pattern_classifications"][0]
+    row["classification"] = "signature"
+    del row["pattern_id"]
+
+    assessment = validate_profile.assess_pattern_profile(
+        pattern_profile, expected_contract_version=5
+    )
+
+    assert assessment.current_contract is False
+    assert any(
+        "pattern_id must be a non-empty string" in error for error in assessment.errors
+    )
+
+
 def test_mixed_opportunity_identity_keeps_occurrences_and_suppresses_raw_average(
     validate_profile,
 ):
