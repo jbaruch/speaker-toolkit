@@ -449,7 +449,14 @@ def test_stable_generation_failure_is_revalidated_then_reused_globally(
 @pytest.mark.parametrize(
     ("flags", "file_attributes"),
     [
-        (video_evidence.VIDEO_MACOS_DATALESS_FLAG, None),
+        pytest.param(
+            video_evidence.VIDEO_MACOS_DATALESS_FLAG,
+            None,
+            marks=pytest.mark.skipif(
+                video_evidence.VIDEO_MACOS_DATALESS_FLAG == 0,
+                reason="macOS dataless flag is unavailable on this platform",
+            ),
+        ),
         (None, artifact_metadata.WINDOWS_OFFLINE_ATTRIBUTE),
         (None, artifact_metadata.WINDOWS_RECALL_ON_OPEN_ATTRIBUTE),
         (None, artifact_metadata.WINDOWS_RECALL_ON_DATA_ACCESS_ATTRIBUTE),
