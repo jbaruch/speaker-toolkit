@@ -40,8 +40,8 @@ size, exact bytes, and SHA-256 throughout verification. Staged `mtime_ns` and
 `ctime_ns` may rebaseline after fsync only when the descriptor view and name view
 are each stable across one byte-read window within the writer-owned bounded
 attempts. Exhaustion and every hard staged mismatch raise
-`StagedCandidateConflictError` with the failed invariant; see
-`{speaker_toolkit_root}/skills/vault-ingress/scripts/tracking_database_io.py`.
+`StagedCandidateConflictError` carrying the failed invariant. The class is
+defined in `skills/vault-ingress/scripts/tracking_database_io.py`.
 
 A schema-v1 database with config v2 is an idempotent no-op. A schema-v1 database
 with config v1 receives only the config-v2 migration; the root generation and
