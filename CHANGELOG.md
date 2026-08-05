@@ -1,5 +1,18 @@
 # Changelog
 
+### ci(review-trigger) — skip dependabot pull requests (#244)
+
+The fleet policy review trigger is synced to the current
+`jbaruch/coding-policy` `install-reviewer` template, which skips Dependabot
+pull requests alongside fork pull requests. GitHub populates the `secrets`
+context from the Dependabot store — not the Actions store — for any workflow a
+Dependabot event triggers, so `FLEET_DISPATCH_TOKEN` resolved empty and the
+workflow's own emptiness guard exited non-zero on every Dependabot PR. This
+turned the `trigger` check red on PRs #125, #128, and #131 while their test
+suites were green. `pull_request_target` is not an escape hatch; GitHub applies
+the same restriction to it for Dependabot-authored pull requests. The
+coding-policy schedule remains the review path for these PRs.
+
 ## 0.20.18 — 2026-08-05
 
 ### fix(vault-ingress) — reconcile event-qualified shownotes titles (#237)
