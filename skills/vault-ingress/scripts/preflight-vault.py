@@ -63,8 +63,15 @@ from source_identity_matching import (
     titles_agree,
 )
 from tracking_database import (
+    CONFIG_RECORD_SCHEMA_VERSION,
+    LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
+    TrackingDatabaseConfigExclusionsError,
     TrackingDatabaseError,
     assess_tracking_database,
+)
+from pptx_discovery_contract import (
+    PptxDiscoveryContractError,
+    validate_pptx_directory_exclusions,
 )
 from tracking_database_io import (
     TrackingDatabaseIOError,
@@ -238,6 +245,7 @@ class VaultPreflight:
         self.artifact_capabilities: dict[int, dict[str, object]] = {}
         self.video_evidence_assessment = VideoEvidenceAssessment()
         self.reported_source_video_failures: set[int] = set()
+        self.reported_config_exclusions_invalid = False
 
     def artifact_root(self) -> Path:
         """Map the trusted configured root lazily, without probing CLI input."""
@@ -322,21 +330,53 @@ class VaultPreflight:
         try:
             assessment = assess_tracking_database(self.database)
         except TrackingDatabaseError as exc:
-            self.add(
-                "blocking",
-                "tracking_database_schema_invalid",
-                str(exc),
-                field="schema_version",
-            )
+            config = self.database.get("config")
+            if not (
+                isinstance(exc, TrackingDatabaseConfigExclusionsError)
+                and isinstance(config, dict)
+                and self._report_invalid_pptx_directory_exclusions(config)
+            ):
+                self.add(
+                    "blocking",
+                    "tracking_database_schema_invalid",
+                    str(exc),
+                    field="schema_version",
+                )
         else:
             if not assessment.usable:
+                reason_codes = list(assessment.reason_codes)
+                field = "schema_version"
+                expected: Any = assessment.as_dict()["accepted_schema_versions"]
+                actual: Any = {
+                    "root_schema_version": assessment.schema_version,
+                    "reason_codes": reason_codes,
+                }
+                if {
+                    "config_schema_version_missing",
+                    "config_schema_version_unsupported",
+                }.intersection(assessment.reason_codes):
+                    config = self.database.get("config")
+                    config_version = (
+                        config.get("schema_version")
+                        if isinstance(config, dict)
+                        else None
+                    )
+                    field = "config.schema_version"
+                    expected = [
+                        LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
+                        CONFIG_RECORD_SCHEMA_VERSION,
+                    ]
+                    actual = {
+                        "schema_version": config_version,
+                        "reason_codes": reason_codes,
+                    }
                 self.add(
                     "blocking",
                     "tracking_database_schema_unsupported",
                     "tracking database is not usable by this reader",
-                    field="schema_version",
-                    expected=assessment.as_dict()["accepted_schema_versions"],
-                    actual=assessment.schema_version,
+                    field=field,
+                    expected=expected,
+                    actual=actual,
                 )
                 return self.report(0)
 
@@ -414,6 +454,7 @@ class VaultPreflight:
 
     def _validate_config_artifact_roots(self) -> None:
         """Report each invalid configured source root once, even without talks."""
+        self._report_invalid_pptx_directory_exclusions(self.config)
         if (
             "pptx_source_dir" not in self.config
             or self.config.get("pptx_source_dir") is None
@@ -430,6 +471,43 @@ class VaultPreflight:
                 expected="absent, null, or a native absolute path",
                 actual={"reason_code": exc.reason_code},
             )
+
+    def _report_invalid_pptx_directory_exclusions(
+        self,
+        config: dict[str, Any],
+    ) -> bool:
+        """Report one typed exclusion fault and suppress generic schema noise."""
+        message: str | None = None
+        actual: Any = config.get("pptx_directory_exclusions")
+        if (
+            config.get("schema_version") == CONFIG_RECORD_SCHEMA_VERSION
+            and "pptx_directory_exclusions" not in config
+        ):
+            message = (
+                "current config must declare exact-component PPTX directory exclusions"
+            )
+            actual = {"state": "missing"}
+        elif "pptx_directory_exclusions" in config:
+            try:
+                validate_pptx_directory_exclusions(
+                    actual,
+                    label="config.pptx_directory_exclusions",
+                )
+            except PptxDiscoveryContractError as exc:
+                message = str(exc)
+        if message is None:
+            return False
+        if not self.reported_config_exclusions_invalid:
+            self.add(
+                "blocking",
+                "pptx_directory_exclusions_invalid",
+                message,
+                field="config.pptx_directory_exclusions",
+                expected="bounded unique exact-component string array",
+                actual=actual,
+            )
+            self.reported_config_exclusions_invalid = True
+        return True
 
     def _validate_filenames(self) -> None:
         occurrences: defaultdict[str, list[int]] = defaultdict(list)

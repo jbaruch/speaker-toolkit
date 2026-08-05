@@ -27,18 +27,53 @@ from conftest import make_deck
 def _use_in_process_directory_discovery(pptx_extraction, monkeypatch):
     """Keep batch unit tests fast while production discovery stays supervised."""
 
-    def discover(directory, patterns, *, deadline):
+    def discover(directory, patterns, directory_exclusions, *, deadline):
         assert deadline > 0
         files, skipped, _started = pptx_extraction._discover_pptx_files(
-            directory, patterns
+            directory,
+            patterns,
+            directory_exclusions,
         )
-        return [relative for _path, relative in files], skipped
+        reasons = pptx_extraction.directory_incomplete_reason_codes(skipped)
+        return [relative for _path, relative in files], skipped, not reasons, reasons
 
     monkeypatch.setattr(
         pptx_extraction,
         "_run_supervised_directory_discovery",
         discover,
     )
+
+
+def _directory_manifest(*, files=None, skipped=None, **updates):
+    skipped = [] if skipped is None else skipped
+    policy_skips = {
+        "pptx_batch_conflict_copy",
+        "pptx_batch_directory_excluded",
+        "pptx_batch_office_lock_file",
+        "pptx_batch_reparse_point_rejected",
+        "pptx_batch_skip_pattern",
+        "pptx_batch_static_export",
+        "pptx_batch_symlink_rejected",
+    }
+    reasons = sorted(
+        {
+            item["reason"]
+            for item in skipped
+            if isinstance(item.get("reason"), str)
+            and item["reason"] not in policy_skips
+        }
+    )
+    manifest = {
+        "schema_version": 2,
+        "kind": "directory",
+        "complete": not reasons,
+        "directory_exclusions": [],
+        "incomplete_reason_codes": reasons,
+        "files": [] if files is None else files,
+        "skipped": skipped,
+    }
+    manifest.update(updates)
+    return manifest
 
 
 def test_slide_count(pptx_extraction, tmp_path):
@@ -305,6 +340,210 @@ def test_bounded_discovery_rejects_symlinks_and_is_deterministic(
     )
 
 
+def test_directory_exclusion_prunes_before_scandir_and_keeps_authored_default_deck(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    dependency = root / ".venv" / "lib" / "site-packages" / "pptx" / "templates"
+    authored = root / "templates"
+    dependency.mkdir(parents=True)
+    authored.mkdir(parents=True)
+    (dependency / "default.pptx").write_bytes(b"dependency")
+    (authored / "default.pptx").write_bytes(b"authored")
+    original_scandir = pptx_extraction.os.scandir
+
+    def guarded_scandir(path):
+        assert Path(path) != root / ".venv", "excluded directory was inspected"
+        return original_scandir(path)
+
+    monkeypatch.setattr(pptx_extraction.os, "scandir", guarded_scandir)
+
+    discovered, skipped, _started = pptx_extraction._discover_pptx_files(
+        root,
+        [],
+        [".VENV"],
+    )
+
+    assert [relative for _path, relative in discovered] == [
+        "templates/default.pptx"
+    ]
+    assert skipped == [
+        {"path": ".venv", "reason": "pptx_batch_directory_excluded"}
+    ]
+    assert pptx_extraction.directory_incomplete_reason_codes(skipped) == []
+
+
+def test_excluded_directory_cannot_starve_authored_sibling_at_entry_cap(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    excluded = root / ".venv"
+    excluded.mkdir(parents=True)
+    (excluded / "dependency.pptx").write_bytes(b"dependency")
+    (root / "talk.pptx").write_bytes(b"authored")
+    monkeypatch.setattr(pptx_extraction, "_BATCH_MAX_ENTRIES", 1)
+
+    discovered, skipped, _started = pptx_extraction._discover_pptx_files(
+        root,
+        [],
+        [".venv"],
+    )
+
+    assert [relative for _path, relative in discovered] == ["talk.pptx"]
+    assert skipped == [
+        {"path": ".venv", "reason": "pptx_batch_directory_excluded"}
+    ]
+
+
+def test_policy_exclusion_enumeration_has_its_own_closed_cap(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    (root / ".venv").mkdir(parents=True)
+    (root / "talk.pptx").write_bytes(b"authored")
+    monkeypatch.setattr(
+        pptx_extraction,
+        "_BATCH_MAX_POLICY_EXCLUDED_ENTRIES",
+        0,
+    )
+
+    discovered, skipped, _started = pptx_extraction._discover_pptx_files(
+        root,
+        [],
+        [".venv"],
+    )
+
+    assert discovered == []
+    assert skipped == [{"path": ".", "reason": "pptx_batch_entry_limit"}]
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX symlink precedence is tested separately from Windows reparse points",
+)
+def test_named_exclusion_keeps_symlink_rejection_precedence(
+    pptx_extraction,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (root / ".venv").symlink_to(outside, target_is_directory=True)
+
+    discovered, skipped, _started = pptx_extraction._discover_pptx_files(
+        root,
+        [],
+        [".venv"],
+    )
+
+    assert discovered == []
+    assert skipped == [
+        {"path": ".venv", "reason": "pptx_batch_symlink_rejected"}
+    ]
+
+
+def test_named_exclusion_keeps_reparse_rejection_precedence(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    excluded = root / ".venv"
+    excluded.mkdir(parents=True)
+    excluded_inode = excluded.lstat().st_ino
+    monkeypatch.setattr(
+        pptx_extraction,
+        "_is_windows_reparse_point",
+        lambda value: value.st_ino == excluded_inode,
+    )
+
+    discovered, skipped, _started = pptx_extraction._discover_pptx_files(
+        root,
+        [],
+        [".venv"],
+    )
+
+    assert discovered == []
+    assert skipped == [
+        {"path": ".venv", "reason": "pptx_batch_reparse_point_rejected"}
+    ]
+
+
+def test_excluded_directories_do_not_consume_directory_budget(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    included = root / "included"
+    excluded = root / ".venv"
+    included.mkdir(parents=True)
+    excluded.mkdir()
+    monkeypatch.setattr(pptx_extraction, "_BATCH_MAX_DIRECTORIES", 2)
+
+    _files, exact_skipped, _started = pptx_extraction._discover_pptx_files(root, [])
+    assert exact_skipped == [
+        {"path": ".", "reason": "pptx_batch_directory_limit"}
+    ]
+
+    _files, excluded_skipped, _started = pptx_extraction._discover_pptx_files(
+        root,
+        [],
+        [".venv"],
+    )
+    assert excluded_skipped == [
+        {"path": ".venv", "reason": "pptx_batch_directory_excluded"}
+    ]
+    assert pptx_extraction.directory_incomplete_reason_codes(excluded_skipped) == []
+
+
+def test_exact_directory_budget_is_complete_but_one_more_directory_is_partial(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    first = root / "first"
+    first.mkdir(parents=True)
+    monkeypatch.setattr(pptx_extraction, "_BATCH_MAX_DIRECTORIES", 2)
+
+    _files, skipped, _started = pptx_extraction._discover_pptx_files(root, [])
+    assert skipped == []
+
+    (root / "second").mkdir()
+    _files, skipped, _started = pptx_extraction._discover_pptx_files(root, [])
+    assert skipped == [
+        {"path": ".", "reason": "pptx_batch_directory_limit"}
+    ]
+
+
+def test_depth_budget_marks_only_unvisited_descendants_partial(
+    pptx_extraction,
+    monkeypatch,
+    tmp_path,
+):
+    root = tmp_path / "decks"
+    child = root / "child"
+    child.mkdir(parents=True)
+    monkeypatch.setattr(pptx_extraction, "_BATCH_MAX_DEPTH", 1)
+
+    _files, skipped, _started = pptx_extraction._discover_pptx_files(root, [])
+    assert skipped == []
+
+    (child / "grandchild").mkdir()
+    _files, skipped, _started = pptx_extraction._discover_pptx_files(root, [])
+    assert skipped == [
+        {"path": "child/grandchild", "reason": "pptx_batch_depth_limit"}
+    ]
+
+
 def test_bounded_discovery_rejects_symlink_root(pptx_extraction, tmp_path):
     root = tmp_path / "decks"
     root.mkdir()
@@ -407,76 +646,31 @@ def test_windows_leaf_policy_accepts_only_hydrated_supported_cloud_tags(
 @pytest.mark.parametrize(
     "manifest",
     [
-        {
-            "schema_version": 1,
-            "kind": "directory",
-            "files": [],
-            "skipped": [],
-            "unexpected": True,
-        },
-        {
-            "schema_version": True,
-            "kind": "directory",
-            "files": [],
-            "skipped": [],
-        },
-        {
-            "schema_version": 1,
-            "kind": "directory",
-            "files": [{"path": "deck.pptx"}, {"path": "deck.pptx"}],
-            "skipped": [],
-        },
-        {
-            "schema_version": 1,
-            "kind": "directory",
-            "files": [{"path": "../deck.pptx"}],
-            "skipped": [],
-        },
-        {
-            "schema_version": 1,
-            "kind": "directory",
-            "files": [{"path": "/outside/deck.pptx"}],
-            "skipped": [],
-        },
-        {
-            "schema_version": 1,
-            "kind": "directory",
-            "files": [{"path": "not-a-deck.txt"}],
-            "skipped": [],
-        },
-        {
-            "schema_version": 1,
-            "kind": "directory",
-            "files": [{"path": "~$locked.pptx"}],
-            "skipped": [],
-        },
-        {
-            "schema_version": 1,
-            "kind": "directory",
-            "files": [],
-            "skipped": [{"path": ".", "reason": "pptx_batch_unknown_typo"}],
-        },
-        {
-            "schema_version": 1,
-            "kind": "directory",
-            "files": [],
-            "skipped": [{"path": ".", "reason": []}],
-        },
-        {
-            "schema_version": 1,
-            "kind": "directory",
-            "files": [{"path": "deck.pptx"}],
-            "skipped": [{"path": "deck.pptx", "reason": "pptx_batch_skip_pattern"}],
-        },
-        {
-            "schema_version": 1,
-            "kind": "directory",
-            "files": [],
-            "skipped": [
+        _directory_manifest(unexpected=True),
+        _directory_manifest(schema_version=True),
+        _directory_manifest(
+            files=[{"path": "deck.pptx"}, {"path": "deck.pptx"}],
+        ),
+        _directory_manifest(files=[{"path": "../deck.pptx"}]),
+        _directory_manifest(files=[{"path": "/outside/deck.pptx"}]),
+        _directory_manifest(files=[{"path": "not-a-deck.txt"}]),
+        _directory_manifest(files=[{"path": "~$locked.pptx"}]),
+        _directory_manifest(
+            skipped=[{"path": ".", "reason": "pptx_batch_unknown_typo"}],
+        ),
+        _directory_manifest(skipped=[{"path": ".", "reason": []}]),
+        _directory_manifest(
+            files=[{"path": "deck.pptx"}],
+            skipped=[{"path": "deck.pptx", "reason": "pptx_batch_skip_pattern"}],
+        ),
+        _directory_manifest(
+            skipped=[
                 {"path": ".", "reason": "pptx_batch_wall_limit"},
                 {"path": ".", "reason": "pptx_batch_wall_limit"},
             ],
-        },
+        ),
+        _directory_manifest(complete=False),
+        _directory_manifest(incomplete_reason_codes=["pptx_batch_wall_limit"]),
     ],
 )
 def test_directory_manifest_rejects_malformed_duplicate_or_noncanonical_data(
@@ -490,20 +684,92 @@ def test_directory_manifest_rejects_malformed_duplicate_or_noncanonical_data(
 
 
 def test_directory_manifest_allows_distinct_root_findings(pptx_extraction):
-    manifest = {
-        "schema_version": 1,
-        "kind": "directory",
-        "files": [],
-        "skipped": [
+    manifest = _directory_manifest(
+        skipped=[
             {"path": ".", "reason": "pptx_batch_wall_limit"},
             {"path": ".", "reason": "pptx_batch_entry_limit"},
         ],
-    }
+    )
 
     assert pptx_extraction._decode_directory_manifest(manifest) == (
         [],
         manifest["skipped"],
+        False,
+        ["pptx_batch_entry_limit", "pptx_batch_wall_limit"],
     )
+
+
+@pytest.mark.parametrize(
+    ("manifest", "expected_exclusions"),
+    [
+        (
+            _directory_manifest(directory_exclusions=["templates"]),
+            [".venv"],
+        ),
+        (
+            _directory_manifest(
+                directory_exclusions=[".venv"],
+                skipped=[
+                    {
+                        "path": "templates",
+                        "reason": "pptx_batch_directory_excluded",
+                    }
+                ],
+            ),
+            [".venv"],
+        ),
+        (
+            _directory_manifest(
+                directory_exclusions=[".venv"],
+                files=[{"path": ".venv/lib/default.pptx"}],
+            ),
+            [".venv"],
+        ),
+        (
+            _directory_manifest(
+                directory_exclusions=[".venv"],
+                skipped=[
+                    {
+                        "path": ".venv",
+                        "reason": "pptx_batch_directory_excluded",
+                    },
+                    {
+                        "path": ".venv/lib",
+                        "reason": "pptx_batch_directory_unavailable",
+                    },
+                ],
+            ),
+            [".venv"],
+        ),
+        (
+            _directory_manifest(
+                skipped=[
+                    {
+                        "path": "unavailable",
+                        "reason": "pptx_batch_directory_unavailable",
+                    },
+                    {
+                        "path": "unavailable/deck.pptx",
+                        "reason": "pptx_batch_entry_unavailable",
+                    },
+                ],
+            ),
+            [],
+        ),
+    ],
+)
+def test_directory_manifest_binds_exclusions_and_rejects_descendant_claims(
+    pptx_extraction,
+    manifest,
+    expected_exclusions,
+):
+    with pytest.raises(pptx_extraction.PptxEvidenceError) as caught:
+        pptx_extraction._decode_directory_manifest(
+            manifest,
+            expected_directory_exclusions=expected_exclusions,
+        )
+
+    assert caught.value.reason_code == "pptx_batch_manifest_invalid"
 
 
 @pytest.mark.skipif(
@@ -520,16 +786,19 @@ def test_directory_discovery_deduplicates_collapsed_invalid_path_receipts(
     (root / "two\\bad.pptx").write_bytes(b"two")
 
     files, skipped, _started = pptx_extraction._discover_pptx_files(root, [])
-    manifest = {
-        "schema_version": 1,
-        "kind": "directory",
-        "files": [{"path": relative} for _path, relative in files],
-        "skipped": skipped,
-    }
+    manifest = _directory_manifest(
+        files=[{"path": relative} for _path, relative in files],
+        skipped=skipped,
+    )
 
     assert files == []
     assert skipped == [{"path": ".", "reason": "pptx_batch_path_invalid"}]
-    assert pptx_extraction._decode_directory_manifest(manifest) == ([], skipped)
+    assert pptx_extraction._decode_directory_manifest(manifest) == (
+        [],
+        skipped,
+        False,
+        ["pptx_batch_path_invalid"],
+    )
 
 
 def test_directory_owner_never_touches_root_before_authenticated_manifest(
@@ -553,12 +822,7 @@ def test_directory_owner_never_touches_root_before_authenticated_manifest(
     ):
         calls.append((command, operation, generations, payload, limits, kwargs))
         return SimpleNamespace(
-            payload={
-                "schema_version": 1,
-                "kind": "directory",
-                "files": [{"path": "nested/deck.pptx"}],
-                "skipped": [],
-            }
+            payload=_directory_manifest(files=[{"path": "nested/deck.pptx"}])
         )
 
     monkeypatch.setattr(
@@ -587,8 +851,12 @@ def test_directory_owner_never_touches_root_before_authenticated_manifest(
     ]
     assert operation == "pptx_resolve_input"
     assert generations == {}
-    assert payload == {"root_path": root, "skip_patterns": []}
-    assert limits.profile_id == "pptx-directory-discovery-v1"
+    assert payload == {
+        "root_path": root,
+        "skip_patterns": [],
+        "directory_exclusions": [],
+    }
+    assert limits.profile_id == "pptx-directory-discovery-v2"
     assert kwargs["schema_generation"] == pptx_extraction.SCHEMA_VERSION
     assert kwargs["pipeline_generation"] == pptx_extraction.PIPELINE_VERSION
     assert kwargs["immutable_process_identity"] == command[:2]
@@ -650,7 +918,9 @@ def test_nested_runtime_reaches_every_fixed_pptx_worker(
         str(worker_scripts / "pptx_evidence.py"),
     )
 
-    results, skipped = pptx_extraction.batch_extract(root, [], ocr=False)
+    batch = pptx_extraction.batch_extract(root, [], ocr=False)
+    results = batch["results"]
+    skipped = batch["skipped"]
     batch_operations = set(operations)
     operation_count = len(operations)
     probe = pptx_evidence.probe_pptx_artifact(deck, trusted_root=root)
@@ -659,6 +929,10 @@ def test_nested_runtime_reaches_every_fixed_pptx_worker(
     audit = pptx_evidence.recompute_native_deck_audit(deck, trusted_root=root)
     audit_operations = set(operations[operation_count:])
 
+    assert batch["schema_version"] == 1
+    assert batch["kind"] == "pptx_directory_batch"
+    assert batch["complete"] is True
+    assert batch["incomplete_reason_codes"] == []
     assert skipped == []
     assert len(results) == 1
     assert results[0]["pptx_path"] == "Conference/deck.pptx"
@@ -692,12 +966,7 @@ def test_directory_cli_passes_only_the_exact_configured_skip_patterns(
     ):
         captured_payload.update(payload)
         return SimpleNamespace(
-            payload={
-                "schema_version": 1,
-                "kind": "directory",
-                "files": [],
-                "skipped": [],
-            }
+            payload=_directory_manifest(directory_exclusions=[".venv"])
         )
 
     monkeypatch.setattr(
@@ -711,6 +980,7 @@ def test_directory_cli_passes_only_the_exact_configured_skip_patterns(
                 root,
                 "--skip=draft",
                 "--skip=-speaker-master",
+                "--exclude-directory=.venv",
                 "--no-ocr",
             ]
         )
@@ -719,10 +989,18 @@ def test_directory_cli_passes_only_the_exact_configured_skip_patterns(
 
     captured = capsys.readouterr()
     assert captured.err == ""
-    assert json.loads(captured.out) == {"results": [], "skipped": []}
+    assert json.loads(captured.out) == {
+        "schema_version": 1,
+        "kind": "pptx_directory_batch",
+        "complete": True,
+        "incomplete_reason_codes": [],
+        "results": [],
+        "skipped": [],
+    }
     assert captured_payload == {
         "root_path": root,
         "skip_patterns": ["draft", "-speaker-master"],
+        "directory_exclusions": [".venv"],
     }
 
 
@@ -794,7 +1072,11 @@ def test_directory_worker_revalidates_root_before_discovery(
         schema_generation=pptx_extraction.SCHEMA_VERSION,
         pipeline_generation=pptx_extraction.PIPELINE_VERSION,
         expected_generations={},
-        payload={"root_path": "relative", "skip_patterns": []},
+        payload={
+            "root_path": "relative",
+            "skip_patterns": [],
+            "directory_exclusions": [],
+        },
         key=b"k" * 32,
     )
     monkeypatch.setattr(
@@ -813,26 +1095,30 @@ def test_directory_worker_revalidates_root_before_discovery(
 
     observed = {}
 
-    def discover(root, patterns):
+    def discover(root, patterns, exclusions):
         observed["root"] = root
         observed["patterns"] = patterns
+        observed["exclusions"] = exclusions
         return [], [], 0.0
 
     monkeypatch.setattr(pptx_extraction, "_discover_pptx_files", discover)
     payload = pptx_extraction._dispatch_directory_worker(
         replace(
             request,
-            payload={"root_path": str(tmp_path), "skip_patterns": []},
+            payload={
+                "root_path": str(tmp_path),
+                "skip_patterns": [],
+                "directory_exclusions": [".venv"],
+            },
         )
     )
 
-    assert observed == {"root": str(tmp_path), "patterns": []}
-    assert payload == {
-        "schema_version": 1,
-        "kind": "directory",
-        "files": [],
-        "skipped": [],
+    assert observed == {
+        "root": str(tmp_path),
+        "patterns": [],
+        "exclusions": [".venv"],
     }
+    assert payload == _directory_manifest(directory_exclusions=[".venv"])
 
 
 def test_batch_reuses_native_absolute_root_if_working_directory_changes(
@@ -847,11 +1133,11 @@ def test_batch_reuses_native_absolute_root_if_working_directory_changes(
     other.mkdir()
     monkeypatch.chdir(original)
 
-    def discover(directory, _patterns, *, deadline):
+    def discover(directory, _patterns, _exclusions, *, deadline):
         assert directory == root
         assert deadline > 0
         monkeypatch.chdir(other)
-        return ["deck.pptx"], []
+        return ["deck.pptx"], [], True, []
 
     observed = []
 
@@ -870,11 +1156,12 @@ def test_batch_reuses_native_absolute_root_if_working_directory_changes(
     )
     monkeypatch.setattr(pptx_extraction, "extract_pptx", extract)
 
-    results, skipped = pptx_extraction.batch_extract(root, [], ocr=False)
+    batch = pptx_extraction.batch_extract(root, [], ocr=False)
 
-    assert skipped == []
+    assert batch["complete"] is True
+    assert batch["skipped"] == []
     assert observed == [root / "deck.pptx"]
-    assert results[0]["pptx_path"] == "deck.pptx"
+    assert batch["results"][0]["pptx_path"] == "deck.pptx"
 
 
 def test_directory_skip_pattern_iterators_are_rejected_without_consumption(
@@ -895,6 +1182,37 @@ def test_directory_skip_pattern_iterators_are_rejected_without_consumption(
         pptx_extraction._run_supervised_directory_discovery(
             "/lexical/root",
             ExplodingIterator(),
+            deadline=pptx_extraction.time.monotonic() + 30,
+        )
+
+    assert caught.value.reason_code == "pptx_batch_request_invalid"
+
+
+@pytest.mark.parametrize(
+    "exclusions",
+    [
+        ["nested/.venv"],
+        ["venv*"],
+        ["venv", "VENV"],
+        (item for item in [".venv"]),
+    ],
+)
+def test_directory_exclusions_are_rejected_before_worker_launch(
+    pptx_extraction,
+    monkeypatch,
+    exclusions,
+):
+    monkeypatch.setattr(
+        pptx_extraction,
+        "run_authenticated_worker",
+        lambda *_args, **_kwargs: pytest.fail("invalid request started worker"),
+    )
+
+    with pytest.raises(pptx_extraction.PptxEvidenceError) as caught:
+        pptx_extraction._run_supervised_directory_discovery(
+            "/lexical/root",
+            [],
+            exclusions,
             deadline=pptx_extraction.time.monotonic() + 30,
         )
 
@@ -980,6 +1298,10 @@ def test_directory_cli_returns_nonzero_structured_discovery_failure(
 
     captured = capsys.readouterr()
     assert json.loads(captured.out) == {
+        "schema_version": 1,
+        "kind": "pptx_directory_batch",
+        "complete": False,
+        "incomplete_reason_codes": ["pptx_batch_discovery_start_failure"],
         "results": [],
         "skipped": [{"path": ".", "reason": "pptx_batch_discovery_start_failure"}],
         "error": {
@@ -1080,22 +1402,24 @@ def test_batch_continues_after_one_supervised_failure_with_relative_paths(
         }
 
     monkeypatch.setattr(pptx_extraction, "extract_pptx", fake_extract)
-    results, skipped = pptx_extraction.batch_extract(root, [], ocr=False)
+    batch = pptx_extraction.batch_extract(root, [], ocr=False)
 
-    assert results == [
+    assert batch["complete"] is False
+    assert batch["incomplete_reason_codes"] == ["pptx_probe_timeout"]
+    assert batch["results"] == [
         {
             "pptx_path": "b-good.pptx",
             "slide_count": 1,
             "input_fingerprint": {"size_bytes": 4},
         }
     ]
-    assert skipped == [
+    assert batch["skipped"] == [
         {
             "path": "a-bad.pptx",
             "reason": "pptx_probe_timeout",
         }
     ]
-    assert str(root) not in json.dumps({"results": results, "skipped": skipped})
+    assert str(root) not in json.dumps(batch)
 
 
 @pytest.mark.skipif(
@@ -1116,12 +1440,12 @@ def test_batch_rejects_intermediate_directory_swapped_after_discovery(
     make_deck(2).save(outside / "deck.pptx")
     parked = tmp_path / "original-nested"
 
-    def discover(directory, _patterns, *, deadline):
+    def discover(directory, _patterns, _exclusions, *, deadline):
         assert directory == root
         assert deadline > 0
         nested.rename(parked)
         nested.symlink_to(outside, target_is_directory=True)
-        return ["nested/deck.pptx"], []
+        return ["nested/deck.pptx"], [], True, []
 
     monkeypatch.setattr(
         pptx_extraction,
@@ -1129,10 +1453,11 @@ def test_batch_rejects_intermediate_directory_swapped_after_discovery(
         discover,
     )
 
-    results, skipped = pptx_extraction.batch_extract(root, [], ocr=False)
+    batch = pptx_extraction.batch_extract(root, [], ocr=False)
 
-    assert results == []
-    assert skipped == [
+    assert batch["results"] == []
+    assert batch["complete"] is False
+    assert batch["skipped"] == [
         {
             "path": "nested/deck.pptx",
             "reason": "pptx_artifact_unavailable",
@@ -1170,11 +1495,16 @@ def test_batch_file_budget_stops_before_extra_worker(
         }
 
     monkeypatch.setattr(pptx_extraction, "extract_pptx", fake_extract)
-    results, skipped = pptx_extraction.batch_extract(root, [], ocr=False)
+    batch = pptx_extraction.batch_extract(root, [], ocr=False)
 
     assert calls == ["a.pptx"]
-    assert results[0]["pptx_path"] == "a.pptx"
-    assert skipped == [
+    assert batch["results"][0]["pptx_path"] == "a.pptx"
+    assert batch["complete"] is False
+    assert batch["incomplete_reason_codes"] == [
+        "pptx_batch_file_limit",
+        "pptx_batch_scan_incomplete_file_limit",
+    ]
+    assert batch["skipped"] == [
         {
             "path": "b.pptx",
             "reason": "pptx_batch_file_limit",
@@ -1240,11 +1570,12 @@ def test_batch_input_budget_uses_launched_generation_not_discovery_size(
         )
 
     monkeypatch.setattr(pptx_extraction, "extract_pptx", fake_extract)
-    results, skipped = pptx_extraction.batch_extract(root, [], ocr=False)
+    batch = pptx_extraction.batch_extract(root, [], ocr=False)
 
     assert calls == [("a.pptx", 5), ("b.pptx", 1)]
-    assert results[0]["input_fingerprint"]["size_bytes"] == 4
-    assert skipped == [
+    assert batch["results"][0]["input_fingerprint"]["size_bytes"] == 4
+    assert batch["complete"] is False
+    assert batch["skipped"] == [
         {"path": "b.pptx", "reason": "pptx_batch_input_limit"},
         {"path": "c.pptx", "reason": "pptx_batch_input_limit"},
     ]
@@ -1258,8 +1589,10 @@ def test_batch_charges_admitted_generation_reported_by_failed_launch(
     monkeypatch.setattr(
         pptx_extraction,
         "_run_supervised_directory_discovery",
-        lambda _root, _patterns, *, deadline: (
+        lambda _root, _patterns, _exclusions, *, deadline: (
             ["a.pptx", "b.pptx", "c.pptx"],
+            [],
+            True,
             [],
         ),
     )
@@ -1280,11 +1613,12 @@ def test_batch_charges_admitted_generation_reported_by_failed_launch(
 
     monkeypatch.setattr(pptx_extraction, "extract_pptx", fake_extract)
 
-    results, skipped = pptx_extraction.batch_extract("/lexical/root", [], ocr=False)
+    batch = pptx_extraction.batch_extract("/lexical/root", [], ocr=False)
 
-    assert results == []
+    assert batch["results"] == []
     assert calls == [("a.pptx", 5), ("b.pptx", 1)]
-    assert skipped == [
+    assert batch["complete"] is False
+    assert batch["skipped"] == [
         {"path": "a.pptx", "reason": "pptx_evidence_invalid"},
         {"path": "b.pptx", "reason": "pptx_batch_input_limit"},
         {"path": "c.pptx", "reason": "pptx_batch_input_limit"},
@@ -1305,9 +1639,9 @@ def test_batch_passes_one_absolute_deadline_and_stops_after_wall_exhaustion(
     monkeypatch.setattr(pptx_extraction, "_BATCH_MAX_WALL_SECONDS", 10)
     deadlines = []
 
-    def discover(_directory, _patterns, *, deadline):
+    def discover(_directory, _patterns, _exclusions, *, deadline):
         deadlines.append(deadline)
-        return ["a.pptx", "b.pptx"], []
+        return ["a.pptx", "b.pptx"], [], True, []
 
     monkeypatch.setattr(
         pptx_extraction, "_run_supervised_directory_discovery", discover
@@ -1323,12 +1657,13 @@ def test_batch_passes_one_absolute_deadline_and_stops_after_wall_exhaustion(
         )
 
     monkeypatch.setattr(pptx_extraction, "extract_pptx", fake_extract)
-    results, skipped = pptx_extraction.batch_extract(root, [], ocr=False)
+    batch = pptx_extraction.batch_extract(root, [], ocr=False)
 
-    assert results == []
+    assert batch["results"] == []
     assert deadlines == [110.0]
     assert calls == [("a.pptx", 110.0)]
-    assert skipped == [
+    assert batch["complete"] is False
+    assert batch["skipped"] == [
         {"path": "a.pptx", "reason": "pptx_batch_wall_limit"},
         {"path": "b.pptx", "reason": "pptx_batch_wall_limit"},
     ]
@@ -1346,15 +1681,17 @@ def test_batch_compact_output_budget_includes_wrapper_and_skips(
     expected_skips = [
         {"path": "~$locked.pptx", "reason": "pptx_batch_office_lock_file"}
     ]
-    exact = pptx_extraction._encode_batch_output([], expected_skips) + b"\n"
+    expected_batch = pptx_extraction._build_batch_output([], expected_skips)
+    exact = pptx_extraction._encode_batch_output(expected_batch) + b"\n"
     monkeypatch.setattr(pptx_extraction, "_BATCH_MAX_OUTPUT_BYTES", len(exact))
     _use_in_process_directory_discovery(pptx_extraction, monkeypatch)
 
-    results, skipped = pptx_extraction.batch_extract(root, [], ocr=False)
+    batch = pptx_extraction.batch_extract(root, [], ocr=False)
 
-    assert results == []
-    assert skipped == expected_skips
-    assert len(pptx_extraction._encode_batch_output(results, skipped)) + 1 == len(exact)
+    assert batch["results"] == []
+    assert batch["complete"] is True
+    assert batch["skipped"] == expected_skips
+    assert len(pptx_extraction._encode_batch_output(batch)) + 1 == len(exact)
 
 
 def test_directory_cli_emits_the_same_compact_bytes_budgeted_by_batch(
@@ -1368,8 +1705,15 @@ def test_directory_cli_emits_the_same_compact_bytes_budgeted_by_batch(
     (root / "~$locked.pptx").write_bytes(b"lock")
     expected = (
         pptx_extraction._encode_batch_output(
-            [],
-            [{"path": "~$locked.pptx", "reason": "pptx_batch_office_lock_file"}],
+            pptx_extraction._build_batch_output(
+                [],
+                [
+                    {
+                        "path": "~$locked.pptx",
+                        "reason": "pptx_batch_office_lock_file",
+                    }
+                ],
+            )
         )
         + b"\n"
     )
@@ -1382,6 +1726,51 @@ def test_directory_cli_emits_the_same_compact_bytes_budgeted_by_batch(
     assert captured.err == ""
     assert captured.out.encode("utf-8") == expected
     assert len(captured.out.encode("utf-8")) <= pptx_extraction._BATCH_MAX_OUTPUT_BYTES
+
+
+def test_directory_cli_partial_batch_exits_zero_with_exact_public_envelope(
+    pptx_extraction,
+    monkeypatch,
+    capsys,
+):
+    monkeypatch.setattr(
+        pptx_extraction,
+        "_run_supervised_directory_discovery",
+        lambda _root, _patterns, _exclusions, *, deadline: (
+            ["broken.pptx"],
+            [],
+            True,
+            [],
+        ),
+    )
+    monkeypatch.setattr(
+        pptx_extraction,
+        "extract_pptx",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            pptx_extraction.PptxEvidenceError(
+                "fixture parse failure",
+                reason_code="pptx_parse_failure",
+            )
+        ),
+    )
+
+    exit_code = pptx_extraction.main(
+        ["--directory", "/lexical/root", "--no-ocr"]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.err == ""
+    assert json.loads(captured.out) == {
+        "schema_version": 1,
+        "kind": "pptx_directory_batch",
+        "complete": False,
+        "incomplete_reason_codes": ["pptx_parse_failure"],
+        "results": [],
+        "skipped": [
+            {"path": "broken.pptx", "reason": "pptx_parse_failure"}
+        ],
+    }
 
 
 def test_per_slide_visual_count(pptx_extraction, tmp_path):

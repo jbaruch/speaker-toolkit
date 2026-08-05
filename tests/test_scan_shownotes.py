@@ -11,6 +11,8 @@ import sys
 
 import pytest
 
+from conftest import current_tracking_config
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "skills" / "vault-ingress" / "scripts" / "scan-shownotes.py"
@@ -63,7 +65,7 @@ def _database_path(
             current_talks.append(current_talk)
         database = {
             "schema_version": 1,
-            "config": {"schema_version": 1, **config},
+            "config": current_tracking_config(**config),
             "talks": current_talks,
             "pptx_catalog": [],
             "qr_codes": [],

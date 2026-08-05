@@ -27,15 +27,19 @@ ask the speaker.
 
 ## Full Config Schema
 
+The exclusion value below is one illustrative valid customization, not the
+canonical owner default.
+
 ```json
 {
   "config": {
-    "schema_version": 1,
+    "schema_version": 2,
     "vault_root": "~/.claude/rhetoric-knowledge-vault",
     "vault_storage_path": "/native/absolute/database-parent (optional; null/absent uses that parent)",
     "pptx_source_dir": "/path/to/Presentations",
     "python_path": "/path/to/python3",
     "template_skip_patterns": ["template"],
+    "pptx_directory_exclusions": ["example-tool-cache"],
     "speaker_name": "",
     "speaker_handle": "",
     "speaker_website": "",
@@ -65,6 +69,29 @@ ask the speaker.
   }
 }
 ```
+
+### PPTX directory exclusions
+
+Config schema v2 requires `pptx_directory_exclusions`: a bounded, unique array
+of literal directory-name components. Matching is case-insensitive and exact at
+any descendant depth. Values are not paths, substrings, globs, or regular
+expressions; `/`, `\\`, control characters, pattern metacharacters,
+case-insensitive duplicates, `.` and `..` are invalid. The code-owned owner
+default is intentionally not reproduced here; use the
+[vault-ingress PPTX scan contract](../../vault-ingress/references/bootstrap-and-preflight.md#scan-for-pptx-files).
+Do not broaden the code-owned default to plausible authored-content directory
+names without an explicit speaker-specific customization.
+
+Dual readers accept config schema v1 only as read-only compatibility and
+owner-migration state; it is never current or writable. It cannot authorize PPTX
+catalog coverage or an absence conclusion because no current directory-exclusion
+policy is established until migration succeeds. The vault-ingress migration
+stamps schema v2 and supplies the canonical defaults when the list is absent. A
+valid custom list already present on a schema-v1 record is preserved exactly. A
+root-schema-v1/config-schema-v1 vault receives only this config upgrade; the root
+and every unrelated record remain unchanged. Future or malformed config
+generations fail closed. Consumers never synthesize defaults or rewrite config
+themselves.
 
 ### Trusted vault storage root
 

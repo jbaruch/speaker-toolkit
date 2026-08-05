@@ -39,7 +39,7 @@ class JsonArgumentParser(argparse.ArgumentParser):
 
 
 def _backup_path(path: Path, digest: str) -> Path:
-    return path.parent / ".backups" / f"{path.name}.schema-v0-{digest}.bak"
+    return path.parent / ".backups" / f"{path.name}.owner-migration-{digest}.bak"
 
 
 def _validate_expected_digest(value: str) -> None:

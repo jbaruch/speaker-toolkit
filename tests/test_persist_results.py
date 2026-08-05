@@ -16,6 +16,8 @@ import pytest
 from pypdf import PdfWriter
 from pptx import Presentation
 
+from conftest import current_tracking_config
+
 
 def test_atomic_json_write_cleans_stage_and_propagates_interrupt(
     persist_results, tracking_database_io, tmp_path, monkeypatch,
@@ -170,7 +172,9 @@ def _db_json(database):
     database["schema_version"] = 1
     config = database.setdefault("config", {})
     if isinstance(config, dict):
-        config["schema_version"] = 1
+        existing = dict(config)
+        config.clear()
+        config.update(current_tracking_config(**existing))
     database.setdefault("pptx_catalog", [])
     database.setdefault("qr_codes", [])
     database.setdefault("resources", [])

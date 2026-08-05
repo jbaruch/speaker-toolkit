@@ -18,7 +18,8 @@ about observed motion, concurrency, or delivered behavior.
 Usage:
     pptx-extraction.py <file.pptx> [--no-ocr]
         [--rendered-pdf <path>] [--inspected-pages <PAGE|START-END>]
-    pptx-extraction.py --directory <directory> [--skip pattern ...] [--no-ocr]
+    pptx-extraction.py --directory <directory> [--skip pattern ...]
+        [--exclude-directory component ...] [--no-ocr]
     pptx-extraction.py --version
 
     <path>       Path to one .pptx, or a root when --directory is explicit
@@ -44,12 +45,14 @@ from collections import Counter
 from dataclasses import replace
 from math import gcd
 from pathlib import Path
+from typing import cast
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.oxml.ns import qn
 
 import artifact_metadata
 from artifact_locator import ArtifactLocatorError, materialize_native_root
 from artifact_supervisor import (
+    JsonValue,
     SupervisorError,
     SupervisorLimits,
     WorkerRequest,
@@ -72,6 +75,18 @@ from pptx_evidence import (
     run_supervised_pptx_extraction,
     sha256_bytes,
     snapshot_regular_file,
+)
+from pptx_discovery_contract import (
+    PPTX_DIRECTORY_BATCH_KIND,
+    PPTX_DIRECTORY_BATCH_SCHEMA_VERSION,
+    PPTX_DIRECTORY_INCOMPLETE_REASON_CODES,
+    PPTX_DIRECTORY_MANIFEST_KIND,
+    PPTX_DIRECTORY_MANIFEST_SCHEMA_VERSION,
+    PptxDiscoveryContractError,
+    build_pptx_directory_batch,
+    directory_component_is_excluded,
+    directory_incomplete_reason_codes,
+    validate_pptx_directory_exclusions,
 )
 
 # Field-shape and behavior versions are deliberately separate. A missing
@@ -144,6 +159,7 @@ def _bounded_package_part_name(value):
 _BATCH_MAX_DEPTH = 32
 _BATCH_MAX_DIRECTORIES = 5_000
 _BATCH_MAX_ENTRIES = 50_000
+_BATCH_MAX_POLICY_EXCLUDED_ENTRIES = 5_000
 _BATCH_MAX_FILES = 256
 _BATCH_MAX_RELATIVE_PATH_CHARS = 4_096
 _BATCH_MAX_INPUT_BYTES = 16 * 1024 * 1024 * 1024
@@ -162,7 +178,7 @@ _WINDOWS_CLOUD_REPARSE_TAGS = artifact_metadata.WINDOWS_CLOUD_REPARSE_TAGS
 _BATCH_MAX_ROOT_PATH_CHARS = 4_096
 _BATCH_MAX_SKIP_PATTERNS = 64
 _BATCH_MAX_SKIP_PATTERN_CHARS = 256
-_DIRECTORY_MANIFEST_SCHEMA_VERSION = 1
+_DIRECTORY_MANIFEST_SCHEMA_VERSION = PPTX_DIRECTORY_MANIFEST_SCHEMA_VERSION
 _DIRECTORY_WORKER_FLAG = "--directory-worker"
 _DIRECTORY_OPERATION = "pptx_resolve_input"
 _DIRECTORY_MANIFEST_SKIP_REASONS = frozenset(
@@ -173,6 +189,7 @@ _DIRECTORY_MANIFEST_SKIP_REASONS = frozenset(
         "pptx_batch_directory_changed",
         "pptx_batch_directory_identity_collision",
         "pptx_batch_directory_identity_unavailable",
+        "pptx_batch_directory_excluded",
         "pptx_batch_directory_limit",
         "pptx_batch_directory_unavailable",
         "pptx_batch_entry_limit",
@@ -264,11 +281,12 @@ _DIRECTORY_BATCH_FAILURE_REASONS = frozenset(
         "pptx_batch_discovery_start_failure",
         "pptx_batch_discovery_timeout",
         "pptx_batch_discovery_worker_failure",
+        "pptx_batch_manifest_invalid",
         "pptx_batch_wall_limit",
     }
 )
 _DIRECTORY_LIMITS = SupervisorLimits(
-    profile_id="pptx-directory-discovery-v1",
+    profile_id="pptx-directory-discovery-v2",
     wall_seconds=60,
     max_memory_bytes=512 * 1024 * 1024,
     max_input_bytes=64 * 1024,
@@ -485,7 +503,7 @@ def _require_tesseract():
         )
 
     try:
-        import pytesseract
+        import pytesseract  # pyright: ignore[reportMissingImports]
     except ImportError as e:
         _tesseract_available = False
         raise OcrUnavailableError(
@@ -512,7 +530,7 @@ def _ocr_image_result(blob):
     engine_version = _require_tesseract()
 
     try:
-        import pytesseract
+        import pytesseract  # pyright: ignore[reportMissingImports]
         from PIL import Image, UnidentifiedImageError
     except ImportError as e:
         raise OcrUnavailableError(
@@ -1832,9 +1850,31 @@ def _usable_directory_identity(stat_result):
     return (device, inode)
 
 
-def _discover_pptx_files(directory, skip_patterns):
+def _entry_is_real_excluded_directory(entry, exclusions):
+    """Identify one policy-prunable dirent without trusting its name alone."""
+    if not directory_component_is_excluded(entry.name, exclusions):
+        return False
+    try:
+        entry_stat = entry.stat(follow_symlinks=False)
+        return bool(
+            entry.is_dir(follow_symlinks=False)
+            and not _is_windows_reparse_point(entry_stat)
+            and not entry.is_symlink()
+        )
+    except OSError:
+        return False
+
+
+def _discover_pptx_files(directory, skip_patterns, directory_exclusions=()):
     """Discover a deterministic, bounded set inside the contained worker."""
     root = Path(_validated_directory_root(directory))
+    try:
+        exclusions = validate_pptx_directory_exclusions(directory_exclusions)
+    except PptxDiscoveryContractError as exc:
+        raise PptxEvidenceError(
+            "PPTX directory exclusions are invalid",
+            reason_code="pptx_batch_request_invalid",
+        ) from exc
     try:
         root_stat = root.lstat()
     except OSError as exc:
@@ -1869,6 +1909,7 @@ def _discover_pptx_files(directory, skip_patterns):
     visited = set()
     directory_count = 0
     entry_count = 0
+    policy_excluded_entry_count = 0
 
     while stack:
         if time.monotonic() - started > _BATCH_MAX_WALL_SECONDS:
@@ -1916,6 +1957,16 @@ def _discover_pptx_files(directory, skip_patterns):
             entry_limit_hit = False
             with os.scandir(current) as iterator:
                 for entry in iterator:
+                    if _entry_is_real_excluded_directory(entry, exclusions):
+                        if (
+                            policy_excluded_entry_count
+                            >= _BATCH_MAX_POLICY_EXCLUDED_ENTRIES
+                        ):
+                            entry_limit_hit = True
+                            break
+                        entries.append(entry)
+                        policy_excluded_entry_count += 1
+                        continue
                     if entry_count >= _BATCH_MAX_ENTRIES:
                         entry_limit_hit = True
                         break
@@ -1969,7 +2020,9 @@ def _discover_pptx_files(directory, skip_patterns):
                     )
                     continue
                 if entry_is_directory:
-                    if depth >= _BATCH_MAX_DEPTH:
+                    if directory_component_is_excluded(entry.name, exclusions):
+                        record_skip(relative, "pptx_batch_directory_excluded")
+                    elif depth >= _BATCH_MAX_DEPTH:
                         record_skip(relative, "pptx_batch_depth_limit")
                     else:
                         child_directories.append(
@@ -2050,6 +2103,19 @@ def _validated_skip_patterns(value):
     return normalized
 
 
+def _validated_directory_exclusions(value):
+    try:
+        return validate_pptx_directory_exclusions(
+            value,
+            label="directory_exclusions",
+        )
+    except PptxDiscoveryContractError as exc:
+        raise PptxEvidenceError(
+            "directory exclusions exceed their bounded exact-component contract",
+            reason_code="pptx_batch_request_invalid",
+        ) from exc
+
+
 def _validated_relative_manifest_path(value, *, allow_root=False):
     if allow_root and value == ".":
         return value
@@ -2075,11 +2141,24 @@ def _validated_relative_manifest_path(value, *, allow_root=False):
     return value
 
 
-def _decode_directory_manifest(value):
+def _decode_directory_manifest(value, *, expected_directory_exclusions=()):
     """Decode only the closed, authenticated directory-worker body."""
+    try:
+        expected_exclusions = validate_pptx_directory_exclusions(
+            expected_directory_exclusions,
+            label="expected_directory_exclusions",
+        )
+    except PptxDiscoveryContractError as exc:
+        raise PptxEvidenceError(
+            "expected directory exclusions violate their contract",
+            reason_code="pptx_batch_manifest_invalid",
+        ) from exc
     if not isinstance(value, dict) or set(value) != {
         "schema_version",
         "kind",
+        "complete",
+        "directory_exclusions",
+        "incomplete_reason_codes",
         "files",
         "skipped",
     }:
@@ -2090,12 +2169,32 @@ def _decode_directory_manifest(value):
     if (
         type(value.get("schema_version")) is not int
         or value.get("schema_version") != _DIRECTORY_MANIFEST_SCHEMA_VERSION
-        or value.get("kind") != "directory"
+        or value.get("kind") != PPTX_DIRECTORY_MANIFEST_KIND
+        or type(value.get("complete")) is not bool
+        or not isinstance(value.get("incomplete_reason_codes"), list)
     ):
         raise PptxEvidenceError(
             "directory worker returned an unsupported manifest",
             reason_code="pptx_batch_manifest_invalid",
         )
+    try:
+        returned_exclusions = validate_pptx_directory_exclusions(
+            value.get("directory_exclusions"),
+            label="manifest.directory_exclusions",
+        )
+    except PptxDiscoveryContractError as exc:
+        raise PptxEvidenceError(
+            "directory worker returned invalid exclusion policy",
+            reason_code="pptx_batch_manifest_invalid",
+        ) from exc
+    if returned_exclusions != expected_exclusions:
+        raise PptxEvidenceError(
+            "directory worker exclusion policy does not match its request",
+            reason_code="pptx_batch_manifest_invalid",
+        )
+    exclusion_identities = {
+        component.casefold() for component in expected_exclusions
+    }
     raw_files = value.get("files")
     raw_skipped = value.get("skipped")
     if (
@@ -2164,7 +2263,59 @@ def _decode_directory_manifest(value):
         if path != ".":
             seen_nonroot_skip_paths.add(path)
         skipped.append({"path": path, "reason": reason})
-    return files, skipped
+    skipped_nonroot_paths = {
+        item["path"] for item in skipped if item["path"] != "."
+    }
+    for item in skipped:
+        path = item["path"]
+        if path == ".":
+            continue
+        components = path.split("/")
+        if any(
+            component.casefold() in exclusion_identities
+            for component in components[:-1]
+        ):
+            raise PptxEvidenceError(
+                "directory worker returned a skip beneath an excluded directory",
+                reason_code="pptx_batch_manifest_invalid",
+            )
+        if (
+            item["reason"] == "pptx_batch_directory_excluded"
+            and components[-1].casefold() not in exclusion_identities
+        ):
+            raise PptxEvidenceError(
+                "directory worker fabricated an exclusion receipt",
+                reason_code="pptx_batch_manifest_invalid",
+            )
+    for relative in files:
+        components = relative.split("/")
+        if any(
+            component.casefold() in exclusion_identities
+            for component in components[:-1]
+        ) or any(
+            relative.startswith(f"{skipped_path}/")
+            for skipped_path in skipped_nonroot_paths
+        ):
+            raise PptxEvidenceError(
+                "directory worker returned a file beneath a skipped directory",
+                reason_code="pptx_batch_manifest_invalid",
+            )
+    try:
+        incomplete_reason_codes = directory_incomplete_reason_codes(skipped)
+    except PptxDiscoveryContractError as exc:
+        raise PptxEvidenceError(
+            "directory worker completeness receipts are invalid",
+            reason_code="pptx_batch_manifest_invalid",
+        ) from exc
+    if (
+        value.get("complete") != (not incomplete_reason_codes)
+        or value.get("incomplete_reason_codes") != incomplete_reason_codes
+    ):
+        raise PptxEvidenceError(
+            "directory worker completeness does not match its skip receipts",
+            reason_code="pptx_batch_manifest_invalid",
+        )
+    return files, skipped, not incomplete_reason_codes, incomplete_reason_codes
 
 
 def _directory_limits_before_deadline(deadline_monotonic):
@@ -2190,18 +2341,30 @@ def _directory_limits_before_deadline(deadline_monotonic):
     return replace(_DIRECTORY_LIMITS, wall_seconds=remaining), True
 
 
-def _run_supervised_directory_discovery(directory, skip_patterns, *, deadline):
+def _run_supervised_directory_discovery(
+    directory,
+    skip_patterns,
+    directory_exclusions=(),
+    *,
+    deadline,
+):
     """Resolve one directory only through the authenticated bounded worker."""
     root = _validated_directory_root(directory)
     patterns = _validated_skip_patterns(skip_patterns)
+    exclusions = _validated_directory_exclusions(directory_exclusions)
     limits, deadline_limited = _directory_limits_before_deadline(deadline)
     command = [sys.executable, os.path.abspath(__file__), _DIRECTORY_WORKER_FLAG]
+    payload: dict[str, JsonValue] = {
+        "root_path": root,
+        "skip_patterns": cast(JsonValue, patterns),
+        "directory_exclusions": cast(JsonValue, exclusions),
+    }
     try:
         result = run_authenticated_worker(
             command,
             _DIRECTORY_OPERATION,
             {},
-            {"root_path": root, "skip_patterns": patterns},
+            payload,
             limits,
             immutable_process_identity=command[:2],
             sensitive_values=(root,),
@@ -2232,7 +2395,10 @@ def _run_supervised_directory_discovery(directory, skip_patterns, *, deadline):
             reason_code=reason,
             details={"supervisor_reason_code": exc.reason_code},
         ) from exc
-    return _decode_directory_manifest(result.payload)
+    return _decode_directory_manifest(
+        result.payload,
+        expected_directory_exclusions=exclusions,
+    )
 
 
 def _dispatch_directory_worker(request: WorkerRequest):
@@ -2243,13 +2409,21 @@ def _dispatch_directory_worker(request: WorkerRequest):
         or request.pipeline_generation != PIPELINE_VERSION
         or request.expected_generations
         or not isinstance(request.payload, dict)
-        or set(request.payload) != {"root_path", "skip_patterns"}
+        or set(request.payload)
+        != {"root_path", "skip_patterns", "directory_exclusions"}
     ):
         raise SupervisorError("invalid_worker_request")
     try:
         root = _validated_directory_root(request.payload.get("root_path"))
         patterns = _validated_skip_patterns(request.payload.get("skip_patterns"))
-        discovered, skipped, _started = _discover_pptx_files(root, patterns)
+        exclusions = _validated_directory_exclusions(
+            request.payload.get("directory_exclusions")
+        )
+        discovered, skipped, _started = _discover_pptx_files(
+            root,
+            patterns,
+            exclusions,
+        )
     except PptxEvidenceError as exc:
         locator_failure = exc.details.get("locator_failure")
         details = (
@@ -2258,9 +2432,13 @@ def _dispatch_directory_worker(request: WorkerRequest):
             else {}
         )
         raise SupervisorError(exc.reason_code, details) from exc
+    incomplete_reason_codes = directory_incomplete_reason_codes(skipped)
     return {
         "schema_version": _DIRECTORY_MANIFEST_SCHEMA_VERSION,
-        "kind": "directory",
+        "kind": PPTX_DIRECTORY_MANIFEST_KIND,
+        "complete": not incomplete_reason_codes,
+        "directory_exclusions": exclusions,
+        "incomplete_reason_codes": incomplete_reason_codes,
         "files": [{"path": relative} for _path, relative in discovered],
         "skipped": skipped,
     }
@@ -2292,10 +2470,21 @@ def _run_directory_worker_child():
     return 0
 
 
-def _encode_batch_output(results, skipped):
-    """Encode the exact compact JSON emitted by directory mode."""
+def _build_batch_output(results, skipped):
+    """Build the public completeness envelope from all retained receipts."""
+    try:
+        return build_pptx_directory_batch(results, skipped)
+    except PptxDiscoveryContractError as exc:
+        raise PptxEvidenceError(
+            "PPTX directory batch output violates its closed contract",
+            reason_code="pptx_batch_manifest_invalid",
+        ) from exc
+
+
+def _encode_batch_output(batch):
+    """Encode the exact compact public JSON emitted by directory mode."""
     return json.dumps(
-        {"results": results, "skipped": skipped},
+        batch,
         ensure_ascii=False,
         separators=(",", ":"),
     ).encode("utf-8")
@@ -2307,15 +2496,18 @@ def _encode_batch_failure(error):
     supervisor_reason = error.details.get("supervisor_reason_code")
     if isinstance(supervisor_reason, str):
         details["supervisor_reason_code"] = supervisor_reason
-    return json.dumps(
-        {
-            "results": [],
-            "skipped": [{"path": ".", "reason": error.reason_code}],
-            "error": {"reason_code": error.reason_code, "details": details},
-        },
-        ensure_ascii=False,
-        separators=(",", ":"),
-    ).encode("utf-8")
+    try:
+        batch = build_pptx_directory_batch(
+            [],
+            [{"path": ".", "reason": error.reason_code}],
+            error={"reason_code": error.reason_code, "details": details},
+        )
+    except PptxDiscoveryContractError as exc:
+        raise PptxEvidenceError(
+            "whole-root failure is outside the public batch contract",
+            reason_code="pptx_batch_manifest_invalid",
+        ) from exc
+    return _encode_batch_output(batch)
 
 
 def _encoded_json_size(value):
@@ -2328,28 +2520,47 @@ def _encoded_json_size(value):
     )
 
 
-def _batch_output_size(result_sizes, skip_sizes):
-    """Return exact compact wrapper size from pre-encoded element sizes."""
+def _batch_output_size(result_sizes, skip_sizes, incomplete_reason_codes):
+    """Return exact compact envelope size from pre-encoded element sizes."""
+    metadata = {
+        "schema_version": PPTX_DIRECTORY_BATCH_SCHEMA_VERSION,
+        "kind": PPTX_DIRECTORY_BATCH_KIND,
+        "complete": not incomplete_reason_codes,
+        "incomplete_reason_codes": list(incomplete_reason_codes),
+        "results": [],
+        "skipped": [],
+    }
+    empty_size = _encoded_json_size(metadata)
     return (
-        len(b'{"results":[')
+        empty_size
         + sum(result_sizes)
         + max(0, len(result_sizes) - 1)
-        + len(b'],"skipped":[')
         + sum(skip_sizes)
         + max(0, len(skip_sizes) - 1)
-        + len(b"]}")
     )
 
 
-def batch_extract(directory, skip_patterns, *, ocr=True):
+def batch_extract(
+    directory,
+    skip_patterns,
+    directory_exclusions=(),
+    *,
+    ocr=True,
+):
     """Extract a bounded deterministic directory batch through the supervisor."""
     results = []
     started = time.monotonic()
     deadline = started + _BATCH_MAX_WALL_SECONDS
     root = Path(_validated_directory_root(directory))
-    relative_files, skipped = _run_supervised_directory_discovery(
+    (
+        relative_files,
+        skipped,
+        _discovery_complete,
+        _discovery_incomplete_reasons,
+    ) = _run_supervised_directory_discovery(
         root,
         skip_patterns,
+        directory_exclusions,
         deadline=deadline,
     )
     discovered = [
@@ -2415,6 +2626,7 @@ def batch_extract(directory, skip_patterns, *, ocr=True):
                 _batch_output_size(
                     [*result_sizes, encoded_size],
                     [*skip_sizes, *future_skip_sizes],
+                    sorted(PPTX_DIRECTORY_INCOMPLETE_REASON_CODES),
                 )
                 + 1
                 > _BATCH_MAX_OUTPUT_BYTES
@@ -2450,15 +2662,27 @@ def batch_extract(directory, skip_patterns, *, ocr=True):
                 break
             append_skip(relative, reason)
             if (
-                _batch_output_size(result_sizes, skip_sizes) + 1
+                _batch_output_size(
+                    result_sizes,
+                    skip_sizes,
+                    sorted(PPTX_DIRECTORY_INCOMPLETE_REASON_CODES),
+                )
+                + 1
                 > _BATCH_MAX_OUTPUT_BYTES
             ):
-                return [], [{"path": ".", "reason": "pptx_batch_output_limit"}]
+                return _build_batch_output(
+                    results,
+                    [{"path": ".", "reason": "pptx_batch_output_limit"}],
+                )
 
-    encoded_batch = _encode_batch_output(results, skipped)
+    batch = _build_batch_output(results, skipped)
+    encoded_batch = _encode_batch_output(batch)
     if len(encoded_batch) + 1 > _BATCH_MAX_OUTPUT_BYTES:
-        return [], [{"path": ".", "reason": "pptx_batch_output_limit"}]
-    return results, skipped
+        return _build_batch_output(
+            results,
+            [{"path": ".", "reason": "pptx_batch_output_limit"}],
+        )
+    return batch
 
 
 def main(argv=None):
@@ -2482,6 +2706,16 @@ def main(argv=None):
         help=(
             "Configured skip pattern (case-insensitive); repeat for each pattern "
             "and omit all --skip flags for an empty set"
+        ),
+    )
+    parser.add_argument(
+        "--exclude-directory",
+        action="append",
+        default=None,
+        metavar="COMPONENT",
+        help=(
+            "Exact directory-name component to prune; repeat for each configured "
+            "exclusion and omit all flags for an empty set"
         ),
     )
     parser.add_argument(
@@ -2528,13 +2762,18 @@ def main(argv=None):
         if args.rendered_pdf or inspected_page_ranges:
             parser.error("--rendered-pdf/--inspected-pages require a single PPTX input")
         try:
-            results, skipped = batch_extract(args.path, args.skip or [], ocr=ocr)
+            batch = batch_extract(
+                args.path,
+                args.skip or [],
+                args.exclude_directory or [],
+                ocr=ocr,
+            )
         except PptxEvidenceError as exc:
             if exc.reason_code in _DIRECTORY_BATCH_FAILURE_REASONS:
                 sys.stdout.write(_encode_batch_failure(exc).decode("utf-8") + "\n")
             print(f"ERROR: {exc.reason_code}", file=sys.stderr)
             return 1
-        sys.stdout.write(_encode_batch_output(results, skipped).decode("utf-8") + "\n")
+        sys.stdout.write(_encode_batch_output(batch).decode("utf-8") + "\n")
     else:
         try:
             result = extract_pptx(

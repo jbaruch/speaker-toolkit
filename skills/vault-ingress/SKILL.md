@@ -183,10 +183,14 @@ extraction and select only unmatched entries, PDF-primary talks with a PPTX, or
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py" \
-  --directory "{pptx_source_dir}" {template_skip_arguments}
+  --directory "{pptx_source_dir}" {template_skip_arguments} \
+  {directory_exclusion_arguments}
 ```
 
-Use only current schema-v4, artifact-bound evidence and the reference's matching,
+Reuse both exact config-derived argument sets from Step 1. Safely extracted deck
+results in a partial schema-v1 directory envelope remain usable, but only
+`complete: true` authorizes a full-catalog or missing-deck conclusion. Use only
+current schema-v4, artifact-bound deck evidence and the reference's matching,
 rendered-page, OCR, and cross-talk rules. Proceed to Step 7.
 
 ## Step 7 — Regenerate Speaker Profile

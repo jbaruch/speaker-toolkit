@@ -76,14 +76,15 @@ state:
 
 Exit 0 writes one JSON object with `from_schema_version`,
 `to_schema_version`, `changed`, `database_written: false`, `input_sha256`, and
-`record_counts`. Continue only for `changed: false` at database schema v1. A
-legacy report requires the owner workflow; invoke `Skill(skill: "vault-ingress")`
+`record_counts`. Continue only for `changed: false` at database schema v1 with
+config schema v2. A legacy root or config report requires the owner workflow;
+invoke `Skill(skill: "vault-ingress")`
 with the migration report as handoff context, then finish this clarification run.
 Exit 2 writes one error object to stdout plus an `ERROR:` diagnostic to stderr;
 stop without changing session state.
 
 Every tracking write in Steps 2–8 is current-only. Preserve database schema 1,
-config schema 1, talk schema 5, and every unrelated record. Stamp confirmed
+config schema 2, talk schema 5, and every unrelated record. Stamp confirmed
 intents with schema 1 and new improvement goals with schema 2. Capture the exact
 input bytes immediately before each write, reject a changed generation, validate
 the complete current shape, and use a same-directory atomic replacement. Never
@@ -233,7 +234,7 @@ Using the latest strict read, persist
 `config.clarification_sessions_completed + 1` with `set_config`, expecting the
 exact prior integer. This counter gates profile generation (vault-profile skill
 requires >= 1).
-The owner mutation preserves `config.schema_version: 1` and every unrelated
+The owner mutation preserves `config.schema_version: 2` and every unrelated
 field.
 
 Finish here.

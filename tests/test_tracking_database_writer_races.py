@@ -10,6 +10,8 @@ import threading
 
 import pytest
 
+from conftest import current_tracking_config
+
 
 def _write(path: Path, value: object) -> bytes:
     raw = json.dumps(value, indent=2).encode("utf-8") + b"\n"
@@ -20,7 +22,7 @@ def _write(path: Path, value: object) -> bytes:
 def _current_database() -> dict[str, object]:
     return {
         "schema_version": 1,
-        "config": {"schema_version": 1},
+        "config": current_tracking_config(),
         "talks": [],
         "pptx_catalog": [],
         "qr_codes": [],

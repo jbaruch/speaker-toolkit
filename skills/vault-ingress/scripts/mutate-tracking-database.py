@@ -48,6 +48,11 @@ from tracking_database_io import (
     render_json_object,
     snapshot_tracking_database,
 )
+from pptx_discovery_contract import (
+    DEFAULT_PPTX_DIRECTORY_EXCLUSIONS,
+    PptxDiscoveryContractError,
+    validate_pptx_directory_exclusions,
+)
 
 
 PLAN_SCHEMA_VERSION = 1
@@ -1048,6 +1053,21 @@ def initial_database(mutation: dict[str, Any], *, index: int) -> dict[str, Any]:
             f"{CONFIG_RECORD_SCHEMA_VERSION}"
         )
     initial_config["schema_version"] = CONFIG_RECORD_SCHEMA_VERSION
+    initial_config.setdefault(
+        "pptx_directory_exclusions",
+        list(DEFAULT_PPTX_DIRECTORY_EXCLUSIONS),
+    )
+    try:
+        initial_config["pptx_directory_exclusions"] = (
+            validate_pptx_directory_exclusions(
+                initial_config["pptx_directory_exclusions"],
+                label=(
+                    f"mutations[{index}].config.pptx_directory_exclusions"
+                ),
+            )
+        )
+    except PptxDiscoveryContractError as exc:
+        raise TrackingDatabaseMutationError(str(exc)) from exc
     return {
         "schema_version": TRACKING_DATABASE_SCHEMA_VERSION,
         "config": initial_config,

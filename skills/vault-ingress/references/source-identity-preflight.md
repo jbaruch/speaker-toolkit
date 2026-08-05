@@ -159,6 +159,12 @@ so the same filesystem state produces byte-for-byte equivalent decoded data.
 Paths are absolute. Consumers route on `severity` and `code`, never on message
 text.
 
+An unusable owner-schema finding retains the assessment's closed
+`reason_codes` in structured `actual` detail. A config-version failure names
+`config.schema_version`, expects readable generations `[1, 2]`, and reports the
+stored config generation separately from those reasons; it is not mislabeled as
+a root-schema failure.
+
 `database` and `vault_root` are nullable authority fields. When raw database or
 CLI input is rejected before admission, both are null, `talk_count` is zero,
 and the report contains one path-neutral blocking finding. Once the direct
@@ -303,6 +309,21 @@ content, but it cannot waive a duplicate-ID fault.
 
 Checks apply to a record with a declared transcript, slide, or video capability
 (processable) or status `processed` / `processed_partial` (completed):
+
+Config schema v2 must contain a bounded unique
+`pptx_directory_exclusions` array of literal directory-name components. Missing
+or malformed current state is blocking as
+`pptx_directory_exclusions_invalid`; config v1 remains readable only so the
+owner migration can supply or preserve the field. This offline check validates
+the policy but does not scan the configured presentation root.
+
+A missing declared PPTX is evidence about that exact locator, not proof that no
+matching deck exists elsewhere. Only a strict schema-v1
+`pptx_directory_batch` result with `complete: true` authorizes a full-catalog or
+missing-deck conclusion. Partial results are usable for the decks they safely
+return, but budget, availability, change, placeholder, probe, or extraction
+reasons leave coverage incomplete. Legacy unversioned batch output has unknown
+completeness and must be rerun before an absence conclusion.
 
 - Transcript source enum: `youtube_auto`, `whisper`, `manual`, `none`. Absence
   remains valid “unknown provenance.” Unless the value is `none`, the expected

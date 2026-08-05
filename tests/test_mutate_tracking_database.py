@@ -10,6 +10,30 @@ import pytest
 
 
 MISSING = {"$missing": True}
+DEFAULT_DIRECTORY_EXCLUSIONS = [
+    ".venv",
+    "venv",
+    "node_modules",
+    ".git",
+    ".hg",
+    ".svn",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".tox",
+    ".nox",
+    ".tessl",
+]
+
+
+def _current_config(**updates: object) -> dict[str, object]:
+    config: dict[str, object] = {
+        "schema_version": 2,
+        "pptx_directory_exclusions": copy.deepcopy(DEFAULT_DIRECTORY_EXCLUSIONS),
+    }
+    config.update(updates)
+    return config
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -19,7 +43,7 @@ def _write_json(path: Path, value: object) -> None:
 def _base_database() -> dict[str, object]:
     return {
         "schema_version": 1,
-        "config": {"schema_version": 1},
+        "config": _current_config(),
         "talks": [
             {"schema_version": 5, "filename": "talk.md", "status": "processed"}
         ],
@@ -347,7 +371,11 @@ def test_initialization_dry_run_and_missing_precondition(
     assert applied["database_written"] is True
     initialized = json.loads(database_path.read_text(encoding="utf-8"))
     assert initialized["schema_version"] == 1
-    assert initialized["config"]["schema_version"] == 1
+    assert initialized["config"]["schema_version"] == 2
+    assert (
+        initialized["config"]["pptx_directory_exclusions"]
+        == DEFAULT_DIRECTORY_EXCLUSIONS
+    )
     assert initialized["talks"] == []
 
 
@@ -379,8 +407,65 @@ def test_initialization_surfaces_owner_io_failure_as_mutation_error(
             apply=True,
             expected_sha256="missing",
         )
-
     assert not database_path.exists()
+
+
+def test_initialization_preserves_valid_custom_directory_exclusions(
+    mutate_tracking_database,
+) -> None:
+    initialized = mutate_tracking_database.initial_database(
+        {
+            "kind": "initialize_database",
+            "config": {
+                "pptx_directory_exclusions": ["generated", "VendorCache"],
+            },
+        },
+        index=0,
+    )
+
+    assert initialized["config"]["schema_version"] == 2
+    assert initialized["config"]["pptx_directory_exclusions"] == [
+        "generated",
+        "VendorCache",
+    ]
+
+
+def test_mutation_rejects_malformed_directory_exclusions(
+    mutate_tracking_database,
+) -> None:
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="case-insensitive duplicate",
+    ):
+        mutate_tracking_database.build_candidate(
+            _base_database(),
+            [
+                {
+                    "kind": "set_config",
+                    "path": ["pptx_directory_exclusions"],
+                    "expect": DEFAULT_DIRECTORY_EXCLUSIONS,
+                    "value": ["venv", "VENV"],
+                }
+            ],
+        )
+
+
+def test_initialization_rejects_malformed_directory_exclusions(
+    mutate_tracking_database,
+) -> None:
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="case-insensitive duplicate",
+    ):
+        mutate_tracking_database.initial_database(
+            {
+                "kind": "initialize_database",
+                "config": {
+                    "pptx_directory_exclusions": ["venv", "VENV"],
+                },
+            },
+            index=0,
+        )
 
 
 def test_plan_strict_json_rejects_duplicate_keys(
@@ -730,7 +815,7 @@ def test_json_preconditions_and_noops_are_type_sensitive(
     mutate_tracking_database,
 ) -> None:
     database = _base_database()
-    database["config"] = {"schema_version": 1, "enabled": True}
+    database["config"] = _current_config(enabled=True)
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
         match="precondition failed",
@@ -801,7 +886,8 @@ def test_delete_missing_nested_config_does_not_materialize_parents(
     )
 
     assert candidate["config"] == {
-        "schema_version": 1,
+        "schema_version": 2,
+        "pptx_directory_exclusions": DEFAULT_DIRECTORY_EXCLUSIONS,
         "shownotes": {"enabled": True},
     }
     assert len(changes) == 1
@@ -828,10 +914,7 @@ def test_delete_missing_nested_config_preserves_exact_expectations(
         )
 
     database = _base_database()
-    database["config"] = {
-        "schema_version": 1,
-        "shownotes": {"legacy": None},
-    }
+    database["config"] = _current_config(shownotes={"legacy": None})
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
         match=r"config\.shownotes\.legacy must be an object",
@@ -1001,17 +1084,19 @@ def test_versioned_owner_records_require_schema_version(
         mutate_tracking_database.build_candidate(_base_database(), [mutation])
 
 
-def test_initialization_rejects_noninteger_config_schema_version(
+@pytest.mark.parametrize("schema_version", [True, 1, 3])
+def test_initialization_rejects_noncurrent_config_schema_version(
     mutate_tracking_database,
+    schema_version,
 ) -> None:
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
-        match="config.schema_version must be exact integer 1",
+        match="config.schema_version must be exact integer 2",
     ):
         mutate_tracking_database.initial_database(
             {
                 "kind": "initialize_database",
-                "config": {"schema_version": True},
+                "config": {"schema_version": schema_version},
             },
             index=0,
         )

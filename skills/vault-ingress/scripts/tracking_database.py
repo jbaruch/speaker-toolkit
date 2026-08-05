@@ -19,13 +19,19 @@ from queue_claim_contract import (
     classify_queue_claim_versions,
     validate_queue_claim_database,
 )
+from pptx_discovery_contract import (
+    DEFAULT_PPTX_DIRECTORY_EXCLUSIONS,
+    PptxDiscoveryContractError,
+    validate_pptx_directory_exclusions,
+)
 
 
 LEGACY_TRACKING_DATABASE_SCHEMA_VERSION = 0
 TRACKING_DATABASE_SCHEMA_VERSION = 1
 LEGACY_TALK_RECORD_SCHEMA_VERSION = 1
 TALK_RECORD_SCHEMA_VERSION = 5
-CONFIG_RECORD_SCHEMA_VERSION = 1
+LEGACY_CONFIG_RECORD_SCHEMA_VERSION = 1
+CONFIG_RECORD_SCHEMA_VERSION = 2
 PPTX_CATALOG_RECORD_SCHEMA_VERSION = 1
 QR_CODE_RECORD_SCHEMA_VERSION = 1
 RESOURCE_RECORD_SCHEMA_VERSION = 1
@@ -142,6 +148,10 @@ IMPROVEMENT_GOAL_REQUIRED_FIELDS = frozenset(
 
 class TrackingDatabaseError(ValueError):
     """The tracking database cannot be read or migrated safely."""
+
+
+class TrackingDatabaseConfigExclusionsError(TrackingDatabaseError):
+    """The config-owned PPTX directory-exclusion field is invalid."""
 
 
 @dataclass(frozen=True)
@@ -312,6 +322,30 @@ def _require_string_array(
         if item in seen:
             raise TrackingDatabaseError(f"{label} contains duplicate value {item!r}")
         seen.add(item)
+
+
+def _validate_config_record(
+    config: Mapping[str, object],
+    *,
+    version: int,
+) -> None:
+    """Validate the owner-versioned PPTX discovery configuration."""
+    if version == CONFIG_RECORD_SCHEMA_VERSION and (
+        "pptx_directory_exclusions" not in config
+    ):
+        raise TrackingDatabaseConfigExclusionsError(
+            "config schema v2 requires pptx_directory_exclusions"
+        )
+    exclusions = config.get("pptx_directory_exclusions")
+    if exclusions is None and "pptx_directory_exclusions" not in config:
+        return
+    try:
+        validate_pptx_directory_exclusions(
+            exclusions,
+            label="config.pptx_directory_exclusions",
+        )
+    except PptxDiscoveryContractError as exc:
+        raise TrackingDatabaseConfigExclusionsError(str(exc)) from exc
 
 
 def _validate_improvement_goal(
@@ -685,11 +719,15 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
     reasons: list[str] = []
     if current and "schema_version" not in config:
         reasons.append("config_schema_version_missing")
-    if _record_version(
+    config_version = _record_version(
         config,
         "config",
-        missing_version=CONFIG_RECORD_SCHEMA_VERSION,
-    ) != CONFIG_RECORD_SCHEMA_VERSION:
+        missing_version=LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
+    )
+    if config_version not in {
+        LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
+        CONFIG_RECORD_SCHEMA_VERSION,
+    }:
         reasons.append("config_schema_version_unsupported")
 
     accepted_versions_by_collection = {
@@ -738,6 +776,8 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
             schema_version=root_version,
             reason_codes=tuple(sorted(set(reasons))),
         )
+
+    _validate_config_record(config, version=config_version)
 
     accepted_rejection_versions = frozenset(
         {SOURCE_REJECTION_RECORD_SCHEMA_VERSION}
@@ -871,7 +911,11 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
 
     return TrackingDatabaseAssessment(
         usable=True,
-        state="current" if current else "legacy",
+        state=(
+            "current"
+            if current and config_version == CONFIG_RECORD_SCHEMA_VERSION
+            else "legacy"
+        ),
         schema_version=root_version,
         reason_codes=(),
     )
@@ -898,7 +942,7 @@ def require_current_tracking_database(database: object) -> dict[str, Any]:
         return database
     if assessment.usable and assessment.state == "legacy":
         raise TrackingDatabaseError(
-            "tracking database uses legacy schema 0; run "
+            "tracking database has owner-managed legacy state; run "
             "skills/vault-ingress/scripts/migrate-tracking-database.py first"
         )
     reasons = ", ".join(assessment.reason_codes) or "unsupported_owner_state"
@@ -939,7 +983,7 @@ def _migrate_talk_record(talk: dict[str, Any]) -> bool:
 
 
 def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
-    """Build the deterministic owner migration from legacy schema 0 to 1."""
+    """Build the deterministic owner migration to root v1/config v2."""
     assessment = assess_tracking_database(database)
     if not assessment.usable:
         raise TrackingDatabaseError(
@@ -959,6 +1003,7 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
         raise TrackingDatabaseError("tracking database root must be a JSON object")
 
     candidate: dict[str, Any] = copy.deepcopy(database)
+    root_version = tracking_database_schema_version(candidate)
     talks = _object_collection(candidate, "talks", required=True)
     active = _active_claim_filenames(talks)
     if active:
@@ -970,11 +1015,37 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
     config = candidate.setdefault("config", {})
     if not isinstance(config, dict):
         raise TrackingDatabaseError("tracking database 'config' must be an object")
-    config_changed = "schema_version" not in config
-    config.setdefault("schema_version", CONFIG_RECORD_SCHEMA_VERSION)
-
     counts = _empty_record_counts()
-    counts["config"] = int(config_changed)
+    config_version = _record_version(
+        config,
+        "config",
+        missing_version=LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
+    )
+    if config_version == LEGACY_CONFIG_RECORD_SCHEMA_VERSION:
+        if "pptx_directory_exclusions" in config:
+            try:
+                exclusions = validate_pptx_directory_exclusions(
+                    config["pptx_directory_exclusions"],
+                    label="config.pptx_directory_exclusions",
+                )
+            except PptxDiscoveryContractError as exc:
+                raise TrackingDatabaseError(str(exc)) from exc
+        else:
+            exclusions = list(DEFAULT_PPTX_DIRECTORY_EXCLUSIONS)
+        config["pptx_directory_exclusions"] = exclusions
+        config["schema_version"] = CONFIG_RECORD_SCHEMA_VERSION
+        counts["config"] = 1
+
+    if root_version == TRACKING_DATABASE_SCHEMA_VERSION:
+        require_current_tracking_database(candidate)
+        return TrackingDatabaseMigration(
+            database=candidate,
+            changed=bool(counts["config"]),
+            from_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
+            to_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
+            record_counts=counts,
+        )
+
     for talk in talks:
         prior_rejections = talk.get("source_rejections", [])
         if isinstance(prior_rejections, list):

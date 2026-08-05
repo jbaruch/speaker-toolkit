@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import current_tracking_config
+
 
 def _catalog_fingerprint():
     root = (
@@ -325,7 +327,7 @@ def _write_tracking_db(
     path = tmp_path / name
     path.write_text(json.dumps({
         "schema_version": 1,
-        "config": {"schema_version": 1},
+        "config": current_tracking_config(),
         "talks": talks,
         "pptx_catalog": [],
         "qr_codes": [],

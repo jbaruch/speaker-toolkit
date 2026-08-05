@@ -11,10 +11,13 @@ each section in order; later sections assume every earlier gate succeeded.
 2. **Path missing** — first-time setup: ask preferred location via `AskUserQuestion`,
    create the directory (and symlink if a custom path was chosen), then use a sole
    `initialize_database` mutation. Include database `schema_version: 1`, config
-   `schema_version: 1`, and empty `talks`, `pptx_catalog`, `qr_codes`, `resources`,
-   `thumbnails`, `confirmed_intents`, and `improvement_goals` arrays. Review the
-   dry-run and apply it with `--expected-sha256 missing`; never create the JSON
-   file directly.
+   `schema_version: 2`, and empty `talks`, `pptx_catalog`, `qr_codes`, `resources`,
+   `thumbnails`, `confirmed_intents`, and `improvement_goals` arrays. The plan may
+   omit `pptx_directory_exclusions`; the initializer supplies the canonical default
+   defined by the [PPTX scan contract](#scan-for-pptx-files). Include that field
+   only when the speaker explicitly requests a valid customization.
+   Review the dry-run and apply it with `--expected-sha256 missing`; never create
+   the JSON file directly.
 
 **Schema gate** — vault-ingress owns the tracking database shape and migrations.
 The stdlib-only strict reader may use the host interpreter for the initial
@@ -42,7 +45,10 @@ changed report authorizes this exact apply command:
 
 Exit 0 from apply writes one JSON report with `database_written: true`, preserves
 the complete original bytes under `{vault_root}/.backups/`, and atomically
-installs database schema v1. A non-empty `warnings` array means replacement
+installs database schema v1 with config schema v2. A current root with config
+schema v1 is also a migration: root `from_schema_version` and
+`to_schema_version` both remain `1`, while `record_counts.config` records the
+config upgrade. A non-empty `warnings` array means replacement
 completed with a durability warning and must not be reported as a failed/no-write
 run. Exit 2 writes one error object to stdout plus a diagnostic to stderr and
 leaves the database unchanged. Recover or
@@ -56,11 +62,15 @@ migration dry-run, then apply its new exact digest. Do not copy a digest across
 runs. `queue-state.py ... normalize` and `queue-state.py ... claim` require
 database schema 1.
 
-**Config bootstrapping** — ask once per missing field and persist to the tracking
+**Config bootstrapping** — ask once per missing user-owned field and persist to the tracking
 database with expectation-bound `set_config` mutations. Re-read after every
 successful apply and use the new hash for the next plan. Core fields: `shownotes` (enabled, source.type, source.path_or_url,
 source.talks_subdir, url.base, url.template, thumbnail_path_template,
-slug_convention), `pptx_source_dir`, `python_path`, `template_skip_patterns`.
+slug_convention), `pptx_source_dir`, `python_path`, `template_skip_patterns`,
+and `pptx_directory_exclusions`. The exclusion field is not a missing-field
+question: initialization supplies the canonical default, while migration supplies
+that default when absent or preserves an existing valid custom list. Ask about or
+change it only when the speaker explicitly wants to customize directory pruning.
 See [schemas-db.md](schemas-db.md) for the full schema and
 [schemas-config.md](../../vault-profile/references/schemas-config.md) for
 field-by-field semantics and migration notes.
@@ -81,7 +91,8 @@ before another config write.
   --lanes core,pdf,pptx
 ```
 
-All owner-authored tracking writes below require database schema 1 after this
+All owner-authored tracking writes below require database schema 1 and config
+schema 2 after this
 gate. Preserve every independent record version and validate the complete
 candidate before installing it. Only `migrate-tracking-database.py` may move
 schema 0 to schema 1; its hash precondition binds replacement to the exact input
@@ -153,26 +164,52 @@ for the complete report and mutation contract.
 directory extraction, which owns deterministic discovery, symlink/reparse-point
 rejection, and aggregate file/input/output/wall budgets:
 
-Read the exact `config.template_skip_patterns` array from the strict owner-read
-result. Set `{template_skip_arguments}` to one separately shell-quoted
+Read the exact `config.template_skip_patterns` and
+`config.pptx_directory_exclusions` arrays from the strict owner-read result.
+Set `{template_skip_arguments}` to one separately shell-quoted
 `--skip=<exact-value>` argument per array entry, preserving its order. An empty
 array produces zero arguments; never add an implicit default.
+Set `{directory_exclusion_arguments}` the same way, using one
+`--exclude-directory=<exact-component>` argument per exclusion. These are
+case-insensitive exact directory-name components at any descendant depth—not
+substrings, paths, globs, or regular expressions. The sole config-v2 owner-default
+source is
+`skills/vault-ingress/scripts/pptx_discovery_contract.py::DEFAULT_PPTX_DIRECTORY_EXCLUSIONS`;
+do not copy or reconstruct that list in workflow prose.
+Do not broaden that code-owned default to plausible authored-content directory
+names without an explicit speaker-specific customization.
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py" \
-  --directory "{pptx_source_dir}" {template_skip_arguments}
+  --directory "{pptx_source_dir}" {template_skip_arguments} \
+  {directory_exclusion_arguments}
 ```
 
-Require exit status zero before consuming `results[]` or `skipped[]`. A
+Require exit status zero before consuming the public schema-v1
+`pptx_directory_batch` envelope's `results[]` or `skipped[]`. A
 whole-root discovery failure exits nonzero and emits a compact top-level
 `error` containing the public `reason_code` plus any closed
 `details.supervisor_reason_code`; report both and stop the PPTX scan. Never
 reinterpret that failure's root `skipped[]` receipt as a successful empty scan.
 
+On exit zero, `complete` is true exactly when `incomplete_reason_codes` is
+empty. A partial scan deliberately still exits zero so its safely extracted
+per-deck results can be reviewed and persisted. Preserve those results and all
+skip receipts, report the incomplete reasons, and rerun after remediation. Only
+`complete: true` proves that all eligible descendants were considered; without
+it, never claim full catalog coverage, infer that a missing deck does not exist,
+or convert an empty result into an absence conclusion. Legacy unversioned
+`{"results": ..., "skipped": ...}` output has unknown completeness and must be
+rerun before any coverage or absence claim.
+
 Use root-relative `results[].pptx_path` identities to fuzzy-match `talks[]` entries
-and retain every `skipped[]` receipt. `pptx_batch_office_lock_file` is an explicit
-exclusion: never catalog or extract an Office temporary file whose basename starts
-with `~$`. Directory intent must remain explicit: do not omit `--directory` or
+and retain every `skipped[]` receipt. Treat the envelope's `complete` and
+`incomplete_reason_codes` fields as authoritative; never reclassify receipts by
+reason string. Configured exclusion dirents use a separate bounded
+policy-enumeration allowance rather than the eligible-entry budget, so policy
+pruning cannot hide an authored sibling; exhausting that allowance fails closed.
+Directory intent must remain explicit:
+do not omit `--directory` or
 pre-probe the root with `find`, a recursive glob, or a per-file loop. The bounded
 authenticated discovery worker owns root validation and enumeration. Report counts,
 then persist each reviewed result with a `record_pptx`
