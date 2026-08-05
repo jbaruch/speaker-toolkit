@@ -3,11 +3,15 @@
 import io
 import importlib
 import json
+import os
+import shlex
+import shutil
 import struct
 import subprocess
 import sys
 import zipfile
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -588,6 +592,80 @@ def test_directory_owner_never_touches_root_before_authenticated_manifest(
     assert kwargs["schema_generation"] == pptx_extraction.SCHEMA_VERSION
     assert kwargs["pipeline_generation"] == pptx_extraction.PIPELINE_VERSION
     assert kwargs["immutable_process_identity"] == command[:2]
+
+
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="real nested-runtime fixture uses an executable POSIX shim",
+)
+def test_nested_runtime_full_batch_reaches_every_fixed_pptx_worker(
+    pptx_extraction,
+    monkeypatch,
+    request,
+    tmp_path,
+):
+    root = tmp_path / "Presentations"
+    source_scripts = Path(pptx_extraction.__file__).parent
+    worker_scripts = root / "toolkit" / "vault-ingress" / "scripts"
+    shutil.copytree(
+        source_scripts,
+        worker_scripts,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
+    runtime = root / ".venv" / "bin" / "python3"
+    runtime.parent.mkdir(parents=True)
+    runtime.write_text(
+        f'#!/bin/sh\nexec {shlex.quote(sys.executable)} "$@"\n',
+        encoding="utf-8",
+    )
+    runtime.chmod(0o700)
+    deck = root / "Conference" / "deck.pptx"
+    deck.parent.mkdir()
+    make_deck(1).save(deck)
+
+    pptx_evidence = importlib.import_module("pptx_evidence")
+    pptx_evidence.clear_pptx_artifact_probe_cache()
+    request.addfinalizer(pptx_evidence.clear_pptx_artifact_probe_cache)
+    operations = []
+    authenticated_worker = pptx_evidence.run_authenticated_worker
+
+    def record_operation(command, operation, *args, **kwargs):
+        operations.append(operation)
+        return authenticated_worker(command, operation, *args, **kwargs)
+
+    monkeypatch.setattr(
+        pptx_evidence,
+        "run_authenticated_worker",
+        record_operation,
+    )
+    monkeypatch.setattr(sys, "executable", str(runtime))
+    monkeypatch.setattr(
+        pptx_extraction,
+        "__file__",
+        str(worker_scripts / "pptx-extraction.py"),
+    )
+    monkeypatch.setattr(
+        pptx_evidence,
+        "__file__",
+        str(worker_scripts / "pptx_evidence.py"),
+    )
+
+    results, skipped = pptx_extraction.batch_extract(root, [], ocr=False)
+    probe = pptx_evidence.probe_pptx_artifact(deck, trusted_root=root)
+    audit = pptx_evidence.recompute_native_deck_audit(deck, trusted_root=root)
+
+    assert skipped == []
+    assert len(results) == 1
+    assert results[0]["pptx_path"] == "Conference/deck.pptx"
+    assert results[0]["slide_count"] == 1
+    assert probe.source_sha256 == results[0]["input_fingerprint"]["digest"]
+    assert audit["source_pptx_sha256"] == probe.source_sha256
+    assert set(operations) >= {
+        pptx_evidence.PPTX_METADATA_OPERATION,
+        pptx_evidence.PPTX_PROBE_OPERATION,
+        pptx_evidence.PPTX_NATIVE_AUDIT_OPERATION,
+        pptx_evidence.PPTX_EXTRACT_OPERATION,
+    }
 
 
 def test_directory_cli_passes_only_the_exact_configured_skip_patterns(

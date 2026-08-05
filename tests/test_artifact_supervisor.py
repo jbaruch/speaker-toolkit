@@ -1515,6 +1515,32 @@ def test_immutable_worker_identity_never_exempts_sensitive_mutable_argv(tmp_path
     assert starts == []
 
 
+def test_immutable_worker_identity_never_exempts_artifact_equal_entrypoint(tmp_path):
+    root = tmp_path / "Presentations"
+    artifact = root / "vault" / "worker.py"
+    command = [
+        str(root / ".venv" / "bin" / "python3"),
+        str(artifact),
+        "--worker",
+    ]
+
+    with pytest.raises(artifact_supervisor.SupervisorError) as caught:
+        artifact_supervisor.run_authenticated_worker(
+            command,
+            "probe",
+            {},
+            {"artifact": str(artifact)},
+            _limits(),
+            immutable_process_identity=command[:2],
+            sensitive_values=(artifact,),
+            process_backend=lambda *_args, **_kwargs: pytest.fail(
+                "artifact-equal identity reached process creation"
+            ),
+        )
+
+    assert caught.value.reason_code == "unsafe_worker_process_metadata"
+
+
 @pytest.mark.parametrize(
     "identity_kind",
     ["short", "long", "relative", "different_prefix"],
