@@ -145,12 +145,25 @@ safe deterministic proposals; `review_required` entries need a human decision.
 The scanner uses exact filename identity, derives supported YouTube and Google
 Drive IDs, and keeps every matching `source_rejections` identity inactive.
 For comparison only, title equality applies Unicode NFC and maps straight/curly
-single and double quote glyphs to the same narrow equivalents; it preserves
+single and double quote glyphs to the same narrow equivalents. It preserves
 case, other punctuation, and wording. Conference equality applies NFC plus
 casefold only and preserves whitespace. The scanner never writes these
 comparison transforms back to the database or report. Incomplete metadata,
 substantive conflicts, and normalized filename collisions remain proposals.
 Disabled, `remote_url`, and `none` sources return a structured no-op.
+
+An exact-filename match may also accept a shownotes title that preserves the
+complete authored title and appends one terminal `at <event>` qualifier. Require
+non-empty conference and date values from the existing talk record. Do not use
+metadata from the current shownotes proposal to corroborate its own title.
+Require the shownotes-specific event alias to equal the stored conference alias.
+Require every explicit qualifier or conference year to agree with the stored
+talk date.
+Keep generic event-type words significant. The closed presentation-equivalence
+policy lives in
+`skills/vault-ingress/scripts/source_identity_matching.py::shownotes_titles_agree`.
+Do not substitute the provider-oriented `event_alias()` comparator. Keep the
+authored title unchanged when this comparison succeeds.
 
 Apply the reviewed deterministic proposals with the same command plus
 `--apply`. Only `add` and `update` entries mutate the tracking database. New

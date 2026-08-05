@@ -1,5 +1,17 @@
 # Changelog
 
+### fix(vault-ingress) — reconcile event-qualified shownotes titles (#237)
+
+Shownotes reconciliation now keeps an existing authored title when the
+publication title adds only an explicit `at <event>` qualifier whose event alias
+and year agree with the same talk's already-stored conference and date. The
+current shownotes document cannot corroborate its own suffix through newly
+proposed metadata. The shared matcher remains asymmetric and preserves the prior
+narrow presentation normalization. Generic event-type words remain
+identity-bearing, while the observed Voxxed `Days` presentation variant stays
+equivalent. Changed subtitles, unrelated events, wrong years, and short-prefix
+collisions stay review-required.
+
 ## 0.20.17 — 2026-08-05
 
 ### fix(vault-ingress) — allow CloudStorage owner writes (#239)

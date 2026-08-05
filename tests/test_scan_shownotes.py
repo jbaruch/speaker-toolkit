@@ -91,13 +91,14 @@ def _write_jekyll_talk(
     filename: str = "2026-08-01-deterministic-ingress.md",
     title: str = "Deterministic Ingress",
     conference: str | None = "TestConf",
+    date: str = "2026-08-01",
     video_url: str | None = None,
     slides_url: str | None = None,
 ) -> Path:
     lines = ["---", "layout: talk", "---", f"# {title}"]
     if conference is not None:
         lines.append(f"**Conference:** {conference}")
-    lines.append("**Date:** 2026-08-01")
+    lines.append(f"**Date:** {date}")
     if slides_url is not None:
         lines.append(f"**Slides:** [View Slides]({slides_url})")
     if video_url is not None:
@@ -263,6 +264,258 @@ def test_existing_metadata_conflict_stays_a_non_mutating_review_proposal(
     assert entry["disposition"] == "review_required"
     assert entry["changes"] == {}
     assert entry["issues"][0]["code"] == "existing_title_conflict"
+    assert report["database_written"] is False
+    assert database_path.read_bytes() == before
+
+
+def test_event_qualified_shownotes_title_preserves_authored_title(
+    tmp_path: Path,
+) -> None:
+    site, talks_directory = _shownotes_site(tmp_path)
+    filename = "voxxed-lu-2026-monkey.md"
+    authored_title = (
+        "Never Trust a Monkey: The Chasm, the Craft, and the Chain of "
+        "AI-Assisted Code"
+    )
+    conference = "Voxxed Days Luxembourg 2026"
+    talk_date = "2026-06-18"
+    _write_jekyll_talk(
+        talks_directory,
+        filename=filename,
+        title=f"{authored_title} at Voxxed Luxembourg 2026",
+        conference=conference,
+        date=talk_date,
+    )
+    existing = {
+        "filename": filename,
+        "title": authored_title,
+        "conference": conference,
+        "date": talk_date,
+        "schema_version": 5,
+        "status": "processed",
+    }
+    database_path = _database_path(
+        tmp_path,
+        _local_config(site),
+        talks=[existing],
+    )
+    before = database_path.read_bytes()
+
+    report = scan_shownotes.execute(database_path, apply_requested=True)
+
+    entry = report["entries"][0]
+    assert entry["disposition"] == "unchanged"
+    assert entry["changes"] == {}
+    assert entry["issues"] == []
+    assert report["database_written"] is False
+    assert database_path.read_bytes() == before
+    assert json.loads(before)["talks"][0]["title"] == authored_title
+
+
+@pytest.mark.parametrize(
+    "stored_context",
+    [
+        {},
+        {"date": "2026-06-18"},
+        {"conference": "Voxxed Days Luxembourg 2026"},
+    ],
+)
+def test_event_qualified_title_requires_stored_conference_and_date(
+    tmp_path: Path,
+    stored_context: dict[str, str],
+) -> None:
+    site, talks_directory = _shownotes_site(tmp_path)
+    filename = "voxxed-lu-2026-monkey.md"
+    authored_title = "Never Trust a Monkey"
+    conference = "Voxxed Days Luxembourg 2026"
+    talk_date = "2026-06-18"
+    _write_jekyll_talk(
+        talks_directory,
+        filename=filename,
+        title=f"{authored_title} at Voxxed Luxembourg 2026",
+        conference=conference,
+        date=talk_date,
+    )
+    existing = {
+        "filename": filename,
+        "title": authored_title,
+        "schema_version": 5,
+        "status": "processed",
+        **stored_context,
+    }
+    database_path = _database_path(
+        tmp_path,
+        _local_config(site),
+        talks=[existing],
+    )
+    before = database_path.read_bytes()
+
+    report = scan_shownotes.execute(database_path, apply_requested=True)
+
+    entry = report["entries"][0]
+    assert entry["disposition"] == "review_required"
+    assert entry["changes"] == {}
+    assert [issue["code"] for issue in entry["issues"]] == [
+        "existing_title_conflict"
+    ]
+    assert report["database_written"] is False
+    assert database_path.read_bytes() == before
+
+
+def test_exact_title_still_fills_missing_stored_conference_and_date(
+    tmp_path: Path,
+) -> None:
+    site, talks_directory = _shownotes_site(tmp_path)
+    filename = "voxxed-lu-2026-monkey.md"
+    authored_title = "Never Trust a Monkey"
+    conference = "Voxxed Days Luxembourg 2026"
+    talk_date = "2026-06-18"
+    _write_jekyll_talk(
+        talks_directory,
+        filename=filename,
+        title=authored_title,
+        conference=conference,
+        date=talk_date,
+    )
+    existing = {
+        "filename": filename,
+        "title": authored_title,
+        "schema_version": 5,
+        "status": "processed",
+    }
+    database_path = _database_path(
+        tmp_path,
+        _local_config(site),
+        talks=[existing],
+    )
+
+    report = scan_shownotes.execute(database_path, apply_requested=True)
+
+    entry = report["entries"][0]
+    assert entry["disposition"] == "update"
+    assert entry["changes"] == {
+        "conference": conference,
+        "date": talk_date,
+    }
+    assert entry["issues"] == []
+    assert report["database_written"] is True
+    talk = json.loads(database_path.read_text(encoding="utf-8"))["talks"][0]
+    assert talk["title"] == authored_title
+    assert talk["conference"] == conference
+    assert talk["date"] == talk_date
+
+
+@pytest.mark.parametrize(
+    ("catalog_conference", "shownotes_qualifier"),
+    [
+        ("Java Conference 2026", "Java Meetup 2026"),
+        ("DevOps Days 2026", "DevOps Conference 2026"),
+        ("Open Source Summit 2026", "Source Conference 2026"),
+    ],
+)
+def test_event_qualified_title_preserves_event_type_identity(
+    tmp_path: Path,
+    catalog_conference: str,
+    shownotes_qualifier: str,
+) -> None:
+    site, talks_directory = _shownotes_site(tmp_path)
+    filename = "2026-06-18-event-identity.md"
+    authored_title = "Identity-Bound Title"
+    talk_date = "2026-06-18"
+    _write_jekyll_talk(
+        talks_directory,
+        filename=filename,
+        title=f"{authored_title} at {shownotes_qualifier}",
+        conference=catalog_conference,
+        date=talk_date,
+    )
+    existing = {
+        "filename": filename,
+        "title": authored_title,
+        "conference": catalog_conference,
+        "date": talk_date,
+        "schema_version": 5,
+        "status": "processed",
+    }
+    database_path = _database_path(
+        tmp_path,
+        _local_config(site),
+        talks=[existing],
+    )
+    before = database_path.read_bytes()
+
+    report = scan_shownotes.execute(database_path, apply_requested=True)
+
+    entry = report["entries"][0]
+    assert entry["disposition"] == "review_required"
+    assert entry["changes"] == {}
+    assert [issue["code"] for issue in entry["issues"]] == [
+        "existing_title_conflict"
+    ]
+    assert report["database_written"] is False
+    assert database_path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "shownotes_title",
+    [
+        (
+            "Never Trust a Monkey: The Chasm, the Craft, and the Chain of "
+            "AI-Assisted Code at Devoxx Belgium 2026"
+        ),
+        (
+            "Never Trust a Monkey: The Chasm, the Craft, and the Chain of "
+            "AI-Assisted Code at Voxxed Days Luxembourg 2025"
+        ),
+        (
+            "Never Trust a Monkey: A Different Subtitle at "
+            "Voxxed Days Luxembourg 2026"
+        ),
+        "Never Trust a Monkey Returns at Voxxed Days Luxembourg 2026",
+    ],
+)
+def test_event_qualified_title_rejects_wrong_identity_and_shared_prefixes(
+    tmp_path: Path,
+    shownotes_title: str,
+) -> None:
+    site, talks_directory = _shownotes_site(tmp_path)
+    filename = "voxxed-lu-2026-monkey.md"
+    authored_title = (
+        "Never Trust a Monkey: The Chasm, the Craft, and the Chain of "
+        "AI-Assisted Code"
+    )
+    conference = "Voxxed Days Luxembourg 2026"
+    talk_date = "2026-06-18"
+    _write_jekyll_talk(
+        talks_directory,
+        filename=filename,
+        title=shownotes_title,
+        conference=conference,
+        date=talk_date,
+    )
+    existing = {
+        "filename": filename,
+        "title": authored_title,
+        "conference": conference,
+        "date": talk_date,
+        "schema_version": 5,
+        "status": "processed",
+    }
+    database_path = _database_path(
+        tmp_path,
+        _local_config(site),
+        talks=[existing],
+    )
+    before = database_path.read_bytes()
+
+    report = scan_shownotes.execute(database_path, apply_requested=True)
+
+    entry = report["entries"][0]
+    assert entry["disposition"] == "review_required"
+    assert entry["changes"] == {}
+    assert [issue["code"] for issue in entry["issues"]] == [
+        "existing_title_conflict"
+    ]
     assert report["database_written"] is False
     assert database_path.read_bytes() == before
 

@@ -9,8 +9,10 @@ from the wrong delivery.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import date
 import re
 from typing import Any
+import unicodedata
 
 
 WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
@@ -18,6 +20,21 @@ TITLE_SUBTITLE_RE = re.compile(r":|\s[-\u2013\u2014]\s|\s\(")
 EVENT_CONTEXT_SEPARATOR_RE = re.compile(r"\s[-\u2013\u2014|]\s")
 AT_RE = re.compile(r"\bat\b", re.IGNORECASE)
 YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+EXPLICIT_YEAR_RE = re.compile(r"(?<!\d)\d{4}(?!\d)")
+ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
+SHOWNOTES_EVENT_QUALIFIER_RE = re.compile(
+    r"\s+at\s+(?P<event>\S(?:.*\S)?)\Z",
+    re.IGNORECASE,
+)
+
+TITLE_QUOTE_EQUIVALENTS = str.maketrans(
+    {
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+    }
+)
 
 TITLE_STOP_WORDS = frozenset({
     "a", "an", "and", "at", "by", "conference", "for", "from", "in",
@@ -28,6 +45,8 @@ EVENT_STOP_WORDS = frozenset({
     "days", "edition", "event", "events", "meetup", "meetups", "of", "open",
     "summit", "the", "webinar", "webinars",
 })
+SHOWNOTES_EVENT_STOP_WORDS = frozenset({"a", "an", "at", "of", "the"})
+SHOWNOTES_OPTIONAL_EVENT_BIGRAMS = frozenset({("voxxed", "days")})
 AMBIGUOUS_EVENT_ALIASES = frozenset({"ai", "devops", "java", "spring"})
 EVENT_WORD_REPLACEMENTS = {
     "belgium": ("be",),
@@ -51,6 +70,10 @@ def _ordered_words(value: str, stop_words: frozenset[str]) -> list[str]:
 def normalized_words(value: str) -> set[str]:
     """Return significant title words for overlap and clip-marker checks."""
     return set(_ordered_words(value, TITLE_STOP_WORDS))
+
+
+def _normalized_title_presentation(value: str) -> str:
+    return unicodedata.normalize("NFC", value).translate(TITLE_QUOTE_EQUIVALENTS)
 
 
 def _contains_sequence(haystack: list[str] | EventAlias, needle: EventAlias) -> bool:
@@ -125,6 +148,96 @@ def event_alias(value: Any) -> EventAlias | None:
     if not words or (len(words) == 1 and len(words[0]) < 3):
         return None
     return words
+
+
+def _shownotes_event_alias(value: Any, *, expected_year: str) -> EventAlias | None:
+    """Return a conservative NFC alias for shownotes title comparison."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    words_list: list[str] = []
+    normalized = unicodedata.normalize("NFC", value).casefold()
+    raw_words = WORD_RE.findall(normalized)
+    for index, word in enumerate(raw_words):
+        if word in SHOWNOTES_EVENT_STOP_WORDS:
+            continue
+        if word.isdigit():
+            if word == expected_year:
+                continue
+            return None
+        if len(word) <= 1:
+            continue
+        if (
+            index > 0
+            and (raw_words[index - 1], word) in SHOWNOTES_OPTIONAL_EVENT_BIGRAMS
+        ):
+            continue
+        words_list.extend(EVENT_WORD_REPLACEMENTS.get(word, (word,)))
+    words = tuple(words_list)
+    if not words or (len(words) == 1 and len(words[0]) < 3):
+        return None
+    return words
+
+
+def shownotes_titles_agree(
+    authored_title: Any,
+    shownotes_title: Any,
+    *,
+    conference: Any,
+    talk_date: Any,
+) -> bool:
+    """Compare an authored title with a shownotes publication title.
+
+    Agreement is intentionally asymmetric. Shownotes may retain the complete
+    authored title and append ``at <event>`` only when that event alias equals
+    the talk conference and every explicit year agrees with the talk date.
+    Generic event-type words remain significant. Only the shownotes comparator's
+    closed branded presentation variants may be omitted.
+    The authored title itself receives only the scanner's historical NFC and
+    Unicode-quote normalization; case, punctuation, wording, and whitespace
+    remain meaningful.
+    """
+    if not isinstance(authored_title, str) or not isinstance(shownotes_title, str):
+        return False
+
+    authored = _normalized_title_presentation(authored_title)
+    shownotes = _normalized_title_presentation(shownotes_title)
+    if authored == shownotes:
+        return True
+    if not authored or not shownotes.startswith(authored):
+        return False
+
+    qualifier_match = SHOWNOTES_EVENT_QUALIFIER_RE.fullmatch(
+        shownotes[len(authored):]
+    )
+    if qualifier_match is None:
+        return False
+    qualifier = qualifier_match.group("event")
+
+    if not isinstance(talk_date, str) or ISO_DATE_RE.fullmatch(talk_date) is None:
+        return False
+    try:
+        expected_year = f"{date.fromisoformat(talk_date).year:04d}"
+    except ValueError:
+        return False
+
+    for value in (conference, qualifier):
+        if not isinstance(value, str):
+            return False
+        explicit_years = set(EXPLICIT_YEAR_RE.findall(value))
+        if explicit_years and explicit_years != {expected_year}:
+            return False
+
+    conference_alias = _shownotes_event_alias(
+        conference,
+        expected_year=expected_year,
+    )
+    qualifier_alias = _shownotes_event_alias(
+        qualifier,
+        expected_year=expected_year,
+    )
+    if conference_alias is None or qualifier_alias != conference_alias:
+        return False
+    return True
 
 
 def known_event_aliases(talks: Iterable[Any]) -> set[EventAlias]:
