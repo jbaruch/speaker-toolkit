@@ -1,5 +1,14 @@
 # Changelog
 
+### fix(vault-ingress) — allow nested PPTX batch workers (#233)
+
+Directory PPTX extraction now carries the fixed interpreter/entrypoint identity
+through per-file metadata, probe, native-audit, and extraction workers. A
+toolkit and configured runtime installed below the presentation root can finish
+ordinary decks instead of returning `pptx_probe_start_failure`; mutable argv,
+artifact-equal identities, redaction, and structured failure reasons are
+unchanged.
+
 ## 0.20.14 — 2026-08-05
 
 ### fix(vault-ingress) — allow nested PPTX discovery runtimes (#228)

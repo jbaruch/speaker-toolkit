@@ -681,7 +681,7 @@ def test_pptx_batch_wrapper_keeps_exact_cloud_reason(
     )
 
 
-def test_pptx_metadata_invocation_contract_is_unchanged(
+def test_pptx_metadata_invocation_contract_includes_fixed_identity(
     pptx_evidence,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -745,6 +745,7 @@ def test_pptx_metadata_invocation_contract_is_unchanged(
     }
     assert captured["limits"] is pptx_evidence.PPTX_METADATA_LIMITS
     assert captured["kwargs"] == {
+        "immutable_process_identity": captured["command"][:2],
         "sensitive_values": (deck,),
         "schema_generation": 4,
         "pipeline_generation": "1.5.0",
