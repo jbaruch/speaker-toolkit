@@ -587,6 +587,7 @@ def test_directory_owner_never_touches_root_before_authenticated_manifest(
     assert limits.profile_id == "pptx-directory-discovery-v1"
     assert kwargs["schema_generation"] == pptx_extraction.SCHEMA_VERSION
     assert kwargs["pipeline_generation"] == pptx_extraction.PIPELINE_VERSION
+    assert kwargs["immutable_process_identity"] == command[:2]
 
 
 def test_directory_cli_passes_only_the_exact_configured_skip_patterns(
@@ -828,18 +829,18 @@ def test_directory_discovery_timeout_blocks_every_extraction(
         lambda *_args, **_kwargs: pytest.fail("timeout launched an extractor"),
     )
 
-    results, skipped = pptx_extraction.batch_extract(
-        "/blocked/discovery", [], ocr=False
-    )
+    with pytest.raises(pptx_extraction.PptxEvidenceError) as caught:
+        pptx_extraction.batch_extract("/blocked/discovery", [], ocr=False)
 
-    assert results == []
-    assert skipped == [{"path": ".", "reason": "pptx_batch_discovery_timeout"}]
+    assert caught.value.reason_code == "pptx_batch_discovery_timeout"
+    assert caught.value.details == {"supervisor_reason_code": "worker_timeout"}
 
 
 @pytest.mark.parametrize(
     ("supervisor_reason", "expected_reason"),
     [
         ("worker_memory_limit_exceeded", "pptx_batch_discovery_resource_unavailable"),
+        ("unsafe_worker_process_metadata", "pptx_batch_discovery_start_failure"),
         ("worker_start_failed", "pptx_batch_discovery_start_failure"),
         ("worker_exit", "pptx_batch_discovery_worker_failure"),
         (
@@ -862,14 +863,42 @@ def test_directory_supervisor_failures_keep_closed_reason_distinctions(
         ),
     )
 
-    results, skipped = pptx_extraction.batch_extract(
-        "/lexical/root",
-        [],
-        ocr=False,
+    with pytest.raises(pptx_extraction.PptxEvidenceError) as caught:
+        pptx_extraction.batch_extract(
+            "/lexical/root",
+            [],
+            ocr=False,
+        )
+
+    assert caught.value.reason_code == expected_reason
+    assert caught.value.details == {"supervisor_reason_code": supervisor_reason}
+
+
+def test_directory_cli_returns_nonzero_structured_discovery_failure(
+    pptx_extraction,
+    monkeypatch,
+    capsys,
+):
+    monkeypatch.setattr(
+        pptx_extraction,
+        "run_authenticated_worker",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            pptx_extraction.SupervisorError("unsafe_worker_process_metadata")
+        ),
     )
 
-    assert results == []
-    assert skipped == [{"path": ".", "reason": expected_reason}]
+    assert pptx_extraction.main(["--directory", "/lexical/root", "--no-ocr"]) == 1
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {
+        "results": [],
+        "skipped": [{"path": ".", "reason": "pptx_batch_discovery_start_failure"}],
+        "error": {
+            "reason_code": "pptx_batch_discovery_start_failure",
+            "details": {"supervisor_reason_code": "unsafe_worker_process_metadata"},
+        },
+    }
+    assert captured.err == "ERROR: pptx_batch_discovery_start_failure\n"
 
 
 def test_directory_identity_zero_is_reported_instead_of_silently_deduplicated(

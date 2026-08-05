@@ -163,6 +163,12 @@ array produces zero arguments; never add an implicit default.
   --directory "{pptx_source_dir}" {template_skip_arguments}
 ```
 
+Require exit status zero before consuming `results[]` or `skipped[]`. A
+whole-root discovery failure exits nonzero and emits a compact top-level
+`error` containing the public `reason_code` plus any closed
+`details.supervisor_reason_code`; report both and stop the PPTX scan. Never
+reinterpret that failure's root `skipped[]` receipt as a successful empty scan.
+
 Use root-relative `results[].pptx_path` identities to fuzzy-match `talks[]` entries
 and retain every `skipped[]` receipt. `pptx_batch_office_lock_file` is an explicit
 exclusion: never catalog or extract an Office temporary file whose basename starts

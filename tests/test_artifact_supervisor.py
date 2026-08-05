@@ -1460,6 +1460,99 @@ def test_request_input_cap_and_sensitive_argv_fail_before_process_start(tmp_path
     assert unsafe.value.reason_code == "unsafe_worker_process_metadata"
 
 
+def test_immutable_worker_identity_may_be_nested_below_sensitive_root(tmp_path):
+    root = tmp_path / "Presentations"
+    command = [
+        str(root / ".venv" / "bin" / "python3"),
+        str(root / "vault" / "worker.py"),
+        "--worker",
+    ]
+    starts = []
+
+    def fail_after_metadata_check(parts, **_kwargs):
+        starts.append(parts)
+        raise OSError("fixture stops before process creation")
+
+    with pytest.raises(artifact_supervisor.SupervisorError) as caught:
+        artifact_supervisor.run_authenticated_worker(
+            command,
+            "probe",
+            {},
+            {"root_path": str(root)},
+            _limits(),
+            immutable_process_identity=command[:2],
+            sensitive_values=(root,),
+            process_backend=fail_after_metadata_check,
+        )
+
+    assert caught.value.reason_code == "worker_start_failed"
+    assert starts == [command]
+
+
+def test_immutable_worker_identity_never_exempts_sensitive_mutable_argv(tmp_path):
+    root = tmp_path / "Presentations"
+    command = [
+        str(root / ".venv" / "bin" / "python3"),
+        str(root / "vault" / "worker.py"),
+        "--root",
+        str(root),
+    ]
+    starts = []
+
+    with pytest.raises(artifact_supervisor.SupervisorError) as caught:
+        artifact_supervisor.run_authenticated_worker(
+            command,
+            "probe",
+            {},
+            {"root_path": str(root)},
+            _limits(),
+            immutable_process_identity=command[:2],
+            sensitive_values=(root,),
+            process_backend=lambda *args, **kwargs: starts.append((args, kwargs)),
+        )
+
+    assert caught.value.reason_code == "unsafe_worker_process_metadata"
+    assert starts == []
+
+
+@pytest.mark.parametrize(
+    "identity_kind",
+    ["short", "long", "relative", "different_prefix"],
+)
+def test_immutable_worker_identity_must_be_exact_two_absolute_prefix_paths(
+    tmp_path,
+    identity_kind,
+):
+    root = tmp_path / "Presentations"
+    command = [
+        str(root / ".venv" / "bin" / "python3"),
+        str(root / "vault" / "worker.py"),
+        "--worker",
+    ]
+    identities = {
+        "short": command[:1],
+        "long": command,
+        "relative": ["python3", command[1]],
+        "different_prefix": [command[0], str(root / "vault" / "other.py")],
+    }
+
+    with pytest.raises(artifact_supervisor.SupervisorError) as caught:
+        artifact_supervisor.run_authenticated_worker(
+            command,
+            "probe",
+            {},
+            {"root_path": str(root)},
+            _limits(),
+            immutable_process_identity=identities[identity_kind],
+            sensitive_values=(root,),
+            process_backend=lambda *_args, **_kwargs: pytest.fail(
+                "invalid identity reached process creation"
+            ),
+        )
+
+    assert caught.value.reason_code == "invalid_worker_command"
+
+
 def test_sensitive_payload_keys_and_environment_names_are_removed(monkeypatch):
     sensitive = "/private/vault/secret-deck.pptx"
     sensitive_name = f"PREFIX_{sensitive}_SUFFIX"
