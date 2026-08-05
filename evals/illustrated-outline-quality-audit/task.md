@@ -10,11 +10,17 @@ Produce the following file:
 
 1. **`guardrail-report.md`** — a Phase 4 audit report covering the outline and the speaker profile together. The report should be structured so the speaker can act on its findings.
 
+The old profile cannot authorize catalog-derived classifications. Still apply the
+`rushed_closing` guardrail at its declared severity because it is explicitly marked
+`source_lane: "non_pattern"`; keep that independent warning separate from taxonomy
+`[RECURRING]` labels, which require an available schema-v5 antipattern-recurrence domain
+and qualifying derived `antipattern_classifications` rows.
+
 ## Input Files
 
 =============== FILE: inputs/speaker-profile.json ===============
 {
-  "schema_version": 1,
+  "schema_version": 4,
   "speaker": {"name": "Pat Illustra", "handle": "@patillustra"},
   "rhetoric_defaults": {
     "default_duration_minutes": 45,
@@ -36,7 +42,7 @@ Produce the following file:
       {"duration_range": "45 min", "max_percent": 45}
     ],
     "recurring_issues": [
-      {"id": "rushed_closing", "description": "Rushes final section", "guardrail": "Closing must have at least 3 slides and 3 min", "severity": "warning"}
+      {"id": "rushed_closing", "source_lane": "non_pattern", "description": "Rushes final section", "guardrail": "Closing must have at least 3 slides and 3 min", "severity": "warning"}
     ]
   }
 }

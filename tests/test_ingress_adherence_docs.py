@@ -120,14 +120,18 @@ def test_native_picture_render_threshold_is_script_owned() -> None:
     assert "image_area_ratio >= 0.5" not in schemas
 
 
-def test_post_batch_cohort_and_section_15_filter_are_explicit() -> None:
+def test_post_batch_contract_is_explicit_without_repeating_section15_filter() -> None:
     docs = _docs()
-    for name in ("persistence", "processing", "schemas"):
+    for name in ("persistence", "schemas"):
         assert "current_adherence_baseline" in docs[name]
         assert "active_batch_excluded: false" in docs[name]
 
+    assert "current_adherence_baseline" in docs["processing"]
     assert "only after every merge succeeds" in docs["processing"]
-    assert "Never approximate this cohort by\n`processed_date`" in docs["processing"]
+    assert "complete baseline contract" in docs["processing"]
+    assert "Do not reproduce its cohort\nselection" in docs["processing"]
+    assert "section15_pattern_history.py" in docs["processing"]
+    assert "active_batch_excluded: false" not in docs["processing"]
     assert "after the entire batch has persisted successfully" in docs["processing"]
     assert "never update it after an\nindividual member merge" in docs["processing"]
     assert "must not recompute after member 1" in docs["schemas"]
@@ -186,11 +190,13 @@ def test_canonical_coverage_alone_never_authorizes_current_absence() -> None:
     )
 
 
-def test_current_v5_cohort_requires_live_artifact_freshness() -> None:
+def test_current_v5_freshness_filter_is_owned_by_section15_helper() -> None:
     docs = _docs()
     assert "shared freshness assessor" in docs["selection"]
     assert "configured source roots" in docs["selection"]
-    assert "artifact freshness against the vault" in docs["processing"]
+    assert "section15_pattern_history.py" in docs["processing"]
+    assert "Do not reproduce its\ncohort filter" in docs["processing"]
+    assert "artifact freshness against the vault" not in docs["processing"]
     assert "shared root-aware assessor" in docs["selection"]
     assert "remote video/slide acquisition remains eligible" in docs["selection"]
 

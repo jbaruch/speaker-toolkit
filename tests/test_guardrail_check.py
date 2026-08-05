@@ -85,6 +85,122 @@ def test_main_rejects_invalid_input_without_stdout(guardrail_check, tmp_path, ca
     assert f"failed to load {missing_outline}" in captured.err
 
 
+# ── Pattern-history domains ─────────────────────────────────
+
+
+def _history_status(guardrail_check, *domains):
+    return guardrail_check.CreatorPatternHistoryStatus(
+        history_enabled=bool(domains),
+        history_source="profile" if domains else None,
+        profile_schema_version=5,
+        scored_talk_count=12,
+        reason_codes=(),
+        reasons=(),
+        eligible_talk_count=12,
+        opportunity_rows_available=True,
+        classification_fields_available=bool(domains),
+        available_classification_domains=tuple(domains),
+        policy_semantic_sha256="a" * 64 if domains else None,
+    )
+
+
+def _classified_antipatterns():
+    def row(pattern_id, classification, detected_count):
+        return {
+            "pattern_id": pattern_id,
+            "classification": classification,
+            "evidence": {
+                "applicable_count": 12,
+                "evaluable_count": 12,
+                "detected_count": detected_count,
+            },
+        }
+
+    return {
+        "antipattern_frequency": [
+            {
+                "pattern_id": "raw-occurrence-must-not-leak",
+                "severity": "recurring",
+            }
+        ],
+        "antipattern_classifications": [
+            row("high", "high_frequency", 8),
+            row("moderate", "moderate_frequency", 4),
+            row("occasional", "occasional", 1),
+            row("none", "confirmed_none", 0),
+        ],
+        "trend_analysis": {
+            "antipattern_movements": [
+                {"pattern_id": "high", "movement": "increasing"},
+                {"pattern_id": "moderate", "movement": "stable"},
+                {"pattern_id": "occasional", "movement": "decreasing"},
+            ]
+        },
+    }
+
+
+def test_recurring_history_requires_recurrence_domain(guardrail_check):
+    status = _history_status(guardrail_check, "mastery_and_novelty")
+
+    items = guardrail_check.recurring_pattern_history_items(
+        _classified_antipatterns(), status
+    )
+
+    assert items == []
+
+
+def test_recurring_history_uses_only_high_and_moderate_classifications(
+    guardrail_check,
+):
+    status = _history_status(guardrail_check, "antipattern_recurrence")
+
+    items = guardrail_check.recurring_pattern_history_items(
+        _classified_antipatterns(), status
+    )
+
+    assert [item["pattern_id"] for item in items] == ["high", "moderate"]
+    assert "raw-occurrence-must-not-leak" not in {item["pattern_id"] for item in items}
+    assert [item["recurrence_classification"] for item in items] == [
+        "high_frequency",
+        "moderate_frequency",
+    ]
+    assert all("trend" not in item for item in items)
+
+
+def test_recurring_history_adds_trend_only_when_trend_domain_is_available(
+    guardrail_check,
+):
+    status = _history_status(guardrail_check, "antipattern_recurrence", "trends")
+
+    items = guardrail_check.recurring_pattern_history_items(
+        _classified_antipatterns(), status
+    )
+
+    assert [(item["pattern_id"], item["trend"]) for item in items] == [
+        ("high", "increasing"),
+        ("moderate", "stable"),
+    ]
+
+
+def test_suppressed_history_fields_follow_independent_domains(guardrail_check):
+    status = _history_status(
+        guardrail_check,
+        "mastery_and_novelty",
+        "underuse",
+        "antipattern_recurrence",
+    )
+
+    suppressed = guardrail_check.suppressed_pattern_history_fields(status)
+
+    assert "mastery_levels" not in suppressed
+    assert "never_used_patterns" not in suppressed
+    assert "underused_patterns" not in suppressed
+    assert "recurring_antipatterns" not in suppressed
+    assert "signature_combinations" in suppressed
+    assert "score_trend" in suppressed
+    assert "by_mode" in suppressed
+
+
 # ── Slide budget ─────────────────────────────────────────────────────
 
 

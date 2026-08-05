@@ -10,7 +10,22 @@ The vault is located at `./vault/` and all the data is provided below. Your job 
 
 Generate `vault/speaker-profile.json` — a complete speaker profile synthesizing all available vault data.
 
-The profile should capture Taylor's defaults and infrastructure in a structured form that another tool can consume programmatically. The supplied talk rows predate source-located scoring-v5 outcomes and therefore cannot authorize a current pattern cohort: emit the canonical schema-v4 empty-current-cohort pattern contract instead of migrating the legacy pattern IDs, scores, or Section 15 prose into mastery, novelty, recurring severity, trends, or badges. Include only non-pattern badges, each marked `source_lane: "non_pattern"`, grounded in independent talk-count, pacing, visual, publishing, or confirmed-intent data.
+The profile should capture Taylor's defaults and infrastructure in a structured form
+that another tool can consume programmatically. After extracting the supplied files,
+run the installed vault-profile `scripts/load-vault.py` against `./vault/`. Treat its
+`pattern_baseline`, `pattern_opportunities`, and `pattern_classification` objects as an
+opaque fixture: copy them into `pattern_profile` according to the profile-construction
+contract without predicting or rewriting any policy stamp, domain status,
+classification, absence result, trend, or derived projection. A nonzero loader exit is
+a task failure, not permission to synthesize fallback catalog history.
+
+The supplied legacy observations and ordinary Section 15 prose must not be imported by
+hand. This task writes only `speaker-profile.json`. Do not create or edit a Section 15
+current block. Include only non-pattern badges, each marked
+`source_lane: "non_pattern"`, grounded in independent talk-count, pacing, visual,
+publishing, or confirmed-intent data. Before saving, run the installed
+`scripts/validate-profile.py --vault-root ./vault`. Save only when it exits `0` and
+reports `valid: true`.
 
 ## Input Files
 

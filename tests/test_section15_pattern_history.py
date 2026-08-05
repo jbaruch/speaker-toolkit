@@ -24,6 +24,7 @@ for script_directory in (PROFILE_SCRIPTS, CREATOR_SCRIPTS):
 section15 = importlib.import_module("section15_pattern_history")
 pattern_history_status = importlib.import_module("pattern_history_status")
 provenance = importlib.import_module("profile_pattern_provenance")
+classification_runtime = importlib.import_module("pattern_classification_runtime")
 opportunities = importlib.import_module("pattern_opportunities")
 pattern_evidence = importlib.import_module("pattern_evidence")
 adherence_baseline = importlib.import_module("adherence_baseline")
@@ -92,6 +93,12 @@ def _pattern_profile(*, note: str = "Current exact cohort.") -> dict[str, Any]:
     opportunity_identity = outcome_talks[0]["pattern_observations"][
         "opportunity_coverage_identity"
     ]
+    classification = classification_runtime.classify_pattern_profile(
+        outcome_talks,
+        classification_runtime.resolve_classification_policy(
+            Path(__file__).resolve().parent / "__no_policy_override__"
+        ),
+    )
     return {
         "pattern_baseline": {
             "schema_version": 2,
@@ -116,38 +123,57 @@ def _pattern_profile(*, note: str = "Current exact cohort.") -> dict[str, Any]:
         "eligible_talk_count": 2,
         "talks_scored": 2,
         "average_pattern_score": 0.0,
-        "score_trend": "unavailable",
-        "pattern_breadth": {
-            "avg_distinct_patterns_per_talk": None,
-            "trend": "unavailable",
-            "note": note,
-        },
-        "underused_patterns": [],
-        "score_drivers": {
-            "direction": "unavailable",
-            "antipattern_drivers": [],
-            "pattern_drivers": [],
-            "note": note,
-        },
-        "by_mode": [],
-        "strengths": [],
-        "strengths_note": note,
         "note": note,
         "pattern_usage": rows["pattern_usage"],
         "antipattern_frequency": rows["antipattern_frequency"],
-        "never_used_patterns": [],
-        "signature_combinations": [],
-        "mastery_levels": {
-            "signature": [],
-            "regular": [],
-            "occasional": [],
-            "rare": [],
-            "never_tried": [],
-        },
-        "classification_availability": (
-            provenance.unavailable_classification_availability()
-        ),
+        **classification,
     }
+
+
+def _legacy_pattern_profile() -> dict[str, Any]:
+    """Project a valid v5 fixture back to the readable occurrence-only v4 shape."""
+    profile = _pattern_profile(note="Legacy occurrence-only payload.")
+    for field in (
+        "classification_schema_version",
+        "classification_policy",
+        "pattern_classifications",
+        "antipattern_classifications",
+        "trend_analysis",
+    ):
+        profile.pop(field)
+    profile.update(
+        {
+            "score_trend": "unavailable",
+            "pattern_breadth": {
+                "avg_distinct_patterns_per_talk": None,
+                "trend": "unavailable",
+                "note": "Occurrence-only v4 compatibility.",
+            },
+            "underused_patterns": [],
+            "score_drivers": {
+                "direction": "unavailable",
+                "antipattern_drivers": [],
+                "pattern_drivers": [],
+                "note": "Occurrence-only v4 compatibility.",
+            },
+            "by_mode": [],
+            "strengths": [],
+            "strengths_note": "Occurrence-only v4 compatibility.",
+            "never_used_patterns": [],
+            "signature_combinations": [],
+            "mastery_levels": {
+                "signature": [],
+                "regular": [],
+                "occasional": [],
+                "rare": [],
+                "never_tried": [],
+            },
+            "classification_availability": (
+                provenance.unavailable_classification_availability()
+            ),
+        }
+    )
+    return profile
 
 
 def _outcome_talks(
@@ -246,6 +272,14 @@ def _all_unknown_pattern_profile() -> dict[str, Any]:
     profile["average_pattern_score"] = None
     profile["pattern_usage"] = rows["pattern_usage"]
     profile["antipattern_frequency"] = rows["antipattern_frequency"]
+    profile.update(
+        classification_runtime.classify_pattern_profile(
+            outcome_talks,
+            classification_runtime.resolve_classification_policy(
+                Path(__file__).resolve().parent / "__no_policy_override__"
+            ),
+        )
+    )
     return profile
 
 
@@ -390,6 +424,17 @@ def _block_from_json(payload_json: str) -> str:
     )
 
 
+def _legacy_block_from_json(payload_json: str) -> str:
+    return (
+        f"{section15.LEGACY_BLOCK_START}\n"
+        "```json\n"
+        f"{payload_json}\n"
+        "```\n\n"
+        f"{section15.NON_BASELINE_NOTICE}\n"
+        f"{section15.LEGACY_BLOCK_END}"
+    )
+
+
 def _summary(block: str = "") -> str:
     block_area = f"\n{block}\n" if block else "\n"
     return (
@@ -419,12 +464,96 @@ def test_exact_current_block_accepts_complete_scoring_v5_cohort():
     assert assessment.current_contract is True
     assert assessment.catalog_fields_available is True
     assert assessment.scored_talk_count == 2
+    assert assessment.reason_codes == ()
+    assert assessment.classification_fields_available is True
+    assert assessment.block_schema_version == 3
+    assert assessment.available_classification_domains == frozenset(
+        {
+            "mastery_and_novelty",
+            "antipattern_recurrence",
+            "underuse",
+            "signature_combinations",
+        }
+    )
+    assert assessment.pattern_profile == profile
+    assert profile["pattern_baseline"]["pattern_scoring_schema_version"] == 5
+
+
+def test_v2_block_remains_readable_as_occurrence_only():
+    profile = _legacy_pattern_profile()
+    baseline = profile["pattern_baseline"]
+    payload = {
+        "schema_version": 2,
+        "source_lane": section15.BLOCK_SOURCE_LANE,
+        "pattern_catalog_fingerprint": baseline["pattern_catalog_fingerprint"],
+        "pattern_scoring_schema_version": baseline["pattern_scoring_schema_version"],
+        "baseline_talk_filenames": profile["baseline_talk_filenames"],
+        "pattern_profile": profile,
+    }
+    block = _legacy_block_from_json(
+        json.dumps(payload, indent=2, sort_keys=True, allow_nan=False)
+    )
+
+    assessment = section15.assess_section15_pattern_history(_summary(block))
+
+    assert assessment.current_contract is True
+    assert assessment.block_schema_version == 2
+    assert assessment.classification_fields_available is False
+    assert assessment.available_classification_domains == frozenset()
     assert assessment.reason_codes == (
         provenance.REASON_CLASSIFICATION_POLICY_UNAVAILABLE,
     )
-    assert assessment.classification_fields_available is False
-    assert assessment.pattern_profile == profile
-    assert profile["pattern_baseline"]["pattern_scoring_schema_version"] == 5
+
+
+def test_writer_replaces_v2_in_place_with_one_v3_block():
+    legacy = _legacy_pattern_profile()
+    baseline = legacy["pattern_baseline"]
+    payload = {
+        "schema_version": 2,
+        "source_lane": section15.BLOCK_SOURCE_LANE,
+        "pattern_catalog_fingerprint": baseline["pattern_catalog_fingerprint"],
+        "pattern_scoring_schema_version": baseline["pattern_scoring_schema_version"],
+        "baseline_talk_filenames": legacy["baseline_talk_filenames"],
+        "pattern_profile": legacy,
+    }
+    original = _summary(
+        _legacy_block_from_json(
+            json.dumps(payload, indent=2, sort_keys=True, allow_nan=False)
+        )
+    )
+
+    candidate = section15._replace_block_text(
+        original,
+        section15.render_section15_current_block(_pattern_profile()),
+    )
+
+    assert section15.LEGACY_BLOCK_TOKEN not in candidate
+    assert candidate.count(section15.BLOCK_START) == 1
+    assert candidate.count(section15.BLOCK_END) == 1
+    assert (
+        section15.assess_section15_pattern_history(candidate).current_contract is True
+    )
+
+
+def test_mixed_v2_v3_markers_fail_closed():
+    profile = _legacy_pattern_profile()
+    baseline = profile["pattern_baseline"]
+    payload = {
+        "schema_version": 2,
+        "source_lane": section15.BLOCK_SOURCE_LANE,
+        "pattern_catalog_fingerprint": baseline["pattern_catalog_fingerprint"],
+        "pattern_scoring_schema_version": baseline["pattern_scoring_schema_version"],
+        "baseline_talk_filenames": profile["baseline_talk_filenames"],
+        "pattern_profile": profile,
+    }
+    block = _legacy_block_from_json(json.dumps(payload)).replace(
+        section15.LEGACY_BLOCK_END, section15.BLOCK_END
+    )
+
+    assessment = section15.assess_section15_pattern_history(_summary(block))
+
+    assert assessment.current_contract is False
+    assert assessment.reason_codes == (section15.REASON_BLOCK_INVALID,)
     assert profile["baseline_talk_filenames"] == sorted(
         profile["baseline_talk_filenames"]
     )
@@ -447,7 +576,7 @@ def test_all_unknown_cohort_stays_raw_score_unavailable_through_section15_and_cr
     summary = summary_path.read_text(encoding="utf-8")
     assessment = section15.assess_section15_pattern_history(summary)
     creator_status = pattern_history_status.assess_creator_pattern_history(
-        {"schema_version": 4, "pattern_profile": profile},
+        {"schema_version": 5, "pattern_profile": profile},
         summary,
     )
 
@@ -463,9 +592,11 @@ def test_all_unknown_cohort_stays_raw_score_unavailable_through_section15_and_cr
     assert baseline["raw_score_comparison_reason"] == (
         adherence_baseline.NO_EVALUABLE_PATTERN_OPPORTUNITIES_REASON
     )
-    assert creator_status.history_enabled is False
+    assert creator_status.history_enabled is True
+    assert creator_status.history_source == "profile"
     assert creator_status.opportunity_rows_available is True
-    assert creator_status.classification_fields_available is False
+    assert creator_status.classification_fields_available is True
+    assert "mastery_and_novelty" in creator_status.available_classification_domains
     assert creator_status.scored_talk_count == 0
 
 
@@ -511,7 +642,7 @@ def test_incomplete_pattern_history_payload_fails_shared_assessor():
     assert assessment.current_contract is False
     assert provenance.REASON_INVALID_CONTRACT in assessment.reason_codes
     assert any(
-        "missing required schema-v4 fields" in error for error in assessment.errors
+        "missing required schema-v5 fields" in error for error in assessment.errors
     )
 
 
@@ -572,10 +703,10 @@ def test_ordinary_section15_prose_never_restores_history():
     assert section15.REASON_BLOCK_MISSING in status.reason_codes
 
 
-def test_current_profile_rows_do_not_authorize_unconfigured_classifications():
+def test_policy_bound_profile_wins_without_merging_section15():
     profile_history = _pattern_profile(note="Profile payload wins.")
     summary_history = _pattern_profile(note="Summary payload must be ignored.")
-    profile = {"schema_version": 4, "pattern_profile": profile_history}
+    profile = {"schema_version": 5, "pattern_profile": profile_history}
     summary = _summary(section15.render_section15_current_block(summary_history))
 
     resolution = pattern_history_status.resolve_creator_pattern_history(
@@ -583,14 +714,15 @@ def test_current_profile_rows_do_not_authorize_unconfigured_classifications():
         summary,
     )
 
-    assert resolution.status.history_enabled is False
+    assert resolution.status.history_enabled is True
     assert resolution.status.opportunity_rows_available is True
-    assert resolution.status.classification_fields_available is False
-    assert resolution.status.history_source is None
-    assert resolution.pattern_profile is None
+    assert resolution.status.classification_fields_available is True
+    assert resolution.status.history_source == "profile"
+    assert resolution.pattern_profile is not None
+    assert resolution.pattern_profile["note"] == "Profile payload wins."
 
 
-def test_current_section15_rows_do_not_authorize_unconfigured_classifications():
+def test_policy_bound_section15_is_used_when_profile_history_is_unavailable():
     summary_history = _pattern_profile()
     summary = _summary(section15.render_section15_current_block(summary_history))
 
@@ -599,13 +731,12 @@ def test_current_section15_rows_do_not_authorize_unconfigured_classifications():
         summary,
     )
 
-    assert resolution.status.history_enabled is False
+    assert resolution.status.history_enabled is True
     assert resolution.status.opportunity_rows_available is True
-    assert resolution.status.history_source is None
-    assert provenance.REASON_CLASSIFICATION_POLICY_UNAVAILABLE in (
-        resolution.status.reason_codes
-    )
-    assert resolution.pattern_profile is None
+    assert resolution.status.classification_fields_available is True
+    assert resolution.status.history_source == "section15_current_block"
+    assert resolution.status.reason_codes == ()
+    assert resolution.pattern_profile == summary_history
 
 
 def test_status_cli_uses_valid_fallback_when_profile_file_is_malformed(
@@ -632,9 +763,10 @@ def test_status_cli_uses_valid_fallback_when_profile_file_is_malformed(
     payload = json.loads(captured.out)
 
     assert return_code == 0
-    assert payload["history_enabled"] is False
+    assert payload["history_enabled"] is True
     assert payload["opportunity_rows_available"] is True
-    assert payload["history_source"] is None
+    assert payload["classification_fields_available"] is True
+    assert payload["history_source"] == "section15_current_block"
 
 
 def test_status_cli_reports_current_rows_without_authorizing_classifications(
@@ -646,7 +778,7 @@ def test_status_cli_reports_current_rows_without_authorizing_classifications(
         json.dumps(
             {
                 "schema_version": 4,
-                "pattern_profile": _pattern_profile(),
+                "pattern_profile": _legacy_pattern_profile(),
             }
         ),
         encoding="utf-8",
@@ -771,9 +903,7 @@ def test_replace_cli_rejects_invalid_database_locator_before_any_input_io(
     assert return_code == 1
     assert captured.out == ""
     assert input_calls == []
-    assert (
-        f"vault_root_database_path_invalid:{locator_reason}" in captured.err
-    )
+    assert f"vault_root_database_path_invalid:{locator_reason}" in captured.err
     if database_locator.strip():
         assert database_locator not in captured.err
 
@@ -944,10 +1074,7 @@ def test_replace_cli_rejects_symlink_target_locator_mismatch_without_paths(
 
     assert return_code == 1
     assert captured.out == ""
-    assert (
-        "vault_root_authority_mismatch:database_path:config_root"
-        in captured.err
-    )
+    assert "vault_root_authority_mismatch:database_path:config_root" in captured.err
     assert str(storage) not in captured.err
     assert str(locator) not in captured.err
 
@@ -1218,7 +1345,31 @@ def test_replace_rejects_self_consistent_rows_not_present_in_live_database(tmp_p
 
     with pytest.raises(
         section15.Section15PatternHistoryError,
-        match="deterministic rows recomputed",
+        match="exact raw A/E/D/U row",
+    ):
+        section15.replace_section15_current_block(
+            summary_path,
+            profile,
+            database,
+            evidence_freshness_assessor=_fresh_evidence,
+        )
+
+    assert summary_path.read_bytes() == original
+
+
+def test_replace_recomputes_policy_derived_rows_from_live_talks(tmp_path):
+    profile = _pattern_profile()
+    profile["pattern_classifications"][0]["reason_codes"] = [
+        "plausible_but_not_canonical"
+    ]
+    database = _tracking_database(_pattern_profile())
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(), encoding="utf-8")
+    original = summary_path.read_bytes()
+
+    with pytest.raises(
+        section15.Section15PatternHistoryError,
+        match="deterministic classifications recomputed",
     ):
         section15.replace_section15_current_block(
             summary_path,
@@ -1294,7 +1445,7 @@ def test_replace_cli_reports_catalog_domain_failure_without_traceback(
     assert summary_path.read_bytes() == original
 
 
-def test_guardrail_suppresses_unconfigured_fallback_classifications(
+def test_guardrail_uses_policy_bound_section15_without_inventing_recurrence(
     guardrail_check,
     tmp_path,
     capsys,
@@ -1317,12 +1468,16 @@ def test_guardrail_suppresses_unconfigured_fallback_classifications(
     checks = {item["name"]: item for item in report["checks"]}
 
     assert return_code == 0
-    assert "Pattern classifications disabled" in checks["Pattern history"]["detail"]
-    assert report["pattern_history"]["history_source"] is None
+    assert "policy-bound domains enabled" in checks["Pattern history"]["detail"]
+    assert report["pattern_history"]["history_source"] == "section15_current_block"
+    assert (
+        "antipattern_recurrence"
+        in (report["pattern_history"]["available_classification_domains"])
+    )
     assert report["recurring_antipatterns"] == []
 
 
-def test_creator_docs_route_summary_fallback_through_shared_parser():
+def test_creator_docs_delegate_history_source_resolution():
     creator = ROOT / "skills" / "presentation-creator"
     docs = {
         "skill": (creator / "SKILL.md").read_text(encoding="utf-8"),
@@ -1335,10 +1490,12 @@ def test_creator_docs_route_summary_fallback_through_shared_parser():
     }
 
     for text in docs.values():
-        assert "section15_pattern_history.py" in text
-    assert "A valid profile always wins" in docs["skill"]
-    assert "summary is a fallback and never merges" in docs["phase0"]
-    assert "sources are never\nmerged" in docs["phase4"]
+        assert "history_source" in text
+    assert "resolve_creator_pattern_history()" in docs["phase0"]
+    assert "section15_pattern_history.py" in docs["skill"]
+    assert "section15_pattern_history.py" in docs["phase0"]
+    assert "section15_pattern_history.py" not in docs["phase4"]
+    assert "recurring_pattern_history_items()" in docs["phase4"]
 
 
 def test_ingress_docs_require_live_database_for_current_block_replace():
@@ -1352,6 +1509,6 @@ def test_ingress_docs_require_live_database_for_current_block_replace():
     assert "section15_pattern_history.py" in skill
     assert "tracking-database.json" in skill
     assert "stale" in skill
-    assert "section15_pattern_history.py replace" in processing
+    assert 'section15_pattern_history.py" replace' in processing
     assert "tracking-database.json" in processing
     assert "stale" in processing

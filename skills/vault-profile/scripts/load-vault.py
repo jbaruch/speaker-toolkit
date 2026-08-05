@@ -29,6 +29,7 @@ Stdout (JSON):
       "pattern_scoring_exclusions": [ ... ] # deterministic per-talk reasons
       "pattern_baseline":  { ... }   # exact-cohort count/sum/average + provenance
       "pattern_opportunities": { ... } # deterministic exhaustive per-pattern rows
+      "pattern_classification": { ... } # policy-bound deterministic derived fields
       "current_instrumentation_talks": [ ... ]  # current extractor cohort
       "stale_instrumentation_talks": [ ... ]    # pre-epoch extractor cohort
       "baseline_note":     "...",    # exact pattern-cohort semantics
@@ -57,7 +58,8 @@ INGRESS_SCRIPTS = (
 if str(INGRESS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(INGRESS_SCRIPTS))
 
-from adherence_baseline import (  # noqa: E402
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
+from adherence_baseline import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     AdherenceBaselineError,
     normalize_as_of,
 )
@@ -66,23 +68,33 @@ from pattern_cohort_snapshot import (  # noqa: E402
     build_current_pattern_snapshot,
     configured_evidence_freshness_assessor,
 )
-from return_validation import (  # noqa: E402
+from pattern_classification_runtime import (  # noqa: E402
+    classify_pattern_profile,
+    resolve_classification_policy,
+)
+
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
+from return_validation import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     PATTERN_SCORING_SCHEMA_VERSION,
     ReturnValidationError,
     load_catalog,
 )
+
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseError,
     assess_tracking_database,
 )
+
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseIOError,
     decode_json_object,
     snapshot_tracking_database,
 )
-from vault_root_authority import (  # noqa: E402
+
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
+from vault_root_authority import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     VaultRootAuthorityError,
     materialize_native_authority,
     resolve_vault_root_authority,
@@ -129,11 +141,13 @@ def project_confirmed_intents(records):
     """Remove tracking-storage metadata from the public profile projection."""
     projected = []
     for record in records:
-        projected.append({
-            field: record[field]
-            for field in _CONFIRMED_INTENT_PROFILE_FIELDS
-            if field in record
-        })
+        projected.append(
+            {
+                field: record[field]
+                for field in _CONFIRMED_INTENT_PROFILE_FIELDS
+                if field in record
+            }
+        )
     return projected
 
 
@@ -158,9 +172,7 @@ def _parse_args(argv: list[str]) -> tuple[pathlib.Path, str | None]:
             raise ValueError(f"unexpected extra argument {arg!r}")
         index += 1
 
-    raw_vault_root: object = (
-        DEFAULT_VAULT if vault_root_arg is None else vault_root_arg
-    )
+    raw_vault_root: object = DEFAULT_VAULT if vault_root_arg is None else vault_root_arg
     return (
         materialize_native_authority(raw_vault_root, authority="cli_root"),
         as_of,
@@ -267,13 +279,22 @@ def main(argv: list[str]) -> int:
         pattern_scoring_exclusions = snapshot["pattern_scoring_exclusions"]
         pattern_baseline = snapshot["pattern_baseline"]
         pattern_opportunities = snapshot["pattern_opportunities"]
+        policy_stamp = resolve_classification_policy(vault_root)
+        pattern_classification = classify_pattern_profile(
+            baseline_talks,
+            policy_stamp,
+            catalog=catalog,
+        )
     except (
         AdherenceBaselineError,
         PatternCohortSnapshotError,
         ReturnValidationError,
+        RuntimeError,
+        ValueError,
     ) as exc:
         print(
-            f"ERROR: cannot build current pattern-scoring cohort: {exc}",
+            "ERROR: cannot build current pattern-scoring/classification "
+            f"payload: {exc}",
             file=sys.stderr,
         )
         return 1
@@ -281,9 +302,7 @@ def main(argv: list[str]) -> int:
     payload = {
         "vault_root": str(vault_root),
         "config": db.get("config", {}),
-        "confirmed_intents": project_confirmed_intents(
-            db.get("confirmed_intents", [])
-        ),
+        "confirmed_intents": project_confirmed_intents(db.get("confirmed_intents", [])),
         "talks": talks,
         "processed_talks": processed_talks,
         "baseline_talks": baseline_talks,
@@ -291,6 +310,7 @@ def main(argv: list[str]) -> int:
         "pattern_scoring_exclusions": pattern_scoring_exclusions,
         "pattern_baseline": pattern_baseline,
         "pattern_opportunities": pattern_opportunities,
+        "pattern_classification": pattern_classification,
         "current_instrumentation_talks": current_instrumentation,
         "stale_instrumentation_talks": stale_instrumentation,
         "baseline_note": (

@@ -4,8 +4,17 @@ from __future__ import annotations
 
 import copy
 import importlib
+import sys
+from pathlib import Path
 
 import pytest
+
+
+PROFILE_SCRIPTS = (
+    Path(__file__).resolve().parents[1] / "skills" / "vault-profile" / "scripts"
+)
+if str(PROFILE_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(PROFILE_SCRIPTS))
 
 
 def _modules():

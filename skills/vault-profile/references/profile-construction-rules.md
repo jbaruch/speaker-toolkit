@@ -31,8 +31,13 @@ count and average are available only when every eligible talk shares one
 `opportunity_coverage_identity` containing at least one evaluable opportunity.
 Otherwise retain the explicit mixed-coverage or no-evaluable-opportunities unavailable
 state. `pattern_opportunities` contains the canonical exhaustive positive and negative
-rows; copy them rather than recalculating them. `pattern_scoring_exclusions` explains
-every otherwise eligible talk omitted from the cohort, including artifact drift.
+rows. `pattern_classification` contains the canonical policy stamp, per-domain
+availability, exhaustive classifications, trend audit, and derived projections. Copy
+both payloads rather than recalculating them. `pattern_scoring_exclusions` explains every
+otherwise eligible talk omitted from the cohort, including artifact drift.
+
+Copy the loader's complete `classification_policy` stamp unchanged. Do not construct or
+repair any field in that stamp during profile assembly.
 
 `current_instrumentation_talks` and `stale_instrumentation_talks` form a separate
 extractor cohort for pacing-sensitive analysis. Instrumentation membership never
@@ -52,7 +57,7 @@ Keep these cohorts distinct:
 
 - `processed_talks` supplies `talks_analyzed` and non-catalog narrative/profile data.
 - `baseline_talks` is available for source review only; deterministic
-  `pattern_opportunities` supplies catalog occurrence rows.
+  `pattern_opportunities` and `pattern_classification` supply catalog rows.
 - `current_instrumentation_talks` supplies pacing data only.
 
 For non-catalog dimensions, skip processed talks with empty `structured_data` and use
@@ -83,11 +88,11 @@ an empty layout list.
 | `rhetoric_defaults` | Step 1 `confirmed_intents` |
 | `pacing` | `current_instrumentation_talks` |
 | `guardrail_sources` | Aggregated non-pattern data |
-| `pattern_profile` | `pattern_baseline` and deterministic `pattern_opportunities` |
+| `pattern_profile` | `pattern_baseline`, `pattern_opportunities`, and `pattern_classification` |
 | `visual_style_history` | Summary dimension 13f observations |
 
 Use every top-level key required by `speaker-profile-schema.md`. Set
-`schema_version` to `4`, `generated_date` to today's `YYYY-MM-DD` date, and
+`schema_version` to `5`, `generated_date` to today's `YYYY-MM-DD` date, and
 `talks_analyzed` to the count of all `processed_talks`.
 
 The required top-level keys are `schema_version`, `generated_date`,
@@ -118,19 +123,37 @@ pattern-specific evaluable counts, not the global eligible count. Preserve exhau
 rows even for an empty cohort, including their canonical null rate and coverage
 sentinels.
 
-No versioned classification policy exists in schema v4. Copy the exact
-owner-policy-unconfigured `classification_availability` sentinel from
-`speaker-profile-schema.md`. Fail closed: score trend, breadth trend/average, and
-score-driver direction are unavailable; driver arrays, `never_used_patterns`, mastery
-tiers, signatures, strengths, underuse, and `by_mode` are empty. Zero detections never
-mean never used, and a positive frequency never means recurring.
+Copy every field of the loader's deterministic `pattern_classification` bundle into
+`pattern_profile` unchanged: `classification_schema_version`, the self-contained
+`classification_policy` stamp, `classification_availability`, exhaustive
+`pattern_classifications` and `antipattern_classifications`, `trend_analysis`, and all
+derived projections. Those projections are `score_trend`, `pattern_breadth`,
+`underused_patterns`, `score_drivers`, `by_mode`, `strengths`, `strengths_note`,
+`never_used_patterns`, `signature_combinations`, and `mastery_levels`.
+
+`skills/vault-profile/scripts/classify-pattern-profile.py` is the sole authority for
+domain availability, thresholds, and classification arithmetic. Copy its
+`classification_availability` output unchanged. Never reconstruct availability from
+raw rows or restate the classifier's predicates in profile-construction guidance.
+Consumers must honor each domain's own `{status, reason_codes}` and each row's evidence
+and reason codes. In particular, `not_yet_observed` is not `never_tried`, and an
+unclassified antipattern is not recurring or confirmed absent.
+
+Do not relabel rows, derive tiers from raw rates, truncate exhaustive classification
+arrays, or infer an absence where `absence_conclusion_capable` is false. Profile
+regeneration re-analyzes already persisted current-generation outcomes. It does not
+reparse talks or modify the raw `pattern_usage`, `antipattern_frequency`, or
+tracking-database rows. See the generated profile's embedded semantic policy when the
+applied values must be inspected.
 
 ## Empty-Cohort Behavior
 
 When `baseline_talks` is empty, retain the zero-count baseline, empty filenames, and
 exhaustive zero-opportunity rows. Set score and breadth averages to null and pattern
-trend/direction fields to `unavailable`. Never borrow pattern values from a prior
-profile, summary prose, an excluded scoring generation, or an instrumentation cohort.
+trend/direction fields to `unavailable`; classification rows remain exhaustive with
+their classifier-owned unavailable/unclassified states, while derived lists are empty.
+Never borrow pattern values from a prior profile, summary prose, an excluded scoring
+generation, or an instrumentation cohort.
 
 ## Pacing and Section 15
 
@@ -139,7 +162,10 @@ the result complements, rather than replaces, Dimension 14's transcript-evident
 "rushing" assessment.
 
 Use Section 15 of `rhetoric-style-summary.md` only for narrative consistency review.
-It cannot override or fill the current pattern cohort.
+It cannot override or fill the current pattern cohort. The Section 15 reader accepts
+the occurrence-only v2 current block for compatibility, but the writer always replaces
+it with a policy-bound v3 block copied from the validated schema-v5 `pattern_profile`.
+Regenerating that block needs no talk reparse and never changes persisted raw rows.
 
 ## Existing-Profile Diff
 
@@ -151,8 +177,11 @@ reset: do not describe catalog-derived score, trend, usage, mastery, or strength
 differences across it as speaker improvement or regression.
 
 Within one exact generation, do not report raw-score movement across a changed or
-unavailable `opportunity_coverage_identity`. Do not infer policy-derived changes while
-`classification_availability.status` is `unavailable`.
+unavailable `opportunity_coverage_identity`. Compare the classifier-emitted
+`semantic_sha256` next. A changed digest is a derived-classification reset. Raw
+occurrence rows remain comparable, but do not attribute tier, severity, combination,
+underuse, or trend changes to the speaker. Within one unchanged policy identity, report
+a derived change only when its own availability domain is `available` in both profiles.
 
 Report these same-generation non-pattern changes:
 

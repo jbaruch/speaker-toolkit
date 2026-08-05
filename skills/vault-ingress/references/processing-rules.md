@@ -328,37 +328,27 @@ individual member merge.
 
 Section 15 is a human-readable account of the verified current cohort, not the
 numeric authority for a worker. `persist-results.py` stdout supplies the
-post-batch `current_adherence_baseline` only after every merge succeeds. That
-schema-v2 payload is all-inclusive (`active_batch_excluded: false`,
-`excluded_filenames: []`). `eligible_talk_count` is the complete fresh-v5
-candidate. `scored_talk_count`, sum, and ROUND_HALF_EVEN average describe only
-one exact `opportunity_coverage_identity`; mixed identities make raw-score
-comparison unavailable with zero/null score aggregates while retaining the
-per-pattern opportunity cohort.
+post-batch `current_adherence_baseline` only after every merge succeeds. Treat that
+emitted object as the complete baseline contract. Do not reproduce its cohort
+selection, arithmetic, or unavailable-state rules in Section 15 prose.
 
-For every Section 15 current-block count, read only talks with status
-`processed`/`processed_partial`, `pattern_scoring_generation_status: current`,
-empty generation reasons, the exact current catalog fingerprint, and the exact
-current pattern-scoring schema version. Never approximate this cohort by
-`processed_date`. Exclude skipped, legacy-unbaselineable, stale-fingerprint,
-stale-schema, and archival `legacy-unverified` adherence prose. The current
-machine-readable block has three audit lanes:
+The Section 15 current block is owned by
+`skills/vault-profile/scripts/section15_pattern_history.py`. Do not reproduce its
+cohort filter, policy resolution, classification, availability, or compatibility
+rules in this reference. To inspect a summary, run:
 
-1. **Occurrence rows** — copy the exhaustive `pattern_usage` and
-   `antipattern_frequency` rows generated from v5 outcomes. Each row retains its
-   own opportunity denominator, detection count, undetected count, coverage, and
-   null-rate sentinel. These are observations, not frequency classifications.
-2. **Raw-score availability** — copy the global comparison status, exact
-   opportunity identity, scored count, sum, and `average_pattern_score` from the
-   post-batch baseline. Mixed identities or no evaluable opportunities keep this
-   lane explicitly unavailable; do not calculate a trajectory or substitute the
-   broader eligible count.
-3. **Classification availability** — copy the exact
-   `owner-policy-unconfigured` sentinel. Until the speaker owns a versioned
-   classification policy, score/breadth trends and driver direction are
-   `unavailable`; recurring/resolved severity, novelty, mastery, signatures,
-   strengths, underuse, combinations, and mode splits remain empty. A zero count
-   does not mean “never used,” and a positive rate does not mean “recurring.”
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py" assess \
+  "{vault_root}/rhetoric-style-summary.md"
+```
+
+`assess` emits `{current_contract, catalog_fields_available,
+classification_fields_available, available_classification_domains,
+block_schema_version, policy_semantic_sha256, scored_talk_count,
+eligible_talk_count, reason_codes, errors}`. Exit `0` authorizes only the fields and
+domains named by that output. Exit `1` means the block cannot authorize current
+catalog history. Use it only as narrative context. Never derive a classification or
+availability decision from Section 15 prose or raw occurrence counts.
 
 Old recurring/signature/underuse/resolved prose may remain outside the delimited
 block only when explicitly labeled historical or manually curated. It is
@@ -366,25 +356,29 @@ non-baseline narrative and must not be regenerated from occurrence rates or
 consumed as current catalog classification.
 
 Section 15 is the human-readable mirror of the profile's validated
-`pattern_profile` occurrence/audit lanes (see
-[../../vault-profile/references/speaker-profile-schema.md](../../vault-profile/references/speaker-profile-schema.md));
-keep the two consistent when both update. Profile generation must independently
-apply the same exact current-generation filter; Section 15 prose and legacy
-adherence text are not machine-readable numeric inputs.
+`pattern_profile` occurrence, policy, classification, and audit lanes (see
+[../../vault-profile/references/speaker-profile-schema.md](../../vault-profile/references/speaker-profile-schema.md)).
+Keep the two consistent by passing the complete profile-pipeline candidate to the
+owner script. Section 15 prose and legacy adherence text are not machine-readable
+numeric inputs.
 
 After the complete post-batch narrative and `pattern_profile` candidate are
 ready, run `"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py" replace`
-with the summary, candidate, and live `tracking-database.json`. The helper
-recomputes the full current cohort from the database, rejects stale candidates,
-checks scoring-v5 artifact freshness against the vault and configured source
-roots, delegates the full payload to the shared profile provenance assessor, and
-atomically replaces only the uniquely delimited current block. All prose outside
-that block remains explicitly historical/non-baseline; ordinary Section 15 prose
-can never restore pattern-history authorization.
-`section15_pattern_history.py replace` is the only supported current-block
-replacement operation and must receive the live tracking database.
-Recount status from the tracking database every time; never increment it
-manually.
+with the summary, candidate, and live `tracking-database.json`:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py" replace \
+  "{vault_root}/rhetoric-style-summary.md" pattern-profile-candidate.json \
+  "{vault_root}/tracking-database.json"
+```
+
+`replace` is the only supported current-block writer. On exit `0`, it emits
+`{path, changed, scored_talk_count, eligible_talk_count,
+catalog_fields_available}` and writes the validated block atomically when `changed` is
+true. On exit `1`, it emits a diagnostic to stderr and makes no write. Pass the complete
+candidate copied from the profile pipeline. Do not hand-filter, classify, or repair it.
+The command re-analyzes persisted data without reparsing talks or mutating tracking or
+raw opportunity rows. All prose outside the block remains historical/non-baseline.
 
 ### Section 16 — Speaker-Confirmed Intent
 
@@ -429,10 +423,11 @@ Section 15 prose as its baseline.
 For each comparable goal with `status` not in (`achieved`, `retired`):
 - Compute `current_value` for the goal's `metric` from the current Section 15
   cohort data — and, for `pacing` and mode-specific goals, from the freshly regenerated
-  speaker profile (this step runs after Step 7, so `pacing.adherence` and
-  `pattern_profile.by_mode` are current). Examples by `kind`: `antipattern` → the
-  antipattern's frequency over recent talks; `underuse` → the pattern's recent usage
-  or distinct-pattern breadth; `pacing` → `pacing.adherence.over_budget_rate`.
+  speaker profile. For a policy-derived metric, consume only the projection and
+  availability state emitted by the validated classifier payload. Never reconstruct
+  either from raw rows. If that payload does not authorize the requested metric, the
+  result is unverifiable/report-only, not zero. Pacing reads
+  `pacing.adherence.over_budget_rate` from its independent lane.
   For schema v1, write only `current_value`, `last_checked` (today),
   `checked_by: "vault-ingress"`, and `status`. For schema v2, write those
   fields plus `verification_state: "current"` and empty

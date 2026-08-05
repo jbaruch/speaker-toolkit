@@ -324,6 +324,14 @@ def validate_profile():
 
 
 @pytest.fixture(scope="session")
+def classify_pattern_profile():
+    return _import_script(
+        os.path.join(SCRIPTS_VP, "classify-pattern-profile.py"),
+        "classify_pattern_profile",
+    )
+
+
+@pytest.fixture(scope="session")
 def compute_pacing_adherence():
     return _import_script(
         os.path.join(SCRIPTS_VP, "compute-pacing-adherence.py"),

@@ -27,7 +27,8 @@ _INGRESS_SCRIPTS = (
 if str(_INGRESS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_INGRESS_SCRIPTS))
 
-from return_validation import (  # noqa: E402
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
+from return_validation import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     load_catalog,
 )
 
@@ -236,6 +237,26 @@ def _opportunity_row(
         common["times_detected"] = detected_count
         common["frequency_rate"] = _rate(detected_count, evaluable_count)
     return common
+
+
+def canonical_talk_outcomes(
+    talk: Mapping[object, object],
+    *,
+    catalog: Any | None = None,
+) -> dict[str, str]:
+    """Return one talk's validated exhaustive outcomes keyed by catalog ID.
+
+    Profile classifiers need the per-talk states for combinations and trends.
+    This public accessor keeps the scoring-v5 consistency checks here with the
+    raw-opportunity owner instead of duplicating them in a derived consumer.
+    """
+    resolved_catalog = catalog or load_catalog()
+    pattern_ids, antipattern_ids, polarity = _catalog_lanes(resolved_catalog)
+    return _canonical_talk_outcomes(
+        talk,
+        expected_ids=sorted(pattern_ids + antipattern_ids),
+        polarity=polarity,
+    )
 
 
 def build_pattern_opportunity_rows(

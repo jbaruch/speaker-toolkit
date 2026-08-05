@@ -21,7 +21,7 @@ creation at runtime.
 
 ## Schema Versioning
 
-Current `schema_version`: **4**. The validator (`scripts/validate-profile.py`,
+Current `schema_version`: **5**. The validator (`scripts/validate-profile.py`,
 `CURRENT_SCHEMA_VERSION`) accepts only the current version.
 
 - **v1 → v2** adds the coaching-outcome fields, all additive: `pattern_profile.score_drivers`,
@@ -34,26 +34,33 @@ Current `schema_version`: **4**. The validator (`scripts/validate-profile.py`,
 - **v3 → v4** binds occurrence history to scoring-v5's exhaustive per-talk outcomes.
   It separates `eligible_talk_count` from raw-score-comparable `talks_scored`, adds
   exact per-pattern opportunity denominators and coverage, and makes classification
-  availability explicit. Until a speaker-owned classification policy is versioned,
-  all novelty, mastery, recurring-severity, underuse, combination, and trend fields
-  use fail-closed sentinels.
-- **Generation:** vault-profile writes only v4. Stored v1/v2/v3 profiles are non-current and
-  `scripts/validate-profile.py` rejects them as generation output. Compatibility for
-  non-owner readers is a separate rollout concern; an old profile never authorizes the
-  writer to reuse legacy pattern aggregates.
+  availability explicit. Its derived fields remain fail-closed because v4 carries no
+  policy identity.
+- **v4 → v5** adds deterministic policy-derived history. It embeds the normalized
+  policy plus its canonical semantic digest, adds exhaustive positive and antipattern
+  classification rows, makes availability independent per derived domain, and retains
+  the complete trend audit used by projections.
+- **Generation:** vault-profile writes only v5. Stored v1/v2/v3/v4 profiles are
+  non-current and `scripts/validate-profile.py` rejects them as generation output. A
+  compatible reader may expose a validated v4 profile's occurrence rows only; every v4
+  mastery, novelty, severity, combination, underuse, and trend field remains
+  unavailable because v4 has no policy stamp.
 - **Migration:** vault-profile regenerates the profile wholesale each run. An older file is
-  replaced by a v4 file on the next run — no in-place migration step. The only value carried
+  replaced by a v5 file on the next run — no in-place migration step and no talk reparse.
+  Existing current-generation tracking rows are read without mutation. The only value carried
   across regenerations is `infrastructure.template_layouts[].use_for` (merged by the
   `(master_index, name)` pair, version-independent).
 - **Generation reset:** when either the catalog fingerprint or pattern-scoring schema
   changes, catalog-derived diffs across the boundary are a reset. Do not describe score,
   usage, mastery, or trend changes across those identities as speaker regressions.
+  Within one generation, a changed classification-policy semantic digest resets only
+  policy-derived comparisons; raw occurrence rows remain comparable.
 
 ## Schema
 
 ```json
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "generated_date": "2026-02-22",
   "talks_analyzed": 24,
 
@@ -337,22 +344,22 @@ Current `schema_version`: **4**. The validator (`scripts/validate-profile.py`,
     "eligible_talk_count": 24,
     "talks_scored": 24,
     "average_pattern_score": 6.79,
-    "score_trend": "unavailable",
+    "score_trend": "improving",
     "pattern_breadth": {
-      "avg_distinct_patterns_per_talk": null,
-      "trend": "unavailable",
-      "note": "Unavailable until a speaker-owned coverage-comparable breadth policy is versioned."
+      "avg_distinct_patterns_per_talk": 6.3,
+      "trend": "widening",
+      "note": "Breadth is the mean count of detected positive catalog patterns per current-generation talk."
     },
     "underused_patterns": [],
     "score_drivers": {
-      "direction": "unavailable",
-      "antipattern_drivers": [],
+      "direction": "improving",
+      "antipattern_drivers": ["going-meta"],
       "pattern_drivers": [],
-      "note": "Unavailable until a speaker-owned trend policy is versioned."
+      "note": "Classifier-produced drivers for the available trend domain."
     },
     "by_mode": [],
-    "strengths": [],
-    "strengths_note": "Unavailable until a speaker-owned classification policy is versioned.",
+    "strengths": ["narrative-arc"],
+    "strengths_note": "Deterministic projection of regular and signature positive-pattern classifications.",
     "note": "Only observable patterns are included. Patterns marked observable: false in the taxonomy (pre-event logistics, hidden authoring/provenance processes, physical stage behaviors, post-event follow-up, and external systems the current artifacts cannot prove) are excluded from scoring and surfaced as a go-live checklist in creator Phase 6 instead.",
     // Opportunity arrays are abbreviated here for readability. Generated
     // profiles contain one sorted row for every observable catalog entry of
@@ -361,19 +368,19 @@ Current `schema_version`: **4**. The validator (`scripts/validate-profile.py`,
       {
         "pattern_id": "narrative-arc",
         "detected_count": 22,
-        "evaluable_count": 24,
-        "unevaluable_count": 0,
+        "evaluable_count": 22,
+        "unevaluable_count": 2,
         "not_applicable_count": 0,
         "eligible_cohort_count": 24,
-        "coverage": 1.0,
+        "coverage": 0.9166666666666666,
         "times_used": 22,
-        "out_of": 24,
-        "usage_rate": 0.9166666666666666
+        "out_of": 22,
+        "usage_rate": 1.0
       }
     ],
     "antipattern_frequency": [
       {
-        "pattern_id": "shortchanged",
+        "pattern_id": "going-meta",
         "detected_count": 8,
         "evaluable_count": 24,
         "unevaluable_count": 0,
@@ -388,16 +395,104 @@ Current `schema_version`: **4**. The validator (`scripts/validate-profile.py`,
     "never_used_patterns": [],
     "signature_combinations": [],
     "mastery_levels": {
-      "signature": [],
+      "signature": ["narrative-arc"],
       "regular": [],
       "occasional": [],
       "rare": [],
       "never_tried": []
     },
-    "classification_availability": {
+    "classification_schema_version": 1,
+    "classification_policy": {
       "schema_version": 1,
-      "status": "unavailable",
-      "reason_codes": ["owner_policy_unconfigured"]
+      "policy_id": "speaker-toolkit-default",
+      "policy_version": 1,
+      "source": "bundled_default",
+      "semantic_sha256": "<classifier-produced 64-character lowercase hex digest>",
+      "semantic_policy": {
+        // Complete classifier-produced object omitted from this illustrative profile.
+      }
+    },
+    "classification_availability": {
+      "schema_version": 2,
+      "mastery_and_novelty": {"status": "available", "reason_codes": []},
+      "antipattern_recurrence": {"status": "available", "reason_codes": []},
+      "underuse": {"status": "available", "reason_codes": []},
+      "signature_combinations": {"status": "available", "reason_codes": []},
+      "trends": {"status": "available", "reason_codes": []},
+      "modes": {"status": "unavailable", "reason_codes": ["talk_mode_assignments_unavailable"]}
+    },
+    // Both arrays below are exhaustive and catalog-sorted in generated profiles;
+    // one representative row from each polarity is shown here.
+    "pattern_classifications": [
+      {
+        "pattern_id": "narrative-arc",
+        "classification": "signature",
+        "observation_status": "observed",
+        "absence_conclusion_capable": false,
+        "evidence": {
+          "applicable_count": 24,
+          "evaluable_count": 22,
+          "detected_count": 22,
+          "unevaluable_count": 2,
+          "applicable_coverage": 0.9166666666666666,
+          "lower": 0.9166666666666666,
+          "upper": 1.0
+        },
+        "reason_codes": ["meets_signature_thresholds"]
+      }
+    ],
+    "antipattern_classifications": [
+      {
+        "pattern_id": "going-meta",
+        "classification": "moderate_frequency",
+        "observation_status": "observed",
+        "absence_conclusion_capable": true,
+        "evidence": {
+          "applicable_count": 24,
+          "evaluable_count": 24,
+          "detected_count": 8,
+          "unevaluable_count": 0,
+          "applicable_coverage": 1.0,
+          "lower": 0.3333333333333333,
+          "upper": 0.3333333333333333
+        },
+        "reason_codes": ["meets_moderate_frequency_thresholds"]
+      }
+    ],
+    // Angle-bracket values in trend_analysis document output shape only.
+    // Copy the classifier-produced values unchanged.
+    "trend_analysis": {
+      "status": "available",
+      "reason_codes": [],
+      "sample": {
+        "required_talk_count": "<classifier-produced integer>",
+        "valid_date_talk_count": "<integer>",
+        "invalid_date_filenames": [],
+        "selected_filenames": ["<classifier-selected filename>", "..."],
+        "opportunity_coverage_identity": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+      },
+      "score": {"status": "improving", "prior_average": 6.0, "recent_average": 7.0, "delta": 1.0},
+      "breadth": {"status": "widening", "prior_average": 5.0, "recent_average": 6.0, "delta": 1.0},
+      // Movement arrays are exhaustive when trends are available and empty when
+      // the trend domain is unavailable. One representative row is shown per lane.
+      "pattern_movements": [
+        {
+          "pattern_id": "narrative-arc",
+          "movement": "indeterminate",
+          "prior_evidence": {"applicable_count": "<integer>", "evaluable_count": "<integer>", "detected_count": "<integer>", "unevaluable_count": "<integer>", "applicable_coverage": "<number or null>", "lower": "<number or null>", "upper": "<number or null>"},
+          "recent_evidence": {"applicable_count": "<integer>", "evaluable_count": "<integer>", "detected_count": "<integer>", "unevaluable_count": "<integer>", "applicable_coverage": "<number or null>", "lower": "<number or null>", "upper": "<number or null>"},
+          "reason_codes": ["uncertainty_spans_movement_threshold"]
+        }
+      ],
+      "antipattern_movements": [
+        {
+          "pattern_id": "going-meta",
+          "movement": "decreasing",
+          "prior_evidence": {"applicable_count": "<integer>", "evaluable_count": "<integer>", "detected_count": "<integer>", "unevaluable_count": "<integer>", "applicable_coverage": "<number or null>", "lower": "<number or null>", "upper": "<number or null>"},
+          "recent_evidence": {"applicable_count": "<integer>", "evaluable_count": "<integer>", "detected_count": "<integer>", "unevaluable_count": "<integer>", "applicable_coverage": "<number or null>", "lower": "<number or null>", "upper": "<number or null>"},
+          "reason_codes": ["conservative_interval_decrease"]
+        }
+      ]
     }
   },
 
@@ -517,17 +612,68 @@ The respective stable reasons are `mixed_opportunity_coverage` and
 `no_evaluable_pattern_opportunities`; the per-pattern occurrence rows remain
 available.
 
-All `pattern_profile` fields in the schema are required in v4. The current
-`classification_availability` sentinel states that no speaker-owned versioned
-classification policy exists. Therefore zero detections cannot authorize
-`never_used_patterns`, and occurrence rates cannot authorize mastery, recurring
-severity, strengths, underuse, combinations, mode splits, or trends. Those fields use
-the exact empty/unavailable shapes in the example until the owner versions such a
-policy. `talks_analyzed` may still count every processed talk. Pacing uses the
-separately named `current_instrumentation_talks` cohort and never borrows the pattern
-denominator.
+All `pattern_profile` fields in the schema are required in v5. If the vault has no
+`pattern-classification-policy.json`, the loader automatically applies the bundled
+`speaker-toolkit-default@1` policy; users are not asked to invent thresholds. A present
+override is strict and fail-closed: an unreadable file, duplicate key, non-finite
+number, unknown/missing field, unsupported version, oversized file, or invalid
+threshold aborts profile generation rather than silently selecting the default.
 
-`pattern_profile` is the only v4 storage lane for catalog history.
+`classification_policy` is self-contained. Copy `semantic_policy` and
+`semantic_sha256` from classifier output unchanged. Treat the digest as an opaque
+comparison identity. `policy_id`, `policy_version`, and `source` identify the applied
+policy for humans.
+
+`pattern_classifications` and `antipattern_classifications` contain one sorted row for
+every observable catalog entry of the matching polarity. Each row preserves the exact
+evaluable denominator and exposes classifier-produced evidence counts, coverage, and
+conservative bounds. Positive and antipattern rows use the label vocabularies shown in
+the schema example; row-level `unclassified` results remain part of the exhaustive
+output.
+
+#### Classifier-Owned Policy Semantics
+
+Thresholds, formulas, tier predicates, combination selection, trend windows, and
+movement decisions are not restated in this reference. See
+`references/pattern-classification-policy-v1.json` for the complete bundled semantic
+policy and `scripts/classify-pattern-profile.py` — `validate_policy()` and
+`classify_pattern_profile()` — for its executable contract. Each generated profile
+embeds the normalized policy that was actually applied, plus its semantic digest.
+Consumers copy the classifier's rows and projections unchanged.
+
+`mastery_levels`, `strengths`, `underused_patterns`, `never_used_patterns`, signature
+combinations, and trend analysis are deterministic classifier projections. Consumers
+must not reconstruct them from raw rates or from the prose summary.
+
+`never_tried` and `not_yet_observed` are deliberately not synonyms. `never_tried` is a
+policy-backed absence classification. `not_yet_observed` says that this corpus has no
+positive detection while absence remains unknown. A conclusive absence that does not
+reach a named tier remains `unclassified` with observation status `confirmed_absent`.
+Only classifier-emitted `never_tried` IDs enter `never_used_patterns`; no other zero
+state may be presented as proof that the speaker has never tried the technique. The
+antipattern equivalent is `confirmed_none`; every other zero-detection antipattern
+remains non-recurring unless the classifier says otherwise.
+
+`classification_availability` is schema v2 and independent per domain. Mastery/novelty,
+antipattern recurrence, underuse, combinations, trends, and modes each carry their own
+`{status, reason_codes}`. The classifier output is the only authority for those values.
+A consumer must gate only the requested domain and retain row-level unclassified
+results. One unavailable domain never erases another available one.
+`trend_analysis` retains the complete selected sample, metric values, exhaustive
+pattern movements, and reasons behind those projections.
+
+A validated schema-v4 profile remains compatible only as occurrence history:
+`pattern_baseline`, filenames, raw score availability, `pattern_usage`, and
+`antipattern_frequency` may be read under their v4 provenance contract. Because v4 has
+no policy stamp, readers must ignore its mastery, novelty, recurrence, strength,
+underuse, combination, mode, and trend projections. Regenerate to v5 from the tracking
+database to obtain those fields; this re-analysis does not reparse talks or modify raw
+talk/opportunity rows.
+
+`talks_analyzed` may count every processed talk. Pacing uses the separately named
+`current_instrumentation_talks` cohort and never borrows the pattern denominator.
+
+`pattern_profile` is the only v5 storage lane for catalog history.
 `rhetoric_defaults` must not duplicate mastery, signatures, usage, scores, or other
 pattern-history fields. `guardrail_sources.recurring_issues[]` and `badges[]` are
 non-pattern-only lanes: every entry carries `source_lane: "non_pattern"` and must not
@@ -536,26 +682,26 @@ denominator. Consumers derive catalog warnings and reinforcement directly from t
 validated `pattern_profile`; the writer never materializes duplicate catalog-derived
 recurring issues or badges.
 
-Writers and readers call
-`scripts/profile_pattern_provenance.py::assess_pattern_profile` for the same strict
-decision. `current_contract: true` means the v4 provenance is structurally canonical;
-`catalog_fields_available: true` additionally requires a non-empty eligible cohort.
-`classification_fields_available: false` suppresses every derived history tier even
-when exact occurrence rows are present. The owner additionally runs
+Writers and readers use the shared profile provenance/classification validator for the
+same strict decision. Current v5 catalog availability requires source-exact cohort and
+opportunity rows; each classification domain then follows its own availability object.
+The owner additionally runs
 `"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/validate-profile.py" --vault-root <path>`;
 it recomputes the cohort from the
-live tracking database and rejects structurally valid but source-fabricated rows.
-A reader may continue using unrelated non-pattern fields from an older profile, but it
-must treat that profile's historical pattern fields as unavailable rather than migrate
-or infer provenance.
+live tracking database and rejects structurally valid but source-fabricated occurrence,
+policy, classification, availability, or projection rows.
+A reader may continue using unrelated non-pattern fields from an older profile and the
+explicitly supported v4 occurrence-only lane above, but it must treat all other legacy
+pattern history as unavailable rather than migrate or infer provenance.
 
 When the current pattern cohort is empty, preserve the canonical zero-count baseline,
 an empty `baseline_talk_filenames`, `eligible_talk_count: 0`, `talks_scored: 0`, and
 `average_pattern_score: null`. Keep the exhaustive positive and negative catalog rows
-with zero counts and null rates/coverage. Set `score_trend`, `pattern_breadth.trend`,
-and `score_drivers.direction` to `"unavailable"`; set the breadth average to `null`
-and every classification-derived array/mastery tier to `[]`. Never fall back to an
-older profile, the rhetoric summary, excluded scoring generations, or the
+with zero counts and null rates/coverage, plus exhaustive classification rows with
+their classifier-owned unavailable/unclassified evidence. Set `score_trend`,
+`pattern_breadth.trend`, and `score_drivers.direction` to `"unavailable"`; set the
+breadth average to `null` and derived list/mastery projections to `[]`. Never fall back
+to an older profile, the rhetoric summary, excluded scoring generations, or the
 instrumentation cohort.
 
 ## How the Presentation Creator Uses Each Section
@@ -576,7 +722,7 @@ automatically picks up changes when the profile is regenerated.
 | `guardrail_sources` | Phase 4 (guardrails) | All guardrail checks with thresholds |
 | `instrument_catalog` | Phase 2 (architecture) | Complete instrument menu by dimension |
 | `visual_style_history` | Phase 2 (architecture — illustration strategy) | Default aesthetic, mode-specific departures, style proposals |
-| `pattern_profile` | Phase 2 (architecture), Phase 4 (guardrails) | Auditable occurrence rows; 4-tier recommendations and recurring antipattern warnings only when the shared gate explicitly authorizes classification fields |
+| `pattern_profile` | Phase 2 (architecture), Phase 4 (guardrails) | Auditable occurrence and exhaustive classification rows; recommendations and warnings gated by the relevant availability domain and row evidence |
 | `badges` | Informational | Fun speaker achievements mined from vault data |
 | `infrastructure.template_layouts` | Phase 5 (slide generation) | Layout map and selection logic |
 | `infrastructure.font_pair` | Phase 5 (slide generation) | Font usage rules |

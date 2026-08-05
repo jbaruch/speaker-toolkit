@@ -35,7 +35,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | 2 | Normalize the queue and claim one exact versioned batch |
 | 3 | Run up to five per-talk workers in parallel |
 | 4 | Validate, persist, render, and aggregate feedback transactionally |
-| 5 | Apply speaker-approved narrative updates and rebuild Section 15 |
+| 5 | Apply speaker-approved narrative updates and write policy-bound Section 15 v3 |
 | 6 | Finish pending PPTX visual evidence |
 | 7 | Regenerate an existing speaker profile |
 | 8 | Verify active improvement goals against current provenance |
@@ -159,7 +159,9 @@ Present `summary_updates` and `new_patterns` as a section-by-section diff and
 apply only speaker-approved changes (unless this batch was pre-authorized).
 Follow the [Rhetoric Summary contract](references/processing-rules.md): rebuild
 Section 15 only after the complete batch persists, never from a date cohort or
-partial merge, and recount the database rather than incrementing totals.
+partial merge, and recount the database rather than incrementing totals. Its reader
+accepts legacy occurrence-only v2 blocks, but every replacement writes v3 with the
+schema-v5 profile's self-contained policy stamp and deterministic classifications.
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py" replace \
@@ -167,8 +169,11 @@ partial merge, and recount the database rather than incrementing totals.
   {vault_root}/tracking-database.json
 ```
 
-A stale candidate or nonzero exit makes no write. Report the batch outcome, then
-continue the loop or proceed to Step 6.
+A stale candidate, invalid optional policy override, or nonzero exit makes no write;
+absence of an override automatically selects bundled `speaker-toolkit-default@1`.
+This step re-analyzes persisted outcomes without reparsing talks or changing raw
+tracking/opportunity rows. Report the batch outcome, then continue the loop or proceed
+to Step 6.
 
 ## Step 6 — Extract Remaining PPTX Visual Data
 
@@ -190,8 +195,9 @@ If `{vault_root}/speaker-profile.json` exists, invoke `Skill(skill: "vault-profi
 with the updated tracking database plus the resolved `{vault_root}` and exact
 database-configured `{python_path}` as handoff context. The profile skill re-reads
 the database and rejects a missing or mismatched interpreter; never let the handoff
-fall back to `python3` on `PATH`. Report the diff of changes (added fields, changed
-values) so the speaker can verify.
+fall back to `python3` on `PATH`. It writes schema v5 by classifying the existing raw
+outcomes; this does not reparse talks. Report the diff of changes (added fields,
+changed values) so the speaker can verify.
 
 If the profile doesn't exist, skip this step silently.
 
@@ -249,6 +255,9 @@ artifact; stale or unreadable local declarations are not capabilities;
 - Raw-score, breadth, and adherence comparisons are permitted only across an
   exact matching `opportunity_coverage_identity`. A mismatched or mixed cohort
   uses the explicit unavailable/empty sentinel; never normalize denominators.
+- Classification availability is per domain. Use each domain and row's explicit
+  status/reasons; never let an unavailable trend or mode erase available mastery,
+  recurrence, underuse, or combination classifications.
 
 For input-quality edge cases that require non-default handling — wide-angle
 room recordings, Whisper hallucination on bad audio, non-speaker talks

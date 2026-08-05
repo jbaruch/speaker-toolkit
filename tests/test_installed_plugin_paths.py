@@ -280,15 +280,82 @@ def test_profile_construction_rules_are_linked_and_shipped() -> None:
         "[profile-construction-rules.md]"
         "(references/profile-construction-rules.md)" in skill
     )
-    assert "owner-policy-unconfigured" in rules
+    assert "Copy the loader's complete `classification_policy` stamp unchanged" in rules
+    assert "policy-comparison identity" not in rules
+    assert "canonical SHA-256" not in rules
     assert "pattern-generation\nreset" in rules
 
-    relative_reference = reference.relative_to(REPO_ROOT)
-    ignore_check = subprocess.run(
-        ["git", "check-ignore", "--no-index", "--quiet", "--", str(relative_reference)],
-        cwd=REPO_ROOT,
-        check=False,
+    shipped = (
+        reference,
+        SKILLS_ROOT
+        / "vault-profile"
+        / "references"
+        / "pattern-classification-policy-v1.json",
+        SKILLS_ROOT / "vault-profile" / "scripts" / "classify-pattern-profile.py",
+        SKILLS_ROOT / "vault-profile" / "scripts" / "pattern_classification_runtime.py",
     )
-    assert ignore_check.returncode == 1, (
-        f"{relative_reference} is excluded from the published plugin"
+    for path in shipped:
+        assert path.is_file(), path
+        relative = path.relative_to(REPO_ROOT)
+        ignore_check = subprocess.run(
+            ["git", "check-ignore", "--no-index", "--quiet", "--", str(relative)],
+            cwd=REPO_ROOT,
+            check=False,
+        )
+        assert ignore_check.returncode == 1, (
+            f"{relative} is excluded from the published plugin"
+        )
+
+
+def test_profile_schema_delegates_policy_arithmetic_to_classifier() -> None:
+    schema = (
+        SKILLS_ROOT / "vault-profile" / "references" / "speaker-profile-schema.md"
+    ).read_text(encoding="utf-8")
+
+    assert "#### Classifier-Owned Policy Semantics" in schema
+    assert "references/pattern-classification-policy-v1.json" in schema
+    assert "scripts/classify-pattern-profile.py" in schema
+    assert "Bundled Default Thresholds" not in schema
+    assert "`E/A`" not in schema
+    assert "`D/A`" not in schema
+    assert "5+5" not in schema
+    assert "canonical sorted" not in schema
+    assert (
+        '"semantic_sha256": "<classifier-produced 64-character lowercase hex digest>"'
+        in schema
     )
+    assert (
+        '"semantic_sha256": '
+        '"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"'
+        not in schema
+    )
+    for classifier_owned_field in (
+        '"minimum_applicable"',
+        '"minimum_evaluable"',
+        '"minimum_lower"',
+        '"minimum_detections"',
+        '"maximum_upper_exclusive"',
+        '"member_counts"',
+        '"maximum_results"',
+        '"minimum_comparable_talks"',
+        '"window_size"',
+        '"score_delta"',
+        '"breadth_delta"',
+        '"pattern_movement_delta"',
+    ):
+        assert classifier_owned_field not in schema
+
+
+def test_profile_construction_rules_delegate_availability_to_classifier() -> None:
+    rules = (
+        SKILLS_ROOT / "vault-profile" / "references" / "profile-construction-rules.md"
+    ).read_text(encoding="utf-8")
+
+    assert "skills/vault-profile/scripts/classify-pattern-profile.py" in rules
+    assert "`classification_availability` output unchanged" in rules
+    for duplicated_predicate in (
+        "their exact opportunity bounds",
+        "shared non-null opportunity identity",
+        "selected ten talks",
+    ):
+        assert duplicated_predicate not in rules

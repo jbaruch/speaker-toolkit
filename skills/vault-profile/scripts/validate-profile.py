@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Validate a current speaker-profile.json before the owner writes it.
 
-Schema version 4 binds every Presentation Pattern aggregate to one exact,
-current scoring generation and exact per-pattern opportunity denominators. The
-reusable strict nested contract lives in
+Schema version 5 binds every Presentation Pattern aggregate to one exact,
+current scoring generation, exact per-pattern opportunity denominators, and a
+versioned classification policy. The reusable strict nested contract lives in
 ``profile_pattern_provenance.py`` so non-owner readers make the same pattern-
 history availability decision as this writer.
 
@@ -11,8 +11,9 @@ Contract
 --------
 Input:
     A profile path (positional) or JSON on stdin, plus required
-    ``--vault-root <path>`` for schema-v4 owner validation. The live vault is
-    reparsed with the candidate baseline's ``as_of`` value before acceptance.
+    ``--vault-root <path>`` for schema-v5 owner validation. The live vault is
+    reloaded with the candidate baseline's ``as_of`` value before acceptance;
+    no talk is reparsed.
 
 Stdout (JSON):
     {
@@ -40,7 +41,9 @@ from typing import Any
 _PROFILE_SCRIPTS = pathlib.Path(__file__).resolve().parent
 if str(_PROFILE_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_PROFILE_SCRIPTS))
-_INGRESS_SCRIPTS = pathlib.Path(__file__).resolve().parents[2] / "vault-ingress" / "scripts"
+_INGRESS_SCRIPTS = (
+    pathlib.Path(__file__).resolve().parents[2] / "vault-ingress" / "scripts"
+)
 if str(_INGRESS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_INGRESS_SCRIPTS))
 
@@ -49,29 +52,36 @@ from profile_pattern_provenance import (  # noqa: E402
     assess_pattern_profile,
 )
 from pattern_cohort_snapshot import (  # noqa: E402
-    PatternCohortSnapshot,
     PatternCohortSnapshotError,
     build_current_pattern_snapshot,
     configured_evidence_freshness_assessor,
 )
+from pattern_classification_runtime import (  # noqa: E402
+    classify_pattern_profile,
+    resolve_classification_policy,
+)
+
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseError,
     assess_tracking_database,
 )
+
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseIOError,
     decode_json_object,
     snapshot_tracking_database,
 )
-from vault_root_authority import (  # noqa: E402
+
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
+from vault_root_authority import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     materialize_native_authority,
     resolve_vault_root_authority,
 )
 
 
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 REQUIRED_KEYS = [
     "schema_version",
@@ -111,6 +121,11 @@ _PATTERN_HISTORY_KEYS = frozenset(
         "signature_combinations",
         "mastery_levels",
         "classification_availability",
+        "classification_schema_version",
+        "classification_policy",
+        "pattern_classifications",
+        "antipattern_classifications",
+        "trend_analysis",
     }
 )
 _FORBIDDEN_NON_PATTERN_ENTRY_FIELDS = frozenset(
@@ -132,6 +147,12 @@ _FORBIDDEN_NON_PATTERN_ENTRY_FIELDS = frozenset(
         "not_applicable_count",
         "eligible_cohort_count",
         "coverage",
+        "classification",
+        "observation_status",
+        "applicable_coverage",
+        "lower",
+        "upper",
+        "semantic_sha256",
     }
 )
 
@@ -176,7 +197,7 @@ def _load_input(profile_path: pathlib.Path | None) -> dict[str, Any]:
 def _load_live_pattern_snapshot(
     vault_root: pathlib.Path,
     profile: Mapping[str, object],
-) -> PatternCohortSnapshot:
+) -> dict[str, object]:
     """Recompute the source-exact payload used by ``load-vault.py``."""
     database_path = vault_root / "tracking-database.json"
     try:
@@ -210,7 +231,7 @@ def _load_live_pattern_snapshot(
         else None
     )
     as_of = baseline.get("as_of") if isinstance(baseline, Mapping) else None
-    return build_current_pattern_snapshot(
+    snapshot = build_current_pattern_snapshot(
         talks,
         as_of=as_of,
         evidence_freshness_assessor=configured_evidence_freshness_assessor(
@@ -218,6 +239,16 @@ def _load_live_pattern_snapshot(
             database.get("config"),
         ),
     )
+    try:
+        classification = classify_pattern_profile(
+            snapshot["baseline_talks"],
+            resolve_classification_policy(vault_root),
+        )
+    except RuntimeError as exc:
+        raise ValueError(
+            f"pattern classification runtime is unavailable: {exc}"
+        ) from exc
+    return {**snapshot, "pattern_classification": classification}
 
 
 def _validate_live_pattern_source(
@@ -233,6 +264,9 @@ def _validate_live_pattern_source(
     opportunities = snapshot.get("pattern_opportunities")
     if not isinstance(opportunities, Mapping):
         return ["live pattern snapshot lacks pattern_opportunities"]
+    classification = snapshot.get("pattern_classification")
+    if not isinstance(classification, Mapping):
+        return ["live pattern snapshot lacks pattern_classification"]
 
     comparisons = (
         (
@@ -267,6 +301,13 @@ def _validate_live_pattern_source(
             errors.append(
                 f"pattern_profile.{field} does not equal the {description}; "
                 "regenerate it from the current load-vault.py payload"
+            )
+    for field, expected in classification.items():
+        if pattern_profile.get(field) != expected:
+            errors.append(
+                f"pattern_profile.{field} does not equal the live deterministic "
+                "classification output; regenerate it from the current "
+                "load-vault.py payload"
             )
     return errors
 
@@ -317,7 +358,7 @@ def _validate_catalog_history_storage(profile: Mapping[object, object]) -> list[
     if not isinstance(guardrail_sources, Mapping):
         errors.append("guardrail_sources must be an object")
     elif "recurring_issues" not in guardrail_sources:
-        errors.append("guardrail_sources.recurring_issues is required in schema v4")
+        errors.append("guardrail_sources.recurring_issues is required in schema v5")
     else:
         errors.extend(
             _validate_non_pattern_entries(
@@ -347,12 +388,19 @@ def validate_profile(
     missing = [key for key in REQUIRED_KEYS if key not in profile]
     schema_version = profile.get("schema_version")
     errors: list[str] = []
-    if schema_version != CURRENT_SCHEMA_VERSION:
+    schema_is_current = (
+        isinstance(schema_version, int)
+        and not isinstance(schema_version, bool)
+        and schema_version == CURRENT_SCHEMA_VERSION
+    )
+    if not schema_is_current:
         errors.append(
             f"schema_version is {schema_version!r} (expected {CURRENT_SCHEMA_VERSION})"
         )
-    if not missing and schema_version == CURRENT_SCHEMA_VERSION:
-        assessment = assess_pattern_profile(profile["pattern_profile"])
+    if not missing and schema_is_current:
+        assessment = assess_pattern_profile(
+            profile["pattern_profile"], expected_contract_version=5
+        )
         if not assessment.current_contract:
             errors.extend(assessment.errors)
         errors.extend(_validate_catalog_history_storage(profile))
@@ -360,8 +408,9 @@ def validate_profile(
             errors.extend(_validate_live_pattern_source(profile, live_pattern_snapshot))
         elif require_live_source:
             errors.append(
-                "schema-v4 owner validation requires --vault-root so occurrence "
-                "rows can be recomputed from the live tracking database"
+                "schema-v5 owner validation requires --vault-root so occurrence "
+                "rows and classifications can be recomputed from the live "
+                "tracking database"
             )
     return missing, errors, schema_version
 

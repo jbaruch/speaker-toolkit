@@ -80,7 +80,12 @@ For **informative talks**, present the existing narrative-arc templates (three-a
 
 The two patterns can coexist: an informative talk can have a small sparkline-shaped closing argument, and a persuasive talk can have informative sections inside its middle. But the choice of *top-level* structure matters because it shapes time allocation across the three sections — sparkline allocates ≤10% to "what is" baseline and most of the time to the persuasive middle; narrative-arc typically allocates ~25-50% to the middle, with longer setup and resolution.
 
-When the speaker profile shows historical preference (most past talks tagged narrative-arc or sparkline), surface that history but do not let it override the persuasive-vs-informative diagnostic. A speaker accustomed to narrative-arc tutorials switching to a sales pitch should switch to sparkline for that talk; the architecture should match the talk's purpose, not the speaker's habit.
+When the `mastery_and_novelty` domain is available and classifies narrative-arc or
+sparkline as `regular`/`signature`, surface that authorized preference but do not let
+it override the persuasive-vs-informative diagnostic. Never infer the preference from
+raw tags or occurrence rows. A speaker accustomed to narrative-arc tutorials switching
+to a sales pitch should switch to sparkline for that talk; the architecture should
+match the talk's purpose, not the speaker's habit.
 
 ### Action Typology — Pre-Plan the Call to Action
 
@@ -90,14 +95,16 @@ This is an architecture-phase concern (not a content-phase one) because the asks
 
 ### Decision #11: Pattern Strategy
 
-Read [patterns/_index.md](patterns/_index.md) for the current taxonomy. Read
-`profile → pattern_profile` only when Phase 0's
-`pattern_history_status.py` result has `history_enabled: true`. Never infer an
-enabled state from profile recency, schema tolerance, Section 15 prose, or
-`opportunity_rows_available: true`. Current schema-v4 profiles explicitly report
-classification policy unavailable, so use the flat taxonomy path below.
+Read [patterns/_index.md](patterns/_index.md) for the current taxonomy. Use only the
+catalog-history source selected by Phase 0's emitted `history_source`. When its status
+has `history_enabled: true`, authorize each derived lane independently through
+`available_classification_domains` / `domain_available(domain)`. Never infer a domain
+from profile recency, schema tolerance, Section 15 prose,
+`classification_fields_available: true`, or `opportunity_rows_available: true`.
+Profile schema v4 and Section 15 v2 are occurrence-only; profile schema v5 and
+Section 15 v3 are policy-bound.
 
-With authorized history, present patterns in **4 tiers:**
+When `mastery_and_novelty` is available, present patterns in **4 tiers:**
 
 ```
 PATTERN STRATEGY for "{talk title}"
@@ -120,8 +127,7 @@ SHAKE IT UP:
   ⚡ [WILD CARD] Cave Painting — one giant canvas instead of slides
 
 WARNINGS:
-  ⚠ Shortchanged (8/24 detections) — plan cut lines for the 20-min slot
-  ⚠ Dual-Headed Monster — co-presented talk, define handoff points
+  ⚠ [CONTEXTUAL] Dual-Headed Monster — co-presented talk, define handoff points
 ===================================
 ```
 
@@ -130,29 +136,39 @@ WARNINGS:
 2. **Contextual history** — current-cohort `mastery_levels.regular` or
    `mastery_levels.occasional` entries matching the talk context.
 3. **New to You** — current-cohort `never_used_patterns` /
-   `mastery_levels.never_tried`, filtered by relevance and marked `[NEW]`.
+   `mastery_levels.never_tried`, filtered by relevance and marked `[NEW]`. This set
+   is exact: never use first detection in the newest talk or `not_yet_observed` as
+   evidence of novelty.
 4. **Shake It Up** — exactly 1–2 current-cohort never-tried options used as
    provocations, not prescriptions.
 
-Current-cohort `strengths`, `underused_patterns`, and `by_mode` may refine the
-recommendation only under that same enabled status. They never independently authorize
-history and never cross a catalog/scoring generation boundary.
+Current-cohort `strengths` requires `mastery_and_novelty`;
+`underused_patterns` requires `underuse`; `signature_combinations` requires
+`signature_combinations`; and `by_mode` requires `modes`. Pattern or antipattern
+movements, score/breadth trend, and score drivers require `trends`. Never infer one
+domain from another.
 
-**Antipattern warnings** — merge speaker's recurring antipatterns (from
-`pattern_profile.antipattern_frequency`) + contextual warnings derived from the spec
-(co-presented → Dual-Headed Monster, dense content → Bullet-Riddled Corpse,
-new format → Shortchanged, etc.). Historical matches receive `[RECURRING]` only while
-history is enabled. Current-outline detections always receive `[CONTEXTUAL]` and remain
-available without history.
+**Antipattern warnings.** Derive contextual warnings from the spec (co-presented →
+Dual-Headed Monster, dense content → Bullet-Riddled Corpse, new format → Shortchanged,
+etc.). Catalog recurrence filtering and `[RECURRING]` labels belong to Phase 4's
+emitted `recurring_antipatterns` output. Do not recreate them during
+architecture. Current-outline detections always receive `[CONTEXTUAL]` and remain
+available without history. Explicit `source_lane: "non_pattern"` guardrails remain
+independent of this catalog lane.
 
-**History-disabled / summary-only mode:** Pattern taxonomy still works — patterns come
-from the reference files alone. Present a flat relevant-patterns list without the four
-history tiers, usage statistics, novelty claims, strengths, underuse, or by-mode
-claims. Do not call taxonomy entries "new to you" merely because history is
-unavailable. Contextual antipattern warnings still apply. Section 15 can restore the
-history view only when its current block carries a complete explicit provenance
-contract and the shared assessor reports `classification_fields_available: true`;
-an occurrence-only block is narrative/audit context, not tier authorization.
+**Mastery-domain-disabled / summary-only mode:** Pattern taxonomy still works —
+patterns come from the reference files alone. Present a flat relevant-patterns list
+without the four history tiers, usage statistics, novelty claims, or strengths. Do not
+call taxonomy entries "new to you" merely because mastery history is unavailable.
+Other policy-bound domains may still authorize their own narrow claims; contextual
+antipattern warnings always apply. Section 15 v3 can restore only the domains listed
+by its complete explicit provenance contract. Section 15 v2 is occurrence-only
+narrative/audit context, not tier authorization.
+
+Across profiles, a catalog/scoring generation change resets occurrence and
+classification comparison. Within one generation, a changed
+`policy_semantic_sha256` resets classification comparison. Neither boundary is
+speaker improvement or regression.
 
 Enhance decisions 3-10 with pattern cross-references as shared vocabulary: when recommending
 an opening pattern, reference the taxonomy ID; when selecting a narrative structure, note

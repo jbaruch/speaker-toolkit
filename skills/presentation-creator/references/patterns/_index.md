@@ -29,10 +29,9 @@ combinatorics are needed.
    `not_evaluable` rather than guessing or treating it as absent. A polished outcome is
    not evidence that a named preparation process occurred.
 3. **During creator Phase 4 (Guardrails):** Read all antipatterns and compare against
-   the outline. Flag matches as `[RECURRING]` only from an exact-generation speaker
-   history authorized by `pattern_history_status.py`; use `[CONTEXTUAL]` for the
-   current-outline scan, which remains enabled without history. Skip unobservable
-   antipatterns.
+   the outline. Render `[RECURRING]` lines only from Phase 4's emitted
+   `recurring_antipatterns` records. Use `[CONTEXTUAL]` for the current-outline scan,
+   which remains enabled without history. Skip unobservable antipatterns.
 4. **During creator Phase 6 (Publishing / Go-Live):** Surface unobservable patterns as
    a go-live preparation checklist — these are actions to take before, during, and after
    delivery that the vault cannot score retroactively.
@@ -322,14 +321,16 @@ Planning patterns — inform spec construction.
 ### Phase 2: Architecture
 All structural patterns — the main Pattern Strategy selection moment.
 
-**With authorized exact-generation `pattern_profile` history:**
+**With the `mastery_and_novelty` domain available:**
 - **Signature tier:** Current-cohort `mastery_levels.signature` patterns
 - **Contextual-history tier:** Current-cohort regular/occasional patterns matching context
-- **New to You tier:** Current-cohort never-tried patterns filtered by relevance
+- **New to You tier:** Exactly current-cohort `mastery_levels.never_tried` /
+  `never_used_patterns`, filtered by relevance; never `not_yet_observed` or a newest-talk
+  first detection
 - **Shake It Up tier:** Exactly 1–2 current-cohort never-tried provocations
 
-When history is disabled, suppress all four history-derived tiers and use a flat
-relevant list from this current taxonomy without usage or novelty claims.
+When that domain is unavailable, suppress all four history-derived tiers and use a
+flat relevant list from this current taxonomy without usage or novelty claims.
 
 Structural patterns relevant here:
 - narrative-arc, triad, talklet, expansion-joints, lightning-talk, takahashi, cave-painting
@@ -359,8 +360,7 @@ Build patterns — applied during outline writing.
 Antipatterns as warnings — scanned against the outline.
 
 **All 28 antipatterns**, with two flag types:
-- `[RECURRING]` — from authorized exact-generation
-  `pattern_profile.antipattern_frequency` only; omit when history is disabled
+- `[RECURRING]`. Emit one line per Phase 4 `recurring_antipatterns` record.
 - `[CONTEXTUAL]` — detected in the current outline; always enabled and not a claim that
   the issue is historically new
 

@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "policy_id": "speaker-toolkit-default",
+  "policy_version": 1,
+  "positive_patterns": {
+    "signature": {
+      "minimum_applicable": 8,
+      "minimum_lower": 0.7
+    },
+    "regular": {
+      "minimum_evaluable": 8,
+      "minimum_applicable_coverage": 0.8,
+      "minimum_lower": 0.4,
+      "maximum_upper_exclusive": 0.7
+    },
+    "occasional": {
+      "minimum_evaluable": 8,
+      "minimum_applicable_coverage": 0.8,
+      "minimum_lower": 0.15,
+      "maximum_upper_exclusive": 0.4
+    },
+    "rare": {
+      "minimum_evaluable": 8,
+      "minimum_applicable_coverage": 0.8,
+      "minimum_detections": 1,
+      "maximum_upper_exclusive": 0.15
+    },
+    "never_tried": {
+      "minimum_applicable": 8,
+      "require_complete_evaluation": true,
+      "maximum_detections": 0
+    }
+  },
+  "antipattern_recurrence": {
+    "high_frequency": {
+      "minimum_applicable": 8,
+      "minimum_detections": 4,
+      "minimum_lower": 0.5
+    },
+    "moderate_frequency": {
+      "minimum_evaluable": 8,
+      "minimum_applicable_coverage": 0.8,
+      "minimum_detections": 3,
+      "minimum_lower": 0.25,
+      "maximum_upper_exclusive": 0.5
+    },
+    "occasional": {
+      "minimum_evaluable": 8,
+      "minimum_applicable_coverage": 0.8,
+      "minimum_detections": 1,
+      "maximum_upper_exclusive": 0.25
+    },
+    "confirmed_none": {
+      "minimum_applicable": 8,
+      "require_complete_evaluation": true,
+      "maximum_detections": 0
+    }
+  },
+  "signature_combinations": {
+    "eligible_member_classifications": [
+      "regular",
+      "signature"
+    ],
+    "member_counts": [
+      2,
+      3
+    ],
+    "minimum_applicable": 8,
+    "minimum_detections": 4,
+    "minimum_lower": 0.4,
+    "maximum_results": 10
+  },
+  "trends": {
+    "minimum_comparable_talks": 10,
+    "window_size": 5,
+    "score_delta": 0.5,
+    "breadth_delta": 0.5,
+    "pattern_movement_delta": 0.2
+  }
+}

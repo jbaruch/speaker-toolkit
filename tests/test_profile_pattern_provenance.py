@@ -6,6 +6,7 @@ import copy
 import hashlib
 import importlib
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -141,7 +142,7 @@ def _pattern_profile(validate_profile, *, count: int = 2) -> dict[str, Any]:
 
 def _profile(validate_profile, *, count: int = 2) -> dict[str, Any]:
     return {
-        "schema_version": 4,
+        "schema_version": 5,
         "generated_date": "2025-01-02",
         "talks_analyzed": 4,
         "speaker": {},
@@ -152,12 +153,191 @@ def _profile(validate_profile, *, count: int = 2) -> dict[str, Any]:
         "confirmed_intents": [],
         "guardrail_sources": {"recurring_issues": []},
         "pacing": {},
-        "pattern_profile": _pattern_profile(validate_profile, count=count),
+        "pattern_profile": _v5_pattern_profile(validate_profile, count=count),
         "visual_style_history": {},
         "publishing_process": {},
         "design_rules": {},
         "badges": [],
     }
+
+
+def _v5_pattern_profile(validate_profile, *, count: int = 2) -> dict[str, Any]:
+    profile = _pattern_profile(validate_profile, count=count)
+    filenames = profile["baseline_talk_filenames"]
+    catalog = importlib.import_module("pattern_opportunities").load_catalog()
+    pattern_outcomes, _, _ = _transcript_projection(catalog)
+    talks = [
+        {
+            "filename": filename,
+            "pattern_score": 0,
+            "pattern_observations": {
+                "pattern_score": 0,
+                "patterns_detected": [],
+                "antipatterns_detected": [],
+                "pattern_outcomes": copy.deepcopy(pattern_outcomes),
+            },
+        }
+        for filename in filenames
+    ]
+    runtime = importlib.import_module("pattern_classification_runtime")
+    profile.update(
+        runtime.classify_pattern_profile(
+            talks,
+            runtime.resolve_classification_policy(
+                Path(__file__).resolve().parent / "__no_policy_override__"
+            ),
+            catalog=catalog,
+        )
+    )
+    return profile
+
+
+def _signature_combination_fixture() -> tuple[dict[str, Any], list[dict[str, str]]]:
+    return (
+        {
+            "combination_id": "p1+p2",
+            "pattern_ids": ["p1", "p2"],
+            "evidence": {
+                "applicable_count": 10,
+                "evaluable_count": 10,
+                "detected_count": 5,
+                "unevaluable_count": 0,
+                "applicable_coverage": 1.0,
+                "lower": 0.5,
+                "upper": 0.5,
+            },
+            "reason_codes": ["meets_signature_combination_thresholds"],
+        },
+        [
+            {"pattern_id": "p1", "classification": "regular"},
+            {"pattern_id": "p2", "classification": "signature"},
+        ],
+    )
+
+
+def _window_evidence(*, detected: int) -> dict[str, Any]:
+    return {
+        "applicable_count": 5,
+        "evaluable_count": 5,
+        "detected_count": detected,
+        "unevaluable_count": 0,
+        "applicable_coverage": 1.0,
+        "lower": detected / 5,
+        "upper": detected / 5,
+    }
+
+
+def _trend_validation_fixture(
+    reason: str | None = None,
+) -> tuple[dict[str, Any], list[dict[str, str]], list[dict[str, str]]]:
+    filenames = [f"talk-{index:02d}.md" for index in range(10)]
+    positive_rows = [{"pattern_id": "p1"}]
+    antipattern_rows = [{"pattern_id": "a1"}]
+    if reason is None:
+        status = "available"
+        reasons: list[str] = []
+        score = {
+            "status": "improving",
+            "prior_average": 0.0,
+            "recent_average": 1.0,
+            "delta": 1.0,
+        }
+        breadth = {
+            "status": "widening",
+            "prior_average": 0.0,
+            "recent_average": 1.0,
+            "delta": 1.0,
+        }
+        pattern_movements = [
+            {
+                "pattern_id": "p1",
+                "movement": "increasing",
+                "prior_evidence": _window_evidence(detected=0),
+                "recent_evidence": _window_evidence(detected=1),
+                "reason_codes": ["conservative_interval_increase"],
+            }
+        ]
+        antipattern_movements = [
+            {
+                "pattern_id": "a1",
+                "movement": "decreasing",
+                "prior_evidence": _window_evidence(detected=1),
+                "recent_evidence": _window_evidence(detected=0),
+                "reason_codes": ["conservative_interval_decrease"],
+            }
+        ]
+        valid_date_count = 10
+        invalid_filenames: list[str] = []
+        selected_filenames = filenames
+        identity: str | None = "a" * 64
+        score_drivers = {
+            "direction": "improving",
+            "pattern_drivers": ["p1"],
+            "antipattern_drivers": ["a1"],
+        }
+    else:
+        status = "unavailable"
+        reasons = [reason]
+        score = {
+            "status": "unavailable",
+            "prior_average": None,
+            "recent_average": None,
+            "delta": None,
+        }
+        breadth = copy.deepcopy(score)
+        pattern_movements = []
+        antipattern_movements = []
+        insufficient = reason == "insufficient_valid_date_sample"
+        valid_date_count = 9 if insufficient else 10
+        invalid_filenames = [filenames[-1]] if insufficient else []
+        selected_filenames = [] if insufficient else filenames
+        identity = "a" * 64 if reason == "no_evaluable_pattern_opportunities" else None
+        score_drivers = {
+            "direction": "unavailable",
+            "pattern_drivers": [],
+            "antipattern_drivers": [],
+        }
+    profile = {
+        "baseline_talk_filenames": filenames,
+        "classification_availability": {
+            "trends": {"status": status, "reason_codes": reasons}
+        },
+        "trend_analysis": {
+            "status": status,
+            "reason_codes": reasons,
+            "sample": {
+                "required_talk_count": 10,
+                "valid_date_talk_count": valid_date_count,
+                "invalid_date_filenames": invalid_filenames,
+                "selected_filenames": selected_filenames,
+                "opportunity_coverage_identity": identity,
+            },
+            "score": score,
+            "breadth": breadth,
+            "pattern_movements": pattern_movements,
+            "antipattern_movements": antipattern_movements,
+        },
+        "score_trend": score["status"],
+        "pattern_breadth": {"trend": breadth["status"]},
+        "score_drivers": score_drivers,
+    }
+    return profile, positive_rows, antipattern_rows
+
+
+def _trend_validation_errors(
+    provenance,
+    profile: dict[str, Any],
+    positive_rows: list[dict[str, str]],
+    antipattern_rows: list[dict[str, str]],
+) -> list[str]:
+    return provenance._validate_trend_analysis(
+        profile,
+        positive_rows,
+        antipattern_rows,
+        eligible_talk_count=10,
+        required_talk_count=10,
+        window_size=5,
+    )
 
 
 def _run(validate_profile, profile, tmp_path, capsys, *, extra_talks=None):
@@ -222,16 +402,20 @@ def _run(validate_profile, profile, tmp_path, capsys, *, extra_talks=None):
                 "timing_artifact_sha256": timing_digest,
             }
             if channel == "timed_transcript":
-                citation.update({
-                    "start_seconds": 0.0,
-                    "end_seconds": 10.0,
-                })
-            located_assessments.append({
-                **assessment,
-                "evidence_source": "transcript",
-                "evidence": "The complete transcript establishes applicability.",
-                "evidence_citations": [citation],
-            })
+                citation.update(
+                    {
+                        "start_seconds": 0.0,
+                        "end_seconds": 10.0,
+                    }
+                )
+            located_assessments.append(
+                {
+                    **assessment,
+                    "evidence_source": "transcript",
+                    "evidence": "The complete transcript establishes applicability.",
+                    "evidence_citations": [citation],
+                }
+            )
         talks.append(
             {
                 "filename": filename,
@@ -325,7 +509,7 @@ def test_current_profile_binds_every_pattern_denominator_to_one_cohort(
     assert return_code == 0, "\n".join(report["errors"])
     assert report == {
         "valid": True,
-        "schema_version": 4,
+        "schema_version": 5,
         "missing_keys": [],
         "errors": [],
     }
@@ -395,6 +579,613 @@ def test_reusable_assessment_distinguishes_current_empty_and_stale_history(
         "pattern_catalog_fingerprint_mismatch",
         "invalid_pattern_profile_contract",
     )
+
+
+def test_v5_assessment_enables_independent_policy_domains(validate_profile):
+    pattern_profile = _v5_pattern_profile(validate_profile)
+
+    assessment = validate_profile.assess_pattern_profile(
+        pattern_profile, expected_contract_version=5
+    )
+
+    assert assessment.current_contract is True
+    assert assessment.classification_fields_available is True
+    assert assessment.available_classification_domains == frozenset(
+        {
+            "mastery_and_novelty",
+            "antipattern_recurrence",
+            "underuse",
+            "signature_combinations",
+        }
+    )
+    assert assessment.domain_available("trends") is False
+    assert assessment.domain_available("modes") is False
+    assert (
+        assessment.policy_semantic_sha256
+        == pattern_profile["classification_policy"]["semantic_sha256"]
+    )
+
+
+def test_v5_assessment_rejects_policy_digest_tampering(validate_profile):
+    pattern_profile = _v5_pattern_profile(validate_profile)
+    pattern_profile["classification_policy"]["semantic_sha256"] = "0" * 64
+
+    assessment = validate_profile.assess_pattern_profile(
+        pattern_profile, expected_contract_version=5
+    )
+
+    provenance_module = importlib.import_module("profile_pattern_provenance")
+    assert assessment.current_contract is False
+    assert (
+        provenance_module.REASON_CLASSIFICATION_POLICY_INVALID
+        in assessment.reason_codes
+    )
+    assert any("semantic_sha256" in error for error in assessment.errors)
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "expected_error"),
+    [
+        (
+            ("classification_schema_version",),
+            True,
+            "pattern_profile.classification_schema_version must be 1",
+        ),
+        (
+            ("classification_schema_version",),
+            1.0,
+            "pattern_profile.classification_schema_version must be 1",
+        ),
+        (
+            ("classification_availability", "schema_version"),
+            True,
+            "pattern_profile.classification_availability.schema_version must be 2",
+        ),
+        (
+            ("classification_availability", "schema_version"),
+            2.0,
+            "pattern_profile.classification_availability.schema_version must be 2",
+        ),
+        (
+            ("classification_policy", "schema_version"),
+            True,
+            "classification_policy.schema_version must be 1",
+        ),
+        (
+            ("classification_policy", "schema_version"),
+            1.0,
+            "classification_policy.schema_version must be 1",
+        ),
+        (
+            ("classification_policy", "policy_version"),
+            True,
+            "classification_policy.policy_version must be a positive integer",
+        ),
+        (
+            ("classification_policy", "policy_version"),
+            1.0,
+            "classification_policy.policy_version must be a positive integer",
+        ),
+        (
+            ("classification_policy", "semantic_policy", "schema_version"),
+            True,
+            "policy.schema_version must be 1",
+        ),
+        (
+            ("classification_policy", "semantic_policy", "schema_version"),
+            1.0,
+            "policy.schema_version must be 1",
+        ),
+        (
+            (
+                "classification_policy",
+                "semantic_policy",
+                "signature_combinations",
+                "member_counts",
+            ),
+            [2.0, 3],
+            "policy.signature_combinations.member_counts must equal the integer list",
+        ),
+        (
+            (
+                "classification_policy",
+                "semantic_policy",
+                "signature_combinations",
+                "member_counts",
+            ),
+            [2, 3.0],
+            "policy.signature_combinations.member_counts must equal the integer list",
+        ),
+        (
+            (
+                "classification_policy",
+                "semantic_policy",
+                "signature_combinations",
+                "member_counts",
+            ),
+            [True, 3],
+            "policy.signature_combinations.member_counts must equal the integer list",
+        ),
+        (
+            (
+                "classification_policy",
+                "semantic_policy",
+                "signature_combinations",
+                "member_counts",
+            ),
+            [2, True],
+            "policy.signature_combinations.member_counts must equal the integer list",
+        ),
+    ],
+)
+def test_v5_assessment_rejects_type_confused_policy_integers(
+    validate_profile,
+    path,
+    value,
+    expected_error,
+):
+    pattern_profile = _v5_pattern_profile(validate_profile)
+    target = pattern_profile
+    for field in path[:-1]:
+        target = target[field]
+    target[path[-1]] = value
+
+    assessment = validate_profile.assess_pattern_profile(
+        pattern_profile, expected_contract_version=5
+    )
+
+    assert assessment.current_contract is False
+    assert any(expected_error in error for error in assessment.errors)
+
+
+def test_v5_assessment_rejects_missing_classification_id_without_crashing(
+    validate_profile,
+):
+    pattern_profile = _v5_pattern_profile(validate_profile)
+    row = pattern_profile["pattern_classifications"][0]
+    row["classification"] = "signature"
+    del row["pattern_id"]
+
+    assessment = validate_profile.assess_pattern_profile(
+        pattern_profile, expected_contract_version=5
+    )
+
+    assert assessment.current_contract is False
+    assert any(
+        "pattern_id must be a non-empty string" in error for error in assessment.errors
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("applicable_count", True),
+        ("applicable_count", False),
+        ("evaluable_count", True),
+        ("evaluable_count", False),
+        ("detected_count", True),
+        ("detected_count", False),
+        ("unevaluable_count", True),
+        ("unevaluable_count", False),
+    ],
+)
+def test_v5_classification_evidence_rejects_boolean_counts(
+    validate_profile,
+    field,
+    value,
+):
+    pattern_profile = _v5_pattern_profile(validate_profile, count=0)
+    row = next(
+        item
+        for item in pattern_profile["pattern_classifications"]
+        if item["absence_conclusion_capable"] is False
+    )
+    row["evidence"][field] = value
+
+    assessment = validate_profile.assess_pattern_profile(
+        pattern_profile, expected_contract_version=5
+    )
+
+    assert assessment.current_contract is False
+    assert any(
+        f".evidence.{field} must be a non-negative integer" in error
+        for error in assessment.errors
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("applicable_coverage", True),
+        ("applicable_coverage", False),
+        ("lower", True),
+        ("lower", False),
+        ("upper", True),
+        ("upper", False),
+    ],
+)
+def test_v5_classification_evidence_rejects_boolean_bounds(
+    validate_profile,
+    field,
+    value,
+):
+    pattern_profile = _v5_pattern_profile(validate_profile)
+    row = pattern_profile["pattern_classifications"][0]
+    row["evidence"][field] = value
+
+    assessment = validate_profile.assess_pattern_profile(
+        pattern_profile, expected_contract_version=5
+    )
+
+    assert assessment.current_contract is False
+    assert any(
+        f".evidence.{field} must be null or a finite number "
+        "between zero and one" in error
+        for error in assessment.errors
+    )
+
+
+@pytest.mark.parametrize("field", ["applicable_coverage", "lower", "upper"])
+@pytest.mark.parametrize(
+    "value",
+    [-0.01, 1.01, float("nan"), float("inf"), "0.5", 10**1000],
+)
+def test_v5_classification_evidence_rejects_invalid_bounds(
+    validate_profile,
+    field,
+    value,
+):
+    pattern_profile = _v5_pattern_profile(validate_profile)
+    row = pattern_profile["pattern_classifications"][0]
+    row["evidence"][field] = value
+
+    assessment = validate_profile.assess_pattern_profile(
+        pattern_profile, expected_contract_version=5
+    )
+
+    assert assessment.current_contract is False
+    assert any(
+        f".evidence.{field} must be null or a finite number "
+        "between zero and one" in error
+        for error in assessment.errors
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_error"),
+    [
+        ("applicable_count", True, "must be a non-negative integer"),
+        ("evaluable_count", "ten", "must be a non-negative integer"),
+        ("unevaluable_count", -1, "must be a non-negative integer"),
+        (
+            "applicable_coverage",
+            True,
+            "must be null or a finite number between zero and one",
+        ),
+        ("lower", float("inf"), "must be null or a finite number between zero and one"),
+        ("upper", "one", "must be null or a finite number between zero and one"),
+    ],
+)
+def test_signature_combination_rejects_malformed_evidence(
+    validate_profile,
+    field,
+    value,
+    expected_error,
+):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    row, positive_rows = _signature_combination_fixture()
+    row["evidence"][field] = value
+
+    errors = provenance._validate_combinations(
+        [row], positive_rows, eligible_talk_count=10
+    )
+
+    assert any(f".evidence.{field} {expected_error}" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_error"),
+    [
+        ("applicable_count", 9, "must satisfy applicable_count = E + U"),
+        ("applicable_count", 11, "cannot exceed the eligible talk count 10"),
+        ("detected_count", 11, "detected_count cannot exceed evaluable_count"),
+        ("lower", 0.4, "must equal the canonical ratio 0.5"),
+    ],
+)
+def test_signature_combination_rejects_inconsistent_evidence(
+    validate_profile,
+    field,
+    value,
+    expected_error,
+):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    row, positive_rows = _signature_combination_fixture()
+    row["evidence"][field] = value
+
+    if field == "applicable_count" and value == 11:
+        row["evidence"].update(
+            {
+                "evaluable_count": 11,
+                "applicable_coverage": 1.0,
+                "lower": 5 / 11,
+                "upper": 5 / 11,
+            }
+        )
+
+    errors = provenance._validate_combinations(
+        [row], positive_rows, eligible_talk_count=10
+    )
+
+    assert any(expected_error in error for error in errors)
+
+
+def test_signature_combination_accepts_canonical_evidence(validate_profile):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    row, positive_rows = _signature_combination_fixture()
+
+    errors = provenance._validate_combinations(
+        [row], positive_rows, eligible_talk_count=10
+    )
+
+    assert errors == []
+
+
+def test_signature_combination_requires_reason_codes(validate_profile):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    row, positive_rows = _signature_combination_fixture()
+    row["reason_codes"] = []
+
+    errors = provenance._validate_combinations(
+        [row], positive_rows, eligible_talk_count=10
+    )
+
+    assert any("reason_codes must not be empty" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        None,
+        "insufficient_valid_date_sample",
+        "opportunity_identity_unavailable",
+        "incomparable_opportunity_identities",
+        "no_evaluable_pattern_opportunities",
+    ],
+)
+def test_trend_validator_accepts_every_canonical_variant(validate_profile, reason):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    profile, positive_rows, antipattern_rows = _trend_validation_fixture(reason)
+
+    errors = _trend_validation_errors(
+        provenance, profile, positive_rows, antipattern_rows
+    )
+
+    assert errors == []
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "unknown_analysis_field",
+        "unknown_sample_field",
+        "unknown_metric_field",
+        "boolean_valid_date_count",
+        "duplicate_selected_filename",
+        "availability_reason_mismatch",
+        "uppercase_identity",
+    ],
+)
+def test_trend_validator_rejects_noncanonical_sample_and_availability(
+    validate_profile, case
+):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    profile, positive_rows, antipattern_rows = _trend_validation_fixture()
+    sample = profile["trend_analysis"]["sample"]
+    if case == "unknown_analysis_field":
+        profile["trend_analysis"]["unexpected"] = True
+    elif case == "unknown_sample_field":
+        sample["unexpected"] = True
+    elif case == "unknown_metric_field":
+        profile["trend_analysis"]["score"]["unexpected"] = True
+    elif case == "boolean_valid_date_count":
+        sample["valid_date_talk_count"] = True
+    elif case == "duplicate_selected_filename":
+        sample["selected_filenames"][-1] = sample["selected_filenames"][0]
+    elif case == "availability_reason_mismatch":
+        profile["classification_availability"]["trends"]["reason_codes"] = [
+            "insufficient_valid_date_sample"
+        ]
+    else:
+        sample["opportunity_coverage_identity"] = "A" * 64
+
+    errors = _trend_validation_errors(
+        provenance, profile, positive_rows, antipattern_rows
+    )
+
+    assert errors
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "boolean_metric",
+        "nonfinite_metric",
+        "delta_mismatch",
+        "direction_projection",
+        "driver_projection",
+    ],
+)
+def test_trend_validator_rejects_invalid_metrics_and_projections(
+    validate_profile, case
+):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    profile, positive_rows, antipattern_rows = _trend_validation_fixture()
+    if case == "boolean_metric":
+        profile["trend_analysis"]["score"]["prior_average"] = True
+    elif case == "nonfinite_metric":
+        profile["trend_analysis"]["breadth"]["recent_average"] = float("inf")
+    elif case == "delta_mismatch":
+        profile["trend_analysis"]["score"]["delta"] = 0.5
+    elif case == "direction_projection":
+        profile["score_drivers"]["direction"] = "stable"
+    else:
+        profile["score_drivers"]["pattern_drivers"] = []
+
+    errors = _trend_validation_errors(
+        provenance, profile, positive_rows, antipattern_rows
+    )
+
+    assert errors
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "boolean_evidence_bound",
+        "inconsistent_evidence_counts",
+        "incomplete_available_movement",
+        "wrong_reason",
+        "wrong_pattern_id",
+        "unknown_movement_field",
+    ],
+)
+def test_trend_validator_rejects_invalid_movement_rows(validate_profile, case):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    profile, positive_rows, antipattern_rows = _trend_validation_fixture()
+    movement = profile["trend_analysis"]["pattern_movements"][0]
+    prior = movement["prior_evidence"]
+    if case == "boolean_evidence_bound":
+        prior["lower"] = False
+    elif case == "inconsistent_evidence_counts":
+        prior["unevaluable_count"] = 1
+    elif case == "incomplete_available_movement":
+        prior.update(
+            {
+                "applicable_count": 4,
+                "evaluable_count": 4,
+                "detected_count": 0,
+                "unevaluable_count": 0,
+                "applicable_coverage": 1.0,
+                "lower": 0.0,
+                "upper": 0.0,
+            }
+        )
+    elif case == "wrong_reason":
+        movement["reason_codes"] = ["conservative_interval_stable"]
+    elif case == "wrong_pattern_id":
+        movement["pattern_id"] = "wrong"
+    else:
+        movement["unexpected"] = True
+
+    errors = _trend_validation_errors(
+        provenance, profile, positive_rows, antipattern_rows
+    )
+
+    assert errors
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "insufficient_with_selection",
+        "resolved_sample_without_identity",
+        "non_null_metric",
+        "nonempty_movements",
+    ],
+)
+def test_trend_validator_enforces_unavailable_sentinels(validate_profile, case):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    reason = (
+        "insufficient_valid_date_sample"
+        if case == "insufficient_with_selection"
+        else "no_evaluable_pattern_opportunities"
+    )
+    profile, positive_rows, antipattern_rows = _trend_validation_fixture(reason)
+    trend = profile["trend_analysis"]
+    if case == "insufficient_with_selection":
+        trend["sample"]["selected_filenames"] = ["talk-00.md"]
+    elif case == "resolved_sample_without_identity":
+        trend["sample"]["opportunity_coverage_identity"] = None
+    elif case == "non_null_metric":
+        trend["score"]["prior_average"] = 0.0
+    else:
+        trend["pattern_movements"] = [
+            {
+                "pattern_id": "p1",
+                "movement": "stable",
+                "prior_evidence": _window_evidence(detected=0),
+                "recent_evidence": _window_evidence(detected=0),
+                "reason_codes": ["conservative_interval_stable"],
+            }
+        ]
+
+    errors = _trend_validation_errors(
+        provenance, profile, positive_rows, antipattern_rows
+    )
+
+    assert errors
+
+
+def test_v5_assessment_rejects_arbitrary_trend_sample_shape(validate_profile):
+    pattern_profile = _v5_pattern_profile(validate_profile)
+    pattern_profile["trend_analysis"]["sample"] = {
+        "required_talk_count": True,
+        "unexpected": "previously accepted",
+    }
+
+    assessment = validate_profile.assess_pattern_profile(
+        pattern_profile, expected_contract_version=5
+    )
+
+    assert assessment.current_contract is False
+    assert any("trend_analysis.sample" in error for error in assessment.errors)
+
+
+def test_v5_assessment_fails_closed_on_huge_self_consistent_counts(validate_profile):
+    pattern_profile = _v5_pattern_profile(validate_profile)
+    classified = pattern_profile["pattern_classifications"][0]
+    huge = 10**1000
+    classified["evidence"] = {
+        "applicable_count": huge,
+        "evaluable_count": huge,
+        "detected_count": huge,
+        "unevaluable_count": 0,
+        "applicable_coverage": 1.0,
+        "lower": 1.0,
+        "upper": 1.0,
+    }
+
+    assessment = validate_profile.assess_pattern_profile(
+        pattern_profile, expected_contract_version=5
+    )
+
+    assert assessment.current_contract is False
+    assert assessment.errors
+
+
+def test_expected_evidence_handles_huge_canonical_counts(validate_profile):
+    provenance = importlib.import_module("profile_pattern_provenance")
+    huge = 10**1000
+
+    evidence = provenance._expected_evidence(
+        {
+            "eligible_cohort_count": huge,
+            "not_applicable_count": 0,
+            "evaluable_count": huge,
+            "detected_count": huge,
+            "unevaluable_count": 0,
+        }
+    )
+
+    assert evidence == {
+        "applicable_count": huge,
+        "evaluable_count": huge,
+        "detected_count": huge,
+        "unevaluable_count": 0,
+        "applicable_coverage": 1.0,
+        "lower": 1.0,
+        "upper": 1.0,
+    }
 
 
 def test_mixed_opportunity_identity_keeps_occurrences_and_suppresses_raw_average(
@@ -492,7 +1283,7 @@ def test_profile_v3_is_noncurrent_and_rejected(validate_profile, tmp_path, capsy
 
     assert return_code == 1
     assert report["valid"] is False
-    assert report["errors"] == ["schema_version is 3 (expected 4)"]
+    assert report["errors"] == ["schema_version is 3 (expected 5)"]
 
 
 def test_missing_pattern_baseline_is_rejected(validate_profile, tmp_path, capsys):
@@ -644,7 +1435,7 @@ def test_nonempty_profile_requires_complete_nested_schema(
 
     assert return_code == 1
     assert any(
-        "missing required schema-v4 fields" in error for error in report["errors"]
+        "missing required schema-v5 fields" in error for error in report["errors"]
     )
     assert any(
         "pattern_breadth is missing required fields" in error
@@ -664,7 +1455,7 @@ def test_current_profile_rejects_unknown_nested_shape(
     return_code, report = _run(validate_profile, profile, tmp_path, capsys)
 
     assert return_code == 1
-    assert any("unknown schema-v4 fields" in error for error in report["errors"])
+    assert any("unknown schema-v5 fields" in error for error in report["errors"])
     assert any("unknown tiers" in error for error in report["errors"])
 
 
@@ -680,9 +1471,7 @@ def test_nonempty_cohort_rejects_unconfigured_trend_claim(
     return_code, report = _run(validate_profile, profile, tmp_path, capsys)
 
     assert return_code == 1
-    assert any(
-        "score_trend must be 'unavailable'" in error for error in report["errors"]
-    )
+    assert any("score_trend must project" in error for error in report["errors"])
 
 
 def test_nested_out_of_denominator_cannot_use_another_cohort(
@@ -790,11 +1579,10 @@ def test_empty_current_cohort_rejects_legacy_pattern_fallback(
     return_code, report = _run(validate_profile, profile, tmp_path, capsys)
 
     assert return_code == 1
+    assert any("score_trend must project" in error for error in report["errors"])
     assert any(
-        "score_trend must be 'unavailable'" in error for error in report["errors"]
-    )
-    assert any(
-        "mastery_levels.signature must be []" in error for error in report["errors"]
+        "mastery_levels is not the deterministic projection" in error
+        for error in report["errors"]
     )
 
 

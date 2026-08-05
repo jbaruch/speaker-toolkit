@@ -23,6 +23,9 @@ def test_owner_creates_generation_bound_schema_v2_pattern_goals():
     assert '"lane": "pattern_scoring"' in SCHEMA
     assert '"pattern_scoring_schema_version": 5' in SCHEMA
     assert '"opportunity_coverage_identity"' in SCHEMA
+    assert "validated schema-v4 or\nschema-v5 profile" in SKILL
+    assert "schema-v4 or schema-v5 `speaker-profile.json`" in SCHEMA
+    assert "only when its exact\nclassification domain is `available`" in SKILL
 
 
 def test_owner_keeps_pacing_and_pattern_provenance_separate():

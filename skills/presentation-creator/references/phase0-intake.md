@@ -34,22 +34,38 @@ counts, or rules — read the profile.
 > Run 'update speaker profile' to sync, or proceed with the current profile?"
 
 **Pattern-history authorization:** run
-`"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/pattern_history_status.py"` against the loaded
-profile and summary before reading any catalog-derived history. Use `-` as its profile
-argument when no profile exists. Its JSON `history_enabled` value is the sole creator
-classification gate; surface a disabled result's exact `warning`.
+`"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/pattern_history_status.py"`
+against the loaded profile and summary before reading any catalog-derived history. Use
+`-` as its profile argument when no profile exists. Surface a disabled result's exact
+`warning`.
+`history_enabled: true` says that at least one policy-bound classification domain is
+available, not that all derived fields are authorized. For every classification use,
+require its name in `available_classification_domains` (Python consumers use
+`domain_available(domain)`). The domains are `mastery_and_novelty`, `underuse`,
+`signature_combinations`, `antipattern_recurrence`, `trends`, and `modes`.
 `opportunity_rows_available: true` means only that exact raw occurrence rows are
-auditable; it does not authorize history tiers or labels. A valid profile source always wins;
-the summary is a fallback and never merges with it. A disabled history lane does not
-invalidate the whole profile. Keep using independent pacing, visual, infrastructure,
-publishing, presentation-mode, instrument-catalog, and confirmed-intent fields.
+auditable. It does not authorize history tiers or labels. Treat the emitted
+`history_source` as the sole source selector. Read only the named source and never merge
+catalog history inputs. Source resolution is owned by
+`pattern_history_status.py` `resolve_creator_pattern_history()`. A disabled history
+lane does not invalidate the whole profile. Keep using independent pacing, visual,
+infrastructure, publishing, presentation-mode, instrument-catalog, and confirmed-intent
+fields.
 
-Until history is enabled, do not read or repeat signature/contextual-history/
-New-to-You tiers, strengths, underuse, by-mode pattern history, recurring antipattern
-labels, or pattern-derived recurring issues and badges. The current pattern taxonomy
-remains available for analyzing the new outline. A profile schema v1/v2/v3 is therefore
-a non-pattern compatibility input, not evidence of speaker pattern history.
-Schema-v4 top-level `guardrail_sources.recurring_issues[]` and `badges[]` are separate:
+Gate each historical claim independently:
+
+- Mastery tiers, strengths, and exact never-tried New-to-You claims require
+  `mastery_and_novelty`.
+- Underuse requires `underuse`.
+- Combinations require `signature_combinations`.
+- Movements and score/breadth trend require `trends`.
+- By-mode history requires `modes`.
+- Catalog recurrence comes only from Phase 4's emitted `recurring_antipatterns`.
+
+The current pattern taxonomy remains available for analyzing the new outline. Profile
+schemas v1/v2/v3 are non-pattern compatibility inputs; schema v4 has auditable
+occurrence rows only; schema v5 binds classifications to a versioned policy.
+Schema-v4/v5 top-level `guardrail_sources.recurring_issues[]` and `badges[]` are separate:
 use an entry only when it explicitly carries `source_lane: "non_pattern"`. Catalog
 warnings and reinforcement come from authorized `pattern_profile` history, never from
 an unmarked duplicate in a top-level lane.
@@ -58,11 +74,11 @@ If the profile is absent, malformed, or history-disabled, Section 15 does not re
 history by implication. Use Section 15 history only when its current block carries
 explicit provenance matching the bundled catalog/scoring generation and a complete
 structured contract accepted by
-`"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py"`. That parser delegates the
-payload to the shared profile provenance assessor, and classifications still require
-`classification_fields_available: true`. A date, a recent heading, an
-unlabeled count, or ordinary prose is insufficient; use taxonomy-only fallback when
-the proof is absent.
+`"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py"`.
+That parser delegates the payload to the shared profile provenance assessor. Section
+15 v2 is occurrence-only; Section 15 v3 is policy-bound, and every consumer must still
+require its relevant available domain. A date, a recent heading, an unlabeled count,
+or ordinary prose is insufficient; use taxonomy-only fallback when the proof is absent.
 
 When an older profile is available for comparison, compare catalog fingerprint and
 pattern-scoring schema before catalog-derived values. Different identities mean a
@@ -70,6 +86,10 @@ generation reset. Report the reset, but do not describe the score, frequency, ma
 strength, or underuse differences as improvement or regression. Even within one
 generation, raw-score comparisons are unavailable across a changed or null
 `opportunity_coverage_identity`.
+
+A changed `policy_semantic_sha256` within the same generation is a classification
+comparison reset. Do not describe tier, recurrence, combination, or trend changes
+across that policy boundary as speaker improvement or regression.
 
 ### Step 0.2: Gather User Context
 
