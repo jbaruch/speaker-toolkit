@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.14 — 2026-08-05
+
 ### fix(vault-ingress) — allow nested PPTX discovery runtimes (#228)
 
 Bounded PPTX directory discovery now permits its exact configured Python and
