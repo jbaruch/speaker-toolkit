@@ -1,5 +1,18 @@
 # Changelog
 
+### fix(vault-ingress) — allow CloudStorage owner writes (#239)
+
+The shared tracking-database transaction now tolerates bounded timestamp-only
+settling on its unique staged file, including macOS Google Drive/File Provider
+behavior after fsync. Staged file type, link count, descriptor/name identity,
+size, exact bytes, and SHA-256 remain strict; failures report the named staged
+invariant and unstable timestamp fields. The target database keeps its exact
+byte-and-generation precondition. Pre-install invariant failures remove the
+still-owned staged name, while a substituted name remains untouched.
+Config-only owner migration remains hash-bound, backed up, and idempotent.
+Database schemas and talk evidence are unchanged; no talk reparse is required
+for this fix.
+
 ## 0.20.16 — 2026-08-05
 
 ### fix(vault-ingress) — make PPTX directory completeness explicit (#234)

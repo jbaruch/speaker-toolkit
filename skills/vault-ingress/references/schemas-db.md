@@ -32,15 +32,24 @@ Run the owner migration in vault-ingress Step 1.
 Dry-run emits the exact input SHA-256. Apply requires that digest, refuses active
 queue claims, stores the complete original bytes under `.backups/`, and replaces
 the verified generation atomically. Backup directory and file opens do not
-follow symbolic links. The writer repeats its byte-and-file-generation check
-after staging and immediately before replacement. A schema-v1 database with
-config v2 is an idempotent no-op. A schema-v1 database with config v1 receives
-only the config-v2 migration; the root generation and every other record remain
-unchanged. Before migration, queue `inspect` may read schema 0 and
-queue `recover` may close an active schema-0 lease in place. Recovery changes
-only queue lease/status state and never stamps database or talk schema fields;
-the established queue transition may advance a recovered claim receipt from v1
-to v2 while adding its release fields.
+follow symbolic links. The target input comparison remains exact across bytes
+and every `FileGeneration` field, including `mtime_ns` and `ctime_ns`, after
+staging and immediately before replacement. The unique staged candidate keeps
+its original descriptor/name device and inode, regular-file type, single link,
+size, exact bytes, and SHA-256 throughout verification. Staged `mtime_ns` and
+`ctime_ns` may rebaseline after fsync only when the descriptor view and name view
+are each stable across one byte-read window within the writer-owned bounded
+attempts. Exhaustion and every hard staged mismatch raise
+`StagedCandidateConflictError` carrying the failed invariant. The class is
+defined in `skills/vault-ingress/scripts/tracking_database_io.py`.
+
+A schema-v1 database with config v2 is an idempotent no-op. A schema-v1 database
+with config v1 receives only the config-v2 migration; the root generation and
+every other record remain unchanged. Before migration, queue `inspect` may read
+schema 0 and queue `recover` may close an active schema-0 lease in place.
+Recovery changes only queue lease/status state and never stamps database or talk
+schema fields; the established queue transition may advance a recovered claim
+receipt from v1 to v2 while adding its release fields.
 
 The owner migration is a preservation migration. Its only allowed semantic
 changes are adding root schema v1, adding the validated historical version to an
