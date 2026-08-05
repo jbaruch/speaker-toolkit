@@ -1,5 +1,14 @@
 # Changelog
 
+### fix(vault-ingress) — reserve missing config markers (#226)
+
+Typed config mutations now reject the reserved `{"$missing": true}` expectation
+sentinel as a literal value and direct callers to `delete: true`. Vaults that
+already contain the sentinel as a present config value can remove it through the
+normal expectation-bound deletion; its change receipt distinguishes presence
+from absence. The database schema is unchanged and talks do not need reparsing
+for this repair.
+
 ## 0.20.12 — 2026-08-05
 
 ### feat(vault-profile) — ship default pattern classification policy (#222)
