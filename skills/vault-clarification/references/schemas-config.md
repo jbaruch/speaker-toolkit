@@ -34,8 +34,10 @@ only) when empty. The question column shows what to ask the speaker.
 
 See the canonical schema and field reference in
 [../../vault-profile/references/schemas-config.md](../../vault-profile/references/schemas-config.md).
-That file also documents the migration path for vaults created before the
-unified `shownotes` block.
+Current writes preserve config schema v2, including the owner-validated
+`pptx_directory_exclusions`; config v1 is owner-migration input, not writable
+session state. That file also documents the migration path for the exclusion
+field and for vaults created before the unified `shownotes` block.
 
 ## Confirmed Intents Schema
 

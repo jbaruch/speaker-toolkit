@@ -22,6 +22,21 @@ from pptx.util import Inches
 VIDEO_ID = "AbCdEfGhI_1"
 OTHER_VIDEO_ID = "ZyXwVuTsR_2"
 DRIVE_ID = "drive-file-123"
+DEFAULT_DIRECTORY_EXCLUSIONS = [
+    ".venv",
+    "venv",
+    "node_modules",
+    ".git",
+    ".hg",
+    ".svn",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".tox",
+    ".nox",
+    ".tessl",
+]
 QUEUE_STATE_SCRIPT = (
     Path(__file__).parents[1]
     / "skills"
@@ -133,7 +148,11 @@ def write_database(fixture, talks, config=None, *, current=False):
                 "improvement_goals": [],
             }
         )
-        database["config"]["schema_version"] = 1
+        database["config"]["schema_version"] = 2
+        database["config"].setdefault(
+            "pptx_directory_exclusions",
+            deepcopy(DEFAULT_DIRECTORY_EXCLUSIONS),
+        )
         for talk in talks:
             if isinstance(talk, dict):
                 talk["schema_version"] = 5
@@ -1942,6 +1961,136 @@ def test_preflight_reports_invalid_configured_pptx_root_without_talks(
     assert finding["artifact_path"] is None
     if configured_root:
         assert configured_root not in json.dumps(finding, sort_keys=True)
+
+
+def test_preflight_reports_malformed_pptx_directory_exclusions(
+    preflight_vault,
+    vault_fixture,
+):
+    write_database(
+        vault_fixture,
+        [],
+        config={
+            "speaker_name": "Baruch Sadogursky",
+            "pptx_source_dir": str(vault_fixture["pptx_source"]),
+            "pptx_directory_exclusions": ["venv", "VENV"],
+        },
+        current=True,
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["ok"] is False
+    findings = [
+        item
+        for item in report["findings"]
+        if item["code"] == "pptx_directory_exclusions_invalid"
+    ]
+    assert len(findings) == 1
+    assert findings[0]["field"] == "config.pptx_directory_exclusions"
+    assert findings[0]["actual"] == ["venv", "VENV"]
+    assert "tracking_database_schema_invalid" not in finding_codes(report)
+
+
+def test_preflight_reports_missing_current_pptx_directory_exclusions_once(
+    preflight_vault,
+    vault_fixture,
+):
+    write_database(vault_fixture, [], current=True)
+    database = json.loads(vault_fixture["database"].read_text(encoding="utf-8"))
+    database["config"].pop("pptx_directory_exclusions")
+    vault_fixture["database"].write_text(
+        json.dumps(database, indent=2),
+        encoding="utf-8",
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    findings = [
+        item
+        for item in report["findings"]
+        if item["code"] == "pptx_directory_exclusions_invalid"
+    ]
+    assert len(findings) == 1
+    assert findings[0]["field"] == "config.pptx_directory_exclusions"
+    assert findings[0]["actual"] == {"state": "missing"}
+    assert "tracking_database_schema_invalid" not in finding_codes(report)
+
+
+def test_preflight_preserves_unrelated_schema_fault_with_invalid_exclusions(
+    preflight_vault,
+    vault_fixture,
+):
+    write_database(vault_fixture, [], current=True)
+    database = json.loads(vault_fixture["database"].read_text(encoding="utf-8"))
+    database["config"]["pptx_directory_exclusions"] = ["venv", "VENV"]
+    database["pptx_catalog"] = {}
+    vault_fixture["database"].write_text(
+        json.dumps(database, indent=2),
+        encoding="utf-8",
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    blocking_codes = finding_codes(report, "blocking")
+    assert "pptx_directory_exclusions_invalid" in blocking_codes
+    assert "tracking_database_schema_invalid" in blocking_codes
+    assert sum(
+        finding["code"] == "pptx_directory_exclusions_invalid"
+        for finding in report["findings"]
+    ) == 1
+    assert sum(
+        finding["code"] == "tracking_database_schema_invalid"
+        for finding in report["findings"]
+    ) == 1
+
+
+def test_preflight_accepts_historical_config_v1_for_owner_migration(
+    preflight_vault,
+    vault_fixture,
+):
+    write_database(vault_fixture, [], current=True)
+    database = json.loads(vault_fixture["database"].read_text(encoding="utf-8"))
+    database["config"]["schema_version"] = 1
+    database["config"].pop("pptx_directory_exclusions")
+    vault_fixture["database"].write_text(
+        json.dumps(database, indent=2),
+        encoding="utf-8",
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "pptx_directory_exclusions_invalid" not in finding_codes(report)
+    assert "tracking_database_schema_unsupported" not in finding_codes(report)
+
+
+def test_preflight_fails_closed_on_future_config_generation(
+    preflight_vault,
+    vault_fixture,
+):
+    write_database(vault_fixture, [], current=True)
+    database = json.loads(vault_fixture["database"].read_text(encoding="utf-8"))
+    database["config"]["schema_version"] = 3
+    vault_fixture["database"].write_text(
+        json.dumps(database, indent=2),
+        encoding="utf-8",
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["ok"] is False
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "tracking_database_schema_unsupported"
+    )
+    assert finding["severity"] == "blocking"
+    assert finding["field"] == "config.schema_version"
+    assert finding["expected"] == [1, 2]
+    assert finding["actual"] == {
+        "schema_version": 3,
+        "reason_codes": ["config_schema_version_unsupported"],
+    }
 
 
 def test_preflight_null_configured_pptx_root_uses_vault_fallback(

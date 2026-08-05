@@ -11,13 +11,13 @@ from PIL import Image
 from pptx import Presentation
 from pptx.util import Inches
 
-from conftest import make_deck
+from conftest import current_tracking_config, make_deck
 
 
 def _current_tracking_database():
     return {
         "schema_version": 1,
-        "config": {"schema_version": 1},
+        "config": current_tracking_config(),
         "talks": [],
         "pptx_catalog": [],
         "qr_codes": [],

@@ -26,22 +26,27 @@ Current constants live in
 implicit unversioned corpus. Within that root, a missing talk version is the
 historical talk schema v1, not a request to synthesize v5 evidence; missing
 config, PPTX, QR, resource, thumbnail, confirmed-intent, source-rejection, and
-goal versions likewise map only to their validated historical v1 shapes. Run the
-owner migration in vault-ingress Step 1.
+goal versions likewise map only to their validated historical v1 shapes. Config
+v2 adds the owner-controlled `pptx_directory_exclusions` discovery boundary.
+Run the owner migration in vault-ingress Step 1.
 Dry-run emits the exact input SHA-256. Apply requires that digest, refuses active
 queue claims, stores the complete original bytes under `.backups/`, and replaces
 the verified generation atomically. Backup directory and file opens do not
 follow symbolic links. The writer repeats its byte-and-file-generation check
-after staging and immediately before replacement. A current schema-v1 database
-is an idempotent no-op. Before migration, queue `inspect` may read schema 0 and
+after staging and immediately before replacement. A schema-v1 database with
+config v2 is an idempotent no-op. A schema-v1 database with config v1 receives
+only the config-v2 migration; the root generation and every other record remain
+unchanged. Before migration, queue `inspect` may read schema 0 and
 queue `recover` may close an active schema-0 lease in place. Recovery changes
 only queue lease/status state and never stamps database or talk schema fields;
 the established queue transition may advance a recovered claim receipt from v1
 to v2 while adding its release fields.
 
-The schema-0 migration is a preservation migration. Its only allowed semantic
+The owner migration is a preservation migration. Its only allowed semantic
 changes are adding root schema v1, adding the validated historical version to an
-unversioned owner record, and creating absent owned arrays as empty arrays. It
+unversioned owner record, creating absent owned arrays as empty arrays, and
+upgrading config v1 to v2. A missing exclusion list receives the canonical
+defaults; a valid owner-supplied list is preserved exactly. It
 preserves every other JSON value and missing-vs-present distinction, including
 legacy-v1 `pattern_observations` objects, arrays, or nulls and every historical
 citation/source-inspection field. Explicit version 0 sentinels, future owner
@@ -52,7 +57,7 @@ no-op.
 | Independent record | Current schema |
 |---|---:|
 | database root | 1 |
-| config | 1 |
+| config | 2 (schema 1 remains readable owner-migration input) |
 | talk | 5 |
 | PPTX catalog | 1 |
 | QR code | 1 |
@@ -64,17 +69,18 @@ no-op.
 
 | Component | Access | Contract |
 |---|---|---|
-| vault-ingress migration | owner read/write | Accept schema 0 or 1; migrate 0 exactly once; never downgrade future state |
+| vault-ingress migration | owner read/write | Accept root schema 0/1 and config schema 1/2; migrate to root v1/config v2; never downgrade future state |
 | vault-ingress queue inspection/recovery | owner compatibility transition | Inspect schema 0/1; recover active leases in schema 0/1; never stamp artifact or talk schema versions |
-| vault-ingress queue normalization/claim, persistence, shownotes apply, source repair | current read/write | Require database schema 1 plus supported explicit owner-record versions; targeted writers emit their current record generation and never migrate the root implicitly |
+| vault-ingress queue normalization/claim, persistence, shownotes apply, source repair | current read/write | Require database schema 1, config schema 2, and supported explicit owner-record versions; targeted writers emit their current record generation and never migrate the root implicitly |
 | vault-ingress preflight, source audit, analysis rendering, shownotes dry-run | dual reader | Parse schemas 0 and 1; gate through existing finding/error channels; never rewrite |
-| vault-clarification | current read/write | Route schema migration to vault-ingress; stamp config v1, confirmed intent v1, improvement goal v2 |
+| vault-clarification | current read/write | Route schema migration to vault-ingress; preserve config v2 and stamp confirmed intent v1/improvement goal v2 |
 | presentation-creator QR writer | dual reader/current writer | Read schemas 0 and 1; require schema 1 before URL creation or QR metadata persistence; stamp QR v1 |
 | presentation-creator publishing/post-event | authorized current writer | Require schema 1 before tracking writes; stamp resource v1 and preserve talk v5 |
 | illustrations thumbnail workflow | authorized current writer | Require schema 1 before tracking writes; stamp thumbnail v1 and preserve talk v5 |
 | vault-profile | dual reader | Parse schemas 0 and 1; treat unsupported generations as unavailable; never migrate |
 
-Current database schema 1 requires all eight top-level state fields shown below.
+Current database schema 1 with config schema 2 requires all eight top-level
+state fields shown below.
 Missing legacy arrays become empty during owner migration. Current writers do
 not create them opportunistically. A schema-v1 improvement goal remains valid
 historical state; migration never fabricates the schema-v2 baseline provenance
@@ -93,16 +99,21 @@ non-absolute value fail closed. Repair an invalid stored assertion with the
 expectation-bound `set_config` dry-run/apply/re-read/preflight sequence in
 [source-identity-preflight.md](source-identity-preflight.md#repair-a-stored-root-assertion).
 
+The exclusion value in the structural example below is one illustrative valid
+customization, not the owner default. See the
+[config field semantics](../../vault-profile/references/schemas-config.md#pptx-directory-exclusions).
+
 ```json
 {
   "schema_version": 1,
   "config": {
-    "schema_version": 1,
+    "schema_version": 2,
     "vault_root": "~/.claude/rhetoric-knowledge-vault",
     "vault_storage_path": "/native/absolute/vault/root (optional; must match the tracking-database parent; null/absent uses that parent)",
     "pptx_source_dir": "/native/absolute/path/to/Presentations (optional; null/absent falls back to the vault root)",
     "python_path": "/path/to/python3",
     "template_skip_patterns": ["template"],
+    "pptx_directory_exclusions": ["example-tool-cache"],
     "shownotes": {
       "enabled": true,
       "source": {
@@ -379,8 +390,10 @@ review its `changes`, then bind apply to that report's exact input hash:
   --apply --expected-sha256 <input-sha256-from-dry-run>
 ```
 
-Initialization uses a sole `initialize_database` mutation, stamps database and
-config schema version 1, defaults to dry-run, and applies with the literal
+Initialization uses a sole `initialize_database` mutation, stamps database
+schema version 1 and config schema version 2, supplies the canonical
+`pptx_directory_exclusions` when the plan omits that field, defaults to dry-run,
+and applies with the literal
 `--expected-sha256 missing`. All other applies
 require the dry-run SHA. The complete plan is one transaction: one failed type,
 record, semantic expectation, or file-generation precondition installs nothing.
@@ -1750,19 +1763,65 @@ Raw worker diagnostics are discarded after producing a bounded count/hash/
 truncation receipt. Source-artifact and operation resource limits are script-owned;
 see `skills/vault-ingress/scripts/pptx_evidence.py` — `PPTX_MAX_INPUT_BYTES` and
 the top-level `SupervisorLimits` profiles. Exceeding a configured limit fails
-closed. Directory
-extraction is selected only with `--directory`. The owner performs no root stat,
-type probe, or recursive enumeration: an authenticated worker with fixed input,
-output, memory, process, and wall limits validates and scans the root, then returns
-a closed root-relative manifest. It rejects symlinks, directory reparse points,
-unusable or colliding directory identities, unknown redirecting Windows reparse
-tags, unavailable Cloud Files (offline/recall), and `~$` Office locks; supported
-hydrated Cloud Files leaves remain eligible. A root-level receipt marks a scan
-truncated by the file cap. Discovery and extraction share one enclosing deadline,
-and final compact-JSON accounting includes its wrapper and newline. Stronger
-root/leaf handle binding and handle-relative traversal remain tracked by #176;
-until then all recursive filesystem contact is at least confined to the
-termination-safe discovery worker rather than occurring in the owner.
+closed.
+
+Directory extraction is selected only with `--directory`. Its public result is
+the strict schema-v1 completeness envelope below; this generation is independent
+of the per-deck extractor schema v4 and pipeline 1.5.0:
+
+```json
+{
+  "schema_version": 1,
+  "kind": "pptx_directory_batch",
+  "complete": false,
+  "incomplete_reason_codes": ["pptx_batch_file_limit"],
+  "results": [],
+  "skipped": [{"path": ".", "reason": "pptx_batch_file_limit"}]
+}
+```
+
+`complete` is true exactly when `incomplete_reason_codes` is empty, and both are
+recomputed from the closed `skipped[]` taxonomy. Exit zero admits either complete
+or partial output: safe per-deck results remain usable, but only `complete: true`
+authorizes full-catalog coverage or an absence conclusion. Whole-root and
+protocol failures exit nonzero and add the existing top-level `error`, bound to
+one root receipt and no results. Whole-root-only reason codes are invalid as
+ordinary partial receipts, and per-deck failures cannot be promoted into the
+top-level error. Its `details` object is path-neutral and may contain only one
+optional closed `supervisor_reason_code`. Each public `skipped[].path` is either
+`.` or one bounded canonical root-relative path; absolute, drive-qualified,
+backslash, traversal, empty-component, and control/format-bearing paths are
+rejected during decode. A legacy unversioned `results`/`skipped` object has
+unknown completeness and must be rerun before a coverage or absence claim.
+
+The owner performs no root stat, type probe, or recursive enumeration: an
+authenticated worker with fixed input, output, memory, process, and wall limits
+validates and scans the root, then returns a private schema-v2 root-relative
+manifest. Its authenticated request carries the validated exact-component
+directory-exclusion list; the response echoes that exact ordered list and
+carries `complete` and `incomplete_reason_codes`. The owner rejects a response
+whose policy differs, fabricates an exclusion receipt, returns evidence below
+an excluded component, or nests any skip below another non-root skip, then
+independently recomputes completeness from `skipped[]`. For every encountered real directory, symlink and
+reparse-point rejection runs before the case-insensitive exact-component
+exclusion check. An excluded directory produces one
+`pptx_batch_directory_excluded` receipt, consumes no descendant scan budget, and
+is not traversed. The excluded dirent is charged to a separate finite policy
+enumeration ceiling rather than the eligible-entry ceiling, so excluded
+environment/cache directories cannot starve authored siblings. Exhausting
+either ceiling emits `pptx_batch_entry_limit`; enumeration remains bounded.
+
+The envelope's `complete` and `incomplete_reason_codes` fields are the sole
+consumer authority; never recreate the per-receipt classification. Its closed
+taxonomy lives only in
+`skills/vault-ingress/scripts/pptx_discovery_contract.py::{PPTX_DIRECTORY_POLICY_SKIP_REASON_CODES,PPTX_DIRECTORY_INCOMPLETE_REASON_CODES}`.
+The worker rejects unusable or colliding directory identities and unknown
+redirecting Windows reparse tags; supported hydrated Cloud Files leaves remain
+eligible. Discovery and extraction share one enclosing deadline, and final
+compact-JSON accounting includes its wrapper and newline. Stronger root/leaf
+handle binding and handle-relative traversal remain tracked by #176; until then
+all recursive filesystem contact is at least confined to the termination-safe
+discovery worker rather than occurring in the owner.
 
 `archive_recovery` is empty on a healthy package. A bad-CRC member under
 `ppt/media/` is replaced only in an in-memory package with a transparent

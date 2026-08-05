@@ -10,6 +10,23 @@ import os
 import pytest
 
 
+DEFAULT_DIRECTORY_EXCLUSIONS = [
+    ".venv",
+    "venv",
+    "node_modules",
+    ".git",
+    ".hg",
+    ".svn",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".tox",
+    ".nox",
+    ".tessl",
+]
+
+
 def _legacy_goal(*, goal_id: str = "legacy") -> dict:
     return {
         "id": goal_id,
@@ -197,7 +214,8 @@ def _legacy_database() -> dict:
 def _expected_migration(database: dict) -> dict:
     expected = copy.deepcopy(database)
     expected["schema_version"] = 1
-    expected["config"]["schema_version"] = 1
+    expected["config"]["schema_version"] = 2
+    expected["config"]["pptx_directory_exclusions"] = DEFAULT_DIRECTORY_EXCLUSIONS
     for talk in expected["talks"]:
         talk.setdefault("schema_version", 1)
         for rejection in talk.get("source_rejections", []):
@@ -801,6 +819,107 @@ def test_current_migration_is_idempotent_with_stable_counts(tracking_database):
     }
 
 
+def test_current_root_config_v1_migrates_only_config(tracking_database):
+    current = tracking_database.migrate_tracking_database(_legacy_database()).database
+    current["config"] = {
+        "schema_version": 1,
+        "python_path": "/opt/python",
+    }
+    untouched = {
+        key: copy.deepcopy(value)
+        for key, value in current.items()
+        if key != "config"
+    }
+
+    assessment = tracking_database.assess_tracking_database(current)
+    migration = tracking_database.migrate_tracking_database(current)
+
+    assert assessment.usable is True
+    assert assessment.state == "legacy"
+    assert migration.changed is True
+    assert migration.from_schema_version == 1
+    assert migration.to_schema_version == 1
+    assert migration.record_counts["config"] == 1
+    assert migration.database["config"] == {
+        "schema_version": 2,
+        "python_path": "/opt/python",
+        "pptx_directory_exclusions": DEFAULT_DIRECTORY_EXCLUSIONS,
+    }
+    assert {
+        key: value
+        for key, value in migration.database.items()
+        if key != "config"
+    } == untouched
+
+    second = tracking_database.migrate_tracking_database(migration.database)
+    assert second.changed is False
+    assert second.from_schema_version == 1
+    assert second.to_schema_version == 1
+    assert second.database == migration.database
+    assert all(count == 0 for count in second.record_counts.values())
+
+
+def test_config_v1_migration_preserves_valid_custom_exclusions(tracking_database):
+    current = tracking_database.migrate_tracking_database(_legacy_database()).database
+    current["config"] = {
+        "schema_version": 1,
+        "pptx_directory_exclusions": ["generated", "VendorCache"],
+    }
+
+    migration = tracking_database.migrate_tracking_database(current)
+
+    assert migration.database["config"] == {
+        "schema_version": 2,
+        "pptx_directory_exclusions": ["generated", "VendorCache"],
+    }
+
+
+@pytest.mark.parametrize(
+    ("config", "expected"),
+    [
+        (
+            {"schema_version": 2},
+            "config schema v2 requires pptx_directory_exclusions",
+        ),
+        (
+            {
+                "schema_version": 2,
+                "pptx_directory_exclusions": ["venv", "VENV"],
+            },
+            "case-insensitive duplicate",
+        ),
+    ],
+)
+def test_current_config_v2_rejects_missing_or_malformed_exclusions(
+    tracking_database,
+    config,
+    expected,
+):
+    current = tracking_database.migrate_tracking_database(_legacy_database()).database
+    current["config"] = config
+
+    with pytest.raises(tracking_database.TrackingDatabaseError, match=expected):
+        tracking_database.assess_tracking_database(current)
+
+
+def test_future_config_generation_fails_closed_without_poisoning_root_version(
+    tracking_database,
+):
+    current = tracking_database.migrate_tracking_database(_legacy_database()).database
+    current["config"]["schema_version"] = 3
+
+    assessment = tracking_database.assess_tracking_database(current)
+
+    assert assessment.usable is False
+    assert assessment.schema_version == 1
+    assert assessment.reason_codes == ("config_schema_version_unsupported",)
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError,
+        match="config_schema_version_unsupported",
+    ):
+        tracking_database.migrate_tracking_database(current)
+
+
 @pytest.mark.parametrize(
     "collection",
     [
@@ -921,7 +1040,11 @@ def test_apply_writes_exact_backup_through_shared_transaction(
         expected_sha256=digest,
     )
 
-    backup = tmp_path / ".backups" / f"{path.name}.schema-v0-{digest}.bak"
+    backup = (
+        tmp_path
+        / ".backups"
+        / f"{path.name}.owner-migration-{digest}.bak"
+    )
     assert backup.read_bytes() == raw
     assert report["backup"] == str(backup)
     assert report["database_written"] is True
@@ -930,6 +1053,35 @@ def test_apply_writes_exact_backup_through_shared_transaction(
     current = json.loads(path.read_text())
     assert tracking_database.assess_tracking_database(current).state == "current"
     assert (path.stat().st_mode & 0o777) == 0o600
+
+
+def test_config_only_migration_uses_generation_neutral_backup_name(
+    migrate_tracking_database,
+    tracking_database,
+    tmp_path,
+):
+    path = tmp_path / "tracking-database.json"
+    current = tracking_database.migrate_tracking_database(_legacy_database()).database
+    current["config"] = {"schema_version": 1, "python_path": "/opt/python"}
+    raw = _write_database(path, current)
+    digest = hashlib.sha256(raw).hexdigest()
+
+    report = migrate_tracking_database.execute(
+        path,
+        apply=True,
+        expected_sha256=digest,
+    )
+
+    backup = (
+        tmp_path
+        / ".backups"
+        / f"{path.name}.owner-migration-{digest}.bak"
+    )
+    assert backup.read_bytes() == raw
+    assert report["backup"] == str(backup)
+    assert report["from_schema_version"] == 1
+    assert report["to_schema_version"] == 1
+    assert report["record_counts"]["config"] == 1
 
 
 def test_apply_current_database_is_exact_noop_without_backup(

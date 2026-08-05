@@ -7,6 +7,36 @@ import sys
 import pytest
 from pptx import Presentation
 
+
+DEFAULT_PPTX_DIRECTORY_EXCLUSIONS = [
+    ".venv",
+    "venv",
+    "node_modules",
+    ".git",
+    ".hg",
+    ".svn",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".tox",
+    ".nox",
+    ".tessl",
+]
+
+
+def current_tracking_config(**updates: object) -> dict[str, object]:
+    """Return the owner-current config generation for writer fixtures."""
+    config: dict[str, object] = {
+        "schema_version": 2,
+        "pptx_directory_exclusions": list(
+            DEFAULT_PPTX_DIRECTORY_EXCLUSIONS
+        ),
+    }
+    config.update(updates)
+    return config
+
+
 # ── Script import helper ──────────────────────────────────────────────
 
 SCRIPTS_PC = os.path.join(

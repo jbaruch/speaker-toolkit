@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import current_tracking_config
+
 
 def write_json(path, value):
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
@@ -14,7 +16,7 @@ def write_json(path, value):
 def base_database():
     return {
         "schema_version": 1,
-        "config": {"schema_version": 1},
+        "config": current_tracking_config(),
         "talks": [{
             "schema_version": 5,
             "filename": "talk.md",

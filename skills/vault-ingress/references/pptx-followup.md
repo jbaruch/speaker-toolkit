@@ -11,9 +11,15 @@ that used PDF as primary but have a PPTX available, or entries with
 `pptx_visual_status: "pending"`. Skip if already `"extracted"`. Use the bounded directory invocation from
 [bootstrap-and-preflight.md](bootstrap-and-preflight.md) and select the root-relative results that
 remain pending; do not replace it with `**/*.pptx` or a shell/per-file extraction
-loop. Reuse the exact config-derived `{template_skip_arguments}` (including zero
-arguments for an empty array), keep the explicit `--directory` flag, preserve every
-bounded skip receipt, and never admit a `~$` Office lock file.
+loop. Reuse the exact config-derived `{template_skip_arguments}` and
+`{directory_exclusion_arguments}` (including zero arguments for either empty
+array), keep the explicit `--directory` flag, preserve every bounded skip
+receipt, and never admit a `~$` Office lock file. Require the public schema-v1
+`pptx_directory_batch` envelope. Safely extracted results from a partial batch
+remain usable, but only `complete: true` authorizes a full-catalog conclusion,
+a claim that a missing deck does not exist, or absence inferred from an empty
+result. Legacy unversioned batch output has unknown completeness and must be
+rerun before any such claim.
 Require schema v4 for current analysis. Regenerate v0-v3 output and stop on an
 unknown future schema rather than interpreting missing fields as zero. When
 rendered pages were inspected, rerun that selected deck as one supervised
@@ -31,6 +37,10 @@ shownotes entries have `conference` and `title` fields. Fuzzy-match by: normaliz
 conference names (strip year, "Days", "Conference"), match by date proximity and title
 substring. Skip Office locks beginning `~$`, files with "static" in name, conflict
 copies matching `(N).pptx`, and files matching `config.template_skip_patterns`.
+Configured `pptx_directory_exclusions` prune a real directory only by
+case-insensitive exact component identity after symlink/reparse rejection; they
+do not match substrings or authored file names. Preserve the single
+`pptx_batch_directory_excluded` receipt and do not scan below it.
 Some talks have multiple .pptx files
 (one per delivery) — match to the closest date.
 

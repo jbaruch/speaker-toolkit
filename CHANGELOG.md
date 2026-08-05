@@ -1,5 +1,26 @@
 # Changelog
 
+### fix(vault-ingress) — make PPTX directory completeness explicit (#234)
+
+PPTX directory extraction now emits a strict schema-v1 batch envelope whose
+closed skip receipts determine `complete` and `incomplete_reason_codes`.
+Partial scans keep safe per-deck results and exit zero, while only a complete
+scan authorizes full-catalog or missing-deck conclusions; whole-root and
+protocol failures still exit nonzero. The private discovery manifest advances
+to v2 so its authenticated response carries the same recomputable decision.
+
+Config schema v2 adds bounded, case-insensitive exact-component
+`pptx_directory_exclusions` with narrow environment/cache defaults. The owner
+migration upgrades config v1 without changing root schema v1, preserves a
+valid custom list, and prunes each configured real directory with one explicit
+policy receipt after symlink/reparse checks. Exclusions use a separate bounded
+enumeration allowance so they cannot consume the eligible-entry budget, and the
+private response is bound back to the exact requested policy. Public whole-root
+errors reject per-deck reason promotion and arbitrary/path-bearing details.
+Per-deck PPTX extractor schema v4
+and pipeline 1.5.0 are unchanged; existing talk evidence does not require
+reparsing solely for this release.
+
 ## 0.20.15 — 2026-08-05
 
 ### fix(vault-ingress) — allow nested PPTX batch workers (#233)
