@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.15 — 2026-08-05
+
 ### fix(vault-ingress) — allow nested PPTX batch workers (#233)
 
 Directory PPTX extraction now carries the fixed interpreter/entrypoint identity
