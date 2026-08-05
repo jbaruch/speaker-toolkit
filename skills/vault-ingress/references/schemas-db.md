@@ -313,10 +313,33 @@ Agent-owned config and catalog changes use a typed plan:
 }
 ```
 
+Delete a config field with `delete: true`; never pass the missing marker as a
+`value`:
+
+```json
+{
+  "schema_version": 1,
+  "mutations": [{
+    "kind": "set_config",
+    "path": ["talks_source_dir"],
+    "expect": "/prior/path",
+    "delete": true
+  }]
+}
+```
+
 Every plan is strict JSON with exactly `schema_version` and a non-empty
 `mutations` array. Every expectation is either the exact decoded value/record
 seen by the owner reader or the exact missing marker `{"$missing": true}`. JSON
 `null` is a present value and is never interchangeable with that marker.
+The exact missing marker is reserved and invalid as a `set_config` value. A
+legacy writer may already have persisted that marker literally. A deletion with
+the missing-marker expectation is idempotent across both recoverable states: an
+absent field stays unchanged, while the exact present marker is removed. Any
+other present value fails the precondition. A recovery change receipt adds
+`before_exists: true` and `after_exists: false` to distinguish the literal old
+marker from the absent `after` marker. Run the usual dry-run, hash-bound apply,
+and owner re-read sequence.
 The plan decoder applies the same finite-number round-trip, 200-container depth,
 and Unicode-scalar gates as the database decoder, so a reviewed value cannot
 silently change or fail later during rendering.

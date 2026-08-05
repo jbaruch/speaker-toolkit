@@ -70,6 +70,12 @@ never fall back to whichever `python3` happens to be on `PATH`. Installed plugin
 bundles do not include `pyproject.toml`, so immediately probe the configured
 runtime with the shipped stdlib-only checker:
 
+Remove obsolete config fields with `delete: true`; never pass the missing marker
+as a `value`. If the owner read exposes that marker as a present legacy value,
+use the expectation-bound deletion in
+[schemas-db.md](schemas-db.md#owner-read-and-mutation-contract), then re-read
+before another config write.
+
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/check-runtime.py" \
   --lanes core,pdf,pptx

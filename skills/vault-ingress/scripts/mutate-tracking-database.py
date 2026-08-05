@@ -616,6 +616,11 @@ def _apply_set_config(
         raise TrackingDatabaseMutationError(
             f"mutations[{index}] must set exactly one of value or delete:true"
         )
+    if has_value and json_values_equal(mutation["value"], MISSING_MARKER):
+        raise TrackingDatabaseMutationError(
+            f"mutations[{index}].value cannot equal the reserved missing marker; "
+            "use delete:true to remove a config field"
+        )
     path = mutation["path"]
     if (
         not isinstance(path, list)
@@ -652,7 +657,19 @@ def _apply_set_config(
     leaf = path[-1]
     exists = leaf in parent
     actual = parent.get(leaf)
-    _expect_value(exists=exists, actual=actual, expected=mutation["expect"], label=label)
+    recovering_reserved_marker = (
+        delete
+        and exists
+        and json_values_equal(actual, MISSING_MARKER)
+        and json_values_equal(mutation["expect"], MISSING_MARKER)
+    )
+    if not recovering_reserved_marker:
+        _expect_value(
+            exists=exists,
+            actual=actual,
+            expected=mutation["expect"],
+            label=label,
+        )
     before: object = actual if exists else MISSING_MARKER
     if delete:
         parent.pop(leaf, None)
@@ -660,6 +677,18 @@ def _apply_set_config(
     else:
         after = copy.deepcopy(mutation["value"])
         parent[leaf] = after
+    if recovering_reserved_marker:
+        changes.append(
+            {
+                "kind": "set_config",
+                "identity": ".".join(path),
+                "before": copy.deepcopy(before),
+                "after": copy.deepcopy(after),
+                "before_exists": True,
+                "after_exists": False,
+            }
+        )
+        return
     _record_change(
         changes,
         kind="set_config",

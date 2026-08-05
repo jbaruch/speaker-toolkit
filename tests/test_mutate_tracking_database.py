@@ -849,6 +849,122 @@ def test_delete_missing_nested_config_preserves_exact_expectations(
         )
 
 
+def test_set_config_rejects_reserved_missing_marker_value(
+    mutate_tracking_database,
+) -> None:
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="value cannot equal the reserved missing marker",
+    ):
+        mutate_tracking_database.build_candidate(
+            _base_database(),
+            [
+                {
+                    "kind": "set_config",
+                    "path": ["legacy"],
+                    "expect": MISSING,
+                    "value": MISSING,
+                }
+            ],
+        )
+
+    candidate, _ = mutate_tracking_database.build_candidate(
+        _base_database(),
+        [
+            {
+                "kind": "set_config",
+                "path": ["ordinary_object"],
+                "expect": MISSING,
+                "value": {"$missing": 1},
+            }
+        ],
+    )
+    assert candidate["config"]["ordinary_object"] == {"$missing": 1}
+
+
+def test_delete_recovers_persisted_reserved_missing_marker(
+    mutate_tracking_database,
+    tmp_path: Path,
+) -> None:
+    database = _base_database()
+    database["config"]["legacy"] = copy.deepcopy(MISSING)
+
+    database_path = tmp_path / "tracking-database.json"
+    plan_path = tmp_path / "plan.json"
+    _write_json(database_path, database)
+    _write_json(
+        plan_path,
+        {
+            "schema_version": 1,
+            "mutations": [
+                {
+                    "kind": "set_config",
+                    "path": ["legacy"],
+                    "expect": MISSING,
+                    "delete": True,
+                }
+            ],
+        },
+    )
+    before = database_path.read_bytes()
+
+    dry_run = mutate_tracking_database.execute(
+        database_path,
+        plan_path,
+        apply=False,
+        expected_sha256=None,
+    )
+    assert dry_run["changed"] is True
+    assert dry_run["database_written"] is False
+    assert database_path.read_bytes() == before
+    assert dry_run["changes"] == [
+        {
+            "kind": "set_config",
+            "identity": "legacy",
+            "before": MISSING,
+            "after": MISSING,
+            "before_exists": True,
+            "after_exists": False,
+        }
+    ]
+
+    applied = mutate_tracking_database.execute(
+        database_path,
+        plan_path,
+        apply=True,
+        expected_sha256=dry_run["input_sha256"],
+    )
+    result = json.loads(database_path.read_text(encoding="utf-8"))
+    assert applied["database_written"] is True
+    assert applied["changes"] == dry_run["changes"]
+    assert "legacy" not in result["config"]
+
+
+@pytest.mark.parametrize("legacy_value", [None, {"$missing": 1}, "value"])
+def test_missing_expectation_recovery_rejects_other_present_values(
+    mutate_tracking_database,
+    legacy_value: object,
+) -> None:
+    database = _base_database()
+    database["config"]["legacy"] = legacy_value
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="expected a missing value",
+    ):
+        mutate_tracking_database.build_candidate(
+            database,
+            [
+                {
+                    "kind": "set_config",
+                    "path": ["legacy"],
+                    "expect": MISSING,
+                    "delete": True,
+                }
+            ],
+        )
+
+
 def test_boolean_plan_and_record_schema_versions_are_rejected(
     mutate_tracking_database,
     tmp_path: Path,
