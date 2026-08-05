@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.12 — 2026-08-05
+
 ### feat(vault-profile) — ship default pattern classification policy (#222)
 
 Speaker profiles now classify current scoring-v5 opportunity rows with the
