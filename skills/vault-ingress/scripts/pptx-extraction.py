@@ -503,7 +503,7 @@ def _require_tesseract():
         )
 
     try:
-        import pytesseract  # pyright: ignore[reportMissingImports]
+        import pytesseract  # pyright: ignore[reportMissingImports] - optional OCR dependency checked at runtime
     except ImportError as e:
         _tesseract_available = False
         raise OcrUnavailableError(
@@ -530,7 +530,7 @@ def _ocr_image_result(blob):
     engine_version = _require_tesseract()
 
     try:
-        import pytesseract  # pyright: ignore[reportMissingImports]
+        import pytesseract  # pyright: ignore[reportMissingImports] - optional OCR dependency checked at runtime
         from PIL import Image, UnidentifiedImageError
     except ImportError as e:
         raise OcrUnavailableError(

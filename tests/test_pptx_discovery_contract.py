@@ -12,7 +12,7 @@ SCRIPTS = Path(__file__).parents[1] / "skills" / "vault-ingress" / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-import pptx_discovery_contract as contract  # noqa: E402
+import pptx_discovery_contract as contract  # noqa: E402 - import follows script-path injection
 
 
 def test_canonical_directory_exclusions_are_narrow_and_stable() -> None:
