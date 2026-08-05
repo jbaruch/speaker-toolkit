@@ -152,18 +152,11 @@ comparison transforms back to the database or report. Incomplete metadata,
 substantive conflicts, and normalized filename collisions remain proposals.
 Disabled, `remote_url`, and `none` sources return a structured no-op.
 
-An exact-filename match may also accept a shownotes title that preserves the
-complete authored title and appends one terminal `at <event>` qualifier. Require
-non-empty conference and date values from the existing talk record. Do not use
-metadata from the current shownotes proposal to corroborate its own title.
-Require the shownotes-specific event alias to equal the stored conference alias.
-Require every explicit qualifier or conference year to agree with the stored
-talk date.
-Keep generic event-type words significant. The closed presentation-equivalence
-policy lives in
-`skills/vault-ingress/scripts/source_identity_matching.py::shownotes_titles_agree`.
-Do not substitute the provider-oriented `event_alias()` comparator. Keep the
-authored title unchanged when this comparison succeeds.
+For an exact-filename match, pass the stored and proposed title plus stored
+conference/date context to the shared title-agreement contract documented in
+[schemas-db.md](schemas-db.md#shownotes-scanimport-report). Agreement keeps the
+authored title unchanged. Disagreement emits `existing_title_conflict` and
+leaves the entry `review_required`.
 
 Apply the reviewed deterministic proposals with the same command plus
 `--apply`. Only `add` and `update` entries mutate the tracking database. New

@@ -443,20 +443,14 @@ reads `config.shownotes.source` for local sources and resolves
 migration. `remote_url`, `none`, and disabled sources return a structured no-op
 without reading Markdown or writing the database.
 
-On an exact-filename match, title agreement is asymmetric and comparison-only.
-The shownotes title may append `at <event>` to the complete authored title when
-the shownotes-specific NFC event alias equals the talk conference and every
-explicit event or conference year agrees with the talk date. Both corroborating
-values must already be non-empty in the stored talk. The current shownotes
-proposal cannot supply either value for its own title comparison. Generic
-event-type words remain significant. Only the comparator's closed branded
-presentation variants and the validated year are removed from event comparison.
-Other numeric event tokens fail closed. The scanner keeps the authored title
-unchanged. Different wording, subtitles, event aliases, years, and shared
-prefixes remain `existing_title_conflict` review findings. Exact-title agreement
-still permits missing metadata fields to be proposed normally. Only NFC and
-Unicode quote presentation variants retain the pre-existing exact-title
-equivalence.
+On an exact-filename match, the title-agreement call receives the stored title,
+the proposed shownotes title, the stored conference, and the stored date. Its
+closed boolean decision contract lives in
+`skills/vault-ingress/scripts/source_identity_matching.py::shownotes_titles_agree`.
+Agreement is comparison-only and keeps the stored title unchanged. Disagreement
+emits `existing_title_conflict` and leaves the entry `review_required`. An exact
+title can still fill empty non-title metadata through the existing update
+contract.
 
 The command emits report schema v2:
 
