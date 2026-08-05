@@ -598,7 +598,7 @@ def test_directory_owner_never_touches_root_before_authenticated_manifest(
     os.name != "posix",
     reason="real nested-runtime fixture uses an executable POSIX shim",
 )
-def test_nested_runtime_full_batch_reaches_every_fixed_pptx_worker(
+def test_nested_runtime_reaches_every_fixed_pptx_worker(
     pptx_extraction,
     monkeypatch,
     request,
@@ -651,8 +651,13 @@ def test_nested_runtime_full_batch_reaches_every_fixed_pptx_worker(
     )
 
     results, skipped = pptx_extraction.batch_extract(root, [], ocr=False)
+    batch_operations = set(operations)
+    operation_count = len(operations)
     probe = pptx_evidence.probe_pptx_artifact(deck, trusted_root=root)
+    probe_operations = set(operations[operation_count:])
+    operation_count = len(operations)
     audit = pptx_evidence.recompute_native_deck_audit(deck, trusted_root=root)
+    audit_operations = set(operations[operation_count:])
 
     assert skipped == []
     assert len(results) == 1
@@ -660,11 +665,17 @@ def test_nested_runtime_full_batch_reaches_every_fixed_pptx_worker(
     assert results[0]["slide_count"] == 1
     assert probe.source_sha256 == results[0]["input_fingerprint"]["digest"]
     assert audit["source_pptx_sha256"] == probe.source_sha256
-    assert set(operations) >= {
+    assert batch_operations >= {
+        pptx_evidence.PPTX_METADATA_OPERATION,
+        pptx_evidence.PPTX_EXTRACT_OPERATION,
+    }
+    assert probe_operations >= {
         pptx_evidence.PPTX_METADATA_OPERATION,
         pptx_evidence.PPTX_PROBE_OPERATION,
+    }
+    assert audit_operations >= {
+        pptx_evidence.PPTX_METADATA_OPERATION,
         pptx_evidence.PPTX_NATIVE_AUDIT_OPERATION,
-        pptx_evidence.PPTX_EXTRACT_OPERATION,
     }
 
 
