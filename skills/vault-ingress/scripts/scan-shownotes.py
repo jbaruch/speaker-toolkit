@@ -36,6 +36,7 @@ from ingress_contract import (
     parse_youtube_id,
     validate_talk_record_schemas,
 )
+from source_identity_matching import shownotes_titles_agree
 from tracking_database import (
     TrackingDatabaseError,
     assess_tracking_database,
@@ -105,19 +106,6 @@ RAW_URL_RE = re.compile(r"https?://[^\s<>]+")
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 FileGeneration = tuple[int, int, int, int, int]
 
-# These transforms are deliberately narrower than general punctuation folding.
-# They exist only for comparison: reports and stored values keep their original
-# typography and capitalization.
-_TITLE_QUOTE_EQUIVALENTS = str.maketrans(
-    {
-        "\u2018": "'",
-        "\u2019": "'",
-        "\u201c": '"',
-        "\u201d": '"',
-    }
-)
-
-
 class ShownotesScanError(ValueError):
     """Input or state prevents a deterministic shownotes scan."""
 
@@ -147,24 +135,29 @@ def _normalized_filename(value: str) -> str:
     return unicodedata.normalize("NFC", value).casefold()
 
 
-def _normalized_title_for_comparison(value: str) -> str:
-    """Normalize title presentation glyphs without changing title wording/case."""
-    return unicodedata.normalize("NFC", value).translate(_TITLE_QUOTE_EQUIVALENTS)
-
-
 def _normalized_conference_for_comparison(value: str) -> str:
     """Normalize conference Unicode and case only; whitespace stays significant."""
     return unicodedata.normalize("NFC", value).casefold()
 
 
-def _same_presentation_value(field: str, left: object, right: object) -> bool:
-    """Return whether a title/conference pair differs only in presentation."""
+def _catalog_values_agree(
+    field: str,
+    left: object,
+    right: object,
+    *,
+    conference: object,
+    talk_date: object,
+) -> bool:
+    """Return whether stored and shownotes metadata agree without rewriting."""
     if not isinstance(left, str) or not isinstance(right, str):
         return False
     if field == "title":
-        return _normalized_title_for_comparison(
-            left
-        ) == _normalized_title_for_comparison(right)
+        return shownotes_titles_agree(
+            left,
+            right,
+            conference=conference,
+            talk_date=talk_date,
+        )
     if field == "conference":
         return _normalized_conference_for_comparison(
             left
@@ -777,6 +770,8 @@ def _existing_entry(
 ) -> tuple[str, dict[str, Any], list[dict[str, str]]]:
     issues = list(parse_issues)
     patch: dict[str, Any] = {}
+    stored_conference = talk.get("conference")
+    stored_date = talk.get("date")
     for field in TRACKED_FIELDS:
         if field not in proposal:
             continue
@@ -792,7 +787,13 @@ def _existing_entry(
             continue
         if current == candidate:
             continue
-        if _same_presentation_value(field, current, candidate):
+        if _catalog_values_agree(
+            field,
+            current,
+            candidate,
+            conference=stored_conference,
+            talk_date=stored_date,
+        ):
             continue
         if (
             field in {"video_url", "slides_url"}

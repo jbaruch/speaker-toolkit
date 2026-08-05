@@ -443,6 +443,15 @@ reads `config.shownotes.source` for local sources and resolves
 migration. `remote_url`, `none`, and disabled sources return a structured no-op
 without reading Markdown or writing the database.
 
+On an exact-filename match, the title-agreement call receives the stored title,
+the proposed shownotes title, the stored conference, and the stored date. Its
+closed boolean decision contract lives in
+`skills/vault-ingress/scripts/source_identity_matching.py::shownotes_titles_agree`.
+Agreement is comparison-only and keeps the stored title unchanged. Disagreement
+emits `existing_title_conflict` and leaves the entry `review_required`. An exact
+title can still fill empty non-title metadata through the existing update
+contract.
+
 The command emits report schema v2:
 
 ```json

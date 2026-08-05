@@ -145,12 +145,18 @@ safe deterministic proposals; `review_required` entries need a human decision.
 The scanner uses exact filename identity, derives supported YouTube and Google
 Drive IDs, and keeps every matching `source_rejections` identity inactive.
 For comparison only, title equality applies Unicode NFC and maps straight/curly
-single and double quote glyphs to the same narrow equivalents; it preserves
+single and double quote glyphs to the same narrow equivalents. It preserves
 case, other punctuation, and wording. Conference equality applies NFC plus
 casefold only and preserves whitespace. The scanner never writes these
 comparison transforms back to the database or report. Incomplete metadata,
 substantive conflicts, and normalized filename collisions remain proposals.
 Disabled, `remote_url`, and `none` sources return a structured no-op.
+
+For an exact-filename match, pass the stored and proposed title plus stored
+conference/date context to the shared title-agreement contract documented in
+[schemas-db.md](schemas-db.md#shownotes-scanimport-report). Agreement keeps the
+authored title unchanged. Disagreement emits `existing_title_conflict` and
+leaves the entry `review_required`.
 
 Apply the reviewed deterministic proposals with the same command plus
 `--apply`. Only `add` and `update` entries mutate the tracking database. New
