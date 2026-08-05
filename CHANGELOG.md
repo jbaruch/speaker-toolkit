@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.16 — 2026-08-05
+
 ### fix(vault-ingress) — make PPTX directory completeness explicit (#234)
 
 PPTX directory extraction now emits a strict schema-v1 batch envelope whose
