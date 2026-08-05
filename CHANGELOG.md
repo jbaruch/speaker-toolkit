@@ -1,7 +1,5 @@
 # Changelog
 
-## Unreleased
-
 ### fix(vault-ingress) — reserve missing config markers (#226)
 
 Typed config mutations now reject the reserved `{"$missing": true}` expectation
