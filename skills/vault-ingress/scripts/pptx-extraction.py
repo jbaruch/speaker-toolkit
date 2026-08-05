@@ -2203,6 +2203,7 @@ def _run_supervised_directory_discovery(directory, skip_patterns, *, deadline):
             {},
             {"root_path": root, "skip_patterns": patterns},
             limits,
+            immutable_process_identity=command[:2],
             sensitive_values=(root,),
             schema_generation=SCHEMA_VERSION,
             pipeline_generation=PIPELINE_VERSION,
@@ -2229,6 +2230,7 @@ def _run_supervised_directory_discovery(directory, skip_patterns, *, deadline):
         raise PptxEvidenceError(
             "bounded directory discovery failed",
             reason_code=reason,
+            details={"supervisor_reason_code": exc.reason_code},
         ) from exc
     return _decode_directory_manifest(result.payload)
 
@@ -2299,6 +2301,23 @@ def _encode_batch_output(results, skipped):
     ).encode("utf-8")
 
 
+def _encode_batch_failure(error):
+    """Encode one path-neutral whole-root failure for machine callers."""
+    details = {}
+    supervisor_reason = error.details.get("supervisor_reason_code")
+    if isinstance(supervisor_reason, str):
+        details["supervisor_reason_code"] = supervisor_reason
+    return json.dumps(
+        {
+            "results": [],
+            "skipped": [{"path": ".", "reason": error.reason_code}],
+            "error": {"reason_code": error.reason_code, "details": details},
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
 def _encoded_json_size(value):
     return len(
         json.dumps(
@@ -2328,16 +2347,11 @@ def batch_extract(directory, skip_patterns, *, ocr=True):
     started = time.monotonic()
     deadline = started + _BATCH_MAX_WALL_SECONDS
     root = Path(_validated_directory_root(directory))
-    try:
-        relative_files, skipped = _run_supervised_directory_discovery(
-            root,
-            skip_patterns,
-            deadline=deadline,
-        )
-    except PptxEvidenceError as exc:
-        if exc.reason_code in _DIRECTORY_BATCH_FAILURE_REASONS:
-            return [], [{"path": ".", "reason": exc.reason_code}]
-        raise
+    relative_files, skipped = _run_supervised_directory_discovery(
+        root,
+        skip_patterns,
+        deadline=deadline,
+    )
     discovered = [
         (root.joinpath(*relative.split("/")), relative) for relative in relative_files
     ]
@@ -2516,6 +2530,8 @@ def main(argv=None):
         try:
             results, skipped = batch_extract(args.path, args.skip or [], ocr=ocr)
         except PptxEvidenceError as exc:
+            if exc.reason_code in _DIRECTORY_BATCH_FAILURE_REASONS:
+                sys.stdout.write(_encode_batch_failure(exc).decode("utf-8") + "\n")
             print(f"ERROR: {exc.reason_code}", file=sys.stderr)
             return 1
         sys.stdout.write(_encode_batch_output(results, skipped).decode("utf-8") + "\n")

@@ -1,5 +1,15 @@
 # Changelog
 
+### fix(vault-ingress) — allow nested PPTX discovery runtimes (#228)
+
+Bounded PPTX directory discovery now permits its exact configured Python and
+fixed worker entrypoint to live beneath the scanned presentation root while
+continuing to reject sensitive paths in mutable process arguments. A
+whole-root discovery failure emits a structured top-level error and exits
+nonzero instead of looking like a successful empty scan. Existing talk
+analysis is unchanged; rerun the PPTX catalog scan where discovery previously
+reported only a root failure.
+
 ## 0.20.13 — 2026-08-05
 
 ### fix(vault-ingress) — reserve missing config markers (#226)

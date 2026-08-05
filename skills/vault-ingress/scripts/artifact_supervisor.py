@@ -437,6 +437,7 @@ def run_authenticated_worker(
     limits: SupervisorLimits,
     *,
     credentials: WorkerCredentials | None = None,
+    immutable_process_identity: Sequence[str | os.PathLike[str]] = (),
     sensitive_values: Sequence[str | os.PathLike[str]] = (),
     schema_generation: int = 1,
     pipeline_generation: str = PROTOCOL_VERSION,
@@ -454,9 +455,19 @@ def run_authenticated_worker(
     controls never learns an artifact path or authentication key.  POSIX process
     groups are cleanup boundaries for trusted worker code, not portable security
     sandboxes against a worker that deliberately creates another session.
+
+    ``immutable_process_identity`` may name the command's exact two-path
+    interpreter/entrypoint prefix. Those paths may sit strictly below a
+    sensitive directory root; every later argv element remains subject to the
+    normal process-metadata rejection, and all sensitive values remain active
+    for environment and diagnostic redaction.
     """
 
     command_parts = _validate_command(command)
+    identity_parts = _validate_immutable_process_identity(
+        command_parts,
+        immutable_process_identity,
+    )
     selected_credentials = credentials or WorkerCredentials.generate()
     pending = _prepare_request(
         operation,
@@ -471,7 +482,11 @@ def run_authenticated_worker(
     inferred_sensitive = _payload_sensitive_strings(pending.request.payload)
     declared_sensitive = tuple(str(value) for value in sensitive_values if str(value))
     redactions = tuple(dict.fromkeys((*declared_sensitive, *inferred_sensitive)))
-    _reject_sensitive_process_metadata(command_parts, redactions)
+    _reject_sensitive_process_metadata(
+        command_parts,
+        redactions,
+        immutable_process_identity=identity_parts,
+    )
     environment = _sanitized_environment(redactions)
     response_redactions = (
         *redactions,
@@ -2047,11 +2062,51 @@ def _payload_sensitive_strings(payload: JsonValue) -> tuple[str, ...]:
     return tuple(dict.fromkeys(found))
 
 
+def _validate_immutable_process_identity(
+    command: Sequence[str],
+    identity: Sequence[str | os.PathLike[str]],
+) -> tuple[str, ...]:
+    """Bind two absolute identity paths to the exact fixed command prefix."""
+    if not identity:
+        return ()
+    identity_parts = tuple(_validate_command(identity))
+    if (
+        len(identity_parts) != 2
+        or not all(os.path.isabs(part) for part in identity_parts)
+        or tuple(command[:2]) != identity_parts
+    ):
+        raise SupervisorError("invalid_worker_command")
+    return identity_parts
+
+
+def _is_strict_path_descendant(candidate: str, root: str) -> bool:
+    """Return lexical containment without resolving or touching either path."""
+    if not os.path.isabs(candidate) or not os.path.isabs(root):
+        return False
+    candidate_path = os.path.normcase(os.path.normpath(candidate))
+    root_path = os.path.normcase(os.path.normpath(root))
+    if candidate_path == root_path:
+        return False
+    try:
+        return os.path.commonpath((candidate_path, root_path)) == root_path
+    except ValueError:
+        return False
+
+
 def _reject_sensitive_process_metadata(
-    command: Sequence[str], values: Sequence[str]
+    command: Sequence[str],
+    values: Sequence[str],
+    *,
+    immutable_process_identity: Sequence[str] = (),
 ) -> None:
-    if any(value and value in part for value in values for part in command):
-        raise SupervisorError("unsafe_worker_process_metadata")
+    identity_length = len(immutable_process_identity)
+    for index, part in enumerate(command):
+        for value in values:
+            if not value or value not in part:
+                continue
+            if index < identity_length and _is_strict_path_descendant(part, value):
+                continue
+            raise SupervisorError("unsafe_worker_process_metadata")
 
 
 def _sanitized_environment(sensitive_values: Sequence[str]) -> dict[str, str]:
