@@ -7,6 +7,7 @@ contract without importing the PPTX extraction runtime.
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass
 from typing import Mapping, Sequence, cast
@@ -19,6 +20,7 @@ PPTX_DIRECTORY_MANIFEST_KIND = "directory"
 
 PPTX_DIRECTORY_EXCLUSION_MAX_COUNT = 64
 PPTX_DIRECTORY_EXCLUSION_MAX_CHARS = 255
+PPTX_DIRECTORY_RELATIVE_PATH_MAX_CHARS = 4_096
 DEFAULT_PPTX_DIRECTORY_EXCLUSIONS = (
     ".venv",
     "venv",
@@ -252,6 +254,33 @@ def directory_component_is_excluded(
     return component.casefold() in {item.casefold() for item in exclusions}
 
 
+def _validate_relative_path(value: object, *, label: str) -> str:
+    """Return one canonical root-relative path, with dot reserved for root."""
+    if isinstance(value, str) and value == ".":
+        return value
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > PPTX_DIRECTORY_RELATIVE_PATH_MAX_CHARS
+        or value.startswith(("/", "\\"))
+        or "\\" in value
+        or re.match(r"^[A-Za-z]:", value)
+        or any(
+            unicodedata.category(character) in {"Cc", "Cf", "Cs"}
+            for character in value
+        )
+    ):
+        raise PptxDiscoveryContractError(
+            f"{label} must be dot or a canonical root-relative path"
+        )
+    components = value.split("/")
+    if any(component in {"", ".", ".."} for component in components):
+        raise PptxDiscoveryContractError(
+            f"{label} must be dot or a canonical root-relative path"
+        )
+    return value
+
+
 def _validate_skipped(value: object) -> list[dict[str, str]]:
     if not isinstance(value, list):
         raise PptxDiscoveryContractError("skipped must be an array")
@@ -263,12 +292,11 @@ def _validate_skipped(value: object) -> list[dict[str, str]]:
             raise PptxDiscoveryContractError(
                 f"skipped[{index}] must contain only path and reason"
             )
-        path = item.get("path")
+        path = _validate_relative_path(
+            item.get("path"),
+            label=f"skipped[{index}].path",
+        )
         reason = item.get("reason")
-        if not isinstance(path, str) or not path:
-            raise PptxDiscoveryContractError(
-                f"skipped[{index}].path must be a nonempty string"
-            )
         if not isinstance(reason, str) or reason not in PPTX_DIRECTORY_SKIP_REASON_CODES:
             raise PptxDiscoveryContractError(
                 f"skipped[{index}].reason is outside the closed taxonomy"

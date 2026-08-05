@@ -202,6 +202,50 @@ def test_public_batch_rejects_descendant_skip_receipts() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/absolute/deck.pptx",
+        "\\absolute\\deck.pptx",
+        "C:/absolute/deck.pptx",
+        "../escape.pptx",
+        "nested/../escape.pptx",
+        "./deck.pptx",
+        "nested//deck.pptx",
+        "nested/",
+        "nested\\deck.pptx",
+        "line\nbreak.pptx",
+        "zero\u200bwidth.pptx",
+    ],
+)
+def test_public_batch_rejects_noncanonical_skip_paths(path: str) -> None:
+    with pytest.raises(
+        contract.PptxDiscoveryContractError,
+        match="canonical root-relative path",
+    ):
+        contract.build_pptx_directory_batch(
+            [],
+            [{"path": path, "reason": "pptx_batch_skip_pattern"}],
+        )
+
+
+def test_public_batch_bounds_skip_path_length() -> None:
+    with pytest.raises(
+        contract.PptxDiscoveryContractError,
+        match="canonical root-relative path",
+    ):
+        contract.build_pptx_directory_batch(
+            [],
+            [
+                {
+                    "path": "x"
+                    * (contract.PPTX_DIRECTORY_RELATIVE_PATH_MAX_CHARS + 1),
+                    "reason": "pptx_batch_skip_pattern",
+                }
+            ],
+        )
+
+
 def test_whole_root_failure_is_bound_to_the_same_public_envelope() -> None:
     batch = contract.build_pptx_directory_batch(
         [],

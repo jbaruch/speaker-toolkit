@@ -1029,7 +1029,7 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
                     label="config.pptx_directory_exclusions",
                 )
             except PptxDiscoveryContractError as exc:
-                raise TrackingDatabaseError(str(exc)) from exc
+                raise TrackingDatabaseConfigExclusionsError(str(exc)) from exc
         else:
             exclusions = list(DEFAULT_PPTX_DIRECTORY_EXCLUSIONS)
         config["pptx_directory_exclusions"] = exclusions

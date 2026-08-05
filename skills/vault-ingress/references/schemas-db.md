@@ -1788,8 +1788,11 @@ protocol failures exit nonzero and add the existing top-level `error`, bound to
 one root receipt and no results. Whole-root-only reason codes are invalid as
 ordinary partial receipts, and per-deck failures cannot be promoted into the
 top-level error. Its `details` object is path-neutral and may contain only one
-optional closed `supervisor_reason_code`. A legacy unversioned `results`/`skipped` object
-has unknown completeness and must be rerun before a coverage or absence claim.
+optional closed `supervisor_reason_code`. Each public `skipped[].path` is either
+`.` or one bounded canonical root-relative path; absolute, drive-qualified,
+backslash, traversal, empty-component, and control/format-bearing paths are
+rejected during decode. A legacy unversioned `results`/`skipped` object has
+unknown completeness and must be rerun before a coverage or absence claim.
 
 The owner performs no root stat, type probe, or recursive enumeration: an
 authenticated worker with fixed input, output, memory, process, and wall limits
