@@ -45,8 +45,8 @@ only from authorized `pattern_profile` history.
 Every antipattern flag MUST be tagged as one of:
 
 - `[RECURRING]`. Render one `guardrail-check.py` `recurring_antipatterns` record.
-  Preserve its `recurrence_classification`, `evidence`, and optional `trend` fields.
-  Do not reclassify the record.
+  - Preserve its `recurrence_classification`, `evidence`, and optional `trend` fields.
+  - Do not reclassify the record.
 - `[CONTEXTUAL]` — detected in the current outline but NOT in the speaker's
   authorized historical profile. It is a current-outline finding, not necessarily a
   first-time issue when history is unavailable.
@@ -62,10 +62,11 @@ recommendations into exactly four tiers:
 2. **Contextual history.** Use current-cohort regular/occasional patterns worth
    considering here.
 3. **New to You.** Use exactly `mastery_levels.never_tried` /
-   `never_used_patterns` entries that fit this talk. A first detection in the newest
-   talk or `not_yet_observed` never counts as New-to-You.
-4. **Shake It Up.** Use exactly 1-2 wild card patterns for experimentation. Never 0,
-   never 3+.
+   `never_used_patterns` entries that fit this talk.
+   - Do not treat a first detection in the newest talk or `not_yet_observed` as
+     New-to-You.
+4. **Shake It Up.** Use exactly 1-2 wild card patterns for experimentation.
+   - Do not use zero or three or more wild card patterns.
 
 When the mastery domain is unavailable, do not manufacture those tiers from legacy
 profiles or unprovenanced prose. Present a flat relevant-pattern list from the current
