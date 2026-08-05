@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.17 — 2026-08-05
+
 ### fix(vault-ingress) — allow CloudStorage owner writes (#239)
 
 The shared tracking-database transaction now tolerates bounded timestamp-only
