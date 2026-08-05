@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.18 — 2026-08-05
+
 ### fix(vault-ingress) — reconcile event-qualified shownotes titles (#237)
 
 Shownotes reconciliation now keeps an existing authored title when the
