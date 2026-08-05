@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 import threading
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,6 +18,24 @@ def _write(path: Path, value: object) -> bytes:
     raw = json.dumps(value, indent=2).encode("utf-8") + b"\n"
     path.write_bytes(raw)
     return raw
+
+
+def _metadata_view(
+    metadata: os.stat_result,
+    *,
+    inode: int | None = None,
+    modified_ns: int | None = None,
+    changed_ns: int | None = None,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        st_mode=metadata.st_mode,
+        st_nlink=metadata.st_nlink,
+        st_dev=metadata.st_dev,
+        st_ino=metadata.st_ino if inode is None else inode,
+        st_size=metadata.st_size,
+        st_mtime_ns=(metadata.st_mtime_ns if modified_ns is None else modified_ns),
+        st_ctime_ns=metadata.st_ctime_ns if changed_ns is None else changed_ns,
+    )
 
 
 @pytest.mark.parametrize(
@@ -500,6 +519,496 @@ def test_staging_interrupt_cleans_candidate_and_preserves_database(
     assert tracking_database_io.lock_path_for(path).is_file()
 
 
+def test_staged_timestamp_churn_retries_same_candidate_then_installs_once(
+    tracking_database_io,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "tracking-database.json"
+    _write(path, {"talks": []})
+    expected = tracking_database_io.snapshot_tracking_database(path)
+    candidate = tracking_database_io.render_json_object({"talks": [], "config": {}})
+    original_observe = tracking_database_io._observe_staged_candidate
+    original_verify = tracking_database_io._verify_staged_candidate
+    original_replace = tracking_database_io._replace_staged_candidate
+    real_fstat = tracking_database_io.os.fstat
+    real_stat = tracking_database_io.os.stat
+    staged_descriptor: int | None = None
+    staged_name: str | None = None
+    staged_directory_descriptor: int | None = None
+    descriptor_observations = 0
+    name_observations = 0
+    verify_windows = 0
+    verification_calls = 0
+    replacements = 0
+
+    def churning_fstat(descriptor: int):
+        nonlocal descriptor_observations
+        metadata = real_fstat(descriptor)
+        if descriptor != staged_descriptor:
+            return metadata
+        descriptor_observations += 1
+        offset = (1, 2, 3, 3)[min(descriptor_observations - 1, 3)]
+        return _metadata_view(
+            metadata,
+            modified_ns=metadata.st_mtime_ns + offset,
+            changed_ns=metadata.st_ctime_ns + offset,
+        )
+
+    def churning_stat(
+        name: object,
+        *,
+        dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ):
+        nonlocal name_observations
+        metadata = real_stat(
+            name,
+            dir_fd=dir_fd,
+            follow_symlinks=follow_symlinks,
+        )
+        if name != staged_name or dir_fd != staged_directory_descriptor:
+            return metadata
+        name_observations += 1
+        offset = (10, 11, 12, 12)[min(name_observations - 1, 3)]
+        return _metadata_view(
+            metadata,
+            modified_ns=metadata.st_mtime_ns + offset,
+            changed_ns=metadata.st_ctime_ns + offset,
+        )
+
+    def counted_observe(stage):
+        nonlocal verify_windows
+        verify_windows += 1
+        return original_observe(stage)
+
+    def verify_with_initial_churn(stage, raw: bytes) -> None:
+        nonlocal staged_descriptor, staged_name, staged_directory_descriptor
+        nonlocal verification_calls
+        verification_calls += 1
+        if staged_descriptor is None:
+            metadata = real_fstat(stage.descriptor)
+            os.utime(
+                stage.path,
+                ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 1_000_000),
+                follow_symlinks=False,
+            )
+            staged_descriptor = stage.descriptor
+            staged_name = stage.name
+            staged_directory_descriptor = stage.directory_descriptor
+            monkeypatch.setattr(tracking_database_io.os, "fstat", churning_fstat)
+            monkeypatch.setattr(tracking_database_io.os, "stat", churning_stat)
+        original_verify(stage, raw)
+
+    def counted_replace(stage, target: Path) -> None:
+        nonlocal replacements
+        replacements += 1
+        original_replace(stage, target)
+
+    monkeypatch.setattr(
+        tracking_database_io,
+        "_observe_staged_candidate",
+        counted_observe,
+    )
+    monkeypatch.setattr(
+        tracking_database_io,
+        "_verify_staged_candidate",
+        verify_with_initial_churn,
+    )
+    monkeypatch.setattr(
+        tracking_database_io,
+        "_replace_staged_candidate",
+        counted_replace,
+    )
+
+    result = tracking_database_io.commit_tracking_database(expected, candidate)
+
+    assert result.installed is True
+    assert path.read_bytes() == candidate
+    assert verify_windows == 3
+    assert verification_calls == 2
+    assert replacements == 1
+    assert not list(tmp_path.glob(".*.tracking-db.tmp"))
+
+
+def test_never_stable_staged_timestamps_fail_with_bounded_typed_diagnostic(
+    tracking_database_io,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "tracking-database.json"
+    original = _write(path, {"talks": []})
+    expected = tracking_database_io.snapshot_tracking_database(path)
+    candidate = tracking_database_io.render_json_object({"talks": [], "config": {}})
+    original_observe = tracking_database_io._observe_staged_candidate
+    original_verify = tracking_database_io._verify_staged_candidate
+    real_fstat = tracking_database_io.os.fstat
+    real_stat = tracking_database_io.os.stat
+    staged_descriptor: int | None = None
+    staged_name: str | None = None
+    staged_directory_descriptor: int | None = None
+    metadata_sequence = 0
+    verify_windows = 0
+    backup = tmp_path / "backups" / "tracking-database.bak"
+    backup_request = tracking_database_io.BackupRequest(
+        path=backup,
+        input_sha256=expected.sha256,
+    )
+
+    def next_view(metadata: os.stat_result) -> SimpleNamespace:
+        nonlocal metadata_sequence
+        metadata_sequence += 1
+        return _metadata_view(
+            metadata,
+            modified_ns=metadata.st_mtime_ns + metadata_sequence,
+            changed_ns=metadata.st_ctime_ns + metadata_sequence,
+        )
+
+    def churning_fstat(descriptor: int):
+        metadata = real_fstat(descriptor)
+        return next_view(metadata) if descriptor == staged_descriptor else metadata
+
+    def churning_stat(
+        name: object,
+        *,
+        dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ):
+        metadata = real_stat(
+            name,
+            dir_fd=dir_fd,
+            follow_symlinks=follow_symlinks,
+        )
+        if name == staged_name and dir_fd == staged_directory_descriptor:
+            return next_view(metadata)
+        return metadata
+
+    def counted_observe(stage):
+        nonlocal verify_windows
+        verify_windows += 1
+        return original_observe(stage)
+
+    def verify_with_never_stable_metadata(stage, raw: bytes) -> None:
+        nonlocal staged_descriptor, staged_name, staged_directory_descriptor
+        staged_descriptor = stage.descriptor
+        staged_name = stage.name
+        staged_directory_descriptor = stage.directory_descriptor
+        monkeypatch.setattr(tracking_database_io.os, "fstat", churning_fstat)
+        monkeypatch.setattr(tracking_database_io.os, "stat", churning_stat)
+        original_verify(stage, raw)
+
+    monkeypatch.setattr(
+        tracking_database_io,
+        "_observe_staged_candidate",
+        counted_observe,
+    )
+    monkeypatch.setattr(
+        tracking_database_io,
+        "_verify_staged_candidate",
+        verify_with_never_stable_metadata,
+    )
+
+    with pytest.raises(
+        tracking_database_io.StagedCandidateConflictError,
+        match="invariant=timestamp_stability.*bounded observations",
+    ) as stopped:
+        tracking_database_io.commit_tracking_database(
+            expected,
+            candidate,
+            backup=backup_request,
+        )
+
+    assert stopped.value.invariant == "timestamp_stability"
+    assert verify_windows == tracking_database_io.STAGED_METADATA_STABILIZATION_ATTEMPTS
+    assert path.read_bytes() == original
+    assert not backup.exists()
+    assert not list(tmp_path.glob(".*.tracking-db.tmp"))
+
+
+def test_staged_name_identity_change_fails_typed_and_cleans_owned_candidate(
+    tracking_database_io,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "tracking-database.json"
+    original = _write(path, {"talks": []})
+    expected = tracking_database_io.snapshot_tracking_database(path)
+    candidate = tracking_database_io.render_json_object({"talks": [], "config": {}})
+    original_stage = tracking_database_io._stage_candidate
+    real_stat = tracking_database_io.os.stat
+    staged_name: str | None = None
+    staged_directory_descriptor: int | None = None
+    substituted = False
+
+    def changed_stat(
+        name: object,
+        *,
+        dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ):
+        nonlocal substituted
+        metadata = real_stat(
+            name,
+            dir_fd=dir_fd,
+            follow_symlinks=follow_symlinks,
+        )
+        if (
+            not substituted
+            and name == staged_name
+            and dir_fd == staged_directory_descriptor
+        ):
+            substituted = True
+            return _metadata_view(metadata, inode=metadata.st_ino + 1)
+        return metadata
+
+    def stage_then_change_identity(target: Path, raw: bytes, mode: int):
+        nonlocal staged_name, staged_directory_descriptor
+        stage = original_stage(target, raw, mode)
+        staged_name = stage.name
+        staged_directory_descriptor = stage.directory_descriptor
+        monkeypatch.setattr(tracking_database_io.os, "stat", changed_stat)
+        return stage
+
+    monkeypatch.setattr(
+        tracking_database_io,
+        "_stage_candidate",
+        stage_then_change_identity,
+    )
+
+    with pytest.raises(
+        tracking_database_io.StagedCandidateConflictError,
+        match="invariant=descriptor_name_identity",
+    ) as stopped:
+        tracking_database_io.commit_tracking_database(expected, candidate)
+
+    assert stopped.value.invariant == "descriptor_name_identity"
+    assert path.read_bytes() == original
+    assert not list(tmp_path.glob(".*.tracking-db.tmp"))
+
+
+def test_regular_staged_name_substitution_fails_typed_and_is_left_untouched(
+    tracking_database_io,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "tracking-database.json"
+    original = _write(path, {"talks": []})
+    expected = tracking_database_io.snapshot_tracking_database(path)
+    candidate = tracking_database_io.render_json_object({"talks": [], "config": {}})
+    original_stage = tracking_database_io._stage_candidate
+    replacement_raw = b"foreign regular staged name\n"
+    substituted: list[Path] = []
+    backup = tmp_path / "backups" / "tracking-database.bak"
+    backup_request = tracking_database_io.BackupRequest(
+        path=backup,
+        input_sha256=expected.sha256,
+    )
+
+    def substitute_regular_name(target: Path, raw: bytes, mode: int):
+        stage = original_stage(target, raw, mode)
+        os.unlink(stage.name, dir_fd=stage.directory_descriptor)
+        replacement_descriptor = os.open(
+            stage.name,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+            dir_fd=stage.directory_descriptor,
+        )
+        with os.fdopen(replacement_descriptor, "wb") as replacement:
+            replacement.write(replacement_raw)
+        substituted.append(stage.path)
+        return stage
+
+    monkeypatch.setattr(
+        tracking_database_io,
+        "_stage_candidate",
+        substitute_regular_name,
+    )
+
+    with pytest.raises(
+        tracking_database_io.StagedCandidateConflictError,
+        match="invariant=descriptor_name_identity",
+    ) as stopped:
+        tracking_database_io.commit_tracking_database(
+            expected,
+            candidate,
+            backup=backup_request,
+        )
+
+    assert stopped.value.invariant == "descriptor_name_identity"
+    assert path.read_bytes() == original
+    assert not backup.exists()
+    assert substituted[0].is_file()
+    assert substituted[0].read_bytes() == replacement_raw
+    assert list(tmp_path.glob(".*.tracking-db.tmp")) == substituted
+
+
+def test_staged_hardlink_change_fails_typed_and_removes_owned_name(
+    tracking_database_io,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "tracking-database.json"
+    original = _write(path, {"talks": []})
+    expected = tracking_database_io.snapshot_tracking_database(path)
+    candidate = tracking_database_io.render_json_object({"talks": [], "config": {}})
+    original_stage = tracking_database_io._stage_candidate
+    extra_link = tmp_path / "unexpected-candidate-link"
+
+    def stage_then_link(target: Path, raw: bytes, mode: int):
+        stage = original_stage(target, raw, mode)
+        os.link(stage.path, extra_link)
+        return stage
+
+    monkeypatch.setattr(tracking_database_io, "_stage_candidate", stage_then_link)
+
+    with pytest.raises(
+        tracking_database_io.StagedCandidateConflictError,
+        match="invariant=link_count",
+    ) as stopped:
+        tracking_database_io.commit_tracking_database(expected, candidate)
+
+    assert stopped.value.invariant == "link_count"
+    assert path.read_bytes() == original
+    assert extra_link.read_bytes() == candidate
+    assert not list(tmp_path.glob(".*.tracking-db.tmp"))
+
+
+def test_staged_size_change_fails_typed_and_cleans_candidate(
+    tracking_database_io,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "tracking-database.json"
+    original = _write(path, {"talks": []})
+    expected = tracking_database_io.snapshot_tracking_database(path)
+    candidate = tracking_database_io.render_json_object({"talks": [], "config": {}})
+    original_stage = tracking_database_io._stage_candidate
+
+    def stage_then_resize(target: Path, raw: bytes, mode: int):
+        stage = original_stage(target, raw, mode)
+        os.ftruncate(stage.descriptor, stage.size + 1)
+        return stage
+
+    monkeypatch.setattr(tracking_database_io, "_stage_candidate", stage_then_resize)
+
+    with pytest.raises(
+        tracking_database_io.StagedCandidateConflictError,
+        match="invariant=size",
+    ) as stopped:
+        tracking_database_io.commit_tracking_database(expected, candidate)
+
+    assert stopped.value.invariant == "size"
+    assert path.read_bytes() == original
+    assert not list(tmp_path.glob(".*.tracking-db.tmp"))
+
+
+def test_staged_same_size_byte_change_fails_typed_and_cleans_candidate(
+    tracking_database_io,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "tracking-database.json"
+    original = _write(path, {"talks": []})
+    expected = tracking_database_io.snapshot_tracking_database(path)
+    candidate = tracking_database_io.render_json_object({"talks": [], "config": {}})
+    original_stage = tracking_database_io._stage_candidate
+
+    def stage_then_change_bytes(target: Path, raw: bytes, mode: int):
+        stage = original_stage(target, raw, mode)
+        os.pwrite(stage.descriptor, b"X", 0)
+        return stage
+
+    monkeypatch.setattr(
+        tracking_database_io,
+        "_stage_candidate",
+        stage_then_change_bytes,
+    )
+
+    with pytest.raises(
+        tracking_database_io.StagedCandidateConflictError,
+        match="invariant=exact_bytes",
+    ) as stopped:
+        tracking_database_io.commit_tracking_database(expected, candidate)
+
+    assert stopped.value.invariant == "exact_bytes"
+    assert path.read_bytes() == original
+    assert not list(tmp_path.glob(".*.tracking-db.tmp"))
+
+
+def test_staged_digest_binding_change_fails_typed_and_cleans_candidate(
+    tracking_database_io,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "tracking-database.json"
+    original = _write(path, {"talks": []})
+    expected = tracking_database_io.snapshot_tracking_database(path)
+    candidate = tracking_database_io.render_json_object({"talks": [], "config": {}})
+    original_stage = tracking_database_io._stage_candidate
+
+    def stage_then_change_digest(target: Path, raw: bytes, mode: int):
+        stage = original_stage(target, raw, mode)
+        stage.sha256 = "0" * 64
+        return stage
+
+    monkeypatch.setattr(
+        tracking_database_io,
+        "_stage_candidate",
+        stage_then_change_digest,
+    )
+
+    with pytest.raises(
+        tracking_database_io.StagedCandidateConflictError,
+        match="invariant=sha256",
+    ) as stopped:
+        tracking_database_io.commit_tracking_database(expected, candidate)
+
+    assert stopped.value.invariant == "sha256"
+    assert path.read_bytes() == original
+    assert not list(tmp_path.glob(".*.tracking-db.tmp"))
+
+
+def test_target_timestamp_change_remains_an_exact_cas_conflict(
+    tracking_database_io,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "tracking-database.json"
+    original = _write(path, {"talks": []})
+    expected = tracking_database_io.snapshot_tracking_database(path)
+    metadata = path.stat()
+    os.utime(
+        path,
+        ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 1_000_000),
+        follow_symlinks=False,
+    )
+    backup = tmp_path / "backups" / "tracking-database.bak"
+    backup_request = tracking_database_io.BackupRequest(
+        path=backup,
+        input_sha256=expected.sha256,
+    )
+
+    def unexpected_stage(*_args, **_kwargs):
+        pytest.fail("target generation conflict must fail before staging")
+
+    monkeypatch.setattr(tracking_database_io, "_stage_candidate", unexpected_stage)
+
+    with pytest.raises(
+        tracking_database_io.TrackingDatabaseConflictError,
+        match="content or generation changed after validation",
+    ):
+        tracking_database_io.commit_tracking_database(
+            expected,
+            tracking_database_io.render_json_object({"talks": [], "config": {}}),
+            backup=backup_request,
+        )
+
+    assert path.read_bytes() == original
+    assert path.stat().st_ino == expected.generation.inode
+    assert not backup.exists()
+    assert not list(tmp_path.glob(".*.tracking-db.tmp"))
+
+
 def test_commit_rejects_substituted_stage_without_unlinking_it(
     tracking_database_io,
     tmp_path: Path,
@@ -531,15 +1040,16 @@ def test_commit_rejects_substituted_stage_without_unlinking_it(
 
     monkeypatch.setattr(tracking_database_io, "_stage_candidate", substitute_stage)
     with pytest.raises(
-        tracking_database_io.TrackingDatabaseConflictError,
+        tracking_database_io.StagedCandidateConflictError,
         match="staged tracking-database candidate.*changed before install",
-    ):
+    ) as stopped:
         tracking_database_io.commit_tracking_database(
             expected,
             tracking_database_io.render_json_object({"talks": [], "config": {}}),
             backup=request,
         )
 
+    assert stopped.value.invariant == "regular_file"
     assert path.read_bytes() == original
     assert attacker.read_bytes() == attacker_raw
     assert substituted[0].is_symlink()
@@ -570,11 +1080,12 @@ def test_initialization_rejects_substituted_stage_without_unlinking_it(
 
     monkeypatch.setattr(tracking_database_io, "_stage_candidate", substitute_stage)
     with pytest.raises(
-        tracking_database_io.TrackingDatabaseConflictError,
+        tracking_database_io.StagedCandidateConflictError,
         match="staged tracking-database candidate.*changed before install",
-    ):
+    ) as stopped:
         tracking_database_io.initialize_tracking_database(path, {"talks": []})
 
+    assert stopped.value.invariant == "regular_file"
     assert not path.exists()
     assert attacker.read_bytes() == attacker_raw
     assert substituted[0].is_symlink()
@@ -598,7 +1109,10 @@ def test_directory_fsync_failure_reports_installed_generation(
 
     assert result.installed is True
     assert result.durability_state == "installed_directory_fsync_failed"
-    assert result.output_sha256 == tracking_database_io.snapshot_tracking_database(path).sha256
+    assert (
+        result.output_sha256
+        == tracking_database_io.snapshot_tracking_database(path).sha256
+    )
     assert path.read_bytes() == candidate
     assert "inspect the installed output SHA before retrying" in result.warnings[0]
 
@@ -643,8 +1157,13 @@ def test_directory_close_failure_is_an_installed_warning(
         result = tracking_database_io.write_json_object(expected, payload)
 
     assert result.installed is True
-    assert tracking_database_io.decode_json_object_bytes(path.read_bytes(), path) == payload
-    assert any("could not close tracking-database directory" in w for w in result.warnings)
+    assert (
+        tracking_database_io.decode_json_object_bytes(path.read_bytes(), path)
+        == payload
+    )
+    assert any(
+        "could not close tracking-database directory" in w for w in result.warnings
+    )
 
 
 @pytest.mark.parametrize("initialize", [False, True], ids=["commit", "initialize"])
@@ -676,7 +1195,10 @@ def test_lock_cleanup_failure_is_an_installed_warning(
         result = tracking_database_io.write_json_object(expected, payload)
 
     assert result.installed is True
-    assert tracking_database_io.decode_json_object_bytes(path.read_bytes(), path) == payload
+    assert (
+        tracking_database_io.decode_json_object_bytes(path.read_bytes(), path)
+        == payload
+    )
     assert any("could not unlock cooperative" in w for w in result.warnings)
 
 
@@ -722,7 +1244,10 @@ def test_lock_close_failure_is_an_installed_warning(
         result = tracking_database_io.write_json_object(expected, payload)
 
     assert result.installed is True
-    assert tracking_database_io.decode_json_object_bytes(path.read_bytes(), path) == payload
+    assert (
+        tracking_database_io.decode_json_object_bytes(path.read_bytes(), path)
+        == payload
+    )
     assert any("could not close cooperative" in w for w in result.warnings)
 
 
@@ -751,7 +1276,10 @@ def test_postinstall_verification_failure_reports_installed_unknown_state(
 
     assert result.installed is True
     assert result.durability_state == "installed_verification_failed"
-    assert result.output_sha256 != tracking_database_io.snapshot_tracking_database(path).sha256
+    assert (
+        result.output_sha256
+        != tracking_database_io.snapshot_tracking_database(path).sha256
+    )
     assert path.read_bytes() == concurrent
     assert any("no longer matches" in warning for warning in result.warnings)
 
@@ -784,7 +1312,10 @@ def test_initialization_postinstall_verification_failure_reports_installed_state
 
     assert result.installed is True
     assert result.durability_state == "installed_verification_failed"
-    assert result.output_sha256 != tracking_database_io.snapshot_tracking_database(path).sha256
+    assert (
+        result.output_sha256
+        != tracking_database_io.snapshot_tracking_database(path).sha256
+    )
     assert path.read_bytes() == concurrent
     assert any("no longer matches" in warning for warning in result.warnings)
 
@@ -905,9 +1436,12 @@ def test_initialization_is_exclusive_and_reports_missing_input(
 
     assert result.input_sha256 is None
     assert result.installed is True
-    assert tracking_database_io.decode_json_object(
-        tracking_database_io.snapshot_tracking_database(path)
-    ) == payload
+    assert (
+        tracking_database_io.decode_json_object(
+            tracking_database_io.snapshot_tracking_database(path)
+        )
+        == payload
+    )
     with pytest.raises(
         tracking_database_io.TrackingDatabaseConflictError,
         match="already exists",

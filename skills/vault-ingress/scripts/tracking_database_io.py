@@ -29,6 +29,7 @@ from typing import Any, Iterator, NoReturn
 
 READ_CHUNK_SIZE = 1024 * 1024
 MAX_JSON_NESTING_DEPTH = 200
+STAGED_METADATA_STABILIZATION_ATTEMPTS = 4
 
 
 class TrackingDatabaseIOError(ValueError):
@@ -37,6 +38,19 @@ class TrackingDatabaseIOError(ValueError):
 
 class TrackingDatabaseConflictError(TrackingDatabaseIOError):
     """The expected database generation is no longer current."""
+
+
+class StagedCandidateConflictError(TrackingDatabaseConflictError):
+    """One named staged-candidate invariant failed before installation."""
+
+    def __init__(self, path: Path, invariant: str, detail: str) -> None:
+        self.path = path
+        self.invariant = invariant
+        self.detail = detail
+        super().__init__(
+            f"staged tracking-database candidate {path} changed before install: "
+            f"invariant={invariant}; {detail}"
+        )
 
 
 @dataclass(frozen=True)
@@ -123,6 +137,17 @@ class StagedCandidate:
     generation: FileGeneration
     sha256: str
     size: int
+
+
+@dataclass(frozen=True)
+class _StagedCandidateObservation:
+    """One descriptor/name observation around an exact staged-byte read."""
+
+    opened_before: os.stat_result
+    visible_before: os.stat_result
+    raw: bytes
+    opened_after: os.stat_result
+    visible_after: os.stat_result
 
 
 def unchanged_write_result(
@@ -818,7 +843,9 @@ def _stage_candidate(path: Path, candidate: bytes, mode: int) -> StagedCandidate
                 pass
 
 
-def _verify_staged_candidate(stage: StagedCandidate, candidate: bytes) -> None:
+def _observe_staged_candidate(
+    stage: StagedCandidate,
+) -> _StagedCandidateObservation:
     try:
         opened_before = os.fstat(stage.descriptor)
         visible_before = os.stat(
@@ -834,28 +861,117 @@ def _verify_staged_candidate(stage: StagedCandidate, candidate: bytes) -> None:
             follow_symlinks=False,
         )
     except OSError as exc:
-        raise TrackingDatabaseConflictError(
-            f"staged tracking-database candidate {stage.path} changed before install: {exc}"
+        raise StagedCandidateConflictError(
+            stage.path,
+            "metadata_read",
+            str(exc),
         ) from exc
-    expected_generation = stage.generation
-    if (
-        not stat.S_ISREG(opened_before.st_mode)
-        or opened_before.st_nlink != 1
-        or not stat.S_ISREG(visible_before.st_mode)
-        or visible_before.st_nlink != 1
-        or FileGeneration.from_stat(opened_before) != expected_generation
-        or FileGeneration.from_stat(visible_before) != expected_generation
-        or FileGeneration.from_stat(opened_after) != expected_generation
-        or FileGeneration.from_stat(visible_after) != expected_generation
-        or opened_after.st_nlink != 1
-        or visible_after.st_nlink != 1
-        or raw != candidate
-        or _sha256(raw) != stage.sha256
-    ):
-        raise TrackingDatabaseConflictError(
-            f"staged tracking-database candidate {stage.path} content or generation "
-            "changed before install"
+    return _StagedCandidateObservation(
+        opened_before=opened_before,
+        visible_before=visible_before,
+        raw=raw,
+        opened_after=opened_after,
+        visible_after=visible_after,
+    )
+
+
+def _staged_metadata_samples(
+    observation: _StagedCandidateObservation,
+) -> tuple[tuple[str, os.stat_result], ...]:
+    return (
+        ("descriptor_before", observation.opened_before),
+        ("name_before", observation.visible_before),
+        ("descriptor_after", observation.opened_after),
+        ("name_after", observation.visible_after),
+    )
+
+
+def _require_staged_candidate_invariants(
+    stage: StagedCandidate,
+    candidate: bytes,
+    observation: _StagedCandidateObservation,
+) -> None:
+    samples = _staged_metadata_samples(observation)
+    non_regular = [
+        label for label, metadata in samples if not stat.S_ISREG(metadata.st_mode)
+    ]
+    if non_regular:
+        raise StagedCandidateConflictError(
+            stage.path,
+            "regular_file",
+            f"non-regular observations={non_regular}",
         )
+    expected_identity = (stage.generation.device, stage.generation.inode)
+    identities = {label: _lock_identity(metadata) for label, metadata in samples}
+    if any(identity != expected_identity for identity in identities.values()):
+        raise StagedCandidateConflictError(
+            stage.path,
+            "descriptor_name_identity",
+            f"expected={expected_identity}; observed={identities}",
+        )
+    link_counts = {label: metadata.st_nlink for label, metadata in samples}
+    if any(link_count != 1 for link_count in link_counts.values()):
+        raise StagedCandidateConflictError(
+            stage.path,
+            "link_count",
+            f"expected one link; observed={link_counts}",
+        )
+    sizes = {label: metadata.st_size for label, metadata in samples}
+    if (
+        len(candidate) != stage.size
+        or len(observation.raw) != stage.size
+        or any(size != stage.size for size in sizes.values())
+    ):
+        raise StagedCandidateConflictError(
+            stage.path,
+            "size",
+            f"expected={stage.size}; candidate={len(candidate)}; "
+            f"read={len(observation.raw)}; observed={sizes}",
+        )
+    if observation.raw != candidate:
+        raise StagedCandidateConflictError(
+            stage.path,
+            "exact_bytes",
+            "descriptor bytes differ from the exact candidate",
+        )
+    candidate_sha256 = _sha256(candidate)
+    observed_sha256 = _sha256(observation.raw)
+    if stage.sha256 != candidate_sha256 or observed_sha256 != stage.sha256:
+        raise StagedCandidateConflictError(
+            stage.path,
+            "sha256",
+            f"expected={stage.sha256}; candidate={candidate_sha256}; "
+            f"observed={observed_sha256}",
+        )
+
+
+def _verify_staged_candidate(stage: StagedCandidate, candidate: bytes) -> None:
+    last_timestamps: dict[str, tuple[int, int]] = {}
+    last_unstable_fields: list[str] = []
+    for _ in range(STAGED_METADATA_STABILIZATION_ATTEMPTS):
+        observation = _observe_staged_candidate(stage)
+        _require_staged_candidate_invariants(stage, candidate, observation)
+        last_timestamps = {
+            label: (metadata.st_mtime_ns, metadata.st_ctime_ns)
+            for label, metadata in _staged_metadata_samples(observation)
+        }
+        last_unstable_fields = []
+        for view in ("descriptor", "name"):
+            before = last_timestamps[f"{view}_before"]
+            after = last_timestamps[f"{view}_after"]
+            if before[0] != after[0]:
+                last_unstable_fields.append(f"{view}.mtime_ns")
+            if before[1] != after[1]:
+                last_unstable_fields.append(f"{view}.ctime_ns")
+        if not last_unstable_fields:
+            return
+    raise StagedCandidateConflictError(
+        stage.path,
+        "timestamp_stability",
+        "staged mtime_ns/ctime_ns changed within every read window across "
+        f"{STAGED_METADATA_STABILIZATION_ATTEMPTS} bounded observations; "
+        f"unstable_fields={last_unstable_fields}; last_observed={last_timestamps}",
+    )
 
 
 def _replace_staged_candidate(stage: StagedCandidate, target: Path) -> None:

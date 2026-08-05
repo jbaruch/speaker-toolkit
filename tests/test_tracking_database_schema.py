@@ -1084,6 +1084,82 @@ def test_config_only_migration_uses_generation_neutral_backup_name(
     assert report["record_counts"]["config"] == 1
 
 
+def test_config_only_migration_tolerates_cloud_stage_churn_and_is_idempotent(
+    migrate_tracking_database,
+    tracking_database,
+    tracking_database_io,
+    tmp_path,
+    monkeypatch,
+):
+    path = tmp_path / "tracking-database.json"
+    current = tracking_database.migrate_tracking_database(_legacy_database()).database
+    current["config"] = {"schema_version": 1, "python_path": "/opt/python"}
+    raw = _write_database(path, current)
+    digest = hashlib.sha256(raw).hexdigest()
+    dry_run = migrate_tracking_database.execute(
+        path,
+        apply=False,
+        expected_sha256=None,
+    )
+    original_stage = tracking_database_io._stage_candidate
+    stage_calls = 0
+
+    def stage_then_change_timestamps(target, candidate, mode):
+        nonlocal stage_calls
+        stage_calls += 1
+        stage = original_stage(target, candidate, mode)
+        metadata = os.fstat(stage.descriptor)
+        os.utime(
+            stage.path,
+            ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 1_000_000),
+            follow_symlinks=False,
+        )
+        return stage
+
+    monkeypatch.setattr(
+        tracking_database_io,
+        "_stage_candidate",
+        stage_then_change_timestamps,
+    )
+
+    applied = migrate_tracking_database.execute(
+        path,
+        apply=True,
+        expected_sha256=digest,
+    )
+    installed = path.read_bytes()
+    installed_inode = path.stat().st_ino
+    backup = tmp_path / ".backups" / f"{path.name}.owner-migration-{digest}.bak"
+
+    assert applied["database_written"] is True
+    assert applied["durability_state"] == "durable"
+    assert applied["warnings"] == []
+    assert applied["output_sha256"] == dry_run["output_sha256"]
+    assert hashlib.sha256(installed).hexdigest() == dry_run["output_sha256"]
+    assert backup.read_bytes() == raw
+    assert applied["backup"] == str(backup)
+    assert json.loads(installed)["config"] == {
+        "schema_version": 2,
+        "python_path": "/opt/python",
+        "pptx_directory_exclusions": DEFAULT_DIRECTORY_EXCLUSIONS,
+    }
+
+    replay = migrate_tracking_database.execute(
+        path,
+        apply=True,
+        expected_sha256=applied["output_sha256"],
+    )
+
+    assert replay["changed"] is False
+    assert replay["database_written"] is False
+    assert replay["backup"] is None
+    assert replay["output_sha256"] == applied["output_sha256"]
+    assert path.read_bytes() == installed
+    assert path.stat().st_ino == installed_inode
+    assert stage_calls == 1
+    assert not list(tmp_path.glob(".*.tracking-db.tmp"))
+
+
 def test_apply_current_database_is_exact_noop_without_backup(
     migrate_tracking_database,
     tracking_database,
