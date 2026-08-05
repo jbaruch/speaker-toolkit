@@ -19,7 +19,10 @@ _CLASSIFIER = pathlib.Path(__file__).resolve().with_name("classify-pattern-profi
 
 @lru_cache(maxsize=1)
 def _exports() -> dict[str, Any]:
-    return runpy.run_path(str(_CLASSIFIER), run_name="_vault_profile_classifier")
+    try:
+        return runpy.run_path(str(_CLASSIFIER), run_name="_vault_profile_classifier")
+    except (OSError, SyntaxError, ImportError) as exc:
+        raise RuntimeError("classification runtime owner could not be loaded") from exc
 
 
 def _callable(name: str) -> Callable[..., Any]:
