@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Enforce tessl-version-floating carve-out
@@ -95,7 +95,7 @@ jobs:
         os: [macos-26-intel, windows-latest]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install macOS media evidence dependencies
