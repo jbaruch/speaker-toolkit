@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.19 — 2026-08-08
+
 ### ci(review-trigger) — skip dependabot pull requests (#244)
 
 The fleet policy review trigger is synced to the current
