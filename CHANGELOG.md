@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.22 — 2026-08-08
+
 ### chore(deps) — pin the setuptools build requirement
 
 `[build-system] requires` now pins `setuptools==83.0.0` instead of declaring the
