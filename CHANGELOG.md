@@ -1,5 +1,16 @@
 # Changelog
 
+### chore(deps) — pin the setuptools build requirement
+
+`[build-system] requires` now pins `setuptools==83.0.0` instead of declaring the
+open lower-bound range `setuptools>=68`, matching how every other renewed
+dependency in `pyproject.toml` is declared. The policy reviewer gated
+Dependabot's range bump (#131) on this: `dependency-management` requires a pin
+or a committed lock file, and the repo has no lock file, so widening the range
+could not satisfy it. Renewal continues through the weekly Dependabot pip lane
+that already covers the other pins. The remaining unpinned runtime
+dependencies (`python-pptx`, `lxml`, `qrcode`) stay tracked in #161.
+
 ## 0.20.19 — 2026-08-08
 
 ### ci(review-trigger) — skip dependabot pull requests (#244)
