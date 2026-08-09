@@ -33,11 +33,14 @@ Requires:
 """
 
 import argparse
+import contextlib
 import datetime
+import fcntl
 import hashlib
 import io
 import json
 import os
+from contextlib import contextmanager
 from pathlib import Path
 import shutil
 import subprocess
@@ -172,6 +175,131 @@ def write_tracking_db(tracking_db_snapshot, tracking_db):
         return write_json_object(snapshot, tracking_db)
     except (TrackingDatabaseError, TrackingDatabaseIOError) as exc:
         raise ValueError(f"cannot safely update tracking database: {exc}") from exc
+
+
+@contextmanager
+def qr_publication_lock(vault_path, talk_slug):
+    """Serialize QR publication for one talk slug across its external effects.
+
+    The tracking-database lock is held only for the duration of a write. QR
+    publication creates a remote link, writes PNGs, and mutates a deck before it
+    commits, so two concurrent runs for the same slug can interleave those
+    effects. This lock spans all of them.
+
+    It is keyed per slug rather than per database so unrelated talks publish
+    concurrently, and it is never held across an unrelated writer's commit.
+    """
+    lock_path = os.path.join(vault_path, f".qr-{talk_slug}.lock")
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(lock_path, flags, 0o600)
+    except OSError as exc:
+        raise ValueError(
+            f"cannot open QR publication lock {lock_path}: {exc}"
+        ) from exc
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+        except OSError as exc:
+            raise ValueError(
+                f"cannot acquire QR publication lock {lock_path}: {exc}"
+            ) from exc
+        yield lock_path
+    finally:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        except OSError as exc:
+            print(f"WARNING: could not unlock {lock_path}: {exc}", file=sys.stderr)
+        try:
+            os.close(descriptor)
+        except OSError as exc:
+            print(f"WARNING: could not close {lock_path}: {exc}", file=sys.stderr)
+
+
+class EffectsReceipt:
+    """What this publication changed outside the tracking database.
+
+    A commit that rejects after these effects landed must not look
+    side-effect-free. The receipt names each effect so the operator knows
+    whether to finalize, retry idempotently, or roll back.
+    """
+
+    def __init__(self, talk_slug):
+        self.talk_slug = talk_slug
+        self.short_link = None      # (provider, link_id, short_url) or None
+        self.artifacts = []         # written PNG paths
+        self.deck = None            # deck path, or None if untouched
+
+    def record_short_link(self, provider, link_id, short_url):
+        self.short_link = (provider, link_id, short_url)
+
+    def record_artifacts(self, paths):
+        self.artifacts = list(paths)
+
+    def record_deck(self, deck_path):
+        self.deck = deck_path
+
+    def any_effects(self):
+        return bool(self.short_link or self.artifacts or self.deck)
+
+
+def _report_unfinalized_effects(receipt):
+    """Print what already landed, and how a retry behaves against it."""
+    if receipt is None or not receipt.any_effects():
+        print(
+            "  No external effects were made; this run is safe to retry as-is.",
+            file=sys.stderr,
+        )
+        return
+
+    print("", file=sys.stderr)
+    print(
+        "  The tracking database was NOT updated, but these effects already "
+        "landed:",
+        file=sys.stderr,
+    )
+    if receipt.short_link:
+        provider, link_id, short_url = receipt.short_link
+        print(
+            f"    short link: {short_url} (provider={provider or 'unknown'}, "
+            f"link_id={link_id or 'unknown'})",
+            file=sys.stderr,
+        )
+    for path in receipt.artifacts:
+        print(f"    PNG written: {path}", file=sys.stderr)
+    if receipt.deck:
+        print(f"    deck mutated: {receipt.deck}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print(
+        "  Re-running the same command is idempotent for the short link: an "
+        "existing managed link with the slug back-half is retargeted, never "
+        "duplicated. The PNGs and deck are overwritten in place. Re-run to "
+        "finalize, or delete the short link above to roll back.",
+        file=sys.stderr,
+    )
+
+
+def commit_qr_record(tdb_path, meta, artifacts):
+    """Rebase this run's single qr_codes upsert onto the current generation.
+
+    Committing the snapshot loaded before QR work would reject whenever any
+    unrelated writer touched the database meanwhile — after the short link,
+    PNGs, and deck were already changed. Re-reading here means only a
+    conflicting change to THIS talk's record can reject, and the CAS generation
+    check still protects against a lost update.
+    """
+    try:
+        fresh_snapshot = snapshot_tracking_database(tdb_path)
+        fresh = decode_json_object(fresh_snapshot)
+        require_current_tracking_database(fresh)
+    except (TrackingDatabaseError, TrackingDatabaseIOError) as exc:
+        raise ValueError(
+            f"cannot re-read tracking database before commit: {exc}"
+        ) from exc
+
+    update_tracking_db(fresh, meta, artifacts)
+    return write_tracking_db(fresh_snapshot, fresh)
 
 
 # --- URL Shortening ---
@@ -1009,6 +1137,22 @@ def main():
             print(f"ERROR: {exc}", file=sys.stderr)
             sys.exit(1)
 
+    effects_receipt = EffectsReceipt(args.talk_slug)
+
+    # Serialize this slug's publication across its external effects. A dry run
+    # makes none, and a missing vault has nowhere to place the lock.
+    lock_scope = (
+        qr_publication_lock(vault_path, args.talk_slug)
+        if not args.dry_run and vault_present_at_start
+        else contextlib.nullcontext()
+    )
+    with lock_scope:
+        _publish(args, effects_receipt, vault_path, vault_present_at_start,
+                 speaker_profile, secrets, tracking_db, qr_config, explicit_bg)
+
+
+def _publish(args, effects_receipt, vault_path, vault_present_at_start,
+             speaker_profile, secrets, tracking_db, qr_config, explicit_bg):
     # Determine the URL to encode in the QR
     if args.short_url:
         # MCP-preresolved mode
@@ -1032,6 +1176,10 @@ def main():
             "shortener_link_id": args.short_link_id,
         }
         print(f"Using pre-resolved short URL: {qr_url} -> {shownotes_url}")
+        # The agent created this link, so a failed commit still leaves it behind.
+        effects_receipt.record_short_link(
+            meta["shortener"], meta["shortener_link_id"], qr_url
+        )
     else:
         # Direct resolution mode
         shownotes_url = args.shownotes_url
@@ -1049,6 +1197,10 @@ def main():
                 file=sys.stderr,
             )
             sys.exit(1)
+        if meta.get("shortener_link_id"):
+            effects_receipt.record_short_link(
+                meta["shortener"], meta["shortener_link_id"], qr_url
+            )
 
     print(f"QR will encode: {qr_url}")
 
@@ -1066,6 +1218,7 @@ def main():
             size_kb = os.path.getsize(qr_path) / 1024
             print(f"QR PNG saved: {qr_path} ({size_kb:.1f} KB)")
             artifacts = [_artifact_receipt(qr_path, None, None)]
+            effects_receipt.record_artifacts([qr_path])
         else:
             print(f"DRY RUN: would save QR to {qr_path}")
             artifacts = None
@@ -1136,8 +1289,12 @@ def main():
             # PowerPoint app (valid OOXML; see rules/deck-editing-rules.md).
             prs = None
             here = os.path.dirname(os.path.abspath(__file__))
+            effects_receipt.record_artifacts(
+                [path for path, _bg in qr_paths_generated]
+            )
             insert_qr_via_powerpoint(args.deck, insert_jobs, here)
             print(f"Deck updated via PowerPoint: {args.deck}")
+            effects_receipt.record_deck(args.deck)
             # Every generated variant is cataloged, not just the first.
             artifacts = [
                 _artifact_receipt(path, deck_dir, bg_hex)
@@ -1149,22 +1306,21 @@ def main():
                 print(f"  DRY RUN: would generate QR bg=RGB{qr_bg} fg=RGB{qr_fg} for slides {[i + 1 for i in indices]}")
             artifacts = None
 
-    # Update tracking database. A dry run generated nothing, so there is no
-    # artifact to bind and the catalog is left untouched.
+    # A dry run generated nothing, so there is no artifact to bind and the
+    # catalog is left untouched. The upsert itself happens inside
+    # commit_qr_record(), against a freshly read generation.
     meta["target_url"] = shownotes_url
-    if artifacts:
-        update_tracking_db(tracking_db, meta, artifacts)
 
     if not args.dry_run:
         tdb_path = os.path.join(vault_path, "tracking-database.json")
         if vault_present_at_start:
             try:
-                write_result = write_tracking_db(
-                    tracking_db_snapshot,
-                    tracking_db,
-                )
+                # Rebase onto the current generation rather than committing the
+                # snapshot taken before the link, PNGs, and deck were changed.
+                write_result = commit_qr_record(tdb_path, meta, artifacts)
             except ValueError as exc:
                 print(f"ERROR: {exc}", file=sys.stderr)
+                _report_unfinalized_effects(effects_receipt)
                 sys.exit(1)
             if write_result.installed:
                 print(f"Tracking DB updated: {tdb_path}")

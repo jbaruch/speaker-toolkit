@@ -197,6 +197,19 @@ path make the check before resolving the link.
    - Auto-select foreground color (black on light backgrounds, white on dark) using
      WCAG relative luminance
    - Insert the QR as a 2" square in the bottom-right corner
+   - Publication holds a per-slug advisory lock at `{vault}/.qr-{talk-slug}.lock`
+     across link resolution, PNG generation, and deck mutation, so two runs for
+     the same talk cannot interleave their external effects. Unrelated talks
+     publish concurrently.
+   - The tracking-database commit re-reads the current generation and rebases
+     this run's single `qr_codes` upsert onto it. An unrelated writer landing a
+     change mid-publication no longer rejects the commit; only a conflicting
+     change to the SAME talk's record does.
+   - If the commit still rejects, the run exits non-zero and prints every
+     external effect that already landed (short link, PNGs, deck) plus whether
+     to re-run or roll back. Re-running is idempotent for the short link: an
+     existing managed link with the slug back-half is retargeted, never
+     duplicated.
    - Persist schema-v2 QR metadata in `qr_codes[]` — including one
      `artifacts[]` receipt per generated PNG — through the shared
      tracking-database transaction used by `generate-qr.py`

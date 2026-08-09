@@ -1,5 +1,30 @@
 # Changelog
 
+### fix(generate-qr) — make publication recoverable when the tracking-database CAS rejects (#172)
+
+QR publication snapshotted the database, then created or retargeted a remote
+link, wrote PNGs, and mutated the deck before committing against that original
+snapshot. Any unrelated concurrent writer therefore caused finalization to
+reject *after* every external effect had already succeeded, leaving the link,
+PNGs, deck, and `qr_codes[]` in disagreement — and a blind retry could repeat
+the effects.
+
+The commit now re-reads the current generation and rebases this run's single
+`qr_codes` upsert onto it. Only a conflicting change to the same talk's record
+can reject; the CAS generation check still protects against a lost update, and
+an unrelated writer's change survives rather than being clobbered.
+
+Publication holds a per-slug advisory lock at `{vault}/.qr-{talk-slug}.lock`
+spanning link resolution, PNG generation, and deck mutation, so two runs for the
+same talk cannot interleave their external effects. The lock is keyed per slug,
+so unrelated talks still publish concurrently, and it is never held across an
+unrelated writer's commit.
+
+A commit that still rejects no longer looks side-effect-free. The run exits
+non-zero and names every effect that landed — short-link provider and link id,
+each PNG path, the mutated deck — plus how a retry behaves against them.
+
+
 ### fix(generate-qr) — preserve canonical MCP targets and exact generated artifact paths (#171)
 
 The `qr_codes` catalog recorded facts that were demonstrably false. `--short-url`

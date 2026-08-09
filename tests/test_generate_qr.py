@@ -1095,3 +1095,105 @@ def test_every_colour_variant_is_cataloged(generate_qr, tmp_path):
     assert [a["bg_hex"] for a in record["artifacts"]] == ["ffffff", "000000"]
     assert len({a["sha256"] for a in record["artifacts"]}) == 2
     assert record["qr_png_rel_path"] == record["artifacts"][0]["path"]
+
+
+# --- #172: publication stays recoverable when the CAS commit rejects ---
+
+def test_unrelated_concurrent_write_no_longer_rejects_the_qr_commit(
+        generate_qr, monkeypatch, tmp_path, capsys):
+    """A concurrent writer touching an unrelated collection must not reject us."""
+    database = _current_tracking_database()
+    path = tmp_path / "tracking-database.json"
+    path.write_text(json.dumps(database), encoding="utf-8")
+    output = tmp_path / "current.png"
+
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "current",
+        "--shownotes-url", "https://example.test/notes",
+        "--short-url", "https://example.test/current",
+        "--vault", str(tmp_path), "--output", str(output),
+    ])
+
+    # Simulate an unrelated writer landing a change after our snapshot but
+    # before our commit: mutate a different collection on disk.
+    real_generate = generate_qr.generate_qr_png
+
+    def generate_then_race(*args, **kwargs):
+        result = real_generate(*args, **kwargs)
+        raced = json.loads(path.read_text(encoding="utf-8"))
+        raced["resources"] = [{
+            "schema_version": 1, "talk_slug": "other",
+            "item_count": 1, "category_breakdown": {"url": 1},
+        }]
+        path.write_text(json.dumps(raced), encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(generate_qr, "generate_qr_png", generate_then_race)
+    generate_qr.main()
+
+    written = json.loads(path.read_text(encoding="utf-8"))
+    # Our QR record landed...
+    assert [r["talk_slug"] for r in written["qr_codes"]] == ["current"]
+    # ...and the unrelated writer's change survived; we rebased, not clobbered.
+    assert written["resources"][0]["talk_slug"] == "other"
+
+
+def test_commit_rejection_reports_the_effects_that_landed(
+        generate_qr, monkeypatch, tmp_path, capsys):
+    """A post-effect commit failure must not look side-effect-free."""
+    database = _current_tracking_database()
+    path = tmp_path / "tracking-database.json"
+    path.write_text(json.dumps(database), encoding="utf-8")
+    output = tmp_path / "current.png"
+
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "current",
+        "--shownotes-url", "https://example.test/notes",
+        "--short-url", "https://example.test/current",
+        "--vault", str(tmp_path), "--output", str(output),
+    ])
+    monkeypatch.setattr(
+        generate_qr, "commit_qr_record",
+        lambda *a, **k: (_ for _ in ()).throw(ValueError("generation conflict")),
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        generate_qr.main()
+    assert excinfo.value.code == 1
+
+    err = capsys.readouterr().err
+    assert "generation conflict" in err
+    assert "these effects already landed" in err
+    assert str(output) in err
+    assert "Re-run to finalize" in err
+
+
+def test_no_effects_yet_reports_a_clean_retry(generate_qr, capsys):
+    receipt = generate_qr.EffectsReceipt("my-talk")
+    generate_qr._report_unfinalized_effects(receipt)
+    err = capsys.readouterr().err
+    assert "No external effects were made" in err
+    assert "safe to retry" in err
+
+
+def test_effects_receipt_names_link_pngs_and_deck(generate_qr, capsys):
+    receipt = generate_qr.EffectsReceipt("my-talk")
+    receipt.record_short_link("bitly", "bit.ly/abc123", "https://jbaru.ch/my-talk")
+    receipt.record_artifacts(["/tmp/a.png", "/tmp/b.png"])
+    receipt.record_deck("/tmp/deck.pptx")
+
+    generate_qr._report_unfinalized_effects(receipt)
+    err = capsys.readouterr().err
+    assert "link_id=bit.ly/abc123" in err
+    assert "/tmp/a.png" in err and "/tmp/b.png" in err
+    assert "deck mutated: /tmp/deck.pptx" in err
+
+
+def test_publication_lock_is_per_slug(generate_qr, tmp_path):
+    """Two slugs publish concurrently; the same slug serializes."""
+    with generate_qr.qr_publication_lock(str(tmp_path), "talk-a") as first:
+        assert os.path.basename(first) == ".qr-talk-a.lock"
+        # A different slug takes its own lock without blocking.
+        with generate_qr.qr_publication_lock(str(tmp_path), "talk-b") as second:
+            assert os.path.basename(second) == ".qr-talk-b.lock"
+            assert first != second
