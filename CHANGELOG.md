@@ -50,6 +50,18 @@ it and the run emits the effects payload, instead of the previous claim that no
 PNG, deck, or tracking-database change was made — which was false whenever the
 link had already been created.
 
+`retry.idempotent` reflects how the link came to be. A retry finds an existing
+link through the committed `qr_codes` record, so a link this run created with no
+record behind it cannot be found — the payload says so and tells the operator to
+delete it or recreate the record first. A retargeted or pre-resolved link keeps
+the idempotent path.
+
+The lock-failure guidance no longer suggests deleting a stale lock file. An
+advisory lock belongs to the open inode, so unlinking the path lets a second
+process create a new inode and publish concurrently — the opposite of what the
+lock is for. It now points at waiting for or stopping the holder, and at
+filesystems without flock support.
+
 A rejected commit writes one JSON document to stderr —
 `{"error": "qr_publication_unfinalized", ...}` carrying `retry`,
 `atomic_rollback`, and an `effects[]` entry per landed effect with its own

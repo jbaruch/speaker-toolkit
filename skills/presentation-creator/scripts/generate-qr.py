@@ -208,9 +208,12 @@ def qr_publication_lock(vault_path, talk_slug):
         except OSError as exc:
             raise ValueError(
                 f"cannot acquire QR publication lock {lock_path}: {exc}. "
-                "Another QR run for this talk may hold it; wait for that run to "
-                "finish and re-run. If no run is active, remove the stale lock "
-                "file."
+                "Another QR run for this talk holds it — wait for that run to "
+                "finish, or stop that process, then re-run. Do not delete the "
+                "lock file: the lock lives on the open inode, so unlinking the "
+                "path lets a second process create a new inode and publish "
+                "concurrently. If no run is active, check that the filesystem "
+                "supports flock (some network mounts do not)."
             ) from exc
         yield lock_path
     finally:
@@ -262,6 +265,35 @@ class EffectsReceipt:
 
     def any_effects(self):
         return bool(self.short_link or self.artifacts or self.deck)
+
+
+def _retry_guidance(link):
+    """Whether re-running is safe, given how this run's link came to be.
+
+    A retry finds an existing link through the committed ``qr_codes`` record.
+    When this run created a link and the commit did not land, no such record
+    exists, so the retry cannot find it — re-running is not idempotent for the
+    link until that identity is reused or the link is deleted.
+    """
+    if link and link["action"] == "created":
+        return {
+            "idempotent": False,
+            "detail": (
+                "this run created a provider-side link but the commit did not "
+                "land, so no qr_codes record points at it. Re-running cannot "
+                "find it and will attempt another creation. First delete the "
+                "link named below, or re-create the record with its identity, "
+                "then re-run"
+            ),
+        }
+    return {
+        "idempotent": True,
+        "detail": (
+            "re-running the same invocation retargets the existing managed "
+            "link rather than duplicating it, and overwrites the PNGs and deck "
+            "in place"
+        ),
+    }
 
 
 def unfinalized_effects_payload(receipt, message):
@@ -316,14 +348,7 @@ def unfinalized_effects_payload(receipt, message):
         "talk_slug": receipt.talk_slug if receipt else None,
         "tracking_database_updated": False,
         "atomic_rollback": False,
-        "retry": {
-            "idempotent": True,
-            "detail": (
-                "re-running the same invocation retargets an existing managed "
-                "link rather than duplicating it, and overwrites the PNGs and "
-                "deck in place"
-            ),
-        },
+        "retry": _retry_guidance(link),
         "effects": effects,
     }
 

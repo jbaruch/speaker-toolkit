@@ -1430,3 +1430,54 @@ def test_partial_link_identity_is_structured_not_only_in_the_message(generate_qr
                               "short_url": "https://jbaru.ch/x"})
     assert err.partial_link["link_id"] == "x"
     assert generate_qr.ShortenerResolutionError("boom").partial_link is None
+
+
+@pytest.mark.parametrize("action,idempotent", [
+    ("created", False),
+    ("retargeted", True),
+    ("preresolved", True),
+])
+def test_retry_idempotency_depends_on_whether_a_record_can_find_the_link(
+        generate_qr, action, idempotent):
+    """A link this run created has no committed record, so a retry cannot find it."""
+    receipt = generate_qr.EffectsReceipt("my-talk")
+    receipt.record_short_link("bitly", "bit.ly/abc", "https://jbaru.ch/my-talk",
+                              action=action, prior_target="https://x.test/old")
+    payload = generate_qr.unfinalized_effects_payload(receipt, "boom")
+    assert payload["retry"]["idempotent"] is idempotent
+    if not idempotent:
+        assert "cannot find it" in payload["retry"]["detail"]
+
+
+def test_retry_is_idempotent_when_no_link_work_happened(generate_qr):
+    receipt = generate_qr.EffectsReceipt("my-talk")
+    receipt.record_artifacts(["/tmp/a.png"])
+    assert generate_qr.unfinalized_effects_payload(
+        receipt, "boom")["retry"]["idempotent"] is True
+
+
+def test_lock_guidance_never_advises_deleting_the_lock_file(generate_qr, tmp_path):
+    """Unlinking an flock path lets a second process publish concurrently."""
+    import fcntl as _fcntl
+
+    lock_path = tmp_path / ".qr-my-talk.lock"
+    lock_path.touch()
+    held = os.open(str(lock_path), os.O_RDWR)
+    _fcntl.flock(held, _fcntl.LOCK_EX)
+    try:
+        def blocking_flock(fd, op):
+            raise OSError("Resource temporarily unavailable")
+
+        import unittest.mock as mock
+        with mock.patch.object(generate_qr.fcntl, "flock", blocking_flock):
+            with pytest.raises(ValueError) as excinfo:
+                with generate_qr.qr_publication_lock(str(tmp_path), "my-talk"):
+                    pass
+    finally:
+        _fcntl.flock(held, _fcntl.LOCK_UN)
+        os.close(held)
+
+    message = str(excinfo.value)
+    assert "Do not delete the lock file" in message
+    assert "remove the stale lock" not in message
+    assert "flock" in message
