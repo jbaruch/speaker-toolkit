@@ -37,6 +37,8 @@ minute rather than ~6. Pyright needs the runtime dependencies present because
 it resolves imports against the active interpreter; without them it reports ~94
 resolution false-positives and stops deep-checking underneath.
 
+## 0.20.36 — 2026-08-09
+
 ### fix — clear every Pyright finding in shipped scripts (#162)
 
 Fourth of the #162 adoption sequence. With resolution correct, the 16 findings
