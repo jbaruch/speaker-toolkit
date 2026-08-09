@@ -1298,15 +1298,22 @@ class VaultPreflight:
         except (OSError, UnicodeError) as exc:
             # `actual` is a public diagnostic field. A raw OSError/UnicodeError
             # string carries the host path and decoder offsets; the typed reason
-            # says which failure it was without them.
+            # says which failure it was without them. The message follows the
+            # same split: a permission denial is a read failure, not a decode
+            # failure, and must not assert the wrong cause.
+            decode_failure = isinstance(exc, UnicodeError)
             self.talk_add(
                 index,
                 severity,
                 "transcript_artifact_unreadable",
-                "transcript artifact cannot be decoded as UTF-8 speech text",
+                (
+                    "transcript artifact is not valid UTF-8 speech text"
+                    if decode_failure
+                    else "transcript artifact could not be read"
+                ),
                 artifact_path=transcript_path,
                 actual=(
-                    "not_utf8" if isinstance(exc, UnicodeError)
+                    "not_utf8" if decode_failure
                     else f"unreadable:{type(exc).__name__}"
                 ),
             )
