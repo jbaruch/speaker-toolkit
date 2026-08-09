@@ -572,6 +572,21 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db,
                       dry_run=False, vault_path=None, effects_receipt=None):
     """Resolve the short URL for a talk, using cache or API as needed.
 
+    Link selection, in order:
+
+    1. A tracked link whose back-half is not the talk slug is legacy. It is
+       neither reused nor retargeted; a slug-based link replaces it.
+    2. A tracked link under the configured shortener whose target already equals
+       ``shownotes_url`` is reused as-is.
+    3. A tracked link under the configured shortener with a different target is
+       retargeted in place, so QR codes already printed stay valid.
+    4. Otherwise a new link is created with the slug as its back-half.
+
+    A cached record produced by a different shortener than the one configured is
+    discarded rather than reused. Only an explicit ``shortener: none`` yields a
+    raw target URL; every other resolution failure raises
+    ``ShortenerResolutionError``.
+
     Args:
         shownotes_url: The full shownotes URL to shorten
         talk_slug: Unique talk identifier
@@ -580,6 +595,8 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db,
         tracking_db: Parsed tracking-database.json
         dry_run: If True, skip API calls
         vault_path: Path to vault (for actionable error messages)
+        effects_receipt: Optional EffectsReceipt; records whether the link was
+            created or retargeted, and the prior target when retargeted
 
     Returns:
         tuple (short_url, metadata_dict)

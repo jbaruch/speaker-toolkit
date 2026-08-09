@@ -210,12 +210,13 @@ path make the check before resolving the link.
    - Persist schema-v2 QR metadata in `qr_codes[]` — including one
      `artifacts[]` receipt per generated PNG — through the shared
      tracking-database transaction used by `generate-qr.py`
-   - Refuse a concurrent database generation and replace the verified current
-     database atomically
+   - Refuse to write when the database moved underneath the run — the exact
+     generation and same-talk conditions live in `commit_qr_record`
 
-5. Re-running for the same `talk_slug` with a different target URL will PATCH the
-   existing short link (keeping QR codes already printed valid) rather than creating
-   a new one.
+5. Re-running for the same `talk_slug` with a different target URL is safe:
+   printed QR codes stay valid. Which link a run reuses, retargets, or creates is
+   decided by `resolve_short_url` in
+   `skills/presentation-creator/scripts/generate-qr.py` — see its docstring.
 
 **No raw-dogging:** NEVER bypass `generate-qr.py` with hand-rolled python-pptx or
 direct `qrcode` library calls. If the script targets the wrong slides, uses the wrong
