@@ -3222,3 +3222,93 @@ def test_completed_generation_cannot_be_replayed(persist_results, tmp_path):
     assert replay.returncode == 1
     assert "closed or stranded member" in replay.stderr
     assert db.read_bytes() == completed
+
+
+# --- #203: the CLI has a closed failure boundary that names commit position ---
+
+@pytest.mark.parametrize("committed", [False, True])
+def test_outer_boundary_reports_whether_the_commit_landed(
+        persist_results, capsys, monkeypatch, committed):
+    """A late failure must say whether the atomic write already happened.
+
+    Without it an operator cannot tell a pre-commit abort from a post-commit
+    reporting failure, and a blind retry could re-persist the batch.
+    """
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("injected failure at /private/vault/tracking.json")
+
+    monkeypatch.setattr(persist_results, "main", explode)
+    monkeypatch.setitem(persist_results._COMMIT_STATE, "database_written", committed)
+
+    assert persist_results.run_cli() == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""                     # stdout stays clean
+    payload = json.loads(captured.err.splitlines()[0])
+    assert payload["error"] == "persist_results_unexpected_failure"
+    assert payload["error_type"] == "RuntimeError"
+    assert payload["database_written"] is committed
+    # Path-neutral: the exception text and its path never reach the output.
+    assert "injected failure" not in captured.err
+    assert "/private/vault/tracking.json" not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_commit_state_does_not_leak_between_runs(
+        persist_results, capsys, monkeypatch):
+    """A stale True would make a pre-commit failure claim the batch was written.
+
+    Exercises the real main(): it resets the flag before doing anything, so a
+    failure after that point cannot inherit an earlier run's committed state.
+    """
+    persist_results._COMMIT_STATE["database_written"] = True
+
+    def fail_after_reset(*_args, **_kwargs):
+        raise RuntimeError("failed before the commit")
+
+    # parse_args is main()'s first call after the reset.
+    monkeypatch.setattr(persist_results, "parse_args", fail_after_reset)
+    monkeypatch.setattr(sys, "argv", ["persist-results.py", "db.json", "b.json"])
+
+    assert persist_results.run_cli() == 2
+    payload = json.loads(capsys.readouterr().err.splitlines()[0])
+    assert payload["database_written"] is False
+    assert persist_results._COMMIT_STATE["database_written"] is False
+
+
+def test_outer_boundary_lets_a_clean_run_report_success(
+        persist_results, monkeypatch):
+    """The boundary must not swallow or alter a normal run."""
+    monkeypatch.setattr(persist_results, "main", lambda *a, **k: None)
+    assert persist_results.run_cli() == 0
+
+
+def test_outer_boundary_does_not_catch_sys_exit(persist_results, monkeypatch):
+    """main()'s own sys.exit paths keep their exit codes."""
+    def bail(*_args, **_kwargs):
+        raise SystemExit(1)
+
+    monkeypatch.setattr(persist_results, "main", bail)
+    with pytest.raises(SystemExit) as excinfo:
+        persist_results.run_cli()
+    assert excinfo.value.code == 1
+
+
+
+
+def test_failure_payload_names_code_locations_without_exception_text(
+        persist_results, capsys, monkeypatch):
+    """no-secrets forbids exception text; the origin frames replace it."""
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("token=SECRET at /private/vault/creds.json")
+
+    monkeypatch.setattr(persist_results, "main", explode)
+    assert persist_results.run_cli() == 2
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.err.splitlines()[0])
+    assert payload["origin"], "the failing code location must be reported"
+    assert all(":" in frame and " in " in frame for frame in payload["origin"])
+    assert "SECRET" not in captured.err
+    assert "/private/vault/creds.json" not in captured.err
+    assert "Traceback" not in captured.err

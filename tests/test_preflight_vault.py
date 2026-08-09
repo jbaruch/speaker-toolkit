@@ -3328,3 +3328,96 @@ def test_non_utf8_database_is_a_structured_blocking_report(
 
     assert report["blocking_count"] == 1
     assert report["findings"][0]["code"] == "database_encoding_invalid"
+
+
+# --- #203: the CLI has a closed failure boundary ---
+
+def test_outer_boundary_emits_one_blocking_report_without_a_traceback(
+        preflight_vault, capsys, monkeypatch):
+    """An unexpected failure still produces the machine-readable blocking signal.
+
+    Callers gate claiming on this report. A traceback with no JSON would read as
+    "preflight did not run", and a partial document would not parse.
+    """
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("injected outer failure at /private/vault/secret.md")
+
+    monkeypatch.setattr(preflight_vault, "main", explode)
+    assert preflight_vault.run_cli() == 2
+
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)            # exactly one valid document
+    assert report["ok"] is False
+    assert report["blocking_count"] == 1
+    finding = report["findings"][0]
+    assert finding["code"] == "preflight_unexpected_failure"
+    assert finding["severity"] == "blocking"
+    assert finding["actual"] == "RuntimeError"
+    # Path-neutral: neither the exception text nor its path reaches the report.
+    assert "injected outer failure" not in captured.out
+    assert "/private/vault/secret.md" not in captured.out
+    assert "Traceback" not in captured.out
+    assert "do not begin claiming" in captured.err
+
+
+def test_outer_boundary_finding_matches_the_normal_finding_shape(
+        preflight_vault, vault_fixture, capsys, monkeypatch):
+    """The failure finding must parse like every other finding."""
+    write_database(vault_fixture, [base_talk()], current=True)
+    normal = preflight_vault.run_preflight(vault_fixture["root"])
+    capsys.readouterr()
+
+    monkeypatch.setattr(preflight_vault, "main",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert preflight_vault.run_cli() == 2
+
+    failure = json.loads(capsys.readouterr().out)
+    # Superset, not equality: the contract is that a consumer reading any
+    # normal key cannot KeyError on the failure shape. The failure report adds
+    # `origin`, which no normal finding carries and no consumer reads.
+    assert set(normal["findings"][0]) <= set(failure["findings"][0])
+    assert set(normal) <= set(failure)
+    assert failure["schema_version"] == normal["schema_version"]
+
+
+def test_outer_boundary_passes_a_clean_exit_code_through(
+        preflight_vault, monkeypatch):
+    """A normal run's exit code is not rewritten by the boundary."""
+    monkeypatch.setattr(preflight_vault, "main", lambda *a, **k: 0)
+    assert preflight_vault.run_cli() == 0
+    monkeypatch.setattr(preflight_vault, "main", lambda *a, **k: 1)
+    assert preflight_vault.run_cli() == 1
+
+
+def test_failure_guidance_names_a_concrete_next_action(
+        preflight_vault, capsys, monkeypatch):
+    """"Repair the condition named by the exception type" is not actionable."""
+    monkeypatch.setattr(preflight_vault, "main",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert preflight_vault.run_cli() == 2
+    err = capsys.readouterr().err
+    assert "code locations that failed" in err
+    assert "check-runtime.py" in err
+    assert "do not begin claiming" in err
+
+
+def test_failure_report_names_code_locations_without_exception_text(
+        preflight_vault, capsys, monkeypatch):
+    """no-secrets forbids exception text; the origin frames replace it."""
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("token=SECRET at /private/vault/creds.json")
+
+    monkeypatch.setattr(preflight_vault, "main", explode)
+    assert preflight_vault.run_cli() == 2
+
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)
+    origin = report["findings"][0]["origin"]
+    assert origin, "the failing code location must be reported"
+    assert all(":" in frame and " in " in frame for frame in origin)
+    # Neither the message, the credential, nor a full path may appear anywhere.
+    for stream in (captured.out, captured.err):
+        assert "SECRET" not in stream
+        assert "/private/vault/creds.json" not in stream
+        assert "Traceback" not in stream
+    assert "code locations that failed" in captured.err

@@ -1,5 +1,36 @@
 # Changelog
 
+### fix(vault-ingress) — close the deterministic diagnostics gap in two CLI entrypoints (#203)
+
+`persist-results.py` and `preflight-vault.py` had no process-wide
+unexpected-failure boundary, so an outer failure surfaced as a traceback with no
+machine-readable document — indistinguishable, to a caller, from the script
+never having run.
+
+`persist-results.py` is mutation-capable, so its boundary reports commit
+position: the failure document carries `database_written`, stating whether the
+atomic write installed. Without it an operator cannot tell a pre-commit abort
+from a post-commit reporting failure, and a blind retry could re-persist the
+batch. stdout stays empty and the JSON goes to stderr.
+
+`preflight-vault.py` emits one closed report in the real schema shape, carrying
+a `preflight_unexpected_failure` blocking finding whose keys match the canonical
+finding shape, so consumers that gate claiming on `blocking_count` keep working.
+Only the exception type crosses the boundary — never its message or any path.
+
+Both documents carry an `origin` list — the traceback's code locations as
+`basename:line in function`. `no-secrets` forbids exception messages and
+credentials from reaching any diagnostic at any level, so the message itself
+never crosses the boundary, but an exception type alone identifies no condition
+to repair. The frames do. The preflight guidance also names likely causes and
+points at `check-runtime.py` for the dependency case.
+
+The issue named five sites; three were already compliant. Both PPTX worker
+guards already carry `outer-boundary-process-contract` catches, `pptx-extraction`'s
+`main()` already has its boundary, and `check-runtime.py`'s child result-write
+traceback is a deliberate contract with a test defending it — stdout stays clean
+and the traceback is the actionable signal.
+
 ## 0.20.27 — 2026-08-09
 
 ### fix(generate-qr) — make publication recoverable when the tracking-database CAS rejects (#172)

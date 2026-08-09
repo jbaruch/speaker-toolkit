@@ -77,7 +77,9 @@ Example:
 
 import copy
 import json
+import os
 import sys
+import traceback
 from datetime import datetime, timezone
 
 from adherence_baseline import (
@@ -844,7 +846,30 @@ def parse_args(argv):
     return args[0], args[1], run_date
 
 
+# Whether the atomic database commit landed. The outer boundary reports this so
+# an operator never has to guess whether a late failure replayed a write.
+_COMMIT_STATE = {"database_written": False}
+
+
+def _sanitized_frames(exc: BaseException) -> list[str]:
+    """Code locations from a traceback, with no exception text or full paths.
+
+    `no-secrets` forbids exception messages and credentials from reaching any
+    diagnostic, so only `basename:line in function` crosses the boundary. That
+    still points an operator at the failing code, which the exception type
+    alone does not.
+    """
+    return [
+        f"{os.path.basename(frame.filename)}:{frame.lineno} in {frame.name}"
+        for frame in traceback.extract_tb(exc.__traceback__)
+    ]
+
+
+
 def main():
+    # Reset per invocation: a stale True from an earlier run in the same process
+    # would make a pre-commit failure claim the database was written.
+    _COMMIT_STATE["database_written"] = False
     db_path, batch_path, run_date = parse_args(sys.argv[1:])
 
     try:
@@ -993,6 +1018,7 @@ def main():
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
+    _COMMIT_STATE["database_written"] = bool(write_result.installed)
 
     json.dump({"persisted": len(summary), "db_path": db_path, "run_date": run_date,
                "schema_version": TALK_SCHEMA_VERSION,
@@ -1009,5 +1035,44 @@ def main():
     sys.stdout.write("\n")
 
 
+def run_cli() -> int:
+    """Run the CLI behind its failure boundary. Returns the process exit code.
+
+    Importable so the boundary's contract is testable without executing the
+    module as a script.
+    """
+    try:
+        main()
+    # Callers read a non-zero exit without this JSON as a silent persistence
+    # failure; emit one closed document naming whether the atomic commit landed
+    # because propagation would leave the operator unable to tell a pre-commit
+    # abort from a post-commit reporting failure, and could replay writes.
+    except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
+        print(
+            json.dumps(
+                {
+                    "error": "persist_results_unexpected_failure",
+                    "error_type": type(exc).__name__,
+                    "origin": _sanitized_frames(exc),
+                    "database_written": _COMMIT_STATE["database_written"],
+                    "persisted": None,
+                },
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+        )
+        print(
+            "vault-ingress persistence failed unexpectedly. `database_written` "
+            "above states whether the atomic commit landed: when true the "
+            "database holds this batch and re-running would re-persist it; when "
+            "false nothing was written and the batch can be retried.\n"
+            "\n  `origin` above lists the code locations that failed, "
+            "innermost last.",
+            file=sys.stderr,
+        )
+        return 2
+    return 0
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(run_cli())

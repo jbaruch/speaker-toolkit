@@ -24,6 +24,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import traceback
 from typing import Any
 
 from artifact_locator import (
@@ -86,6 +87,20 @@ from vault_root_authority import (
 
 
 REPORT_SCHEMA_VERSION = 1
+
+
+def _sanitized_frames(exc: BaseException) -> list[str]:
+    """Code locations from a traceback, with no exception text or full paths.
+
+    `no-secrets` forbids exception messages and credentials from reaching any
+    diagnostic, so only `basename:line in function` crosses the boundary. That
+    still points an operator at the failing code, which the exception type
+    alone does not.
+    """
+    return [
+        f"{os.path.basename(frame.filename)}:{frame.lineno} in {frame.name}"
+        for frame in traceback.extract_tb(exc.__traceback__)
+    ]
 SOURCE_IDENTITY_SCHEMA_VERSION = 1
 TRANSCRIPT_SOURCES = frozenset({"youtube_auto", "whisper", "manual", "none"})
 SLIDE_SOURCES = frozenset({"pptx", "pdf", "both", "video_extracted", "none"})
@@ -2286,5 +2301,72 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if report["blocking_count"] == 0 else 1
 
 
+def run_cli() -> int:
+    """Run the CLI behind its failure boundary. Returns the process exit code.
+
+    Importable so the boundary's contract is testable without executing the
+    module as a script.
+    """
+    try:
+        return main()
+    # Callers read a non-zero exit without report JSON as a silent preflight
+    # failure and may proceed to claim work; emit one closed report because
+    # propagation would suppress the machine-readable blocking signal that gates
+    # claiming.
+    except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
+        # The report stays path-neutral by contract. An operator diagnosing a
+        print(
+            json.dumps(
+                {
+                    "schema_version": REPORT_SCHEMA_VERSION,
+                    "ok": False,
+                    # Present on every normal report; a consumer reading them
+                    # unconditionally must not KeyError on the failure shape.
+                    "database": None,
+                    "vault_root": None,
+                    "talk_count": 0,
+                    "blocking_count": 1,
+                    "warning_count": 0,
+                    "summary": {
+                        "by_severity": {"blocking": 1, "warning": 0},
+                        "by_code": {"preflight_unexpected_failure": 1},
+                    },
+                    "findings": [
+                        {
+                            "severity": "blocking",
+                            "code": "preflight_unexpected_failure",
+                            "talk_index": None,
+                            "filename": None,
+                            "field": None,
+                            "message": (
+                                "preflight aborted before completing its checks; "
+                                "its findings are unknown, so no talk may be "
+                                "claimed"
+                            ),
+                            "expected": None,
+                            "actual": type(exc).__name__,
+                            "origin": _sanitized_frames(exc),
+                            "artifact_path": None,
+                            "capability_fact": None,
+                        }
+                    ],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        print(
+            "vault-ingress preflight failed unexpectedly before completing its "
+            "checks. Treat the vault as unverified and do not begin claiming.\n"
+            "  `origin` above lists the code locations that failed, innermost "
+            "last.\n"
+            "  Common causes: an unreadable or partially written "
+            "tracking-database.json, a vault path that moved, or a missing "
+            "runtime dependency. `check-runtime.py` reports the last of these.",
+            file=sys.stderr,
+        )
+        return 2
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run_cli())
