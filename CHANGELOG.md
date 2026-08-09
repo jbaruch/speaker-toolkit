@@ -32,6 +32,7 @@ split into atomic bullets per `context-writing-style`, and a new §4 states the
 catalog-fidelity contract. Sections renumbered accordingly, with cross-references
 updated.
 
+## 0.20.24 — 2026-08-09
 
 ### fix(generate-qr) — fail closed when a configured shortener cannot produce the managed link (#170)
 
