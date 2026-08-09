@@ -197,14 +197,19 @@ def qr_publication_lock(vault_path, talk_slug):
         descriptor = os.open(lock_path, flags, 0o600)
     except OSError as exc:
         raise ValueError(
-            f"cannot open QR publication lock {lock_path}: {exc}"
+            f"cannot open QR publication lock {lock_path}: {exc}. Check that "
+            "the vault directory exists and is writable by this user, then "
+            "re-run."
         ) from exc
     try:
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX)
         except OSError as exc:
             raise ValueError(
-                f"cannot acquire QR publication lock {lock_path}: {exc}"
+                f"cannot acquire QR publication lock {lock_path}: {exc}. "
+                "Another QR run for this talk may hold it; wait for that run to "
+                "finish and re-run. If no run is active, remove the stale lock "
+                "file."
             ) from exc
         yield lock_path
     finally:
