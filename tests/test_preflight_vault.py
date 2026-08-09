@@ -5,6 +5,7 @@ import importlib
 import json
 import os
 from pathlib import Path
+import pathlib
 import shutil
 import struct
 import subprocess
@@ -3555,3 +3556,38 @@ def test_database_read_report_never_echoes_the_host_path(
     findings = json.dumps(report["findings"], sort_keys=True)
     assert "secret-vault-name" not in findings, findings
     assert report["findings"][0]["code"] == "database_encoding_invalid"
+
+
+@pytest.mark.parametrize("payload,expected_message", [
+    (
+        # MAX_JSON_NESTING_DEPTH is 200; go comfortably past it.
+        ('{"config": {}, "talks": [], "deep": '
+         + "[" * 260 + "]" * 260 + "}").encode(),
+        "tracking database exceeds the maximum supported JSON nesting depth",
+    ),
+    (
+        b'{"config": {}, "talks": [], "s": "\\ud800"}',
+        "tracking database contains an unpaired UTF-16 surrogate in a JSON string",
+    ),
+])
+def test_tree_validator_defects_route_to_their_specific_reason(
+        preflight_vault, tmp_path, payload, expected_message):
+    """These raise after a successful decode; untyped they fall back to generic."""
+    database = tmp_path / "tracking-database.json"
+    database.write_bytes(payload)
+
+    report = preflight_vault.run_preflight(database)
+    finding = report["findings"][0]
+    assert finding["code"] == "database_json_invalid", finding
+    assert finding["message"] == expected_message
+
+
+def test_every_emitted_decoder_reason_is_mapped(preflight_vault):
+    """A reason with no mapping silently degrades to the generic code."""
+    import re
+    io_source = pathlib.Path(
+        importlib.import_module("tracking_database_io").__file__
+    ).read_text(encoding="utf-8")
+    emitted = set(re.findall(r'reason_code="([a-z_]+)"', io_source))
+    mapped = set(preflight_vault._DATABASE_READ_DIAGNOSTICS)
+    assert emitted <= mapped, sorted(emitted - mapped)

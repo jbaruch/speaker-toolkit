@@ -124,6 +124,10 @@ _DATABASE_READ_DIAGNOSTICS = {
         "database_json_invalid",
         "tracking database exceeds the maximum supported JSON nesting depth",
     ),
+    "json_unpaired_surrogate": (
+        "database_json_invalid",
+        "tracking database contains an unpaired UTF-16 surrogate in a JSON string",
+    ),
 }
 _DATABASE_READ_FALLBACK = (
     "database_unreadable",

@@ -298,14 +298,16 @@ def _validate_decoded_json_tree(payload: object, *, subject: str) -> None:
             if any(0xD800 <= ord(character) <= 0xDFFF for character in value):
                 raise TrackingDatabaseIOError(
                     f"{subject} contains an unpaired UTF-16 surrogate in a "
-                    "JSON string"
+                    "JSON string",
+                    reason_code="json_unpaired_surrogate",
                 )
             continue
         if isinstance(value, dict):
             if depth > MAX_JSON_NESTING_DEPTH:
                 raise TrackingDatabaseIOError(
                     f"{subject} exceeds maximum supported JSON nesting depth "
-                    f"{MAX_JSON_NESTING_DEPTH}"
+                    f"{MAX_JSON_NESTING_DEPTH}",
+                    reason_code="json_nesting_too_deep",
                 )
             previous_depth = deepest_container_visits.get(id(value))
             if previous_depth is not None and previous_depth >= depth:
@@ -319,7 +321,8 @@ def _validate_decoded_json_tree(payload: object, *, subject: str) -> None:
             if depth > MAX_JSON_NESTING_DEPTH:
                 raise TrackingDatabaseIOError(
                     f"{subject} exceeds maximum supported JSON nesting depth "
-                    f"{MAX_JSON_NESTING_DEPTH}"
+                    f"{MAX_JSON_NESTING_DEPTH}",
+                    reason_code="json_nesting_too_deep",
                 )
             previous_depth = deepest_container_visits.get(id(value))
             if previous_depth is not None and previous_depth >= depth:

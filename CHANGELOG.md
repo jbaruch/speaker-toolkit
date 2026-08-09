@@ -13,6 +13,12 @@ database path, the offending duplicate key, and rejected numeric literals —
 never reaches the report. An unmapped reason falls back to
 `database_unreadable` rather than inventing a code.
 
+`_validate_decoded_json_tree` runs after a successful decode, so its
+deep-nesting and unpaired-surrogate rejections are typed too — without codes
+they degraded to the generic `database_unreadable` and defeated the routing. A
+test asserts every `reason_code` the decoder emits has a mapping, so a new
+reason cannot silently fall through.
+
 Three existing tests asserted the report echoed the offending key or literal.
 They now assert the message belongs to the closed set of seven constants, which
 is a stronger guard: a message drawn from fixed strings cannot carry input at
