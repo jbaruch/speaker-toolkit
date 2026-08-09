@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.35 — 2026-08-09
+
 ### chore(ci) — resolve Pyright's module graph and pin the checker (#162)
 
 Third of the #162 adoption sequence. `language-diagnostics` Resolve Modules
