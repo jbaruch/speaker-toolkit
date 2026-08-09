@@ -40,6 +40,8 @@ typed-helper form `language-diagnostics` prefers over an ignore at each use.
 Still open on #162: 242 findings in test modules, then wiring Ruff check, Ruff
 format check, and Pyright into pull-request CI.
 
+## 0.20.35 — 2026-08-09
+
 ### chore(ci) — resolve Pyright's module graph and pin the checker (#162)
 
 Third of the #162 adoption sequence. `language-diagnostics` Resolve Modules
