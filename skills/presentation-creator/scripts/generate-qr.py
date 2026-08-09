@@ -41,6 +41,7 @@ import hashlib
 import io
 import json
 import os
+import re
 from contextlib import contextmanager
 from pathlib import Path
 import shutil
@@ -537,6 +538,23 @@ def update_rebrandly_link(link_id, new_long_url, api_key):
 
 
 _SUPPORTED_SHORTENERS = frozenset({"bitly", "rebrandly", "none"})
+
+# rules/qr-generation-rules.md §5: lowercase kebab-case, no special characters.
+# Enforced before the slug reaches any path or URL, so a value containing "/"
+# or ".." cannot place the publication lock or a PNG outside the vault.
+_TALK_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def require_valid_talk_slug(talk_slug):
+    """Reject a slug that breaks the kebab-case contract, before any path use."""
+    if not isinstance(talk_slug, str) or not _TALK_SLUG_RE.match(talk_slug):
+        raise ValueError(
+            f"--talk-slug {talk_slug!r} is not lowercase kebab-case. It must "
+            "match the published shownotes slug: lowercase letters and digits "
+            "separated by single hyphens, no slashes, dots, or spaces "
+            "(rules/qr-generation-rules.md §5)."
+        )
+    return talk_slug
 
 
 class ShortenerResolutionError(RuntimeError):
@@ -1206,6 +1224,12 @@ def main():
     # an incomplete identity.
     if (args.short_provider or args.short_link_id) and not args.short_url:
         parser.error("--short-provider and --short-link-id require --short-url")
+    # Validate before the slug reaches a lock path, a filename, or a back-half.
+    try:
+        require_valid_talk_slug(args.talk_slug)
+    except ValueError as exc:
+        parser.error(str(exc))
+
     if bool(args.short_provider) != bool(args.short_link_id):
         parser.error(
             "--short-provider and --short-link-id must be given together; "

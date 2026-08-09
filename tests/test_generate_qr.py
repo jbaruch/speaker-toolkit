@@ -1325,3 +1325,59 @@ def test_lock_failure_exits_cleanly_without_a_traceback(
         generate_qr.main()
     assert excinfo.value.code == 1
     assert "cannot open QR publication lock" in capsys.readouterr().err
+
+
+# --- slug is a path component: it must never escape the vault ---
+
+@pytest.mark.parametrize("bad", [
+    "../../etc/passwd",
+    "a/b",
+    "..",
+    ".",
+    "Talk-Slug",
+    "talk slug",
+    "talk_slug",
+    "-leading",
+    "trailing-",
+    "double--hyphen",
+    "",
+])
+def test_invalid_talk_slug_is_rejected(generate_qr, bad):
+    with pytest.raises(ValueError, match="kebab-case"):
+        generate_qr.require_valid_talk_slug(bad)
+
+
+@pytest.mark.parametrize("good", ["arc-of-ai", "devnexus26-robocoders", "talk1"])
+def test_valid_talk_slug_is_accepted(generate_qr, good):
+    assert generate_qr.require_valid_talk_slug(good) == good
+
+
+def test_unsafe_slug_is_rejected_at_the_cli_boundary(
+        generate_qr, monkeypatch, tmp_path, capsys):
+    """A path-shaped slug fails on the slug contract, before any file is touched.
+
+    Without validation the same input fails later and less usefully — the lock
+    open errors on a directory that happens not to exist — so the operator is
+    told about a lock path instead of the slug that is actually wrong.
+    """
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "tracking-database.json").write_text(
+        json.dumps(_current_tracking_database()), encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "../escaped",
+        "--shownotes-url", "https://example.test/notes",
+        "--short-url", "https://example.test/escaped",
+        "--vault", str(vault), "--output", str(tmp_path / "qr.png"),
+    ])
+    with pytest.raises(SystemExit):
+        generate_qr.main()
+
+    err = capsys.readouterr().err
+    assert "kebab-case" in err
+    assert "qr-generation-rules.md" in err
+    # Nothing was created, in the vault or above it.
+    assert list(vault.glob(".qr-*")) == []
+    assert list(tmp_path.glob(".qr-*")) == []
+    assert not (tmp_path / "qr.png").exists()

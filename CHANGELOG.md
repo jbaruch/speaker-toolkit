@@ -20,6 +20,11 @@ same talk cannot interleave their external effects. The lock is keyed per slug,
 so unrelated talks still publish concurrently, and it is never held across an
 unrelated writer's commit.
 
+`--talk-slug` is validated as lowercase kebab-case at the CLI boundary, before
+it reaches the lock path, the default PNG filename, or the short link's
+back-half. A path-shaped slug now fails on the slug contract with a message
+naming it, instead of surfacing later as a confusing lock-open error.
+
 State loaded before the lock is re-read after acquiring it, before short-link
 resolution. Without that, two same-slug processes both load the old view,
 serialize at the lock, and the second still cannot see the first's committed
