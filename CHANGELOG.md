@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.30 — 2026-08-09
+
 ### fix(vault-ingress) — say which failure the unreadable transcript hit (#253)
 
 `transcript_artifact_unreadable` always read "transcript artifact cannot be
