@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.23 — 2026-08-09
+
 ### fix(skills) — restore standalone sequential-workflow preambles (#179)
 
 `presentation-creator`, `shownotes-publisher`, and `vault-ingress` each failed
