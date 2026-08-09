@@ -23,6 +23,8 @@ one that ships.
 Verified by building a clean venv from the manifest alone and running the full
 suite on Python 3.11 and 3.13, bracketing CI's 3.12.
 
+## 0.20.31 — 2026-08-09
+
 ### fix(vault-ingress) — close the last four deterministic entrypoint boundaries (#203)
 
 `write-analysis.py`, `validate-returns.py`, `audit-pattern-catalog.py`, and
