@@ -14,7 +14,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # `coding-policy: code-formatting` CI Integration — format/lint checks run
+  # BEFORE tests, in their own fast job. `test` carries a multi-minute apt
+  # install for ffmpeg/libreoffice/tesseract; gating on `lint` means a style or
+  # type regression reports in about a minute and never pays for that install.
+  lint:
+    name: Lint, format, and type gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      # Pyright resolves third-party imports against the ACTIVE interpreter, so
+      # the runtime dependencies must be present even though nothing here runs
+      # them. Without them it reports ~94 resolution false-positives and stops
+      # deep-checking the code underneath (`[tool.pyright]` in pyproject.toml).
+      - run: pip install ".[test,lint]"
+      - name: Ruff lint
+        run: ruff check .
+      - name: Ruff format check
+        run: ruff format --check .
+      - name: Pyright
+        run: pyright
+
   test:
+    needs: lint
     runs-on: ubuntu-latest
     # Backstop against the apt step hanging on flaky runner networking: fail
     # fast and re-runnable instead of consuming the 6h default job limit.
@@ -86,6 +112,7 @@ jobs:
   # Exercise native artifact supervision, path handling, private video
   # workspaces, and atomic PDF publication; Ubuntu already runs the full suite.
   supervisor-platform:
+    needs: lint
     name: Artifact platform contracts (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
