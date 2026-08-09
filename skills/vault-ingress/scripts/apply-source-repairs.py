@@ -53,27 +53,34 @@ from tracking_database_io import (
 PLAN_SCHEMA_VERSION = 1
 REPORT_SCHEMA_VERSION = 2
 MISSING_MARKER = {"$missing": True}
-ALLOWED_FIELDS = frozenset({
-    "video_url",
-    "youtube_id",
-    "slides_url",
-    "google_drive_id",
-    "pptx_path",
-    "slides_local_path",
-    "slides_pdf_path",
-    "pdf_path",
-    "transcript_path",
-    "transcript_source",
-    "slide_source",
-    "source_identity",
-    "source_relation",
-    "source_rejections",
-    "status",
-    "reprocess_reason",
-})
-ALLOWED_REPAIR_STATUSES = frozenset({
-    "pending", "needs-reprocessing", "processed_partial", "skipped_no_sources",
-})
+ALLOWED_FIELDS = frozenset(
+    {
+        "video_url",
+        "youtube_id",
+        "slides_url",
+        "google_drive_id",
+        "pptx_path",
+        "slides_local_path",
+        "slides_pdf_path",
+        "pdf_path",
+        "transcript_path",
+        "transcript_source",
+        "slide_source",
+        "source_identity",
+        "source_relation",
+        "source_rejections",
+        "status",
+        "reprocess_reason",
+    }
+)
+ALLOWED_REPAIR_STATUSES = frozenset(
+    {
+        "pending",
+        "needs-reprocessing",
+        "processed_partial",
+        "skipped_no_sources",
+    }
+)
 
 
 class SourceRepairError(ValueError):
@@ -140,9 +147,7 @@ def require_nonempty(value: Any, label: str) -> str:
 
 def validate_plan(plan: dict[str, Any]) -> list[dict[str, Any]]:
     if not json_values_equal(plan.get("schema_version"), PLAN_SCHEMA_VERSION):
-        raise SourceRepairError(
-            f"plan schema_version must be {PLAN_SCHEMA_VERSION}"
-        )
+        raise SourceRepairError(f"plan schema_version must be {PLAN_SCHEMA_VERSION}")
     repairs = plan.get("repairs")
     if not isinstance(repairs, list) or not repairs:
         raise SourceRepairError("plan repairs must be a nonempty array")
@@ -190,10 +195,11 @@ def validate_plan(plan: dict[str, Any]) -> list[dict[str, Any]]:
             )
         overlap = set(set_values) & set(clear)
         if overlap:
-            raise SourceRepairError(
-                f"{label} both sets and clears: {sorted(overlap)}"
-            )
-        if "status" in set_values and set_values["status"] not in ALLOWED_REPAIR_STATUSES:
+            raise SourceRepairError(f"{label} both sets and clears: {sorted(overlap)}")
+        if (
+            "status" in set_values
+            and set_values["status"] not in ALLOWED_REPAIR_STATUSES
+        ):
             raise SourceRepairError(
                 f"{label}.set.status must be one of {sorted(ALLOWED_REPAIR_STATUSES)}"
             )
@@ -208,7 +214,8 @@ def _matches_expected(talk: dict[str, Any], field: str, expected: Any) -> bool:
 
 
 def build_repaired_database(
-    database: dict[str, Any], repairs: list[dict[str, Any]],
+    database: dict[str, Any],
+    repairs: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     talks = database.get("talks")
     if not isinstance(talks, list) or any(not isinstance(talk, dict) for talk in talks):
@@ -236,7 +243,9 @@ def build_repaired_database(
         if current.get("status") == "reprocessing-inflight" or (
             isinstance(claim, dict) and claim.get("state") == "claimed"
         ):
-            errors.append(f"{filename}: source repair cannot change an active queue claim")
+            errors.append(
+                f"{filename}: source repair cannot change an active queue claim"
+            )
             continue
         for field, expected in repair["expect"].items():
             if not _matches_expected(current, field, expected):
@@ -246,7 +255,9 @@ def build_repaired_database(
                 )
 
     if errors:
-        raise SourceRepairError("repair preconditions failed:\n- " + "\n- ".join(errors))
+        raise SourceRepairError(
+            "repair preconditions failed:\n- " + "\n- ".join(errors)
+        )
 
     for repair in repairs:
         filename = repair["filename"]
@@ -265,12 +276,14 @@ def build_repaired_database(
             talk[field] = copy.deepcopy(value)
             after[field] = value
         if before:
-            changes.append({
-                "filename": filename,
-                "reason": repair["reason"],
-                "before": before,
-                "after": after,
-            })
+            changes.append(
+                {
+                    "filename": filename,
+                    "reason": repair["reason"],
+                    "before": before,
+                    "after": after,
+                }
+            )
     return result, changes
 
 
@@ -294,7 +307,10 @@ def atomic_write(
 
 
 def execute(
-    database_path: Path, plan_path: Path, *, apply: bool,
+    database_path: Path,
+    plan_path: Path,
+    *,
+    apply: bool,
     backup_dir: Path | None = None,
 ) -> dict[str, Any]:
     database, database_snapshot = load_database(database_path)
@@ -327,8 +343,7 @@ def execute(
         target_backup_dir = backup_dir or database_path.parent / ".backups"
         backup_request = BackupRequest(
             path=(
-                target_backup_dir
-                / f"{database_path.name}.source-repair-"
+                target_backup_dir / f"{database_path.name}.source-repair-"
                 f"{database_snapshot.sha256}.bak"
             ),
             input_sha256=database_snapshot.sha256,
@@ -369,7 +384,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         report = execute(
-            args.database, args.plan, apply=args.apply, backup_dir=args.backup_dir,
+            args.database,
+            args.plan,
+            apply=args.apply,
+            backup_dir=args.backup_dir,
         )
     except (SourceRepairError, OSError) as exc:
         print(

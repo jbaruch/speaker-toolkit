@@ -1305,8 +1305,7 @@ class VaultPreflight:
                 ),
                 artifact_path=transcript_path,
                 actual=(
-                    "not_utf8" if decode_failure
-                    else f"unreadable:{type(exc).__name__}"
+                    "not_utf8" if decode_failure else f"unreadable:{type(exc).__name__}"
                 ),
             )
             return

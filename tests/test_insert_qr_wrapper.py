@@ -3,6 +3,7 @@ validation, staging/move, JSON-only stdout, macro-failure path), with `osascript
 (the real PowerPoint/VBA call) faked on PATH. Only the VBA macro itself is the
 manual-validation gap; the wrapper scaffolding around it is testable.
 """
+
 import json
 import os
 import subprocess
@@ -30,8 +31,8 @@ def _fake_osascript(dirpath, *, succeed):
 
 def _run(args, tmp_path):
     env = dict(os.environ)
-    env["PATH"] = f"{tmp_path}:{env['PATH']}"   # shadow the real osascript
-    env["HOME"] = str(tmp_path)                  # isolate ~/.deckops-staging
+    env["PATH"] = f"{tmp_path}:{env['PATH']}"  # shadow the real osascript
+    env["HOME"] = str(tmp_path)  # isolate ~/.deckops-staging
     return subprocess.run(
         ["bash", str(WRAPPER), *args], capture_output=True, text=True, env=env
     )
@@ -57,7 +58,9 @@ def test_missing_base_fails_with_actionable_error(tmp_path):
     png.write_text("x")
     _fake_osascript(tmp_path, succeed=True)
 
-    r = _run([str(tmp_path / "nope.pptx"), str(tmp_path / "o.pptx"), str(png), "1"], tmp_path)
+    r = _run(
+        [str(tmp_path / "nope.pptx"), str(tmp_path / "o.pptx"), str(png), "1"], tmp_path
+    )
     assert r.returncode != 0
     assert "base deck not found" in r.stderr
 
@@ -67,7 +70,9 @@ def test_missing_png_fails(tmp_path):
     base.write_text("x")
     _fake_osascript(tmp_path, succeed=True)
 
-    r = _run([str(base), str(tmp_path / "o.pptx"), str(tmp_path / "nope.png"), "1"], tmp_path)
+    r = _run(
+        [str(base), str(tmp_path / "o.pptx"), str(tmp_path / "nope.png"), "1"], tmp_path
+    )
     assert r.returncode != 0
     assert "QR PNG not found" in r.stderr
 

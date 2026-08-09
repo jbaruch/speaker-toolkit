@@ -216,7 +216,9 @@ def _path_metadata(path: Path, *, subject: str) -> os.stat_result:
             "(a regular file)"
         ) from exc
     except OSError as exc:
-        raise TrackingDatabaseIOError(f"cannot inspect {subject} {path}: {exc}") from exc
+        raise TrackingDatabaseIOError(
+            f"cannot inspect {subject} {path}: {exc}"
+        ) from exc
     if stat.S_ISLNK(metadata.st_mode):
         raise TrackingDatabaseIOError(
             f"{subject} {path} is a symbolic link; pass its canonical regular-file path"
@@ -297,8 +299,7 @@ def _validate_decoded_json_tree(payload: object, *, subject: str) -> None:
         if isinstance(value, str):
             if any(0xD800 <= ord(character) <= 0xDFFF for character in value):
                 raise TrackingDatabaseIOError(
-                    f"{subject} contains an unpaired UTF-16 surrogate in a "
-                    "JSON string",
+                    f"{subject} contains an unpaired UTF-16 surrogate in a JSON string",
                     reason_code="json_unpaired_surrogate",
                 )
             continue
@@ -630,7 +631,9 @@ def _ensure_backup_directory(path: Path) -> int:
             f"tracking-database backup directory {path} must be a real directory"
         )
     if created:
-        parent_descriptor = _open_directory(path.parent, label="backup parent directory")
+        parent_descriptor = _open_directory(
+            path.parent, label="backup parent directory"
+        )
         try:
             _fsync_directory(parent_descriptor)
         except OSError as exc:
@@ -806,9 +809,7 @@ def _stage_candidate(path: Path, candidate: bytes, mode: int) -> StagedCandidate
         flags = os.O_RDWR | os.O_CREAT | os.O_EXCL
         flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
         for _ in range(128):
-            candidate_name = (
-                f".{path.name}.{secrets.token_hex(12)}.tracking-db.tmp"
-            )
+            candidate_name = f".{path.name}.{secrets.token_hex(12)}.tracking-db.tmp"
             try:
                 descriptor = os.open(
                     candidate_name,
@@ -1234,4 +1235,6 @@ def write_json_object(
     current = decode_json_object(expected)
     if json_values_equal(current, payload):
         return commit_tracking_database(expected, expected.raw, backup=backup)
-    return commit_tracking_database(expected, render_json_object(payload), backup=backup)
+    return commit_tracking_database(
+        expected, render_json_object(payload), backup=backup
+    )

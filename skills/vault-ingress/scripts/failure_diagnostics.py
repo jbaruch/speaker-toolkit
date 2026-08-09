@@ -83,9 +83,7 @@ def emit_unexpected_failure(
     """
     target = sys.stderr if stream is None else stream
     print(
-        json.dumps(
-            unexpected_failure_document(exc, error_code, state), sort_keys=True
-        ),
+        json.dumps(unexpected_failure_document(exc, error_code, state), sort_keys=True),
         file=target,
     )
     print(

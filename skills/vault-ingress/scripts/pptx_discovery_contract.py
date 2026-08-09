@@ -231,7 +231,9 @@ def validate_pptx_directory_exclusions(
                 unicodedata.category(character) in {"Cc", "Cf", "Cs"}
                 for character in component
             )
-            or any(character in _FORBIDDEN_PATTERN_CHARACTERS for character in component)
+            or any(
+                character in _FORBIDDEN_PATTERN_CHARACTERS for character in component
+            )
         ):
             raise PptxDiscoveryContractError(
                 f"{item_label} must be one literal directory-name component"
@@ -266,8 +268,7 @@ def _validate_relative_path(value: object, *, label: str) -> str:
         or "\\" in value
         or re.match(r"^[A-Za-z]:", value)
         or any(
-            unicodedata.category(character) in {"Cc", "Cf", "Cs"}
-            for character in value
+            unicodedata.category(character) in {"Cc", "Cf", "Cs"} for character in value
         )
     ):
         raise PptxDiscoveryContractError(
@@ -297,7 +298,10 @@ def _validate_skipped(value: object) -> list[dict[str, str]]:
             label=f"skipped[{index}].path",
         )
         reason = item.get("reason")
-        if not isinstance(reason, str) or reason not in PPTX_DIRECTORY_SKIP_REASON_CODES:
+        if (
+            not isinstance(reason, str)
+            or reason not in PPTX_DIRECTORY_SKIP_REASON_CODES
+        ):
             raise PptxDiscoveryContractError(
                 f"skipped[{index}].reason is outside the closed taxonomy"
             )
@@ -385,13 +389,9 @@ def build_pptx_directory_batch(
                 "error.details may contain only supervisor_reason_code"
             )
         supervisor_reason_code = details.get("supervisor_reason_code")
-        if (
-            "supervisor_reason_code" in details
-            and (
-                not isinstance(supervisor_reason_code, str)
-                or supervisor_reason_code
-                not in PPTX_DIRECTORY_SUPERVISOR_REASON_CODES
-            )
+        if "supervisor_reason_code" in details and (
+            not isinstance(supervisor_reason_code, str)
+            or supervisor_reason_code not in PPTX_DIRECTORY_SUPERVISOR_REASON_CODES
         ):
             raise PptxDiscoveryContractError(
                 "error.details supervisor_reason_code is outside the closed taxonomy"
@@ -439,9 +439,10 @@ def decode_pptx_directory_batch(value: object) -> dict[str, object]:
     )
     if has_error and not isinstance(error, Mapping):
         raise PptxDiscoveryContractError("directory batch error must be an object")
-    if value.get("complete") != built["complete"] or value.get(
-        "incomplete_reason_codes"
-    ) != built["incomplete_reason_codes"]:
+    if (
+        value.get("complete") != built["complete"]
+        or value.get("incomplete_reason_codes") != built["incomplete_reason_codes"]
+    ):
         raise PptxDiscoveryContractError(
             "directory batch completeness does not match its skip receipts"
         )

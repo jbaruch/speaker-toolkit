@@ -91,13 +91,9 @@ QR_CODE_REQUIRED_FIELDS = frozenset(
 # the exact path written plus a SHA-256 so catalog validation can tell the
 # intended artifact from a stale replacement.
 QR_CODE_V2_REQUIRED_FIELDS = QR_CODE_REQUIRED_FIELDS | frozenset({"artifacts"})
-QR_ARTIFACT_REQUIRED_FIELDS = frozenset(
-    {"path", "path_root", "sha256", "bg_hex"}
-)
+QR_ARTIFACT_REQUIRED_FIELDS = frozenset({"path", "path_root", "sha256", "bg_hex"})
 QR_ARTIFACT_PATH_ROOTS = frozenset({"deck_dir", "cwd", "absolute"})
-RESOURCE_REQUIRED_FIELDS = frozenset(
-    {"talk_slug", "item_count", "category_breakdown"}
-)
+RESOURCE_REQUIRED_FIELDS = frozenset({"talk_slug", "item_count", "category_breakdown"})
 THUMBNAIL_REQUIRED_FIELDS = frozenset(
     {
         "talk_slug",
@@ -112,9 +108,7 @@ THUMBNAIL_REQUIRED_FIELDS = frozenset(
         "approved",
     }
 )
-CONFIRMED_INTENT_REQUIRED_FIELDS = frozenset(
-    {"pattern", "intent", "rule", "note"}
-)
+CONFIRMED_INTENT_REQUIRED_FIELDS = frozenset({"pattern", "intent", "rule", "note"})
 CONFIRMED_INTENT_OPTIONAL_FIELDS = frozenset(
     {
         "confirmed_date",
@@ -350,7 +344,9 @@ def _require_iso_date(value: object, label: str) -> None:
     try:
         parsed = dt.date.fromisoformat(date_text)
     except ValueError as exc:
-        raise TrackingDatabaseError(f"{label} must be a canonical YYYY-MM-DD date") from exc
+        raise TrackingDatabaseError(
+            f"{label} must be a canonical YYYY-MM-DD date"
+        ) from exc
     if parsed.isoformat() != date_text:
         raise TrackingDatabaseError(f"{label} must be a canonical YYYY-MM-DD date")
 
@@ -529,9 +525,7 @@ def _validate_collection_record(
             )
         _require_exact_integer(record["slide_count"], f"{label}.slide_count")
         if type(record["visual_extracted"]) is not bool:
-            raise TrackingDatabaseError(
-                f"{label}.visual_extracted must be a boolean"
-            )
+            raise TrackingDatabaseError(f"{label}.visual_extracted must be a boolean")
         return
     if collection == "qr_codes":
         version = record.get("schema_version", LEGACY_QR_CODE_RECORD_SCHEMA_VERSION)
@@ -576,9 +570,7 @@ def _validate_collection_record(
         )
         breakdown = record["category_breakdown"]
         if not isinstance(breakdown, Mapping):
-            raise TrackingDatabaseError(
-                f"{label}.category_breakdown must be an object"
-            )
+            raise TrackingDatabaseError(f"{label}.category_breakdown must be an object")
         category_total = 0
         for category, count in breakdown.items():
             _require_nonempty_string(category, f"{label}.category_breakdown key")
@@ -752,12 +744,9 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
         raise TrackingDatabaseError("tracking database root must be a JSON object")
     root_version_is_explicit = "schema_version" in database
     root_version = tracking_database_schema_version(database)
-    if (
-        root_version not in READABLE_TRACKING_DATABASE_SCHEMA_VERSIONS
-        or (
-            root_version_is_explicit
-            and root_version == LEGACY_TRACKING_DATABASE_SCHEMA_VERSION
-        )
+    if root_version not in READABLE_TRACKING_DATABASE_SCHEMA_VERSIONS or (
+        root_version_is_explicit
+        and root_version == LEGACY_TRACKING_DATABASE_SCHEMA_VERSION
     ):
         return TrackingDatabaseAssessment(
             usable=False,
@@ -848,9 +837,7 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
 
     _validate_config_record(config, version=config_version)
 
-    accepted_rejection_versions = frozenset(
-        {SOURCE_REJECTION_RECORD_SCHEMA_VERSION}
-    )
+    accepted_rejection_versions = frozenset({SOURCE_REJECTION_RECORD_SCHEMA_VERSION})
     supported_talks: list[Mapping[str, object]] = []
     for talk_index, talk in enumerate(collections["talks"]):
         talk_version = _record_version(
@@ -1010,9 +997,7 @@ def require_current_tracking_database(database: object) -> dict[str, Any]:
         raise
     if assessment.usable and assessment.state == "current":
         if not isinstance(database, dict):
-            raise TrackingDatabaseError(
-                "tracking database root must be a JSON object"
-            )
+            raise TrackingDatabaseError("tracking database root must be a JSON object")
         return database
     if assessment.usable and assessment.state == "legacy":
         raise TrackingDatabaseError(
@@ -1046,10 +1031,7 @@ def _migrate_talk_record(talk: dict[str, Any]) -> bool:
     rejections = talk.get("source_rejections", [])
     if isinstance(rejections, list):
         for rejection in rejections:
-            if (
-                isinstance(rejection, dict)
-                and "schema_version" not in rejection
-            ):
+            if isinstance(rejection, dict) and "schema_version" not in rejection:
                 rejection["schema_version"] = SOURCE_REJECTION_RECORD_SCHEMA_VERSION
     if talk_version_added:
         talk["schema_version"] = LEGACY_TALK_RECORD_SCHEMA_VERSION

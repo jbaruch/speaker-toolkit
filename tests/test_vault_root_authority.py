@@ -32,7 +32,9 @@ def _foreign_root_text() -> str:
 
 
 def _native_dot_root_text() -> str:
-    return r"C:\trusted\other\..\vault" if os.name == "nt" else "/trusted/other/../vault"
+    return (
+        r"C:\trusted\other\..\vault" if os.name == "nt" else "/trusted/other/../vault"
+    )
 
 
 @pytest.mark.parametrize(

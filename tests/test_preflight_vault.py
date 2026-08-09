@@ -2036,14 +2036,20 @@ def test_preflight_preserves_unrelated_schema_fault_with_invalid_exclusions(
     blocking_codes = finding_codes(report, "blocking")
     assert "pptx_directory_exclusions_invalid" in blocking_codes
     assert "tracking_database_schema_invalid" in blocking_codes
-    assert sum(
-        finding["code"] == "pptx_directory_exclusions_invalid"
-        for finding in report["findings"]
-    ) == 1
-    assert sum(
-        finding["code"] == "tracking_database_schema_invalid"
-        for finding in report["findings"]
-    ) == 1
+    assert (
+        sum(
+            finding["code"] == "pptx_directory_exclusions_invalid"
+            for finding in report["findings"]
+        )
+        == 1
+    )
+    assert (
+        sum(
+            finding["code"] == "tracking_database_schema_invalid"
+            for finding in report["findings"]
+        )
+        == 1
+    )
 
 
 def test_preflight_accepts_historical_config_v1_for_owner_migration(
@@ -3337,13 +3343,16 @@ def test_non_utf8_database_is_a_structured_blocking_report(
 
 # --- #203: the CLI has a closed failure boundary ---
 
+
 def test_outer_boundary_emits_one_blocking_report_without_a_traceback(
-        preflight_vault, capsys, monkeypatch):
+    preflight_vault, capsys, monkeypatch
+):
     """An unexpected failure still produces the machine-readable blocking signal.
 
     Callers gate claiming on this report. A traceback with no JSON would read as
     "preflight did not run", and a partial document would not parse.
     """
+
     def explode(*_args, **_kwargs):
         raise RuntimeError("injected outer failure at /private/vault/secret.md")
 
@@ -3351,7 +3360,7 @@ def test_outer_boundary_emits_one_blocking_report_without_a_traceback(
     assert preflight_vault.run_cli() == 2
 
     captured = capsys.readouterr()
-    report = json.loads(captured.out)            # exactly one valid document
+    report = json.loads(captured.out)  # exactly one valid document
     assert report["ok"] is False
     assert report["blocking_count"] == 1
     finding = report["findings"][0]
@@ -3366,14 +3375,18 @@ def test_outer_boundary_emits_one_blocking_report_without_a_traceback(
 
 
 def test_outer_boundary_finding_matches_the_normal_finding_shape(
-        preflight_vault, vault_fixture, capsys, monkeypatch):
+    preflight_vault, vault_fixture, capsys, monkeypatch
+):
     """The failure finding must parse like every other finding."""
     write_database(vault_fixture, [base_talk()], current=True)
     normal = preflight_vault.run_preflight(vault_fixture["root"])
     capsys.readouterr()
 
-    monkeypatch.setattr(preflight_vault, "main",
-                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        preflight_vault,
+        "main",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
     assert preflight_vault.run_cli() == 2
 
     failure = json.loads(capsys.readouterr().out)
@@ -3385,8 +3398,7 @@ def test_outer_boundary_finding_matches_the_normal_finding_shape(
     assert failure["schema_version"] == normal["schema_version"]
 
 
-def test_outer_boundary_passes_a_clean_exit_code_through(
-        preflight_vault, monkeypatch):
+def test_outer_boundary_passes_a_clean_exit_code_through(preflight_vault, monkeypatch):
     """A normal run's exit code is not rewritten by the boundary."""
     monkeypatch.setattr(preflight_vault, "main", lambda *a, **k: 0)
     assert preflight_vault.run_cli() == 0
@@ -3395,11 +3407,15 @@ def test_outer_boundary_passes_a_clean_exit_code_through(
 
 
 def test_failure_guidance_names_a_concrete_next_action(
-        preflight_vault, capsys, monkeypatch):
+    preflight_vault, capsys, monkeypatch
+):
     """Telling the operator to repair whatever the exception type named is not
     an actionable message."""
-    monkeypatch.setattr(preflight_vault, "main",
-                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        preflight_vault,
+        "main",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
     assert preflight_vault.run_cli() == 2
     err = capsys.readouterr().err
     assert "code locations that failed" in err
@@ -3408,8 +3424,10 @@ def test_failure_guidance_names_a_concrete_next_action(
 
 
 def test_failure_report_names_code_locations_without_exception_text(
-        preflight_vault, capsys, monkeypatch):
+    preflight_vault, capsys, monkeypatch
+):
     """no-secrets forbids exception text; the origin frames replace it."""
+
     def explode(*_args, **_kwargs):
         raise RuntimeError("token=SECRET at /private/vault/creds.json")
 
@@ -3431,15 +3449,20 @@ def test_failure_report_names_code_locations_without_exception_text(
 
 # --- #200: public diagnostics route on typed reasons, not exception prose ---
 
-@pytest.mark.parametrize("payload,expected_code", [
-    (b"\xff\xfe not utf-8", "database_encoding_invalid"),
-    (b"{not json", "database_json_invalid"),
-    (b'{"a": 1, "a": 2}', "database_json_invalid"),
-    (b'{"a": NaN}', "database_json_invalid"),
-    (b'["not", "an", "object"]', "database_json_invalid"),
-])
+
+@pytest.mark.parametrize(
+    "payload,expected_code",
+    [
+        (b"\xff\xfe not utf-8", "database_encoding_invalid"),
+        (b"{not json", "database_json_invalid"),
+        (b'{"a": 1, "a": 2}', "database_json_invalid"),
+        (b'{"a": NaN}', "database_json_invalid"),
+        (b'["not", "an", "object"]', "database_json_invalid"),
+    ],
+)
 def test_database_read_finding_code_comes_from_the_typed_reason(
-        preflight_vault, tmp_path, payload, expected_code):
+    preflight_vault, tmp_path, payload, expected_code
+):
     """The public taxonomy must not depend on upstream message wording."""
     database = tmp_path / "tracking-database.json"
     database.write_bytes(payload)
@@ -3456,7 +3479,8 @@ def test_unmapped_decoder_reason_falls_back_to_unreadable(preflight_vault):
 
 
 def test_transcript_decode_failure_reports_a_typed_reason_not_os_text(
-        preflight_vault, vault_fixture):
+    preflight_vault, vault_fixture
+):
     """`actual` is public: a raw OSError string carries the host path."""
     # The transcript resolves from youtube_id, so the file must use that name.
     transcript = vault_fixture["root"] / "transcripts" / f"{VIDEO_ID}.txt"
@@ -3466,8 +3490,13 @@ def test_transcript_decode_failure_reports_a_typed_reason_not_os_text(
 
     report = preflight_vault.run_preflight(vault_fixture["root"])
     finding = next(
-        (f for f in report["findings"]
-         if f["code"] == "transcript_artifact_unreadable"), None)
+        (
+            f
+            for f in report["findings"]
+            if f["code"] == "transcript_artifact_unreadable"
+        ),
+        None,
+    )
     assert finding is not None, [f["code"] for f in report["findings"]]
     assert finding["actual"] == "not_utf8"
     assert finding["message"].startswith(
@@ -3487,7 +3516,8 @@ def test_transcript_decode_failure_reports_a_typed_reason_not_os_text(
 
 
 def test_transcript_read_failure_does_not_claim_a_decode_failure(
-        preflight_vault, vault_fixture, monkeypatch):
+    preflight_vault, vault_fixture, monkeypatch
+):
     """A permission denial is a read failure — the message must say so (#253)."""
     transcript = vault_fixture["root"] / "transcripts" / f"{VIDEO_ID}.txt"
     transcript.parent.mkdir(parents=True, exist_ok=True)
@@ -3505,13 +3535,16 @@ def test_transcript_read_failure_does_not_claim_a_decode_failure(
 
     report = preflight_vault.run_preflight(vault_fixture["root"])
     finding = next(
-        (f for f in report["findings"]
-         if f["code"] == "transcript_artifact_unreadable"), None)
+        (
+            f
+            for f in report["findings"]
+            if f["code"] == "transcript_artifact_unreadable"
+        ),
+        None,
+    )
     assert finding is not None, [f["code"] for f in report["findings"]]
     assert finding["actual"] == "unreadable:PermissionError"
-    assert finding["message"].startswith(
-        "transcript artifact could not be read"
-    )
+    assert finding["message"].startswith("transcript artifact could not be read")
     assert "rerun preflight" in finding["message"], (
         "error-handling requires the message to say what to do next"
     )
@@ -3523,7 +3556,8 @@ def test_transcript_read_failure_does_not_claim_a_decode_failure(
 
 
 def test_reworded_decoder_message_keeps_its_finding_code(
-        preflight_vault, tmp_path, monkeypatch):
+    preflight_vault, tmp_path, monkeypatch
+):
     """The taxonomy survives upstream rewording — that is the point of the fix.
 
     Substring matching on the message would fall through to the generic
@@ -3535,7 +3569,7 @@ def test_reworded_decoder_message_keeps_its_finding_code(
 
     def reworded(*_args, **_kwargs):
         raise io_module.TrackingDatabaseIOError(
-            "the file could not be interpreted as text",   # no legacy substring
+            "the file could not be interpreted as text",  # no legacy substring
             reason_code="encoding_invalid",
         )
 
@@ -3548,7 +3582,8 @@ def test_reworded_decoder_message_keeps_its_finding_code(
 
 
 def test_manifest_rejection_reports_a_typed_reason_not_the_rejected_value(
-        preflight_vault, vault_fixture):
+    preflight_vault, vault_fixture
+):
     """ReturnValidationError text can echo the malformed input it rejected."""
     poisoned = "SENSITIVE_VALUE_abc123"
     talk = base_talk(
@@ -3561,19 +3596,34 @@ def test_manifest_rejection_reports_a_typed_reason_not_the_rejected_value(
 
     report = preflight_vault.run_preflight(vault_fixture["root"])
     finding = next(
-        (f for f in report["findings"]
-         if f["code"] == "video_extraction_provenance_invalid"), None)
+        (
+            f
+            for f in report["findings"]
+            if f["code"] == "video_extraction_provenance_invalid"
+        ),
+        None,
+    )
     assert finding is not None, [f["code"] for f in report["findings"]]
     assert finding["actual"].startswith("video_extraction.")
     assert poisoned not in json.dumps(finding, sort_keys=True)
 
 
-@pytest.mark.parametrize("payload,leaked", [
-    (b'{"a": 1, "SENSITIVE_KEY_abc": 2, "SENSITIVE_KEY_abc": 3}', "SENSITIVE_KEY_abc"),
-    (b'{"a": 123456789012345678901234567890123456789.5}', "123456789012345678901234567890"),
-])
+@pytest.mark.parametrize(
+    "payload,leaked",
+    [
+        (
+            b'{"a": 1, "SENSITIVE_KEY_abc": 2, "SENSITIVE_KEY_abc": 3}',
+            "SENSITIVE_KEY_abc",
+        ),
+        (
+            b'{"a": 123456789012345678901234567890123456789.5}',
+            "123456789012345678901234567890",
+        ),
+    ],
+)
 def test_database_read_report_never_echoes_malformed_input(
-        preflight_vault, tmp_path, payload, leaked):
+    preflight_vault, tmp_path, payload, leaked
+):
     """Decoder messages embed the rejected key or value; the report must not."""
     database = tmp_path / "tracking-database.json"
     database.write_bytes(payload)
@@ -3587,8 +3637,7 @@ def test_database_read_report_never_echoes_malformed_input(
     assert "database_json_invalid" in serialized
 
 
-def test_database_read_report_never_echoes_the_host_path(
-        preflight_vault, tmp_path):
+def test_database_read_report_never_echoes_the_host_path(preflight_vault, tmp_path):
     """The decoder message embeds the artifact path; findings must not."""
     database = tmp_path / "secret-vault-name" / "tracking-database.json"
     database.parent.mkdir(parents=True)
@@ -3601,20 +3650,25 @@ def test_database_read_report_never_echoes_the_host_path(
     assert report["findings"][0]["code"] == "database_encoding_invalid"
 
 
-@pytest.mark.parametrize("payload,expected_message", [
-    (
-        # MAX_JSON_NESTING_DEPTH is 200; go comfortably past it.
-        ('{"config": {}, "talks": [], "deep": '
-         + "[" * 260 + "]" * 260 + "}").encode(),
-        "tracking database exceeds the maximum supported JSON nesting depth",
-    ),
-    (
-        b'{"config": {}, "talks": [], "s": "\\ud800"}',
-        "tracking database contains an unpaired UTF-16 surrogate in a JSON string",
-    ),
-])
+@pytest.mark.parametrize(
+    "payload,expected_message",
+    [
+        (
+            # MAX_JSON_NESTING_DEPTH is 200; go comfortably past it.
+            (
+                '{"config": {}, "talks": [], "deep": ' + "[" * 260 + "]" * 260 + "}"
+            ).encode(),
+            "tracking database exceeds the maximum supported JSON nesting depth",
+        ),
+        (
+            b'{"config": {}, "talks": [], "s": "\\ud800"}',
+            "tracking database contains an unpaired UTF-16 surrogate in a JSON string",
+        ),
+    ],
+)
 def test_tree_validator_defects_route_to_their_specific_reason(
-        preflight_vault, tmp_path, payload, expected_message):
+    preflight_vault, tmp_path, payload, expected_message
+):
     """These raise after a successful decode; untyped they fall back to generic."""
     database = tmp_path / "tracking-database.json"
     database.write_bytes(payload)
@@ -3628,6 +3682,7 @@ def test_tree_validator_defects_route_to_their_specific_reason(
 def test_every_emitted_decoder_reason_is_mapped(preflight_vault):
     """A reason with no mapping silently degrades to the generic code."""
     import re
+
     io_source = pathlib.Path(
         importlib.import_module("tracking_database_io").__file__
     ).read_text(encoding="utf-8")

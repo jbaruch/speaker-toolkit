@@ -87,8 +87,12 @@ def is_youtube_url(url: Any) -> bool:
         candidate = "https://" + candidate
     host = (urlparse(candidate).hostname or "").casefold().rstrip(".")
     return host in {
-        "youtube.com", "www.youtube.com", "m.youtube.com",
-        "youtu.be", "www.youtu.be", "youtube-nocookie.com",
+        "youtube.com",
+        "www.youtube.com",
+        "m.youtube.com",
+        "youtu.be",
+        "www.youtu.be",
+        "youtube-nocookie.com",
         "www.youtube-nocookie.com",
     }
 
@@ -111,11 +115,7 @@ def parse_google_drive_id(url: Any) -> str | None:
     if path_match is not None:
         return path_match.group(1)
     values = parse_qs(parsed.query).get("id", [])
-    return (
-        values[0]
-        if values and GOOGLE_DRIVE_ID_RE.fullmatch(values[0])
-        else None
-    )
+    return values[0] if values and GOOGLE_DRIVE_ID_RE.fullmatch(values[0]) else None
 
 
 def _valid_http_url(value: object) -> bool:
@@ -146,7 +146,8 @@ def has_remote_slide_acquisition(talk: dict) -> bool:
         return False
     parsed = urlparse(str(slides_url).strip())
     if (parsed.hostname or "").casefold().rstrip(".") in {
-        "drive.google.com", "docs.google.com"
+        "drive.google.com",
+        "docs.google.com",
     }:
         return parse_google_drive_id(slides_url) is not None
     return True
@@ -161,11 +162,9 @@ def has_video_source(talk: dict) -> bool:
 
 def has_transcript_source(talk: dict) -> bool:
     """Return whether a transcript artifact exists or can be acquired."""
-    return (
-        any(has_nonempty_source_field(talk, field)
-            for field in TRANSCRIPT_ARTIFACT_FIELDS)
-        or has_video_source(talk)
-    )
+    return any(
+        has_nonempty_source_field(talk, field) for field in TRANSCRIPT_ARTIFACT_FIELDS
+    ) or has_video_source(talk)
 
 
 def has_pptx_source(talk: dict) -> bool:
@@ -199,17 +198,13 @@ def source_capabilities(talk: dict) -> list[str]:
 
 def has_remote_acquisition_source(talk: dict) -> bool:
     """Return whether a declared upstream path could mechanically fail to download."""
-    return (
-        has_remote_video_acquisition(talk)
-        or has_remote_slide_acquisition(talk)
-    )
+    return has_remote_video_acquisition(talk) or has_remote_slide_acquisition(talk)
 
 
 def has_local_source_artifact(talk: dict) -> bool:
     """Return whether a local transcript/deck/PDF reference remains usable."""
     return any(
-        has_nonempty_source_field(talk, field)
-        for field in LOCAL_ARTIFACT_FIELDS
+        has_nonempty_source_field(talk, field) for field in LOCAL_ARTIFACT_FIELDS
     )
 
 
@@ -221,18 +216,20 @@ def validate_talk_record_schemas(talks: object) -> list[dict]:
     for index, talk in enumerate(talks):
         if not isinstance(talk, dict):
             raise IngressContractError(
-                f"talks[{index}] must be a JSON object, got {type(talk).__name__}")
+                f"talks[{index}] must be a JSON object, got {type(talk).__name__}"
+            )
         version = talk.get("schema_version", 0)
-        if (isinstance(version, bool) or not isinstance(version, int)
-                or version < 0):
+        if isinstance(version, bool) or not isinstance(version, int) or version < 0:
             raise IngressContractError(
                 f"talks[{index}].schema_version must be a non-negative integer, "
-                f"got {version!r}")
+                f"got {version!r}"
+            )
         if version > TALK_SCHEMA_VERSION:
             filename = talk.get("filename", f"talks[{index}]")
             raise IngressContractError(
                 f"{filename} uses future talk schema_version {version}; this writer "
-                f"supports through {TALK_SCHEMA_VERSION} and will not downgrade it")
+                f"supports through {TALK_SCHEMA_VERSION} and will not downgrade it"
+            )
         validated.append(talk)
     return validated
 
@@ -244,4 +241,5 @@ def reject_tracking_database_symlink(path: str | os.PathLike[str]) -> None:
         raise IngressContractError(
             f"tracking database path {candidate} is a symbolic link; pass the "
             "canonical regular-file path so atomic replacement cannot split the "
-            "link from its target")
+            "link from its target"
+        )

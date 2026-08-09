@@ -13,6 +13,7 @@ The spec string consumed by the ApplyBackgrounds VBA macro is
 Usage:
     backgrounds-manifest-to-spec.py <manifest.json>   # prints the spec to stdout
 """
+
 import json
 import sys
 from pathlib import Path
@@ -33,7 +34,9 @@ def manifest_to_spec(manifest: object) -> str:
         )
     backgrounds = manifest.get("backgrounds", {})
     if not isinstance(backgrounds, dict):
-        raise ValueError("manifest 'backgrounds' must be an object mapping slide # -> image path")
+        raise ValueError(
+            "manifest 'backgrounds' must be an object mapping slide # -> image path"
+        )
     if not backgrounds:
         raise ValueError(
             "manifest has no 'backgrounds' entries — nothing to apply; skip the "
@@ -50,7 +53,9 @@ def manifest_to_spec(manifest: object) -> str:
     for key in sorted(backgrounds, key=slide_num):
         path = backgrounds[key]
         if not isinstance(path, str):
-            raise ValueError(f"image path for slide {key} must be a string, got {type(path).__name__}")
+            raise ValueError(
+                f"image path for slide {key} must be a string, got {type(path).__name__}"
+            )
         if ";" in path or "=" in path:
             raise ValueError(
                 f"image path for slide {key} contains a reserved spec delimiter "
@@ -68,8 +73,11 @@ def main() -> None:
     try:
         raw = path.read_text()
     except OSError as exc:
-        print(f"ERROR: cannot read manifest {path}: {exc.strerror or exc} — "
-              f"generate it with apply-illustrations-to-deck.py --backgrounds-out", file=sys.stderr)
+        print(
+            f"ERROR: cannot read manifest {path}: {exc.strerror or exc} — "
+            f"generate it with apply-illustrations-to-deck.py --backgrounds-out",
+            file=sys.stderr,
+        )
         sys.exit(1)
     try:
         manifest = json.loads(raw)

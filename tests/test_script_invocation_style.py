@@ -118,9 +118,11 @@ def _bare_is_at_command_position(segment: str, match: re.Match) -> bool:
     (`DRIVER=skills/x/scripts/y.sh`) stores it instead, and survives the peel
     because no whitespace separates the `=` from the value.
     """
-    before = segment[:match.start(1)]
+    before = segment[: match.start(1)]
     while True:
-        peeled = ENV_ASSIGNMENT_PREFIX.sub("", CONTROL_PREFIX.sub("", before, count=1), count=1)
+        peeled = ENV_ASSIGNMENT_PREFIX.sub(
+            "", CONTROL_PREFIX.sub("", before, count=1), count=1
+        )
         if peeled == before:
             break
         before = peeled
@@ -146,7 +148,7 @@ def _unsafe_bare_references(line: str, in_fence: bool) -> list[str]:
 
     # In prose, only a span introduced by an execution verb is a command.
     for span in CODE_SPAN.finditer(line):
-        if not RUN_VERB_BEFORE.search(line[:span.start()]):
+        if not RUN_VERB_BEFORE.search(line[: span.start()]):
             continue
         content = span.group(1)
         match = BARE_PATH_REFERENCE.search(" " + content)
@@ -157,7 +159,7 @@ def _unsafe_bare_references(line: str, in_fence: bool) -> list[str]:
 
 def _reference_is_safe(segment: str, match: re.Match) -> bool:
     """True when this specific reference is named without needing the exec bit."""
-    before = segment[:match.start(1)]
+    before = segment[: match.start(1)]
 
     if INTERPRETER_BEFORE.search(before):
         return True
@@ -192,7 +194,9 @@ def _unsafe_references(line: str, reference: re.Pattern) -> list[str]:
 def _tracked(*globs: str) -> list[Path]:
     result = subprocess.run(
         ["git", "-C", str(REPO_ROOT), "ls-files", "--", *globs],
-        check=True, capture_output=True, text=True,
+        check=True,
+        capture_output=True,
+        text=True,
     )
     return [REPO_ROOT / line for line in result.stdout.splitlines() if line]
 
@@ -261,7 +265,9 @@ def test_both_categories_are_scanned(skill_files: list[Path]) -> None:
     scripts = [f for f in skill_files if "/scripts/" in f.as_posix()]
 
     assert len(docs) >= 100, f"skill docs missing from the scan (found {len(docs)})"
-    assert len(scripts) >= 40, f"skill scripts missing from the scan (found {len(scripts)})"
+    assert len(scripts) >= 40, (
+        f"skill scripts missing from the scan (found {len(scripts)})"
+    )
 
 
 def test_no_exec_bit_dependent_dot_slash_invocations(skill_files: list[Path]) -> None:
@@ -279,8 +285,8 @@ def test_no_exec_bit_dependent_sibling_invocations(skill_files: list[Path]) -> N
     offenders = _scan(skill_files, VAR_PATH_REFERENCE)
     assert not offenders, (
         "Sibling scripts executed directly through a variable path. tessl "
-        "install strips the executable bit; use `source \"$HERE/x.sh\"` or "
-        "`bash \"$HERE/x.sh\"`.\n" + "\n".join(offenders)
+        'install strips the executable bit; use `source "$HERE/x.sh"` or '
+        '`bash "$HERE/x.sh"`.\n' + "\n".join(offenders)
     )
 
 
@@ -301,68 +307,76 @@ def test_no_exec_bit_dependent_bare_path_invocations(skill_files: list[Path]) ->
 
 
 UNSAFE_BARE_FENCED = [
-    'skills/presentation-creator/scripts/apply-backgrounds.sh \\',
-    'scripts/load-vault.py > /tmp/out.json',
-    'if scripts/poll.sh; then',
+    "skills/presentation-creator/scripts/apply-backgrounds.sh \\",
+    "scripts/load-vault.py > /tmp/out.json",
+    "if scripts/poll.sh; then",
     # Environment-assignment PREFIX: the script still executes. Matches how the
     # `$VAR` detector already classifies `FOO=1 "$HERE/ensure-drivers.sh"`.
-    'FOO=1 scripts/poll.sh',
-    'A=1 B=2 skills/x/scripts/y.sh',
-    'DEBUG=1 skills/presentation-creator/scripts/apply-backgrounds.sh a b',
+    "FOO=1 scripts/poll.sh",
+    "A=1 B=2 skills/x/scripts/y.sh",
+    "DEBUG=1 skills/presentation-creator/scripts/apply-backgrounds.sh a b",
 ]
 
 SAFE_BARE_FENCED = [
-    'python3 skills/vault-profile/scripts/load-vault.py > /tmp/out.json',
-    'bash skills/presentation-creator/scripts/apply-backgrounds.sh a b c',
+    "python3 skills/vault-profile/scripts/load-vault.py > /tmp/out.json",
+    "bash skills/presentation-creator/scripts/apply-backgrounds.sh a b c",
     'cp skills/x/scripts/RunDeckOps.bas "$DEST"',
-    'cat skills/x/scripts/y.py',
+    "cat skills/x/scripts/y.py",
     # Assignment OF the path stores it; no whitespace after the `=`.
-    'DRIVER=skills/x/scripts/y.sh',
-    'FOO=1 bash scripts/poll.sh',
-    'cp deck-with-titles.pptx deck-bg-src.pptx',
+    "DRIVER=skills/x/scripts/y.sh",
+    "FOO=1 bash scripts/poll.sh",
+    "cp deck-with-titles.pptx deck-bg-src.pptx",
 ]
 
 UNSAFE_BARE_PROSE = [
-    'Run `scripts/load-vault.py` to read the vault sources.',
-    'Compute it by running `scripts/compute-pacing-adherence.py`. The',
-    'Pipe the profile dict through `scripts/validate-profile.py` to verify keys.',
+    "Run `scripts/load-vault.py` to read the vault sources.",
+    "Compute it by running `scripts/compute-pacing-adherence.py`. The",
+    "Pipe the profile dict through `scripts/validate-profile.py` to verify keys.",
 ]
 
 # Pointers, not commands. `rules/script-as-black-box.md` REQUIRES these — a
 # detector that flagged them would push authors to stop citing scripts at all.
 SAFE_BARE_PROSE = [
-    'Partition criterion: see `skills/vault-profile/scripts/load-vault.py` — the constant.',
-    'The validator (`scripts/validate-profile.py`, schema_version 2) checks keys.',
-    'Per-model attributes live in `skills/illustrations/scripts/model_registry.py`.',
-    '| `scripts/load-vault.py` | Read vault sources, emit JSON to stdout |',
-    '| `skills/illustrations/scripts/model_registry.py` | Model roster |',
-    'Run `python3 scripts/load-vault.py` to read the vault sources.',
+    "Partition criterion: see `skills/vault-profile/scripts/load-vault.py` — the constant.",
+    "The validator (`scripts/validate-profile.py`, schema_version 2) checks keys.",
+    "Per-model attributes live in `skills/illustrations/scripts/model_registry.py`.",
+    "| `scripts/load-vault.py` | Read vault sources, emit JSON to stdout |",
+    "| `skills/illustrations/scripts/model_registry.py` | Model roster |",
+    "Run `python3 scripts/load-vault.py` to read the vault sources.",
 ]
 
 
 @pytest.mark.parametrize("line", UNSAFE_BARE_FENCED)
 def test_bare_detector_flags_fenced_invocations(line: str) -> None:
-    assert _unsafe_bare_references(line, in_fence=True), f"should have been flagged: {line}"
+    assert _unsafe_bare_references(line, in_fence=True), (
+        f"should have been flagged: {line}"
+    )
 
 
 @pytest.mark.parametrize("line", SAFE_BARE_FENCED)
 def test_bare_detector_accepts_fenced_non_invocations(line: str) -> None:
-    assert not _unsafe_bare_references(line, in_fence=True), f"should have been accepted: {line}"
+    assert not _unsafe_bare_references(line, in_fence=True), (
+        f"should have been accepted: {line}"
+    )
 
 
 @pytest.mark.parametrize("line", UNSAFE_BARE_PROSE)
 def test_bare_detector_flags_prose_invocations(line: str) -> None:
-    assert _unsafe_bare_references(line, in_fence=False), f"should have been flagged: {line}"
+    assert _unsafe_bare_references(line, in_fence=False), (
+        f"should have been flagged: {line}"
+    )
 
 
 @pytest.mark.parametrize("line", SAFE_BARE_PROSE)
 def test_bare_detector_accepts_prose_pointers(line: str) -> None:
-    assert not _unsafe_bare_references(line, in_fence=False), f"should have been accepted: {line}"
+    assert not _unsafe_bare_references(line, in_fence=False), (
+        f"should have been accepted: {line}"
+    )
 
 
 UNSAFE_LINES = [
-    './scripts/build-deck.sh --deck x',
-    'run ./generate-qr.py',
+    "./scripts/build-deck.sh --deck x",
+    "run ./generate-qr.py",
     '"$HERE/ensure-drivers.sh"',
     'if "$HERE/ensure-drivers.sh"; then',
     'elif "$HERE/ensure-drivers.sh"; then',
@@ -371,7 +385,7 @@ UNSAFE_LINES = [
     'mkdir -p "$OUT" && "$HERE/ensure-drivers.sh"',
     # Environment-assignment PREFIX: the script still executes.
     'FOO=1 "$HERE/ensure-drivers.sh"',
-    'DEBUG=1 ./scripts/build-deck.sh',
+    "DEBUG=1 ./scripts/build-deck.sh",
 ]
 
 SAFE_LINES = [
@@ -380,9 +394,9 @@ SAFE_LINES = [
     'bash "$HERE/ensure-drivers.sh"',
     'python3 "$HERE/persist-results.py"',
     # An interpreter makes a './' path fine — the outcome, not the spelling.
-    'bash ./scripts/build-deck.sh',
-    'python3 ./scripts/generate-qr.py',
-    'Run `bash ./scripts/build-deck.sh` to build the deck.',
+    "bash ./scripts/build-deck.sh",
+    "python3 ./scripts/generate-qr.py",
+    "Run `bash ./scripts/build-deck.sh` to build the deck.",
     'if bash "$HERE/ensure-drivers.sh"; then',
     'if [ -f "$HERE/ensure-drivers.sh" ]; then',
     'if ! source "$HERE/ensure-drivers.sh"; then',
@@ -396,14 +410,16 @@ SAFE_LINES = [
 @pytest.mark.parametrize("line", UNSAFE_LINES)
 def test_detector_flags_exec_bit_dependent_lines(line: str) -> None:
     """A detector that never fires guards nothing."""
-    flagged = (_unsafe_references(line, DOT_SLASH_REFERENCE)
-               + _unsafe_references(line, VAR_PATH_REFERENCE))
+    flagged = _unsafe_references(line, DOT_SLASH_REFERENCE) + _unsafe_references(
+        line, VAR_PATH_REFERENCE
+    )
     assert flagged, f"should have been flagged: {line}"
 
 
 @pytest.mark.parametrize("line", SAFE_LINES)
 def test_detector_accepts_safe_references(line: str) -> None:
     """A detector that fires on everything is noise, not a guard."""
-    flagged = (_unsafe_references(line, DOT_SLASH_REFERENCE)
-               + _unsafe_references(line, VAR_PATH_REFERENCE))
+    flagged = _unsafe_references(line, DOT_SLASH_REFERENCE) + _unsafe_references(
+        line, VAR_PATH_REFERENCE
+    )
     assert not flagged, f"should have been accepted: {line}"

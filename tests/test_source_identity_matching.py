@@ -10,11 +10,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = (
-    REPO_ROOT
-    / "skills"
-    / "vault-ingress"
-    / "scripts"
-    / "source_identity_matching.py"
+    REPO_ROOT / "skills" / "vault-ingress" / "scripts" / "source_identity_matching.py"
 )
 SPEC = importlib.util.spec_from_file_location("source_identity_matching", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
@@ -35,12 +31,15 @@ def test_shownotes_title_presentation_rules_remain_narrow(
     shownotes_title: str,
     expected: bool,
 ) -> None:
-    assert source_identity_matching.shownotes_titles_agree(
-        authored_title,
-        shownotes_title,
-        conference=None,
-        talk_date=None,
-    ) is expected
+    assert (
+        source_identity_matching.shownotes_titles_agree(
+            authored_title,
+            shownotes_title,
+            conference=None,
+            talk_date=None,
+        )
+        is expected
+    )
 
 
 @pytest.mark.parametrize(
@@ -144,9 +143,12 @@ def test_shownotes_event_qualifier_requires_exact_base_event_and_year(
     talk_date: str,
     expected: bool,
 ) -> None:
-    assert source_identity_matching.shownotes_titles_agree(
-        "Never Trust a Monkey",
-        shownotes_title,
-        conference=conference,
-        talk_date=talk_date,
-    ) is expected
+    assert (
+        source_identity_matching.shownotes_titles_agree(
+            "Never Trust a Monkey",
+            shownotes_title,
+            conference=conference,
+            talk_date=talk_date,
+        )
+        is expected
+    )

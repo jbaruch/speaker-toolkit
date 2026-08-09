@@ -3577,7 +3577,9 @@ def test_bounded_pptx_resolver_names_the_violated_root(tmp_path: Path) -> None:
     assert "the trusted root" not in message
 
 
-def test_unknown_root_kind_falls_back_without_claiming_the_vault(tmp_path: Path) -> None:
+def test_unknown_root_kind_falls_back_without_claiming_the_vault(
+    tmp_path: Path,
+) -> None:
     vault = tmp_path / "vault"
     _symlink_escaping(vault, "notes.txt", tmp_path / "external" / "notes.txt")
 

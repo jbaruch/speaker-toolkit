@@ -43,13 +43,12 @@ class _StrictModel(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+
 _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 # ── Pattern enum: discovered from the patterns directory ──────────────
 
-_PATTERNS_DIR = (
-    Path(__file__).resolve().parent.parent / "references" / "patterns"
-)
+_PATTERNS_DIR = Path(__file__).resolve().parent.parent / "references" / "patterns"
 
 
 def _discover_pattern_ids() -> tuple[frozenset[str], frozenset[str]]:
@@ -76,10 +75,19 @@ def _discover_pattern_ids() -> tuple[frozenset[str], frozenset[str]]:
 
 PATTERN_IDS, ANTIPATTERN_IDS = _discover_pattern_ids()
 
-ARCHITECTURE_IDS: frozenset[str] = frozenset({
-    "narrative-arc", "sparkline", "fourthought", "triad", "talklet",
-    "expansion-joints", "lightning-talk", "takahashi", "cave-painting",
-})
+ARCHITECTURE_IDS: frozenset[str] = frozenset(
+    {
+        "narrative-arc",
+        "sparkline",
+        "fourthought",
+        "triad",
+        "talklet",
+        "expansion-joints",
+        "lightning-talk",
+        "takahashi",
+        "cave-painting",
+    }
+)
 
 
 # ── Closed enums for instance metadata ───────────────────────────────
@@ -200,11 +208,19 @@ _PATTERN_INSTANCE_FIELDS: dict[str, frozenset[str]] = {
     "walk-around": frozenset({"registers"}),
 }
 
-_ALL_INSTANCE_FIELDS: frozenset[str] = frozenset({
-    "flavors", "subtype", "resistance_vector",
-    "story_id", "beat", "plant_id", "big_idea_text", "asks",
-    "registers",
-})
+_ALL_INSTANCE_FIELDS: frozenset[str] = frozenset(
+    {
+        "flavors",
+        "subtype",
+        "resistance_vector",
+        "story_id",
+        "beat",
+        "plant_id",
+        "big_idea_text",
+        "asks",
+        "registers",
+    }
+)
 
 
 class AppliedPattern(_StrictModel):
@@ -584,7 +600,8 @@ class Slide(_StrictModel):
 
 
 def _check_beat_slide_refs(
-    chapters: list["Chapter"], slides: list["Slide"],
+    chapters: list["Chapter"],
+    slides: list["Slide"],
 ) -> None:
     """Reject argument_beat slide_refs that point at a non-existent slide.
 
@@ -825,8 +842,7 @@ def main(argv: list[str]) -> int:
         sys.stdout.write("\n")
     else:
         print(
-            f"OK: {len(outline.slides)} slides across "
-            f"{len(outline.chapters)} chapters",
+            f"OK: {len(outline.slides)} slides across {len(outline.chapters)} chapters",
         )
     return 0
 

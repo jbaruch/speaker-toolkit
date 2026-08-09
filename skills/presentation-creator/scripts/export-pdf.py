@@ -30,8 +30,7 @@ tell application "Microsoft PowerPoint"
 end tell
 '''
     result = subprocess.run(
-        ['osascript', '-e', script],
-        capture_output=True, text=True, timeout=30
+        ["osascript", "-e", script], capture_output=True, text=True, timeout=30
     )
     return result.returncode == 0
 
@@ -40,13 +39,24 @@ def try_libreoffice(pptx_path, pdf_path):
     """Export via LibreOffice CLI."""
     output_dir = os.path.dirname(pdf_path) or "."
     result = subprocess.run(
-        ['libreoffice', '--headless', '--convert-to', 'pdf',
-         '--outdir', output_dir, pptx_path],
-        capture_output=True, text=True, timeout=60
+        [
+            "libreoffice",
+            "--headless",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            output_dir,
+            pptx_path,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     if result.returncode == 0:
         # LibreOffice names output after the input file
-        lo_output = os.path.join(output_dir, os.path.splitext(os.path.basename(pptx_path))[0] + ".pdf")
+        lo_output = os.path.join(
+            output_dir, os.path.splitext(os.path.basename(pptx_path))[0] + ".pdf"
+        )
         if lo_output != pdf_path and os.path.exists(lo_output):
             shutil.move(lo_output, pdf_path)
     return result.returncode == 0
@@ -75,7 +85,10 @@ def main():
             print(f"Exported via LibreOffice: {pdf_path}")
             sys.exit(0)
 
-    print("ERROR: Neither PowerPoint nor LibreOffice available for PDF export", file=sys.stderr)
+    print(
+        "ERROR: Neither PowerPoint nor LibreOffice available for PDF export",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 

@@ -108,19 +108,25 @@ def extract_urls(parsed_lines):
             url = match.group(0).rstrip(".,;:!?)")
             if url in seen:
                 for r in resources:
-                    if (r["value"] == url and slide_num
-                            and slide_num is not None and slide_num not in r["slide_nums"]):
+                    if (
+                        r["value"] == url
+                        and slide_num
+                        and slide_num is not None
+                        and slide_num not in r["slide_nums"]
+                    ):
                         r["slide_nums"].append(slide_num)
                         r["context"] = _merge_context(r["context"], section, slide_num)
                 continue
             seen.add(url)
-            resources.append({
-                "type": "url",
-                "value": url,
-                "context": _slide_context(section, slide_num),
-                "slide_nums": [slide_num] if slide_num is not None else [],
-                "approved": False,
-            })
+            resources.append(
+                {
+                    "type": "url",
+                    "value": url,
+                    "context": _slide_context(section, slide_num),
+                    "slide_nums": [slide_num] if slide_num is not None else [],
+                    "approved": False,
+                }
+            )
     return resources
 
 
@@ -138,28 +144,33 @@ def extract_repos(parsed_lines):
             key = repo.lower()
             if key in seen:
                 for r in resources:
-                    if (r["value"].lower().endswith("/" + key.split("/")[-1])
-                            and slide_num is not None and slide_num not in r["slide_nums"]):
+                    if (
+                        r["value"].lower().endswith("/" + key.split("/")[-1])
+                        and slide_num is not None
+                        and slide_num not in r["slide_nums"]
+                    ):
                         r["slide_nums"].append(slide_num)
                 continue
             seen.add(key)
             host = "github.com" if "github" in line else "gitlab.com"
-            resources.append({
-                "type": "repo",
-                "value": f"{host}/{repo}",
-                "context": _slide_context(section, slide_num),
-                "slide_nums": [slide_num] if slide_num is not None else [],
-                "url": f"https://{host}/{repo}",
-                "approved": False,
-            })
+            resources.append(
+                {
+                    "type": "repo",
+                    "value": f"{host}/{repo}",
+                    "context": _slide_context(section, slide_num),
+                    "slide_nums": [slide_num] if slide_num is not None else [],
+                    "url": f"https://{host}/{repo}",
+                    "approved": False,
+                }
+            )
     return resources
 
 
 def extract_books(parsed_lines):
     book_patterns = [
         re.compile(r'"([^"]{5,}?)"\s+by\s+([A-Z][a-zA-Z\s,.]+)', re.IGNORECASE),
-        re.compile(r'\*([^*]{5,}?)\*\s+by\s+([A-Z][a-zA-Z\s,.]+)', re.IGNORECASE),
-        re.compile(r'\*\*([^*]{5,}?)\*\*\s+by\s+([A-Z][a-zA-Z\s,.]+)', re.IGNORECASE),
+        re.compile(r"\*([^*]{5,}?)\*\s+by\s+([A-Z][a-zA-Z\s,.]+)", re.IGNORECASE),
+        re.compile(r"\*\*([^*]{5,}?)\*\*\s+by\s+([A-Z][a-zA-Z\s,.]+)", re.IGNORECASE),
     ]
     resources = []
     seen = set()
@@ -171,13 +182,15 @@ def extract_books(parsed_lines):
                 if key in seen:
                     continue
                 seen.add(key)
-                resources.append({
-                    "type": "book",
-                    "value": title,
-                    "context": _slide_context(section, slide_num),
-                    "slide_nums": [slide_num] if slide_num is not None else [],
-                    "approved": False,
-                })
+                resources.append(
+                    {
+                        "type": "book",
+                        "value": title,
+                        "context": _slide_context(section, slide_num),
+                        "slide_nums": [slide_num] if slide_num is not None else [],
+                        "approved": False,
+                    }
+                )
     return resources
 
 
@@ -190,19 +203,25 @@ def extract_rfcs(parsed_lines):
             rfc_num = match.group(1)
             if rfc_num in seen:
                 for r in resources:
-                    if (r["value"] == f"RFC {rfc_num}" and slide_num
-                            and slide_num is not None and slide_num not in r["slide_nums"]):
+                    if (
+                        r["value"] == f"RFC {rfc_num}"
+                        and slide_num
+                        and slide_num is not None
+                        and slide_num not in r["slide_nums"]
+                    ):
                         r["slide_nums"].append(slide_num)
                 continue
             seen.add(rfc_num)
-            resources.append({
-                "type": "rfc",
-                "value": f"RFC {rfc_num}",
-                "context": _slide_context(section, slide_num),
-                "slide_nums": [slide_num] if slide_num is not None else [],
-                "url": f"https://www.rfc-editor.org/rfc/rfc{rfc_num}",
-                "approved": False,
-            })
+            resources.append(
+                {
+                    "type": "rfc",
+                    "value": f"RFC {rfc_num}",
+                    "context": _slide_context(section, slide_num),
+                    "slide_nums": [slide_num] if slide_num is not None else [],
+                    "url": f"https://www.rfc-editor.org/rfc/rfc{rfc_num}",
+                    "approved": False,
+                }
+            )
     return resources
 
 
@@ -218,27 +237,40 @@ def extract_tools(parsed_lines):
             if len(name) <= 2 or name.startswith("--") or "=" in name:
                 continue
             if name.lower() in (
-                "true", "false", "null", "none", "n/a",
-                "todo", "tbd", "wip", "fixme",
+                "true",
+                "false",
+                "null",
+                "none",
+                "n/a",
+                "todo",
+                "tbd",
+                "wip",
+                "fixme",
             ):
                 continue
             key = name.lower()
             if key in seen:
                 for r in resources:
-                    if (r["value"].lower() == key and slide_num
-                            and slide_num is not None and slide_num not in r["slide_nums"]):
+                    if (
+                        r["value"].lower() == key
+                        and slide_num
+                        and slide_num is not None
+                        and slide_num not in r["slide_nums"]
+                    ):
                         r["slide_nums"].append(slide_num)
                         r["context"] = _merge_context(r["context"], section, slide_num)
                 continue
             seen.add(key)
-            resources.append({
-                "type": "tool",
-                "value": name,
-                "context": _slide_context(section, slide_num),
-                "slide_nums": [slide_num] if slide_num is not None else [],
-                "url": None,
-                "approved": False,
-            })
+            resources.append(
+                {
+                    "type": "tool",
+                    "value": name,
+                    "context": _slide_context(section, slide_num),
+                    "slide_nums": [slide_num] if slide_num is not None else [],
+                    "url": None,
+                    "approved": False,
+                }
+            )
     return resources
 
 
@@ -293,9 +325,11 @@ def format_markdown(data):
         lines.append(f"## {label} ({len(items)})")
         lines.append("")
         for item in items:
-            slides = ", ".join(
-                str(s) for s in item["slide_nums"]
-            ) if item["slide_nums"] else "n/a"
+            slides = (
+                ", ".join(str(s) for s in item["slide_nums"])
+                if item["slide_nums"]
+                else "n/a"
+            )
             url_part = f" — {item['url']}" if item.get("url") else ""
             lines.append(f"- [ ] **{item['value']}**{url_part}")
             lines.append(f"  Slides: {slides} | Context: {item['context']}")
@@ -313,11 +347,14 @@ def main():
     )
     parser.add_argument("outline", help="Path to outline.yaml")
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         help="Output path (default: resources.json next to outline.yaml)",
     )
     parser.add_argument(
-        "--format", choices=["json", "markdown"], default="json",
+        "--format",
+        choices=["json", "markdown"],
+        default="json",
         help="Output format (default: json)",
     )
     args = parser.parse_args()
@@ -343,15 +380,16 @@ def main():
 
     url_values = {r["value"] for r in resources if r["type"] == "url"}
     resources = [
-        r for r in resources
-        if r["type"] != "repo" or r.get("url") not in url_values
+        r for r in resources if r["type"] != "repo" or r.get("url") not in url_values
     ]
 
     type_order = {"url": 0, "repo": 1, "book": 2, "rfc": 3, "tool": 4}
-    resources.sort(key=lambda r: (
-        type_order.get(r["type"], 99),
-        min(r["slide_nums"]) if r["slide_nums"] else 9999,
-    ))
+    resources.sort(
+        key=lambda r: (
+            type_order.get(r["type"], 99),
+            min(r["slide_nums"]) if r["slide_nums"] else 9999,
+        )
+    )
 
     data = build_output(resources, outline.talk.slug)
 
@@ -362,8 +400,11 @@ def main():
         ext = ".md" if args.format == "markdown" else ".json"
         output_path = os.path.join(outline_dir, f"resources{ext}")
 
-    content = format_markdown(data) if args.format == "markdown" \
+    content = (
+        format_markdown(data)
+        if args.format == "markdown"
         else json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    )
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(content)

@@ -189,8 +189,7 @@ def assess_goal_generation(
     unknown_fields = sorted(set(provenance) - allowed_fields)
     if unknown_fields:
         raise GoalGenerationProvenanceError(
-            "goal.baseline_provenance has unknown fields: "
-            f"{unknown_fields!r}"
+            f"goal.baseline_provenance has unknown fields: {unknown_fields!r}"
         )
     lane = _require_nonempty_string(
         provenance.get("lane"), "goal.baseline_provenance.lane"
@@ -236,10 +235,7 @@ def assess_goal_generation(
     )
 
     reason_codes = []
-    if (
-        fixed["pattern_catalog_fingerprint"]
-        != current["pattern_catalog_fingerprint"]
-    ):
+    if fixed["pattern_catalog_fingerprint"] != current["pattern_catalog_fingerprint"]:
         reason_codes.append(CATALOG_FINGERPRINT_MISMATCH)
     if (
         fixed["pattern_scoring_schema_version"]
@@ -281,9 +277,7 @@ def main() -> int:
     try:
         payload = json.load(sys.stdin)
         root = _require_mapping(payload, "stdin")
-        unknown_fields = sorted(
-            set(root) - {"goals", "current_pattern_baseline"}
-        )
+        unknown_fields = sorted(set(root) - {"goals", "current_pattern_baseline"})
         if unknown_fields:
             raise GoalGenerationProvenanceError(
                 f"stdin has unknown fields: {unknown_fields!r}"

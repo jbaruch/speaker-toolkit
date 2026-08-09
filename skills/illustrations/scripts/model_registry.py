@@ -71,7 +71,11 @@ MODEL_REGISTRY = [
         "id": "gemini-3-pro-image",
         "display": "Gemini 3 Pro Image (Nano Banana Pro)",
         "family": "gemini",
-        "aliases": ["gemini-3-pro-image-preview", "nano-banana-pro", "nano-banana-pro-preview"],
+        "aliases": [
+            "gemini-3-pro-image-preview",
+            "nano-banana-pro",
+            "nano-banana-pro-preview",
+        ],
         "cost": "medium",
         "speed": "medium",
         "quality": "high",
@@ -81,7 +85,11 @@ MODEL_REGISTRY = [
         "id": "gemini-3.1-flash-image",
         "display": "Gemini 3.1 Flash Image (Nano Banana)",
         "family": "gemini",
-        "aliases": ["gemini-3.1-flash-image-preview", "nano-banana", "gemini-flash-image"],
+        "aliases": [
+            "gemini-3.1-flash-image-preview",
+            "nano-banana",
+            "gemini-flash-image",
+        ],
         "cost": "low",
         "speed": "fast",
         "quality": "medium",
@@ -252,9 +260,9 @@ def main():
     parser = argparse.ArgumentParser(
         description="Query the image-generation model registry.",
         epilog="Examples:\n"
-               "  %(prog)s --check-freshness\n"
-               "  %(prog)s --shortlist quality,build-editability\n"
-               "  %(prog)s --shortlist cost\n",
+        "  %(prog)s --check-freshness\n"
+        "  %(prog)s --shortlist quality,build-editability\n"
+        "  %(prog)s --shortlist cost\n",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     group = parser.add_mutually_exclusive_group(required=True)
@@ -267,13 +275,13 @@ def main():
         "--shortlist",
         metavar="PRIORITIES",
         help="Comma-separated priorities (cost, speed, quality, "
-             "build-editability); emit ranked candidate JSON, best first",
+        "build-editability); emit ranked candidate JSON, best first",
     )
     parser.add_argument(
         "--add",
         metavar="JSON",
         help="JSON array of extra model entries to rank alongside the cached "
-             "roster (live injection of a web-discovered model); with --shortlist",
+        "roster (live injection of a web-discovered model); with --shortlist",
     )
     args = parser.parse_args()
 
@@ -289,7 +297,9 @@ def main():
             print(f"ERROR: --add is not valid JSON ({exc}).", file=sys.stderr)
             sys.exit(1)
         if not isinstance(extra_models, list):
-            print("ERROR: --add must be a JSON array of model entries.", file=sys.stderr)
+            print(
+                "ERROR: --add must be a JSON array of model entries.", file=sys.stderr
+            )
             sys.exit(1)
 
     priorities = [p.strip() for p in args.shortlist.split(",") if p.strip()]

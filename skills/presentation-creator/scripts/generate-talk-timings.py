@@ -59,11 +59,14 @@ def main():
     )
     parser.add_argument("outline", help="Path to outline.yaml")
     parser.add_argument(
-        "--qa", type=int, default=0,
+        "--qa",
+        type=int,
+        default=0,
         help="Q&A duration in minutes to add before FINISH",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         help="Output path (default: stdout)",
     )
     args = parser.parse_args()

@@ -43,22 +43,34 @@ REPORT_SCHEMA_VERSION = 1
 SOURCE_IDENTITY_SCHEMA_VERSION = 1
 YT_DLP_TIMEOUT_SECONDS = 60
 YOUTUBE_ID_RE = re.compile(r"[A-Za-z0-9_-]{11}")
-CLIP_MARKERS = frozenset({
-    "clip", "demo", "excerpt", "highlight", "highlights", "preview", "promo",
-    "short", "teaser", "trailer",
-})
-ERROR_CODES = frozenset({
-    "active_youtube_url_invalid",
-    "database_shape_invalid",
-    "metadata_fetch_failed",
-    "provider_metadata_incomplete",
-    "provider_video_id_mismatch",
-    "provider_webpage_identity_mismatch",
-    "talk_shape_invalid",
-    "talks_shape_invalid",
-    "tracking_database_schema_invalid",
-    "tracking_database_schema_unsupported",
-})
+CLIP_MARKERS = frozenset(
+    {
+        "clip",
+        "demo",
+        "excerpt",
+        "highlight",
+        "highlights",
+        "preview",
+        "promo",
+        "short",
+        "teaser",
+        "trailer",
+    }
+)
+ERROR_CODES = frozenset(
+    {
+        "active_youtube_url_invalid",
+        "database_shape_invalid",
+        "metadata_fetch_failed",
+        "provider_metadata_incomplete",
+        "provider_video_id_mismatch",
+        "provider_webpage_identity_mismatch",
+        "talk_shape_invalid",
+        "talks_shape_invalid",
+        "tracking_database_schema_invalid",
+        "tracking_database_schema_unsupported",
+    }
+)
 
 
 class MetadataFetchError(RuntimeError):
@@ -105,8 +117,12 @@ def is_youtube_url(value: Any) -> bool:
         candidate = "https://" + candidate
     host = (urlparse(candidate).hostname or "").casefold().rstrip(".")
     return host in {
-        "youtube.com", "www.youtube.com", "m.youtube.com",
-        "youtu.be", "www.youtu.be", "youtube-nocookie.com",
+        "youtube.com",
+        "www.youtube.com",
+        "m.youtube.com",
+        "youtu.be",
+        "www.youtu.be",
+        "youtube-nocookie.com",
         "www.youtube-nocookie.com",
     }
 
@@ -119,11 +135,13 @@ def expected_duration_seconds(talk: dict[str, Any]) -> float | None:
     ]
     structured = talk.get("structured_data")
     if isinstance(structured, dict):
-        candidates.extend([
-            structured.get("video_duration_seconds"),
-            structured.get("recording_duration_seconds"),
-            structured.get("duration_seconds"),
-        ])
+        candidates.extend(
+            [
+                structured.get("video_duration_seconds"),
+                structured.get("recording_duration_seconds"),
+                structured.get("duration_seconds"),
+            ]
+        )
     for value in candidates:
         if (
             not isinstance(value, bool)
@@ -172,13 +190,20 @@ def fetch_youtube_metadata(
     if not YOUTUBE_ID_RE.fullmatch(video_id):
         raise MetadataFetchError(f"invalid YouTube ID: {video_id!r}")
     command = [
-        "yt-dlp", "--ignore-config", "--no-playlist", "--skip-download",
-        "--dump-single-json", "--no-warnings",
+        "yt-dlp",
+        "--ignore-config",
+        "--no-playlist",
+        "--skip-download",
+        "--dump-single-json",
+        "--no-warnings",
         f"https://www.youtube.com/watch?v={video_id}",
     ]
     try:
         completed = runner(
-            command, capture_output=True, text=True, check=False,
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
             timeout=YT_DLP_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -250,8 +275,13 @@ def provider_evidence(
         "captured_at": captured_at,
     }
     missing = [
-        field for field in (
-            "title", "uploader", "upload_date", "duration_seconds", "webpage_url",
+        field
+        for field in (
+            "title",
+            "uploader",
+            "upload_date",
+            "duration_seconds",
+            "webpage_url",
         )
         if evidence[field] is None
     ]
@@ -262,10 +292,7 @@ def provider_evidence(
 
 def proposed_source_identity(evidence: dict[str, Any]) -> dict[str, Any]:
     """Return provider facts only; uploader and upload date are not human identity."""
-    return {
-        key: value for key, value in evidence.items()
-        if value is not None
-    }
+    return {key: value for key, value in evidence.items() if value is not None}
 
 
 def _finding(
@@ -293,36 +320,45 @@ def _filename(talk: dict[str, Any], index: int) -> str:
 
 
 def _stored_identity_differences(
-    talk: dict[str, Any], proposal: dict[str, Any],
+    talk: dict[str, Any],
+    proposal: dict[str, Any],
 ) -> list[dict[str, Any]]:
     stored = talk.get("source_identity")
     if not isinstance(stored, dict):
         return []
     fields = (
-        "video_id", "title", "uploader", "uploader_id", "upload_date",
-        "duration_seconds", "webpage_url",
+        "video_id",
+        "title",
+        "uploader",
+        "uploader_id",
+        "upload_date",
+        "duration_seconds",
+        "webpage_url",
     )
     differences = []
     for field in fields:
         if field not in stored or field not in proposal:
             continue
         if stored[field] != proposal[field]:
-            differences.append({
-                "field": field,
-                "stored": stored[field],
-                "fetched": proposal[field],
-            })
+            differences.append(
+                {
+                    "field": field,
+                    "stored": stored[field],
+                    "fetched": proposal[field],
+                }
+            )
     return differences
 
 
 def _non_delivery_signals(
-    talk: dict[str, Any], evidence: dict[str, Any], title_agrees: bool | None,
+    talk: dict[str, Any],
+    evidence: dict[str, Any],
+    title_agrees: bool | None,
 ) -> list[str]:
     provider_title = evidence.get("title")
     duration = evidence.get("duration_seconds")
     expected = expected_duration_seconds(talk)
-    markers = sorted(
-        normalized_words(provider_title or "") & CLIP_MARKERS)
+    markers = sorted(normalized_words(provider_title or "") & CLIP_MARKERS)
     signals: list[str] = []
     if markers:
         signals.append("provider_title_has_clip_marker:" + ",".join(markers))
@@ -342,15 +378,14 @@ def _non_delivery_signals(
         for signal in signals
     )
     marker_with_support = bool(markers) and (
-        title_agrees is False
-        or (isinstance(duration, (int, float)) and duration < 900)
+        title_agrees is False or (isinstance(duration, (int, float)) and duration < 900)
     )
     return signals if strong or marker_with_support else []
 
 
 def _talks_collide(talks: list[dict[str, Any]]) -> bool:
     for left_index, left in enumerate(talks):
-        for right in talks[left_index + 1:]:
+        for right in talks[left_index + 1 :]:
             left_title = _nonempty(left.get("title"))
             right_title = _nonempty(right.get("title"))
             if left_title and right_title and not titles_agree(left_title, right_title):
@@ -379,11 +414,17 @@ def audit_database(
 
     talks: list[Any] = []
     if not isinstance(database, dict):
-        findings.append(_finding(
-            "database_shape_invalid", None, [], [],
-            "tracking database must be a JSON object",
-            {"actual": type(database).__name__}, "high",
-        ))
+        findings.append(
+            _finding(
+                "database_shape_invalid",
+                None,
+                [],
+                [],
+                "tracking database must be a JSON object",
+                {"actual": type(database).__name__},
+                "high",
+            )
+        )
     else:
         try:
             assessment = assess_tracking_database(database)
@@ -420,11 +461,17 @@ def audit_database(
             else:
                 raw_talks = database.get("talks")
                 if not isinstance(raw_talks, list):
-                    findings.append(_finding(
-                        "talks_shape_invalid", None, [], [],
-                        "tracking database talks must be an array",
-                        {"actual": type(raw_talks).__name__}, "high",
-                    ))
+                    findings.append(
+                        _finding(
+                            "talks_shape_invalid",
+                            None,
+                            [],
+                            [],
+                            "tracking database talks must be an array",
+                            {"actual": type(raw_talks).__name__},
+                            "high",
+                        )
+                    )
                 else:
                     talks = raw_talks
 
@@ -434,11 +481,17 @@ def audit_database(
     audits_by_index: dict[int, dict[str, Any]] = {}
     for index, talk in enumerate(talks):
         if not isinstance(talk, dict):
-            findings.append(_finding(
-                "talk_shape_invalid", None, [index], [f"talk[{index}]"],
-                "active source audit skipped a non-object talk record",
-                {"actual": type(talk).__name__}, "high",
-            ))
+            findings.append(
+                _finding(
+                    "talk_shape_invalid",
+                    None,
+                    [index],
+                    [f"talk[{index}]"],
+                    "active source audit skipped a non-object talk record",
+                    {"actual": type(talk).__name__},
+                    "high",
+                )
+            )
             continue
         video_url = _nonempty(talk.get("video_url"))
         if video_url is None:
@@ -465,23 +518,35 @@ def audit_database(
         audits_by_index[index] = audit
         if video_id is None:
             code = (
-                "active_youtube_url_invalid" if is_youtube_url(video_url)
+                "active_youtube_url_invalid"
+                if is_youtube_url(video_url)
                 else "active_video_provider_unsupported"
             )
-            findings.append(_finding(
-                code, None, [index], [filename],
-                "active video source cannot be audited as a YouTube identity",
-                {"active_video_url": video_url},
-                "high" if code in ERROR_CODES else "medium",
-            ))
+            findings.append(
+                _finding(
+                    code,
+                    None,
+                    [index],
+                    [filename],
+                    "active video source cannot be audited as a YouTube identity",
+                    {"active_video_url": video_url},
+                    "high" if code in ERROR_CODES else "medium",
+                )
+            )
             continue
         stored_id = _nonempty(talk.get("youtube_id"))
         if stored_id is not None and stored_id != video_id:
-            findings.append(_finding(
-                "stored_youtube_id_mismatch", video_id, [index], [filename],
-                "active video URL and stored youtube_id disagree",
-                {"url_video_id": video_id, "stored_youtube_id": stored_id}, "high",
-            ))
+            findings.append(
+                _finding(
+                    "stored_youtube_id_mismatch",
+                    video_id,
+                    [index],
+                    [filename],
+                    "active video URL and stored youtube_id disagree",
+                    {"url_video_id": video_id, "stored_youtube_id": stored_id},
+                    "high",
+                )
+            )
         groups[video_id].append((index, talk))
 
     evidence_by_id: dict[str, dict[str, Any]] = {}
@@ -504,42 +569,58 @@ def audit_database(
         except (MetadataFetchError, OSError, RuntimeError) as exc:
             source["fetch_status"] = "error"
             source["error"] = str(exc)
-            findings.append(_finding(
-                "metadata_fetch_failed", video_id, indexes, filenames,
-                "yt-dlp metadata capture failed",
-                {"error": str(exc)}, "high",
-            ))
+            findings.append(
+                _finding(
+                    "metadata_fetch_failed",
+                    video_id,
+                    indexes,
+                    filenames,
+                    "yt-dlp metadata capture failed",
+                    {"error": str(exc)},
+                    "high",
+                )
+            )
             sources.append(source)
             continue
 
         evidence, faults = provider_evidence(video_id, raw_metadata, captured)
         source["provider_evidence"] = evidence
         critical = {
-            "provider_video_id_mismatch", "provider_webpage_identity_mismatch",
+            "provider_video_id_mismatch",
+            "provider_webpage_identity_mismatch",
         }.intersection(faults)
         for code in sorted(set(faults)):
             missing = [
-                field for field in (
-                    "title", "uploader", "upload_date", "duration_seconds",
+                field
+                for field in (
+                    "title",
+                    "uploader",
+                    "upload_date",
+                    "duration_seconds",
                     "webpage_url",
                 )
                 if evidence[field] is None
             ]
-            findings.append(_finding(
-                code, video_id, indexes, filenames,
-                (
-                    "provider metadata is missing stable audit fields"
-                    if code == "provider_metadata_incomplete"
-                    else "provider metadata does not confirm the requested identity"
-                ),
-                {
-                    "requested_video_id": video_id,
-                    "provider_video_id": evidence["video_id"],
-                    "webpage_video_id": evidence["webpage_video_id"],
-                    "missing_fields": missing,
-                },
-                "high" if code in ERROR_CODES else "medium",
-            ))
+            findings.append(
+                _finding(
+                    code,
+                    video_id,
+                    indexes,
+                    filenames,
+                    (
+                        "provider metadata is missing stable audit fields"
+                        if code == "provider_metadata_incomplete"
+                        else "provider metadata does not confirm the requested identity"
+                    ),
+                    {
+                        "requested_video_id": video_id,
+                        "provider_video_id": evidence["video_id"],
+                        "webpage_video_id": evidence["webpage_video_id"],
+                        "missing_fields": missing,
+                    },
+                    "high" if code in ERROR_CODES else "medium",
+                )
+            )
         if critical:
             source["fetch_status"] = "invalid"
             sources.append(source)
@@ -559,25 +640,31 @@ def audit_database(
             catalog_title = _nonempty(talk.get("title"))
             title_agrees = (
                 titles_agree(catalog_title, provider_title)
-                if catalog_title and provider_title else None
+                if catalog_title and provider_title
+                else None
             )
             expected_duration = expected_duration_seconds(talk)
             provider_duration = proposal.get("duration_seconds")
             duration_within_tolerance: bool | None = None
             if expected_duration is not None and isinstance(
-                    provider_duration, (int, float)):
+                provider_duration, (int, float)
+            ):
                 tolerance = max(60.0, expected_duration * 0.05)
                 duration_within_tolerance = (
-                    abs(float(provider_duration) - expected_duration) <= tolerance)
+                    abs(float(provider_duration) - expected_duration) <= tolerance
+                )
             catalog_date = parse_catalog_date(talk.get("date"))
             upload_date = _provider_date(proposal.get("upload_date"))
             upload_predates = (
                 date.fromisoformat(upload_date) < catalog_date
-                if catalog_date is not None and upload_date is not None else None
+                if catalog_date is not None and upload_date is not None
+                else None
             )
             differences = _stored_identity_differences(talk, proposal)
             event_agrees, catalog_event, provider_events = event_agreement(
-                talk.get("conference"), provider_title or "", event_aliases,
+                talk.get("conference"),
+                provider_title or "",
+                event_aliases,
             )
             audit["comparison"] = {
                 "catalog_title_agrees": title_agrees,
@@ -591,67 +678,100 @@ def audit_database(
             }
             filename = _filename(talk, index)
             if title_agrees is False:
-                findings.append(_finding(
-                    "provider_title_mismatch", video_id, [index], [filename],
-                    "provider title does not materially overlap the catalog title",
-                    {"catalog_title": catalog_title, "provider_title": provider_title},
-                ))
+                findings.append(
+                    _finding(
+                        "provider_title_mismatch",
+                        video_id,
+                        [index],
+                        [filename],
+                        "provider title does not materially overlap the catalog title",
+                        {
+                            "catalog_title": catalog_title,
+                            "provider_title": provider_title,
+                        },
+                    )
+                )
             if event_agrees is False:
-                findings.append(_finding(
-                    "provider_event_mismatch", video_id, [index], [filename],
-                    "provider title explicitly names a different catalog event",
-                    {
-                        "catalog_conference": talk.get("conference"),
-                        "catalog_event_alias": " ".join(catalog_event or ()),
-                        "provider_event_aliases": [
-                            " ".join(alias) for alias in provider_events
-                        ],
-                        "provider_title": provider_title,
-                    },
-                    "high",
-                ))
+                findings.append(
+                    _finding(
+                        "provider_event_mismatch",
+                        video_id,
+                        [index],
+                        [filename],
+                        "provider title explicitly names a different catalog event",
+                        {
+                            "catalog_conference": talk.get("conference"),
+                            "catalog_event_alias": " ".join(catalog_event or ()),
+                            "provider_event_aliases": [
+                                " ".join(alias) for alias in provider_events
+                            ],
+                            "provider_title": provider_title,
+                        },
+                        "high",
+                    )
+                )
             if duration_within_tolerance is False:
-                findings.append(_finding(
-                    "provider_duration_mismatch", video_id, [index], [filename],
-                    "provider duration differs from the catalog duration beyond tolerance",
-                    {
-                        "catalog_duration_seconds": expected_duration,
-                        "provider_duration_seconds": provider_duration,
-                    },
-                ))
+                findings.append(
+                    _finding(
+                        "provider_duration_mismatch",
+                        video_id,
+                        [index],
+                        [filename],
+                        "provider duration differs from the catalog duration beyond tolerance",
+                        {
+                            "catalog_duration_seconds": expected_duration,
+                            "provider_duration_seconds": provider_duration,
+                        },
+                    )
+                )
             if (
                 upload_predates is True
                 and catalog_date is not None
                 and upload_date is not None
             ):
-                findings.append(_finding(
-                    "provider_upload_predates_catalog", video_id, [index], [filename],
-                    "provider upload date predates the cataloged delivery date",
-                    {
-                        "catalog_date": catalog_date.isoformat(),
-                        "provider_upload_date": upload_date,
-                    },
-                ))
+                findings.append(
+                    _finding(
+                        "provider_upload_predates_catalog",
+                        video_id,
+                        [index],
+                        [filename],
+                        "provider upload date predates the cataloged delivery date",
+                        {
+                            "catalog_date": catalog_date.isoformat(),
+                            "provider_upload_date": upload_date,
+                        },
+                    )
+                )
             if differences:
-                findings.append(_finding(
-                    "stored_source_identity_differs", video_id, [index], [filename],
-                    "fresh provider facts differ from stored source identity evidence",
-                    differences,
-                ))
+                findings.append(
+                    _finding(
+                        "stored_source_identity_differs",
+                        video_id,
+                        [index],
+                        [filename],
+                        "fresh provider facts differ from stored source identity evidence",
+                        differences,
+                    )
+                )
             signals = _non_delivery_signals(talk, proposal, title_agrees)
             if signals:
-                findings.append(_finding(
-                    "likely_non_delivery_clip", video_id, [index], [filename],
-                    "provider title/duration suggest this source may not be a full delivery",
-                    {
-                        "signals": signals,
-                        "catalog_title": catalog_title,
-                        "provider_title": provider_title,
-                        "catalog_duration_seconds": expected_duration,
-                        "provider_duration_seconds": provider_duration,
-                    },
-                    "high",
-                ))
+                findings.append(
+                    _finding(
+                        "likely_non_delivery_clip",
+                        video_id,
+                        [index],
+                        [filename],
+                        "provider title/duration suggest this source may not be a full delivery",
+                        {
+                            "signals": signals,
+                            "catalog_title": catalog_title,
+                            "provider_title": provider_title,
+                            "catalog_duration_seconds": expected_duration,
+                            "provider_duration_seconds": provider_duration,
+                        },
+                        "high",
+                    )
+                )
 
     for video_id in sorted(groups):
         members = groups[video_id]
@@ -671,21 +791,30 @@ def audit_database(
             for index, talk in members
         ]
         collision_records.sort(key=lambda item: str(item["filename"]))
-        findings.append(_finding(
-            "same_id_cross_talk_collision", video_id, indexes, filenames,
-            "one active YouTube identity is attached to distinct catalog talks/deliveries",
-            {
-                "catalog_records": collision_records,
-                "provider_title": evidence_by_id.get(video_id, {}).get("title"),
-            },
-            "high",
-        ))
+        findings.append(
+            _finding(
+                "same_id_cross_talk_collision",
+                video_id,
+                indexes,
+                filenames,
+                "one active YouTube identity is attached to distinct catalog talks/deliveries",
+                {
+                    "catalog_records": collision_records,
+                    "provider_title": evidence_by_id.get(video_id, {}).get("title"),
+                },
+                "high",
+            )
+        )
 
     priority_order = {"high": 0, "medium": 1, "low": 2}
-    findings.sort(key=lambda item: (
-        priority_order.get(item["review_priority"], 9),
-        item["code"], item["video_id"] or "", item["filenames"],
-    ))
+    findings.sort(
+        key=lambda item: (
+            priority_order.get(item["review_priority"], 9),
+            item["code"],
+            item["video_id"] or "",
+            item["filenames"],
+        )
+    )
     talk_audits.sort(key=lambda item: (item["talk_index"], item["filename"]))
     sources.sort(key=lambda item: item["video_id"])
     by_code = Counter(item["code"] for item in findings)
@@ -731,8 +860,10 @@ def audit_path(
         database = decode_json_object(snapshot)
     except TrackingDatabaseIOError as exc:
         report = audit_database(
-            {}, database_path=database_path,
-            metadata_fetcher=metadata_fetcher, captured_at=captured_at,
+            {},
+            database_path=database_path,
+            metadata_fetcher=metadata_fetcher,
+            captured_at=captured_at,
         )
         report["complete"] = False
         report["review_required"] = True
@@ -740,15 +871,23 @@ def audit_path(
             "finding_count": 1,
             "by_code": {"database_unreadable": 1},
         }
-        report["findings"] = [_finding(
-            "database_unreadable", None, [], [],
-            "tracking database could not be read as UTF-8 JSON",
-            {"error": str(exc)}, "high",
-        )]
+        report["findings"] = [
+            _finding(
+                "database_unreadable",
+                None,
+                [],
+                [],
+                "tracking database could not be read as UTF-8 JSON",
+                {"error": str(exc)},
+                "high",
+            )
+        ]
         return report
     return audit_database(
-        database, database_path=database_path,
-        metadata_fetcher=metadata_fetcher, captured_at=captured_at,
+        database,
+        database_path=database_path,
+        metadata_fetcher=metadata_fetcher,
+        captured_at=captured_at,
     )
 
 
@@ -765,7 +904,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         report = audit_path(
-            args.vault_or_database, captured_at=args.captured_at,
+            args.vault_or_database,
+            captured_at=args.captured_at,
         )
     except ValueError as exc:
         parser.error(str(exc))

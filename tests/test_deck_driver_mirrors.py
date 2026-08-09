@@ -13,7 +13,11 @@ Two layers here:
 import os
 
 SCRIPTS_PC = os.path.join(
-    os.path.dirname(__file__), os.pardir, "skills", "presentation-creator", "scripts",
+    os.path.dirname(__file__),
+    os.pardir,
+    "skills",
+    "presentation-creator",
+    "scripts",
 )
 
 
@@ -23,7 +27,7 @@ def _write(p, data: bytes):
 
 
 def test_mirror_then_materialize_roundtrip(sync_deck_drivers, tmp_path):
-    bas = _write(tmp_path / "Foo.bas", b"Attribute VB_Name=\"Foo\"\nSub X()\nEnd Sub\n")
+    bas = _write(tmp_path / "Foo.bas", b'Attribute VB_Name="Foo"\nSub X()\nEnd Sub\n')
     scpt = _write(tmp_path / "do-thing.applescript", b"on run\nreturn 1\nend run\n")
 
     # mirror: real -> .txt
@@ -39,8 +43,12 @@ def test_mirror_then_materialize_roundtrip(sync_deck_drivers, tmp_path):
     # materialize: .txt -> real
     made = sync_deck_drivers.materialize(tmp_path)
     assert {p.name for p in made} == {"Foo.bas", "do-thing.applescript"}
-    assert (tmp_path / "Foo.bas").read_bytes() == (tmp_path / "Foo.bas.txt").read_bytes()
-    assert (tmp_path / "do-thing.applescript").read_bytes() == (tmp_path / "do-thing.applescript.txt").read_bytes()
+    assert (tmp_path / "Foo.bas").read_bytes() == (
+        tmp_path / "Foo.bas.txt"
+    ).read_bytes()
+    assert (tmp_path / "do-thing.applescript").read_bytes() == (
+        tmp_path / "do-thing.applescript.txt"
+    ).read_bytes()
 
 
 def test_materialize_is_create_if_missing_by_default(sync_deck_drivers, tmp_path):
@@ -61,7 +69,7 @@ def test_materialize_force_overwrites(sync_deck_drivers, tmp_path):
 
 
 def test_check_flags_missing_and_drifted_mirrors(sync_deck_drivers, tmp_path):
-    _write(tmp_path / "A.bas", b"aaa")               # mirror missing
+    _write(tmp_path / "A.bas", b"aaa")  # mirror missing
     _write(tmp_path / "B.applescript", b"bbb")
     _write(tmp_path / "B.applescript.txt", b"DIFFERENT")  # drifted
     problems = sync_deck_drivers.check(tmp_path)
@@ -89,5 +97,6 @@ def test_committed_repo_mirrors_are_in_sync(sync_deck_drivers):
     `sync-deck-drivers.py mirror` — the install-restore would ship a stale driver.
     """
     from pathlib import Path
+
     problems = sync_deck_drivers.check(Path(SCRIPTS_PC).resolve())
     assert problems == [], "deck-driver mirror drift:\n" + "\n".join(problems)

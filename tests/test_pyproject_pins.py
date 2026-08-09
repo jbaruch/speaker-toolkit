@@ -105,16 +105,19 @@ def test_every_requirement_pins_an_exact_version(label, requirements):
     )
 
 
-@pytest.mark.parametrize("raw", [
-    "pytest",                              # bare name
-    "setuptools>=68",                      # range
-    "numpy>=2.0,<3.0",                     # two-sided range
-    "numpy==2.2.6,>=2.0",                  # pin plus a range that reopens it
-    "numpy===2.2.6",                       # arbitrary-equality, not exact
-    "numpy==2.2.*",                        # wildcard
-    "numpy~=2.2.6",                        # compatible-release
-    "lxml @ https://example.invalid/a==b.whl",   # URL containing '=='
-])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "pytest",  # bare name
+        "setuptools>=68",  # range
+        "numpy>=2.0,<3.0",  # two-sided range
+        "numpy==2.2.6,>=2.0",  # pin plus a range that reopens it
+        "numpy===2.2.6",  # arbitrary-equality, not exact
+        "numpy==2.2.*",  # wildcard
+        "numpy~=2.2.6",  # compatible-release
+        "lxml @ https://example.invalid/a==b.whl",  # URL containing '=='
+    ],
+)
 def test_the_pin_check_rejects_specifiers_that_are_not_exact(raw):
     """The last four beat a naive `'==' in raw` check; the first four do not.
 
@@ -124,13 +127,16 @@ def test_the_pin_check_rejects_specifiers_that_are_not_exact(raw):
     assert pin_violation(raw) is not None, raw
 
 
-@pytest.mark.parametrize("raw", [
-    "numpy==2.2.6",
-    "Pillow==12.3.0",
-    "python-pptx==1.0.2",
-    "tomli==2.4.1; python_version < '3.11'",     # a marker is not a version
-    "qrcode[pil]==8.2",                          # an extra is not a version
-])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "numpy==2.2.6",
+        "Pillow==12.3.0",
+        "python-pptx==1.0.2",
+        "tomli==2.4.1; python_version < '3.11'",  # a marker is not a version
+        "qrcode[pil]==8.2",  # an extra is not a version
+    ],
+)
 def test_the_pin_check_accepts_real_pins(raw):
     assert pin_violation(raw) is None, pin_violation(raw)
 
@@ -143,8 +149,7 @@ def test_dependabot_actively_covers_the_pip_ecosystem():
     """
     config = yaml.safe_load(DEPENDABOT.read_text(encoding="utf-8"))
     pip_updates = [
-        entry for entry in config["updates"]
-        if entry.get("package-ecosystem") == "pip"
+        entry for entry in config["updates"] if entry.get("package-ecosystem") == "pip"
     ]
     assert len(pip_updates) == 1, (
         f"expected exactly one active pip update entry, got {len(pip_updates)}"

@@ -152,7 +152,8 @@ def test_rejects_out_of_order_slides(outline_schema, base_data):
     data = copy.deepcopy(base_data)
     # Swap first two slide numbers without duplicating
     data["slides"][0]["n"], data["slides"][1]["n"] = (
-        data["slides"][1]["n"], data["slides"][0]["n"],
+        data["slides"][1]["n"],
+        data["slides"][0]["n"],
     )
     with pytest.raises(ValidationError, match="ascending order"):
         outline_schema.Outline.model_validate(data)
@@ -274,10 +275,12 @@ def test_rejects_unknown_pattern_id(outline_schema, base_data):
 def test_rejects_instance_field_on_wrong_pattern(outline_schema, base_data):
     data = copy.deepcopy(base_data)
     # flavors only belongs on opening-punch — putting it on bookends should fail
-    data["talk"]["applied_patterns"].append({
-        "id": "bookends",
-        "flavors": ["personal"],
-    })
+    data["talk"]["applied_patterns"].append(
+        {
+            "id": "bookends",
+            "flavors": ["personal"],
+        }
+    )
     with pytest.raises(ValidationError, match="does not accept"):
         outline_schema.Outline.model_validate(data)
 
@@ -298,7 +301,8 @@ def test_rejects_unpaid_callback_plant(outline_schema, base_data):
     # Remove the pay for receipt-motif (currently on slide n=7)
     for slide in data["slides"]:
         slide["callbacks"] = [
-            cb for cb in slide.get("callbacks", [])
+            cb
+            for cb in slide.get("callbacks", [])
             if not (cb.get("kind") == "pay" and cb.get("id") == "receipt-motif")
         ]
     with pytest.raises(ValidationError, match="unpaid plants"):
@@ -352,17 +356,19 @@ def test_accepts_slide_n_zero(outline_schema, base_data):
 def test_accepts_demo_format(outline_schema, base_data):
     """DEMO is a production-interlude slide — live terminal, no image prompt."""
     data = copy.deepcopy(base_data)
-    data["slides"].append({
-        "n": 99,
-        "chapter": "ch1",
-        "title": "DEMO 01 — Live Terminal",
-        "format": "DEMO",
-        "visual": "Live terminal. Claude Code TUI.",
-        "script": [
-            {"cue": "TERMINAL UP"},
-            {"line": "Let me show you something."},
-        ],
-    })
+    data["slides"].append(
+        {
+            "n": 99,
+            "chapter": "ch1",
+            "title": "DEMO 01 — Live Terminal",
+            "format": "DEMO",
+            "visual": "Live terminal. Claude Code TUI.",
+            "script": [
+                {"cue": "TERMINAL UP"},
+                {"line": "Let me show you something."},
+            ],
+        }
+    )
     data["talk"]["slide_budget"] = 30
     outline = outline_schema.Outline.model_validate(data)
     assert outline.slides[-1].format.value == "DEMO"
@@ -371,12 +377,14 @@ def test_accepts_demo_format(outline_schema, base_data):
 def test_accepts_title_format(outline_schema, base_data):
     """TITLE is a title-card slide — passive display, often n=0."""
     data = copy.deepcopy(base_data)
-    data["slides"].append({
-        "n": 99,
-        "chapter": "ch1",
-        "title": "Title Card",
-        "format": "TITLE",
-    })
+    data["slides"].append(
+        {
+            "n": 99,
+            "chapter": "ch1",
+            "title": "Title Card",
+            "format": "TITLE",
+        }
+    )
     data["talk"]["slide_budget"] = 30
     outline = outline_schema.Outline.model_validate(data)
     assert outline.slides[-1].format.value == "TITLE"
@@ -412,10 +420,13 @@ def test_accepts_speaker_on_parenthetical_multi_speaker(outline_schema, base_dat
             if item.get("line") is not None:
                 item["speaker"] = "Speaker One"
     # Add a speaker-attributed parenthetical
-    data["slides"][0]["script"].insert(0, {
-        "speaker": "Speaker Two",
-        "parenthetical": "(to Speaker One)",
-    })
+    data["slides"][0]["script"].insert(
+        0,
+        {
+            "speaker": "Speaker Two",
+            "parenthetical": "(to Speaker One)",
+        },
+    )
     outline = outline_schema.Outline.model_validate(data)
     assert outline.slides[0].script[0].speaker == "Speaker Two"
 
@@ -423,10 +434,13 @@ def test_accepts_speaker_on_parenthetical_multi_speaker(outline_schema, base_dat
 def test_rejects_speaker_on_parenthetical_single_speaker(outline_schema, base_data):
     """Single-speaker talks must not attribute parentheticals — there's only one voice."""
     data = copy.deepcopy(base_data)
-    data["slides"][0]["script"].insert(0, {
-        "speaker": "Speaker One",
-        "parenthetical": "(beat)",
-    })
+    data["slides"][0]["script"].insert(
+        0,
+        {
+            "speaker": "Speaker One",
+            "parenthetical": "(beat)",
+        },
+    )
     with pytest.raises(ValidationError, match="must not attribute parentheticals"):
         outline_schema.Outline.model_validate(data)
 
@@ -450,10 +464,13 @@ def test_rejects_unknown_speaker_on_parenthetical(outline_schema, base_data):
         for item in slide.get("script", []):
             if item.get("line") is not None:
                 item["speaker"] = "Speaker One"
-    data["slides"][0]["script"].insert(0, {
-        "speaker": "Speaker Three",
-        "parenthetical": "(to Speaker One)",
-    })
+    data["slides"][0]["script"].insert(
+        0,
+        {
+            "speaker": "Speaker Three",
+            "parenthetical": "(to Speaker One)",
+        },
+    )
     with pytest.raises(ValidationError, match="not in talk.speakers"):
         outline_schema.Outline.model_validate(data)
 
@@ -463,16 +480,18 @@ def test_rejects_unknown_speaker_on_parenthetical(outline_schema, base_data):
 
 def test_accepts_interlude(outline_schema, base_data):
     data = copy.deepcopy(base_data)
-    data["interludes"] = [{
-        "id": "demo-01",
-        "after_slide": 1,
-        "chapter": "ch1",
-        "title": "DEMO 01 — Cold Open",
-        "script": [
-            {"cue": "TERMINAL UP"},
-            {"line": "Let me show you something."},
-        ],
-    }]
+    data["interludes"] = [
+        {
+            "id": "demo-01",
+            "after_slide": 1,
+            "chapter": "ch1",
+            "title": "DEMO 01 — Cold Open",
+            "script": [
+                {"cue": "TERMINAL UP"},
+                {"line": "Let me show you something."},
+            ],
+        }
+    ]
     outline = outline_schema.Outline.model_validate(data)
     assert len(outline.interludes) == 1
     assert outline.interludes[0].after_slide == 1
@@ -480,26 +499,30 @@ def test_accepts_interlude(outline_schema, base_data):
 
 def test_rejects_interlude_unknown_chapter(outline_schema, base_data):
     data = copy.deepcopy(base_data)
-    data["interludes"] = [{
-        "id": "demo-01",
-        "after_slide": 1,
-        "chapter": "ch99",
-        "title": "DEMO 01",
-        "script": [{"cue": "TERMINAL UP"}],
-    }]
+    data["interludes"] = [
+        {
+            "id": "demo-01",
+            "after_slide": 1,
+            "chapter": "ch99",
+            "title": "DEMO 01",
+            "script": [{"cue": "TERMINAL UP"}],
+        }
+    ]
     with pytest.raises(ValidationError, match="unknown chapter"):
         outline_schema.Outline.model_validate(data)
 
 
 def test_rejects_interlude_bad_anchor(outline_schema, base_data):
     data = copy.deepcopy(base_data)
-    data["interludes"] = [{
-        "id": "demo-01",
-        "after_slide": 999,
-        "chapter": "ch1",
-        "title": "DEMO 01",
-        "script": [{"cue": "TERMINAL UP"}],
-    }]
+    data["interludes"] = [
+        {
+            "id": "demo-01",
+            "after_slide": 999,
+            "chapter": "ch1",
+            "title": "DEMO 01",
+            "script": [{"cue": "TERMINAL UP"}],
+        }
+    ]
     with pytest.raises(ValidationError, match="after_slide=999"):
         outline_schema.Outline.model_validate(data)
 
@@ -529,14 +552,16 @@ def test_rejects_duplicate_interlude_ids(outline_schema, base_data):
 def test_interlude_callbacks_count_toward_ledger(outline_schema, base_data):
     """An interlude that plants a callback must be paid (somewhere)."""
     data = copy.deepcopy(base_data)
-    data["interludes"] = [{
-        "id": "demo-01",
-        "after_slide": 1,
-        "chapter": "ch1",
-        "title": "DEMO 01",
-        "script": [{"cue": "TERMINAL UP"}],
-        "callbacks": [{"kind": "plant", "id": "demo-plant"}],
-    }]
+    data["interludes"] = [
+        {
+            "id": "demo-01",
+            "after_slide": 1,
+            "chapter": "ch1",
+            "title": "DEMO 01",
+            "script": [{"cue": "TERMINAL UP"}],
+            "callbacks": [{"kind": "plant", "id": "demo-plant"}],
+        }
+    ]
     with pytest.raises(ValidationError, match="unpaid plants"):
         outline_schema.Outline.model_validate(data)
 
@@ -556,12 +581,12 @@ def test_requires_slug(outline_schema, base_data):
 def test_rejects_non_kebab_slug(outline_schema, base_data):
     data = copy.deepcopy(base_data)
     bad_slugs = [
-        "Demo Talk",          # spaces + caps
-        "demo_talk",          # underscore
-        "demo--talk",         # double dash
-        "-demo-talk",         # leading dash
-        "demo-talk-",         # trailing dash
-        "DemoTalk",           # camelCase
+        "Demo Talk",  # spaces + caps
+        "demo_talk",  # underscore
+        "demo--talk",  # double dash
+        "-demo-talk",  # leading dash
+        "demo-talk-",  # trailing dash
+        "DemoTalk",  # camelCase
     ]
     for slug in bad_slugs:
         data["talk"]["slug"] = slug
@@ -666,7 +691,7 @@ def test_rejects_builds_not_starting_at_zero(outline_schema, base_data):
     data = copy.deepcopy(base_data)
     slide_with_builds = next(s for s in data["slides"] if s.get("builds"))
     for i, b in enumerate(slide_with_builds["builds"]):
-        b["step"] = i + 1   # shift to start at 1
+        b["step"] = i + 1  # shift to start at 1
     with pytest.raises(ValidationError, match="contiguous starting at 0"):
         outline_schema.Outline.model_validate(data)
 
@@ -675,7 +700,7 @@ def test_rejects_builds_with_holes(outline_schema, base_data):
     """Build sequences must be contiguous — no gaps."""
     data = copy.deepcopy(base_data)
     slide_with_builds = next(s for s in data["slides"] if s.get("builds"))
-    slide_with_builds["builds"][-1]["step"] = 99   # gap
+    slide_with_builds["builds"][-1]["step"] = 99  # gap
     with pytest.raises(ValidationError, match="contiguous"):
         outline_schema.Outline.model_validate(data)
 
@@ -745,7 +770,9 @@ def test_accepts_style_anchor_composition_and_footer(outline_schema, base_data):
     data["style_anchor"]["composition"] = "poster-theatrical"
     data["style_anchor"]["embedded_footer"] = "@speaker · example.com/talk"
     outline = outline_schema.Outline.model_validate(data)
-    assert outline.style_anchor.composition == outline_schema.Composition.poster_theatrical
+    assert (
+        outline.style_anchor.composition == outline_schema.Composition.poster_theatrical
+    )
     assert outline.style_anchor.embedded_footer == "@speaker · example.com/talk"
 
 
@@ -877,11 +904,13 @@ def test_cli_emit_json_dumps_validated_outline(outline_schema, capsys):
     re-parsing YAML by hand."""
     import json as _json
 
-    rc = outline_schema.main([
-        "outline_schema.py",
-        "--emit-json",
-        str(FIXTURE),
-    ])
+    rc = outline_schema.main(
+        [
+            "outline_schema.py",
+            "--emit-json",
+            str(FIXTURE),
+        ]
+    )
     assert rc == 0
     captured = capsys.readouterr()
     assert captured.err == ""
@@ -906,11 +935,13 @@ def test_cli_emit_json_validation_failure_to_stderr(outline_schema, capsys, tmp_
     not silently emit a partial payload on failure."""
     bad = tmp_path / "bad-outline.yaml"
     bad.write_text("talk: {}\n", encoding="utf-8")
-    rc = outline_schema.main([
-        "outline_schema.py",
-        "--emit-json",
-        str(bad),
-    ])
+    rc = outline_schema.main(
+        [
+            "outline_schema.py",
+            "--emit-json",
+            str(bad),
+        ]
+    )
     assert rc == 1
     captured = capsys.readouterr()
     assert captured.out == ""

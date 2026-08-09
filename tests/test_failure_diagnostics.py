@@ -23,8 +23,7 @@ def _raised(exc):
     return excinfo.value
 
 
-def test_sanitized_frames_report_location_without_paths_or_text(
-        failure_diagnostics):
+def test_sanitized_frames_report_location_without_paths_or_text(failure_diagnostics):
     """`no-secrets` forbids exception text; the frames replace it."""
     caught = _raised(RuntimeError("token=SECRET at /private/vault/creds.json"))
 
@@ -33,12 +32,11 @@ def test_sanitized_frames_report_location_without_paths_or_text(
     assert frames, "the failing code location must be reported"
     for frame in frames:
         assert ":" in frame and " in " in frame
-        assert "/" not in frame          # basename only, never a host path
+        assert "/" not in frame  # basename only, never a host path
         assert "SECRET" not in frame
 
 
-def test_failure_document_carries_the_type_but_never_the_message(
-        failure_diagnostics):
+def test_failure_document_carries_the_type_but_never_the_message(failure_diagnostics):
     """The type says which failure it was; the message would say where."""
     caught = _raised(FileNotFoundError(2, "No such file", "/private/vault/db.json"))
 
@@ -74,9 +72,7 @@ def test_state_adds_fields_beside_the_identity(failure_diagnostics):
         state={"analyses_written": False},
     )
 
-    assert set(document) == {
-        "error", "error_type", "origin", "analyses_written"
-    }
+    assert set(document) == {"error", "error_type", "origin", "analyses_written"}
 
 
 def test_state_cannot_overwrite_the_error_identity(failure_diagnostics):
@@ -103,13 +99,10 @@ def test_state_cannot_overwrite_the_error_identity(failure_diagnostics):
     assert document["error_type"] == "RuntimeError"
     assert document["origin"] != ["forged.py:1 in nowhere"]
     assert document["database_written"] is True, "non-identity state survives"
-    assert failure_diagnostics.IDENTITY_FIELDS == {
-        "error", "error_type", "origin"
-    }
+    assert failure_diagnostics.IDENTITY_FIELDS == {"error", "error_type", "origin"}
 
 
-def test_emitted_failure_is_one_json_document_then_a_recovery_note(
-        failure_diagnostics):
+def test_emitted_failure_is_one_json_document_then_a_recovery_note(failure_diagnostics):
     """Callers parse line one; a human reads the rest."""
     caught = _raised(RuntimeError("boom at /private/vault/db.json"))
     stream = io.StringIO()
@@ -136,7 +129,10 @@ def test_emitted_document_is_key_ordered_for_stable_diffs(failure_diagnostics):
     stream = io.StringIO()
 
     failure_diagnostics.emit_unexpected_failure(
-        caught, "example_unexpected_failure", "retry", state={"z": 1, "a": 2},
+        caught,
+        "example_unexpected_failure",
+        "retry",
+        state={"z": 1, "a": 2},
         stream=stream,
     )
 

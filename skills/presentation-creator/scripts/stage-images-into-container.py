@@ -111,8 +111,7 @@ def stage_manifest(manifest: object, stage_dir: Path) -> dict:
     if isinstance(manifest.get("backgrounds"), dict):
         bg = manifest["backgrounds"]
         staged = {
-            key: _stage_one(path, stage_dir, f"slide {key}")
-            for key, path in bg.items()
+            key: _stage_one(path, stage_dir, f"slide {key}") for key, path in bg.items()
         }
         out = dict(manifest)
         out["backgrounds"] = staged
@@ -152,21 +151,35 @@ def stage_manifest(manifest: object, stage_dir: Path) -> dict:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
-        description="Copy a manifest's images into PowerPoint's container; rewrite paths.")
+        description="Copy a manifest's images into PowerPoint's container; rewrite paths."
+    )
     ap.add_argument("manifest", type=Path, help="Path to the deck-ops manifest JSON")
-    ap.add_argument("--stage-dir", type=Path, required=True,
-                    help="Staging dir inside PowerPoint's container Data dir")
-    ap.add_argument("--out", type=Path, default=None,
-                    help="Also write the rewritten manifest JSON here")
+    ap.add_argument(
+        "--stage-dir",
+        type=Path,
+        required=True,
+        help="Staging dir inside PowerPoint's container Data dir",
+    )
+    ap.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="Also write the rewritten manifest JSON here",
+    )
     args = ap.parse_args(argv)
 
     try:
         manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     except OSError as exc:
-        print(f"ERROR: cannot read manifest {args.manifest}: {exc.strerror or exc}", file=sys.stderr)
+        print(
+            f"ERROR: cannot read manifest {args.manifest}: {exc.strerror or exc}",
+            file=sys.stderr,
+        )
         return 1
     except json.JSONDecodeError as exc:
-        print(f"ERROR: manifest {args.manifest} is not valid JSON: {exc}", file=sys.stderr)
+        print(
+            f"ERROR: manifest {args.manifest} is not valid JSON: {exc}", file=sys.stderr
+        )
         return 1
 
     rewritten = stage_manifest(manifest, args.stage_dir)
@@ -175,8 +188,11 @@ def main(argv=None) -> int:
         try:
             args.out.write_text(text + "\n", encoding="utf-8")
         except OSError as exc:
-            print(f"ERROR: cannot write rewritten manifest {args.out}: {exc.strerror or exc} — "
-                  "check the path and that its directory is writable", file=sys.stderr)
+            print(
+                f"ERROR: cannot write rewritten manifest {args.out}: {exc.strerror or exc} — "
+                "check the path and that its directory is writable",
+                file=sys.stderr,
+            )
             return 1
     print(text)
     return 0

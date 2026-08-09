@@ -86,9 +86,7 @@ def _check_opening_punch(outline: _os.Outline) -> CheckResult:
             "Audiences grant ~2 min before forming a verdict — the opening "
             "needs at least one PUNCH flavor.",
         )
-    where = "; ".join(
-        f"slide {n}: flavors={flavors}" for n, flavors in flavored
-    )
+    where = "; ".join(f"slide {n}: flavors={flavors}" for n, flavors in flavored)
     return CheckResult("Opening PUNCH", "PASS", where)
 
 
@@ -111,7 +109,7 @@ def _check_big_idea(outline: _os.Outline) -> CheckResult:
         if p.id == "call-to-adventure" and p.big_idea_text:
             big_idea_text = p.big_idea_text
             break
-    detail = f"slide {slide.n}: \"{slide.title}\""
+    detail = f'slide {slide.n}: "{slide.title}"'
     if big_idea_text:
         detail += f" — text: {big_idea_text!r}"
     return CheckResult("Big Idea singleton", "PASS", detail)
@@ -143,8 +141,7 @@ def _check_thesis_ordering(outline: _os.Outline) -> CheckResult:
         return CheckResult(
             "Thesis preview/payoff",
             "FLAG",
-            f"Preview slides {previews} not strictly before payoff "
-            f"slides {payoffs}.",
+            f"Preview slides {previews} not strictly before payoff slides {payoffs}.",
         )
     return CheckResult(
         "Thesis preview/payoff",
@@ -161,11 +158,13 @@ def _check_sparkline_requirements(outline: _os.Outline) -> list[CheckResult]:
     - at least one star-moment
     """
     if outline.talk.architecture != "sparkline":
-        return [CheckResult(
-            "Sparkline elements",
-            "N/A",
-            f"Architecture is `{outline.talk.architecture}`, not sparkline.",
-        )]
+        return [
+            CheckResult(
+                "Sparkline elements",
+                "N/A",
+                f"Architecture is `{outline.talk.architecture}`, not sparkline.",
+            )
+        ]
     counts: dict[str, list[str]] = {
         "call-to-adventure": [],
         "call-to-action": [],
@@ -184,24 +183,30 @@ def _check_sparkline_requirements(outline: _os.Outline) -> list[CheckResult]:
     ]:
         n = len(counts[pid])
         if n < expected_min:
-            out.append(CheckResult(
-                label,
-                "FLAG",
-                f"Sparkline requires ≥{expected_min}, found {n}.",
-            ))
+            out.append(
+                CheckResult(
+                    label,
+                    "FLAG",
+                    f"Sparkline requires ≥{expected_min}, found {n}.",
+                )
+            )
         elif expected_max is not None and n > expected_max:
-            out.append(CheckResult(
-                label,
-                "FLAG",
-                f"Sparkline requires exactly {expected_max}, found {n} at "
-                f"{counts[pid]}.",
-            ))
+            out.append(
+                CheckResult(
+                    label,
+                    "FLAG",
+                    f"Sparkline requires exactly {expected_max}, found {n} at "
+                    f"{counts[pid]}.",
+                )
+            )
         else:
-            out.append(CheckResult(
-                label,
-                "PASS",
-                f"{n} declared at {counts[pid]}",
-            ))
+            out.append(
+                CheckResult(
+                    label,
+                    "PASS",
+                    f"{n} declared at {counts[pid]}",
+                )
+            )
     return out
 
 
@@ -245,64 +250,78 @@ def _check_register_coverage(outline: _os.Outline) -> list[CheckResult]:
     )
 
     if unannotated:
-        return [CheckResult(
-            label,
-            "FLAG",
-            f"`walk-around` declared at {unannotated} with no `registers:` set "
-            f"— name which of {{A, B, C, D}} each claim answers, or the audit "
-            f"cannot be checked.",
-        )]
+        return [
+            CheckResult(
+                label,
+                "FLAG",
+                f"`walk-around` declared at {unannotated} with no `registers:` set "
+                f"— name which of {{A, B, C, D}} each claim answers, or the audit "
+                f"cannot be checked.",
+            )
+        ]
 
     if spread == _os.AudienceSpread.homogeneous:
         dom = outline.talk.dominant_register
         assert dom is not None  # schema validator guarantees this
         if not declared:
-            return [CheckResult(
-                "Register match",
-                "FLAG",
-                f"Room declared homogeneous on register `{dom.value}`, but no "
-                f"claim declares a walk-around answering it. Matching a room "
-                f"is a claim about the talk, not just about the audience — "
-                f"answer `{dom.value}` on the load-bearing claims, or "
-                f"re-declare the spread as heterogeneous.",
-            )]
+            return [
+                CheckResult(
+                    "Register match",
+                    "FLAG",
+                    f"Room declared homogeneous on register `{dom.value}`, but no "
+                    f"claim declares a walk-around answering it. Matching a room "
+                    f"is a claim about the talk, not just about the audience — "
+                    f"answer `{dom.value}` on the load-bearing claims, or "
+                    f"re-declare the spread as heterogeneous.",
+                )
+            ]
         if dom.value not in declared:
-            return [CheckResult(
+            return [
+                CheckResult(
+                    "Register match",
+                    "FLAG",
+                    f"Room declared homogeneous on register `{dom.value}`, but no "
+                    f"walk-around answers it (declared: "
+                    f"{sorted(declared)}). Match the room or re-declare the spread.",
+                )
+            ]
+        return [
+            CheckResult(
                 "Register match",
-                "FLAG",
-                f"Room declared homogeneous on register `{dom.value}`, but no "
-                f"walk-around answers it (declared: "
-                f"{sorted(declared)}). Match the room or re-declare the spread.",
-            )]
-        return [CheckResult(
-            "Register match",
-            "PASS",
-            f"Homogeneous room matched on `{dom.value}` at {declared[dom.value]}",
-        )]
+                "PASS",
+                f"Homogeneous room matched on `{dom.value}` at {declared[dom.value]}",
+            )
+        ]
 
     missing = [r.value for r in _os.Register if r.value not in declared]
     if not declared:
-        return [CheckResult(
-            "Register coverage",
-            "FLAG",
-            "Room declared heterogeneous, but no claim declares a walk-around. "
-            "A mixed room contains all four questions — audit the load-bearing "
-            "claims, or re-declare the spread as homogeneous.",
-        )]
+        return [
+            CheckResult(
+                "Register coverage",
+                "FLAG",
+                "Room declared heterogeneous, but no claim declares a walk-around. "
+                "A mixed room contains all four questions — audit the load-bearing "
+                "claims, or re-declare the spread as homogeneous.",
+            )
+        ]
     if missing:
-        return [CheckResult(
-            "Register coverage",
-            "FLAG",
-            f"Room declared heterogeneous; registers {missing} unanswered "
-            f"(covered: {sorted(declared)}). Every register left unanswered is "
-            f"a slice of the room whose question the talk never reaches.",
-        )]
+        return [
+            CheckResult(
+                "Register coverage",
+                "FLAG",
+                f"Room declared heterogeneous; registers {missing} unanswered "
+                f"(covered: {sorted(declared)}). Every register left unanswered is "
+                f"a slice of the room whose question the talk never reaches.",
+            )
+        ]
     by_register = dict(sorted(declared.items()))
-    return [CheckResult(
-        "Register coverage",
-        "PASS",
-        f"All four registers answered: {by_register}",
-    )]
+    return [
+        CheckResult(
+            "Register coverage",
+            "PASS",
+            f"All four registers answered: {by_register}",
+        )
+    ]
 
 
 def _check_master_story_threading(outline: _os.Outline) -> CheckResult:
@@ -436,8 +455,7 @@ def _check_running_gags(outline: _os.Outline) -> CheckResult:
         summary.append(f"`{gid}` appearances {idxs}")
         if len(idxs) < 2:
             problems.append(
-                f"`{gid}` only has {len(idxs)} appearance "
-                f"— gags need ≥2 escalations",
+                f"`{gid}` only has {len(idxs)} appearance — gags need ≥2 escalations",
             )
         if idxs != list(range(1, len(idxs) + 1)):
             problems.append(f"`{gid}` indexes not contiguous from 1: {idxs}")
@@ -491,8 +509,7 @@ def _check_callback_ledger(outline: _os.Outline) -> CheckResult:
             "No callbacks declared.",
         )
     summary = " | ".join(
-        f"`{cid}`: plant {e['plant']} → pay {e['pay']}"
-        for cid, e in chains.items()
+        f"`{cid}`: plant {e['plant']} → pay {e['pay']}" for cid, e in chains.items()
     )
     return CheckResult("Callback chains", "PASS", summary)
 

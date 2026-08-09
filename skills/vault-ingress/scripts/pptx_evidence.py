@@ -4907,16 +4907,13 @@ def _run_supervised_pptx_extraction_impl(
     return extraction
 
 
-_INSPECTED_PAGES_GRAMMAR_ERROR = (
-    "--inspected-pages values must be PAGE or START-END"
-)
+_INSPECTED_PAGES_GRAMMAR_ERROR = "--inspected-pages values must be PAGE or START-END"
 _INSPECTED_PAGES_LIMIT_ERROR = (
     "--inspected-pages page numbers must not exceed the bounded PPTX "
     f"page limit {PPTX_ARCHIVE_MAX_MEMBERS}"
 )
 _INSPECTED_PAGES_COUNT_ERROR = (
-    "--inspected-pages must contain no more than "
-    f"{PPTX_ARCHIVE_MAX_MEMBERS} ranges"
+    f"--inspected-pages must contain no more than {PPTX_ARCHIVE_MAX_MEMBERS} ranges"
 )
 
 
@@ -4964,9 +4961,7 @@ def _parse_cli_page_range(
         stop_at_hyphen=True,
     )
     if start < 1:
-        raise PptxEvidenceError(
-            "--inspected-pages page numbers must be at least 1"
-        )
+        raise PptxEvidenceError("--inspected-pages page numbers must be at least 1")
     if index == end_index:
         return [start, start]
 

@@ -36,15 +36,52 @@ TITLE_QUOTE_EQUIVALENTS = str.maketrans(
     }
 )
 
-TITLE_STOP_WORDS = frozenset({
-    "a", "an", "and", "at", "by", "conference", "for", "from", "in",
-    "keynote", "of", "on", "or", "session", "talk", "the", "to", "with",
-})
-EVENT_STOP_WORDS = frozenset({
-    "a", "an", "annual", "at", "conference", "conf", "convention", "day",
-    "days", "edition", "event", "events", "meetup", "meetups", "of", "open",
-    "summit", "the", "webinar", "webinars",
-})
+TITLE_STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "at",
+        "by",
+        "conference",
+        "for",
+        "from",
+        "in",
+        "keynote",
+        "of",
+        "on",
+        "or",
+        "session",
+        "talk",
+        "the",
+        "to",
+        "with",
+    }
+)
+EVENT_STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "annual",
+        "at",
+        "conference",
+        "conf",
+        "convention",
+        "day",
+        "days",
+        "edition",
+        "event",
+        "events",
+        "meetup",
+        "meetups",
+        "of",
+        "open",
+        "summit",
+        "the",
+        "webinar",
+        "webinars",
+    }
+)
 SHOWNOTES_EVENT_STOP_WORDS = frozenset({"a", "an", "at", "of", "the"})
 SHOWNOTES_OPTIONAL_EVENT_BIGRAMS = frozenset({("voxxed", "days")})
 AMBIGUOUS_EVENT_ALIASES = frozenset({"ai", "devops", "java", "spring"})
@@ -62,7 +99,8 @@ EventAlias = tuple[str, ...]
 
 def _ordered_words(value: str, stop_words: frozenset[str]) -> list[str]:
     return [
-        word for word in WORD_RE.findall(value.casefold())
+        word
+        for word in WORD_RE.findall(value.casefold())
         if word not in stop_words and len(word) > 1
     ]
 
@@ -80,8 +118,10 @@ def _contains_sequence(haystack: list[str] | EventAlias, needle: EventAlias) -> 
     if not needle or len(needle) > len(haystack):
         return False
     width = len(needle)
-    return any(tuple(haystack[index:index + width]) == needle
-               for index in range(len(haystack) - width + 1))
+    return any(
+        tuple(haystack[index : index + width]) == needle
+        for index in range(len(haystack) - width + 1)
+    )
 
 
 def _contains_ordered_subsequence(
@@ -99,7 +139,7 @@ def _explicit_base_title_agrees(expected: str, observed: str) -> bool:
     separator = TITLE_SUBTITLE_RE.search(expected)
     if separator is None:
         return False
-    lead = tuple(_ordered_words(expected[:separator.start()], TITLE_STOP_WORDS))
+    lead = tuple(_ordered_words(expected[: separator.start()], TITLE_STOP_WORDS))
     if len(lead) < 2:
         return False
     if len(lead) == 2 and not any(len(word) >= 8 for word in lead):
@@ -128,8 +168,9 @@ def titles_agree(expected: str, observed: str) -> bool:
     observed_words = normalized_words(observed)
     if expected_words and observed_words:
         overlap = len(expected_words & observed_words)
-        minimum = 1 if len(expected_words) == 1 else max(
-            2, (len(expected_words) + 1) // 2)
+        minimum = (
+            1 if len(expected_words) == 1 else max(2, (len(expected_words) + 1) // 2)
+        )
         if overlap >= minimum:
             return True
     return _explicit_base_title_agrees(expected, observed)
@@ -206,9 +247,7 @@ def shownotes_titles_agree(
     if not authored or not shownotes.startswith(authored):
         return False
 
-    qualifier_match = SHOWNOTES_EVENT_QUALIFIER_RE.fullmatch(
-        shownotes[len(authored):]
-    )
+    qualifier_match = SHOWNOTES_EVENT_QUALIFIER_RE.fullmatch(shownotes[len(authored) :])
     if qualifier_match is None:
         return False
     qualifier = qualifier_match.group("event")
@@ -256,12 +295,11 @@ def _provider_event_contexts(title: str) -> list[list[str]]:
     contexts: list[str] = []
     at_matches = list(AT_RE.finditer(title))
     if at_matches:
-        contexts.append(title[at_matches[-1].end():])
+        contexts.append(title[at_matches[-1].end() :])
     chunks = EVENT_CONTEXT_SEPARATOR_RE.split(title)
     if len(chunks) > 1:
         contexts.extend(
-            chunk for chunk in (chunks[0], chunks[-1])
-            if YEAR_RE.search(chunk)
+            chunk for chunk in (chunks[0], chunks[-1]) if YEAR_RE.search(chunk)
         )
 
     normalized: set[EventAlias] = set()
@@ -285,20 +323,13 @@ def provider_event_aliases(
     for context in _provider_event_contexts(provider_title):
         context_matches: list[EventAlias] = []
         for alias in ordered_aliases:
-            if (
-                len(alias) == 1
-                and alias[0] in AMBIGUOUS_EVENT_ALIASES
-            ):
+            if len(alias) == 1 and alias[0] in AMBIGUOUS_EVENT_ALIASES:
                 continue
             contiguous = _contains_sequence(context, alias)
-            ordered = (
-                len(alias) > 1
-                and _contains_ordered_subsequence(context, alias)
-            )
+            ordered = len(alias) > 1 and _contains_ordered_subsequence(context, alias)
             if not contiguous and not ordered:
                 continue
-            if any(_contains_sequence(existing, alias)
-                   for existing in context_matches):
+            if any(_contains_sequence(existing, alias) for existing in context_matches):
                 continue
             context_matches.append(alias)
         found.update(context_matches)
@@ -321,7 +352,5 @@ def event_agreement(
     mentions = provider_event_aliases(provider_title, known_aliases)
     if catalog_alias is None or not mentions:
         return None, catalog_alias, mentions
-    agrees = any(
-        _aliases_compatible(catalog_alias, mention) for mention in mentions
-    )
+    agrees = any(_aliases_compatible(catalog_alias, mention) for mention in mentions)
     return agrees, catalog_alias, mentions

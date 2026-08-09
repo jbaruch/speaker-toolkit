@@ -103,6 +103,7 @@ EXPRESSION_DEFAULT = (
 
 # --- API Key Loading ---
 
+
 def load_api_key(vault_path=None):
     """Load Gemini API key from secrets.json or environment.
 
@@ -136,6 +137,7 @@ def load_api_key(vault_path=None):
 
 
 # --- Image Utilities ---
+
 
 def load_image_as_base64(path):
     """Load an image file and return (base64_data, mime_type).
@@ -346,9 +348,15 @@ VALID_AESTHETICS = (AESTHETIC_PHOTO, AESTHETIC_COMIC_BOOK)
 VALID_SOFTNESS = ("default", "softer", "softest")
 
 
-def build_thumbnail_prompt(title, style="slide_dominant", title_position="top",
-                           subtitle=None, brand_colors=None, softness="default",
-                           aesthetic=AESTHETIC_PHOTO):
+def build_thumbnail_prompt(
+    title,
+    style="slide_dominant",
+    title_position="top",
+    subtitle=None,
+    brand_colors=None,
+    softness="default",
+    aesthetic=AESTHETIC_PHOTO,
+):
     """Build the Gemini prompt for thumbnail generation.
 
     aesthetic:
@@ -370,8 +378,9 @@ def build_thumbnail_prompt(title, style="slide_dominant", title_position="top",
         )
 
     style_desc = STYLE_VARIANTS.get(style, STYLE_VARIANTS["slide_dominant"])
-    position_desc = TITLE_POSITION_GUIDANCE.get(title_position,
-                                                 TITLE_POSITION_GUIDANCE["top"])
+    position_desc = TITLE_POSITION_GUIDANCE.get(
+        title_position, TITLE_POSITION_GUIDANCE["top"]
+    )
 
     subtitle_line = ""
     if subtitle:
@@ -397,8 +406,9 @@ def build_thumbnail_prompt(title, style="slide_dominant", title_position="top",
     )
 
 
-def _build_photo_prompt(title, style_desc, position_desc, subtitle_line,
-                        brand_guidance, softness):
+def _build_photo_prompt(
+    title, style_desc, position_desc, subtitle_line, brand_guidance, softness
+):
     """Photographic composite: face natural, slide as background, viral typography."""
     base = f"""Combine the two provided images into a single 16:9 graphic, \
 1280x720 pixels.
@@ -435,8 +445,9 @@ the portrait adds human presence, the title carries the message."""
     return base + typography_styling + composition_energy + brand_guidance
 
 
-def _build_comic_book_prompt(title, style_desc, position_desc, subtitle_line,
-                             brand_guidance, softness):
+def _build_comic_book_prompt(
+    title, style_desc, position_desc, subtitle_line, brand_guidance, softness
+):
     """Comic-book illustration: caricatured speaker, halftone-shaded scene."""
     base = f"""Render a single 16:9 comic-book illustration, 1280x720 pixels, \
 combining the two provided images.
@@ -483,6 +494,7 @@ readable at thumbnail size: one idea, not cluttered."""
 
 # --- Slide Extraction ---
 
+
 def extract_slide_from_pptx(pptx_path, slide_num, output_path=None):
     """Extract a slide image from a PPTX deck.
 
@@ -499,13 +511,24 @@ def extract_slide_from_pptx(pptx_path, slide_num, output_path=None):
 
     # Try LibreOffice headless
     try:
-        tmpdir = os.path.join(os.path.dirname(os.path.abspath(pptx_path)), "_lo_export_tmp")
+        tmpdir = os.path.join(
+            os.path.dirname(os.path.abspath(pptx_path)), "_lo_export_tmp"
+        )
         os.makedirs(tmpdir, exist_ok=True)
 
         result = subprocess.run(
-            ["libreoffice", "--headless", "--convert-to", "png",
-             "--outdir", tmpdir, os.path.abspath(pptx_path)],
-            capture_output=True, text=True, timeout=120,
+            [
+                "libreoffice",
+                "--headless",
+                "--convert-to",
+                "png",
+                "--outdir",
+                tmpdir,
+                os.path.abspath(pptx_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
 
         if result.returncode == 0:
@@ -513,22 +536,28 @@ def extract_slide_from_pptx(pptx_path, slide_num, output_path=None):
             basename = os.path.splitext(os.path.basename(pptx_path))[0]
             # LibreOffice names them basename.png for single-page or
             # basename-N.png for multi-page (varies by version)
-            candidates = sorted([
-                f for f in os.listdir(tmpdir)
-                if f.startswith(basename) and f.endswith(".png")
-            ])
+            candidates = sorted(
+                [
+                    f
+                    for f in os.listdir(tmpdir)
+                    if f.startswith(basename) and f.endswith(".png")
+                ]
+            )
             if slide_num <= len(candidates):
                 src = os.path.join(tmpdir, candidates[slide_num - 1])
                 import shutil
+
                 shutil.move(src, output_path)
                 # Clean up
                 import shutil as _shutil
+
                 _shutil.rmtree(tmpdir, ignore_errors=True)
                 print(f"Extracted slide {slide_num} via LibreOffice: {output_path}")
                 return output_path
 
         # Clean up on failure
         import shutil
+
         shutil.rmtree(tmpdir, ignore_errors=True)
 
     except FileNotFoundError:
@@ -552,10 +581,14 @@ def extract_slide_from_pptx(pptx_path, slide_num, output_path=None):
             """
             result = subprocess.run(
                 ["osascript", "-e", script],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             if result.returncode == 0 and os.path.isfile(output_path):
-                print(f"Extracted slide {slide_num} via PowerPoint AppleScript: {output_path}")
+                print(
+                    f"Extracted slide {slide_num} via PowerPoint AppleScript: {output_path}"
+                )
                 return output_path
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
@@ -568,6 +601,7 @@ def extract_slide_from_pptx(pptx_path, slide_num, output_path=None):
 
 
 # --- Compose Mode ---
+
 
 def compose_thumbnail(args):
     """Generate a thumbnail by composing slide image + speaker photo via Gemini."""
@@ -589,9 +623,9 @@ def compose_thumbnail(args):
     print(f"Model: {model}")
     print(f"Aesthetic: {args.aesthetic}")
     print(f"Style: {args.style}")
-    print(f"Title: \"{args.title}\"")
+    print(f'Title: "{args.title}"')
     if args.subtitle:
-        print(f"Subtitle: \"{args.subtitle}\"")
+        print(f'Subtitle: "{args.subtitle}"')
 
     # Pre-stylize portrait to match the deck's illustration anchor when set.
     # This makes the composition step's input photo already palette-matched
@@ -601,11 +635,17 @@ def compose_thumbnail(args):
         # Normalize whitespace for the preview log — anchors copied from
         # markdown blocks can carry newlines that break log readability.
         anchor_preview = " ".join(args.portrait_style.split())
-        print(f"Pre-stylizing portrait to anchor: {anchor_preview[:80]}"
-              f"{'...' if len(anchor_preview) > 80 else ''}")
+        print(
+            f"Pre-stylizing portrait to anchor: {anchor_preview[:80]}"
+            f"{'...' if len(anchor_preview) > 80 else ''}"
+        )
         try:
             speaker_b64, speaker_mime = stylize_portrait(
-                speaker_b64, speaker_mime, args.portrait_style, model, api_key,
+                speaker_b64,
+                speaker_mime,
+                args.portrait_style,
+                model,
+                api_key,
             )
         except RuntimeError as e:
             print(f"ERROR: {e}", file=sys.stderr)
@@ -649,8 +689,10 @@ def compose_thumbnail(args):
                 file=sys.stderr,
             )
             sys.exit(1)
-        print(f"  '{softness}' attempt rejected by safety filter: {last_error[:200]}",
-              file=sys.stderr)
+        print(
+            f"  '{softness}' attempt rejected by safety filter: {last_error[:200]}",
+            file=sys.stderr,
+        )
 
     if image_bytes is None:
         print(
@@ -690,6 +732,7 @@ def compose_thumbnail(args):
 
 # --- Main ---
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate a YouTube thumbnail for a presentation.",
@@ -702,31 +745,49 @@ def main():
     parser.add_argument("--title", help="Thumbnail title text (3-5 word hook)")
     parser.add_argument("--subtitle", help="Optional subtitle (e.g., conference name)")
     parser.add_argument("--output", "-o", help="Output path (default: thumbnail.png)")
-    parser.add_argument("--vault", help="Path to rhetoric-knowledge-vault (for secrets.json)")
-    parser.add_argument("--style", choices=["slide_dominant", "split_panel", "overlay"],
-                        default="slide_dominant",
-                        help="Thumbnail composition layout (default: slide_dominant)")
-    parser.add_argument("--aesthetic", choices=list(VALID_AESTHETICS),
-                        default=AESTHETIC_PHOTO,
-                        help="Rendering aesthetic (default: photo). 'comic_book' "
-                             "produces a caricatured, halftone-shaded illustration "
-                             "in the speaker's on-brand comic-book style.")
-    parser.add_argument("--portrait-style", default=None,
-                        help="Deck Illustration Style Anchor. When set, the "
-                             "speaker photo is first pre-stylized to match the "
-                             "anchor (e.g., retro tech-manual sepia, watercolor) "
-                             "before composition — fixes palette mismatch on "
-                             "decks with a strong visual style. Pass through from "
-                             "Phase 2's style_anchor block when present.")
-    parser.add_argument("--title-position", choices=["top", "bottom", "overlay"],
-                        default="top",
-                        help="Title text position (default: top)")
+    parser.add_argument(
+        "--vault", help="Path to rhetoric-knowledge-vault (for secrets.json)"
+    )
+    parser.add_argument(
+        "--style",
+        choices=["slide_dominant", "split_panel", "overlay"],
+        default="slide_dominant",
+        help="Thumbnail composition layout (default: slide_dominant)",
+    )
+    parser.add_argument(
+        "--aesthetic",
+        choices=list(VALID_AESTHETICS),
+        default=AESTHETIC_PHOTO,
+        help="Rendering aesthetic (default: photo). 'comic_book' "
+        "produces a caricatured, halftone-shaded illustration "
+        "in the speaker's on-brand comic-book style.",
+    )
+    parser.add_argument(
+        "--portrait-style",
+        default=None,
+        help="Deck Illustration Style Anchor. When set, the "
+        "speaker photo is first pre-stylized to match the "
+        "anchor (e.g., retro tech-manual sepia, watercolor) "
+        "before composition — fixes palette mismatch on "
+        "decks with a strong visual style. Pass through from "
+        "Phase 2's style_anchor block when present.",
+    )
+    parser.add_argument(
+        "--title-position",
+        choices=["top", "bottom", "overlay"],
+        default="top",
+        help="Title text position (default: top)",
+    )
     parser.add_argument("--brand-colors", help="Comma-separated brand hex colors")
     parser.add_argument("--model", help=f"Gemini model (default: {DEFAULT_MODEL})")
 
     # Extract-slide mode
-    parser.add_argument("--extract-slide", nargs=2, metavar=("PPTX", "SLIDE_NUM"),
-                        help="Extract a slide image from a PPTX deck")
+    parser.add_argument(
+        "--extract-slide",
+        nargs=2,
+        metavar=("PPTX", "SLIDE_NUM"),
+        help="Extract a slide image from a PPTX deck",
+    )
 
     args = parser.parse_args()
 

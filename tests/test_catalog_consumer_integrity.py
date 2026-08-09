@@ -10,7 +10,9 @@ import pytest
 
 
 def _copy_bundled_catalog(return_validation, tmp_path: Path, name: str) -> Path:
-    return Path(shutil.copytree(return_validation.default_catalog_dir(), tmp_path / name))
+    return Path(
+        shutil.copytree(return_validation.default_catalog_dir(), tmp_path / name)
+    )
 
 
 def test_auditor_and_return_validator_share_complete_fingerprint(
@@ -19,12 +21,15 @@ def test_auditor_and_return_validator_share_complete_fingerprint(
     return_validation,
 ):
     baseline_root = _copy_bundled_catalog(
-        return_validation, tmp_path, "baseline-patterns")
+        return_validation, tmp_path, "baseline-patterns"
+    )
     changed_root = _copy_bundled_catalog(
-        return_validation, tmp_path, "changed-patterns")
+        return_validation, tmp_path, "changed-patterns"
+    )
     changed_index = changed_root / "_index.md"
     changed_index.write_bytes(
-        changed_index.read_bytes() + b"\n<!-- fingerprint regression -->\n")
+        changed_index.read_bytes() + b"\n<!-- fingerprint regression -->\n"
+    )
 
     baseline_report = audit_pattern_catalog.audit_catalog(baseline_root)
     changed_report = audit_pattern_catalog.audit_catalog(changed_root)
@@ -59,22 +64,27 @@ def test_duplicate_nested_yaml_key_fails_every_catalog_consumer(
     audit_report = audit_pattern_catalog.audit_catalog(root)
     feedback_path = tmp_path / "return.json"
     feedback_path.write_text(
-        json.dumps({
-            "filename": "talk.md",
-            "status": "processed",
-            "catalog_feedback": {},
-        }),
+        json.dumps(
+            {
+                "filename": "talk.md",
+                "status": "processed",
+                "catalog_feedback": {},
+            }
+        ),
         encoding="utf-8",
     )
     aggregate_report = aggregate_catalog_feedback.aggregate_feedback(
-        [feedback_path], catalog_path=root)
+        [feedback_path], catalog_path=root
+    )
 
     assert audit_report["valid"] is False
     assert "frontmatter_duplicate_key" in {
-        issue["code"] for issue in audit_report["errors"]}
+        issue["code"] for issue in audit_report["errors"]
+    }
     assert aggregate_report["ok"] is False
     assert "catalog_frontmatter_duplicate_key" in {
-        issue["code"] for issue in aggregate_report["catalog"]["errors"]}
+        issue["code"] for issue in aggregate_report["catalog"]["errors"]
+    }
     with pytest.raises(
         return_validation.ReturnValidationError,
         match="duplicate YAML frontmatter keys",

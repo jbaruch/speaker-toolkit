@@ -38,6 +38,7 @@ Usage:
         [--out OUT_DECK] [--image-ext jpg|jpeg|png] \\
         [--scrim-color RRGGBB] [--scrim-alpha 0-100000]
 """
+
 import argparse
 import json
 import shutil
@@ -55,8 +56,11 @@ from pptx.util import Inches
 sys.path.insert(
     0,
     str(
-        (Path(__file__).resolve().parent.parent.parent
-         / "presentation-creator" / "scripts")
+        (
+            Path(__file__).resolve().parent.parent.parent
+            / "presentation-creator"
+            / "scripts"
+        )
     ),
 )
 import outline_schema  # noqa: E402  (path appended above)
@@ -72,16 +76,41 @@ SLIDE_H_IN = 7.5
 TEXT_W_FULL_IN = 10.0
 TEXT_W_HALF_IN = 5.5
 HALF_MARGIN_IN = 0.4
-_BAND_H_IN = 1.9    # horizontal-band title height (title + subtitle)
-_HALF_H_IN = 4.5    # half-frame title column height
+_BAND_H_IN = 1.9  # horizontal-band title height (title + subtitle)
+_HALF_H_IN = 4.5  # half-frame title column height
 _HALF_TOP_IN = (SLIDE_H_IN - _HALF_H_IN) / 2
 
 ZONE_LAYOUT = {
-    "upper_third":  {"top_in": 0.4,         "left_in": (SLIDE_W_IN - TEXT_W_FULL_IN) / 2,            "width_in": TEXT_W_FULL_IN, "height_in": _BAND_H_IN},
-    "middle_third": {"top_in": (SLIDE_H_IN - _BAND_H_IN) / 2, "left_in": (SLIDE_W_IN - TEXT_W_FULL_IN) / 2, "width_in": TEXT_W_FULL_IN, "height_in": _BAND_H_IN},
-    "lower_third":  {"top_in": SLIDE_H_IN - _BAND_H_IN - 0.4, "left_in": (SLIDE_W_IN - TEXT_W_FULL_IN) / 2, "width_in": TEXT_W_FULL_IN, "height_in": _BAND_H_IN},
-    "left_half":    {"top_in": _HALF_TOP_IN, "left_in": HALF_MARGIN_IN,                               "width_in": TEXT_W_HALF_IN, "height_in": _HALF_H_IN},
-    "right_half":   {"top_in": _HALF_TOP_IN, "left_in": SLIDE_W_IN - HALF_MARGIN_IN - TEXT_W_HALF_IN, "width_in": TEXT_W_HALF_IN, "height_in": _HALF_H_IN},
+    "upper_third": {
+        "top_in": 0.4,
+        "left_in": (SLIDE_W_IN - TEXT_W_FULL_IN) / 2,
+        "width_in": TEXT_W_FULL_IN,
+        "height_in": _BAND_H_IN,
+    },
+    "middle_third": {
+        "top_in": (SLIDE_H_IN - _BAND_H_IN) / 2,
+        "left_in": (SLIDE_W_IN - TEXT_W_FULL_IN) / 2,
+        "width_in": TEXT_W_FULL_IN,
+        "height_in": _BAND_H_IN,
+    },
+    "lower_third": {
+        "top_in": SLIDE_H_IN - _BAND_H_IN - 0.4,
+        "left_in": (SLIDE_W_IN - TEXT_W_FULL_IN) / 2,
+        "width_in": TEXT_W_FULL_IN,
+        "height_in": _BAND_H_IN,
+    },
+    "left_half": {
+        "top_in": _HALF_TOP_IN,
+        "left_in": HALF_MARGIN_IN,
+        "width_in": TEXT_W_HALF_IN,
+        "height_in": _HALF_H_IN,
+    },
+    "right_half": {
+        "top_in": _HALF_TOP_IN,
+        "left_in": SLIDE_W_IN - HALF_MARGIN_IN - TEXT_W_HALF_IN,
+        "width_in": TEXT_W_HALF_IN,
+        "height_in": _HALF_H_IN,
+    },
 }
 
 SUBTITLE_OFFSET_IN = 1.2
@@ -90,16 +119,16 @@ SUBTITLE_OFFSET_IN = 1.2
 # Numbers chosen to leave a 0.3" outer margin, 0.2" gutter, and 0.6" footer band.
 IMGTXT_IMG_LEFT_IN = 0.3
 IMGTXT_IMG_TOP_IN = 0.8
-IMGTXT_IMG_WIDTH_IN = 8.0       # ~60% of 13.333" slide width
-IMGTXT_IMG_HEIGHT_IN = 5.9      # leaves a 0.8" footer band below
-IMGTXT_TEXT_LEFT_IN = IMGTXT_IMG_LEFT_IN + IMGTXT_IMG_WIDTH_IN + 0.2   # 8.5
-IMGTXT_TEXT_WIDTH_IN = SLIDE_W_IN - IMGTXT_TEXT_LEFT_IN - 0.3          # 4.533
+IMGTXT_IMG_WIDTH_IN = 8.0  # ~60% of 13.333" slide width
+IMGTXT_IMG_HEIGHT_IN = 5.9  # leaves a 0.8" footer band below
+IMGTXT_TEXT_LEFT_IN = IMGTXT_IMG_LEFT_IN + IMGTXT_IMG_WIDTH_IN + 0.2  # 8.5
+IMGTXT_TEXT_WIDTH_IN = SLIDE_W_IN - IMGTXT_TEXT_LEFT_IN - 0.3  # 4.533
 IMGTXT_TITLE_TOP_IN = IMGTXT_IMG_TOP_IN
 IMGTXT_TITLE_HEIGHT_IN = 1.9
-IMGTXT_BODY_TOP_IN = IMGTXT_TITLE_TOP_IN + IMGTXT_TITLE_HEIGHT_IN + 0.1   # 2.8
+IMGTXT_BODY_TOP_IN = IMGTXT_TITLE_TOP_IN + IMGTXT_TITLE_HEIGHT_IN + 0.1  # 2.8
 IMGTXT_BODY_HEIGHT_IN = (
     IMGTXT_IMG_TOP_IN + IMGTXT_IMG_HEIGHT_IN - IMGTXT_BODY_TOP_IN
-)   # aligns body bottom with image bottom — 3.9
+)  # aligns body bottom with image bottom — 3.9
 
 # Default scrim: 45% black. Decks with a strong tonal style (warm sepia,
 # cool night, etc.) should pass a sampled color via --scrim-color.
@@ -194,8 +223,10 @@ def swap_or_insert_picture(slide, illust_path: Path):
         return bg
     return slide.shapes.add_picture(
         str(illust_path),
-        left=Inches(0), top=Inches(0),
-        width=Inches(SLIDE_W_IN), height=Inches(SLIDE_H_IN),
+        left=Inches(0),
+        top=Inches(0),
+        width=Inches(SLIDE_W_IN),
+        height=Inches(SLIDE_H_IN),
     )
 
 
@@ -212,8 +243,10 @@ def ensure_scrim(slide, zone: str, scrim_hex: str, scrim_alpha: int) -> int:
     layout = ZONE_LAYOUT[zone]
     shape = slide.shapes.add_shape(
         MSO_SHAPE.RECTANGLE,
-        left=Inches(layout["left_in"]), top=Inches(layout["top_in"]),
-        width=Inches(layout["width_in"]), height=Inches(layout["height_in"]),
+        left=Inches(layout["left_in"]),
+        top=Inches(layout["top_in"]),
+        width=Inches(layout["width_in"]),
+        height=Inches(layout["height_in"]),
     )
     shape.name = SCRIM_SHAPE_NAME
     sp = shape._element
@@ -248,8 +281,10 @@ def ensure_scrim(slide, zone: str, scrim_hex: str, scrim_alpha: int) -> int:
         if nvSpPr is not None:
             cNvSpPr = nvSpPr.find(qn("p:cNvSpPr"))
             has_txbox = cNvSpPr is not None and cNvSpPr.get("txBox") == "1"
-            has_placeholder = nvSpPr.find(qn("p:nvPr")) is not None and \
-                nvSpPr.find(qn("p:nvPr")).find(qn("p:ph")) is not None
+            has_placeholder = (
+                nvSpPr.find(qn("p:nvPr")) is not None
+                and nvSpPr.find(qn("p:nvPr")).find(qn("p:ph")) is not None
+            )
             has_txbody = child.find(qn("p:txBody")) is not None
             if has_txbox or (has_placeholder and has_txbody):
                 first_text_idx = i
@@ -279,8 +314,10 @@ def reposition_title(slide, zone: str) -> int:
     # Fall back to text boxes if no placeholders found
     if not title_shapes:
         title_shapes = [
-            s for s in slide.shapes
-            if s.has_text_frame and s.name != SCRIM_SHAPE_NAME
+            s
+            for s in slide.shapes
+            if s.has_text_frame
+            and s.name != SCRIM_SHAPE_NAME
             and s.shape_type == MSO_SHAPE_TYPE.TEXT_BOX
         ]
     title_shapes.sort(key=lambda s: s.top)
@@ -327,7 +364,8 @@ def apply_img_txt_layout(slide) -> tuple[int, int]:
     # Reposition any non-title placeholder (body/content) into the right column.
     # Subtitle (idx 1) shares the body's column-and-stack treatment.
     body_shapes = [
-        s for s in slide.placeholders
+        s
+        for s in slide.placeholders
         if s.has_text_frame
         and s is not title
         and s.placeholder_format.idx != 0  # idx 0 is the title; already handled
@@ -346,8 +384,14 @@ def apply_img_txt_layout(slide) -> tuple[int, int]:
 
 
 def apply(
-    deck: Path, illust_dir: Path, zones: dict, img_txt_slides: set,
-    out_deck: Path, ext: str, scrim_hex: str, scrim_alpha: int,
+    deck: Path,
+    illust_dir: Path,
+    zones: dict,
+    img_txt_slides: set,
+    out_deck: Path,
+    ext: str,
+    scrim_hex: str,
+    scrim_alpha: int,
     poster_full_slides: set | None = None,
 ) -> tuple[list[dict], dict]:
     """Apply scrim + title for FULL slides and the IMG+TXT layout.
@@ -381,11 +425,18 @@ def apply(
 
         scrim_added = ensure_scrim(slide, zone, scrim_hex, scrim_alpha)
         moved = reposition_title(slide, zone)
-        print(f"  [{n:02d}] zone={zone}  moved={moved} text  scrim+{scrim_added}  bg->VBA")
-        results.append({
-            "slide": n, "format": "FULL", "zone": zone,
-            "text_moved": moved, "scrim_added": scrim_added,
-        })
+        print(
+            f"  [{n:02d}] zone={zone}  moved={moved} text  scrim+{scrim_added}  bg->VBA"
+        )
+        results.append(
+            {
+                "slide": n,
+                "format": "FULL",
+                "zone": zone,
+                "text_moved": moved,
+                "scrim_added": scrim_added,
+            }
+        )
 
     # IMG+TXT slides — image-left + text-right layout
     for n in sorted(img_txt_slides):
@@ -402,10 +453,14 @@ def apply(
 
         pic_moved, text_moved = apply_img_txt_layout(slide)
         print(f"  [{n:02d}] format=IMG+TXT  pic+{pic_moved}  text+{text_moved}")
-        results.append({
-            "slide": n, "format": "IMG+TXT",
-            "picture_repositioned": pic_moved, "text_moved": text_moved,
-        })
+        results.append(
+            {
+                "slide": n,
+                "format": "IMG+TXT",
+                "picture_repositioned": pic_moved,
+                "text_moved": text_moved,
+            }
+        )
 
     # Poster-theatrical FULL slides — background only. Title + footer are baked
     # into the image, so no scrim and no overlaid title; QR (added later) is the
@@ -429,23 +484,45 @@ def apply(
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("deck", type=Path, help="Path to source .pptx")
-    ap.add_argument("illustrations", type=Path, help="Directory with slide-NN.<ext> files")
-    ap.add_argument("outline", type=Path, help="Path to outline.yaml (the single source of truth)")
-    ap.add_argument("--out", type=Path, default=None, help="Output deck (default: <stem>-with-titles.pptx)")
+    ap.add_argument(
+        "illustrations", type=Path, help="Directory with slide-NN.<ext> files"
+    )
+    ap.add_argument(
+        "outline", type=Path, help="Path to outline.yaml (the single source of truth)"
+    )
+    ap.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="Output deck (default: <stem>-with-titles.pptx)",
+    )
     ap.add_argument("--image-ext", default="jpg", choices=["jpg", "jpeg", "png"])
-    ap.add_argument("--scrim-color", default=DEFAULT_SCRIM_HEX,
-                    help="Scrim color as 6-digit hex (default: %(default)s). "
-                         "Run suggest-scrim-color.py to sample one from the deck's illustrations.")
-    ap.add_argument("--scrim-alpha", type=int, default=DEFAULT_SCRIM_ALPHA,
-                    help="Scrim opacity in OOXML thousandths (0-100000, default: %(default)s = 45%%).")
-    ap.add_argument("--backgrounds-out", type=Path, default=None,
-                    help="Where to write the FULL-slide backgrounds manifest JSON "
-                         "(default: <out_stem>.backgrounds.json). Feed it to "
-                         "apply-backgrounds.sh to set the backgrounds via PowerPoint.")
+    ap.add_argument(
+        "--scrim-color",
+        default=DEFAULT_SCRIM_HEX,
+        help="Scrim color as 6-digit hex (default: %(default)s). "
+        "Run suggest-scrim-color.py to sample one from the deck's illustrations.",
+    )
+    ap.add_argument(
+        "--scrim-alpha",
+        type=int,
+        default=DEFAULT_SCRIM_ALPHA,
+        help="Scrim opacity in OOXML thousandths (0-100000, default: %(default)s = 45%%).",
+    )
+    ap.add_argument(
+        "--backgrounds-out",
+        type=Path,
+        default=None,
+        help="Where to write the FULL-slide backgrounds manifest JSON "
+        "(default: <out_stem>.backgrounds.json). Feed it to "
+        "apply-backgrounds.sh to set the backgrounds via PowerPoint.",
+    )
     args = ap.parse_args()
 
     out_deck = args.out or args.deck.with_name(args.deck.stem + "-with-titles.pptx")
-    backgrounds_out = args.backgrounds_out or out_deck.with_name(out_deck.stem + ".backgrounds.json")
+    backgrounds_out = args.backgrounds_out or out_deck.with_name(
+        out_deck.stem + ".backgrounds.json"
+    )
     poster = parse_composition(args.outline) == POSTER_COMPOSITION
     zones = parse_zones(args.outline)
     img_txt_slides = parse_img_txt_slides(args.outline)
@@ -471,25 +548,40 @@ def main():
 
     scrim_hex = args.scrim_color.lstrip("#").upper()
     if len(scrim_hex) != 6 or any(c not in "0123456789ABCDEF" for c in scrim_hex):
-        raise SystemExit(f"--scrim-color must be a 6-digit hex, got {args.scrim_color!r}")
+        raise SystemExit(
+            f"--scrim-color must be a 6-digit hex, got {args.scrim_color!r}"
+        )
     if not (0 <= args.scrim_alpha <= 100000):
         raise SystemExit(f"--scrim-alpha must be 0..100000, got {args.scrim_alpha}")
 
     results, backgrounds = apply(
-        args.deck, args.illustrations, zones, img_txt_slides, out_deck,
-        args.image_ext, scrim_hex, args.scrim_alpha, poster_full_slides,
+        args.deck,
+        args.illustrations,
+        zones,
+        img_txt_slides,
+        out_deck,
+        args.image_ext,
+        scrim_hex,
+        args.scrim_alpha,
+        poster_full_slides,
     )
     print(f"\nSaved {out_deck}")
     print(f"Updated {len(results)}/{total_slides} slides")
 
     if backgrounds:
-        manifest = {"backgrounds": {str(n): path for n, path in sorted(backgrounds.items())}}
+        manifest = {
+            "backgrounds": {str(n): path for n, path in sorted(backgrounds.items())}
+        }
         backgrounds_out.write_text(json.dumps(manifest, indent=2) + "\n")
         print(f"Wrote {len(backgrounds)} FULL-slide background(s) -> {backgrounds_out}")
-        print(f"Apply them via: apply-backgrounds.sh <uniquely-named copy of {out_deck.name}> "
-              f"<final.pptx> {backgrounds_out.name}")
+        print(
+            f"Apply them via: apply-backgrounds.sh <uniquely-named copy of {out_deck.name}> "
+            f"<final.pptx> {backgrounds_out.name}"
+        )
     else:
-        print("No FULL background slides (Safe zone or poster) — no background manifest written.")
+        print(
+            "No FULL background slides (Safe zone or poster) — no background manifest written."
+        )
 
 
 if __name__ == "__main__":

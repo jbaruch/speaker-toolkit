@@ -18,8 +18,9 @@ GATE = REPO_ROOT / "scripts" / "check-package-contents.sh"
 
 
 def _git(repo: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(repo), *args], check=True,
-                   capture_output=True, text=True)
+    subprocess.run(
+        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
+    )
 
 
 def _write(repo: Path, rel: str, body: str) -> None:
@@ -29,8 +30,9 @@ def _write(repo: Path, rel: str, body: str) -> None:
 
 
 def _run(repo: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(["bash", str(GATE), str(repo)],
-                          capture_output=True, text=True)
+    return subprocess.run(
+        ["bash", str(GATE), str(repo)], capture_output=True, text=True
+    )
 
 
 @pytest.fixture()
@@ -38,18 +40,25 @@ def plugin(tmp_path: Path) -> Path:
     """A committed plugin repo: one skill with a script, one rule, no ignores."""
     repo = tmp_path / "plugin"
     repo.mkdir()
-    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)],
-                   check=True, capture_output=True)
+    subprocess.run(
+        ["git", "init", "-q", "-b", "main", str(repo)], check=True, capture_output=True
+    )
     _git(repo, "config", "user.email", "test@example.com")
     _git(repo, "config", "user.name", "Test")
 
-    _write(repo, ".tessl-plugin/plugin.json", json.dumps({
-        "name": "acme/widget",
-        "version": "1.0.0",
-        "description": "Test plugin",
-        "skills": ["skills/builder"],
-        "rules": ["rules/house-style.md"],
-    }))
+    _write(
+        repo,
+        ".tessl-plugin/plugin.json",
+        json.dumps(
+            {
+                "name": "acme/widget",
+                "version": "1.0.0",
+                "description": "Test plugin",
+                "skills": ["skills/builder"],
+                "rules": ["rules/house-style.md"],
+            }
+        ),
+    )
     _write(repo, "skills/builder/SKILL.md", "# Builder\n")
     _write(repo, "skills/builder/scripts/build.py", "print('build')\n")
     _write(repo, "skills/builder/references/notes.md", "notes\n")
@@ -144,10 +153,18 @@ def test_malformed_manifest_fails(plugin: Path) -> None:
 
 
 def test_wrong_field_shape_fails(plugin: Path) -> None:
-    _write(plugin, ".tessl-plugin/plugin.json", json.dumps({
-        "name": "acme/widget", "version": "1.0.0", "description": "d",
-        "skills": 42,
-    }))
+    _write(
+        plugin,
+        ".tessl-plugin/plugin.json",
+        json.dumps(
+            {
+                "name": "acme/widget",
+                "version": "1.0.0",
+                "description": "d",
+                "skills": 42,
+            }
+        ),
+    )
     _write(plugin, ".tesslignore", "/scripts/\n")
     result = _run(plugin)
     assert result.returncode == 1
@@ -155,9 +172,17 @@ def test_wrong_field_shape_fails(plugin: Path) -> None:
 
 
 def test_manifest_declaring_no_content_fails(plugin: Path) -> None:
-    _write(plugin, ".tessl-plugin/plugin.json", json.dumps({
-        "name": "acme/widget", "version": "1.0.0", "description": "d",
-    }))
+    _write(
+        plugin,
+        ".tessl-plugin/plugin.json",
+        json.dumps(
+            {
+                "name": "acme/widget",
+                "version": "1.0.0",
+                "description": "d",
+            }
+        ),
+    )
     _write(plugin, ".tesslignore", "/scripts/\n")
     result = _run(plugin)
     assert result.returncode == 1
@@ -165,10 +190,18 @@ def test_manifest_declaring_no_content_fails(plugin: Path) -> None:
 
 
 def test_declared_path_with_no_tracked_files_fails(plugin: Path) -> None:
-    _write(plugin, ".tessl-plugin/plugin.json", json.dumps({
-        "name": "acme/widget", "version": "1.0.0", "description": "d",
-        "skills": ["skills/builder", "skills/ghost"],
-    }))
+    _write(
+        plugin,
+        ".tessl-plugin/plugin.json",
+        json.dumps(
+            {
+                "name": "acme/widget",
+                "version": "1.0.0",
+                "description": "d",
+                "skills": ["skills/builder", "skills/ghost"],
+            }
+        ),
+    )
     _write(plugin, ".tesslignore", "/scripts/\n")
     result = _run(plugin)
     assert result.returncode == 1
@@ -177,10 +210,18 @@ def test_declared_path_with_no_tracked_files_fails(plugin: Path) -> None:
 
 def test_skills_declared_as_directory_string(plugin: Path) -> None:
     """`skills` may be a directory path instead of an array of paths."""
-    _write(plugin, ".tessl-plugin/plugin.json", json.dumps({
-        "name": "acme/widget", "version": "1.0.0", "description": "d",
-        "skills": "skills/",
-    }))
+    _write(
+        plugin,
+        ".tessl-plugin/plugin.json",
+        json.dumps(
+            {
+                "name": "acme/widget",
+                "version": "1.0.0",
+                "description": "d",
+                "skills": "skills/",
+            }
+        ),
+    )
     _write(plugin, ".tesslignore", "scripts/\n")
     result = _run(plugin)
     assert result.returncode == 1
@@ -189,10 +230,18 @@ def test_skills_declared_as_directory_string(plugin: Path) -> None:
 
 def test_non_string_array_item_reports_a_shape_error(plugin: Path) -> None:
     """A non-string array item is a broken manifest, not a missing directory."""
-    _write(plugin, ".tessl-plugin/plugin.json", json.dumps({
-        "name": "acme/widget", "version": "1.0.0", "description": "d",
-        "skills": [42],
-    }))
+    _write(
+        plugin,
+        ".tessl-plugin/plugin.json",
+        json.dumps(
+            {
+                "name": "acme/widget",
+                "version": "1.0.0",
+                "description": "d",
+                "skills": [42],
+            }
+        ),
+    )
     _write(plugin, ".tesslignore", "/scripts/\n")
     result = _run(plugin)
     assert result.returncode == 1
@@ -203,11 +252,19 @@ def test_non_string_array_item_reports_a_shape_error(plugin: Path) -> None:
 
 def test_overlapping_declared_paths_are_counted_once(plugin: Path) -> None:
     """Declaring a directory and a path beneath it must not double-count files."""
-    _write(plugin, ".tessl-plugin/plugin.json", json.dumps({
-        "name": "acme/widget", "version": "1.0.0", "description": "d",
-        "skills": ["skills/", "skills/builder"],
-        "rules": ["rules/house-style.md"],
-    }))
+    _write(
+        plugin,
+        ".tessl-plugin/plugin.json",
+        json.dumps(
+            {
+                "name": "acme/widget",
+                "version": "1.0.0",
+                "description": "d",
+                "skills": ["skills/", "skills/builder"],
+                "rules": ["rules/house-style.md"],
+            }
+        ),
+    )
     # An ignore file that excludes no declared content, so the gate reaches its
     # counting path instead of short-circuiting on a missing .tesslignore.
     _write(plugin, ".tesslignore", "/build/\n")
@@ -219,11 +276,19 @@ def test_overlapping_declared_paths_are_counted_once(plugin: Path) -> None:
 
 def test_overlapping_declared_paths_report_each_violation_once(plugin: Path) -> None:
     """An excluded file under overlapping globs is reported once, not twice."""
-    _write(plugin, ".tessl-plugin/plugin.json", json.dumps({
-        "name": "acme/widget", "version": "1.0.0", "description": "d",
-        "skills": ["skills/", "skills/builder"],
-        "rules": ["rules/house-style.md"],
-    }))
+    _write(
+        plugin,
+        ".tessl-plugin/plugin.json",
+        json.dumps(
+            {
+                "name": "acme/widget",
+                "version": "1.0.0",
+                "description": "d",
+                "skills": ["skills/", "skills/builder"],
+                "rules": ["rules/house-style.md"],
+            }
+        ),
+    )
     _write(plugin, ".tesslignore", "scripts/\n")
     result = _run(plugin)
     assert result.returncode == 1

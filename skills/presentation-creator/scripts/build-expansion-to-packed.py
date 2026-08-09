@@ -64,7 +64,9 @@ def manifest_to_packed(manifest: object) -> str:
                 raise ValueError(f"build entry 'parent' must be an integer, got {p!r}")
             p = int(p)
         if p < 1:
-            raise ValueError(f"build entry 'parent' must be a positive slide number, got {p}")
+            raise ValueError(
+                f"build entry 'parent' must be a positive slide number, got {p}"
+            )
         return p
 
     records = []
@@ -75,14 +77,20 @@ def manifest_to_packed(manifest: object) -> str:
             raise ValueError(f"build for parent {parent} has no frames")
         notes = b.get("notes", "") or ""
         if not isinstance(notes, str):
-            raise ValueError(f"notes for parent {parent} must be a string, got {type(notes).__name__}")
+            raise ValueError(
+                f"notes for parent {parent} must be a string, got {type(notes).__name__}"
+            )
         for f in frames:
             if not isinstance(f, str):
                 raise ValueError(f"frame for parent {parent} must be a string path")
             if any(c in f for c in (RS, US, GS)):
-                raise ValueError(f"frame path for parent {parent} contains a reserved control char: {f!r}")
+                raise ValueError(
+                    f"frame path for parent {parent} contains a reserved control char: {f!r}"
+                )
         if any(c in notes for c in (RS, US, GS)):
-            raise ValueError(f"notes for parent {parent} contain a reserved control char")
+            raise ValueError(
+                f"notes for parent {parent} contain a reserved control char"
+            )
         records.append(f"{parent}{US}{notes}{US}{GS.join(frames)}")
     return RS.join(records)
 
@@ -90,16 +98,24 @@ def manifest_to_packed(manifest: object) -> str:
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if len(argv) != 2:
-        print("usage: build-expansion-to-packed.py <manifest.json> <packed_out>", file=sys.stderr)
+        print(
+            "usage: build-expansion-to-packed.py <manifest.json> <packed_out>",
+            file=sys.stderr,
+        )
         return 2
     manifest_path, out_path = Path(argv[0]), Path(argv[1])
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except OSError as exc:
-        print(f"ERROR: cannot read manifest {manifest_path}: {exc.strerror or exc}", file=sys.stderr)
+        print(
+            f"ERROR: cannot read manifest {manifest_path}: {exc.strerror or exc}",
+            file=sys.stderr,
+        )
         return 1
     except json.JSONDecodeError as exc:
-        print(f"ERROR: manifest {manifest_path} is not valid JSON: {exc}", file=sys.stderr)
+        print(
+            f"ERROR: manifest {manifest_path} is not valid JSON: {exc}", file=sys.stderr
+        )
         return 1
     try:
         packed = manifest_to_packed(manifest)
@@ -109,8 +125,11 @@ def main(argv=None) -> int:
     try:
         out_path.write_text(packed, encoding="utf-8")
     except OSError as exc:
-        print(f"ERROR: cannot write packed output {out_path}: {exc.strerror or exc} — "
-              "check the path and that its directory is writable", file=sys.stderr)
+        print(
+            f"ERROR: cannot write packed output {out_path}: {exc.strerror or exc} — "
+            "check the path and that its directory is writable",
+            file=sys.stderr,
+        )
         return 1
     return 0
 

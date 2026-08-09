@@ -366,12 +366,8 @@ def test_directory_exclusion_prunes_before_scandir_and_keeps_authored_default_de
         [".VENV"],
     )
 
-    assert [relative for _path, relative in discovered] == [
-        "templates/default.pptx"
-    ]
-    assert skipped == [
-        {"path": ".venv", "reason": "pptx_batch_directory_excluded"}
-    ]
+    assert [relative for _path, relative in discovered] == ["templates/default.pptx"]
+    assert skipped == [{"path": ".venv", "reason": "pptx_batch_directory_excluded"}]
     assert pptx_extraction.directory_incomplete_reason_codes(skipped) == []
 
 
@@ -394,9 +390,7 @@ def test_excluded_directory_cannot_starve_authored_sibling_at_entry_cap(
     )
 
     assert [relative for _path, relative in discovered] == ["talk.pptx"]
-    assert skipped == [
-        {"path": ".venv", "reason": "pptx_batch_directory_excluded"}
-    ]
+    assert skipped == [{"path": ".venv", "reason": "pptx_batch_directory_excluded"}]
 
 
 def test_policy_exclusion_enumeration_has_its_own_closed_cap(
@@ -444,9 +438,7 @@ def test_named_exclusion_keeps_symlink_rejection_precedence(
     )
 
     assert discovered == []
-    assert skipped == [
-        {"path": ".venv", "reason": "pptx_batch_symlink_rejected"}
-    ]
+    assert skipped == [{"path": ".venv", "reason": "pptx_batch_symlink_rejected"}]
 
 
 def test_named_exclusion_keeps_reparse_rejection_precedence(
@@ -471,9 +463,7 @@ def test_named_exclusion_keeps_reparse_rejection_precedence(
     )
 
     assert discovered == []
-    assert skipped == [
-        {"path": ".venv", "reason": "pptx_batch_reparse_point_rejected"}
-    ]
+    assert skipped == [{"path": ".venv", "reason": "pptx_batch_reparse_point_rejected"}]
 
 
 def test_excluded_directories_do_not_consume_directory_budget(
@@ -489,9 +479,7 @@ def test_excluded_directories_do_not_consume_directory_budget(
     monkeypatch.setattr(pptx_extraction, "_BATCH_MAX_DIRECTORIES", 2)
 
     _files, exact_skipped, _started = pptx_extraction._discover_pptx_files(root, [])
-    assert exact_skipped == [
-        {"path": ".", "reason": "pptx_batch_directory_limit"}
-    ]
+    assert exact_skipped == [{"path": ".", "reason": "pptx_batch_directory_limit"}]
 
     _files, excluded_skipped, _started = pptx_extraction._discover_pptx_files(
         root,
@@ -519,9 +507,7 @@ def test_exact_directory_budget_is_complete_but_one_more_directory_is_partial(
 
     (root / "second").mkdir()
     _files, skipped, _started = pptx_extraction._discover_pptx_files(root, [])
-    assert skipped == [
-        {"path": ".", "reason": "pptx_batch_directory_limit"}
-    ]
+    assert skipped == [{"path": ".", "reason": "pptx_batch_directory_limit"}]
 
 
 def test_depth_budget_marks_only_unvisited_descendants_partial(
@@ -539,9 +525,7 @@ def test_depth_budget_marks_only_unvisited_descendants_partial(
 
     (child / "grandchild").mkdir()
     _files, skipped, _started = pptx_extraction._discover_pptx_files(root, [])
-    assert skipped == [
-        {"path": "child/grandchild", "reason": "pptx_batch_depth_limit"}
-    ]
+    assert skipped == [{"path": "child/grandchild", "reason": "pptx_batch_depth_limit"}]
 
 
 def test_bounded_discovery_rejects_symlink_root(pptx_extraction, tmp_path):
@@ -1754,9 +1738,7 @@ def test_directory_cli_partial_batch_exits_zero_with_exact_public_envelope(
         ),
     )
 
-    exit_code = pptx_extraction.main(
-        ["--directory", "/lexical/root", "--no-ocr"]
-    )
+    exit_code = pptx_extraction.main(["--directory", "/lexical/root", "--no-ocr"])
 
     captured = capsys.readouterr()
     assert exit_code == 0
@@ -1767,9 +1749,7 @@ def test_directory_cli_partial_batch_exits_zero_with_exact_public_envelope(
         "complete": False,
         "incomplete_reason_codes": ["pptx_parse_failure"],
         "results": [],
-        "skipped": [
-            {"path": "broken.pptx", "reason": "pptx_parse_failure"}
-        ],
+        "skipped": [{"path": "broken.pptx", "reason": "pptx_parse_failure"}],
     }
 
 
@@ -3179,9 +3159,7 @@ _PAGE_DECIMAL_ALPHABET_IDS = (
     "fullwidth",
     "mathematical",
 )
-_INSPECTED_PAGES_GRAMMAR_ERROR = (
-    "--inspected-pages values must be PAGE or START-END"
-)
+_INSPECTED_PAGES_GRAMMAR_ERROR = "--inspected-pages values must be PAGE or START-END"
 
 
 def _render_page_decimal(value, alphabet):
@@ -3220,10 +3198,7 @@ def test_page_range_parser_supports_unicode_decimal_digits_at_global_ceiling(
     )
 
     assert pptx_extraction.parse_page_range_arguments(
-        [
-            f"{_render_page_decimal(1, alphabet)}-"
-            f"{_render_page_decimal(3, alphabet)}"
-        ]
+        [f"{_render_page_decimal(1, alphabet)}-{_render_page_decimal(3, alphabet)}"]
     ) == [[1, 3]]
     assert pptx_extraction.parse_page_range_arguments(
         [_render_page_decimal(limit, alphabet)]
@@ -3247,10 +3222,7 @@ def test_page_range_parser_supports_mixed_script_decimal_numbers(
     )
 
     assert pptx_extraction.parse_page_range_arguments(
-        [
-            f"{_render_mixed_page_decimal(12345)}-"
-            f"{_render_mixed_page_decimal(12347)}"
-        ]
+        [f"{_render_mixed_page_decimal(12345)}-{_render_mixed_page_decimal(12347)}"]
     ) == [[12345, 12347]]
     assert pptx_extraction.parse_page_range_arguments(
         [_render_mixed_page_decimal(limit)]
@@ -3325,9 +3297,7 @@ def test_page_range_parser_enforces_range_count_without_split_amplification(
         pptx_extraction.parse_page_range_arguments([limit_plus_one])
 
     diagnostic = str(caught.value)
-    assert diagnostic == (
-        f"--inspected-pages must contain no more than {limit} ranges"
-    )
+    assert diagnostic == (f"--inspected-pages must contain no more than {limit} ranges")
     assert malformed not in diagnostic
     assert len(diagnostic.encode("utf-8")) < 128
 
@@ -3337,9 +3307,7 @@ def test_page_range_parser_preserves_repeated_comma_and_leading_zero_inputs(
 ):
     leading_zero_page = ("0" * 5_000) + "1"
     leading_zero_end = ("０" * 5_000) + "３"
-    canonical = pptx_extraction.parse_page_range_arguments(
-        ["1", "2-4,6", "8-9"]
-    )
+    canonical = pptx_extraction.parse_page_range_arguments(["1", "2-4,6", "8-9"])
     equivalent = pptx_extraction.parse_page_range_arguments(
         [leading_zero_page, "0002-０００４,٠٠٠٦", "０００８-0009"]
     )

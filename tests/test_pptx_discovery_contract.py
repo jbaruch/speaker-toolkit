@@ -88,8 +88,7 @@ def test_directory_exclusions_use_exact_casefolded_component_matching() -> None:
 
     assert contract.directory_component_is_excluded(".venv", exclusions) is True
     assert (
-        contract.directory_component_is_excluded("generated assets", exclusions)
-        is True
+        contract.directory_component_is_excluded("generated assets", exclusions) is True
     )
     assert contract.directory_component_is_excluded("my.venv", exclusions) is False
     assert (
@@ -166,7 +165,9 @@ def test_public_batch_round_trip_is_strict_and_recomputes_completeness() -> None
             contract.decode_pptx_directory_batch(malformed)
 
 
-def test_public_batch_rejects_nonobjects_unknown_reasons_and_duplicate_receipts() -> None:
+def test_public_batch_rejects_nonobjects_unknown_reasons_and_duplicate_receipts() -> (
+    None
+):
     for results, skipped in (
         (["not-an-object"], []),
         ([], [{"path": ".", "reason": "typo"}]),
@@ -238,8 +239,7 @@ def test_public_batch_bounds_skip_path_length() -> None:
             [],
             [
                 {
-                    "path": "x"
-                    * (contract.PPTX_DIRECTORY_RELATIVE_PATH_MAX_CHARS + 1),
+                    "path": "x" * (contract.PPTX_DIRECTORY_RELATIVE_PATH_MAX_CHARS + 1),
                     "reason": "pptx_batch_skip_pattern",
                 }
             ],
@@ -262,9 +262,7 @@ def test_whole_root_failure_is_bound_to_the_same_public_envelope() -> None:
 
 
 def test_whole_root_receipt_requires_error_and_zero_results() -> None:
-    receipt = [
-        {"path": ".", "reason": "pptx_batch_discovery_start_failure"}
-    ]
+    receipt = [{"path": ".", "reason": "pptx_batch_discovery_start_failure"}]
     with pytest.raises(
         contract.PptxDiscoveryContractError,
         match="require a matching top-level error",
@@ -337,9 +335,7 @@ def test_top_level_error_details_are_closed_and_path_neutral(details: object) ->
 
 
 def test_legacy_unversioned_batch_never_authorizes_absence() -> None:
-    assessment = contract.assess_pptx_directory_batch(
-        {"results": [], "skipped": []}
-    )
+    assessment = contract.assess_pptx_directory_batch({"results": [], "skipped": []})
 
     assert assessment.state == "unknown_legacy"
     assert assessment.schema_version == 0
@@ -353,14 +349,10 @@ def test_ingress_and_config_docs_bind_directory_completeness_and_migration() -> 
     root = Path(__file__).parents[1]
     relative_paths = {
         "skill": "skills/vault-ingress/SKILL.md",
-        "bootstrap": (
-            "skills/vault-ingress/references/bootstrap-and-preflight.md"
-        ),
+        "bootstrap": ("skills/vault-ingress/references/bootstrap-and-preflight.md"),
         "followup": "skills/vault-ingress/references/pptx-followup.md",
         "schemas": "skills/vault-ingress/references/schemas-db.md",
-        "preflight": (
-            "skills/vault-ingress/references/source-identity-preflight.md"
-        ),
+        "preflight": ("skills/vault-ingress/references/source-identity-preflight.md"),
         "profile_config": "skills/vault-profile/references/schemas-config.md",
         "clarification": "skills/vault-clarification/SKILL.md",
         "clarification_config": (
@@ -380,8 +372,7 @@ def test_ingress_and_config_docs_bind_directory_completeness_and_migration() -> 
     for name in ("bootstrap", "schemas", "profile_config"):
         assert "pptx_directory_exclusions" in docs[name]
         assert (
-            '"schema_version": 2' in docs[name]
-            or "`schema_version: 2`" in docs[name]
+            '"schema_version": 2' in docs[name] or "`schema_version: 2`" in docs[name]
         )
     assert "config schema 2" in docs["clarification"]
     assert "config schema v2" in docs["clarification_config"]
@@ -392,8 +383,9 @@ def test_ingress_and_config_docs_bind_directory_completeness_and_migration() -> 
     assert docs["bootstrap"].count("DEFAULT_PPTX_DIRECTORY_EXCLUSIONS") == 1
     assert "DEFAULT_PPTX_DIRECTORY_EXCLUSIONS" not in docs["profile_config"]
     assert "DEFAULT_PPTX_DIRECTORY_EXCLUSIONS" not in docs["schemas"]
-    assert '"pptx_directory_exclusions": ["example-tool-cache"]' in (
-        docs["profile_config"]
+    assert (
+        '"pptx_directory_exclusions": ["example-tool-cache"]'
+        in (docs["profile_config"])
     )
     assert '"pptx_directory_exclusions": ["example-tool-cache"]' in docs["schemas"]
     taxonomy_reference = (
@@ -407,9 +399,7 @@ def test_ingress_and_config_docs_bind_directory_completeness_and_migration() -> 
         if name != "schemas"
     )
     assert "never reclassify receipts by\nreason string" in docs["bootstrap"]
-    assert "without an explicit speaker-specific customization" in (
-        docs["bootstrap"]
-    )
-    assert "without an explicit speaker-specific customization" in (
-        docs["profile_config"]
+    assert "without an explicit speaker-specific customization" in (docs["bootstrap"])
+    assert (
+        "without an explicit speaker-specific customization" in (docs["profile_config"])
     )

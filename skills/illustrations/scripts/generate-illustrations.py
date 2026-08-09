@@ -67,8 +67,11 @@ sys.path.insert(
     0,
     os.path.abspath(
         os.path.join(
-            os.path.dirname(__file__), os.pardir, os.pardir,
-            "presentation-creator", "scripts",
+            os.path.dirname(__file__),
+            os.pardir,
+            os.pardir,
+            "presentation-creator",
+            "scripts",
         )
     ),
 )
@@ -108,6 +111,7 @@ def sizing_for(slide_format):
     """
     return FORMAT_SIZING.get(slide_format, FORMAT_SIZING["FULL"])
 
+
 RATE_LIMIT_DELAY = 5  # seconds between API requests
 
 # Max seconds to spend reading secrets.json before giving up and falling back to
@@ -122,8 +126,11 @@ IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"]
 # --- Title safe-zone policy (see rules/title-overlay-rules.md) ---
 
 VALID_SAFE_ZONES = {
-    "upper_third", "middle_third", "lower_third",
-    "left_half", "right_half",
+    "upper_third",
+    "middle_third",
+    "lower_third",
+    "left_half",
+    "right_half",
 }
 
 DEFAULT_SAFE_ZONE_SURFACE = {
@@ -150,7 +157,7 @@ SAFE_ZONE_DIRECTIVE_TEMPLATE = (
 POSTER_COMPOSITION = "poster-theatrical"
 
 POSTER_EMBED_DIRECTIVE_TEMPLATE = (
-    " EMBEDDED TEXT -- CRITICAL COMPOSITION RULE: Render the title \"{title}\" "
+    ' EMBEDDED TEXT -- CRITICAL COMPOSITION RULE: Render the title "{title}" '
     "as an integral, stylized part of the scene itself — {treatment} — not "
     "pasted on as a flat overlay or caption. "
     "{footer_clause}All text must be fully blended and integrated into the "
@@ -167,7 +174,7 @@ DEFAULT_POSTER_TEXT_TREATMENT = (
 )
 
 POSTER_FOOTER_CLAUSE_TEMPLATE = (
-    "Also integrate the footer \"{footer}\" small along the lower edge of the "
+    'Also integrate the footer "{footer}" small along the lower edge of the '
     "frame, in the same stylized treatment. "
 )
 
@@ -187,6 +194,7 @@ _cli_vault_path = None  # set by main() from --vault arg
 
 
 # --- Model Family Dispatch ---
+
 
 def model_family(model_name):
     """Classify a model into a vendor family for endpoint dispatch.
@@ -216,6 +224,7 @@ def family_key_name(family):
 
 
 # --- Outline Parsing ---
+
 
 def _collapse_anchor(text):
     """Collapse a (possibly multi-line) anchor block into one prompt-ready line."""
@@ -274,7 +283,9 @@ def parse_outline(path):
         "anchors": {
             "FULL": _anchor_with_conventions(anchor.full),
             "IMG+TXT": _anchor_with_conventions(anchor.imgtxt),
-        } if anchor else {},
+        }
+        if anchor
+        else {},
         "conventions": conventions or None,
         "slides": [],
         "composition": (
@@ -311,9 +322,7 @@ def parse_outline(path):
                     # Normalized [x0, y0, x1, y1] erase box, or None. Drives the
                     # masked/composited edit path that keeps a static background
                     # pixel-stable across build frames (#90).
-                    "erase_region": (
-                        list(b.erase_region) if b.erase_region else None
-                    ),
+                    "erase_region": (list(b.erase_region) if b.erase_region else None),
                 }
                 for b in sorted(slide.builds, key=lambda b: b.step)
             ]
@@ -459,6 +468,7 @@ def effective_slide_format(slide_format, safe_zone):
 
 # --- Slide Number Selection ---
 
+
 def parse_slide_selection(args, available_slides, output_dir):
     """Parse CLI slide selection into a list of slide numbers.
 
@@ -499,6 +509,7 @@ def parse_slide_selection(args, available_slides, output_dir):
 
 # --- File Helpers ---
 
+
 def find_base_image(output_dir, slide_num):
     """Find the unversioned base image for a slide, or None."""
     for ext in IMAGE_EXTENSIONS:
@@ -529,7 +540,9 @@ def final_build_dest(builds_dir, slide_num, final_step, source_path):
     .webp depending on the generating vendor.
     """
     src_ext = os.path.splitext(source_path)[1].lower() or ".jpg"
-    return os.path.join(builds_dir, f"slide-{slide_num:02d}-build-{final_step:02d}{src_ext}")
+    return os.path.join(
+        builds_dir, f"slide-{slide_num:02d}-build-{final_step:02d}{src_ext}"
+    )
 
 
 def _has_keep_clause(description):
@@ -577,6 +590,7 @@ def ext_to_mime(ext):
 
 
 # --- Shared Setup ---
+
 
 def _read_file_with_timeout(path, timeout):
     """Read a file's bytes, abandoning the read if it overruns `timeout` seconds.
@@ -690,7 +704,9 @@ def _require_keys_for_families(keys, families, secrets_path):
                 print('    "gemini": {"api_key": "YOUR_KEY"}')
             else:
                 print(f"  Create {secrets_path}:")
-                print(f'    echo \'{{"gemini": {{"api_key": "YOUR_KEY"}}}}\' > {secrets_path}')
+                print(
+                    f'    echo \'{{"gemini": {{"api_key": "YOUR_KEY"}}}}\' > {secrets_path}'
+                )
                 print(f"    chmod 600 {secrets_path}")
             print("  Or set the GEMINI_API_KEY environment variable.")
         elif k == "openai":
@@ -702,13 +718,17 @@ def _require_keys_for_families(keys, families, secrets_path):
                 print('    "openai": {"api_key": "YOUR_KEY"}')
             else:
                 print(f"  Create {secrets_path}:")
-                print(f'    echo \'{{"openai": {{"api_key": "YOUR_KEY"}}}}\' > {secrets_path}')
+                print(
+                    f'    echo \'{{"openai": {{"api_key": "YOUR_KEY"}}}}\' > {secrets_path}'
+                )
                 print(f"    chmod 600 {secrets_path}")
             print("  Or set the OPENAI_API_KEY environment variable.")
     sys.exit(1)
 
 
-def _load_context(outline_path, require_model=True, vault_path=None, compare_mode=False):
+def _load_context(
+    outline_path, require_model=True, vault_path=None, compare_mode=False
+):
     """Common preamble: load API keys, parse outline, compute paths.
 
     Determines which vendor families need keys based on:
@@ -748,6 +768,7 @@ def _load_context(outline_path, require_model=True, vault_path=None, compare_mod
 
 
 # --- Gemini API ---
+
 
 def _call_gemini(parts, model, api_key):
     """Send parts to the Gemini generateContent API and extract the image.
@@ -841,6 +862,7 @@ def _call_imagen(prompt, model, api_key, aspect_ratio=IMAGEN_DEFAULT_ASPECT):
 
 
 # --- Masked / composited edits (build static-background stability, #90) ---
+
 
 def _require_pil():
     """Import Pillow lazily, exiting with an actionable message if it's absent.
@@ -938,6 +960,7 @@ def composite_region(prior_path, new_bytes, region):
 
 # --- OpenAI API ---
 
+
 def _multipart_body(fields, files):
     """Build a multipart/form-data body. Returns (bytes, boundary)."""
     boundary = "----GenIllustBnd" + uuid.uuid4().hex
@@ -950,8 +973,7 @@ def _multipart_body(fields, files):
     for name, filename, mime, content in files:
         body += f"--{boundary}\r\n".encode()
         body += (
-            f'Content-Disposition: form-data; name="{name}"; '
-            f'filename="{filename}"\r\n'
+            f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'
         ).encode()
         body += f"Content-Type: {mime}\r\n\r\n".encode()
         body += content
@@ -974,7 +996,10 @@ def _extract_openai_image(body):
                 return r.read(), "image/png"
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             return None, f"Failed to fetch image URL: {e}"
-    return None, f"OpenAI response has neither b64_json nor url: {json.dumps(first)[:500]}"
+    return (
+        None,
+        f"OpenAI response has neither b64_json nor url: {json.dumps(first)[:500]}",
+    )
 
 
 def _call_openai_generate(prompt, model, api_key, size=OPENAI_DEFAULT_SIZE):
@@ -1014,8 +1039,9 @@ def _call_openai_generate(prompt, model, api_key, size=OPENAI_DEFAULT_SIZE):
     return _extract_openai_image(body)
 
 
-def _call_openai_edit(input_path, prompt, model, api_key, size=OPENAI_DEFAULT_SIZE,
-                      mask_png=None):
+def _call_openai_edit(
+    input_path, prompt, model, api_key, size=OPENAI_DEFAULT_SIZE, mask_png=None
+):
     """Call OpenAI /images/edits to edit an existing image.
 
     When `mask_png` is given (a PNG matching the image dimensions), only its
@@ -1034,8 +1060,13 @@ def _call_openai_edit(input_path, prompt, model, api_key, size=OPENAI_DEFAULT_SI
     body, boundary = _multipart_body(
         # gpt-image-* returns base64 by default; do not send
         # `response_format` (legacy DALL-E knob; gpt-image-* 400s on it).
-        fields={"model": model, "prompt": prompt, "size": size,
-                "quality": "high", "n": "1"},
+        fields={
+            "model": model,
+            "prompt": prompt,
+            "size": size,
+            "quality": "high",
+            "n": "1",
+        },
         files=files,
     )
     url = f"{OPENAI_API_BASE}/images/edits"
@@ -1059,6 +1090,7 @@ def _call_openai_edit(input_path, prompt, model, api_key, size=OPENAI_DEFAULT_SI
 
 
 # --- Vendor-Agnostic Dispatchers ---
+
 
 def generate_image(prompt, model, keys, slide_format=None):
     """Generate a fresh image via the appropriate vendor endpoint.
@@ -1088,8 +1120,9 @@ def generate_image(prompt, model, keys, slide_format=None):
     return _call_gemini([{"text": prompt}], model, keys["gemini"])
 
 
-def edit_image(input_path, edit_prompt, model, keys, slide_format=None,
-               erase_region=None):
+def edit_image(
+    input_path, edit_prompt, model, keys, slide_format=None, erase_region=None
+):
     """Edit an existing image via the appropriate vendor endpoint.
 
     Auto-appends vendor-agnostic safety suffixes to the prompt to prevent
@@ -1130,10 +1163,16 @@ def edit_image(input_path, edit_prompt, model, keys, slide_format=None,
     if family == "openai":
         # A mask lets the model edit in-place with surrounding context; the
         # composite below then guarantees the kept region byte-for-byte.
-        mask_png = build_edit_mask_png(input_path, erase_region) if erase_region else None
+        mask_png = (
+            build_edit_mask_png(input_path, erase_region) if erase_region else None
+        )
         image_bytes, result = _call_openai_edit(
-            input_path, edit_prompt, model, keys["openai"],
-            size=sizing["openai_size"], mask_png=mask_png,
+            input_path,
+            edit_prompt,
+            model,
+            keys["openai"],
+            size=sizing["openai_size"],
+            mask_png=mask_png,
         )
     else:
         # Gemini path: send image as base64 inline data on generateContent.
@@ -1163,9 +1202,7 @@ RENDERED_MANIFEST = "rendered.json"
 
 def style_explore_dir(outline_path):
     """The style-explore/ directory alongside the outline."""
-    return os.path.join(
-        os.path.dirname(os.path.abspath(outline_path)), "style-explore"
-    )
+    return os.path.join(os.path.dirname(os.path.abspath(outline_path)), "style-explore")
 
 
 def write_rendered_manifest(base_dir, outline_path, results):
@@ -1378,6 +1415,7 @@ def enforce_render_gate(outline_path):
 
 # --- Main Commands ---
 
+
 def run_generate(outline_path, slide_args, versioned=False):
     """Generate illustrations for selected slides."""
     keys, outline, output_dir = _load_context(outline_path)
@@ -1400,7 +1438,9 @@ def run_generate(outline_path, slide_args, versioned=False):
 
     print(f"Model: {model}")
     print(f"Style anchors: {', '.join(outline['anchors'].keys()) or 'none'}")
-    print(f"Generating {len(to_generate)} illustration(s): slides {', '.join(map(str, to_generate))}")
+    print(
+        f"Generating {len(to_generate)} illustration(s): slides {', '.join(map(str, to_generate))}"
+    )
     if versioned:
         print("Versioned mode: saving as slide-NN-vM.ext (never overwrites)")
     print(f"Output: {output_dir}/")
@@ -1418,7 +1458,8 @@ def run_generate(outline_path, slide_args, versioned=False):
         # prompt-bearing slides; EXCEPTION slides carry no prompt and render as
         # real assets, so they are correctly out of scope here.)
         bad = [
-            s["slide_num"] for s in outline["slides"]
+            s["slide_num"]
+            for s in outline["slides"]
             if s["format"] != "FULL" or s.get("safe_zone")
         ]
         if bad:
@@ -1458,7 +1499,7 @@ def run_generate(outline_path, slide_args, versioned=False):
         # to this slide's scene and keep deck-wide page-furniture from leaking (#87).
         prompt = apply_compose_only_directive(prompt)
 
-        print(f"[{i+1}/{len(to_generate)}] Slide {num}: {slide['title']}")
+        print(f"[{i + 1}/{len(to_generate)}] Slide {num}: {slide['title']}")
 
         image_bytes, result = generate_image(prompt, model, keys, eff_format)
 
@@ -1484,12 +1525,16 @@ def run_generate(outline_path, slide_args, versioned=False):
             time.sleep(RATE_LIMIT_DELAY)
 
     print()
-    print(f"Done: {success} generated, {failed} failed, out of {len(to_generate)} requested.")
+    print(
+        f"Done: {success} generated, {failed} failed, out of {len(to_generate)} requested."
+    )
 
 
 def run_compare(outline_path, slide_num):
     """Generate the same prompt across multiple models for comparison."""
-    keys, outline, _ = _load_context(outline_path, require_model=False, compare_mode=True)
+    keys, outline, _ = _load_context(
+        outline_path, require_model=False, compare_mode=True
+    )
 
     slides_by_num = {s["slide_num"]: s for s in outline["slides"]}
     if slide_num not in slides_by_num:
@@ -1526,7 +1571,7 @@ def run_compare(outline_path, slide_num):
     results = []
 
     for i, model in enumerate(models):
-        print(f"[{i+1}/{len(models)}] {model}...", end=" ", flush=True)
+        print(f"[{i + 1}/{len(models)}] {model}...", end=" ", flush=True)
 
         image_bytes, result = generate_image(prompt, model, keys, eff_format)
 
@@ -1562,6 +1607,7 @@ def run_compare(outline_path, slide_num):
 
 
 # --- Style Exploration (Phase 2 strategy: style x model x format grid) ---
+
 
 def style_slug(name):
     """Filesystem-safe kebab-case slug for a style name."""
@@ -1612,14 +1658,19 @@ def parse_candidates(path):
         raise ValueError(f"{path}: 'models' must be a non-empty list of model ids.")
     for i, m in enumerate(models):
         if not isinstance(m, str) or not m.strip():
-            raise ValueError(f"{path}: models[{i}] must be a non-empty string model id.")
+            raise ValueError(
+                f"{path}: models[{i}] must be a non-empty string model id."
+            )
     data["models"] = [m.strip() for m in models]
     styles = data.get("styles")
     if not isinstance(styles, list) or not styles:
         raise ValueError(f"{path}: 'styles' must be a non-empty list of style entries.")
     for i, style in enumerate(styles):
-        if not isinstance(style, dict) or not isinstance(style.get("name"), str) \
-                or not style["name"].strip():
+        if (
+            not isinstance(style, dict)
+            or not isinstance(style.get("name"), str)
+            or not style["name"].strip()
+        ):
             raise ValueError(f"{path}: styles[{i}] needs a non-empty string 'name'.")
         anchors = style.get("anchors")
         if not isinstance(anchors, dict) or not anchors:
@@ -1808,10 +1859,15 @@ def run_style_explore(outline_path, candidates_path):
         image_bytes, result = generate_image(prompt, model, keys, eff_format)
         if image_bytes is None:
             print(f"FAILED: {result[:80]}")
-            results.append({
-                "style": style_name, "format": fmt, "model": model,
-                "status": "FAIL", "error": result[:200],
-            })
+            results.append(
+                {
+                    "style": style_name,
+                    "format": fmt,
+                    "model": model,
+                    "status": "FAIL",
+                    "error": result[:200],
+                }
+            )
         else:
             ext = mime_to_ext(result)
             dest = explore_dest(base_dir, style_name, fmt, model, ext)
@@ -1819,10 +1875,15 @@ def run_style_explore(outline_path, candidates_path):
             with open(dest, "wb") as fh:
                 fh.write(image_bytes)
             print(f"OK ({len(image_bytes) / 1024:.0f} KB)")
-            results.append({
-                "style": style_name, "format": fmt, "model": model,
-                "status": "OK", "rel_path": os.path.relpath(dest, base_dir),
-            })
+            results.append(
+                {
+                    "style": style_name,
+                    "format": fmt,
+                    "model": model,
+                    "status": "OK",
+                    "rel_path": os.path.relpath(dest, base_dir),
+                }
+            )
         if i < total:
             time.sleep(RATE_LIMIT_DELAY)
 
@@ -1835,7 +1896,9 @@ def run_style_explore(outline_path, candidates_path):
     print()
     print(f"Wrote {index_path}")
     print(f"Wrote {manifest_path}")
-    print("Review the grid, pick a style + model, then bake them into outline.yaml's style_anchor.")
+    print(
+        "Review the grid, pick a style + model, then bake them into outline.yaml's style_anchor."
+    )
 
 
 def run_edit(outline_path, slide_num, edit_prompt):
@@ -1852,7 +1915,8 @@ def run_edit(outline_path, slide_num, edit_prompt):
     slide = next((s for s in outline["slides"] if s["slide_num"] == slide_num), None)
     eff_format = (
         effective_slide_format(slide["format"], slide.get("safe_zone"))
-        if slide else None
+        if slide
+        else None
     )
 
     print(f"Model: {model}")
@@ -1875,7 +1939,9 @@ def run_edit(outline_path, slide_num, edit_prompt):
         f.write(image_bytes)
     size_kb = len(image_bytes) / 1024
     print(f"OK: {filename} ({size_kb:.0f} KB)")
-    print(f"Review and compare with the original. If good, replace slide-{slide_num:02d}.")
+    print(
+        f"Review and compare with the original. If good, replace slide-{slide_num:02d}."
+    )
 
 
 def run_build(outline_path, slide_arg):
@@ -1950,16 +2016,26 @@ def run_build(outline_path, slide_arg):
         missing_keep = steps_missing_keep_clause(edit_steps)
         if missing_keep:
             build_failed = True
-            print(f"  ERROR: {len(missing_keep)} build step(s) lack an explicit "
-                  '"Keep ..." preservation list:', file=sys.stderr)
+            print(
+                f"  ERROR: {len(missing_keep)} build step(s) lack an explicit "
+                '"Keep ..." preservation list:',
+                file=sys.stderr,
+            )
             for s in missing_keep:
-                print(f"    build-{s['step']:02d}: {s['description'][:70]}",
-                      file=sys.stderr)
-            print("  Phrase each step as an erase instruction naming every element "
-                  "that must persist", file=sys.stderr)
-            print('  ("Erase X. Keep the Y. Keep the Z.") — see '
-                  "rules/illustration-rules.md component #3. Skipping slide.",
-                  file=sys.stderr)
+                print(
+                    f"    build-{s['step']:02d}: {s['description'][:70]}",
+                    file=sys.stderr,
+                )
+            print(
+                "  Phrase each step as an erase instruction naming every element "
+                "that must persist",
+                file=sys.stderr,
+            )
+            print(
+                '  ("Erase X. Keep the Y. Keep the Z.") — see '
+                "rules/illustration-rules.md component #3. Skipping slide.",
+                file=sys.stderr,
+            )
             continue
 
         # Copy full image as the final build step. The dest path preserves
@@ -1989,7 +2065,10 @@ def run_build(outline_path, slide_arg):
             # down the chain (#90). Without a region, the whole frame is
             # regenerated (historical behavior; may drift).
             image_bytes, result = edit_image(
-                prev_image, desc, model, keys,
+                prev_image,
+                desc,
+                model,
+                keys,
                 effective_slide_format(slide["format"], slide.get("safe_zone")),
                 erase_region=region,
             )
@@ -1997,10 +2076,14 @@ def run_build(outline_path, slide_arg):
             if image_bytes is None:
                 build_failed = True
                 print("FAILED")  # complete the stdout progress line opened above
-                print(f"  slide {num} build-{step_num:02d} edit failed: {result[:100]}",
-                      file=sys.stderr)
-                print(f"  Aborting remaining build steps for slide {num} (chain broken)",
-                      file=sys.stderr)
+                print(
+                    f"  slide {num} build-{step_num:02d} edit failed: {result[:100]}",
+                    file=sys.stderr,
+                )
+                print(
+                    f"  Aborting remaining build steps for slide {num} (chain broken)",
+                    file=sys.stderr,
+                )
                 break
 
             ext = mime_to_ext(result)
@@ -2024,8 +2107,10 @@ def run_build(outline_path, slide_arg):
     # policy: non-zero exit on failure). Exit before the success line so a failed
     # run never prints a success-sounding "Done".
     if build_failed:
-        print("ERROR: one or more slides did not produce a complete build chain.",
-              file=sys.stderr)
+        print(
+            "ERROR: one or more slides did not produce a complete build chain.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     print("Done. Review build images in:", builds_dir)
@@ -2044,7 +2129,8 @@ def run_fix(outline_path, slide_num, fix_prompt):
     slide = next((s for s in outline["slides"] if s["slide_num"] == slide_num), None)
     eff_format = (
         effective_slide_format(slide["format"], slide.get("safe_zone"))
-        if slide else None
+        if slide
+        else None
     )
 
     ver = next_version(output_dir, slide_num)
@@ -2070,24 +2156,27 @@ def run_fix(outline_path, slide_num, fix_prompt):
 
 # --- CLI ---
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate illustrations for a presentation outline.",
         epilog="Examples:\n"
-               "  %(prog)s outline.yaml all\n"
-               "  %(prog)s outline.yaml remaining\n"
-               "  %(prog)s outline.yaml 2 5 9\n"
-               "  %(prog)s outline.yaml 2-10\n"
-               "  %(prog)s outline.yaml --compare 2\n"
-               "  %(prog)s outline.yaml --style-explore style-explore/candidates.json\n"
-               "  %(prog)s outline.yaml --edit 5 \"Erase the label\"\n"
-               "  %(prog)s outline.yaml --build 5\n"
-               "  %(prog)s outline.yaml --build all\n"
-               "  %(prog)s outline.yaml --fix 5 \"Make the road wider\"\n"
-               "  %(prog)s outline.yaml -v 2 5 9\n",
+        "  %(prog)s outline.yaml all\n"
+        "  %(prog)s outline.yaml remaining\n"
+        "  %(prog)s outline.yaml 2 5 9\n"
+        "  %(prog)s outline.yaml 2-10\n"
+        "  %(prog)s outline.yaml --compare 2\n"
+        "  %(prog)s outline.yaml --style-explore style-explore/candidates.json\n"
+        '  %(prog)s outline.yaml --edit 5 "Erase the label"\n'
+        "  %(prog)s outline.yaml --build 5\n"
+        "  %(prog)s outline.yaml --build all\n"
+        '  %(prog)s outline.yaml --fix 5 "Make the road wider"\n'
+        "  %(prog)s outline.yaml -v 2 5 9\n",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("outline", help="Path to outline.yaml (the single source of truth)")
+    parser.add_argument(
+        "outline", help="Path to outline.yaml (the single source of truth)"
+    )
     parser.add_argument(
         "--vault",
         default=None,
@@ -2103,19 +2192,19 @@ def main():
         "--style-explore",
         metavar="CANDIDATES_JSON",
         help="Render a style x model x format grid from a candidates.json "
-             "(Phase 2 strategy); writes style-explore/ + index.md + rendered.json",
+        "(Phase 2 strategy); writes style-explore/ + index.md + rendered.json",
     )
     parser.add_argument(
         "--check-style-explore",
         action="store_true",
         help="Render-before-bake gate: verify the outline's baked model was "
-             "rendered in style-explore/; emits verdict JSON, exits non-zero on fail",
+        "rendered in style-explore/; emits verdict JSON, exits non-zero on fail",
     )
     parser.add_argument(
         "--edit",
         nargs=2,
         metavar=("SLIDE", "PROMPT"),
-        help="Edit an existing slide image (e.g., --edit 5 \"Erase the label\")",
+        help='Edit an existing slide image (e.g., --edit 5 "Erase the label")',
     )
     parser.add_argument(
         "--build",
@@ -2126,10 +2215,11 @@ def main():
         "--fix",
         nargs=2,
         metavar=("SLIDE", "PROMPT"),
-        help="Targeted fix pass on a slide (e.g., --fix 5 \"Make the road wider\")",
+        help='Targeted fix pass on a slide (e.g., --fix 5 "Make the road wider")',
     )
     parser.add_argument(
-        "-v", "--version",
+        "-v",
+        "--version",
         action="store_true",
         help="Save as slide-NN-vM.ext instead of overwriting (for generate mode)",
     )

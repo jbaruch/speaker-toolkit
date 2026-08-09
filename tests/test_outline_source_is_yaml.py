@@ -34,9 +34,7 @@ FORBIDDEN_MD_OUTLINE_FIELDS = ("**Composition:**", "**Embedded footer:**")
 
 def _script_files() -> list[Path]:
     return sorted(
-        p
-        for p in SKILLS_DIR.glob("*/scripts/*.py")
-        if "__pycache__" not in p.parts
+        p for p in SKILLS_DIR.glob("*/scripts/*.py") if "__pycache__" not in p.parts
     )
 
 
@@ -47,9 +45,11 @@ def _outline_arg_help(tree: ast.AST) -> str | None:
     `add_argument("--outline", ...)`.
     """
     for node in ast.walk(tree):
-        if not (isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "add_argument"):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "add_argument"
+        ):
             continue
         if not (node.args and isinstance(node.args[0], ast.Constant)):
             continue

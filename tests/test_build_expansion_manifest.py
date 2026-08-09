@@ -16,20 +16,37 @@ FIXTURE = Path(__file__).parent / "fixtures" / "outline-example.yaml"
 _TALK = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))["talk"]
 
 DEFAULT_SLIDES = [
-    {"n": 3, "chapter": "c", "title": "Plain", "format": "FULL",
-     "image_prompt": "[STYLE ANCHOR] a thing"},
-    {"n": 7, "chapter": "c", "title": "The Pipeline", "format": "FULL",
-     "image_prompt": "[STYLE ANCHOR] a pipeline", "builds": [
-         {"step": 0, "desc": "Empty track"},
-         {"step": 1, "desc": "Build stage revealed"},
-         {"step": 2, "desc": "Test stage revealed"},
-         {"step": 3, "desc": "Full pipeline"},
-     ]},
-    {"n": 9, "chapter": "c", "title": "Rollback", "format": "FULL",
-     "image_prompt": "[STYLE ANCHOR] rollback", "builds": [
-         {"step": 0, "desc": "Empty"},
-         {"step": 1, "desc": "Full"},
-     ]},
+    {
+        "n": 3,
+        "chapter": "c",
+        "title": "Plain",
+        "format": "FULL",
+        "image_prompt": "[STYLE ANCHOR] a thing",
+    },
+    {
+        "n": 7,
+        "chapter": "c",
+        "title": "The Pipeline",
+        "format": "FULL",
+        "image_prompt": "[STYLE ANCHOR] a pipeline",
+        "builds": [
+            {"step": 0, "desc": "Empty track"},
+            {"step": 1, "desc": "Build stage revealed"},
+            {"step": 2, "desc": "Test stage revealed"},
+            {"step": 3, "desc": "Full pipeline"},
+        ],
+    },
+    {
+        "n": 9,
+        "chapter": "c",
+        "title": "Rollback",
+        "format": "FULL",
+        "image_prompt": "[STYLE ANCHOR] rollback",
+        "builds": [
+            {"step": 0, "desc": "Empty"},
+            {"step": 1, "desc": "Full"},
+        ],
+    },
 ]
 
 
@@ -75,7 +92,9 @@ def test_non_string_note_is_rejected(build_expansion_manifest, tmp_path):
     _make_frames(builds, 7, 4)
     _make_frames(builds, 9, 2)
     with pytest.raises(SystemExit) as exc:
-        build_expansion_manifest.build_manifest(outline, builds, {"6": 123})  # slide 7 -> key 6
+        build_expansion_manifest.build_manifest(
+            outline, builds, {"6": 123}
+        )  # slide 7 -> key 6
     assert "must be a string" in str(exc.value)
 
 
@@ -167,6 +186,8 @@ def test_unwritable_out_returns_error(build_expansion_manifest, tmp_path, capsys
     _make_frames(builds, 9, 2)
     out_dir = tmp_path / "outdir"
     out_dir.mkdir()
-    rc = build_expansion_manifest.main([str(outline), str(builds), "--out", str(out_dir)])
+    rc = build_expansion_manifest.main(
+        [str(outline), str(builds), "--out", str(out_dir)]
+    )
     assert rc == 1
     assert "cannot write manifest" in capsys.readouterr().err

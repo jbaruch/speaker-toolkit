@@ -43,7 +43,8 @@ def parse_args(argv):
     if not args:
         raise ReturnValidationError(
             f"Usage: {sys.argv[0]} <batch-or-return.json> [...] "
-            "[--catalog-dir <patterns-dir>]")
+            "[--catalog-dir <patterns-dir>]"
+        )
     return args, catalog_dir
 
 
@@ -55,7 +56,9 @@ def load_inputs(paths):
         path = Path(raw)
         candidates = sorted(path.glob("*.json")) if path.is_dir() else [path]
         if path.is_dir() and not candidates:
-            raise ReturnValidationError(f"return directory contains no *.json files: {path}")
+            raise ReturnValidationError(
+                f"return directory contains no *.json files: {path}"
+            )
         for candidate in candidates:
             payload = load_json(candidate, "return")
             files.append(str(candidate))
@@ -66,7 +69,8 @@ def load_inputs(paths):
             else:
                 raise ReturnValidationError(
                     f"return file {candidate} must contain an object or array, "
-                    f"got {type(payload).__name__}")
+                    f"got {type(payload).__name__}"
+                )
     return returns, files
 
 
@@ -79,8 +83,11 @@ def main():
         if errors:
             for error in errors:
                 print(f"ERROR: {error['error']}", file=sys.stderr)
-            print(f"ERROR: {len(errors)} validation error(s) across "
-                  f"{len(returns)} return(s)", file=sys.stderr)
+            print(
+                f"ERROR: {len(errors)} validation error(s) across "
+                f"{len(returns)} return(s)",
+                file=sys.stderr,
+            )
             sys.exit(1)
     except ReturnValidationError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
