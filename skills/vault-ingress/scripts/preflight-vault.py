@@ -2308,8 +2308,11 @@ def run_preflight(value: str | Path) -> dict[str, Any]:
         snapshot = snapshot_tracking_database(database_path)
         database = decode_json_object(snapshot)
     except TrackingDatabaseIOError as exc:
+        # `reason_code` is declared on TrackingDatabaseIOError with a default,
+        # so it is always a str. The old `getattr(..., None)` implied it might
+        # be absent and typed the lookup key as `Any | None`.
         code, message = _DATABASE_READ_DIAGNOSTICS.get(
-            getattr(exc, "reason_code", None), _DATABASE_READ_FALLBACK
+            exc.reason_code, _DATABASE_READ_FALLBACK
         )
         return error_report(vault_root, database_path, code, message)
     return VaultPreflight(database, vault_root, database_path).run()

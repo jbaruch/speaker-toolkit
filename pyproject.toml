@@ -66,6 +66,10 @@ lint = [
     # separate Node setup step.
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
     "pyright==1.1.411",
+    # lxml ships no inline types and Pyright's bundled typeshed has no `etree`
+    # symbol for it; without these stubs the import reads as unresolved.
+    # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
+    "lxml-stubs==0.5.1",
 ]
 # Local Whisper transcription, used by vault-ingress/scripts/fetch-transcript.py
 # when a video has no caption track. Optional and not in the base dependency set

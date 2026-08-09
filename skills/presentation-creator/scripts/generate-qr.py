@@ -1635,6 +1635,7 @@ def _publish(
             insert_jobs = []  # (png_path, [(1-based num, [removal rects])]) per color variant
             for (qr_bg, qr_fg), indices in color_groups.items():
                 if len(color_groups) == 1:
+                    bg_hex = None
                     qr_filename = f"{args.talk_slug}-qr.png"
                 else:
                     # Multiple color variants — suffix with bg hex
@@ -1651,9 +1652,10 @@ def _publish(
                 print(
                     f"  QR PNG saved: {qr_filename} ({size_kb:.1f} KB) — for slide(s) {[i + 1 for i in indices]}"
                 )
-                qr_paths_generated.append(
-                    (qr_path, None if len(color_groups) == 1 else bg_hex)
-                )
+                # `bg_hex` is already None for the single-variant case, so the
+                # binding carries the answer instead of re-deriving it from a
+                # condition evaluated three statements earlier.
+                qr_paths_generated.append((qr_path, bg_hex))
                 # VBA is 1-based; pair each slide with its existing-QR rects
                 insert_jobs.append(
                     (qr_path, [(i + 1, qr_rects_by_idx[i]) for i in indices])

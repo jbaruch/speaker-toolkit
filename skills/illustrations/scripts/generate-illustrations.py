@@ -635,7 +635,7 @@ def load_secrets(vault_path=None):
         tuple (keys_dict, secrets_path) where keys_dict maps
         "gemini" / "openai" → key string or None.
     """
-    keys = {"gemini": None, "openai": None}
+    keys: dict[str, str | None] = {"gemini": None, "openai": None}
 
     if vault_path is None:
         vault_path = _cli_vault_path

@@ -271,11 +271,18 @@ def _require_closed_shape(
         raise TrackingDatabaseError(f"{label} has unknown fields {sorted(unknown)}")
 
 
-def _validate_qr_artifacts(value: object, label: str) -> None:
-    """Every generated PNG is recorded, each bound to its exact written path."""
+def _validate_qr_artifacts(value: object, label: str) -> list[str]:
+    """Every generated PNG is recorded, each bound to its exact written path.
+
+    Returns the validated artifact paths in order, so a caller that needs one
+    reads a proven value rather than re-indexing back into the raw record —
+    `language-diagnostics` prefers a helper that proves the invariant once over
+    an ignore at each use.
+    """
     if not isinstance(value, list) or not value:
         raise TrackingDatabaseError(f"{label} must be a non-empty array")
     seen_paths = set()
+    paths: list[str] = []
     for index, artifact in enumerate(value):
         item_label = f"{label}[{index}]"
         if not isinstance(artifact, Mapping):
@@ -289,6 +296,7 @@ def _validate_qr_artifacts(value: object, label: str) -> None:
                 f"{item_label}.path {path!r} is recorded more than once"
             )
         seen_paths.add(path)
+        paths.append(path)
         root = _require_nonempty_string(
             artifact["path_root"], f"{item_label}.path_root"
         )
@@ -308,6 +316,7 @@ def _validate_qr_artifacts(value: object, label: str) -> None:
                 raise TrackingDatabaseError(
                     f"{item_label}.bg_hex must be 6 lowercase hex characters or null"
                 )
+    return paths
 
 
 def _require_nonempty_string(value: object, label: str) -> str:
@@ -536,10 +545,12 @@ def _validate_collection_record(
             label=label,
         )
         if is_v2:
-            _validate_qr_artifacts(record["artifacts"], f"{label}.artifacts")
+            artifact_paths = _validate_qr_artifacts(
+                record["artifacts"], f"{label}.artifacts"
+            )
             # The documented v2 contract: qr_png_rel_path is the schema-v1
             # reader's view of the first artifact, so the two must agree.
-            first = record["artifacts"][0]["path"]
+            first = artifact_paths[0]
             if record["qr_png_rel_path"] != first:
                 raise TrackingDatabaseError(
                     f"{label}.qr_png_rel_path must mirror artifacts[0].path "
