@@ -20,6 +20,51 @@ A bit.ly custom-back-half failure now carries the already-created link's
 `link_id` and `short_url` in the error, so the provider-side partial creation
 can be reused or deleted deterministically instead of being orphaned.
 
+## 0.20.23 — 2026-08-09
+
+### fix(skills) — restore standalone sequential-workflow preambles (#179)
+
+`presentation-creator`, `shownotes-publisher`, and `vault-ingress` each failed
+the `skill-authoring` title/preamble clause under whole-file validation. The
+first two appended workflow prose to `Process steps in order. Do not skip
+ahead.` in the same paragraph; `vault-ingress` substituted a custom sentence
+for it. All three now open with the standalone preamble and keep their
+workflow explanation as the following paragraph. Step semantics and numbering
+are unchanged.
+
+### fix(packaging) — clearer shape errors and de-duped path list (#133)
+
+`scripts/check-package-contents.sh` coerced manifest array items with `str()`,
+so `"skills": [42]` reported `declares "42" but no tracked files live there` —
+sending the reader after a directory that was never declared. Non-string items
+now hit the `BAD_SHAPE` branch and name the offending index and type.
+
+A manifest declaring both a directory and a path beneath it (`skills/` plus
+`skills/builder`) listed every file under the narrower path twice, inflating
+the total, repeating each violation line, and making the `excludes X of Y`
+counts wrong. The content list is de-duplicated after the per-path existence
+check, which needs its own unfiltered count.
+
+### fix(vault-profile) — distinguish absent `--vault-root` from failed recomputation (#225)
+
+Schema-v5 owner validation appended `requires --vault-root` whenever the live
+pattern snapshot was absent, including when the flag *was* supplied and
+recomputation failed first — for instance on an invalid classification-policy
+override. The report then carried both the real recomputation error and a
+second message implying the flag was omitted. The owner-validation requirement
+stays explicit in both cases; only the stated cause differs.
+
+### fix(vault-ingress) — report the actual trusted root for artifact rejections (#187)
+
+`pattern_evidence._resolve_local_artifact()` hardcoded `outside the vault
+root`, but `_resolve_preclaim_artifact()` calls it against three different
+roots: the vault, a configured `pptx_source_dir`, and a field-specific
+`preclaim:<field>` root. An absolute external PDF, symlink, or path escape
+rejected by the latter two named the wrong trust boundary, obscuring which one
+refused the artifact and making catalog/reparse failures harder to repair. The
+root kind now travels with the resolution and names the violated boundary; an
+unrecognized kind degrades to `the trusted root` rather than claiming the
+vault. Fail-closed behavior and path redaction are unchanged.
 
 ## 0.20.22 — 2026-08-08
 

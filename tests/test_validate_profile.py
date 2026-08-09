@@ -265,6 +265,41 @@ def test_owner_reports_classification_runtime_failure_as_structured_validation(
     )
 
 
+def test_supplied_vault_root_that_cannot_recompute_omits_the_missing_flag_error(
+    validate_profile, tmp_path, capsys
+):
+    """A supplied --vault-root whose snapshot fails must not read as an absent flag."""
+    profile = _minimal_profile(validate_profile)
+    # An invalid classification-policy override makes live recomputation fail
+    # after the flag was already supplied.
+    (tmp_path / "pattern-classification-policy.json").write_text(
+        "{ not valid json", encoding="utf-8"
+    )
+
+    rc = _run(validate_profile, profile, tmp_path)
+    report = json.loads(capsys.readouterr().out)
+
+    assert rc == 1
+    assert report["valid"] is False
+    assert not any(
+        "requires --vault-root" in error for error in report["errors"]
+    ), report["errors"]
+    assert any(
+        "could not recompute occurrence rows" in error for error in report["errors"]
+    ), report["errors"]
+
+
+def test_absent_vault_root_still_reports_the_flag_requirement(validate_profile):
+    """The owner-validation requirement stays explicit when the flag is absent."""
+    profile = _minimal_profile(validate_profile)
+
+    _missing, errors, _schema = validate_profile.validate_profile(
+        profile, require_live_source=True
+    )
+
+    assert any("requires --vault-root" in error for error in errors), errors
+
+
 def test_valid_override_is_stamped_and_recomputed_without_talk_reparse(
     validate_profile, tmp_path, capsys
 ):

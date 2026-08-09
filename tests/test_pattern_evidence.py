@@ -3499,3 +3499,95 @@ def test_malformed_remote_references_are_not_acquisition_capabilities(
     )
 
     assert assessment["acquisition_capabilities"] == ()
+
+
+def _symlink_escaping(root: Path, name: str, outside: Path) -> Path:
+    """Create root/<name> as a symlink to a real file outside root."""
+    outside.parent.mkdir(parents=True, exist_ok=True)
+    outside.write_text("payload\n", encoding="utf-8")
+    root.mkdir(parents=True, exist_ok=True)
+    link = root / name
+    link.symlink_to(outside)
+    return link
+
+
+def test_vault_root_escape_names_the_vault_root(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    _symlink_escaping(vault, "notes.txt", tmp_path / "external" / "notes.txt")
+
+    with pytest.raises(pattern_evidence.PatternEvidenceError) as excinfo:
+        pattern_evidence._resolve_local_artifact(
+            vault, "notes.txt", suffix=".txt", label="transcript_path"
+        )
+
+    assert "resolves outside the vault root" in str(excinfo.value)
+
+
+def test_pptx_source_root_escape_names_the_configured_root(tmp_path: Path) -> None:
+    source_root = tmp_path / "decks"
+    _symlink_escaping(source_root, "notes.txt", tmp_path / "external" / "notes.txt")
+
+    with pytest.raises(pattern_evidence.PatternEvidenceError) as excinfo:
+        pattern_evidence._resolve_local_artifact(
+            source_root,
+            "notes.txt",
+            suffix=".txt",
+            label="pptx_path",
+            root_kind="pptx_source",
+        )
+
+    message = str(excinfo.value)
+    assert "resolves outside the configured pptx_source_dir root" in message
+    assert "vault root" not in message
+
+
+def test_preclaim_root_escape_names_the_field_preclaim_root(tmp_path: Path) -> None:
+    preclaim_root = tmp_path / "preclaim"
+    _symlink_escaping(preclaim_root, "notes.txt", tmp_path / "external" / "notes.txt")
+
+    with pytest.raises(pattern_evidence.PatternEvidenceError) as excinfo:
+        pattern_evidence._resolve_local_artifact(
+            preclaim_root,
+            "notes.txt",
+            suffix=".txt",
+            label="slides_local_path",
+            root_kind="preclaim:slides_local_path",
+        )
+
+    message = str(excinfo.value)
+    assert "resolves outside the slides_local_path preclaim root" in message
+    assert "vault root" not in message
+
+
+def test_bounded_pptx_resolver_names_the_violated_root(tmp_path: Path) -> None:
+    """The bounded .pptx lane reports the field-specific root, not a generic one."""
+    preclaim_root = tmp_path / "preclaim"
+    preclaim_root.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(pattern_evidence.PatternEvidenceError) as excinfo:
+        pattern_evidence._resolve_local_pptx_artifact(
+            preclaim_root,
+            str(tmp_path / "external" / "deck.pptx"),
+            label="pptx_path",
+            root_kind="preclaim:pptx_path",
+        )
+
+    message = str(excinfo.value)
+    assert "resolves outside the pptx_path preclaim root" in message
+    assert "the trusted root" not in message
+
+
+def test_unknown_root_kind_falls_back_without_claiming_the_vault(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    _symlink_escaping(vault, "notes.txt", tmp_path / "external" / "notes.txt")
+
+    with pytest.raises(pattern_evidence.PatternEvidenceError) as excinfo:
+        pattern_evidence._resolve_local_artifact(
+            vault,
+            "notes.txt",
+            suffix=".txt",
+            label="transcript_path",
+            root_kind="something_new",
+        )
+
+    assert "resolves outside the trusted root" in str(excinfo.value)

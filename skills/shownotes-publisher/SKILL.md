@@ -21,12 +21,13 @@ user-invocable: true
 
 # Shownotes Publisher
 
-Process steps in order. Do not skip ahead. This skill writes a
-markdown file into the Jekyll shownotes site's `_talks/` collection
-where a custom parser plugin (`_plugins/markdown_parser.rb` in the
-target site) extracts structured fields by pattern matching on the
-body. The format is strict — small mistakes silently flatten
-content or break conditional rendering.
+Process steps in order. Do not skip ahead.
+
+This skill writes a markdown file into the Jekyll shownotes site's `_talks/`
+collection where a custom parser plugin (`_plugins/markdown_parser.rb` in the
+target site) extracts structured fields by pattern matching on the body. The
+format is strict — small mistakes silently flatten content or break
+conditional rendering.
 
 Resolve the absolute path of this loaded `SKILL.md`, then set
 `speaker_toolkit_root` to the plugin root two directories above the directory

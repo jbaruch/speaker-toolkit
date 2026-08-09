@@ -237,6 +237,7 @@ def _resolve_local_artifact(
     *,
     suffix: str | frozenset[str],
     label: str,
+    root_kind: str = "vault",
 ) -> Path:
     if not isinstance(value, str) or not value.strip() or value != value.strip():
         raise PatternEvidenceError(f"{label} must be a non-empty path")
@@ -257,7 +258,9 @@ def _resolve_local_artifact(
     try:
         resolved.relative_to(root)
     except ValueError as exc:
-        raise PatternEvidenceError(f"{label} resolves outside the vault root") from exc
+        raise PatternEvidenceError(
+            f"{label} resolves outside {_trusted_root_description(root_kind)}"
+        ) from exc
     if lexical != resolved:
         raise PatternEvidenceError(f"{label} must not traverse a symbolic link")
     if not resolved.is_file():
@@ -319,6 +322,22 @@ def _reject_ambiguous_path_segments(value: str, *, label: str) -> None:
         raise PatternEvidenceError(f"{label}: {exc.reason_code}") from exc
 
 
+def _trusted_root_description(root_kind: str) -> str:
+    """Name the trusted root a rejected locator was actually measured against.
+
+    ``root_kind`` uses the same vocabulary ``_resolve_preclaim_artifact``
+    returns, so a rejection diagnostic names the boundary that refused the
+    artifact rather than defaulting to the vault root.
+    """
+    if root_kind == "vault":
+        return "the vault root"
+    if root_kind == "pptx_source":
+        return "the configured pptx_source_dir root"
+    if root_kind.startswith("preclaim:"):
+        return f"the {root_kind.removeprefix('preclaim:')} preclaim root"
+    return "the trusted root"
+
+
 def _resolve_local_bounded_artifact(
     trusted_root: str | Path,
     value: object,
@@ -326,6 +345,7 @@ def _resolve_local_bounded_artifact(
     suffix: str | frozenset[str],
     label: str,
     canonicalize_root: bool = False,
+    root_kind: str = "vault",
 ) -> Path:
     """Validate a locator lexically; its bounded probe owns filesystem I/O."""
     if not isinstance(value, str) or not value.strip() or value != value.strip():
@@ -352,7 +372,7 @@ def _resolve_local_bounded_artifact(
         relative = candidate.relative_to(canonical_root)
     except ValueError as exc:
         raise PatternEvidenceError(
-            f"{label} resolves outside the trusted root"
+            f"{label} resolves outside {_trusted_root_description(root_kind)}"
         ) from exc
     suffixes = frozenset({suffix}) if isinstance(suffix, str) else suffix
     if not relative.parts or candidate.suffix.casefold() not in suffixes:
@@ -365,12 +385,14 @@ def _resolve_local_pptx_artifact(
     value: object,
     *,
     label: str,
+    root_kind: str = "vault",
 ) -> Path:
     return _resolve_local_bounded_artifact(
         trusted_root,
         value,
         suffix=".pptx",
         label=label,
+        root_kind=root_kind,
     )
 
 
@@ -379,6 +401,7 @@ def _resolve_local_pdf_artifact(
     value: object,
     *,
     label: str,
+    root_kind: str = "vault",
 ) -> Path:
     return _resolve_local_bounded_artifact(
         trusted_root,
@@ -386,6 +409,7 @@ def _resolve_local_pdf_artifact(
         suffix=".pdf",
         label=label,
         canonicalize_root=True,
+        root_kind=root_kind,
     )
 
 
@@ -504,9 +528,11 @@ def _resolve_preclaim_artifact(
         root = configured_root or vault
         root_kind = "pptx_source" if configured_root is not None else "vault"
         if resolver is None:
-            path = _resolve_local_artifact(root, value, suffix=suffix, label=field)
+            path = _resolve_local_artifact(
+                root, value, suffix=suffix, label=field, root_kind=root_kind
+            )
         else:
-            path = resolver(root, value, label=field)
+            path = resolver(root, value, label=field, root_kind=root_kind)
         admitted_root = _canonical_pdf_root(root) if suffix == ".pdf" else root
         return path, admitted_root, root_kind
 
@@ -523,20 +549,25 @@ def _resolve_preclaim_artifact(
             continue
         admitted_root = _canonical_pdf_root(root) if suffix == ".pdf" else root
         path = (
-            _resolve_local_artifact(root, candidate, suffix=suffix, label=field)
+            _resolve_local_artifact(
+                root, candidate, suffix=suffix, label=field, root_kind=root_kind
+            )
             if resolver is None
-            else resolver(root, candidate, label=field)
+            else resolver(root, candidate, label=field, root_kind=root_kind)
         )
         return path, admitted_root, root_kind
 
     root = _native_artifact_root(absolute.parent, label=f"{field} parent")
+    preclaim_kind = f"preclaim:{field}"
     admitted_root = _canonical_pdf_root(root) if suffix == ".pdf" else root
     path = (
-        _resolve_local_artifact(root, absolute.name, suffix=suffix, label=field)
+        _resolve_local_artifact(
+            root, absolute.name, suffix=suffix, label=field, root_kind=preclaim_kind
+        )
         if resolver is None
-        else resolver(root, absolute.name, label=field)
+        else resolver(root, absolute.name, label=field, root_kind=preclaim_kind)
     )
-    return path, admitted_root, f"preclaim:{field}"
+    return path, admitted_root, preclaim_kind
 
 
 def _pptx_locator_count(
