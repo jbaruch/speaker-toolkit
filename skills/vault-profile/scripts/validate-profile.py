@@ -376,8 +376,15 @@ def validate_profile(
     *,
     live_pattern_snapshot: object | None = None,
     require_live_source: bool = False,
+    live_source_recompute_failed: bool = False,
 ) -> tuple[list[str], list[str], object]:
-    """Return ``(missing_top_level_keys, errors, schema_version)``."""
+    """Return ``(missing_top_level_keys, errors, schema_version)``.
+
+    ``live_source_recompute_failed`` marks a supplied ``--vault-root`` whose
+    live snapshot could not be rebuilt. The caller reports that failure with its
+    own specific error, so the missing-flag message is suppressed rather than
+    stacked on top of it.
+    """
     if not isinstance(profile, Mapping):
         return (
             [],
@@ -406,6 +413,11 @@ def validate_profile(
         errors.extend(_validate_catalog_history_storage(profile))
         if live_pattern_snapshot is not None:
             errors.extend(_validate_live_pattern_source(profile, live_pattern_snapshot))
+        elif live_source_recompute_failed:
+            # The root was supplied; the caller appends the specific
+            # recomputation failure. Saying the flag is required here would
+            # contradict it.
+            pass
         elif require_live_source:
             errors.append(
                 "schema-v5 owner validation requires --vault-root so occurrence "
@@ -462,14 +474,21 @@ def main(argv: list[str]) -> int:
         try:
             live_snapshot = _load_live_pattern_snapshot(vault_root, profile)
         except PatternCohortSnapshotError as exc:
-            live_error = f"could not recompute the live pattern cohort: {exc}"
+            live_error = (
+                "schema-v5 owner validation could not recompute occurrence rows "
+                f"and classifications from the --vault-root given: {exc}"
+            )
         except (json.JSONDecodeError, OSError, ValueError) as exc:
-            live_error = f"could not recompute the live pattern cohort: {exc}"
+            live_error = (
+                "schema-v5 owner validation could not recompute occurrence rows "
+                f"and classifications from the --vault-root given: {exc}"
+            )
 
     missing, errors, schema_version = validate_profile(
         profile,
         live_pattern_snapshot=live_snapshot,
         require_live_source=True,
+        live_source_recompute_failed=live_error is not None,
     )
     if live_error is not None:
         errors.append(live_error)
