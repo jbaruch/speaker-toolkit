@@ -1,5 +1,22 @@
 # Changelog
 
+### fix(vault-ingress) — say which failure the unreadable transcript hit (#253)
+
+`transcript_artifact_unreadable` always read "transcript artifact cannot be
+decoded as UTF-8 speech text", but the handler catches `(OSError, UnicodeError)`
+— a permission denial or a vanished file got a message asserting the wrong
+cause. #252 already split `actual` into `not_utf8` versus
+`unreadable:<ExceptionType>`; the message now follows the same branch, staying
+free of the errno prose and host path that `artifact_path` already carries
+(#200). Both messages name the recovery — re-fetch or re-save for a decode
+failure, restore and make readable for a read failure — because a diagnostic
+that only describes the fault leaves the operator to guess (`error-handling`
+Actionable Messages).
+
+Found by Copilot's advisory review of #252. Advisories never gate
+(`rules/review-severity.md`), so it was deferred here rather than burning a
+re-review round.
+
 ## 0.20.29 — 2026-08-09
 
 ### fix(vault-ingress) — route preflight diagnostics off typed reasons, not exception prose (#200)
