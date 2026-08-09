@@ -28,9 +28,20 @@ failure the lock exists to prevent. A lock-acquisition failure exits with an
 `ERROR:` line rather than a traceback, matching the script's other early-failure
 paths.
 
+The rebase is not a blind overwrite. This talk's `qr_codes` record is captured
+under the lock at publication start and compared against the fresh read at
+commit; a same-talk change landing meanwhile is another owner's decision, so
+the commit rejects rather than discarding it. The slug lock keeps competing QR
+runs out, but non-QR writers do not take it.
+
 A commit that still rejects no longer looks side-effect-free. The run exits
 non-zero and names every effect that landed — short-link provider and link id,
 each PNG path, the mutated deck — plus how a retry behaves against them.
+
+Rollback advice depends on how the link came to be. A link this run created can
+be deleted; a retargeted link predates the run and must be pointed back at its
+recorded prior target instead; a pre-resolved link was never this run's to
+remove. Advising deletion in the latter two cases would be destructive.
 
 ## 0.20.25 — 2026-08-09
 

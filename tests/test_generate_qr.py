@@ -1189,7 +1189,8 @@ def test_no_effects_yet_reports_a_clean_retry(generate_qr, capsys):
 
 def test_effects_receipt_names_link_pngs_and_deck(generate_qr, capsys):
     receipt = generate_qr.EffectsReceipt("my-talk")
-    receipt.record_short_link("bitly", "bit.ly/abc123", "https://jbaru.ch/my-talk")
+    receipt.record_short_link("bitly", "bit.ly/abc123", "https://jbaru.ch/my-talk",
+                              action="created")
     receipt.record_artifacts(["/tmp/a.png", "/tmp/b.png"])
     receipt.record_deck("/tmp/deck.pptx")
 
@@ -1198,6 +1199,64 @@ def test_effects_receipt_names_link_pngs_and_deck(generate_qr, capsys):
     assert "link_id=bit.ly/abc123" in err
     assert "/tmp/a.png" in err and "/tmp/b.png" in err
     assert "deck mutated: /tmp/deck.pptx" in err
+    assert "delete the short link above" in err
+
+
+@pytest.mark.parametrize("action,prior,expected,forbidden", [
+    ("created", None, "delete the short link above", "do NOT delete"),
+    ("retargeted", "https://example.test/old",
+     "point https://jbaru.ch/my-talk back at https://example.test/old", "delete the short link above"),
+    ("preresolved", None, "leave the short link alone", "delete the short link above"),
+])
+def test_rollback_advice_matches_how_the_link_came_to_be(
+        generate_qr, capsys, action, prior, expected, forbidden):
+    """Deleting a link this run did not create is destructive, not a rollback."""
+    receipt = generate_qr.EffectsReceipt("my-talk")
+    receipt.record_short_link("bitly", "bit.ly/abc123", "https://jbaru.ch/my-talk",
+                              action=action, prior_target=prior)
+    receipt.record_artifacts(["/tmp/a.png"])
+
+    generate_qr._report_unfinalized_effects(receipt)
+    err = capsys.readouterr().err
+    assert expected in err
+    assert forbidden not in err
+    if action == "retargeted":
+        assert "previous target: https://example.test/old" in err
+
+
+def test_same_talk_change_during_publication_rejects(generate_qr, tmp_path):
+    """Another owner's decision about this record is not silently discarded."""
+    path = tmp_path / "tracking-database.json"
+    database = _current_tracking_database()
+    path.write_text(json.dumps(database), encoding="utf-8")
+
+    prior = {
+        "schema_version": 2, "talk_slug": "current",
+        "target_url": "https://example.test/old", "shortener": "bitly",
+        "short_path": "current", "short_url": "https://jbaru.ch/current",
+        "shortener_link_id": "bit.ly/abc", "qr_png_rel_path": "current.png",
+        "artifacts": [{"path": "current.png", "path_root": "cwd",
+                       "sha256": "c" * 64, "bg_hex": None}],
+        "created_at": "2026-08-09", "updated_at": "2026-08-09",
+    }
+    # A different writer changed this same record after publication began.
+    raced = json.loads(path.read_text(encoding="utf-8"))
+    raced["qr_codes"] = [dict(prior, target_url="https://example.test/theirs")]
+    path.write_text(json.dumps(raced), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="changed during publication"):
+        generate_qr.commit_qr_record(
+            str(path),
+            {"talk_slug": "current", "target_url": "https://example.test/mine",
+             "shortener": "bitly", "short_url": "https://jbaru.ch/current",
+             "short_path": "current", "shortener_link_id": "bit.ly/abc"},
+            [_receipt("current.png")],
+            prior,
+        )
+
+    # Their record survives untouched.
+    after = json.loads(path.read_text(encoding="utf-8"))["qr_codes"][0]
+    assert after["target_url"] == "https://example.test/theirs"
 
 
 def test_publication_lock_is_per_slug(generate_qr, tmp_path):
