@@ -507,15 +507,37 @@ def test_format_qr_spec_new_placement_and_replace(generate_qr):
 def test_create_bitly_link_raises_when_custom_back_half_fails(generate_qr, monkeypatch):
     """If the custom back-half can't be set, fail rather than return a random hash —
     the back-half must always be the slug (rules/qr-generation-rules.md §2)."""
-    import pytest
+    import urllib.error
 
     def fake_http(url, data=None, headers=None, method="GET"):
         if url.endswith("/v4/bitlinks"):
             return {"id": "bit.ly/abc123", "link": "https://bit.ly/abc123"}
-        raise RuntimeError("custom back-half already taken")
+        # bit.ly answers 422 when the requested back-half is already taken.
+        raise urllib.error.HTTPError(url, 422, "Unprocessable", {}, None)
 
     monkeypatch.setattr(generate_qr, "_http_request", fake_http)
-    with pytest.raises(RuntimeError, match="could not set custom back-half"):
+    with pytest.raises(
+        generate_qr.ShortenerResolutionError, match="could not set custom back-half"
+    ) as excinfo:
+        generate_qr.create_bitly_link(
+            "https://example.com/notes", "tok", custom_back_half="my-slug", domain="jbaru.ch"
+        )
+    # The link exists provider-side; its identity must travel with the failure
+    # so the operator can reuse or delete it deterministically.
+    message = str(excinfo.value)
+    assert "link_id=bit.ly/abc123" in message
+    assert "short_url=https://bit.ly/abc123" in message
+
+
+def test_create_bitly_link_lets_programming_errors_propagate(generate_qr, monkeypatch):
+    """Only documented provider failures are wrapped; bugs surface as themselves."""
+    def fake_http(url, data=None, headers=None, method="GET"):
+        if url.endswith("/v4/bitlinks"):
+            return {"id": "bit.ly/abc123", "link": "https://bit.ly/abc123"}
+        raise TypeError("bug in the caller")
+
+    monkeypatch.setattr(generate_qr, "_http_request", fake_http)
+    with pytest.raises(TypeError, match="bug in the caller"):
         generate_qr.create_bitly_link(
             "https://example.com/notes", "tok", custom_back_half="my-slug", domain="jbaru.ch"
         )
@@ -720,3 +742,119 @@ def test_main_rejects_tracking_database_symlink_before_loading_config(
 
     with pytest.raises(SystemExit, match="symbolic link"):
         generate_qr.main()
+
+
+# --- #170: a configured shortener must fail closed, never ship a raw URL ---
+
+def _qr_db():
+    """Tracking DB carrying one managed link for `my-talk`."""
+    return {
+        "qr_codes": [{
+            "talk_slug": "my-talk",
+            "target_url": "https://example.com/old",
+            "shortener": "bitly",
+            "short_path": "my-talk",
+            "short_url": "https://jbaru.ch/my-talk",
+            "shortener_link_id": "bit.ly/abc123",
+        }]
+    }
+
+
+def test_unconfigured_shortener_fails_closed(generate_qr):
+    with pytest.raises(generate_qr.ShortenerResolutionError, match="no URL shortener configured"):
+        generate_qr.resolve_short_url(
+            "https://example.com/notes", "my-talk", {}, {}, {"qr_codes": []}
+        )
+
+
+def test_unknown_shortener_fails_closed(generate_qr):
+    with pytest.raises(generate_qr.ShortenerResolutionError, match="unknown shortener 'tinyurl'"):
+        generate_qr.resolve_short_url(
+            "https://example.com/notes", "my-talk",
+            {"shortener": "tinyurl"}, {}, {"qr_codes": []}
+        )
+
+
+@pytest.mark.parametrize("service,key", [("bitly", "api_token"), ("rebrandly", "api_key")])
+def test_missing_credentials_fail_closed(generate_qr, service, key):
+    with pytest.raises(generate_qr.ShortenerResolutionError, match=f"{key} is missing"):
+        generate_qr.resolve_short_url(
+            "https://example.com/notes", "my-talk",
+            {"shortener": service, f"{service}_domain": None}, {}, {"qr_codes": []}
+        )
+
+
+def test_provider_error_fails_closed(generate_qr, monkeypatch):
+    import urllib.error
+
+    def fake_http(url, data=None, headers=None, method="GET"):
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr(generate_qr, "_http_request", fake_http)
+    with pytest.raises(generate_qr.ShortenerResolutionError, match="could not produce the managed"):
+        generate_qr.resolve_short_url(
+            "https://example.com/notes", "my-talk",
+            {"shortener": "bitly", "bitly_domain": "jbaru.ch"},
+            {"bitly": {"api_token": "tok"}}, {"qr_codes": []}
+        )
+
+
+def test_malformed_provider_response_fails_closed(generate_qr, monkeypatch):
+    """A response missing an expected field is a provider failure, not a raw-URL cue."""
+    monkeypatch.setattr(
+        generate_qr, "_http_request",
+        lambda url, data=None, headers=None, method="GET": {"unexpected": "shape"},
+    )
+    with pytest.raises(generate_qr.ShortenerResolutionError, match="could not produce the managed"):
+        generate_qr.resolve_short_url(
+            "https://example.com/notes", "my-talk",
+            {"shortener": "bitly", "bitly_domain": "jbaru.ch"},
+            {"bitly": {"api_token": "tok"}}, {"qr_codes": []}
+        )
+
+
+def test_programming_errors_propagate_unwrapped(generate_qr, monkeypatch):
+    def fake_http(url, data=None, headers=None, method="GET"):
+        raise AttributeError("bug in the caller")
+
+    monkeypatch.setattr(generate_qr, "_http_request", fake_http)
+    with pytest.raises(AttributeError, match="bug in the caller"):
+        generate_qr.resolve_short_url(
+            "https://example.com/notes", "my-talk",
+            {"shortener": "bitly", "bitly_domain": "jbaru.ch"},
+            {"bitly": {"api_token": "tok"}}, {"qr_codes": []}
+        )
+
+
+def test_failure_never_downgrades_an_existing_managed_record(generate_qr, monkeypatch):
+    """A resolution failure must leave the tracking DB byte-identical."""
+    import copy
+    import urllib.error
+
+    db = _qr_db()
+    before = copy.deepcopy(db)
+
+    monkeypatch.setattr(
+        generate_qr, "_http_request",
+        lambda *a, **k: (_ for _ in ()).throw(urllib.error.URLError("down")),
+    )
+    with pytest.raises(generate_qr.ShortenerResolutionError):
+        generate_qr.resolve_short_url(
+            "https://example.com/new", "my-talk",
+            {"shortener": "bitly", "bitly_domain": "jbaru.ch"},
+            {"bitly": {"api_token": "tok"}}, db
+        )
+
+    assert db == before
+    assert db["qr_codes"][0]["shortener"] == "bitly"
+
+
+def test_explicit_none_still_authorizes_a_raw_url(generate_qr):
+    """The one sanctioned path to a raw target URL stays open."""
+    url, meta = generate_qr.resolve_short_url(
+        "https://example.com/notes", "my-talk",
+        {"shortener": "none"}, {}, {"qr_codes": []}
+    )
+    assert url == "https://example.com/notes"
+    assert meta["shortener"] == "none"
+    assert meta["target_url"] == "https://example.com/notes"

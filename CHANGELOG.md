@@ -1,5 +1,26 @@
 # Changelog
 
+### fix(generate-qr) — fail closed when a configured shortener cannot produce the managed link (#170)
+
+`resolve_short_url()` silently returned the raw shownotes URL on five paths: no
+shortener configured, an unknown shortener name, missing bit.ly/rebrand.ly
+credentials, any exception escaping through the effectively-broad
+`except (..., Exception)`, and a failed custom back-half. Each shipped a QR
+without the managed redirect layer and cataloged it as `shortener: none`,
+overwriting an existing managed `qr_codes[]` record.
+
+Only an explicit `shortener: none` now authorizes a raw target URL. Every other
+resolution failure raises `ShortenerResolutionError`, which `main()` converts to
+a non-zero exit before any PNG, deck, or tracking-database write. The catch is
+narrowed to documented provider and network failures (`HTTPError`, `URLError`,
+`OSError`, `JSONDecodeError`, and a `KeyError` from a malformed response);
+programming errors and process-control exceptions propagate.
+
+A bit.ly custom-back-half failure now carries the already-created link's
+`link_id` and `short_url` in the error, so the provider-side partial creation
+can be reused or deleted deterministically instead of being orphaned.
+
+
 ## 0.20.22 — 2026-08-08
 
 ### chore(deps) — pin the setuptools build requirement

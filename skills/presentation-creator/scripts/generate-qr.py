@@ -234,11 +234,22 @@ def create_bitly_link(long_url, api_token, custom_back_half=None, domain=None):
             short_url = f"https://{bitly_domain}/{custom_back_half}"
             short_path = custom_back_half
             print(f"  Custom back-half set: {bitly_domain}/{custom_back_half}")
-        except Exception as e:
+        except (
+            urllib.error.HTTPError,
+            urllib.error.URLError,
+            OSError,
+            json.JSONDecodeError,
+            KeyError,
+        ) as e:
             # A random hash would silently break the slug=back-half contract
             # (rules/qr-generation-rules.md §2), so surface the failure instead.
-            raise RuntimeError(
-                f"could not set custom back-half '{custom_back_half}' on {bitly_domain}: {e}"
+            # The link already exists provider-side; carry its identity so the
+            # operator can reuse or delete it deterministically.
+            raise ShortenerResolutionError(
+                f"could not set custom back-half '{custom_back_half}' on "
+                f"{bitly_domain}: {e}. A provider-side link was already created "
+                f"and must be reused or deleted: link_id={link_id} "
+                f"short_url={short_url}"
             ) from e
 
     return {
@@ -303,6 +314,16 @@ def update_rebrandly_link(link_id, new_long_url, api_key):
         headers=headers,
         method="POST",
     )
+
+
+class ShortenerResolutionError(RuntimeError):
+    """A configured shortener could not produce its managed short link.
+
+    Only an explicit ``shortener: none`` authorizes encoding a raw target URL.
+    Every other resolution failure raises this so the run stops before a PNG,
+    deck, or tracking-database write, rather than silently shipping a QR
+    without the managed redirect layer and cataloging it as ``none``.
+    """
 
 
 def _print_missing_key_help(service, key_name, vault_path):
@@ -378,12 +399,13 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
 
     # Distinguish "not configured" from "explicitly disabled"
     if shortener is None:
-        print("  WARNING: No URL shortener configured in speaker profile (publishing_process.qr_code.shortener).")
-        print("  Add 'shortener: bitly' or 'shortener: rebrandly' to your profile,")
-        print("  or set 'shortener: none' to explicitly use raw URLs.")
-        print("  Proceeding with raw URL.")
+        raise ShortenerResolutionError(
+            "no URL shortener configured at publishing_process.qr_code.shortener. "
+            "Set 'shortener: bitly' or 'shortener: rebrandly', or set "
+            "'shortener: none' to explicitly authorize an unmanaged raw URL."
+        )
 
-    if shortener in (None, "none"):
+    if shortener == "none":
         meta = {
             "talk_slug": talk_slug,
             "target_url": shownotes_url,
@@ -415,7 +437,10 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
             api_token = secrets.get("bitly", {}).get("api_token")
             if not api_token:
                 _print_missing_key_help("bitly", "api_token", vault_path)
-                return shownotes_url, _none_meta(talk_slug, shownotes_url)
+                raise ShortenerResolutionError(
+                    "bitly is configured but its api_token is missing from "
+                    "secrets.json; see the guidance above"
+                )
 
             bitly_domain = config.get("bitly_domain")  # e.g., "jbaru.ch"
 
@@ -447,7 +472,10 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
             api_key = secrets.get("rebrandly", {}).get("api_key")
             if not api_key:
                 _print_missing_key_help("rebrandly", "api_key", vault_path)
-                return shownotes_url, _none_meta(talk_slug, shownotes_url)
+                raise ShortenerResolutionError(
+                    "rebrandly is configured but its api_key is missing from "
+                    "secrets.json; see the guidance above"
+                )
 
             domain = config.get("rebrandly_domain")
 
@@ -473,24 +501,27 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
                 return result["short_url"], meta
 
         else:
-            print(f"  WARNING: Unknown shortener '{shortener}', using raw URL")
-            return shownotes_url, _none_meta(talk_slug, shownotes_url)
+            raise ShortenerResolutionError(
+                f"unknown shortener '{shortener}' at "
+                "publishing_process.qr_code.shortener; supported values are "
+                "'bitly', 'rebrandly', and 'none'"
+            )
 
-    except (urllib.error.HTTPError, urllib.error.URLError, Exception) as e:
-        print(f"  WARNING: {shortener} API failed ({e}), falling back to raw URL")
-        return shownotes_url, _none_meta(talk_slug, shownotes_url)
-
-
-def _none_meta(talk_slug, shownotes_url):
-    """Build a metadata dict for the shortener=none fallback."""
-    return {
-        "talk_slug": talk_slug,
-        "target_url": shownotes_url,
-        "shortener": "none",
-        "short_path": None,
-        "short_url": shownotes_url,
-        "shortener_link_id": None,
-    }
+    except ShortenerResolutionError:
+        raise
+    except (
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        OSError,
+        json.JSONDecodeError,
+        # A provider response missing an expected field is a malformed-response
+        # failure, not a bug in this script.
+        KeyError,
+    ) as e:
+        raise ShortenerResolutionError(
+            f"{shortener} could not produce the managed short link for "
+            f"'{talk_slug}': {e}"
+        ) from e
 
 
 # --- Slide Background Color Resolution ---
@@ -904,10 +935,19 @@ def main():
         # Direct resolution mode
         shownotes_url = args.shownotes_url
         print(f"Resolving short URL for: {shownotes_url}")
-        qr_url, meta = resolve_short_url(
-            shownotes_url, args.talk_slug, qr_config, secrets, tracking_db, args.dry_run,
-            vault_path=vault_path,
-        )
+        try:
+            qr_url, meta = resolve_short_url(
+                shownotes_url, args.talk_slug, qr_config, secrets, tracking_db,
+                args.dry_run, vault_path=vault_path,
+            )
+        except ShortenerResolutionError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            print(
+                "  No QR PNG, deck, or tracking-database change was made. Only "
+                "an explicit 'shortener: none' may encode a raw target URL.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     print(f"QR will encode: {qr_url}")
 
