@@ -38,8 +38,12 @@ A commit that still rejects no longer looks side-effect-free. The run exits
 non-zero and names every effect that landed — short-link provider and link id,
 each PNG path, the mutated deck — plus how a retry behaves against them.
 
-Recovery guidance covers every landed effect, and says plainly that there is no
-atomic rollback. The link action differs by how it came to be: a link this run
+A rejected commit writes one JSON document to stderr —
+`{"error": "qr_publication_unfinalized", ...}` carrying `retry`,
+`atomic_rollback`, and an `effects[]` entry per landed effect with its own
+`rollback` action — and the skill renders it, per `script-delegation`. The
+payload covers every landed effect, and says plainly that there is no atomic
+rollback. The link action differs by how it came to be: a link this run
 created can be deleted, a retargeted link predates the run and must be pointed
 back at its recorded prior target, and a pre-resolved link was never this run's
 to remove. Each written PNG is named, and the deck is reported as modified in

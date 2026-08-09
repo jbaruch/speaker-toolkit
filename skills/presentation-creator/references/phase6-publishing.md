@@ -204,8 +204,12 @@ path make the check before resolving the link.
    - Commit the QR record against the current database generation — see the
      `commit_qr_record` docstring in the same script for what it rebases and
      what it refuses
-   - On a rejected commit: exit non-zero, having printed every external effect
-     that already landed and the rollback action matching each. The run makes no
+   - On a rejected commit: exit non-zero having written one JSON document to
+     stderr — `{"error": "qr_publication_unfinalized", ...}` with `retry`,
+     `atomic_rollback`, and an `effects[]` entry per landed effect, each
+     carrying its own `rollback` action. Render it for the operator; do not
+     restate its fields here. See `unfinalized_effects_payload` in
+     `skills/presentation-creator/scripts/generate-qr.py`. The run makes no
      tracking-database change in that case
    - Persist schema-v2 QR metadata in `qr_codes[]` — including one
      `artifacts[]` receipt per generated PNG — through the shared

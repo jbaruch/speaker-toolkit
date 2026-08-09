@@ -263,77 +263,74 @@ class EffectsReceipt:
         return bool(self.short_link or self.artifacts or self.deck)
 
 
-def _report_unfinalized_effects(receipt):
-    """Print what already landed, and how a retry behaves against it."""
-    if receipt is None or not receipt.any_effects():
-        print(
-            "  No external effects were made; this run is safe to retry as-is.",
-            file=sys.stderr,
-        )
-        return
+def unfinalized_effects_payload(receipt, message):
+    """Structured account of a publication whose commit did not land.
 
-    print("", file=sys.stderr)
-    print(
-        "  The tracking database was NOT updated, but these effects already "
-        "landed:",
-        file=sys.stderr,
-    )
-    link = receipt.short_link
+    Emitted as one JSON document on stderr so the calling skill renders the
+    operator-facing prose. Every recorded effect carries its own rollback
+    action: there is no atomic rollback, and a link this run did not create
+    must never be deleted.
+    """
+    effects = []
+    link = receipt.short_link if receipt else None
     if link:
-        print(
-            f"    short link {link['action']}: {link['short_url']} "
-            f"(provider={link['provider'] or 'unknown'}, "
-            f"link_id={link['link_id'] or 'unknown'})",
-            file=sys.stderr,
-        )
-        if link["action"] == "retargeted":
-            print(
-                f"      previous target: {link['prior_target']}",
-                file=sys.stderr,
-            )
-    for path in receipt.artifacts:
-        print(f"    PNG written: {path}", file=sys.stderr)
-    if receipt.deck:
-        print(f"    deck mutated: {receipt.deck}", file=sys.stderr)
+        if link["action"] == "created":
+            rollback = {"action": "delete", "target": link["short_url"]}
+        elif link["action"] == "retargeted":
+            rollback = {
+                "action": "restore_target",
+                "target": link["short_url"],
+                "restore_to": link["prior_target"],
+            }
+        else:
+            rollback = {"action": "none", "target": link["short_url"]}
+        effects.append({
+            "kind": "short_link",
+            "action": link["action"],
+            "short_url": link["short_url"],
+            "provider": link["provider"],
+            "link_id": link["link_id"],
+            "prior_target": link["prior_target"],
+            "rollback": rollback,
+        })
+    for path in (receipt.artifacts if receipt else []):
+        effects.append({
+            "kind": "png",
+            "path": path,
+            "rollback": {"action": "delete", "target": path},
+        })
+    if receipt and receipt.deck:
+        effects.append({
+            "kind": "deck",
+            "path": receipt.deck,
+            "backup_available": False,
+            "rollback": {
+                "action": "restore_from_version_control",
+                "target": receipt.deck,
+            },
+        })
+    return {
+        "error": "qr_publication_unfinalized",
+        "message": message,
+        "talk_slug": receipt.talk_slug if receipt else None,
+        "tracking_database_updated": False,
+        "atomic_rollback": False,
+        "retry": {
+            "idempotent": True,
+            "detail": (
+                "re-running the same invocation retargets an existing managed "
+                "link rather than duplicating it, and overwrites the PNGs and "
+                "deck in place"
+            ),
+        },
+        "effects": effects,
+    }
+
+
+def _emit_unfinalized_effects(receipt, message):
+    """Write the structured failure account as one JSON document on stderr."""
+    json.dump(unfinalized_effects_payload(receipt, message), sys.stderr, indent=2)
     print("", file=sys.stderr)
-    print(
-        "  Finish forward: re-run the same command. It is idempotent — an "
-        "existing managed link with the slug back-half is retargeted rather "
-        "than duplicated, and the PNGs and deck are overwritten in place.",
-        file=sys.stderr,
-    )
-    print("", file=sys.stderr)
-    print(
-        "  Or undo, per effect. There is no atomic rollback; each landed effect "
-        "is reverted separately:",
-        file=sys.stderr,
-    )
-    if link and link["action"] == "created":
-        print(
-            f"    - short link: delete {link['short_url']}; this run created it",
-            file=sys.stderr,
-        )
-    elif link and link["action"] == "retargeted":
-        print(
-            f"    - short link: point {link['short_url']} back at "
-            f"{link['prior_target']}. Do NOT delete it — it predates this run",
-            file=sys.stderr,
-        )
-    elif link:
-        print(
-            "    - short link: leave it alone; it was supplied pre-resolved and "
-            "this run did not create it",
-            file=sys.stderr,
-        )
-    for path in receipt.artifacts:
-        print(f"    - PNG: delete {path} if it should not exist", file=sys.stderr)
-    if receipt.deck:
-        print(
-            f"    - deck: {receipt.deck} was modified in place and this script "
-            "keeps no backup. Restore it from version control if you need the "
-            "prior slides",
-            file=sys.stderr,
-        )
 
 
 def _reload_tracking_db(vault_path):
@@ -1475,8 +1472,8 @@ def _publish(args, effects_receipt, vault_path, vault_present_at_start,
                     tdb_path, meta, artifacts, prior_record
                 )
             except ValueError as exc:
-                print(f"ERROR: {exc}", file=sys.stderr)
-                _report_unfinalized_effects(effects_receipt)
+                # Single JSON document on stderr; the skill renders it.
+                _emit_unfinalized_effects(effects_receipt, str(exc))
                 sys.exit(1)
             if write_result.installed:
                 print(f"Tracking DB updated: {tdb_path}")

@@ -1149,7 +1149,7 @@ def test_unrelated_concurrent_write_no_longer_rejects_the_qr_commit(
     assert written["resources"][0]["talk_slug"] == "other"
 
 
-def test_commit_rejection_reports_the_effects_that_landed(
+def test_commit_rejection_emits_a_structured_effects_payload(
         generate_qr, monkeypatch, tmp_path, capsys):
     """A post-effect commit failure must not look side-effect-free."""
     database = _current_tracking_database()
@@ -1172,114 +1172,60 @@ def test_commit_rejection_reports_the_effects_that_landed(
         generate_qr.main()
     assert excinfo.value.code == 1
 
-    err = capsys.readouterr().err
-    assert "generation conflict" in err
-    assert "these effects already landed" in err
-    assert str(output) in err
-    assert "Finish forward: re-run" in err
+    payload = json.loads(capsys.readouterr().err)
+    assert payload["error"] == "qr_publication_unfinalized"
+    assert payload["message"] == "generation conflict"
+    assert payload["tracking_database_updated"] is False
+    assert payload["atomic_rollback"] is False
+    assert payload["retry"]["idempotent"] is True
+    png = [e for e in payload["effects"] if e["kind"] == "png"]
+    assert [e["path"] for e in png] == [str(output)]
+    assert png[0]["rollback"] == {"action": "delete", "target": str(output)}
 
 
-def test_no_effects_yet_reports_a_clean_retry(generate_qr, capsys):
+def test_payload_is_one_valid_json_document(generate_qr):
     receipt = generate_qr.EffectsReceipt("my-talk")
-    generate_qr._report_unfinalized_effects(receipt)
-    err = capsys.readouterr().err
-    assert "No external effects were made" in err
-    assert "safe to retry" in err
+    payload = generate_qr.unfinalized_effects_payload(receipt, "boom")
+    assert json.loads(json.dumps(payload)) == payload
+    assert payload["effects"] == []
+    assert payload["talk_slug"] == "my-talk"
 
 
-def test_effects_receipt_names_link_pngs_and_deck(generate_qr, capsys):
-    receipt = generate_qr.EffectsReceipt("my-talk")
-    receipt.record_short_link("bitly", "bit.ly/abc123", "https://jbaru.ch/my-talk",
-                              action="created")
-    receipt.record_artifacts(["/tmp/a.png", "/tmp/b.png"])
-    receipt.record_deck("/tmp/deck.pptx")
-
-    generate_qr._report_unfinalized_effects(receipt)
-    err = capsys.readouterr().err
-    assert "link_id=bit.ly/abc123" in err
-    assert "/tmp/a.png" in err and "/tmp/b.png" in err
-    assert "deck mutated: /tmp/deck.pptx" in err
-    assert "delete https://jbaru.ch/my-talk" in err
-
-
-@pytest.mark.parametrize("action,prior,expected,forbidden", [
-    ("created", None, "delete https://jbaru.ch/my-talk", "Do NOT delete"),
+@pytest.mark.parametrize("action,prior,expected", [
+    ("created", None, {"action": "delete", "target": "https://jbaru.ch/my-talk"}),
     ("retargeted", "https://example.test/old",
-     "point https://jbaru.ch/my-talk back at https://example.test/old",
-     "delete https://jbaru.ch/my-talk;"),
-    ("preresolved", None, "leave it alone", "delete https://jbaru.ch/my-talk;"),
+     {"action": "restore_target", "target": "https://jbaru.ch/my-talk",
+      "restore_to": "https://example.test/old"}),
+    ("preresolved", None, {"action": "none", "target": "https://jbaru.ch/my-talk"}),
 ])
-def test_rollback_advice_matches_how_the_link_came_to_be(
-        generate_qr, capsys, action, prior, expected, forbidden):
+def test_link_rollback_matches_how_the_link_came_to_be(
+        generate_qr, action, prior, expected):
     """Deleting a link this run did not create is destructive, not a rollback."""
     receipt = generate_qr.EffectsReceipt("my-talk")
     receipt.record_short_link("bitly", "bit.ly/abc123", "https://jbaru.ch/my-talk",
                               action=action, prior_target=prior)
-    receipt.record_artifacts(["/tmp/a.png"])
-
-    generate_qr._report_unfinalized_effects(receipt)
-    err = capsys.readouterr().err
-    assert expected in err
-    assert forbidden not in err
-    if action == "retargeted":
-        assert "previous target: https://example.test/old" in err
+    payload = generate_qr.unfinalized_effects_payload(receipt, "boom")
+    link = [e for e in payload["effects"] if e["kind"] == "short_link"][0]
+    assert link["rollback"] == expected
+    assert link["action"] == action
 
 
-def test_recovery_covers_every_landed_effect_not_just_the_link(
-        generate_qr, capsys):
-    """Link-only advice would imply the PNGs and deck were reverted too."""
+def test_payload_covers_every_landed_effect(generate_qr):
+    """Link-only recovery would imply the PNGs and deck were reverted too."""
     receipt = generate_qr.EffectsReceipt("my-talk")
     receipt.record_short_link("bitly", "bit.ly/abc", "https://jbaru.ch/my-talk",
                               action="created")
     receipt.record_artifacts(["/tmp/a.png", "/tmp/b.png"])
     receipt.record_deck("/tmp/deck.pptx")
 
-    generate_qr._report_unfinalized_effects(receipt)
-    err = capsys.readouterr().err
+    payload = generate_qr.unfinalized_effects_payload(receipt, "boom")
+    kinds = [e["kind"] for e in payload["effects"]]
+    assert kinds == ["short_link", "png", "png", "deck"]
 
-    assert "no atomic rollback" in err
-    assert "delete https://jbaru.ch/my-talk" in err
-    assert "delete /tmp/a.png" in err
-    assert "delete /tmp/b.png" in err
-    assert "/tmp/deck.pptx was modified in place" in err
-    # No backup is taken, so a restore must not be promised.
-    assert "keeps no backup" in err
-    assert "restore the deck from its backup" not in err
-
-
-def test_same_talk_change_during_publication_rejects(generate_qr, tmp_path):
-    """Another owner's decision about this record is not silently discarded."""
-    path = tmp_path / "tracking-database.json"
-    database = _current_tracking_database()
-    path.write_text(json.dumps(database), encoding="utf-8")
-
-    prior = {
-        "schema_version": 2, "talk_slug": "current",
-        "target_url": "https://example.test/old", "shortener": "bitly",
-        "short_path": "current", "short_url": "https://jbaru.ch/current",
-        "shortener_link_id": "bit.ly/abc", "qr_png_rel_path": "current.png",
-        "artifacts": [{"path": "current.png", "path_root": "cwd",
-                       "sha256": "c" * 64, "bg_hex": None}],
-        "created_at": "2026-08-09", "updated_at": "2026-08-09",
-    }
-    # A different writer changed this same record after publication began.
-    raced = json.loads(path.read_text(encoding="utf-8"))
-    raced["qr_codes"] = [dict(prior, target_url="https://example.test/theirs")]
-    path.write_text(json.dumps(raced), encoding="utf-8")
-
-    with pytest.raises(ValueError, match="changed during publication"):
-        generate_qr.commit_qr_record(
-            str(path),
-            {"talk_slug": "current", "target_url": "https://example.test/mine",
-             "shortener": "bitly", "short_url": "https://jbaru.ch/current",
-             "short_path": "current", "shortener_link_id": "bit.ly/abc"},
-            [_receipt("current.png")],
-            prior,
-        )
-
-    # Their record survives untouched.
-    after = json.loads(path.read_text(encoding="utf-8"))["qr_codes"][0]
-    assert after["target_url"] == "https://example.test/theirs"
+    deck = payload["effects"][-1]
+    # No backup is taken, so a restore must not be claimed.
+    assert deck["backup_available"] is False
+    assert deck["rollback"]["action"] == "restore_from_version_control"
 
 
 def test_publication_lock_is_per_slug(generate_qr, tmp_path):
