@@ -1,5 +1,36 @@
 # Changelog
 
+### fix(generate-qr) — fail closed when a configured shortener cannot produce the managed link (#170)
+
+`resolve_short_url()` silently returned the raw shownotes URL on five paths: no
+shortener configured, an unknown shortener name, missing bit.ly/rebrand.ly
+credentials, any exception escaping through the effectively-broad
+`except (..., Exception)`, and a failed custom back-half. Each shipped a QR
+without the managed redirect layer and cataloged it as `shortener: none`,
+overwriting an existing managed `qr_codes[]` record.
+
+Only an explicit `shortener: none` now authorizes a raw target URL. Every other
+resolution failure raises `ShortenerResolutionError`, which `main()` converts to
+a non-zero exit before any PNG, deck, or tracking-database write. The catch is
+narrowed to documented provider and network failures (`HTTPError`, `URLError`,
+`OSError`, `JSONDecodeError`, and a `KeyError` from a malformed response);
+programming errors and process-control exceptions propagate.
+
+A bit.ly custom-back-half failure now carries the already-created link's
+`link_id` and `short_url` in the error, so the provider-side partial creation
+can be reused or deleted deterministically instead of being orphaned.
+
+Configuration is validated before any cache reuse. A cached record proves what
+was authorized on an earlier run, never what is authorized now, so a stale
+`shortener: none` entry could otherwise re-authorize a raw URL under a missing
+or newly-managed configuration. A cached record is reused only when its
+`shortener` matches the one configured; a mismatch forces re-resolution.
+
+`rules/qr-generation-rules.md` §2 said the script "fails to a raw-URL fallback"
+when the slug back-half cannot be set. That contradicted §3 and now contradicts
+the implementation, so it states the current contract: exit non-zero without
+generating a QR, and report the provider-side link identity.
+
 ## 0.20.23 — 2026-08-09
 
 ### fix(skills) — restore standalone sequential-workflow preambles (#179)
