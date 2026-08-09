@@ -28,6 +28,10 @@ import sys
 import traceback
 from typing import Any, TextIO
 
+# The document's identity. A caller's `state` may add fields beside these but
+# never replace them — see `unexpected_failure_document`.
+IDENTITY_FIELDS = frozenset({"error", "error_type", "origin"})
+
 
 def sanitized_frames(exc: BaseException) -> list[str]:
     """Code locations from a traceback, with no exception text or full paths.
@@ -51,14 +55,17 @@ def unexpected_failure_document(
     `error_code` is the entrypoint's documented failure identifier. `state`
     carries entrypoint-specific facts an operator needs before retrying —
     commit position for a mutating script, `None` for a read-only one.
+
+    A `state` key colliding with `IDENTITY_FIELDS` loses: the identity fields
+    are written last. An entrypoint that renamed its own failure code would
+    make every downstream consumer misclassify the failure, and this builder
+    runs inside the boundary itself — raising here would produce exactly the
+    traceback the boundary exists to prevent.
     """
-    document: dict[str, Any] = {
-        "error": error_code,
-        "error_type": type(exc).__name__,
-        "origin": sanitized_frames(exc),
-    }
-    if state:
-        document.update(state)
+    document: dict[str, Any] = dict(state or {})
+    document["error"] = error_code
+    document["error_type"] = type(exc).__name__
+    document["origin"] = sanitized_frames(exc)
     return document
 
 

@@ -10,7 +10,8 @@ validation predicates stay in the script (`rules/script-as-black-box.md`).
 
 ## The Shared Diagnostic Shape
 
-`scripts/failure_diagnostics.py` owns the emitted document. On an unexpected
+`skills/vault-ingress/scripts/failure_diagnostics.py` owns the emitted
+document. On an unexpected
 failure the entrypoint writes to **stderr**, one JSON object on the first line:
 
 ```json
@@ -28,6 +29,8 @@ A human-readable recovery note follows on the next lines.
 - Mutating entrypoints add commit-position fields; see the table.
 
 ## CLI Contracts
+
+Every script named below lives in `skills/vault-ingress/scripts/`.
 
 | Script | stdout on success | Unexpected-failure exit | Failure identifier | Commit-position field |
 |---|---|---|---|---|
@@ -68,8 +71,8 @@ Never infer commit position from the exit code; read the field.
 
 ## Worker Protocol Boundaries
 
-`pptx_evidence.py`, `pptx-extraction.py`, and `pdf_evidence.py` run supervised
-worker children whose stdout is reserved for one authenticated frame. Their
-boundaries emit a path-neutral `<kind> worker failed: <reason>` line on stderr
-and exit 2; the supervisor reads a non-zero child without an authenticated
-response as a bounded crash.
+`pptx_evidence.py`, `pptx-extraction.py`, and `pdf_evidence.py` — same
+directory — run supervised worker children whose stdout is reserved for one
+authenticated frame. Their boundaries emit a path-neutral
+`<kind> worker failed: <reason>` line on stderr and exit 2; the supervisor
+reads a non-zero child without an authenticated response as a bounded crash.

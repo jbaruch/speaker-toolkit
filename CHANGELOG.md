@@ -21,9 +21,12 @@ All four pre-render their reports with `json.dumps` before writing. A
 `json.dump` straight to stdout that fails partway leaves a truncated document a
 caller would try to parse.
 
-`scripts/failure_diagnostics.py` is the new home of the diagnostic shape, which
-`persist-results.py` and `preflight-vault.py` had each copied. A sixth
-entrypoint would have been a third copy.
+`skills/vault-ingress/scripts/failure_diagnostics.py` is the new home of the
+diagnostic shape, which `persist-results.py` and `preflight-vault.py` had each
+copied. A sixth entrypoint would have been a third copy. The document's
+identity fields are written after a caller's `state`, so an entrypoint cannot
+shadow its own `error` code and make consumers misclassify the failure —
+raising instead would produce the traceback the boundary exists to prevent.
 
 `references/entrypoint-failure-contracts.md` inventories every entrypoint's
 stdout, stderr, exit-code, and commit-position contract — #203's first

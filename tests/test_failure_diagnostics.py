@@ -64,8 +64,8 @@ def test_state_fields_merge_into_the_document(failure_diagnostics):
     assert document["database_written"] is True
 
 
-def test_state_never_overwrites_the_error_identity(failure_diagnostics):
-    """An entrypoint cannot accidentally rename its own failure code."""
+def test_state_adds_fields_beside_the_identity(failure_diagnostics):
+    """State extends the document; it does not reshape it."""
     caught = _raised(RuntimeError("boom"))
 
     document = failure_diagnostics.unexpected_failure_document(
@@ -76,6 +76,35 @@ def test_state_never_overwrites_the_error_identity(failure_diagnostics):
 
     assert set(document) == {
         "error", "error_type", "origin", "analyses_written"
+    }
+
+
+def test_state_cannot_overwrite_the_error_identity(failure_diagnostics):
+    """An entrypoint must not be able to rename its own failure.
+
+    A caller that shadowed `error` would make every downstream consumer
+    misclassify the failure — including the tests that gate each entrypoint on
+    its own code.
+    """
+    caught = _raised(RuntimeError("boom"))
+
+    document = failure_diagnostics.unexpected_failure_document(
+        caught,
+        "example_unexpected_failure",
+        state={
+            "error": "something_else",
+            "error_type": "NotThisOne",
+            "origin": ["forged.py:1 in nowhere"],
+            "database_written": True,
+        },
+    )
+
+    assert document["error"] == "example_unexpected_failure"
+    assert document["error_type"] == "RuntimeError"
+    assert document["origin"] != ["forged.py:1 in nowhere"]
+    assert document["database_written"] is True, "non-identity state survives"
+    assert failure_diagnostics.IDENTITY_FIELDS == {
+        "error", "error_type", "origin"
     }
 
 
