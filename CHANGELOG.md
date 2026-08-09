@@ -1,5 +1,30 @@
 # Changelog
 
+### fix(vault-ingress) — close the deterministic diagnostics gap in two CLI entrypoints (#203)
+
+`persist-results.py` and `preflight-vault.py` had no process-wide
+unexpected-failure boundary, so an outer failure surfaced as a traceback with no
+machine-readable document — indistinguishable, to a caller, from the script
+never having run.
+
+`persist-results.py` is mutation-capable, so its boundary reports commit
+position: the failure document carries `database_written`, stating whether the
+atomic write installed. Without it an operator cannot tell a pre-commit abort
+from a post-commit reporting failure, and a blind retry could re-persist the
+batch. stdout stays empty and the JSON goes to stderr.
+
+`preflight-vault.py` emits one closed report in the real schema shape, carrying
+a `preflight_unexpected_failure` blocking finding whose keys match the canonical
+finding shape, so consumers that gate claiming on `blocking_count` keep working.
+Only the exception type crosses the boundary — never its message or any path.
+
+The issue named five sites; three were already compliant. Both PPTX worker
+guards already carry `outer-boundary-process-contract` catches, `pptx-extraction`'s
+`main()` already has its boundary, and `check-runtime.py`'s child result-write
+traceback is a deliberate contract with a test defending it — stdout stays clean
+and the traceback is the actionable signal.
+
+
 ### fix(generate-qr) — make publication recoverable when the tracking-database CAS rejects (#172)
 
 QR publication snapshotted the database, then created or retargeted a remote

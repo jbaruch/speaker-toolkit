@@ -844,6 +844,11 @@ def parse_args(argv):
     return args[0], args[1], run_date
 
 
+# Whether the atomic database commit landed. The outer boundary reports this so
+# an operator never has to guess whether a late failure replayed a write.
+_COMMIT_STATE = {"database_written": False}
+
+
 def main():
     db_path, batch_path, run_date = parse_args(sys.argv[1:])
 
@@ -993,6 +998,7 @@ def main():
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
+    _COMMIT_STATE["database_written"] = bool(write_result.installed)
 
     json.dump({"persisted": len(summary), "db_path": db_path, "run_date": run_date,
                "schema_version": TALK_SCHEMA_VERSION,
@@ -1010,4 +1016,30 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    # Callers read a non-zero exit without this JSON as a silent persistence
+    # failure; emit one closed document naming whether the atomic commit landed
+    # because propagation would leave the operator unable to tell a pre-commit
+    # abort from a post-commit reporting failure, and could replay writes.
+    except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
+        print(
+            json.dumps(
+                {
+                    "error": "persist_results_unexpected_failure",
+                    "error_type": type(exc).__name__,
+                    "database_written": _COMMIT_STATE["database_written"],
+                    "persisted": None,
+                },
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+        )
+        print(
+            "vault-ingress persistence failed unexpectedly. `database_written` "
+            "above states whether the atomic commit landed: when true the "
+            "database holds this batch and re-running would re-persist it; when "
+            "false nothing was written and the batch can be retried.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from exc

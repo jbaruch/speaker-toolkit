@@ -7,6 +7,7 @@ the tracking DB, with the declared queryable scalars promoted to the talk top le
 import copy
 import importlib
 import json
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -3222,3 +3223,44 @@ def test_completed_generation_cannot_be_replayed(persist_results, tmp_path):
     assert replay.returncode == 1
     assert "closed or stranded member" in replay.stderr
     assert db.read_bytes() == completed
+
+
+# --- #203: the CLI has a closed failure boundary that names commit position ---
+
+def _run_persist_boundary(persist_results, explode, *, committed):
+    """Execute the module's __main__ boundary with main() replaced."""
+    source = pathlib.Path(persist_results.__file__).read_text(encoding="utf-8")
+    boundary = source[source.index('if __name__ == "__main__":'):]
+    namespace = dict(vars(persist_results))
+    namespace["__name__"] = "__main__"
+    namespace["main"] = explode
+    namespace["_COMMIT_STATE"] = {"database_written": committed}
+    with pytest.raises(SystemExit) as excinfo:
+        exec(compile(boundary, "boundary", "exec"), namespace)
+    return excinfo.value
+
+
+@pytest.mark.parametrize("committed", [False, True])
+def test_outer_boundary_reports_whether_the_commit_landed(
+        persist_results, capsys, committed):
+    """A late failure must say whether the atomic write already happened.
+
+    Without it an operator cannot tell a pre-commit abort from a post-commit
+    reporting failure, and a blind retry could re-persist the batch.
+    """
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("injected failure at /private/vault/tracking.json")
+
+    exc = _run_persist_boundary(persist_results, explode, committed=committed)
+    assert exc.code == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""                     # stdout stays clean
+    payload = json.loads(captured.err.splitlines()[0])
+    assert payload["error"] == "persist_results_unexpected_failure"
+    assert payload["error_type"] == "RuntimeError"
+    assert payload["database_written"] is committed
+    # Path-neutral: the exception text and its path never reach the payload.
+    assert "injected failure" not in captured.err.splitlines()[0]
+    assert "/private/vault/tracking.json" not in captured.err
+    assert "Traceback" not in captured.err

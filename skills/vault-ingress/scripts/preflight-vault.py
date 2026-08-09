@@ -2287,4 +2287,51 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    # Callers read a non-zero exit without report JSON as a silent preflight
+    # failure and may proceed to claim work; emit one closed report because
+    # propagation would suppress the machine-readable blocking signal that gates
+    # claiming.
+    except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
+        print(
+            json.dumps(
+                {
+                    "schema_version": REPORT_SCHEMA_VERSION,
+                    "ok": False,
+                    "blocking_count": 1,
+                    "warning_count": 0,
+                    "summary": {
+                        "by_severity": {"blocking": 1, "warning": 0},
+                        "by_code": {"preflight_unexpected_failure": 1},
+                    },
+                    "findings": [
+                        {
+                            "severity": "blocking",
+                            "code": "preflight_unexpected_failure",
+                            "talk_index": None,
+                            "filename": None,
+                            "field": None,
+                            "message": (
+                                "preflight aborted before completing its checks; "
+                                "its findings are unknown, so no talk may be "
+                                "claimed"
+                            ),
+                            "expected": None,
+                            "actual": type(exc).__name__,
+                            "artifact_path": None,
+                            "capability_fact": None,
+                        }
+                    ],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        print(
+            "vault-ingress preflight failed unexpectedly; treat the vault as "
+            "unverified and do not begin claiming. Rerun after repairing the "
+            "condition named by the exception type above",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from exc
