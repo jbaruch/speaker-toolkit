@@ -92,7 +92,7 @@ no-op.
 | config | 2 (schema 1 remains readable owner-migration input) |
 | talk | 5 |
 | PPTX catalog | 1 |
-| QR code | 1 |
+| QR code | 2 (schema 1 remains readable legacy state) |
 | resource summary | 1 |
 | thumbnail | 1 |
 | confirmed intent | 1 |
@@ -106,7 +106,7 @@ no-op.
 | vault-ingress queue normalization/claim, persistence, shownotes apply, source repair | current read/write | Require database schema 1, config schema 2, and supported explicit owner-record versions; targeted writers emit their current record generation and never migrate the root implicitly |
 | vault-ingress preflight, source audit, analysis rendering, shownotes dry-run | dual reader | Parse schemas 0 and 1; gate through existing finding/error channels; never rewrite |
 | vault-clarification | current read/write | Route schema migration to vault-ingress; preserve config v2 and stamp confirmed intent v1/improvement goal v2 |
-| presentation-creator QR writer | dual reader/current writer | Read schemas 0 and 1; require schema 1 before URL creation or QR metadata persistence; stamp QR v1 |
+| presentation-creator QR writer | dual reader/current writer | Read schemas 0 and 1; require schema 1 before URL creation or QR metadata persistence; stamp QR v2 |
 | presentation-creator publishing/post-event | authorized current writer | Require schema 1 before tracking writes; stamp resource v1 and preserve talk v5 |
 | illustrations thumbnail workflow | authorized current writer | Require schema 1 before tracking writes; stamp thumbnail v1 and preserve talk v5 |
 | vault-profile | dual reader | Parse schemas 0 and 1; treat unsupported generations as unavailable; never migrate |

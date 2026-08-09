@@ -197,7 +197,8 @@ path make the check before resolving the link.
    - Auto-select foreground color (black on light backgrounds, white on dark) using
      WCAG relative luminance
    - Insert the QR as a 2" square in the bottom-right corner
-   - Persist schema-v1 QR metadata in `qr_codes[]` through the shared
+   - Persist schema-v2 QR metadata in `qr_codes[]` — including one
+     `artifacts[]` receipt per generated PNG — through the shared
      tracking-database transaction used by `generate-qr.py`
    - Refuse a concurrent database generation and replace the verified current
      database atomically
