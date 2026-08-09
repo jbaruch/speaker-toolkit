@@ -88,6 +88,19 @@ from vault_root_authority import (
 
 REPORT_SCHEMA_VERSION = 1
 
+# Public finding code per typed decoder reason. Routing on the reason keeps the
+# taxonomy stable when an upstream message is reworded; an unmapped reason falls
+# back to the generic unreadable code rather than inventing one.
+_DATABASE_READ_FINDING_CODES = {
+    "encoding_invalid": "database_encoding_invalid",
+    "json_invalid": "database_json_invalid",
+    "json_duplicate_key": "database_json_invalid",
+    "json_non_standard_number": "database_json_invalid",
+    "json_non_roundtrippable_number": "database_json_invalid",
+    "json_root_not_object": "database_json_invalid",
+    "json_nesting_too_deep": "database_json_invalid",
+}
+
 
 def _sanitized_frames(exc: BaseException) -> list[str]:
     """Code locations from a traceback, with no exception text or full paths.
@@ -1250,13 +1263,19 @@ class VaultPreflight:
         try:
             text = transcript_path.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as exc:
+            # `actual` is a public diagnostic field. A raw OSError/UnicodeError
+            # string carries the host path and decoder offsets; the typed reason
+            # says which failure it was without them.
             self.talk_add(
                 index,
                 severity,
                 "transcript_artifact_unreadable",
                 "transcript artifact cannot be decoded as UTF-8 speech text",
                 artifact_path=transcript_path,
-                actual=str(exc),
+                actual=(
+                    "not_utf8" if isinstance(exc, UnicodeError)
+                    else f"unreadable:{type(exc).__name__}"
+                ),
             )
             return
         valid, reason, receipt_reason, receipt_bound = (
@@ -1385,7 +1404,9 @@ class VaultPreflight:
                 "video extraction manifest violates the schema-v3 artifact contract",
                 field="structured_data.video_extraction",
                 expected="complete, internally consistent schema-v3 manifest",
-                actual=str(exc),
+                # ReturnValidationError text can echo the malformed input value
+                # it rejected, so only its typed reason crosses the boundary.
+                actual=getattr(exc, "reason_code", None) or type(exc).__name__,
                 artifact_path=promoted_pdf,
             )
             return
@@ -2256,23 +2277,14 @@ def run_preflight(value: str | Path) -> dict[str, Any]:
         snapshot = snapshot_tracking_database(database_path)
         database = decode_json_object(snapshot)
     except TrackingDatabaseIOError as exc:
-        message = str(exc)
-        if "not valid UTF-8" in message:
-            code = "database_encoding_invalid"
-        elif (
-            "not valid JSON" in message
-            or "duplicate object key" in message
-            or ("non-standard JSON number" in message)
-            or "root must be a JSON object" in message
-        ):
-            code = "database_json_invalid"
-        else:
-            code = "database_unreadable"
+        code = _DATABASE_READ_FINDING_CODES.get(
+            getattr(exc, "reason_code", None), "database_unreadable"
+        )
         return error_report(
             vault_root,
             database_path,
             code,
-            message,
+            str(exc),
         )
     return VaultPreflight(database, vault_root, database_path).run()
 

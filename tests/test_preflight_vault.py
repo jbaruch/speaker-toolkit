@@ -3421,3 +3421,99 @@ def test_failure_report_names_code_locations_without_exception_text(
         assert "/private/vault/creds.json" not in stream
         assert "Traceback" not in stream
     assert "code locations that failed" in captured.err
+
+
+# --- #200: public diagnostics route on typed reasons, not exception prose ---
+
+@pytest.mark.parametrize("payload,expected_code", [
+    (b"\xff\xfe not utf-8", "database_encoding_invalid"),
+    (b"{not json", "database_json_invalid"),
+    (b'{"a": 1, "a": 2}', "database_json_invalid"),
+    (b'{"a": NaN}', "database_json_invalid"),
+    (b'["not", "an", "object"]', "database_json_invalid"),
+])
+def test_database_read_finding_code_comes_from_the_typed_reason(
+        preflight_vault, tmp_path, payload, expected_code):
+    """The public taxonomy must not depend on upstream message wording."""
+    database = tmp_path / "tracking-database.json"
+    database.write_bytes(payload)
+
+    report = preflight_vault.run_preflight(database)
+    codes = [item["code"] for item in report["findings"]]
+    assert expected_code in codes, codes
+
+
+def test_unmapped_decoder_reason_falls_back_to_unreadable(preflight_vault):
+    """An unrecognised reason must not invent a code."""
+    assert preflight_vault._DATABASE_READ_FINDING_CODES.get("brand_new_reason") is None
+
+
+def test_transcript_decode_failure_reports_a_typed_reason_not_os_text(
+        preflight_vault, vault_fixture):
+    """`actual` is public: a raw OSError string carries the host path."""
+    # The transcript resolves from youtube_id, so the file must use that name.
+    transcript = vault_fixture["root"] / "transcripts" / f"{VIDEO_ID}.txt"
+    transcript.parent.mkdir(parents=True, exist_ok=True)
+    transcript.write_bytes(b"\xff\xfe invalid utf-8 bytes")
+    write_database(vault_fixture, [base_talk(status="processed")], current=True)
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+    finding = next(
+        (f for f in report["findings"]
+         if f["code"] == "transcript_artifact_unreadable"), None)
+    assert finding is not None, [f["code"] for f in report["findings"]]
+    assert finding["actual"] == "not_utf8"
+    # `artifact_path` is a documented structured field and legitimately carries
+    # an absolute path (#200). Every OTHER field must stay free of raw decoder
+    # prose and host paths.
+    rest = {k: v for k, v in finding.items() if k != "artifact_path"}
+    serialized = json.dumps(rest, sort_keys=True)
+    assert "codec" not in serialized
+    assert "invalid start byte" not in serialized
+    assert str(vault_fixture["root"]) not in serialized
+
+
+def test_reworded_decoder_message_keeps_its_finding_code(
+        preflight_vault, tmp_path, monkeypatch):
+    """The taxonomy survives upstream rewording — that is the point of the fix.
+
+    Substring matching on the message would fall through to the generic
+    `database_unreadable` as soon as the wording changed.
+    """
+    io_module = importlib.import_module("tracking_database_io")
+    database = tmp_path / "tracking-database.json"
+    database.write_text("{}", encoding="utf-8")
+
+    def reworded(*_args, **_kwargs):
+        raise io_module.TrackingDatabaseIOError(
+            "the file could not be interpreted as text",   # no legacy substring
+            reason_code="encoding_invalid",
+        )
+
+    monkeypatch.setattr(preflight_vault, "decode_json_object", reworded)
+
+    report = preflight_vault.run_preflight(database)
+    codes = [item["code"] for item in report["findings"]]
+    assert "database_encoding_invalid" in codes, codes
+    assert "database_unreadable" not in codes
+
+
+def test_manifest_rejection_reports_a_typed_reason_not_the_rejected_value(
+        preflight_vault, vault_fixture):
+    """ReturnValidationError text can echo the malformed input it rejected."""
+    poisoned = "SENSITIVE_VALUE_abc123"
+    talk = base_talk(
+        status="processed_partial",
+        transcript_source="none",
+        slide_source="video_extracted",
+        structured_data={"video_extraction": {"schema_version": poisoned}},
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+    finding = next(
+        (f for f in report["findings"]
+         if f["code"] == "video_extraction_provenance_invalid"), None)
+    assert finding is not None, [f["code"] for f in report["findings"]]
+    assert finding["actual"].startswith("video_extraction.")
+    assert poisoned not in json.dumps(finding, sort_keys=True)

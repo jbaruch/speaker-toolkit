@@ -433,7 +433,16 @@ MEME_CONTENT_TYPES = frozenset({"meme_only", "meme_with_text"})
 
 
 class ReturnValidationError(ValueError):
-    """A subagent return violates the shared ingress contract."""
+    """A subagent return violates the shared ingress contract.
+
+    ``reason_code`` is the stable, typed classification. Its message may quote
+    the rejected input value, so a consumer publishing a public diagnostic
+    routes on the reason and never forwards the text.
+    """
+
+    def __init__(self, message: str, *, reason_code: str | None = None) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
 
 
 def resolve_return_schema_version(ret: dict) -> int:
@@ -916,8 +925,18 @@ def _validate_slides_local_path(ret: dict) -> str | None:
     return value
 
 
-def _manifest_error(field: str, message: str) -> NoReturn:
-    raise ReturnValidationError(f"structured_data.video_extraction.{field} {message}")
+def _manifest_error(field: str, message: str, *, reason: str | None = None) -> NoReturn:
+    """Raise a manifest rejection carrying a typed, closed reason.
+
+    The reason defaults to the schema field path — closed, schema-derived, and
+    free of the rejected input value the message quotes. A caller that already
+    holds a narrower classification (an artifact-locator reason, say) passes it
+    as ``reason`` so the specific code survives to the public diagnostic.
+    """
+    raise ReturnValidationError(
+        f"structured_data.video_extraction.{field} {message}",
+        reason_code=reason or f"video_extraction.{field}",
+    )
 
 
 def _manifest_bool(manifest: dict, field: str) -> bool:
@@ -951,6 +970,7 @@ def _validate_absolute_manifest_path(value, field: str) -> str:
         _manifest_error(
             field,
             f"{reason_message} ({exc.reason_code})",
+            reason=exc.reason_code,
         )
     return value
 

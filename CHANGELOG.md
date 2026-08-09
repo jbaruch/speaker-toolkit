@@ -1,5 +1,32 @@
 # Changelog
 
+### fix(vault-ingress) — route preflight diagnostics off typed reasons, not exception prose (#200)
+
+Three preflight paths published raw exception text across a public diagnostic
+boundary, and one chose the public finding code by substring-matching that text.
+
+`TrackingDatabaseIOError` and `ReturnValidationError` now carry a
+`reason_code`. The top-level database read routes its finding code from that
+code through a lookup table, so rewording an upstream message can no longer
+silently reclassify a failure — an unmapped reason falls back to
+`database_unreadable` rather than inventing a code.
+
+`transcript_artifact_unreadable` reports `not_utf8` or
+`unreadable:<ExceptionType>` instead of the raw `OSError`/`UnicodeError`
+string, which carried the host path and decoder byte offset. The video-manifest
+rejection reports the schema field path instead of the validator's message,
+which can quote the value it rejected; where a narrower classification already
+exists — an artifact-locator reason — that code survives to the diagnostic
+rather than being flattened to the field path.
+
+Two further leaks surfaced while testing: `pattern_evidence.py` embedded the
+decoder's message in `source_reasons`, which preflight publishes as a
+`capability_fact`. Both now state the condition without the offset or path.
+
+The documented structured `artifact_path` field is unchanged — it exposes
+absolute paths by design, and this issue never covered it.
+
+
 ### fix(vault-ingress) — close the deterministic diagnostics gap in two CLI entrypoints (#203)
 
 `persist-results.py` and `preflight-vault.py` had no process-wide
