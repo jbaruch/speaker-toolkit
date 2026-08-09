@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.32 — 2026-08-09
+
 ### chore(deps) — pin the last four Python requirements and gate the rule (#161)
 
 `python-pptx`, `lxml`, `qrcode`, and `pytest` were still unpinned, so every
