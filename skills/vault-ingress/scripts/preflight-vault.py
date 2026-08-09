@@ -2286,9 +2286,14 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if report["blocking_count"] == 0 else 1
 
 
-if __name__ == "__main__":
+def run_cli() -> int:
+    """Run the CLI behind its failure boundary. Returns the process exit code.
+
+    Importable so the boundary's contract is testable without executing the
+    module as a script.
+    """
     try:
-        sys.exit(main())
+        return main()
     # Callers read a non-zero exit without report JSON as a silent preflight
     # failure and may proceed to claim work; emit one closed report because
     # propagation would suppress the machine-readable blocking signal that gates
@@ -2334,4 +2339,8 @@ if __name__ == "__main__":
             "condition named by the exception type above",
             file=sys.stderr,
         )
-        raise SystemExit(2) from exc
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(run_cli())

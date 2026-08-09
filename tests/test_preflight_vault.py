@@ -3334,26 +3334,17 @@ def test_non_utf8_database_is_a_structured_blocking_report(
 # --- #203: the CLI has a closed failure boundary ---
 
 def test_outer_boundary_emits_one_blocking_report_without_a_traceback(
-        preflight_vault, vault_fixture, capsys):
+        preflight_vault, capsys, monkeypatch):
     """An unexpected failure still produces the machine-readable blocking signal.
 
     Callers gate claiming on this report. A traceback with no JSON would read as
     "preflight did not run", and a partial document would not parse.
     """
-    write_database(vault_fixture, [base_talk()], current=True)
-
     def explode(*_args, **_kwargs):
         raise RuntimeError("injected outer failure at /private/vault/secret.md")
 
-    source = pathlib.Path(preflight_vault.__file__).read_text(encoding="utf-8")
-    boundary = source[source.index('if __name__ == "__main__":'):]
-    namespace = dict(vars(preflight_vault))
-    namespace["__name__"] = "__main__"
-    namespace["main"] = explode
-
-    with pytest.raises(SystemExit) as excinfo:
-        exec(compile(boundary, "boundary", "exec"), namespace)
-    assert excinfo.value.code == 2
+    monkeypatch.setattr(preflight_vault, "main", explode)
+    assert preflight_vault.run_cli() == 2
 
     captured = capsys.readouterr()
     report = json.loads(captured.out)            # exactly one valid document
@@ -3371,22 +3362,25 @@ def test_outer_boundary_emits_one_blocking_report_without_a_traceback(
 
 
 def test_outer_boundary_finding_matches_the_normal_finding_shape(
-        preflight_vault, vault_fixture, capsys):
+        preflight_vault, vault_fixture, capsys, monkeypatch):
     """The failure finding must parse like every other finding."""
     write_database(vault_fixture, [base_talk()], current=True)
     normal = preflight_vault.run_preflight(vault_fixture["root"])
+    capsys.readouterr()
 
-    def explode(*_args, **_kwargs):
-        raise RuntimeError("boom")
-
-    source = pathlib.Path(preflight_vault.__file__).read_text(encoding="utf-8")
-    boundary = source[source.index('if __name__ == "__main__":'):]
-    namespace = dict(vars(preflight_vault))
-    namespace["__name__"] = "__main__"
-    namespace["main"] = explode
-    with pytest.raises(SystemExit):
-        exec(compile(boundary, "boundary", "exec"), namespace)
+    monkeypatch.setattr(preflight_vault, "main",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert preflight_vault.run_cli() == 2
 
     failure = json.loads(capsys.readouterr().out)
     assert set(failure["findings"][0]) == set(normal["findings"][0])
     assert failure["schema_version"] == normal["schema_version"]
+
+
+def test_outer_boundary_passes_a_clean_exit_code_through(
+        preflight_vault, monkeypatch):
+    """A normal run's exit code is not rewritten by the boundary."""
+    monkeypatch.setattr(preflight_vault, "main", lambda *a, **k: 0)
+    assert preflight_vault.run_cli() == 0
+    monkeypatch.setattr(preflight_vault, "main", lambda *a, **k: 1)
+    assert preflight_vault.run_cli() == 1

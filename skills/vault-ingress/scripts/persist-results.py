@@ -1015,7 +1015,12 @@ def main():
     sys.stdout.write("\n")
 
 
-if __name__ == "__main__":
+def run_cli() -> int:
+    """Run the CLI behind its failure boundary. Returns the process exit code.
+
+    Importable so the boundary's contract is testable without executing the
+    module as a script.
+    """
     try:
         main()
     # Callers read a non-zero exit without this JSON as a silent persistence
@@ -1042,4 +1047,9 @@ if __name__ == "__main__":
             "false nothing was written and the batch can be retried.",
             file=sys.stderr,
         )
-        raise SystemExit(2) from exc
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(run_cli())

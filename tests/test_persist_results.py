@@ -3227,22 +3227,9 @@ def test_completed_generation_cannot_be_replayed(persist_results, tmp_path):
 
 # --- #203: the CLI has a closed failure boundary that names commit position ---
 
-def _run_persist_boundary(persist_results, explode, *, committed):
-    """Execute the module's __main__ boundary with main() replaced."""
-    source = pathlib.Path(persist_results.__file__).read_text(encoding="utf-8")
-    boundary = source[source.index('if __name__ == "__main__":'):]
-    namespace = dict(vars(persist_results))
-    namespace["__name__"] = "__main__"
-    namespace["main"] = explode
-    namespace["_COMMIT_STATE"] = {"database_written": committed}
-    with pytest.raises(SystemExit) as excinfo:
-        exec(compile(boundary, "boundary", "exec"), namespace)
-    return excinfo.value
-
-
 @pytest.mark.parametrize("committed", [False, True])
 def test_outer_boundary_reports_whether_the_commit_landed(
-        persist_results, capsys, committed):
+        persist_results, capsys, monkeypatch, committed):
     """A late failure must say whether the atomic write already happened.
 
     Without it an operator cannot tell a pre-commit abort from a post-commit
@@ -3251,8 +3238,10 @@ def test_outer_boundary_reports_whether_the_commit_landed(
     def explode(*_args, **_kwargs):
         raise RuntimeError("injected failure at /private/vault/tracking.json")
 
-    exc = _run_persist_boundary(persist_results, explode, committed=committed)
-    assert exc.code == 2
+    monkeypatch.setattr(persist_results, "main", explode)
+    monkeypatch.setitem(persist_results._COMMIT_STATE, "database_written", committed)
+
+    assert persist_results.run_cli() == 2
 
     captured = capsys.readouterr()
     assert captured.out == ""                     # stdout stays clean
@@ -3260,7 +3249,25 @@ def test_outer_boundary_reports_whether_the_commit_landed(
     assert payload["error"] == "persist_results_unexpected_failure"
     assert payload["error_type"] == "RuntimeError"
     assert payload["database_written"] is committed
-    # Path-neutral: the exception text and its path never reach the payload.
-    assert "injected failure" not in captured.err.splitlines()[0]
+    # Path-neutral: the exception text and its path never reach the output.
+    assert "injected failure" not in captured.err
     assert "/private/vault/tracking.json" not in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_outer_boundary_lets_a_clean_run_report_success(
+        persist_results, monkeypatch):
+    """The boundary must not swallow or alter a normal run."""
+    monkeypatch.setattr(persist_results, "main", lambda *a, **k: None)
+    assert persist_results.run_cli() == 0
+
+
+def test_outer_boundary_does_not_catch_sys_exit(persist_results, monkeypatch):
+    """main()'s own sys.exit paths keep their exit codes."""
+    def bail(*_args, **_kwargs):
+        raise SystemExit(1)
+
+    monkeypatch.setattr(persist_results, "main", bail)
+    with pytest.raises(SystemExit) as excinfo:
+        persist_results.run_cli()
+    assert excinfo.value.code == 1
