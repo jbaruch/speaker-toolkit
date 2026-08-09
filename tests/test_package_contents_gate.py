@@ -187,6 +187,50 @@ def test_skills_declared_as_directory_string(plugin: Path) -> None:
     assert "skills/builder/scripts/build.py" in result.stderr
 
 
+def test_non_string_array_item_reports_a_shape_error(plugin: Path) -> None:
+    """A non-string array item is a broken manifest, not a missing directory."""
+    _write(plugin, ".tessl-plugin/plugin.json", json.dumps({
+        "name": "acme/widget", "version": "1.0.0", "description": "d",
+        "skills": [42],
+    }))
+    _write(plugin, ".tesslignore", "/scripts/\n")
+    result = _run(plugin)
+    assert result.returncode == 1
+    assert "wrong shape" in result.stderr
+    assert "'skills'[0] must be a string, got int" in result.stderr
+    assert "no tracked files live there" not in result.stderr
+
+
+def test_overlapping_declared_paths_are_counted_once(plugin: Path) -> None:
+    """Declaring a directory and a path beneath it must not double-count files."""
+    _write(plugin, ".tessl-plugin/plugin.json", json.dumps({
+        "name": "acme/widget", "version": "1.0.0", "description": "d",
+        "skills": ["skills/", "skills/builder"],
+        "rules": ["rules/house-style.md"],
+    }))
+    # An ignore file that excludes no declared content, so the gate reaches its
+    # counting path instead of short-circuiting on a missing .tesslignore.
+    _write(plugin, ".tesslignore", "/build/\n")
+    result = _run(plugin)
+    assert result.returncode == 0, result.stderr
+    # 3 skill files + 1 rule, each counted once despite the overlapping globs.
+    assert "all 4 declared plugin content files" in result.stdout
+
+
+def test_overlapping_declared_paths_report_each_violation_once(plugin: Path) -> None:
+    """An excluded file under overlapping globs is reported once, not twice."""
+    _write(plugin, ".tessl-plugin/plugin.json", json.dumps({
+        "name": "acme/widget", "version": "1.0.0", "description": "d",
+        "skills": ["skills/", "skills/builder"],
+        "rules": ["rules/house-style.md"],
+    }))
+    _write(plugin, ".tesslignore", "scripts/\n")
+    result = _run(plugin)
+    assert result.returncode == 1
+    assert result.stderr.count("skills/builder/scripts/build.py") == 1
+    assert "excludes 1 of 4" in result.stderr
+
+
 def test_this_repo_ships_every_declared_file() -> None:
     """Regression guard: speaker-toolkit's own package must be complete."""
     result = subprocess.run(["bash", str(GATE)], capture_output=True, text=True)

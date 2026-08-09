@@ -71,7 +71,18 @@ for field in ("skills", "rules"):
     if isinstance(value, str):
         entries.append(value)
     elif isinstance(value, list):
-        entries.extend(str(item) for item in value)
+        for position, item in enumerate(value):
+            # A non-string item coerced with str() would be reported downstream
+            # as a missing directory, sending the reader after a path that was
+            # never declared. It is a manifest shape error, so say that.
+            if not isinstance(item, str):
+                print(
+                    f"BAD_SHAPE: manifest field {field!r}[{position}] must be a "
+                    f"string, got {type(item).__name__}",
+                    file=sys.stderr,
+                )
+                sys.exit(4)
+            entries.append(item)
     else:
         print(
             f"BAD_SHAPE: manifest field {field!r} must be a string or array, "
@@ -164,6 +175,13 @@ done <<< "$declared"
 if [ "$missing" -ne 0 ]; then
   exit 1
 fi
+
+# A manifest may declare both a directory and a path beneath it (e.g. `skills/`
+# alongside `skills/release`). Every file under the narrower path is then listed
+# twice, which inflates `total`, repeats each violation line, and makes the
+# "excludes X of Y" counts wrong. De-duplicate after the per-path existence
+# check above, which needs its own unfiltered count.
+sort -u "$content_list" -o "$content_list"
 
 total=$(wc -l < "$content_list" | tr -d ' ')
 
