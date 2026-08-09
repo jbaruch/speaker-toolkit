@@ -2903,3 +2903,104 @@ def test_cli_missing_input_file_is_actionable(write_analysis, tmp_path):
     )
     assert result.returncode != 0
     assert "not found" in result.stderr
+
+
+# --- #203: the CLI has a closed failure boundary that names commit position ---
+
+@pytest.mark.parametrize("committed", [False, True])
+def test_outer_boundary_reports_whether_the_analyses_landed(
+        write_analysis, capsys, monkeypatch, committed):
+    """A late failure must say whether the atomic batch commit already happened.
+
+    The DB half of Step 4 and this half must agree. Without commit position an
+    operator cannot tell a pre-commit abort — where every target was rolled
+    back — from a post-commit reporting failure where the files are current.
+    """
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("injected failure at /private/vault/analyses/x.md")
+
+    monkeypatch.setattr(write_analysis, "main", explode)
+    monkeypatch.setitem(write_analysis._COMMIT_STATE, "analyses_written", committed)
+
+    assert write_analysis.run_cli() == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""                     # stdout stays clean
+    payload = json.loads(captured.err.splitlines()[0])
+    assert payload["error"] == "write_analysis_unexpected_failure"
+    assert payload["error_type"] == "RuntimeError"
+    assert payload["analyses_written"] is committed
+    assert "injected failure" not in captured.err
+    assert "/private/vault/analyses/x.md" not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_commit_state_does_not_leak_between_runs(
+        write_analysis, capsys, monkeypatch):
+    """A stale True would make a pre-commit failure claim files were replaced."""
+    write_analysis._COMMIT_STATE["analyses_written"] = True
+
+    def fail_after_reset(*_args, **_kwargs):
+        raise RuntimeError("failed before the commit")
+
+    # parse_args is main()'s first call after the reset.
+    monkeypatch.setattr(write_analysis, "parse_args", fail_after_reset)
+    monkeypatch.setattr(sys, "argv", ["write-analysis.py", "b.json", "out"])
+
+    assert write_analysis.run_cli() == 2
+    payload = json.loads(capsys.readouterr().err.splitlines()[0])
+    assert payload["analyses_written"] is False
+    assert write_analysis._COMMIT_STATE["analyses_written"] is False
+
+
+def test_outer_boundary_does_not_catch_sys_exit(write_analysis, monkeypatch):
+    """main()'s own documented sys.exit paths keep their exit codes."""
+    def bail(*_args, **_kwargs):
+        raise SystemExit(1)
+
+    monkeypatch.setattr(write_analysis, "main", bail)
+    with pytest.raises(SystemExit) as excinfo:
+        write_analysis.run_cli()
+    assert excinfo.value.code == 1
+
+
+def test_outer_boundary_lets_a_clean_run_report_success(
+        write_analysis, monkeypatch):
+    """The boundary must not swallow or alter a normal run."""
+    monkeypatch.setattr(write_analysis, "main", lambda *a, **k: None)
+    assert write_analysis.run_cli() == 0
+
+
+def test_a_committed_batch_reports_written_when_the_receipt_fails(
+        write_analysis, tmp_path, capsys, monkeypatch):
+    """The real failure this guards: files installed, receipt write dies.
+
+    Exercises the whole CLI rather than a stubbed main(), so the commit flag is
+    set by the same code path production uses.
+    """
+    db = _write_tracking_db(tmp_path, [_return()])
+    batch = tmp_path / "batch.json"
+    batch.write_text(json.dumps([_return()]), encoding="utf-8")
+    out_dir = tmp_path / "analyses"
+
+    real_write = write_analysis.sys.stdout.write
+
+    def refuse_receipt(text):
+        if text.startswith("{"):
+            raise OSError("stdout closed")
+        return real_write(text)
+
+    monkeypatch.setattr(write_analysis.sys.stdout, "write", refuse_receipt)
+    monkeypatch.setattr(
+        sys, "argv",
+        ["write-analysis.py", str(batch), str(out_dir), "--talks", str(db)],
+    )
+
+    assert write_analysis.run_cli() == 2
+
+    payload = json.loads(capsys.readouterr().err.splitlines()[0])
+    assert payload["error"] == "write_analysis_unexpected_failure"
+    assert payload["analyses_written"] is True, (
+        "the analyses are on disk; claiming otherwise invites a wrong retry"
+    )
+    assert list(out_dir.glob("*.md")), "the batch really did commit"

@@ -66,6 +66,7 @@ import sys
 import tempfile
 import unicodedata
 
+from failure_diagnostics import emit_unexpected_failure
 from tracking_database import (
     TrackingDatabaseError,
     assess_tracking_database,
@@ -1088,7 +1089,15 @@ def parse_args(argv):
     return args[0], args[1], run_date, talks_path
 
 
+# Whether the atomic analysis-batch commit landed. The outer boundary reports
+# this so an operator never has to guess whether a late failure replaced files.
+_COMMIT_STATE = {"analyses_written": False}
+
+
 def main():
+    # Reset per invocation: a stale True from an earlier run in the same process
+    # would make a pre-commit failure claim the analyses were replaced.
+    _COMMIT_STATE["analyses_written"] = False
     batch_path, out_dir, run_date, talks_path = parse_args(sys.argv[1:])
 
     if not talks_path:
@@ -1301,12 +1310,17 @@ def main():
             file=sys.stderr,
         )
         sys.exit(1)
+    # `atomic_write_batch` installs every target or rolls all of them back, so
+    # reaching here with a non-empty batch means the analyses are on disk.
+    _COMMIT_STATE["analyses_written"] = bool(rendered)
 
     written = []
     for name, path, body in rendered:
         written.append({"filename": name, "path": path, "bytes": len(body.encode())})
 
-    json.dump(
+    # Serialize before writing: a `json.dump` straight to stdout that fails
+    # partway leaves a truncated document the caller would try to parse.
+    receipt = json.dumps(
         {
             "written": len(written),
             "dir": out_dir,
@@ -1314,11 +1328,39 @@ def main():
             "skipped": skipped,
             "pattern_catalog_fingerprint": catalog.fingerprint,
         },
-        sys.stdout,
         ensure_ascii=False,
     )
-    sys.stdout.write("\n")
+    sys.stdout.write(receipt + "\n")
+
+
+def run_cli() -> int:
+    """Run the CLI behind its failure boundary. Returns the process exit code.
+
+    Importable so the boundary's contract is testable without executing the
+    module as a script.
+    """
+    try:
+        main()
+    # Callers read a non-zero exit without the stdout receipt as "no analyses
+    # were written"; emit one closed document naming whether the atomic commit
+    # landed because propagation would leave the operator unable to tell a
+    # pre-commit abort from a post-commit reporting failure, and the DB half of
+    # Step 4 would then disagree with the analyses on disk.
+    except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
+        emit_unexpected_failure(
+            exc,
+            "write_analysis_unexpected_failure",
+            "vault-ingress analysis writing failed unexpectedly. "
+            "`analyses_written` above states whether the atomic batch commit "
+            "landed: when true the analyses directory holds this batch and the "
+            "files on disk are current; when false every target was restored "
+            "and the batch can be retried. Re-read the directory before "
+            "retrying rather than assuming either state.",
+            state={"analyses_written": _COMMIT_STATE["analyses_written"]},
+        )
+        return 2
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(run_cli())

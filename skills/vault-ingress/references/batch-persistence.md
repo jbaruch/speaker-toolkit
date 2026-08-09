@@ -27,6 +27,9 @@ whether to run the gate.
   or multiple such inputs. Exit 0 emits one structured JSON validation report on
   stdout and authorizes the next step; exit 1 emits concise diagnostics on stderr,
   authorizes no write, and requires repairing the named return before rerunning.
+  Exit 2 means the validator itself failed and the batch is UNVALIDATED, not
+  invalid — see
+  [Entrypoint Failure Contracts](entrypoint-failure-contracts.md).
   The complete field, catalog, source, evidence, scoring, and artifact predicates
   are owned by `skills/vault-ingress/scripts/validate-returns.py` (top-of-file
   input/output/exit contract) and
@@ -94,6 +97,9 @@ whether to run the gate.
   interrupted batch is recovered with
   `queue-state.py ... recover --now <ISO> --stale-after-seconds <N>`, not by
   replaying whichever old return files happen to exist.
+  On exit 2 read the stderr document's `database_written` before retrying — it
+  states whether the atomic commit landed. See
+  [Entrypoint Failure Contracts](entrypoint-failure-contracts.md).
   Future talk-record schemas are rejected before merge so this writer never
   stamps a newer record down to its current version. Pass the canonical tracking
   DB path: queue and persistence tools reject a final-component symlink before
@@ -119,6 +125,9 @@ whether to run the gate.
   and catalog feedback — creates `analyses/` if missing, prints a JSON summary, and
   exits non-zero on a return with no `filename`. Section list and field handling live
   in `skills/vault-ingress/scripts/write-analysis.py` (top-of-file docstring).
+  On exit 2 read the stderr document's `analyses_written` before retrying — it
+  states whether the batch committed. See
+  [Entrypoint Failure Contracts](entrypoint-failure-contracts.md).
   Non-empty adherence prose from a legacy v1–v4 return is preserved only as
   archival text under an unmistakable `legacy-unverified` label. It is never a
   current numeric comparison, Section 15 aggregate, or profile input.
@@ -130,4 +139,6 @@ whether to run the gate.
   suggestions, and polarity warnings with the speaker. Recurrence is evidence
   for review, never authorization to change a catalog file. The five lanes and
   report contract live in
-  [catalog-feedback-intake.md](catalog-feedback-intake.md).
+  [catalog-feedback-intake.md](catalog-feedback-intake.md); exit 3 means the
+  aggregator failed and no feedback was harvested, per
+  [Entrypoint Failure Contracts](entrypoint-failure-contracts.md).

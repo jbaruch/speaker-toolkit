@@ -600,3 +600,58 @@ def test_cli_exits_nonzero_on_invalid_feedback(
 
     assert result.returncode == 1
     assert json.loads(result.stdout)["ok"] is False
+
+
+# --- #203: the CLI has a closed failure boundary ---
+
+def test_outer_boundary_reports_an_unexpected_failure_without_a_traceback(
+        aggregate_catalog_feedback, capsys, monkeypatch):
+    """Every documented outcome is JSON; a traceback would be the one exception."""
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("injected failure at /private/vault/returns/a.json")
+
+    monkeypatch.setattr(aggregate_catalog_feedback, "aggregate_feedback", explode)
+
+    assert aggregate_catalog_feedback.run_cli(["some-return.json"]) == 3
+
+    captured = capsys.readouterr()
+    assert captured.out == ""                     # stdout stays clean
+    payload = json.loads(captured.err.splitlines()[0])
+    assert payload["error"] == "catalog_feedback_unexpected_failure"
+    assert payload["error_type"] == "RuntimeError"
+    assert payload["origin"], "the failing code location must be reported"
+    assert "injected failure" not in captured.err
+    assert "/private/vault/returns/a.json" not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_unexpected_failure_exit_is_distinct_from_the_argparse_exit(
+        aggregate_catalog_feedback, capsys, monkeypatch):
+    """argparse already owns 2 — reusing it would conflate the two causes."""
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(aggregate_catalog_feedback, "aggregate_feedback", explode)
+    assert aggregate_catalog_feedback.run_cli(["some-return.json"]) == 3
+
+    capsys.readouterr()
+    with pytest.raises(SystemExit) as excinfo:
+        aggregate_catalog_feedback.run_cli([])
+    assert excinfo.value.code == 2
+
+
+def test_the_argument_error_report_still_reaches_stdout(
+        aggregate_catalog_feedback, capsys):
+    """The boundary must not swallow the documented invalid-arguments report."""
+    with pytest.raises(SystemExit):
+        aggregate_catalog_feedback.run_cli([])
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["error"]["code"] == "invalid_arguments"
+
+
+def test_outer_boundary_lets_the_documented_verdicts_through(
+        aggregate_catalog_feedback, monkeypatch):
+    """An `ok: false` report is exit 1, not an unexpected failure."""
+    monkeypatch.setattr(aggregate_catalog_feedback, "main", lambda *a, **k: 1)
+    assert aggregate_catalog_feedback.run_cli([]) == 1

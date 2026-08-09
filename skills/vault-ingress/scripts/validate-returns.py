@@ -18,6 +18,7 @@ import json
 import sys
 from pathlib import Path
 
+from failure_diagnostics import emit_unexpected_failure
 from return_validation import (
     ReturnValidationError,
     audit_batch,
@@ -86,9 +87,36 @@ def main():
         sys.exit(1)
     report = validation_report(returns, resolved_catalog)
     report["input_files"] = files
-    json.dump(report, sys.stdout, ensure_ascii=False)
-    sys.stdout.write("\n")
+    # Serialize before writing: a `json.dump` straight to stdout that fails
+    # partway leaves a truncated document the batch gate would try to parse.
+    sys.stdout.write(json.dumps(report, ensure_ascii=False) + "\n")
+
+
+def run_cli() -> int:
+    """Run the CLI behind its failure boundary. Returns the process exit code.
+
+    Importable so the boundary's contract is testable without executing the
+    module as a script.
+    """
+    try:
+        main()
+    # The batch gate runs this immediately after agents return and reads a
+    # non-zero exit as "the batch is not validated"; emit one closed stderr
+    # document because a traceback would leak return paths and rejected values
+    # into the gate's log, and the gate could not tell a failed validation from
+    # a failed validator.
+    except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
+        emit_unexpected_failure(
+            exc,
+            "validate_returns_unexpected_failure",
+            "vault-ingress return validation failed unexpectedly. This script "
+            "writes no state, so nothing was changed — but the batch is "
+            "UNVALIDATED and must not be persisted until a clean run reports "
+            "on stdout.",
+        )
+        return 2
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(run_cli())

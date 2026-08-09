@@ -8,6 +8,9 @@ to stdout. It never edits entries or invents semantic relationships.
 Structural errors make the process exit 1. Differences that require a human to
 choose which prose or metadata is authoritative are emitted separately as
 ``semantic_debts`` and do not make the process fail. Argument errors use exit 2.
+An unexpected failure uses exit 3 and writes one ``catalog_audit_unexpected_failure``
+JSON document to stderr, leaving stdout empty — argparse already owns 2, so the
+caller can still tell a malformed invocation from a broken auditor.
 
 The machine-owned contract is expressed by the named constants below:
 
@@ -37,6 +40,8 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from failure_diagnostics import emit_unexpected_failure
 
 from yaml import YAMLError
 
@@ -1505,8 +1510,10 @@ def main(argv: list[str] | None = None) -> int:
     """Run the CLI and return its process status."""
     args = _parser().parse_args(argv)
     report = audit_catalog(args.catalog)
-    json.dump(report, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
-    sys.stdout.write("\n")
+    # Serialize before writing: a `json.dump` straight to stdout that fails
+    # partway leaves a truncated document the caller would try to parse.
+    rendered = json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False)
+    sys.stdout.write(rendered + "\n")
     if not report["valid"]:
         print(
             f"catalog audit found {report['summary']['errors']} structural error(s); "
@@ -1517,5 +1524,28 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def run_cli(argv: list[str] | None = None) -> int:
+    """Run the CLI behind its failure boundary. Returns the process exit code.
+
+    Importable so the boundary's contract is testable without executing the
+    module as a script.
+    """
+    try:
+        return main(argv)
+    # Ingress gates on this audit, so a non-zero exit without the stdout report
+    # must still say what happened; a traceback would leak catalog entry paths
+    # and read a malformed catalog file as a broken auditor.
+    except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
+        emit_unexpected_failure(
+            exc,
+            "catalog_audit_unexpected_failure",
+            "The Presentation Patterns catalog audit failed unexpectedly. This "
+            "command is read-only, so the catalog is unchanged — but it is "
+            "UNAUDITED. Do not begin ingress or catalog edits until a clean run "
+            "reports on stdout.",
+        )
+        return 3
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_cli())

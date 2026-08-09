@@ -24,9 +24,9 @@ import os
 from pathlib import Path
 import re
 import sys
-import traceback
 from typing import Any
 
+from failure_diagnostics import sanitized_frames
 from artifact_locator import (
     ArtifactLocatorError,
     materialize_artifact_locator,
@@ -135,18 +135,6 @@ _DATABASE_READ_FALLBACK = (
 )
 
 
-def _sanitized_frames(exc: BaseException) -> list[str]:
-    """Code locations from a traceback, with no exception text or full paths.
-
-    `no-secrets` forbids exception messages and credentials from reaching any
-    diagnostic, so only `basename:line in function` crosses the boundary. That
-    still points an operator at the failing code, which the exception type
-    alone does not.
-    """
-    return [
-        f"{os.path.basename(frame.filename)}:{frame.lineno} in {frame.name}"
-        for frame in traceback.extract_tb(exc.__traceback__)
-    ]
 SOURCE_IDENTITY_SCHEMA_VERSION = 1
 TRANSCRIPT_SOURCES = frozenset({"youtube_auto", "whisper", "manual", "none"})
 SLIDE_SOURCES = frozenset({"pptx", "pdf", "both", "video_extracted", "none"})
@@ -2385,7 +2373,7 @@ def run_cli() -> int:
                             ),
                             "expected": None,
                             "actual": type(exc).__name__,
-                            "origin": _sanitized_frames(exc),
+                            "origin": sanitized_frames(exc),
                             "artifact_path": None,
                             "capability_fact": None,
                         }
