@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.38 — 2026-08-09
+
 ### chore(ci) — enforce the Ruff, format, and Pyright gates (#162)
 
 Closes #162, and it is the last step of the adoption sequence by design:
