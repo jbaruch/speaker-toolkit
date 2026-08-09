@@ -77,6 +77,7 @@ Example:
 
 import copy
 import json
+import os
 import sys
 from datetime import datetime, timezone
 
@@ -848,6 +849,10 @@ def parse_args(argv):
 # an operator never has to guess whether a late failure replayed a write.
 _COMMIT_STATE = {"database_written": False}
 
+# Opt-in escape hatch: re-raise instead of emitting the path-neutral payload, so
+# an operator can obtain the traceback the boundary otherwise suppresses.
+DEBUG_TRACEBACK_ENV = "VAULT_INGRESS_DEBUG_TRACEBACK"
+
 
 def main():
     # Reset per invocation: a stale True from an earlier run in the same process
@@ -1031,6 +1036,10 @@ def run_cli() -> int:
     # because propagation would leave the operator unable to tell a pre-commit
     # abort from a post-commit reporting failure, and could replay writes.
     except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
+        # Same opt-in as preflight: the payload stays path-neutral, but an
+        # operator diagnosing a repeat failure can obtain the traceback.
+        if os.environ.get(DEBUG_TRACEBACK_ENV):
+            raise
         print(
             json.dumps(
                 {
@@ -1047,7 +1056,9 @@ def run_cli() -> int:
             "vault-ingress persistence failed unexpectedly. `database_written` "
             "above states whether the atomic commit landed: when true the "
             "database holds this batch and re-running would re-persist it; when "
-            "false nothing was written and the batch can be retried.",
+            "false nothing was written and the batch can be retried.\n"
+            f"  To see the underlying traceback, rerun with {DEBUG_TRACEBACK_ENV}=1 "
+            "— it prints raw paths, so keep it out of shared logs.",
             file=sys.stderr,
         )
         return 2

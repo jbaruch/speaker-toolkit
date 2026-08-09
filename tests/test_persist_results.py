@@ -3293,3 +3293,13 @@ def test_outer_boundary_does_not_catch_sys_exit(persist_results, monkeypatch):
     with pytest.raises(SystemExit) as excinfo:
         persist_results.run_cli()
     assert excinfo.value.code == 1
+
+
+def test_debug_env_surfaces_the_traceback_for_diagnosis(
+        persist_results, monkeypatch):
+    """The suppressed traceback must be obtainable on explicit opt-in."""
+    monkeypatch.setattr(persist_results, "main",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setenv(persist_results.DEBUG_TRACEBACK_ENV, "1")
+    with pytest.raises(RuntimeError, match="boom"):
+        persist_results.run_cli()

@@ -3387,3 +3387,26 @@ def test_outer_boundary_passes_a_clean_exit_code_through(
     assert preflight_vault.run_cli() == 0
     monkeypatch.setattr(preflight_vault, "main", lambda *a, **k: 1)
     assert preflight_vault.run_cli() == 1
+
+
+def test_debug_env_surfaces_the_traceback_for_diagnosis(
+        preflight_vault, monkeypatch):
+    """The suppressed traceback must be obtainable on explicit opt-in."""
+    monkeypatch.setattr(preflight_vault, "main",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setenv(preflight_vault.DEBUG_TRACEBACK_ENV, "1")
+    with pytest.raises(RuntimeError, match="boom"):
+        preflight_vault.run_cli()
+
+
+def test_failure_guidance_names_a_concrete_next_action(
+        preflight_vault, capsys, monkeypatch):
+    """"Repair the condition named by the exception type" is not actionable."""
+    monkeypatch.setattr(preflight_vault, "main",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.delenv(preflight_vault.DEBUG_TRACEBACK_ENV, raising=False)
+    assert preflight_vault.run_cli() == 2
+    err = capsys.readouterr().err
+    assert preflight_vault.DEBUG_TRACEBACK_ENV in err
+    assert "check-runtime.py" in err
+    assert "do not begin claiming" in err

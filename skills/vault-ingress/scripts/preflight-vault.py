@@ -86,6 +86,9 @@ from vault_root_authority import (
 
 
 REPORT_SCHEMA_VERSION = 1
+# Opt-in escape hatch: re-raise instead of emitting the path-neutral report, so
+# an operator can obtain the traceback the boundary otherwise suppresses.
+DEBUG_TRACEBACK_ENV = "VAULT_INGRESS_DEBUG_TRACEBACK"
 SOURCE_IDENTITY_SCHEMA_VERSION = 1
 TRANSCRIPT_SOURCES = frozenset({"youtube_auto", "whisper", "manual", "none"})
 SLIDE_SOURCES = frozenset({"pptx", "pdf", "both", "video_extracted", "none"})
@@ -2299,6 +2302,10 @@ def run_cli() -> int:
     # propagation would suppress the machine-readable blocking signal that gates
     # claiming.
     except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
+        # The report stays path-neutral by contract. An operator diagnosing a
+        # repeat failure needs the traceback, so re-raise on explicit opt-in.
+        if os.environ.get(DEBUG_TRACEBACK_ENV):
+            raise
         print(
             json.dumps(
                 {
@@ -2339,9 +2346,13 @@ def run_cli() -> int:
             )
         )
         print(
-            "vault-ingress preflight failed unexpectedly; treat the vault as "
-            "unverified and do not begin claiming. Rerun after repairing the "
-            "condition named by the exception type above",
+            "vault-ingress preflight failed unexpectedly before completing its "
+            "checks. Treat the vault as unverified and do not begin claiming.\n"
+            f"  To see the underlying traceback, rerun with {DEBUG_TRACEBACK_ENV}=1 "
+            "— it prints raw paths, so keep it out of shared logs.\n"
+            "  Common causes: an unreadable or partially written "
+            "tracking-database.json, a vault path that moved, or a missing "
+            "runtime dependency. `check-runtime.py` reports the last of these.",
             file=sys.stderr,
         )
         return 2

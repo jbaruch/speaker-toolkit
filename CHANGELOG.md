@@ -18,6 +18,13 @@ a `preflight_unexpected_failure` blocking finding whose keys match the canonical
 finding shape, so consumers that gate claiming on `blocking_count` keep working.
 Only the exception type crosses the boundary — never its message or any path.
 
+Both boundaries redact the exception, so `VAULT_INGRESS_DEBUG_TRACEBACK=1`
+re-raises instead — an operator diagnosing a repeat failure can obtain the
+traceback the boundary otherwise suppresses, while the default output stays
+path-neutral. The preflight guidance also names likely causes and points at
+`check-runtime.py`, rather than telling the operator to repair "the condition
+named by the exception type", which an exception type does not identify.
+
 The issue named five sites; three were already compliant. Both PPTX worker
 guards already carry `outer-boundary-process-contract` catches, `pptx-extraction`'s
 `main()` already has its boundary, and `check-runtime.py`'s child result-write
