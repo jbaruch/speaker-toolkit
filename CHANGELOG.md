@@ -24,6 +24,7 @@ A commit that still rejects no longer looks side-effect-free. The run exits
 non-zero and names every effect that landed — short-link provider and link id,
 each PNG path, the mutated deck — plus how a retry behaves against them.
 
+## 0.20.25 — 2026-08-09
 
 ### fix(generate-qr) — preserve canonical MCP targets and exact generated artifact paths (#171)
 
