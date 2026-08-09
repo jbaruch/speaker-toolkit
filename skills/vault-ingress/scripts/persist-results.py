@@ -850,6 +850,9 @@ _COMMIT_STATE = {"database_written": False}
 
 
 def main():
+    # Reset per invocation: a stale True from an earlier run in the same process
+    # would make a pre-commit failure claim the database was written.
+    _COMMIT_STATE["database_written"] = False
     db_path, batch_path, run_date = parse_args(sys.argv[1:])
 
     try:

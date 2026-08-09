@@ -2304,6 +2304,11 @@ def run_cli() -> int:
                 {
                     "schema_version": REPORT_SCHEMA_VERSION,
                     "ok": False,
+                    # Present on every normal report; a consumer reading them
+                    # unconditionally must not KeyError on the failure shape.
+                    "database": None,
+                    "vault_root": None,
+                    "talk_count": 0,
                     "blocking_count": 1,
                     "warning_count": 0,
                     "summary": {

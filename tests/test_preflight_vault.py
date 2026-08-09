@@ -3375,6 +3375,9 @@ def test_outer_boundary_finding_matches_the_normal_finding_shape(
     failure = json.loads(capsys.readouterr().out)
     assert set(failure["findings"][0]) == set(normal["findings"][0])
     assert failure["schema_version"] == normal["schema_version"]
+    # Top-level keys must match too: a consumer reading `database` or
+    # `talk_count` unconditionally must not KeyError on the failure shape.
+    assert set(failure) == set(normal)
 
 
 def test_outer_boundary_passes_a_clean_exit_code_through(

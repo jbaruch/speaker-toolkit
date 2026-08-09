@@ -3255,6 +3255,28 @@ def test_outer_boundary_reports_whether_the_commit_landed(
     assert "Traceback" not in captured.err
 
 
+def test_commit_state_does_not_leak_between_runs(
+        persist_results, capsys, monkeypatch):
+    """A stale True would make a pre-commit failure claim the batch was written.
+
+    Exercises the real main(): it resets the flag before doing anything, so a
+    failure after that point cannot inherit an earlier run's committed state.
+    """
+    persist_results._COMMIT_STATE["database_written"] = True
+
+    def fail_after_reset(*_args, **_kwargs):
+        raise RuntimeError("failed before the commit")
+
+    # parse_args is main()'s first call after the reset.
+    monkeypatch.setattr(persist_results, "parse_args", fail_after_reset)
+    monkeypatch.setattr(sys, "argv", ["persist-results.py", "db.json", "b.json"])
+
+    assert persist_results.run_cli() == 2
+    payload = json.loads(capsys.readouterr().err.splitlines()[0])
+    assert payload["database_written"] is False
+    assert persist_results._COMMIT_STATE["database_written"] is False
+
+
 def test_outer_boundary_lets_a_clean_run_report_success(
         persist_results, monkeypatch):
     """The boundary must not swallow or alter a normal run."""
