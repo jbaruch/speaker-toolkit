@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.24 — 2026-08-09
+
 ### fix(generate-qr) — fail closed when a configured shortener cannot produce the managed link (#170)
 
 `resolve_short_url()` silently returned the raw shownotes URL on five paths: no
