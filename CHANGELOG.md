@@ -23,6 +23,8 @@ deep-checking the code underneath.
 Branch protection is untouched. Promoting `lint` to a required check is a
 repo-settings decision, not a file in this change.
 
+## 0.20.37 — 2026-08-09
+
 ### fix — clear the Pyright test baseline (#162)
 
 Fifth of the #162 adoption sequence. Pyright reports **0 errors across all 153
