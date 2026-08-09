@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.27 — 2026-08-09
+
 ### fix(generate-qr) — make publication recoverable when the tracking-database CAS rejects (#172)
 
 QR publication snapshotted the database, then created or retargeted a remote
