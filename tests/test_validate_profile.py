@@ -8,6 +8,7 @@ optional/additive and not part of REQUIRED_KEYS.
 import hashlib
 import importlib
 import json
+from typing import Any
 import os
 import pathlib
 from datetime import datetime, timezone
@@ -104,7 +105,7 @@ def _set_projection(talk, source: str | None) -> None:
 # Built programmatically per testing-standards (no fixture file). A current
 # profile carries explicit zero-cohort pattern provenance rather than borrowing
 # historical pattern values.
-def _minimal_profile(validate_profile):
+def _minimal_profile(validate_profile) -> dict[str, Any]:
     catalog_fingerprint, scoring_schema = (
         validate_profile.active_pattern_generation_identity()
     )
@@ -117,7 +118,7 @@ def _minimal_profile(validate_profile):
             pathlib.Path(__file__).resolve().parent / "__no_policy_override__"
         ),
     )
-    profile = {
+    profile: dict[str, Any] = {
         k: []
         for k in (
             "generated_date",

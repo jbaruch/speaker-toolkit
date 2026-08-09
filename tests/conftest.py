@@ -7,6 +7,8 @@ import sys
 import pytest
 from pptx import Presentation
 from pptx.oxml.shapes.graphfrm import CT_GraphicalObjectFrame
+from pptx.oxml.slide import CT_Slide
+from pptx.oxml.xmlchemy import BaseOxmlElement
 from pptx.util import Emu
 
 
@@ -87,6 +89,10 @@ def _import_script(path, name):
     if name in sys.modules:
         return sys.modules[name]
     spec = importlib.util.spec_from_file_location(name, path)
+    # Both are Optional for a path no loader claims. Every caller passes a real
+    # .py file, so a None here is a broken fixture path, not a missing feature —
+    # naming it beats an AttributeError two lines later.
+    assert spec is not None and spec.loader is not None, f"no loader for {path}"
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
@@ -498,6 +504,48 @@ def slide_title(slide):
     title = slide.shapes.title
     assert title is not None, "this layout has no title placeholder"
     return title
+
+
+def slide_element(slide) -> CT_Slide:
+    """The `<p:sld>` element behind a slide, narrowed from `BaseOxmlElement`.
+
+    python-pptx types `Slide.element` as the generic base, which carries no
+    `cSld`. Fixtures that author background DrawingML reach through it, so the
+    narrowing happens once here.
+    """
+    element = slide.element
+    assert isinstance(element, CT_Slide), type(element).__name__
+    return element
+
+
+def background_fill_element(slide) -> BaseOxmlElement:
+    """The fill element under a slide's authored `<p:bg><p:bgPr>`.
+
+    python-pptx annotates `CT_Background.bgPr` as Optional but leaves
+    `CT_BackgroundProperties.eg_fillProperties` unannotated, so a reader sees
+    the `ZeroOrOneChoice` descriptor rather than the element it returns. The
+    Optional chain is asserted here and the descriptor gap is suppressed once,
+    instead of at each fixture that reaches through it.
+    """
+    background = slide_element(slide).cSld.bg
+    assert background is not None, "slide has no authored background"
+    properties = background.bgPr
+    assert properties is not None, "slide background has no <p:bgPr>"
+    fill: BaseOxmlElement | None = properties.eg_fillProperties  # pyright: ignore[reportAssignmentType]
+    assert fill is not None, "slide background has no fill element"
+    return fill
+
+
+def background_properties(slide):
+    """A slide's `<p:bgPr>`, created if absent. See `background_fill_element`."""
+    return slide_element(slide).cSld.get_or_add_bgPr()
+
+
+def clear_background_fill(properties) -> None:
+    """Drop any existing fill under a `<p:bgPr>`. See `background_fill_element`."""
+    existing: BaseOxmlElement | None = properties.eg_fillProperties  # pyright: ignore[reportAssignmentType]
+    if existing is not None:
+        properties.remove(existing)
 
 
 def graphic_frame_element(shape) -> CT_GraphicalObjectFrame:

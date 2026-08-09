@@ -7,6 +7,7 @@ network or reads subagent returns.
 import copy
 import hashlib
 import json
+from typing import Any
 import os
 import shutil
 import struct
@@ -1259,7 +1260,7 @@ def test_normalize_rejects_malformed_generation_without_any_write(
 ):
     fingerprint = return_validation.load_catalog().fingerprint
     scoring_schema = return_validation.PATTERN_SCORING_SCHEMA_VERSION
-    malformed = _scored_talk(
+    malformed: dict[str, Any] = _scored_talk(
         "HHHHHHHHHHH",
         filename="malformed-generation.md",
         fingerprint=fingerprint,
@@ -1493,9 +1494,11 @@ def test_new_claim_is_v5_with_one_immutable_batch_baseline(tmp_path):
     assert {claim["schema_version"] for claim in claims} == {5}
     assert {claim["required_return_schema_version"] for claim in claims} == {5}
     assert claims[0]["adherence_baseline"] == claims[1]["adherence_baseline"]
-    baseline = claims[0]["adherence_baseline"]
+    baseline: dict[str, Any] = claims[0]["adherence_baseline"]
     assert baseline["as_of"] == NOW
-    assert baseline["excluded_filenames"] == sorted(talk["filename"] for talk in talks)
+    assert baseline["excluded_filenames"] == sorted(
+        str(talk["filename"]) for talk in talks
+    )
 
 
 def test_inspect_dual_reads_a_schema_v3_adherence_claim(tmp_path):

@@ -1,5 +1,42 @@
 # Changelog
 
+### chore(ci) — clear the Pyright test baseline and gate all three checks (#162)
+
+Closes #162. Pyright reports **0 errors across all 153 files**, and
+`.github/workflows/tests.yml` gains a `lint` job running `ruff check`,
+`ruff format --check`, and `pyright` on every pull request.
+
+The 242 test-file findings were resolved by proving invariants once rather than
+suppressing them at each use, per `language-diagnostics`. Seven `conftest.py`
+helpers now carry what was previously re-derived or ignored at ~90 call sites:
+`deck_width` / `deck_height` (python-pptx types slide extents Optional),
+`slide_title` (a layout may have no title placeholder), `slide_element` /
+`graphic_frame_element` (`element` is typed as the union of every CT_* shape),
+and `background_fill_element` / `background_properties` /
+`clear_background_fill`.
+
+`_load_vault_payload` in `test_validate_profile.py` is the same move at the
+test layer: `_run_load_vault` legitimately returns None when the command wrote
+nothing — three tests assert exactly that — so the six tests that go on to read
+the payload now assert its presence once instead of subscripting an Optional 24
+times.
+
+Mechanical shapes handled in bulk: 34 `Path` arguments where python-pptx
+declares `str | IO[bytes]`, 41 zero-valued `Length` positions, and JSON-document
+fixtures annotated `dict[str, Any]` — `object` values forced every nested
+subscript to be re-narrowed, while `Any` is what `json.loads` returns anyway.
+
+Exactly two suppressions survive, both in one `conftest.py` helper and both
+naming their cause: python-pptx annotates `CT_Background.bgPr` as Optional but
+leaves `CT_BackgroundProperties.eg_fillProperties` unannotated, so a reader sees
+the `ZeroOrOneChoice` descriptor instead of the element it returns.
+
+The `lint` job installs `.[test,lint]` and finishes in about a minute — the
+long apt install stays with `test`, so a style or type regression reports in ~1
+minute rather than ~6. Pyright needs the runtime dependencies present because
+it resolves imports against the active interpreter; without them it reports ~94
+resolution false-positives and stops deep-checking underneath.
+
 ### fix — clear every Pyright finding in shipped scripts (#162)
 
 Fourth of the #162 adoption sequence. With resolution correct, the 16 findings

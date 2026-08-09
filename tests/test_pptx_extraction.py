@@ -22,10 +22,14 @@ from pptx.oxml.ns import nsdecls
 from pptx.util import Emu, Inches, Pt
 
 from conftest import (
+    background_fill_element,
+    background_properties,
+    clear_background_fill,
     deck_height,
     deck_width,
     graphic_frame_element,
     make_deck,
+    slide_element,
     slide_title,
 )
 
@@ -2741,10 +2745,8 @@ def test_smartart_and_unknown_graphic_frames_are_explicitly_unsupported(
 def _set_background_image(slide, image_path):
     """Author an image background directly in DrawingML for fixture coverage."""
     _, r_id = slide.part.get_or_add_image_part(str(image_path))
-    bg_pr = slide.element.cSld.get_or_add_bgPr()
-    existing_fill = bg_pr.eg_fillProperties
-    if existing_fill is not None:
-        bg_pr.remove(existing_fill)
+    bg_pr = background_properties(slide)
+    clear_background_fill(bg_pr)
     blip_fill = parse_xml(
         f"<a:blipFill {nsdecls('a', 'r')}>"
         f'<a:blip r:embed="{r_id}"/>'
@@ -2795,13 +2797,13 @@ def test_background_image_blob_is_ocrd_with_distinct_provenance(
 def test_background_inspection_does_not_break_inheritance(pptx_extraction):
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    assert slide.element.cSld.bg is None
+    assert slide_element(slide).cSld.bg is None
 
     assert pptx_extraction.get_background_color(slide) == (None, "unknown")
 
     # Access through python-pptx's public fill property would author a noFill
     # node here and sever inheritance. Extraction must stay read-only.
-    assert slide.element.cSld.bg is None
+    assert slide_element(slide).cSld.bg is None
 
 
 def test_missing_background_blob_requires_render_without_claiming_ocr(
@@ -2813,13 +2815,7 @@ def test_missing_background_blob_requires_render_without_claiming_ocr(
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _set_background_image(slide, image_path)
-    blip = next(
-        iter(
-            slide.element.cSld.bg.bgPr.eg_fillProperties.iter(
-                pptx_extraction.qn("a:blip")
-            )
-        )
-    )
+    blip = next(iter(background_fill_element(slide).iter(pptx_extraction.qn("a:blip"))))
     blip.set(pptx_extraction.qn("r:embed"), "rIdMissing")
 
     data = _first_slide(pptx_extraction, prs, tmp_path)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+from typing import Any
 from pathlib import Path
 
 import pytest
@@ -27,7 +28,7 @@ DEFAULT_DIRECTORY_EXCLUSIONS = [
 ]
 
 
-def _current_config(**updates: object) -> dict[str, object]:
+def _current_config(**updates: object) -> dict[str, Any]:
     config: dict[str, object] = {
         "schema_version": 2,
         "pptx_directory_exclusions": copy.deepcopy(DEFAULT_DIRECTORY_EXCLUSIONS),
@@ -40,7 +41,7 @@ def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
-def _base_database() -> dict[str, object]:
+def _base_database() -> dict[str, Any]:
     return {
         "schema_version": 1,
         "config": _current_config(),
@@ -54,7 +55,7 @@ def _base_database() -> dict[str, object]:
     }
 
 
-def _goal() -> dict[str, object]:
+def _goal() -> dict[str, Any]:
     return {
         "id": "reduce-shortchanged",
         "schema_version": 2,
@@ -77,7 +78,7 @@ def _goal() -> dict[str, object]:
     }
 
 
-def _complete_plan() -> dict[str, object]:
+def _complete_plan() -> dict[str, Any]:
     goal = _goal()
     return {
         "schema_version": 1,
@@ -635,7 +636,7 @@ def test_talk_metadata_mutations_require_exact_current_talk_schema(
     assert database == original
 
 
-def _legacy_goal_for_mutation(kind: str) -> dict[str, object]:
+def _legacy_goal_for_mutation(kind: str) -> dict[str, Any]:
     goal = {
         key: copy.deepcopy(value)
         for key, value in _goal().items()

@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+from typing import Any
 import subprocess
 import sys
 from pathlib import Path
@@ -63,7 +64,7 @@ def _goal(*, kind: str = "underuse", schema_version: int = 2):
             "pacing": "pacing",
             "other": "independent",
         }
-        provenance = {"lane": lanes[kind]}
+        provenance: dict[str, Any] = {"lane": lanes[kind]}
         if kind in {"antipattern", "underuse"}:
             provenance["pattern_baseline"] = _baseline()
         goal["baseline_provenance"] = provenance

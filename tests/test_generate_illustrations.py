@@ -1802,8 +1802,13 @@ def test_build_edit_mask_is_transparent_only_in_region(
     mask_png = gi.build_edit_mask_png(str(src), [0.4, 0.4, 0.6, 0.6])
     mask = Image.open(io.BytesIO(mask_png)).convert("RGBA")
     assert mask.size == (100, 100)
-    assert mask.getpixel((50, 50))[3] == 0  # inside box -> transparent
-    assert mask.getpixel((5, 5))[3] == 255  # outside box -> opaque
+    # `getpixel` is typed as a scalar-or-tuple union across image modes; an
+    # RGBA mask always yields the 4-tuple this test indexes.
+    inside = mask.getpixel((50, 50))
+    outside = mask.getpixel((5, 5))
+    assert isinstance(inside, tuple) and isinstance(outside, tuple)
+    assert inside[3] == 0  # inside box -> transparent
+    assert outside[3] == 255  # outside box -> opaque
 
 
 def test_composite_region_keeps_background_pixel_identical(

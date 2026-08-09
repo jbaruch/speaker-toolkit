@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import importlib
 import json
+from typing import Any
 import os
 import struct
 import subprocess
@@ -18,6 +19,7 @@ from PIL import Image
 from pptx import Presentation
 from pptx.oxml import parse_xml
 from pptx.oxml.ns import nsdecls
+from pptx.shapes.placeholder import PicturePlaceholder
 from pptx.util import Emu, Inches
 
 from conftest import deck_height, deck_width, graphic_frame_element
@@ -155,7 +157,7 @@ def test_metadata_generation_never_calls_owner_lstat(
     deck = tmp_path / "metadata-only-child.pptx"
     _write_deck(deck, with_image=False)
     generation = pptx_evidence.FileGeneration.from_stat(deck.stat())
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def metadata_child(command, payload, sensitive_values, _limits):
         captured.update(
@@ -822,7 +824,7 @@ def test_live_badzipfile_media_path_recovers_with_structured_loss(
     damaged_part = _damage_member_crc(deck, lambda name: name.startswith("ppt/media/"))
 
     with pytest.raises(zipfile.BadZipFile):
-        Presentation(deck)
+        Presentation(str(deck))
 
     probe = pptx_evidence.probe_pptx_artifact(deck)
 
@@ -2245,7 +2247,7 @@ def test_metadata_admission_timeout_reports_enclosing_batch_wall_limit(
 ) -> None:
     deck = tmp_path / "metadata-deadline.pptx"
     _write_deck(deck, with_image=False)
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def blocked_metadata(_command, _payload, _sensitive, limits):
         captured["wall_seconds"] = limits.wall_seconds
@@ -3135,7 +3137,7 @@ def test_inserted_picture_placeholder_round_trips_as_picture_evidence(
     picture_placeholder = next(
         placeholder
         for placeholder in slide.placeholders
-        if hasattr(placeholder, "insert_picture")
+        if isinstance(placeholder, PicturePlaceholder)
     )
     picture_placeholder.insert_picture(str(image_path))
     deck = tmp_path / "placeholder-picture.pptx"

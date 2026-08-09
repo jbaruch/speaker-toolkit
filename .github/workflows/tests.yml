@@ -14,6 +14,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Runs before/alongside the suite and finishes in about a minute — the slow
+  # apt install belongs to `test` alone, so a style or type regression reports
+  # in ~1 min instead of ~6 (`coding-policy: code-formatting` CI Integration).
+  lint:
+    name: Lint, format, and type gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      # Pyright resolves third-party imports against the ACTIVE interpreter, so
+      # the runtime dependencies must be present even though nothing here runs
+      # them. Without them it reports ~94 resolution false-positives and stops
+      # deep-checking the code underneath (`[tool.pyright]` in pyproject.toml).
+      - run: pip install ".[test,lint]"
+      - name: Ruff lint
+        run: ruff check .
+      - name: Ruff format check
+        run: ruff format --check .
+      - name: Pyright
+        run: pyright
+
   test:
     runs-on: ubuntu-latest
     # Backstop against the apt step hanging on flaky runner networking: fail

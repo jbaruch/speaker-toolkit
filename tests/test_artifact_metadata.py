@@ -9,7 +9,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -697,7 +697,7 @@ def test_pptx_metadata_invocation_contract_includes_fixed_identity(
         flags=None,
         file_attributes=None,
     )
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def runner(
         command,
