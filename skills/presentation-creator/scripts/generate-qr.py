@@ -811,20 +811,21 @@ def insert_qr_via_powerpoint(deck_path, jobs, scripts_dir):
 
 
 def _validated_back_half(short_url, talk_slug):
-    """Return the short link's back-half, or None when it is not the slug.
+    """Return the short link's back-half, which MUST be the talk slug.
 
-    The back-half MUST be the talk slug (rules/qr-generation-rules.md §2). A
-    preresolved link whose last path segment differs is recorded as unknown
-    rather than having the slug asserted onto it.
+    rules/qr-generation-rules.md §2 admits no exception: a link whose back-half
+    is not the slug is the random-hash failure mode, and it stops the run
+    whether the script created the link or an agent pre-resolved it.
     """
     segment = urllib.parse.urlparse(short_url).path.strip("/").split("/")[-1]
-    if segment == talk_slug:
-        return segment
-    print(
-        f"  WARNING: pre-resolved short URL back-half '{segment}' is not the "
-        f"talk slug '{talk_slug}' — recording short_path as unknown"
-    )
-    return None
+    if segment != talk_slug:
+        raise ShortenerResolutionError(
+            f"pre-resolved short URL back-half '{segment}' is not the talk slug "
+            f"'{talk_slug}'. The back-half must be the slug "
+            "(rules/qr-generation-rules.md §2); recreate the short link with "
+            "the slug as its back-half, then re-run."
+        )
+    return segment
 
 
 def _artifact_receipt(path, deck_dir, bg_hex):
@@ -938,6 +939,11 @@ def main():
     if not args.png_only and not args.deck:
         parser.error("deck is required unless --png-only is specified")
 
+    # Provider identity describes an agent-preresolved link. Accepting it
+    # without --short-url would silently drop it.
+    if (args.short_provider or args.short_link_id) and not args.short_url:
+        parser.error("--short-provider and --short-link-id require --short-url")
+
     if args.deck and not os.path.isfile(args.deck):
         print(f"ERROR: Deck file not found: {args.deck}")
         sys.exit(1)
@@ -998,7 +1004,15 @@ def main():
         # MCP-preresolved mode
         qr_url = args.short_url
         shownotes_url = args.shownotes_url
-        short_path = _validated_back_half(qr_url, args.talk_slug)
+        try:
+            short_path = _validated_back_half(qr_url, args.talk_slug)
+        except ShortenerResolutionError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            print(
+                "  No QR PNG, deck, or tracking-database change was made.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         meta = {
             "talk_slug": args.talk_slug,
             "target_url": shownotes_url,

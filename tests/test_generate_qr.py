@@ -1023,11 +1023,37 @@ def test_artifact_receipt_records_an_explicit_path_root(generate_qr, tmp_path):
     assert elsewhere["path"] == str(outside)
 
 
-def test_back_half_that_is_not_the_slug_is_not_asserted(generate_qr, capsys):
-    """A non-slug back-half is recorded as unknown, never rewritten to the slug."""
-    assert generate_qr._validated_back_half("https://bit.ly/a3xK9f", "my-talk") is None
-    assert "not the talk slug" in capsys.readouterr().out
+def test_back_half_that_is_not_the_slug_stops_the_run(generate_qr):
+    """§2 admits no exception: a non-slug back-half is the random-hash failure."""
+    with pytest.raises(generate_qr.ShortenerResolutionError, match="is not the talk slug"):
+        generate_qr._validated_back_half("https://bit.ly/a3xK9f", "my-talk")
     assert generate_qr._validated_back_half("https://jbaru.ch/my-talk", "my-talk") == "my-talk"
+
+
+def test_mcp_non_slug_back_half_exits_before_any_side_effect(
+        generate_qr, monkeypatch, tmp_path):
+    output = tmp_path / "qr.png"
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "my-talk",
+        "--shownotes-url", "https://example.test/notes",
+        "--short-url", "https://bit.ly/a3xK9f",
+        "--output", str(output),
+    ])
+    with pytest.raises(SystemExit) as excinfo:
+        generate_qr.main()
+    assert excinfo.value.code == 1
+    assert not output.exists()
+
+
+def test_provider_flags_require_short_url(generate_qr, monkeypatch):
+    """Provider identity without --short-url would be silently dropped."""
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "my-talk",
+        "--shownotes-url", "https://example.test/notes",
+        "--short-provider", "bitly",
+    ])
+    with pytest.raises(SystemExit):
+        generate_qr.main()
 
 
 def test_every_colour_variant_is_cataloged(generate_qr, tmp_path):

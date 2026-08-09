@@ -61,8 +61,9 @@ The `qr_codes` record MUST describe what was actually produced:
 - Record a SHA-256 per artifact so a stale replacement is distinguishable.
 - Record the issuing provider and its link id. `mcp_preresolved` is a
   last-resort marker for when the agent supplies neither.
-- Record `short_path` only when the short URL's back-half equals the talk slug;
-  otherwise record `null`. Never assert the slug onto a link that lacks it.
+- Record `short_path` as the short URL's back-half, which §2 requires to equal
+  the talk slug. A pre-resolved link whose back-half differs stops the run under
+  §2; it is never recorded with the slug asserted onto it.
 
 ## 5. Slug Convention
 

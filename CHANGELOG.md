@@ -27,6 +27,16 @@ variant's `bg_hex`. `qr_png_rel_path` mirrors the first artifact so schema-v1
 readers keep working. Readers dual-accept v1 and v2; migration stamps
 unversioned records at v1, since they cannot satisfy the v2 shape.
 
+MCP mode enforces §2 rather than carving an exception into it: a pre-resolved
+link whose back-half is not the talk slug exits non-zero before any side effect,
+the same as a script-created link that cannot take the slug. `--short-provider`
+and `--short-link-id` now require `--short-url`, so provider identity is never
+accepted and silently dropped.
+
+`skills/vault-ingress/references/schemas-db.md` documents both record shapes,
+the `artifacts` fields, `path_root` semantics, the dual-reader window, and why
+migration stamps unversioned records at v1.
+
 Also folds in #248: `qr-generation-rules.md` §2's back-half failure directive is
 split into atomic bullets per `context-writing-style`, and a new §4 states the
 catalog-fidelity contract. Sections renumbered accordingly, with cross-references
