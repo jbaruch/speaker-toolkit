@@ -122,15 +122,20 @@ Read `publishing_process.qr_code`. If `enabled`:
 
 | Path | Short URL resolution | QR image |
 |---|---|---|
-| MCP (preferred when configured) | Agent calls Bitly/Rebrandly MCP tool, passes `--short-url` to script | Script generates locally from the resolved URL |
+| MCP (preferred when configured) | Agent calls Bitly/Rebrandly MCP tool, passes `--short-url` **and** `--shownotes-url` to script | Script generates locally from the resolved URL |
 | Direct API | Script calls bit.ly/rebrand.ly REST API via `secrets.json` | Script generates locally |
-| None | Script uses the raw shownotes URL | Script generates locally |
+| None (explicit `"shortener": "none"` only) | Script uses the raw shownotes URL | Script generates locally |
 
 **MCP path (preferred when Bitly or Rebrandly MCP server is installed):**
 - Bitly MCP: `npx @bitly/mcp` — covers link creation, update, QR, and analytics
 - Rebrandly MCP: see rebrandly.com MCP documentation
 - Agent creates or updates the short link via MCP tools, then passes the resolved
   URL to `generate-qr.py` via `--short-url`
+- `--shownotes-url` is ALWAYS required — it is the canonical redirect target the
+  catalog records. Passing only the short URL would make the record claim the
+  short link redirects to itself
+- Pass `--short-provider` and `--short-link-id` so the catalog keeps the real
+  provider identity instead of the generic `mcp_preresolved` marker
 
 **Direct API path (when MCP is not available):**
 - API keys must be stored in `{vault_root}/secrets.json` with `chmod 600`:
@@ -145,21 +150,25 @@ Read `publishing_process.qr_code`. If `enabled`:
 - The `shortener` field in the profile controls which service to use
 
 **None path (no shortening):**
+- Requires an explicit `"shortener": "none"` in the profile
 - Script encodes the raw shownotes URL directly into the QR code
+- Any other resolution failure exits non-zero without generating a QR
+  (`rules/qr-generation-rules.md` §2, §6, §7)
 
 **First short link — confirm the custom domain:** before a short link is created
 for the first time, ensure `publishing_process.qr_code.{shortener}_domain` is
 recorded in the profile. If the key is absent, ASK the user whether they have a
 custom domain (e.g. `jbaru.ch`) and SAVE the answer — the domain, or `null` for
-"no custom domain" — then proceed. See `rules/qr-generation-rules.md` §7. The
+"no custom domain" — then proceed. See `rules/qr-generation-rules.md` §8. The
 Direct API path enforces this (the script STOPS if the key is absent); on the MCP
 path make the check before resolving the link.
 
 3. Run the QR generation script:
    ```bash
-   # MCP-preresolved mode:
+   # MCP-preresolved mode (--shownotes-url is the canonical redirect target):
    "{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/generate-qr.py" deck.pptx \
-     --talk-slug SLUG --short-url SHORT_URL
+     --talk-slug SLUG --shownotes-url SHOWNOTES_URL --short-url SHORT_URL \
+     --short-provider bitly --short-link-id LINK_ID
 
    # Direct API mode:
    "{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/generate-qr.py" deck.pptx \
@@ -188,7 +197,8 @@ path make the check before resolving the link.
    - Auto-select foreground color (black on light backgrounds, white on dark) using
      WCAG relative luminance
    - Insert the QR as a 2" square in the bottom-right corner
-   - Persist schema-v1 QR metadata in `qr_codes[]` through the shared
+   - Persist schema-v2 QR metadata in `qr_codes[]` — including one
+     `artifacts[]` receipt per generated PNG — through the shared
      tracking-database transaction used by `generate-qr.py`
    - Refuse a concurrent database generation and replace the verified current
      database atomically

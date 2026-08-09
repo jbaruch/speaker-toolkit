@@ -33,7 +33,8 @@ TALK_RECORD_SCHEMA_VERSION = 5
 LEGACY_CONFIG_RECORD_SCHEMA_VERSION = 1
 CONFIG_RECORD_SCHEMA_VERSION = 2
 PPTX_CATALOG_RECORD_SCHEMA_VERSION = 1
-QR_CODE_RECORD_SCHEMA_VERSION = 1
+LEGACY_QR_CODE_RECORD_SCHEMA_VERSION = 1
+QR_CODE_RECORD_SCHEMA_VERSION = 2
 RESOURCE_RECORD_SCHEMA_VERSION = 1
 THUMBNAIL_RECORD_SCHEMA_VERSION = 1
 CONFIRMED_INTENT_RECORD_SCHEMA_VERSION = 1
@@ -86,6 +87,14 @@ QR_CODE_REQUIRED_FIELDS = frozenset(
         "updated_at",
     }
 )
+# Schema v2 records every generated PNG, not just the first, and binds each to
+# the exact path written plus a SHA-256 so catalog validation can tell the
+# intended artifact from a stale replacement.
+QR_CODE_V2_REQUIRED_FIELDS = QR_CODE_REQUIRED_FIELDS | frozenset({"artifacts"})
+QR_ARTIFACT_REQUIRED_FIELDS = frozenset(
+    {"path", "path_root", "sha256", "bg_hex"}
+)
+QR_ARTIFACT_PATH_ROOTS = frozenset({"deck_dir", "cwd", "absolute"})
 RESOURCE_REQUIRED_FIELDS = frozenset(
     {"talk_slug", "item_count", "category_breakdown"}
 )
@@ -266,6 +275,45 @@ def _require_closed_shape(
         raise TrackingDatabaseError(f"{label} is missing fields {sorted(missing)}")
     if unknown:
         raise TrackingDatabaseError(f"{label} has unknown fields {sorted(unknown)}")
+
+
+def _validate_qr_artifacts(value: object, label: str) -> None:
+    """Every generated PNG is recorded, each bound to its exact written path."""
+    if not isinstance(value, list) or not value:
+        raise TrackingDatabaseError(f"{label} must be a non-empty array")
+    seen_paths = set()
+    for index, artifact in enumerate(value):
+        item_label = f"{label}[{index}]"
+        if not isinstance(artifact, Mapping):
+            raise TrackingDatabaseError(f"{item_label} must be a JSON object")
+        _require_closed_shape(
+            artifact, required=QR_ARTIFACT_REQUIRED_FIELDS, label=item_label
+        )
+        path = _require_nonempty_string(artifact["path"], f"{item_label}.path")
+        if path in seen_paths:
+            raise TrackingDatabaseError(
+                f"{item_label}.path {path!r} is recorded more than once"
+            )
+        seen_paths.add(path)
+        root = _require_nonempty_string(
+            artifact["path_root"], f"{item_label}.path_root"
+        )
+        if root not in QR_ARTIFACT_PATH_ROOTS:
+            raise TrackingDatabaseError(
+                f"{item_label}.path_root must be one of "
+                f"{sorted(QR_ARTIFACT_PATH_ROOTS)}, got {root!r}"
+            )
+        digest = _require_nonempty_string(artifact["sha256"], f"{item_label}.sha256")
+        if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+            raise TrackingDatabaseError(
+                f"{item_label}.sha256 must be 64 lowercase hex characters"
+            )
+        if artifact["bg_hex"] is not None:
+            bg = _require_nonempty_string(artifact["bg_hex"], f"{item_label}.bg_hex")
+            if len(bg) != 6 or any(c not in "0123456789abcdef" for c in bg):
+                raise TrackingDatabaseError(
+                    f"{item_label}.bg_hex must be 6 lowercase hex characters or null"
+                )
 
 
 def _require_nonempty_string(value: object, label: str) -> str:
@@ -457,7 +505,7 @@ def _validate_improvement_goal(
         )
 
 
-def _validate_schema_one_record(
+def _validate_collection_record(
     collection: str,
     record: Mapping[str, object],
     *,
@@ -486,7 +534,23 @@ def _validate_schema_one_record(
             )
         return
     if collection == "qr_codes":
-        _require_closed_shape(record, required=QR_CODE_REQUIRED_FIELDS, label=label)
+        version = record.get("schema_version", LEGACY_QR_CODE_RECORD_SCHEMA_VERSION)
+        is_v2 = version == QR_CODE_RECORD_SCHEMA_VERSION
+        _require_closed_shape(
+            record,
+            required=QR_CODE_V2_REQUIRED_FIELDS if is_v2 else QR_CODE_REQUIRED_FIELDS,
+            label=label,
+        )
+        if is_v2:
+            _validate_qr_artifacts(record["artifacts"], f"{label}.artifacts")
+            # The documented v2 contract: qr_png_rel_path is the schema-v1
+            # reader's view of the first artifact, so the two must agree.
+            first = record["artifacts"][0]["path"]
+            if record["qr_png_rel_path"] != first:
+                raise TrackingDatabaseError(
+                    f"{label}.qr_png_rel_path must mirror artifacts[0].path "
+                    f"({first!r}), got {record['qr_png_rel_path']!r}"
+                )
         for field in (
             "talk_slug",
             "target_url",
@@ -738,7 +802,12 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
             )
         ),
         "pptx_catalog": frozenset({PPTX_CATALOG_RECORD_SCHEMA_VERSION}),
-        "qr_codes": frozenset({QR_CODE_RECORD_SCHEMA_VERSION}),
+        "qr_codes": frozenset(
+            {
+                LEGACY_QR_CODE_RECORD_SCHEMA_VERSION,
+                QR_CODE_RECORD_SCHEMA_VERSION,
+            }
+        ),
         "resources": frozenset({RESOURCE_RECORD_SCHEMA_VERSION}),
         "thumbnails": frozenset({THUMBNAIL_RECORD_SCHEMA_VERSION}),
         "confirmed_intents": frozenset({CONFIRMED_INTENT_RECORD_SCHEMA_VERSION}),
@@ -868,8 +937,13 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
                     version=version,
                     label=f"{key}[{index}]",
                 )
+            elif key == "qr_codes" and version in {
+                LEGACY_QR_CODE_RECORD_SCHEMA_VERSION,
+                QR_CODE_RECORD_SCHEMA_VERSION,
+            }:
+                _validate_collection_record(key, record, label=f"{key}[{index}]")
             elif version == 1:
-                _validate_schema_one_record(key, record, label=f"{key}[{index}]")
+                _validate_collection_record(key, record, label=f"{key}[{index}]")
 
     for talk_index, talk in enumerate(collections["talks"]):
         talk_version = _record_version(
@@ -1058,7 +1132,10 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
 
     simple_collections = {
         "pptx_catalog": PPTX_CATALOG_RECORD_SCHEMA_VERSION,
-        "qr_codes": QR_CODE_RECORD_SCHEMA_VERSION,
+        # An unversioned qr_codes record predates the v2 artifact receipts and
+        # cannot satisfy the v2 shape, so it is stamped at the legacy version.
+        # Only the QR writer produces v2 records, and it writes them complete.
+        "qr_codes": LEGACY_QR_CODE_RECORD_SCHEMA_VERSION,
         "resources": RESOURCE_RECORD_SCHEMA_VERSION,
         "thumbnails": THUMBNAIL_RECORD_SCHEMA_VERSION,
         "confirmed_intents": CONFIRMED_INTENT_RECORD_SCHEMA_VERSION,

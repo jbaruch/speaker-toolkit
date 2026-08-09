@@ -43,6 +43,29 @@ attempts. Exhaustion and every hard staged mismatch raise
 `StagedCandidateConflictError` carrying the failed invariant. The class is
 defined in `skills/vault-ingress/scripts/tracking_database_io.py`.
 
+### `qr_codes` v1 -> v2
+
+Writer: `skills/presentation-creator/scripts/generate-qr.py`. Readers dual-accept
+v1 and v2 for the rollout window.
+
+- v1 records `qr_png_rel_path` alone and carries no `artifacts` key. A v1 record
+  with an `artifacts` key is rejected as an unknown field.
+- v2 requires a non-empty `artifacts` array — one entry per generated PNG, so a
+  multi-colour deck run records every variant rather than only the first.
+- `path` is the exact path written, never a default filename. `path_root`
+  states what `path` is relative to: `deck_dir`, `cwd`, or `absolute`. A reader
+  never infers the root.
+- `sha256` is the artifact's digest, so catalog validation distinguishes the
+  intended PNG from a stale replacement. `bg_hex` names the colour variant, or
+  is null for a single-variant run.
+- `qr_png_rel_path` mirrors `artifacts[0].path` so schema-v1 readers keep
+  resolving one artifact.
+- `target_url` is the canonical redirect target in every mode, including
+  MCP-preresolved. The short URL never stands in for it.
+- Migration stamps an unversioned record at **v1**, not the current constant: a
+  legacy record has no `artifacts` and cannot satisfy the v2 shape. Only the QR
+  writer produces v2 records, and it writes them complete.
+
 A schema-v1 database with config v2 is an idempotent no-op. A schema-v1 database
 with config v1 receives only the config-v2 migration; the root generation and
 every other record remain unchanged. Before migration, queue `inspect` may read
@@ -69,7 +92,7 @@ no-op.
 | config | 2 (schema 1 remains readable owner-migration input) |
 | talk | 5 |
 | PPTX catalog | 1 |
-| QR code | 1 |
+| QR code | 2 (schema 1 remains readable legacy state) |
 | resource summary | 1 |
 | thumbnail | 1 |
 | confirmed intent | 1 |
@@ -83,7 +106,7 @@ no-op.
 | vault-ingress queue normalization/claim, persistence, shownotes apply, source repair | current read/write | Require database schema 1, config schema 2, and supported explicit owner-record versions; targeted writers emit their current record generation and never migrate the root implicitly |
 | vault-ingress preflight, source audit, analysis rendering, shownotes dry-run | dual reader | Parse schemas 0 and 1; gate through existing finding/error channels; never rewrite |
 | vault-clarification | current read/write | Route schema migration to vault-ingress; preserve config v2 and stamp confirmed intent v1/improvement goal v2 |
-| presentation-creator QR writer | dual reader/current writer | Read schemas 0 and 1; require schema 1 before URL creation or QR metadata persistence; stamp QR v1 |
+| presentation-creator QR writer | dual reader/current writer | Read schemas 0 and 1; require schema 1 before URL creation or QR metadata persistence; stamp QR v2 |
 | presentation-creator publishing/post-event | authorized current writer | Require schema 1 before tracking writes; stamp resource v1 and preserve talk v5 |
 | illustrations thumbnail workflow | authorized current writer | Require schema 1 before tracking writes; stamp thumbnail v1 and preserve talk v5 |
 | vault-profile | dual reader | Parse schemas 0 and 1; treat unsupported generations as unavailable; never migrate |
@@ -252,14 +275,20 @@ customization, not the owner default. See the
     "visual_extracted": false
   }],
   "qr_codes": [{
-    "schema_version": 1,
+    "schema_version": 2,
     "talk_slug": "arc-of-ai",
-    "target_url": "canonical talk URL",
-    "shortener": "bitly|rebrandly|none",
-    "short_path": "shortener's back-half/slashtag, null for none",
+    "target_url": "canonical shownotes URL — the short link's redirect target",
+    "shortener": "bitly|rebrandly|none|mcp_preresolved",
+    "short_path": "shortener's back-half/slashtag; always equals talk_slug, null for none",
     "short_url": "shortened URL, equal to target_url when shortener=none",
     "shortener_link_id": "API-side ID needed for updates; null for none",
-    "qr_png_rel_path": "illustrations/arcofai-qr.png (relative to vault or deck dir)",
+    "qr_png_rel_path": "mirrors artifacts[0].path for schema-v1 readers",
+    "artifacts": [{
+      "path": "arc-of-ai-qr-ffffff.png",
+      "path_root": "deck_dir|cwd|absolute",
+      "sha256": "64 lowercase hex characters",
+      "bg_hex": "ffffff, or null for a single-variant run"
+    }],
     "created_at": "2026-04-15",
     "updated_at": "2026-04-15"
   }],

@@ -26,11 +26,15 @@ back-half AND the rebrand.ly slashtag, with no override. When a custom domain is
 configured in the vault profile (`bitly_domain` / `rebrandly_domain`), the short
 link MUST use it. The script does this automatically: `--talk-slug
 devnexus26-robocoders` with `bitly_domain: jbaru.ch` creates
-`jbaru.ch/devnexus26-robocoders` (not `bit.ly/a3xK9f`). If the slug back-half
-can't be set, the script exits non-zero without generating a QR, and reports the
-already-created provider-side link's identity so it can be reused or deleted. It
-never keeps a random hash and never degrades to a raw URL — only an explicit
-`"shortener": "none"` authorizes raw encoding (§3).
+`jbaru.ch/devnexus26-robocoders` (not `bit.ly/a3xK9f`).
+
+When the slug back-half cannot be set:
+
+- The script exits non-zero without generating a QR.
+- It reports the already-created provider-side link's `link_id` and `short_url`.
+- It never keeps a random hash.
+- It never degrades to a raw URL. Only an explicit `"shortener": "none"`
+  authorizes raw encoding (§3).
 
 Random hashes are untraceable and unprofessional. The back-half IS the slug.
 
@@ -43,7 +47,25 @@ update the shortener target, and every printed QR code stays valid.
 The only exception is `"shortener": "none"` (explicit opt-out), where the raw
 URL is the only option.
 
-## 4. Slug Convention
+`--shownotes-url` is required in every mode, including MCP-preresolved. It is
+the canonical redirect target the catalog records; the short URL never stands in
+for it.
+
+## 4. Catalog Every Generated Artifact
+
+The `qr_codes` record MUST describe what was actually produced:
+
+- Record the exact path each PNG was written to, never a default filename.
+- Record `path_root` explicitly (`deck_dir`, `cwd`, or `absolute`).
+- Record every colour variant a run generates, not only the first.
+- Record a SHA-256 per artifact so a stale replacement is distinguishable.
+- Record the issuing provider and its link id. `mcp_preresolved` is a
+  last-resort marker for when the agent supplies neither.
+- Record `short_path` as the short URL's back-half, which §2 requires to equal
+  the talk slug. A pre-resolved link whose back-half differs stops the run under
+  §2; it is never recorded with the slug asserted onto it.
+
+## 5. Slug Convention
 
 The back-half IS `talk.slug` — composed and agreed with the author in Phase 1
 (per the speaker's `slug_convention.template`) and persisted in `outline.yaml` /
@@ -54,7 +76,7 @@ shownotes slug.
 - Kebab-case, lowercase, no special characters
 - No date prefix (e.g. `devnexus26-robocoders`, not `2026-04-16-devnexus-robocoders`)
 
-## 5. Missing Shortener Config = STOP
+## 6. Missing Shortener Config = STOP
 
 When the speaker profile has no `shortener` configured (key missing, not set
 to `"none"`), STOP and ask the user to choose one.
@@ -64,7 +86,7 @@ to `"none"`), STOP and ask the user to choose one.
 
 Silent generation with a raw URL when shortening was never discussed = failure.
 
-## 6. Missing API Token = STOP
+## 7. Missing API Token = STOP
 
 If `secrets.json` is missing or lacks the required API token, STOP and guide
 the user to create it. Do not silently degrade to a raw URL.
@@ -72,7 +94,7 @@ the user to create it. Do not silently degrade to a raw URL.
 The script prints actionable creation commands — but the agent must treat a
 missing token as a blocker, not a fallback trigger.
 
-## 7. First Short Link = ASK + SAVE the Custom Domain
+## 8. First Short Link = ASK + SAVE the Custom Domain
 
 The first time a short link is created for the active shortener, the custom-domain
 decision MUST be recorded in the vault profile. Three states of
@@ -88,7 +110,7 @@ A `null` is a recorded decision, not an absent value; never re-ask once saved. O
 the Direct API path `generate-qr.py` STOPS when the key is absent; on the MCP path
 the agent makes the same check before resolving the link.
 
-## 8. Replace Existing QRs In Place
+## 9. Replace Existing QRs In Place
 
 A deck adapted (trimmed) from another talk carries that talk's QR images. The QR
 step detects every existing QR — the closing slide AND any earlier shownotes

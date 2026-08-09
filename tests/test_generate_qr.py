@@ -68,6 +68,16 @@ def _sparse_text_png(tmp_path, name="screenshot.png"):
     return path
 
 
+def _receipt(path, *, bg_hex=None):
+    """Minimal valid artifact receipt for tests that do not write a real PNG."""
+    return {
+        "path": path,
+        "path_root": "cwd",
+        "sha256": "0" * 64,
+        "bg_hex": bg_hex,
+    }
+
+
 def test_choose_fg_color_dark_bg(generate_qr):
     # Dark background → white foreground
     fg = generate_qr.choose_fg_color((0, 0, 0))
@@ -120,9 +130,9 @@ def test_tracking_db_crud_insert(generate_qr):
         "shortener": "none",
         "short_url": "https://example.com/notes",
     }
-    generate_qr.update_tracking_db(db, entry, "test-talk-qr.png")
+    generate_qr.update_tracking_db(db, entry, [_receipt("test-talk-qr.png")])
     assert len(db["qr_codes"]) == 1
-    assert db["qr_codes"][0]["schema_version"] == 1
+    assert db["qr_codes"][0]["schema_version"] == 2
     assert db["qr_codes"][0]["talk_slug"] == "test-talk"
     assert db["qr_codes"][0]["qr_png_rel_path"] == "test-talk-qr.png"
 
@@ -143,14 +153,14 @@ def test_tracking_db_crud_update(generate_qr):
         "shortener": "none",
         "short_url": "https://new-url.com",
     }
-    generate_qr.update_tracking_db(db, entry, "new.png")
+    generate_qr.update_tracking_db(db, entry, [_receipt("new.png")])
     assert len(db["qr_codes"]) == 1
-    assert db["qr_codes"][0]["schema_version"] == 1
+    assert db["qr_codes"][0]["schema_version"] == 2
     assert db["qr_codes"][0]["target_url"] == "https://new-url.com"
     assert db["qr_codes"][0]["qr_png_rel_path"] == "new.png"
     # created_at preserved from original
     assert db["qr_codes"][0]["created_at"] == "2024-01-01"
-    assert db["qr_codes"][0]["schema_version"] == 1
+    assert db["qr_codes"][0]["schema_version"] == 2
 
 
 def test_tracking_db_semantic_noop_preserves_raw_bytes_and_inode(
@@ -240,6 +250,8 @@ def test_main_dry_run_allows_existing_vault_without_database(
             "--png-only",
             "--talk-slug",
             "talk",
+            "--shownotes-url",
+            "https://example.test/notes",
             "--short-url",
             "https://example.com/talk",
             "--vault",
@@ -311,6 +323,8 @@ def test_main_valid_snapshot_generates_png_and_persists_metadata(
             "--png-only",
             "--talk-slug",
             "talk",
+            "--shownotes-url",
+            "https://example.test/notes",
             "--short-url",
             "https://example.com/talk",
             "--vault",
@@ -639,7 +653,7 @@ def test_main_dry_run_dual_reads_legacy_database_without_writing(
     before = path.read_bytes()
     monkeypatch.setattr(sys, "argv", [
         "generate-qr.py", "--png-only", "--talk-slug", "legacy",
-        "--short-url", "https://example.test/legacy", "--vault", str(tmp_path),
+        "--short-url", "https://example.test/legacy", "--shownotes-url", "https://example.test/notes", "--vault", str(tmp_path),
         "--dry-run",
     ])
 
@@ -661,7 +675,7 @@ def test_main_rejects_legacy_database_before_qr_side_effect(
     )
     monkeypatch.setattr(sys, "argv", [
         "generate-qr.py", "--png-only", "--talk-slug", "legacy",
-        "--short-url", "https://example.test/legacy", "--vault", str(tmp_path),
+        "--short-url", "https://example.test/legacy", "--shownotes-url", "https://example.test/notes", "--vault", str(tmp_path),
     ])
 
     with pytest.raises(SystemExit, match="current tracking schema"):
@@ -683,7 +697,7 @@ def test_main_current_database_stamps_qr_record_and_writes_atomically(
     )
     monkeypatch.setattr(sys, "argv", [
         "generate-qr.py", "--png-only", "--talk-slug", "current",
-        "--short-url", "https://example.test/current", "--vault", str(tmp_path),
+        "--short-url", "https://example.test/current", "--shownotes-url", "https://example.test/notes", "--vault", str(tmp_path),
         "--output", str(output),
     ])
 
@@ -691,18 +705,30 @@ def test_main_current_database_stamps_qr_record_and_writes_atomically(
 
     written = json.loads(path.read_text(encoding="utf-8"))
     assert written["schema_version"] == 1
+    record = written["qr_codes"][0]
     assert written["qr_codes"] == [{
-        "schema_version": 1,
+        "schema_version": 2,
         "talk_slug": "current",
-        "target_url": "https://example.test/current",
+        # The canonical redirect target, never the short URL standing in for it.
+        "target_url": "https://example.test/notes",
         "shortener": "mcp_preresolved",
-        "short_path": None,
+        # The back-half is recovered from the short URL and matches the slug.
+        "short_path": "current",
         "short_url": "https://example.test/current",
         "shortener_link_id": None,
-        "qr_png_rel_path": "current-qr.png",
-        "created_at": written["qr_codes"][0]["created_at"],
-        "updated_at": written["qr_codes"][0]["updated_at"],
+        "qr_png_rel_path": record["qr_png_rel_path"],
+        "artifacts": record["artifacts"],
+        "created_at": record["created_at"],
+        "updated_at": record["updated_at"],
     }]
+    # The exact written path is recorded, not the default {slug}-qr.png name.
+    assert len(record["artifacts"]) == 1
+    artifact = record["artifacts"][0]
+    assert artifact["path"].endswith("current.png")
+    assert artifact["path_root"] in {"cwd", "absolute"}
+    assert len(artifact["sha256"]) == 64
+    assert artifact["bg_hex"] is None
+    assert record["qr_png_rel_path"] == artifact["path"]
 
 
 def test_main_rejects_future_database_without_side_effect(
@@ -718,7 +744,7 @@ def test_main_rejects_future_database_without_side_effect(
     )
     monkeypatch.setattr(sys, "argv", [
         "generate-qr.py", "--png-only", "--talk-slug", "future",
-        "--short-url", "https://example.test/future", "--vault", str(tmp_path),
+        "--short-url", "https://example.test/future", "--shownotes-url", "https://example.test/notes", "--vault", str(tmp_path),
         "--dry-run",
     ])
 
@@ -736,7 +762,7 @@ def test_main_rejects_tracking_database_symlink_before_loading_config(
     path.symlink_to(target.name)
     monkeypatch.setattr(sys, "argv", [
         "generate-qr.py", "--png-only", "--talk-slug", "link",
-        "--short-url", "https://example.test/link", "--vault", str(tmp_path),
+        "--short-url", "https://example.test/link", "--shownotes-url", "https://example.test/notes", "--vault", str(tmp_path),
         "--dry-run",
     ])
 
@@ -925,3 +951,147 @@ def test_unknown_shortener_is_rejected_before_cache_reuse(generate_qr):
             "https://example.com/notes", "my-talk",
             {"shortener": "tinyurl"}, {}, db
         )
+
+
+# --- #171: catalog fidelity — canonical target, provider identity, every artifact ---
+
+def test_mcp_mode_records_canonical_target_and_provider_identity(
+        generate_qr, monkeypatch, tmp_path):
+    """MCP mode must persist the redirect target, provider, and link id."""
+    output = tmp_path / "talk-qr.png"
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "my-talk",
+        "--shownotes-url", "https://example.test/notes",
+        "--short-url", "https://jbaru.ch/my-talk",
+        "--short-provider", "bitly",
+        "--short-link-id", "bit.ly/abc123",
+        "--output", str(output),
+    ])
+    monkeypatch.setattr(generate_qr, "update_tracking_db",
+                        lambda db, entry, artifacts: captured.update(
+                            entry=entry, artifacts=artifacts))
+    captured = {}
+    generate_qr.main()
+
+    entry = captured["entry"]
+    assert entry["target_url"] == "https://example.test/notes"
+    assert entry["short_url"] == "https://jbaru.ch/my-talk"
+    assert entry["shortener"] == "bitly"
+    assert entry["shortener_link_id"] == "bit.ly/abc123"
+    assert entry["short_path"] == "my-talk"
+
+
+def test_png_only_records_the_path_actually_written(generate_qr, monkeypatch, tmp_path):
+    """--output PATH must be cataloged, not the default {slug}-qr.png name."""
+    output = tmp_path / "custom" / "elsewhere.png"
+    output.parent.mkdir()
+    captured = {}
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "my-talk",
+        "--shownotes-url", "https://example.test/notes",
+        "--short-url", "https://jbaru.ch/my-talk",
+        "--output", str(output),
+    ])
+    monkeypatch.setattr(generate_qr, "update_tracking_db",
+                        lambda db, entry, artifacts: captured.update(artifacts=artifacts))
+    generate_qr.main()
+
+    assert len(captured["artifacts"]) == 1
+    artifact = captured["artifacts"][0]
+    assert artifact["path"].endswith("elsewhere.png")
+    assert "my-talk-qr.png" not in artifact["path"]
+    # The digest binds the record to these exact bytes.
+    import hashlib
+    assert artifact["sha256"] == hashlib.sha256(output.read_bytes()).hexdigest()
+
+
+def test_artifact_receipt_records_an_explicit_path_root(generate_qr, tmp_path):
+    """The path root is recorded, never left for a reader to guess."""
+    deck_dir = tmp_path / "deck"
+    deck_dir.mkdir()
+    inside = deck_dir / "a.png"
+    inside.write_bytes(b"png-a")
+    outside = tmp_path / "b.png"
+    outside.write_bytes(b"png-b")
+
+    within = generate_qr._artifact_receipt(str(inside), str(deck_dir), None)
+    assert within["path_root"] == "deck_dir"
+    assert within["path"] == "a.png"
+
+    elsewhere = generate_qr._artifact_receipt(str(outside), str(deck_dir), None)
+    assert elsewhere["path_root"] == "absolute"
+    assert elsewhere["path"] == str(outside)
+
+
+def test_back_half_that_is_not_the_slug_stops_the_run(generate_qr):
+    """§2 admits no exception: a non-slug back-half is the random-hash failure."""
+    with pytest.raises(generate_qr.ShortenerResolutionError, match="is not the talk slug"):
+        generate_qr._validated_back_half("https://bit.ly/a3xK9f", "my-talk")
+    assert generate_qr._validated_back_half("https://jbaru.ch/my-talk", "my-talk") == "my-talk"
+
+
+def test_mcp_non_slug_back_half_exits_before_any_side_effect(
+        generate_qr, monkeypatch, tmp_path):
+    output = tmp_path / "qr.png"
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "my-talk",
+        "--shownotes-url", "https://example.test/notes",
+        "--short-url", "https://bit.ly/a3xK9f",
+        "--output", str(output),
+    ])
+    with pytest.raises(SystemExit) as excinfo:
+        generate_qr.main()
+    assert excinfo.value.code == 1
+    assert not output.exists()
+
+
+def test_provider_flags_require_short_url(generate_qr, monkeypatch):
+    """Provider identity without --short-url would be silently dropped."""
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "my-talk",
+        "--shownotes-url", "https://example.test/notes",
+        "--short-provider", "bitly", "--short-link-id", "bit.ly/abc",
+    ])
+    with pytest.raises(SystemExit):
+        generate_qr.main()
+
+
+@pytest.mark.parametrize("flag,value", [
+    ("--short-provider", "bitly"),
+    ("--short-link-id", "bit.ly/abc123"),
+])
+def test_provider_identity_is_all_or_neither(generate_qr, monkeypatch, tmp_path, flag, value):
+    """Half an identity catalogs an incomplete provider record."""
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "my-talk",
+        "--shownotes-url", "https://example.test/notes",
+        "--short-url", "https://jbaru.ch/my-talk",
+        flag, value,
+        "--output", str(tmp_path / "qr.png"),
+    ])
+    with pytest.raises(SystemExit):
+        generate_qr.main()
+
+
+def test_every_colour_variant_is_cataloged(generate_qr, tmp_path):
+    """A multi-colour deck run records each PNG, not just the first."""
+    deck_dir = tmp_path / "deck"
+    deck_dir.mkdir()
+    receipts = []
+    for name, bg in (("a-qr-ffffff.png", "ffffff"), ("a-qr-000000.png", "000000")):
+        path = deck_dir / name
+        path.write_bytes(name.encode())
+        receipts.append(generate_qr._artifact_receipt(str(path), str(deck_dir), bg))
+
+    db = {"qr_codes": []}
+    generate_qr.update_tracking_db(db, {
+        "talk_slug": "a", "target_url": "https://example.test/notes",
+        "shortener": "bitly", "short_url": "https://jbaru.ch/a",
+        "short_path": "a", "shortener_link_id": "bit.ly/a",
+    }, receipts)
+
+    record = db["qr_codes"][0]
+    assert record["schema_version"] == 2
+    assert [a["bg_hex"] for a in record["artifacts"]] == ["ffffff", "000000"]
+    assert len({a["sha256"] for a in record["artifacts"]}) == 2
+    assert record["qr_png_rel_path"] == record["artifacts"][0]["path"]

@@ -1536,3 +1536,108 @@ def test_cli_errors_follow_json_contract(
     assert result == 2
     assert json.loads(captured.out)["ok"] is False
     assert "invalid arguments" in captured.err
+
+
+# --- #171: qr_codes schema v2 — artifact receipts ---
+
+def _qr_v2_record(**overrides):
+    record = {
+        "schema_version": 2,
+        "talk_slug": "my-talk",
+        "target_url": "https://example.test/notes",
+        "shortener": "bitly",
+        "short_path": "my-talk",
+        "short_url": "https://jbaru.ch/my-talk",
+        "shortener_link_id": "bit.ly/abc123",
+        "qr_png_rel_path": "my-talk-qr.png",
+        "artifacts": [{
+            "path": "my-talk-qr.png",
+            "path_root": "deck_dir",
+            "sha256": "a" * 64,
+            "bg_hex": None,
+        }],
+        "created_at": "2026-08-09",
+        "updated_at": "2026-08-09",
+    }
+    record.update(overrides)
+    return record
+
+
+def _qr_v1_record():
+    return {
+        "schema_version": 1,
+        "talk_slug": "legacy-talk",
+        "target_url": "https://example.test/notes",
+        "shortener": "none",
+        "short_path": None,
+        "short_url": "https://example.test/notes",
+        "shortener_link_id": None,
+        "qr_png_rel_path": "legacy-talk-qr.png",
+        "created_at": "2026-01-01",
+        "updated_at": "2026-01-01",
+    }
+
+
+def _validate_qr(tracking_database, record):
+    """Validate one qr_codes record inside an otherwise-current database."""
+    migrated = tracking_database.migrate_tracking_database(_legacy_database())
+    database = copy.deepcopy(migrated.database)
+    database["qr_codes"] = [record]
+    tracking_database.require_current_tracking_database(database)
+
+
+def test_qr_v1_records_still_validate(tracking_database):
+    """Dual-accept: existing v1 records keep reading during the rollout."""
+    _validate_qr(tracking_database, _qr_v1_record())
+
+
+def test_qr_v2_record_validates(tracking_database):
+    _validate_qr(tracking_database, _qr_v2_record())
+
+
+def test_qr_v2_requires_artifacts(tracking_database):
+    record = _qr_v2_record()
+    del record["artifacts"]
+    with pytest.raises(tracking_database.TrackingDatabaseError, match="artifacts"):
+        _validate_qr(tracking_database, record)
+
+
+def test_qr_v1_must_not_carry_artifacts(tracking_database):
+    record = _qr_v1_record() | {"artifacts": []}
+    with pytest.raises(tracking_database.TrackingDatabaseError, match="unknown fields"):
+        _validate_qr(tracking_database, record)
+
+
+def test_qr_v2_rejects_an_empty_artifact_list(tracking_database):
+    with pytest.raises(tracking_database.TrackingDatabaseError, match="non-empty array"):
+        _validate_qr(tracking_database, _qr_v2_record(artifacts=[]))
+
+
+def test_qr_v2_rejects_an_unknown_path_root(tracking_database):
+    record = _qr_v2_record()
+    record["artifacts"][0]["path_root"] = "somewhere"
+    with pytest.raises(tracking_database.TrackingDatabaseError, match="path_root must be one of"):
+        _validate_qr(tracking_database, record)
+
+
+def test_qr_v2_rejects_a_malformed_digest(tracking_database):
+    record = _qr_v2_record()
+    record["artifacts"][0]["sha256"] = "NOTHEX"
+    with pytest.raises(tracking_database.TrackingDatabaseError, match="64 lowercase hex"):
+        _validate_qr(tracking_database, record)
+
+
+def test_qr_v2_rejects_duplicate_artifact_paths(tracking_database):
+    record = _qr_v2_record()
+    record["artifacts"].append(dict(record["artifacts"][0]))
+    with pytest.raises(tracking_database.TrackingDatabaseError, match="recorded more than once"):
+        _validate_qr(tracking_database, record)
+
+
+def test_qr_v2_requires_qr_png_rel_path_to_mirror_first_artifact(tracking_database):
+    """The v1 reader's view must agree with the artifact it points at."""
+    record = _qr_v2_record(qr_png_rel_path="something-else.png")
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="must mirror artifacts\\[0\\].path"
+    ):
+        _validate_qr(tracking_database, record)
