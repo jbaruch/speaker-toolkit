@@ -3396,7 +3396,8 @@ def test_outer_boundary_passes_a_clean_exit_code_through(
 
 def test_failure_guidance_names_a_concrete_next_action(
         preflight_vault, capsys, monkeypatch):
-    """"Repair the condition named by the exception type" is not actionable."""
+    """Telling the operator to repair whatever the exception type named is not
+    an actionable message."""
     monkeypatch.setattr(preflight_vault, "main",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
     assert preflight_vault.run_cli() == 2
