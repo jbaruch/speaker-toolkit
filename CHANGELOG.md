@@ -43,6 +43,13 @@ A commit that still rejects no longer looks side-effect-free. The run exits
 non-zero and names every effect that landed — short-link provider and link id,
 each PNG path, the mutated deck — plus how a retry behaves against them.
 
+A bit.ly back-half failure creates the link before it fails, so
+`ShortenerResolutionError` now carries that partial creation as structured
+`partial_link` data rather than only in its message text. The receipt records
+it and the run emits the effects payload, instead of the previous claim that no
+PNG, deck, or tracking-database change was made — which was false whenever the
+link had already been created.
+
 A rejected commit writes one JSON document to stderr —
 `{"error": "qr_publication_unfinalized", ...}` carrying `retry`,
 `atomic_rollback`, and an `effects[]` entry per landed effect with its own

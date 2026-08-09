@@ -470,7 +470,12 @@ def create_bitly_link(long_url, api_token, custom_back_half=None, domain=None):
                 f"could not set custom back-half '{custom_back_half}' on "
                 f"{bitly_domain}: {e}. A provider-side link was already created "
                 f"and must be reused or deleted: link_id={link_id} "
-                f"short_url={short_url}"
+                f"short_url={short_url}",
+                partial_link={
+                    "provider": "bitly",
+                    "link_id": link_id,
+                    "short_url": short_url,
+                },
             ) from e
 
     return {
@@ -564,7 +569,16 @@ class ShortenerResolutionError(RuntimeError):
     Every other resolution failure raises this so the run stops before a PNG,
     deck, or tracking-database write, rather than silently shipping a QR
     without the managed redirect layer and cataloging it as ``none``.
+
+    ``partial_link`` carries a provider-side link this run created before
+    failing — the back-half assignment can fail after creation. It is a dict of
+    provider / link_id / short_url, or None when nothing was created. The
+    caller records it so the failure never claims no effects landed.
     """
+
+    def __init__(self, message, *, partial_link=None):
+        super().__init__(message)
+        self.partial_link = partial_link
 
 
 def _print_missing_key_help(service, key_name, vault_path):
@@ -810,7 +824,12 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db,
                 "publishing_process.qr_code.shortener"
             )
 
-    except ShortenerResolutionError:
+    except ShortenerResolutionError as e:
+        if e.partial_link is not None and effects_receipt is not None:
+            effects_receipt.record_short_link(
+                e.partial_link["provider"], e.partial_link["link_id"],
+                e.partial_link["short_url"], action="created",
+            )
         raise
     except (
         urllib.error.HTTPError,
@@ -1368,12 +1387,18 @@ def _publish(args, effects_receipt, vault_path, vault_present_at_start,
                 effects_receipt=effects_receipt,
             )
         except ShortenerResolutionError as e:
-            print(f"ERROR: {e}", file=sys.stderr)
-            print(
-                "  No QR PNG, deck, or tracking-database change was made. Only "
-                "an explicit 'shortener: none' may encode a raw target URL.",
-                file=sys.stderr,
-            )
+            if effects_receipt.any_effects():
+                # A provider-side link was created before the failure; saying
+                # nothing landed would be false.
+                _emit_unfinalized_effects(effects_receipt, str(e))
+            else:
+                print(f"ERROR: {e}", file=sys.stderr)
+                print(
+                    "  No QR PNG, deck, or tracking-database change was made. "
+                    "Only an explicit 'shortener: none' may encode a raw "
+                    "target URL.",
+                    file=sys.stderr,
+                )
             sys.exit(1)
 
 

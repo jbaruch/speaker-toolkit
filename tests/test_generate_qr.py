@@ -1381,3 +1381,52 @@ def test_unsafe_slug_is_rejected_at_the_cli_boundary(
     assert list(vault.glob(".qr-*")) == []
     assert list(tmp_path.glob(".qr-*")) == []
     assert not (tmp_path / "qr.png").exists()
+
+
+def test_back_half_failure_after_link_creation_reports_the_created_link(
+        generate_qr, monkeypatch, tmp_path, capsys):
+    """The link exists provider-side; claiming no effects landed would be false."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "tracking-database.json").write_text(
+        json.dumps(_current_tracking_database()), encoding="utf-8")
+    (vault / "speaker-profile.json").write_text(json.dumps(
+        {"publishing_process": {"qr_code": {
+            "shortener": "bitly", "bitly_domain": "jbaru.ch"}}}), encoding="utf-8")
+    (vault / "secrets.json").write_text(
+        json.dumps({"bitly": {"api_token": "tok"}}), encoding="utf-8")
+
+    import urllib.error
+
+    def fake_http(url, data=None, headers=None, method="GET"):
+        if url.endswith("/v4/bitlinks"):
+            return {"id": "jbaru.ch/abc123", "link": "https://jbaru.ch/abc123"}
+        # Creation succeeded; the back-half assignment is what fails.
+        raise urllib.error.HTTPError(url, 422, "Unprocessable", {}, None)
+
+    monkeypatch.setattr(generate_qr, "_http_request", fake_http)
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "current",
+        "--shownotes-url", "https://example.test/notes",
+        "--vault", str(vault), "--output", str(tmp_path / "qr.png"),
+    ])
+
+    with pytest.raises(SystemExit) as excinfo:
+        generate_qr.main()
+    assert excinfo.value.code == 1
+
+    payload = json.loads(capsys.readouterr().err)
+    link = [e for e in payload["effects"] if e["kind"] == "short_link"]
+    assert link, "the created link must be reported"
+    assert link[0]["link_id"] == "jbaru.ch/abc123"
+    assert link[0]["action"] == "created"
+    assert link[0]["rollback"] == {
+        "action": "delete", "target": "https://jbaru.ch/abc123"}
+
+
+def test_partial_link_identity_is_structured_not_only_in_the_message(generate_qr):
+    err = generate_qr.ShortenerResolutionError(
+        "boom", partial_link={"provider": "bitly", "link_id": "x",
+                              "short_url": "https://jbaru.ch/x"})
+    assert err.partial_link["link_id"] == "x"
+    assert generate_qr.ShortenerResolutionError("boom").partial_link is None
