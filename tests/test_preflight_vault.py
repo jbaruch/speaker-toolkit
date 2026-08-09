@@ -3469,6 +3469,12 @@ def test_transcript_decode_failure_reports_a_typed_reason_not_os_text(
          if f["code"] == "transcript_artifact_unreadable"), None)
     assert finding is not None, [f["code"] for f in report["findings"]]
     assert finding["actual"] == "not_utf8"
+    assert finding["message"].startswith(
+        "transcript artifact is not valid UTF-8 speech text"
+    )
+    assert "rerun preflight" in finding["message"], (
+        "error-handling requires the message to say what to do next"
+    )
     # `artifact_path` is a documented structured field and legitimately carries
     # an absolute path (#200). Every OTHER field must stay free of raw decoder
     # prose and host paths.
@@ -3477,6 +3483,42 @@ def test_transcript_decode_failure_reports_a_typed_reason_not_os_text(
     assert "codec" not in serialized
     assert "invalid start byte" not in serialized
     assert str(vault_fixture["root"]) not in serialized
+
+
+def test_transcript_read_failure_does_not_claim_a_decode_failure(
+        preflight_vault, vault_fixture, monkeypatch):
+    """A permission denial is a read failure — the message must say so (#253)."""
+    transcript = vault_fixture["root"] / "transcripts" / f"{VIDEO_ID}.txt"
+    transcript.parent.mkdir(parents=True, exist_ok=True)
+    transcript.write_text("speech text", encoding="utf-8")
+    write_database(vault_fixture, [base_talk(status="processed")], current=True)
+
+    real_read_text = Path.read_text
+
+    def denied(self, *args, **kwargs):
+        if self == transcript:
+            raise PermissionError(13, "Permission denied", str(transcript))
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", denied)
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+    finding = next(
+        (f for f in report["findings"]
+         if f["code"] == "transcript_artifact_unreadable"), None)
+    assert finding is not None, [f["code"] for f in report["findings"]]
+    assert finding["actual"] == "unreadable:PermissionError"
+    assert finding["message"].startswith(
+        "transcript artifact could not be read"
+    )
+    assert "rerun preflight" in finding["message"], (
+        "error-handling requires the message to say what to do next"
+    )
+    # The location lives in the documented `artifact_path` field (#200); neither
+    # the message nor `actual` may carry the errno prose or the host path.
+    for field in ("message", "actual"):
+        assert "Permission denied" not in finding[field]
+        assert str(vault_fixture["root"]) not in finding[field]
 
 
 def test_reworded_decoder_message_keeps_its_finding_code(
