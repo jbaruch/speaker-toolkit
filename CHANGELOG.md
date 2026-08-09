@@ -34,6 +34,8 @@ The baseline this cleared:
 Still open on #162: the `ruff format` baseline, the Pyright baseline, and
 wiring all three into pull-request CI.
 
+## 0.20.32 — 2026-08-09
+
 ### chore(deps) — pin the last four Python requirements and gate the rule (#161)
 
 `python-pptx`, `lxml`, `qrcode`, and `pytest` were still unpinned, so every
