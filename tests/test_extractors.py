@@ -148,7 +148,6 @@ def test_slides_omits_speaker_dialogue(extract_slides, outline):
 def test_slides_omits_interludes(extract_slides, outline_schema):
     """The slides extractor walks slides[] only — interludes never appear in
     slides.md, even if the outline declares them."""
-    import copy
     import yaml as _yaml
 
     data = _yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
@@ -175,7 +174,6 @@ def test_slides_omits_interludes(extract_slides, outline_schema):
 def test_script_interleaves_interludes_after_anchor(extract_script, outline_schema):
     """Build a tiny outline with one interlude anchored after_slide=1, verify
     it appears between slide 1 and slide 2 in the rendered script."""
-    import copy
     import yaml
 
     data = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))

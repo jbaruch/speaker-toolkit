@@ -1,5 +1,39 @@
 # Changelog
 
+### chore(ci) — clear the Ruff lint baseline and configure the linter (#162)
+
+First of the #162 adoption sequence. `language-diagnostics` Adopting on a Dirty
+Tree wants the config and the fixes landed before the gate, in their own PR —
+so this one turns nothing red in CI yet.
+
+`[tool.ruff]` now pins `line-length = 88` and `target-version = "py310"`
+explicitly, and `[tool.ruff.lint]` selects Ruff's default set plus `BLE`.
+E501 stays off on purpose: the formatter owns line width, and running both
+makes the linter argue with the formatter over lines the formatter cannot split.
+
+The baseline this cleared:
+
+- `generate-qr.py` caught bare `Exception` twice, both inner helpers, neither an
+  outer process boundary. `_two_color_metrics` now catches `(OSError, ValueError)`
+  — Pillow raises `UnidentifiedImageError` (an `OSError`) for a format it cannot
+  read and `ValueError` for an unsupported convert mode. `_picture_is_qr` catches
+  `(ValueError, KeyError)` — python-pptx raises the first for a picture with no
+  embedded image and the second for a missing relationship. Anything else was
+  a bug in the script being swallowed as "not a QR".
+- `test_video_slide_extraction.py` built its distinct-frame fixture with
+  `np.random.RandomState(42)`. Seeded is not the same as fixed, and
+  `testing-standards` Determinism's carve-out covers property-based generators,
+  not a numpy RNG shaping a fixture. Three index-arithmetic patterns replace it
+  — vertical stripes, a diagonal sawtooth, concentric rings — with a second test
+  asserting their pairwise phash distances (31, 31, 38) really do clear the
+  threshold 8 the first test relies on. Solid fills would not work: phash reads
+  structure, so three flat colors hash alike.
+- Nine mechanical findings in tests: three unused imports, one dead local whose
+  stale comment went with it, one multi-import line, six semicolon statements.
+
+Still open on #162: the `ruff format` baseline, the Pyright baseline, and
+wiring all three into pull-request CI.
+
 ### chore(deps) — pin the last four Python requirements and gate the rule (#161)
 
 `python-pptx`, `lxml`, `qrcode`, and `pytest` were still unpinned, so every

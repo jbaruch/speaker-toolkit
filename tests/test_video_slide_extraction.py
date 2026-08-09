@@ -700,21 +700,65 @@ def test_deduplicate_identical_frames(video_slide_extraction, tmp_path):
     assert len(unique) == 1
 
 
-def test_deduplicate_distinct_frames(video_slide_extraction, tmp_path):
-    """Visually distinct frames should all be kept."""
+# Three patterns built from index arithmetic, not RNG. Their pairwise phash
+# distances are 31, 31, and 38 — comfortably past the threshold 8 the test uses,
+# so the assertion does not sit on the edge of the comparison. Solid colors
+# would not work: phash reads structure, and three flat fills hash alike.
+# `testing-standards` Determinism bans runtime randomness from shaping inputs,
+# and its seeded carve-out covers property-based generators, not a numpy RNG
+# building a fixture.
+DISTINCT_FRAME_PATTERNS = (
+    # vertical stripes, 4px period
+    lambda rows, cols: ((cols // 4) % 2) * 255,
+    # diagonal sawtooth
+    lambda rows, cols: ((rows + cols) % 64) * 4,
+    # concentric rings about the center
+    lambda rows, cols: (
+        ((rows - 90) ** 2 + (cols - 160) ** 2) // 400 % 2
+    ) * 255,
+)
+
+
+def _patterned_frame(pattern, height=180, width=320):
+    """One deterministic RGB frame from an index-arithmetic pattern."""
     import numpy as np
 
-    # Use patterned images (not solid) so JPEG compression preserves distinctness
-    rng = np.random.RandomState(42)
+    rows = np.arange(height).reshape(height, 1)
+    cols = np.arange(width).reshape(1, width)
+    plane = np.broadcast_to(pattern(rows, cols), (height, width))
+    frame = np.zeros((height, width, 3), dtype=np.uint8)
+    frame[:, :, :] = plane.astype(np.uint8)[:, :, None]
+    return Image.fromarray(frame)
+
+
+def test_deduplicate_distinct_frames(video_slide_extraction, tmp_path):
+    """Visually distinct frames should all be kept."""
     frames = []
-    for i in range(3):
-        arr = rng.randint(0, 256, (180, 320, 3), dtype=np.uint8)
-        img = Image.fromarray(arr)
+    for i, pattern in enumerate(DISTINCT_FRAME_PATTERNS):
         path = str(tmp_path / f"frame_{i:05d}.png")
-        img.save(path)  # PNG to avoid JPEG lossy compression
+        # PNG, not JPEG: lossy compression would blur the patterns together.
+        _patterned_frame(pattern).save(path)
         frames.append(path)
     unique = video_slide_extraction.deduplicate_frames(frames, hash_threshold=8)
     assert len(unique) == 3
+
+
+def test_the_distinct_frame_patterns_really_are_distinct(
+        video_slide_extraction, tmp_path):
+    """Guard the fixture itself: solid or near-identical patterns would make
+    `test_deduplicate_distinct_frames` pass for the wrong reason."""
+    import imagehash
+
+    hashes = [
+        imagehash.phash(_patterned_frame(pattern), hash_size=8)
+        for pattern in DISTINCT_FRAME_PATTERNS
+    ]
+    distances = [
+        hashes[i] - hashes[j]
+        for i in range(len(hashes))
+        for j in range(i + 1, len(hashes))
+    ]
+    assert all(distance > 8 for distance in distances), distances
 
 
 def test_higher_hash_threshold_monotonically_keeps_fewer_variants(
