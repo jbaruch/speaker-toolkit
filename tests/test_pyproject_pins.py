@@ -87,6 +87,7 @@ def test_the_manifest_declares_every_group_this_test_checks():
     )
     labels = [label for label, _ in _requirement_groups()]
     assert "project.optional-dependencies.test" in labels
+    assert "project.optional-dependencies.lint" in labels
     assert "project.optional-dependencies.whisper" in labels
 
 

@@ -712,9 +712,12 @@ DISTINCT_FRAME_PATTERNS = (
     lambda rows, cols: ((cols // 4) % 2) * 255,
     # diagonal sawtooth
     lambda rows, cols: ((rows + cols) % 64) * 4,
-    # concentric rings about the center
+    # concentric rings about the center, derived from the frame's own extent so
+    # the pattern stays centered at any size
     lambda rows, cols: (
-        ((rows - 90) ** 2 + (cols - 160) ** 2) // 400 % 2
+        (
+            (rows - rows.size // 2) ** 2 + (cols - cols.size // 2) ** 2
+        ) // 400 % 2
     ) * 255,
 )
 
@@ -744,7 +747,8 @@ def test_deduplicate_distinct_frames(video_slide_extraction, tmp_path):
 
 
 def test_the_distinct_frame_patterns_really_are_distinct(
-        video_slide_extraction, tmp_path):
+    video_slide_extraction, tmp_path
+):
     """Guard the fixture itself: solid or near-identical patterns would make
     `test_deduplicate_distinct_frames` pass for the wrong reason."""
     import imagehash

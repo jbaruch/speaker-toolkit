@@ -6,6 +6,10 @@ First of the #162 adoption sequence. `language-diagnostics` Adopting on a Dirty
 Tree wants the config and the fixes landed before the gate, in their own PR —
 so this one turns nothing red in CI yet.
 
+Ruff is declared and pinned in a new `lint` optional group (`ruff==0.16.2`),
+on the same weekly Dependabot pip lane. Its own group because the test runner
+does not need it and a linter bump is its own change.
+
 `[tool.ruff]` now pins `line-length = 88` and `target-version = "py310"`
 explicitly, and `[tool.ruff.lint]` selects Ruff's default set plus `BLE`.
 E501 stays off on purpose: the formatter owns line width, and running both
@@ -27,7 +31,8 @@ The baseline this cleared:
   — vertical stripes, a diagonal sawtooth, concentric rings — with a second test
   asserting their pairwise phash distances (31, 31, 38) really do clear the
   threshold 8 the first test relies on. Solid fills would not work: phash reads
-  structure, so three flat colors hash alike.
+  structure, so three flat colors hash alike. The ring pattern derives its
+  center from the frame's own extent, so the distances hold at any size.
 - Nine mechanical findings in tests: three unused imports, one dead local whose
   stale comment went with it, one multi-import line, six semicolon statements.
 

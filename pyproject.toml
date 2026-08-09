@@ -55,6 +55,14 @@ test = [
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
     "tomli==2.4.1; python_version < '3.11'",
 ]
+# Lint and formatting, run by the #162 CI gate. Its own group because the test
+# runner does not need it and a lint bump should not rebuild a test image.
+# A formatter/linter bump is its own change, per
+# `rules/code-formatting.md` Separation of Concerns.
+lint = [
+    # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
+    "ruff==0.16.2",
+]
 # Local Whisper transcription, used by vault-ingress/scripts/fetch-transcript.py
 # when a video has no caption track. Optional and not in the base dependency set
 # because mlx-whisper requires Apple Silicon and cannot install on the Linux CI
