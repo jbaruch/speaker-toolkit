@@ -24,7 +24,11 @@ from packaging.requirements import InvalidRequirement, Requirement
 if sys.version_info >= (3, 11):
     import tomllib
 else:  # requires-python admits 3.10, where tomllib is not in the stdlib
-    import tomli as tomllib
+    # Pyright analyzes at the declared floor (3.10) but resolves imports against
+    # the ambient environment, which is 3.11+ and correctly has no `tomli`. The
+    # guard above is the contract; only the checker's two-version view needs
+    # telling.
+    import tomli as tomllib  # pyright: ignore[reportMissingImports]
 
 REPO_ROOT = Path(__file__).parents[1]
 PYPROJECT = REPO_ROOT / "pyproject.toml"
