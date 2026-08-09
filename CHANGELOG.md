@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.34 — 2026-08-09
+
 ### chore(ci) — clear the `ruff format` baseline (#162)
 
 Second of the #162 adoption sequence. `ruff format` rewrites 94 of the repo's
