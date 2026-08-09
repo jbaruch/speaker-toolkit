@@ -8,7 +8,8 @@ deck at the configured slide position.
 
 Two URL-resolution modes:
   --shownotes-url URL   Script resolves shortening itself via {vault}/secrets.json
-  --short-url URL       Agent pre-resolved the short URL (via MCP); script just
+  --short-url URL       Agent pre-resolved the short URL (via MCP); requires
+                        --shownotes-url as the canonical redirect target. Script just
                         generates the QR and inserts it
 
 PNG-only mode (no deck required):
@@ -19,7 +20,8 @@ PNG-only mode (no deck required):
 
 Usage:
     python3 generate-qr.py <deck.pptx> --talk-slug SLUG --shownotes-url URL
-    python3 generate-qr.py <deck.pptx> --talk-slug SLUG --short-url URL
+    python3 generate-qr.py <deck.pptx> --talk-slug SLUG --shownotes-url URL \\
+        --short-url SHORT_URL --short-provider bitly --short-link-id LINK_ID
     python3 generate-qr.py <deck.pptx> --talk-slug SLUG --shownotes-url URL --dry-run
     python3 generate-qr.py <deck.pptx> --talk-slug SLUG --shownotes-url URL --profile PATH --vault PATH
     python3 generate-qr.py --png-only --talk-slug SLUG --shownotes-url URL --output qr.png --bg-color 128,0,128
@@ -902,10 +904,12 @@ def main():
         description="Generate a QR code and insert it into a PowerPoint deck.",
         epilog="Examples:\n"
                "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url https://example.com/arc-of-ai\n"
-               "  %(prog)s deck.pptx --talk-slug arc-of-ai --short-url https://example.com/arcofai\n"
+               "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url https://example.com/arc-of-ai"
+               " --short-url https://jbaru.ch/arc-of-ai --short-provider bitly --short-link-id bit.ly/abc\n"
                "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url https://example.com/arc-of-ai --dry-run\n"
                "  %(prog)s --png-only --talk-slug SLUG --shownotes-url https://example.com/arc-of-ai --output qr.png\n"
-               "  %(prog)s --png-only --talk-slug SLUG --short-url https://example.com/arcofai --bg-color 128,0,128\n",
+               "  %(prog)s --png-only --talk-slug SLUG --shownotes-url https://example.com/arc-of-ai"
+               " --short-url https://jbaru.ch/arc-of-ai --bg-color 128,0,128\n",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("deck", nargs="?", default=None, help="Path to the .pptx deck file (not required with --png-only)")
