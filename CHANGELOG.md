@@ -1,10 +1,11 @@
 # Changelog
 
-### chore(ci) — clear the Pyright test baseline and gate all three checks (#162)
+### fix — clear the Pyright test baseline (#162)
 
-Closes #162. Pyright reports **0 errors across all 153 files**, and
-`.github/workflows/tests.yml` gains a `lint` job running `ruff check`,
-`ruff format --check`, and `pyright` on every pull request.
+Fifth of the #162 adoption sequence. Pyright reports **0 errors across all 153
+files**. The CI gate is the next and final PR: `language-diagnostics` Adopting
+on a Dirty Tree wants the tree green before the gate is wired, in its own
+change.
 
 The 242 test-file findings were resolved by proving invariants once rather than
 suppressing them at each use, per `language-diagnostics`. Seven `conftest.py`
@@ -31,11 +32,8 @@ naming their cause: python-pptx annotates `CT_Background.bgPr` as Optional but
 leaves `CT_BackgroundProperties.eg_fillProperties` unannotated, so a reader sees
 the `ZeroOrOneChoice` descriptor instead of the element it returns.
 
-The `lint` job installs `.[test,lint]` and finishes in about a minute — the
-long apt install stays with `test`, so a style or type regression reports in ~1
-minute rather than ~6. Pyright needs the runtime dependencies present because
-it resolves imports against the active interpreter; without them it reports ~94
-resolution false-positives and stops deep-checking underneath.
+Verified against a clean venv built the way CI builds one: `ruff check` clean,
+`ruff format --check` 359 files already formatted, `pyright` 0 errors.
 
 ## 0.20.36 — 2026-08-09
 
