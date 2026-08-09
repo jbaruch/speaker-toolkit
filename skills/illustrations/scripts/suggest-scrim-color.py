@@ -40,7 +40,7 @@ def sample_dark_pixels(img_paths, percentile=5.0, resize_to=200):
     for p in img_paths:
         with Image.open(p) as raw:
             img = raw.convert("RGB")
-        img.thumbnail((resize_to, resize_to), Image.LANCZOS)
+        img.thumbnail((resize_to, resize_to), Image.Resampling.LANCZOS)
         arr = np.asarray(img, dtype=np.float32) / 255.0  # (H, W, 3)
         lum = arr @ REC709  # (H, W)
         flat_px = arr.reshape(-1, 3)
@@ -87,7 +87,7 @@ def recommend_alpha(sample_rgb01):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     ap.add_argument("illustrations_dir", type=Path)
     ap.add_argument(
         "--percentile",

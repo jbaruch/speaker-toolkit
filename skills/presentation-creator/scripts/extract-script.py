@@ -132,6 +132,7 @@ def render(outline: _os.Outline) -> str:
         lines.append("")
         if kind == "slide":
             slide: _os.Slide = ev  # type: ignore[assignment]
+            script = slide.script
             lines.append(f"## Slide {slide.n} — {slide.title}")
             if slide.cuttable:
                 lines.append("")
@@ -145,13 +146,17 @@ def render(outline: _os.Outline) -> str:
                 lines.append("")
         else:
             il: _os.Interlude = ev  # type: ignore[assignment]
+            script = il.script
             lines.append(f"## {il.title}")
             if il.cuttable:
                 lines.append("")
                 lines.append("> *Cuttable for short slot.*")
             lines.append("")
 
-        script = ev.script if hasattr(ev, "script") else []
+        # Read off the branch's own narrowed model. Both declare `script` with a
+        # default_factory, so it is always present; the old
+        # `ev.script if hasattr(ev, "script")` implied otherwise and read the
+        # attribute off `ev`, still typed `object` at that point.
         lines.extend(_render_script_items(script))
 
     # Collapse runs of blank lines to at most one

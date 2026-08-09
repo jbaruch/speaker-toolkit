@@ -1,5 +1,57 @@
 # Changelog
 
+### fix — clear every Pyright finding in shipped scripts (#162)
+
+Fourth of the #162 adoption sequence. With resolution correct, the 16 findings
+Pyright reported against shipped code were real signal rather than import
+noise. All 16 are gone; the remaining baseline is entirely in tests.
+
+Two were latent bugs the type checker surfaced:
+
+- `generate-qr.py` bound `bg_hex` only in the multi-variant branch, then read it
+  behind `None if len(color_groups) == 1 else bg_hex` — correct only because
+  that condition was re-derived identically three statements later. `bg_hex` is
+  now `None` in the single-variant branch, so the binding carries the answer.
+- `extract-script.py` read `ev.script if hasattr(ev, "script") else []` off a
+  variable still typed `object`. Both `Slide` and `Interlude` declare `script`
+  with a `default_factory`, so the guard could never fire and the `else []`
+  branch was unreachable. Each branch now reads off its own narrowed model.
+
+Two were defensive code asserting something untrue:
+
+- `preflight-vault.py` looked up `getattr(exc, "reason_code", None)`, implying
+  the attribute might be absent. `TrackingDatabaseIOError.__init__` declares it
+  with a default, so it is always a `str`.
+- `backgrounds-manifest-to-spec.py` and `notes-to-packed.py` passed an arbitrary
+  `object` to `int()` and caught `TypeError`. They now narrow to `str | int`
+  first — JSON object keys are strings, and every other input takes the same
+  rejection path with the same message.
+
+The rest were API drift and typing gaps: `Image.LANCZOS` →
+`Image.Resampling.LANCZOS` (Pillow's own stubs dropped the old alias), a
+`dict[str, str | None]` annotation on the secrets map, and `lxml-stubs` added
+to the `lint` group because lxml ships no inline types.
+
+`__doc__.splitlines()[0]` needed two passes. `__doc__` is `None` under
+`python -OO`, and the first fix — `(__doc__ or "").splitlines()[0]` — still
+raised `IndexError`, because `"".splitlines()` is `[]` while `"".split("\n")`
+is `[""]`. All 13 argparse descriptions now use the `split("\n")` form the
+repo already used in five of them, and
+`tests/test_cli_docstring_descriptions.py` runs each CLI's `--help` under a
+real `-OO` interpreter.
+
+That test asserts exit 0, not the absence of a traceback: `check-runtime.py`'s
+outer failure boundary (#203) converted the `IndexError` into a clean stderr
+diagnostic and exit 2, so a traceback check passed while `--help` was broken.
+A boundary that hides a crash from a test is worse than no boundary.
+
+`_validate_qr_artifacts` now returns the validated paths instead of `None`, so
+its caller reads a proven value rather than re-indexing into a raw record — the
+typed-helper form `language-diagnostics` prefers over an ignore at each use.
+
+Still open on #162: 242 findings in test modules, then wiring Ruff check, Ruff
+format check, and Pyright into pull-request CI.
+
 ## 0.20.35 — 2026-08-09
 
 ### chore(ci) — resolve Pyright's module graph and pin the checker (#162)

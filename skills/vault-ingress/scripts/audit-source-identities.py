@@ -892,7 +892,7 @@ def audit_path(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     parser.add_argument(
         "vault_or_database",
         help="vault root directory or tracking-database JSON path",

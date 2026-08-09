@@ -1307,7 +1307,7 @@ def execute(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = _ArgumentParser(description=(__doc__ or "").splitlines()[0])
+    parser = _ArgumentParser(description=(__doc__ or "").split("\n")[0])
     parser.add_argument("database", type=Path)
     parser.add_argument("plan", type=Path)
     parser.add_argument("--apply", action="store_true")

@@ -176,7 +176,7 @@ def validate_and_resize(image_bytes, mime_type):
 
     # Resize to exactly 1280x720
     if img.size != (YOUTUBE_WIDTH, YOUTUBE_HEIGHT):
-        img = img.resize((YOUTUBE_WIDTH, YOUTUBE_HEIGHT), Image.LANCZOS)
+        img = img.resize((YOUTUBE_WIDTH, YOUTUBE_HEIGHT), Image.Resampling.LANCZOS)
 
     # Convert to RGB if necessary (e.g., RGBA)
     if img.mode not in ("RGB", "L"):

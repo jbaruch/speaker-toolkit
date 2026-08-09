@@ -994,7 +994,7 @@ def positive_integer(value):
 
 
 def build_parser():
-    parser = JsonArgumentParser(description=(__doc__ or "").splitlines()[0])
+    parser = JsonArgumentParser(description=(__doc__ or "").split("\n")[0])
     parser.add_argument("database", help="tracking-database.json path")
     actions = parser.add_subparsers(
         dest="action", required=True, parser_class=JsonArgumentParser

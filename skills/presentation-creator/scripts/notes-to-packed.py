@@ -35,10 +35,15 @@ def pack_notes(notes_map: object) -> str:
         )
 
     def slide_num(key: object) -> int:
-        try:
-            return int(key)
-        except (TypeError, ValueError):
-            raise ValueError(f"notes key {key!r} is not an integer") from None
+        # JSON object keys are strings; an int key can only come from a manifest
+        # built in-process. Anything else takes the same rejection path it
+        # always did, now without asking int() to consume an arbitrary object.
+        if isinstance(key, (str, int)):
+            try:
+                return int(key)
+            except ValueError:
+                pass
+        raise ValueError(f"notes key {key!r} is not an integer")
 
     records = []
     for key in sorted(notes_map, key=slide_num):
