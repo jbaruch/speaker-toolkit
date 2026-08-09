@@ -1307,9 +1307,13 @@ class VaultPreflight:
                 severity,
                 "transcript_artifact_unreadable",
                 (
-                    "transcript artifact is not valid UTF-8 speech text"
+                    "transcript artifact is not valid UTF-8 speech text; "
+                    "re-fetch it with fetch-transcript.py (or re-save it as "
+                    "UTF-8), then rerun preflight"
                     if decode_failure
-                    else "transcript artifact could not be read"
+                    else "transcript artifact could not be read; restore the "
+                    "file at the reported artifact_path and make it readable, "
+                    "then rerun preflight"
                 ),
                 artifact_path=transcript_path,
                 actual=(

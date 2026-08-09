@@ -3469,7 +3469,12 @@ def test_transcript_decode_failure_reports_a_typed_reason_not_os_text(
          if f["code"] == "transcript_artifact_unreadable"), None)
     assert finding is not None, [f["code"] for f in report["findings"]]
     assert finding["actual"] == "not_utf8"
-    assert finding["message"] == "transcript artifact is not valid UTF-8 speech text"
+    assert finding["message"].startswith(
+        "transcript artifact is not valid UTF-8 speech text"
+    )
+    assert "rerun preflight" in finding["message"], (
+        "error-handling requires the message to say what to do next"
+    )
     # `artifact_path` is a documented structured field and legitimately carries
     # an absolute path (#200). Every OTHER field must stay free of raw decoder
     # prose and host paths.
@@ -3503,7 +3508,12 @@ def test_transcript_read_failure_does_not_claim_a_decode_failure(
          if f["code"] == "transcript_artifact_unreadable"), None)
     assert finding is not None, [f["code"] for f in report["findings"]]
     assert finding["actual"] == "unreadable:PermissionError"
-    assert finding["message"] == "transcript artifact could not be read"
+    assert finding["message"].startswith(
+        "transcript artifact could not be read"
+    )
+    assert "rerun preflight" in finding["message"], (
+        "error-handling requires the message to say what to do next"
+    )
     # The location lives in the documented `artifact_path` field (#200); neither
     # the message nor `actual` may carry the errno prose or the host path.
     for field in ("message", "actual"):

@@ -8,7 +8,10 @@ decoded as UTF-8 speech text", but the handler catches `(OSError, UnicodeError)`
 cause. #252 already split `actual` into `not_utf8` versus
 `unreadable:<ExceptionType>`; the message now follows the same branch, staying
 free of the errno prose and host path that `artifact_path` already carries
-(#200).
+(#200). Both messages name the recovery — re-fetch or re-save for a decode
+failure, restore and make readable for a read failure — because a diagnostic
+that only describes the fault leaves the operator to guess (`error-handling`
+Actionable Messages).
 
 Found by Copilot's advisory review of #252. Advisories never gate
 (`rules/review-severity.md`), so it was deferred here rather than burning a
