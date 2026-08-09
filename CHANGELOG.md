@@ -1,5 +1,34 @@
 # Changelog
 
+### chore(ci) — resolve Pyright's module graph and pin the checker (#162)
+
+Third of the #162 adoption sequence. `language-diagnostics` Resolve Modules
+First: configure resolution before raising strictness, because unresolved
+modules stop deep checking and real null-flow bugs hide behind import
+false-positives. This PR does the resolution and nothing else — no gate, no
+finding fixes.
+
+Every script directory is its own `sys.path` root at runtime: each script runs
+directly so its own directory leads `sys.path`, `conftest.py` inserts all of
+them for the tests, and vault-clarification, vault-profile, and illustrations
+splice a sibling skill's scripts on to share its validators.
+`[tool.pyright].executionEnvironments` now models that per root.
+
+Unresolved imports went 116 → 0. The one remaining suppression is targeted and
+states its cause: `tests/test_pyproject_pins.py` imports `tomli` on Python 3.10
+only, and Pyright analyzes at the declared 3.10 floor while resolving against a
+3.11+ environment that correctly has no `tomli`.
+
+`pyright==1.1.411` joins the `lint` group beside Ruff. The pip distribution
+bundles its own Node runtime, so the CI gate will need no Node setup step.
+
+Resolution changes what the checker reports, so the baseline is now
+measured, not guessed: **223 findings — 16 in shipped scripts, 207 in tests**,
+concentrated in four test modules. `reportArgumentType` (122),
+`reportOptionalSubscript` (30), and `reportIndexIssue` (24) lead. Fixing those
+by shape, then wiring Ruff check, Ruff format check, and Pyright into CI, are
+what remain on #162.
+
 ## 0.20.34 — 2026-08-09
 
 ### chore(ci) — clear the `ruff format` baseline (#162)

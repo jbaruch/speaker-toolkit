@@ -62,6 +62,10 @@ test = [
 lint = [
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
     "ruff==0.16.2",
+    # The pip distribution bundles its own Node runtime, so CI needs no
+    # separate Node setup step.
+    # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
+    "pyright==1.1.411",
 ]
 # Local Whisper transcription, used by vault-ingress/scripts/fetch-transcript.py
 # when a video has no caption track. Optional and not in the base dependency set
@@ -92,6 +96,48 @@ target-version = "py310"
 # and running both makes the linter argue with the formatter over lines the
 # formatter cannot split (long URLs, literal error strings).
 select = ["E4", "E7", "E9", "F", "BLE"]
+
+[tool.pyright]
+# `language-diagnostics` Resolve Modules First: imports must resolve before
+# strictness is worth raising, or real null-flow bugs hide behind resolution
+# false-positives. Every script directory is its own sys.path root at runtime
+# (each script is executed directly, so its own directory leads sys.path), and
+# conftest.py inserts each of them for the tests.
+#
+# Pyright resolves third-party imports against the ACTIVE interpreter, so it
+# must run in the same environment the tests do — `pip install '.[test,lint]'`
+# then `pyright`. Run against a bare system Python and 94 resolution
+# false-positives reappear, hiding the real findings underneath.
+pythonVersion = "3.10"
+include = ["skills", "tests"]
+exclude = ["**/__pycache__", ".venv", ".tessl"]
+executionEnvironments = [
+    # illustrations reads the outline schema from presentation-creator.
+    { root = "skills/illustrations/scripts", extraPaths = [
+        "skills/illustrations/scripts",
+        "skills/presentation-creator/scripts",
+    ] },
+    { root = "skills/presentation-creator/scripts", extraPaths = ["skills/presentation-creator/scripts"] },
+    # clarification and profile splice the vault-ingress scripts onto sys.path
+    # at import time to share its validators.
+    { root = "skills/vault-clarification/scripts", extraPaths = [
+        "skills/vault-clarification/scripts",
+        "skills/vault-ingress/scripts",
+    ] },
+    { root = "skills/vault-ingress/scripts", extraPaths = ["skills/vault-ingress/scripts"] },
+    { root = "skills/vault-profile/scripts", extraPaths = [
+        "skills/vault-profile/scripts",
+        "skills/vault-ingress/scripts",
+    ] },
+    { root = "tests", extraPaths = [
+        "tests",
+        "skills/illustrations/scripts",
+        "skills/presentation-creator/scripts",
+        "skills/vault-clarification/scripts",
+        "skills/vault-ingress/scripts",
+        "skills/vault-profile/scripts",
+    ] },
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
