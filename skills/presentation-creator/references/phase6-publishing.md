@@ -197,15 +197,30 @@ path make the check before resolving the link.
    - Auto-select foreground color (black on light backgrounds, white on dark) using
      WCAG relative luminance
    - Insert the QR as a 2" square in the bottom-right corner
+   - Serialize concurrent publication of the same talk and hold that
+     serialization across the external effects — see
+     `skills/presentation-creator/scripts/generate-qr.py` (`qr_publication_lock`
+     docstring) for the lock's scope and placement
+   - Commit the QR record against the current database generation — see the
+     `commit_qr_record` docstring in the same script for what it rebases and
+     what it refuses
+   - On a rejected commit: exit non-zero having written one JSON document to
+     stderr — `{"error": "qr_publication_unfinalized", ...}` with `retry`,
+     `atomic_rollback`, and an `effects[]` entry per landed effect, each
+     carrying its own `rollback` action. Render it for the operator; do not
+     restate its fields here. See `unfinalized_effects_payload` in
+     `skills/presentation-creator/scripts/generate-qr.py`. The run makes no
+     tracking-database change in that case
    - Persist schema-v2 QR metadata in `qr_codes[]` — including one
      `artifacts[]` receipt per generated PNG — through the shared
      tracking-database transaction used by `generate-qr.py`
-   - Refuse a concurrent database generation and replace the verified current
-     database atomically
+   - Refuse to write when the database moved underneath the run — the exact
+     generation and same-talk conditions live in `commit_qr_record`
 
-5. Re-running for the same `talk_slug` with a different target URL will PATCH the
-   existing short link (keeping QR codes already printed valid) rather than creating
-   a new one.
+5. Re-running for the same `talk_slug` with a different target URL is safe:
+   printed QR codes stay valid. Which link a run reuses, retargets, or creates is
+   decided by `resolve_short_url` in
+   `skills/presentation-creator/scripts/generate-qr.py` — see its docstring.
 
 **No raw-dogging:** NEVER bypass `generate-qr.py` with hand-rolled python-pptx or
 direct `qrcode` library calls. If the script targets the wrong slides, uses the wrong

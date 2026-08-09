@@ -33,11 +33,16 @@ Requires:
 """
 
 import argparse
+import contextlib
+import copy
 import datetime
+import fcntl
 import hashlib
 import io
 import json
 import os
+import re
+from contextlib import contextmanager
 from pathlib import Path
 import shutil
 import subprocess
@@ -174,6 +179,243 @@ def write_tracking_db(tracking_db_snapshot, tracking_db):
         raise ValueError(f"cannot safely update tracking database: {exc}") from exc
 
 
+@contextmanager
+def qr_publication_lock(vault_path, talk_slug):
+    """Serialize QR publication for one talk slug across its external effects.
+
+    The tracking-database lock is held only for the duration of a write. QR
+    publication creates a remote link, writes PNGs, and mutates a deck before it
+    commits, so two concurrent runs for the same slug can interleave those
+    effects. This lock spans all of them.
+
+    It is keyed per slug rather than per database so unrelated talks publish
+    concurrently, and it is never held across an unrelated writer's commit.
+    """
+    lock_path = os.path.join(vault_path, f".qr-{talk_slug}.lock")
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(lock_path, flags, 0o600)
+    except OSError as exc:
+        raise ValueError(
+            f"cannot open QR publication lock {lock_path}: {exc}. Check that "
+            "the vault directory exists and is writable by this user, then "
+            "re-run."
+        ) from exc
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+        except OSError as exc:
+            raise ValueError(
+                f"cannot acquire QR publication lock {lock_path}: {exc}. "
+                "Another QR run for this talk holds it — wait for that run to "
+                "finish, or stop that process, then re-run. Do not delete the "
+                "lock file: the lock lives on the open inode, so unlinking the "
+                "path lets a second process create a new inode and publish "
+                "concurrently. If no run is active, check that the filesystem "
+                "supports flock (some network mounts do not)."
+            ) from exc
+        yield lock_path
+    finally:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        except OSError as exc:
+            print(f"WARNING: could not unlock {lock_path}: {exc}", file=sys.stderr)
+        try:
+            os.close(descriptor)
+        except OSError as exc:
+            print(f"WARNING: could not close {lock_path}: {exc}", file=sys.stderr)
+
+
+class EffectsReceipt:
+    """What this publication changed outside the tracking database.
+
+    A commit that rejects after these effects landed must not look
+    side-effect-free. The receipt names each effect so the operator knows
+    whether to finalize, retry idempotently, or roll back.
+    """
+
+    def __init__(self, talk_slug):
+        self.talk_slug = talk_slug
+        self.short_link = None      # dict, or None when no link work happened
+        self.artifacts = []         # written PNG paths
+        self.deck = None            # deck path, or None if untouched
+
+    def record_short_link(self, provider, link_id, short_url, *, action,
+                          prior_target=None):
+        """Record link work. ``action`` is created, retargeted, or preresolved.
+
+        Rollback differs by action: a link this run created can be deleted, a
+        retargeted link must be restored to ``prior_target`` instead, and a
+        preresolved link was never ours to remove.
+        """
+        self.short_link = {
+            "provider": provider,
+            "link_id": link_id,
+            "short_url": short_url,
+            "action": action,
+            "prior_target": prior_target,
+        }
+
+    def record_artifacts(self, paths):
+        self.artifacts = list(paths)
+
+    def record_deck(self, deck_path):
+        self.deck = deck_path
+
+    def any_effects(self):
+        return bool(self.short_link or self.artifacts or self.deck)
+
+
+def _retry_guidance(link):
+    """Whether re-running is safe, given how this run's link came to be.
+
+    A retry finds an existing link through the committed ``qr_codes`` record.
+    When this run created a link and the commit did not land, no such record
+    exists, so the retry cannot find it — re-running is not idempotent for the
+    link until that identity is reused or the link is deleted.
+    """
+    if link and link["action"] == "created":
+        return {
+            "idempotent": False,
+            "detail": (
+                "this run created a provider-side link but the commit did not "
+                "land, so no qr_codes record points at it. Re-running cannot "
+                "find it and will attempt another creation. First delete the "
+                "link named below, or re-create the record with its identity, "
+                "then re-run"
+            ),
+        }
+    return {
+        "idempotent": True,
+        "detail": (
+            "re-running the same invocation retargets the existing managed "
+            "link rather than duplicating it, and overwrites the PNGs and deck "
+            "in place"
+        ),
+    }
+
+
+def unfinalized_effects_payload(receipt, message):
+    """Structured account of a publication whose commit did not land.
+
+    Emitted as one JSON document on stderr so the calling skill renders the
+    operator-facing prose. Every recorded effect carries its own rollback
+    action: there is no atomic rollback, and a link this run did not create
+    must never be deleted.
+    """
+    effects = []
+    link = receipt.short_link if receipt else None
+    if link:
+        if link["action"] == "created":
+            rollback = {"action": "delete", "target": link["short_url"]}
+        elif link["action"] == "retargeted":
+            rollback = {
+                "action": "restore_target",
+                "target": link["short_url"],
+                "restore_to": link["prior_target"],
+            }
+        else:
+            rollback = {"action": "none", "target": link["short_url"]}
+        effects.append({
+            "kind": "short_link",
+            "action": link["action"],
+            "short_url": link["short_url"],
+            "provider": link["provider"],
+            "link_id": link["link_id"],
+            "prior_target": link["prior_target"],
+            "rollback": rollback,
+        })
+    for path in (receipt.artifacts if receipt else []):
+        effects.append({
+            "kind": "png",
+            "path": path,
+            "rollback": {"action": "delete", "target": path},
+        })
+    if receipt and receipt.deck:
+        effects.append({
+            "kind": "deck",
+            "path": receipt.deck,
+            "backup_available": False,
+            "rollback": {
+                "action": "restore_from_version_control",
+                "target": receipt.deck,
+            },
+        })
+    return {
+        "error": "qr_publication_unfinalized",
+        "message": message,
+        "talk_slug": receipt.talk_slug if receipt else None,
+        "tracking_database_updated": False,
+        "atomic_rollback": False,
+        "retry": _retry_guidance(link),
+        "effects": effects,
+    }
+
+
+def _emit_unfinalized_effects(receipt, message):
+    """Write the structured failure account as one JSON document on stderr."""
+    json.dump(unfinalized_effects_payload(receipt, message), sys.stderr, indent=2)
+    print("", file=sys.stderr)
+
+
+def _reload_tracking_db(vault_path):
+    """Re-read the database under the slug lock, before short-link resolution."""
+    tdb_path = os.path.join(vault_path, "tracking-database.json")
+    try:
+        snapshot = snapshot_tracking_database(tdb_path)
+        fresh = decode_json_object(snapshot)
+        require_current_tracking_database(fresh)
+    except (TrackingDatabaseError, TrackingDatabaseIOError) as exc:
+        raise ValueError(
+            f"cannot re-read tracking database under the publication lock: {exc}"
+        ) from exc
+    return fresh
+
+
+def _qr_record_for(database, talk_slug):
+    """Return this talk's qr_codes record, or None."""
+    for record in database.get("qr_codes", []):
+        if isinstance(record, dict) and record.get("talk_slug") == talk_slug:
+            return record
+    return None
+
+
+def commit_qr_record(tdb_path, meta, artifacts, prior_record):
+    """Rebase this run's single qr_codes upsert onto the current generation.
+
+    Committing the snapshot loaded before QR work would reject whenever ANY
+    writer touched the database meanwhile — after the short link, PNGs, and
+    deck had already changed. Re-reading here narrows that to a conflict on
+    this talk's own record.
+
+    ``prior_record`` is this talk's record as it stood when publication began,
+    under the slug lock. A same-talk change landing since then is another
+    owner's decision about the same record; rebasing over it would silently
+    discard that decision, so it rejects instead. The slug lock keeps competing
+    QR runs out, but non-QR writers do not take it.
+    """
+    try:
+        fresh_snapshot = snapshot_tracking_database(tdb_path)
+        fresh = decode_json_object(fresh_snapshot)
+        require_current_tracking_database(fresh)
+    except (TrackingDatabaseError, TrackingDatabaseIOError) as exc:
+        raise ValueError(
+            f"cannot re-read tracking database before commit: {exc}"
+        ) from exc
+
+    current_record = _qr_record_for(fresh, meta["talk_slug"])
+    if current_record != prior_record:
+        raise ValueError(
+            f"the qr_codes record for {meta['talk_slug']!r} changed during "
+            "publication; another writer owns that change. Re-run to rebuild "
+            "against it rather than discarding it"
+        )
+
+    update_tracking_db(fresh, meta, artifacts)
+    return write_tracking_db(fresh_snapshot, fresh)
+
+
 # --- URL Shortening ---
 
 def _http_request(url, data=None, headers=None, method="GET"):
@@ -253,7 +495,12 @@ def create_bitly_link(long_url, api_token, custom_back_half=None, domain=None):
                 f"could not set custom back-half '{custom_back_half}' on "
                 f"{bitly_domain}: {e}. A provider-side link was already created "
                 f"and must be reused or deleted: link_id={link_id} "
-                f"short_url={short_url}"
+                f"short_url={short_url}",
+                partial_link={
+                    "provider": "bitly",
+                    "link_id": link_id,
+                    "short_url": short_url,
+                },
             ) from e
 
     return {
@@ -322,6 +569,23 @@ def update_rebrandly_link(link_id, new_long_url, api_key):
 
 _SUPPORTED_SHORTENERS = frozenset({"bitly", "rebrandly", "none"})
 
+# rules/qr-generation-rules.md §5: lowercase kebab-case, no special characters.
+# Enforced before the slug reaches any path or URL, so a value containing "/"
+# or ".." cannot place the publication lock or a PNG outside the vault.
+_TALK_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def require_valid_talk_slug(talk_slug):
+    """Reject a slug that breaks the kebab-case contract, before any path use."""
+    if not isinstance(talk_slug, str) or not _TALK_SLUG_RE.match(talk_slug):
+        raise ValueError(
+            f"--talk-slug {talk_slug!r} is not lowercase kebab-case. It must "
+            "match the published shownotes slug: lowercase letters and digits "
+            "separated by single hyphens, no slashes, dots, or spaces "
+            "(rules/qr-generation-rules.md §5)."
+        )
+    return talk_slug
+
 
 class ShortenerResolutionError(RuntimeError):
     """A configured shortener could not produce its managed short link.
@@ -330,7 +594,16 @@ class ShortenerResolutionError(RuntimeError):
     Every other resolution failure raises this so the run stops before a PNG,
     deck, or tracking-database write, rather than silently shipping a QR
     without the managed redirect layer and cataloging it as ``none``.
+
+    ``partial_link`` carries a provider-side link this run created before
+    failing — the back-half assignment can fail after creation. It is a dict of
+    provider / link_id / short_url, or None when nothing was created. The
+    caller records it so the failure never claims no effects landed.
     """
+
+    def __init__(self, message, *, partial_link=None):
+        super().__init__(message)
+        self.partial_link = partial_link
 
 
 def _print_missing_key_help(service, key_name, vault_path):
@@ -366,8 +639,24 @@ def _require_domain_decision(config, shortener, vault_path):
     sys.exit(1)
 
 
-def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dry_run=False, vault_path=None):
+def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db,
+                      dry_run=False, vault_path=None, effects_receipt=None):
     """Resolve the short URL for a talk, using cache or API as needed.
+
+    Link selection, in order:
+
+    1. A tracked link whose back-half is not the talk slug is legacy. It is
+       neither reused nor retargeted; a slug-based link replaces it.
+    2. A tracked link under the configured shortener whose target already equals
+       ``shownotes_url`` is reused as-is.
+    3. A tracked link under the configured shortener with a different target is
+       retargeted in place, so QR codes already printed stay valid.
+    4. Otherwise a new link is created with the slug as its back-half.
+
+    A cached record produced by a different shortener than the one configured is
+    discarded rather than reused. Only an explicit ``shortener: none`` yields a
+    raw target URL; every other resolution failure raises
+    ``ShortenerResolutionError``.
 
     Args:
         shownotes_url: The full shownotes URL to shorten
@@ -377,6 +666,8 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
         tracking_db: Parsed tracking-database.json
         dry_run: If True, skip API calls
         vault_path: Path to vault (for actionable error messages)
+        effects_receipt: Optional EffectsReceipt; records whether the link was
+            created or retargeted, and the prior target when retargeted
 
     Returns:
         tuple (short_url, metadata_dict)
@@ -477,8 +768,15 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
                 print(f"  Updating bit.ly link {existing['shortener_link_id']} → {shownotes_url}")
                 update_bitly_link(existing["shortener_link_id"], shownotes_url, api_token)
                 meta = dict(existing)
+                prior_target = existing.get("target_url")
                 meta["target_url"] = shownotes_url
                 meta["updated_at"] = datetime.date.today().isoformat()
+                if effects_receipt is not None:
+                    effects_receipt.record_short_link(
+                        meta["shortener"], meta["shortener_link_id"],
+                        meta["short_url"], action="retargeted",
+                        prior_target=prior_target,
+                    )
                 return existing["short_url"], meta
             else:
                 _require_domain_decision(config, "bitly", vault_path)
@@ -494,6 +792,11 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
                     "short_url": result["short_url"],
                     "shortener_link_id": result["link_id"],
                 }
+                if effects_receipt is not None:
+                    effects_receipt.record_short_link(
+                        meta["shortener"], meta["shortener_link_id"],
+                        meta["short_url"], action="created",
+                    )
                 return result["short_url"], meta
 
         elif shortener == "rebrandly":
@@ -511,8 +814,15 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
                 print(f"  Updating rebrand.ly link {existing['shortener_link_id']} → {shownotes_url}")
                 update_rebrandly_link(existing["shortener_link_id"], shownotes_url, api_key)
                 meta = dict(existing)
+                prior_target = existing.get("target_url")
                 meta["target_url"] = shownotes_url
                 meta["updated_at"] = datetime.date.today().isoformat()
+                if effects_receipt is not None:
+                    effects_receipt.record_short_link(
+                        meta["shortener"], meta["shortener_link_id"],
+                        meta["short_url"], action="retargeted",
+                        prior_target=prior_target,
+                    )
                 return existing["short_url"], meta
             else:
                 _require_domain_decision(config, "rebrandly", vault_path)
@@ -526,6 +836,11 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
                     "short_url": result["short_url"],
                     "shortener_link_id": result["link_id"],
                 }
+                if effects_receipt is not None:
+                    effects_receipt.record_short_link(
+                        meta["shortener"], meta["shortener_link_id"],
+                        meta["short_url"], action="created",
+                    )
                 return result["short_url"], meta
 
         else:  # pragma: no cover - _SUPPORTED_SHORTENERS is checked above
@@ -534,7 +849,12 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
                 "publishing_process.qr_code.shortener"
             )
 
-    except ShortenerResolutionError:
+    except ShortenerResolutionError as e:
+        if e.partial_link is not None and effects_receipt is not None:
+            effects_receipt.record_short_link(
+                e.partial_link["provider"], e.partial_link["link_id"],
+                e.partial_link["short_url"], action="created",
+            )
         raise
     except (
         urllib.error.HTTPError,
@@ -948,6 +1268,12 @@ def main():
     # an incomplete identity.
     if (args.short_provider or args.short_link_id) and not args.short_url:
         parser.error("--short-provider and --short-link-id require --short-url")
+    # Validate before the slug reaches a lock path, a filename, or a back-half.
+    try:
+        require_valid_talk_slug(args.talk_slug)
+    except ValueError as exc:
+        parser.error(str(exc))
+
     if bool(args.short_provider) != bool(args.short_link_id):
         parser.error(
             "--short-provider and --short-link-id must be given together; "
@@ -1009,6 +1335,44 @@ def main():
             print(f"ERROR: {exc}", file=sys.stderr)
             sys.exit(1)
 
+    effects_receipt = EffectsReceipt(args.talk_slug)
+
+    # Serialize this slug's publication across its external effects. A dry run
+    # makes none, and a missing vault has nowhere to place the lock.
+    serialized = not args.dry_run and vault_present_at_start
+    try:
+        lock_scope = (
+            qr_publication_lock(vault_path, args.talk_slug)
+            if serialized
+            else contextlib.nullcontext()
+        )
+        with lock_scope:
+            prior_record = None
+            if serialized:
+                # State loaded before the lock is stale by definition: another
+                # same-slug process may have committed a link while we waited.
+                # Resolving from that view would create a duplicate instead of
+                # retargeting the link it just made.
+                try:
+                    tracking_db = _reload_tracking_db(vault_path)
+                except ValueError as exc:
+                    print(f"ERROR: {exc}", file=sys.stderr)
+                    sys.exit(1)
+                prior_record = copy.deepcopy(
+                    _qr_record_for(tracking_db, args.talk_slug)
+                )
+            _publish(args, effects_receipt, vault_path, vault_present_at_start,
+                     speaker_profile, secrets, tracking_db, qr_config,
+                     explicit_bg, prior_record)
+    except ValueError as exc:
+        # Lock acquisition failures are a CLI error path, not a traceback.
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _publish(args, effects_receipt, vault_path, vault_present_at_start,
+             speaker_profile, secrets, tracking_db, qr_config, explicit_bg,
+             prior_record):
     # Determine the URL to encode in the QR
     if args.short_url:
         # MCP-preresolved mode
@@ -1032,6 +1396,11 @@ def main():
             "shortener_link_id": args.short_link_id,
         }
         print(f"Using pre-resolved short URL: {qr_url} -> {shownotes_url}")
+        # The agent created this link, so a failed commit still leaves it behind.
+        effects_receipt.record_short_link(
+            meta["shortener"], meta["shortener_link_id"], qr_url,
+            action="preresolved",
+        )
     else:
         # Direct resolution mode
         shownotes_url = args.shownotes_url
@@ -1040,15 +1409,23 @@ def main():
             qr_url, meta = resolve_short_url(
                 shownotes_url, args.talk_slug, qr_config, secrets, tracking_db,
                 args.dry_run, vault_path=vault_path,
+                effects_receipt=effects_receipt,
             )
         except ShortenerResolutionError as e:
-            print(f"ERROR: {e}", file=sys.stderr)
-            print(
-                "  No QR PNG, deck, or tracking-database change was made. Only "
-                "an explicit 'shortener: none' may encode a raw target URL.",
-                file=sys.stderr,
-            )
+            if effects_receipt.any_effects():
+                # A provider-side link was created before the failure; saying
+                # nothing landed would be false.
+                _emit_unfinalized_effects(effects_receipt, str(e))
+            else:
+                print(f"ERROR: {e}", file=sys.stderr)
+                print(
+                    "  No QR PNG, deck, or tracking-database change was made. "
+                    "Only an explicit 'shortener: none' may encode a raw "
+                    "target URL.",
+                    file=sys.stderr,
+                )
             sys.exit(1)
+
 
     print(f"QR will encode: {qr_url}")
 
@@ -1066,6 +1443,7 @@ def main():
             size_kb = os.path.getsize(qr_path) / 1024
             print(f"QR PNG saved: {qr_path} ({size_kb:.1f} KB)")
             artifacts = [_artifact_receipt(qr_path, None, None)]
+            effects_receipt.record_artifacts([qr_path])
         else:
             print(f"DRY RUN: would save QR to {qr_path}")
             artifacts = None
@@ -1136,8 +1514,12 @@ def main():
             # PowerPoint app (valid OOXML; see rules/deck-editing-rules.md).
             prs = None
             here = os.path.dirname(os.path.abspath(__file__))
+            effects_receipt.record_artifacts(
+                [path for path, _bg in qr_paths_generated]
+            )
             insert_qr_via_powerpoint(args.deck, insert_jobs, here)
             print(f"Deck updated via PowerPoint: {args.deck}")
+            effects_receipt.record_deck(args.deck)
             # Every generated variant is cataloged, not just the first.
             artifacts = [
                 _artifact_receipt(path, deck_dir, bg_hex)
@@ -1149,22 +1531,23 @@ def main():
                 print(f"  DRY RUN: would generate QR bg=RGB{qr_bg} fg=RGB{qr_fg} for slides {[i + 1 for i in indices]}")
             artifacts = None
 
-    # Update tracking database. A dry run generated nothing, so there is no
-    # artifact to bind and the catalog is left untouched.
+    # A dry run generated nothing, so there is no artifact to bind and the
+    # catalog is left untouched. The upsert itself happens inside
+    # commit_qr_record(), against a freshly read generation.
     meta["target_url"] = shownotes_url
-    if artifacts:
-        update_tracking_db(tracking_db, meta, artifacts)
 
     if not args.dry_run:
         tdb_path = os.path.join(vault_path, "tracking-database.json")
         if vault_present_at_start:
             try:
-                write_result = write_tracking_db(
-                    tracking_db_snapshot,
-                    tracking_db,
+                # Rebase onto the current generation rather than committing the
+                # snapshot taken before the link, PNGs, and deck were changed.
+                write_result = commit_qr_record(
+                    tdb_path, meta, artifacts, prior_record
                 )
             except ValueError as exc:
-                print(f"ERROR: {exc}", file=sys.stderr)
+                # Single JSON document on stderr; the skill renders it.
+                _emit_unfinalized_effects(effects_receipt, str(exc))
                 sys.exit(1)
             if write_result.installed:
                 print(f"Tracking DB updated: {tdb_path}")

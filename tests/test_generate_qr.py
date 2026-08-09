@@ -1,5 +1,6 @@
 """Tests for generate-qr.py — QR generation (no network calls)."""
 
+import contextlib
 import json
 import os
 import sys
@@ -959,12 +960,18 @@ def test_mcp_mode_records_canonical_target_and_provider_identity(
         generate_qr, monkeypatch, tmp_path):
     """MCP mode must persist the redirect target, provider, and link id."""
     output = tmp_path / "talk-qr.png"
+    # An explicit vault keeps the run hermetic. Without --vault the script
+    # falls back to ~/.claude/rhetoric-knowledge-vault, so the test would read
+    # the developer's real vault and behave differently in CI.
+    (tmp_path / "tracking-database.json").write_text(
+        json.dumps(_current_tracking_database()), encoding="utf-8")
     monkeypatch.setattr(sys, "argv", [
         "generate-qr.py", "--png-only", "--talk-slug", "my-talk",
         "--shownotes-url", "https://example.test/notes",
         "--short-url", "https://jbaru.ch/my-talk",
         "--short-provider", "bitly",
         "--short-link-id", "bit.ly/abc123",
+        "--vault", str(tmp_path),
         "--output", str(output),
     ])
     monkeypatch.setattr(generate_qr, "update_tracking_db",
@@ -986,10 +993,14 @@ def test_png_only_records_the_path_actually_written(generate_qr, monkeypatch, tm
     output = tmp_path / "custom" / "elsewhere.png"
     output.parent.mkdir()
     captured = {}
+    # Explicit vault — see the note in the MCP test above.
+    (tmp_path / "tracking-database.json").write_text(
+        json.dumps(_current_tracking_database()), encoding="utf-8")
     monkeypatch.setattr(sys, "argv", [
         "generate-qr.py", "--png-only", "--talk-slug", "my-talk",
         "--shownotes-url", "https://example.test/notes",
         "--short-url", "https://jbaru.ch/my-talk",
+        "--vault", str(tmp_path),
         "--output", str(output),
     ])
     monkeypatch.setattr(generate_qr, "update_tracking_db",
@@ -1095,3 +1106,378 @@ def test_every_colour_variant_is_cataloged(generate_qr, tmp_path):
     assert [a["bg_hex"] for a in record["artifacts"]] == ["ffffff", "000000"]
     assert len({a["sha256"] for a in record["artifacts"]}) == 2
     assert record["qr_png_rel_path"] == record["artifacts"][0]["path"]
+
+
+# --- #172: publication stays recoverable when the CAS commit rejects ---
+
+def test_unrelated_concurrent_write_no_longer_rejects_the_qr_commit(
+        generate_qr, monkeypatch, tmp_path, capsys):
+    """A concurrent writer touching an unrelated collection must not reject us."""
+    database = _current_tracking_database()
+    path = tmp_path / "tracking-database.json"
+    path.write_text(json.dumps(database), encoding="utf-8")
+    output = tmp_path / "current.png"
+
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "current",
+        "--shownotes-url", "https://example.test/notes",
+        "--short-url", "https://example.test/current",
+        "--vault", str(tmp_path), "--output", str(output),
+    ])
+
+    # Simulate an unrelated writer landing a change after our snapshot but
+    # before our commit: mutate a different collection on disk.
+    real_generate = generate_qr.generate_qr_png
+
+    def generate_then_race(*args, **kwargs):
+        result = real_generate(*args, **kwargs)
+        raced = json.loads(path.read_text(encoding="utf-8"))
+        raced["resources"] = [{
+            "schema_version": 1, "talk_slug": "other",
+            "item_count": 1, "category_breakdown": {"url": 1},
+        }]
+        path.write_text(json.dumps(raced), encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(generate_qr, "generate_qr_png", generate_then_race)
+    generate_qr.main()
+
+    written = json.loads(path.read_text(encoding="utf-8"))
+    # Our QR record landed...
+    assert [r["talk_slug"] for r in written["qr_codes"]] == ["current"]
+    # ...and the unrelated writer's change survived; we rebased, not clobbered.
+    assert written["resources"][0]["talk_slug"] == "other"
+
+
+def test_commit_rejection_emits_a_structured_effects_payload(
+        generate_qr, monkeypatch, tmp_path, capsys):
+    """A post-effect commit failure must not look side-effect-free."""
+    database = _current_tracking_database()
+    path = tmp_path / "tracking-database.json"
+    path.write_text(json.dumps(database), encoding="utf-8")
+    output = tmp_path / "current.png"
+
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "current",
+        "--shownotes-url", "https://example.test/notes",
+        "--short-url", "https://example.test/current",
+        "--vault", str(tmp_path), "--output", str(output),
+    ])
+    monkeypatch.setattr(
+        generate_qr, "commit_qr_record",
+        lambda *a, **k: (_ for _ in ()).throw(ValueError("generation conflict")),
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        generate_qr.main()
+    assert excinfo.value.code == 1
+
+    payload = json.loads(capsys.readouterr().err)
+    assert payload["error"] == "qr_publication_unfinalized"
+    assert payload["message"] == "generation conflict"
+    assert payload["tracking_database_updated"] is False
+    assert payload["atomic_rollback"] is False
+    assert payload["retry"]["idempotent"] is True
+    png = [e for e in payload["effects"] if e["kind"] == "png"]
+    assert [e["path"] for e in png] == [str(output)]
+    assert png[0]["rollback"] == {"action": "delete", "target": str(output)}
+
+
+def test_payload_is_one_valid_json_document(generate_qr):
+    receipt = generate_qr.EffectsReceipt("my-talk")
+    payload = generate_qr.unfinalized_effects_payload(receipt, "boom")
+    assert json.loads(json.dumps(payload)) == payload
+    assert payload["effects"] == []
+    assert payload["talk_slug"] == "my-talk"
+
+
+@pytest.mark.parametrize("action,prior,expected", [
+    ("created", None, {"action": "delete", "target": "https://jbaru.ch/my-talk"}),
+    ("retargeted", "https://example.test/old",
+     {"action": "restore_target", "target": "https://jbaru.ch/my-talk",
+      "restore_to": "https://example.test/old"}),
+    ("preresolved", None, {"action": "none", "target": "https://jbaru.ch/my-talk"}),
+])
+def test_link_rollback_matches_how_the_link_came_to_be(
+        generate_qr, action, prior, expected):
+    """Deleting a link this run did not create is destructive, not a rollback."""
+    receipt = generate_qr.EffectsReceipt("my-talk")
+    receipt.record_short_link("bitly", "bit.ly/abc123", "https://jbaru.ch/my-talk",
+                              action=action, prior_target=prior)
+    payload = generate_qr.unfinalized_effects_payload(receipt, "boom")
+    link = [e for e in payload["effects"] if e["kind"] == "short_link"][0]
+    assert link["rollback"] == expected
+    assert link["action"] == action
+
+
+def test_payload_covers_every_landed_effect(generate_qr):
+    """Link-only recovery would imply the PNGs and deck were reverted too."""
+    receipt = generate_qr.EffectsReceipt("my-talk")
+    receipt.record_short_link("bitly", "bit.ly/abc", "https://jbaru.ch/my-talk",
+                              action="created")
+    receipt.record_artifacts(["/tmp/a.png", "/tmp/b.png"])
+    receipt.record_deck("/tmp/deck.pptx")
+
+    payload = generate_qr.unfinalized_effects_payload(receipt, "boom")
+    kinds = [e["kind"] for e in payload["effects"]]
+    assert kinds == ["short_link", "png", "png", "deck"]
+
+    deck = payload["effects"][-1]
+    # No backup is taken, so a restore must not be claimed.
+    assert deck["backup_available"] is False
+    assert deck["rollback"]["action"] == "restore_from_version_control"
+
+
+def test_publication_lock_is_per_slug(generate_qr, tmp_path):
+    """Different slugs take different locks and do not block each other."""
+    with generate_qr.qr_publication_lock(str(tmp_path), "talk-a") as first:
+        assert os.path.basename(first) == ".qr-talk-a.lock"
+        with generate_qr.qr_publication_lock(str(tmp_path), "talk-b") as second:
+            assert os.path.basename(second) == ".qr-talk-b.lock"
+            assert first != second
+
+
+def test_run_reloads_state_after_the_lock_so_it_retargets_instead_of_duplicating(
+        generate_qr, monkeypatch, tmp_path):
+    """State loaded before the lock is stale; resolving from it duplicates links.
+
+    Simulates the real interleaving: this run loads the database, and a
+    competing same-slug process commits its link while this one waits on the
+    lock. The commit is injected at lock acquisition, which is exactly when the
+    wait ends.
+    """
+    path = tmp_path / "tracking-database.json"
+    path.write_text(json.dumps(_current_tracking_database()), encoding="utf-8")
+    (tmp_path / "speaker-profile.json").write_text(json.dumps(
+        {"publishing_process": {"qr_code": {
+            "shortener": "bitly", "bitly_domain": "jbaru.ch"}}}), encoding="utf-8")
+    (tmp_path / "secrets.json").write_text(
+        json.dumps({"bitly": {"api_token": "tok"}}), encoding="utf-8")
+
+    created, updated = [], []
+    monkeypatch.setattr(generate_qr, "create_bitly_link",
+                        lambda long_url, api_token, custom_back_half=None, domain=None: (
+                            created.append(long_url) or {
+                                "short_url": f"https://jbaru.ch/{custom_back_half}",
+                                "link_id": "bit.ly/NEW", "short_path": custom_back_half}))
+    monkeypatch.setattr(generate_qr, "update_bitly_link",
+                        lambda link_id, new_long_url, api_token: updated.append(
+                            (link_id, new_long_url)))
+
+    real_lock = generate_qr.qr_publication_lock
+
+    @contextlib.contextmanager
+    def lock_then_race(vault_path, talk_slug):
+        with real_lock(vault_path, talk_slug) as held:
+            # A competing process finished while we waited: its link is now
+            # committed, and our pre-lock view does not contain it.
+            raced = json.loads(path.read_text(encoding="utf-8"))
+            raced["qr_codes"] = [{
+                "schema_version": 2,
+                "talk_slug": "current",
+                "target_url": "https://example.test/other",
+                "shortener": "bitly",
+                "short_path": "current",
+                "short_url": "https://jbaru.ch/current",
+                "shortener_link_id": "bit.ly/RACED",
+                "qr_png_rel_path": "current.png",
+                "artifacts": [{"path": "current.png", "path_root": "cwd",
+                               "sha256": "b" * 64, "bg_hex": None}],
+                "created_at": "2026-08-09", "updated_at": "2026-08-09",
+            }]
+            path.write_text(json.dumps(raced), encoding="utf-8")
+            yield held
+
+    monkeypatch.setattr(generate_qr, "qr_publication_lock", lock_then_race)
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "current",
+        "--shownotes-url", "https://example.test/notes",
+        "--vault", str(tmp_path), "--output", str(tmp_path / "current.png"),
+    ])
+    generate_qr.main()
+
+    assert created == [], "the raced link must be retargeted, never duplicated"
+    assert updated == [("bit.ly/RACED", "https://example.test/notes")]
+
+    record = json.loads(path.read_text(encoding="utf-8"))["qr_codes"][0]
+    assert record["shortener_link_id"] == "bit.ly/RACED"
+
+
+def test_lock_failure_exits_cleanly_without_a_traceback(
+        generate_qr, monkeypatch, tmp_path, capsys):
+    path = tmp_path / "tracking-database.json"
+    path.write_text(json.dumps(_current_tracking_database()), encoding="utf-8")
+
+    @contextlib.contextmanager
+    def refuse(vault_path, talk_slug):
+        raise ValueError(f"cannot open QR publication lock for {talk_slug}")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(generate_qr, "qr_publication_lock", refuse)
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "current",
+        "--shownotes-url", "https://example.test/notes",
+        "--short-url", "https://example.test/current",
+        "--vault", str(tmp_path), "--output", str(tmp_path / "qr.png"),
+    ])
+
+    with pytest.raises(SystemExit) as excinfo:
+        generate_qr.main()
+    assert excinfo.value.code == 1
+    assert "cannot open QR publication lock" in capsys.readouterr().err
+
+
+# --- slug is a path component: it must never escape the vault ---
+
+@pytest.mark.parametrize("bad", [
+    "../../etc/passwd",
+    "a/b",
+    "..",
+    ".",
+    "Talk-Slug",
+    "talk slug",
+    "talk_slug",
+    "-leading",
+    "trailing-",
+    "double--hyphen",
+    "",
+])
+def test_invalid_talk_slug_is_rejected(generate_qr, bad):
+    with pytest.raises(ValueError, match="kebab-case"):
+        generate_qr.require_valid_talk_slug(bad)
+
+
+@pytest.mark.parametrize("good", ["arc-of-ai", "devnexus26-robocoders", "talk1"])
+def test_valid_talk_slug_is_accepted(generate_qr, good):
+    assert generate_qr.require_valid_talk_slug(good) == good
+
+
+def test_unsafe_slug_is_rejected_at_the_cli_boundary(
+        generate_qr, monkeypatch, tmp_path, capsys):
+    """A path-shaped slug fails on the slug contract, before any file is touched.
+
+    Without validation the same input fails later and less usefully — the lock
+    open errors on a directory that happens not to exist — so the operator is
+    told about a lock path instead of the slug that is actually wrong.
+    """
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "tracking-database.json").write_text(
+        json.dumps(_current_tracking_database()), encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "../escaped",
+        "--shownotes-url", "https://example.test/notes",
+        "--short-url", "https://example.test/escaped",
+        "--vault", str(vault), "--output", str(tmp_path / "qr.png"),
+    ])
+    with pytest.raises(SystemExit):
+        generate_qr.main()
+
+    err = capsys.readouterr().err
+    assert "kebab-case" in err
+    assert "qr-generation-rules.md" in err
+    # Nothing was created, in the vault or above it.
+    assert list(vault.glob(".qr-*")) == []
+    assert list(tmp_path.glob(".qr-*")) == []
+    assert not (tmp_path / "qr.png").exists()
+
+
+def test_back_half_failure_after_link_creation_reports_the_created_link(
+        generate_qr, monkeypatch, tmp_path, capsys):
+    """The link exists provider-side; claiming no effects landed would be false."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "tracking-database.json").write_text(
+        json.dumps(_current_tracking_database()), encoding="utf-8")
+    (vault / "speaker-profile.json").write_text(json.dumps(
+        {"publishing_process": {"qr_code": {
+            "shortener": "bitly", "bitly_domain": "jbaru.ch"}}}), encoding="utf-8")
+    (vault / "secrets.json").write_text(
+        json.dumps({"bitly": {"api_token": "tok"}}), encoding="utf-8")
+
+    import urllib.error
+
+    def fake_http(url, data=None, headers=None, method="GET"):
+        if url.endswith("/v4/bitlinks"):
+            return {"id": "jbaru.ch/abc123", "link": "https://jbaru.ch/abc123"}
+        # Creation succeeded; the back-half assignment is what fails.
+        raise urllib.error.HTTPError(url, 422, "Unprocessable", {}, None)
+
+    monkeypatch.setattr(generate_qr, "_http_request", fake_http)
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "current",
+        "--shownotes-url", "https://example.test/notes",
+        "--vault", str(vault), "--output", str(tmp_path / "qr.png"),
+    ])
+
+    with pytest.raises(SystemExit) as excinfo:
+        generate_qr.main()
+    assert excinfo.value.code == 1
+
+    payload = json.loads(capsys.readouterr().err)
+    link = [e for e in payload["effects"] if e["kind"] == "short_link"]
+    assert link, "the created link must be reported"
+    assert link[0]["link_id"] == "jbaru.ch/abc123"
+    assert link[0]["action"] == "created"
+    assert link[0]["rollback"] == {
+        "action": "delete", "target": "https://jbaru.ch/abc123"}
+
+
+def test_partial_link_identity_is_structured_not_only_in_the_message(generate_qr):
+    err = generate_qr.ShortenerResolutionError(
+        "boom", partial_link={"provider": "bitly", "link_id": "x",
+                              "short_url": "https://jbaru.ch/x"})
+    assert err.partial_link["link_id"] == "x"
+    assert generate_qr.ShortenerResolutionError("boom").partial_link is None
+
+
+@pytest.mark.parametrize("action,idempotent", [
+    ("created", False),
+    ("retargeted", True),
+    ("preresolved", True),
+])
+def test_retry_idempotency_depends_on_whether_a_record_can_find_the_link(
+        generate_qr, action, idempotent):
+    """A link this run created has no committed record, so a retry cannot find it."""
+    receipt = generate_qr.EffectsReceipt("my-talk")
+    receipt.record_short_link("bitly", "bit.ly/abc", "https://jbaru.ch/my-talk",
+                              action=action, prior_target="https://x.test/old")
+    payload = generate_qr.unfinalized_effects_payload(receipt, "boom")
+    assert payload["retry"]["idempotent"] is idempotent
+    if not idempotent:
+        assert "cannot find it" in payload["retry"]["detail"]
+
+
+def test_retry_is_idempotent_when_no_link_work_happened(generate_qr):
+    receipt = generate_qr.EffectsReceipt("my-talk")
+    receipt.record_artifacts(["/tmp/a.png"])
+    assert generate_qr.unfinalized_effects_payload(
+        receipt, "boom")["retry"]["idempotent"] is True
+
+
+def test_lock_guidance_never_advises_deleting_the_lock_file(generate_qr, tmp_path):
+    """Unlinking an flock path lets a second process publish concurrently."""
+    import fcntl as _fcntl
+
+    lock_path = tmp_path / ".qr-my-talk.lock"
+    lock_path.touch()
+    held = os.open(str(lock_path), os.O_RDWR)
+    _fcntl.flock(held, _fcntl.LOCK_EX)
+    try:
+        def blocking_flock(fd, op):
+            raise OSError("Resource temporarily unavailable")
+
+        import unittest.mock as mock
+        with mock.patch.object(generate_qr.fcntl, "flock", blocking_flock):
+            with pytest.raises(ValueError) as excinfo:
+                with generate_qr.qr_publication_lock(str(tmp_path), "my-talk"):
+                    pass
+    finally:
+        _fcntl.flock(held, _fcntl.LOCK_UN)
+        os.close(held)
+
+    message = str(excinfo.value)
+    assert "Do not delete the lock file" in message
+    assert "remove the stale lock" not in message
+    assert "flock" in message

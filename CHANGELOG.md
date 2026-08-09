@@ -1,5 +1,79 @@
 # Changelog
 
+### fix(generate-qr) — make publication recoverable when the tracking-database CAS rejects (#172)
+
+QR publication snapshotted the database, then created or retargeted a remote
+link, wrote PNGs, and mutated the deck before committing against that original
+snapshot. Any unrelated concurrent writer therefore caused finalization to
+reject *after* every external effect had already succeeded, leaving the link,
+PNGs, deck, and `qr_codes[]` in disagreement — and a blind retry could repeat
+the effects.
+
+The commit now re-reads the current generation and rebases this run's single
+`qr_codes` upsert onto it. Only a conflicting change to the same talk's record
+can reject; the CAS generation check still protects against a lost update, and
+an unrelated writer's change survives rather than being clobbered.
+
+Publication holds a per-slug advisory lock at `{vault}/.qr-{talk-slug}.lock`
+spanning link resolution, PNG generation, and deck mutation, so two runs for the
+same talk cannot interleave their external effects. The lock is keyed per slug,
+so unrelated talks still publish concurrently, and it is never held across an
+unrelated writer's commit.
+
+`--talk-slug` is validated as lowercase kebab-case at the CLI boundary, before
+it reaches the lock path, the default PNG filename, or the short link's
+back-half. A path-shaped slug now fails on the slug contract with a message
+naming it, instead of surfacing later as a confusing lock-open error.
+
+State loaded before the lock is re-read after acquiring it, before short-link
+resolution. Without that, two same-slug processes both load the old view,
+serialize at the lock, and the second still cannot see the first's committed
+link — so it creates a duplicate instead of retargeting it, which is the
+failure the lock exists to prevent. A lock-acquisition failure exits with an
+`ERROR:` line rather than a traceback, matching the script's other early-failure
+paths.
+
+The rebase is not a blind overwrite. This talk's `qr_codes` record is captured
+under the lock at publication start and compared against the fresh read at
+commit; a same-talk change landing meanwhile is another owner's decision, so
+the commit rejects rather than discarding it. The slug lock keeps competing QR
+runs out, but non-QR writers do not take it.
+
+A commit that still rejects no longer looks side-effect-free. The run exits
+non-zero and names every effect that landed — short-link provider and link id,
+each PNG path, the mutated deck — plus how a retry behaves against them.
+
+A bit.ly back-half failure creates the link before it fails, so
+`ShortenerResolutionError` now carries that partial creation as structured
+`partial_link` data rather than only in its message text. The receipt records
+it and the run emits the effects payload, instead of the previous claim that no
+PNG, deck, or tracking-database change was made — which was false whenever the
+link had already been created.
+
+`retry.idempotent` reflects how the link came to be. A retry finds an existing
+link through the committed `qr_codes` record, so a link this run created with no
+record behind it cannot be found — the payload says so and tells the operator to
+delete it or recreate the record first. A retargeted or pre-resolved link keeps
+the idempotent path.
+
+The lock-failure guidance no longer suggests deleting a stale lock file. An
+advisory lock belongs to the open inode, so unlinking the path lets a second
+process create a new inode and publish concurrently — the opposite of what the
+lock is for. It now points at waiting for or stopping the holder, and at
+filesystems without flock support.
+
+A rejected commit writes one JSON document to stderr —
+`{"error": "qr_publication_unfinalized", ...}` carrying `retry`,
+`atomic_rollback`, and an `effects[]` entry per landed effect with its own
+`rollback` action — and the skill renders it, per `script-delegation`. The
+payload covers every landed effect, and says plainly that there is no atomic
+rollback. The link action differs by how it came to be: a link this run
+created can be deleted, a retargeted link predates the run and must be pointed
+back at its recorded prior target, and a pre-resolved link was never this run's
+to remove. Each written PNG is named, and the deck is reported as modified in
+place with no backup kept — restoring it means version control, not a promised
+restore the script cannot deliver.
+
 ## 0.20.25 — 2026-08-09
 
 ### fix(generate-qr) — preserve canonical MCP targets and exact generated artifact paths (#171)
