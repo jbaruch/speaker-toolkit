@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.28 — 2026-08-09
+
 ### fix(vault-ingress) — close the deterministic diagnostics gap in two CLI entrypoints (#203)
 
 `persist-results.py` and `preflight-vault.py` had no process-wide
