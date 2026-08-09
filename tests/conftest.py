@@ -6,6 +6,7 @@ import sys
 
 import pytest
 from pptx import Presentation
+from pptx.util import Emu
 
 
 DEFAULT_PPTX_DIRECTORY_EXCLUSIONS = [
@@ -464,6 +465,26 @@ def generate_talk_timings():
 
 NS_P = "http://schemas.openxmlformats.org/presentationml/2006/main"
 NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+
+
+def deck_width(presentation) -> Emu:
+    """A deck's slide width, proven present.
+
+    python-pptx types `slide_width` `Length | None` because a malformed package
+    can omit `sldSz`. A `Presentation()` built in-process always carries it, so
+    the invariant is asserted once here rather than ignored at every arithmetic
+    site (`language-diagnostics` prefers the typed helper).
+    """
+    width = presentation.slide_width
+    assert width is not None, "in-process decks always carry a slide width"
+    return Emu(width)
+
+
+def deck_height(presentation) -> Emu:
+    """A deck's slide height, proven present. See `deck_width`."""
+    height = presentation.slide_height
+    assert height is not None, "in-process decks always carry a slide height"
+    return Emu(height)
 
 
 def _make_deck(slide_count, *, slide_width=None, slide_height=None):

@@ -19,9 +19,9 @@ from pypdf import PdfWriter
 from pptx import Presentation
 from pptx.oxml import parse_xml
 from pptx.oxml.ns import nsdecls
-from pptx.util import Inches, Pt
+from pptx.util import Emu, Inches, Pt
 
-from conftest import make_deck
+from conftest import deck_height, deck_width, make_deck
 
 
 def _use_in_process_directory_discovery(pptx_extraction, monkeypatch):
@@ -1874,10 +1874,10 @@ def test_picture_area_ratio_full_bleed(pptx_extraction, tmp_path):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide.shapes.add_picture(
         _png(tmp_path / "i.png"),
-        0,
-        0,
-        width=prs.slide_width,
-        height=prs.slide_height,
+        Inches(0),
+        Inches(0),
+        width=deck_width(prs),
+        height=deck_height(prs),
     )
     data = _first_slide(pptx_extraction, prs, tmp_path)
     assert data["image_area_ratio"] > 0.99
@@ -1906,10 +1906,10 @@ def test_full_bleed_image_slide_does_not_assert_absence(
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide.shapes.add_picture(
         _png(tmp_path / "i.png"),
-        0,
-        0,
-        width=prs.slide_width,
-        height=prs.slide_height,
+        Inches(0),
+        Inches(0),
+        width=deck_width(prs),
+        height=deck_height(prs),
     )
     data = _first_slide(pptx_extraction, prs, tmp_path)
 
@@ -1941,10 +1941,10 @@ def test_small_decorative_image_stays_high_confidence(
     slide.shapes.title.text = "Title"
     slide.shapes.add_picture(
         _png(tmp_path / "i.png"),
-        0,
-        0,
-        width=int(prs.slide_width * 0.1),
-        height=int(prs.slide_height * 0.1),
+        Inches(0),
+        Inches(0),
+        width=Emu(int(deck_width(prs) * 0.1)),
+        height=Emu(int(deck_height(prs) * 0.1)),
     )
     data = _first_slide(pptx_extraction, prs, tmp_path)
     assert data["has_image"] is True
@@ -1962,10 +1962,10 @@ def test_text_overlay_over_full_bleed_is_still_low_confidence(
     slide.shapes.title.text = "Overlay"
     slide.shapes.add_picture(
         _png(tmp_path / "i.png"),
-        0,
-        0,
-        width=prs.slide_width,
-        height=prs.slide_height,
+        Inches(0),
+        Inches(0),
+        width=deck_width(prs),
+        height=deck_height(prs),
     )
     data = _first_slide(pptx_extraction, prs, tmp_path)
     assert data["has_text_frame_shapes"] is True
@@ -2111,10 +2111,10 @@ def test_full_bleed_runs_ocr_fn_and_records_inventory(
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide.shapes.add_picture(
         _png_with_text(tmp_path / "labeled.png"),
-        0,
-        0,
-        width=prs.slide_width,
-        height=prs.slide_height,
+        Inches(0),
+        Inches(0),
+        width=deck_width(prs),
+        height=deck_height(prs),
     )
     path = str(tmp_path / "deck.pptx")
     prs.save(path)
@@ -2138,17 +2138,17 @@ def test_multi_image_ocr_emits_one_identity_and_outcome_receipt_per_asset(
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide.shapes.add_picture(
         _png_with_text(tmp_path / "left.png", text="LEFT LABEL"),
-        0,
-        0,
-        width=int(prs.slide_width / 2),
-        height=prs.slide_height,
+        Inches(0),
+        Inches(0),
+        width=Emu(int(deck_width(prs) / 2)),
+        height=deck_height(prs),
     )
     slide.shapes.add_picture(
         _png_with_text(tmp_path / "right.png", text="RIGHT LABEL"),
-        int(prs.slide_width / 2),
-        0,
-        width=int(prs.slide_width / 2),
-        height=prs.slide_height,
+        Emu(int(deck_width(prs) / 2)),
+        Inches(0),
+        width=Emu(int(deck_width(prs) / 2)),
+        height=deck_height(prs),
     )
     path = tmp_path / "multi-image.pptx"
     prs.save(path)
@@ -2213,10 +2213,10 @@ def test_genuine_empty_ocr_is_distinct_from_asset_failure(
     for index in range(2):
         slide.shapes.add_picture(
             _png(tmp_path / f"asset-{index}.png", w=16 + index),
-            int(prs.slide_width * index / 2),
-            0,
-            width=int(prs.slide_width / 2),
-            height=prs.slide_height,
+            Emu(int(deck_width(prs) * index / 2)),
+            Inches(0),
+            width=Emu(int(deck_width(prs) / 2)),
+            height=deck_height(prs),
         )
     path = tmp_path / "empty-vs-failure.pptx"
     prs.save(path)
@@ -2270,17 +2270,17 @@ def test_truncated_picture_is_one_failed_receipt_not_a_deck_abort(
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide.shapes.add_picture(
         _png(tmp_path / "healthy.png", w=64),
-        0,
-        0,
-        width=int(prs.slide_width / 2),
-        height=prs.slide_height,
+        Inches(0),
+        Inches(0),
+        width=Emu(int(deck_width(prs) / 2)),
+        height=deck_height(prs),
     )
     slide.shapes.add_picture(
         _png(tmp_path / "truncated.png", w=65),
-        int(prs.slide_width / 2),
-        0,
-        width=int(prs.slide_width / 2),
-        height=prs.slide_height,
+        Emu(int(deck_width(prs) / 2)),
+        Inches(0),
+        width=Emu(int(deck_width(prs) / 2)),
+        height=deck_height(prs),
     )
     path = tmp_path / "mixed-assets.pptx"
     prs.save(path)
@@ -2342,10 +2342,10 @@ def test_no_ocr_flag_skips_inventory(pptx_extraction, tmp_path):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide.shapes.add_picture(
         _png_with_text(tmp_path / "labeled.png"),
-        0,
-        0,
-        width=prs.slide_width,
-        height=prs.slide_height,
+        Inches(0),
+        Inches(0),
+        width=deck_width(prs),
+        height=deck_height(prs),
     )
     path = str(tmp_path / "deck.pptx")
     prs.save(path)
@@ -2382,10 +2382,10 @@ def test_small_decorative_image_does_not_ocr(pptx_extraction, tmp_path):
     slide.shapes.title.text = "Title"
     slide.shapes.add_picture(
         _png_with_text(tmp_path / "logo.png", text="LOGO"),
-        0,
-        0,
-        width=int(prs.slide_width * 0.1),
-        height=int(prs.slide_height * 0.1),
+        Inches(0),
+        Inches(0),
+        width=Emu(int(deck_width(prs) * 0.1)),
+        height=Emu(int(deck_height(prs) * 0.1)),
     )
     path = str(tmp_path / "deck.pptx")
     prs.save(path)
@@ -2407,10 +2407,10 @@ def test_ocr_unavailable_records_method_not_crash(pptx_extraction, tmp_path):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide.shapes.add_picture(
         _png(tmp_path / "i.png"),
-        0,
-        0,
-        width=prs.slide_width,
-        height=prs.slide_height,
+        Inches(0),
+        Inches(0),
+        width=deck_width(prs),
+        height=deck_height(prs),
     )
     path = str(tmp_path / "deck.pptx")
     prs.save(path)
@@ -2584,10 +2584,10 @@ def test_full_bleed_with_baked_text_end_to_end(pptx_extraction, tmp_path):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide.shapes.add_picture(
         _png_with_text(tmp_path / "labeled.png", text="VENUE PREPARATION"),
-        0,
-        0,
-        width=prs.slide_width,
-        height=prs.slide_height,
+        Inches(0),
+        Inches(0),
+        width=deck_width(prs),
+        height=deck_height(prs),
     )
     path = str(tmp_path / "deck.pptx")
     prs.save(path)
