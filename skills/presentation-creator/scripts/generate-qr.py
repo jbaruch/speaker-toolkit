@@ -280,6 +280,20 @@ def _report_unfinalized_effects(receipt):
     )
 
 
+def _reload_tracking_db(vault_path):
+    """Re-read the database under the slug lock, before short-link resolution."""
+    tdb_path = os.path.join(vault_path, "tracking-database.json")
+    try:
+        snapshot = snapshot_tracking_database(tdb_path)
+        fresh = decode_json_object(snapshot)
+        require_current_tracking_database(fresh)
+    except (TrackingDatabaseError, TrackingDatabaseIOError) as exc:
+        raise ValueError(
+            f"cannot re-read tracking database under the publication lock: {exc}"
+        ) from exc
+    return fresh
+
+
 def commit_qr_record(tdb_path, meta, artifacts):
     """Rebase this run's single qr_codes upsert onto the current generation.
 
@@ -1141,14 +1155,30 @@ def main():
 
     # Serialize this slug's publication across its external effects. A dry run
     # makes none, and a missing vault has nowhere to place the lock.
-    lock_scope = (
-        qr_publication_lock(vault_path, args.talk_slug)
-        if not args.dry_run and vault_present_at_start
-        else contextlib.nullcontext()
-    )
-    with lock_scope:
-        _publish(args, effects_receipt, vault_path, vault_present_at_start,
-                 speaker_profile, secrets, tracking_db, qr_config, explicit_bg)
+    serialized = not args.dry_run and vault_present_at_start
+    try:
+        lock_scope = (
+            qr_publication_lock(vault_path, args.talk_slug)
+            if serialized
+            else contextlib.nullcontext()
+        )
+        with lock_scope:
+            if serialized:
+                # State loaded before the lock is stale by definition: another
+                # same-slug process may have committed a link while we waited.
+                # Resolving from that view would create a duplicate instead of
+                # retargeting the link it just made.
+                try:
+                    tracking_db = _reload_tracking_db(vault_path)
+                except ValueError as exc:
+                    print(f"ERROR: {exc}", file=sys.stderr)
+                    sys.exit(1)
+            _publish(args, effects_receipt, vault_path, vault_present_at_start,
+                     speaker_profile, secrets, tracking_db, qr_config, explicit_bg)
+    except ValueError as exc:
+        # Lock acquisition failures are a CLI error path, not a traceback.
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 def _publish(args, effects_receipt, vault_path, vault_present_at_start,

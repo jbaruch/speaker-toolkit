@@ -1,5 +1,6 @@
 """Tests for generate-qr.py — QR generation (no network calls)."""
 
+import contextlib
 import json
 import os
 import sys
@@ -959,12 +960,18 @@ def test_mcp_mode_records_canonical_target_and_provider_identity(
         generate_qr, monkeypatch, tmp_path):
     """MCP mode must persist the redirect target, provider, and link id."""
     output = tmp_path / "talk-qr.png"
+    # An explicit vault keeps the run hermetic. Without --vault the script
+    # falls back to ~/.claude/rhetoric-knowledge-vault, so the test would read
+    # the developer's real vault and behave differently in CI.
+    (tmp_path / "tracking-database.json").write_text(
+        json.dumps(_current_tracking_database()), encoding="utf-8")
     monkeypatch.setattr(sys, "argv", [
         "generate-qr.py", "--png-only", "--talk-slug", "my-talk",
         "--shownotes-url", "https://example.test/notes",
         "--short-url", "https://jbaru.ch/my-talk",
         "--short-provider", "bitly",
         "--short-link-id", "bit.ly/abc123",
+        "--vault", str(tmp_path),
         "--output", str(output),
     ])
     monkeypatch.setattr(generate_qr, "update_tracking_db",
@@ -986,10 +993,14 @@ def test_png_only_records_the_path_actually_written(generate_qr, monkeypatch, tm
     output = tmp_path / "custom" / "elsewhere.png"
     output.parent.mkdir()
     captured = {}
+    # Explicit vault — see the note in the MCP test above.
+    (tmp_path / "tracking-database.json").write_text(
+        json.dumps(_current_tracking_database()), encoding="utf-8")
     monkeypatch.setattr(sys, "argv", [
         "generate-qr.py", "--png-only", "--talk-slug", "my-talk",
         "--shownotes-url", "https://example.test/notes",
         "--short-url", "https://jbaru.ch/my-talk",
+        "--vault", str(tmp_path),
         "--output", str(output),
     ])
     monkeypatch.setattr(generate_qr, "update_tracking_db",
@@ -1190,10 +1201,99 @@ def test_effects_receipt_names_link_pngs_and_deck(generate_qr, capsys):
 
 
 def test_publication_lock_is_per_slug(generate_qr, tmp_path):
-    """Two slugs publish concurrently; the same slug serializes."""
+    """Different slugs take different locks and do not block each other."""
     with generate_qr.qr_publication_lock(str(tmp_path), "talk-a") as first:
         assert os.path.basename(first) == ".qr-talk-a.lock"
-        # A different slug takes its own lock without blocking.
         with generate_qr.qr_publication_lock(str(tmp_path), "talk-b") as second:
             assert os.path.basename(second) == ".qr-talk-b.lock"
             assert first != second
+
+
+def test_run_reloads_state_after_the_lock_so_it_retargets_instead_of_duplicating(
+        generate_qr, monkeypatch, tmp_path):
+    """State loaded before the lock is stale; resolving from it duplicates links.
+
+    Simulates the real interleaving: this run loads the database, and a
+    competing same-slug process commits its link while this one waits on the
+    lock. The commit is injected at lock acquisition, which is exactly when the
+    wait ends.
+    """
+    path = tmp_path / "tracking-database.json"
+    path.write_text(json.dumps(_current_tracking_database()), encoding="utf-8")
+    (tmp_path / "speaker-profile.json").write_text(json.dumps(
+        {"publishing_process": {"qr_code": {
+            "shortener": "bitly", "bitly_domain": "jbaru.ch"}}}), encoding="utf-8")
+    (tmp_path / "secrets.json").write_text(
+        json.dumps({"bitly": {"api_token": "tok"}}), encoding="utf-8")
+
+    created, updated = [], []
+    monkeypatch.setattr(generate_qr, "create_bitly_link",
+                        lambda long_url, api_token, custom_back_half=None, domain=None: (
+                            created.append(long_url) or {
+                                "short_url": f"https://jbaru.ch/{custom_back_half}",
+                                "link_id": "bit.ly/NEW", "short_path": custom_back_half}))
+    monkeypatch.setattr(generate_qr, "update_bitly_link",
+                        lambda link_id, new_long_url, api_token: updated.append(
+                            (link_id, new_long_url)))
+
+    real_lock = generate_qr.qr_publication_lock
+
+    @contextlib.contextmanager
+    def lock_then_race(vault_path, talk_slug):
+        with real_lock(vault_path, talk_slug) as held:
+            # A competing process finished while we waited: its link is now
+            # committed, and our pre-lock view does not contain it.
+            raced = json.loads(path.read_text(encoding="utf-8"))
+            raced["qr_codes"] = [{
+                "schema_version": 2,
+                "talk_slug": "current",
+                "target_url": "https://example.test/other",
+                "shortener": "bitly",
+                "short_path": "current",
+                "short_url": "https://jbaru.ch/current",
+                "shortener_link_id": "bit.ly/RACED",
+                "qr_png_rel_path": "current.png",
+                "artifacts": [{"path": "current.png", "path_root": "cwd",
+                               "sha256": "b" * 64, "bg_hex": None}],
+                "created_at": "2026-08-09", "updated_at": "2026-08-09",
+            }]
+            path.write_text(json.dumps(raced), encoding="utf-8")
+            yield held
+
+    monkeypatch.setattr(generate_qr, "qr_publication_lock", lock_then_race)
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "current",
+        "--shownotes-url", "https://example.test/notes",
+        "--vault", str(tmp_path), "--output", str(tmp_path / "current.png"),
+    ])
+    generate_qr.main()
+
+    assert created == [], "the raced link must be retargeted, never duplicated"
+    assert updated == [("bit.ly/RACED", "https://example.test/notes")]
+
+    record = json.loads(path.read_text(encoding="utf-8"))["qr_codes"][0]
+    assert record["shortener_link_id"] == "bit.ly/RACED"
+
+
+def test_lock_failure_exits_cleanly_without_a_traceback(
+        generate_qr, monkeypatch, tmp_path, capsys):
+    path = tmp_path / "tracking-database.json"
+    path.write_text(json.dumps(_current_tracking_database()), encoding="utf-8")
+
+    @contextlib.contextmanager
+    def refuse(vault_path, talk_slug):
+        raise ValueError(f"cannot open QR publication lock for {talk_slug}")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(generate_qr, "qr_publication_lock", refuse)
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "current",
+        "--shownotes-url", "https://example.test/notes",
+        "--short-url", "https://example.test/current",
+        "--vault", str(tmp_path), "--output", str(tmp_path / "qr.png"),
+    ])
+
+    with pytest.raises(SystemExit) as excinfo:
+        generate_qr.main()
+    assert excinfo.value.code == 1
+    assert "cannot open QR publication lock" in capsys.readouterr().err

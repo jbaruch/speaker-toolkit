@@ -20,6 +20,14 @@ same talk cannot interleave their external effects. The lock is keyed per slug,
 so unrelated talks still publish concurrently, and it is never held across an
 unrelated writer's commit.
 
+State loaded before the lock is re-read after acquiring it, before short-link
+resolution. Without that, two same-slug processes both load the old view,
+serialize at the lock, and the second still cannot see the first's committed
+link — so it creates a duplicate instead of retargeting it, which is the
+failure the lock exists to prevent. A lock-acquisition failure exits with an
+`ERROR:` line rather than a traceback, matching the script's other early-failure
+paths.
+
 A commit that still rejects no longer looks side-effect-free. The run exits
 non-zero and names every effect that landed — short-link provider and link id,
 each PNG path, the mutated deck — plus how a retry behaves against them.
