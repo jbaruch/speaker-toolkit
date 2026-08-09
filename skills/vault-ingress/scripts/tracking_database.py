@@ -543,6 +543,14 @@ def _validate_collection_record(
         )
         if is_v2:
             _validate_qr_artifacts(record["artifacts"], f"{label}.artifacts")
+            # The documented v2 contract: qr_png_rel_path is the schema-v1
+            # reader's view of the first artifact, so the two must agree.
+            first = record["artifacts"][0]["path"]
+            if record["qr_png_rel_path"] != first:
+                raise TrackingDatabaseError(
+                    f"{label}.qr_png_rel_path must mirror artifacts[0].path "
+                    f"({first!r}), got {record['qr_png_rel_path']!r}"
+                )
         for field in (
             "talk_slug",
             "target_url",

@@ -1050,7 +1050,24 @@ def test_provider_flags_require_short_url(generate_qr, monkeypatch):
     monkeypatch.setattr(sys, "argv", [
         "generate-qr.py", "--png-only", "--talk-slug", "my-talk",
         "--shownotes-url", "https://example.test/notes",
-        "--short-provider", "bitly",
+        "--short-provider", "bitly", "--short-link-id", "bit.ly/abc",
+    ])
+    with pytest.raises(SystemExit):
+        generate_qr.main()
+
+
+@pytest.mark.parametrize("flag,value", [
+    ("--short-provider", "bitly"),
+    ("--short-link-id", "bit.ly/abc123"),
+])
+def test_provider_identity_is_all_or_neither(generate_qr, monkeypatch, tmp_path, flag, value):
+    """Half an identity catalogs an incomplete provider record."""
+    monkeypatch.setattr(sys, "argv", [
+        "generate-qr.py", "--png-only", "--talk-slug", "my-talk",
+        "--shownotes-url", "https://example.test/notes",
+        "--short-url", "https://jbaru.ch/my-talk",
+        flag, value,
+        "--output", str(tmp_path / "qr.png"),
     ])
     with pytest.raises(SystemExit):
         generate_qr.main()

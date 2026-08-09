@@ -1632,3 +1632,12 @@ def test_qr_v2_rejects_duplicate_artifact_paths(tracking_database):
     record["artifacts"].append(dict(record["artifacts"][0]))
     with pytest.raises(tracking_database.TrackingDatabaseError, match="recorded more than once"):
         _validate_qr(tracking_database, record)
+
+
+def test_qr_v2_requires_qr_png_rel_path_to_mirror_first_artifact(tracking_database):
+    """The v1 reader's view must agree with the artifact it points at."""
+    record = _qr_v2_record(qr_png_rel_path="something-else.png")
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="must mirror artifacts\\[0\\].path"
+    ):
+        _validate_qr(tracking_database, record)

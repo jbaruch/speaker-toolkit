@@ -33,6 +33,12 @@ the same as a script-created link that cannot take the slug. `--short-provider`
 and `--short-link-id` now require `--short-url`, so provider identity is never
 accepted and silently dropped.
 
+`--short-provider` and `--short-link-id` are an all-or-neither pair: a provider
+without its link id would catalog an incomplete identity. Schema v2 also
+enforces the contract its documentation states — `qr_png_rel_path` must equal
+`artifacts[0].path`, so the schema-v1 reader's view cannot contradict the
+artifact it points at.
+
 `skills/vault-ingress/references/schemas-db.md` documents both record shapes,
 the `artifacts` fields, `path_root` semantics, the dual-reader window, and why
 migration stamps unversioned records at v1.

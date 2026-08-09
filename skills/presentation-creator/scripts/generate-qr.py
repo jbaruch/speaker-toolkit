@@ -940,9 +940,15 @@ def main():
         parser.error("deck is required unless --png-only is specified")
 
     # Provider identity describes an agent-preresolved link. Accepting it
-    # without --short-url would silently drop it.
+    # without --short-url would silently drop it, and half of it would catalog
+    # an incomplete identity.
     if (args.short_provider or args.short_link_id) and not args.short_url:
         parser.error("--short-provider and --short-link-id require --short-url")
+    if bool(args.short_provider) != bool(args.short_link_id):
+        parser.error(
+            "--short-provider and --short-link-id must be given together; "
+            "a provider without its link id catalogs an incomplete identity"
+        )
 
     if args.deck and not os.path.isfile(args.deck):
         print(f"ERROR: Deck file not found: {args.deck}")
