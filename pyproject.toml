@@ -5,16 +5,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "speaker-toolkit"
+# Not a published version. The registry version lives in
+# `.tessl-plugin/plugin.json` and is bumped by the publish workflow
+# (`tesslio/patch-version-publish`). This package is never uploaded to PyPI —
+# `pyproject.toml` exists to declare dependencies and pytest config for a local
+# or CI checkout. A real number here would be a second versioning scheme with
+# nothing keeping it in step with the one that ships.
 version = "0.0.0"
 requires-python = ">=3.10"
 dependencies = [
-    "python-pptx",
+    # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
+    "python-pptx==1.0.2",
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
     "psutil==7.2.2",
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
     "pypdf==6.14.2",
-    "lxml",
-    "qrcode",
+    # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
+    "lxml==6.1.1",
+    # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
+    "qrcode==8.2",
     # Video/image dependency pins renew through the same weekly Dependabot lane.
     "Pillow==12.3.0",
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
@@ -36,7 +45,8 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
-    "pytest",
+    # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
+    "pytest==9.1.1",
 ]
 # Local Whisper transcription, used by vault-ingress/scripts/fetch-transcript.py
 # when a video has no caption track. Optional and not in the base dependency set

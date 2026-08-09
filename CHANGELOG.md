@@ -1,5 +1,28 @@
 # Changelog
 
+### chore(deps) — pin the last four Python requirements and gate the rule (#161)
+
+`python-pptx`, `lxml`, `qrcode`, and `pytest` were still unpinned, so every
+clean install resolved whatever PyPI served that day. All four now pin exactly
+and ride the same weekly Dependabot pip lane as their already-pinned siblings.
+
+`tests/test_pyproject_pins.py` is the gate. `dependency-management` said "pin
+versions" and nothing checked it, which is how four requirements drifted past
+in the first place — a deterministic check nobody runs does not exist. The test
+walks every requirement group in the manifest, including optional extras, and
+fails on a bare name, a range, or a pin paired with a second specifier. It also
+asserts the pip ecosystem is still declared in `.github/dependabot.yml`,
+because a pin without a renewal mechanism rots quietly.
+
+`project.version = "0.0.0"` now says beside itself why it is a sentinel: the
+registry version lives in `.tessl-plugin/plugin.json` and is bumped by the
+publish workflow. This package is never uploaded to PyPI. A real number here
+would be a second versioning scheme with nothing keeping it in step with the
+one that ships.
+
+Verified by building a clean venv from the manifest alone and running the full
+suite on Python 3.11 and 3.13, bracketing CI's 3.12.
+
 ### fix(vault-ingress) — close the last four deterministic entrypoint boundaries (#203)
 
 `write-analysis.py`, `validate-returns.py`, `audit-pattern-catalog.py`, and
