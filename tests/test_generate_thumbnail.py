@@ -358,14 +358,8 @@ def test_compose_thumbnail_two_pass_threads_stylized_portrait(
     calls = []
 
     def fake_call_gemini(parts, model, api_key):
-        # Record the second inlineData part's `data` value (the speaker photo
-        # in the composition call) so the assertion can confirm it's the
-        # stylized output, not the original.
-        photo_part = next(
-            (p for p in parts if "inlineData" in p and p["inlineData"]["data"] != "PHOTO_RAW_B64"),
-            None,
-        )
-        # The composition call will have BOTH images; record the photo data.
+        # The composition call will have BOTH images; record the photo data so
+        # the assertion can confirm it's the stylized output, not the original.
         composition_photo_data = None
         if len(parts) >= 2 and "inlineData" in parts[1]:
             composition_photo_data = parts[1]["inlineData"]["data"]
@@ -419,7 +413,8 @@ def test_compose_thumbnail_skips_pre_stylize_when_no_anchor(
 ):
     """Without --portrait-style, stylize_portrait must NOT be invoked; the
     original photo bytes go directly to composition."""
-    import argparse, base64
+    import argparse
+    import base64
 
     slide_path = tmp_path / "slide.png"
     speaker_path = tmp_path / "headshot.jpg"

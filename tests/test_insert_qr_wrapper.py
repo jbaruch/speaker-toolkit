@@ -38,8 +38,10 @@ def _run(args, tmp_path):
 
 
 def test_success_emits_json_only_stdout(tmp_path):
-    base = tmp_path / "deck.pptx"; base.write_text("x")
-    png = tmp_path / "qr.png"; png.write_text("x")
+    base = tmp_path / "deck.pptx"
+    base.write_text("x")
+    png = tmp_path / "qr.png"
+    png.write_text("x")
     out = tmp_path / "out.pptx"
     _fake_osascript(tmp_path, succeed=True)
 
@@ -51,7 +53,8 @@ def test_success_emits_json_only_stdout(tmp_path):
 
 
 def test_missing_base_fails_with_actionable_error(tmp_path):
-    png = tmp_path / "qr.png"; png.write_text("x")
+    png = tmp_path / "qr.png"
+    png.write_text("x")
     _fake_osascript(tmp_path, succeed=True)
 
     r = _run([str(tmp_path / "nope.pptx"), str(tmp_path / "o.pptx"), str(png), "1"], tmp_path)
@@ -60,7 +63,8 @@ def test_missing_base_fails_with_actionable_error(tmp_path):
 
 
 def test_missing_png_fails(tmp_path):
-    base = tmp_path / "deck.pptx"; base.write_text("x")
+    base = tmp_path / "deck.pptx"
+    base.write_text("x")
     _fake_osascript(tmp_path, succeed=True)
 
     r = _run([str(base), str(tmp_path / "o.pptx"), str(tmp_path / "nope.png"), "1"], tmp_path)
@@ -69,8 +73,10 @@ def test_missing_png_fails(tmp_path):
 
 
 def test_macro_failure_path(tmp_path):
-    base = tmp_path / "deck.pptx"; base.write_text("x")
-    png = tmp_path / "qr.png"; png.write_text("x")
+    base = tmp_path / "deck.pptx"
+    base.write_text("x")
+    png = tmp_path / "qr.png"
+    png.write_text("x")
     out = tmp_path / "out.pptx"
     _fake_osascript(tmp_path, succeed=False)
 

@@ -55,6 +55,14 @@ test = [
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
     "tomli==2.4.1; python_version < '3.11'",
 ]
+# Lint and formatting, run by the #162 CI gate. Its own group because the test
+# runner does not need it and a lint bump should not rebuild a test image.
+# A formatter/linter bump is its own change, per
+# `rules/code-formatting.md` Separation of Concerns.
+lint = [
+    # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
+    "ruff==0.16.2",
+]
 # Local Whisper transcription, used by vault-ingress/scripts/fetch-transcript.py
 # when a video has no caption track. Optional and not in the base dependency set
 # because mlx-whisper requires Apple Silicon and cannot install on the Linux CI
@@ -67,6 +75,23 @@ whisper = [
 
 [tool.setuptools]
 py-modules = []
+
+[tool.ruff]
+# The repo's prevailing width. Kept explicit rather than inherited so a Ruff
+# default change cannot silently rewrap the tree.
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+# Ruff's default set (`E4`, `E7`, `E9`, `F`) plus BLE. `error-handling` forbids
+# bare catch-alls outside an outer process boundary, and BLE001 is the only rule
+# that sees them; the boundaries that legitimately need one carry an inline
+# `# noqa: BLE001` naming its cause, per that rule's Outer-Boundary carve-out.
+#
+# E501 (line-too-long) stays off deliberately: the formatter owns line width,
+# and running both makes the linter argue with the formatter over lines the
+# formatter cannot split (long URLs, literal error strings).
+select = ["E4", "E7", "E9", "F", "BLE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -973,7 +973,11 @@ def _two_color_metrics(blob):
     """
     try:
         im = Image.open(io.BytesIO(blob)).convert("RGB")
-    except Exception:
+    # Pillow raises UnidentifiedImageError (an OSError) for a format it cannot
+    # read and plain OSError for a truncated one; `convert` raises ValueError on
+    # an unsupported mode. An unreadable blob is simply not a QR — anything else
+    # is a bug in this script and must propagate.
+    except (OSError, ValueError):
         return 255.0, 0.0
     q = im.quantize(colors=2)
     means = ImageStat.Stat(ImageChops.difference(im, q.convert("RGB"))).mean
@@ -1003,7 +1007,10 @@ def _picture_is_qr(shape):
         return False
     try:
         blob = shape.image.blob
-    except Exception:
+    # python-pptx raises ValueError for a picture with no embedded image (a
+    # linked one) and KeyError when the relationship is missing, which it
+    # documents as a corrupted .pptx. Neither carries a QR to find.
+    except (ValueError, KeyError):
         return False
     err, minority = _two_color_metrics(blob)
     return err < QR_RECON_ERR_MAX and minority >= QR_MIN_MINORITY
