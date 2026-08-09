@@ -1,5 +1,38 @@
 # Changelog
 
+### fix(generate-qr) — preserve canonical MCP targets and exact generated artifact paths (#171)
+
+The `qr_codes` catalog recorded facts that were demonstrably false. `--short-url`
+and `--shownotes-url` were mutually exclusive, so MCP mode could not supply the
+canonical redirect target and stored the short URL as both `short_url` and
+`target_url` — a record claiming the short link redirects to itself. MCP mode
+also recorded a generic `mcp_preresolved` shortener, losing the provider, link
+id, and back-half.
+
+`--shownotes-url` is now required in every mode and is always the recorded
+`target_url`. New optional `--short-provider` and `--short-link-id` carry the
+real provider identity; `short_path` is recovered from the short URL and
+recorded only when it equals the talk slug, never asserted onto a link that
+lacks it.
+
+Artifact paths were equally unreliable: `--png-only --output PATH` wrote to
+`PATH` but recorded the default `{talk-slug}-qr.png`, deck mode reduced a custom
+output to its basename against an ambiguous root, and a multi-colour run
+generated several PNGs while cataloging one.
+
+The `qr_codes` record schema advances to v2 with an `artifacts` array — one
+entry per generated PNG, each carrying the exact written path, an explicit
+`path_root` (`deck_dir`, `cwd`, or `absolute`), a SHA-256, and the colour
+variant's `bg_hex`. `qr_png_rel_path` mirrors the first artifact so schema-v1
+readers keep working. Readers dual-accept v1 and v2; migration stamps
+unversioned records at v1, since they cannot satisfy the v2 shape.
+
+Also folds in #248: `qr-generation-rules.md` §2's back-half failure directive is
+split into atomic bullets per `context-writing-style`, and a new §4 states the
+catalog-fidelity contract. Sections renumbered accordingly, with cross-references
+updated.
+
+
 ### fix(generate-qr) — fail closed when a configured shortener cannot produce the managed link (#170)
 
 `resolve_short_url()` silently returned the raw shownotes URL on five paths: no

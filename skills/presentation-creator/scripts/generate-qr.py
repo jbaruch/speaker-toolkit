@@ -32,6 +32,7 @@ Requires:
 
 import argparse
 import datetime
+import hashlib
 import io
 import json
 import os
@@ -40,6 +41,7 @@ import shutil
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 try:
@@ -808,15 +810,56 @@ def insert_qr_via_powerpoint(deck_path, jobs, scripts_dir):
     shutil.move(current, deck_path)
 
 
+def _validated_back_half(short_url, talk_slug):
+    """Return the short link's back-half, or None when it is not the slug.
+
+    The back-half MUST be the talk slug (rules/qr-generation-rules.md §2). A
+    preresolved link whose last path segment differs is recorded as unknown
+    rather than having the slug asserted onto it.
+    """
+    segment = urllib.parse.urlparse(short_url).path.strip("/").split("/")[-1]
+    if segment == talk_slug:
+        return segment
+    print(
+        f"  WARNING: pre-resolved short URL back-half '{segment}' is not the "
+        f"talk slug '{talk_slug}' — recording short_path as unknown"
+    )
+    return None
+
+
+def _artifact_receipt(path, deck_dir, bg_hex):
+    """Bind one generated PNG to the exact path written plus its digest."""
+    absolute = os.path.abspath(path)
+    if deck_dir and os.path.commonpath([absolute, os.path.abspath(deck_dir)]) == \
+            os.path.abspath(deck_dir):
+        path_root = "deck_dir"
+        recorded = os.path.relpath(absolute, os.path.abspath(deck_dir))
+    elif not os.path.isabs(path):
+        path_root = "cwd"
+        recorded = os.path.relpath(absolute, os.path.abspath("."))
+    else:
+        path_root = "absolute"
+        recorded = absolute
+    digest = hashlib.sha256(Path(absolute).read_bytes()).hexdigest()
+    return {
+        "path": recorded,
+        "path_root": path_root,
+        "sha256": digest,
+        "bg_hex": bg_hex,
+    }
+
+
 # --- Tracking Database ---
 
-def update_tracking_db(tracking_db, entry, qr_png_rel_path):
+def update_tracking_db(tracking_db, entry, artifacts):
     """Append or replace a qr_codes entry in the tracking database.
 
     Args:
         tracking_db: The full tracking database dict (mutated in place)
         entry: Metadata dict from resolve_short_url
-        qr_png_rel_path: Relative path to the QR PNG file
+        artifacts: Non-empty list of receipts from _artifact_receipt(), one per
+            generated PNG. `qr_png_rel_path` mirrors the first for schema-v1
+            readers; `artifacts` is the authoritative record.
     """
     if "qr_codes" not in tracking_db:
         tracking_db["qr_codes"] = []
@@ -832,7 +875,8 @@ def update_tracking_db(tracking_db, entry, qr_png_rel_path):
         "short_path": entry.get("short_path"),
         "short_url": entry["short_url"],
         "shortener_link_id": entry.get("shortener_link_id"),
-        "qr_png_rel_path": qr_png_rel_path,
+        "qr_png_rel_path": artifacts[0]["path"],
+        "artifacts": artifacts,
         "created_at": today,
         "updated_at": today,
     }
@@ -866,9 +910,18 @@ def main():
     parser.add_argument("deck", nargs="?", default=None, help="Path to the .pptx deck file (not required with --png-only)")
     parser.add_argument("--talk-slug", required=True, help="Unique talk identifier (e.g., arc-of-ai)")
 
-    url_group = parser.add_mutually_exclusive_group(required=True)
-    url_group.add_argument("--shownotes-url", help="Full shownotes URL (script resolves shortening)")
-    url_group.add_argument("--short-url", help="Pre-resolved short URL (skip shortening)")
+    # The canonical redirect target is always required. --short-url supplies an
+    # agent-preresolved managed link (MCP mode) and does NOT replace the target:
+    # recording the short URL as its own target loses the redirect relationship
+    # the catalog exists to describe.
+    parser.add_argument("--shownotes-url", required=True,
+                        help="Canonical shownotes URL — the short link's redirect target")
+    parser.add_argument("--short-url",
+                        help="Pre-resolved short URL (MCP mode; skips shortening)")
+    parser.add_argument("--short-provider", metavar="NAME",
+                        help="Provider that issued --short-url (e.g. bitly, rebrandly)")
+    parser.add_argument("--short-link-id", metavar="ID",
+                        help="Provider-side link id for --short-url")
 
     parser.add_argument("--png-only", action="store_true",
                         help="Generate QR PNG only, without opening or modifying a deck")
@@ -944,16 +997,17 @@ def main():
     if args.short_url:
         # MCP-preresolved mode
         qr_url = args.short_url
-        shownotes_url = args.shownotes_url or qr_url  # for tracking
+        shownotes_url = args.shownotes_url
+        short_path = _validated_back_half(qr_url, args.talk_slug)
         meta = {
             "talk_slug": args.talk_slug,
-            "target_url": qr_url,
-            "shortener": "mcp_preresolved",
-            "short_path": None,
+            "target_url": shownotes_url,
+            "shortener": args.short_provider or "mcp_preresolved",
+            "short_path": short_path,
             "short_url": qr_url,
-            "shortener_link_id": None,
+            "shortener_link_id": args.short_link_id,
         }
-        print(f"Using pre-resolved short URL: {qr_url}")
+        print(f"Using pre-resolved short URL: {qr_url} -> {shownotes_url}")
     else:
         # Direct resolution mode
         shownotes_url = args.shownotes_url
@@ -987,8 +1041,10 @@ def main():
             generate_qr_png(qr_url, qr_fg, qr_bg, qr_path)
             size_kb = os.path.getsize(qr_path) / 1024
             print(f"QR PNG saved: {qr_path} ({size_kb:.1f} KB)")
+            artifacts = [_artifact_receipt(qr_path, None, None)]
         else:
             print(f"DRY RUN: would save QR to {qr_path}")
+            artifacts = None
 
     # --- Deck mode: open deck, detect colors, insert ---
     else:
@@ -1046,7 +1102,9 @@ def main():
                 generate_qr_png(qr_url, qr_fg, qr_bg, qr_path)
                 size_kb = os.path.getsize(qr_path) / 1024
                 print(f"  QR PNG saved: {qr_filename} ({size_kb:.1f} KB) — for slide(s) {[i + 1 for i in indices]}")
-                qr_paths_generated.append(qr_path)
+                qr_paths_generated.append(
+                    (qr_path, None if len(color_groups) == 1 else bg_hex)
+                )
                 # VBA is 1-based; pair each slide with its existing-QR rects
                 insert_jobs.append((qr_path, [(i + 1, qr_rects_by_idx[i]) for i in indices]))
 
@@ -1056,17 +1114,22 @@ def main():
             here = os.path.dirname(os.path.abspath(__file__))
             insert_qr_via_powerpoint(args.deck, insert_jobs, here)
             print(f"Deck updated via PowerPoint: {args.deck}")
-            # Use first generated path for tracking DB
-            qr_filename = os.path.basename(qr_paths_generated[0])
+            # Every generated variant is cataloged, not just the first.
+            artifacts = [
+                _artifact_receipt(path, deck_dir, bg_hex)
+                for path, bg_hex in qr_paths_generated
+            ]
         else:
             # Dry run — just report what would happen
             for (qr_bg, qr_fg), indices in color_groups.items():
                 print(f"  DRY RUN: would generate QR bg=RGB{qr_bg} fg=RGB{qr_fg} for slides {[i + 1 for i in indices]}")
-            qr_filename = f"{args.talk_slug}-qr.png"
+            artifacts = None
 
-    # Update tracking database
-    meta["target_url"] = shownotes_url if args.shownotes_url else qr_url
-    update_tracking_db(tracking_db, meta, qr_filename)
+    # Update tracking database. A dry run generated nothing, so there is no
+    # artifact to bind and the catalog is left untouched.
+    meta["target_url"] = shownotes_url
+    if artifacts:
+        update_tracking_db(tracking_db, meta, artifacts)
 
     if not args.dry_run:
         tdb_path = os.path.join(vault_path, "tracking-database.json")
