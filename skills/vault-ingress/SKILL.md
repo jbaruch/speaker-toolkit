@@ -14,7 +14,9 @@ user-invocable: true
 
 # Vault Ingress — Incremental Talk Parser
 
-Process the steps below in order; each step's output (tracking DB state, batch results, per-talk artifacts) feeds the next. Do not skip ahead.
+Process steps in order. Do not skip ahead.
+
+Each step's output (tracking DB state, batch results, per-talk artifacts) feeds the next.
 
 Resolve the absolute path of this loaded `SKILL.md`, then set
 `speaker_toolkit_root` to the plugin root two directories above the directory
