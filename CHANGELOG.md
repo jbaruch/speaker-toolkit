@@ -1,5 +1,28 @@
 # Changelog
 
+### chore(ci) — enforce the Ruff, format, and Pyright gates (#162)
+
+Closes #162, and it is the last step of the adoption sequence by design:
+`language-diagnostics` Adopting on a Dirty Tree wires the gate only once the
+tree reports zero, in its own change. Four PRs cleared the baseline first
+(#257 Ruff lint, #258 `ruff format`, #259 Pyright resolution, #260 and #261 the
+findings); this one turns them into a gate.
+
+`.github/workflows/tests.yml` gains a `lint` job running `ruff check`,
+`ruff format --check`, and `pyright`. `test` and `supervisor-platform` declare
+`needs: lint`, so the checks run BEFORE tests as `code-formatting` CI
+Integration requires — a style or type regression reports in about a minute
+and never pays for `test`'s multi-minute apt install of
+ffmpeg/libreoffice/tesseract.
+
+The job installs `.[test,lint]` even though it executes nothing: Pyright
+resolves third-party imports against the active interpreter, and without the
+runtime dependencies it reports ~94 resolution false-positives and stops
+deep-checking the code underneath.
+
+Branch protection is untouched. Promoting `lint` to a required check is a
+repo-settings decision, not a file in this change.
+
 ## 0.20.37 — 2026-08-09
 
 ### fix — clear the Pyright test baseline (#162)
