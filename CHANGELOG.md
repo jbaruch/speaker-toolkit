@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.31 — 2026-08-09
+
 ### fix(vault-ingress) — close the last four deterministic entrypoint boundaries (#203)
 
 `write-analysis.py`, `validate-returns.py`, `audit-pattern-catalog.py`, and
