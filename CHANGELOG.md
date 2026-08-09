@@ -24,6 +24,7 @@ guards already carry `outer-boundary-process-contract` catches, `pptx-extraction
 traceback is a deliberate contract with a test defending it — stdout stays clean
 and the traceback is the actionable signal.
 
+## 0.20.27 — 2026-08-09
 
 ### fix(generate-qr) — make publication recoverable when the tracking-database CAS rejects (#172)
 
