@@ -7,7 +7,6 @@ the tracking DB, with the declared queryable scalars promoted to the talk top le
 import copy
 import importlib
 import json
-import pathlib
 import shutil
 import subprocess
 import sys
@@ -3295,11 +3294,21 @@ def test_outer_boundary_does_not_catch_sys_exit(persist_results, monkeypatch):
     assert excinfo.value.code == 1
 
 
-def test_debug_env_surfaces_the_traceback_for_diagnosis(
-        persist_results, monkeypatch):
-    """The suppressed traceback must be obtainable on explicit opt-in."""
-    monkeypatch.setattr(persist_results, "main",
-                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
-    monkeypatch.setenv(persist_results.DEBUG_TRACEBACK_ENV, "1")
-    with pytest.raises(RuntimeError, match="boom"):
-        persist_results.run_cli()
+
+
+def test_failure_payload_names_code_locations_without_exception_text(
+        persist_results, capsys, monkeypatch):
+    """no-secrets forbids exception text; the origin frames replace it."""
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("token=SECRET at /private/vault/creds.json")
+
+    monkeypatch.setattr(persist_results, "main", explode)
+    assert persist_results.run_cli() == 2
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.err.splitlines()[0])
+    assert payload["origin"], "the failing code location must be reported"
+    assert all(":" in frame and " in " in frame for frame in payload["origin"])
+    assert "SECRET" not in captured.err
+    assert "/private/vault/creds.json" not in captured.err
+    assert "Traceback" not in captured.err

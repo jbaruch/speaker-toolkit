@@ -5,7 +5,6 @@ import importlib
 import json
 import os
 from pathlib import Path
-import pathlib
 import shutil
 import struct
 import subprocess
@@ -3373,11 +3372,12 @@ def test_outer_boundary_finding_matches_the_normal_finding_shape(
     assert preflight_vault.run_cli() == 2
 
     failure = json.loads(capsys.readouterr().out)
-    assert set(failure["findings"][0]) == set(normal["findings"][0])
+    # Superset, not equality: the contract is that a consumer reading any
+    # normal key cannot KeyError on the failure shape. The failure report adds
+    # `origin`, which no normal finding carries and no consumer reads.
+    assert set(normal["findings"][0]) <= set(failure["findings"][0])
+    assert set(normal) <= set(failure)
     assert failure["schema_version"] == normal["schema_version"]
-    # Top-level keys must match too: a consumer reading `database` or
-    # `talk_count` unconditionally must not KeyError on the failure shape.
-    assert set(failure) == set(normal)
 
 
 def test_outer_boundary_passes_a_clean_exit_code_through(
@@ -3389,24 +3389,35 @@ def test_outer_boundary_passes_a_clean_exit_code_through(
     assert preflight_vault.run_cli() == 1
 
 
-def test_debug_env_surfaces_the_traceback_for_diagnosis(
-        preflight_vault, monkeypatch):
-    """The suppressed traceback must be obtainable on explicit opt-in."""
-    monkeypatch.setattr(preflight_vault, "main",
-                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
-    monkeypatch.setenv(preflight_vault.DEBUG_TRACEBACK_ENV, "1")
-    with pytest.raises(RuntimeError, match="boom"):
-        preflight_vault.run_cli()
-
-
 def test_failure_guidance_names_a_concrete_next_action(
         preflight_vault, capsys, monkeypatch):
     """"Repair the condition named by the exception type" is not actionable."""
     monkeypatch.setattr(preflight_vault, "main",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
-    monkeypatch.delenv(preflight_vault.DEBUG_TRACEBACK_ENV, raising=False)
     assert preflight_vault.run_cli() == 2
     err = capsys.readouterr().err
-    assert preflight_vault.DEBUG_TRACEBACK_ENV in err
+    assert "code locations that failed" in err
     assert "check-runtime.py" in err
     assert "do not begin claiming" in err
+
+
+def test_failure_report_names_code_locations_without_exception_text(
+        preflight_vault, capsys, monkeypatch):
+    """no-secrets forbids exception text; the origin frames replace it."""
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("token=SECRET at /private/vault/creds.json")
+
+    monkeypatch.setattr(preflight_vault, "main", explode)
+    assert preflight_vault.run_cli() == 2
+
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)
+    origin = report["findings"][0]["origin"]
+    assert origin, "the failing code location must be reported"
+    assert all(":" in frame and " in " in frame for frame in origin)
+    # Neither the message, the credential, nor a full path may appear anywhere.
+    for stream in (captured.out, captured.err):
+        assert "SECRET" not in stream
+        assert "/private/vault/creds.json" not in stream
+        assert "Traceback" not in stream
+    assert "code locations that failed" in captured.err

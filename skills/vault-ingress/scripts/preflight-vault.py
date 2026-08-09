@@ -24,6 +24,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import traceback
 from typing import Any
 
 from artifact_locator import (
@@ -86,9 +87,20 @@ from vault_root_authority import (
 
 
 REPORT_SCHEMA_VERSION = 1
-# Opt-in escape hatch: re-raise instead of emitting the path-neutral report, so
-# an operator can obtain the traceback the boundary otherwise suppresses.
-DEBUG_TRACEBACK_ENV = "VAULT_INGRESS_DEBUG_TRACEBACK"
+
+
+def _sanitized_frames(exc: BaseException) -> list[str]:
+    """Code locations from a traceback, with no exception text or full paths.
+
+    `no-secrets` forbids exception messages and credentials from reaching any
+    diagnostic, so only `basename:line in function` crosses the boundary. That
+    still points an operator at the failing code, which the exception type
+    alone does not.
+    """
+    return [
+        f"{os.path.basename(frame.filename)}:{frame.lineno} in {frame.name}"
+        for frame in traceback.extract_tb(exc.__traceback__)
+    ]
 SOURCE_IDENTITY_SCHEMA_VERSION = 1
 TRANSCRIPT_SOURCES = frozenset({"youtube_auto", "whisper", "manual", "none"})
 SLIDE_SOURCES = frozenset({"pptx", "pdf", "both", "video_extracted", "none"})
@@ -2303,9 +2315,6 @@ def run_cli() -> int:
     # claiming.
     except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
         # The report stays path-neutral by contract. An operator diagnosing a
-        # repeat failure needs the traceback, so re-raise on explicit opt-in.
-        if os.environ.get(DEBUG_TRACEBACK_ENV):
-            raise
         print(
             json.dumps(
                 {
@@ -2336,6 +2345,7 @@ def run_cli() -> int:
                             ),
                             "expected": None,
                             "actual": type(exc).__name__,
+                            "origin": _sanitized_frames(exc),
                             "artifact_path": None,
                             "capability_fact": None,
                         }
@@ -2348,8 +2358,8 @@ def run_cli() -> int:
         print(
             "vault-ingress preflight failed unexpectedly before completing its "
             "checks. Treat the vault as unverified and do not begin claiming.\n"
-            f"  To see the underlying traceback, rerun with {DEBUG_TRACEBACK_ENV}=1 "
-            "— it prints raw paths, so keep it out of shared logs.\n"
+            "  `origin` above lists the code locations that failed, innermost "
+            "last.\n"
             "  Common causes: an unreadable or partially written "
             "tracking-database.json, a vault path that moved, or a missing "
             "runtime dependency. `check-runtime.py` reports the last of these.",

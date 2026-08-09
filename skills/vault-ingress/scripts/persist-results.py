@@ -79,6 +79,7 @@ import copy
 import json
 import os
 import sys
+import traceback
 from datetime import datetime, timezone
 
 from adherence_baseline import (
@@ -849,9 +850,20 @@ def parse_args(argv):
 # an operator never has to guess whether a late failure replayed a write.
 _COMMIT_STATE = {"database_written": False}
 
-# Opt-in escape hatch: re-raise instead of emitting the path-neutral payload, so
-# an operator can obtain the traceback the boundary otherwise suppresses.
-DEBUG_TRACEBACK_ENV = "VAULT_INGRESS_DEBUG_TRACEBACK"
+
+def _sanitized_frames(exc: BaseException) -> list[str]:
+    """Code locations from a traceback, with no exception text or full paths.
+
+    `no-secrets` forbids exception messages and credentials from reaching any
+    diagnostic, so only `basename:line in function` crosses the boundary. That
+    still points an operator at the failing code, which the exception type
+    alone does not.
+    """
+    return [
+        f"{os.path.basename(frame.filename)}:{frame.lineno} in {frame.name}"
+        for frame in traceback.extract_tb(exc.__traceback__)
+    ]
+
 
 
 def main():
@@ -1036,15 +1048,12 @@ def run_cli() -> int:
     # because propagation would leave the operator unable to tell a pre-commit
     # abort from a post-commit reporting failure, and could replay writes.
     except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
-        # Same opt-in as preflight: the payload stays path-neutral, but an
-        # operator diagnosing a repeat failure can obtain the traceback.
-        if os.environ.get(DEBUG_TRACEBACK_ENV):
-            raise
         print(
             json.dumps(
                 {
                     "error": "persist_results_unexpected_failure",
                     "error_type": type(exc).__name__,
+                    "origin": _sanitized_frames(exc),
                     "database_written": _COMMIT_STATE["database_written"],
                     "persisted": None,
                 },
@@ -1057,8 +1066,8 @@ def run_cli() -> int:
             "above states whether the atomic commit landed: when true the "
             "database holds this batch and re-running would re-persist it; when "
             "false nothing was written and the batch can be retried.\n"
-            f"  To see the underlying traceback, rerun with {DEBUG_TRACEBACK_ENV}=1 "
-            "— it prints raw paths, so keep it out of shared logs.",
+            "\n  `origin` above lists the code locations that failed, "
+            "innermost last.",
             file=sys.stderr,
         )
         return 2
