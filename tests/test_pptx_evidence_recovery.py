@@ -20,7 +20,7 @@ from pptx.oxml import parse_xml
 from pptx.oxml.ns import nsdecls
 from pptx.util import Emu, Inches
 
-from conftest import deck_height, deck_width
+from conftest import deck_height, deck_width, graphic_frame_element
 from pypdf import PdfWriter
 
 
@@ -2457,7 +2457,9 @@ def test_full_extraction_accepts_derived_render_and_ocr_contracts(
         0, 0
     ).text = "table text"
     smartart = slide.shapes.add_table(1, 1, Inches(1), Inches(3), Inches(2), Inches(1))
-    smartart.element.graphic.graphicData.uri = (
+    graphic_frame_element(
+        smartart
+    ).graphic.graphicData.uri = (
         "http://schemas.openxmlformats.org/drawingml/2006/diagram"
     )
     _set_background_image(slide, background_image)
@@ -2524,7 +2526,9 @@ def test_catalog_bindings_reject_detached_worker_evidence(
     table = slide.shapes.add_table(1, 1, Inches(1), Inches(1.5), Inches(2), Inches(1))
     table.table.cell(0, 0).text = "table text"
     smartart = slide.shapes.add_table(1, 1, Inches(1), Inches(3), Inches(2), Inches(1))
-    smartart.element.graphic.graphicData.uri = (
+    graphic_frame_element(
+        smartart
+    ).graphic.graphicData.uri = (
         "http://schemas.openxmlformats.org/drawingml/2006/diagram"
     )
     _set_background_image(slide, background_image)
@@ -2844,7 +2848,9 @@ def test_smartart_shape_cannot_omit_unsupported_evidence(
     presentation = Presentation()
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     smartart = slide.shapes.add_table(1, 1, Inches(1), Inches(1), Inches(2), Inches(1))
-    smartart.element.graphic.graphicData.uri = (
+    graphic_frame_element(
+        smartart
+    ).graphic.graphicData.uri = (
         "http://schemas.openxmlformats.org/drawingml/2006/diagram"
     )
     deck = tmp_path / "hidden-smartart.pptx"
@@ -2893,7 +2899,7 @@ def test_graphic_frame_without_uri_round_trips_as_unsupported(
         Inches(2),
         Inches(1),
     )
-    graphic_frame.element.graphic.graphicData.uri = ""
+    graphic_frame_element(graphic_frame).graphic.graphicData.uri = ""
     deck = tmp_path / "missing-graphic-uri.pptx"
     presentation.save(str(deck))
 
@@ -3463,7 +3469,9 @@ def test_duplicate_and_empty_unsupported_names_preserve_multiplicity(
     ]
     for shape, name in zip(shapes, ("Same", "Same", "")):
         shape.name = name
-        shape.element.graphic.graphicData.uri = (
+        graphic_frame_element(
+            shape
+        ).graphic.graphicData.uri = (
             "http://schemas.openxmlformats.org/drawingml/2006/diagram"
         )
     deck = tmp_path / "duplicate-empty-unsupported.pptx"

@@ -12,6 +12,8 @@ from pptx.oxml import parse_xml
 from pptx.oxml.ns import nsdecls
 from pptx.util import Inches
 
+from conftest import graphic_frame_element
+
 
 def _round_trip(pptx_extraction, pptx_evidence, deck: Path):
     extraction = pptx_extraction._extract_pptx_in_process(deck, ocr=False)
@@ -105,7 +107,7 @@ def test_graphic_uri_is_canonicalized_across_all_provenance(
     presentation = Presentation()
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     shape = slide.shapes.add_table(1, 1, Inches(1), Inches(1), Inches(2), Inches(1))
-    shape.element.graphic.graphicData.uri = "u" * 4097
+    graphic_frame_element(shape).graphic.graphicData.uri = "u" * 4097
     deck = tmp_path / "long-graphic-uri.pptx"
     presentation.save(str(deck))
 

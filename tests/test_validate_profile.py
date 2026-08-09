@@ -635,6 +635,22 @@ def _run_load_vault(load_vault, vault_root, monkeypatch, capsys):
     return rc, payload, captured.err
 
 
+def _load_vault_payload(load_vault, vault_root, monkeypatch, capsys):
+    """Run load-vault and return the payload it must have produced.
+
+    `_run_load_vault` returns None when the command wrote nothing — a real
+    outcome three tests assert. A test that goes on to read the payload has
+    already required output, so asserting it once here turns a confusing
+    `'NoneType' is not subscriptable` into a named failure and proves the
+    value present at one place rather than at every subscript.
+    """
+    rc, payload, error = _run_load_vault(load_vault, vault_root, monkeypatch, capsys)
+    assert payload is not None, (
+        f"load-vault wrote no stdout (rc={rc}, stderr={error!r})"
+    )
+    return rc, payload, error
+
+
 def test_load_vault_separates_pattern_generation_from_instrumentation(
     load_vault,
     tmp_path,
@@ -686,7 +702,7 @@ def test_load_vault_separates_pattern_generation_from_instrumentation(
             pending_duplicate,
         ],
     )
-    rc, payload, error = _run_load_vault(load_vault, tmp_path, monkeypatch, capsys)
+    rc, payload, error = _load_vault_payload(load_vault, tmp_path, monkeypatch, capsys)
 
     assert rc == 0
     assert error == ""
@@ -796,7 +812,7 @@ def test_load_vault_projects_confirmed_intents_without_storage_metadata(
     raw = (json.dumps(database, indent=2) + "\n").encode()
     database_path.write_bytes(raw)
 
-    rc, payload, error = _run_load_vault(load_vault, tmp_path, monkeypatch, capsys)
+    rc, payload, error = _load_vault_payload(load_vault, tmp_path, monkeypatch, capsys)
 
     assert rc == 0
     assert error == ""
@@ -872,7 +888,7 @@ def test_load_vault_does_not_fallback_when_current_pattern_cohort_is_empty(
     )
     _write_vault(tmp_path, [legacy])
 
-    rc, payload, error = _run_load_vault(load_vault, tmp_path, monkeypatch, capsys)
+    rc, payload, error = _load_vault_payload(load_vault, tmp_path, monkeypatch, capsys)
 
     assert rc == 0
     assert error == ""
@@ -906,7 +922,7 @@ def test_load_vault_excludes_current_generation_with_stale_evidence(
     else:
         artifact.write_text("Replacement with a different digest.\n", encoding="utf-8")
 
-    rc, payload, error = _run_load_vault(load_vault, tmp_path, monkeypatch, capsys)
+    rc, payload, error = _load_vault_payload(load_vault, tmp_path, monkeypatch, capsys)
 
     assert rc == 0
     assert error == ""
@@ -976,7 +992,7 @@ def test_load_vault_passes_configured_source_roots_to_freshness_assessor(
         config={"pptx_source_dir": str(source_root)},
     )
 
-    rc, payload, error = _run_load_vault(load_vault, tmp_path, monkeypatch, capsys)
+    rc, payload, error = _load_vault_payload(load_vault, tmp_path, monkeypatch, capsys)
 
     assert rc == 0
     assert error == ""
@@ -1169,7 +1185,7 @@ def test_load_vault_accepts_one_matching_lexical_symlink_authority(
     _directory_symlink(locator, storage)
     _write_vault(storage, [], config={"vault_storage_path": str(locator)})
 
-    rc, payload, error = _run_load_vault(
+    rc, payload, error = _load_vault_payload(
         load_vault,
         locator,
         monkeypatch,

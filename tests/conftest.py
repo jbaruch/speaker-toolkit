@@ -6,6 +6,7 @@ import sys
 
 import pytest
 from pptx import Presentation
+from pptx.oxml.shapes.graphfrm import CT_GraphicalObjectFrame
 from pptx.util import Emu
 
 
@@ -487,6 +488,31 @@ def deck_height(presentation) -> Emu:
     return Emu(height)
 
 
+def slide_title(slide):
+    """A slide's title placeholder, proven present.
+
+    `shapes.title` is Optional because a layout may have none. Fixtures that
+    set a title have already chosen a layout that has one, so the assertion
+    belongs here rather than at every assignment.
+    """
+    title = slide.shapes.title
+    assert title is not None, "this layout has no title placeholder"
+    return title
+
+
+def graphic_frame_element(shape) -> CT_GraphicalObjectFrame:
+    """The `<p:graphicFrame>` element behind a table or chart shape.
+
+    python-pptx types `BaseShape.element` as the union of every CT_* shape
+    element, and only the graphic-frame member carries `.graphic`. `add_table`
+    always returns a GraphicFrame, so narrowing once here beats an ignore at
+    each fixture site that retags a table as SmartArt.
+    """
+    element = shape.element
+    assert isinstance(element, CT_GraphicalObjectFrame), type(element).__name__
+    return element
+
+
 def _make_deck(slide_count, *, slide_width=None, slide_height=None):
     """Create a minimal PPTX with *slide_count* blank slides."""
     prs = Presentation()
@@ -525,7 +551,7 @@ def deck_with_text(tmp_path):
     layout = prs.slide_layouts[1]  # Title + Content
     for i in range(3):
         slide = prs.slides.add_slide(layout)
-        slide.shapes.title.text = f"Slide {i + 1} Title"
+        slide_title(slide).text = f"Slide {i + 1} Title"
     path = str(tmp_path / "text_deck.pptx")
     prs.save(path)
     return prs, path

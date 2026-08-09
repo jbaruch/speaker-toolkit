@@ -21,7 +21,13 @@ from pptx.oxml import parse_xml
 from pptx.oxml.ns import nsdecls
 from pptx.util import Emu, Inches, Pt
 
-from conftest import deck_height, deck_width, make_deck
+from conftest import (
+    deck_height,
+    deck_width,
+    graphic_frame_element,
+    make_deck,
+    slide_title,
+)
 
 
 def _use_in_process_directory_discovery(pptx_extraction, monkeypatch):
@@ -224,7 +230,7 @@ def test_shape_text_extraction(pptx_extraction, tmp_path):
     prs = Presentation()
     layout = prs.slide_layouts[1]
     slide = prs.slides.add_slide(layout)
-    slide.shapes.title.text = "Hello World"
+    slide_title(slide).text = "Hello World"
     path = str(tmp_path / "deck.pptx")
     prs.save(path)
 
@@ -1925,7 +1931,7 @@ def test_text_slide_is_high_confidence(pptx_extraction, tmp_path):
     """No picture — extractable text is the whole story."""
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[5])
-    slide.shapes.title.text = "A real title"
+    slide_title(slide).text = "A real title"
     data = _first_slide(pptx_extraction, prs, tmp_path)
     assert data["has_text_frame_shapes"] is True
     assert data["text_extraction_confidence"] == "high"
@@ -1938,7 +1944,7 @@ def test_small_decorative_image_stays_high_confidence(
     """A logo-sized picture cannot be hiding the slide's content."""
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[5])
-    slide.shapes.title.text = "Title"
+    slide_title(slide).text = "Title"
     slide.shapes.add_picture(
         _png(tmp_path / "i.png"),
         Inches(0),
@@ -1959,7 +1965,7 @@ def test_text_overlay_over_full_bleed_is_still_low_confidence(
     """Extracting *some* text is not evidence of extracting *all* of it."""
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[5])
-    slide.shapes.title.text = "Overlay"
+    slide_title(slide).text = "Overlay"
     slide.shapes.add_picture(
         _png(tmp_path / "i.png"),
         Inches(0),
@@ -2095,7 +2101,7 @@ def test_ocr_confidence_is_paired_only_with_retained_token(pptx_extraction):
 def test_high_confidence_slide_method_is_shapes_only(pptx_extraction, tmp_path):
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[5])
-    slide.shapes.title.text = "A real title"
+    slide_title(slide).text = "A real title"
     data = _first_slide(pptx_extraction, prs, tmp_path)
     assert data["text_extraction_confidence"] == "high"
     assert data["text_extraction_method"] == "shapes"
@@ -2379,7 +2385,7 @@ def test_small_decorative_image_does_not_ocr(pptx_extraction, tmp_path):
     """High-confidence slides must not pay for OCR."""
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[5])
-    slide.shapes.title.text = "Title"
+    slide_title(slide).text = "Title"
     slide.shapes.add_picture(
         _png_with_text(tmp_path / "logo.png", text="LOGO"),
         Inches(0),
@@ -2700,7 +2706,9 @@ def test_smartart_and_unknown_graphic_frames_are_explicitly_unsupported(
         Inches(3),
         Inches(1),
     )
-    smartart.element.graphic.graphicData.uri = (
+    graphic_frame_element(
+        smartart
+    ).graphic.graphicData.uri = (
         "http://schemas.openxmlformats.org/drawingml/2006/diagram"
     )
     other = slide.shapes.add_table(
@@ -2711,7 +2719,9 @@ def test_smartart_and_unknown_graphic_frames_are_explicitly_unsupported(
         Inches(3),
         Inches(1),
     )
-    other.element.graphic.graphicData.uri = "urn:example:unsupported-graphic"
+    graphic_frame_element(
+        other
+    ).graphic.graphicData.uri = "urn:example:unsupported-graphic"
 
     data = _first_slide(pptx_extraction, prs, tmp_path)
 
