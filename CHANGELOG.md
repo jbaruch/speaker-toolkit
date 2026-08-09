@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.29 — 2026-08-09
+
 ### fix(vault-ingress) — route preflight diagnostics off typed reasons, not exception prose (#200)
 
 Three preflight paths published raw exception text across a public diagnostic
