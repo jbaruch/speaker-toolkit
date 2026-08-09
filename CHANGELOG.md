@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.36 — 2026-08-09
+
 ### fix — clear every Pyright finding in shipped scripts (#162)
 
 Fourth of the #162 adoption sequence. With resolution correct, the 16 findings
