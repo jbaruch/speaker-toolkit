@@ -20,6 +20,17 @@ A bit.ly custom-back-half failure now carries the already-created link's
 `link_id` and `short_url` in the error, so the provider-side partial creation
 can be reused or deleted deterministically instead of being orphaned.
 
+Configuration is validated before any cache reuse. A cached record proves what
+was authorized on an earlier run, never what is authorized now, so a stale
+`shortener: none` entry could otherwise re-authorize a raw URL under a missing
+or newly-managed configuration. A cached record is reused only when its
+`shortener` matches the one configured; a mismatch forces re-resolution.
+
+`rules/qr-generation-rules.md` §2 said the script "fails to a raw-URL fallback"
+when the slug back-half cannot be set. That contradicted §3 and now contradicts
+the implementation, so it states the current contract: exit non-zero without
+generating a QR, and report the provider-side link identity.
+
 ## 0.20.23 — 2026-08-09
 
 ### fix(skills) — restore standalone sequential-workflow preambles (#179)

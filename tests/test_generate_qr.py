@@ -858,3 +858,70 @@ def test_explicit_none_still_authorizes_a_raw_url(generate_qr):
     assert url == "https://example.com/notes"
     assert meta["shortener"] == "none"
     assert meta["target_url"] == "https://example.com/notes"
+
+
+def test_cached_raw_record_is_not_reused_when_config_is_missing(generate_qr):
+    """A stale `shortener: none` entry must not re-authorize a raw URL."""
+    db = {"qr_codes": [{
+        "talk_slug": "my-talk",
+        "target_url": "https://example.com/notes",
+        "shortener": "none",
+        "short_path": None,
+        "short_url": "https://example.com/notes",
+        "shortener_link_id": None,
+    }]}
+    with pytest.raises(generate_qr.ShortenerResolutionError, match="no URL shortener configured"):
+        generate_qr.resolve_short_url("https://example.com/notes", "my-talk", {}, {}, db)
+
+
+def test_cached_raw_record_is_not_reused_under_a_managed_shortener(generate_qr, monkeypatch):
+    """Switching config from none to bitly must re-resolve, not replay the raw URL."""
+    db = {"qr_codes": [{
+        "talk_slug": "my-talk",
+        "target_url": "https://example.com/notes",
+        "shortener": "none",
+        "short_path": None,
+        "short_url": "https://example.com/notes",
+        "shortener_link_id": None,
+    }]}
+    calls = []
+
+    def fake_http(url, data=None, headers=None, method="GET"):
+        calls.append(url)
+        if url.endswith("/v4/bitlinks"):
+            return {"id": "jbaru.ch/my-talk", "link": "https://jbaru.ch/my-talk"}
+        return {}
+
+    monkeypatch.setattr(generate_qr, "_http_request", fake_http)
+    url, meta = generate_qr.resolve_short_url(
+        "https://example.com/notes", "my-talk",
+        {"shortener": "bitly", "bitly_domain": "jbaru.ch"},
+        {"bitly": {"api_token": "tok"}}, db
+    )
+
+    assert calls, "the managed shortener must actually be called"
+    assert url == "https://jbaru.ch/my-talk"
+    assert meta["shortener"] == "bitly"
+
+
+def test_cached_managed_record_is_still_reused(generate_qr):
+    """The reuse path stays open when the cached record matches current config."""
+    db = _qr_db()
+    db["qr_codes"][0]["target_url"] = "https://example.com/notes"
+    url, meta = generate_qr.resolve_short_url(
+        "https://example.com/notes", "my-talk",
+        {"shortener": "bitly", "bitly_domain": "jbaru.ch"},
+        {"bitly": {"api_token": "tok"}}, db
+    )
+    assert url == "https://jbaru.ch/my-talk"
+    assert meta["shortener"] == "bitly"
+
+
+def test_unknown_shortener_is_rejected_before_cache_reuse(generate_qr):
+    db = _qr_db()
+    db["qr_codes"][0]["target_url"] = "https://example.com/notes"
+    with pytest.raises(generate_qr.ShortenerResolutionError, match="unknown shortener 'tinyurl'"):
+        generate_qr.resolve_short_url(
+            "https://example.com/notes", "my-talk",
+            {"shortener": "tinyurl"}, {}, db
+        )

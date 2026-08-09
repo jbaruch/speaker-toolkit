@@ -316,6 +316,9 @@ def update_rebrandly_link(link_id, new_long_url, api_key):
     )
 
 
+_SUPPORTED_SHORTENERS = frozenset({"bitly", "rebrandly", "none"})
+
+
 class ShortenerResolutionError(RuntimeError):
     """A configured shortener could not produce its managed short link.
 
@@ -392,18 +395,39 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
         print(f"  Legacy non-slug back-half '{existing.get('short_path')}' for '{talk_slug}' — recreating with the slug")
         existing = None
 
-    # If cached and target matches, reuse
-    if existing and existing.get("target_url") == shownotes_url:
-        print(f"  Reusing cached short URL for '{talk_slug}': {existing['short_url']}")
-        return existing["short_url"], existing
-
-    # Distinguish "not configured" from "explicitly disabled"
+    # Configuration is validated BEFORE any cache reuse. A cached record proves
+    # what was authorized on some earlier run, never what is authorized now, so
+    # reusing one ahead of this check would let a stale `shortener: none` entry
+    # re-authorize a raw URL under a missing or managed configuration.
     if shortener is None:
         raise ShortenerResolutionError(
             "no URL shortener configured at publishing_process.qr_code.shortener. "
             "Set 'shortener: bitly' or 'shortener: rebrandly', or set "
             "'shortener: none' to explicitly authorize an unmanaged raw URL."
         )
+
+    if shortener not in _SUPPORTED_SHORTENERS:
+        raise ShortenerResolutionError(
+            f"unknown shortener '{shortener}' at "
+            "publishing_process.qr_code.shortener; supported values are "
+            f"{', '.join(repr(s) for s in sorted(_SUPPORTED_SHORTENERS))}"
+        )
+
+    # A cached record is reusable only when it was produced by the shortener now
+    # configured. A mismatch means the configuration changed since it was
+    # written, so it must be re-resolved rather than replayed.
+    if existing and existing.get("shortener") != shortener:
+        print(
+            f"  Cached record for '{talk_slug}' was produced by "
+            f"'{existing.get('shortener')}' but '{shortener}' is configured now "
+            "— re-resolving"
+        )
+        existing = None
+
+    # If cached under the current shortener and the target matches, reuse
+    if existing and existing.get("target_url") == shownotes_url:
+        print(f"  Reusing cached short URL for '{talk_slug}': {existing['short_url']}")
+        return existing["short_url"], existing
 
     if shortener == "none":
         meta = {
@@ -500,11 +524,10 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db, dr
                 }
                 return result["short_url"], meta
 
-        else:
+        else:  # pragma: no cover - _SUPPORTED_SHORTENERS is checked above
             raise ShortenerResolutionError(
                 f"unknown shortener '{shortener}' at "
-                "publishing_process.qr_code.shortener; supported values are "
-                "'bitly', 'rebrandly', and 'none'"
+                "publishing_process.qr_code.shortener"
             )
 
     except ShortenerResolutionError:

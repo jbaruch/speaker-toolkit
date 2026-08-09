@@ -27,8 +27,10 @@ configured in the vault profile (`bitly_domain` / `rebrandly_domain`), the short
 link MUST use it. The script does this automatically: `--talk-slug
 devnexus26-robocoders` with `bitly_domain: jbaru.ch` creates
 `jbaru.ch/devnexus26-robocoders` (not `bit.ly/a3xK9f`). If the slug back-half
-can't be set, the script fails to a raw-URL fallback rather than keeping a random
-hash.
+can't be set, the script exits non-zero without generating a QR, and reports the
+already-created provider-side link's identity so it can be reused or deleted. It
+never keeps a random hash and never degrades to a raw URL — only an explicit
+`"shortener": "none"` authorizes raw encoding (§3).
 
 Random hashes are untraceable and unprofessional. The back-half IS the slug.
 
