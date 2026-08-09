@@ -65,6 +65,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | [references/pattern-catalog-contract.md](references/pattern-catalog-contract.md) | Read-only catalog graph, polarity, source-gate, and semantic-debt contract |
 | [references/processing-rules.md](references/processing-rules.md) | Language policy, pattern migration logic, structured field rules |
 | [references/known-issues.md](references/known-issues.md) | Edge cases — wide-angle recordings, Whisper hallucination, non-speaker talks |
+| [references/entrypoint-failure-contracts.md](references/entrypoint-failure-contracts.md) | Per-script stdout, stderr, exit-code, and commit-position contract on failure |
 
 Every agent-driven read of `tracking-database.json` must go through
 `read-tracking-database.py`. Every agent-driven write not already owned by a

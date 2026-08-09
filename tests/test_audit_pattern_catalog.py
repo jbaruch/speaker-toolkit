@@ -1174,3 +1174,75 @@ def test_cli_emits_stable_json_for_valid_catalog(tmp_path, audit_pattern_catalog
     assert first.stdout == second.stdout
     assert first.stderr == ""
     assert json.loads(first.stdout)["valid"] is True
+
+
+# --- #203: the CLI has a closed failure boundary ---
+
+def test_outer_boundary_reports_an_unexpected_failure_without_a_traceback(
+        audit_pattern_catalog, capsys, monkeypatch):
+    """Ingress gates on this audit; a bare traceback is not a verdict."""
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("injected failure at /private/vault/patterns/x.md")
+
+    monkeypatch.setattr(audit_pattern_catalog, "audit_catalog", explode)
+
+    assert audit_pattern_catalog.run_cli([]) == 3
+
+    captured = capsys.readouterr()
+    assert captured.out == ""                     # stdout stays clean
+    payload = json.loads(captured.err.splitlines()[0])
+    assert payload["error"] == "catalog_audit_unexpected_failure"
+    assert payload["error_type"] == "RuntimeError"
+    assert payload["origin"], "the failing code location must be reported"
+    assert "injected failure" not in captured.err
+    assert "/private/vault/patterns/x.md" not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_unexpected_failure_exit_is_distinct_from_the_argparse_exit(
+        audit_pattern_catalog, capsys, monkeypatch):
+    """argparse already owns 2 — reusing it would conflate the two causes."""
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(audit_pattern_catalog, "audit_catalog", explode)
+    assert audit_pattern_catalog.run_cli([]) == 3
+
+    capsys.readouterr()
+    with pytest.raises(SystemExit) as excinfo:
+        audit_pattern_catalog.run_cli(["--not-a-flag"])
+    assert excinfo.value.code == 2
+
+
+def test_outer_boundary_lets_the_documented_verdicts_through(
+        audit_pattern_catalog, monkeypatch):
+    """A structural-error verdict is exit 1, not an unexpected failure."""
+    monkeypatch.setattr(
+        audit_pattern_catalog, "main", lambda *a, **k: 1
+    )
+    assert audit_pattern_catalog.run_cli([]) == 1
+
+
+def test_a_failed_report_write_does_not_leave_partial_json_on_stdout(
+        audit_pattern_catalog, capsys, monkeypatch):
+    """The report is serialized before it is written, so it lands whole or not at all."""
+    monkeypatch.setattr(
+        audit_pattern_catalog,
+        "audit_catalog",
+        lambda *a, **k: {"valid": True, "summary": {"errors": 0}},
+    )
+    real_write = audit_pattern_catalog.sys.stdout.write
+
+    def refuse_report(text):
+        if text.startswith("{"):
+            raise OSError("stdout closed")
+        return real_write(text)
+
+    monkeypatch.setattr(audit_pattern_catalog.sys.stdout, "write", refuse_report)
+
+    assert audit_pattern_catalog.run_cli([]) == 3
+
+    captured = capsys.readouterr()
+    assert captured.out == "", "a truncated document is worse than none"
+    payload = json.loads(captured.err.splitlines()[0])
+    assert payload["error"] == "catalog_audit_unexpected_failure"

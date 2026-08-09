@@ -9,6 +9,12 @@ grouped separately with occurrence, talk, and source-return counts.
 
 The five-lane schema, polarity rules, classifications, and report shape are
 documented in ``references/catalog-feedback-intake.md``.
+
+Exit 0 is a clean harvest, exit 1 a report with ``ok: false``, and exit 2 an
+argparse rejection. An unexpected failure uses exit 3 and writes one
+``catalog_feedback_unexpected_failure`` JSON document to stderr, leaving stdout
+empty — argparse already owns 2, so the caller can still tell a malformed
+invocation from a broken aggregator.
 """
 
 from __future__ import annotations
@@ -24,6 +30,7 @@ import unicodedata
 
 from yaml import YAMLError
 
+from failure_diagnostics import emit_unexpected_failure
 from catalog_io import DuplicateYAMLKeyError, catalog_entry_paths, load_catalog_yaml
 from catalog_normalization import normalize_catalog_alias
 
@@ -1084,5 +1091,29 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if report["ok"] else 1
 
 
+def run_cli(argv: list[str] | None = None) -> int:
+    """Run the CLI behind its failure boundary. Returns the process exit code.
+
+    Importable so the boundary's contract is testable without executing the
+    module as a script.
+    """
+    try:
+        return main(argv)
+    # Every documented outcome — including the invalid-arguments report — leaves
+    # one JSON document on stdout, so a traceback here would be the only shape a
+    # caller could not parse, and it would carry return paths and catalog entry
+    # text with it.
+    except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
+        emit_unexpected_failure(
+            exc,
+            "catalog_feedback_unexpected_failure",
+            "Catalog feedback aggregation failed unexpectedly. This command is "
+            "read-only, so neither the catalog nor the returns were changed — "
+            "but no feedback was harvested and the report on stdout is absent, "
+            "not empty.",
+        )
+        return 3
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run_cli())

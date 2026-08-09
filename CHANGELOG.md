@@ -1,5 +1,44 @@
 # Changelog
 
+### fix(vault-ingress) — close the last four deterministic entrypoint boundaries (#203)
+
+`write-analysis.py`, `validate-returns.py`, `audit-pattern-catalog.py`, and
+`aggregate-catalog-feedback.py` had no process-wide unexpected-failure boundary.
+An unexpected exception reached the caller as a traceback carrying return paths,
+catalog entry text, and vault locations — and for `write-analysis.py`, which
+installs files before emitting its receipt, with no way to tell whether the
+batch had committed.
+
+Each now runs behind a `run_cli()` that emits one closed, path-neutral JSON
+document on stderr and exits non-zero. `write-analysis.py` reports
+`analyses_written` the way `persist-results.py` reports `database_written`, so
+an operator can distinguish a rolled-back batch from a committed one whose
+receipt died. The two catalog gates exit 3 rather than 2 because argparse
+already owns 2 there; a caller can still tell a malformed invocation from a
+broken tool.
+
+All four pre-render their reports with `json.dumps` before writing. A
+`json.dump` straight to stdout that fails partway leaves a truncated document a
+caller would try to parse.
+
+`skills/vault-ingress/scripts/failure_diagnostics.py` is the new home of the
+diagnostic shape, which `persist-results.py` and `preflight-vault.py` had each
+copied. A sixth entrypoint would have been a third copy. The document's
+identity fields are written after a caller's `state`, so an entrypoint cannot
+shadow its own `error` code and make consumers misclassify the failure —
+raising instead would produce the traceback the boundary exists to prevent.
+
+`references/entrypoint-failure-contracts.md` inventories every entrypoint's
+stdout, stderr, exit-code, and commit-position contract — #203's first
+acceptance criterion, and previously nowhere written down. The exit-2 shapes
+#251 introduced were undocumented too; the reference and the four call sites in
+`batch-persistence.md`, `bootstrap-and-preflight.md`, and
+`pattern-catalog-contract.md` now name them.
+
+Closes the deterministic-entrypoint scope of #203. The earlier audit
+(PR #251) established the three PPTX sites were already compliant and that
+`check-runtime.py`'s traceback is a deliberate, tested contract.
+
 ## 0.20.30 — 2026-08-09
 
 ### fix(vault-ingress) — say which failure the unreadable transcript hit (#253)

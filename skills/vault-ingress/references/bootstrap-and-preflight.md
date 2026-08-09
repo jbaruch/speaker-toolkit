@@ -280,7 +280,10 @@ Exit 1 means one or more blocking integrity errors (identity disagreement,
 unqualified duplicate recording, invalid source claim, or a claimed completed
 artifact that is missing): stop and repair those records/artifacts before
 processing. Exit 0 may still carry warnings for legacy evidence gaps or pending
-artifacts; report them, but they do not make the vault unusable. The stable JSON
+artifacts; report them, but they do not make the vault unusable. Exit 2 carries
+a real report whose single blocking `preflight_unexpected_failure` finding means
+the gate never completed — treat the vault as unverified, not clean, per
+[Entrypoint Failure Contracts](entrypoint-failure-contracts.md). The stable JSON
 report and evidence shape are defined in
 [source-identity-preflight.md](source-identity-preflight.md).
 

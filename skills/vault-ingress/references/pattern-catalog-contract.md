@@ -10,7 +10,9 @@ Pass `--catalog <patterns-directory>` to inspect another catalog. The command
 uses local Markdown and YAML only. It does not use the network or modify any
 file. Stdout is one deterministic JSON document. Exit `0` means no structural
 errors, exit `1` means the catalog contract is broken, and argument errors use
-exit `2`.
+exit `2`. Exit `3` means the auditor itself failed and the catalog is
+UNAUDITED, not clean — see
+[Entrypoint Failure Contracts](entrypoint-failure-contracts.md).
 
 ## Authority boundaries
 

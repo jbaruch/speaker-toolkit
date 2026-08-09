@@ -237,6 +237,20 @@ def write_analysis():
 
 
 @pytest.fixture(scope="session")
+def validate_returns():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "validate-returns.py"), "validate_returns"
+    )
+
+
+@pytest.fixture(scope="session")
+def failure_diagnostics():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "failure_diagnostics.py"), "failure_diagnostics"
+    )
+
+
+@pytest.fixture(scope="session")
 def fetch_transcript():
     return _import_script(
         os.path.join(SCRIPTS_VI, "fetch-transcript.py"), "fetch_transcript"
