@@ -3103,7 +3103,11 @@ def test_identity_date_and_duration_types_are_validated(
     report = preflight_vault.run_preflight(vault_fixture["root"])
 
     assert finding_codes(report, "blocking") == {"database_json_invalid"}
-    assert "non-standard JSON number Infinity" in report["findings"][0]["message"]
+    # The public message no longer echoes the rejected literal (#200).
+    assert report["findings"][0]["message"] == (
+        "tracking database contains a non-standard JSON number"
+    )
+    assert "Infinity" not in json.dumps(report["findings"], sort_keys=True)
     # The report remains strict JSON even when Python's input decoder accepted
     # a non-standard Infinity token from a legacy artifact.
     json.dumps(report, allow_nan=False)
@@ -3445,7 +3449,8 @@ def test_database_read_finding_code_comes_from_the_typed_reason(
 
 def test_unmapped_decoder_reason_falls_back_to_unreadable(preflight_vault):
     """An unrecognised reason must not invent a code."""
-    assert preflight_vault._DATABASE_READ_FINDING_CODES.get("brand_new_reason") is None
+    assert preflight_vault._DATABASE_READ_DIAGNOSTICS.get("brand_new_reason") is None
+    assert preflight_vault._DATABASE_READ_FALLBACK[0] == "database_unreadable"
 
 
 def test_transcript_decode_failure_reports_a_typed_reason_not_os_text(
@@ -3517,3 +3522,36 @@ def test_manifest_rejection_reports_a_typed_reason_not_the_rejected_value(
     assert finding is not None, [f["code"] for f in report["findings"]]
     assert finding["actual"].startswith("video_extraction.")
     assert poisoned not in json.dumps(finding, sort_keys=True)
+
+
+@pytest.mark.parametrize("payload,leaked", [
+    (b'{"a": 1, "SENSITIVE_KEY_abc": 2, "SENSITIVE_KEY_abc": 3}', "SENSITIVE_KEY_abc"),
+    (b'{"a": 123456789012345678901234567890123456789.5}', "123456789012345678901234567890"),
+])
+def test_database_read_report_never_echoes_malformed_input(
+        preflight_vault, tmp_path, payload, leaked):
+    """Decoder messages embed the rejected key or value; the report must not."""
+    database = tmp_path / "tracking-database.json"
+    database.write_bytes(payload)
+
+    report = preflight_vault.run_preflight(database)
+    serialized = json.dumps(
+        {k: v for k, v in report.items() if k not in {"database", "vault_root"}},
+        sort_keys=True,
+    )
+    assert leaked not in serialized, serialized
+    assert "database_json_invalid" in serialized
+
+
+def test_database_read_report_never_echoes_the_host_path(
+        preflight_vault, tmp_path):
+    """The decoder message embeds the artifact path; findings must not."""
+    database = tmp_path / "secret-vault-name" / "tracking-database.json"
+    database.parent.mkdir(parents=True)
+    database.write_bytes(b"\xff\xfe not utf-8")
+
+    report = preflight_vault.run_preflight(database)
+    # `database` and `vault_root` are documented structured fields.
+    findings = json.dumps(report["findings"], sort_keys=True)
+    assert "secret-vault-name" not in findings, findings
+    assert report["findings"][0]["code"] == "database_encoding_invalid"

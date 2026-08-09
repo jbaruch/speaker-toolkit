@@ -144,7 +144,16 @@ def test_preflight_blocks_every_strict_json_defect_without_rewrite(
         "database_encoding_invalid",
         "database_json_invalid",
     }
-    assert message in report["findings"][0]["message"]
+    # The public report's message is derived from the decoder's typed reason,
+    # never from its text: the decoder names the offending key or value, and
+    # those are input data (#200, no-secrets). The message must be one of the
+    # closed set, and must not echo the detail this case injected.
+    closed_messages = {
+        text for _code, text in preflight_vault._DATABASE_READ_DIAGNOSTICS.values()
+    } | {preflight_vault._DATABASE_READ_FALLBACK[1]}
+    # Membership in a fixed set is itself the leak guard: a message drawn from
+    # seven constants cannot carry the offending key or value.
+    assert report["findings"][0]["message"] in closed_messages
     assert database.read_bytes() == raw
 
 

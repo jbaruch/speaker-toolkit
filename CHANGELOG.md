@@ -6,10 +6,17 @@ Three preflight paths published raw exception text across a public diagnostic
 boundary, and one chose the public finding code by substring-matching that text.
 
 `TrackingDatabaseIOError` and `ReturnValidationError` now carry a
-`reason_code`. The top-level database read routes its finding code from that
-code through a lookup table, so rewording an upstream message can no longer
-silently reclassify a failure — an unmapped reason falls back to
+`reason_code`. The top-level database read derives BOTH its finding code and
+its public message from that reason, so rewording an upstream message can no
+longer silently reclassify a failure, and the decoder's text — which embeds the
+database path, the offending duplicate key, and rejected numeric literals —
+never reaches the report. An unmapped reason falls back to
 `database_unreadable` rather than inventing a code.
+
+Three existing tests asserted the report echoed the offending key or literal.
+They now assert the message belongs to the closed set of seven constants, which
+is a stronger guard: a message drawn from fixed strings cannot carry input at
+all.
 
 `transcript_artifact_unreadable` reports `not_utf8` or
 `unreadable:<ExceptionType>` instead of the raw `OSError`/`UnicodeError`

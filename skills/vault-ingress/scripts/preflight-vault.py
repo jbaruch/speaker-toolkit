@@ -91,15 +91,44 @@ REPORT_SCHEMA_VERSION = 1
 # Public finding code per typed decoder reason. Routing on the reason keeps the
 # taxonomy stable when an upstream message is reworded; an unmapped reason falls
 # back to the generic unreadable code rather than inventing one.
-_DATABASE_READ_FINDING_CODES = {
-    "encoding_invalid": "database_encoding_invalid",
-    "json_invalid": "database_json_invalid",
-    "json_duplicate_key": "database_json_invalid",
-    "json_non_standard_number": "database_json_invalid",
-    "json_non_roundtrippable_number": "database_json_invalid",
-    "json_root_not_object": "database_json_invalid",
-    "json_nesting_too_deep": "database_json_invalid",
+# Public finding code and closed message per typed decoder reason. Both are
+# derived from the reason, never from the exception text: decoder messages embed
+# the database path, the offending duplicate key, and rejected numeric values.
+_DATABASE_READ_DIAGNOSTICS = {
+    "encoding_invalid": (
+        "database_encoding_invalid",
+        "tracking database is not valid UTF-8",
+    ),
+    "json_invalid": (
+        "database_json_invalid",
+        "tracking database is not valid JSON",
+    ),
+    "json_duplicate_key": (
+        "database_json_invalid",
+        "tracking database contains a duplicate object key",
+    ),
+    "json_non_standard_number": (
+        "database_json_invalid",
+        "tracking database contains a non-standard JSON number",
+    ),
+    "json_non_roundtrippable_number": (
+        "database_json_invalid",
+        "tracking database contains a JSON number that cannot round-trip "
+        "losslessly through this toolkit",
+    ),
+    "json_root_not_object": (
+        "database_json_invalid",
+        "tracking database root must be a JSON object",
+    ),
+    "json_nesting_too_deep": (
+        "database_json_invalid",
+        "tracking database exceeds the maximum supported JSON nesting depth",
+    ),
 }
+_DATABASE_READ_FALLBACK = (
+    "database_unreadable",
+    "tracking database could not be read",
+)
 
 
 def _sanitized_frames(exc: BaseException) -> list[str]:
@@ -2277,15 +2306,10 @@ def run_preflight(value: str | Path) -> dict[str, Any]:
         snapshot = snapshot_tracking_database(database_path)
         database = decode_json_object(snapshot)
     except TrackingDatabaseIOError as exc:
-        code = _DATABASE_READ_FINDING_CODES.get(
-            getattr(exc, "reason_code", None), "database_unreadable"
+        code, message = _DATABASE_READ_DIAGNOSTICS.get(
+            getattr(exc, "reason_code", None), _DATABASE_READ_FALLBACK
         )
-        return error_report(
-            vault_root,
-            database_path,
-            code,
-            str(exc),
-        )
+        return error_report(vault_root, database_path, code, message)
     return VaultPreflight(database, vault_root, database_path).run()
 
 
