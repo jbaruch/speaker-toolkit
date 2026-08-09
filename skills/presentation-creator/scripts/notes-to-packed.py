@@ -13,6 +13,7 @@ indices; PowerPoint VBA uses 1-based). Empty notes are dropped.
 Usage:
     notes-to-packed.py <notes.json> <out.packed>
 """
+
 import json
 import sys
 from pathlib import Path
@@ -29,7 +30,9 @@ def pack_notes(notes_map: object) -> str:
     non-string text, or text containing the RS/US control chars).
     """
     if not isinstance(notes_map, dict):
-        raise ValueError('notes JSON must be an object {"<0-based slide #>": "text", ...}')
+        raise ValueError(
+            'notes JSON must be an object {"<0-based slide #>": "text", ...}'
+        )
 
     def slide_num(key: object) -> int:
         try:
@@ -41,14 +44,20 @@ def pack_notes(notes_map: object) -> str:
     for key in sorted(notes_map, key=slide_num):
         num = slide_num(key)
         if num < 0:
-            raise ValueError(f"notes key {key!r} is negative; slide indices are 0-based (>= 0)")
+            raise ValueError(
+                f"notes key {key!r} is negative; slide indices are 0-based (>= 0)"
+            )
         text = notes_map[key]
         if text is None or text == "":
             continue
         if not isinstance(text, str):
-            raise ValueError(f"notes for slide {key} must be a string, got {type(text).__name__}")
+            raise ValueError(
+                f"notes for slide {key} must be a string, got {type(text).__name__}"
+            )
         if RS in text or US in text:
-            raise ValueError(f"notes for slide {key} contain a reserved control char (RS/US)")
+            raise ValueError(
+                f"notes for slide {key} contain a reserved control char (RS/US)"
+            )
         records.append(f"{num + 1}{US}{text}")
     return RS.join(records)
 

@@ -51,8 +51,11 @@ from pathlib import Path
 # presentation-creator scripts.
 sys.path.insert(
     0,
-    str(Path(__file__).resolve().parent.parent.parent
-        / "presentation-creator" / "scripts"),
+    str(
+        Path(__file__).resolve().parent.parent.parent
+        / "presentation-creator"
+        / "scripts"
+    ),
 )
 import outline_schema  # noqa: E402  (path appended above)
 
@@ -87,7 +90,9 @@ def frames_for(builds_dir: Path, parent: int) -> dict[int, Path]:
     return found
 
 
-def build_manifest(outline_path: Path, builds_dir: Path, notes_map: dict | None = None) -> dict:
+def build_manifest(
+    outline_path: Path, builds_dir: Path, notes_map: dict | None = None
+) -> dict:
     """Build the expansion manifest.
 
     notes_map: optional {"<0-based deck slide #>": "notes"} (the historical
@@ -124,23 +129,36 @@ def build_manifest(outline_path: Path, builds_dir: Path, notes_map: dict | None 
                 f"ERROR: note for slide {parent} (notes key {parent - 1}) must be a "
                 f"string, got {type(raw_note).__name__} — fix the --notes JSON."
             )
-        builds.append({
-            "parent": parent,
-            "frames": [str(found[s].resolve()) for s in steps],
-            "notes": raw_note,
-        })
+        builds.append(
+            {
+                "parent": parent,
+                "frames": [str(found[s].resolve()) for s in steps],
+                "notes": raw_note,
+            }
+        )
     return {"schema_version": SCHEMA_VERSION, "builds": builds}
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(
-        description="Emit the build-expansion manifest for deck assembly.")
-    ap.add_argument("outline", type=Path, help="Path to outline.yaml (the single source of truth)")
-    ap.add_argument("builds_dir", type=Path, help="Directory with slide-NN-build-MM.<ext> frames")
-    ap.add_argument("--out", type=Path, default=None, help="Also write the manifest JSON here")
-    ap.add_argument("--notes", type=Path, default=None,
-                    help='Optional notes JSON {"<0-based slide #>": "text"}; a build '
-                         "parent's notes ride onto its final frame so expansion keeps them")
+        description="Emit the build-expansion manifest for deck assembly."
+    )
+    ap.add_argument(
+        "outline", type=Path, help="Path to outline.yaml (the single source of truth)"
+    )
+    ap.add_argument(
+        "builds_dir", type=Path, help="Directory with slide-NN-build-MM.<ext> frames"
+    )
+    ap.add_argument(
+        "--out", type=Path, default=None, help="Also write the manifest JSON here"
+    )
+    ap.add_argument(
+        "--notes",
+        type=Path,
+        default=None,
+        help='Optional notes JSON {"<0-based slide #>": "text"}; a build '
+        "parent's notes ride onto its final frame so expansion keeps them",
+    )
     args = ap.parse_args(argv)
 
     if not args.outline.is_file():
@@ -153,7 +171,9 @@ def main(argv=None):
         except (OSError, json.JSONDecodeError) as exc:
             raise SystemExit(f"ERROR: cannot read notes JSON {args.notes}: {exc}")
         if not isinstance(notes_map, dict):
-            raise SystemExit(f"ERROR: notes JSON {args.notes} must be an object mapping slide # -> text")
+            raise SystemExit(
+                f"ERROR: notes JSON {args.notes} must be an object mapping slide # -> text"
+            )
 
     manifest = build_manifest(args.outline, args.builds_dir, notes_map)
     text = json.dumps(manifest, indent=2)
@@ -161,8 +181,11 @@ def main(argv=None):
         try:
             args.out.write_text(text + "\n", encoding="utf-8")
         except OSError as exc:
-            print(f"ERROR: cannot write manifest {args.out}: {exc.strerror or exc} — "
-                  "check the path and that its directory is writable", file=sys.stderr)
+            print(
+                f"ERROR: cannot write manifest {args.out}: {exc.strerror or exc} — "
+                "check the path and that its directory is writable",
+                file=sys.stderr,
+            )
             return 1
     print(text)
     return 0

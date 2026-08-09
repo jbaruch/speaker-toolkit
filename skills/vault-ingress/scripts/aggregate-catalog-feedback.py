@@ -45,10 +45,17 @@ LANES = (
     "confusable_pairs",
 )
 LANE_SET = frozenset(LANES)
-RETURN_MARKERS = frozenset({
-    "status", "rhetoric_notes", "pattern_observations", "structured_data",
-    "areas_for_improvement", "summary_updates", "verbatim_examples",
-})
+RETURN_MARKERS = frozenset(
+    {
+        "status",
+        "rhetoric_notes",
+        "pattern_observations",
+        "structured_data",
+        "areas_for_improvement",
+        "summary_updates",
+        "verbatim_examples",
+    }
+)
 
 
 class DuplicateJSONKeyError(ValueError):
@@ -75,7 +82,9 @@ def normalize_suggestion(value: str) -> str:
 def default_catalog_path() -> Path:
     return (
         Path(__file__).resolve().parents[2]
-        / "presentation-creator" / "references" / "patterns"
+        / "presentation-creator"
+        / "references"
+        / "patterns"
     )
 
 
@@ -100,11 +109,13 @@ def load_catalog(catalog_path: str | Path) -> dict[str, Any]:
     claims_by_id: dict[str, list[str]] = {}
     errors: list[dict[str, Any]] = []
     if not root.is_dir():
-        errors.append(_issue(
-            "catalog_directory_unreadable",
-            "catalog path is not a readable directory",
-            path=str(root),
-        ))
+        errors.append(
+            _issue(
+                "catalog_directory_unreadable",
+                "catalog path is not a readable directory",
+                path=str(root),
+            )
+        )
         return {
             "path": str(root),
             "registry": registry,
@@ -116,66 +127,90 @@ def load_catalog(catalog_path: str | Path) -> dict[str, Any]:
         try:
             raw = path.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as exc:
-            errors.append(_issue(
-                "catalog_file_unreadable", f"cannot read catalog file: {exc}",
-                path=str(path.resolve(strict=False)),
-            ))
+            errors.append(
+                _issue(
+                    "catalog_file_unreadable",
+                    f"cannot read catalog file: {exc}",
+                    path=str(path.resolve(strict=False)),
+                )
+            )
             continue
         try:
             metadata = _frontmatter(raw)
         except DuplicateYAMLKeyError as exc:
-            errors.append(_issue(
-                "catalog_frontmatter_duplicate_key",
-                f"duplicate YAML frontmatter key: {exc}",
-                path=str(path.resolve(strict=False)),
-            ))
+            errors.append(
+                _issue(
+                    "catalog_frontmatter_duplicate_key",
+                    f"duplicate YAML frontmatter key: {exc}",
+                    path=str(path.resolve(strict=False)),
+                )
+            )
             continue
         except YAMLError as exc:
-            errors.append(_issue(
-                "catalog_frontmatter_invalid", f"invalid YAML frontmatter: {exc}",
-                path=str(path.resolve(strict=False)),
-            ))
+            errors.append(
+                _issue(
+                    "catalog_frontmatter_invalid",
+                    f"invalid YAML frontmatter: {exc}",
+                    path=str(path.resolve(strict=False)),
+                )
+            )
             continue
         if metadata is None:
-            errors.append(_issue(
-                "catalog_frontmatter_missing",
-                "catalog file has no parseable YAML frontmatter",
-                path=str(path.resolve(strict=False)),
-            ))
+            errors.append(
+                _issue(
+                    "catalog_frontmatter_missing",
+                    "catalog file has no parseable YAML frontmatter",
+                    path=str(path.resolve(strict=False)),
+                )
+            )
             continue
 
         catalog_id = _nonempty_string(metadata.get("id"))
         polarity = metadata.get("type")
         relative_path = str(path.relative_to(root))
         if catalog_id is None:
-            errors.append(_issue(
-                "catalog_id_missing", "catalog file has no nonempty id",
-                path=relative_path,
-            ))
+            errors.append(
+                _issue(
+                    "catalog_id_missing",
+                    "catalog file has no nonempty id",
+                    path=relative_path,
+                )
+            )
             continue
         if polarity not in POLARITIES:
-            errors.append(_issue(
-                "catalog_polarity_invalid",
-                "catalog type must be pattern or antipattern",
-                path=relative_path, catalog_id=catalog_id, actual=polarity,
-            ))
+            errors.append(
+                _issue(
+                    "catalog_polarity_invalid",
+                    "catalog type must be pattern or antipattern",
+                    path=relative_path,
+                    catalog_id=catalog_id,
+                    actual=polarity,
+                )
+            )
             continue
 
         filename_is_anti = path.stem.startswith("_anti_")
         filename_polarity = "antipattern" if filename_is_anti else "pattern"
         if polarity != filename_polarity:
-            errors.append(_issue(
-                "catalog_filename_polarity_mismatch",
-                "catalog filename convention disagrees with frontmatter type",
-                path=relative_path, catalog_id=catalog_id,
-                expected=filename_polarity, actual=polarity,
-            ))
+            errors.append(
+                _issue(
+                    "catalog_filename_polarity_mismatch",
+                    "catalog filename convention disagrees with frontmatter type",
+                    path=relative_path,
+                    catalog_id=catalog_id,
+                    expected=filename_polarity,
+                    actual=polarity,
+                )
+            )
         if catalog_id in registry:
-            errors.append(_issue(
-                "catalog_id_duplicate", "catalog id appears in multiple files",
-                catalog_id=catalog_id,
-                paths=[registry[catalog_id]["path"], relative_path],
-            ))
+            errors.append(
+                _issue(
+                    "catalog_id_duplicate",
+                    "catalog id appears in multiple files",
+                    catalog_id=catalog_id,
+                    paths=[registry[catalog_id]["path"], relative_path],
+                )
+            )
             continue
         registry[catalog_id] = {"polarity": polarity, "path": relative_path}
         claims = [catalog_id]
@@ -192,10 +227,13 @@ def load_catalog(catalog_path: str | Path) -> dict[str, Any]:
         claims_by_id[catalog_id] = claims
 
     if not registry:
-        errors.append(_issue(
-            "catalog_empty", "catalog directory contains no valid pattern entries",
-            path=str(root),
-        ))
+        errors.append(
+            _issue(
+                "catalog_empty",
+                "catalog directory contains no valid pattern entries",
+                path=str(root),
+            )
+        )
     alias_claims: defaultdict[str, set[str]] = defaultdict(set)
     for catalog_id, claims in claims_by_id.items():
         for claim in claims:
@@ -205,12 +243,14 @@ def load_catalog(catalog_path: str | Path) -> dict[str, Any]:
     alias_registry: dict[str, str] = {}
     for normalized, owners in sorted(alias_claims.items()):
         if len(owners) > 1:
-            errors.append(_issue(
-                "catalog_alias_collision",
-                "catalog IDs, names, or aliases share one normalized claim",
-                normalized_alias=normalized,
-                catalog_ids=sorted(owners),
-            ))
+            errors.append(
+                _issue(
+                    "catalog_alias_collision",
+                    "catalog IDs, names, or aliases share one normalized claim",
+                    normalized_alias=normalized,
+                    catalog_ids=sorted(owners),
+                )
+            )
             continue
         alias_registry[normalized] = next(iter(owners))
     return {
@@ -249,14 +289,20 @@ def _source_return_key(provenance: dict[str, Any]) -> tuple[str, int]:
 
 
 def _require_text(
-    entry: dict[str, Any], field: str, errors: list[dict[str, Any]],
+    entry: dict[str, Any],
+    field: str,
+    errors: list[dict[str, Any]],
 ) -> str | None:
     text = _nonempty_string(entry.get(field))
     if text is None:
-        errors.append(_issue(
-            "feedback_text_missing", f"{field} must be a nonempty string",
-            field=field, actual=entry.get(field),
-        ))
+        errors.append(
+            _issue(
+                "feedback_text_missing",
+                f"{field} must be a nonempty string",
+                field=field,
+                actual=entry.get(field),
+            )
+        )
     return text
 
 
@@ -269,48 +315,71 @@ def _validate_catalog_ids(
     minimum_count: int | None = None,
 ) -> list[str]:
     if not isinstance(value, list):
-        errors.append(_issue(
-            "catalog_ids_not_array", "pattern_ids must be an array",
-            field="pattern_ids", actual=value,
-        ))
+        errors.append(
+            _issue(
+                "catalog_ids_not_array",
+                "pattern_ids must be an array",
+                field="pattern_ids",
+                actual=value,
+            )
+        )
         return []
     if exact_count is not None and len(value) != exact_count:
-        errors.append(_issue(
-            "catalog_id_count_invalid",
-            f"pattern_ids must contain exactly {exact_count} IDs",
-            field="pattern_ids", expected=exact_count, actual=len(value),
-        ))
+        errors.append(
+            _issue(
+                "catalog_id_count_invalid",
+                f"pattern_ids must contain exactly {exact_count} IDs",
+                field="pattern_ids",
+                expected=exact_count,
+                actual=len(value),
+            )
+        )
     if minimum_count is not None and len(value) < minimum_count:
-        errors.append(_issue(
-            "catalog_id_count_invalid",
-            f"pattern_ids must contain at least {minimum_count} IDs",
-            field="pattern_ids", expected=f">={minimum_count}", actual=len(value),
-        ))
+        errors.append(
+            _issue(
+                "catalog_id_count_invalid",
+                f"pattern_ids must contain at least {minimum_count} IDs",
+                field="pattern_ids",
+                expected=f">={minimum_count}",
+                actual=len(value),
+            )
+        )
 
     ids: list[str] = []
     for position, value_id in enumerate(value):
         catalog_id = _nonempty_string(value_id)
         if catalog_id is None or catalog_id != value_id:
-            errors.append(_issue(
-                "catalog_id_not_exact",
-                "catalog IDs must be nonempty exact strings without normalization",
-                field=f"pattern_ids[{position}]", actual=value_id,
-            ))
+            errors.append(
+                _issue(
+                    "catalog_id_not_exact",
+                    "catalog IDs must be nonempty exact strings without normalization",
+                    field=f"pattern_ids[{position}]",
+                    actual=value_id,
+                )
+            )
             continue
         ids.append(catalog_id)
         if catalog_id not in registry:
-            errors.append(_issue(
-                "catalog_id_unknown", "catalog ID does not exist",
-                field=f"pattern_ids[{position}]", actual=catalog_id,
-            ))
+            errors.append(
+                _issue(
+                    "catalog_id_unknown",
+                    "catalog ID does not exist",
+                    field=f"pattern_ids[{position}]",
+                    actual=catalog_id,
+                )
+            )
     duplicates = sorted(
         catalog_id for catalog_id, count in Counter(ids).items() if count > 1
     )
     if duplicates:
-        errors.append(_issue(
-            "catalog_ids_duplicate", "pattern_ids must be distinct",
-            field="pattern_ids", actual=duplicates,
-        ))
+        errors.append(
+            _issue(
+                "catalog_ids_duplicate",
+                "pattern_ids must be distinct",
+                field="pattern_ids",
+                actual=duplicates,
+            )
+        )
     return ids
 
 
@@ -325,52 +394,72 @@ def _validate_polarity_assertions(
         actual = entry.get("catalog_polarity")
         expected = registry.get(ids[0], {}).get("polarity")
         if actual not in POLARITIES:
-            errors.append(_issue(
-                "catalog_polarity_invalid",
-                "catalog_polarity must be pattern or antipattern",
-                field="catalog_polarity", actual=actual,
-            ))
+            errors.append(
+                _issue(
+                    "catalog_polarity_invalid",
+                    "catalog_polarity must be pattern or antipattern",
+                    field="catalog_polarity",
+                    actual=actual,
+                )
+            )
         elif expected is not None and actual != expected:
-            errors.append(_issue(
-                "catalog_polarity_mismatch",
-                "asserted polarity disagrees with the exact catalog ID",
-                field="catalog_polarity", catalog_id=ids[0],
-                expected=expected, actual=actual,
-            ))
+            errors.append(
+                _issue(
+                    "catalog_polarity_mismatch",
+                    "asserted polarity disagrees with the exact catalog ID",
+                    field="catalog_polarity",
+                    catalog_id=ids[0],
+                    expected=expected,
+                    actual=actual,
+                )
+            )
 
     if "catalog_polarities" not in entry:
         return
     assertions = entry.get("catalog_polarities")
     if not isinstance(assertions, dict):
-        errors.append(_issue(
-            "catalog_polarities_not_object",
-            "catalog_polarities must map every referenced ID to its polarity",
-            field="catalog_polarities", actual=assertions,
-        ))
+        errors.append(
+            _issue(
+                "catalog_polarities_not_object",
+                "catalog_polarities must map every referenced ID to its polarity",
+                field="catalog_polarities",
+                actual=assertions,
+            )
+        )
         return
     if set(assertions) != set(ids):
-        errors.append(_issue(
-            "catalog_polarity_keys_mismatch",
-            "catalog_polarities keys must exactly match pattern_ids",
-            field="catalog_polarities", expected=sorted(set(ids)),
-            actual=sorted(str(key) for key in assertions),
-        ))
+        errors.append(
+            _issue(
+                "catalog_polarity_keys_mismatch",
+                "catalog_polarities keys must exactly match pattern_ids",
+                field="catalog_polarities",
+                expected=sorted(set(ids)),
+                actual=sorted(str(key) for key in assertions),
+            )
+        )
     for catalog_id in sorted(set(ids) & set(assertions)):
         actual = assertions[catalog_id]
         expected = registry.get(catalog_id, {}).get("polarity")
         if actual not in POLARITIES:
-            errors.append(_issue(
-                "catalog_polarity_invalid",
-                "asserted polarity must be pattern or antipattern",
-                field=f"catalog_polarities.{catalog_id}", actual=actual,
-            ))
+            errors.append(
+                _issue(
+                    "catalog_polarity_invalid",
+                    "asserted polarity must be pattern or antipattern",
+                    field=f"catalog_polarities.{catalog_id}",
+                    actual=actual,
+                )
+            )
         elif expected is not None and actual != expected:
-            errors.append(_issue(
-                "catalog_polarity_mismatch",
-                "asserted polarity disagrees with the exact catalog ID",
-                field=f"catalog_polarities.{catalog_id}", catalog_id=catalog_id,
-                expected=expected, actual=actual,
-            ))
+            errors.append(
+                _issue(
+                    "catalog_polarity_mismatch",
+                    "asserted polarity disagrees with the exact catalog ID",
+                    field=f"catalog_polarities.{catalog_id}",
+                    catalog_id=catalog_id,
+                    expected=expected,
+                    actual=actual,
+                )
+            )
 
 
 def validate_entry(
@@ -385,13 +474,18 @@ def validate_entry(
     catalog_ids: list[str] = []
     suggestion: dict[str, Any] | None = None
     if not isinstance(entry, dict):
-        errors.append(_issue(
-            "feedback_entry_not_object", "feedback entry must be an object",
-            actual=entry,
-        ))
+        errors.append(
+            _issue(
+                "feedback_entry_not_object",
+                "feedback entry must be an object",
+                actual=entry,
+            )
+        )
         return {
-            "errors": errors, "warnings": warnings,
-            "catalog_ids": catalog_ids, "suggestion": suggestion,
+            "errors": errors,
+            "warnings": warnings,
+            "catalog_ids": catalog_ids,
+            "suggestion": suggestion,
         }
 
     if lane == "unmatched_observations":
@@ -400,58 +494,76 @@ def validate_entry(
         proposed = entry.get("proposed_name")
         proposed_name = _nonempty_string(proposed)
         if proposed is not None and proposed_name is None:
-            errors.append(_issue(
-                "suggestion_name_invalid",
-                "proposed_name must be null or a nonempty string",
-                field="proposed_name", actual=proposed,
-            ))
+            errors.append(
+                _issue(
+                    "suggestion_name_invalid",
+                    "proposed_name must be null or a nonempty string",
+                    field="proposed_name",
+                    actual=proposed,
+                )
+            )
         proposed_polarity = entry.get("proposed_polarity")
         if proposed_name is None:
             if proposed_polarity is not None:
-                errors.append(_issue(
-                    "suggestion_polarity_without_name",
-                    "proposed_polarity requires proposed_name",
-                    field="proposed_polarity", actual=proposed_polarity,
-                ))
+                errors.append(
+                    _issue(
+                        "suggestion_polarity_without_name",
+                        "proposed_polarity requires proposed_name",
+                        field="proposed_polarity",
+                        actual=proposed_polarity,
+                    )
+                )
         else:
             normalized = normalize_suggestion(proposed_name)
             if not normalized:
-                errors.append(_issue(
-                    "suggestion_name_invalid",
-                    "proposed_name normalizes to an empty value",
-                    field="proposed_name", actual=proposed_name,
-                ))
-            elif normalized in registry:
-                errors.append(_issue(
-                    "suggestion_matches_catalog_id",
-                    "unmatched suggestion normalizes to an existing exact catalog ID",
-                    field="proposed_name", actual=proposed_name,
-                    catalog_id=normalized,
-                ))
-            elif alias_registry is not None:
-                matched_id = alias_registry.get(
-                    normalize_catalog_alias(proposed_name)
-                )
-                if matched_id is not None:
-                    errors.append(_issue(
-                        "suggestion_matches_catalog_alias",
-                        "unmatched suggestion matches an existing catalog name or alias",
+                errors.append(
+                    _issue(
+                        "suggestion_name_invalid",
+                        "proposed_name normalizes to an empty value",
                         field="proposed_name",
                         actual=proposed_name,
-                        catalog_id=matched_id,
-                    ))
+                    )
+                )
+            elif normalized in registry:
+                errors.append(
+                    _issue(
+                        "suggestion_matches_catalog_id",
+                        "unmatched suggestion normalizes to an existing exact catalog ID",
+                        field="proposed_name",
+                        actual=proposed_name,
+                        catalog_id=normalized,
+                    )
+                )
+            elif alias_registry is not None:
+                matched_id = alias_registry.get(normalize_catalog_alias(proposed_name))
+                if matched_id is not None:
+                    errors.append(
+                        _issue(
+                            "suggestion_matches_catalog_alias",
+                            "unmatched suggestion matches an existing catalog name or alias",
+                            field="proposed_name",
+                            actual=proposed_name,
+                            catalog_id=matched_id,
+                        )
+                    )
             if proposed_polarity is None:
-                warnings.append(_issue(
-                    "suggestion_polarity_missing",
-                    "legacy suggestion needs human pattern/antipattern classification",
-                    field="proposed_polarity", suggestion=normalized,
-                ))
+                warnings.append(
+                    _issue(
+                        "suggestion_polarity_missing",
+                        "legacy suggestion needs human pattern/antipattern classification",
+                        field="proposed_polarity",
+                        suggestion=normalized,
+                    )
+                )
             elif proposed_polarity not in POLARITIES:
-                errors.append(_issue(
-                    "suggestion_polarity_invalid",
-                    "proposed_polarity must be pattern or antipattern",
-                    field="proposed_polarity", actual=proposed_polarity,
-                ))
+                errors.append(
+                    _issue(
+                        "suggestion_polarity_invalid",
+                        "proposed_polarity must be pattern or antipattern",
+                        field="proposed_polarity",
+                        actual=proposed_polarity,
+                    )
+                )
             suggestion = {
                 "normalized_suggestion": normalized,
                 "proposed_name": proposed_name,
@@ -460,7 +572,9 @@ def validate_entry(
 
     elif lane == "tensions":
         catalog_ids = _validate_catalog_ids(
-            entry.get("pattern_ids"), registry=registry, errors=errors,
+            entry.get("pattern_ids"),
+            registry=registry,
+            errors=errors,
             minimum_count=2,
         )
         _require_text(entry, "nature", errors)
@@ -470,7 +584,10 @@ def validate_entry(
     elif lane == "definition_problems":
         pattern_id = entry.get("pattern_id")
         catalog_ids = _validate_catalog_ids(
-            [pattern_id], registry=registry, errors=errors, exact_count=1,
+            [pattern_id],
+            registry=registry,
+            errors=errors,
+            exact_count=1,
         )
         _require_text(entry, "problem", errors)
         _require_text(entry, "detail", errors)
@@ -480,15 +597,21 @@ def validate_entry(
         _require_text(entry, "issue", errors)
         _require_text(entry, "detail", errors)
         if "polarity" in entry and entry.get("polarity") != "neutral":
-            errors.append(_issue(
-                "lane_polarity_invalid",
-                "scoring_problems is a neutral diagnostic lane",
-                field="polarity", expected="neutral", actual=entry.get("polarity"),
-            ))
+            errors.append(
+                _issue(
+                    "lane_polarity_invalid",
+                    "scoring_problems is a neutral diagnostic lane",
+                    field="polarity",
+                    expected="neutral",
+                    actual=entry.get("polarity"),
+                )
+            )
 
     elif lane == "confusable_pairs":
         catalog_ids = _validate_catalog_ids(
-            entry.get("pattern_ids"), registry=registry, errors=errors,
+            entry.get("pattern_ids"),
+            registry=registry,
+            errors=errors,
             exact_count=2,
         )
         _require_text(entry, "detail", errors)
@@ -512,10 +635,15 @@ def discover_inputs(values: list[str | Path]) -> dict[str, Any]:
         if argument.is_dir():
             files = sorted(argument.rglob("*.json"), key=lambda item: str(item))
             if not files:
-                immediate.append({
-                    "path": str(argument), "kind": "directory", "status": "rejected",
-                    "shape": None, "reason": "directory contains no JSON files",
-                })
+                immediate.append(
+                    {
+                        "path": str(argument),
+                        "kind": "directory",
+                        "status": "rejected",
+                        "shape": None,
+                        "reason": "directory contains no JSON files",
+                    }
+                )
             for path in files:
                 discovered[path.resolve(strict=False)].add(str(argument))
         else:
@@ -523,11 +651,14 @@ def discover_inputs(values: list[str | Path]) -> dict[str, Any]:
 
     for path, origins in discovered.items():
         if len(origins) > 1:
-            discovery_warnings.append(_issue(
-                "duplicate_input_suppressed",
-                "the same concrete file was discovered through multiple inputs",
-                path=str(path), discovered_from=sorted(origins),
-            ))
+            discovery_warnings.append(
+                _issue(
+                    "duplicate_input_suppressed",
+                    "the same concrete file was discovered through multiple inputs",
+                    path=str(path),
+                    discovered_from=sorted(origins),
+                )
+            )
     files = [
         {"path": path, "discovered_from": sorted(origins)}
         for path, origins in sorted(discovered.items(), key=lambda item: str(item[0]))
@@ -544,7 +675,8 @@ def _read_json(path: Path) -> tuple[Any | None, dict[str, Any] | None]:
         raw = path.read_text(encoding="utf-8")
     except UnicodeError as exc:
         return None, _issue(
-            "input_encoding_invalid", f"input is not valid UTF-8: {exc}",
+            "input_encoding_invalid",
+            f"input is not valid UTF-8: {exc}",
         )
     except OSError as exc:
         return None, _issue("input_unreadable", f"cannot read input: {exc}")
@@ -593,9 +725,11 @@ def _return_container(document: Any) -> tuple[list[Any] | None, str | None, str 
         returns = document.get("returns")
         if not isinstance(returns, list):
             return None, None, "top-level returns must be an array"
-        shape = "feedback_harvest" if any(
-            isinstance(item, dict) and "feedback" in item for item in returns
-        ) else "returns_wrapper"
+        shape = (
+            "feedback_harvest"
+            if any(isinstance(item, dict) and "feedback" in item for item in returns)
+            else "returns_wrapper"
+        )
         return returns, shape, None
     return_like = (
         "catalog_feedback" in document
@@ -617,13 +751,18 @@ class FeedbackAggregator:
         self.catalog = catalog
         self.registry: dict[str, dict[str, str]] = catalog["registry"]
         self.inputs: dict[str, list[dict[str, Any]]] = {
-            "accepted": [], "rejected": [], "invalid": [],
+            "accepted": [],
+            "rejected": [],
+            "invalid": [],
         }
         self.returns: dict[str, list[dict[str, Any]]] = {
-            "accepted": [], "rejected": [], "invalid": [],
+            "accepted": [],
+            "rejected": [],
+            "invalid": [],
         }
         self.entries: dict[str, list[dict[str, Any]]] = {
-            "accepted": [], "invalid": [],
+            "accepted": [],
+            "invalid": [],
         }
         self.warnings: list[dict[str, Any]] = []
         self.validation_errors: list[dict[str, Any]] = []
@@ -636,19 +775,33 @@ class FeedbackAggregator:
             "discovered_from": discovered_from,
         }
         if read_error:
-            self.inputs["invalid"].append({
-                **base, "status": "invalid", "shape": None,
-                "reason": read_error["message"], "issues": [read_error],
-            })
+            self.inputs["invalid"].append(
+                {
+                    **base,
+                    "status": "invalid",
+                    "shape": None,
+                    "reason": read_error["message"],
+                    "issues": [read_error],
+                }
+            )
             return
 
         return_items, shape, rejection = _return_container(document)
         if return_items is None:
-            status = "invalid" if rejection == "top-level returns must be an array" else "rejected"
-            self.inputs[status].append({
-                **base, "status": status, "shape": None,
-                "reason": rejection, "issues": [],
-            })
+            status = (
+                "invalid"
+                if rejection == "top-level returns must be an array"
+                else "rejected"
+            )
+            self.inputs[status].append(
+                {
+                    **base,
+                    "status": status,
+                    "shape": None,
+                    "reason": rejection,
+                    "issues": [],
+                }
+            )
             return
 
         before = self._counts()
@@ -666,18 +819,20 @@ class FeedbackAggregator:
         else:
             status = "rejected"
             reason = "recognized returns contain no catalog_feedback"
-        self.inputs[status].append({
-            **base,
-            "status": status,
-            "shape": shape,
-            "return_count": len(return_items),
-            "accepted_return_count": deltas["accepted_returns"],
-            "rejected_return_count": deltas["rejected_returns"],
-            "invalid_return_count": deltas["invalid_returns"],
-            "accepted_entry_count": deltas["accepted_entries"],
-            "invalid_entry_count": deltas["invalid_entries"],
-            "reason": reason,
-        })
+        self.inputs[status].append(
+            {
+                **base,
+                "status": status,
+                "shape": shape,
+                "return_count": len(return_items),
+                "accepted_return_count": deltas["accepted_returns"],
+                "rejected_return_count": deltas["rejected_returns"],
+                "invalid_return_count": deltas["invalid_returns"],
+                "accepted_entry_count": deltas["accepted_entries"],
+                "invalid_entry_count": deltas["invalid_entries"],
+                "reason": reason,
+            }
+        )
 
     def _counts(self) -> dict[str, int]:
         return {
@@ -691,50 +846,64 @@ class FeedbackAggregator:
     def _consume_return(self, path: Path, return_index: int, item: Any) -> None:
         if not isinstance(item, dict):
             provenance = _provenance(path, return_index, None, None)
-            self.returns["invalid"].append({
-                "provenance": provenance,
-                "issues": [_issue(
-                    "return_not_object", "return must be a JSON object", actual=item,
-                )],
-            })
+            self.returns["invalid"].append(
+                {
+                    "provenance": provenance,
+                    "issues": [
+                        _issue(
+                            "return_not_object",
+                            "return must be a JSON object",
+                            actual=item,
+                        )
+                    ],
+                }
+            )
             return
 
         talk_filename = _nonempty_string(item.get("filename"))
         talk_id = _nonempty_string(item.get("talk_id"))
         provenance = _provenance(path, return_index, talk_filename, talk_id)
-        feedback_keys = [
-            key for key in ("catalog_feedback", "feedback")
-            if key in item
-        ]
+        feedback_keys = [key for key in ("catalog_feedback", "feedback") if key in item]
         if not feedback_keys:
-            self.returns["rejected"].append({
-                "provenance": provenance,
-                "reason": "return has no catalog_feedback",
-            })
+            self.returns["rejected"].append(
+                {
+                    "provenance": provenance,
+                    "reason": "return has no catalog_feedback",
+                }
+            )
             return
         issues = []
         if len(feedback_keys) > 1:
-            issues.append(_issue(
-                "catalog_feedback_fields_conflict",
-                "return cannot contain both catalog_feedback and legacy feedback",
-                actual=feedback_keys,
-            ))
+            issues.append(
+                _issue(
+                    "catalog_feedback_fields_conflict",
+                    "return cannot contain both catalog_feedback and legacy feedback",
+                    actual=feedback_keys,
+                )
+            )
         if talk_filename is None and talk_id is None:
-            issues.append(_issue(
-                "talk_identity_missing",
-                "feedback return needs a nonempty filename or talk_id",
-            ))
+            issues.append(
+                _issue(
+                    "talk_identity_missing",
+                    "feedback return needs a nonempty filename or talk_id",
+                )
+            )
         feedback = item.get(feedback_keys[0])
         if not isinstance(feedback, dict):
-            issues.append(_issue(
-                "catalog_feedback_not_object",
-                "catalog_feedback must be an object of the five feedback lanes",
-                actual=feedback,
-            ))
+            issues.append(
+                _issue(
+                    "catalog_feedback_not_object",
+                    "catalog_feedback must be an object of the five feedback lanes",
+                    actual=feedback,
+                )
+            )
         if issues:
-            self.returns["invalid"].append({
-                "provenance": provenance, "issues": issues,
-            })
+            self.returns["invalid"].append(
+                {
+                    "provenance": provenance,
+                    "issues": issues,
+                }
+            )
             return
 
         assert isinstance(feedback, dict)  # narrowed by the validation above
@@ -742,53 +911,78 @@ class FeedbackAggregator:
         for lane, value in feedback.items():
             if lane not in LANE_SET:
                 lane_provenance = _provenance(
-                    path, return_index, talk_filename, talk_id, lane=lane,
+                    path,
+                    return_index,
+                    talk_filename,
+                    talk_id,
+                    lane=lane,
                 )
-                self.entries["invalid"].append({
-                    "provenance": lane_provenance,
-                    "feedback": value,
-                    "issues": [_issue(
-                        "feedback_lane_unsupported",
-                        "catalog_feedback contains a lane outside the five-lane contract",
-                        expected=list(LANES), actual=lane,
-                    )],
-                })
+                self.entries["invalid"].append(
+                    {
+                        "provenance": lane_provenance,
+                        "feedback": value,
+                        "issues": [
+                            _issue(
+                                "feedback_lane_unsupported",
+                                "catalog_feedback contains a lane outside the five-lane contract",
+                                expected=list(LANES),
+                                actual=lane,
+                            )
+                        ],
+                    }
+                )
                 continue
             if not isinstance(value, list):
                 lane_provenance = _provenance(
-                    path, return_index, talk_filename, talk_id, lane=lane,
+                    path,
+                    return_index,
+                    talk_filename,
+                    talk_id,
+                    lane=lane,
                 )
-                self.entries["invalid"].append({
-                    "provenance": lane_provenance,
-                    "feedback": value,
-                    "issues": [_issue(
-                        "feedback_lane_not_array",
-                        "each feedback lane must be an array",
-                        actual=type(value).__name__,
-                    )],
-                })
+                self.entries["invalid"].append(
+                    {
+                        "provenance": lane_provenance,
+                        "feedback": value,
+                        "issues": [
+                            _issue(
+                                "feedback_lane_not_array",
+                                "each feedback lane must be an array",
+                                actual=type(value).__name__,
+                            )
+                        ],
+                    }
+                )
                 continue
             for entry_index, entry in enumerate(value):
                 self._consume_entry(
-                    path, return_index, talk_filename, talk_id,
-                    lane, entry_index, entry,
+                    path,
+                    return_index,
+                    talk_filename,
+                    talk_id,
+                    lane,
+                    entry_index,
+                    entry,
                 )
 
         status = (
-            "invalid" if len(self.entries["invalid"]) > invalid_before
-            else "accepted"
+            "invalid" if len(self.entries["invalid"]) > invalid_before else "accepted"
         )
         target = self.returns[status]
         if status == "accepted":
             target.append({"provenance": provenance})
         else:
-            target.append({
-                "provenance": provenance,
-                "issues": [_issue(
-                    "feedback_entries_invalid",
-                    "one or more feedback lanes/entries are invalid",
-                )],
-            })
+            target.append(
+                {
+                    "provenance": provenance,
+                    "issues": [
+                        _issue(
+                            "feedback_entries_invalid",
+                            "one or more feedback lanes/entries are invalid",
+                        )
+                    ],
+                }
+            )
 
     def _consume_entry(
         self,
@@ -801,8 +995,12 @@ class FeedbackAggregator:
         entry: Any,
     ) -> None:
         provenance = _provenance(
-            path, return_index, talk_filename, talk_id,
-            lane=lane, entry_index=entry_index,
+            path,
+            return_index,
+            talk_filename,
+            talk_id,
+            lane=lane,
+            entry_index=entry_index,
         )
         validation = validate_entry(
             lane,
@@ -811,11 +1009,13 @@ class FeedbackAggregator:
             self.catalog.get("alias_registry", {}),
         )
         if validation["errors"]:
-            self.entries["invalid"].append({
-                "provenance": provenance,
-                "feedback": entry,
-                "issues": validation["errors"],
-            })
+            self.entries["invalid"].append(
+                {
+                    "provenance": provenance,
+                    "feedback": entry,
+                    "issues": validation["errors"],
+                }
+            )
             return
         for warning in validation["warnings"]:
             self.warnings.append({"provenance": provenance, **warning})
@@ -827,12 +1027,14 @@ class FeedbackAggregator:
             for catalog_id in validation["catalog_ids"]
             if catalog_id in self.registry
         ]
-        self.entries["accepted"].append({
-            "provenance": provenance,
-            "feedback": entry,
-            "catalog_references": references,
-            "suggestion": validation["suggestion"],
-        })
+        self.entries["accepted"].append(
+            {
+                "provenance": provenance,
+                "feedback": entry,
+                "catalog_references": references,
+                "suggestion": validation["suggestion"],
+            }
+        )
 
     def _exact_catalog_groups(self) -> list[dict[str, Any]]:
         groups: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -843,21 +1045,27 @@ class FeedbackAggregator:
         result = []
         for catalog_id, occurrences in groups.items():
             lane_counts = Counter(item["feedback_lane"] for item in occurrences)
-            result.append({
-                "catalog_id": catalog_id,
-                "polarity": self.registry[catalog_id]["polarity"],
-                "catalog_path": self.registry[catalog_id]["path"],
-                "occurrence_count": len(occurrences),
-                "talk_count": len({_talk_key(item) for item in occurrences}),
-                "source_return_count": len({
-                    _source_return_key(item) for item in occurrences
-                }),
-                "lane_counts": dict(sorted(lane_counts.items())),
-                "occurrences": sorted(occurrences, key=provenance_sort_key),
-            })
+            result.append(
+                {
+                    "catalog_id": catalog_id,
+                    "polarity": self.registry[catalog_id]["polarity"],
+                    "catalog_path": self.registry[catalog_id]["path"],
+                    "occurrence_count": len(occurrences),
+                    "talk_count": len({_talk_key(item) for item in occurrences}),
+                    "source_return_count": len(
+                        {_source_return_key(item) for item in occurrences}
+                    ),
+                    "lane_counts": dict(sorted(lane_counts.items())),
+                    "occurrences": sorted(occurrences, key=provenance_sort_key),
+                }
+            )
         return sorted(
             result,
-            key=lambda item: (-item["talk_count"], -item["occurrence_count"], item["catalog_id"]),
+            key=lambda item: (
+                -item["talk_count"],
+                -item["occurrence_count"],
+                item["catalog_id"],
+            ),
         )
 
     def _suggestion_groups(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -867,29 +1075,36 @@ class FeedbackAggregator:
             suggestion = accepted["suggestion"]
             if suggestion is None:
                 continue
-            groups[suggestion["normalized_suggestion"]].append({
-                "provenance": accepted["provenance"],
-                "proposed_name": suggestion["proposed_name"],
-                "proposed_polarity": suggestion["proposed_polarity"],
-            })
+            groups[suggestion["normalized_suggestion"]].append(
+                {
+                    "provenance": accepted["provenance"],
+                    "proposed_name": suggestion["proposed_name"],
+                    "proposed_polarity": suggestion["proposed_polarity"],
+                }
+            )
 
         result = []
         for normalized, occurrences in groups.items():
-            explicit = sorted({
-                item["proposed_polarity"] for item in occurrences
-                if item["proposed_polarity"] != "unspecified"
-            })
+            explicit = sorted(
+                {
+                    item["proposed_polarity"]
+                    for item in occurrences
+                    if item["proposed_polarity"] != "unspecified"
+                }
+            )
             unspecified = sum(
                 item["proposed_polarity"] == "unspecified" for item in occurrences
             )
             if len(explicit) > 1:
                 polarity_status = "conflict"
-                conflicts.append(_issue(
-                    "suggestion_polarity_conflict",
-                    "normalized suggestion is asserted as both pattern and antipattern",
-                    normalized_suggestion=normalized,
-                    asserted_polarities=explicit,
-                ))
+                conflicts.append(
+                    _issue(
+                        "suggestion_polarity_conflict",
+                        "normalized suggestion is asserted as both pattern and antipattern",
+                        normalized_suggestion=normalized,
+                        asserted_polarities=explicit,
+                    )
+                )
             elif explicit and unspecified:
                 polarity_status = "partial"
             elif explicit:
@@ -901,56 +1116,63 @@ class FeedbackAggregator:
                 _source_return_key(item["provenance"]) for item in occurrences
             }
             variants = Counter(item["proposed_name"] for item in occurrences)
-            result.append({
-                "normalized_suggestion": normalized,
-                "occurrence_count": len(occurrences),
-                "talk_count": len(talks),
-                "source_return_count": len(source_returns),
-                "variants": [
-                    {"value": value, "count": count}
-                    for value, count in sorted(variants.items())
-                ],
-                "asserted_polarities": explicit,
-                "unspecified_polarity_count": unspecified,
-                "polarity_status": polarity_status,
-                "occurrences": sorted(
-                    occurrences,
-                    key=lambda item: provenance_sort_key(item["provenance"]),
-                ),
-            })
+            result.append(
+                {
+                    "normalized_suggestion": normalized,
+                    "occurrence_count": len(occurrences),
+                    "talk_count": len(talks),
+                    "source_return_count": len(source_returns),
+                    "variants": [
+                        {"value": value, "count": count}
+                        for value, count in sorted(variants.items())
+                    ],
+                    "asserted_polarities": explicit,
+                    "unspecified_polarity_count": unspecified,
+                    "polarity_status": polarity_status,
+                    "occurrences": sorted(
+                        occurrences,
+                        key=lambda item: provenance_sort_key(item["provenance"]),
+                    ),
+                }
+            )
         return (
             sorted(
                 result,
                 key=lambda item: (
-                    -item["talk_count"], -item["occurrence_count"],
+                    -item["talk_count"],
+                    -item["occurrence_count"],
                     item["normalized_suggestion"],
                 ),
             ),
             conflicts,
         )
 
-    def report(self, requested_inputs: list[str], discovery: dict[str, Any]) -> dict[str, Any]:
+    def report(
+        self, requested_inputs: list[str], discovery: dict[str, Any]
+    ) -> dict[str, Any]:
         suggestions, suggestion_conflicts = self._suggestion_groups()
         catalog_groups = self._exact_catalog_groups()
         lane_summary = {}
         for lane in LANES:
             lane_entries = [
-                item for item in self.entries["accepted"]
+                item
+                for item in self.entries["accepted"]
                 if item["provenance"]["feedback_lane"] == lane
             ]
             invalid_lane_entries = [
-                item for item in self.entries["invalid"]
+                item
+                for item in self.entries["invalid"]
                 if item["provenance"]["feedback_lane"] == lane
             ]
             lane_summary[lane] = {
                 "accepted_entry_count": len(lane_entries),
                 "invalid_entry_count": len(invalid_lane_entries),
-                "talk_count": len({
-                    _talk_key(item["provenance"]) for item in lane_entries
-                }),
-                "source_return_count": len({
-                    _source_return_key(item["provenance"]) for item in lane_entries
-                }),
+                "talk_count": len(
+                    {_talk_key(item["provenance"]) for item in lane_entries}
+                ),
+                "source_return_count": len(
+                    {_source_return_key(item["provenance"]) for item in lane_entries}
+                ),
             }
 
         for classification in self.inputs:
@@ -963,9 +1185,7 @@ class FeedbackAggregator:
             self.entries[classification].sort(
                 key=lambda item: provenance_sort_key(item["provenance"])
             )
-        warnings = sorted(
-            [*self.warnings, *discovery["warnings"]], key=issue_sort_key
-        )
+        warnings = sorted([*self.warnings, *discovery["warnings"]], key=issue_sort_key)
         validation_errors = sorted(
             [*self.validation_errors, *suggestion_conflicts], key=issue_sort_key
         )
@@ -980,7 +1200,10 @@ class FeedbackAggregator:
             "schema_version": REPORT_SCHEMA_VERSION,
             "ok": invalid_count == 0,
             "read_only": True,
-            "requested_inputs": sorted(str(Path(value).expanduser().resolve(strict=False)) for value in requested_inputs),
+            "requested_inputs": sorted(
+                str(Path(value).expanduser().resolve(strict=False))
+                for value in requested_inputs
+            ),
             "catalog": {
                 "path": self.catalog["path"],
                 "id_count": len(self.registry),
@@ -993,11 +1216,13 @@ class FeedbackAggregator:
                 "errors": catalog_errors,
             },
             "input_summary": {
-                key: len(self.inputs[key]) for key in ("accepted", "rejected", "invalid")
+                key: len(self.inputs[key])
+                for key in ("accepted", "rejected", "invalid")
             },
             "inputs": self.inputs,
             "return_summary": {
-                key: len(self.returns[key]) for key in ("accepted", "rejected", "invalid")
+                key: len(self.returns[key])
+                for key in ("accepted", "rejected", "invalid")
             },
             "returns": self.returns,
             "entry_summary": {
@@ -1024,7 +1249,8 @@ def provenance_sort_key(provenance: dict[str, Any]) -> tuple[Any, ...]:
         provenance.get("talk_id") or "",
         provenance.get("feedback_lane") or "",
         provenance.get("feedback_entry_index")
-        if provenance.get("feedback_entry_index") is not None else -1,
+        if provenance.get("feedback_entry_index") is not None
+        else -1,
     )
 
 
@@ -1048,9 +1274,12 @@ def aggregate_feedback(
     discovery = discover_inputs(inputs)
     aggregator = FeedbackAggregator(catalog)
     if not inputs:
-        aggregator.validation_errors.append(_issue(
-            "inputs_missing", "at least one return file or directory is required",
-        ))
+        aggregator.validation_errors.append(
+            _issue(
+                "inputs_missing",
+                "at least one return file or directory is required",
+            )
+        )
     for immediate in discovery["immediate"]:
         aggregator.inputs[immediate["status"]].append(immediate)
     for discovered in discovery["files"]:
@@ -1073,10 +1302,13 @@ def _argument_error_report() -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     parser.add_argument(
-        "inputs", nargs="+", help="return JSON files or directories",
+        "inputs",
+        nargs="+",
+        help="return JSON files or directories",
     )
     parser.add_argument(
-        "--catalog", default=None,
+        "--catalog",
+        default=None,
         help="pattern catalog directory (defaults to the bundled catalog)",
     )
     try:

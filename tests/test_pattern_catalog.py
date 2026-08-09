@@ -24,27 +24,24 @@ import yaml
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PATTERNS = os.path.join(
-    REPO_ROOT, "skills", "presentation-creator", "references", "patterns")
+    REPO_ROOT, "skills", "presentation-creator", "references", "patterns"
+)
 INDEX = os.path.join(PATTERNS, "_index.md")
 
-STRONG_RE = re.compile(
-    r"^- Strong signal(?: \((?P<qualifier>[^)]*)\))?:", re.M)
+STRONG_RE = re.compile(r"^- Strong signal(?: \((?P<qualifier>[^)]*)\))?:", re.M)
 MODERATE_RE = re.compile(r"^- Moderate signal:", re.M)
-ABSENT_RE = re.compile(
-    r"^- Absent(?: \((?P<qualifier>[^)]*)\))?:", re.M)
+ABSENT_RE = re.compile(r"^- Absent(?: \((?P<qualifier>[^)]*)\))?:", re.M)
 ARITHMETIC_LABEL_RE = re.compile(
     r"^- (?:Strong signal|Moderate signal|Absent) "
     r"\([^)]*\b(?:pt|pts|point|points)\b[^)]*\):",
     re.I | re.M,
 )
-MEDIUM_LABEL_RE = re.compile(
-    r"^- Medium signal(?: \([^)]*\))?:", re.I | re.M)
+MEDIUM_LABEL_RE = re.compile(r"^- Medium signal(?: \([^)]*\))?:", re.I | re.M)
 
 ENTRY_FILES = sorted(f for f in glob.glob(os.path.join(PATTERNS, "*", "*.md")))
 ANTI_FILES = [f for f in ENTRY_FILES if os.path.basename(f).startswith("_anti_")]
 ENTRY_BY_ID = {
-    os.path.basename(path)[:-3].removeprefix("_anti_"): path
-    for path in ENTRY_FILES
+    os.path.basename(path)[:-3].removeprefix("_anti_"): path for path in ENTRY_FILES
 }
 
 NAME_TRAP_GUARDS = {
@@ -74,162 +71,204 @@ NAME_TRAP_GUARDS = {
     ),
 }
 
-EVIDENCE_SOURCE_VALUES = frozenset({
-    "static_slides",
-    "native_deck",
-    "delivery_video",
-    "transcript",
-    "source_comparison",
-})
+EVIDENCE_SOURCE_VALUES = frozenset(
+    {
+        "static_slides",
+        "native_deck",
+        "delivery_video",
+        "transcript",
+        "source_comparison",
+    }
+)
 EVIDENCE_SOURCE_CHANNELS = {
     "static_slides": frozenset({"slides", "slide_sequence", "talk_metadata"}),
     "native_deck": frozenset({"slides", "slide_sequence", "talk_metadata"}),
     "delivery_video": frozenset({"video", "talk_metadata"}),
     "transcript": frozenset({"transcript", "timed_transcript", "talk_metadata"}),
 }
-EVIDENCE_GATE_FIELDS = frozenset({
-    "evaluable_from",
-    "evidence_requirements",
-    "not_evaluable_when",
-})
-OUTCOME_EVIDENCE_GATE_FIELDS = frozenset({
-    "strong_evaluable_from",
-    "absence_evaluable_from",
-})
-ABSENCE_STATIC_IDS = frozenset({
-    "analog-noise",
-    "ant-fonts",
-    "bookends",
-    "breadcrumbs",
-    "cookie-cutter",
-    "defy-defaults",
-    "floodmarks",
-    "fontaholic",
-    "injured-outlines",
-    "takahashi",
-    "unifying-visual-theme",
-})
-ABSENCE_TRANSCRIPT_IDS = frozenset({
-    "concrete-before-abstract",
-    "flyover",
-    "going-meta",
-    "mentor",
-    "negative-ignorance",
-})
+EVIDENCE_GATE_FIELDS = frozenset(
+    {
+        "evaluable_from",
+        "evidence_requirements",
+        "not_evaluable_when",
+    }
+)
+OUTCOME_EVIDENCE_GATE_FIELDS = frozenset(
+    {
+        "strong_evaluable_from",
+        "absence_evaluable_from",
+    }
+)
+ABSENCE_STATIC_IDS = frozenset(
+    {
+        "analog-noise",
+        "ant-fonts",
+        "bookends",
+        "breadcrumbs",
+        "cookie-cutter",
+        "defy-defaults",
+        "floodmarks",
+        "fontaholic",
+        "injured-outlines",
+        "takahashi",
+        "unifying-visual-theme",
+    }
+)
+ABSENCE_TRANSCRIPT_IDS = frozenset(
+    {
+        "concrete-before-abstract",
+        "flyover",
+        "going-meta",
+        "mentor",
+        "negative-ignorance",
+    }
+)
 EXPECTED_ABSENCE_GATES = {
     **{pattern_id: ["static_slides"] for pattern_id in ABSENCE_STATIC_IDS},
     **{pattern_id: ["transcript"] for pattern_id in ABSENCE_TRANSCRIPT_IDS},
 }
 assert len(EXPECTED_ABSENCE_GATES) == 16
-APPLICABILITY_GATE_FIELDS = frozenset({
-    "not_applicable_when",
-    "applicability_evaluable_from",
-})
+APPLICABILITY_GATE_FIELDS = frozenset(
+    {
+        "not_applicable_when",
+        "applicability_evaluable_from",
+    }
+)
 ALL_EVIDENCE_GATE_FIELDS = (
-    EVIDENCE_GATE_FIELDS
-    | OUTCOME_EVIDENCE_GATE_FIELDS
-    | APPLICABILITY_GATE_FIELDS
+    EVIDENCE_GATE_FIELDS | OUTCOME_EVIDENCE_GATE_FIELDS | APPLICABILITY_GATE_FIELDS
 )
 EXISTING_REQUIRED_EVIDENCE_GATES = {
-    "progressive-reveal": frozenset({
-        frozenset({"static_slides"}),
-        frozenset({"native_deck"}),
-        frozenset({"delivery_video"}),
-    }),
-    "composite-animation": frozenset({
-        frozenset({"native_deck"}),
-        frozenset({"delivery_video"}),
-    }),
-    "invisibility": frozenset({
-        frozenset({"native_deck"}),
-        frozenset({"native_deck", "static_slides"}),
-        frozenset({"delivery_video", "static_slides"}),
-    }),
-    "exuberant-title-top": frozenset({
-        frozenset({"native_deck"}),
-        frozenset({"delivery_video"}),
-    }),
-    "gradual-consistency": frozenset({
-        frozenset({"native_deck"}),
-        frozenset({"native_deck", "static_slides"}),
-        frozenset({"delivery_video", "static_slides"}),
-    }),
-    "traveling-highlights": frozenset({
-        frozenset({"static_slides"}),
-        frozenset({"native_deck"}),
-        frozenset({"delivery_video"}),
-    }),
-    "second-look": frozenset({
-        frozenset({"delivery_video"}),
-        frozenset({"static_slides", "transcript"}),
-        frozenset({"native_deck", "transcript"}),
-    }),
-    "vacation-photos": frozenset({
-        frozenset({"delivery_video"}),
-        frozenset({"static_slides", "transcript"}),
-        frozenset({"native_deck", "transcript"}),
-    }),
+    "progressive-reveal": frozenset(
+        {
+            frozenset({"static_slides"}),
+            frozenset({"native_deck"}),
+            frozenset({"delivery_video"}),
+        }
+    ),
+    "composite-animation": frozenset(
+        {
+            frozenset({"native_deck"}),
+            frozenset({"delivery_video"}),
+        }
+    ),
+    "invisibility": frozenset(
+        {
+            frozenset({"native_deck"}),
+            frozenset({"native_deck", "static_slides"}),
+            frozenset({"delivery_video", "static_slides"}),
+        }
+    ),
+    "exuberant-title-top": frozenset(
+        {
+            frozenset({"native_deck"}),
+            frozenset({"delivery_video"}),
+        }
+    ),
+    "gradual-consistency": frozenset(
+        {
+            frozenset({"native_deck"}),
+            frozenset({"native_deck", "static_slides"}),
+            frozenset({"delivery_video", "static_slides"}),
+        }
+    ),
+    "traveling-highlights": frozenset(
+        {
+            frozenset({"static_slides"}),
+            frozenset({"native_deck"}),
+            frozenset({"delivery_video"}),
+        }
+    ),
+    "second-look": frozenset(
+        {
+            frozenset({"delivery_video"}),
+            frozenset({"static_slides", "transcript"}),
+            frozenset({"native_deck", "transcript"}),
+        }
+    ),
+    "vacation-photos": frozenset(
+        {
+            frozenset({"delivery_video"}),
+            frozenset({"static_slides", "transcript"}),
+            frozenset({"native_deck", "transcript"}),
+        }
+    ),
 }
 
-SAFE_VISUAL_GATE_IDS = frozenset({
-    "analog-noise",
-    "bookends",
-    "breadcrumbs",
-    "context-keeper",
-    "cookie-cutter",
-    "defy-defaults",
-    "floodmarks",
-    "fontaholic",
-    "injured-outlines",
-    "intermezzi",
-    "three-part-close",
-    "unifying-visual-theme",
-})
-SAFE_MOTION_GATE_IDS = frozenset({
-    "cave-painting",
-    "crawling-credits",
-    "soft-transitions",
-})
-SAFE_DELIVERY_GATE_IDS = frozenset({
-    "a-la-carte-content",
-    "brain-breaks",
-    "breathing-room",
-    "celery",
-    "dead-demo",
-    "dual-headed-monster",
-    "hecklers",
-    "lightning-talk",
-    "live-demo",
-    "make-it-rain",
-    "weatherman",
-})
+SAFE_VISUAL_GATE_IDS = frozenset(
+    {
+        "analog-noise",
+        "bookends",
+        "breadcrumbs",
+        "context-keeper",
+        "cookie-cutter",
+        "defy-defaults",
+        "floodmarks",
+        "fontaholic",
+        "injured-outlines",
+        "intermezzi",
+        "three-part-close",
+        "unifying-visual-theme",
+    }
+)
+SAFE_MOTION_GATE_IDS = frozenset(
+    {
+        "cave-painting",
+        "crawling-credits",
+        "soft-transitions",
+    }
+)
+SAFE_DELIVERY_GATE_IDS = frozenset(
+    {
+        "a-la-carte-content",
+        "brain-breaks",
+        "breathing-room",
+        "celery",
+        "dead-demo",
+        "dual-headed-monster",
+        "hecklers",
+        "lightning-talk",
+        "live-demo",
+        "make-it-rain",
+        "weatherman",
+    }
+)
 SAFE_SPOKEN_GATE_IDS = frozenset({"echo-chamber"})
 SAFE_COMBINED_GATE_IDS = frozenset({"lipstick-on-a-pig"})
 SAFE_CODA_GATE_IDS = frozenset({"coda"})
 
-VISUAL_GATE = frozenset({
-    frozenset({"static_slides"}),
-    frozenset({"native_deck"}),
-    frozenset({"delivery_video"}),
-})
-MOTION_GATE = frozenset({
-    frozenset({"native_deck"}),
-    frozenset({"delivery_video"}),
-})
+VISUAL_GATE = frozenset(
+    {
+        frozenset({"static_slides"}),
+        frozenset({"native_deck"}),
+        frozenset({"delivery_video"}),
+    }
+)
+MOTION_GATE = frozenset(
+    {
+        frozenset({"native_deck"}),
+        frozenset({"delivery_video"}),
+    }
+)
 DELIVERY_GATE = frozenset({frozenset({"delivery_video"})})
-SPOKEN_GATE = frozenset({
-    frozenset({"transcript"}),
-    frozenset({"delivery_video"}),
-})
-COMBINED_GATE = frozenset({
-    frozenset({"delivery_video"}),
-    frozenset({"static_slides", "transcript"}),
-    frozenset({"native_deck", "transcript"}),
-})
-CODA_GATE = frozenset({
-    frozenset({"static_slides", "transcript"}),
-    frozenset({"native_deck", "transcript"}),
-})
+SPOKEN_GATE = frozenset(
+    {
+        frozenset({"transcript"}),
+        frozenset({"delivery_video"}),
+    }
+)
+COMBINED_GATE = frozenset(
+    {
+        frozenset({"delivery_video"}),
+        frozenset({"static_slides", "transcript"}),
+        frozenset({"native_deck", "transcript"}),
+    }
+)
+CODA_GATE = frozenset(
+    {
+        frozenset({"static_slides", "transcript"}),
+        frozenset({"native_deck", "transcript"}),
+    }
+)
 
 SAFE_SOURCE_GATE_GROUPS = (
     (SAFE_VISUAL_GATE_IDS, VISUAL_GATE),
@@ -248,16 +287,12 @@ assert len(SAFE_SOURCE_GATES) == 29
 
 APPROVED_MECHANICAL_OUTCOME_GATES = {
     "ant-fonts": {
-        "evaluable_from": [
-            "static_slides", "native_deck", "delivery_video"],
-        "strong_evaluable_from": [
-            "static_slides", "native_deck", "delivery_video"],
-        "absence_evaluable_from": [
-            "static_slides", "native_deck", "delivery_video"],
+        "evaluable_from": ["static_slides", "native_deck", "delivery_video"],
+        "strong_evaluable_from": ["static_slides", "native_deck", "delivery_video"],
+        "absence_evaluable_from": ["static_slides", "native_deck", "delivery_video"],
     },
     "bullet-riddled-corpse": {
-        "evaluable_from": [
-            "static_slides", "native_deck", "delivery_video"],
+        "evaluable_from": ["static_slides", "native_deck", "delivery_video"],
         "strong_evaluable_from": ["delivery_video"],
         "absence_evaluable_from": ["delivery_video"],
     },
@@ -272,27 +307,27 @@ APPROVED_MECHANICAL_OUTCOME_GATES = {
         "absence_evaluable_from": ["transcript", "delivery_video"],
     },
     "charred-trail": {
-        "evaluable_from": [
-            "static_slides", "native_deck", "delivery_video"],
-        "strong_evaluable_from": [
-            "static_slides", "native_deck", "delivery_video"],
+        "evaluable_from": ["static_slides", "native_deck", "delivery_video"],
+        "strong_evaluable_from": ["static_slides", "native_deck", "delivery_video"],
         "absence_evaluable_from": ["native_deck", "delivery_video"],
     },
     "concrete-before-abstract": {
         "evaluable_from": [
-            "transcript", "static_slides", "native_deck", "delivery_video"],
+            "transcript",
+            "static_slides",
+            "native_deck",
+            "delivery_video",
+        ],
         "strong_evaluable_from": ["transcript", "delivery_video"],
         "absence_evaluable_from": ["transcript", "delivery_video"],
     },
     "crawling-code": {
-        "evaluable_from": [
-            "static_slides", "native_deck", "delivery_video"],
+        "evaluable_from": ["static_slides", "native_deck", "delivery_video"],
         "strong_evaluable_from": ["native_deck", "delivery_video"],
         "absence_evaluable_from": ["native_deck", "delivery_video"],
     },
     "emergence": {
-        "evaluable_from": [
-            "static_slides", "native_deck", "delivery_video"],
+        "evaluable_from": ["static_slides", "native_deck", "delivery_video"],
         "strong_evaluable_from": ["delivery_video"],
         "absence_evaluable_from": ["native_deck", "delivery_video"],
     },
@@ -317,12 +352,9 @@ APPROVED_MECHANICAL_OUTCOME_GATES = {
         "absence_evaluable_from": ["transcript", "delivery_video"],
     },
     "meme-as-argument": {
-        "evaluable_from": [
-            "static_slides", "native_deck", "delivery_video"],
-        "strong_evaluable_from": [
-            "static_slides", "native_deck", "delivery_video"],
-        "absence_evaluable_from": [
-            "static_slides", "native_deck", "delivery_video"],
+        "evaluable_from": ["static_slides", "native_deck", "delivery_video"],
+        "strong_evaluable_from": ["static_slides", "native_deck", "delivery_video"],
+        "absence_evaluable_from": ["static_slides", "native_deck", "delivery_video"],
     },
     "negative-ignorance": {
         "evaluable_from": ["transcript", "delivery_video"],
@@ -341,15 +373,31 @@ APPROVED_MECHANICAL_OUTCOME_GATES = {
     },
     "triad": {
         "evaluable_from": [
-            "transcript", "static_slides", "native_deck", "delivery_video"],
+            "transcript",
+            "static_slides",
+            "native_deck",
+            "delivery_video",
+        ],
         "strong_evaluable_from": [
-            "transcript", "static_slides", "native_deck", "delivery_video"],
+            "transcript",
+            "static_slides",
+            "native_deck",
+            "delivery_video",
+        ],
         "absence_evaluable_from": [
-            "transcript", "static_slides", "native_deck", "delivery_video"],
+            "transcript",
+            "static_slides",
+            "native_deck",
+            "delivery_video",
+        ],
     },
     "delayed-self-introduction": {
         "evaluable_from": [
-            "transcript", "static_slides", "native_deck", "delivery_video"],
+            "transcript",
+            "static_slides",
+            "native_deck",
+            "delivery_video",
+        ],
         "strong_evaluable_from": [
             "delivery_video",
             ["transcript", "static_slides"],
@@ -378,7 +426,11 @@ APPROVED_MECHANICAL_OUTCOME_GATES = {
     },
     "inoculation": {
         "evaluable_from": [
-            "transcript", "static_slides", "native_deck", "delivery_video"],
+            "transcript",
+            "static_slides",
+            "native_deck",
+            "delivery_video",
+        ],
         "strong_evaluable_from": ["transcript", "delivery_video"],
         "absence_evaluable_from": None,
     },
@@ -398,11 +450,9 @@ APPROVED_MECHANICAL_OUTCOME_GATES = {
         "absence_evaluable_from": ["delivery_video"],
     },
     "takahashi": {
-        "evaluable_from": [
-            "static_slides", "native_deck", "delivery_video"],
+        "evaluable_from": ["static_slides", "native_deck", "delivery_video"],
         "strong_evaluable_from": ["delivery_video"],
-        "absence_evaluable_from": [
-            "static_slides", "native_deck", "delivery_video"],
+        "absence_evaluable_from": ["static_slides", "native_deck", "delivery_video"],
     },
 }
 assert len(APPROVED_MECHANICAL_OUTCOME_GATES) == 25
@@ -418,9 +468,17 @@ APPROVED_MECHANICAL_SOURCE_GATES = {
 SEMANTIC_OUTCOME_GATES = {
     "alienating-artifact": {
         "evaluable_from": [
-            "transcript", "static_slides", "native_deck", "delivery_video"],
+            "transcript",
+            "static_slides",
+            "native_deck",
+            "delivery_video",
+        ],
         "strong_evaluable_from": [
-            "transcript", "static_slides", "native_deck", "delivery_video"],
+            "transcript",
+            "static_slides",
+            "native_deck",
+            "delivery_video",
+        ],
         "absence_evaluable_from": [
             "delivery_video",
             ["transcript", "static_slides"],
@@ -434,7 +492,11 @@ SEMANTIC_OUTCOME_GATES = {
     },
     "backtracking": {
         "evaluable_from": [
-            "transcript", "static_slides", "native_deck", "delivery_video"],
+            "transcript",
+            "static_slides",
+            "native_deck",
+            "delivery_video",
+        ],
         "strong_evaluable_from": ["delivery_video"],
         "absence_evaluable_from": [
             "delivery_video",
@@ -444,7 +506,11 @@ SEMANTIC_OUTCOME_GATES = {
     },
     "entertainment": {
         "evaluable_from": [
-            "transcript", "static_slides", "native_deck", "delivery_video"],
+            "transcript",
+            "static_slides",
+            "native_deck",
+            "delivery_video",
+        ],
         "strong_evaluable_from": ["delivery_video"],
         "absence_evaluable_from": [
             "delivery_video",
@@ -453,14 +519,17 @@ SEMANTIC_OUTCOME_GATES = {
         ],
     },
     "expansion-joints": {
-        "evaluable_from": [
-            "static_slides", "native_deck", "delivery_video"],
+        "evaluable_from": ["static_slides", "native_deck", "delivery_video"],
         "strong_evaluable_from": ["delivery_video"],
         "absence_evaluable_from": None,
     },
     "foreshadowing": {
         "evaluable_from": [
-            "transcript", "static_slides", "native_deck", "delivery_video"],
+            "transcript",
+            "static_slides",
+            "native_deck",
+            "delivery_video",
+        ],
         "strong_evaluable_from": ["delivery_video"],
         "absence_evaluable_from": [
             "delivery_video",
@@ -469,8 +538,7 @@ SEMANTIC_OUTCOME_GATES = {
         ],
     },
     "greek-chorus": {
-        "evaluable_from": [
-            "static_slides", "native_deck", "delivery_video"],
+        "evaluable_from": ["static_slides", "native_deck", "delivery_video"],
         "strong_evaluable_from": ["delivery_video"],
         "absence_evaluable_from": ["delivery_video"],
     },
@@ -486,13 +554,21 @@ SEMANTIC_OUTCOME_GATES = {
     },
     "mentor": {
         "evaluable_from": [
-            "transcript", "static_slides", "native_deck", "delivery_video"],
+            "transcript",
+            "static_slides",
+            "native_deck",
+            "delivery_video",
+        ],
         "strong_evaluable_from": ["transcript", "delivery_video"],
         "absence_evaluable_from": ["transcript", "delivery_video"],
     },
     "narrative-arc": {
         "evaluable_from": [
-            "transcript", "static_slides", "native_deck", "delivery_video"],
+            "transcript",
+            "static_slides",
+            "native_deck",
+            "delivery_video",
+        ],
         "strong_evaluable_from": ["transcript", "delivery_video"],
         "absence_evaluable_from": [
             "delivery_video",
@@ -507,7 +583,11 @@ SEMANTIC_OUTCOME_GATES = {
     },
     "opening-punch": {
         "evaluable_from": [
-            "transcript", "static_slides", "native_deck", "delivery_video"],
+            "transcript",
+            "static_slides",
+            "native_deck",
+            "delivery_video",
+        ],
         "strong_evaluable_from": [
             "delivery_video",
             ["transcript", "static_slides"],
@@ -520,8 +600,7 @@ SEMANTIC_OUTCOME_GATES = {
         ],
     },
     "photomaniac": {
-        "evaluable_from": [
-            "static_slides", "native_deck", "delivery_video"],
+        "evaluable_from": ["static_slides", "native_deck", "delivery_video"],
         "strong_evaluable_from": ["delivery_video"],
         "absence_evaluable_from": ["delivery_video"],
     },
@@ -532,7 +611,11 @@ SEMANTIC_OUTCOME_GATES = {
     },
     "sparkline": {
         "evaluable_from": [
-            "transcript", "static_slides", "native_deck", "delivery_video"],
+            "transcript",
+            "static_slides",
+            "native_deck",
+            "delivery_video",
+        ],
         "strong_evaluable_from": [
             "delivery_video",
             ["transcript", "static_slides"],
@@ -551,13 +634,21 @@ SEMANTIC_OUTCOME_GATES = {
     },
     "talklet": {
         "evaluable_from": [
-            "transcript", "static_slides", "native_deck", "delivery_video"],
+            "transcript",
+            "static_slides",
+            "native_deck",
+            "delivery_video",
+        ],
         "strong_evaluable_from": ["transcript", "delivery_video"],
         "absence_evaluable_from": ["delivery_video"],
     },
     "walk-around": {
         "evaluable_from": [
-            "transcript", "static_slides", "native_deck", "delivery_video"],
+            "transcript",
+            "static_slides",
+            "native_deck",
+            "delivery_video",
+        ],
         "strong_evaluable_from": [
             "delivery_video",
             ["transcript", "static_slides"],
@@ -581,15 +672,14 @@ SEMANTIC_SOURCE_GATES = {
 # only a complete, separately declared rendered PDF or a complete transcript.
 # Keep the historical maps readable while overriding their absence lane with
 # the single canonical release decision.
-for _outcome_map in (
-        APPROVED_MECHANICAL_OUTCOME_GATES, SEMANTIC_OUTCOME_GATES):
+for _outcome_map in (APPROVED_MECHANICAL_OUTCOME_GATES, SEMANTIC_OUTCOME_GATES):
     for _pattern_id, _expected_gates in _outcome_map.items():
-        _expected_gates["absence_evaluable_from"] = (
-            EXPECTED_ABSENCE_GATES.get(_pattern_id))
+        _expected_gates["absence_evaluable_from"] = EXPECTED_ABSENCE_GATES.get(
+            _pattern_id
+        )
 
 EXPECTED_APPLICABILITY_CONDITION_IDS = {
-    "a-la-carte-content": (
-        "short-talk-under-30-minutes", "fixed-prerequisite-order"),
+    "a-la-carte-content": ("short-talk-under-30-minutes", "fixed-prerequisite-order"),
     "backtracking": ("lightning-format",),
     "bookends": ("fewer-than-three-major-sections",),
     "brain-breaks": ("short-talk-at-most-15-minutes",),
@@ -608,50 +698,77 @@ EXPECTED_APPLICABILITY_CONDITION_IDS = {
     "expansion-joints": ("short-talk-at-most-20-minutes",),
     "foreshadowing": (
         "short-talk-at-most-15-minutes",
-        "strictly-sequential-instructional-contract"),
+        "strictly-sequential-instructional-contract",
+    ),
     "hecklers": ("no-audience-disruption",),
-    "intermezzi": (
-        "short-talk-at-most-15-minutes", "continuous-single-theme-flow"),
+    "intermezzi": ("short-talk-at-most-15-minutes", "continuous-single-theme-flow"),
     "lightning-talk": ("not-lightning-format",),
     "lipsync": ("no-executable-subject",),
     "live-demo": ("no-executable-subject",),
-    "master-story": (
-        "short-talk-under-20-minutes", "purely-informational-big-idea"),
+    "master-story": ("short-talk-under-20-minutes", "purely-informational-big-idea"),
     "new-bliss": ("non-persuasive-talk",),
     "nodding-room": ("performance-shaped-talk",),
     "opening-punch": ("tightly-formatted-ceremonial-slot",),
     "preroll": ("no-prestart-display-opportunity",),
     "progressive-reveal": ("no-complex-reveal-opportunity",),
     "retrieval-beat": ("performance-shaped-talk",),
-    "screen-blackout": (
-        "screen-only-remote-presentation", "no-projected-screen"),
+    "screen-blackout": ("screen-only-remote-presentation", "no-projected-screen"),
     "seeding-the-first-question": ("no-q-and-a-segment",),
     "sparkline": ("non-persuasive-talk",),
-    "talklet": (
-        "short-talk-at-most-30-minutes", "cumulative-prerequisite-chain"),
-    "three-part-close": (
-        "short-talk-under-25-minutes", "non-action-oriented-talk"),
+    "talklet": ("short-talk-at-most-30-minutes", "cumulative-prerequisite-chain"),
+    "three-part-close": ("short-talk-under-25-minutes", "non-action-oriented-talk"),
     "traveling-highlights": ("no-dense-visual",),
     "weatherman": ("no-projected-slides",),
 }
 assert len(EXPECTED_APPLICABILITY_CONDITION_IDS) == 37
 
-APP_VIDEO_GATE_IDS = frozenset({
-    "a-la-carte-content", "backtracking", "brain-breaks", "context-keeper",
-    "dead-demo", "dual-headed-monster", "expansion-joints", "foreshadowing",
-    "hecklers", "intermezzi", "lightning-talk", "lipsync", "live-demo",
-    "master-story", "nodding-room", "preroll", "screen-blackout",
-    "seeding-the-first-question", "talklet",
-    "three-part-close", "weatherman",
-})
-APP_VISUAL_GATE_IDS = frozenset({
-    "bookends", "breadcrumbs", "charred-trail", "crawling-code",
-    "emergence", "progressive-reveal", "traveling-highlights",
-})
-APP_SPOKEN_GATE_IDS = frozenset({
-    "call-to-action", "call-to-adventure", "echo-chamber", "new-bliss",
-    "opening-punch", "retrieval-beat", "sparkline",
-})
+APP_VIDEO_GATE_IDS = frozenset(
+    {
+        "a-la-carte-content",
+        "backtracking",
+        "brain-breaks",
+        "context-keeper",
+        "dead-demo",
+        "dual-headed-monster",
+        "expansion-joints",
+        "foreshadowing",
+        "hecklers",
+        "intermezzi",
+        "lightning-talk",
+        "lipsync",
+        "live-demo",
+        "master-story",
+        "nodding-room",
+        "preroll",
+        "screen-blackout",
+        "seeding-the-first-question",
+        "talklet",
+        "three-part-close",
+        "weatherman",
+    }
+)
+APP_VISUAL_GATE_IDS = frozenset(
+    {
+        "bookends",
+        "breadcrumbs",
+        "charred-trail",
+        "crawling-code",
+        "emergence",
+        "progressive-reveal",
+        "traveling-highlights",
+    }
+)
+APP_SPOKEN_GATE_IDS = frozenset(
+    {
+        "call-to-action",
+        "call-to-adventure",
+        "echo-chamber",
+        "new-bliss",
+        "opening-punch",
+        "retrieval-beat",
+        "sparkline",
+    }
+)
 EXPECTED_APPLICABILITY_GATES = {
     **{pattern_id: ["delivery_video"] for pattern_id in APP_VIDEO_GATE_IDS},
     **{
@@ -668,8 +785,7 @@ EXPECTED_APPLICABILITY_GATES = {
         ["native_deck", "transcript"],
     ],
 }
-assert set(EXPECTED_APPLICABILITY_GATES) == set(
-    EXPECTED_APPLICABILITY_CONDITION_IDS)
+assert set(EXPECTED_APPLICABILITY_GATES) == set(EXPECTED_APPLICABILITY_CONDITION_IDS)
 
 OBSERVABLE_GATE_IDS = frozenset(
     set(EXISTING_REQUIRED_EVIDENCE_GATES)
@@ -681,16 +797,18 @@ POSITIVE_ONLY_IDS = OBSERVABLE_GATE_IDS - frozenset(EXPECTED_ABSENCE_GATES)
 assert len(OBSERVABLE_GATE_IDS) == 81
 assert len(POSITIVE_ONLY_IDS) == 65
 
-RECLASSIFIED_UNOBSERVABLE_IDS = frozenset({
-    "disowning-your-topic",
-    "golden-rule",
-    "infodeck",
-    "leet-grammars",
-    "live-on-tape",
-    "slideuments",
-    "the-big-why",
-    "tower-of-babble",
-})
+RECLASSIFIED_UNOBSERVABLE_IDS = frozenset(
+    {
+        "disowning-your-topic",
+        "golden-rule",
+        "infodeck",
+        "leet-grammars",
+        "live-on-tape",
+        "slideuments",
+        "the-big-why",
+        "tower-of-babble",
+    }
+)
 assert len(RECLASSIFIED_UNOBSERVABLE_IDS) == 8
 
 REQUIRED_EVIDENCE_GATES = {
@@ -721,13 +839,13 @@ def _metadata(path):
     assert len(parts) == 3, f"{os.path.basename(path)}: malformed frontmatter"
     metadata = yaml.safe_load(parts[1])
     assert isinstance(metadata, dict), (
-        f"{os.path.basename(path)}: frontmatter is not a mapping")
+        f"{os.path.basename(path)}: frontmatter is not a mapping"
+    )
     return metadata
 
 
 def _path_for_id(pattern_id):
-    matches = [path for path in ENTRY_FILES
-               if _front(path, "id") == pattern_id]
+    matches = [path for path in ENTRY_FILES if _front(path, "id") == pattern_id]
     assert len(matches) == 1, f"expected one catalog entry for {pattern_id!r}"
     return matches[0]
 
@@ -754,7 +872,8 @@ def test_antipattern_scoring_polarity_is_direct(path):
     assert strong, f"{os.path.basename(path)}: no Strong signal bullet"
     assert strong.group("qualifier") == "antipattern present", (
         f"{os.path.basename(path)} scores on the inverted scale: "
-        f"Strong signal must read 'Strong signal (antipattern present)'")
+        f"Strong signal must read 'Strong signal (antipattern present)'"
+    )
 
 
 @pytest.mark.parametrize("path", ANTI_FILES, ids=_ids(ANTI_FILES))
@@ -763,7 +882,8 @@ def test_antipattern_absent_bullet_is_labelled(path):
     assert absent, f"{os.path.basename(path)}: no Absent bullet"
     assert absent.group("qualifier") == "antipattern not present", (
         f"{os.path.basename(path)}: Absent must read "
-        f"'Absent (antipattern not present)' so polarity is unambiguous")
+        f"'Absent (antipattern not present)' so polarity is unambiguous"
+    )
 
 
 @pytest.mark.parametrize("path", ENTRY_FILES, ids=_ids(ENTRY_FILES))
@@ -772,7 +892,9 @@ def test_scoring_block_is_complete(path):
     text = _read(path)
     assert "## Scoring Criteria" in text, f"{os.path.basename(path)}: no scoring block"
     assert STRONG_RE.search(text), f"{os.path.basename(path)}: missing Strong bullet"
-    assert MODERATE_RE.search(text), f"{os.path.basename(path)}: missing Moderate bullet"
+    assert MODERATE_RE.search(text), (
+        f"{os.path.basename(path)}: missing Moderate bullet"
+    )
     assert ABSENT_RE.search(text), f"{os.path.basename(path)}: missing Absent bullet"
 
 
@@ -781,23 +903,25 @@ def test_scoring_labels_are_non_arithmetic_and_use_moderate(path):
     """Decision labels are not weights, and ``medium`` is not an alias."""
     text = _read(path)
     assert not ARITHMETIC_LABEL_RE.search(text), (
-        f"{os.path.basename(path)}: scoring labels must not declare point values")
+        f"{os.path.basename(path)}: scoring labels must not declare point values"
+    )
     assert not MEDIUM_LABEL_RE.search(text), (
-        f"{os.path.basename(path)}: use Moderate signal, never Medium signal")
+        f"{os.path.basename(path)}: use Moderate signal, never Medium signal"
+    )
 
 
 def test_compact_list_alone_is_not_bullet_riddled_corpse():
     text = _read(_entry("bullet-riddled-corpse"))
-    section = text[
-        text.index("## Scoring Criteria"):
-        text.index("## Evidence Gate")
-    ]
+    section = text[text.index("## Scoring Criteria") : text.index("## Evidence Gate")]
     normalized = " ".join(section.split())
 
     assert "Repeated bullet-heavy slides" in normalized
     assert "duplicate the speaker's narration" in normalized
     assert "reading-ahead or cognitive competition" in normalized
-    assert "a compact list of three or fewer short items by itself is not a signal" in normalized
+    assert (
+        "a compact list of three or fewer short items by itself is not a signal"
+        in normalized
+    )
 
 
 @pytest.mark.parametrize("path", ENTRY_FILES, ids=_ids(ENTRY_FILES))
@@ -806,7 +930,8 @@ def test_id_matches_filename(path):
     exist in the catalog, `terminal-as-deck` fourteen times."""
     expected = os.path.basename(path)[:-3].removeprefix("_anti_")
     assert _front(path, "id") == expected, (
-        f"{os.path.basename(path)}: frontmatter id is {_front(path, 'id')!r}")
+        f"{os.path.basename(path)}: frontmatter id is {_front(path, 'id')!r}"
+    )
 
 
 def test_ids_are_unique():
@@ -839,7 +964,8 @@ def test_catalog_references_resolve():
         for field in ("related_patterns", "inverse_of"):
             references = metadata.get(field)
             assert isinstance(references, list), (
-                f"{metadata.get('id')}: {field} must be a list")
+                f"{metadata.get('id')}: {field} must be a list"
+            )
             dangling.extend(
                 (metadata.get("id"), field, target)
                 for target in references
@@ -855,7 +981,8 @@ def test_type_matches_anti_prefix(path):
     declared = _front(path, "type")
     is_anti = os.path.basename(path).startswith("_anti_")
     assert declared == ("antipattern" if is_anti else "pattern"), (
-        f"{os.path.basename(path)}: type is {declared!r}")
+        f"{os.path.basename(path)}: type is {declared!r}"
+    )
 
 
 @pytest.mark.parametrize("path", ENTRY_FILES, ids=_ids(ENTRY_FILES))
@@ -870,55 +997,68 @@ def test_evidence_gate_frontmatter_is_well_formed(path):
 
     assert present_base == EVIDENCE_GATE_FIELDS, (
         f"{os.path.basename(path)}: partial evidence gate; "
-        f"present={sorted(present_base | present_outcomes)}")
+        f"present={sorted(present_base | present_outcomes)}"
+    )
 
     requirements = metadata["evidence_requirements"]
     disqualifiers = metadata["not_evaluable_when"]
     for gate_field in (
-            "evaluable_from", "strong_evaluable_from",
-            "absence_evaluable_from"):
+        "evaluable_from",
+        "strong_evaluable_from",
+        "absence_evaluable_from",
+    ):
         if gate_field not in metadata:
             continue
         sources = metadata[gate_field]
         if gate_field == "absence_evaluable_from" and sources is None:
             continue
         assert isinstance(sources, list) and sources, (
-            f"{os.path.basename(path)}: {gate_field} must be a non-empty list")
+            f"{os.path.basename(path)}: {gate_field} must be a non-empty list"
+        )
         groups = []
         for option in sources:
             if isinstance(option, list):
                 assert len(option) >= 2, (
-                    f"{os.path.basename(path)}: nested alternatives need two sources")
+                    f"{os.path.basename(path)}: nested alternatives need two sources"
+                )
             group = [option] if isinstance(option, str) else option
             assert isinstance(group, list) and group, (
-                f"{os.path.basename(path)}: invalid evidence-source alternative")
+                f"{os.path.basename(path)}: invalid evidence-source alternative"
+            )
             assert all(isinstance(source, str) for source in group), (
-                f"{os.path.basename(path)}: evidence sources must be strings")
+                f"{os.path.basename(path)}: evidence sources must be strings"
+            )
             assert set(group) <= EVIDENCE_SOURCE_VALUES, (
                 f"{os.path.basename(path)}: unknown evidence sources "
-                f"{sorted(set(group) - EVIDENCE_SOURCE_VALUES)}")
+                f"{sorted(set(group) - EVIDENCE_SOURCE_VALUES)}"
+            )
             assert len(group) == len(set(group)), (
-                f"{os.path.basename(path)}: duplicate evidence sources")
+                f"{os.path.basename(path)}: duplicate evidence sources"
+            )
             assert group != ["source_comparison"], (
-                f"{os.path.basename(path)}: comparison label needs an exact pair")
+                f"{os.path.basename(path)}: comparison label needs an exact pair"
+            )
             assert len(group) == 1 or "source_comparison" not in group, (
-                f"{os.path.basename(path)}: comparison label cannot be an underlying source")
+                f"{os.path.basename(path)}: comparison label cannot be an underlying source"
+            )
             groups.append(frozenset(group))
         assert len(groups) == len(set(groups)), (
-            f"{os.path.basename(path)}: duplicate evidence-source alternatives")
+            f"{os.path.basename(path)}: duplicate evidence-source alternatives"
+        )
 
     assert present_applicability in (frozenset(), APPLICABILITY_GATE_FIELDS), (
-        f"{os.path.basename(path)}: applicability fields must be declared together")
+        f"{os.path.basename(path)}: applicability fields must be declared together"
+    )
     if present_applicability:
         conditions = metadata["not_applicable_when"]
         assert isinstance(conditions, list) and conditions, (
-            f"{os.path.basename(path)}: not_applicable_when must be non-empty")
+            f"{os.path.basename(path)}: not_applicable_when must be non-empty"
+        )
         condition_ids = []
         for condition in conditions:
             assert isinstance(condition, dict)
             assert set(condition) == {"condition_id", "description"}
-            assert re.fullmatch(
-                r"[a-z0-9]+(?:-[a-z0-9]+)*", condition["condition_id"])
+            assert re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", condition["condition_id"])
             assert isinstance(condition["description"], str)
             assert condition["description"].strip()
             condition_ids.append(condition["condition_id"])
@@ -935,12 +1075,16 @@ def test_evidence_gate_frontmatter_is_well_formed(path):
             assert len(group) == len(set(group))
             groups.append(frozenset(group))
         assert len(groups) == len(set(groups))
-    for field, values in (("evidence_requirements", requirements),
-                          ("not_evaluable_when", disqualifiers)):
+    for field, values in (
+        ("evidence_requirements", requirements),
+        ("not_evaluable_when", disqualifiers),
+    ):
         assert isinstance(values, list) and values, (
-            f"{os.path.basename(path)}: {field} must be a non-empty list")
+            f"{os.path.basename(path)}: {field} must be a non-empty list"
+        )
         assert all(isinstance(value, str) and value.strip() for value in values), (
-            f"{os.path.basename(path)}: {field} values must be non-empty strings")
+            f"{os.path.basename(path)}: {field} values must be non-empty strings"
+        )
 
 
 @pytest.mark.parametrize(
@@ -948,7 +1092,8 @@ def test_evidence_gate_frontmatter_is_well_formed(path):
     sorted(REQUIRED_EVIDENCE_GATES.items()),
 )
 def test_source_dependent_patterns_have_required_evidence_gates(
-        pattern_id, expected_sources):
+    pattern_id, expected_sources
+):
     """Known source traps must never fall back to visual guesswork."""
     path = _path_for_id(pattern_id)
     metadata = _metadata(path)
@@ -967,7 +1112,8 @@ def test_source_dependent_patterns_have_required_evidence_gates(
     sorted(APPROVED_MECHANICAL_OUTCOME_GATES.items()),
 )
 def test_approved_mechanical_gates_preserve_owner_reviewed_outcomes(
-        pattern_id, expected_gates):
+    pattern_id, expected_gates
+):
     """Owner-reviewed mechanical proposals pin all three outcome contracts."""
     metadata = _metadata(_path_for_id(pattern_id))
 
@@ -986,7 +1132,8 @@ def test_approved_mechanical_gates_preserve_owner_reviewed_outcomes(
     sorted(SEMANTIC_OUTCOME_GATES.items()),
 )
 def test_semantic_owner_review_pins_positive_strong_and_absence_gates(
-        pattern_id, expected_gates):
+    pattern_id, expected_gates
+):
     metadata = _metadata(_path_for_id(pattern_id))
     assert {
         field: metadata[field]
@@ -1083,9 +1230,7 @@ def test_evidence_gate_prose_matches_machine_absence_authority(path):
             "does not authorize absence" in evidence_gate
         )
     elif absence_gate == ["transcript"]:
-        assert (
-            "only from a complete transcript (`transcript`)" in evidence_gate
-        )
+        assert "only from a complete transcript (`transcript`)" in evidence_gate
         assert (
             "delivery video, rendered/static slides, native decks, and "
             "comparison artifacts do not authorize absence" in evidence_gate
@@ -1113,12 +1258,16 @@ def test_positive_only_absence_null_set_is_exact():
 def test_applicability_contracts_pin_conditions_and_source_gates(pattern_id):
     metadata = _metadata(_path_for_id(pattern_id))
 
-    assert tuple(
-        condition["condition_id"]
-        for condition in metadata["not_applicable_when"]
-    ) == EXPECTED_APPLICABILITY_CONDITION_IDS[pattern_id]
-    assert metadata["applicability_evaluable_from"] == (
-        EXPECTED_APPLICABILITY_GATES[pattern_id])
+    assert (
+        tuple(
+            condition["condition_id"] for condition in metadata["not_applicable_when"]
+        )
+        == EXPECTED_APPLICABILITY_CONDITION_IDS[pattern_id]
+    )
+    assert (
+        metadata["applicability_evaluable_from"]
+        == (EXPECTED_APPLICABILITY_GATES[pattern_id])
+    )
     assert all(
         condition["description"].strip()
         for condition in metadata["not_applicable_when"]
@@ -1141,21 +1290,22 @@ def test_lipsync_executable_subject_condition_is_the_applicability_canary():
     assert metadata["evaluable_from"] == ["delivery_video"]
     assert metadata["absence_evaluable_from"] is None
     assert metadata["applicability_evaluable_from"] == ["delivery_video"]
-    assert metadata["not_applicable_when"] == [{
-        "condition_id": "no-executable-subject",
-        "description": (
-            "Complete delivery video establishes that the talk explains or "
-            "claims no executable tool, system, or workflow that could be "
-            "demonstrated."
-        ),
-    }]
+    assert metadata["not_applicable_when"] == [
+        {
+            "condition_id": "no-executable-subject",
+            "description": (
+                "Complete delivery video establishes that the talk explains or "
+                "claims no executable tool, system, or workflow that could be "
+                "demonstrated."
+            ),
+        }
+    ]
 
 
 def test_traveling_highlights_is_the_outcome_gate_canary():
     metadata = _metadata(_path_for_id("traveling-highlights"))
 
-    assert metadata["strong_evaluable_from"] == [
-        "native_deck", "delivery_video"]
+    assert metadata["strong_evaluable_from"] == ["native_deck", "delivery_video"]
     assert metadata["absence_evaluable_from"] is None
 
 
@@ -1169,70 +1319,69 @@ def test_progressive_reveal_explicitly_disables_absence():
 def test_index_defines_confidence_and_binary_pattern_score_exactly():
     index = _read(INDEX)
     section = index[
-        index.index("## Decision Labels, Confidence, and Binary Pattern Score"):
-        index.index("## Evidence-Source Contract")
+        index.index(
+            "## Decision Labels, Confidence, and Binary Pattern Score"
+        ) : index.index("## Evidence-Source Contract")
     ]
     normalized = " ".join(section.split())
 
     assert "three **non-arithmetic** decision labels" in normalized
     assert (
         "`confidence` records evidence certainty and has exactly three valid "
-        "values: `weak`, `moderate`, and `strong`"
-        in normalized
+        "values: `weak`, `moderate`, and `strong`" in normalized
     )
     assert "`strong` maps to the entry's Strong signal decision criterion" in normalized
-    assert "`moderate` maps to the entry's Moderate signal decision criterion" in normalized
+    assert (
+        "`moderate` maps to the entry's Moderate signal decision criterion"
+        in normalized
+    )
     assert (
         "`weak` means direct, source-located but incomplete positive evidence "
-        "that satisfies the base gate"
-        in normalized
+        "that satisfies the base gate" in normalized
     )
     assert (
         "It never means speculation, a failed source gate, `not_evaluable`, "
-        "or `not_applicable`"
-        in normalized
+        "or `not_applicable`" in normalized
     )
     assert "`medium` is invalid and is never an alias for `moderate`" in normalized
     assert "Each detected pattern contributes **+1**" in normalized
     assert "each detected antipattern contributes **−1**" in normalized
     assert (
         "`Absent`, undetected, `not_evaluable`, and `not_applicable` outcomes "
-        "contribute zero"
-        in normalized
+        "contribute zero" in normalized
     )
     assert (
         "`pattern_score = count(patterns_detected) - "
-        "count(antipatterns_detected)`"
-        in normalized
+        "count(antipatterns_detected)`" in normalized
     )
 
 
 def test_evidence_source_enum_is_documented_in_index():
     index = _read(INDEX)
-    section = index[index.index("## Evidence-Source Contract"):
-                    index.index("## Pattern Catalog")]
+    section = index[
+        index.index("## Evidence-Source Contract") : index.index("## Pattern Catalog")
+    ]
     for source in EVIDENCE_SOURCE_VALUES:
         assert f"`{source}`" in section, f"index does not document {source!r}"
 
 
 def test_index_scopes_exact_comparison_proof_to_positive_detections():
     index = _read(INDEX)
-    section = index[index.index("## Evidence-Source Contract"):
-                    index.index("## Pattern Catalog")]
+    section = index[
+        index.index("## Evidence-Source Contract") : index.index("## Pattern Catalog")
+    ]
     normalized = " ".join(section.split())
 
     assert "For a positive comparison detection" in normalized
     assert "For an undetected absence outcome" in normalized
-    assert (
-        "there is no detection object or `evidence_sources_used` field"
-        in normalized
-    )
+    assert "there is no detection object or `evidence_sources_used` field" in normalized
 
 
 def test_index_documents_null_absence_and_applicability_denominators():
     index = _read(INDEX)
-    section = index[index.index("## Evidence-Source Contract"):
-                    index.index("## Pattern Catalog")]
+    section = index[
+        index.index("## Evidence-Source Contract") : index.index("## Pattern Catalog")
+    ]
     normalized = " ".join(section.split())
 
     assert "`absence_evaluable_from: null`" in normalized
@@ -1240,13 +1389,11 @@ def test_index_documents_null_absence_and_applicability_denominators():
     assert "`applicability_evaluable_from`" in normalized
     assert (
         "An explicit null absence gate permits source-gated positive detections "
-        "but never authorizes an absence"
-        in normalized
+        "but never authorizes an absence" in normalized
     )
     assert (
         "only an applicable assessment plus complete absence-gate coverage "
-        "yields undetected"
-        in normalized
+        "yields undetected" in normalized
     )
 
 
@@ -1255,14 +1402,16 @@ def test_unobservable_files_match_the_index():
     `observable: false` flag is what a scorer consults. Drift between them means
     an entry gets scored that the index says cannot be, or vice versa.
     """
-    flagged = {str(_front(f, "id")) for f in ENTRY_FILES
-               if _front(f, "observable") == "false"}
+    flagged = {
+        str(_front(f, "id")) for f in ENTRY_FILES if _front(f, "observable") == "false"
+    }
     index = _read(INDEX)
-    section = index[index.index("## Unobservable Patterns"):]
+    section = index[index.index("## Unobservable Patterns") :]
     listed = set(re.findall(r"^\| ([a-z0-9-]+) \|", section, re.M))
     assert flagged == listed, (
         f"only in files: {sorted(flagged - listed)}; "
-        f"only in index: {sorted(listed - flagged)}")
+        f"only in index: {sorted(listed - flagged)}"
+    )
 
 
 @pytest.mark.parametrize("pattern_id", sorted(RECLASSIFIED_UNOBSERVABLE_IDS))
@@ -1283,22 +1432,29 @@ def test_index_summary_statistics_are_accurate():
     anti = len(ANTI_FILES)
     unobs = sum(1 for f in ENTRY_FILES if _front(f, "observable") == "false")
     unobs_anti = sum(1 for f in ANTI_FILES if _front(f, "observable") == "false")
-    positive = sum(
-        EVIDENCE_GATE_FIELDS <= set(_metadata(f)) for f in ENTRY_FILES)
+    positive = sum(EVIDENCE_GATE_FIELDS <= set(_metadata(f)) for f in ENTRY_FILES)
     absence = sum(
         EVIDENCE_GATE_FIELDS <= set(_metadata(f))
         and _metadata(f).get("absence_evaluable_from", "default") is not None
         for f in ENTRY_FILES
     )
     applicability = sum(
-        APPLICABILITY_GATE_FIELDS <= set(_metadata(f)) for f in ENTRY_FILES)
+        APPLICABILITY_GATE_FIELDS <= set(_metadata(f)) for f in ENTRY_FILES
+    )
     positive_only = positive - absence
-    assert f"**Total entries:** {total} ({total - anti} patterns + {anti} antipatterns)" in index
-    assert (f"**Observable (vault-scorable):** {total - unobs} "
-            f"({total - anti - (unobs - unobs_anti)} patterns + "
-            f"{anti - unobs_anti} antipatterns)") in index
-    assert (f"**Unobservable (go-live checklist):** {unobs} "
-            f"({unobs - unobs_anti} patterns + {unobs_anti} antipatterns)") in index
+    assert (
+        f"**Total entries:** {total} ({total - anti} patterns + {anti} antipatterns)"
+        in index
+    )
+    assert (
+        f"**Observable (vault-scorable):** {total - unobs} "
+        f"({total - anti - (unobs - unobs_anti)} patterns + "
+        f"{anti - unobs_anti} antipatterns)"
+    ) in index
+    assert (
+        f"**Unobservable (go-live checklist):** {unobs} "
+        f"({unobs - unobs_anti} patterns + {unobs_anti} antipatterns)"
+    ) in index
     assert f"**Positive source-gated:** {positive}" in index
     assert f"**Absence source-gated:** {absence}" in index
     assert f"**Applicability-gated:** {applicability}" in index
@@ -1317,9 +1473,11 @@ def test_public_catalog_totals_are_accurate():
     total = len(ENTRY_FILES)
     anti = len(ANTI_FILES)
     unobservable = sum(
-        _metadata(path).get("observable") is False for path in ENTRY_FILES)
+        _metadata(path).get("observable") is False for path in ENTRY_FILES
+    )
     unobservable_anti = sum(
-        _metadata(path).get("observable") is False for path in ANTI_FILES)
+        _metadata(path).get("observable") is False for path in ANTI_FILES
+    )
     observable = total - unobservable
     observable_anti = anti - unobservable_anti
     observable_patterns = observable - observable_anti
@@ -1363,9 +1521,11 @@ def test_evidence_channels_use_the_closed_source_channel_vocabulary():
         if _metadata(path).get("observable") is not False:
             assert isinstance(channels, list) and channels, (
                 f"{os.path.basename(path)}: every observable entry needs a "
-                "non-empty evidence_channels list")
+                "non-empty evidence_channels list"
+            )
             assert set(channels) <= allowed, (
-                f"{os.path.basename(path)}: unknown channels {set(channels) - allowed}")
+                f"{os.path.basename(path)}: unknown channels {set(channels) - allowed}"
+            )
 
 
 def test_unobservable_entries_do_not_declare_evidence_gates():
@@ -1374,7 +1534,8 @@ def test_unobservable_entries_do_not_declare_evidence_gates():
         if metadata.get("observable") is False:
             assert ALL_EVIDENCE_GATE_FIELDS.isdisjoint(metadata), (
                 f"{os.path.basename(path)}: unobservable entries cannot declare "
-                "per-talk evidence gates")
+                "per-talk evidence gates"
+            )
 
 
 @pytest.mark.parametrize("path", ENTRY_FILES, ids=_ids(ENTRY_FILES))
@@ -1382,8 +1543,11 @@ def test_every_gated_source_has_an_allowed_citation_channel(path):
     metadata = _metadata(path)
     channels = set(metadata.get("evidence_channels") or [])
     for gate_field in (
-            "evaluable_from", "strong_evaluable_from",
-            "absence_evaluable_from", "applicability_evaluable_from"):
+        "evaluable_from",
+        "strong_evaluable_from",
+        "absence_evaluable_from",
+        "applicability_evaluable_from",
+    ):
         if metadata.get(gate_field) is None:
             continue
         for option in metadata.get(gate_field, []):
@@ -1391,7 +1555,8 @@ def test_every_gated_source_has_an_allowed_citation_channel(path):
             for source in sources:
                 assert channels.intersection(EVIDENCE_SOURCE_CHANNELS[source]), (
                     f"{os.path.basename(path)}: {gate_field} source {source!r} "
-                    "has no permitted source-located citation channel")
+                    "has no permitted source-located citation channel"
+                )
 
 
 def test_metadata_channel_declares_the_fields_it_can_use():
@@ -1401,9 +1566,11 @@ def test_metadata_channel_declares_the_fields_it_can_use():
         fields = metadata.get("evidence_metadata_fields") or []
         assert bool(fields) == ("talk_metadata" in channels), (
             f"{os.path.basename(path)}: talk_metadata and evidence_metadata_fields "
-            "must be declared together")
+            "must be declared together"
+        )
         assert len(fields) == len(set(fields)), (
-            f"{os.path.basename(path)}: duplicate evidence metadata fields")
+            f"{os.path.basename(path)}: duplicate evidence metadata fields"
+        )
 
 
 @pytest.mark.parametrize(
@@ -1429,8 +1596,7 @@ def test_metadata_channel_declares_the_fields_it_can_use():
         ("takahashi", {"slides", "slide_sequence", "video"}),
     ],
 )
-def test_channel_sensitive_patterns_require_exact_source_channels(
-        pattern_id, channels):
+def test_channel_sensitive_patterns_require_exact_source_channels(pattern_id, channels):
     assert set(_metadata(_entry(pattern_id))["evidence_channels"]) == channels
 
 
@@ -1438,7 +1604,10 @@ def test_lightning_talk_metadata_corroborates_without_widening_the_video_gate():
     metadata = _metadata(_entry("lightning-talk"))
 
     assert metadata["evidence_metadata_fields"] == [
-        "title", "conference", "slide_count"]
+        "title",
+        "conference",
+        "slide_count",
+    ]
     assert "talk_metadata" in metadata["evidence_channels"]
     assert metadata["evaluable_from"] == ["delivery_video"]
 
@@ -1471,13 +1640,18 @@ def test_hidden_process_and_provenance_ids_are_not_auto_scorable():
         ("progressive-reveal", ("same base image", "adding one annotation per slide")),
         ("meme-as-argument", ("internet memes", "argumentative devices")),
         ("dead-demo", ("time filler", "no narrative connection")),
-        ("three-part-close", ("three distinct slides", "summary, call to action, thanks")),
+        (
+            "three-part-close",
+            ("three distinct slides", "summary, call to action, thanks"),
+        ),
         ("anti-sell", ("products, employer, or credentials", "expects a pitch")),
-        ("negative-ignorance", ('who here is not familiar with x?',)),
+        ("negative-ignorance", ("who here is not familiar with x?",)),
         ("shortchanged", ("last-minute reduction", "previous speakers running long")),
     ],
 )
 def test_stable_ids_retain_their_distinguishing_source_meaning(pattern_id, anchors):
     text = _read(_entry(pattern_id)).casefold()
     for anchor in anchors:
-        assert anchor.casefold() in text, f"{pattern_id}: missing source-meaning anchor {anchor!r}"
+        assert anchor.casefold() in text, (
+            f"{pattern_id}: missing source-meaning anchor {anchor!r}"
+        )

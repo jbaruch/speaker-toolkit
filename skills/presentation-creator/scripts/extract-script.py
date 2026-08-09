@@ -118,11 +118,13 @@ def render(outline: _os.Outline) -> str:
         f"{outline.talk.pacing_wpm[1]} WPM",
     )
     lines.append("")
-    lines.append("> Read top to bottom. Bold-bracketed lines are production "
-                 "cues. Italic parentheticals are delivery notes — pause, "
-                 "tone, audience interaction. Bolded ALL-CAPS names are "
-                 "speaker headers; consecutive items under one header are "
-                 "the same speaker.")
+    lines.append(
+        "> Read top to bottom. Bold-bracketed lines are production "
+        "cues. Italic parentheticals are delivery notes — pause, "
+        "tone, audience interaction. Bolded ALL-CAPS names are "
+        "speaker headers; consecutive items under one header are "
+        "the same speaker."
+    )
     lines.append("")
 
     for kind, ev in _ordered_events(outline):

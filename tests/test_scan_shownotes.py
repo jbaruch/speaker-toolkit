@@ -198,9 +198,10 @@ def test_apply_adds_only_complete_proposal_and_preserves_file_mode(
     assert report["database_written"] is True
     assert report["schema_version"] == 2
     assert report["input_sha256"] != report["output_sha256"]
-    assert report["output_sha256"] == hashlib.sha256(
-        database_path.read_bytes()
-    ).hexdigest()
+    assert (
+        report["output_sha256"]
+        == hashlib.sha256(database_path.read_bytes()).hexdigest()
+    )
     assert report["durability_state"] == "durable"
     assert report["entries"][0]["applied"] is True
     assert database_path.stat().st_mode & 0o777 == 0o640
@@ -274,8 +275,7 @@ def test_event_qualified_shownotes_title_preserves_authored_title(
     site, talks_directory = _shownotes_site(tmp_path)
     filename = "voxxed-lu-2026-monkey.md"
     authored_title = (
-        "Never Trust a Monkey: The Chasm, the Craft, and the Chain of "
-        "AI-Assisted Code"
+        "Never Trust a Monkey: The Chasm, the Craft, and the Chain of AI-Assisted Code"
     )
     conference = "Voxxed Days Luxembourg 2026"
     talk_date = "2026-06-18"
@@ -355,9 +355,7 @@ def test_event_qualified_title_requires_stored_conference_and_date(
     entry = report["entries"][0]
     assert entry["disposition"] == "review_required"
     assert entry["changes"] == {}
-    assert [issue["code"] for issue in entry["issues"]] == [
-        "existing_title_conflict"
-    ]
+    assert [issue["code"] for issue in entry["issues"]] == ["existing_title_conflict"]
     assert report["database_written"] is False
     assert database_path.read_bytes() == before
 
@@ -449,9 +447,7 @@ def test_event_qualified_title_preserves_event_type_identity(
     entry = report["entries"][0]
     assert entry["disposition"] == "review_required"
     assert entry["changes"] == {}
-    assert [issue["code"] for issue in entry["issues"]] == [
-        "existing_title_conflict"
-    ]
+    assert [issue["code"] for issue in entry["issues"]] == ["existing_title_conflict"]
     assert report["database_written"] is False
     assert database_path.read_bytes() == before
 
@@ -467,10 +463,7 @@ def test_event_qualified_title_preserves_event_type_identity(
             "Never Trust a Monkey: The Chasm, the Craft, and the Chain of "
             "AI-Assisted Code at Voxxed Days Luxembourg 2025"
         ),
-        (
-            "Never Trust a Monkey: A Different Subtitle at "
-            "Voxxed Days Luxembourg 2026"
-        ),
+        ("Never Trust a Monkey: A Different Subtitle at Voxxed Days Luxembourg 2026"),
         "Never Trust a Monkey Returns at Voxxed Days Luxembourg 2026",
     ],
 )
@@ -481,8 +474,7 @@ def test_event_qualified_title_rejects_wrong_identity_and_shared_prefixes(
     site, talks_directory = _shownotes_site(tmp_path)
     filename = "voxxed-lu-2026-monkey.md"
     authored_title = (
-        "Never Trust a Monkey: The Chasm, the Craft, and the Chain of "
-        "AI-Assisted Code"
+        "Never Trust a Monkey: The Chasm, the Craft, and the Chain of AI-Assisted Code"
     )
     conference = "Voxxed Days Luxembourg 2026"
     talk_date = "2026-06-18"
@@ -513,9 +505,7 @@ def test_event_qualified_title_rejects_wrong_identity_and_shared_prefixes(
     entry = report["entries"][0]
     assert entry["disposition"] == "review_required"
     assert entry["changes"] == {}
-    assert [issue["code"] for issue in entry["issues"]] == [
-        "existing_title_conflict"
-    ]
+    assert [issue["code"] for issue in entry["issues"]] == ["existing_title_conflict"]
     assert report["database_written"] is False
     assert database_path.read_bytes() == before
 

@@ -130,9 +130,9 @@ def render(outline: _os.Outline) -> str:
 
         if slide.placeholders:
             lines.append("")
-            lines.append("- **Placeholders:** " + ", ".join(
-                f"`{p}`" for p in slide.placeholders
-            ))
+            lines.append(
+                "- **Placeholders:** " + ", ".join(f"`{p}`" for p in slide.placeholders)
+            )
 
         if slide.applied_patterns:
             lines.append("")

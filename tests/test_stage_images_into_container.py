@@ -18,7 +18,9 @@ def _img(dir_, name, data=b"PNGDATA"):
     return str(p)
 
 
-def test_backgrounds_paths_rewritten_into_stage_dir(stage_images_into_container, tmp_path):
+def test_backgrounds_paths_rewritten_into_stage_dir(
+    stage_images_into_container, tmp_path
+):
     src = tmp_path / "src"
     src.mkdir()
     stage = tmp_path / "stage"
@@ -39,7 +41,9 @@ def test_backgrounds_paths_rewritten_into_stage_dir(stage_images_into_container,
     assert open(out["backgrounds"]["3"], "rb").read() == b"BBB"
 
 
-def test_build_expansion_frames_rewritten_metadata_preserved(stage_images_into_container, tmp_path):
+def test_build_expansion_frames_rewritten_metadata_preserved(
+    stage_images_into_container, tmp_path
+):
     src = tmp_path / "src"
     src.mkdir()
     stage = tmp_path / "stage"
@@ -62,7 +66,9 @@ def test_build_expansion_frames_rewritten_metadata_preserved(stage_images_into_c
     assert open(build["frames"][1], "rb").read() == b"F1"
 
 
-def test_same_basename_different_dirs_get_distinct_staged_names(stage_images_into_container, tmp_path):
+def test_same_basename_different_dirs_get_distinct_staged_names(
+    stage_images_into_container, tmp_path
+):
     d1 = tmp_path / "a"
     d2 = tmp_path / "b"
     d1.mkdir()
@@ -124,7 +130,9 @@ def test_unrecognized_shape_rejected(stage_images_into_container, tmp_path):
     assert "unrecognized manifest shape" in str(exc.value)
 
 
-def test_non_string_path_rejected_with_actionable_error(stage_images_into_container, tmp_path):
+def test_non_string_path_rejected_with_actionable_error(
+    stage_images_into_container, tmp_path
+):
     stage = tmp_path / "stage"
     # a malformed manifest with a non-string (int) path value must not crash with
     # a raw TypeError — it should raise SystemExit naming the offending slot

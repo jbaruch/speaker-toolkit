@@ -325,17 +325,21 @@ def _write_tracking_db(
             talk["pattern_score"] = score
         talks.append(talk)
     path = tmp_path / name
-    path.write_text(json.dumps({
-        "schema_version": 1,
-        "config": current_tracking_config(),
-        "talks": talks,
-        "pptx_catalog": [],
-        "qr_codes": [],
-        "resources": [],
-        "thumbnails": [],
-        "confirmed_intents": [],
-        "improvement_goals": [],
-    }))
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "config": current_tracking_config(),
+                "talks": talks,
+                "pptx_catalog": [],
+                "qr_codes": [],
+                "resources": [],
+                "thumbnails": [],
+                "confirmed_intents": [],
+                "improvement_goals": [],
+            }
+        )
+    )
     return path
 
 
@@ -986,9 +990,7 @@ def test_cli_compares_symlinked_vault_roots_by_lexical_identity_before_write(
     )
     alias_db = alias_root / db.name
     database = json.loads(db.read_text(encoding="utf-8"))
-    configured_root = (
-        alias_root if configured_identity == "alias" else physical_root
-    )
+    configured_root = alias_root if configured_identity == "alias" else physical_root
     database["config"]["vault_storage_path"] = str(configured_root)
     db.write_text(json.dumps(database), encoding="utf-8")
     before = db.read_bytes()
@@ -1072,9 +1074,7 @@ def test_cli_rejects_invalid_configured_vault_root_before_analysis_write(
     )
 
     assert result.returncode == 1
-    assert result.stderr == (
-        f"ERROR: vault_root_config_invalid:{locator_reason}\n"
-    )
+    assert result.stderr == (f"ERROR: vault_root_config_invalid:{locator_reason}\n")
     assert "Traceback" not in result.stderr
     if configured_root.strip():
         assert configured_root not in result.stderr
@@ -1146,8 +1146,7 @@ def test_cli_rejects_relative_database_authority_before_open_or_write(
 
     assert result.returncode == 1
     assert result.stderr == (
-        "ERROR: vault_root_database_path_invalid:"
-        "artifact_root_not_native_absolute\n"
+        "ERROR: vault_root_database_path_invalid:artifact_root_not_native_absolute\n"
     )
     assert db.name not in result.stderr
     assert db.read_text(encoding="utf-8") == original
@@ -1205,8 +1204,7 @@ def test_root_authority_rejection_precedes_artifact_and_analysis_boundaries(
     assert caught.value.code == 1
     assert called == []
     assert capsys.readouterr().err == (
-        "ERROR: vault_root_config_invalid:"
-        "artifact_locator_home_expansion_unsupported\n"
+        "ERROR: vault_root_config_invalid:artifact_locator_home_expansion_unsupported\n"
     )
     assert db.read_text(encoding="utf-8") == original
     assert not out.exists()
@@ -1961,7 +1959,9 @@ def test_top_level_generation_mismatch_cannot_overwrite_analysis(
     )
 
     assert result.returncode == 1
-    assert "current claim generation 1 disagrees with talk generation 2" in result.stderr
+    assert (
+        "current claim generation 1 disagrees with talk generation 2" in result.stderr
+    )
     assert target.read_text() == "# current generation\n"
 
 
@@ -2907,15 +2907,18 @@ def test_cli_missing_input_file_is_actionable(write_analysis, tmp_path):
 
 # --- #203: the CLI has a closed failure boundary that names commit position ---
 
+
 @pytest.mark.parametrize("committed", [False, True])
 def test_outer_boundary_reports_whether_the_analyses_landed(
-        write_analysis, capsys, monkeypatch, committed):
+    write_analysis, capsys, monkeypatch, committed
+):
     """A late failure must say whether the atomic batch commit already happened.
 
     The DB half of Step 4 and this half must agree. Without commit position an
     operator cannot tell a pre-commit abort — where every target was rolled
     back — from a post-commit reporting failure where the files are current.
     """
+
     def explode(*_args, **_kwargs):
         raise RuntimeError("injected failure at /private/vault/analyses/x.md")
 
@@ -2925,7 +2928,7 @@ def test_outer_boundary_reports_whether_the_analyses_landed(
     assert write_analysis.run_cli() == 2
 
     captured = capsys.readouterr()
-    assert captured.out == ""                     # stdout stays clean
+    assert captured.out == ""  # stdout stays clean
     payload = json.loads(captured.err.splitlines()[0])
     assert payload["error"] == "write_analysis_unexpected_failure"
     assert payload["error_type"] == "RuntimeError"
@@ -2935,8 +2938,7 @@ def test_outer_boundary_reports_whether_the_analyses_landed(
     assert "Traceback" not in captured.err
 
 
-def test_commit_state_does_not_leak_between_runs(
-        write_analysis, capsys, monkeypatch):
+def test_commit_state_does_not_leak_between_runs(write_analysis, capsys, monkeypatch):
     """A stale True would make a pre-commit failure claim files were replaced."""
     write_analysis._COMMIT_STATE["analyses_written"] = True
 
@@ -2955,6 +2957,7 @@ def test_commit_state_does_not_leak_between_runs(
 
 def test_outer_boundary_does_not_catch_sys_exit(write_analysis, monkeypatch):
     """main()'s own documented sys.exit paths keep their exit codes."""
+
     def bail(*_args, **_kwargs):
         raise SystemExit(1)
 
@@ -2964,15 +2967,15 @@ def test_outer_boundary_does_not_catch_sys_exit(write_analysis, monkeypatch):
     assert excinfo.value.code == 1
 
 
-def test_outer_boundary_lets_a_clean_run_report_success(
-        write_analysis, monkeypatch):
+def test_outer_boundary_lets_a_clean_run_report_success(write_analysis, monkeypatch):
     """The boundary must not swallow or alter a normal run."""
     monkeypatch.setattr(write_analysis, "main", lambda *a, **k: None)
     assert write_analysis.run_cli() == 0
 
 
 def test_a_committed_batch_reports_written_when_the_receipt_fails(
-        write_analysis, tmp_path, capsys, monkeypatch):
+    write_analysis, tmp_path, capsys, monkeypatch
+):
     """The real failure this guards: files installed, receipt write dies.
 
     Exercises the whole CLI rather than a stubbed main(), so the commit flag is
@@ -2992,7 +2995,8 @@ def test_a_committed_batch_reports_written_when_the_receipt_fails(
 
     monkeypatch.setattr(write_analysis.sys.stdout, "write", refuse_receipt)
     monkeypatch.setattr(
-        sys, "argv",
+        sys,
+        "argv",
         ["write-analysis.py", str(batch), str(out_dir), "--talks", str(db)],
     )
 

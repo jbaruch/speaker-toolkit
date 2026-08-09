@@ -1,5 +1,25 @@
 # Changelog
 
+### chore(ci) — clear the `ruff format` baseline (#162)
+
+Second of the #162 adoption sequence. `ruff format` rewrites 94 of the repo's
+153 tracked Python files; landing that alongside anything else would bury the
+"anything else". This PR is the reformat and nothing but.
+
+`code-formatting` Separation of Concerns is enforced at the commit level here,
+not just the PR level. The reformat is one commit whose 94 files are each
+AST-identical to their prior form — `ast.dump(ast.parse(before)) ==
+ast.dump(ast.parse(after))`, checked file by file rather than asserted.
+
+One docstring needed a prior commit to make that hold. `""""Repair the
+condition..."""` opens with a quote character, so the formatter inserts a
+disambiguating space and changes the string's value. Rewording it first keeps
+the formatting commit provably mechanical instead of "mechanical except for
+one thing".
+
+Still open on #162: the Pyright baseline, and wiring Ruff check, Ruff format
+check, and Pyright into pull-request CI.
+
 ## 0.20.33 — 2026-08-09
 
 ### chore(ci) — clear the Ruff lint baseline and configure the linter (#162)

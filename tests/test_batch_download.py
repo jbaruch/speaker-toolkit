@@ -6,8 +6,12 @@ import stat
 
 
 SCRIPT = os.path.join(
-    os.path.dirname(__file__), os.pardir,
-    "skills", "vault-ingress", "scripts", "batch-download-videos.sh",
+    os.path.dirname(__file__),
+    os.pardir,
+    "skills",
+    "vault-ingress",
+    "scripts",
+    "batch-download-videos.sh",
 )
 SCRIPT = os.path.abspath(SCRIPT)
 
@@ -43,7 +47,10 @@ def test_creates_directory_structure(tmp_path):
 
     result = subprocess.run(
         ["bash", SCRIPT, str(vault), "abc123", "def456"],
-        capture_output=True, text=True, env=env, timeout=10,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=10,
     )
     assert result.returncode == 0
     assert (vault / "slides-rebuild" / "abc123").is_dir()
@@ -61,7 +68,10 @@ def test_downloads_to_correct_path(tmp_path):
 
     subprocess.run(
         ["bash", SCRIPT, str(vault), "xyz789"],
-        capture_output=True, text=True, env=env, timeout=10,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=10,
     )
     expected = vault / "slides-rebuild" / "xyz789" / "xyz789.mp4"
     assert expected.exists()

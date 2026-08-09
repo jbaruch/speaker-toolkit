@@ -81,6 +81,7 @@ from tracking_database import (  # noqa: E402  # pyright: ignore[reportMissingIm
     assess_tracking_database,
     require_current_tracking_database,
 )
+
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseIOError,
@@ -92,8 +93,8 @@ from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissin
 
 # --- Constants ---
 
-QR_BOX_SIZE = 10       # pixels per QR module
-QR_BORDER = 4          # quiet-zone modules
+QR_BOX_SIZE = 10  # pixels per QR module
+QR_BORDER = 4  # quiet-zone modules
 QR_ERROR_CORRECTION = ERROR_CORRECT_M
 
 # QR placement: bottom-right, 2 inches wide, 0.3 inch margin from edges
@@ -113,13 +114,14 @@ QR_MARGIN_INCHES = 0.3
 # reconErr 0.0 / minority 0.34; a colored Venn 68 / 0.50; a martinfowler.com
 # screenshot 6.4 / 0.18. The VBA writer can't run PIL, so detection lives here and
 # the resulting geometry is handed to InsertQR.
-QR_DETECT_MIN_INCHES = 1.5      # side floor — excludes small 2-color icons
-QR_SQUARE_TOL_INCHES = 0.1      # |width − height| tolerance
-QR_RECON_ERR_MAX = 5.0          # max mean 2-color reconstruction error
-QR_MIN_MINORITY = 0.25          # min minority-color fraction (QRs are balanced)
+QR_DETECT_MIN_INCHES = 1.5  # side floor — excludes small 2-color icons
+QR_SQUARE_TOL_INCHES = 0.1  # |width − height| tolerance
+QR_RECON_ERR_MAX = 5.0  # max mean 2-color reconstruction error
+QR_MIN_MINORITY = 0.25  # min minority-color fraction (QRs are balanced)
 
 
 # --- Vault / Config Loading ---
+
 
 def load_vault_config(vault_path, profile_path=None):
     """Load speaker profile, secrets, and tracking database from the vault.
@@ -237,12 +239,13 @@ class EffectsReceipt:
 
     def __init__(self, talk_slug):
         self.talk_slug = talk_slug
-        self.short_link = None      # dict, or None when no link work happened
-        self.artifacts = []         # written PNG paths
-        self.deck = None            # deck path, or None if untouched
+        self.short_link = None  # dict, or None when no link work happened
+        self.artifacts = []  # written PNG paths
+        self.deck = None  # deck path, or None if untouched
 
-    def record_short_link(self, provider, link_id, short_url, *, action,
-                          prior_target=None):
+    def record_short_link(
+        self, provider, link_id, short_url, *, action, prior_target=None
+    ):
         """Record link work. ``action`` is created, retargeted, or preresolved.
 
         Rollback differs by action: a link this run created can be deleted, a
@@ -317,31 +320,37 @@ def unfinalized_effects_payload(receipt, message):
             }
         else:
             rollback = {"action": "none", "target": link["short_url"]}
-        effects.append({
-            "kind": "short_link",
-            "action": link["action"],
-            "short_url": link["short_url"],
-            "provider": link["provider"],
-            "link_id": link["link_id"],
-            "prior_target": link["prior_target"],
-            "rollback": rollback,
-        })
-    for path in (receipt.artifacts if receipt else []):
-        effects.append({
-            "kind": "png",
-            "path": path,
-            "rollback": {"action": "delete", "target": path},
-        })
+        effects.append(
+            {
+                "kind": "short_link",
+                "action": link["action"],
+                "short_url": link["short_url"],
+                "provider": link["provider"],
+                "link_id": link["link_id"],
+                "prior_target": link["prior_target"],
+                "rollback": rollback,
+            }
+        )
+    for path in receipt.artifacts if receipt else []:
+        effects.append(
+            {
+                "kind": "png",
+                "path": path,
+                "rollback": {"action": "delete", "target": path},
+            }
+        )
     if receipt and receipt.deck:
-        effects.append({
-            "kind": "deck",
-            "path": receipt.deck,
-            "backup_available": False,
-            "rollback": {
-                "action": "restore_from_version_control",
-                "target": receipt.deck,
-            },
-        })
+        effects.append(
+            {
+                "kind": "deck",
+                "path": receipt.deck,
+                "backup_available": False,
+                "rollback": {
+                    "action": "restore_from_version_control",
+                    "target": receipt.deck,
+                },
+            }
+        )
     return {
         "error": "qr_publication_unfinalized",
         "message": message,
@@ -417,6 +426,7 @@ def commit_qr_record(tdb_path, meta, artifacts, prior_record):
 
 
 # --- URL Shortening ---
+
 
 def _http_request(url, data=None, headers=None, method="GET"):
     """Make an HTTP request using stdlib urllib. Returns parsed JSON or raises."""
@@ -608,16 +618,24 @@ class ShortenerResolutionError(RuntimeError):
 
 def _print_missing_key_help(service, key_name, vault_path):
     """Print actionable help when an API key is missing from secrets.json."""
-    secrets_path = os.path.join(vault_path, "secrets.json") if vault_path else "secrets.json"
+    secrets_path = (
+        os.path.join(vault_path, "secrets.json") if vault_path else "secrets.json"
+    )
     if vault_path and not os.path.isfile(secrets_path):
-        print(f"  WARNING: No {service}.{key_name} found — secrets.json does not exist. Falling back to raw URL.")
+        print(
+            f"  WARNING: No {service}.{key_name} found — secrets.json does not exist. Falling back to raw URL."
+        )
         print("  Create it:")
-        print(f'    echo \'{{\"{service}\": {{\"{key_name}\": \"YOUR_KEY\"}}}}\' > {secrets_path}')
+        print(
+            f'    echo \'{{"{service}": {{"{key_name}": "YOUR_KEY"}}}}\' > {secrets_path}'
+        )
         print(f"    chmod 600 {secrets_path}")
     else:
-        print(f"  WARNING: No {service}.{key_name} in secrets.json, falling back to raw URL.")
+        print(
+            f"  WARNING: No {service}.{key_name} in secrets.json, falling back to raw URL."
+        )
         print(f"  Add to {secrets_path}:")
-        print(f'    \"{service}\": {{\"{key_name}\": \"YOUR_KEY\"}}')
+        print(f'    "{service}": {{"{key_name}": "YOUR_KEY"}}')
 
 
 def _require_domain_decision(config, shortener, vault_path):
@@ -630,17 +648,31 @@ def _require_domain_decision(config, shortener, vault_path):
     if key in config:
         return
     default_domain = "bit.ly" if shortener == "bitly" else "the shortener default"
-    profile = os.path.join(vault_path, "speaker-profile.json") if vault_path else "the speaker profile"
+    profile = (
+        os.path.join(vault_path, "speaker-profile.json")
+        if vault_path
+        else "the speaker profile"
+    )
     print(f"ERROR: No custom-domain decision recorded for shortener '{shortener}'.")
     print("  Before creating the first short link, ask the user whether they have a")
     print("  custom domain (e.g. jbaru.ch), then save the answer under")
     print(f"  publishing_process.qr_code.{key} in {profile}:")
-    print(f'    a domain string (e.g. "jbaru.ch"), or null for no custom domain ({default_domain}).')
+    print(
+        f'    a domain string (e.g. "jbaru.ch"), or null for no custom domain ({default_domain}).'
+    )
     sys.exit(1)
 
 
-def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db,
-                      dry_run=False, vault_path=None, effects_receipt=None):
+def resolve_short_url(
+    shownotes_url,
+    talk_slug,
+    config,
+    secrets,
+    tracking_db,
+    dry_run=False,
+    vault_path=None,
+    effects_receipt=None,
+):
     """Resolve the short URL for a talk, using cache or API as needed.
 
     Link selection, in order:
@@ -686,8 +718,14 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db,
     # Enforce slug-only back-half on EXISTING links too: a tracked shortened link
     # whose back-half isn't the slug is legacy — don't reuse it from cache or
     # retarget it in place; drop it so a slug-based link is recreated below.
-    if existing and existing.get("shortener_link_id") and existing.get("short_path") != talk_slug:
-        print(f"  Legacy non-slug back-half '{existing.get('short_path')}' for '{talk_slug}' — recreating with the slug")
+    if (
+        existing
+        and existing.get("shortener_link_id")
+        and existing.get("short_path") != talk_slug
+    ):
+        print(
+            f"  Legacy non-slug back-half '{existing.get('short_path')}' for '{talk_slug}' — recreating with the slug"
+        )
         existing = None
 
     # Configuration is validated BEFORE any cache reuse. A cached record proves
@@ -765,16 +803,22 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db,
 
             if existing and existing.get("shortener_link_id"):
                 # Update existing link target
-                print(f"  Updating bit.ly link {existing['shortener_link_id']} → {shownotes_url}")
-                update_bitly_link(existing["shortener_link_id"], shownotes_url, api_token)
+                print(
+                    f"  Updating bit.ly link {existing['shortener_link_id']} → {shownotes_url}"
+                )
+                update_bitly_link(
+                    existing["shortener_link_id"], shownotes_url, api_token
+                )
                 meta = dict(existing)
                 prior_target = existing.get("target_url")
                 meta["target_url"] = shownotes_url
                 meta["updated_at"] = datetime.date.today().isoformat()
                 if effects_receipt is not None:
                     effects_receipt.record_short_link(
-                        meta["shortener"], meta["shortener_link_id"],
-                        meta["short_url"], action="retargeted",
+                        meta["shortener"],
+                        meta["shortener_link_id"],
+                        meta["short_url"],
+                        action="retargeted",
                         prior_target=prior_target,
                     )
                 return existing["short_url"], meta
@@ -782,8 +826,12 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db,
                 _require_domain_decision(config, "bitly", vault_path)
                 # Create new link with talk slug as custom back-half
                 domain_label = bitly_domain or "bit.ly"
-                print(f"  Creating {domain_label} link for {shownotes_url} (back-half: {custom_back_half})")
-                result = create_bitly_link(shownotes_url, api_token, custom_back_half, domain=bitly_domain)
+                print(
+                    f"  Creating {domain_label} link for {shownotes_url} (back-half: {custom_back_half})"
+                )
+                result = create_bitly_link(
+                    shownotes_url, api_token, custom_back_half, domain=bitly_domain
+                )
                 meta = {
                     "talk_slug": talk_slug,
                     "target_url": shownotes_url,
@@ -794,8 +842,10 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db,
                 }
                 if effects_receipt is not None:
                     effects_receipt.record_short_link(
-                        meta["shortener"], meta["shortener_link_id"],
-                        meta["short_url"], action="created",
+                        meta["shortener"],
+                        meta["shortener_link_id"],
+                        meta["short_url"],
+                        action="created",
                     )
                 return result["short_url"], meta
 
@@ -811,23 +861,33 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db,
             domain = config.get("rebrandly_domain")
 
             if existing and existing.get("shortener_link_id"):
-                print(f"  Updating rebrand.ly link {existing['shortener_link_id']} → {shownotes_url}")
-                update_rebrandly_link(existing["shortener_link_id"], shownotes_url, api_key)
+                print(
+                    f"  Updating rebrand.ly link {existing['shortener_link_id']} → {shownotes_url}"
+                )
+                update_rebrandly_link(
+                    existing["shortener_link_id"], shownotes_url, api_key
+                )
                 meta = dict(existing)
                 prior_target = existing.get("target_url")
                 meta["target_url"] = shownotes_url
                 meta["updated_at"] = datetime.date.today().isoformat()
                 if effects_receipt is not None:
                     effects_receipt.record_short_link(
-                        meta["shortener"], meta["shortener_link_id"],
-                        meta["short_url"], action="retargeted",
+                        meta["shortener"],
+                        meta["shortener_link_id"],
+                        meta["short_url"],
+                        action="retargeted",
                         prior_target=prior_target,
                     )
                 return existing["short_url"], meta
             else:
                 _require_domain_decision(config, "rebrandly", vault_path)
-                print(f"  Creating rebrand.ly link for {shownotes_url} (slashtag: {custom_back_half})")
-                result = create_rebrandly_link(shownotes_url, api_key, domain, custom_back_half)
+                print(
+                    f"  Creating rebrand.ly link for {shownotes_url} (slashtag: {custom_back_half})"
+                )
+                result = create_rebrandly_link(
+                    shownotes_url, api_key, domain, custom_back_half
+                )
                 meta = {
                     "talk_slug": talk_slug,
                     "target_url": shownotes_url,
@@ -838,8 +898,10 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db,
                 }
                 if effects_receipt is not None:
                     effects_receipt.record_short_link(
-                        meta["shortener"], meta["shortener_link_id"],
-                        meta["short_url"], action="created",
+                        meta["shortener"],
+                        meta["shortener_link_id"],
+                        meta["short_url"],
+                        action="created",
                     )
                 return result["short_url"], meta
 
@@ -852,8 +914,10 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db,
     except ShortenerResolutionError as e:
         if e.partial_link is not None and effects_receipt is not None:
             effects_receipt.record_short_link(
-                e.partial_link["provider"], e.partial_link["link_id"],
-                e.partial_link["short_url"], action="created",
+                e.partial_link["provider"],
+                e.partial_link["link_id"],
+                e.partial_link["short_url"],
+                action="created",
             )
         raise
     except (
@@ -872,6 +936,7 @@ def resolve_short_url(shownotes_url, talk_slug, config, secrets, tracking_db,
 
 
 # --- Slide Background Color Resolution ---
+
 
 def resolve_slide_bg_rgb(slide):
     """Walk slide → layout → master to find an explicit solid fill background.
@@ -918,6 +983,7 @@ def choose_fg_color(bg_rgb):
 
 # --- QR Code Generation ---
 
+
 def generate_qr_png(url, fg_rgb, bg_rgb, out_path):
     """Generate a QR code PNG file.
 
@@ -944,6 +1010,7 @@ def generate_qr_png(url, fg_rgb, bg_rgb, out_path):
 
 
 # --- Slide Detection ---
+
 
 def find_shownotes_slide(prs, shownotes_url):
     """Find the slide index containing the shownotes URL text.
@@ -1003,7 +1070,9 @@ def _picture_is_qr(shape):
     w, h = shape.width, shape.height
     if w is None or h is None:
         return False
-    if abs(w - h) >= Inches(QR_SQUARE_TOL_INCHES) or min(w, h) < Inches(QR_DETECT_MIN_INCHES):
+    if abs(w - h) >= Inches(QR_SQUARE_TOL_INCHES) or min(w, h) < Inches(
+        QR_DETECT_MIN_INCHES
+    ):
         return False
     try:
         blob = shape.image.blob
@@ -1058,7 +1127,9 @@ def resolve_target_slide_indices(prs, config, shownotes_url):
         else:
             # Fallback: slide index 3 (common shownotes position)
             fallback = min(3, slide_count - 1)
-            print(f"  WARNING: Shownotes URL not found in slide text, falling back to slide {fallback + 1}")
+            print(
+                f"  WARNING: Shownotes URL not found in slide text, falling back to slide {fallback + 1}"
+            )
             indices.append(fallback)
 
     if position in ("closing", "both"):
@@ -1081,6 +1152,7 @@ def resolve_target_slide_indices(prs, config, shownotes_url):
 
 
 # --- QR Insertion ---
+
 
 def _format_qr_spec(slide_specs):
     """Encode per-slide insertion targets for the InsertQR macro.
@@ -1160,8 +1232,9 @@ def _validated_back_half(short_url, talk_slug):
 def _artifact_receipt(path, deck_dir, bg_hex):
     """Bind one generated PNG to the exact path written plus its digest."""
     absolute = os.path.abspath(path)
-    if deck_dir and os.path.commonpath([absolute, os.path.abspath(deck_dir)]) == \
-            os.path.abspath(deck_dir):
+    if deck_dir and os.path.commonpath(
+        [absolute, os.path.abspath(deck_dir)]
+    ) == os.path.abspath(deck_dir):
         path_root = "deck_dir"
         recorded = os.path.relpath(absolute, os.path.abspath(deck_dir))
     elif not os.path.isabs(path):
@@ -1180,6 +1253,7 @@ def _artifact_receipt(path, deck_dir, bg_hex):
 
 
 # --- Tracking Database ---
+
 
 def update_tracking_db(tracking_db, entry, artifacts):
     """Append or replace a qr_codes entry in the tracking database.
@@ -1226,44 +1300,74 @@ def update_tracking_db(tracking_db, entry, artifacts):
 
 # --- Main ---
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate a QR code and insert it into a PowerPoint deck.",
         epilog="Examples:\n"
-               "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url https://example.com/arc-of-ai\n"
-               "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url https://example.com/arc-of-ai"
-               " --short-url https://jbaru.ch/arc-of-ai --short-provider bitly --short-link-id bit.ly/abc\n"
-               "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url https://example.com/arc-of-ai --dry-run\n"
-               "  %(prog)s --png-only --talk-slug SLUG --shownotes-url https://example.com/arc-of-ai --output qr.png\n"
-               "  %(prog)s --png-only --talk-slug SLUG --shownotes-url https://example.com/arc-of-ai"
-               " --short-url https://jbaru.ch/arc-of-ai --bg-color 128,0,128\n",
+        "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url https://example.com/arc-of-ai\n"
+        "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url https://example.com/arc-of-ai"
+        " --short-url https://jbaru.ch/arc-of-ai --short-provider bitly --short-link-id bit.ly/abc\n"
+        "  %(prog)s deck.pptx --talk-slug arc-of-ai --shownotes-url https://example.com/arc-of-ai --dry-run\n"
+        "  %(prog)s --png-only --talk-slug SLUG --shownotes-url https://example.com/arc-of-ai --output qr.png\n"
+        "  %(prog)s --png-only --talk-slug SLUG --shownotes-url https://example.com/arc-of-ai"
+        " --short-url https://jbaru.ch/arc-of-ai --bg-color 128,0,128\n",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("deck", nargs="?", default=None, help="Path to the .pptx deck file (not required with --png-only)")
-    parser.add_argument("--talk-slug", required=True, help="Unique talk identifier (e.g., arc-of-ai)")
+    parser.add_argument(
+        "deck",
+        nargs="?",
+        default=None,
+        help="Path to the .pptx deck file (not required with --png-only)",
+    )
+    parser.add_argument(
+        "--talk-slug", required=True, help="Unique talk identifier (e.g., arc-of-ai)"
+    )
 
     # The canonical redirect target is always required. --short-url supplies an
     # agent-preresolved managed link (MCP mode) and does NOT replace the target:
     # recording the short URL as its own target loses the redirect relationship
     # the catalog exists to describe.
-    parser.add_argument("--shownotes-url", required=True,
-                        help="Canonical shownotes URL — the short link's redirect target")
-    parser.add_argument("--short-url",
-                        help="Pre-resolved short URL (MCP mode; skips shortening)")
-    parser.add_argument("--short-provider", metavar="NAME",
-                        help="Provider that issued --short-url (e.g. bitly, rebrandly)")
-    parser.add_argument("--short-link-id", metavar="ID",
-                        help="Provider-side link id for --short-url")
+    parser.add_argument(
+        "--shownotes-url",
+        required=True,
+        help="Canonical shownotes URL — the short link's redirect target",
+    )
+    parser.add_argument(
+        "--short-url", help="Pre-resolved short URL (MCP mode; skips shortening)"
+    )
+    parser.add_argument(
+        "--short-provider",
+        metavar="NAME",
+        help="Provider that issued --short-url (e.g. bitly, rebrandly)",
+    )
+    parser.add_argument(
+        "--short-link-id", metavar="ID", help="Provider-side link id for --short-url"
+    )
 
-    parser.add_argument("--png-only", action="store_true",
-                        help="Generate QR PNG only, without opening or modifying a deck")
-    parser.add_argument("--output", metavar="PATH",
-                        help="Output path for QR PNG (default: {deck_dir}/{talk-slug}-qr.png, or ./{talk-slug}-qr.png with --png-only)")
-    parser.add_argument("--bg-color", metavar="R,G,B",
-                        help="QR background color as R,G,B (e.g., 128,0,128). Default: detected from deck, or white with --png-only")
-    parser.add_argument("--profile", help="Path to speaker-profile.json (default: {vault}/speaker-profile.json)")
+    parser.add_argument(
+        "--png-only",
+        action="store_true",
+        help="Generate QR PNG only, without opening or modifying a deck",
+    )
+    parser.add_argument(
+        "--output",
+        metavar="PATH",
+        help="Output path for QR PNG (default: {deck_dir}/{talk-slug}-qr.png, or ./{talk-slug}-qr.png with --png-only)",
+    )
+    parser.add_argument(
+        "--bg-color",
+        metavar="R,G,B",
+        help="QR background color as R,G,B (e.g., 128,0,128). Default: detected from deck, or white with --png-only",
+    )
+    parser.add_argument(
+        "--profile",
+        help="Path to speaker-profile.json (default: {vault}/speaker-profile.json)",
+    )
     parser.add_argument("--vault", help="Path to vault root directory")
-    parser.add_argument("--dry-run", action="store_true", help="Skip API calls and deck modification")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Skip API calls and deck modification"
+    )
 
     args = parser.parse_args()
 
@@ -1368,18 +1472,36 @@ def main():
                 prior_record = copy.deepcopy(
                     _qr_record_for(tracking_db, args.talk_slug)
                 )
-            _publish(args, effects_receipt, vault_path, vault_present_at_start,
-                     speaker_profile, secrets, tracking_db, qr_config,
-                     explicit_bg, prior_record)
+            _publish(
+                args,
+                effects_receipt,
+                vault_path,
+                vault_present_at_start,
+                speaker_profile,
+                secrets,
+                tracking_db,
+                qr_config,
+                explicit_bg,
+                prior_record,
+            )
     except ValueError as exc:
         # Lock acquisition failures are a CLI error path, not a traceback.
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
 
 
-def _publish(args, effects_receipt, vault_path, vault_present_at_start,
-             speaker_profile, secrets, tracking_db, qr_config, explicit_bg,
-             prior_record):
+def _publish(
+    args,
+    effects_receipt,
+    vault_path,
+    vault_present_at_start,
+    speaker_profile,
+    secrets,
+    tracking_db,
+    qr_config,
+    explicit_bg,
+    prior_record,
+):
     # Determine the URL to encode in the QR
     if args.short_url:
         # MCP-preresolved mode
@@ -1405,7 +1527,9 @@ def _publish(args, effects_receipt, vault_path, vault_present_at_start,
         print(f"Using pre-resolved short URL: {qr_url} -> {shownotes_url}")
         # The agent created this link, so a failed commit still leaves it behind.
         effects_receipt.record_short_link(
-            meta["shortener"], meta["shortener_link_id"], qr_url,
+            meta["shortener"],
+            meta["shortener_link_id"],
+            qr_url,
             action="preresolved",
         )
     else:
@@ -1414,8 +1538,13 @@ def _publish(args, effects_receipt, vault_path, vault_present_at_start,
         print(f"Resolving short URL for: {shownotes_url}")
         try:
             qr_url, meta = resolve_short_url(
-                shownotes_url, args.talk_slug, qr_config, secrets, tracking_db,
-                args.dry_run, vault_path=vault_path,
+                shownotes_url,
+                args.talk_slug,
+                qr_config,
+                secrets,
+                tracking_db,
+                args.dry_run,
+                vault_path=vault_path,
                 effects_receipt=effects_receipt,
             )
         except ShortenerResolutionError as e:
@@ -1432,7 +1561,6 @@ def _publish(args, effects_receipt, vault_path, vault_present_at_start,
                     file=sys.stderr,
                 )
             sys.exit(1)
-
 
     print(f"QR will encode: {qr_url}")
 
@@ -1461,7 +1589,9 @@ def _publish(args, effects_receipt, vault_path, vault_present_at_start,
 
         # Determine target slides
         target_url_for_detection = shownotes_url if args.shownotes_url else qr_url
-        slide_indices = resolve_target_slide_indices(prs, qr_config, target_url_for_detection)
+        slide_indices = resolve_target_slide_indices(
+            prs, qr_config, target_url_for_detection
+        )
         print(f"Target slides: {[i + 1 for i in slide_indices]}")
 
         bg_match = qr_config.get("bg_color_match", True)
@@ -1482,13 +1612,17 @@ def _publish(args, effects_receipt, vault_path, vault_present_at_start,
                 if slide_bg:
                     bg_rgb = slide_bg
                 else:
-                    print(f"  WARNING: Could not detect background for slide {idx + 1}, defaulting to white")
+                    print(
+                        f"  WARNING: Could not detect background for slide {idx + 1}, defaulting to white"
+                    )
                     bg_rgb = (255, 255, 255)
             qr_bg = bg_rgb if bg_match else (255, 255, 255)
             qr_fg = choose_fg_color(qr_bg)
             slide_colors[idx] = (qr_bg, qr_fg)
             qr_rects_by_idx[idx] = find_qr_rects(prs.slides[idx])
-            placement = "replace in place" if qr_rects_by_idx[idx] else "new (bottom-right)"
+            placement = (
+                "replace in place" if qr_rects_by_idx[idx] else "new (bottom-right)"
+            )
             print(f"  Slide {idx + 1}: bg=RGB{qr_bg}, fg=RGB{qr_fg} — {placement}")
 
         # Group slides by color scheme to generate minimal QR PNGs
@@ -1507,23 +1641,29 @@ def _publish(args, effects_receipt, vault_path, vault_present_at_start,
                     bg_hex = "{:02x}{:02x}{:02x}".format(*qr_bg)
                     qr_filename = f"{args.talk_slug}-qr-{bg_hex}.png"
 
-                qr_path = args.output if (args.output and len(color_groups) == 1) else os.path.join(deck_dir, qr_filename)
+                qr_path = (
+                    args.output
+                    if (args.output and len(color_groups) == 1)
+                    else os.path.join(deck_dir, qr_filename)
+                )
                 generate_qr_png(qr_url, qr_fg, qr_bg, qr_path)
                 size_kb = os.path.getsize(qr_path) / 1024
-                print(f"  QR PNG saved: {qr_filename} ({size_kb:.1f} KB) — for slide(s) {[i + 1 for i in indices]}")
+                print(
+                    f"  QR PNG saved: {qr_filename} ({size_kb:.1f} KB) — for slide(s) {[i + 1 for i in indices]}"
+                )
                 qr_paths_generated.append(
                     (qr_path, None if len(color_groups) == 1 else bg_hex)
                 )
                 # VBA is 1-based; pair each slide with its existing-QR rects
-                insert_jobs.append((qr_path, [(i + 1, qr_rects_by_idx[i]) for i in indices]))
+                insert_jobs.append(
+                    (qr_path, [(i + 1, qr_rects_by_idx[i]) for i in indices])
+                )
 
             # Release the read-only deck handle, then write via the real
             # PowerPoint app (valid OOXML; see rules/deck-editing-rules.md).
             prs = None
             here = os.path.dirname(os.path.abspath(__file__))
-            effects_receipt.record_artifacts(
-                [path for path, _bg in qr_paths_generated]
-            )
+            effects_receipt.record_artifacts([path for path, _bg in qr_paths_generated])
             insert_qr_via_powerpoint(args.deck, insert_jobs, here)
             print(f"Deck updated via PowerPoint: {args.deck}")
             effects_receipt.record_deck(args.deck)
@@ -1535,7 +1675,9 @@ def _publish(args, effects_receipt, vault_path, vault_present_at_start,
         else:
             # Dry run — just report what would happen
             for (qr_bg, qr_fg), indices in color_groups.items():
-                print(f"  DRY RUN: would generate QR bg=RGB{qr_bg} fg=RGB{qr_fg} for slides {[i + 1 for i in indices]}")
+                print(
+                    f"  DRY RUN: would generate QR bg=RGB{qr_bg} fg=RGB{qr_fg} for slides {[i + 1 for i in indices]}"
+                )
             artifacts = None
 
     # A dry run generated nothing, so there is no artifact to bind and the
@@ -1549,9 +1691,7 @@ def _publish(args, effects_receipt, vault_path, vault_present_at_start,
             try:
                 # Rebase onto the current generation rather than committing the
                 # snapshot taken before the link, PNGs, and deck were changed.
-                write_result = commit_qr_record(
-                    tdb_path, meta, artifacts, prior_record
-                )
+                write_result = commit_qr_record(tdb_path, meta, artifacts, prior_record)
             except ValueError as exc:
                 # Single JSON document on stderr; the skill renders it.
                 _emit_unfinalized_effects(effects_receipt, str(exc))
@@ -1569,7 +1709,9 @@ def _publish(args, effects_receipt, vault_path, vault_present_at_start,
             for warning in write_result.warnings:
                 print(f"WARNING: {warning}", file=sys.stderr)
         else:
-            print(f"  NOTE: Vault path {vault_path} not found, tracking DB not persisted")
+            print(
+                f"  NOTE: Vault path {vault_path} not found, tracking DB not persisted"
+            )
 
     print("\nDone.")
 

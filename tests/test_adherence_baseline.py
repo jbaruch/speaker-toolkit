@@ -157,14 +157,12 @@ def test_partitions_exact_generation_with_deterministic_exclusion_reasons(
         selected_invalid,
     ]
 
-    current, excluded, details = (
-        adherence_baseline.partition_pattern_scoring_cohort(
-            talks,
-            excluded_filenames=["selected.md"],
-            pattern_catalog_fingerprint=CATALOG,
-            pattern_scoring_schema_version=2,
-            evidence_freshness_assessor=None,
-        )
+    current, excluded, details = adherence_baseline.partition_pattern_scoring_cohort(
+        talks,
+        excluded_filenames=["selected.md"],
+        pattern_catalog_fingerprint=CATALOG,
+        pattern_scoring_schema_version=2,
+        evidence_freshness_assessor=None,
     )
 
     assert [talk["filename"] for talk in current] == ["current.md"]
@@ -192,9 +190,7 @@ def test_partitions_exact_generation_with_deterministic_exclusion_reasons(
         {
             "filename": "legacy.md",
             "reason_codes": ["legacy_generation"],
-            "observed_pattern_scoring_generation_status": (
-                "legacy_unbaselineable"
-            ),
+            "observed_pattern_scoring_generation_status": ("legacy_unbaselineable"),
             "observed_pattern_catalog_fingerprint": None,
             "observed_pattern_scoring_schema_version": None,
             **common_expected,
@@ -250,18 +246,16 @@ def test_scoring_v4_excludes_stale_evidence_with_canonical_details(
 ):
     talk = _talk("stale.md", 2, scoring_schema=4)
 
-    current, excluded, details = (
-        adherence_baseline.partition_pattern_scoring_cohort(
-            [talk],
-            excluded_filenames=(),
-            pattern_catalog_fingerprint=CATALOG,
-            pattern_scoring_schema_version=4,
-            evidence_freshness_assessor=lambda _talk: (
-                "source_inspection[0]:artifact_path:missing",
-                "patterns_detected[0].citation[0]:artifact_path:digest_mismatch",
-                "source_inspection[0]:artifact_path:missing",
-            ),
-        )
+    current, excluded, details = adherence_baseline.partition_pattern_scoring_cohort(
+        [talk],
+        excluded_filenames=(),
+        pattern_catalog_fingerprint=CATALOG,
+        pattern_scoring_schema_version=4,
+        evidence_freshness_assessor=lambda _talk: (
+            "source_inspection[0]:artifact_path:missing",
+            "patterns_detected[0].citation[0]:artifact_path:digest_mismatch",
+            "source_inspection[0]:artifact_path:missing",
+        ),
     )
 
     assert current == []
@@ -289,16 +283,14 @@ def test_historical_scoring_schema_never_invokes_freshness_assessor(
 ):
     talk = _talk("historical.md", 2, scoring_schema=2)
 
-    current, excluded, details = (
-        adherence_baseline.partition_pattern_scoring_cohort(
-            [talk],
-            excluded_filenames=(),
-            pattern_catalog_fingerprint=CATALOG,
-            pattern_scoring_schema_version=2,
-            evidence_freshness_assessor=lambda _talk: (_ for _ in ()).throw(
-                AssertionError("historical selector invoked freshness")
-            ),
-        )
+    current, excluded, details = adherence_baseline.partition_pattern_scoring_cohort(
+        [talk],
+        excluded_filenames=(),
+        pattern_catalog_fingerprint=CATALOG,
+        pattern_scoring_schema_version=2,
+        evidence_freshness_assessor=lambda _talk: (_ for _ in ()).throw(
+            AssertionError("historical selector invoked freshness")
+        ),
     )
 
     assert current == [talk]

@@ -57,14 +57,17 @@ from pptx_discovery_contract import (
 
 PLAN_SCHEMA_VERSION = 1
 OWNER_RECORD_SCHEMA_VERSION = CONFIRMED_INTENT_RECORD_SCHEMA_VERSION
-if len(
-    {
-        OWNER_RECORD_SCHEMA_VERSION,
-        PPTX_CATALOG_RECORD_SCHEMA_VERSION,
-        RESOURCE_RECORD_SCHEMA_VERSION,
-        THUMBNAIL_RECORD_SCHEMA_VERSION,
-    }
-) != 1:
+if (
+    len(
+        {
+            OWNER_RECORD_SCHEMA_VERSION,
+            PPTX_CATALOG_RECORD_SCHEMA_VERSION,
+            RESOURCE_RECORD_SCHEMA_VERSION,
+            THUMBNAIL_RECORD_SCHEMA_VERSION,
+        }
+    )
+    != 1
+):
     raise RuntimeError("typed owner collection versions require per-kind validation")
 MISSING_MARKER = {"$missing": True}
 COLLECTION_IDENTITIES = {
@@ -83,9 +86,7 @@ PUBLISHING_TALK_FIELDS = frozenset(
         "youtube_id",
     }
 )
-CLARIFICATION_TALK_FIELDS = frozenset(
-    {"blind_spot_observations", "humor_postmortem"}
-)
+CLARIFICATION_TALK_FIELDS = frozenset({"blind_spot_observations", "humor_postmortem"})
 GOAL_VERIFICATION_FIELDS = frozenset(
     {
         "status",
@@ -106,6 +107,8 @@ CONFIRMED_INTENT_REQUIRED_FIELDS = OWNER_CONFIRMED_INTENT_REQUIRED_FIELDS | {
 RESOURCE_REQUIRED_FIELDS = OWNER_RESOURCE_REQUIRED_FIELDS | {"schema_version"}
 PPTX_REQUIRED_FIELDS = PPTX_CATALOG_REQUIRED_FIELDS | {"schema_version"}
 THUMBNAIL_REQUIRED_FIELDS = OWNER_THUMBNAIL_REQUIRED_FIELDS | {"schema_version"}
+
+
 class TrackingDatabaseMutationError(ValueError):
     """A mutation plan, precondition, or database shape is invalid."""
 
@@ -130,7 +133,9 @@ def load_plan(path: Path) -> dict[str, Any]:
     try:
         raw = path.read_bytes()
     except OSError as exc:
-        raise TrackingDatabaseMutationError(f"cannot read mutation plan {path}: {exc}") from exc
+        raise TrackingDatabaseMutationError(
+            f"cannot read mutation plan {path}: {exc}"
+        ) from exc
     plan = _strict_json_object(raw, path, "mutation plan")
     if not json_values_equal(plan.get("schema_version"), PLAN_SCHEMA_VERSION):
         raise TrackingDatabaseMutationError(
@@ -142,7 +147,9 @@ def load_plan(path: Path) -> dict[str, Any]:
         )
     mutations = plan.get("mutations")
     if not isinstance(mutations, list) or not mutations:
-        raise TrackingDatabaseMutationError("mutation plan mutations must be a nonempty array")
+        raise TrackingDatabaseMutationError(
+            "mutation plan mutations must be a nonempty array"
+        )
     if any(not isinstance(mutation, dict) for mutation in mutations):
         raise TrackingDatabaseMutationError("every mutation must be a JSON object")
     return plan
@@ -160,7 +167,9 @@ def _require_keys(
     if missing:
         raise TrackingDatabaseMutationError(f"{label} is missing {sorted(missing)}")
     if unknown:
-        raise TrackingDatabaseMutationError(f"{label} has unknown fields {sorted(unknown)}")
+        raise TrackingDatabaseMutationError(
+            f"{label} has unknown fields {sorted(unknown)}"
+        )
 
 
 def _nonempty(value: object, label: str) -> str:
@@ -208,7 +217,9 @@ def _string_array(value: object, label: str, *, nonempty: bool = False) -> list[
         raise TrackingDatabaseMutationError(
             f"{label} must be {suffix} array of unique nonempty strings"
         )
-    normalized = [_nonempty(item, f"{label}[{index}]") for index, item in enumerate(value)]
+    normalized = [
+        _nonempty(item, f"{label}[{index}]") for index, item in enumerate(value)
+    ]
     if len(normalized) != len(set(normalized)):
         raise TrackingDatabaseMutationError(
             f"{label} must contain unique nonempty strings"
@@ -319,7 +330,9 @@ def _collection(
 ) -> list[dict[str, Any]]:
     value = database.setdefault(key, [])
     if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
-        raise TrackingDatabaseMutationError(f"database {key} must be an array of objects")
+        raise TrackingDatabaseMutationError(
+            f"database {key} must be an array of objects"
+        )
     return value
 
 
@@ -542,7 +555,9 @@ def _validate_collection_record(kind: str, record: dict[str, Any]) -> None:
             "shownotes_thumbnail_path",
         ):
             _nonempty(record[field], f"{label}.{field}")
-        _exact_integer(record["source_slide_num"], f"{label}.source_slide_num", minimum=1)
+        _exact_integer(
+            record["source_slide_num"], f"{label}.source_slide_num", minimum=1
+        )
         dimensions = _nonempty(record["dimensions"], f"{label}.dimensions")
         match = re.fullmatch(r"([1-9][0-9]*)x([1-9][0-9]*)", dimensions)
         if match is None:
@@ -570,10 +585,14 @@ def _apply_collection_upsert(
     )
     record = mutation["record"]
     if not isinstance(record, dict):
-        raise TrackingDatabaseMutationError(f"mutations[{index}].record must be an object")
+        raise TrackingDatabaseMutationError(
+            f"mutations[{index}].record must be an object"
+        )
     _validate_collection_record(kind, record)
     collection_name, identity_field = COLLECTION_IDENTITIES[kind]
-    identity = _nonempty(record.get(identity_field), f"mutations[{index}].record.{identity_field}")
+    identity = _nonempty(
+        record.get(identity_field), f"mutations[{index}].record.{identity_field}"
+    )
     records = _collection(database, collection_name)
     record_index, current = _find_unique_record(
         records,
@@ -723,8 +742,14 @@ def _apply_record_patch(
     allowed_fields: frozenset[str],
     label: str,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    if not isinstance(expect, dict) or not isinstance(set_values, dict) or not set_values:
-        raise TrackingDatabaseMutationError(f"{label} expect/set must be nonempty objects")
+    if (
+        not isinstance(expect, dict)
+        or not isinstance(set_values, dict)
+        or not set_values
+    ):
+        raise TrackingDatabaseMutationError(
+            f"{label} expect/set must be nonempty objects"
+        )
     if set(set_values) - allowed_fields:
         raise TrackingDatabaseMutationError(
             f"{label} set has unsupported fields {sorted(set(set_values) - allowed_fields)}"
@@ -843,7 +868,9 @@ def _apply_goal_verification(
     goals = _collection(database, "improvement_goals")
     _, goal = _find_unique_record(goals, "id", identity, label="improvement_goals")
     if goal is None:
-        raise TrackingDatabaseMutationError(f"improvement goal {identity!r} does not exist")
+        raise TrackingDatabaseMutationError(
+            f"improvement goal {identity!r} does not exist"
+        )
     goal_version = goal.get("schema_version")
     goal_kind = goal.get("kind")
     if goal_version == 1:
@@ -941,7 +968,9 @@ def _apply_record_pptx(
     )
     record = mutation["record"]
     if not isinstance(record, dict):
-        raise TrackingDatabaseMutationError(f"mutations[{index}].record must be an object")
+        raise TrackingDatabaseMutationError(
+            f"mutations[{index}].record must be an object"
+        )
     record_label = f"mutations[{index}].record"
     _require_keys(
         record,
@@ -951,7 +980,9 @@ def _apply_record_pptx(
     _validate_record_schema(record, record_label)
     pptx_path = _nonempty(record["pptx_path"], f"{record_label}.pptx_path")
     if type(record["matched"]) is not bool:
-        raise TrackingDatabaseMutationError(f"mutations[{index}].record.matched must be boolean")
+        raise TrackingDatabaseMutationError(
+            f"mutations[{index}].record.matched must be boolean"
+        )
     _exact_integer(record["slide_count"], f"{record_label}.slide_count")
     if type(record["visual_extracted"]) is not bool:
         raise TrackingDatabaseMutationError(
@@ -959,7 +990,9 @@ def _apply_record_pptx(
         )
     talk_filename = record.get("talk_filename")
     if talk_filename is not None:
-        talk_filename = _nonempty(talk_filename, f"mutations[{index}].record.talk_filename")
+        talk_filename = _nonempty(
+            talk_filename, f"mutations[{index}].record.talk_filename"
+        )
     if record["matched"] != (talk_filename is not None):
         raise TrackingDatabaseMutationError(
             f"mutations[{index}] matched must be true exactly when talk_filename is set"
@@ -1025,12 +1058,16 @@ def _validate_database_shape(database: dict[str, Any]) -> None:
     if not isinstance(config, dict):
         raise TrackingDatabaseMutationError("database config must be an object")
     if not isinstance(talks, list) or any(not isinstance(talk, dict) for talk in talks):
-        raise TrackingDatabaseMutationError("database talks must be an array of objects")
+        raise TrackingDatabaseMutationError(
+            "database talks must be an array of objects"
+        )
     seen: set[str] = set()
     for index, talk in enumerate(talks):
         filename = _nonempty(talk.get("filename"), f"talks[{index}].filename")
         if filename in seen:
-            raise TrackingDatabaseMutationError(f"database repeats talk filename {filename!r}")
+            raise TrackingDatabaseMutationError(
+                f"database repeats talk filename {filename!r}"
+            )
         seen.add(filename)
 
 
@@ -1042,7 +1079,9 @@ def initial_database(mutation: dict[str, Any], *, index: int) -> dict[str, Any]:
     )
     config = mutation["config"]
     if not isinstance(config, dict):
-        raise TrackingDatabaseMutationError(f"mutations[{index}].config must be an object")
+        raise TrackingDatabaseMutationError(
+            f"mutations[{index}].config must be an object"
+        )
     initial_config = copy.deepcopy(config)
     if "schema_version" in initial_config and not json_values_equal(
         initial_config["schema_version"],
@@ -1061,9 +1100,7 @@ def initial_database(mutation: dict[str, Any], *, index: int) -> dict[str, Any]:
         initial_config["pptx_directory_exclusions"] = (
             validate_pptx_directory_exclusions(
                 initial_config["pptx_directory_exclusions"],
-                label=(
-                    f"mutations[{index}].config.pptx_directory_exclusions"
-                ),
+                label=(f"mutations[{index}].config.pptx_directory_exclusions"),
             )
         )
     except PptxDiscoveryContractError as exc:
@@ -1135,7 +1172,9 @@ def build_candidate(
 def _validate_digest(value: str) -> None:
     if value == "missing":
         return
-    if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+    if len(value) != 64 or any(
+        character not in "0123456789abcdef" for character in value
+    ):
         raise TrackingDatabaseMutationError(
             "--expected-sha256 must be `missing` or 64 lowercase hexadecimal characters"
         )
@@ -1157,8 +1196,13 @@ def execute(
             "--apply requires --expected-sha256 from the reviewed dry-run report"
         )
 
-    initialize = len(mutations) == 1 and mutations[0].get("kind") == "initialize_database"
-    if any(mutation.get("kind") == "initialize_database" for mutation in mutations) and not initialize:
+    initialize = (
+        len(mutations) == 1 and mutations[0].get("kind") == "initialize_database"
+    )
+    if (
+        any(mutation.get("kind") == "initialize_database" for mutation in mutations)
+        and not initialize
+    ):
         raise TrackingDatabaseMutationError(
             "initialize_database must be the mutation plan's sole mutation"
         )

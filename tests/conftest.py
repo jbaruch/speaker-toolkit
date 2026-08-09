@@ -29,9 +29,7 @@ def current_tracking_config(**updates: object) -> dict[str, object]:
     """Return the owner-current config generation for writer fixtures."""
     config: dict[str, object] = {
         "schema_version": 2,
-        "pptx_directory_exclusions": list(
-            DEFAULT_PPTX_DIRECTORY_EXCLUSIONS
-        ),
+        "pptx_directory_exclusions": list(DEFAULT_PPTX_DIRECTORY_EXCLUSIONS),
     }
     config.update(updates)
     return config

@@ -65,11 +65,7 @@ def catalog_entry_paths(root: Path) -> list[Path]:
     """Return every recursive Markdown entry except the catalog-root index."""
     root_index = root / "_index.md"
     return sorted(
-        (
-            path
-            for path in root.rglob("*.md")
-            if path.is_file() and path != root_index
-        ),
+        (path for path in root.rglob("*.md") if path.is_file() and path != root_index),
         key=lambda path: path.relative_to(root).as_posix(),
     )
 
@@ -94,29 +90,32 @@ def parse_evidence_source_groups(
         else:
             raise ValueError(
                 f"{field_name}[{index}] must be a source string or an "
-                "all-of list containing at least two sources")
+                "all-of list containing at least two sources"
+            )
         if any(not isinstance(source, str) for source in raw_group):
-            raise ValueError(
-                f"{field_name}[{index}] sources must all be strings")
+            raise ValueError(f"{field_name}[{index}] sources must all be strings")
         if len(raw_group) != len(set(raw_group)):
-            raise ValueError(
-                f"{field_name}[{index}] contains duplicate sources")
+            raise ValueError(f"{field_name}[{index}] contains duplicate sources")
         unknown = sorted(set(raw_group) - allowed)
         if unknown:
             raise ValueError(
-                f"{field_name}[{index}] contains unknown sources: {unknown}")
+                f"{field_name}[{index}] contains unknown sources: {unknown}"
+            )
         group = frozenset(raw_group)
         if group == frozenset({SOURCE_COMPARISON}):
             raise ValueError(
                 f"{field_name}[{index}] cannot use source_comparison as a "
-                "singleton; name the exact underlying source pair")
+                "singleton; name the exact underlying source pair"
+            )
         if len(group) > 1 and SOURCE_COMPARISON in group:
             raise ValueError(
                 "source_comparison labels a completed comparison and cannot be "
-                "an underlying source in an all-of alternative")
+                "an underlying source in an all-of alternative"
+            )
         if group in groups:
             raise ValueError(
-                f"{field_name} contains duplicate alternative {sorted(group)}")
+                f"{field_name} contains duplicate alternative {sorted(group)}"
+            )
         groups.append(group)
     return tuple(groups)
 
@@ -130,8 +129,7 @@ def qualifying_evidence_groups(
     return tuple(
         group
         for group in groups
-        if group <= available and (
-            len(group) == 1 or SOURCE_COMPARISON in available)
+        if group <= available and (len(group) == 1 or SOURCE_COMPARISON in available)
     )
 
 

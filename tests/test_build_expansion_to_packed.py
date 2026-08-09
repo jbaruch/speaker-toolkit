@@ -10,10 +10,12 @@ def _manifest(builds):
 
 
 def test_packs_descending_by_parent(build_expansion_to_packed):
-    m = _manifest([
-        {"parent": 7, "frames": ["/b/s7-00.jpg", "/b/s7-01.jpg"], "notes": ""},
-        {"parent": 9, "frames": ["/b/s9-00.jpg", "/b/s9-01.jpg"], "notes": "final"},
-    ])
+    m = _manifest(
+        [
+            {"parent": 7, "frames": ["/b/s7-00.jpg", "/b/s7-01.jpg"], "notes": ""},
+            {"parent": 9, "frames": ["/b/s9-00.jpg", "/b/s9-01.jpg"], "notes": "final"},
+        ]
+    )
     packed = build_expansion_to_packed.manifest_to_packed(m)
     records = packed.split(RS)
     # Descending: parent 9 first so its insertion can't shift parent 7's index.
@@ -22,7 +24,15 @@ def test_packs_descending_by_parent(build_expansion_to_packed):
 
 
 def test_record_fields_and_frame_order(build_expansion_to_packed):
-    m = _manifest([{"parent": 7, "frames": ["/b/00.jpg", "/b/01.jpg", "/b/02.jpg"], "notes": "spk"}])
+    m = _manifest(
+        [
+            {
+                "parent": 7,
+                "frames": ["/b/00.jpg", "/b/01.jpg", "/b/02.jpg"],
+                "notes": "spk",
+            }
+        ]
+    )
     packed = build_expansion_to_packed.manifest_to_packed(m)
     parent, notes, frames = packed.split(US)
     assert parent == "7"
@@ -51,10 +61,15 @@ def test_reserved_control_char_in_path_errors(build_expansion_to_packed):
 
 def test_cli_writes_packed_file(build_expansion_to_packed, tmp_path):
     import json
+
     manifest = tmp_path / "builds.json"
-    manifest.write_text(json.dumps(_manifest(
-        [{"parent": 4, "frames": ["/b/00.jpg", "/b/01.jpg"], "notes": ""}]
-    )))
+    manifest.write_text(
+        json.dumps(
+            _manifest(
+                [{"parent": 4, "frames": ["/b/00.jpg", "/b/01.jpg"], "notes": ""}]
+            )
+        )
+    )
     out = tmp_path / "packed.txt"
     rc = build_expansion_to_packed.main([str(manifest), str(out)])
     assert rc == 0
@@ -64,7 +79,10 @@ def test_cli_writes_packed_file(build_expansion_to_packed, tmp_path):
 
 
 def test_wrong_schema_version_errors(build_expansion_to_packed):
-    bad = {"schema_version": 2, "builds": [{"parent": 7, "frames": ["/b/00.jpg"], "notes": ""}]}
+    bad = {
+        "schema_version": 2,
+        "builds": [{"parent": 7, "frames": ["/b/00.jpg"], "notes": ""}],
+    }
     with pytest.raises(ValueError, match="schema_version"):
         build_expansion_to_packed.manifest_to_packed(bad)
 
@@ -76,7 +94,10 @@ def test_missing_schema_version_errors(build_expansion_to_packed):
 
 
 def test_non_string_notes_errors(build_expansion_to_packed):
-    bad = {"schema_version": 1, "builds": [{"parent": 7, "frames": ["/b/00.jpg"], "notes": 123}]}
+    bad = {
+        "schema_version": 1,
+        "builds": [{"parent": 7, "frames": ["/b/00.jpg"], "notes": 123}],
+    }
     with pytest.raises(ValueError, match="notes for parent 7 must be a string"):
         build_expansion_to_packed.manifest_to_packed(bad)
 
@@ -102,10 +123,16 @@ def test_non_positive_parent_rejected(build_expansion_to_packed):
 
 def test_unwritable_out_returns_error(build_expansion_to_packed, tmp_path, capsys):
     import json
+
     manifest = tmp_path / "builds.json"
-    manifest.write_text(json.dumps(
-        {"schema_version": 1, "builds": [{"parent": 4, "frames": ["/b/00.jpg"], "notes": ""}]}
-    ))
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "builds": [{"parent": 4, "frames": ["/b/00.jpg"], "notes": ""}],
+            }
+        )
+    )
     out_dir = tmp_path / "outdir"
     out_dir.mkdir()
     rc = build_expansion_to_packed.main([str(manifest), str(out_dir)])

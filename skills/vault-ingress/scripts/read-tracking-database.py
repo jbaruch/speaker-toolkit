@@ -34,8 +34,7 @@ def execute(path: Path) -> dict[str, object]:
     if not assessment.usable:
         reasons = ", ".join(assessment.reason_codes) or "unsupported_owner_state"
         raise TrackingDatabaseIOError(
-            "tracking database has no usable legacy/current owner state "
-            f"({reasons})"
+            f"tracking database has no usable legacy/current owner state ({reasons})"
         )
     return {
         "schema_version": REPORT_SCHEMA_VERSION,

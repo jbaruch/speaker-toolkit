@@ -17,14 +17,16 @@ def base_database():
     return {
         "schema_version": 1,
         "config": current_tracking_config(),
-        "talks": [{
-            "schema_version": 5,
-            "filename": "talk.md",
-            "status": "processed",
-            "video_url": "https://youtu.be/AbCdEfGhI_1",
-            "youtube_id": "AbCdEfGhI_1",
-            "transcript_source": "youtube_auto",
-        }],
+        "talks": [
+            {
+                "schema_version": 5,
+                "filename": "talk.md",
+                "status": "processed",
+                "video_url": "https://youtu.be/AbCdEfGhI_1",
+                "youtube_id": "AbCdEfGhI_1",
+                "transcript_source": "youtube_auto",
+            }
+        ],
         "pptx_catalog": [],
         "qr_codes": [],
         "resources": [],
@@ -57,7 +59,8 @@ def repair_plan(**overrides):
 
 
 def test_dry_run_reports_changes_without_writing(
-    apply_source_repairs, tmp_path,
+    apply_source_repairs,
+    tmp_path,
 ):
     database_path = tmp_path / "tracking-database.json"
     plan_path = tmp_path / "plan.json"
@@ -67,7 +70,9 @@ def test_dry_run_reports_changes_without_writing(
     before = database_path.read_bytes()
 
     report = apply_source_repairs.execute(
-        database_path, plan_path, apply=False,
+        database_path,
+        plan_path,
+        apply=False,
     )
 
     assert report["schema_version"] == 2
@@ -83,7 +88,8 @@ def test_dry_run_reports_changes_without_writing(
 
 
 def test_legacy_database_rejects_repair_dry_run_without_writing(
-    apply_source_repairs, tmp_path,
+    apply_source_repairs,
+    tmp_path,
 ):
     database_path = tmp_path / "tracking-database.json"
     plan_path = tmp_path / "plan.json"
@@ -105,20 +111,23 @@ def test_legacy_database_rejects_repair_dry_run_without_writing(
 
 
 def test_repair_cannot_create_unversioned_source_rejection(
-    apply_source_repairs, tmp_path,
+    apply_source_repairs,
+    tmp_path,
 ):
     database_path = tmp_path / "tracking-database.json"
     plan_path = tmp_path / "plan.json"
     write_json(database_path, base_database())
     plan = repair_plan()
     plan["repairs"][0]["expect"]["source_rejections"] = {"$missing": True}
-    plan["repairs"][0]["set"]["source_rejections"] = [{
-        "source_type": "video",
-        "url": "https://youtu.be/AbCdEfGhI_1",
-        "reason": "wrong_delivery",
-        "evidence": "provider metadata identifies another delivery",
-        "verified_at": "2026-08-01T12:00:00+00:00",
-    }]
+    plan["repairs"][0]["set"]["source_rejections"] = [
+        {
+            "source_type": "video",
+            "url": "https://youtu.be/AbCdEfGhI_1",
+            "reason": "wrong_delivery",
+            "evidence": "provider metadata identifies another delivery",
+            "verified_at": "2026-08-01T12:00:00+00:00",
+        }
+    ]
     write_json(plan_path, plan)
     before = database_path.read_bytes()
 
@@ -132,7 +141,8 @@ def test_repair_cannot_create_unversioned_source_rejection(
 
 
 def test_apply_writes_atomically_and_creates_exact_backup(
-    apply_source_repairs, tmp_path,
+    apply_source_repairs,
+    tmp_path,
 ):
     database_path = tmp_path / "tracking-database.json"
     plan_path = tmp_path / "plan.json"
@@ -142,7 +152,10 @@ def test_apply_writes_atomically_and_creates_exact_backup(
     before = database_path.read_bytes()
 
     report = apply_source_repairs.execute(
-        database_path, plan_path, apply=True, backup_dir=backup_dir,
+        database_path,
+        plan_path,
+        apply=True,
+        backup_dir=backup_dir,
     )
 
     repaired = json.loads(database_path.read_text(encoding="utf-8"))
@@ -156,9 +169,10 @@ def test_apply_writes_atomically_and_creates_exact_backup(
     assert report["backup"] is not None
     assert report["schema_version"] == 2
     assert report["input_sha256"] == hashlib.sha256(before).hexdigest()
-    assert report["output_sha256"] == hashlib.sha256(
-        database_path.read_bytes()
-    ).hexdigest()
+    assert (
+        report["output_sha256"]
+        == hashlib.sha256(database_path.read_bytes()).hexdigest()
+    )
     assert report["database_written"] is True
     assert report["durability_state"] == "durable"
     assert report["input_sha256"] in Path(report["backup"]).name
@@ -179,12 +193,14 @@ def test_idempotent_apply_preserves_exact_bytes_inode_and_skips_backup(
         plan_path,
         {
             "schema_version": 1,
-            "repairs": [{
-                "filename": "talk.md",
-                "reason": "idempotent replay",
-                "expect": {"transcript_source": "youtube_auto"},
-                "set": {"transcript_source": "youtube_auto"},
-            }],
+            "repairs": [
+                {
+                    "filename": "talk.md",
+                    "reason": "idempotent replay",
+                    "expect": {"transcript_source": "youtube_auto"},
+                    "set": {"transcript_source": "youtube_auto"},
+                }
+            ],
         },
     )
 
@@ -206,7 +222,10 @@ def test_idempotent_apply_preserves_exact_bytes_inode_and_skips_backup(
 
 
 def test_atomic_write_cleans_stage_and_propagates_interrupt(
-    apply_source_repairs, tracking_database_io, tmp_path, monkeypatch,
+    apply_source_repairs,
+    tracking_database_io,
+    tmp_path,
+    monkeypatch,
 ):
     target = tmp_path / "tracking-database.json"
     target.write_text('{"value": "old"}\n', encoding="utf-8")
@@ -227,7 +246,8 @@ def test_atomic_write_cleans_stage_and_propagates_interrupt(
 
 
 def test_expectation_mismatch_aborts_whole_plan_without_backup(
-    apply_source_repairs, tmp_path,
+    apply_source_repairs,
+    tmp_path,
 ):
     database_path = tmp_path / "tracking-database.json"
     plan_path = tmp_path / "plan.json"
@@ -243,7 +263,10 @@ def test_expectation_mismatch_aborts_whole_plan_without_backup(
         apply_source_repairs.SourceRepairError, match="preconditions failed"
     ):
         apply_source_repairs.execute(
-            database_path, plan_path, apply=True, backup_dir=backup_dir,
+            database_path,
+            plan_path,
+            apply=True,
+            backup_dir=backup_dir,
         )
 
     assert database_path.read_bytes() == before
@@ -251,7 +274,8 @@ def test_expectation_mismatch_aborts_whole_plan_without_backup(
 
 
 def test_missing_marker_distinguishes_absent_from_null(
-    apply_source_repairs, tmp_path,
+    apply_source_repairs,
+    tmp_path,
 ):
     database_path = tmp_path / "tracking-database.json"
     plan_path = tmp_path / "plan.json"
@@ -266,14 +290,17 @@ def test_missing_marker_distinguishes_absent_from_null(
     write_json(plan_path, plan)
 
     report = apply_source_repairs.execute(
-        database_path, plan_path, apply=False,
+        database_path,
+        plan_path,
+        apply=False,
     )
 
     assert report["changes"][0]["before"]["youtube_id"] == {"$missing": True}
 
 
 def test_active_queue_claim_cannot_be_repaired(
-    apply_source_repairs, tmp_path,
+    apply_source_repairs,
+    tmp_path,
 ):
     database_path = tmp_path / "tracking-database.json"
     plan_path = tmp_path / "plan.json"
@@ -298,11 +325,14 @@ def test_active_queue_claim_cannot_be_repaired(
         apply_source_repairs.execute(database_path, plan_path, apply=False)
 
 
-@pytest.mark.parametrize("mutation", [
-    {"set": {"rhetoric_notes": "not a source repair"}},
-    {"clear": ["rhetoric_notes"]},
-    {"set": {"status": "processed"}},
-])
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        {"set": {"rhetoric_notes": "not a source repair"}},
+        {"clear": ["rhetoric_notes"]},
+        {"set": {"status": "processed"}},
+    ],
+)
 def test_plan_rejects_out_of_scope_mutations(apply_source_repairs, mutation):
     plan = repair_plan(**mutation)
 

@@ -106,6 +106,7 @@ RAW_URL_RE = re.compile(r"https?://[^\s<>]+")
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 FileGeneration = tuple[int, int, int, int, int]
 
+
 class ShownotesScanError(ValueError):
     """Input or state prevents a deterministic shownotes scan."""
 

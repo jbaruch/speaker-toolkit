@@ -281,9 +281,9 @@ def test_supplied_vault_root_that_cannot_recompute_omits_the_missing_flag_error(
 
     assert rc == 1
     assert report["valid"] is False
-    assert not any(
-        "requires --vault-root" in error for error in report["errors"]
-    ), report["errors"]
+    assert not any("requires --vault-root" in error for error in report["errors"]), (
+        report["errors"]
+    )
     assert any(
         "could not recompute occurrence rows" in error for error in report["errors"]
     ), report["errors"]

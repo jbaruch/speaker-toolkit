@@ -122,12 +122,20 @@ def check(base: Path) -> list[str]:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
-        description="Keep deck-ops .bas/.applescript drivers shippable past tessl's extension filter.")
+        description="Keep deck-ops .bas/.applescript drivers shippable past tessl's extension filter."
+    )
     ap.add_argument("mode", choices=("materialize", "mirror", "check"))
-    ap.add_argument("--force", action="store_true",
-                    help="materialize: overwrite existing real drivers (refresh after a plugin update)")
-    ap.add_argument("--dir", type=Path, default=Path(__file__).resolve().parent,
-                    help="the scripts dir holding the drivers (default: this script's dir)")
+    ap.add_argument(
+        "--force",
+        action="store_true",
+        help="materialize: overwrite existing real drivers (refresh after a plugin update)",
+    )
+    ap.add_argument(
+        "--dir",
+        type=Path,
+        default=Path(__file__).resolve().parent,
+        help="the scripts dir holding the drivers (default: this script's dir)",
+    )
     args = ap.parse_args(argv)
     base = args.dir
 

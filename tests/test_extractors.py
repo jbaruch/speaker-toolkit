@@ -151,16 +151,18 @@ def test_slides_omits_interludes(extract_slides, outline_schema):
     import yaml as _yaml
 
     data = _yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
-    data["interludes"] = [{
-        "id": "demo-test-only",
-        "after_slide": 1,
-        "chapter": "ch1",
-        "title": "DEMO TEST — Should Not Appear In slides.md",
-        "script": [
-            {"cue": "TERMINAL UP"},
-            {"line": "This line should only appear in script.md."},
-        ],
-    }]
+    data["interludes"] = [
+        {
+            "id": "demo-test-only",
+            "after_slide": 1,
+            "chapter": "ch1",
+            "title": "DEMO TEST — Should Not Appear In slides.md",
+            "script": [
+                {"cue": "TERMINAL UP"},
+                {"line": "This line should only appear in script.md."},
+            ],
+        }
+    ]
     outline_with_interlude = outline_schema.Outline.model_validate(data)
     out = extract_slides.render(outline_with_interlude)
     assert "demo-test-only" not in out
@@ -177,16 +179,18 @@ def test_script_interleaves_interludes_after_anchor(extract_script, outline_sche
     import yaml
 
     data = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
-    data["interludes"] = [{
-        "id": "demo-X",
-        "after_slide": 1,
-        "chapter": "ch1",
-        "title": "DEMO X — Live Terminal",
-        "script": [
-            {"cue": "TERMINAL UP"},
-            {"line": "Watch this."},
-        ],
-    }]
+    data["interludes"] = [
+        {
+            "id": "demo-X",
+            "after_slide": 1,
+            "chapter": "ch1",
+            "title": "DEMO X — Live Terminal",
+            "script": [
+                {"cue": "TERMINAL UP"},
+                {"line": "Watch this."},
+            ],
+        }
+    ]
     outline_with_interlude = outline_schema.Outline.model_validate(data)
     out = extract_script.render(outline_with_interlude)
 

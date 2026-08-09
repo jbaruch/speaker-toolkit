@@ -69,7 +69,8 @@ def test_narrative_full_renders_per_slide_walk(extract_narrative, outline):
 
 
 def test_narrative_slide_synopsis_prefers_overlay_then_visual(
-    extract_narrative, outline,
+    extract_narrative,
+    outline,
 ):
     out = extract_narrative.render(outline)
     # Slide 2 has a text_overlay — use it
@@ -79,17 +80,21 @@ def test_narrative_slide_synopsis_prefers_overlay_then_visual(
 
 
 def test_narrative_inlines_interlude_at_anchor(
-    extract_narrative, outline_schema, base_data,
+    extract_narrative,
+    outline_schema,
+    base_data,
 ):
     """An interlude renders as a live-demo line right after its anchor slide."""
     data = copy.deepcopy(base_data)
-    data["interludes"] = [{
-        "id": "demo-vat",
-        "after_slide": 8,
-        "title": "Live coding: agent rewrites the VAT calc",
-        "chapter": "ch2",
-        "script": [{"line": "Watch what happens."}],
-    }]
+    data["interludes"] = [
+        {
+            "id": "demo-vat",
+            "after_slide": 8,
+            "title": "Live coding: agent rewrites the VAT calc",
+            "chapter": "ch2",
+            "script": [{"line": "Watch what happens."}],
+        }
+    ]
     outline = outline_schema.Outline.model_validate(data)
     out = extract_narrative.render(outline)
     assert "- *Live coding: agent rewrites the VAT calc — live demo*" in out
@@ -121,7 +126,9 @@ def test_narrative_renders_tldr_when_present(extract_narrative, outline):
 
 
 def test_narrative_never_reprints_full_thesis(
-    extract_narrative, outline_schema, base_data,
+    extract_narrative,
+    outline_schema,
+    base_data,
 ):
     """The elaborated talk.thesis must never appear — only the tldr does."""
     data = copy.deepcopy(base_data)
@@ -136,7 +143,9 @@ def test_narrative_never_reprints_full_thesis(
 
 
 def test_narrative_partial_tldr_only_stub(
-    extract_narrative, outline_schema, base_data,
+    extract_narrative,
+    outline_schema,
+    base_data,
 ):
     """Phase 1 stub: tldr renders, chapter body is a 'not yet authored' note."""
     data = {"talk": copy.deepcopy(base_data["talk"])}
@@ -150,7 +159,9 @@ def test_narrative_partial_tldr_only_stub(
 
 
 def test_narrative_partial_renders_chapters_without_slides(
-    extract_narrative, outline_schema, base_data,
+    extract_narrative,
+    outline_schema,
+    base_data,
 ):
     """Phase 2: chapters present, slides absent — full chapter body renders."""
     chapters = copy.deepcopy(base_data["chapters"])
@@ -167,7 +178,10 @@ def test_narrative_partial_renders_chapters_without_slides(
 
 
 def test_narrative_cli_partial_renders_talk_only(
-    extract_narrative, base_data, tmp_path, capsys,
+    extract_narrative,
+    base_data,
+    tmp_path,
+    capsys,
 ):
     """CLI --partial renders a talk-only outline to stdout."""
     data = {"talk": copy.deepcopy(base_data["talk"])}
@@ -180,7 +194,10 @@ def test_narrative_cli_partial_renders_talk_only(
 
 
 def test_narrative_cli_full_mode_rejects_slideless_outline(
-    extract_narrative, base_data, tmp_path, capsys,
+    extract_narrative,
+    base_data,
+    tmp_path,
+    capsys,
 ):
     """Without --partial, a slides-less outline fails full validation (exit 1)."""
     data = {"talk": copy.deepcopy(base_data["talk"])}
@@ -215,7 +232,8 @@ def _outline_from(outline_schema, base_data, mutate):
 
 
 def test_register_coverage_passes_when_all_four_answered(
-    check_rhetorical, outline,
+    check_rhetorical,
+    outline,
 ):
     content, flag_count = check_rhetorical.render(outline)
     assert "### Register coverage — ✅ **PASS**" in content
@@ -223,15 +241,20 @@ def test_register_coverage_passes_when_all_four_answered(
 
 
 def test_register_coverage_flags_missing_register(
-    check_rhetorical, outline_schema, base_data,
+    check_rhetorical,
+    outline_schema,
+    base_data,
 ):
     """Dropping the C+D walk-around leaves a heterogeneous room half-answered."""
+
     def mutate(data):
         for slide in data["slides"]:
             slide["applied_patterns"] = [
-                p for p in slide.get("applied_patterns", [])
+                p
+                for p in slide.get("applied_patterns", [])
                 if p.get("id") != "walk-around" or p.get("registers") != ["C", "D"]
             ]
+
     o = _outline_from(outline_schema, base_data, mutate)
     content, flag_count = check_rhetorical.render(o)
     assert "Register coverage" in content
@@ -240,14 +263,18 @@ def test_register_coverage_flags_missing_register(
 
 
 def test_register_coverage_flags_heterogeneous_with_no_walk_around(
-    check_rhetorical, outline_schema, base_data,
+    check_rhetorical,
+    outline_schema,
+    base_data,
 ):
     def mutate(data):
         for slide in data["slides"]:
             slide["applied_patterns"] = [
-                p for p in slide.get("applied_patterns", [])
+                p
+                for p in slide.get("applied_patterns", [])
                 if p.get("id") != "walk-around"
             ]
+
     o = _outline_from(outline_schema, base_data, mutate)
     content, flag_count = check_rhetorical.render(o)
     assert "no claim declares a walk-around" in content
@@ -255,17 +282,22 @@ def test_register_coverage_flags_heterogeneous_with_no_walk_around(
 
 
 def test_register_match_flags_unmatched_homogeneous_room(
-    check_rhetorical, outline_schema, base_data,
+    check_rhetorical,
+    outline_schema,
+    base_data,
 ):
     """A room declared homogeneous on C, with no walk-around answering C."""
+
     def mutate(data):
         data["talk"]["audience_spread"] = "homogeneous"
         data["talk"]["dominant_register"] = "C"
         for slide in data["slides"]:
             slide["applied_patterns"] = [
-                p for p in slide.get("applied_patterns", [])
+                p
+                for p in slide.get("applied_patterns", [])
                 if p.get("id") != "walk-around" or p.get("registers") != ["C", "D"]
             ]
+
     o = _outline_from(outline_schema, base_data, mutate)
     content, flag_count = check_rhetorical.render(o)
     assert "Register match" in content
@@ -274,32 +306,40 @@ def test_register_match_flags_unmatched_homogeneous_room(
 
 
 def test_register_match_passes_when_dominant_answered(
-    check_rhetorical, outline_schema, base_data,
+    check_rhetorical,
+    outline_schema,
+    base_data,
 ):
     def mutate(data):
         data["talk"]["audience_spread"] = "homogeneous"
         data["talk"]["dominant_register"] = "C"
+
     o = _outline_from(outline_schema, base_data, mutate)
     content, _ = check_rhetorical.render(o)
     assert "### Register match — ✅ **PASS**" in content
 
 
 def test_register_match_flags_homogeneous_with_zero_walk_arounds(
-    check_rhetorical, outline_schema, base_data,
+    check_rhetorical,
+    outline_schema,
+    base_data,
 ):
     """A homogeneous room with no audit at all must not pass as N/A.
 
     Declaring `dominant_register: C` and supplying no register evidence is an
     unanswered claim, not an inapplicable check.
     """
+
     def mutate(data):
         data["talk"]["audience_spread"] = "homogeneous"
         data["talk"]["dominant_register"] = "C"
         for slide in data["slides"]:
             slide["applied_patterns"] = [
-                p for p in slide.get("applied_patterns", [])
+                p
+                for p in slide.get("applied_patterns", [])
                 if p.get("id") != "walk-around"
             ]
+
     o = _outline_from(outline_schema, base_data, mutate)
     content, flag_count = check_rhetorical.render(o)
     assert "Register match — ⚠️" in content
@@ -309,14 +349,18 @@ def test_register_match_flags_homogeneous_with_zero_walk_arounds(
 
 
 def test_register_coverage_flags_walk_around_without_registers(
-    check_rhetorical, outline_schema, base_data,
+    check_rhetorical,
+    outline_schema,
+    base_data,
 ):
     """A walk-around with no `registers:` is unverifiable, not absent."""
+
     def mutate(data):
         for slide in data["slides"]:
             for p in slide.get("applied_patterns", []):
                 if p.get("id") == "walk-around":
                     p.pop("registers", None)
+
     o = _outline_from(outline_schema, base_data, mutate)
     content, flag_count = check_rhetorical.render(o)
     assert "no `registers:` set" in content
@@ -324,28 +368,35 @@ def test_register_coverage_flags_walk_around_without_registers(
 
 
 def test_register_coverage_counts_interlude_walk_around(
-    check_rhetorical, outline_schema, base_data,
+    check_rhetorical,
+    outline_schema,
+    base_data,
 ):
     """An interlude is a located, claim-bearing unit — its walk-around counts.
 
     A live demo answering "how does it work, in what order" is a B answer no
     slide can match. Only talk-level (which has no claim to locate) is barred.
     """
+
     def mutate(data):
         # Drop the slide-level C+D audit, and answer C+D from a demo instead.
         for slide in data["slides"]:
             slide["applied_patterns"] = [
-                p for p in slide.get("applied_patterns", [])
+                p
+                for p in slide.get("applied_patterns", [])
                 if p.get("id") != "walk-around" or p.get("registers") != ["C", "D"]
             ]
-        data["interludes"] = [{
-            "id": "demo-migration",
-            "after_slide": 8,
-            "title": "Live: migrating a service",
-            "chapter": "ch2",
-            "script": [{"line": "Watch who has to be paged."}],
-            "applied_patterns": [{"id": "walk-around", "registers": ["C", "D"]}],
-        }]
+        data["interludes"] = [
+            {
+                "id": "demo-migration",
+                "after_slide": 8,
+                "title": "Live: migrating a service",
+                "chapter": "ch2",
+                "script": [{"line": "Watch who has to be paged."}],
+                "applied_patterns": [{"id": "walk-around", "registers": ["C", "D"]}],
+            }
+        ]
+
     o = _outline_from(outline_schema, base_data, mutate)
     content, flag_count = check_rhetorical.render(o)
     assert "### Register coverage — ✅ **PASS**" in content
@@ -354,13 +405,16 @@ def test_register_coverage_counts_interlude_walk_around(
 
 
 def test_unannotated_walk_around_label_tracks_spread(
-    check_rhetorical, outline_schema, base_data,
+    check_rhetorical,
+    outline_schema,
+    base_data,
 ):
     """The section header must stay 'Register match' for a homogeneous room.
 
     A homogeneous run that emits 'Register coverage' breaks the header any
     reader — or downstream parse — keys on.
     """
+
     def mutate(data):
         data["talk"]["audience_spread"] = "homogeneous"
         data["talk"]["dominant_register"] = "A"
@@ -368,6 +422,7 @@ def test_unannotated_walk_around_label_tracks_spread(
             for p in slide.get("applied_patterns", []):
                 if p.get("id") == "walk-around":
                     p.pop("registers", None)
+
     o = _outline_from(outline_schema, base_data, mutate)
     content, _ = check_rhetorical.render(o)
     assert "### Register match — ⚠️" in content
@@ -375,12 +430,15 @@ def test_unannotated_walk_around_label_tracks_spread(
 
 
 def test_register_coverage_flags_unannotated_before_absent(
-    check_rhetorical, outline_schema, base_data,
+    check_rhetorical,
+    outline_schema,
+    base_data,
 ):
     """The unannotated message must win over 'no claim declares a walk-around'.
 
     Reporting an unannotated walk-around as absent misdescribes the outline.
     """
+
     def mutate(data):
         data["talk"]["audience_spread"] = "homogeneous"
         data["talk"]["dominant_register"] = "A"
@@ -388,6 +446,7 @@ def test_register_coverage_flags_unannotated_before_absent(
             for p in slide.get("applied_patterns", []):
                 if p.get("id") == "walk-around":
                     p.pop("registers", None)
+
     o = _outline_from(outline_schema, base_data, mutate)
     content, _ = check_rhetorical.render(o)
     assert "no `registers:` set" in content
@@ -406,7 +465,9 @@ def test_rhetorical_reports_thesis_ordering(check_rhetorical, outline):
     assert "preview slide 5 → payoff slide 11" in content
 
 
-def test_rhetorical_passes_sparkline_when_complete(check_rhetorical, outline_schema, base_data):
+def test_rhetorical_passes_sparkline_when_complete(
+    check_rhetorical, outline_schema, base_data
+):
     """Fixture's architecture is sparkline with call-to-adventure, new-bliss,
     star-moment. Add call-to-action to complete the set."""
     data = copy.deepcopy(base_data)
@@ -439,11 +500,14 @@ def test_rhetorical_includes_duration_accounting(check_rhetorical, outline):
 # ── check-rhetorical.py — FLAG cases via mutation ────────────────────
 
 
-def test_rhetorical_flags_missing_opening_punch(check_rhetorical, outline_schema, base_data):
+def test_rhetorical_flags_missing_opening_punch(
+    check_rhetorical, outline_schema, base_data
+):
     data = copy.deepcopy(base_data)
     # Remove opening-punch from slide 1
     data["slides"][0]["applied_patterns"] = [
-        p for p in data["slides"][0]["applied_patterns"]
+        p
+        for p in data["slides"][0]["applied_patterns"]
         if p.get("id") != "opening-punch"
     ]
     outline = outline_schema.Outline.model_validate(data)
@@ -453,14 +517,15 @@ def test_rhetorical_flags_missing_opening_punch(check_rhetorical, outline_schema
 
 
 def test_rhetorical_flags_sparkline_missing_call_to_action(
-    check_rhetorical, outline_schema, base_data,
+    check_rhetorical,
+    outline_schema,
+    base_data,
 ):
     data = copy.deepcopy(base_data)
     # Remove call-to-action from slide 10
     slide_10 = next(s for s in data["slides"] if s["n"] == 10)
     slide_10["applied_patterns"] = [
-        p for p in slide_10["applied_patterns"]
-        if p.get("id") != "call-to-action"
+        p for p in slide_10["applied_patterns"] if p.get("id") != "call-to-action"
     ]
     outline = outline_schema.Outline.model_validate(data)
     content, flag_count = check_rhetorical.render(outline)
@@ -469,16 +534,20 @@ def test_rhetorical_flags_sparkline_missing_call_to_action(
 
 
 def test_rhetorical_flags_too_many_inoculations(
-    check_rhetorical, outline_schema, base_data,
+    check_rhetorical,
+    outline_schema,
+    base_data,
 ):
     data = copy.deepcopy(base_data)
     # Fixture has 1 inoculation; add 3 more to push past the ≤3 limit
     for slide_n, vector in [(8, "fear"), (10, "obstacles"), (11, "comfort-zone")]:
         slide = next(s for s in data["slides"] if s["n"] == slide_n)
-        slide.setdefault("applied_patterns", []).append({
-            "id": "inoculation",
-            "resistance_vector": vector,
-        })
+        slide.setdefault("applied_patterns", []).append(
+            {
+                "id": "inoculation",
+                "resistance_vector": vector,
+            }
+        )
     outline = outline_schema.Outline.model_validate(data)
     content, flag_count = check_rhetorical.render(outline)
     assert flag_count >= 1
@@ -486,7 +555,9 @@ def test_rhetorical_flags_too_many_inoculations(
 
 
 def test_rhetorical_na_for_non_sparkline_arch(
-    check_rhetorical, outline_schema, base_data,
+    check_rhetorical,
+    outline_schema,
+    base_data,
 ):
     data = copy.deepcopy(base_data)
     data["talk"]["architecture"] = "talklet"
@@ -499,11 +570,14 @@ def test_rhetorical_na_for_non_sparkline_arch(
     assert "Sparkline elements — — *N/A*" in content
 
 
-def test_rhetorical_strict_mode_returns_flag_count(check_rhetorical, outline_schema, base_data):
+def test_rhetorical_strict_mode_returns_flag_count(
+    check_rhetorical, outline_schema, base_data
+):
     """Verify the render() function returns the flag count for --strict gating."""
     data = copy.deepcopy(base_data)
     data["slides"][0]["applied_patterns"] = [
-        p for p in data["slides"][0]["applied_patterns"]
+        p
+        for p in data["slides"][0]["applied_patterns"]
         if p.get("id") != "opening-punch"
     ]
     outline = outline_schema.Outline.model_validate(data)

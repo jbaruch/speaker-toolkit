@@ -47,7 +47,9 @@ def test_validate_and_resize_correct_dimensions(generate_thumbnail):
     img.save(buf, format="PNG")
     image_bytes = buf.getvalue()
 
-    result_bytes, mime = generate_thumbnail.validate_and_resize(image_bytes, "image/png")
+    result_bytes, mime = generate_thumbnail.validate_and_resize(
+        image_bytes, "image/png"
+    )
     result_img = Image.open(BytesIO(result_bytes))
     assert result_img.size == (1280, 720)
 
@@ -59,7 +61,9 @@ def test_validate_and_resize_rescales(generate_thumbnail):
     img.save(buf, format="PNG")
     image_bytes = buf.getvalue()
 
-    result_bytes, mime = generate_thumbnail.validate_and_resize(image_bytes, "image/png")
+    result_bytes, mime = generate_thumbnail.validate_and_resize(
+        image_bytes, "image/png"
+    )
     result_img = Image.open(BytesIO(result_bytes))
     assert result_img.size == (1280, 720)
 
@@ -77,7 +81,9 @@ def test_validate_and_resize_rgba_to_rgb(generate_thumbnail):
     img.save(buf, format="PNG")
     image_bytes = buf.getvalue()
 
-    result_bytes, mime = generate_thumbnail.validate_and_resize(image_bytes, "image/png")
+    result_bytes, mime = generate_thumbnail.validate_and_resize(
+        image_bytes, "image/png"
+    )
     result_img = Image.open(BytesIO(result_bytes))
     assert result_img.mode == "RGB"
 
@@ -136,7 +142,9 @@ def test_brand_colors_carry_through_all_softness_levels(generate_thumbnail):
     even on a retry."""
     for softness in ("default", "softer", "softest"):
         prompt = generate_thumbnail.build_thumbnail_prompt(
-            "T", brand_colors=["#5B2C6F", "#C0392B"], softness=softness,
+            "T",
+            brand_colors=["#5B2C6F", "#C0392B"],
+            softness=softness,
         )
         assert "#5B2C6F" in prompt, f"brand color missing at softness={softness}"
         assert "#C0392B" in prompt, f"brand color missing at softness={softness}"
@@ -171,9 +179,7 @@ def test_comic_book_prompt_uses_caricature_framing(generate_thumbnail):
 def test_comic_book_preserves_identifying_features_language(generate_thumbnail):
     """The speaker still needs to be recognizable in caricature form — the
     prompt must explicitly call out preserving identifying features."""
-    prompt = generate_thumbnail.build_thumbnail_prompt(
-        "T", aesthetic="comic_book"
-    )
+    prompt = generate_thumbnail.build_thumbnail_prompt("T", aesthetic="comic_book")
     assert "identifying features" in prompt.lower()
     # And we shouldn't fall back to forbidden assertive face-preservation
     # phrases that triggered the safety filter for photo realism (issue #19).
@@ -200,6 +206,7 @@ def test_comic_book_softness_levels_monotonic(generate_thumbnail):
 def test_unknown_aesthetic_raises(generate_thumbnail):
     """Unknown aesthetic value should fail loud, not silently fall back."""
     import pytest
+
     with pytest.raises(ValueError):
         generate_thumbnail.build_thumbnail_prompt("T", aesthetic="watercolor")
 
@@ -209,6 +216,7 @@ def test_unknown_softness_raises(generate_thumbnail):
     not silently produce default-strength output and break the retry ladder
     semantics."""
     import pytest
+
     with pytest.raises(ValueError):
         generate_thumbnail.build_thumbnail_prompt("T", softness="softrer")
 
@@ -216,13 +224,17 @@ def test_unknown_softness_raises(generate_thumbnail):
 def test_call_gemini_filter_rejection_prefix(generate_thumbnail, monkeypatch):
     """call_gemini must prefix safety-filter rejections with _ERR_FILTER so the
     retry ladder can distinguish them from transport-level failures."""
+
     class _FakeResp:
         def __init__(self, body):
             self._body = body
+
         def __enter__(self):
             return self
+
         def __exit__(self, *args):
             return False
+
         def read(self):
             return self._body.encode("utf-8")
 
@@ -246,7 +258,11 @@ def test_call_gemini_http_error_prefix(generate_thumbnail, monkeypatch):
 
     def _raise_http(req, timeout=None):
         raise urllib.error.HTTPError(
-            req.full_url, 429, "Too Many Requests", {}, BytesIO(b"rate limited"),
+            req.full_url,
+            429,
+            "Too Many Requests",
+            {},
+            BytesIO(b"rate limited"),
         )
 
     monkeypatch.setattr(generate_thumbnail.urllib.request, "urlopen", _raise_http)
@@ -270,13 +286,16 @@ def test_stylize_portrait_returns_stylized_bytes(generate_thumbnail, monkeypatch
 
     monkeypatch.setattr(generate_thumbnail, "call_gemini", fake_call_gemini)
     b64, mime = generate_thumbnail.stylize_portrait(
-        "ORIGINAL_B64", "image/jpeg",
+        "ORIGINAL_B64",
+        "image/jpeg",
         "retro tech-manual, sepia, pen-and-ink crosshatching",
-        "gemini-3-pro-image", "key",
+        "gemini-3-pro-image",
+        "key",
     )
     assert mime == "image/png"
     # Stylized bytes are returned base64-encoded
     import base64
+
     assert base64.b64decode(b64) == b"STYLIZED_BYTES"
     # The single Gemini call had exactly the photo + a prompt mentioning the anchor
     assert len(captured["parts"]) == 2
@@ -296,7 +315,11 @@ def test_stylize_portrait_raises_on_filter_rejection(generate_thumbnail, monkeyp
     monkeypatch.setattr(generate_thumbnail, "call_gemini", fake_call_gemini)
     with pytest.raises(RuntimeError) as excinfo:
         generate_thumbnail.stylize_portrait(
-            "B64", "image/jpeg", "any anchor", "model", "key",
+            "B64",
+            "image/jpeg",
+            "any anchor",
+            "model",
+            "key",
         )
     assert "Portrait pre-stylization failed" in str(excinfo.value)
 
@@ -312,7 +335,11 @@ def test_stylize_portrait_raises_on_http_error(generate_thumbnail, monkeypatch):
     monkeypatch.setattr(generate_thumbnail, "call_gemini", fake_call_gemini)
     with pytest.raises(RuntimeError):
         generate_thumbnail.stylize_portrait(
-            "B64", "image/jpeg", "any anchor", "model", "key",
+            "B64",
+            "image/jpeg",
+            "any anchor",
+            "model",
+            "key",
         )
 
 
@@ -336,7 +363,9 @@ def test_stylize_portrait_error_message_is_actionable(generate_thumbnail, monkey
 
 
 def test_compose_thumbnail_two_pass_threads_stylized_portrait(
-    generate_thumbnail, monkeypatch, tmp_path,
+    generate_thumbnail,
+    monkeypatch,
+    tmp_path,
 ):
     """When --portrait-style is set, compose_thumbnail must:
     (a) call stylize_portrait with the original photo bytes, and
@@ -363,9 +392,12 @@ def test_compose_thumbnail_two_pass_threads_stylized_portrait(
         composition_photo_data = None
         if len(parts) >= 2 and "inlineData" in parts[1]:
             composition_photo_data = parts[1]["inlineData"]["data"]
-        calls.append({"parts_count": len(parts), "composition_photo": composition_photo_data})
+        calls.append(
+            {"parts_count": len(parts), "composition_photo": composition_photo_data}
+        )
         # Return a 1280x720 PNG to satisfy validate_and_resize.
         from io import BytesIO
+
         img = Image.new("RGB", (1280, 720), (10, 20, 30))
         buf = BytesIO()
         img.save(buf, format="PNG")
@@ -376,6 +408,7 @@ def test_compose_thumbnail_two_pass_threads_stylized_portrait(
     def fake_stylize(speaker_b64, speaker_mime, anchor, model, api_key):
         # Confirm the original photo bytes reach the stylize step
         import base64
+
         assert base64.b64decode(speaker_b64) == b"PHOTO_RAW"
         assert anchor == "sepia tech-manual, pen-and-ink"
         return "STYLIZED_B64", "image/png"
@@ -409,7 +442,9 @@ def test_compose_thumbnail_two_pass_threads_stylized_portrait(
 
 
 def test_compose_thumbnail_skips_pre_stylize_when_no_anchor(
-    generate_thumbnail, monkeypatch, tmp_path,
+    generate_thumbnail,
+    monkeypatch,
+    tmp_path,
 ):
     """Without --portrait-style, stylize_portrait must NOT be invoked; the
     original photo bytes go directly to composition."""
@@ -435,6 +470,7 @@ def test_compose_thumbnail_skips_pre_stylize_when_no_anchor(
         if len(parts) >= 2 and "inlineData" in parts[1]:
             captured_photo.append(parts[1]["inlineData"]["data"])
         from io import BytesIO
+
         img = Image.new("RGB", (1280, 720), (10, 20, 30))
         buf = BytesIO()
         img.save(buf, format="PNG")
@@ -446,7 +482,8 @@ def test_compose_thumbnail_skips_pre_stylize_when_no_anchor(
     args = argparse.Namespace(
         slide_image=str(slide_path),
         speaker_photo=str(speaker_path),
-        title="T", subtitle=None,
+        title="T",
+        subtitle=None,
         output=str(tmp_path / "out.png"),
         vault=str(tmp_path),
         style="slide_dominant",
@@ -459,7 +496,9 @@ def test_compose_thumbnail_skips_pre_stylize_when_no_anchor(
 
     generate_thumbnail.compose_thumbnail(args)
 
-    assert stylize_called == [], "stylize_portrait must not run without --portrait-style"
+    assert stylize_called == [], (
+        "stylize_portrait must not run without --portrait-style"
+    )
     # The composition call received the ORIGINAL photo (base64-encoded raw).
     expected_b64 = base64.b64encode(b"PHOTO_RAW").decode("utf-8")
     assert captured_photo[0] == expected_b64
@@ -468,12 +507,17 @@ def test_compose_thumbnail_skips_pre_stylize_when_no_anchor(
 def _make_large_image_bytes():
     """Create a large random-ish image that exceeds 2MB as PNG."""
     import random
+
     random.seed(42)
     img = Image.new("RGB", (1280, 720))
     pixels = img.load()
     for x in range(1280):
         for y in range(720):
-            pixels[x, y] = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+            pixels[x, y] = (
+                random.randint(0, 255),
+                random.randint(0, 255),
+                random.randint(0, 255),
+            )
     buf = BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()

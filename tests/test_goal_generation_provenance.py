@@ -163,9 +163,7 @@ def test_missing_current_pattern_baseline_is_unverifiable(goal_provenance):
         ),
     ],
 )
-def test_malformed_v2_goal_provenance_fails_closed(
-    goal_provenance, mutation, message
-):
+def test_malformed_v2_goal_provenance_fails_closed(goal_provenance, mutation, message):
     goal = _goal()
     mutation(goal)
 
@@ -217,9 +215,10 @@ def test_cli_emits_all_decisions_only_after_complete_validation():
     )
 
     assert valid.returncode == 0, valid.stderr
-    assert [
-        item["decision"] for item in json.loads(valid.stdout)["assessments"]
-    ] == ["comparable", "comparable"]
+    assert [item["decision"] for item in json.loads(valid.stdout)["assessments"]] == [
+        "comparable",
+        "comparable",
+    ]
 
     invalid_payload = copy.deepcopy(valid_payload)
     invalid_payload["goals"][1]["schema_version"] = 99

@@ -18,8 +18,9 @@ FIXTURE = Path(__file__).parent / "fixtures" / "outline-example.yaml"
 _TALK = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))["talk"]
 
 
-def _write_outline(tmp_path, slides, *, composition=None, embedded_footer=None,
-                   name="outline.yaml"):
+def _write_outline(
+    tmp_path, slides, *, composition=None, embedded_footer=None, name="outline.yaml"
+):
     """Write a minimal partial outline.yaml for the apply parsers.
 
     `slides` is a list of dicts; each needs at least `n` + `format`. chapter and
@@ -40,9 +41,21 @@ def _write_outline(tmp_path, slides, *, composition=None, embedded_footer=None,
 
 
 ZONES_SLIDES = [
-    {"n": 2, "format": "FULL", "safe_zone": {"zone": "upper_third", "surface": "painted sky"}},
-    {"n": 5, "format": "FULL", "safe_zone": {"zone": "lower_third", "surface": "flat gradient"}},
-    {"n": 8, "format": "FULL", "safe_zone": {"zone": "left_half", "surface": "studio backdrop"}},
+    {
+        "n": 2,
+        "format": "FULL",
+        "safe_zone": {"zone": "upper_third", "surface": "painted sky"},
+    },
+    {
+        "n": 5,
+        "format": "FULL",
+        "safe_zone": {"zone": "lower_third", "surface": "flat gradient"},
+    },
+    {
+        "n": 8,
+        "format": "FULL",
+        "safe_zone": {"zone": "left_half", "surface": "studio backdrop"},
+    },
 ]
 
 NO_ZONES_SLIDES = [{"n": 1, "format": "FULL", "image_prompt": "A title slide"}]
@@ -61,13 +74,16 @@ def test_parse_zones_empty(apply_illustrations, tmp_path):
 
 
 def test_parse_zones_all_types(apply_illustrations, tmp_path):
-    outline = _write_outline(tmp_path, [
-        {"n": 1, "format": "FULL", "safe_zone": {"zone": "upper_third"}},
-        {"n": 2, "format": "FULL", "safe_zone": {"zone": "middle_third"}},
-        {"n": 3, "format": "FULL", "safe_zone": {"zone": "lower_third"}},
-        {"n": 4, "format": "FULL", "safe_zone": {"zone": "left_half"}},
-        {"n": 5, "format": "FULL", "safe_zone": {"zone": "right_half"}},
-    ])
+    outline = _write_outline(
+        tmp_path,
+        [
+            {"n": 1, "format": "FULL", "safe_zone": {"zone": "upper_third"}},
+            {"n": 2, "format": "FULL", "safe_zone": {"zone": "middle_third"}},
+            {"n": 3, "format": "FULL", "safe_zone": {"zone": "lower_third"}},
+            {"n": 4, "format": "FULL", "safe_zone": {"zone": "left_half"}},
+            {"n": 5, "format": "FULL", "safe_zone": {"zone": "right_half"}},
+        ],
+    )
     zones = apply_illustrations.parse_zones(outline)
     assert len(zones) == 5
     assert zones[1] == "upper_third"
@@ -79,7 +95,13 @@ def test_parse_zones_all_types(apply_illustrations, tmp_path):
 
 def test_zone_layout_keys(apply_illustrations):
     """All five zones have layout entries."""
-    for zone in ["upper_third", "middle_third", "lower_third", "left_half", "right_half"]:
+    for zone in [
+        "upper_third",
+        "middle_third",
+        "lower_third",
+        "left_half",
+        "right_half",
+    ]:
         assert zone in apply_illustrations.ZONE_LAYOUT
         layout = apply_illustrations.ZONE_LAYOUT[zone]
         assert "top_in" in layout
@@ -151,11 +173,18 @@ def test_reposition_title_placeholder(apply_illustrations, tmp_path):
 
 def test_parse_zones_no_cross_slide_match(apply_illustrations, tmp_path):
     """A slide without a safe_zone stays absent; the neighbouring zone doesn't leak."""
-    outline = _write_outline(tmp_path, [
-        {"n": 4, "format": "FULL", "image_prompt": "A scene"},
-        {"n": 5, "format": "FULL", "image_prompt": "Another scene",
-         "safe_zone": {"zone": "lower_third", "surface": "gradient"}},
-    ])
+    outline = _write_outline(
+        tmp_path,
+        [
+            {"n": 4, "format": "FULL", "image_prompt": "A scene"},
+            {
+                "n": 5,
+                "format": "FULL",
+                "image_prompt": "Another scene",
+                "safe_zone": {"zone": "lower_third", "surface": "gradient"},
+            },
+        ],
+    )
     zones = apply_illustrations.parse_zones(outline)
     assert 4 not in zones
     assert zones.get(5) == "lower_third"
@@ -165,13 +194,25 @@ def test_parse_zones_no_cross_slide_match(apply_illustrations, tmp_path):
 
 
 MIXED_FORMAT_SLIDES = [
-    {"n": 1, "format": "FULL", "image_prompt": "Opening scene",
-     "safe_zone": {"zone": "upper_third", "surface": "sky"}},
+    {
+        "n": 1,
+        "format": "FULL",
+        "image_prompt": "Opening scene",
+        "safe_zone": {"zone": "upper_third", "surface": "sky"},
+    },
     {"n": 2, "format": "IMG+TXT", "image_prompt": "A diagram with explanation"},
-    {"n": 3, "format": "EXCEPTION", "format_justification": "real screenshot",
-     "visual": "screenshot of the dashboard"},
-    {"n": 4, "format": "IMG+TXT", "image_prompt": "Mixed signals",
-     "safe_zone": {"zone": "lower_third", "surface": "gradient"}},
+    {
+        "n": 3,
+        "format": "EXCEPTION",
+        "format_justification": "real screenshot",
+        "visual": "screenshot of the dashboard",
+    },
+    {
+        "n": 4,
+        "format": "IMG+TXT",
+        "image_prompt": "Mixed signals",
+        "safe_zone": {"zone": "lower_third", "surface": "gradient"},
+    },
 ]
 
 
@@ -320,14 +361,28 @@ def test_apply_full_records_background_not_picture(apply_illustrations, tmp_path
     illust_dir.mkdir()
     (illust_dir / "slide-02.png").write_bytes(_MIN_PNG)
 
-    outline = _write_outline(tmp_path, [
-        {"n": 2, "format": "FULL", "safe_zone": {"zone": "upper_third", "surface": "sky"}},
-    ])
+    outline = _write_outline(
+        tmp_path,
+        [
+            {
+                "n": 2,
+                "format": "FULL",
+                "safe_zone": {"zone": "upper_third", "surface": "sky"},
+            },
+        ],
+    )
     out_deck = tmp_path / "out.pptx"
 
     zones = apply_illustrations.parse_zones(outline)
     _, backgrounds = apply_illustrations.apply(
-        deck, illust_dir, zones, set(), out_deck, "png", "000000", 45000,
+        deck,
+        illust_dir,
+        zones,
+        set(),
+        out_deck,
+        "png",
+        "000000",
+        45000,
     )
 
     # FULL slide 2 is recorded for the background pass with an absolute path…
@@ -355,7 +410,14 @@ def test_apply_imgtxt_keeps_picture_shape(apply_illustrations, tmp_path):
 
     img_txt = apply_illustrations.parse_img_txt_slides(outline)
     _, backgrounds = apply_illustrations.apply(
-        deck, illust_dir, {}, img_txt, out_deck, "png", "000000", 45000,
+        deck,
+        illust_dir,
+        {},
+        img_txt,
+        out_deck,
+        "png",
+        "000000",
+        45000,
     )
 
     # IMG+TXT is not a background; it stays a picture shape
@@ -368,8 +430,7 @@ def test_apply_imgtxt_keeps_picture_shape(apply_illustrations, tmp_path):
 def test_imgtxt_geometry_constants_consistent(apply_illustrations):
     """IMG+TXT image + text columns + margins fit the 13.333" slide."""
     img_right = (
-        apply_illustrations.IMGTXT_IMG_LEFT_IN
-        + apply_illustrations.IMGTXT_IMG_WIDTH_IN
+        apply_illustrations.IMGTXT_IMG_LEFT_IN + apply_illustrations.IMGTXT_IMG_WIDTH_IN
     )
     text_right = (
         apply_illustrations.IMGTXT_TEXT_LEFT_IN
@@ -386,17 +447,27 @@ def test_imgtxt_geometry_constants_consistent(apply_illustrations):
 # ── Poster-theatrical composition ────────────────────────────────────
 
 POSTER_SLIDES = [
-    {"n": 3, "format": "FULL", "text_overlay": "One team, one bench",
-     "image_prompt": "[STYLE ANCHOR] one team at a workbench"},
-    {"n": 7, "format": "FULL", "text_overlay": "Many teams, many wires",
-     "image_prompt": "[STYLE ANCHOR] many teams, snarl of wires"},
+    {
+        "n": 3,
+        "format": "FULL",
+        "text_overlay": "One team, one bench",
+        "image_prompt": "[STYLE ANCHOR] one team at a workbench",
+    },
+    {
+        "n": 7,
+        "format": "FULL",
+        "text_overlay": "Many teams, many wires",
+        "image_prompt": "[STYLE ANCHOR] many teams, snarl of wires",
+    },
 ]
 
 
 def test_parse_composition_poster(apply_illustrations, tmp_path):
     outline = _write_outline(
-        tmp_path, POSTER_SLIDES,
-        composition="poster-theatrical", embedded_footer="jbaruch • Devoxx 2026",
+        tmp_path,
+        POSTER_SLIDES,
+        composition="poster-theatrical",
+        embedded_footer="jbaruch • Devoxx 2026",
     )
     assert apply_illustrations.parse_composition(outline) == "poster-theatrical"
 
@@ -409,29 +480,47 @@ def test_parse_composition_absent(apply_illustrations, tmp_path):
 def test_parse_full_slides_poster(apply_illustrations, tmp_path):
     # Poster FULL slides (no safe_zone) are collected for background-only apply.
     outline = _write_outline(
-        tmp_path, POSTER_SLIDES,
-        composition="poster-theatrical", embedded_footer="jbaruch • Devoxx 2026",
+        tmp_path,
+        POSTER_SLIDES,
+        composition="poster-theatrical",
+        embedded_footer="jbaruch • Devoxx 2026",
     )
     assert apply_illustrations.parse_full_slides(outline) == {3, 7}
 
 
 def test_parse_full_slides_excludes_safe_zone(apply_illustrations, tmp_path):
     # A FULL slide with a safe_zone belongs to the zones path, not poster.
-    outline = _write_outline(tmp_path, [
-        {"n": 1, "format": "FULL", "image_prompt": "x",
-         "safe_zone": {"zone": "upper_third"}},
-        {"n": 2, "format": "FULL", "image_prompt": "y"},
-    ])
+    outline = _write_outline(
+        tmp_path,
+        [
+            {
+                "n": 1,
+                "format": "FULL",
+                "image_prompt": "x",
+                "safe_zone": {"zone": "upper_third"},
+            },
+            {"n": 2, "format": "FULL", "image_prompt": "y"},
+        ],
+    )
     assert apply_illustrations.parse_full_slides(outline) == {2}
 
 
-def test_apply_main_rejects_poster_with_safe_zone(apply_illustrations, tmp_path, monkeypatch):
+def test_apply_main_rejects_poster_with_safe_zone(
+    apply_illustrations, tmp_path, monkeypatch
+):
     # Poster mode + a safe_zone slide is contradictory — main() must fail fast.
     import pytest
+
     outline = _write_outline(
         tmp_path,
-        [{"n": 1, "format": "FULL", "image_prompt": "x",
-          "safe_zone": {"zone": "upper_third"}}],
+        [
+            {
+                "n": 1,
+                "format": "FULL",
+                "image_prompt": "x",
+                "safe_zone": {"zone": "upper_third"},
+            }
+        ],
         composition="poster-theatrical",
     )
     deck = tmp_path / "deck.pptx"

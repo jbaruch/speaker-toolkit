@@ -44,9 +44,7 @@ def _base_database() -> dict[str, object]:
     return {
         "schema_version": 1,
         "config": _current_config(),
-        "talks": [
-            {"schema_version": 5, "filename": "talk.md", "status": "processed"}
-        ],
+        "talks": [{"schema_version": 5, "filename": "talk.md", "status": "processed"}],
         "pptx_catalog": [],
         "qr_codes": [],
         "resources": [],
@@ -508,14 +506,20 @@ def test_plan_strict_json_rejects_non_roundtrippable_number(
     ("raw", "message"),
     [
         pytest.param(
-            b'{"schema_version":1,"mutations":' + b"[" * 500 + b"{}"
-            + b"]" * 500 + b"}\n",
+            b'{"schema_version":1,"mutations":'
+            + b"[" * 500
+            + b"{}"
+            + b"]" * 500
+            + b"}\n",
             "maximum supported JSON nesting depth 200",
             id="decoded-depth-limit",
         ),
         pytest.param(
-            b'{"schema_version":1,"mutations":' + b"[" * 10_000 + b"{}"
-            + b"]" * 10_000 + b"}\n",
+            b'{"schema_version":1,"mutations":'
+            + b"[" * 10_000
+            + b"{}"
+            + b"]" * 10_000
+            + b"}\n",
             "maximum supported JSON nesting depth 200",
             id="decoder-recursion-limit",
         ),
@@ -568,9 +572,7 @@ def test_talk_clarification_operation_accepts_only_structured_exact_fields(
         ],
     )
 
-    assert candidate["talks"][0]["blind_spot_observations"] == {
-        "room_energy": "high"
-    }
+    assert candidate["talks"][0]["blind_spot_observations"] == {"room_energy": "high"}
     assert candidate["talks"][0]["humor_postmortem"] == ["opening joke landed"]
     assert changes[0]["kind"] == "update_talk_clarification"
 

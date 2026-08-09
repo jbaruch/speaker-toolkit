@@ -715,10 +715,8 @@ DISTINCT_FRAME_PATTERNS = (
     # concentric rings about the center, derived from the frame's own extent so
     # the pattern stays centered at any size
     lambda rows, cols: (
-        (
-            (rows - rows.size // 2) ** 2 + (cols - cols.size // 2) ** 2
-        ) // 400 % 2
-    ) * 255,
+        (((rows - rows.size // 2) ** 2 + (cols - cols.size // 2) ** 2) // 400 % 2) * 255
+    ),
 )
 
 

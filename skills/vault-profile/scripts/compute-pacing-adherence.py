@@ -118,14 +118,16 @@ def compute(payload: dict) -> dict:
         if budget is None:
             continue
         spm = slide_count / minutes
-        scored.append({
-            "filename": talk.get("filename"),
-            "date": talk.get("date", ""),
-            "slides_per_minute": round(spm, 2),
-            "budget_slides_per_minute": budget,
-            "over_budget": spm > budget,
-            "over_by_ratio": (spm / budget) - 1.0,
-        })
+        scored.append(
+            {
+                "filename": talk.get("filename"),
+                "date": talk.get("date", ""),
+                "slides_per_minute": round(spm, 2),
+                "budget_slides_per_minute": budget,
+                "over_budget": spm > budget,
+                "over_by_ratio": (spm / budget) - 1.0,
+            }
+        )
 
     over = [t for t in scored if t["over_budget"]]
     worst = sorted(over, key=lambda t: t["over_by_ratio"], reverse=True)[:worst_n]
@@ -164,14 +166,17 @@ def main() -> int:
         print(f"ERROR: stdin is not valid JSON: {exc}", file=sys.stderr)
         return 1
     if not isinstance(payload, dict):
-        print("ERROR: stdin JSON must be an object with 'talks' and "
-              "'slide_budgets'.", file=sys.stderr)
+        print(
+            "ERROR: stdin JSON must be an object with 'talks' and 'slide_budgets'.",
+            file=sys.stderr,
+        )
         return 1
     if not isinstance(payload.get("talks", []), list) or not isinstance(
         payload.get("slide_budgets", []), list
     ):
-        print("ERROR: 'talks' and 'slide_budgets' must be JSON arrays.",
-              file=sys.stderr)
+        print(
+            "ERROR: 'talks' and 'slide_budgets' must be JSON arrays.", file=sys.stderr
+        )
         return 1
     try:
         result = compute(payload)

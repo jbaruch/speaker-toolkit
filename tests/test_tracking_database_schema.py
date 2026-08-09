@@ -267,9 +267,7 @@ def test_future_root_is_no_usable_prior_state(tracking_database):
 
     assert assessment.usable is False
     assert assessment.state == "unsupported"
-    assert assessment.reason_codes == (
-        "tracking_database_schema_version_unsupported",
-    )
+    assert assessment.reason_codes == ("tracking_database_schema_version_unsupported",)
 
 
 def test_explicit_root_zero_is_not_implicit_legacy_state(tracking_database):
@@ -279,9 +277,7 @@ def test_explicit_root_zero_is_not_implicit_legacy_state(tracking_database):
     assessment = tracking_database.assess_tracking_database(database)
 
     assert assessment.usable is False
-    assert assessment.reason_codes == (
-        "tracking_database_schema_version_unsupported",
-    )
+    assert assessment.reason_codes == ("tracking_database_schema_version_unsupported",)
     with pytest.raises(tracking_database.TrackingDatabaseError):
         tracking_database.migrate_tracking_database(database)
     assert database == original
@@ -315,9 +311,7 @@ def test_future_owner_shape_is_classified_before_legacy_identity_validation(
     assessment = tracking_database.assess_tracking_database(database)
 
     assert assessment.usable is False
-    assert assessment.reason_codes == (
-        f"{collection}_schema_version_unsupported",
-    )
+    assert assessment.reason_codes == (f"{collection}_schema_version_unsupported",)
 
 
 @pytest.mark.parametrize(
@@ -345,9 +339,9 @@ def test_explicit_sentinel_or_future_record_is_not_migrated(
     if record_class == "config":
         database["config"]["schema_version"] = unsupported_version
     elif record_class == "source_rejections":
-        database["talks"][0]["source_rejections"][0][
-            "schema_version"
-        ] = unsupported_version
+        database["talks"][0]["source_rejections"][0]["schema_version"] = (
+            unsupported_version
+        )
     else:
         database[record_class][0]["schema_version"] = unsupported_version
 
@@ -369,9 +363,7 @@ def test_future_pattern_evidence_is_no_usable_prior_state_without_mutation(
     assessment = tracking_database.assess_tracking_database(database)
 
     assert assessment.usable is False
-    assert assessment.reason_codes == (
-        "pattern_evidence_schema_version_unsupported",
-    )
+    assert assessment.reason_codes == ("pattern_evidence_schema_version_unsupported",)
     assert database == before
 
 
@@ -397,9 +389,7 @@ def test_future_pattern_evidence_is_no_usable_prior_state_without_mutation(
             "speaker_photo_used must be a non-empty",
         ),
         (
-            lambda value: value["confirmed_intents"][0].update(
-                source_talk="one.md"
-            ),
+            lambda value: value["confirmed_intents"][0].update(source_talk="one.md"),
             "may use only one",
         ),
         (
@@ -480,7 +470,9 @@ def test_owner_migration_only_adds_owned_version_keys(tracking_database):
         "improvement_goals": 1,
         "source_rejections": 1,
     }
-    assert tracking_database.assess_tracking_database(result.database).state == "current"
+    assert (
+        tracking_database.assess_tracking_database(result.database).state == "current"
+    )
 
 
 def test_talk_count_excludes_nested_source_rejection_stamp(tracking_database):
@@ -530,9 +522,7 @@ def test_implicit_v1_migration_preserves_legacy_observation_shapes(
     legacy_observations,
 ):
     database = _legacy_database()
-    database["talks"][0]["pattern_observations"] = copy.deepcopy(
-        legacy_observations
-    )
+    database["talks"][0]["pattern_observations"] = copy.deepcopy(legacy_observations)
 
     migrated = tracking_database.migrate_tracking_database(database).database
 
@@ -626,9 +616,7 @@ def test_legacy_and_current_roots_reject_malformed_claim_versions(
     if claim_location == "current":
         database["talks"][0]["_queue_claim"] = copy.deepcopy(malformed_claim)
     else:
-        database["talks"][0]["_queue_claim_history"] = [
-            copy.deepcopy(malformed_claim)
-        ]
+        database["talks"][0]["_queue_claim_history"] = [copy.deepcopy(malformed_claim)]
 
     with pytest.raises(tracking_database.TrackingDatabaseError):
         tracking_database.assess_tracking_database(database)
@@ -653,18 +641,14 @@ def test_future_claim_is_no_usable_state_before_old_nested_validation(
     }
     if claim_location == "current":
         database["talks"][0]["_queue_claim"] = future_claim
-        database["talks"][0]["_queue_claim_history"] = {
-            "future_history_shape": True
-        }
+        database["talks"][0]["_queue_claim_history"] = {"future_history_shape": True}
     else:
         database["talks"][0]["_queue_claim_history"] = [future_claim]
 
     assessment = tracking_database.assess_tracking_database(database)
 
     assert assessment.usable is False
-    assert assessment.reason_codes == (
-        "queue_claim_schema_version_unsupported",
-    )
+    assert assessment.reason_codes == ("queue_claim_schema_version_unsupported",)
 
 
 def test_future_claim_baseline_is_classified_before_known_baseline_shape(
@@ -682,9 +666,7 @@ def test_future_claim_baseline_is_classified_before_known_baseline_shape(
     assessment = tracking_database.assess_tracking_database(database)
 
     assert assessment.usable is False
-    assert assessment.reason_codes == (
-        "adherence_baseline_schema_version_unsupported",
-    )
+    assert assessment.reason_codes == ("adherence_baseline_schema_version_unsupported",)
 
 
 @pytest.mark.parametrize("current_root", [False, True])
@@ -826,9 +808,7 @@ def test_current_root_config_v1_migrates_only_config(tracking_database):
         "python_path": "/opt/python",
     }
     untouched = {
-        key: copy.deepcopy(value)
-        for key, value in current.items()
-        if key != "config"
+        key: copy.deepcopy(value) for key, value in current.items() if key != "config"
     }
 
     assessment = tracking_database.assess_tracking_database(current)
@@ -846,9 +826,7 @@ def test_current_root_config_v1_migrates_only_config(tracking_database):
         "pptx_directory_exclusions": DEFAULT_DIRECTORY_EXCLUSIONS,
     }
     assert {
-        key: value
-        for key, value in migration.database.items()
-        if key != "config"
+        key: value for key, value in migration.database.items() if key != "config"
     } == untouched
 
     second = tracking_database.migrate_tracking_database(migration.database)
@@ -1040,11 +1018,7 @@ def test_apply_writes_exact_backup_through_shared_transaction(
         expected_sha256=digest,
     )
 
-    backup = (
-        tmp_path
-        / ".backups"
-        / f"{path.name}.owner-migration-{digest}.bak"
-    )
+    backup = tmp_path / ".backups" / f"{path.name}.owner-migration-{digest}.bak"
     assert backup.read_bytes() == raw
     assert report["backup"] == str(backup)
     assert report["database_written"] is True
@@ -1072,11 +1046,7 @@ def test_config_only_migration_uses_generation_neutral_backup_name(
         expected_sha256=digest,
     )
 
-    backup = (
-        tmp_path
-        / ".backups"
-        / f"{path.name}.owner-migration-{digest}.bak"
-    )
+    backup = tmp_path / ".backups" / f"{path.name}.owner-migration-{digest}.bak"
     assert backup.read_bytes() == raw
     assert report["backup"] == str(backup)
     assert report["from_schema_version"] == 1
@@ -1312,24 +1282,25 @@ def test_legacy_queue_recovery_unblocks_migration_without_schema_stamping(
     assert path.read_bytes() == raw
     assert not (tmp_path / ".backups").exists()
 
-    assert queue_state.main(
-        [str(path), "inspect", "--run-id", "legacy-run"]
-    ) == 0
+    assert queue_state.main([str(path), "inspect", "--run-id", "legacy-run"]) == 0
     capsys.readouterr()
     assert path.read_bytes() == raw
 
-    assert queue_state.main(
-        [
-            str(path),
-            "recover",
-            "--now",
-            "2026-08-01T12:00:00+00:00",
-            "--stale-after-seconds",
-            "1",
-            "--run-id",
-            "legacy-run",
-        ]
-    ) == 0
+    assert (
+        queue_state.main(
+            [
+                str(path),
+                "recover",
+                "--now",
+                "2026-08-01T12:00:00+00:00",
+                "--stale-after-seconds",
+                "1",
+                "--run-id",
+                "legacy-run",
+            ]
+        )
+        == 0
+    )
     capsys.readouterr()
     recovered = json.loads(path.read_text())
     assert "schema_version" not in recovered
@@ -1392,9 +1363,13 @@ def test_non_roundtrippable_number_blocks_migration_before_backup(
     path = tmp_path / "tracking-database.json"
     database = _legacy_database()
     database["config"]["precision_marker"] = "NUMBER_TOKEN"
-    raw = (json.dumps(database, indent=2) + "\n").encode().replace(
-        b'"NUMBER_TOKEN"',
-        b"0.12345678901234567890123456789",
+    raw = (
+        (json.dumps(database, indent=2) + "\n")
+        .encode()
+        .replace(
+            b'"NUMBER_TOKEN"',
+            b"0.12345678901234567890123456789",
+        )
     )
     path.write_bytes(raw)
 
@@ -1428,9 +1403,13 @@ def test_cli_reports_extreme_number_as_json_without_write_or_backup(
     path = tmp_path / "tracking-database.json"
     database = _legacy_database()
     database["config"]["precision_marker"] = "NUMBER_TOKEN"
-    raw = (json.dumps(database, indent=2) + "\n").encode().replace(
-        b'"NUMBER_TOKEN"',
-        number_token.encode(),
+    raw = (
+        (json.dumps(database, indent=2) + "\n")
+        .encode()
+        .replace(
+            b'"NUMBER_TOKEN"',
+            number_token.encode(),
+        )
     )
     path.write_bytes(raw)
 
@@ -1458,13 +1437,19 @@ def test_cli_reports_extreme_number_as_json_without_write_or_backup(
     ("raw", "message"),
     [
         pytest.param(
-            b'{"config":{"value":' + b"[" * 500 + b"0" + b"]" * 500
+            b'{"config":{"value":'
+            + b"[" * 500
+            + b"0"
+            + b"]" * 500
             + b'},"talks":[]}\n',
             "maximum supported JSON nesting depth 200",
             id="decoded-depth-limit",
         ),
         pytest.param(
-            b'{"config":{"value":' + b"[" * 10_000 + b"0" + b"]" * 10_000
+            b'{"config":{"value":'
+            + b"[" * 10_000
+            + b"0"
+            + b"]" * 10_000
             + b'},"talks":[]}\n',
             "maximum supported JSON nesting depth 200",
             id="decoder-recursion-limit",
@@ -1540,6 +1525,7 @@ def test_cli_errors_follow_json_contract(
 
 # --- #171: qr_codes schema v2 — artifact receipts ---
 
+
 def _qr_v2_record(**overrides):
     record = {
         "schema_version": 2,
@@ -1550,12 +1536,14 @@ def _qr_v2_record(**overrides):
         "short_url": "https://jbaru.ch/my-talk",
         "shortener_link_id": "bit.ly/abc123",
         "qr_png_rel_path": "my-talk-qr.png",
-        "artifacts": [{
-            "path": "my-talk-qr.png",
-            "path_root": "deck_dir",
-            "sha256": "a" * 64,
-            "bg_hex": None,
-        }],
+        "artifacts": [
+            {
+                "path": "my-talk-qr.png",
+                "path_root": "deck_dir",
+                "sha256": "a" * 64,
+                "bg_hex": None,
+            }
+        ],
         "created_at": "2026-08-09",
         "updated_at": "2026-08-09",
     }
@@ -1609,28 +1597,36 @@ def test_qr_v1_must_not_carry_artifacts(tracking_database):
 
 
 def test_qr_v2_rejects_an_empty_artifact_list(tracking_database):
-    with pytest.raises(tracking_database.TrackingDatabaseError, match="non-empty array"):
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="non-empty array"
+    ):
         _validate_qr(tracking_database, _qr_v2_record(artifacts=[]))
 
 
 def test_qr_v2_rejects_an_unknown_path_root(tracking_database):
     record = _qr_v2_record()
     record["artifacts"][0]["path_root"] = "somewhere"
-    with pytest.raises(tracking_database.TrackingDatabaseError, match="path_root must be one of"):
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="path_root must be one of"
+    ):
         _validate_qr(tracking_database, record)
 
 
 def test_qr_v2_rejects_a_malformed_digest(tracking_database):
     record = _qr_v2_record()
     record["artifacts"][0]["sha256"] = "NOTHEX"
-    with pytest.raises(tracking_database.TrackingDatabaseError, match="64 lowercase hex"):
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="64 lowercase hex"
+    ):
         _validate_qr(tracking_database, record)
 
 
 def test_qr_v2_rejects_duplicate_artifact_paths(tracking_database):
     record = _qr_v2_record()
     record["artifacts"].append(dict(record["artifacts"][0]))
-    with pytest.raises(tracking_database.TrackingDatabaseError, match="recorded more than once"):
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="recorded more than once"
+    ):
         _validate_qr(tracking_database, record)
 
 
@@ -1638,6 +1634,7 @@ def test_qr_v2_requires_qr_png_rel_path_to_mirror_first_artifact(tracking_databa
     """The v1 reader's view must agree with the artifact it points at."""
     record = _qr_v2_record(qr_png_rel_path="something-else.png")
     with pytest.raises(
-        tracking_database.TrackingDatabaseError, match="must mirror artifacts\\[0\\].path"
+        tracking_database.TrackingDatabaseError,
+        match="must mirror artifacts\\[0\\].path",
     ):
         _validate_qr(tracking_database, record)

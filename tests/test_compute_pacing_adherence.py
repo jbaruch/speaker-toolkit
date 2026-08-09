@@ -16,12 +16,15 @@ BUDGETS = [
 
 def _talk(filename, date, slides, dur):
     return {
-        "filename": filename, "date": date,
-        "slide_count": slides, "talk_duration_estimate": dur,
+        "filename": filename,
+        "date": date,
+        "slide_count": slides,
+        "talk_duration_estimate": dur,
     }
 
 
 # ── parse_minutes ────────────────────────────────────────────────────
+
 
 def test_parse_minutes_plain(compute_pacing_adherence):
     assert compute_pacing_adherence.parse_minutes("35 min") == 35
@@ -39,6 +42,7 @@ def test_parse_minutes_unparseable_is_none(compute_pacing_adherence):
 
 
 # ── budget_for ───────────────────────────────────────────────────────
+
 
 def test_budget_band_picks_largest_le(compute_pacing_adherence):
     # 60 min -> 45-min band (largest duration_min <= 60)
@@ -60,10 +64,11 @@ def test_budget_accepts_duration_minutes_key(compute_pacing_adherence):
 
 # ── compute: counts + rate ───────────────────────────────────────────
 
+
 def test_over_budget_count_and_rate(compute_pacing_adherence):
     talks = [
-        _talk("over.md", "2024-01-01", 90, "45 min"),    # 2.0 spm > 1.5 -> over
-        _talk("under.md", "2024-02-01", 60, "45 min"),   # 1.33 spm < 1.5 -> ok
+        _talk("over.md", "2024-01-01", 90, "45 min"),  # 2.0 spm > 1.5 -> over
+        _talk("under.md", "2024-02-01", 60, "45 min"),  # 1.33 spm < 1.5 -> ok
     ]
     out = compute_pacing_adherence.compute({"talks": talks, "slide_budgets": BUDGETS})
     assert out["talks_scored"] == 2
@@ -73,7 +78,7 @@ def test_over_budget_count_and_rate(compute_pacing_adherence):
 
 def test_worst_offenders_sorted_by_over_by_desc(compute_pacing_adherence):
     talks = [
-        _talk("a.md", "2024-01-01", 90, "45 min"),   # 2.0/1.5 -> +33%
+        _talk("a.md", "2024-01-01", 90, "45 min"),  # 2.0/1.5 -> +33%
         _talk("c.md", "2024-02-01", 180, "90 min"),  # 2.0/1.4 -> +43%
     ]
     out = compute_pacing_adherence.compute({"talks": talks, "slide_budgets": BUDGETS})
@@ -103,6 +108,7 @@ def test_unparseable_and_zero_slides_skipped(compute_pacing_adherence):
 
 
 # ── compute: trend ───────────────────────────────────────────────────
+
 
 def test_trend_worsening(compute_pacing_adherence):
     # older two ok, newer two over -> worsening
@@ -139,15 +145,22 @@ def test_trend_stable_when_too_few(compute_pacing_adherence):
 def test_empty_input(compute_pacing_adherence):
     out = compute_pacing_adherence.compute({"talks": [], "slide_budgets": BUDGETS})
     assert out == {
-        "talks_over_budget": 0, "talks_scored": 0, "over_budget_rate": 0.0,
-        "trend": "stable", "worst_offenders": [],
+        "talks_over_budget": 0,
+        "talks_scored": 0,
+        "over_budget_rate": 0.0,
+        "trend": "stable",
+        "worst_offenders": [],
     }
 
 
 # ── main: I/O contract ───────────────────────────────────────────────
 
+
 def test_main_reads_stdin_emits_json(compute_pacing_adherence, monkeypatch, capsys):
-    payload = {"talks": [_talk("o.md", "2024-01-01", 90, "45 min")], "slide_budgets": BUDGETS}
+    payload = {
+        "talks": [_talk("o.md", "2024-01-01", 90, "45 min")],
+        "slide_budgets": BUDGETS,
+    }
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
     rc = compute_pacing_adherence.main()
     out = json.loads(capsys.readouterr().out)

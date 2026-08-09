@@ -112,9 +112,7 @@ class QueueClaimContractError(ValueError):
 def parse_queue_timestamp(value: object, label: str) -> datetime:
     """Parse a timezone-aware timestamp and normalize it to UTC seconds."""
     if not isinstance(value, str) or not value:
-        raise QueueClaimContractError(
-            f"{label} must be a non-empty ISO-8601 timestamp"
-        )
+        raise QueueClaimContractError(f"{label} must be a non-empty ISO-8601 timestamp")
     candidate = value[:-1] + "+00:00" if value.endswith("Z") else value
     try:
         moment = datetime.fromisoformat(candidate)
@@ -153,9 +151,9 @@ def is_deliberate_reprocess_reason(value: object) -> bool:
         return True
     if not value.startswith(PATTERN_SCORING_REPROCESS_REASON_PREFIX):
         return False
-    encoded_codes = value.removeprefix(
-        PATTERN_SCORING_REPROCESS_REASON_PREFIX
-    ).split("+")
+    encoded_codes = value.removeprefix(PATTERN_SCORING_REPROCESS_REASON_PREFIX).split(
+        "+"
+    )
     return tuple(encoded_codes) in PATTERN_SCORING_REPROCESS_REASON_SEQUENCES
 
 
@@ -234,9 +232,7 @@ def validate_queue_claim(
     historical: bool = False,
 ) -> None:
     if not isinstance(claim, Mapping):
-        raise QueueClaimContractError(
-            f"{filename}: queue claim must be a JSON object"
-        )
+        raise QueueClaimContractError(f"{filename}: queue claim must be a JSON object")
     version = claim.get("schema_version")
     if (
         isinstance(version, int)
@@ -258,13 +254,9 @@ def validate_queue_claim(
             f"of {sorted(SUPPORTED_QUEUE_CLAIM_SCHEMA_VERSIONS)}"
         )
     require_queue_identifier(claim.get("run_id"), f"{filename}: claim.run_id")
-    require_queue_identifier(
-        claim.get("batch_id"), f"{filename}: claim.batch_id"
-    )
+    require_queue_identifier(claim.get("batch_id"), f"{filename}: claim.batch_id")
     claimed_at = queue_timestamp_text(
-        parse_queue_timestamp(
-            claim.get("claimed_at"), f"{filename}: claim.claimed_at"
-        )
+        parse_queue_timestamp(claim.get("claimed_at"), f"{filename}: claim.claimed_at")
     )
     previous = claim.get("previous_status")
     if previous not in CLAIMABLE_STATUSES:
@@ -306,13 +298,10 @@ def validate_queue_claim(
                 f"schema version {version}"
             )
         try:
-            baseline = validate_adherence_baseline(
-                claim.get("adherence_baseline")
-            )
+            baseline = validate_adherence_baseline(claim.get("adherence_baseline"))
         except AdherenceBaselineError as exc:
             raise QueueClaimContractError(
-                f"{filename}: invalid schema-v{version} claim "
-                f"adherence_baseline: {exc}"
+                f"{filename}: invalid schema-v{version} claim adherence_baseline: {exc}"
             ) from exc
         expected_baseline_schema = (
             ADHERENCE_BASELINE_SCHEMA_VERSION
@@ -334,10 +323,7 @@ def validate_queue_claim(
                 f"{filename}: schema-v{version} claim adherence_baseline must "
                 "exclude the active batch"
             )
-    elif (
-        "required_return_schema_version" in claim
-        or "adherence_baseline" in claim
-    ):
+    elif "required_return_schema_version" in claim or "adherence_baseline" in claim:
         raise QueueClaimContractError(
             f"{filename}: schema-v{version} claim cannot carry adherence-claim "
             "return or adherence-baseline fields"
@@ -361,8 +347,7 @@ def validate_queue_claim(
     if state == "completed":
         if claim.get("result_status") not in TERMINAL_RESULT_STATUSES:
             raise QueueClaimContractError(
-                f"{filename}: a completed claim must carry a terminal "
-                "result_status"
+                f"{filename}: a completed claim must carry a terminal result_status"
             )
         if (
             version in RECEIPT_QUEUE_CLAIM_SCHEMA_VERSIONS
@@ -391,9 +376,7 @@ def validate_queue_claim(
                 "for a migrated legacy claim or a lowercase SHA-256 receipt"
             )
     if historical and state == "claimed":
-        raise QueueClaimContractError(
-            f"{filename}: historical claims must be closed"
-        )
+        raise QueueClaimContractError(f"{filename}: historical claims must be closed")
 
 
 def validate_talk_queue_claim_state(
@@ -403,26 +386,18 @@ def validate_talk_queue_claim_state(
     allow_claim_status_drift: bool = False,
 ) -> None:
     if not isinstance(talk, Mapping):
-        raise QueueClaimContractError(
-            f"talks[{index}] must be a JSON object"
-        )
+        raise QueueClaimContractError(f"talks[{index}] must be a JSON object")
     filename = talk.get("filename")
-    if (
-        not isinstance(filename, str)
-        or not filename
-        or Path(filename).name != filename
-    ):
+    if not isinstance(filename, str) or not filename or Path(filename).name != filename:
         raise QueueClaimContractError(
-            f"talks[{index}].filename must be a non-empty basename, got "
-            f"{filename!r}"
+            f"talks[{index}].filename must be a non-empty basename, got {filename!r}"
         )
     if not filename.endswith(".md"):
         raise QueueClaimContractError(f"{filename}: filename must end in .md")
     status = talk.get("status")
     if status not in KNOWN_STATUSES:
         raise QueueClaimContractError(
-            f"{filename}: status {status!r} is unknown; reconcile it before "
-            "queueing"
+            f"{filename}: status {status!r} is unknown; reconcile it before queueing"
         )
 
     generation = talk.get("reprocess_generation", 0)
@@ -475,8 +450,7 @@ def validate_talk_queue_claim_state(
     if status == INFLIGHT_STATUS:
         if current is None:
             raise QueueClaimContractError(
-                f"{filename}: {INFLIGHT_STATUS} has no reconstructable "
-                "_queue_claim"
+                f"{filename}: {INFLIGHT_STATUS} has no reconstructable _queue_claim"
             )
         assert isinstance(current, Mapping)
         if current["state"] != "claimed":
@@ -516,14 +490,10 @@ def validate_queue_claim_database(
     allow_claim_status_drift: bool = False,
 ) -> None:
     if not isinstance(database, Mapping):
-        raise QueueClaimContractError(
-            "tracking database root must be a JSON object"
-        )
+        raise QueueClaimContractError("tracking database root must be a JSON object")
     talks = database.get("talks")
     if not isinstance(talks, list):
-        raise QueueClaimContractError(
-            "tracking database must contain a talks array"
-        )
+        raise QueueClaimContractError("tracking database must contain a talks array")
     seen: set[str] = set()
     typed_talks: list[Mapping[str, object]] = []
     for index, talk in enumerate(talks):
@@ -537,8 +507,7 @@ def validate_queue_claim_database(
         assert isinstance(filename, str)
         if filename in seen:
             raise QueueClaimContractError(
-                f"duplicate talk filename {filename!r} — filenames are queue "
-                "identities"
+                f"duplicate talk filename {filename!r} — filenames are queue identities"
             )
         seen.add(filename)
         typed_talks.append(talk)
@@ -560,9 +529,10 @@ def _validate_adherence_claim_batches(
         filename = talk["filename"]
         assert isinstance(filename, str)
         current = talk.get("_queue_claim")
-        if isinstance(current, Mapping) and current.get(
-            "schema_version"
-        ) in ADHERENCE_QUEUE_CLAIM_SCHEMA_VERSIONS:
+        if (
+            isinstance(current, Mapping)
+            and current.get("schema_version") in ADHERENCE_QUEUE_CLAIM_SCHEMA_VERSIONS
+        ):
             identity = (current["run_id"], current["batch_id"])
             current_batches.setdefault(identity, []).append((filename, current))
             epoch = (*identity, current["claimed_at"])
@@ -571,9 +541,7 @@ def _validate_adherence_claim_batches(
         assert isinstance(history, list)
         for claim in history:
             assert isinstance(claim, Mapping)
-            if claim.get(
-                "schema_version"
-            ) not in ADHERENCE_QUEUE_CLAIM_SCHEMA_VERSIONS:
+            if claim.get("schema_version") not in ADHERENCE_QUEUE_CLAIM_SCHEMA_VERSIONS:
                 continue
             epoch = (
                 claim["run_id"],

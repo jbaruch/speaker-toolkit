@@ -2192,9 +2192,7 @@ def _decode_directory_manifest(value, *, expected_directory_exclusions=()):
             "directory worker exclusion policy does not match its request",
             reason_code="pptx_batch_manifest_invalid",
         )
-    exclusion_identities = {
-        component.casefold() for component in expected_exclusions
-    }
+    exclusion_identities = {component.casefold() for component in expected_exclusions}
     raw_files = value.get("files")
     raw_skipped = value.get("skipped")
     if (
@@ -2263,9 +2261,7 @@ def _decode_directory_manifest(value, *, expected_directory_exclusions=()):
         if path != ".":
             seen_nonroot_skip_paths.add(path)
         skipped.append({"path": path, "reason": reason})
-    skipped_nonroot_paths = {
-        item["path"] for item in skipped if item["path"] != "."
-    }
+    skipped_nonroot_paths = {item["path"] for item in skipped if item["path"] != "."}
     for item in skipped:
         path = item["path"]
         if path == ".":

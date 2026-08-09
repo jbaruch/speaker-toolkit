@@ -25,14 +25,14 @@ def _return():
     }
 
 
-def test_a_clean_batch_leaves_one_json_document_on_stdout(
-        validate_returns, tmp_path):
+def test_a_clean_batch_leaves_one_json_document_on_stdout(validate_returns, tmp_path):
     batch = tmp_path / "batch.json"
     batch.write_text(json.dumps([_return()]), encoding="utf-8")
 
     result = subprocess.run(
         [sys.executable, validate_returns.__file__, str(batch)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
 
     assert result.returncode == 0, result.stderr
@@ -41,14 +41,16 @@ def test_a_clean_batch_leaves_one_json_document_on_stdout(
 
 
 def test_a_rejected_batch_exits_one_with_a_stderr_diagnostic(
-        validate_returns, tmp_path):
+    validate_returns, tmp_path
+):
     """Exit 1 is a failed validation — distinct from a failed validator."""
     batch = tmp_path / "batch.json"
     batch.write_text(json.dumps([{"filename": "x.md"}]), encoding="utf-8")
 
     result = subprocess.run(
         [sys.executable, validate_returns.__file__, str(batch)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
 
     assert result.returncode == 1
@@ -58,9 +60,12 @@ def test_a_rejected_batch_exits_one_with_a_stderr_diagnostic(
 
 # --- #203: the CLI has a closed failure boundary ---
 
+
 def test_outer_boundary_reports_an_unexpected_failure_without_a_traceback(
-        validate_returns, capsys, monkeypatch):
+    validate_returns, capsys, monkeypatch
+):
     """The gate reads a non-zero exit; it must still say what happened."""
+
     def explode(*_args, **_kwargs):
         raise RuntimeError("injected failure at /private/vault/returns/a.json")
 
@@ -69,7 +74,7 @@ def test_outer_boundary_reports_an_unexpected_failure_without_a_traceback(
     assert validate_returns.run_cli() == 2
 
     captured = capsys.readouterr()
-    assert captured.out == ""                     # stdout stays clean
+    assert captured.out == ""  # stdout stays clean
     payload = json.loads(captured.err.splitlines()[0])
     assert payload["error"] == "validate_returns_unexpected_failure"
     assert payload["error_type"] == "RuntimeError"
@@ -80,8 +85,10 @@ def test_outer_boundary_reports_an_unexpected_failure_without_a_traceback(
 
 
 def test_failure_note_says_the_batch_is_unvalidated_not_invalid(
-        validate_returns, capsys, monkeypatch):
+    validate_returns, capsys, monkeypatch
+):
     """A broken validator must never read as a clean batch."""
+
     def explode(*_args, **_kwargs):
         raise RuntimeError("boom")
 
@@ -93,6 +100,7 @@ def test_failure_note_says_the_batch_is_unvalidated_not_invalid(
 
 def test_outer_boundary_does_not_catch_sys_exit(validate_returns, monkeypatch):
     """main()'s own documented sys.exit(1) validation failures keep exit 1."""
+
     def bail(*_args, **_kwargs):
         raise SystemExit(1)
 
@@ -102,14 +110,14 @@ def test_outer_boundary_does_not_catch_sys_exit(validate_returns, monkeypatch):
     assert excinfo.value.code == 1
 
 
-def test_outer_boundary_lets_a_clean_run_report_success(
-        validate_returns, monkeypatch):
+def test_outer_boundary_lets_a_clean_run_report_success(validate_returns, monkeypatch):
     monkeypatch.setattr(validate_returns, "main", lambda *a, **k: None)
     assert validate_returns.run_cli() == 0
 
 
 def test_a_failed_report_write_does_not_leave_partial_json_on_stdout(
-        validate_returns, tmp_path, capsys, monkeypatch):
+    validate_returns, tmp_path, capsys, monkeypatch
+):
     """The report is serialized before it is written, so it lands whole or not at all."""
     batch = tmp_path / "batch.json"
     batch.write_text(json.dumps([_return()]), encoding="utf-8")

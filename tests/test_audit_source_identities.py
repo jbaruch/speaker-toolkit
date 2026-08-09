@@ -46,11 +46,14 @@ def finding_codes(report):
 
 
 def test_fetches_once_per_youtube_id_and_flags_cross_talk_collision(
-        audit_source_identities):
-    database = {"talks": [
-        talk("first.md", "Perfect Vault Ingress"),
-        talk("second.md", "Unrelated Platform Keynote", date="2025-04-10"),
-    ]}
+    audit_source_identities,
+):
+    database = {
+        "talks": [
+            talk("first.md", "Perfect Vault Ingress"),
+            talk("second.md", "Unrelated Platform Keynote", date="2025-04-10"),
+        ]
+    }
     original = deepcopy(database)
     calls = []
 
@@ -59,8 +62,10 @@ def test_fetches_once_per_youtube_id_and_flags_cross_talk_collision(
         return metadata(video_id)
 
     report = audit_source_identities.audit_database(
-        database, database_path="/vault/tracking-database.json",
-        metadata_fetcher=fetcher, captured_at=CAPTURED_AT,
+        database,
+        database_path="/vault/tracking-database.json",
+        metadata_fetcher=fetcher,
+        captured_at=CAPTURED_AT,
     )
 
     assert calls == [VIDEO_ID]
@@ -72,9 +77,11 @@ def test_fetches_once_per_youtube_id_and_flags_cross_talk_collision(
 
 
 def test_captures_provider_facts_without_inventing_speakers_or_recorded_date(
-        audit_source_identities):
+    audit_source_identities,
+):
     report = audit_source_identities.audit_database(
-        {"talks": [talk()]}, database_path="/vault/tracking-database.json",
+        {"talks": [talk()]},
+        database_path="/vault/tracking-database.json",
         metadata_fetcher=lambda video_id: metadata(video_id),
         captured_at=CAPTURED_AT,
     )
@@ -102,84 +109,95 @@ def test_captures_provider_facts_without_inventing_speakers_or_recorded_date(
 
 
 def test_likely_non_delivery_clip_uses_title_and_duration_evidence(
-        audit_source_identities):
+    audit_source_identities,
+):
     report = audit_source_identities.audit_database(
-        {"talks": [talk()]}, database_path="/vault/tracking-database.json",
+        {"talks": [talk()]},
+        database_path="/vault/tracking-database.json",
         metadata_fetcher=lambda video_id: metadata(
-            video_id, title="Two-minute product demo clip", duration=180,
+            video_id,
+            title="Two-minute product demo clip",
+            duration=180,
         ),
         captured_at=CAPTURED_AT,
     )
 
     finding = next(
-        item for item in report["findings"]
+        item
+        for item in report["findings"]
         if item["code"] == "likely_non_delivery_clip"
     )
     assert finding["review_priority"] == "high"
     assert "provider_title_mismatch" in finding_codes(report)
-    assert "provider_duration_under_55_percent_of_catalog" in (
-        finding["evidence"]["signals"])
+    assert (
+        "provider_duration_under_55_percent_of_catalog"
+        in (finding["evidence"]["signals"])
+    )
 
 
-@pytest.mark.parametrize(("catalog_title", "conference", "provider_title"), [
-    (
-        'Influencing DevOps without Authority - how "DevOps engineer" can '
-        "advance real DevOps",
-        "DevOps Vision 2023",
-        "Influencing DevOps without Authority at DevOps Vision 2023",
-    ),
-    (
-        "The Epic Groovy Puzzlers: As Usual — Traps, Pitfalls and End Cases",
-        "DevNexus 2015",
-        "Devnexus 2015 - The Epic Groovy Puzzlers - Baruch and Leonid",
-    ),
-    (
-        "Coding Fast and Slow: Applying Kahneman's Insights to Improve "
-        "Development Practices and Efficiency",
-        "Dev2Next 2024",
-        "Coding Fast and Slow at Dev2Next 2024",
-    ),
-    (
-        "Technical Enshittification: Why Everything in IT is Horrible Right "
-        "Now and How to Fix It",
-        "JCON 2025",
-        "Technical Enshittification at JCON 2025",
-    ),
-    (
-        "Back to the Future of Software: How to Survive AI with Intent "
-        "Integrity Chain",
-        "DevNexus 2026",
-        "Back to the Future of Software at DevNexus 2026",
-    ),
-    (
-        "DevOps Reframed: Embracing the Path to Developer Productivity "
-        "Engineering",
-        "Dev2Next 2024",
-        "DevOps Reframed at Dev2Next 2024",
-    ),
-    (
-        "Runtime Rumble: Tool Alpha vs. Tool Beta at ExampleConf 2025",
-        "ExampleConf 2025",
-        "Runtime Rumble Tool Alpha vs Tool Beta",
-    ),
-    (
-        "DevOps for developers (or maybe against them?!)",
-        "Devoxx Belgium 2024",
-        "DevOps for Developers at Devoxx Belgium 2024",
-    ),
-    (
-        "Data-Driven DevOps",
-        "DevOpsDays Indianapolis 2024",
-        "#DataDrivenDevOps as presented at #DevOpsDaysIndy",
-    ),
-])
+@pytest.mark.parametrize(
+    ("catalog_title", "conference", "provider_title"),
+    [
+        (
+            'Influencing DevOps without Authority - how "DevOps engineer" can '
+            "advance real DevOps",
+            "DevOps Vision 2023",
+            "Influencing DevOps without Authority at DevOps Vision 2023",
+        ),
+        (
+            "The Epic Groovy Puzzlers: As Usual — Traps, Pitfalls and End Cases",
+            "DevNexus 2015",
+            "Devnexus 2015 - The Epic Groovy Puzzlers - Baruch and Leonid",
+        ),
+        (
+            "Coding Fast and Slow: Applying Kahneman's Insights to Improve "
+            "Development Practices and Efficiency",
+            "Dev2Next 2024",
+            "Coding Fast and Slow at Dev2Next 2024",
+        ),
+        (
+            "Technical Enshittification: Why Everything in IT is Horrible Right "
+            "Now and How to Fix It",
+            "JCON 2025",
+            "Technical Enshittification at JCON 2025",
+        ),
+        (
+            "Back to the Future of Software: How to Survive AI with Intent "
+            "Integrity Chain",
+            "DevNexus 2026",
+            "Back to the Future of Software at DevNexus 2026",
+        ),
+        (
+            "DevOps Reframed: Embracing the Path to Developer Productivity Engineering",
+            "Dev2Next 2024",
+            "DevOps Reframed at Dev2Next 2024",
+        ),
+        (
+            "Runtime Rumble: Tool Alpha vs. Tool Beta at ExampleConf 2025",
+            "ExampleConf 2025",
+            "Runtime Rumble Tool Alpha vs Tool Beta",
+        ),
+        (
+            "DevOps for developers (or maybe against them?!)",
+            "Devoxx Belgium 2024",
+            "DevOps for Developers at Devoxx Belgium 2024",
+        ),
+        (
+            "Data-Driven DevOps",
+            "DevOpsDays Indianapolis 2024",
+            "#DataDrivenDevOps as presented at #DevOpsDaysIndy",
+        ),
+    ],
+)
 def test_explicit_base_title_accepts_real_provider_subtitle_omissions(
-        audit_source_identities, catalog_title, conference, provider_title):
+    audit_source_identities, catalog_title, conference, provider_title
+):
     report = audit_source_identities.audit_database(
         {"talks": [talk(title=catalog_title, conference=conference)]},
         database_path="/vault/tracking-database.json",
         metadata_fetcher=lambda video_id: metadata(
-            video_id, title=provider_title,
+            video_id,
+            title=provider_title,
         ),
         captured_at=CAPTURED_AT,
     )
@@ -190,7 +208,8 @@ def test_explicit_base_title_accepts_real_provider_subtitle_omissions(
 
 
 @pytest.mark.parametrize(
-    ("catalog_conference", "provider_conference", "provider_title"), [
+    ("catalog_conference", "provider_conference", "provider_title"),
+    [
         (
             "Conference Alpha 2024",
             "Devoxx Poland 2024",
@@ -204,30 +223,33 @@ def test_explicit_base_title_accepts_real_provider_subtitle_omissions(
     ],
 )
 def test_shared_base_title_does_not_hide_wrong_delivery_event(
-        audit_source_identities, catalog_conference, provider_conference,
-        provider_title):
+    audit_source_identities, catalog_conference, provider_conference, provider_title
+):
     catalog_title = (
         "Coding Fast and Slow: Applying Kahneman's Insights to Improve "
         "Development Practices and Efficiency"
     )
     active = talk(title=catalog_title, conference=catalog_conference)
     known_other_event = talk(
-        "other-event.md", catalog_title,
-        conference=provider_conference, video_url=None, youtube_id=None,
+        "other-event.md",
+        catalog_title,
+        conference=provider_conference,
+        video_url=None,
+        youtube_id=None,
     )
     report = audit_source_identities.audit_database(
         {"talks": [active, known_other_event]},
         database_path="/vault/tracking-database.json",
         metadata_fetcher=lambda video_id: metadata(
-            video_id, title=provider_title,
+            video_id,
+            title=provider_title,
         ),
         captured_at=CAPTURED_AT,
     )
 
     assert "provider_title_mismatch" not in finding_codes(report)
     finding = next(
-        item for item in report["findings"]
-        if item["code"] == "provider_event_mismatch"
+        item for item in report["findings"] if item["code"] == "provider_event_mismatch"
     )
     assert finding["review_priority"] == "high"
     assert finding["evidence"]["catalog_conference"] == catalog_conference
@@ -238,7 +260,8 @@ def test_shared_base_title_does_not_hide_wrong_delivery_event(
 
 
 @pytest.mark.parametrize(
-    ("catalog_conference", "provider_title", "other_conferences"), [
+    ("catalog_conference", "provider_title", "other_conferences"),
+    [
         (
             "DevIgnition 2024",
             'Baruch Sadogursky — "DevOps Reframed: Embracing the Path"',
@@ -277,8 +300,8 @@ def test_shared_base_title_does_not_hide_wrong_delivery_event(
     ],
 )
 def test_event_matcher_ignores_live_generic_and_cobrand_false_positives(
-        audit_source_identities, catalog_conference, provider_title,
-        other_conferences):
+    audit_source_identities, catalog_conference, provider_title, other_conferences
+):
     active = talk(conference=catalog_conference)
     catalog_only = [
         talk(
@@ -293,7 +316,8 @@ def test_event_matcher_ignores_live_generic_and_cobrand_false_positives(
         {"talks": [active, *catalog_only]},
         database_path="/vault/tracking-database.json",
         metadata_fetcher=lambda video_id: metadata(
-            video_id, title=provider_title,
+            video_id,
+            title=provider_title,
         ),
         captured_at=CAPTURED_AT,
     )
@@ -302,14 +326,19 @@ def test_event_matcher_ignores_live_generic_and_cobrand_false_positives(
 
 
 def test_short_matching_lightning_talk_is_not_automatically_called_a_clip(
-        audit_source_identities):
+    audit_source_identities,
+):
     lightning = talk(
-        title="Fast Lightning", duration_seconds=300,
+        title="Fast Lightning",
+        duration_seconds=300,
     )
     report = audit_source_identities.audit_database(
-        {"talks": [lightning]}, database_path="/vault/tracking-database.json",
+        {"talks": [lightning]},
+        database_path="/vault/tracking-database.json",
         metadata_fetcher=lambda video_id: metadata(
-            video_id, title="Fast Lightning", duration=240,
+            video_id,
+            title="Fast Lightning",
+            duration=240,
         ),
         captured_at=CAPTURED_AT,
     )
@@ -317,45 +346,53 @@ def test_short_matching_lightning_talk_is_not_automatically_called_a_clip(
 
 
 def test_fetch_order_and_report_are_deterministic(audit_source_identities):
-    database = {"talks": [
-        talk(
-            "other.md", "Other Talk",
-            video_url=f"https://youtu.be/{OTHER_VIDEO_ID}",
-            youtube_id=OTHER_VIDEO_ID,
-        ),
-        talk("first.md"),
-        talk("same-id.md", video_url=f"https://youtu.be/{VIDEO_ID}"),
-    ]}
+    database = {
+        "talks": [
+            talk(
+                "other.md",
+                "Other Talk",
+                video_url=f"https://youtu.be/{OTHER_VIDEO_ID}",
+                youtube_id=OTHER_VIDEO_ID,
+            ),
+            talk("first.md"),
+            talk("same-id.md", video_url=f"https://youtu.be/{VIDEO_ID}"),
+        ]
+    }
     calls = []
 
     def fetcher(video_id):
         calls.append(video_id)
-        return metadata(video_id, title=(
-            "Other Talk" if video_id == OTHER_VIDEO_ID
-            else "Perfect Vault Ingress"
-        ))
+        return metadata(
+            video_id,
+            title=(
+                "Other Talk" if video_id == OTHER_VIDEO_ID else "Perfect Vault Ingress"
+            ),
+        )
 
     first = audit_source_identities.audit_database(
-        deepcopy(database), database_path="/vault/tracking-database.json",
-        metadata_fetcher=fetcher, captured_at=CAPTURED_AT,
+        deepcopy(database),
+        database_path="/vault/tracking-database.json",
+        metadata_fetcher=fetcher,
+        captured_at=CAPTURED_AT,
     )
     second = audit_source_identities.audit_database(
-        deepcopy(database), database_path="/vault/tracking-database.json",
-        metadata_fetcher=fetcher, captured_at=CAPTURED_AT,
+        deepcopy(database),
+        database_path="/vault/tracking-database.json",
+        metadata_fetcher=fetcher,
+        captured_at=CAPTURED_AT,
     )
 
     expected_order = sorted({VIDEO_ID, OTHER_VIDEO_ID})
     assert calls == expected_order + expected_order
     assert first == second
     assert [source["video_id"] for source in first["sources"]] == expected_order
-    assert list(first["summary"]["by_code"]) == sorted(
-        first["summary"]["by_code"])
+    assert list(first["summary"]["by_code"]) == sorted(first["summary"]["by_code"])
 
 
-def test_provider_identity_mismatch_blocks_evidence_proposal(
-        audit_source_identities):
+def test_provider_identity_mismatch_blocks_evidence_proposal(audit_source_identities):
     report = audit_source_identities.audit_database(
-        {"talks": [talk()]}, database_path="/vault/tracking-database.json",
+        {"talks": [talk()]},
+        database_path="/vault/tracking-database.json",
         metadata_fetcher=lambda video_id: metadata(OTHER_VIDEO_ID),
         captured_at=CAPTURED_AT,
     )
@@ -366,11 +403,11 @@ def test_provider_identity_mismatch_blocks_evidence_proposal(
     assert report["talks"][0]["proposed_evidence"] is None
 
 
-def test_audit_path_leaves_database_bytes_unchanged(
-        audit_source_identities, tmp_path):
+def test_audit_path_leaves_database_bytes_unchanged(audit_source_identities, tmp_path):
     database_path = tmp_path / "tracking-database.json"
     database_path.write_text(
-        json.dumps({"talks": [talk()]}, indent=2) + "\n", encoding="utf-8",
+        json.dumps({"talks": [talk()]}, indent=2) + "\n",
+        encoding="utf-8",
     )
     before = database_path.read_bytes()
 
@@ -384,13 +421,13 @@ def test_audit_path_leaves_database_bytes_unchanged(
     assert database_path.read_bytes() == before
 
 
-def test_inactive_stored_id_is_not_fetched_or_resurrected(
-        audit_source_identities):
+def test_inactive_stored_id_is_not_fetched_or_resurrected(audit_source_identities):
     database = {"talks": [talk(video_url=None)]}
     calls = []
 
     report = audit_source_identities.audit_database(
-        database, database_path="/vault/tracking-database.json",
+        database,
+        database_path="/vault/tracking-database.json",
         metadata_fetcher=lambda video_id: calls.append(video_id),
         captured_at=CAPTURED_AT,
     )
@@ -401,8 +438,7 @@ def test_inactive_stored_id_is_not_fetched_or_resurrected(
     assert report["talks"] == []
 
 
-def test_future_tracking_database_is_not_fetched_or_rewritten(
-        audit_source_identities):
+def test_future_tracking_database_is_not_fetched_or_rewritten(audit_source_identities):
     database = {
         "schema_version": 99,
         "future_inventory": {"records": "not-an-old-talks-array"},
@@ -424,11 +460,16 @@ def test_future_tracking_database_is_not_fetched_or_rewritten(
 
 
 def test_incomplete_provider_metadata_is_proposed_without_invented_values(
-        audit_source_identities):
+    audit_source_identities,
+):
     report = audit_source_identities.audit_database(
-        {"talks": [talk()]}, database_path="/vault/tracking-database.json",
+        {"talks": [talk()]},
+        database_path="/vault/tracking-database.json",
         metadata_fetcher=lambda video_id: metadata(
-            video_id, uploader=None, uploader_id=None, upload_date=None,
+            video_id,
+            uploader=None,
+            uploader_id=None,
+            upload_date=None,
         ),
         captured_at=CAPTURED_AT,
     )
@@ -443,18 +484,20 @@ def test_incomplete_provider_metadata_is_proposed_without_invented_values(
     assert "recorded_date" not in proposal
 
 
-def test_yt_dlp_fetch_is_dependency_injected_and_download_free(
-        audit_source_identities):
+def test_yt_dlp_fetch_is_dependency_injected_and_download_free(audit_source_identities):
     calls = []
 
     def runner(command, **kwargs):
         calls.append((command, kwargs))
         return SimpleNamespace(
-            returncode=0, stdout=json.dumps(metadata()), stderr="",
+            returncode=0,
+            stdout=json.dumps(metadata()),
+            stderr="",
         )
 
     result = audit_source_identities.fetch_youtube_metadata(
-        VIDEO_ID, runner=runner,
+        VIDEO_ID,
+        runner=runner,
     )
 
     assert result["id"] == VIDEO_ID
@@ -474,18 +517,23 @@ def test_yt_dlp_fetch_is_dependency_injected_and_download_free(
 def test_capture_timestamp_requires_explicit_timezone(audit_source_identities):
     with pytest.raises(ValueError, match="timezone"):
         audit_source_identities.normalize_captured_at("2026-07-31T12:00:00")
-    assert audit_source_identities.normalize_captured_at(
-        "2026-07-31T14:00:00-05:00") == CAPTURED_AT
+    assert (
+        audit_source_identities.normalize_captured_at("2026-07-31T14:00:00-05:00")
+        == CAPTURED_AT
+    )
 
 
 def test_cli_failure_emits_json_and_actionable_stderr(
-        audit_source_identities, monkeypatch, capsys):
+    audit_source_identities, monkeypatch, capsys
+):
     report = {
         "complete": False,
         "findings": [{"code": "metadata_fetch_failed"}],
     }
     monkeypatch.setattr(
-        audit_source_identities, "audit_path", lambda *args, **kwargs: report,
+        audit_source_identities,
+        "audit_path",
+        lambda *args, **kwargs: report,
     )
 
     exit_code = audit_source_identities.main(["/vault"])

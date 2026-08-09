@@ -18,8 +18,9 @@ GATE = REPO_ROOT / "skills" / "shownotes-publisher" / "scripts" / "content-only-
 
 
 def _git(repo: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(repo), *args], check=True,
-                   capture_output=True, text=True)
+    subprocess.run(
+        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
+    )
 
 
 def _commit(repo: Path, rel: str, body: str = "x\n") -> None:
@@ -34,11 +35,15 @@ def _commit(repo: Path, rel: str, body: str = "x\n") -> None:
 def repo(tmp_path: Path) -> Path:
     """A work repo on `main` tracking a bare origin, seeded and pushed."""
     origin = tmp_path / "origin.git"
-    subprocess.run(["git", "init", "--bare", "-b", "main", str(origin)],
-                   check=True, capture_output=True)
+    subprocess.run(
+        ["git", "init", "--bare", "-b", "main", str(origin)],
+        check=True,
+        capture_output=True,
+    )
     work = tmp_path / "work"
-    subprocess.run(["git", "clone", str(origin), str(work)],
-                   check=True, capture_output=True)
+    subprocess.run(
+        ["git", "clone", str(origin), str(work)], check=True, capture_output=True
+    )
     _git(work, "config", "user.email", "test@example.com")
     _git(work, "config", "user.name", "Test")
     _commit(work, "seed.txt", "seed\n")
@@ -47,8 +52,9 @@ def repo(tmp_path: Path) -> Path:
 
 
 def _run(target: Path, *extra: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["bash", str(GATE), str(target), *extra],
-                          capture_output=True, text=True)
+    return subprocess.run(
+        ["bash", str(GATE), str(target), *extra], capture_output=True, text=True
+    )
 
 
 def _payload(result: subprocess.CompletedProcess) -> dict:

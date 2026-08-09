@@ -123,8 +123,7 @@ def test_source_repair_writer_preserves_final_window_generation(
     ):
         apply_source_repairs.atomic_write(
             path,
-            json.dumps({"config": {}, "talks": [], "writer": "source-repair"})
-            + "\n",
+            json.dumps({"config": {}, "talks": [], "writer": "source-repair"}) + "\n",
             expected_snapshot=expected,
         )
 

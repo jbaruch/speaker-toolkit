@@ -10,9 +10,7 @@ import pytest
 def _catalog_file(path, catalog_id, polarity, *, name=None, aliases=None):
     path.parent.mkdir(parents=True, exist_ok=True)
     name_field = f"name: {name}\n" if name is not None else ""
-    aliases_field = (
-        f"aliases: {json.dumps(aliases)}\n" if aliases is not None else ""
-    )
+    aliases_field = f"aliases: {json.dumps(aliases)}\n" if aliases is not None else ""
     path.write_text(
         "---\n"
         f"id: {catalog_id}\n"
@@ -42,36 +40,46 @@ def catalog_fixture(tmp_path):
 
 def _feedback():
     return {
-        "unmatched_observations": [{
-            "observation": "The room predicts before the reveal.",
-            "why_no_pattern_fits": "The existing mechanism differs.",
-            "proposed_name": "Fresh Move",
-            "proposed_polarity": "pattern",
-        }],
-        "tensions": [{
-            "pattern_ids": ["alpha", "beta"],
-            "catalog_polarities": {
-                "alpha": "pattern",
-                "beta": "antipattern",
-            },
-            "nature": "Using alpha can trigger beta.",
-            "evidence": "Both occur in the same minute.",
-        }],
-        "definition_problems": [{
-            "pattern_id": "beta",
-            "catalog_polarity": "antipattern",
-            "problem": "ambiguous",
-            "detail": "Its threshold is not testable.",
-        }],
-        "scoring_problems": [{
-            "issue": "Confidence is unweighted.",
-            "detail": "Weak and strong evidence both count one.",
-            "polarity": "neutral",
-        }],
-        "confusable_pairs": [{
-            "pattern_ids": ["alpha", "gamma"],
-            "detail": "The boundary is not observable.",
-        }],
+        "unmatched_observations": [
+            {
+                "observation": "The room predicts before the reveal.",
+                "why_no_pattern_fits": "The existing mechanism differs.",
+                "proposed_name": "Fresh Move",
+                "proposed_polarity": "pattern",
+            }
+        ],
+        "tensions": [
+            {
+                "pattern_ids": ["alpha", "beta"],
+                "catalog_polarities": {
+                    "alpha": "pattern",
+                    "beta": "antipattern",
+                },
+                "nature": "Using alpha can trigger beta.",
+                "evidence": "Both occur in the same minute.",
+            }
+        ],
+        "definition_problems": [
+            {
+                "pattern_id": "beta",
+                "catalog_polarity": "antipattern",
+                "problem": "ambiguous",
+                "detail": "Its threshold is not testable.",
+            }
+        ],
+        "scoring_problems": [
+            {
+                "issue": "Confidence is unweighted.",
+                "detail": "Weak and strong evidence both count one.",
+                "polarity": "neutral",
+            }
+        ],
+        "confusable_pairs": [
+            {
+                "pattern_ids": ["alpha", "gamma"],
+                "detail": "The boundary is not observable.",
+            }
+        ],
     }
 
 
@@ -110,7 +118,9 @@ def test_normalize_suggestion_is_format_only(aggregate_catalog_feedback):
 
 
 def test_valid_five_lane_return_preserves_provenance_and_groups_ids(
-    aggregate_catalog_feedback, catalog_fixture, tmp_path,
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
 ):
     source = _write(tmp_path / "returns" / "one.json", _return())
 
@@ -125,7 +135,9 @@ def test_valid_five_lane_return_preserves_provenance_and_groups_ids(
     assert {item["provenance"]["feedback_lane"] for item in accepted} == set(
         aggregate_catalog_feedback.LANES
     )
-    assert all(item["provenance"]["source_path"] == str(source.resolve()) for item in accepted)
+    assert all(
+        item["provenance"]["source_path"] == str(source.resolve()) for item in accepted
+    )
     assert all(item["provenance"]["talk_filename"] == "talk.md" for item in accepted)
     assert all(item["provenance"]["source_return_index"] == 0 for item in accepted)
 
@@ -141,14 +153,20 @@ def test_valid_five_lane_return_preserves_provenance_and_groups_ids(
 
 
 def test_normalized_suggestion_recurrence_counts_talks_and_returns(
-    aggregate_catalog_feedback, catalog_fixture, tmp_path,
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
 ):
     directory = tmp_path / "returns"
     first = _return("one.md")
     second = _return("two.md")
-    second["catalog_feedback"]["unmatched_observations"][0]["proposed_name"] = "fresh_move"
+    second["catalog_feedback"]["unmatched_observations"][0]["proposed_name"] = (
+        "fresh_move"
+    )
     third = _return("two.md")
-    third["catalog_feedback"]["unmatched_observations"][0]["proposed_name"] = "Fresh-Move!"
+    third["catalog_feedback"]["unmatched_observations"][0]["proposed_name"] = (
+        "Fresh-Move!"
+    )
     _write(directory / "a.json", [first, second])
     _write(directory / "nested" / "b.json", third)
 
@@ -157,7 +175,8 @@ def test_normalized_suggestion_recurrence_counts_talks_and_returns(
     )
 
     group = next(
-        item for item in report["normalized_suggestions"]
+        item
+        for item in report["normalized_suggestions"]
         if item["normalized_suggestion"] == "fresh-move"
     )
     assert group["occurrence_count"] == 3
@@ -165,12 +184,16 @@ def test_normalized_suggestion_recurrence_counts_talks_and_returns(
     assert group["source_return_count"] == 3
     assert group["polarity_status"] == "consistent"
     assert {item["value"] for item in group["variants"]} == {
-        "Fresh Move", "fresh_move", "Fresh-Move!",
+        "Fresh Move",
+        "fresh_move",
+        "Fresh-Move!",
     }
 
 
 def test_exact_catalog_ids_are_not_folded_into_suggestions(
-    aggregate_catalog_feedback, catalog_fixture, tmp_path,
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
 ):
     feedback = _feedback()
     feedback["unmatched_observations"][0]["proposed_name"] = "Alpha"
@@ -188,11 +211,14 @@ def test_exact_catalog_ids_are_not_folded_into_suggestions(
     assert any(item["catalog_id"] == "alpha" for item in report["exact_catalog_ids"])
 
 
-@pytest.mark.parametrize("proposed_name", [
-    "Alpha Signal",
-    "Alpha—Signal!",
-    "First_Move",
-])
+@pytest.mark.parametrize(
+    "proposed_name",
+    [
+        "Alpha Signal",
+        "Alpha—Signal!",
+        "First_Move",
+    ],
+)
 def test_existing_catalog_names_and_aliases_are_not_novel_suggestions(
     aggregate_catalog_feedback,
     catalog_fixture,
@@ -210,14 +236,17 @@ def test_existing_catalog_names_and_aliases_are_not_novel_suggestions(
     assert report["ok"] is False
     assert "suggestion_matches_catalog_alias" in _issues(report)
     invalid = [
-        item for item in report["entries"]["invalid"]
+        item
+        for item in report["entries"]["invalid"]
         if item["provenance"]["feedback_lane"] == "unmatched_observations"
     ]
     assert invalid[0]["issues"][0]["catalog_id"] == "alpha"
 
 
 def test_missing_legacy_suggestion_polarity_is_warning_not_rejection(
-    aggregate_catalog_feedback, catalog_fixture, tmp_path,
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
 ):
     feedback = _feedback()
     del feedback["unmatched_observations"][0]["proposed_polarity"]
@@ -235,14 +264,21 @@ def test_missing_legacy_suggestion_polarity_is_warning_not_rejection(
     }
 
 
-@pytest.mark.parametrize(("mutation", "code"), [
-    ("bad_suggestion_polarity", "suggestion_polarity_invalid"),
-    ("wrong_catalog_polarity", "catalog_polarity_mismatch"),
-    ("wrong_pair_polarities", "catalog_polarity_mismatch"),
-    ("non_neutral_scoring", "lane_polarity_invalid"),
-])
+@pytest.mark.parametrize(
+    ("mutation", "code"),
+    [
+        ("bad_suggestion_polarity", "suggestion_polarity_invalid"),
+        ("wrong_catalog_polarity", "catalog_polarity_mismatch"),
+        ("wrong_pair_polarities", "catalog_polarity_mismatch"),
+        ("non_neutral_scoring", "lane_polarity_invalid"),
+    ],
+)
 def test_lane_polarity_mismatches_are_invalid(
-    aggregate_catalog_feedback, catalog_fixture, tmp_path, mutation, code,
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
+    mutation,
+    code,
 ):
     feedback = _feedback()
     if mutation == "bad_suggestion_polarity":
@@ -265,13 +301,15 @@ def test_lane_polarity_mismatches_are_invalid(
 
 
 def test_cross_return_suggestion_polarity_conflict_is_reported(
-    aggregate_catalog_feedback, catalog_fixture, tmp_path,
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
 ):
     first = _return("first.md")
     second = _return("second.md")
-    second["catalog_feedback"]["unmatched_observations"][0][
-        "proposed_polarity"
-    ] = "antipattern"
+    second["catalog_feedback"]["unmatched_observations"][0]["proposed_polarity"] = (
+        "antipattern"
+    )
     source = _write(tmp_path / "batch.json", [first, second])
 
     report = aggregate_catalog_feedback.aggregate_feedback(
@@ -286,7 +324,9 @@ def test_cross_return_suggestion_polarity_conflict_is_reported(
 
 
 def test_confusable_pair_requires_exactly_two_ids_but_tension_allows_more(
-    aggregate_catalog_feedback, catalog_fixture, tmp_path,
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
 ):
     feedback = _feedback()
     feedback["confusable_pairs"][0]["pattern_ids"] = ["alpha", "beta", "gamma"]
@@ -299,7 +339,8 @@ def test_confusable_pair_requires_exactly_two_ids_but_tension_allows_more(
     )
 
     invalid = [
-        item for item in report["entries"]["invalid"]
+        item
+        for item in report["entries"]["invalid"]
         if item["provenance"]["feedback_lane"] == "confusable_pairs"
     ]
     assert len(invalid) == 1
@@ -310,16 +351,23 @@ def test_confusable_pair_requires_exactly_two_ids_but_tension_allows_more(
     )
 
 
-@pytest.mark.parametrize(("mutation", "code"), [
-    ("unknown_lane", "feedback_lane_unsupported"),
-    ("lane_not_array", "feedback_lane_not_array"),
-    ("entry_not_object", "feedback_entry_not_object"),
-    ("missing_text", "feedback_text_missing"),
-    ("unknown_id", "catalog_id_unknown"),
-    ("duplicate_ids", "catalog_ids_duplicate"),
-])
+@pytest.mark.parametrize(
+    ("mutation", "code"),
+    [
+        ("unknown_lane", "feedback_lane_unsupported"),
+        ("lane_not_array", "feedback_lane_not_array"),
+        ("entry_not_object", "feedback_entry_not_object"),
+        ("missing_text", "feedback_text_missing"),
+        ("unknown_id", "catalog_id_unknown"),
+        ("duplicate_ids", "catalog_ids_duplicate"),
+    ],
+)
 def test_feedback_lane_shape_validation(
-    aggregate_catalog_feedback, catalog_fixture, tmp_path, mutation, code,
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
+    mutation,
+    code,
 ):
     feedback = _feedback()
     if mutation == "unknown_lane":
@@ -345,12 +393,18 @@ def test_feedback_lane_shape_validation(
 
 
 def test_inputs_are_classified_accepted_rejected_and_invalid(
-    aggregate_catalog_feedback, catalog_fixture, tmp_path,
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
 ):
     accepted = _write(tmp_path / "accepted.json", _return())
-    rejected = _write(tmp_path / "rejected.json", {
-        "filename": "thin.md", "status": "processed",
-    })
+    rejected = _write(
+        tmp_path / "rejected.json",
+        {
+            "filename": "thin.md",
+            "status": "processed",
+        },
+    )
     invalid = tmp_path / "invalid.json"
     invalid.write_text('{"filename":', encoding="utf-8")
 
@@ -366,7 +420,9 @@ def test_inputs_are_classified_accepted_rejected_and_invalid(
 
 
 def test_nonstandard_json_constant_is_invalid(
-    aggregate_catalog_feedback, catalog_fixture, tmp_path,
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
 ):
     source = tmp_path / "nan.json"
     source.write_text(
@@ -402,7 +458,9 @@ def test_duplicate_json_object_keys_are_invalid_before_feedback_is_lost(
 
     assert report["ok"] is False
     assert report["input_summary"] == {
-        "accepted": 0, "rejected": 0, "invalid": 1,
+        "accepted": 0,
+        "rejected": 0,
+        "invalid": 1,
     }
     assert "input_json_duplicate_key" in _issues(report)
 
@@ -414,11 +472,13 @@ def test_current_and_legacy_feedback_fields_cannot_coexist(
 ):
     value = _return()
     value["feedback"] = {
-        "definition_problems": [{
-            "pattern_id": "alpha",
-            "problem": "would be discarded",
-            "detail": "dual representations are ambiguous",
-        }],
+        "definition_problems": [
+            {
+                "pattern_id": "alpha",
+                "problem": "would be discarded",
+                "detail": "dual representations are ambiguous",
+            }
+        ],
     }
     source = _write(tmp_path / "dual-feedback.json", value)
 
@@ -432,7 +492,8 @@ def test_current_and_legacy_feedback_fields_cannot_coexist(
 
 
 def test_programmatic_api_rejects_no_inputs(
-    aggregate_catalog_feedback, catalog_fixture,
+    aggregate_catalog_feedback,
+    catalog_fixture,
 ):
     report = aggregate_catalog_feedback.aggregate_feedback(
         [], catalog_path=catalog_fixture
@@ -443,7 +504,9 @@ def test_programmatic_api_rejects_no_inputs(
 
 
 def test_feedback_return_requires_talk_provenance(
-    aggregate_catalog_feedback, catalog_fixture, tmp_path,
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
 ):
     source = _write(tmp_path / "anonymous.json", {"catalog_feedback": {}})
 
@@ -456,7 +519,9 @@ def test_feedback_return_requires_talk_provenance(
 
 
 def test_feedback_harvest_wrapper_is_supported(
-    aggregate_catalog_feedback, catalog_fixture, tmp_path,
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
 ):
     wrapper = {
         "harvested_from": "legacy reparse",
@@ -477,7 +542,9 @@ def test_feedback_harvest_wrapper_is_supported(
 
 
 def test_empty_feedback_is_an_accepted_return(
-    aggregate_catalog_feedback, catalog_fixture, tmp_path,
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
 ):
     source = _write(tmp_path / "empty.json", _return(feedback={}))
 
@@ -491,7 +558,9 @@ def test_empty_feedback_is_an_accepted_return(
 
 
 def test_duplicate_discovery_does_not_double_count(
-    aggregate_catalog_feedback, catalog_fixture, tmp_path,
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
 ):
     directory = tmp_path / "returns"
     source = _write(directory / "one.json", _return())
@@ -508,7 +577,9 @@ def test_duplicate_discovery_does_not_double_count(
 
 
 def test_report_is_stable_across_input_argument_order(
-    aggregate_catalog_feedback, catalog_fixture, tmp_path,
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
 ):
     first = _write(tmp_path / "b.json", _return("b.md"))
     second = _write(tmp_path / "a.json", _return("a.md"))
@@ -524,7 +595,9 @@ def test_report_is_stable_across_input_argument_order(
 
 
 def test_catalog_polarity_fault_is_reported_without_modifying_catalog(
-    aggregate_catalog_feedback, catalog_fixture, tmp_path,
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
 ):
     bad = catalog_fixture / "build" / "wrong.md"
     _catalog_file(bad, "wrong", "antipattern")
@@ -553,7 +626,9 @@ def test_bundled_catalog_registry_uses_frontmatter_polarity(
 
 
 def test_cli_emits_stable_json_and_does_not_edit_inputs_or_catalog(
-    aggregate_catalog_feedback, catalog_fixture, tmp_path,
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
 ):
     source = _write(tmp_path / "return.json", _return())
     source_before = source.read_bytes()
@@ -564,7 +639,8 @@ def test_cli_emits_stable_json_and_does_not_edit_inputs_or_catalog(
             sys.executable,
             aggregate_catalog_feedback.__file__,
             str(source),
-            "--catalog", str(catalog_fixture),
+            "--catalog",
+            str(catalog_fixture),
         ],
         capture_output=True,
         text=True,
@@ -576,11 +652,15 @@ def test_cli_emits_stable_json_and_does_not_edit_inputs_or_catalog(
     assert report["ok"] is True
     assert report["read_only"] is True
     assert source.read_bytes() == source_before
-    assert {path: path.read_bytes() for path in catalog_fixture.rglob("*.md")} == catalog_before
+    assert {
+        path: path.read_bytes() for path in catalog_fixture.rglob("*.md")
+    } == catalog_before
 
 
 def test_cli_exits_nonzero_on_invalid_feedback(
-    aggregate_catalog_feedback, catalog_fixture, tmp_path,
+    aggregate_catalog_feedback,
+    catalog_fixture,
+    tmp_path,
 ):
     feedback = _feedback()
     feedback["confusable_pairs"][0]["pattern_ids"] = ["alpha", "beta", "gamma"]
@@ -591,7 +671,8 @@ def test_cli_exits_nonzero_on_invalid_feedback(
             sys.executable,
             aggregate_catalog_feedback.__file__,
             str(source),
-            "--catalog", str(catalog_fixture),
+            "--catalog",
+            str(catalog_fixture),
         ],
         capture_output=True,
         text=True,
@@ -604,9 +685,12 @@ def test_cli_exits_nonzero_on_invalid_feedback(
 
 # --- #203: the CLI has a closed failure boundary ---
 
+
 def test_outer_boundary_reports_an_unexpected_failure_without_a_traceback(
-        aggregate_catalog_feedback, capsys, monkeypatch):
+    aggregate_catalog_feedback, capsys, monkeypatch
+):
     """Every documented outcome is JSON; a traceback would be the one exception."""
+
     def explode(*_args, **_kwargs):
         raise RuntimeError("injected failure at /private/vault/returns/a.json")
 
@@ -615,7 +699,7 @@ def test_outer_boundary_reports_an_unexpected_failure_without_a_traceback(
     assert aggregate_catalog_feedback.run_cli(["some-return.json"]) == 3
 
     captured = capsys.readouterr()
-    assert captured.out == ""                     # stdout stays clean
+    assert captured.out == ""  # stdout stays clean
     payload = json.loads(captured.err.splitlines()[0])
     assert payload["error"] == "catalog_feedback_unexpected_failure"
     assert payload["error_type"] == "RuntimeError"
@@ -626,8 +710,10 @@ def test_outer_boundary_reports_an_unexpected_failure_without_a_traceback(
 
 
 def test_unexpected_failure_exit_is_distinct_from_the_argparse_exit(
-        aggregate_catalog_feedback, capsys, monkeypatch):
+    aggregate_catalog_feedback, capsys, monkeypatch
+):
     """argparse already owns 2 — reusing it would conflate the two causes."""
+
     def explode(*_args, **_kwargs):
         raise RuntimeError("boom")
 
@@ -641,7 +727,8 @@ def test_unexpected_failure_exit_is_distinct_from_the_argparse_exit(
 
 
 def test_the_argument_error_report_still_reaches_stdout(
-        aggregate_catalog_feedback, capsys):
+    aggregate_catalog_feedback, capsys
+):
     """The boundary must not swallow the documented invalid-arguments report."""
     with pytest.raises(SystemExit):
         aggregate_catalog_feedback.run_cli([])
@@ -651,7 +738,8 @@ def test_the_argument_error_report_still_reaches_stdout(
 
 
 def test_outer_boundary_lets_the_documented_verdicts_through(
-        aggregate_catalog_feedback, monkeypatch):
+    aggregate_catalog_feedback, monkeypatch
+):
     """An `ok: false` report is exit 1, not an unexpected failure."""
     monkeypatch.setattr(aggregate_catalog_feedback, "main", lambda *a, **k: 1)
     assert aggregate_catalog_feedback.run_cli([]) == 1

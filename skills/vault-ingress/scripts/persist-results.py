@@ -166,6 +166,7 @@ def normalize_stamp(value):
     """
     return normalize_processing_stamp(value)
 
+
 # Tracking-DB talk-record schema version, stamped by this writer on every merge.
 #
 # v1 is the implicit, unversioned shape every pre-2026-07-28 record carries:
@@ -186,16 +187,16 @@ def normalize_stamp(value):
 # (top_level_field, dotted source path within the return). To add a new queryable
 # scalar, add it here AND to the return schema — never reintroduce hand-mapping.
 PROMOTE = [
-    ("slide_count",                "structured_data.slide_count"),
-    ("slide_design_style",         "structured_data.slide_design_style"),
-    ("illustration_style",         "structured_data.illustration_style"),
-    ("opening_type",               "structured_data.opening_type"),
-    ("closing_type",               "structured_data.closing_type"),
-    ("narrative_arc_type",         "structured_data.narrative_arc_type"),
+    ("slide_count", "structured_data.slide_count"),
+    ("slide_design_style", "structured_data.slide_design_style"),
+    ("illustration_style", "structured_data.illustration_style"),
+    ("opening_type", "structured_data.opening_type"),
+    ("closing_type", "structured_data.closing_type"),
+    ("narrative_arc_type", "structured_data.narrative_arc_type"),
     ("audience_interaction_count", "structured_data.audience_interaction_count"),
-    ("co_presenter",               "structured_data.co_presenter"),
-    ("co_presenters",              "structured_data.co_presenters"),
-    ("delivery_language",          "structured_data.delivery_language"),
+    ("co_presenter", "structured_data.co_presenter"),
+    ("co_presenters", "structured_data.co_presenters"),
+    ("delivery_language", "structured_data.delivery_language"),
 ]
 
 # NOT in PROMOTE: `pattern_score`. It is set explicitly in merge_talk from
@@ -206,15 +207,21 @@ PROMOTE = [
 # processing stamp is writer-owned and handled separately below: a subagent's
 # legacy `processed_date` cannot override the batch timestamp.
 SCALARS = [
-    "status", "rhetoric_notes", "areas_for_improvement",
-    "adherence_assessment", "transcript_source", "transcript_path",
-    "slide_source", "slides_local_path",
+    "status",
+    "rhetoric_notes",
+    "areas_for_improvement",
+    "adherence_assessment",
+    "transcript_source",
+    "transcript_path",
+    "slide_source",
+    "slides_local_path",
 ]
 
 PROMOTED_BY_STRUCTURED_KEY = {
     path.removeprefix("structured_data."): field
     for field, path in PROMOTE
-    if path.startswith("structured_data.") and "." not in path.removeprefix("structured_data.")
+    if path.startswith("structured_data.")
+    and "." not in path.removeprefix("structured_data.")
 }
 
 
@@ -258,7 +265,8 @@ def require_stored_mapping(talk, field):
     if not isinstance(value, dict):
         raise ValueError(
             f"stored {field} is a {type(value).__name__}; refusing to merge a "
-            "new analysis into malformed prior state")
+            "new analysis into malformed prior state"
+        )
     return value
 
 
@@ -268,8 +276,8 @@ def merge_structured_v2(existing, incoming):
     if present_group and present_group != IMAGE_SOURCE_GROUP:
         missing = sorted(IMAGE_SOURCE_GROUP - present_group)
         raise ValueError(
-            "snapshot return image-source group is incomplete; missing "
-            f"{missing}")
+            f"snapshot return image-source group is incomplete; missing {missing}"
+        )
 
     validate_v2_structured_policy_shapes(incoming)
     merged = copy.deepcopy(existing)
@@ -285,7 +293,8 @@ def merge_structured_v2(existing, incoming):
             if not isinstance(current, dict):
                 raise ValueError(
                     f"stored structured_data.{field} is a "
-                    f"{type(current).__name__}; additive namespaces must be objects")
+                    f"{type(current).__name__}; additive namespaces must be objects"
+                )
             merged[field] = deep_merge(copy.deepcopy(current), copy.deepcopy(value))
         else:
             merged[field] = copy.deepcopy(value)
@@ -301,8 +310,9 @@ def merge_verbatim_v2(existing, incoming):
     return merged
 
 
-def _normalized_pattern_fields(patterns, antipatterns, not_evaluable,
-                               evidence_sources, score):
+def _normalized_pattern_fields(
+    patterns, antipatterns, not_evaluable, evidence_sources, score
+):
     return normalize_pattern_observations(
         {},
         copy.deepcopy(patterns),
@@ -319,14 +329,14 @@ def _sync_v2_promotions(talk, incoming_structured):
     for field, path in PROMOTE:
         structured_field = path.removeprefix("structured_data.")
         if structured_field in incoming_structured:
-            talk[field] = copy.deepcopy(
-                talk["structured_data"][structured_field])
+            talk[field] = copy.deepcopy(talk["structured_data"][structured_field])
             promoted.append(field)
     return promoted
 
 
 def validate_effective_v2_state(
-        talk, incoming_structured, *, pattern_snapshot_replaced):
+    talk, incoming_structured, *, pattern_snapshot_replaced
+):
     """Validate a post-v2–v5 snapshot candidate before publication."""
     validate_talk_record_schemas([talk])
     try:
@@ -342,11 +352,11 @@ def validate_effective_v2_state(
             nested = structured[structured_field]
             if field not in talk or talk[field] != nested:
                 raise ValueError(
-                    f"effective merged analysis has divergent promoted field {field}")
+                    f"effective merged analysis has divergent promoted field {field}"
+                )
 
     if not pattern_snapshot_replaced:
-        raise ValueError(
-            "snapshot return did not replace pattern_observations")
+        raise ValueError("snapshot return did not replace pattern_observations")
 
 
 def _delete_path(obj, parts):
@@ -372,8 +382,12 @@ def apply_clear_fields(talk, paths):
             promoted = PROMOTED_BY_STRUCTURED_KEY.get(parts[1])
             if promoted and talk.pop(promoted, None) is not None:
                 cleared.append(promoted)
-        if (len(parts) == 2 and parts[0] == "pattern_observations" and
-                parts[1] == "pattern_score" and talk.pop("pattern_score", None) is not None):
+        if (
+            len(parts) == 2
+            and parts[0] == "pattern_observations"
+            and parts[1] == "pattern_score"
+            and talk.pop("pattern_score", None) is not None
+        ):
             cleared.append("pattern_score")
     return cleared
 
@@ -415,7 +429,8 @@ def require_mapping(ret, field):
         raise ValueError(
             f"{field} is a {type(value).__name__}, but the return schema declares "
             f"it a JSON object. Refusing to skip it silently — a dropped {field} "
-            "loses the whole block while the merge still reports success.")
+            "loses the whole block while the merge still reports success."
+        )
     return value
 
 
@@ -434,13 +449,15 @@ def require_detections(observations, field):
     if not isinstance(value, list):
         raise ValueError(
             f"pattern_observations.{field} is a {type(value).__name__}, but the "
-            "return schema declares it an array of detection objects.")
+            "return schema declares it an array of detection objects."
+        )
     bad = next((e for e in value if not isinstance(e, dict)), None)
     if bad is not None:
         raise ValueError(
             f"pattern_observations.{field} contains {bad!r} "
             f"({type(bad).__name__}); every element must be an object carrying a "
-            "`pattern_id`.")
+            "`pattern_id`."
+        )
     return value
 
 
@@ -482,7 +499,8 @@ def resolve_pattern_score(observations, patterns, antipatterns):
         raise ValueError(
             "pattern_score is an object with no `score` key "
             f"(got keys {sorted(raw)}). Emit "
-            '{"patterns_used": N, "antipatterns_detected": M, "score": N-M}.')
+            '{"patterns_used": N, "antipatterns_detected": M, "score": N-M}.'
+        )
 
     label = "pattern_score" if coerced else "pattern_score.score"
     if isinstance(nested, bool) or not isinstance(nested, int):
@@ -490,7 +508,8 @@ def resolve_pattern_score(observations, patterns, antipatterns):
             f"{label} is {nested!r} ({type(nested).__name__}). It must be an "
             "integer — the score is count(patterns) minus count(antipatterns), "
             "so a float, a string and a bool are all wrong. Emit "
-            '{"patterns_used": N, "antipatterns_detected": M, "score": N-M}.')
+            '{"patterns_used": N, "antipatterns_detected": M, "score": N-M}.'
+        )
 
     # Only the coerced form is cross-checked. It is the shape that arrived
     # without its accompanying counts, so the arrays are the only evidence that
@@ -501,12 +520,14 @@ def resolve_pattern_score(observations, patterns, antipatterns):
             raise ValueError(
                 f"pattern_score is the bare int {nested}, but patterns_detected "
                 f"({used}) minus antipatterns_detected ({against}) is "
-                f"{used - against}. Refusing to guess which is right.")
+                f"{used - against}. Refusing to guess which is right."
+            )
     return nested, coerced
 
 
-def normalize_pattern_observations(existing, patterns, antipatterns,
-                                   not_evaluable, evidence_sources, score):
+def normalize_pattern_observations(
+    existing, patterns, antipatterns, not_evaluable, evidence_sources, score
+):
     """Map the subagent return shape onto the DB shape, keeping both views.
 
     Takes already-validated inputs and decides nothing about their shape, so it
@@ -515,14 +536,19 @@ def normalize_pattern_observations(existing, patterns, antipatterns,
     obs = dict(existing) if isinstance(existing, dict) else {}
     if patterns is not None:
         obs["patterns_detected"] = patterns
-        obs["pattern_ids"] = [p.get("pattern_id") for p in patterns if p.get("pattern_id")]
+        obs["pattern_ids"] = [
+            p.get("pattern_id") for p in patterns if p.get("pattern_id")
+        ]
     if antipatterns is not None:
         obs["antipatterns_detected"] = antipatterns
-        obs["antipattern_ids"] = [p.get("pattern_id") for p in antipatterns if p.get("pattern_id")]
+        obs["antipattern_ids"] = [
+            p.get("pattern_id") for p in antipatterns if p.get("pattern_id")
+        ]
     if not_evaluable is not None:
         obs["not_evaluable"] = not_evaluable
         obs["not_evaluable_ids"] = [
-            item.get("pattern_id") for item in not_evaluable if item.get("pattern_id")]
+            item.get("pattern_id") for item in not_evaluable if item.get("pattern_id")
+        ]
     if evidence_sources is not None:
         obs["evidence_sources"] = evidence_sources
     if score is not None:
@@ -530,9 +556,17 @@ def normalize_pattern_observations(existing, patterns, antipatterns,
     return obs
 
 
-def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
-               *, enforce_queue_claim=False, catalog=None,
-               canonical_ret=None, artifact_capabilities=None):
+def merge_talk(
+    talk,
+    ret,
+    run_date=None,
+    catalog_fingerprint=None,
+    *,
+    enforce_queue_claim=False,
+    catalog=None,
+    canonical_ret=None,
+    artifact_capabilities=None,
+):
     """Merge one return into its talk.
 
     Returns (promoted, stamped, coerced_score, cleared).
@@ -549,19 +583,21 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     if enforce_queue_claim and normalized_run_date is None:
         raise ValueError(
             "run_date is required when closing a queue claim so released_at is "
-            "deterministic")
+            "deterministic"
+        )
     if enforce_queue_claim:
         validate_claim_against_talk(
-            talk, ret, artifact_capabilities=artifact_capabilities)
+            talk, ret, artifact_capabilities=artifact_capabilities
+        )
 
     if return_schema_version in SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS:
         if not isinstance(canonical_ret, dict):
             raise ValueError(
                 f"return-schema v{return_schema_version} requires source evidence canonicalization "
-                "before merge")
+                "before merge"
+            )
         if return_evidence_claim(canonical_ret) != return_evidence_claim(ret):
-            raise ValueError(
-                "canonical evidence changed model-authored return fields")
+            raise ValueError("canonical evidence changed model-authored return fields")
         evidence_ret = canonical_ret
         if enforce_queue_claim:
             validate_v5_adherence_opportunity(talk, ret, canonical_ret)
@@ -587,12 +623,15 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     returned_stamp = ret.get("processed_date")
     if normalized_run_date and not is_empty(returned_stamp):
         normalized_returned_stamp = normalize_stamp(returned_stamp)
-        if (len(normalized_returned_stamp) > 10
-                and normalized_returned_stamp != normalized_run_date):
+        if (
+            len(normalized_returned_stamp) > 10
+            and normalized_returned_stamp != normalized_run_date
+        ):
             raise ValueError(
                 "return processed_date is an explicit timestamp "
                 f"{normalized_returned_stamp!r} that conflicts with authoritative "
-                f"batch run_date {normalized_run_date!r}")
+                f"batch run_date {normalized_run_date!r}"
+            )
 
     structured = require_mapping(ret, "structured_data")
     verbatim = require_mapping(ret, "verbatim_examples")
@@ -603,23 +642,28 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     not_evaluable = require_detections(observation_values, "not_evaluable")
     evidence_sources = observation_values.get("evidence_sources")
     resolved_catalog = catalog or load_catalog()
-    if (catalog_fingerprint is not None and
-            catalog_fingerprint != resolved_catalog.fingerprint):
+    if (
+        catalog_fingerprint is not None
+        and catalog_fingerprint != resolved_catalog.fingerprint
+    ):
         raise ValueError(
-            "catalog_fingerprint does not match the catalog used to assess "
-            "the return")
-    scoring_assessment = assess_scoring_generation(
-        evidence_ret, resolved_catalog)
-    if (return_schema_version == RETURN_SCHEMA_VERSION and
-            not scoring_assessment.current):
+            "catalog_fingerprint does not match the catalog used to assess the return"
+        )
+    scoring_assessment = assess_scoring_generation(evidence_ret, resolved_catalog)
+    if (
+        return_schema_version == RETURN_SCHEMA_VERSION
+        and not scoring_assessment.current
+    ):
         raise ValueError(
             f"return-schema v{return_schema_version} cannot satisfy the "
             "current scoring generation: "
-            f"{list(scoring_assessment.reasons)}")
+            f"{list(scoring_assessment.reasons)}"
+        )
     patterns = scoring_assessment.patterns_detected
     antipatterns = scoring_assessment.antipatterns_detected
     score, coerced_score = resolve_pattern_score(
-        observation_values, patterns, antipatterns)
+        observation_values, patterns, antipatterns
+    )
 
     if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
         # Validate persisted block types before a clear could conceal malformed
@@ -631,14 +675,16 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     cleared = apply_clear_fields(candidate, ret.get("clear_fields"))
     candidate["schema_version"] = TALK_SCHEMA_VERSION
     for f in SCALARS:
-        if (f in ret and
-                (return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS or
-                 not is_empty(ret[f]))):
+        if f in ret and (
+            return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS
+            or not is_empty(ret[f])
+        ):
             candidate[f] = copy.deepcopy(ret[f])
-    if (return_schema_version in SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS and
-            "adherence_comparison" in ret):
-        candidate["adherence_comparison"] = copy.deepcopy(
-            ret["adherence_comparison"])
+    if (
+        return_schema_version in SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS
+        and "adherence_comparison" in ret
+    ):
+        candidate["adherence_comparison"] = copy.deepcopy(ret["adherence_comparison"])
     elif return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
         # A v2–v4 replay is archival prose, never an authenticated current
         # comparison. Snapshot replacement therefore clears any stale
@@ -658,17 +704,22 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     if structured is not None:
         if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
             candidate["structured_data"] = merge_structured_v2(
-                require_stored_mapping(candidate, "structured_data"), structured)
+                require_stored_mapping(candidate, "structured_data"), structured
+            )
         else:
             candidate["structured_data"] = deep_merge(
-                candidate.get("structured_data") or {}, structured)
-        if (return_schema_version == LEGACY_RETURN_SCHEMA_VERSION and
-                "video_extraction" in structured):
+                candidate.get("structured_data") or {}, structured
+            )
+        if (
+            return_schema_version == LEGACY_RETURN_SCHEMA_VERSION
+            and "video_extraction" in structured
+        ):
             # This owner-generated schema is a complete manifest, not a bag of
             # independently additive observations. Replacement prevents v1/v2
             # keys such as `output_pdf` from contaminating a validated v3 record.
             candidate["structured_data"]["video_extraction"] = copy.deepcopy(
-                structured["video_extraction"])
+                structured["video_extraction"]
+            )
     if verbatim is not None:
         if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
             existing_verbatim = candidate.get("verbatim_examples")
@@ -678,16 +729,24 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
             )
         else:
             candidate["verbatim_examples"] = deep_merge(
-                candidate.get("verbatim_examples") or {}, verbatim)
+                candidate.get("verbatim_examples") or {}, verbatim
+            )
     if observations is not None:
         if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
-            candidate["pattern_observations"] = \
+            candidate["pattern_observations"] = (
                 canonical_persisted_pattern_observations(
-                    evidence_ret, resolved_catalog, scoring_assessment)
+                    evidence_ret, resolved_catalog, scoring_assessment
+                )
+            )
         elif observations:
             candidate["pattern_observations"] = normalize_pattern_observations(
-                candidate.get("pattern_observations"), patterns, antipatterns,
-                not_evaluable, evidence_sources, score)
+                candidate.get("pattern_observations"),
+                patterns,
+                antipatterns,
+                not_evaluable,
+                evidence_sources,
+                score,
+            )
 
     if return_schema_version not in SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS:
         persisted_observations = candidate.get("pattern_observations")
@@ -718,23 +777,26 @@ def merge_talk(talk, ret, run_date=None, catalog_fingerprint=None,
     if score is not None:
         candidate["pattern_score"] = score
         promoted.append("pattern_score")
-    elif (return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS and
-          observations is not None):
+    elif (
+        return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS
+        and observations is not None
+    ):
         candidate.pop("pattern_score", None)
     if ret.get("status") in ANALYSIS_STATUSES:
         if scoring_assessment.current:
-            candidate["pattern_scoring_generation_status"] = \
+            candidate["pattern_scoring_generation_status"] = (
                 CURRENT_PATTERN_SCORING_GENERATION_STATUS
+            )
             candidate["pattern_scoring_generation_reasons"] = []
-            candidate["pattern_scoring_schema_version"] = \
-                PATTERN_SCORING_SCHEMA_VERSION
-            candidate["pattern_catalog_fingerprint"] = \
-                resolved_catalog.fingerprint
+            candidate["pattern_scoring_schema_version"] = PATTERN_SCORING_SCHEMA_VERSION
+            candidate["pattern_catalog_fingerprint"] = resolved_catalog.fingerprint
         else:
-            candidate["pattern_scoring_generation_status"] = \
+            candidate["pattern_scoring_generation_status"] = (
                 LEGACY_UNBASELINEABLE_SCORING_STATUS
-            candidate["pattern_scoring_generation_reasons"] = \
-                list(scoring_assessment.reasons)
+            )
+            candidate["pattern_scoring_generation_reasons"] = list(
+                scoring_assessment.reasons
+            )
             candidate.pop("pattern_scoring_schema_version", None)
             candidate.pop("pattern_catalog_fingerprint", None)
     if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
@@ -761,7 +823,9 @@ def atomic_write_json(
         snapshot = expected_snapshot or snapshot_tracking_database(path)
         return write_json_object(snapshot, payload)
     except TrackingDatabaseIOError as exc:
-        raise ValueError(f"cannot safely write tracking database {path}: {exc}") from exc
+        raise ValueError(
+            f"cannot safely write tracking database {path}: {exc}"
+        ) from exc
 
 
 def load_tracking_database(path):
@@ -816,8 +880,10 @@ def parse_args(argv):
     while i < len(argv):
         if argv[i] == "--run-date":
             if i + 1 >= len(argv):
-                print("ERROR: --run-date requires a YYYY-MM-DD or ISO-8601 value",
-                      file=sys.stderr)
+                print(
+                    "ERROR: --run-date requires a YYYY-MM-DD or ISO-8601 value",
+                    file=sys.stderr,
+                )
                 sys.exit(1)
             run_date = argv[i + 1]
             i += 2
@@ -825,8 +891,11 @@ def parse_args(argv):
         args.append(argv[i])
         i += 1
     if len(args) != 2:
-        print(f"Usage: {sys.argv[0]} <tracking-database.json> <batch-returns.json> "
-              f"[--run-date YYYY-MM-DD|ISO-8601]", file=sys.stderr)
+        print(
+            f"Usage: {sys.argv[0]} <tracking-database.json> <batch-returns.json> "
+            f"[--run-date YYYY-MM-DD|ISO-8601]",
+            file=sys.stderr,
+        )
         sys.exit(1)
     if run_date is None:
         # Second resolution, not day. A date-only stamp cannot order a talk
@@ -839,8 +908,11 @@ def parse_args(argv):
         try:
             run_date = normalize_stamp(run_date)
         except ValueError as e:
-            print(f"ERROR: --run-date must be YYYY-MM-DD or a timezone-aware "
-                  f"ISO-8601 timestamp: {e}", file=sys.stderr)
+            print(
+                f"ERROR: --run-date must be YYYY-MM-DD or a timezone-aware "
+                f"ISO-8601 timestamp: {e}",
+                file=sys.stderr,
+            )
             sys.exit(1)
     return args[0], args[1], run_date
 
@@ -848,7 +920,6 @@ def parse_args(argv):
 # Whether the atomic database commit landed. The outer boundary reports this so
 # an operator never has to guess whether a late failure replayed a write.
 _COMMIT_STATE = {"database_written": False}
-
 
 
 def main():
@@ -870,7 +941,8 @@ def main():
     db, database_snapshot = load_tracking_database(db_path)
     raw_config = db.get("config")
     source_roots: dict[str, object] = (
-        copy.deepcopy(raw_config) if isinstance(raw_config, dict) else {})
+        copy.deepcopy(raw_config) if isinstance(raw_config, dict) else {}
+    )
     try:
         vault_root = resolve_vault_root_authority(
             database_path=db_path,
@@ -889,7 +961,8 @@ def main():
     artifact_capabilities_by_filename = assess_batch_artifact_capabilities(
         db["talks"],
         {
-            ret["filename"] for ret in returns
+            ret["filename"]
+            for ret in returns
             if isinstance(ret, dict) and isinstance(ret.get("filename"), str)
         },
         vault_root=vault_root,
@@ -898,8 +971,11 @@ def main():
     )
     try:
         by_name = validate_batch_claims_against_talks(
-            db["talks"], returns, required_state="claimed",
-            artifact_capabilities_by_filename=artifact_capabilities_by_filename)
+            db["talks"],
+            returns,
+            required_state="claimed",
+            artifact_capabilities_by_filename=artifact_capabilities_by_filename,
+        )
     except ReturnValidationError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -919,22 +995,26 @@ def main():
                     ret,
                     video_evidence_assessment=video_evidence_assessment,
                 )
-            if (ret.get("status") in ANALYSIS_STATUSES and
-                    resolve_return_schema_version(ret) in
-                    SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS):
+            if (
+                ret.get("status") in ANALYSIS_STATUSES
+                and resolve_return_schema_version(ret)
+                in SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS
+            ):
                 canonical = canonicalize_return_evidence(
-                    ret, by_name[name], vault_root, catalog,
+                    ret,
+                    by_name[name],
+                    vault_root,
+                    catalog,
                     source_roots=source_roots,
-                    pattern_scoring_schema_version=(
-                        PATTERN_SCORING_SCHEMA_VERSION
-                    ),
+                    pattern_scoring_schema_version=(PATTERN_SCORING_SCHEMA_VERSION),
                     video_evidence_assessment=video_evidence_assessment,
                 )
             else:
                 canonical = copy.deepcopy(ret)
             if return_evidence_claim(canonical) != return_evidence_claim(ret):
                 raise PatternEvidenceError(
-                    "canonicalization changed model-authored return fields")
+                    "canonicalization changed model-authored return fields"
+                )
         except PatternEvidenceError as exc:
             print(f"ERROR: {name}: {exc}", file=sys.stderr)
             sys.exit(1)
@@ -950,25 +1030,39 @@ def main():
         talk = by_name[name]
         try:
             promoted, stamped, coerced, cleared = merge_talk(
-                talk, ret, run_date, catalog.fingerprint,
-                enforce_queue_claim=True, catalog=catalog,
+                talk,
+                ret,
+                run_date,
+                catalog.fingerprint,
+                enforce_queue_claim=True,
+                catalog=catalog,
                 canonical_ret=canonical_ret,
-                artifact_capabilities=(
-                    artifact_capabilities_by_filename.get(name)))
+                artifact_capabilities=(artifact_capabilities_by_filename.get(name)),
+            )
         except ValueError as exc:
             print(f"ERROR: {name}: {exc}", file=sys.stderr)
             sys.exit(1)
         analysis_result = talk.get("status") in ANALYSIS_STATUSES
-        summary.append({"filename": name, "status": talk.get("status"),
-                        "promoted": promoted, "stamped_processed_date": stamped,
-                        "coerced_pattern_score": coerced, "cleared": cleared,
-                        "pattern_scoring_generation_status": (
-                            talk.get("pattern_scoring_generation_status")
-                            if analysis_result else
-                            UNSCORED_PATTERN_SCORING_GENERATION_STATUS),
-                        "pattern_scoring_generation_reasons": (
-                            talk.get("pattern_scoring_generation_reasons", [])
-                            if analysis_result else [])})
+        summary.append(
+            {
+                "filename": name,
+                "status": talk.get("status"),
+                "promoted": promoted,
+                "stamped_processed_date": stamped,
+                "coerced_pattern_score": coerced,
+                "cleared": cleared,
+                "pattern_scoring_generation_status": (
+                    talk.get("pattern_scoring_generation_status")
+                    if analysis_result
+                    else UNSCORED_PATTERN_SCORING_GENERATION_STATUS
+                ),
+                "pattern_scoring_generation_reasons": (
+                    talk.get("pattern_scoring_generation_reasons", [])
+                    if analysis_result
+                    else []
+                ),
+            }
+        )
 
     # This all-inclusive cohort is derived only after every member merged into
     # the isolated in-memory candidate. It is intentionally distinct from the
@@ -982,14 +1076,16 @@ def main():
             pattern_scoring_schema_version=PATTERN_SCORING_SCHEMA_VERSION,
             evidence_freshness_assessor=lambda talk: (
                 assess_current_persisted_pattern_evidence_freshness(
-                    talk, vault_root=vault_root, source_roots=source_roots,
-                    video_evidence_assessment=video_evidence_assessment)
+                    talk,
+                    vault_root=vault_root,
+                    source_roots=source_roots,
+                    video_evidence_assessment=video_evidence_assessment,
+                )
             ),
         )
     except AdherenceBaselineError as exc:
         print(
-            "ERROR: cannot derive the post-batch current adherence cohort: "
-            f"{exc}",
+            f"ERROR: cannot derive the post-batch current adherence cohort: {exc}",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -1005,18 +1101,26 @@ def main():
         sys.exit(1)
     _COMMIT_STATE["database_written"] = bool(write_result.installed)
 
-    json.dump({"persisted": len(summary), "db_path": db_path, "run_date": run_date,
-               "schema_version": TALK_SCHEMA_VERSION,
-               "migrated_records": 0,
-               "pattern_scoring_schema_version": PATTERN_SCORING_SCHEMA_VERSION,
-               "pattern_catalog_fingerprint": catalog.fingerprint,
-               "current_adherence_baseline": current_adherence_baseline,
-               "input_sha256": write_result.input_sha256,
-               "output_sha256": write_result.output_sha256,
-               "database_written": write_result.installed,
-               "durability_state": write_result.durability_state,
-               "warnings": list(write_result.warnings),
-               "talks": summary}, sys.stdout, ensure_ascii=False)
+    json.dump(
+        {
+            "persisted": len(summary),
+            "db_path": db_path,
+            "run_date": run_date,
+            "schema_version": TALK_SCHEMA_VERSION,
+            "migrated_records": 0,
+            "pattern_scoring_schema_version": PATTERN_SCORING_SCHEMA_VERSION,
+            "pattern_catalog_fingerprint": catalog.fingerprint,
+            "current_adherence_baseline": current_adherence_baseline,
+            "input_sha256": write_result.input_sha256,
+            "output_sha256": write_result.output_sha256,
+            "database_written": write_result.installed,
+            "durability_state": write_result.durability_state,
+            "warnings": list(write_result.warnings),
+            "talks": summary,
+        },
+        sys.stdout,
+        ensure_ascii=False,
+    )
     sys.stdout.write("\n")
 
 

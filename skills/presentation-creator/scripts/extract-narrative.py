@@ -82,7 +82,8 @@ def _slide_synopsis(slide: "_os.Slide") -> str:
 
 
 def _render_slide_walk(
-    outline: "_os.Outline | _os.PartialOutline", lines: list[str],
+    outline: "_os.Outline | _os.PartialOutline",
+    lines: list[str],
 ) -> None:
     """Full view: one line per slide, grouped by chapter, interludes inlined."""
     lines.append("## The Deck, Slide by Slide")
@@ -127,7 +128,8 @@ def _render_slide_walk(
 
 
 def _render_narrative_scaffold(
-    outline: "_os.Outline | _os.PartialOutline", lines: list[str],
+    outline: "_os.Outline | _os.PartialOutline",
+    lines: list[str],
 ) -> None:
     """Partial view (no slides yet): the Phase 2 chapter + argument-beat arc."""
     lines.append("## The Talk as a Narrative")

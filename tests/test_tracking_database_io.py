@@ -41,7 +41,10 @@ def _metadata_view(
 @pytest.mark.parametrize(
     ("raw", "message"),
     [
-        (b'{"talks": [], "talks": [{"filename": "lost.md"}]}\n', "duplicate object key 'talks'"),
+        (
+            b'{"talks": [], "talks": [{"filename": "lost.md"}]}\n',
+            "duplicate object key 'talks'",
+        ),
         (
             b'{"talks": [{"filename": "a.md", "source_identity": '
             b'{"video_id": "one", "video_id": "two"}}]}\n',
@@ -109,13 +112,19 @@ def test_strict_decoder_rejects_numbers_that_cannot_round_trip(
     ("raw", "message"),
     [
         pytest.param(
-            b'{"config":{"value":' + b"[" * 500 + b"0" + b"]" * 500
+            b'{"config":{"value":'
+            + b"[" * 500
+            + b"0"
+            + b"]" * 500
             + b'},"talks":[]}\n',
             "maximum supported JSON nesting depth 200",
             id="decoded-depth-limit",
         ),
         pytest.param(
-            b'{"config":{"value":' + b"[" * 10_000 + b"0" + b"]" * 10_000
+            b'{"config":{"value":'
+            + b"[" * 10_000
+            + b"0"
+            + b"]" * 10_000
             + b'},"talks":[]}\n',
             "maximum supported JSON nesting depth 200",
             id="decoder-recursion-limit",
@@ -343,7 +352,9 @@ def test_symlink_substitution_before_commit_is_preserved(
     path.unlink()
     path.symlink_to(concurrent)
 
-    with pytest.raises(tracking_database_io.TrackingDatabaseIOError, match="symbolic link"):
+    with pytest.raises(
+        tracking_database_io.TrackingDatabaseIOError, match="symbolic link"
+    ):
         tracking_database_io.commit_tracking_database(
             expected,
             tracking_database_io.render_json_object({"talks": [], "config": {}}),
@@ -507,7 +518,9 @@ def test_staging_interrupt_cleans_candidate_and_preserves_database(
         real_write(descriptor, raw)
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(tracking_database_io, "_write_descriptor", interrupt_after_write)
+    monkeypatch.setattr(
+        tracking_database_io, "_write_descriptor", interrupt_after_write
+    )
     with pytest.raises(KeyboardInterrupt):
         tracking_database_io.commit_tracking_database(
             expected,

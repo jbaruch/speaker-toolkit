@@ -48,9 +48,7 @@ def _talk(
         "filename": filename,
         "title": filename,
         "status": status,
-        "video_url": (
-            f"https://www.youtube.com/watch?v={video_id}" if video else ""
-        ),
+        "video_url": (f"https://www.youtube.com/watch?v={video_id}" if video else ""),
         "youtube_id": video_id if youtube_identity else None,
     }
 
@@ -69,15 +67,17 @@ def _scored_talk(
     if generation_reasons is None:
         generation_reasons = []
     talk = _talk(video_id, status=status, filename=filename)
-    talk.update({
-        "processed_date": "2001-01-01T00:00:00+00:00",
-        "pattern_scoring_generation_status": generation_status,
-        "pattern_scoring_generation_reasons": generation_reasons,
-        "pattern_catalog_fingerprint": fingerprint,
-        "pattern_scoring_schema_version": scoring_schema,
-        "pattern_score": score,
-        "pattern_observations": {"pattern_score": score},
-    })
+    talk.update(
+        {
+            "processed_date": "2001-01-01T00:00:00+00:00",
+            "pattern_scoring_generation_status": generation_status,
+            "pattern_scoring_generation_reasons": generation_reasons,
+            "pattern_catalog_fingerprint": fingerprint,
+            "pattern_scoring_schema_version": scoring_schema,
+            "pattern_score": score,
+            "pattern_observations": {"pattern_score": score},
+        }
+    )
     return talk
 
 
@@ -97,16 +97,18 @@ def _write_db(tmp_path, talks, *, config=None, current=True):
         relative = artifact.relative_to(tmp_path).as_posix()
         quality = artifact.with_suffix(".quality.json")
         quality.write_text(
-            json.dumps({
-                "schema_version": 1,
-                "transcript_sha256": digest,
-                "policy": {
+            json.dumps(
+                {
                     "schema_version": 1,
-                    "min_words": 400,
-                    "duration_seconds": None,
-                },
-                "provenance": {"kind": "fixed_default"},
-            }),
+                    "transcript_sha256": digest,
+                    "policy": {
+                        "schema_version": 1,
+                        "min_words": 400,
+                        "duration_seconds": None,
+                    },
+                    "provenance": {"kind": "fixed_default"},
+                }
+            ),
             encoding="utf-8",
         )
         quality_digest = hashlib.sha256(quality.read_bytes()).hexdigest()
@@ -138,19 +140,21 @@ def _write_db(tmp_path, talks, *, config=None, current=True):
                 "confidence": "moderate",
                 "evidence_source": "transcript",
                 "evidence": "Synthetic source-located fixture evidence.",
-                "evidence_citations": [{
-                    "source": "transcript",
-                    "channel": "transcript",
-                    "quote": "synthetic evidence synthetic evidence",
-                    "line_start": 1,
-                    "line_end": 1,
-                    "artifact_root": "vault",
-                    "artifact_path": relative,
-                    "artifact_sha256": digest,
-                    "quality_artifact_root": "vault",
-                    "quality_artifact_path": quality_relative,
-                    "quality_artifact_sha256": quality_digest,
-                }],
+                "evidence_citations": [
+                    {
+                        "source": "transcript",
+                        "channel": "transcript",
+                        "quote": "synthetic evidence synthetic evidence",
+                        "line_start": 1,
+                        "line_end": 1,
+                        "artifact_root": "vault",
+                        "artifact_path": relative,
+                        "artifact_sha256": digest,
+                        "quality_artifact_root": "vault",
+                        "quality_artifact_path": quality_relative,
+                        "quality_artifact_sha256": quality_digest,
+                    }
+                ],
             }
             for index in range(max(int(score), 0))
         ]
@@ -160,19 +164,21 @@ def _write_db(tmp_path, talks, *, config=None, current=True):
                 "confidence": "moderate",
                 "evidence_source": "transcript",
                 "evidence": "Synthetic source-located fixture evidence.",
-                "evidence_citations": [{
-                    "source": "transcript",
-                    "channel": "transcript",
-                    "quote": "synthetic evidence synthetic evidence",
-                    "line_start": 1,
-                    "line_end": 1,
-                    "artifact_root": "vault",
-                    "artifact_path": relative,
-                    "artifact_sha256": digest,
-                    "quality_artifact_root": "vault",
-                    "quality_artifact_path": quality_relative,
-                    "quality_artifact_sha256": quality_digest,
-                }],
+                "evidence_citations": [
+                    {
+                        "source": "transcript",
+                        "channel": "transcript",
+                        "quote": "synthetic evidence synthetic evidence",
+                        "line_start": 1,
+                        "line_end": 1,
+                        "artifact_root": "vault",
+                        "artifact_path": relative,
+                        "artifact_sha256": digest,
+                        "quality_artifact_root": "vault",
+                        "quality_artifact_path": quality_relative,
+                        "quality_artifact_sha256": quality_digest,
+                    }
+                ],
             }
             for index in range(max(-int(score), 0))
         ]
@@ -201,12 +207,14 @@ def _write_db(tmp_path, talks, *, config=None, current=True):
             }
             observations.setdefault(
                 "opportunity_coverage_identity",
-                hashlib.sha256(json.dumps(
-                    payload,
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                    sort_keys=True,
-                ).encode("utf-8")).hexdigest(),
+                hashlib.sha256(
+                    json.dumps(
+                        payload,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ).encode("utf-8")
+                ).hexdigest(),
             )
     path = tmp_path / "tracking-database.json"
     database = {
@@ -221,9 +229,7 @@ def _write_db(tmp_path, talks, *, config=None, current=True):
     }
     if current:
         database["schema_version"] = 1
-        database["config"] = current_tracking_config(
-            **database["config"]
-        )
+        database["config"] = current_tracking_config(**database["config"])
     else:
         for talk in talks:
             talk.pop("schema_version", None)
@@ -237,17 +243,18 @@ def _write_verified_transcript(tmp_path, name="talk"):
     text = " ".join(["substantive transcript evidence"] * 200)
     transcript.write_text(text, encoding="utf-8")
     transcript.with_suffix(".quality.json").write_text(
-        json.dumps({
-            "schema_version": 1,
-            "transcript_sha256": hashlib.sha256(
-                text.encode("utf-8")).hexdigest(),
-            "policy": {
+        json.dumps(
+            {
                 "schema_version": 1,
-                "min_words": 400,
-                "duration_seconds": None,
-            },
-            "provenance": {"kind": "fixed_default"},
-        }),
+                "transcript_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                "policy": {
+                    "schema_version": 1,
+                    "min_words": 400,
+                    "duration_seconds": None,
+                },
+                "provenance": {"kind": "fixed_default"},
+            }
+        ),
         encoding="utf-8",
     )
     return transcript
@@ -296,10 +303,14 @@ def _run(path, *arguments):
 def _claim(path, *, run_id="run-1", batch_id="batch-1", limit=5, filenames=()):
     arguments = [
         "claim",
-        "--run-id", run_id,
-        "--batch-id", batch_id,
-        "--now", NOW,
-        "--limit", str(limit),
+        "--run-id",
+        run_id,
+        "--batch-id",
+        batch_id,
+        "--now",
+        NOW,
+        "--limit",
+        str(limit),
     ]
     for filename in filenames:
         arguments.extend(("--filename", filename))
@@ -337,9 +348,7 @@ def test_queue_compares_symlinked_vault_roots_by_lexical_identity(
     physical_root.mkdir()
     alias_root = tmp_path / "alias-vault"
     alias_root.symlink_to(physical_root, target_is_directory=True)
-    configured_root = (
-        alias_root if configured_identity == "alias" else physical_root
-    )
+    configured_root = alias_root if configured_identity == "alias" else physical_root
     database = _write_db(
         physical_root,
         [],
@@ -512,13 +521,19 @@ def test_claim_recovers_the_two_stranded_transcript_statuses(tmp_path):
         _talk("eixm_f7Jpdc", status="skipped_no_transcript"),
         _talk("QS-_4k7o7A4", status="skipped_no_transcript"),
         _talk(
-            "abcdefghijk", status="skipped_no_video", video=False,
-            youtube_identity=False, filename="catalog-no-source.md",
+            "abcdefghijk",
+            status="skipped_no_video",
+            video=False,
+            youtube_identity=False,
+            filename="catalog-no-source.md",
         ),
         _talk("lmnopqrstuv", status="skipped_duplicate"),
         _talk(
-            "wxyzABCDEF0", status="pending", video=False,
-            youtube_identity=False, filename="catalog-pending.md",
+            "wxyzABCDEF0",
+            status="pending",
+            video=False,
+            youtube_identity=False,
+            filename="catalog-pending.md",
         ),
     ]
     path = _write_db(tmp_path, talks)
@@ -552,26 +567,34 @@ def test_legacy_no_video_status_with_video_is_normalized_and_claimed(tmp_path):
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["normalizations"] == [{
-        "filename": "playlist-eg6gqvUFh6Q.md",
-        "previous_status": "skipped_no_video",
-        "status": "pending",
-        "video_present": True,
-        "source_capabilities": ["video", "transcript"],
-    }]
+    assert payload["normalizations"] == [
+        {
+            "filename": "playlist-eg6gqvUFh6Q.md",
+            "previous_status": "skipped_no_video",
+            "status": "pending",
+            "video_present": True,
+            "source_capabilities": ["video", "transcript"],
+        }
+    ]
     assert payload["claimed"][0]["previous_status"] == "pending"
 
 
-@pytest.mark.parametrize("source_kind,expected_capability", [
-    ("remote_slides", "slides"),
-    ("pptx", "slides"),
-    ("pdf", "slides"),
-    ("transcript", "transcript"),
-])
+@pytest.mark.parametrize(
+    "source_kind,expected_capability",
+    [
+        ("remote_slides", "slides"),
+        ("pptx", "slides"),
+        ("pdf", "slides"),
+        ("transcript", "transcript"),
+    ],
+)
 def test_legacy_no_video_talk_with_nonvideo_source_is_claimable(
-        tmp_path, source_kind, expected_capability):
+    tmp_path, source_kind, expected_capability
+):
     talk = _talk(
-        "abcdefghijk", status="skipped_no_video", video=False,
+        "abcdefghijk",
+        status="skipped_no_video",
+        video=False,
         youtube_identity=False,
         filename="source-only.md",
     )
@@ -603,13 +626,15 @@ def test_legacy_no_video_talk_with_nonvideo_source_is_claimable(
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["normalizations"] == [{
-        "filename": "source-only.md",
-        "previous_status": "skipped_no_video",
-        "status": "pending",
-        "video_present": False,
-        "source_capabilities": [expected_capability],
-    }]
+    assert payload["normalizations"] == [
+        {
+            "filename": "source-only.md",
+            "previous_status": "skipped_no_video",
+            "status": "pending",
+            "video_present": False,
+            "source_capabilities": [expected_capability],
+        }
+    ]
     assert payload["claimed"][0]["filename"] == "source-only.md"
     assert payload["claimed"][0]["previous_status"] == "pending"
 
@@ -737,10 +762,12 @@ def test_invalid_transcript_does_not_hide_valid_deck_from_queue(tmp_path):
         youtube_identity=False,
         filename="deck-survives.md",
     )
-    talk.update({
-        "transcript_path": "../bad.txt",
-        "pptx_path": "decks/talk.pptx",
-    })
+    talk.update(
+        {
+            "transcript_path": "../bad.txt",
+            "pptx_path": "decks/talk.pptx",
+        }
+    )
     path = _write_db(tmp_path, [talk])
 
     result = _claim(path)
@@ -760,19 +787,20 @@ def test_invalid_deck_does_not_hide_valid_transcript_from_queue(tmp_path):
         youtube_identity=False,
         filename="transcript-survives.md",
     )
-    talk.update({
-        "transcript_path": transcript.relative_to(tmp_path).as_posix(),
-        "transcript_source": "manual",
-        "pptx_path": "../bad.pptx",
-    })
+    talk.update(
+        {
+            "transcript_path": transcript.relative_to(tmp_path).as_posix(),
+            "transcript_source": "manual",
+            "pptx_path": "../bad.pptx",
+        }
+    )
     path = _write_db(tmp_path, [talk])
 
     result = _claim(path)
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["normalizations"][0]["source_capabilities"] == [
-        "transcript"]
+    assert payload["normalizations"][0]["source_capabilities"] == ["transcript"]
     assert payload["claimed"][0]["filename"] == "transcript-survives.md"
 
 
@@ -878,10 +906,12 @@ def test_required_degraded_pptx_cannot_create_a_fresh_current_claim(tmp_path):
         "abcdefghijk",
         filename="required-damaged-deck.md",
     )
-    talk.update({
-        "pptx_path": "decks/damaged.pptx",
-        "slide_source": "pptx",
-    })
+    talk.update(
+        {
+            "pptx_path": "decks/damaged.pptx",
+            "slide_source": "pptx",
+        }
+    )
     path = _write_db(tmp_path, [talk])
     before = path.read_bytes()
 
@@ -932,9 +962,7 @@ def test_claim_reassesses_after_eligibility_and_refuses_mutated_deck(
     def assessor(_talk):
         return next(assessments)
 
-    assert queue_state.has_claimable_source(
-        talk, capability_assessor=assessor
-    ) is True
+    assert queue_state.has_claimable_source(talk, capability_assessor=assessor) is True
     before = copy.deepcopy(talk)
     with pytest.raises(queue_state.QueueStateError, match="cannot claim"):
         queue_state.claim_talk(
@@ -957,10 +985,12 @@ def test_unused_optional_degraded_pptx_does_not_block_independent_source(
         "abcdefghijk",
         filename="optional-damaged-deck.md",
     )
-    talk.update({
-        "pptx_path": "decks/optional-damaged.pptx",
-        "slide_source": "pdf",
-    })
+    talk.update(
+        {
+            "pptx_path": "decks/optional-damaged.pptx",
+            "slide_source": "pdf",
+        }
+    )
     path = _write_db(tmp_path, [talk])
 
     result = _claim(path, filenames=(str(talk["filename"]),))
@@ -1010,12 +1040,14 @@ def test_optional_degraded_deck_allows_an_independent_healthy_transcript(
         video=False,
         youtube_identity=False,
     )
-    talk.update({
-        "pptx_path": "decks/optional-damaged.pptx",
-        "slide_source": "none",
-        "transcript_path": transcript.relative_to(tmp_path).as_posix(),
-        "transcript_source": "manual",
-    })
+    talk.update(
+        {
+            "pptx_path": "decks/optional-damaged.pptx",
+            "slide_source": "none",
+            "transcript_path": transcript.relative_to(tmp_path).as_posix(),
+            "transcript_source": "manual",
+        }
+    )
     path = _write_db(tmp_path, [talk])
 
     result = _claim(path, filenames=(str(talk["filename"]),))
@@ -1041,48 +1073,63 @@ def test_manual_provenance_label_without_artifact_is_not_a_capability(tmp_path):
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["normalizations"] == [{
-        "filename": "label-only.md",
-        "previous_status": "skipped_no_video",
-        "status": "skipped_no_sources",
-        "video_present": False,
-        "source_capabilities": [],
-    }]
+    assert payload["normalizations"] == [
+        {
+            "filename": "label-only.md",
+            "previous_status": "skipped_no_video",
+            "status": "skipped_no_sources",
+            "video_present": False,
+            "source_capabilities": [],
+        }
+    ]
     assert payload["claimed"] == []
 
 
 def test_normalize_requeues_every_noncurrent_or_stale_generation_atomically(
-        tmp_path, return_validation):
+    tmp_path, return_validation
+):
     fingerprint = return_validation.load_catalog().fingerprint
     scoring_schema = return_validation.PATTERN_SCORING_SCHEMA_VERSION
     other_fingerprint = "0" * 64 if fingerprint != "0" * 64 else "1" * 64
     current = _scored_talk(
-        "AAAAAAAAAAA", filename="current-old-date.md",
-        fingerprint=fingerprint, scoring_schema=scoring_schema,
+        "AAAAAAAAAAA",
+        filename="current-old-date.md",
+        fingerprint=fingerprint,
+        scoring_schema=scoring_schema,
     )
     legacy = _scored_talk(
-        "BBBBBBBBBBB", filename="legacy-recent.md",
-        fingerprint=fingerprint, scoring_schema=scoring_schema, score=100,
+        "BBBBBBBBBBB",
+        filename="legacy-recent.md",
+        fingerprint=fingerprint,
+        scoring_schema=scoring_schema,
+        score=100,
         generation_status="legacy_unbaselineable",
     )
     legacy.pop("pattern_catalog_fingerprint")
     legacy.pop("pattern_scoring_schema_version")
     old_catalog = _scored_talk(
-        "CCCCCCCCCCC", filename="old-catalog-recent.md",
-        fingerprint=other_fingerprint, scoring_schema=scoring_schema,
+        "CCCCCCCCCCC",
+        filename="old-catalog-recent.md",
+        fingerprint=other_fingerprint,
+        scoring_schema=scoring_schema,
     )
     old_schema = _scored_talk(
-        "DDDDDDDDDDD", filename="old-schema-recent.md",
-        fingerprint=fingerprint, scoring_schema=scoring_schema - 1,
+        "DDDDDDDDDDD",
+        filename="old-schema-recent.md",
+        fingerprint=fingerprint,
+        scoring_schema=scoring_schema - 1,
         status="processed_partial",
     )
     missing = _scored_talk(
-        "EEEEEEEEEEE", filename="missing-generation.md",
-        fingerprint=fingerprint, scoring_schema=scoring_schema,
+        "EEEEEEEEEEE",
+        filename="missing-generation.md",
+        fingerprint=fingerprint,
+        scoring_schema=scoring_schema,
     )
     missing.pop("pattern_scoring_generation_status")
     legacy_source = _talk(
-        "FFFFFFFFFFF", filename="legacy-source-status.md",
+        "FFFFFFFFFFF",
+        filename="legacy-source-status.md",
         status="skipped_no_video",
     )
     path = _write_db(
@@ -1101,8 +1148,7 @@ def test_normalize_requeues_every_noncurrent_or_stale_generation_atomically(
         if "reason_codes" in item
     }
     assert {
-        filename: item["reason_codes"]
-        for filename, item in generation_changes.items()
+        filename: item["reason_codes"] for filename, item in generation_changes.items()
     } == {
         "current-old-date.md": ["persisted_evidence_stale"],
         "legacy-recent.md": ["legacy_generation"],
@@ -1120,8 +1166,10 @@ def test_normalize_requeues_every_noncurrent_or_stale_generation_atomically(
     records = {talk["filename"]: talk for talk in _read_db(path)["talks"]}
     for filename in generation_changes:
         assert records[filename]["status"] == "needs-reprocessing"
-        assert records[filename]["reprocess_reason"] == \
-            generation_changes[filename]["reprocess_reason"]
+        assert (
+            records[filename]["reprocess_reason"]
+            == generation_changes[filename]["reprocess_reason"]
+        )
     assert records["legacy-source-status.md"]["status"] == "pending"
 
     first_bytes = path.read_bytes()
@@ -1137,8 +1185,10 @@ def test_normalize_preserves_ordered_generation_reasons(tmp_path, return_validat
     scoring_schema = return_validation.PATTERN_SCORING_SCHEMA_VERSION
     other_fingerprint = "0" * 64 if fingerprint != "0" * 64 else "1" * 64
     talk = _scored_talk(
-        "GGGGGGGGGGG", filename="both-generations-stale.md",
-        fingerprint=other_fingerprint, scoring_schema=scoring_schema - 1,
+        "GGGGGGGGGGG",
+        filename="both-generations-stale.md",
+        fingerprint=other_fingerprint,
+        scoring_schema=scoring_schema - 1,
     )
     path = _write_db(tmp_path, [talk])
 
@@ -1171,9 +1221,7 @@ def test_normalize_requeues_current_generation_when_evidence_artifact_drifts(
     )
     path = _write_db(tmp_path, [talk])
     stored = _read_db(path)["talks"][0]
-    relative = stored["pattern_observations"]["source_inspection"][0][
-        "artifact_path"
-    ]
+    relative = stored["pattern_observations"]["source_inspection"][0]["artifact_path"]
     artifact = tmp_path / relative
     if drift == "missing":
         artifact.unlink()
@@ -1207,12 +1255,15 @@ def test_normalize_requeues_current_generation_when_evidence_artifact_drifts(
     ],
 )
 def test_normalize_rejects_malformed_generation_without_any_write(
-        tmp_path, return_validation, case, message):
+    tmp_path, return_validation, case, message
+):
     fingerprint = return_validation.load_catalog().fingerprint
     scoring_schema = return_validation.PATTERN_SCORING_SCHEMA_VERSION
     malformed = _scored_talk(
-        "HHHHHHHHHHH", filename="malformed-generation.md",
-        fingerprint=fingerprint, scoring_schema=scoring_schema,
+        "HHHHHHHHHHH",
+        filename="malformed-generation.md",
+        fingerprint=fingerprint,
+        scoring_schema=scoring_schema,
     )
     if case == "unknown_status":
         malformed["pattern_scoring_generation_status"] = "future"
@@ -1229,7 +1280,8 @@ def test_normalize_rejects_malformed_generation_without_any_write(
     elif case == "divergent_score":
         malformed["pattern_observations"]["pattern_score"] = 1
     legacy_source = _talk(
-        "IIIIIIIIIII", filename="would-normalize.md",
+        "IIIIIIIIIII",
+        filename="would-normalize.md",
         status="skipped_no_video",
     )
     path = _write_db(tmp_path, [legacy_source, malformed])
@@ -1245,28 +1297,33 @@ def test_normalize_rejects_malformed_generation_without_any_write(
 
 def test_normalize_does_not_inspect_generation_for_ineligible_statuses(tmp_path):
     inflight = _talk(
-        "JJJJJJJJJJJ", filename="inflight.md",
+        "JJJJJJJJJJJ",
+        filename="inflight.md",
         status="reprocessing-inflight",
     )
-    inflight.update({
-        "reprocess_generation": 1,
-        "_queue_claim": {
-            "schema_version": 1,
-            "run_id": "active-run",
-            "batch_id": "active-batch",
-            "claimed_at": NOW,
-            "previous_status": "pending",
+    inflight.update(
+        {
             "reprocess_generation": 1,
-            "state": "claimed",
-        },
-        "pattern_scoring_generation_status": "future",
-        "pattern_score": 4,
-        "pattern_observations": {"pattern_score": 5},
-    })
+            "_queue_claim": {
+                "schema_version": 1,
+                "run_id": "active-run",
+                "batch_id": "active-batch",
+                "claimed_at": NOW,
+                "previous_status": "pending",
+                "reprocess_generation": 1,
+                "state": "claimed",
+            },
+            "pattern_scoring_generation_status": "future",
+            "pattern_score": 4,
+            "pattern_observations": {"pattern_score": 5},
+        }
+    )
     pending = _talk("KKKKKKKKKKK", filename="pending.md")
     pending["pattern_scoring_generation_status"] = "future"
     skipped = _talk(
-        "LLLLLLLLLLL", filename="skipped.md", status="skipped_duplicate",
+        "LLLLLLLLLLL",
+        filename="skipped.md",
+        status="skipped_duplicate",
     )
     skipped["pattern_scoring_generation_status"] = True
     path = _write_db(tmp_path, [inflight, pending, skipped])
@@ -1280,12 +1337,15 @@ def test_normalize_does_not_inspect_generation_for_ineligible_statuses(tmp_path)
 
 
 def test_generation_requeue_preserves_completed_claim_until_next_claim(
-        tmp_path, return_validation):
+    tmp_path, return_validation
+):
     fingerprint = return_validation.load_catalog().fingerprint
     scoring_schema = return_validation.PATTERN_SCORING_SCHEMA_VERSION
     talk = _scored_talk(
-        "MMMMMMMMMMM", filename="completed-legacy.md",
-        fingerprint=fingerprint, scoring_schema=scoring_schema,
+        "MMMMMMMMMMM",
+        filename="completed-legacy.md",
+        fingerprint=fingerprint,
+        scoring_schema=scoring_schema,
         generation_status="legacy_unbaselineable",
     )
     talk.pop("pattern_catalog_fingerprint")
@@ -1316,7 +1376,9 @@ def test_generation_requeue_preserves_completed_claim_until_next_claim(
     assert requeued.get("_queue_claim_history", []) == []
 
     claimed = _claim(
-        path, run_id="replacement-run", batch_id="replacement-batch",
+        path,
+        run_id="replacement-run",
+        batch_id="replacement-batch",
         filenames=(talk["filename"],),
     )
 
@@ -1329,28 +1391,32 @@ def test_generation_requeue_preserves_completed_claim_until_next_claim(
 
 @pytest.mark.parametrize("reason", ["please_run_this_again", ["not", "a", "reason"]])
 def test_completed_claim_status_drift_rejects_unowned_reprocess_reason(
-        tmp_path, reason):
+    tmp_path, reason
+):
     talk = _talk(
-        "NNNNNNNNNNN", filename="unowned-requeue.md",
+        "NNNNNNNNNNN",
+        filename="unowned-requeue.md",
         status="needs-reprocessing",
     )
-    talk.update({
-        "reprocess_reason": reason,
-        "reprocess_generation": 1,
-        "_queue_claim": {
-            "schema_version": 2,
-            "run_id": "completed-run",
-            "batch_id": "completed-batch",
-            "claimed_at": "2026-07-31T17:00:00+00:00",
-            "previous_status": "pending",
+    talk.update(
+        {
+            "reprocess_reason": reason,
             "reprocess_generation": 1,
-            "state": "completed",
-            "released_at": "2026-07-31T17:30:00+00:00",
-            "release_reason": "return_persisted",
-            "result_status": "processed",
-            "result_payload_sha256": "0" * 64,
-        },
-    })
+            "_queue_claim": {
+                "schema_version": 2,
+                "run_id": "completed-run",
+                "batch_id": "completed-batch",
+                "claimed_at": "2026-07-31T17:00:00+00:00",
+                "previous_status": "pending",
+                "reprocess_generation": 1,
+                "state": "completed",
+                "released_at": "2026-07-31T17:30:00+00:00",
+                "release_reason": "return_persisted",
+                "result_status": "processed",
+                "result_payload_sha256": "0" * 64,
+            },
+        }
+    )
     path = _write_db(tmp_path, [talk])
     before = path.read_bytes()
 
@@ -1363,12 +1429,16 @@ def test_completed_claim_status_drift_rejects_unowned_reprocess_reason(
 
 def test_legacy_true_no_source_talk_is_the_only_one_skipped(tmp_path):
     no_source = _talk(
-        "abcdefghijk", status="skipped_no_transcript", video=False,
+        "abcdefghijk",
+        status="skipped_no_transcript",
+        video=False,
         youtube_identity=False,
         filename="no-source.md",
     )
     slides_only = _talk(
-        "lmnopqrstuv", status="skipped_no_transcript", video=False,
+        "lmnopqrstuv",
+        status="skipped_no_transcript",
+        video=False,
         youtube_identity=False,
         filename="slides-only.md",
     )
@@ -1425,8 +1495,7 @@ def test_new_claim_is_v5_with_one_immutable_batch_baseline(tmp_path):
     assert claims[0]["adherence_baseline"] == claims[1]["adherence_baseline"]
     baseline = claims[0]["adherence_baseline"]
     assert baseline["as_of"] == NOW
-    assert baseline["excluded_filenames"] == sorted(
-        talk["filename"] for talk in talks)
+    assert baseline["excluded_filenames"] == sorted(talk["filename"] for talk in talks)
 
 
 def test_inspect_dual_reads_a_schema_v3_adherence_claim(tmp_path):
@@ -1461,9 +1530,7 @@ def test_schema_v5_claim_cannot_request_a_schema_v3_return(tmp_path):
     claimed = _claim(path)
     assert claimed.returncode == 0, claimed.stderr
     database = _read_db(path)
-    database["talks"][0]["_queue_claim"][
-        "required_return_schema_version"
-    ] = 3
+    database["talks"][0]["_queue_claim"]["required_return_schema_version"] = 3
     path.write_text(json.dumps(database))
     before = path.read_bytes()
 
@@ -1476,12 +1543,14 @@ def test_schema_v5_claim_cannot_request_a_schema_v3_return(tmp_path):
 
 def test_claim_baseline_failure_is_copy_on_write(tmp_path):
     malformed = _talk("eg6gqvUFh6Q", status="processed")
-    malformed.update({
-        "pattern_scoring_generation_status": "current",
-        "pattern_scoring_generation_reasons": [],
-        "pattern_score": 1,
-        "pattern_observations": {"pattern_score": 1},
-    })
+    malformed.update(
+        {
+            "pattern_scoring_generation_status": "current",
+            "pattern_scoring_generation_reasons": [],
+            "pattern_score": 1,
+            "pattern_observations": {"pattern_score": 1},
+        }
+    )
     path = _write_db(tmp_path, [malformed, _talk("iPYc7LCH608")])
     before = path.read_bytes()
 
@@ -1503,26 +1572,34 @@ def test_same_run_and_batch_reclaims_a_stale_recovered_generation(tmp_path):
     first = _run(
         path,
         "claim",
-        "--run-id", "reparse",
-        "--batch-id", "25",
-        "--now", "2026-07-31T17:00:00+00:00",
+        "--run-id",
+        "reparse",
+        "--batch-id",
+        "25",
+        "--now",
+        "2026-07-31T17:00:00+00:00",
     )
     assert first.returncode == 0, first.stderr
     first_claim = json.loads(first.stdout)["claimed"][0]
     recovered = _run(
         path,
         "recover",
-        "--now", "2026-07-31T18:00:00+00:00",
-        "--stale-after-seconds", "3600",
+        "--now",
+        "2026-07-31T18:00:00+00:00",
+        "--stale-after-seconds",
+        "3600",
     )
     assert recovered.returncode == 0, recovered.stderr
 
     retried = _run(
         path,
         "claim",
-        "--run-id", "reparse",
-        "--batch-id", "25",
-        "--now", "2026-07-31T18:01:00+00:00",
+        "--run-id",
+        "reparse",
+        "--batch-id",
+        "25",
+        "--now",
+        "2026-07-31T18:01:00+00:00",
     )
 
     assert retried.returncode == 0, retried.stderr
@@ -1540,18 +1617,22 @@ def test_same_run_and_batch_reclaims_a_stale_recovered_generation(tmp_path):
     assert archived["state"] == "stale_recovered"
     assert archived["released_at"] == "2026-07-31T18:00:00+00:00"
     assert archived["release_reason"] == "lease_expired"
-    assert talk["_queue_claim"]["adherence_baseline"]["as_of"] == \
-        "2026-07-31T18:01:00+00:00"
-    assert (talk["_queue_claim"]["adherence_baseline"] !=
-            archived["adherence_baseline"])
+    assert (
+        talk["_queue_claim"]["adherence_baseline"]["as_of"]
+        == "2026-07-31T18:01:00+00:00"
+    )
+    assert talk["_queue_claim"]["adherence_baseline"] != archived["adherence_baseline"]
 
     retried_bytes = path.read_bytes()
     replay = _run(
         path,
         "claim",
-        "--run-id", "reparse",
-        "--batch-id", "25",
-        "--now", "2026-07-31T18:02:00+00:00",
+        "--run-id",
+        "reparse",
+        "--batch-id",
+        "25",
+        "--now",
+        "2026-07-31T18:02:00+00:00",
     )
     assert replay.returncode == 0, replay.stderr
     replay_payload = json.loads(replay.stdout)
@@ -1561,8 +1642,7 @@ def test_same_run_and_batch_reclaims_a_stale_recovered_generation(tmp_path):
     assert path.read_bytes() == retried_bytes
 
 
-def test_v4_batch_epoch_can_span_current_and_history_after_member_reclaim(
-        tmp_path):
+def test_v4_batch_epoch_can_span_current_and_history_after_member_reclaim(tmp_path):
     path = _write_db(
         tmp_path,
         [_talk("eg6gqvUFh6Q"), _talk("iPYc7LCH608")],
@@ -1572,32 +1652,38 @@ def test_v4_batch_epoch_can_span_current_and_history_after_member_reclaim(
     database = _read_db(path)
     for talk in database["talks"]:
         talk["status"] = "processed"
-        talk["_queue_claim"].update({
-            "state": "completed",
-            "released_at": "2026-07-31T18:05:00+00:00",
-            "release_reason": "return_persisted",
-            "result_status": "processed",
-            "result_payload_sha256": "0" * 64,
-        })
+        talk["_queue_claim"].update(
+            {
+                "state": "completed",
+                "released_at": "2026-07-31T18:05:00+00:00",
+                "release_reason": "return_persisted",
+                "result_status": "processed",
+                "result_payload_sha256": "0" * 64,
+            }
+        )
 
     reclaimed = database["talks"][0]
     old_claim = copy.deepcopy(reclaimed["_queue_claim"])
     reclaimed["_queue_claim_history"] = [old_claim]
     new_claim = copy.deepcopy(old_claim)
     for field in (
-            "released_at", "release_reason", "result_status",
-            "result_payload_sha256"):
+        "released_at",
+        "release_reason",
+        "result_status",
+        "result_payload_sha256",
+    ):
         new_claim.pop(field)
-    new_claim.update({
-        "run_id": "new-run",
-        "batch_id": "new-batch",
-        "claimed_at": "2026-07-31T19:00:00+00:00",
-        "reprocess_generation": 2,
-        "state": "claimed",
-    })
+    new_claim.update(
+        {
+            "run_id": "new-run",
+            "batch_id": "new-batch",
+            "claimed_at": "2026-07-31T19:00:00+00:00",
+            "reprocess_generation": 2,
+            "state": "claimed",
+        }
+    )
     new_claim["adherence_baseline"]["as_of"] = new_claim["claimed_at"]
-    new_claim["adherence_baseline"]["excluded_filenames"] = [
-        reclaimed["filename"]]
+    new_claim["adherence_baseline"]["excluded_filenames"] = [reclaimed["filename"]]
     reclaimed["_queue_claim"] = new_claim
     reclaimed["reprocess_generation"] = 2
     reclaimed["status"] = "reprocessing-inflight"
@@ -1704,17 +1790,22 @@ def test_recover_uses_injected_time_and_exact_stale_threshold(tmp_path):
     claimed = _run(
         path,
         "claim",
-        "--run-id", "reparse",
-        "--batch-id", "25",
-        "--now", "2026-07-31T17:00:00+00:00",
+        "--run-id",
+        "reparse",
+        "--batch-id",
+        "25",
+        "--now",
+        "2026-07-31T17:00:00+00:00",
     )
     assert claimed.returncode == 0, claimed.stderr
 
     fresh = _run(
         path,
         "recover",
-        "--now", "2026-07-31T17:59:59+00:00",
-        "--stale-after-seconds", "3600",
+        "--now",
+        "2026-07-31T17:59:59+00:00",
+        "--stale-after-seconds",
+        "3600",
     )
     assert fresh.returncode == 0
     assert json.loads(fresh.stdout)["recovered"] == []
@@ -1722,18 +1813,22 @@ def test_recover_uses_injected_time_and_exact_stale_threshold(tmp_path):
     stale = _run(
         path,
         "recover",
-        "--now", "2026-07-31T18:00:00+00:00",
-        "--stale-after-seconds", "3600",
+        "--now",
+        "2026-07-31T18:00:00+00:00",
+        "--stale-after-seconds",
+        "3600",
     )
     assert stale.returncode == 0, stale.stderr
-    assert json.loads(stale.stdout)["recovered"] == [{
-        "filename": "playlist-eg6gqvUFh6Q.md",
-        "run_id": "reparse",
-        "batch_id": "25",
-        "reprocess_generation": 1,
-        "status": "needs-reprocessing",
-        "age_seconds": 3600,
-    }]
+    assert json.loads(stale.stdout)["recovered"] == [
+        {
+            "filename": "playlist-eg6gqvUFh6Q.md",
+            "run_id": "reparse",
+            "batch_id": "25",
+            "reprocess_generation": 1,
+            "status": "needs-reprocessing",
+            "age_seconds": 3600,
+        }
+    ]
     talk = _read_db(path)["talks"][0]
     assert talk["status"] == "needs-reprocessing"
     assert talk["_queue_claim"]["state"] == "stale_recovered"
@@ -1743,21 +1838,28 @@ def test_recover_uses_injected_time_and_exact_stale_threshold(tmp_path):
 def test_inspect_reconstructs_claims_after_stale_recovery(tmp_path):
     path = _write_db(tmp_path, [_talk("eg6gqvUFh6Q")])
     assert _claim(path, run_id="reparse", batch_id="25").returncode == 0
-    assert _run(
-        path,
-        "recover",
-        "--now", "2026-07-31T19:00:00+00:00",
-        "--stale-after-seconds", "1",
-    ).returncode == 0
+    assert (
+        _run(
+            path,
+            "recover",
+            "--now",
+            "2026-07-31T19:00:00+00:00",
+            "--stale-after-seconds",
+            "1",
+        ).returncode
+        == 0
+    )
 
     result = _run(path, "inspect", "--run-id", "reparse")
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["batches"] == [{
-        "batch_id": "25",
-        "filenames": ["playlist-eg6gqvUFh6Q.md"],
-    }]
+    assert payload["batches"] == [
+        {
+            "batch_id": "25",
+            "filenames": ["playlist-eg6gqvUFh6Q.md"],
+        }
+    ]
     assert payload["claims"][0]["state"] == "stale_recovered"
 
 
@@ -1916,14 +2018,12 @@ def test_unknown_future_claim_schema_fails_without_rewriting(tmp_path):
 
     assert result.returncode == 2
     assert (
-        "queue_claim_schema_version_unsupported"
-        in json.loads(result.stdout)["error"]
+        "queue_claim_schema_version_unsupported" in json.loads(result.stdout)["error"]
     )
     assert path.read_bytes() == before
 
 
-def test_active_claim_with_terminal_status_rejects_every_command_but_recover(
-        tmp_path):
+def test_active_claim_with_terminal_status_rejects_every_command_but_recover(tmp_path):
     talk = _talk("eg6gqvUFh6Q", status="processed")
     talk["reprocess_generation"] = 1
     talk["_queue_claim"] = {
@@ -1947,21 +2047,25 @@ def test_active_claim_with_terminal_status_rejects_every_command_but_recover(
     recovered = _run(
         path,
         "recover",
-        "--now", NOW,
-        "--stale-after-seconds", "999",
+        "--now",
+        NOW,
+        "--stale-after-seconds",
+        "999",
     )
 
     assert recovered.returncode == 0, recovered.stderr
-    assert json.loads(recovered.stdout)["recovered"] == [{
-        "filename": "playlist-eg6gqvUFh6Q.md",
-        "run_id": "reparse",
-        "batch_id": "25",
-        "reprocess_generation": 1,
-        "status": "needs-reprocessing",
-        "age_seconds": 0,
-        "status_before": "processed",
-        "release_reason": "state_status_drift",
-    }]
+    assert json.loads(recovered.stdout)["recovered"] == [
+        {
+            "filename": "playlist-eg6gqvUFh6Q.md",
+            "run_id": "reparse",
+            "batch_id": "25",
+            "reprocess_generation": 1,
+            "status": "needs-reprocessing",
+            "age_seconds": 0,
+            "status_before": "processed",
+            "release_reason": "state_status_drift",
+        }
+    ]
     repaired = _read_db(path)["talks"][0]
     assert repaired["status"] == "needs-reprocessing"
     assert repaired["_queue_claim"]["state"] == "stale_recovered"
@@ -2047,8 +2151,11 @@ def test_malformed_claim_timestamp_rejects(tmp_path):
     [
         _talk("eg6gqvUFh6Q", status="skipped_duplicate"),
         _talk(
-            "iPYc7LCH608", status="pending", video=False,
-            youtube_identity=False, filename="catalog-pending.md",
+            "iPYc7LCH608",
+            status="pending",
+            video=False,
+            youtube_identity=False,
+            filename="catalog-pending.md",
         ),
     ],
 )
@@ -2069,9 +2176,12 @@ def test_cli_requires_timezone_aware_now(tmp_path):
     result = _run(
         path,
         "claim",
-        "--run-id", "reparse",
-        "--batch-id", "25",
-        "--now", "2026-07-31T18:00:00",
+        "--run-id",
+        "reparse",
+        "--batch-id",
+        "25",
+        "--now",
+        "2026-07-31T18:00:00",
     )
 
     assert result.returncode == 2

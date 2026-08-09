@@ -15,6 +15,7 @@ Algorithm:
 
 Output: suggested hex color + a recommended alpha (OOXML thousandths).
 """
+
 import argparse
 import sys
 from pathlib import Path
@@ -41,7 +42,7 @@ def sample_dark_pixels(img_paths, percentile=5.0, resize_to=200):
             img = raw.convert("RGB")
         img.thumbnail((resize_to, resize_to), Image.LANCZOS)
         arr = np.asarray(img, dtype=np.float32) / 255.0  # (H, W, 3)
-        lum = arr @ REC709                                # (H, W)
+        lum = arr @ REC709  # (H, W)
         flat_px = arr.reshape(-1, 3)
         flat_lum = lum.reshape(-1)
         cutoff = np.percentile(flat_lum, percentile)
@@ -88,10 +89,18 @@ def recommend_alpha(sample_rgb01):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("illustrations_dir", type=Path)
-    ap.add_argument("--percentile", type=float, default=5.0,
-                    help="Sample the darkest N%% of pixels (default 5)")
-    ap.add_argument("--target-luminance", type=float, default=0.10,
-                    help="Clamp sample to this Rec. 709 luminance (default 0.10)")
+    ap.add_argument(
+        "--percentile",
+        type=float,
+        default=5.0,
+        help="Sample the darkest N%% of pixels (default 5)",
+    )
+    ap.add_argument(
+        "--target-luminance",
+        type=float,
+        default=0.10,
+        help="Clamp sample to this Rec. 709 luminance (default 0.10)",
+    )
     ap.add_argument("--glob", default="slide-*.jpg")
     args = ap.parse_args()
 
@@ -103,14 +112,18 @@ def main():
     scrim = clamp_to_scrim(raw, target_lum=args.target_luminance)
     alpha = recommend_alpha(raw)
 
-    print(f"Sampled {len(paths)} illustrations, darkest {args.percentile:.0f}% of pixels")
+    print(
+        f"Sampled {len(paths)} illustrations, darkest {args.percentile:.0f}% of pixels"
+    )
     print(f"  raw dark-pixel mean : #{to_hex(raw)} (lum={float(raw @ REC709):.3f})")
     print(f"  scrim base color    : #{to_hex(scrim)} (lum={float(scrim @ REC709):.3f})")
-    print(f"  recommended alpha   : {alpha} / 100000 ({alpha/1000:.1f}% opaque)")
+    print(f"  recommended alpha   : {alpha} / 100000 ({alpha / 1000:.1f}% opaque)")
     print()
     print("OOXML:")
-    print(f'  <a:solidFill><a:srgbClr val="{to_hex(scrim)}">'
-          f'<a:alpha val="{alpha}"/></a:srgbClr></a:solidFill>')
+    print(
+        f'  <a:solidFill><a:srgbClr val="{to_hex(scrim)}">'
+        f'<a:alpha val="{alpha}"/></a:srgbClr></a:solidFill>'
+    )
 
 
 if __name__ == "__main__":
