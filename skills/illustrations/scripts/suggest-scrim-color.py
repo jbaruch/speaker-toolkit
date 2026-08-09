@@ -87,7 +87,7 @@ def recommend_alpha(sample_rgb01):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     ap.add_argument("illustrations_dir", type=Path)
     ap.add_argument(
         "--percentile",

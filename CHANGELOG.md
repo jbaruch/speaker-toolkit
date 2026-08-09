@@ -27,11 +27,23 @@ Two were defensive code asserting something untrue:
   first — JSON object keys are strings, and every other input takes the same
   rejection path with the same message.
 
-The rest were API drift and typing gaps: `Image.LANCZOS` → `Image.Resampling.LANCZOS`
-(Pillow's own stubs dropped the old alias), `__doc__.splitlines()` →
-`(__doc__ or "").splitlines()` in two argparse descriptions (`__doc__` is None
-under `python -OO`), a `dict[str, str | None]` annotation on the secrets map,
-and `lxml-stubs` added to the `lint` group because lxml ships no inline types.
+The rest were API drift and typing gaps: `Image.LANCZOS` →
+`Image.Resampling.LANCZOS` (Pillow's own stubs dropped the old alias), a
+`dict[str, str | None]` annotation on the secrets map, and `lxml-stubs` added
+to the `lint` group because lxml ships no inline types.
+
+`__doc__.splitlines()[0]` needed two passes. `__doc__` is `None` under
+`python -OO`, and the first fix — `(__doc__ or "").splitlines()[0]` — still
+raised `IndexError`, because `"".splitlines()` is `[]` while `"".split("\n")`
+is `[""]`. All 13 argparse descriptions now use the `split("\n")` form the
+repo already used in five of them, and
+`tests/test_cli_docstring_descriptions.py` runs each CLI's `--help` under a
+real `-OO` interpreter.
+
+That test asserts exit 0, not the absence of a traceback: `check-runtime.py`'s
+outer failure boundary (#203) converted the `IndexError` into a clean stderr
+diagnostic and exit 2, so a traceback check passed while `--help` was broken.
+A boundary that hides a crash from a test is worse than no boundary.
 
 `_validate_qr_artifacts` now returns the validated paths instead of `None`, so
 its caller reads a proven value rather than re-indexing into a raw record — the

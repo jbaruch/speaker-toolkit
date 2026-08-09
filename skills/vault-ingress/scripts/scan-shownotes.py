@@ -1043,7 +1043,7 @@ def _error_payload(message: str) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = _ArgumentParser(description=(__doc__ or "").splitlines()[0])
+    parser = _ArgumentParser(description=(__doc__ or "").split("\n")[0])
     parser.add_argument("database", type=Path, help="canonical tracking-database.json")
     parser.add_argument(
         "--apply",

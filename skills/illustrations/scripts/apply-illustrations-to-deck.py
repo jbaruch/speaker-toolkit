@@ -482,7 +482,7 @@ def apply(
 
 
 def main():
-    ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     ap.add_argument("deck", type=Path, help="Path to source .pptx")
     ap.add_argument(
         "illustrations", type=Path, help="Directory with slide-NN.<ext> files"
