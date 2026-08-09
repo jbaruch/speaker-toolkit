@@ -47,6 +47,13 @@ dependencies = [
 test = [
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
     "pytest==9.1.1",
+    # tests/test_pyproject_pins.py parses this manifest's own requirements as
+    # PEP 508 rather than pattern-matching their text.
+    # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
+    "packaging==26.3",
+    # `tomllib` entered the stdlib in 3.11; requires-python still admits 3.10.
+    # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
+    "tomli==2.4.1; python_version < '3.11'",
 ]
 # Local Whisper transcription, used by vault-ingress/scripts/fetch-transcript.py
 # when a video has no caption track. Optional and not in the base dependency set

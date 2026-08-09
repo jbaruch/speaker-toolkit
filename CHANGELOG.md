@@ -10,9 +10,16 @@ and ride the same weekly Dependabot pip lane as their already-pinned siblings.
 versions" and nothing checked it, which is how four requirements drifted past
 in the first place — a deterministic check nobody runs does not exist. The test
 walks every requirement group in the manifest, including optional extras, and
-fails on a bare name, a range, or a pin paired with a second specifier. It also
-asserts the pip ecosystem is still declared in `.github/dependabot.yml`,
-because a pin without a renewal mechanism rots quietly.
+parses each entry as PEP 508 rather than pattern-matching its text: a substring
+search for `==` calls `pkg===1.0`, `pkg==1.*`, `pkg==1.0,>=0.9`, and
+`pkg @ https://host/a==b.whl` pinned. Fixed negative cases cover each. The
+Dependabot half is parsed too — it asserts one active pip entry on the
+manifest's directory with its weekly schedule, because a commented-out entry
+leaves the text present while no bump PR is ever opened again.
+
+`packaging` and (below Python 3.11) `tomli` join the test extra for that
+parsing. `tomllib` entered the stdlib in 3.11 and `requires-python` still
+admits 3.10.
 
 `project.version = "0.0.0"` now says beside itself why it is a sentinel: the
 registry version lives in `.tessl-plugin/plugin.json` and is bumped by the
