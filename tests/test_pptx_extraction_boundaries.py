@@ -12,6 +12,8 @@ from pptx.oxml import parse_xml
 from pptx.oxml.ns import nsdecls
 from pptx.util import Inches
 
+from conftest import graphic_frame_element
+
 
 def _round_trip(pptx_extraction, pptx_evidence, deck: Path):
     extraction = pptx_extraction._extract_pptx_in_process(deck, ocr=False)
@@ -63,7 +65,7 @@ def test_layout_name_is_canonicalized_before_validation(
     presentation.slide_layouts[6].name = "L" * 4097
     presentation.slides.add_slide(presentation.slide_layouts[6])
     deck = tmp_path / "long-layout-name.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
 
     extraction = _round_trip(pptx_extraction, pptx_evidence, deck)
     slide = extraction["per_slide_visual"][0]
@@ -87,7 +89,7 @@ def test_font_name_is_canonicalized_before_global_cataloging(
     run.text = "x"
     run.font.name = "F" * 4097
     deck = tmp_path / "long-font-name.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
 
     extraction = _round_trip(pptx_extraction, pptx_evidence, deck)
     font_name = extraction["per_slide_visual"][0]["shapes_summary"][0]["font_name"]
@@ -105,9 +107,9 @@ def test_graphic_uri_is_canonicalized_across_all_provenance(
     presentation = Presentation()
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     shape = slide.shapes.add_table(1, 1, Inches(1), Inches(1), Inches(2), Inches(1))
-    shape.element.graphic.graphicData.uri = "u" * 4097
+    graphic_frame_element(shape).graphic.graphicData.uri = "u" * 4097
     deck = tmp_path / "long-graphic-uri.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
 
     extraction = _round_trip(pptx_extraction, pptx_evidence, deck)
     slide_result = extraction["per_slide_visual"][0]
@@ -131,7 +133,7 @@ def test_background_relationship_id_is_canonicalized_before_validation(
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     relationship_id = _set_background_image(slide, image_path)
     deck = tmp_path / "long-background-relationship.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
 
     with zipfile.ZipFile(deck) as archive:
         slide_xml = archive.read("ppt/slides/slide1.xml")
@@ -176,7 +178,7 @@ def test_group_depth_over_contract_fails_with_stable_resource_reason(
     for _index in range(64):
         group = group.shapes.add_group_shape()
     deck = tmp_path / "group-depth-65.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
 
     with pytest.raises(pptx_evidence.PptxEvidenceError) as caught:
         pptx_extraction._extract_pptx_in_process(deck, ocr=False)
@@ -195,7 +197,7 @@ def test_archive_part_name_over_contract_fails_with_stable_resource_reason(
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     slide.shapes.add_picture(str(image_path), Inches(1), Inches(1))
     deck = tmp_path / "long-picture-part.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
 
     old_part_name = "ppt/media/image1.png"
     part_prefix = "ppt/media/"
@@ -236,7 +238,7 @@ def test_valid_encoded_space_in_part_name_round_trips(
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     slide.shapes.add_picture(str(image_path), Inches(1), Inches(1))
     deck = tmp_path / "encoded-space-part.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
 
     old_part_name = "ppt/media/image1.png"
     new_part_name = "ppt/media/image%201.png"

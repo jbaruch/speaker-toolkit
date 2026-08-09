@@ -1,5 +1,6 @@
 """Tests for generate-thumbnail.py — prompt building and image validation (no API calls)."""
 
+from email.message import Message
 from io import BytesIO
 
 from PIL import Image
@@ -261,7 +262,7 @@ def test_call_gemini_http_error_prefix(generate_thumbnail, monkeypatch):
             req.full_url,
             429,
             "Too Many Requests",
-            {},
+            Message(),
             BytesIO(b"rate limited"),
         )
 
@@ -511,6 +512,7 @@ def _make_large_image_bytes():
     random.seed(42)
     img = Image.new("RGB", (1280, 720))
     pixels = img.load()
+    assert pixels is not None, "a loaded image always exposes pixel access"
     for x in range(1280):
         for y in range(720):
             pixels[x, y] = (

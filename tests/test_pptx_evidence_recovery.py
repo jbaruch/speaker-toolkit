@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import importlib
 import json
+from typing import Any
 import os
 import struct
 import subprocess
@@ -18,7 +19,10 @@ from PIL import Image
 from pptx import Presentation
 from pptx.oxml import parse_xml
 from pptx.oxml.ns import nsdecls
-from pptx.util import Inches
+from pptx.shapes.placeholder import PicturePlaceholder
+from pptx.util import Emu, Inches
+
+from conftest import deck_height, deck_width, graphic_frame_element
 from pypdf import PdfWriter
 
 
@@ -30,7 +34,7 @@ def _write_deck(path: Path, *, with_image: bool) -> None:
         image_path = path.with_suffix(".png")
         Image.new("RGB", (64, 64), "navy").save(image_path)
         slide.shapes.add_picture(str(image_path), Inches(1), Inches(1))
-    deck.save(path)
+    deck.save(str(path))
 
 
 def _damage_member(path: Path, predicate) -> str:
@@ -153,7 +157,7 @@ def test_metadata_generation_never_calls_owner_lstat(
     deck = tmp_path / "metadata-only-child.pptx"
     _write_deck(deck, with_image=False)
     generation = pptx_evidence.FileGeneration.from_stat(deck.stat())
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def metadata_child(command, payload, sensitive_values, _limits):
         captured.update(
@@ -820,7 +824,7 @@ def test_live_badzipfile_media_path_recovers_with_structured_loss(
     damaged_part = _damage_member_crc(deck, lambda name: name.startswith("ppt/media/"))
 
     with pytest.raises(zipfile.BadZipFile):
-        Presentation(deck)
+        Presentation(str(deck))
 
     probe = pptx_evidence.probe_pptx_artifact(deck)
 
@@ -1777,7 +1781,7 @@ def test_extraction_rejects_conflicting_equivalent_package_part_names(
     textbox = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(2), Inches(1))
     textbox.text_frame.text = "REAL"
     deck = tmp_path / "duplicate-slide-part.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
 
     with zipfile.ZipFile(deck, "a") as archive:
         original = archive.read("ppt/slides/slide1.xml")
@@ -1856,7 +1860,7 @@ def test_extraction_rejects_duplicate_relationship_ids_before_asset_cataloging(
     slide.shapes.add_picture(str(first_image), Inches(1), Inches(1))
     slide.shapes.add_picture(str(second_image), Inches(3), Inches(1))
     deck = tmp_path / "duplicate-relationship-id.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
 
     relationships_name = "ppt/slides/_rels/slide1.xml.rels"
     with zipfile.ZipFile(deck) as archive:
@@ -2016,12 +2020,12 @@ def test_render_receipt_binds_exact_source_render_and_ranges(
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     slide.shapes.add_picture(
         str(image_path),
-        0,
-        0,
-        width=presentation.slide_width,
-        height=presentation.slide_height,
+        Inches(0),
+        Inches(0),
+        width=deck_width(presentation),
+        height=deck_height(presentation),
     )
-    presentation.save(deck)
+    presentation.save(str(deck))
     rendered = tmp_path / "rendered.pdf"
     _write_pdf(rendered, page_count=1)
 
@@ -2071,12 +2075,12 @@ def test_full_extraction_render_binding_rejects_unrequested_or_broader_receipt(
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     slide.shapes.add_picture(
         str(image_path),
-        0,
-        0,
-        width=presentation.slide_width,
-        height=presentation.slide_height,
+        Inches(0),
+        Inches(0),
+        width=deck_width(presentation),
+        height=deck_height(presentation),
     )
-    presentation.save(deck)
+    presentation.save(str(deck))
     rendered = tmp_path / "render-binding.pdf"
     _write_pdf(rendered, page_count=1)
     extraction = pptx_extraction._extract_pptx_in_process(
@@ -2243,7 +2247,7 @@ def test_metadata_admission_timeout_reports_enclosing_batch_wall_limit(
 ) -> None:
     deck = tmp_path / "metadata-deadline.pptx"
     _write_deck(deck, with_image=False)
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def blocked_metadata(_command, _payload, _sensitive, limits):
         captured["wall_seconds"] = limits.wall_seconds
@@ -2455,7 +2459,9 @@ def test_full_extraction_accepts_derived_render_and_ocr_contracts(
         0, 0
     ).text = "table text"
     smartart = slide.shapes.add_table(1, 1, Inches(1), Inches(3), Inches(2), Inches(1))
-    smartart.element.graphic.graphicData.uri = (
+    graphic_frame_element(
+        smartart
+    ).graphic.graphicData.uri = (
         "http://schemas.openxmlformats.org/drawingml/2006/diagram"
     )
     _set_background_image(slide, background_image)
@@ -2522,12 +2528,14 @@ def test_catalog_bindings_reject_detached_worker_evidence(
     table = slide.shapes.add_table(1, 1, Inches(1), Inches(1.5), Inches(2), Inches(1))
     table.table.cell(0, 0).text = "table text"
     smartart = slide.shapes.add_table(1, 1, Inches(1), Inches(3), Inches(2), Inches(1))
-    smartart.element.graphic.graphicData.uri = (
+    graphic_frame_element(
+        smartart
+    ).graphic.graphicData.uri = (
         "http://schemas.openxmlformats.org/drawingml/2006/diagram"
     )
     _set_background_image(slide, background_image)
     deck = tmp_path / f"catalog-binding-{binding}.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
     extraction = json.loads(
         json.dumps(pptx_extraction._extract_pptx_in_process(deck, ocr=False))
     )
@@ -2627,13 +2635,13 @@ def test_near_threshold_picture_uses_reported_ratio_for_render_decision(
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     slide.shapes.add_picture(
         str(image_path),
-        0,
-        0,
-        width=int(presentation.slide_width * 4996 / 10_000),
-        height=presentation.slide_height,
+        Inches(0),
+        Inches(0),
+        width=Emu(int(deck_width(presentation) * 4996 / 10_000)),
+        height=deck_height(presentation),
     )
     deck = tmp_path / "threshold.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
 
     extraction = pptx_extraction._extract_pptx_in_process(deck, ocr=False)
     slide_result = extraction["per_slide_visual"][0]
@@ -2668,13 +2676,13 @@ def test_extraction_payload_is_bound_to_requested_ocr_mode(
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     slide.shapes.add_picture(
         str(image_path),
-        0,
-        0,
-        width=presentation.slide_width,
-        height=presentation.slide_height,
+        Inches(0),
+        Inches(0),
+        width=deck_width(presentation),
+        height=deck_height(presentation),
     )
     deck = tmp_path / "ocr-mode.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
 
     disabled = pptx_extraction._extract_pptx_in_process(deck, ocr=False)
     with pytest.raises(pptx_evidence.PptxEvidenceError) as disabled_mismatch:
@@ -2740,7 +2748,7 @@ def test_footer_threshold_uses_reported_geometry_for_round_trip_validation(
     )
     textbox.text_frame.text = "boundary footer"
     deck = tmp_path / f"footer-{top_inches}.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
 
     extraction = pptx_extraction._extract_pptx_in_process(deck, ocr=False)
     slide_result = extraction["per_slide_visual"][0]
@@ -2770,13 +2778,13 @@ def test_full_slide_picture_cannot_hide_its_geometry_and_render_requirement(
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     slide.shapes.add_picture(
         str(image_path),
-        0,
-        0,
-        width=presentation.slide_width,
-        height=presentation.slide_height,
+        Inches(0),
+        Inches(0),
+        width=deck_width(presentation),
+        height=deck_height(presentation),
     )
     deck = tmp_path / "full-slide.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
     extraction = json.loads(
         json.dumps(pptx_extraction._extract_pptx_in_process(deck, ocr=False))
     )
@@ -2842,11 +2850,13 @@ def test_smartart_shape_cannot_omit_unsupported_evidence(
     presentation = Presentation()
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     smartart = slide.shapes.add_table(1, 1, Inches(1), Inches(1), Inches(2), Inches(1))
-    smartart.element.graphic.graphicData.uri = (
+    graphic_frame_element(
+        smartart
+    ).graphic.graphicData.uri = (
         "http://schemas.openxmlformats.org/drawingml/2006/diagram"
     )
     deck = tmp_path / "hidden-smartart.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
     extraction = json.loads(
         json.dumps(pptx_extraction._extract_pptx_in_process(deck, ocr=False))
     )
@@ -2891,9 +2901,9 @@ def test_graphic_frame_without_uri_round_trips_as_unsupported(
         Inches(2),
         Inches(1),
     )
-    graphic_frame.element.graphic.graphicData.uri = ""
+    graphic_frame_element(graphic_frame).graphic.graphicData.uri = ""
     deck = tmp_path / "missing-graphic-uri.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
 
     extraction = pptx_extraction._extract_pptx_in_process(deck, ocr=False)
     slide_result = extraction["per_slide_visual"][0]
@@ -3016,7 +3026,7 @@ def test_native_shape_text_channel_cannot_be_omitted(
         Inches(1), Inches(1), Inches(2), Inches(1)
     ).text_frame.text = "bound text"
     deck = tmp_path / "omitted-shape-text.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
     extraction = json.loads(
         json.dumps(pptx_extraction._extract_pptx_in_process(deck, ocr=False))
     )
@@ -3048,7 +3058,7 @@ def test_textbox_capability_cannot_be_erased_with_its_channel(
         Inches(1), Inches(1), Inches(2), Inches(1)
     ).text_frame.text = "SECRET"
     deck = tmp_path / "erased-textbox.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
     extraction = json.loads(
         json.dumps(pptx_extraction._extract_pptx_in_process(deck, ocr=False))
     )
@@ -3127,11 +3137,11 @@ def test_inserted_picture_placeholder_round_trips_as_picture_evidence(
     picture_placeholder = next(
         placeholder
         for placeholder in slide.placeholders
-        if hasattr(placeholder, "insert_picture")
+        if isinstance(placeholder, PicturePlaceholder)
     )
     picture_placeholder.insert_picture(str(image_path))
     deck = tmp_path / "placeholder-picture.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
 
     extraction = pptx_extraction._extract_pptx_in_process(deck, ocr=False)
     slide_result = extraction["per_slide_visual"][0]
@@ -3218,7 +3228,7 @@ def test_known_shape_capabilities_cannot_be_coherently_relabelled(
     textbox.text_frame.text = "bound text"
     slide.shapes.add_table(1, 1, Inches(1), Inches(3), Inches(2), Inches(1))
     deck = tmp_path / f"shape-relabel-{mutation}.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
     extraction = pptx_extraction._extract_pptx_in_process(deck, ocr=False)
     shapes = extraction["per_slide_visual"][0]["shapes_summary"]
 
@@ -3268,7 +3278,7 @@ def test_shape_catalog_fields_follow_their_native_capabilities(
     textbox = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(2), Inches(1))
     textbox.text_frame.text = "formatted"
     slide.shapes.add_picture(str(image_path), Inches(1), Inches(3))
-    presentation.save(deck)
+    presentation.save(str(deck))
     extraction = pptx_extraction._extract_pptx_in_process(deck, ocr=False)
     shapes = extraction["per_slide_visual"][0]["shapes_summary"]
 
@@ -3304,7 +3314,7 @@ def test_table_capability_cannot_be_erased_with_channel_and_render_flags(
     )
     table_shape.table.cell(0, 0).text = "SECRET TABLE"
     deck = tmp_path / "erased-table.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
     extraction = json.loads(
         json.dumps(pptx_extraction._extract_pptx_in_process(deck, ocr=False))
     )
@@ -3362,7 +3372,7 @@ def test_media_shape_cannot_forge_a_native_text_frame(
         mime_type="video/mp4",
     )
     deck = tmp_path / "media-native-text.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
     extraction = json.loads(
         json.dumps(pptx_extraction._extract_pptx_in_process(deck, ocr=False))
     )
@@ -3419,7 +3429,7 @@ def test_duplicate_and_empty_shape_names_round_trip_with_canonical_paths(
     second.text_frame.text = "second"
     unnamed.text_frame.text = "third"
     deck = tmp_path / "duplicate-empty-names.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
 
     extraction = pptx_extraction._extract_pptx_in_process(deck, ocr=False)
     paths = [
@@ -3461,11 +3471,13 @@ def test_duplicate_and_empty_unsupported_names_preserve_multiplicity(
     ]
     for shape, name in zip(shapes, ("Same", "Same", "")):
         shape.name = name
-        shape.element.graphic.graphicData.uri = (
+        graphic_frame_element(
+            shape
+        ).graphic.graphicData.uri = (
             "http://schemas.openxmlformats.org/drawingml/2006/diagram"
         )
     deck = tmp_path / "duplicate-empty-unsupported.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
 
     extraction = pptx_extraction._extract_pptx_in_process(deck, ocr=False)
     unsupported_names = [
@@ -3498,12 +3510,12 @@ def test_picture_ocr_cannot_forge_or_duplicate_shape_paths(
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     slide.shapes.add_picture(
         str(image_path),
-        0,
-        0,
-        width=presentation.slide_width,
-        height=presentation.slide_height,
+        Inches(0),
+        Inches(0),
+        width=deck_width(presentation),
+        height=deck_height(presentation),
     )
-    presentation.save(deck)
+    presentation.save(str(deck))
     extraction = json.loads(
         json.dumps(pptx_extraction._extract_pptx_in_process(deck, ocr=False))
     )
@@ -3543,12 +3555,12 @@ def test_picture_ocr_receipts_are_exactly_bound_to_readable_assets(
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     slide.shapes.add_picture(
         str(image_path),
-        0,
-        0,
-        width=presentation.slide_width,
-        height=presentation.slide_height,
+        Inches(0),
+        Inches(0),
+        width=deck_width(presentation),
+        height=deck_height(presentation),
     )
-    presentation.save(deck)
+    presentation.save(str(deck))
     extraction = json.loads(
         json.dumps(pptx_extraction._extract_pptx_in_process(deck, ocr=False))
     )
@@ -3634,7 +3646,7 @@ def test_one_picture_part_cannot_claim_conflicting_asset_digests(
     slide.shapes.add_picture(str(image_path), Inches(1), Inches(1))
     slide.shapes.add_picture(str(image_path), Inches(3), Inches(1))
     deck = tmp_path / "conflicting-picture-digests.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
     extraction = json.loads(
         json.dumps(pptx_extraction._extract_pptx_in_process(deck, ocr=False))
     )
@@ -3673,7 +3685,7 @@ def test_empty_image_parts_round_trip_as_unavailable_assets(
     else:
         _set_background_image(slide, image_path)
     deck = tmp_path / f"empty-{asset_kind}.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
 
     with zipfile.ZipFile(deck) as archive:
         members = [(member, archive.read(member)) for member in archive.infolist()]
@@ -3722,7 +3734,7 @@ def test_background_ocr_cannot_duplicate_its_single_bound_asset(
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     _set_background_image(slide, image_path)
     deck = tmp_path / "background-duplicate.pptx"
-    presentation.save(deck)
+    presentation.save(str(deck))
     extraction = json.loads(
         json.dumps(
             pptx_extraction._extract_pptx_in_process(
@@ -3775,12 +3787,12 @@ def test_unhashable_channel_and_ocr_enums_fail_as_malformed_results(
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     slide.shapes.add_picture(
         str(image_path),
-        0,
-        0,
-        width=presentation.slide_width,
-        height=presentation.slide_height,
+        Inches(0),
+        Inches(0),
+        width=deck_width(presentation),
+        height=deck_height(presentation),
     )
-    presentation.save(deck)
+    presentation.save(str(deck))
     baseline = pptx_extraction._extract_pptx_in_process(deck, ocr=False)
 
     for field, invalid in (("status", []), ("confidence", [])):

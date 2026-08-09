@@ -6,6 +6,10 @@ import sys
 
 import pytest
 from pptx import Presentation
+from pptx.oxml.shapes.graphfrm import CT_GraphicalObjectFrame
+from pptx.oxml.slide import CT_Slide
+from pptx.oxml.xmlchemy import BaseOxmlElement
+from pptx.util import Emu
 
 
 DEFAULT_PPTX_DIRECTORY_EXCLUSIONS = [
@@ -85,6 +89,10 @@ def _import_script(path, name):
     if name in sys.modules:
         return sys.modules[name]
     spec = importlib.util.spec_from_file_location(name, path)
+    # Both are Optional for a path no loader claims. Every caller passes a real
+    # .py file, so a None here is a broken fixture path, not a missing feature —
+    # naming it beats an AttributeError two lines later.
+    assert spec is not None and spec.loader is not None, f"no loader for {path}"
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
@@ -466,6 +474,93 @@ NS_P = "http://schemas.openxmlformats.org/presentationml/2006/main"
 NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 
 
+def deck_width(presentation) -> Emu:
+    """A deck's slide width, proven present.
+
+    python-pptx types `slide_width` `Length | None` because a malformed package
+    can omit `sldSz`. A `Presentation()` built in-process always carries it, so
+    the invariant is asserted once here rather than ignored at every arithmetic
+    site (`language-diagnostics` prefers the typed helper).
+    """
+    width = presentation.slide_width
+    assert width is not None, "in-process decks always carry a slide width"
+    return Emu(width)
+
+
+def deck_height(presentation) -> Emu:
+    """A deck's slide height, proven present. See `deck_width`."""
+    height = presentation.slide_height
+    assert height is not None, "in-process decks always carry a slide height"
+    return Emu(height)
+
+
+def slide_title(slide):
+    """A slide's title placeholder, proven present.
+
+    `shapes.title` is Optional because a layout may have none. Fixtures that
+    set a title have already chosen a layout that has one, so the assertion
+    belongs here rather than at every assignment.
+    """
+    title = slide.shapes.title
+    assert title is not None, "this layout has no title placeholder"
+    return title
+
+
+def slide_element(slide) -> CT_Slide:
+    """The `<p:sld>` element behind a slide, narrowed from `BaseOxmlElement`.
+
+    python-pptx types `Slide.element` as the generic base, which carries no
+    `cSld`. Fixtures that author background DrawingML reach through it, so the
+    narrowing happens once here.
+    """
+    element = slide.element
+    assert isinstance(element, CT_Slide), type(element).__name__
+    return element
+
+
+def background_fill_element(slide) -> BaseOxmlElement:
+    """The fill element under a slide's authored `<p:bg><p:bgPr>`.
+
+    python-pptx annotates `CT_Background.bgPr` as Optional but leaves
+    `CT_BackgroundProperties.eg_fillProperties` unannotated, so a reader sees
+    the `ZeroOrOneChoice` descriptor rather than the element it returns. The
+    Optional chain is asserted here and the descriptor gap is suppressed once,
+    instead of at each fixture that reaches through it.
+    """
+    background = slide_element(slide).cSld.bg
+    assert background is not None, "slide has no authored background"
+    properties = background.bgPr
+    assert properties is not None, "slide background has no <p:bgPr>"
+    fill: BaseOxmlElement | None = properties.eg_fillProperties  # pyright: ignore[reportAssignmentType]
+    assert fill is not None, "slide background has no fill element"
+    return fill
+
+
+def background_properties(slide):
+    """A slide's `<p:bgPr>`, created if absent. See `background_fill_element`."""
+    return slide_element(slide).cSld.get_or_add_bgPr()
+
+
+def clear_background_fill(properties) -> None:
+    """Drop any existing fill under a `<p:bgPr>`. See `background_fill_element`."""
+    existing: BaseOxmlElement | None = properties.eg_fillProperties  # pyright: ignore[reportAssignmentType]
+    if existing is not None:
+        properties.remove(existing)
+
+
+def graphic_frame_element(shape) -> CT_GraphicalObjectFrame:
+    """The `<p:graphicFrame>` element behind a table or chart shape.
+
+    python-pptx types `BaseShape.element` as the union of every CT_* shape
+    element, and only the graphic-frame member carries `.graphic`. `add_table`
+    always returns a GraphicFrame, so narrowing once here beats an ignore at
+    each fixture site that retags a table as SmartArt.
+    """
+    element = shape.element
+    assert isinstance(element, CT_GraphicalObjectFrame), type(element).__name__
+    return element
+
+
 def _make_deck(slide_count, *, slide_width=None, slide_height=None):
     """Create a minimal PPTX with *slide_count* blank slides."""
     prs = Presentation()
@@ -504,7 +599,7 @@ def deck_with_text(tmp_path):
     layout = prs.slide_layouts[1]  # Title + Content
     for i in range(3):
         slide = prs.slides.add_slide(layout)
-        slide.shapes.title.text = f"Slide {i + 1} Title"
+        slide_title(slide).text = f"Slide {i + 1} Title"
     path = str(tmp_path / "text_deck.pptx")
     prs.save(path)
     return prs, path

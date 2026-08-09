@@ -3683,9 +3683,11 @@ def test_every_emitted_decoder_reason_is_mapped(preflight_vault):
     """A reason with no mapping silently degrades to the generic code."""
     import re
 
-    io_source = pathlib.Path(
-        importlib.import_module("tracking_database_io").__file__
-    ).read_text(encoding="utf-8")
+    # `__file__` is Optional because a namespace or builtin module has none;
+    # this one is imported from a real path.
+    io_module_file = importlib.import_module("tracking_database_io").__file__
+    assert io_module_file is not None
+    io_source = pathlib.Path(io_module_file).read_text(encoding="utf-8")
     emitted = set(re.findall(r'reason_code="([a-z_]+)"', io_source))
     mapped = set(preflight_vault._DATABASE_READ_DIAGNOSTICS)
     assert emitted <= mapped, sorted(emitted - mapped)

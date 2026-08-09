@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import copy
 from pathlib import Path
 
@@ -196,7 +198,7 @@ def _persisted_v5(return_validation, transcript_timing, tmp_path):
     )
     return_validation.validate_return(raw, catalog)
     vault, owner = _artifact(tmp_path, transcript_timing)
-    canonical = pattern_evidence.canonicalize_return_evidence(
+    canonical: dict[str, Any] = pattern_evidence.canonicalize_return_evidence(
         raw,
         owner,
         vault,
@@ -262,14 +264,14 @@ def test_v5_persists_one_exhaustive_outcome_and_opportunity_identity(
     return_validation.validate_return(raw, catalog)
     vault, talk = _artifact(tmp_path, transcript_timing)
 
-    canonical = pattern_evidence.canonicalize_return_evidence(
+    canonical: dict[str, Any] = pattern_evidence.canonicalize_return_evidence(
         raw,
         talk,
         vault,
         catalog,
         pattern_scoring_schema_version=5,
     )
-    observations = canonical["pattern_observations"]
+    observations: dict[str, Any] = canonical["pattern_observations"]
     transcript_inspection = observations["source_inspection"][0]
     assert transcript_inspection["coverage_complete"] is True
     assert transcript_inspection["absence_capability_complete"] is True
@@ -563,7 +565,7 @@ def test_incomplete_applicability_gate_forbids_assessment_and_is_not_evaluable(
     )
     return_validation.validate_return(raw, catalog)
     vault, talk = _artifact(tmp_path, transcript_timing)
-    canonical = pattern_evidence.canonicalize_return_evidence(
+    canonical: dict[str, Any] = pattern_evidence.canonicalize_return_evidence(
         raw, talk, vault, catalog, pattern_scoring_schema_version=5
     )
 
@@ -657,7 +659,7 @@ def test_bare_native_deck_is_fail_closed_for_applicability_and_fresh_with_root(
     )
     roots = {"pptx_source_dir": str(source_root)}
     return_validation.validate_return(raw, catalog)
-    canonical = pattern_evidence.canonicalize_return_evidence(
+    canonical: dict[str, Any] = pattern_evidence.canonicalize_return_evidence(
         raw,
         owner,
         vault,

@@ -10,6 +10,7 @@ import json
 import shutil
 import subprocess
 import sys
+from typing import Any
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -1571,7 +1572,7 @@ def test_cli_accepts_database_bound_vault_root_authority(
 ):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    database = {"talks": [_talk()]}
+    database: dict[str, Any] = {"talks": [_talk()]}
     _db_json(database)
     if config_mode == "null":
         database["config"]["vault_storage_path"] = None
@@ -1609,7 +1610,7 @@ def test_cli_compares_symlinked_vault_roots_by_lexical_identity_before_persisten
     db = physical_root / "tracking-database.json"
     alias_db = alias_root / db.name
     batch = tmp_path / "batch-returns.json"
-    database = {"talks": [_talk()]}
+    database: dict[str, Any] = {"talks": [_talk()]}
     _db_json(database)
     configured_root = alias_root if configured_identity == "alias" else physical_root
     database["config"]["vault_storage_path"] = str(configured_root)
@@ -1669,7 +1670,7 @@ def test_cli_rejects_invalid_configured_vault_root_before_persistence(
 ):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    database = {"talks": [_talk()]}
+    database: dict[str, Any] = {"talks": [_talk()]}
     _db_json(database)
     database["config"]["vault_storage_path"] = configured_root
     original = json.dumps(database)
@@ -1696,7 +1697,7 @@ def test_cli_rejects_configured_vault_root_authority_mismatch(
 ):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    database = {"talks": [_talk()]}
+    database: dict[str, Any] = {"talks": [_talk()]}
     _db_json(database)
     mismatched_root = tmp_path / "other-vault"
     database["config"]["vault_storage_path"] = str(mismatched_root)
@@ -1724,7 +1725,7 @@ def test_cli_rejects_relative_database_authority_before_open(
 ):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    database = {"talks": [_talk()]}
+    database: dict[str, Any] = {"talks": [_talk()]}
     original = _db_json(database)
     db.write_text(original, encoding="utf-8")
     batch.write_text(json.dumps([_return()]), encoding="utf-8")
@@ -1752,7 +1753,7 @@ def test_root_authority_rejection_precedes_every_artifact_and_write_boundary(
 ):
     db = tmp_path / "tracking-database.json"
     batch = tmp_path / "batch-returns.json"
-    database = {"talks": [_talk()]}
+    database: dict[str, Any] = {"talks": [_talk()]}
     _db_json(database)
     database["config"]["vault_storage_path"] = "~/private-vault"
     original = json.dumps(database)
@@ -3152,7 +3153,7 @@ def test_skipped_no_sources_rejects_each_live_capability(
 def test_invalid_source_cannot_hide_independent_terminal_capability(
     persist_results, tmp_path, surviving_source
 ):
-    fields = {
+    fields: dict[str, Any] = {
         "video_url": None,
         "youtube_id": None,
         "slides_url": None,

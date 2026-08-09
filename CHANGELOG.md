@@ -1,5 +1,40 @@
 # Changelog
 
+### fix — clear the Pyright test baseline (#162)
+
+Fifth of the #162 adoption sequence. Pyright reports **0 errors across all 153
+files**. The CI gate is the next and final PR: `language-diagnostics` Adopting
+on a Dirty Tree wants the tree green before the gate is wired, in its own
+change.
+
+The 242 test-file findings were resolved by proving invariants once rather than
+suppressing them at each use, per `language-diagnostics`. Seven `conftest.py`
+helpers now carry what was previously re-derived or ignored at ~90 call sites:
+`deck_width` / `deck_height` (python-pptx types slide extents Optional),
+`slide_title` (a layout may have no title placeholder), `slide_element` /
+`graphic_frame_element` (`element` is typed as the union of every CT_* shape),
+and `background_fill_element` / `background_properties` /
+`clear_background_fill`.
+
+`_load_vault_payload` in `test_validate_profile.py` is the same move at the
+test layer: `_run_load_vault` legitimately returns None when the command wrote
+nothing — three tests assert exactly that — so the six tests that go on to read
+the payload now assert its presence once instead of subscripting an Optional 24
+times.
+
+Mechanical shapes handled in bulk: 34 `Path` arguments where python-pptx
+declares `str | IO[bytes]`, 41 zero-valued `Length` positions, and JSON-document
+fixtures annotated `dict[str, Any]` — `object` values forced every nested
+subscript to be re-narrowed, while `Any` is what `json.loads` returns anyway.
+
+Exactly two suppressions survive, both in one `conftest.py` helper and both
+naming their cause: python-pptx annotates `CT_Background.bgPr` as Optional but
+leaves `CT_BackgroundProperties.eg_fillProperties` unannotated, so a reader sees
+the `ZeroOrOneChoice` descriptor instead of the element it returns.
+
+Verified against a clean venv built the way CI builds one: `ruff check` clean,
+`ruff format --check` 359 files already formatted, `pyright` 0 errors.
+
 ## 0.20.36 — 2026-08-09
 
 ### fix — clear every Pyright finding in shipped scripts (#162)

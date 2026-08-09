@@ -2,6 +2,7 @@
 
 import contextlib
 import json
+from email.message import Message
 import os
 import sys
 from pathlib import Path
@@ -35,6 +36,7 @@ def _square_png(tmp_path, name="sq.png"):
     path = str(tmp_path / name)
     im = Image.new("RGB", (50, 50), (255, 255, 255))
     px = im.load()
+    assert px is not None, "a loaded image always exposes pixel access"
     for x in range(50):
         for y in range(50):
             if (x + y) % 2 == 0:
@@ -49,6 +51,7 @@ def _multicolor_png(tmp_path, name="multi.png"):
     path = str(tmp_path / name)
     im = Image.new("RGB", (60, 60))
     px = im.load()
+    assert px is not None, "a loaded image always exposes pixel access"
     for x in range(60):
         for y in range(60):
             px[x, y] = ((x * 4) % 256, (y * 4) % 256, ((x + y) * 2) % 256)
@@ -62,6 +65,7 @@ def _sparse_text_png(tmp_path, name="screenshot.png"):
     path = str(tmp_path / name)
     im = Image.new("RGB", (80, 80), (255, 255, 255))
     px = im.load()
+    assert px is not None, "a loaded image always exposes pixel access"
     for y in range(0, 80, 6):
         for x in range(0, 80, 3):
             px[x, y] = (0, 0, 0)
@@ -599,7 +603,7 @@ def test_create_bitly_link_raises_when_custom_back_half_fails(generate_qr, monke
         if url.endswith("/v4/bitlinks"):
             return {"id": "bit.ly/abc123", "link": "https://bit.ly/abc123"}
         # bit.ly answers 422 when the requested back-half is already taken.
-        raise urllib.error.HTTPError(url, 422, "Unprocessable", {}, None)
+        raise urllib.error.HTTPError(url, 422, "Unprocessable", Message(), None)
 
     monkeypatch.setattr(generate_qr, "_http_request", fake_http)
     with pytest.raises(
@@ -1859,7 +1863,7 @@ def test_back_half_failure_after_link_creation_reports_the_created_link(
         if url.endswith("/v4/bitlinks"):
             return {"id": "jbaru.ch/abc123", "link": "https://jbaru.ch/abc123"}
         # Creation succeeded; the back-half assignment is what fails.
-        raise urllib.error.HTTPError(url, 422, "Unprocessable", {}, None)
+        raise urllib.error.HTTPError(url, 422, "Unprocessable", Message(), None)
 
     monkeypatch.setattr(generate_qr, "_http_request", fake_http)
     monkeypatch.setattr(

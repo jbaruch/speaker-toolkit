@@ -11,7 +11,7 @@ import yaml
 from pptx import Presentation
 from pptx.util import Inches
 
-from conftest import make_deck
+from conftest import make_deck, slide_title
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "outline-example.yaml"
@@ -283,8 +283,8 @@ def test_apply_img_txt_layout_repositions_title(apply_illustrations):
 
     _, text_moved = apply_illustrations.apply_img_txt_layout(slide)
     assert text_moved >= 1
-    assert slide.shapes.title.left == Inches(apply_illustrations.IMGTXT_TEXT_LEFT_IN)
-    assert slide.shapes.title.top == Inches(apply_illustrations.IMGTXT_TITLE_TOP_IN)
+    assert slide_title(slide).left == Inches(apply_illustrations.IMGTXT_TEXT_LEFT_IN)
+    assert slide_title(slide).top == Inches(apply_illustrations.IMGTXT_TITLE_TOP_IN)
 
 
 def test_swap_or_insert_picture_inserts_when_missing(apply_illustrations, tmp_path):
