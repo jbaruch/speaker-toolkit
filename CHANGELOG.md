@@ -26,6 +26,7 @@ decoder's message in `source_reasons`, which preflight publishes as a
 The documented structured `artifact_path` field is unchanged — it exposes
 absolute paths by design, and this issue never covered it.
 
+## 0.20.28 — 2026-08-09
 
 ### fix(vault-ingress) — close the deterministic diagnostics gap in two CLI entrypoints (#203)
 
