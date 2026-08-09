@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.33 — 2026-08-09
+
 ### chore(ci) — clear the Ruff lint baseline and configure the linter (#162)
 
 First of the #162 adoption sequence. `language-diagnostics` Adopting on a Dirty
