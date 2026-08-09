@@ -1,5 +1,44 @@
 # Changelog
 
+### fix(vault-ingress) — route preflight diagnostics off typed reasons, not exception prose (#200)
+
+Three preflight paths published raw exception text across a public diagnostic
+boundary, and one chose the public finding code by substring-matching that text.
+
+`TrackingDatabaseIOError` and `ReturnValidationError` now carry a
+`reason_code`. The top-level database read derives BOTH its finding code and
+its public message from that reason, so rewording an upstream message can no
+longer silently reclassify a failure, and the decoder's text — which embeds the
+database path, the offending duplicate key, and rejected numeric literals —
+never reaches the report. An unmapped reason falls back to
+`database_unreadable` rather than inventing a code.
+
+`_validate_decoded_json_tree` runs after a successful decode, so its
+deep-nesting and unpaired-surrogate rejections are typed too — without codes
+they degraded to the generic `database_unreadable` and defeated the routing. A
+test asserts every `reason_code` the decoder emits has a mapping, so a new
+reason cannot silently fall through.
+
+Three existing tests asserted the report echoed the offending key or literal.
+They now assert the message belongs to the closed set of seven constants, which
+is a stronger guard: a message drawn from fixed strings cannot carry input at
+all.
+
+`transcript_artifact_unreadable` reports `not_utf8` or
+`unreadable:<ExceptionType>` instead of the raw `OSError`/`UnicodeError`
+string, which carried the host path and decoder byte offset. The video-manifest
+rejection reports the schema field path instead of the validator's message,
+which can quote the value it rejected; where a narrower classification already
+exists — an artifact-locator reason — that code survives to the diagnostic
+rather than being flattened to the field path.
+
+Two further leaks surfaced while testing: `pattern_evidence.py` embedded the
+decoder's message in `source_reasons`, which preflight publishes as a
+`capability_fact`. Both now state the condition without the offset or path.
+
+The documented structured `artifact_path` field is unchanged — it exposes
+absolute paths by design, and this issue never covered it.
+
 ## 0.20.28 — 2026-08-09
 
 ### fix(vault-ingress) — close the deterministic diagnostics gap in two CLI entrypoints (#203)

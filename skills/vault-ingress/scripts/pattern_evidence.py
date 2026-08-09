@@ -1308,11 +1308,14 @@ def validate_transcript_quality_for_owner(
         else:
             try:
                 current_text = before.transcript_bytes.decode("utf-8")
-            except UnicodeDecodeError as exc:
+            except UnicodeDecodeError:
+                # These strings reach public preflight capability facts, so the
+                # decoder's message — which carries the offending byte offset —
+                # stays out of them.
                 result = (
                     False,
-                    f"transcript artifact is not valid UTF-8: {exc}",
-                    f"transcript artifact is not valid UTF-8: {exc}",
+                    "transcript artifact is not valid UTF-8",
+                    "transcript artifact is not valid UTF-8",
                     False,
                 )
             else:
@@ -1383,7 +1386,7 @@ def _load_verified_transcript_snapshot(
 
         try:
             transcript_text = transcript_bytes.decode("utf-8")
-        except UnicodeDecodeError as exc:
+        except UnicodeDecodeError:
             try:
                 after = _capture_transcript_bundle(transcript_path)
             except PatternEvidenceError as snapshot_exc:
@@ -1393,9 +1396,9 @@ def _load_verified_transcript_snapshot(
                 continue
             return _VerifiedTranscriptSnapshot(
                 text=None,
-                transcript_reason=(
-                    f"transcript file is not valid UTF-8: {transcript_path}: {exc}"
-                ),
+                # Reaches public preflight capability facts: no host path and
+                # no decoder byte offset.
+                transcript_reason="transcript file is not valid UTF-8",
                 policy_bound=False,
                 timed_segments=(),
                 timing_reason="timed transcript is unavailable",

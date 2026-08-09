@@ -5,6 +5,7 @@ import importlib
 import json
 import os
 from pathlib import Path
+import pathlib
 import shutil
 import struct
 import subprocess
@@ -3103,7 +3104,11 @@ def test_identity_date_and_duration_types_are_validated(
     report = preflight_vault.run_preflight(vault_fixture["root"])
 
     assert finding_codes(report, "blocking") == {"database_json_invalid"}
-    assert "non-standard JSON number Infinity" in report["findings"][0]["message"]
+    # The public message no longer echoes the rejected literal (#200).
+    assert report["findings"][0]["message"] == (
+        "tracking database contains a non-standard JSON number"
+    )
+    assert "Infinity" not in json.dumps(report["findings"], sort_keys=True)
     # The report remains strict JSON even when Python's input decoder accepted
     # a non-standard Infinity token from a legacy artifact.
     json.dumps(report, allow_nan=False)
@@ -3421,3 +3426,168 @@ def test_failure_report_names_code_locations_without_exception_text(
         assert "/private/vault/creds.json" not in stream
         assert "Traceback" not in stream
     assert "code locations that failed" in captured.err
+
+
+# --- #200: public diagnostics route on typed reasons, not exception prose ---
+
+@pytest.mark.parametrize("payload,expected_code", [
+    (b"\xff\xfe not utf-8", "database_encoding_invalid"),
+    (b"{not json", "database_json_invalid"),
+    (b'{"a": 1, "a": 2}', "database_json_invalid"),
+    (b'{"a": NaN}', "database_json_invalid"),
+    (b'["not", "an", "object"]', "database_json_invalid"),
+])
+def test_database_read_finding_code_comes_from_the_typed_reason(
+        preflight_vault, tmp_path, payload, expected_code):
+    """The public taxonomy must not depend on upstream message wording."""
+    database = tmp_path / "tracking-database.json"
+    database.write_bytes(payload)
+
+    report = preflight_vault.run_preflight(database)
+    codes = [item["code"] for item in report["findings"]]
+    assert expected_code in codes, codes
+
+
+def test_unmapped_decoder_reason_falls_back_to_unreadable(preflight_vault):
+    """An unrecognised reason must not invent a code."""
+    assert preflight_vault._DATABASE_READ_DIAGNOSTICS.get("brand_new_reason") is None
+    assert preflight_vault._DATABASE_READ_FALLBACK[0] == "database_unreadable"
+
+
+def test_transcript_decode_failure_reports_a_typed_reason_not_os_text(
+        preflight_vault, vault_fixture):
+    """`actual` is public: a raw OSError string carries the host path."""
+    # The transcript resolves from youtube_id, so the file must use that name.
+    transcript = vault_fixture["root"] / "transcripts" / f"{VIDEO_ID}.txt"
+    transcript.parent.mkdir(parents=True, exist_ok=True)
+    transcript.write_bytes(b"\xff\xfe invalid utf-8 bytes")
+    write_database(vault_fixture, [base_talk(status="processed")], current=True)
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+    finding = next(
+        (f for f in report["findings"]
+         if f["code"] == "transcript_artifact_unreadable"), None)
+    assert finding is not None, [f["code"] for f in report["findings"]]
+    assert finding["actual"] == "not_utf8"
+    # `artifact_path` is a documented structured field and legitimately carries
+    # an absolute path (#200). Every OTHER field must stay free of raw decoder
+    # prose and host paths.
+    rest = {k: v for k, v in finding.items() if k != "artifact_path"}
+    serialized = json.dumps(rest, sort_keys=True)
+    assert "codec" not in serialized
+    assert "invalid start byte" not in serialized
+    assert str(vault_fixture["root"]) not in serialized
+
+
+def test_reworded_decoder_message_keeps_its_finding_code(
+        preflight_vault, tmp_path, monkeypatch):
+    """The taxonomy survives upstream rewording — that is the point of the fix.
+
+    Substring matching on the message would fall through to the generic
+    `database_unreadable` as soon as the wording changed.
+    """
+    io_module = importlib.import_module("tracking_database_io")
+    database = tmp_path / "tracking-database.json"
+    database.write_text("{}", encoding="utf-8")
+
+    def reworded(*_args, **_kwargs):
+        raise io_module.TrackingDatabaseIOError(
+            "the file could not be interpreted as text",   # no legacy substring
+            reason_code="encoding_invalid",
+        )
+
+    monkeypatch.setattr(preflight_vault, "decode_json_object", reworded)
+
+    report = preflight_vault.run_preflight(database)
+    codes = [item["code"] for item in report["findings"]]
+    assert "database_encoding_invalid" in codes, codes
+    assert "database_unreadable" not in codes
+
+
+def test_manifest_rejection_reports_a_typed_reason_not_the_rejected_value(
+        preflight_vault, vault_fixture):
+    """ReturnValidationError text can echo the malformed input it rejected."""
+    poisoned = "SENSITIVE_VALUE_abc123"
+    talk = base_talk(
+        status="processed_partial",
+        transcript_source="none",
+        slide_source="video_extracted",
+        structured_data={"video_extraction": {"schema_version": poisoned}},
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+    finding = next(
+        (f for f in report["findings"]
+         if f["code"] == "video_extraction_provenance_invalid"), None)
+    assert finding is not None, [f["code"] for f in report["findings"]]
+    assert finding["actual"].startswith("video_extraction.")
+    assert poisoned not in json.dumps(finding, sort_keys=True)
+
+
+@pytest.mark.parametrize("payload,leaked", [
+    (b'{"a": 1, "SENSITIVE_KEY_abc": 2, "SENSITIVE_KEY_abc": 3}', "SENSITIVE_KEY_abc"),
+    (b'{"a": 123456789012345678901234567890123456789.5}', "123456789012345678901234567890"),
+])
+def test_database_read_report_never_echoes_malformed_input(
+        preflight_vault, tmp_path, payload, leaked):
+    """Decoder messages embed the rejected key or value; the report must not."""
+    database = tmp_path / "tracking-database.json"
+    database.write_bytes(payload)
+
+    report = preflight_vault.run_preflight(database)
+    serialized = json.dumps(
+        {k: v for k, v in report.items() if k not in {"database", "vault_root"}},
+        sort_keys=True,
+    )
+    assert leaked not in serialized, serialized
+    assert "database_json_invalid" in serialized
+
+
+def test_database_read_report_never_echoes_the_host_path(
+        preflight_vault, tmp_path):
+    """The decoder message embeds the artifact path; findings must not."""
+    database = tmp_path / "secret-vault-name" / "tracking-database.json"
+    database.parent.mkdir(parents=True)
+    database.write_bytes(b"\xff\xfe not utf-8")
+
+    report = preflight_vault.run_preflight(database)
+    # `database` and `vault_root` are documented structured fields.
+    findings = json.dumps(report["findings"], sort_keys=True)
+    assert "secret-vault-name" not in findings, findings
+    assert report["findings"][0]["code"] == "database_encoding_invalid"
+
+
+@pytest.mark.parametrize("payload,expected_message", [
+    (
+        # MAX_JSON_NESTING_DEPTH is 200; go comfortably past it.
+        ('{"config": {}, "talks": [], "deep": '
+         + "[" * 260 + "]" * 260 + "}").encode(),
+        "tracking database exceeds the maximum supported JSON nesting depth",
+    ),
+    (
+        b'{"config": {}, "talks": [], "s": "\\ud800"}',
+        "tracking database contains an unpaired UTF-16 surrogate in a JSON string",
+    ),
+])
+def test_tree_validator_defects_route_to_their_specific_reason(
+        preflight_vault, tmp_path, payload, expected_message):
+    """These raise after a successful decode; untyped they fall back to generic."""
+    database = tmp_path / "tracking-database.json"
+    database.write_bytes(payload)
+
+    report = preflight_vault.run_preflight(database)
+    finding = report["findings"][0]
+    assert finding["code"] == "database_json_invalid", finding
+    assert finding["message"] == expected_message
+
+
+def test_every_emitted_decoder_reason_is_mapped(preflight_vault):
+    """A reason with no mapping silently degrades to the generic code."""
+    import re
+    io_source = pathlib.Path(
+        importlib.import_module("tracking_database_io").__file__
+    ).read_text(encoding="utf-8")
+    emitted = set(re.findall(r'reason_code="([a-z_]+)"', io_source))
+    mapped = set(preflight_vault._DATABASE_READ_DIAGNOSTICS)
+    assert emitted <= mapped, sorted(emitted - mapped)

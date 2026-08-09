@@ -33,7 +33,17 @@ STAGED_METADATA_STABILIZATION_ATTEMPTS = 4
 
 
 class TrackingDatabaseIOError(ValueError):
-    """The tracking database could not be read or installed safely."""
+    """The tracking database could not be read or installed safely.
+
+    ``reason_code`` is the stable, typed classification. Consumers route on it;
+    the message is human prose and may be reworded without notice. Readers that
+    substring-match the message instead will silently misclassify on any
+    rewording.
+    """
+
+    def __init__(self, message: str, *, reason_code: str = "io_error") -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
 
 
 class TrackingDatabaseConflictError(TrackingDatabaseIOError):
@@ -288,14 +298,16 @@ def _validate_decoded_json_tree(payload: object, *, subject: str) -> None:
             if any(0xD800 <= ord(character) <= 0xDFFF for character in value):
                 raise TrackingDatabaseIOError(
                     f"{subject} contains an unpaired UTF-16 surrogate in a "
-                    "JSON string"
+                    "JSON string",
+                    reason_code="json_unpaired_surrogate",
                 )
             continue
         if isinstance(value, dict):
             if depth > MAX_JSON_NESTING_DEPTH:
                 raise TrackingDatabaseIOError(
                     f"{subject} exceeds maximum supported JSON nesting depth "
-                    f"{MAX_JSON_NESTING_DEPTH}"
+                    f"{MAX_JSON_NESTING_DEPTH}",
+                    reason_code="json_nesting_too_deep",
                 )
             previous_depth = deepest_container_visits.get(id(value))
             if previous_depth is not None and previous_depth >= depth:
@@ -309,7 +321,8 @@ def _validate_decoded_json_tree(payload: object, *, subject: str) -> None:
             if depth > MAX_JSON_NESTING_DEPTH:
                 raise TrackingDatabaseIOError(
                     f"{subject} exceeds maximum supported JSON nesting depth "
-                    f"{MAX_JSON_NESTING_DEPTH}"
+                    f"{MAX_JSON_NESTING_DEPTH}",
+                    reason_code="json_nesting_too_deep",
                 )
             previous_depth = deepest_container_visits.get(id(value))
             if previous_depth is not None and previous_depth >= depth:
@@ -332,14 +345,16 @@ def decode_json_object_bytes(
         for key, value in pairs:
             if key in result:
                 raise TrackingDatabaseIOError(
-                    f"{label} {artifact_path} contains duplicate object key {key!r}"
+                    f"{label} {artifact_path} contains duplicate object key {key!r}",
+                    reason_code="json_duplicate_key",
                 )
             result[key] = value
         return result
 
     def reject_non_finite(value: str) -> NoReturn:
         raise TrackingDatabaseIOError(
-            f"{label} {artifact_path} contains non-standard JSON number {value}"
+            f"{label} {artifact_path} contains non-standard JSON number {value}",
+            reason_code="json_non_standard_number",
         )
 
     def non_roundtrippable_number(value: str) -> TrackingDatabaseIOError:
@@ -351,7 +366,8 @@ def decode_json_object_bytes(
         return TrackingDatabaseIOError(
             f"{label} {artifact_path} contains JSON number {description} that "
             "cannot round-trip losslessly through this toolkit; replace it "
-            "with a string or use a supported finite number"
+            "with a string or use a supported finite number",
+            reason_code="json_non_roundtrippable_number",
         )
 
     def parse_lossless_int(value: str) -> int:
@@ -383,17 +399,20 @@ def decode_json_object_bytes(
         raise
     except UnicodeDecodeError as exc:
         raise TrackingDatabaseIOError(
-            f"{label} {artifact_path} is not valid UTF-8: {exc}"
+            f"{label} {artifact_path} is not valid UTF-8: {exc}",
+            reason_code="encoding_invalid",
         ) from exc
     except RecursionError as exc:
         raise TrackingDatabaseIOError(
             f"{label} {artifact_path} exceeds maximum supported JSON nesting "
-            f"depth {MAX_JSON_NESTING_DEPTH}"
+            f"depth {MAX_JSON_NESTING_DEPTH}",
+            reason_code="json_nesting_too_deep",
         ) from exc
     except json.JSONDecodeError as exc:
         raise TrackingDatabaseIOError(
             f"{label} {artifact_path} is not valid JSON at line {exc.lineno}, "
-            f"column {exc.colno}"
+            f"column {exc.colno}",
+            reason_code="json_invalid",
         ) from exc
     _validate_decoded_json_tree(
         payload,
@@ -401,7 +420,8 @@ def decode_json_object_bytes(
     )
     if not isinstance(payload, dict):
         raise TrackingDatabaseIOError(
-            f"{label} {artifact_path} root must be a JSON object"
+            f"{label} {artifact_path} root must be a JSON object",
+            reason_code="json_root_not_object",
         )
     return payload
 
