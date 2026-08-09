@@ -38,10 +38,13 @@ A commit that still rejects no longer looks side-effect-free. The run exits
 non-zero and names every effect that landed — short-link provider and link id,
 each PNG path, the mutated deck — plus how a retry behaves against them.
 
-Rollback advice depends on how the link came to be. A link this run created can
-be deleted; a retargeted link predates the run and must be pointed back at its
-recorded prior target instead; a pre-resolved link was never this run's to
-remove. Advising deletion in the latter two cases would be destructive.
+Recovery guidance covers every landed effect, and says plainly that there is no
+atomic rollback. The link action differs by how it came to be: a link this run
+created can be deleted, a retargeted link predates the run and must be pointed
+back at its recorded prior target, and a pre-resolved link was never this run's
+to remove. Each written PNG is named, and the deck is reported as modified in
+place with no backup kept — restoring it means version control, not a promised
+restore the script cannot deliver.
 
 ## 0.20.25 — 2026-08-09
 

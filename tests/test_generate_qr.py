@@ -1176,7 +1176,7 @@ def test_commit_rejection_reports_the_effects_that_landed(
     assert "generation conflict" in err
     assert "these effects already landed" in err
     assert str(output) in err
-    assert "Re-run to finalize" in err
+    assert "Finish forward: re-run" in err
 
 
 def test_no_effects_yet_reports_a_clean_retry(generate_qr, capsys):
@@ -1199,14 +1199,15 @@ def test_effects_receipt_names_link_pngs_and_deck(generate_qr, capsys):
     assert "link_id=bit.ly/abc123" in err
     assert "/tmp/a.png" in err and "/tmp/b.png" in err
     assert "deck mutated: /tmp/deck.pptx" in err
-    assert "delete the short link above" in err
+    assert "delete https://jbaru.ch/my-talk" in err
 
 
 @pytest.mark.parametrize("action,prior,expected,forbidden", [
-    ("created", None, "delete the short link above", "do NOT delete"),
+    ("created", None, "delete https://jbaru.ch/my-talk", "Do NOT delete"),
     ("retargeted", "https://example.test/old",
-     "point https://jbaru.ch/my-talk back at https://example.test/old", "delete the short link above"),
-    ("preresolved", None, "leave the short link alone", "delete the short link above"),
+     "point https://jbaru.ch/my-talk back at https://example.test/old",
+     "delete https://jbaru.ch/my-talk;"),
+    ("preresolved", None, "leave it alone", "delete https://jbaru.ch/my-talk;"),
 ])
 def test_rollback_advice_matches_how_the_link_came_to_be(
         generate_qr, capsys, action, prior, expected, forbidden):
@@ -1222,6 +1223,28 @@ def test_rollback_advice_matches_how_the_link_came_to_be(
     assert forbidden not in err
     if action == "retargeted":
         assert "previous target: https://example.test/old" in err
+
+
+def test_recovery_covers_every_landed_effect_not_just_the_link(
+        generate_qr, capsys):
+    """Link-only advice would imply the PNGs and deck were reverted too."""
+    receipt = generate_qr.EffectsReceipt("my-talk")
+    receipt.record_short_link("bitly", "bit.ly/abc", "https://jbaru.ch/my-talk",
+                              action="created")
+    receipt.record_artifacts(["/tmp/a.png", "/tmp/b.png"])
+    receipt.record_deck("/tmp/deck.pptx")
+
+    generate_qr._report_unfinalized_effects(receipt)
+    err = capsys.readouterr().err
+
+    assert "no atomic rollback" in err
+    assert "delete https://jbaru.ch/my-talk" in err
+    assert "delete /tmp/a.png" in err
+    assert "delete /tmp/b.png" in err
+    assert "/tmp/deck.pptx was modified in place" in err
+    # No backup is taken, so a restore must not be promised.
+    assert "keeps no backup" in err
+    assert "restore the deck from its backup" not in err
 
 
 def test_same_talk_change_during_publication_rejects(generate_qr, tmp_path):

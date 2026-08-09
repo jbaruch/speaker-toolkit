@@ -297,26 +297,43 @@ def _report_unfinalized_effects(receipt):
         print(f"    deck mutated: {receipt.deck}", file=sys.stderr)
     print("", file=sys.stderr)
     print(
-        "  Re-running the same command is idempotent for the short link: an "
-        "existing managed link with the slug back-half is retargeted, never "
-        "duplicated. The PNGs and deck are overwritten in place.",
+        "  Finish forward: re-run the same command. It is idempotent — an "
+        "existing managed link with the slug back-half is retargeted rather "
+        "than duplicated, and the PNGs and deck are overwritten in place.",
+        file=sys.stderr,
+    )
+    print("", file=sys.stderr)
+    print(
+        "  Or undo, per effect. There is no atomic rollback; each landed effect "
+        "is reverted separately:",
         file=sys.stderr,
     )
     if link and link["action"] == "created":
-        rollback = "delete the short link above"
+        print(
+            f"    - short link: delete {link['short_url']}; this run created it",
+            file=sys.stderr,
+        )
     elif link and link["action"] == "retargeted":
-        rollback = (
-            f"point {link['short_url']} back at {link['prior_target']} — do NOT "
-            "delete it, it predates this run"
+        print(
+            f"    - short link: point {link['short_url']} back at "
+            f"{link['prior_target']}. Do NOT delete it — it predates this run",
+            file=sys.stderr,
         )
     elif link:
-        rollback = (
-            "leave the short link alone; it was supplied pre-resolved and this "
-            "run did not create it"
+        print(
+            "    - short link: leave it alone; it was supplied pre-resolved and "
+            "this run did not create it",
+            file=sys.stderr,
         )
-    else:
-        rollback = "remove the PNGs above"
-    print(f"  Re-run to finalize, or {rollback} to roll back.", file=sys.stderr)
+    for path in receipt.artifacts:
+        print(f"    - PNG: delete {path} if it should not exist", file=sys.stderr)
+    if receipt.deck:
+        print(
+            f"    - deck: {receipt.deck} was modified in place and this script "
+            "keeps no backup. Restore it from version control if you need the "
+            "prior slides",
+            file=sys.stderr,
+        )
 
 
 def _reload_tracking_db(vault_path):
