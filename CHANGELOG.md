@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.37 — 2026-08-09
+
 ### fix — clear the Pyright test baseline (#162)
 
 Fifth of the #162 adoption sequence. Pyright reports **0 errors across all 153
