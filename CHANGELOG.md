@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.25 — 2026-08-09
+
 ### fix(generate-qr) — preserve canonical MCP targets and exact generated artifact paths (#171)
 
 The `qr_codes` catalog recorded facts that were demonstrably false. `--short-url`
