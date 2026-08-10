@@ -3691,3 +3691,103 @@ def test_every_emitted_decoder_reason_is_mapped(preflight_vault):
     emitted = set(re.findall(r'reason_code="([a-z_]+)"', io_source))
     mapped = set(preflight_vault._DATABASE_READ_DIAGNOSTICS)
     assert emitted <= mapped, sorted(emitted - mapped)
+
+
+def _catalog_record(**overrides: Any) -> dict[str, Any]:
+    """One schema-v2 PPTX catalog record with current visual evidence (#229)."""
+    record = {
+        "schema_version": 2,
+        "pptx_path": "Conference/2026/Talk.pptx",
+        "talk_filename": None,
+        "matched": False,
+        "slide_count": 42,
+        "visual_extracted": True,
+        "visual_evidence": {
+            "outcome": "succeeded",
+            "extractor_schema_version": preflight_vault_module().PPTX_EXTRACTION_SCHEMA_VERSION,
+            "pipeline_version": preflight_vault_module().PPTX_EXTRACTION_PIPELINE_VERSION,
+            "source_fingerprint": {
+                "algorithm": "sha256",
+                "digest": "a" * 64,
+                "size_bytes": 4096,
+            },
+            "artifact": {"path": "evidence/talk.json", "sha256": "c" * 64},
+        },
+    }
+    record.update(overrides)
+    return record
+
+
+def preflight_vault_module():
+    return importlib.import_module("preflight_vault")
+
+
+def _catalog_findings(report: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        finding
+        for finding in report["findings"]
+        if finding["code"].startswith("pptx_visual_evidence")
+    ]
+
+
+def test_preflight_warns_when_catalog_evidence_is_not_current(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    """A legacy record's bare claim cannot name an extractor generation (#229)."""
+    database = write_database(vault_fixture, [], current=True)
+    payload = json.loads(database.read_text(encoding="utf-8"))
+    payload["pptx_catalog"] = [
+        {
+            "schema_version": 1,
+            "pptx_path": "Conference/2026/Talk.pptx",
+            "talk_filename": None,
+            "matched": False,
+            "slide_count": 42,
+            "visual_extracted": True,
+        }
+    ]
+    database.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    findings = _catalog_findings(report)
+    assert [finding["code"] for finding in findings] == [
+        "pptx_visual_evidence_not_current"
+    ]
+    assert findings[0]["severity"] == "warning"
+    assert findings[0]["actual"]["classification"] == "unknown_legacy"
+
+
+def test_preflight_is_quiet_when_catalog_evidence_is_current(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    database = write_database(vault_fixture, [], current=True)
+    payload = json.loads(database.read_text(encoding="utf-8"))
+    payload["pptx_catalog"] = [_catalog_record()]
+    database.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert _catalog_findings(report) == []
+
+
+def test_preflight_reports_an_unreadable_receipt_instead_of_crashing(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    database = write_database(vault_fixture, [], current=True)
+    payload = json.loads(database.read_text(encoding="utf-8"))
+    broken = _catalog_record()
+    broken["visual_evidence"]["artifact"] = None
+    payload["pptx_catalog"] = [broken]
+    database.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    findings = _catalog_findings(report)
+    assert [finding["code"] for finding in findings] == [
+        "pptx_visual_evidence_unreadable"
+    ]
+    assert "artifact is required" in findings[0]["message"]

@@ -303,7 +303,7 @@ customization, not the owner default. See the
     "slide_count": 60,
     "visual_extracted": true,
     "visual_evidence": {
-      "outcome": "succeeded|failed",
+      "outcome": "succeeded",
       "extractor_schema_version": 4,
       "pipeline_version": "1.5.0",
       "source_fingerprint": {
@@ -317,6 +317,25 @@ customization, not the owner default. See the
       }
     }
   }],
+  "_comment_pptx_catalog_failed": {
+    "schema_version": 2,
+    "pptx_path": "Conference/Year/Broken.pptx",
+    "talk_filename": null,
+    "matched": false,
+    "slide_count": 0,
+    "visual_extracted": false,
+    "visual_evidence": {
+      "outcome": "failed",
+      "extractor_schema_version": 4,
+      "pipeline_version": "1.5.0",
+      "source_fingerprint": {
+        "algorithm": "sha256",
+        "digest": "64 lowercase hex characters",
+        "size_bytes": 123456
+      },
+      "artifact": null
+    }
+  },
   "qr_codes": [{
     "schema_version": 2,
     "talk_slug": "arc-of-ai",

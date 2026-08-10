@@ -36,6 +36,20 @@ accepts raises rather than falling through to a legacy reading, because a
 lagging reader must not send a deck back through extraction on the strength of
 a shape it cannot read (`stateful-artifacts` → Migration Policy).
 
+Both production readers of the catalog now classify through it.
+`read-tracking-database.py` reports a derived `pptx_visual_evidence` block —
+report schema v2 — so every consumer reading through the owner reader gets one
+authoritative per-record classification instead of interpreting
+`visual_extracted` itself. `preflight-vault.py` raises a `warning` finding for
+each deck whose evidence is not current, and a distinct one for a receipt it
+cannot read; neither blocks, because stale evidence is work to schedule rather
+than a reason to refuse the vault.
+
+The classifier validates a v2 receipt before trusting it. A receipt is the
+licence to SKIP extraction, so a malformed one — `succeeded` with a null
+artifact, a bogus fingerprint, a mirror flag disagreeing with the outcome —
+raises instead of classifying as current.
+
 Found while wiring this up: the assessor validated collection-record shapes
 under an `elif version == 1` cascade, so a collection lost its shape validation
 the moment it bumped past the version named there — `qr_codes` v2 had already

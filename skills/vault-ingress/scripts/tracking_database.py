@@ -466,12 +466,24 @@ def classify_pptx_visual_evidence(
             f"reader accepts (v{LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION} and "
             f"v{PPTX_CATALOG_RECORD_SCHEMA_VERSION}); update speaker-toolkit"
         )
+    # Validate before trusting. A receipt is the licence to SKIP extraction, so
+    # a malformed one must never classify as current: `succeeded` with a null
+    # artifact, a bogus fingerprint, or a mirror flag that disagrees with the
+    # outcome would otherwise skip a deck on evidence that cannot be proven.
+    succeeded = _validate_pptx_visual_evidence(
+        record.get("visual_evidence"), "pptx_catalog record.visual_evidence"
+    )
+    if record.get("visual_extracted") != succeeded:
+        raise TrackingDatabaseError(
+            "pptx_catalog record.visual_extracted must mirror whether "
+            "visual_evidence records a succeeded extraction"
+        )
     evidence = record.get("visual_evidence")
     if evidence is None:
         return PPTX_EVIDENCE_PENDING
     if not isinstance(evidence, Mapping):
         raise TrackingDatabaseError("pptx_catalog.visual_evidence must be an object")
-    if evidence.get("outcome") != "succeeded":
+    if not succeeded:
         return PPTX_EVIDENCE_FAILED
     if (
         evidence.get("extractor_schema_version") != extractor_schema_version

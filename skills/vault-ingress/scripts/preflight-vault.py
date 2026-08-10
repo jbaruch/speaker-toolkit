@@ -63,12 +63,19 @@ from source_identity_matching import (
     known_event_aliases,
     titles_agree,
 )
+from pptx_evidence import (
+    PPTX_EXTRACTION_PIPELINE_VERSION,
+    PPTX_EXTRACTION_SCHEMA_VERSION,
+)
 from tracking_database import (
     CONFIG_RECORD_SCHEMA_VERSION,
     LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
+    PPTX_EVIDENCE_CURRENT,
     TrackingDatabaseConfigExclusionsError,
     TrackingDatabaseError,
     assess_tracking_database,
+    classify_pptx_visual_evidence,
+    pptx_visual_evidence_needs_extraction,
 )
 from pptx_discovery_contract import (
     PptxDiscoveryContractError,
@@ -306,6 +313,54 @@ class VaultPreflight:
             self._artifact_root = admitted_root or self.vault_root
         return self._artifact_root
 
+    def _check_pptx_visual_evidence(self) -> None:
+        """Report catalog decks whose visual evidence is not current (#229).
+
+        Selection is classified through the one shared authority, never from
+        `visual_extracted` alone: a legacy record's bare claim cannot say which
+        extractor schema it refers to. Findings are warnings — a stale or
+        missing extraction is work to schedule, not a reason to refuse the
+        vault.
+        """
+        catalog = self.database.get("pptx_catalog")
+        if not isinstance(catalog, list):
+            return
+        for index, record in enumerate(catalog):
+            if not isinstance(record, dict):
+                continue
+            try:
+                classification = classify_pptx_visual_evidence(
+                    record,
+                    extractor_schema_version=PPTX_EXTRACTION_SCHEMA_VERSION,
+                    pipeline_version=PPTX_EXTRACTION_PIPELINE_VERSION,
+                )
+            except TrackingDatabaseError as exc:
+                self.add(
+                    "warning",
+                    "pptx_visual_evidence_unreadable",
+                    str(exc),
+                    field=f"pptx_catalog[{index}].visual_evidence",
+                    expected=PPTX_EVIDENCE_CURRENT,
+                    actual=None,
+                )
+                continue
+            if not pptx_visual_evidence_needs_extraction(classification):
+                continue
+            self.add(
+                "warning",
+                "pptx_visual_evidence_not_current",
+                "PPTX visual evidence is not bound to the current extractor "
+                "generation; regenerate before relying on it",
+                field=f"pptx_catalog[{index}].visual_evidence",
+                expected=PPTX_EVIDENCE_CURRENT,
+                actual={
+                    "classification": classification,
+                    "pptx_path": record.get("pptx_path"),
+                    "extractor_schema_version": PPTX_EXTRACTION_SCHEMA_VERSION,
+                    "pipeline_version": PPTX_EXTRACTION_PIPELINE_VERSION,
+                },
+            )
+
     def add(
         self,
         severity: str,
@@ -452,6 +507,8 @@ class VaultPreflight:
                 expected="object",
                 actual=type(config).__name__,
             )
+
+        self._check_pptx_visual_evidence()
 
         talks = self.database.get("talks")
         if not isinstance(talks, list):

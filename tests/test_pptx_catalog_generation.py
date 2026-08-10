@@ -17,6 +17,7 @@ disagree about which decks need regeneration.
 from __future__ import annotations
 
 import copy
+import json
 
 import pytest
 
@@ -215,6 +216,36 @@ def test_a_future_record_says_the_reader_is_lagging(tracking_database) -> None:
         _classify(tracking_database, record)
 
 
+@pytest.mark.parametrize(
+    ("evidence", "match"),
+    [
+        ({"artifact": None}, "artifact is required"),
+        (
+            {"source_fingerprint": {"algorithm": "sha256", "digest": "nope"}},
+            "missing|64 lowercase hex",
+        ),
+        ({"extractor_schema_version": "4"}, "must be an integer"),
+    ],
+)
+def test_a_malformed_receipt_never_classifies_as_current(
+    tracking_database, evidence, match
+) -> None:
+    """A receipt is the licence to skip extraction — validate before trusting it."""
+    record = _current_record(visual_evidence=_evidence(**evidence))
+
+    with pytest.raises(tracking_database.TrackingDatabaseError, match=match):
+        _classify(tracking_database, record)
+
+
+def test_a_mirror_flag_disagreeing_with_the_receipt_is_rejected(
+    tracking_database,
+) -> None:
+    record = _current_record(visual_extracted=False)
+
+    with pytest.raises(tracking_database.TrackingDatabaseError, match="must mirror"):
+        _classify(tracking_database, record)
+
+
 def test_a_non_integer_record_version_is_rejected(tracking_database) -> None:
     record = _current_record(schema_version="2")
 
@@ -388,3 +419,61 @@ def test_v1_records_may_not_carry_a_binding_field(tracking_database) -> None:
 
     with pytest.raises(tracking_database.TrackingDatabaseError, match="unknown fields"):
         tracking_database.require_current_tracking_database(_database([record]))
+
+
+# The wired production consumers: the owner reader and preflight both classify
+# through the same function, so a deck cannot be "current" to one and stale to
+# the other.
+
+
+def test_owner_reader_reports_the_selection_for_every_catalog_record(
+    read_tracking_database, tmp_path
+) -> None:
+    database = _database(
+        [
+            _legacy_record(),
+            _current_record(pptx_path="Conference/2025/Second.pptx"),
+        ]
+    )
+    path = tmp_path / "tracking-database.json"
+    path.write_text(json.dumps(database))
+
+    report = read_tracking_database.execute(path)
+
+    selection = report["pptx_visual_evidence"]
+    assert selection["extractor_schema_version"] == CURRENT_EXTRACTOR_SCHEMA
+    assert selection["pipeline_version"] == CURRENT_PIPELINE
+    assert [
+        (item["pptx_path"], item["classification"], item["needs_extraction"])
+        for item in selection["records"]
+    ] == [
+        ("Conference/2024/Talk.pptx", "unknown_legacy", True),
+        ("Conference/2025/Second.pptx", "current", False),
+    ]
+
+
+def test_owner_reader_refuses_a_database_carrying_a_malformed_receipt(
+    read_tracking_database, tmp_path
+) -> None:
+    """Owner state that fails validation is not readable at all, not classified."""
+    broken = _current_record(visual_evidence=_evidence(artifact=None))
+    path = tmp_path / "tracking-database.json"
+    path.write_text(json.dumps(_database([broken])))
+
+    with pytest.raises(Exception, match="artifact is required"):
+        read_tracking_database.execute(path)
+
+
+def test_selection_reports_an_unreadable_receipt_as_needing_extraction(
+    read_tracking_database,
+) -> None:
+    """A dropped row would read as "nothing to regenerate"."""
+    broken = _current_record(visual_evidence=_evidence(artifact=None))
+
+    selection = read_tracking_database.pptx_visual_evidence_selection(
+        _database([broken])
+    )
+
+    assert selection[0]["classification"] is None
+    assert selection[0]["needs_extraction"] is True
+    assert "artifact is required" in selection[0]["error"]
