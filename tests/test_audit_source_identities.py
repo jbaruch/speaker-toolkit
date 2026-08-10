@@ -552,8 +552,11 @@ def test_cli_failure_emits_json_and_actionable_stderr(
 CANDIDATE_ID = "QqWwEeRrT_3"
 
 
-def scan_report(*entries):
-    return {"schema_version": 1, "ok": True, "entries": list(entries)}
+def scan_report(*entries, **overrides):
+    """A scan-shownotes.py report envelope at the version the auditor accepts."""
+    report = {"schema_version": 3, "ok": True, "entries": list(entries)}
+    report.update(overrides)
+    return report
 
 
 def conflict_entry(filename="talk.md", candidate_id=CANDIDATE_ID, lane="video_url"):
@@ -827,3 +830,51 @@ def test_a_candidate_matching_another_talks_active_source_names_both_lanes(
     assert calls.count(VIDEO_ID) == 1
     shared = [item for item in report["sources"] if item["video_id"] == VIDEO_ID]
     assert shared[0]["lanes"] == ["active", "candidate"]
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"schema_version": 2},
+        {"schema_version": 4},
+        {"schema_version": None},
+        {"ok": False},
+        {"ok": None},
+    ],
+)
+def test_an_unaccepted_report_envelope_is_refused_before_any_fetch(
+    audit_source_identities, overrides
+):
+    """A stale, future, or failed scan cannot be read as a complete conflict set."""
+    database = {"talks": [talk()]}
+    calls = []
+
+    def fetcher(video_id):
+        calls.append(video_id)
+        return metadata(video_id)
+
+    report = audit_source_identities.audit_database(
+        database,
+        database_path="/vault/tracking-database.json",
+        metadata_fetcher=fetcher,
+        captured_at=CAPTURED_AT,
+        candidate_report=scan_report(conflict_entry(), **overrides),
+    )
+
+    assert "candidate_report_invalid" in finding_codes(report)
+    assert report["candidates"] == []
+    # The active lane still audits; only the candidate report was refused.
+    assert calls == [VIDEO_ID]
+
+
+def test_a_malformed_issue_is_refused_not_skipped(audit_source_identities):
+    """A silently dropped conflict reads as "nothing to review"."""
+    database = {"talks": [talk()]}
+    entry = conflict_entry()
+    entry["issues"] = ["not an object", {"field": "video_url"}]
+
+    report, _calls = _audit(audit_source_identities, database, scan_report(entry))
+
+    codes = finding_codes(report)
+    assert codes.count("candidate_report_invalid") == 2
+    assert report["candidates"] == []

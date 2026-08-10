@@ -14,6 +14,10 @@ ingress workflow entirely.
 `--candidates-from <scan-report.json>` closes that. Review-required conflicts
 bind to talks and audit beside the active source:
 
+- **The report envelope is validated whole.** Only `schema_version: 3` with
+  `ok: true` is accepted; a stale, future, or failed scan is refused rather
+  than partially read. A malformed entry or issue is refused too, never
+  skipped — a silently dropped conflict reads as "nothing to review".
 - **Bindings resolve before any provider request.** A report that is not an
   object, carries no `entries`, or names an unknown or ambiguous talk is refused
   without spending a fetch. The active lane still audits.

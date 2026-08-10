@@ -87,6 +87,11 @@ collision analysis reads that map, so a candidate shared by two talks would
 otherwise fabricate a collision between active identities that share nothing.
 `sources[].lanes` names which lane claimed each fetched identity.
 
+The report envelope is validated whole before anything is bound: only
+`schema_version: 3` with `ok: true` is accepted, and a malformed entry or issue
+is refused rather than skipped — a silently dropped conflict would read as
+"nothing to review".
+
 Every binding resolves before any provider request — a report naming an unknown
 or ambiguous talk is refused without spending a fetch. Candidate identities
 share the active lane's dedupe, so a candidate repeated across conflicts, or one

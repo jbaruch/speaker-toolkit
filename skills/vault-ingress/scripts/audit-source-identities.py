@@ -47,6 +47,10 @@ SOURCE_IDENTITY_SCHEMA_VERSION = 1
 # Drive URL with no such identity, so it is reported unsupported rather than
 # silently dropped.
 CANDIDATE_LANES = frozenset({"video_url"})
+# The exact scan-shownotes.py report generation this reader accepts. A newer
+# report may move a field this parser reads, and an older one may not carry it
+# at all, so an unexpected version is refused rather than parsed hopefully.
+CANDIDATE_REPORT_SCHEMA_VERSION = 3
 CANDIDATE_CONFLICT_CODES = {
     "existing_video_url_conflict": "video_url",
     "existing_slides_url_conflict": "slides_url",
@@ -456,6 +460,37 @@ def candidate_bindings(
                 "high",
             )
         ]
+    version = report.get("schema_version")
+    if version != CANDIDATE_REPORT_SCHEMA_VERSION:
+        return [], [
+            _finding(
+                "candidate_report_invalid",
+                None,
+                [],
+                [],
+                "shownotes scan report schema version is not the accepted one",
+                {
+                    "expected": CANDIDATE_REPORT_SCHEMA_VERSION,
+                    "actual": version,
+                },
+                "high",
+            )
+        ]
+    if report.get("ok") is not True:
+        # A failed scan did not finish classifying; its entries cannot be read
+        # as a complete conflict set, and a missing conflict reads as "nothing
+        # to review".
+        return [], [
+            _finding(
+                "candidate_report_invalid",
+                None,
+                [],
+                [],
+                "shownotes scan report did not complete successfully",
+                {"ok": report.get("ok")},
+                "high",
+            )
+        ]
     entries = report.get("entries")
     if not isinstance(entries, list):
         return [], [
@@ -519,11 +554,20 @@ def candidate_bindings(
             )
             continue
         for issue in issues:
-            if not isinstance(issue, dict):
+            if not isinstance(issue, dict) or not isinstance(issue.get("code"), str):
+                findings.append(
+                    _finding(
+                        "candidate_report_invalid",
+                        None,
+                        [index],
+                        [filename],
+                        "review-required entry carries a malformed issue",
+                        {"entry_index": position},
+                        "high",
+                    )
+                )
                 continue
-            code = issue.get("code")
-            if not isinstance(code, str):
-                continue
+            code = issue["code"]
             lane = CANDIDATE_CONFLICT_CODES.get(code)
             if lane is None:
                 continue
