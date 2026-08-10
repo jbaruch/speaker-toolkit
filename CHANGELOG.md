@@ -48,6 +48,18 @@ stderr. The interrupt path cleans up and warns without trapping the interrupt.
 a `finally` for interrupt-safe release, since it is an inner helper and none of
 the Outer-Boundary Carve-Out's preconditions apply.
 
+A second review round caught four more, three of them in the error contract I
+had just written. The enrichment path rebuilt the failure with
+`type(exc)(message, reason_code=...)`, which is the wrong constructor for
+`StagedInvariantError` — a cleanup failure would have raised `TypeError` in
+place of the real diagnostic. Each type is now rebuilt through its own
+constructor, and both helpers catch only their anticipated typed failure with a
+cleanup-only `finally` for everything else, interrupts included. A failed
+inspection of the staged name no longer reports `already_absent`, since absence
+was never established and an orphan may remain; it gets its own
+`staged_cleanup_inspect_failed` disposition. The test fixture stopped
+suppressing cleanup errors.
+
 Two Copilot findings folded in. `_stage_candidate` ran cleanup on a
 verification failure and dropped the report, reintroducing the vanished-warning
 problem one level up; the cleanup detail now rides out inside the typed

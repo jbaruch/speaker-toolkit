@@ -83,6 +83,7 @@ class StagedInvariantError(RetainedStageError):
         self.path = path
         self.invariant = invariant
         self.detail = detail
+        self.label = label
         super().__init__(
             f"staged {label} {path} changed before install: "
             f"invariant={invariant}; {detail}",
@@ -130,8 +131,9 @@ class RetainedStage:
 class StageCleanupReport:
     """What cleanup actually did, in stable terms a caller can report.
 
-    ``disposition`` is one of ``removed``, ``already_absent``, or
-    ``staged_cleanup_name_not_owned``. A cleanup that could not finish carries
+    ``disposition`` is one of ``removed``, ``already_absent``,
+    ``staged_cleanup_name_not_owned``, or ``staged_cleanup_inspect_failed`` —
+    the last meaning absence was never established, so an orphan may remain. A cleanup that could not finish carries
     ``reason_codes`` alongside human ``warnings``; neither ever converts an
     installed outcome into a failure.
     """
@@ -238,6 +240,23 @@ def visible_descriptor_identity(
         stat.S_ISREG(opened.st_mode)
         and stat.S_ISREG(visible.st_mode)
         and _identity(opened) == _identity(visible)
+    )
+
+
+def _with_cleanup_detail(
+    exc: RetainedStageError, notes: list[str]
+) -> RetainedStageError:
+    """Rebuild a staged error carrying its cleanup detail, type intact."""
+    detail = "; ".join(notes)
+    if isinstance(exc, StagedInvariantError):
+        return StagedInvariantError(
+            exc.path,
+            exc.invariant,
+            f"{exc.detail}; staged cleanup: {detail}",
+            label=exc.label,
+        )
+    return RetainedStageError(
+        f"{exc}; staged cleanup: {detail}", reason_code=exc.reason_code
     )
 
 
@@ -351,23 +370,19 @@ def open_retained_stage(
             verify_retained_stage(stage, payload)
         completed = True
         return stage
-    except Exception as exc:
+    except RetainedStageError as exc:
+        # Attach rather than discard: an orphaned staged temp with no diagnostic
+        # naming it is the exact failure this module exists to stop. Each type
+        # is rebuilt through its own constructor so the typed failure survives.
         released = True
         notes = _release_incomplete_stage(name, descriptor, directory_descriptor)
-        if notes and isinstance(exc, RetainedStageError):
-            # Attach rather than discard: an orphaned staged temp with no
-            # diagnostic naming it is the exact failure this module exists to
-            # stop. Attaching keeps the primary error's type and reason_code.
-            raise type(exc)(
-                f"{exc}; staged cleanup: {'; '.join(notes)}",
-                reason_code=exc.reason_code,
-            ) from exc
-        _warn(notes)
-        raise
+        if not notes:
+            raise
+        raise _with_cleanup_detail(exc, notes) from exc
     finally:
         if not completed and not released:
-            # Interrupt path: cleanup still runs, and its diagnostics still go
-            # somewhere. Re-raising here would replace the interrupt.
+            # Every other failure, interrupts included, propagates unchanged;
+            # cleanup still runs and its diagnostics still go somewhere.
             _warn(_release_incomplete_stage(name, descriptor, directory_descriptor))
 
 
@@ -587,11 +602,14 @@ def _unlink_staged_name(stage: RetainedStage, collector: _CleanupCollector) -> s
     except FileNotFoundError:
         return "already_absent"
     except OSError as exc:
+        # Absence was never established, so the name may still be there. Saying
+        # "already_absent" would let a caller record a clean cleanup over an
+        # orphan.
         collector.add(
             STAGED_CLEANUP_INSPECT_FAILED,
             f"could not inspect staged {stage.label} {stage.path}: {exc}",
         )
-        return "already_absent"
+        return STAGED_CLEANUP_INSPECT_FAILED
     if not visible_descriptor_identity(
         stage.name,
         stage.descriptor,

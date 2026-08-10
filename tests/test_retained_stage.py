@@ -31,10 +31,9 @@ def staged(retained_stage, tmp_path: Path):
         yield stage, payload, target
     finally:
         if stage.descriptor is not None:
-            try:
-                retained_stage.close_retained_stage(stage)
-            except OSError:
-                pass
+            # No suppression: a cleanup failure here is a leaked descriptor or
+            # a leaked temp file, and the test should say so.
+            retained_stage.close_retained_stage(stage)
 
 
 # --- the invariants ----------------------------------------------------------

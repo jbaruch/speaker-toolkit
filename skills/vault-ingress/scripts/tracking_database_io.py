@@ -721,22 +721,22 @@ def _stage_candidate(path: Path, candidate: bytes, mode: int) -> StagedCandidate
     try:
         _verify_staged_candidate(stage, candidate)
         verified = True
-    except Exception as exc:
+    except StagedCandidateConflictError as exc:
         # Cleanup detail must ride out with the primary failure. Discarding the
         # report here would reintroduce exactly the vanished-warning problem
         # this primitive exists to close (#240): an orphaned staged temp with
         # no diagnostic naming it.
         released = True
         report = close_retained_stage(stage)
-        if report.warnings and isinstance(exc, StagedCandidateConflictError):
-            raise StagedCandidateConflictError(
-                exc.path,
-                exc.invariant,
-                f"{exc.detail}; staged cleanup: {'; '.join(report.warnings)}",
-            ) from exc
-        raise
+        if not report.warnings:
+            raise
+        raise StagedCandidateConflictError(
+            exc.path,
+            exc.invariant,
+            f"{exc.detail}; staged cleanup: {'; '.join(report.warnings)}",
+        ) from exc
     finally:
-        # Interrupt path: release the stage without trapping the interrupt.
+        # Every other failure, interrupts included, propagates unchanged.
         if not verified and not released:
             close_retained_stage(stage)
     return stage
