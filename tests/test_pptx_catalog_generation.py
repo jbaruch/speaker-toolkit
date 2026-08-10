@@ -648,3 +648,46 @@ def test_an_absolute_artifact_path_leaves_the_receipt_unverified(
         )
         is None
     )
+
+
+def test_a_symlinked_intermediate_directory_is_never_traversed(
+    pptx_catalog_selection, tmp_path
+) -> None:
+    """Every component below the root is opened O_NOFOLLOW, not just the leaf."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "Talk.pptx").write_bytes(b"not yours")
+    source = tmp_path / "presentations"
+    source.mkdir()
+    try:
+        (source / "nested").symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):  # pragma: no cover - platform guard
+        pytest.skip("symlinks unavailable on this platform")
+
+    assert pptx_catalog_selection.digest_and_size("nested/Talk.pptx", source) is None
+
+
+def test_a_non_regular_file_is_never_hashed(pptx_catalog_selection, tmp_path) -> None:
+    source = tmp_path / "presentations"
+    (source / "Talk.pptx").mkdir(parents=True)
+
+    assert pptx_catalog_selection.digest_and_size("Talk.pptx", source) is None
+
+
+def test_a_symlinked_root_is_still_trusted_configuration(
+    pptx_catalog_selection, tmp_path
+) -> None:
+    """The root may be a symlink by design; only descendants are refused."""
+    real = tmp_path / "real-presentations"
+    real.mkdir()
+    (real / "Talk.pptx").write_bytes(b"deck")
+    link = tmp_path / "presentations"
+    try:
+        link.symlink_to(real, target_is_directory=True)
+    except (OSError, NotImplementedError):  # pragma: no cover - platform guard
+        pytest.skip("symlinks unavailable on this platform")
+
+    assert pptx_catalog_selection.digest_and_size("Talk.pptx", link) == (
+        hashlib.sha256(b"deck").hexdigest(),
+        4,
+    )

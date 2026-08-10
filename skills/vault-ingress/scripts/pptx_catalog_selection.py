@@ -14,6 +14,8 @@ workflow. Neither reimplements the observation or the classification.
 from __future__ import annotations
 
 import hashlib
+import os
+import stat as stat_module
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -36,31 +38,63 @@ SELECTION_SCHEMA_VERSION = 1
 _READ_CHUNK_BYTES = 1024 * 1024
 
 
-def _contained(resolved: Path, root: object) -> bool:
-    """Whether ``resolved`` really lives under ``root`` once symlinks resolve.
+def _open_contained(root: object, parts: tuple[str, ...]) -> int | None:
+    """Open a descendant of ``root``, refusing every symlink below the root.
 
-    The locator layer rejects dot segments, so a relative locator cannot climb
-    out lexically — but a symlink inside the tree still can. An unresolvable
-    root or leaf is treated as not contained: this decides whether to open a
-    file, so the uncertain answer has to be the closed one.
+    Checking a resolved path and then opening it by name are two separate
+    lookups; a symlink swapped in between them redirects the open outside the
+    root. Each component is therefore opened relative to the previous
+    descriptor with ``O_NOFOLLOW``, so the descriptor that gets hashed is the
+    one that passed the check. The root itself is opened by name and may be a
+    symlink: it is trusted configuration, exactly as the artifact-metadata
+    contract documents.
+
+    Returns None whenever the walk cannot be completed that way — an uncertain
+    answer must be the closed one, because this decides what gets read.
     """
+    if not parts or os.open not in os.supports_dir_fd:
+        return None
+    directory_flags = (
+        os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_DIRECTORY", 0)
+    )
+    no_follow = getattr(os, "O_NOFOLLOW", 0)
     try:
-        return resolved.resolve(strict=True).is_relative_to(
-            Path(str(root)).resolve(strict=True)
-        )
-    except (OSError, RuntimeError, TypeError, ValueError):
-        return False
+        current = os.open(os.fspath(Path(str(root))), directory_flags)
+    except (OSError, ValueError):
+        return None
+    try:
+        for part in parts[:-1]:
+            try:
+                nested = os.open(part, directory_flags | no_follow, dir_fd=current)
+            except OSError:
+                return None
+            os.close(current)
+            current = nested
+        try:
+            descriptor = os.open(
+                parts[-1],
+                os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | no_follow,
+                dir_fd=current,
+            )
+        except OSError:
+            return None
+    finally:
+        os.close(current)
+    if not stat_module.S_ISREG(os.fstat(descriptor).st_mode):
+        os.close(descriptor)
+        return None
+    return descriptor
 
 
 def digest_and_size(path: object, root: object) -> tuple[str, int] | None:
     """SHA-256 and byte count of one artifact, or None when it cannot be read.
 
-    Catalog locators are root-relative by contract, and this enforces it before
-    opening anything: persisted state is a hint, never a licence to read an
-    arbitrary host file. An absolute locator, a locator that resolves outside
-    the declared root, an unresolvable locator, and an unreadable file all
-    return None — the caller must not be able to mistake "not observed" for
-    "matches".
+    Catalog locators are root-relative by contract, and this enforces it
+    without ever opening a path it has not walked: persisted state is a hint,
+    never a licence to read an arbitrary host file. An absolute locator, a
+    symlinked component below the root, a non-regular file, a platform without
+    descriptor-relative opens, and an unreadable file all return None — the
+    caller must not be able to mistake "not observed" for "matches".
     """
     if not isinstance(path, str) or not path.strip():
         return None
@@ -70,14 +104,16 @@ def digest_and_size(path: object, root: object) -> tuple[str, int] | None:
         if classify_artifact_locator(path) != "relative":
             return None
         resolved = materialize_artifact_locator(path, root)
-    except ArtifactLocatorError:
+        parts = resolved.relative_to(Path(str(root))).parts
+    except (ArtifactLocatorError, TypeError, ValueError):
         return None
-    if not _contained(resolved, root):
+    descriptor = _open_contained(root, parts)
+    if descriptor is None:
         return None
     digest = hashlib.sha256()
     size = 0
     try:
-        with open(resolved, "rb") as source:
+        with os.fdopen(descriptor, "rb", closefd=True) as source:
             for chunk in iter(lambda: source.read(_READ_CHUNK_BYTES), b""):
                 digest.update(chunk)
                 size += len(chunk)

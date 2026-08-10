@@ -56,6 +56,16 @@ strict-snapshot reader with no filesystem authority, and a classification it
 could not verify against the live deck would be exactly the unverified claim
 this change removes.
 
+Containment is enforced by the open itself, not by a check before it. A
+resolved-path check followed by `open(path)` is two lookups, and a symlink
+swapped in between them redirects the read outside the root. Each component
+below the root is now opened relative to the previous descriptor with
+`O_NOFOLLOW`, and the descriptor that passed the walk is the one that gets
+hashed. The root itself is opened by name and may be a symlink — it is trusted
+configuration, as the artifact-metadata contract already documents. A
+non-regular file, a symlinked component, and a platform without
+descriptor-relative opens all read as not-observed.
+
 Catalog locators are enforced as root-relative before anything is opened. The
 locator layer accepts a native absolute path even when a trusted root is
 supplied, so a persisted record naming `/etc/passwd` would have had preflight
