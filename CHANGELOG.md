@@ -20,9 +20,20 @@ cannot disturb a narrative section, and it carries the database SHA-256,
 generated timestamp, database schema version, active scoring/catalog generation
 identity, total talks, exact status counts, and the active-claim count.
 
-It reports historically-analysed separately from the current cohort. Conflating
-them is what makes normalization look like lost work: a talk analysed under an
-older generation stays historically analysed while ceasing to be eligible now.
+It reports historically-analysed separately from the current cohort, and reads
+the two from different places. Eligibility is a status question; whether a talk
+was ever analysed is not. Normalization flips `status` to `needs-reprocessing`
+and leaves the analysis evidence in place, so reading history off the status
+would erase every requeued talk's past work — the exact misreading this block
+exists to stop. History is counted from the persisted evidence instead.
+
+The compare-and-swap binds the install, not just the earlier read: the target is
+re-read immediately before the rename and the swap is abandoned if it moved, so
+an edit landing while the replacement is staged is not overwritten by a tool
+that promised to refuse exactly that. Duplicate delimiters are malformed rather
+than first-match spliced, and the whole retained-stage error family is
+translated into the JSON failure contract instead of only its invariant
+subclass.
 
 `--apply` requires `--expected-sha256` from a dry run. The summary is a file a
 human also edits, so an apply that cannot prove it read the current bytes

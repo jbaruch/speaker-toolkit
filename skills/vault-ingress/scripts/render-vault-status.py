@@ -39,7 +39,7 @@ import sys
 from typing import Any
 
 from retained_stage import (
-    StagedInvariantError,
+    RetainedStageError,
     close_retained_stage,
     install_retained_stage,
     open_retained_stage,
@@ -67,11 +67,13 @@ SUMMARY_BASENAME = "rhetoric-style-summary.md"
 BLOCK_BEGIN = "<!-- vault-status:begin -->"
 BLOCK_END = "<!-- vault-status:end -->"
 
-# A talk counted here has been analysed at some point in its history. Whether
-# that analysis is ELIGIBLE in the current scoring generation is a different
-# question, and conflating them is what makes normalization look like lost work.
-HISTORICALLY_ANALYSED_STATUSES = frozenset({"processed", "processed_partial"})
+# Eligibility in the CURRENT generation is a status question. Whether a talk was
+# ever analysed is not: normalization flips `status` to `needs-reprocessing` and
+# leaves the analysis evidence in place, so reading history off the status would
+# erase every requeued talk's past work — the exact misreading this block exists
+# to stop. History is therefore read from the persisted evidence itself.
 CURRENT_COHORT_STATUSES = frozenset({"processed", "processed_partial"})
+ANALYSIS_EVIDENCE_FIELD = "pattern_observations"
 
 
 class SummaryRenderError(Exception):
@@ -133,9 +135,9 @@ def derive_status(database: dict[str, Any], *, input_sha256: str) -> dict[str, A
         if isinstance(status, str):
             statuses[status] += 1
     historically = sum(
-        count
-        for status, count in statuses.items()
-        if status in HISTORICALLY_ANALYSED_STATUSES
+        1
+        for talk in talks
+        if isinstance(talk, dict) and talk.get(ANALYSIS_EVIDENCE_FIELD)
     )
     return {
         "schema_version": STATUS_BLOCK_SCHEMA_VERSION,
@@ -145,9 +147,9 @@ def derive_status(database: dict[str, Any], *, input_sha256: str) -> dict[str, A
         "total_talks": len(talks),
         "status_counts": {key: statuses[key] for key in sorted(statuses)},
         "active_claim_count": _active_claims(talks),
-        # The distinction normalization keeps erasing: a talk analysed in an
-        # older generation stays historically analysed while ceasing to be
-        # eligible in the current one.
+        # The distinction normalization keeps erasing: a requeued talk still
+        # carries its analysis evidence, so it stays historically analysed
+        # while ceasing to be eligible in the current generation.
         "historically_analysed_count": historically,
         "current_cohort_count": sum(
             count
@@ -175,6 +177,13 @@ def render_block(status: dict[str, Any], *, generated_at: str) -> str:
 
 def splice_block(summary_text: str, block: str) -> str:
     """Replace the delimited block, or append one when the summary has none."""
+    if summary_text.count(BLOCK_BEGIN) > 1 or summary_text.count(BLOCK_END) > 1:
+        # A second delimiter pair, or one quoted in narrative, would make the
+        # splice target a range this tool never inspected.
+        raise SummaryRenderError(
+            "summary carries more than one status-block delimiter",
+            reason_code="summary_block_malformed",
+        )
     begin = summary_text.find(BLOCK_BEGIN)
     end = summary_text.find(BLOCK_END)
     if begin == -1 and end == -1:
@@ -209,8 +218,14 @@ def _read_summary(path: Path) -> tuple[str, str]:
         ) from error
 
 
-def _install(summary_path: Path, payload: bytes) -> None:
-    """Replace the summary atomically; an interruption leaves the prior file."""
+def _install(summary_path: Path, payload: bytes, *, expected_sha256: str) -> None:
+    """Replace the summary atomically, bound to the bytes we actually read.
+
+    Checking the digest at read time and installing later is not a
+    compare-and-swap: an edit landing in between is overwritten by a tool that
+    promised to refuse exactly that. The target is re-read immediately before
+    the rename and the swap is abandoned if it moved.
+    """
     stage = open_retained_stage(
         summary_path,
         payload,
@@ -219,6 +234,12 @@ def _install(summary_path: Path, payload: bytes) -> None:
         label="rhetoric summary",
     )
     try:
+        _, observed = _read_summary(summary_path)
+        if observed != expected_sha256:
+            raise SummaryRenderError(
+                "summary bytes changed while the replacement was staged",
+                reason_code="summary_precondition_failed",
+            )
         install_retained_stage(stage, summary_path)
     except OSError as error:
         raise SummaryRenderError(
@@ -277,7 +298,7 @@ def execute(
         # A no-op render installs nothing: rewriting identical bytes would
         # churn the file's identity for consumers watching it.
         if changed:
-            _install(summary_path, payload)
+            _install(summary_path, payload, expected_sha256=expected_sha256)
             written = True
 
     return {
@@ -338,7 +359,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(_failure(exc.reason_code, str(exc)), sort_keys=True))
         print(f"vault status render failed: {exc}", file=sys.stderr)
         return 3 if exc.reason_code == "summary_precondition_failed" else 2
-    except StagedInvariantError as exc:
+    except RetainedStageError as exc:
         print(
             json.dumps(
                 _failure(

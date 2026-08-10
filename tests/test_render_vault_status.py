@@ -50,6 +50,9 @@ def _claim(state: str = "claimed") -> dict:
     return claim
 
 
+ANALYSED = {"pattern_observations": {"patterns_detected": [{"pattern_id": "hook"}]}}
+
+
 def _talk(filename: str, status: str, **extra) -> dict:
     talk = {"schema_version": 5, "filename": filename, "status": status}
     if "_queue_claim" in extra:
@@ -92,10 +95,13 @@ def test_the_verified_209_talk_mismatch_is_derived_not_transcribed(
 ) -> None:
     """The live snapshot from the issue: prose said 199/208, the database said this."""
     talks = (
-        [_talk(f"reproc-{i}.md", "needs-reprocessing") for i in range(116)]
+        # 100 of the requeued talks were analysed before normalization moved
+        # them back; 16 never were.
+        [_talk(f"reproc-{i}.md", "needs-reprocessing", **ANALYSED) for i in range(100)]
+        + [_talk(f"fresh-{i}.md", "needs-reprocessing") for i in range(16)]
         + [_talk(f"pending-{i}.md", "pending") for i in range(9)]
-        + [_talk(f"done-{i}.md", "processed") for i in range(78)]
-        + [_talk(f"partial-{i}.md", "processed_partial") for i in range(2)]
+        + [_talk(f"done-{i}.md", "processed", **ANALYSED) for i in range(78)]
+        + [_talk(f"partial-{i}.md", "processed_partial", **ANALYSED) for i in range(2)]
         + [
             _talk(f"inflight-{i}.md", "reprocessing-inflight", _queue_claim=_claim())
             for i in range(3)
@@ -116,10 +122,11 @@ def test_the_verified_209_talk_mismatch_is_derived_not_transcribed(
         "reprocessing-inflight": 3,
         "skipped_duplicate": 1,
     }
-    # 78 + 2 analysed at some point; the 116 sent back by normalization are not
-    # lost work, they are simply not in the current cohort.
-    assert status["historically_analysed_count"] == 80
+    # The two counts must differ: 100 requeued talks keep their analysis
+    # evidence, so they are historically analysed while out of the current
+    # cohort. Reading history off `status` would erase all 100.
     assert status["current_cohort_count"] == 80
+    assert status["historically_analysed_count"] == 180
     assert status["active_claim_count"] == 3
 
 
@@ -384,3 +391,71 @@ def test_the_block_payload_is_machine_readable(
     assert payload["schema_version"] == render_vault_status.STATUS_BLOCK_SCHEMA_VERSION
     assert payload["generated_at"] == GENERATED_AT
     assert payload["database_sha256"] == report["status"]["database_sha256"]
+
+
+def test_a_requeued_talk_stays_historically_analysed(
+    render_vault_status, tmp_path: Path
+) -> None:
+    """The distinction the block exists for, in isolation.
+
+    Normalization flips `status` and leaves the analysis evidence in place.
+    Deriving history from `status` would report the work as never done.
+    """
+    talks = [
+        _talk("requeued.md", "needs-reprocessing", **ANALYSED),
+        _talk("current.md", "processed", **ANALYSED),
+        _talk("never.md", "needs-reprocessing"),
+    ]
+    root = _vault(tmp_path, _database(talks))
+
+    status = render_vault_status.execute(root, generated_at=GENERATED_AT)["status"]
+
+    assert status["current_cohort_count"] == 1
+    assert status["historically_analysed_count"] == 2
+
+
+def test_duplicate_delimiters_are_malformed(
+    render_vault_status, tmp_path: Path
+) -> None:
+    """A second pair would make the splice target a range never inspected."""
+    root = _vault(tmp_path, _database([_talk("one.md", "processed")]))
+    summary = root / "rhetoric-style-summary.md"
+    block = f"{render_vault_status.BLOCK_BEGIN}\nx\n{render_vault_status.BLOCK_END}"
+    summary.write_text(f"# Rhetoric\n\n{block}\n\n{block}\n", encoding="utf-8")
+    before = summary.read_bytes()
+
+    with pytest.raises(render_vault_status.SummaryRenderError) as caught:
+        render_vault_status.execute(root, generated_at=GENERATED_AT)
+
+    assert caught.value.reason_code == "summary_block_malformed"
+    assert summary.read_bytes() == before
+
+
+def test_an_edit_during_the_stage_window_abandons_the_swap(
+    render_vault_status, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The compare-and-swap must bind the install, not just the earlier read."""
+    root = _vault(tmp_path, _database([_talk("one.md", "processed")]))
+    summary = root / "rhetoric-style-summary.md"
+    dry = render_vault_status.execute(root, generated_at=GENERATED_AT)
+
+    real_open_stage = render_vault_status.open_retained_stage
+
+    def edit_then_stage(*args, **kwargs):
+        # A human saves the file after the digest was read and while the
+        # replacement is being staged.
+        summary.write_text("# Rhetoric\n\nSaved mid-flight.\n", encoding="utf-8")
+        return real_open_stage(*args, **kwargs)
+
+    monkeypatch.setattr(render_vault_status, "open_retained_stage", edit_then_stage)
+
+    with pytest.raises(render_vault_status.SummaryRenderError) as caught:
+        render_vault_status.execute(
+            root,
+            generated_at=GENERATED_AT,
+            apply_requested=True,
+            expected_sha256=dry["summary_sha256"],
+        )
+
+    assert caught.value.reason_code == "summary_precondition_failed"
+    assert summary.read_text(encoding="utf-8") == "# Rhetoric\n\nSaved mid-flight.\n"
