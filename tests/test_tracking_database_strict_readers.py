@@ -215,6 +215,41 @@ def test_a_path_that_never_reached_the_decoder_still_says_what_to_do(
     assert str(database) not in captured.out + captured.err
 
 
+def test_a_concurrent_write_still_says_to_rerun(
+    read_tracking_database,
+    tracking_database_io,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nothing is wrong with the file; rerunning is the whole remedy.
+
+    A conflict routed through the generic fallback would report "could not be
+    read" and drop the one instruction that fixes it (`error-handling` →
+    Actionable Messages).
+    """
+    database = _database(tmp_path, b'{"config":{},"talks":[]}\n')
+    real_snapshot = read_tracking_database.snapshot_tracking_database
+
+    def conflict(path):
+        real_snapshot(path)
+        raise tracking_database_io.TrackingDatabaseConflictError(
+            "tracking database changed while it was read; rerun the operation"
+        )
+
+    monkeypatch.setattr(read_tracking_database, "snapshot_tracking_database", conflict)
+
+    result = read_tracking_database.main([str(database)])
+
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
+    assert result == 2
+    assert output["code"] == "database_generation_conflict"
+    assert "rerun the operation" in output["error"]
+    assert output["error"] in _closed_messages(tracking_database_io)
+    assert str(database) not in captured.out + captured.err
+
+
 @pytest.mark.parametrize(("raw", "message"), STRICT_INVALID_CASES)
 def test_owner_reader_rejects_every_strict_json_defect_without_rewrite(
     read_tracking_database,
@@ -362,6 +397,9 @@ def test_section15_reader_fails_before_summary_replacement(
     assert captured.out == ""
     assert _says_one_closed_message(captured.err, tracking_database_io)
     _assert_defect_detail_absent(captured.err, message, tracking_database_io)
+    # The host path is the other half of what redaction keeps out of output;
+    # the caller supplied it and already knows it.
+    assert str(database) not in captured.err
     assert summary.read_bytes() == original_summary
     assert database.read_bytes() == raw
 

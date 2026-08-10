@@ -719,8 +719,11 @@ def _load_tracking_database(path: Path) -> dict[str, Any]:
         _code, message = DATABASE_READ_DIAGNOSTICS.get(
             exc.reason_code, DATABASE_READ_FALLBACK
         )
+        # The path goes no further either: this message is printed, and the
+        # host path is the other half of what the redaction contract keeps out
+        # of output. The caller supplied the path and already knows it.
         raise Section15PatternHistoryError(
-            f"cannot load strict tracking database from {path}: {message}"
+            f"cannot load the strict tracking database: {message}"
         ) from exc
     _require_usable_tracking_database(tracking_database)
     return tracking_database

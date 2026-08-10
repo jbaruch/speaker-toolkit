@@ -120,6 +120,18 @@ DATABASE_READ_DIAGNOSTICS = {
         "tracking database bytes could not be read; confirm the file is readable "
         "and the volume is healthy, then retry",
     ),
+    # Nothing is wrong with the file: another writer installed a generation
+    # mid-read. Rerunning against the new one is the whole remedy.
+    "generation_conflict": (
+        "database_generation_conflict",
+        "tracking database changed while it was being read; rerun the operation "
+        "against the current generation",
+    ),
+    "staged_candidate_conflict": (
+        "database_generation_conflict",
+        "a staged tracking-database candidate changed before it could be "
+        "installed; rerun the operation against the current generation",
+    ),
 }
 DATABASE_READ_FALLBACK = (
     "database_unreadable",
@@ -142,7 +154,21 @@ class TrackingDatabaseIOError(ValueError):
 
 
 class TrackingDatabaseConflictError(TrackingDatabaseIOError):
-    """The expected database generation is no longer current."""
+    """The expected database generation is no longer current.
+
+    Defaults its reason code so a reader routing through
+    DATABASE_READ_DIAGNOSTICS reports "rerun the operation" rather than the
+    generic could-not-be-read fallback: a concurrent write is the one read
+    failure that is fixed by simply trying again.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason_code: str = "generation_conflict",
+    ) -> None:
+        super().__init__(message, reason_code=reason_code)
 
 
 class StagedCandidateConflictError(TrackingDatabaseConflictError):
@@ -154,7 +180,8 @@ class StagedCandidateConflictError(TrackingDatabaseConflictError):
         self.detail = detail
         super().__init__(
             f"staged tracking-database candidate {path} changed before install: "
-            f"invariant={invariant}; {detail}"
+            f"invariant={invariant}; {detail}",
+            reason_code="staged_candidate_conflict",
         )
 
 
