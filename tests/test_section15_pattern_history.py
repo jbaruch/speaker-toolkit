@@ -1353,6 +1353,38 @@ def test_replace_holds_the_shared_summary_writer_lock(tmp_path, monkeypatch):
     assert lock_path.is_file()
 
 
+def test_lock_cleanup_failure_is_reported_not_dropped(tmp_path, monkeypatch, capsys):
+    """A release that failed is a warning, never silence.
+
+    The guarded write already happened, so cleanup cannot fail the call — but
+    dropping the warning leaves incomplete lock cleanup with nothing naming it.
+    """
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(), encoding="utf-8")
+    real_flock = cooperative_lock.fcntl.flock
+
+    def fail_unlock(descriptor, operation):
+        outcome = real_flock(descriptor, operation)
+        if operation == fcntl.LOCK_UN:
+            raise OSError("simulated unlock failure")
+        return outcome
+
+    monkeypatch.setattr(cooperative_lock.fcntl, "flock", fail_unlock)
+    profile = _pattern_profile(note="Candidate payload.")
+
+    result = section15.replace_section15_current_block(
+        summary_path,
+        profile,
+        _tracking_database(profile),
+        evidence_freshness_assessor=_fresh_evidence,
+    )
+
+    assert result.changed is True
+    assert (
+        "could not unlock cooperative rhetoric-summary lock" in capsys.readouterr().err
+    )
+
+
 def test_replace_refuses_a_summary_edited_while_the_block_was_staged(
     tmp_path,
     monkeypatch,

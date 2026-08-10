@@ -525,6 +525,35 @@ def test_the_apply_holds_the_shared_summary_writer_lock(
     assert lock_path.is_file()
 
 
+def test_lock_cleanup_failure_is_reported_not_dropped(
+    render_vault_status, cooperative_lock, tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """A release that failed is a warning, never silence."""
+    root = _vault(tmp_path, _database([_talk("one.md", "processed")]))
+    dry = render_vault_status.execute(root, generated_at=GENERATED_AT)
+    real_flock = cooperative_lock.fcntl.flock
+
+    def fail_unlock(descriptor: int, operation: int) -> object:
+        outcome = real_flock(descriptor, operation)
+        if operation == fcntl.LOCK_UN:
+            raise OSError("simulated unlock failure")
+        return outcome
+
+    monkeypatch.setattr(cooperative_lock.fcntl, "flock", fail_unlock)
+
+    applied = render_vault_status.execute(
+        root,
+        generated_at=GENERATED_AT,
+        apply_requested=True,
+        expected_sha256=dry["summary_sha256"],
+    )
+
+    assert applied["summary_written"] is True
+    assert (
+        "could not unlock cooperative rhetoric-summary lock" in capsys.readouterr().err
+    )
+
+
 def test_a_dry_run_takes_no_writer_lock(
     render_vault_status, cooperative_lock, tmp_path: Path
 ) -> None:

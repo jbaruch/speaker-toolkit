@@ -620,11 +620,34 @@ def replace_section15_current_block(
     # shared writer lock for their whole read-splice-install section.
     stack = ExitStack()
     try:
-        stack.enter_context(rhetoric_summary_lock(summary_path))
+        lock = stack.enter_context(rhetoric_summary_lock(summary_path))
     except CooperativeLockError as exc:
         raise Section15PatternHistoryError(
             f"cannot take the rhetoric summary writer lock for {summary_path}: {exc}"
         ) from exc
+    # An unlock or close that failed is recorded on the lock rather than
+    # raised — the guarded write already happened. Dropping those warnings
+    # would leave incomplete lock cleanup with no diagnostic naming it.
+    try:
+        return _replace_under_summary_lock(
+            summary_path,
+            stack,
+            rendered=rendered,
+            canonical_input=canonical_input,
+        )
+    finally:
+        for warning in lock.warnings:
+            print(f"WARNING: {warning}", file=sys.stderr)
+
+
+def _replace_under_summary_lock(
+    summary_path: Path,
+    stack: ExitStack,
+    *,
+    rendered: str,
+    canonical_input: dict[str, Any],
+) -> Section15WriteResult:
+    """Read, validate, and install the block while the writer lock is held."""
     with stack:
         try:
             original_bytes = summary_path.read_bytes()
