@@ -1104,3 +1104,286 @@ def test_initialization_rejects_noncurrent_config_schema_version(
             },
             index=0,
         )
+
+
+# Reviewed shownotes catalog-conflict repair (#236). `scan-shownotes.py --apply`
+# refuses review-required entries, so an approved title or conference
+# correction had no owner writer at all — the operator's only options were to
+# leave a known-wrong catalog fact in place or edit the database directly.
+
+
+def _catalog_database(**talk_fields: Any) -> dict[str, Any]:
+    database = _base_database()
+    database["talks"][0].update(
+        {
+            "title": "Monkey See Monkey Do",
+            "conference": "DevOps Nashville 2024",
+            **talk_fields,
+        }
+    )
+    return database
+
+
+def _repair(set_values: dict[str, Any], expect: dict[str, Any], **extra: Any):
+    mutation = {
+        "kind": "apply_reviewed_metadata",
+        "filename": "talk.md",
+        "expect": expect,
+        "set": set_values,
+    }
+    mutation.update(extra)
+    return mutation
+
+
+def test_a_reviewed_conference_conflict_applies_with_an_exact_precondition(
+    mutate_tracking_database,
+) -> None:
+    """Acceptance 1: the live DevOps Nashville case."""
+    database = _catalog_database()
+
+    candidate, changes = mutate_tracking_database.build_candidate(
+        database,
+        [
+            _repair(
+                {"conference": "DevOps Days Nashville 2024"},
+                {"conference": "DevOps Nashville 2024"},
+            )
+        ],
+    )
+
+    assert candidate["talks"][0]["conference"] == "DevOps Days Nashville 2024"
+    assert changes[0]["kind"] == "apply_reviewed_metadata"
+    assert changes[0]["before"] == {"conference": "DevOps Nashville 2024"}
+    # The input object is never mutated; only the candidate carries the repair.
+    assert database["talks"][0]["conference"] == "DevOps Nashville 2024"
+
+
+def test_a_reviewed_title_conflict_applies_without_opening_other_fields(
+    mutate_tracking_database,
+) -> None:
+    """Acceptance 2: the live Voxxed Luxembourg case, and nothing wider."""
+    database = _catalog_database()
+
+    candidate, _changes = mutate_tracking_database.build_candidate(
+        database,
+        [
+            _repair(
+                {"title": "Monkey See Monkey Do at Voxxed Days Luxembourg 2026"},
+                {"title": "Monkey See Monkey Do"},
+            )
+        ],
+    )
+
+    assert candidate["talks"][0]["title"].endswith("Voxxed Days Luxembourg 2026")
+    assert candidate["talks"][0]["status"] == "processed"
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["status", "video_url", "slides_url", "date", "transcript_source"],
+)
+def test_the_writer_refuses_every_field_outside_the_catalog_set(
+    mutate_tracking_database, field
+) -> None:
+    """A reviewed metadata decision is not a licence to edit arbitrary talk fields."""
+    database = _catalog_database()
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError, match="unsupported"
+    ):
+        mutate_tracking_database.build_candidate(
+            database, [_repair({field: "anything"}, {field: None})]
+        )
+
+
+def test_a_stale_precondition_installs_nothing(mutate_tracking_database) -> None:
+    """Acceptance 3: the reviewed value must still be the one that was reviewed."""
+    database = _catalog_database()
+    original = copy.deepcopy(database)
+
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(
+            database,
+            [
+                _repair(
+                    {"conference": "DevOps Days Nashville 2024"},
+                    {"conference": "Something Else Entirely"},
+                )
+            ],
+        )
+
+    assert database == original
+
+
+def test_an_unknown_filename_installs_nothing(mutate_tracking_database) -> None:
+    database = _catalog_database()
+    mutation = _repair(
+        {"conference": "DevOps Days Nashville 2024"},
+        {"conference": "DevOps Nashville 2024"},
+    )
+    mutation["filename"] = "nobody.md"
+
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(database, [mutation])
+
+
+def test_a_duplicate_filename_installs_nothing(mutate_tracking_database) -> None:
+    database = _catalog_database()
+    database["talks"].append(copy.deepcopy(database["talks"][0]))
+
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(
+            database,
+            [
+                _repair(
+                    {"conference": "DevOps Days Nashville 2024"},
+                    {"conference": "DevOps Nashville 2024"},
+                )
+            ],
+        )
+
+
+def test_a_legacy_talk_schema_installs_nothing(mutate_tracking_database) -> None:
+    database = _catalog_database()
+    database["talks"][0]["schema_version"] = 4
+
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(
+            database,
+            [
+                _repair(
+                    {"conference": "DevOps Days Nashville 2024"},
+                    {"conference": "DevOps Nashville 2024"},
+                )
+            ],
+        )
+
+
+def test_a_metadata_only_change_refuses_a_reprocess_transition(
+    mutate_tracking_database,
+) -> None:
+    """Acceptance 4, first half: the writer proves the change is metadata-only."""
+    database = _catalog_database()
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError, match="metadata-only"
+    ):
+        mutate_tracking_database.build_candidate(
+            database,
+            [
+                _repair(
+                    {"conference": "DevOps Days Nashville 2024"},
+                    {"conference": "DevOps Nashville 2024"},
+                    reprocess={
+                        "status": "needs-reprocessing",
+                        "reprocess_reason": "not needed",
+                    },
+                )
+            ],
+        )
+
+
+def test_an_analysis_invalidating_field_requires_the_transition_atomically(
+    mutate_tracking_database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Acceptance 4, second half.
+
+    Both current fields are metadata-only, so the invalidating branch is
+    exercised by classifying one as invalidating — which is exactly what adding
+    such a field would do.
+    """
+    monkeypatch.setattr(
+        mutate_tracking_database,
+        "ANALYSIS_INVALIDATING_METADATA_FIELDS",
+        frozenset({"conference"}),
+    )
+    database = _catalog_database()
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="invalidates derived analysis",
+    ):
+        mutate_tracking_database.build_candidate(
+            database,
+            [
+                _repair(
+                    {"conference": "DevOps Days Nashville 2024"},
+                    {"conference": "DevOps Nashville 2024"},
+                )
+            ],
+        )
+
+    candidate, changes = mutate_tracking_database.build_candidate(
+        database,
+        [
+            _repair(
+                {"conference": "DevOps Days Nashville 2024"},
+                {"conference": "DevOps Nashville 2024"},
+                reprocess={
+                    "status": "needs-reprocessing",
+                    "reprocess_reason": "catalog conference corrected",
+                },
+            )
+        ],
+    )
+
+    talk = candidate["talks"][0]
+    assert talk["conference"] == "DevOps Days Nashville 2024"
+    assert talk["status"] == "needs-reprocessing"
+    assert talk["reprocess_reason"] == "catalog conference corrected"
+    assert changes[0]["after"]["status"] == "needs-reprocessing"
+
+
+def test_a_reprocess_transition_rejects_an_unsupported_status(
+    mutate_tracking_database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        mutate_tracking_database,
+        "ANALYSIS_INVALIDATING_METADATA_FIELDS",
+        frozenset({"conference"}),
+    )
+    database = _catalog_database()
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError, match="must be one of"
+    ):
+        mutate_tracking_database.build_candidate(
+            database,
+            [
+                _repair(
+                    {"conference": "DevOps Days Nashville 2024"},
+                    {"conference": "DevOps Nashville 2024"},
+                    reprocess={"status": "processed", "reprocess_reason": "nope"},
+                )
+            ],
+        )
+
+
+def test_unrelated_talk_fields_survive_the_repair(mutate_tracking_database) -> None:
+    database = _catalog_database(
+        date="2024-07-10", video_url="https://youtu.be/AbCdEfGhI_1"
+    )
+
+    candidate, _changes = mutate_tracking_database.build_candidate(
+        database,
+        [
+            _repair(
+                {"conference": "DevOps Days Nashville 2024"},
+                {"conference": "DevOps Nashville 2024"},
+            )
+        ],
+    )
+
+    talk = candidate["talks"][0]
+    assert talk["date"] == "2024-07-10"
+    assert talk["video_url"] == "https://youtu.be/AbCdEfGhI_1"
+    assert talk["title"] == "Monkey See Monkey Do"
+
+
+def test_every_writable_metadata_field_is_classified(mutate_tracking_database) -> None:
+    """The import-time guard that keeps a new field from defaulting to safe."""
+    classified = (
+        mutate_tracking_database.METADATA_ONLY_FIELDS
+        | mutate_tracking_database.ANALYSIS_INVALIDATING_METADATA_FIELDS
+    )
+    assert mutate_tracking_database.METADATA_TALK_FIELDS <= classified
