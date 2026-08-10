@@ -37,6 +37,17 @@ resolves to a different inode or file type is left untouched rather than
 unlinked: it is someone else's data, and removing it to tidy up after ourselves
 would be the second bug. `KeyboardInterrupt` and `SystemExit` still propagate.
 
+The policy reviewer caught the same failure shape inside the new module: the
+incomplete-stage path used `except OSError: pass`, so a failed unlink orphaned
+a temp with no diagnostic — the exact bug this primitive exists to stop, one
+layer down, and a violation of Never Suppress Errors besides. Cleanup now
+returns what it could not do; a `RetainedStageError` carries that detail in its
+message with its type and `reason_code` intact, and anything else surfaces on
+stderr. The interrupt path cleans up and warns without trapping the interrupt.
+`_stage_candidate`'s `except BaseException` narrowed to `except Exception` with
+a `finally` for interrupt-safe release, since it is an inner helper and none of
+the Outer-Boundary Carve-Out's preconditions apply.
+
 Two Copilot findings folded in. `_stage_candidate` ran cleanup on a
 verification failure and dropped the report, reintroducing the vanished-warning
 problem one level up; the cleanup detail now rides out inside the typed

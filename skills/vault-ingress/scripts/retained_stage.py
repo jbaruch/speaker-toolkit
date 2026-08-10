@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import sys
 import secrets
 import stat
 from dataclasses import dataclass, field
@@ -240,6 +241,44 @@ def visible_descriptor_identity(
     )
 
 
+def _warn(notes: list[str]) -> None:
+    """Surface best-effort cleanup failures that have nowhere else to go.
+
+    `error-handling` Shell Error Handling: best-effort work that legitimately
+    continues past a failure emits a warning, never nothing.
+    """
+    for note in notes:
+        print(f"WARNING: {note}", file=sys.stderr)
+
+
+def _release_incomplete_stage(
+    name: str | None,
+    descriptor: int | None,
+    directory_descriptor: int,
+) -> list[str]:
+    """Drop a half-built stage, returning what could not be cleaned up."""
+    notes: list[str] = []
+    if descriptor is not None and name is not None:
+        if visible_descriptor_identity(name, descriptor, directory_descriptor):
+            try:
+                os.unlink(name, dir_fd=directory_descriptor)
+            except OSError as exc:
+                notes.append(f"could not remove incomplete staged file {name}: {exc}")
+        else:
+            notes.append(
+                f"incomplete staged name {name} was substituted; left it untouched"
+            )
+        try:
+            os.close(descriptor)
+        except OSError as exc:
+            notes.append(f"could not close incomplete staged file {name}: {exc}")
+    try:
+        os.close(directory_descriptor)
+    except OSError as exc:
+        notes.append(f"could not close staging directory descriptor: {exc}")
+    return notes
+
+
 def open_retained_stage(
     path: Path,
     payload: bytes,
@@ -266,6 +305,7 @@ def open_retained_stage(
     descriptor: int | None = None
     name: str | None = None
     completed = False
+    released = False
     try:
         flags = os.O_RDWR | os.O_CREAT | os.O_EXCL
         flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
@@ -311,25 +351,24 @@ def open_retained_stage(
             verify_retained_stage(stage, payload)
         completed = True
         return stage
+    except Exception as exc:
+        released = True
+        notes = _release_incomplete_stage(name, descriptor, directory_descriptor)
+        if notes and isinstance(exc, RetainedStageError):
+            # Attach rather than discard: an orphaned staged temp with no
+            # diagnostic naming it is the exact failure this module exists to
+            # stop. Attaching keeps the primary error's type and reason_code.
+            raise type(exc)(
+                f"{exc}; staged cleanup: {'; '.join(notes)}",
+                reason_code=exc.reason_code,
+            ) from exc
+        _warn(notes)
+        raise
     finally:
-        if not completed:
-            # An incomplete stage still owns a name and two descriptors. Their
-            # cleanup failures are reported by the caller's error path, not
-            # discarded here — but they must never mask the primary failure.
-            if descriptor is not None and name is not None:
-                if visible_descriptor_identity(name, descriptor, directory_descriptor):
-                    try:
-                        os.unlink(name, dir_fd=directory_descriptor)
-                    except OSError:
-                        pass
-                try:
-                    os.close(descriptor)
-                except OSError:
-                    pass
-            try:
-                os.close(directory_descriptor)
-            except OSError:
-                pass
+        if not completed and not released:
+            # Interrupt path: cleanup still runs, and its diagnostics still go
+            # somewhere. Re-raising here would replace the interrupt.
+            _warn(_release_incomplete_stage(name, descriptor, directory_descriptor))
 
 
 def _observe(stage: RetainedStage) -> _StagedObservation:

@@ -716,22 +716,29 @@ def _stage_candidate(path: Path, candidate: bytes, mode: int) -> StagedCandidate
         )
     except RetainedStageError as exc:
         raise TrackingDatabaseIOError(str(exc)) from exc
+    verified = False
+    released = False
     try:
         _verify_staged_candidate(stage, candidate)
-    except BaseException as exc:
+        verified = True
+    except Exception as exc:
         # Cleanup detail must ride out with the primary failure. Discarding the
         # report here would reintroduce exactly the vanished-warning problem
         # this primitive exists to close (#240): an orphaned staged temp with
-        # no diagnostic naming it. BaseException so an interrupt still reports.
+        # no diagnostic naming it.
+        released = True
         report = close_retained_stage(stage)
-        if report.warnings:
-            if isinstance(exc, StagedCandidateConflictError):
-                raise StagedCandidateConflictError(
-                    exc.path,
-                    exc.invariant,
-                    f"{exc.detail}; staged cleanup: {'; '.join(report.warnings)}",
-                ) from exc
+        if report.warnings and isinstance(exc, StagedCandidateConflictError):
+            raise StagedCandidateConflictError(
+                exc.path,
+                exc.invariant,
+                f"{exc.detail}; staged cleanup: {'; '.join(report.warnings)}",
+            ) from exc
         raise
+    finally:
+        # Interrupt path: release the stage without trapping the interrupt.
+        if not verified and not released:
+            close_retained_stage(stage)
     return stage
 
 

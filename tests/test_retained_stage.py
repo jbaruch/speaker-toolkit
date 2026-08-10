@@ -325,3 +325,64 @@ def test_stage_verification_failure_carries_its_cleanup_detail(
     # Both the primary invariant and the cleanup failure are reported.
     assert "staged cleanup" in caught.value.detail
     assert "could not remove" in caught.value.detail
+
+
+def test_incomplete_stage_cleanup_failure_is_not_swallowed(
+    retained_stage, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`except OSError: pass` here would orphan a temp with no diagnostic.
+
+    The primary error keeps its type and reason_code; the cleanup detail is
+    appended rather than discarded.
+    """
+
+    def failing_write(descriptor: int, raw: bytes) -> None:
+        raise retained_stage.RetainedStageError(
+            "injected staging failure", reason_code="staged_shape_invalid"
+        )
+
+    def failing_unlink(*_args, **_kwargs):
+        raise OSError("simulated unlink failure")
+
+    monkeypatch.setattr(retained_stage, "_write_descriptor", failing_write)
+    monkeypatch.setattr(retained_stage.os, "unlink", failing_unlink)
+
+    with pytest.raises(retained_stage.RetainedStageError) as caught:
+        retained_stage.open_retained_stage(
+            tmp_path / "target.txt",
+            b"body\n",
+            mode=0o600,
+            suffix=".test.tmp",
+            label="test artifact",
+        )
+
+    assert "injected staging failure" in str(caught.value)
+    assert "staged cleanup" in str(caught.value)
+    assert "could not remove incomplete staged file" in str(caught.value)
+    assert caught.value.reason_code == "staged_shape_invalid"
+
+
+def test_incomplete_stage_cleanup_failure_warns_when_it_cannot_attach(
+    retained_stage, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """A non-RetainedStageError still gets its cleanup detail surfaced."""
+
+    def failing_write(descriptor: int, raw: bytes) -> None:
+        raise ValueError("injected non-staged failure")
+
+    def failing_unlink(*_args, **_kwargs):
+        raise OSError("simulated unlink failure")
+
+    monkeypatch.setattr(retained_stage, "_write_descriptor", failing_write)
+    monkeypatch.setattr(retained_stage.os, "unlink", failing_unlink)
+
+    with pytest.raises(ValueError):
+        retained_stage.open_retained_stage(
+            tmp_path / "target.txt",
+            b"body\n",
+            mode=0o600,
+            suffix=".test.tmp",
+            label="test artifact",
+        )
+
+    assert "could not remove incomplete staged file" in capsys.readouterr().err
