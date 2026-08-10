@@ -56,6 +56,12 @@ strict-snapshot reader with no filesystem authority, and a classification it
 could not verify against the live deck would be exactly the unverified claim
 this change removes.
 
+The ingress workflow gets an executable rather than a function to reproduce:
+`classify-pptx-evidence.py` takes a vault root, makes both observations,
+and prints one JSON object naming every record's class and whether it needs
+extraction. Observation and classification live in `pptx_catalog_selection.py`,
+shared with preflight, so the two surfaces cannot drift.
+
 The classifier validates a v2 receipt before trusting it. A receipt is the
 licence to SKIP extraction, so a malformed one — `succeeded` with a null
 artifact, a bogus fingerprint, a mirror flag disagreeing with the outcome —

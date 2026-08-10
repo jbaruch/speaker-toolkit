@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 from collections import Counter, defaultdict
 from datetime import date, datetime
-import hashlib
 import json
 import math
 import os
@@ -64,6 +63,7 @@ from source_identity_matching import (
     known_event_aliases,
     titles_agree,
 )
+from pptx_catalog_selection import classify_catalog
 from pptx_evidence import (
     PPTX_EXTRACTION_PIPELINE_VERSION,
     PPTX_EXTRACTION_SCHEMA_VERSION,
@@ -75,8 +75,6 @@ from tracking_database import (
     TrackingDatabaseConfigExclusionsError,
     TrackingDatabaseError,
     assess_tracking_database,
-    classify_pptx_visual_evidence,
-    pptx_visual_evidence_needs_extraction,
 )
 from pptx_discovery_contract import (
     PptxDiscoveryContractError,
@@ -314,93 +312,33 @@ class VaultPreflight:
             self._artifact_root = admitted_root or self.vault_root
         return self._artifact_root
 
-    def _digest_and_size(self, path: object, root: object) -> tuple[str, int] | None:
-        """SHA-256 and byte count of one artifact, or None when unreadable."""
-        if not isinstance(path, str) or not path.strip():
-            return None
-        try:
-            resolved = materialize_artifact_locator(path, root)
-        except ArtifactLocatorError:
-            return None
-        digest = hashlib.sha256()
-        size = 0
-        try:
-            with open(resolved, "rb") as source:
-                for chunk in iter(lambda: source.read(1024 * 1024), b""):
-                    digest.update(chunk)
-                    size += len(chunk)
-        except OSError:
-            return None
-        return digest.hexdigest(), size
-
-    def _observed_pptx_fingerprint(self, pptx_path: object) -> dict[str, object] | None:
-        """Fingerprint the deck as it exists now, or None when it cannot be read.
-
-        A persisted receipt is a hint; the live bytes are the authority
-        (`stateful-artifacts` -> Hints, Not Authority). Returning None states
-        that the source could not be observed, which the classifier reports as
-        unverified rather than letting stored metadata claim currency.
-        """
-        observed = self._digest_and_size(pptx_path, self.config.get("pptx_source_dir"))
-        if observed is None:
-            return None
-        digest, size = observed
-        return {"algorithm": "sha256", "digest": digest, "size_bytes": size}
-
-    def _observed_artifact_digest(self, evidence: object) -> str | None:
-        """Digest the extraction artifact the receipt names, if it still exists.
-
-        A deleted or replaced artifact must not stay authoritative: the receipt
-        can only skip regeneration while the file it points at is the one it
-        was written for.
-        """
-        if not isinstance(evidence, dict):
-            return None
-        artifact = evidence.get("artifact")
-        if not isinstance(artifact, dict):
-            return None
-        observed = self._digest_and_size(artifact.get("path"), self.vault_root)
-        return None if observed is None else observed[0]
-
     def _check_pptx_visual_evidence(self) -> None:
         """Report catalog decks whose visual evidence is not current (#229).
 
-        Selection is classified through the one shared authority, never from
-        `visual_extracted` alone: a legacy record's bare claim cannot say which
-        extractor schema it refers to, and a receipt matching the current
-        extractor still has to match the bytes on disk. Findings are warnings —
-        a stale or unverifiable extraction is work to schedule, not a reason to
-        refuse the vault.
+        The observation and classification live in
+        `pptx_catalog_selection.classify_catalog`, shared with
+        `classify-pptx-evidence.py`, so preflight and the ingress workflow
+        cannot disagree about which decks need regeneration. Findings are
+        warnings — a stale or unverifiable extraction is work to schedule, not
+        a reason to refuse the vault.
         """
-        catalog = self.database.get("pptx_catalog")
-        if not isinstance(catalog, list):
-            return
-        for index, record in enumerate(catalog):
-            if not isinstance(record, dict):
+        for row in classify_catalog(
+            self.database,
+            vault_root=self.vault_root,
+            pptx_source_dir=self.config.get("pptx_source_dir"),
+        ):
+            if not row["needs_extraction"]:
                 continue
-            observed = self._observed_pptx_fingerprint(record.get("pptx_path"))
-            artifact_digest = self._observed_artifact_digest(
-                record.get("visual_evidence")
-            )
-            try:
-                classification = classify_pptx_visual_evidence(
-                    record,
-                    extractor_schema_version=PPTX_EXTRACTION_SCHEMA_VERSION,
-                    pipeline_version=PPTX_EXTRACTION_PIPELINE_VERSION,
-                    observed_source_fingerprint=observed,
-                    observed_artifact_digest=artifact_digest,
-                )
-            except TrackingDatabaseError as exc:
+            index = row["index"]
+            if row["classification"] is None:
                 self.add(
                     "warning",
                     "pptx_visual_evidence_unreadable",
-                    str(exc),
+                    str(row["error"]),
                     field=f"pptx_catalog[{index}].visual_evidence",
                     expected=PPTX_EVIDENCE_CURRENT,
                     actual=None,
                 )
-                continue
-            if not pptx_visual_evidence_needs_extraction(classification):
                 continue
             self.add(
                 "warning",
@@ -411,10 +349,10 @@ class VaultPreflight:
                 field=f"pptx_catalog[{index}].visual_evidence",
                 expected=PPTX_EVIDENCE_CURRENT,
                 actual={
-                    "classification": classification,
-                    "pptx_path": record.get("pptx_path"),
-                    "source_observed": observed is not None,
-                    "artifact_observed": artifact_digest is not None,
+                    "classification": row["classification"],
+                    "pptx_path": row["pptx_path"],
+                    "source_observed": row["source_observed"],
+                    "artifact_observed": row["artifact_observed"],
                     "extractor_schema_version": PPTX_EXTRACTION_SCHEMA_VERSION,
                     "pipeline_version": PPTX_EXTRACTION_PIPELINE_VERSION,
                 },

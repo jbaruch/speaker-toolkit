@@ -17,6 +17,8 @@ disagree about which decks need regeneration.
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 from typing import Any
 
 import pytest
@@ -477,3 +479,80 @@ def test_v1_records_may_not_carry_a_binding_field(tracking_database) -> None:
 
     with pytest.raises(tracking_database.TrackingDatabaseError, match="unknown fields"):
         tracking_database.require_current_tracking_database(_database([record]))
+
+
+# The executable the ingress workflow runs (#229). Deterministic selection is a
+# script, not something the agent reproduces.
+
+
+def _vault(tmp_path, records: list[dict], *, deck: bytes | None = None):
+    """A vault whose catalog rows point at real files under the source dir."""
+    root = tmp_path / "vault"
+    source = tmp_path / "presentations"
+    (root / "evidence").mkdir(parents=True)
+    source.mkdir()
+    if deck is not None:
+        (source / "Talk.pptx").write_bytes(deck)
+    database = _database(records)
+    database["config"]["pptx_source_dir"] = str(source)
+    (root / "tracking-database.json").write_text(json.dumps(database))
+    return root, source
+
+
+def _live_record(deck_bytes: bytes, artifact_bytes: bytes) -> dict:
+    return _current_record(
+        pptx_path="Talk.pptx",
+        visual_evidence=_evidence(
+            source_fingerprint={
+                "algorithm": "sha256",
+                "digest": hashlib.sha256(deck_bytes).hexdigest(),
+                "size_bytes": len(deck_bytes),
+            },
+            artifact={
+                "path": "evidence/talk.json",
+                "sha256": hashlib.sha256(artifact_bytes).hexdigest(),
+            },
+        ),
+    )
+
+
+def test_the_cli_reports_a_current_deck_as_not_needing_extraction(
+    classify_pptx_evidence, tmp_path
+) -> None:
+    deck_bytes, artifact_bytes = b"deck", b'{"slides": []}'
+    root, _source = _vault(tmp_path, [], deck=deck_bytes)
+    (root / "evidence" / "talk.json").write_bytes(artifact_bytes)
+    database = json.loads((root / "tracking-database.json").read_text())
+    database["pptx_catalog"] = [_live_record(deck_bytes, artifact_bytes)]
+    (root / "tracking-database.json").write_text(json.dumps(database))
+
+    report = classify_pptx_evidence.execute(root)
+
+    assert report["ok"] is True
+    assert report["needs_extraction_count"] == 0
+    assert report["records"][0]["classification"] == "current"
+
+
+def test_the_cli_reports_an_edited_deck_as_stale(
+    classify_pptx_evidence, tmp_path
+) -> None:
+    deck_bytes, artifact_bytes = b"deck", b'{"slides": []}'
+    root, source = _vault(tmp_path, [], deck=deck_bytes)
+    (root / "evidence" / "talk.json").write_bytes(artifact_bytes)
+    database = json.loads((root / "tracking-database.json").read_text())
+    database["pptx_catalog"] = [_live_record(deck_bytes, artifact_bytes)]
+    (root / "tracking-database.json").write_text(json.dumps(database))
+    (source / "Talk.pptx").write_bytes(b"deck-edited")
+
+    report = classify_pptx_evidence.execute(root)
+
+    assert report["needs_extraction_count"] == 1
+    assert report["records"][0]["classification"] == "stale"
+
+
+def test_the_cli_refuses_an_unusable_database(classify_pptx_evidence, tmp_path) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "tracking-database.json").write_text('{"schema_version": 99}')
+
+    assert classify_pptx_evidence.main([str(root)]) == 2

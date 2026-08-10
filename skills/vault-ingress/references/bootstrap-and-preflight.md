@@ -224,10 +224,20 @@ a match, the talk's exact prior `pptx_path` expectation. A record whose deck has
 had no extraction attempt carries `visual_evidence: null`; a record claiming
 visual evidence carries the receipt binding extractor schema, pipeline version,
 exact source fingerprint, and artifact identity. Never decide from
-`visual_extracted` alone whether a deck needs extraction — classify through
-`classify_pptx_visual_evidence` (see [schemas-db.md](schemas-db.md) —
-`pptx_catalog` v1 -> v2), which reads a legacy record's bare claim as
-unknown-generation evidence rather than current. See
+`visual_extracted` alone whether a deck needs extraction. Run:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/classify-pptx-evidence.py" \
+  "{vault_root}"
+```
+
+It fingerprints each deck and each extraction artifact on disk, classifies
+every catalog record, and prints one JSON object; extract exactly the records
+whose `needs_extraction` is true. Argument, output shape, and exit codes are in
+the script's module docstring. A legacy record's bare claim reads as
+unknown-generation evidence, and an unreadable deck or a deleted artifact reads
+as unverified — never as current (see [schemas-db.md](schemas-db.md) —
+`pptx_catalog` v1 -> v2). See
 [schemas-db.md](schemas-db.md) for the PPTX extraction output
 schema (per-slide visual data, shape types, global design stats).
 Consume current schema v4. A v0/v1 record has unknown timing, not zero timing;
