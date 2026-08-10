@@ -1,5 +1,41 @@
 # Changelog
 
+### ci — gate every pull request on `tessl plugin lint` (#265)
+
+Closes #265.
+
+`tessl plugin lint` ran nowhere before merge. The publish workflow runs it, but
+only after the merge commit lands, so a frontmatter or manifest error aborted a
+release instead of failing the pull request that introduced it. That is the
+shape `context-artifacts` → Plugin Structure means by "validate before every
+publish", and `language-diagnostics` → Gate It Deterministically is explicit
+that a check nobody runs does not exist. The over-length `description` this
+issue names was caught during PR #263 only because a maintainer happened to run
+lint by hand.
+
+`scripts/check_plugin_lint.py` now runs in the `lint` job on every PR. The
+advisory policy is explicit, because the CLI's exit code does not express it:
+
+- `✘` fails the build. The CLI already exits non-zero for these; the gate also
+  fails on a printed `✘` with a zero exit, so a future CLI that stops exiting
+  non-zero cannot silently un-gate the repo.
+- `⚠` does not fail, and is surfaced as a GitHub warning annotation plus a step
+  summary entry. The only advisory lint currently raises here is entrypoint
+  size, which `scripts/check_skill_entrypoints.py` already gates deterministically
+  and more conservatively. Failing on `⚠` would double-gate that one and turn
+  any advisory a future CLI adds into an instant build break with no owner
+  decision behind it.
+
+The CLI is installed unpinned and without a token. Unpinned because the gate
+exists to predict what the publish run's own lint will say, and that step
+installs the latest CLI — a pinned gate could pass against an older ruleset and
+still break the release. Tokenless because lint needs no auth, so the gate also
+runs on fork pull requests, where secrets are unavailable.
+
+Not added to `scripts/pre-publish-checks.sh`: the publish workflow already runs
+lint as its own step, and it runs the composer before installing the CLI
+precisely because the composer's gates are self-contained.
+
 ## 0.20.44 — 2026-08-10
 
 ### chore(scripts) — bring the two sibling pre-publish gates up to policy (#264)

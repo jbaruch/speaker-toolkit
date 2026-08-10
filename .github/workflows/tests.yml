@@ -38,6 +38,18 @@ jobs:
         run: ruff format --check .
       - name: Pyright
         run: pyright
+      # Deliberately unpinned: this gate exists to predict what the publish
+      # run's own `tessl plugin lint` will say, and that step installs the
+      # latest CLI. Pinning here could pass against an older ruleset and still
+      # break the release. No token — lint needs no auth, so the gate also runs
+      # on fork pull requests, where secrets are unavailable.
+      - uses: tesslio/setup-tessl@v2
+      - name: Validate plugin structure
+        # context-artifacts -> Plugin Structure requires a clean lint before
+        # every publish. The publish workflow runs it after merge, which turns
+        # a frontmatter error into an aborted release instead of a failed PR.
+        # Advisory policy lives in the script, not here.
+        run: python3 scripts/check_plugin_lint.py > /dev/null
 
   test:
     needs: lint
@@ -50,6 +62,10 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      # tests/test_plugin_lint_gate.py drives the real CLI against synthetic
+      # plugins. `ci-safety` -> Install, Don't Skip: install the tool rather
+      # than skipping the cases that need it.
+      - uses: tesslio/setup-tessl@v2
       - name: Enforce tessl-version-floating carve-out
         # See rules/tessl-version-floating.md. Fails the build if any
         # dependency in a covered manifest uses a specifier other than
