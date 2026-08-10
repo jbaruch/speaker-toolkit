@@ -1,8 +1,59 @@
 # Changelog
 
+### chore(scripts) — bring the two sibling pre-publish gates up to policy (#264)
+
+Closes #264.
+
+`scripts/check-package-contents.sh` and `scripts/check-tessl-pins.sh` were the
+two gates #263 left behind: no entry-point guard (`file-hygiene` → Standalone
+Scripts), and prose on stdout where `script-delegation` → Script Requirements
+wants a structured result. Both are now Python, matching the sibling
+`check_skill_entrypoints.py` the review brought into line — `scripts/
+check_package_contents.py` and `scripts/check_tessl_pins.py`, each with the
+canonical `if __name__ == "__main__"` guard, one JSON object on stdout every
+run, and actionable diagnostics on stderr.
+
+Python rather than a bash `main` + guard because both scripts already embedded
+a python3 heredoc for the JSON work, and the guard's stated purpose is making a
+script importable for testing. `check_tessl_pins.py` had no test suite at all —
+it now has 17 cases covering ranges, tags, missing `version` keys, non-object
+entries, and every unreadable-manifest shape. The package-contents suite keeps
+all 20 of its cases, re-pointed from prose stdout to the JSON report, plus the
+one-JSON-object-on-every-failure-path contract and an importability case.
+
+Gate semantics and exit codes are unchanged: same covered manifests, same
+`.tesslignore` scratch-repo matching, same de-duplication of overlapping
+declared paths, same 279-file result on this repo. One behavior change:
+`check_tessl_pins.py` resolves its manifests against the repo root rather than
+the caller's working directory, so the publish composer no longer depends on
+where it was invoked from.
+
+`scripts/pre-publish-checks.sh` gets a bash `main` + `BASH_SOURCE` guard and
+keeps its exit-code-only contract. The two `tests.yml` steps invoke the renamed
+gates; that CI edit is the rename, nothing else.
+
+The port also closes a vacuous pass the shell version shipped with:
+`dependencies` was read as `manifest.get("dependencies") or {}`, so a
+present-but-malformed container — `[]`, `""`, `null`, `0`, `false` — collapsed
+into an empty mapping and the gate reported every dependency floating. Absence
+of the key is now the only thing that means nothing was declared; a
+present-but-malformed container is a violation. An empty object still passes,
+being a well-formed container that declares nothing.
+
+All three gates' crash-path guidance now names `sys.executable` and the
+resolved script path, so the suggested re-run command works from any working
+directory and under the interpreter that actually failed.
+
+A second inherited gap closes with it: the shell gate returned success the
+moment no `.tesslignore` existed, before parsing the manifest or checking that
+every declared path holds tracked files. A malformed manifest or a stale
+declaration reached publish unexamined whenever the repo had no ignore file.
+The manifest and declared-path checks now run on every invocation; only the
+exclusion matching depends on the ignore file.
+
 ## 0.20.43 — 2026-08-10
 
-### fix(vault-ingress) — choose the supervisor exit-vs-monitor ordering instead of racing it (#268)
+### fix(tests) — choose the supervisor exit-vs-monitor ordering instead of racing it (#268)
 
 Closes #268.
 

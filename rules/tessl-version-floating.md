@@ -17,10 +17,10 @@ No other manifest in this repo is covered. Every other dependency-bearing manife
 
 ## Enforcement
 
-- A deploy-time check at `scripts/check-tessl-pins.sh` walks every covered manifest and fails the build if any dependency uses a specifier other than the permitted floating value `"latest"` — rejecting literal pins, version ranges, tags, and anything else, per the carve-out's warning that "rejecting only literal pins lets a non-literal pinned/ranged value slip through".
+- A deploy-time check at `scripts/check_tessl_pins.py` walks every covered manifest and fails the build if any dependency uses a specifier other than the permitted floating value `"latest"` — rejecting literal pins, version ranges, tags, and anything else, per the carve-out's warning that "rejecting only literal pins lets a non-literal pinned/ranged value slip through".
 - The check runs in CI on every push and pull request via `.github/workflows/tests.yml`, ahead of the test suite. CI failure blocks merge per `ci-safety`.
 
 ## Scope Limits
 
-- The carve-out does not widen to "any manifest". To extend it to a new manifest, name the manifest in the **Covered Manifests** list above AND ensure `scripts/check-tessl-pins.sh` walks it. Adding a manifest without updating both invalidates the precondition.
+- The carve-out does not widen to "any manifest". To extend it to a new manifest, name the manifest in the **Covered Manifests** list above AND ensure `scripts/check_tessl_pins.py` walks it. Adding a manifest without updating both invalidates the precondition.
 - The carve-out does not widen by transitivity. Manifests `tessl install` does not rewrite — manifests inside vendored plugins, manifests in subtrees not consumed by `tessl install` — still pin per the default policy.

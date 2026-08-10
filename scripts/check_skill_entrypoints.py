@@ -373,7 +373,7 @@ def tesslignore_excluded(repo_root: Path, relative_paths: list[str]) -> set[str]
     Matching runs against a throwaway empty git repo with core.excludesFile
     pointed at .tesslignore, so only .tesslignore patterns are consulted — the
     same technique (and therefore the same semantics) as
-    scripts/check-package-contents.sh.
+    scripts/check_package_contents.py.
     """
     ignore_file = repo_root / ".tesslignore"
     if not ignore_file.is_file() or not relative_paths:
@@ -649,7 +649,8 @@ def main(argv: list[str]) -> int:
             f"ERROR: {Path(__file__).name} failed unexpectedly — "
             f"{type(error).__name__}: {error}\n"
             f"  This is a bug in the gate, not in the plugin. Re-run with a"
-            f"  traceback (`python -X dev {Path(__file__).name}`) and report it.",
+            f"  traceback"
+            f" (`{sys.executable} -X dev {Path(__file__).resolve()}`) and report it.",
             file=sys.stderr,
         )
         return 1

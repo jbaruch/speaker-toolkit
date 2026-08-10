@@ -56,13 +56,15 @@ jobs:
         # the permitted floating value "latest" — the deploy-time check
         # preconditioned by `coding-policy: dependency-management`'s
         # runtime-managed-manifest carve-out.
-        run: ./scripts/check-tessl-pins.sh
+        # JSON verdict on stdout, diagnostics on stderr; the step reads the
+        # exit code, so the report is discarded.
+        run: python3 scripts/check_tessl_pins.py > /dev/null
       - name: Verify the published package ships every declared file
         # Fails the build when a .tesslignore pattern would strip content the
         # manifest declares. .tesslignore is gitignore semantics, so an
         # unanchored "scripts/" silently stripped all 59 skills/*/scripts/
         # files from 0.18.43 through 0.18.61 while publish reported success.
-        run: ./scripts/check-package-contents.sh
+        run: python3 scripts/check_package_contents.py > /dev/null
       - name: Cache apt package downloads
         # Cache the downloaded .deb archives (kept in a runner-writable dir via
         # Dir::Cache::Archives below), so the slow libreoffice fetch only hits
