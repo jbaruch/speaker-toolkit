@@ -12,8 +12,10 @@ it never read.
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -429,6 +431,160 @@ def test_duplicate_delimiters_are_malformed(
 
     assert caught.value.reason_code == "summary_block_malformed"
     assert summary.read_bytes() == before
+
+
+def test_an_edit_after_the_final_check_still_loses_nothing(
+    render_vault_status, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The last observation before the rename is the one that binds.
+
+    An edit landing after the digest was checked and before the swap is the
+    window a check-then-replace design silently overwrites. Here it is caught
+    by the recheck that runs immediately before installation.
+    """
+    root = _vault(tmp_path, _database([_talk("one.md", "processed")]))
+    summary = root / "rhetoric-style-summary.md"
+    dry = render_vault_status.execute(root, generated_at=GENERATED_AT)
+    real_install = render_vault_status.install_retained_stage
+
+    def edit_then_install(*args, **kwargs):  # pragma: no cover - must not run
+        return real_install(*args, **kwargs)
+
+    def edit_then_recheck(path, expected_sha256):
+        # A human saves the file between the staged bytes being verified and
+        # the rename that would replace them.
+        summary.write_text("# Rhetoric\n\nSaved after the check.\n", encoding="utf-8")
+        return real_recheck(path, expected_sha256)
+
+    real_recheck = render_vault_status._require_expected_summary
+    monkeypatch.setattr(
+        render_vault_status, "install_retained_stage", edit_then_install
+    )
+    monkeypatch.setattr(
+        render_vault_status, "_require_expected_summary", edit_then_recheck
+    )
+
+    with pytest.raises(render_vault_status.SummaryRenderError) as caught:
+        render_vault_status.execute(
+            root,
+            generated_at=GENERATED_AT,
+            apply_requested=True,
+            expected_sha256=dry["summary_sha256"],
+        )
+
+    assert caught.value.reason_code == "summary_precondition_failed"
+    assert (
+        summary.read_text(encoding="utf-8") == "# Rhetoric\n\nSaved after the check.\n"
+    )
+
+
+def test_the_apply_holds_the_shared_summary_writer_lock(
+    render_vault_status,
+    cooperative_lock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A second toolkit writer cannot interleave with the check-and-swap.
+
+    Human editors take no lock, which is why the pre-install recheck exists;
+    every writer that goes through this toolkit is excluded outright.
+    """
+    root = _vault(tmp_path, _database([_talk("one.md", "processed")]))
+    summary = root / "rhetoric-style-summary.md"
+    dry = render_vault_status.execute(root, generated_at=GENERATED_AT)
+    lock_path = cooperative_lock.lock_path_for(summary)
+    observed: list[str] = []
+    real_install = render_vault_status.install_retained_stage
+
+    def probe_then_install(*args, **kwargs):
+        descriptor = os.open(lock_path, os.O_RDWR)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            observed.append("acquired")
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        except BlockingIOError:
+            observed.append("excluded")
+        finally:
+            os.close(descriptor)
+        return real_install(*args, **kwargs)
+
+    monkeypatch.setattr(
+        render_vault_status, "install_retained_stage", probe_then_install
+    )
+
+    render_vault_status.execute(
+        root,
+        generated_at=GENERATED_AT,
+        apply_requested=True,
+        expected_sha256=dry["summary_sha256"],
+    )
+
+    assert observed == ["excluded"]
+    # The lock is persistent: removing it would let two writers lock two
+    # different inodes under one name.
+    assert lock_path.is_file()
+
+
+def test_a_dry_run_takes_no_writer_lock(
+    render_vault_status, cooperative_lock, tmp_path: Path
+) -> None:
+    """Reading is not writing; a dry run must not serialize against writers."""
+    root = _vault(tmp_path, _database([_talk("one.md", "processed")]))
+    summary = root / "rhetoric-style-summary.md"
+
+    render_vault_status.execute(root, generated_at=GENERATED_AT)
+
+    assert not cooperative_lock.lock_path_for(summary).exists()
+
+
+def test_a_missing_summary_says_how_to_recover(
+    render_vault_status, tmp_path: Path, capsys
+) -> None:
+    """`error-handling` Actionable Messages: name the fix, not just the fault."""
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "tracking-database.json").write_text(
+        json.dumps(_database([_talk("one.md", "processed")])), encoding="utf-8"
+    )
+
+    exit_code = render_vault_status.main([str(root), "--generated-at", GENERATED_AT])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    payload = json.loads(captured.out)
+    assert payload["code"] == "summary_missing"
+    assert "rhetoric-style-summary.md" in payload["error"]
+    assert "--summary" in payload["error"]
+    assert str(root) not in captured.out + captured.err
+
+
+def test_an_unreadable_summary_says_how_to_recover(
+    render_vault_status, tmp_path: Path
+) -> None:
+    root = _vault(tmp_path, _database([_talk("one.md", "processed")]))
+    summary = root / "rhetoric-style-summary.md"
+    summary.unlink()
+    # A directory in the summary's place: readable path, unreadable file.
+    summary.mkdir()
+
+    with pytest.raises(render_vault_status.SummaryRenderError) as caught:
+        render_vault_status.execute(root, generated_at=GENERATED_AT)
+
+    assert caught.value.reason_code == "summary_unreadable"
+    assert "regular file" in str(caught.value)
+
+
+def test_a_non_utf8_summary_says_how_to_recover(
+    render_vault_status, tmp_path: Path
+) -> None:
+    root = _vault(tmp_path, _database([_talk("one.md", "processed")]))
+    (root / "rhetoric-style-summary.md").write_bytes(b"# Rhetoric\n\n\xff\xfe\n")
+
+    with pytest.raises(render_vault_status.SummaryRenderError) as caught:
+        render_vault_status.execute(root, generated_at=GENERATED_AT)
+
+    assert caught.value.reason_code == "summary_not_utf8"
+    assert "UTF-8" in str(caught.value)
 
 
 def test_an_edit_during_the_stage_window_abandons_the_swap(

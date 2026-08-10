@@ -380,6 +380,7 @@ def test_initialization_dry_run_and_missing_precondition(
 
 
 def test_initialization_surfaces_owner_io_failure_as_mutation_error(
+    cooperative_lock,
     mutate_tracking_database,
     tracking_database_io,
     tmp_path: Path,
@@ -395,7 +396,7 @@ def test_initialization_surfaces_owner_io_failure_as_mutation_error(
     )
     outside_lock = tmp_path / "outside.lock"
     outside_lock.write_bytes(b"")
-    tracking_database_io.lock_path_for(database_path).symlink_to(outside_lock)
+    cooperative_lock.lock_path_for(database_path).symlink_to(outside_lock)
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,

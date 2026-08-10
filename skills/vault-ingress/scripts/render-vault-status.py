@@ -15,29 +15,37 @@ section.
 
 `--apply` requires `--expected-sha256` from a dry run: the summary is a file a
 human also edits, so an apply that cannot prove it read the current bytes must
-refuse rather than overwrite an edit it never saw. Replacement is atomic
-through the shared retained-stage lifecycle, so an interruption leaves the
-prior complete summary.
+refuse rather than overwrite an edit it never saw. The read, the digest check,
+and the install all run inside the summary's shared cooperative lock, so no
+second toolkit writer can land between the check and the swap; the bytes are
+rechecked once more immediately before the rename, which is what catches a
+human editor, who holds no lock. Replacement is atomic through the shared
+retained-stage lifecycle, so an interruption leaves the prior complete summary.
 
 Usage:
   render-vault-status.py <vault-root-or-database-path> [--summary <path>]
   render-vault-status.py <...> --apply --expected-sha256 <hex>
 Stdout: one JSON object carrying the rendered block and the derived counts.
 Stderr: one actionable, path-neutral line when the database cannot be read.
-Exit 0 on success, 2 when the database or summary cannot be read, 3 when the
-summary's bytes do not match `--expected-sha256`.
+Exit 0 on success, 2 when the database or summary cannot be read, locked, or
+installed, 3 when the summary's bytes do not match `--expected-sha256`.
 """
 
 from __future__ import annotations
 
 import argparse
 from collections import Counter
+from contextlib import contextmanager, ExitStack
 import hashlib
 import json
 from pathlib import Path
 import sys
-from typing import Any
+from typing import Any, Iterator
 
+from cooperative_lock import (
+    CooperativeLockError,
+    exclusive_file_lock,
+)
 from retained_stage import (
     RetainedStageError,
     close_retained_stage,
@@ -61,6 +69,11 @@ REPORT_SCHEMA_VERSION = 1
 STATUS_BLOCK_SCHEMA_VERSION = 1
 DATABASE_BASENAME = "tracking-database.json"
 SUMMARY_BASENAME = "rhetoric-style-summary.md"
+
+# Names the summary in every cooperative-lock diagnostic. Every toolkit writer
+# of this file takes that lock, so the check-and-swap below is one critical
+# section rather than two racing operations.
+SUMMARY_LOCK_LABEL = "rhetoric-summary"
 
 # The block is fenced by exact literals so replacement is a delimited splice,
 # never a heuristic match against narrative prose that may quote a count.
@@ -200,31 +213,102 @@ def splice_block(summary_text: str, block: str) -> str:
 
 
 def _read_summary(path: Path) -> tuple[str, str]:
+    """Read the summary's exact bytes, or say what to do about it.
+
+    Messages stay path-neutral — a host path in a failure line is the leak this
+    tool's diagnostics contract exists to prevent — so recovery is named by the
+    file's canonical basename and by the flag that overrides it.
+    """
     try:
         raw = path.read_bytes()
     except FileNotFoundError as error:
         raise SummaryRenderError(
-            "summary file does not exist", reason_code="summary_missing"
+            f"summary file does not exist: create {SUMMARY_BASENAME} in the vault "
+            "root, or pass --summary with the path to the existing summary",
+            reason_code="summary_missing",
         ) from error
     except OSError as error:
         raise SummaryRenderError(
-            "summary file could not be read", reason_code="summary_unreadable"
+            f"summary file could not be read: confirm {SUMMARY_BASENAME} is a "
+            "readable regular file (not a directory, dangling symlink, or "
+            "unreadable mount), then rerun",
+            reason_code="summary_unreadable",
         ) from error
     try:
         return raw.decode("utf-8"), hashlib.sha256(raw).hexdigest()
     except UnicodeError as error:
         raise SummaryRenderError(
-            "summary file is not valid UTF-8", reason_code="summary_not_utf8"
+            f"summary file is not valid UTF-8: re-save {SUMMARY_BASENAME} as UTF-8, "
+            "or pass --summary with a UTF-8 copy, then rerun",
+            reason_code="summary_not_utf8",
         ) from error
 
 
-def _install(summary_path: Path, payload: bytes, *, expected_sha256: str) -> None:
-    """Replace the summary atomically, bound to the bytes we actually read.
+def _precondition_failed() -> SummaryRenderError:
+    """One wording for every point the bound digest stops matching."""
+    return SummaryRenderError(
+        "summary bytes changed since the digest this apply is bound to: rerun the "
+        "dry run and apply with the sha256 it reports",
+        reason_code="summary_precondition_failed",
+    )
 
-    Checking the digest at read time and installing later is not a
-    compare-and-swap: an edit landing in between is overwritten by a tool that
-    promised to refuse exactly that. The target is re-read immediately before
-    the rename and the swap is abandoned if it moved.
+
+def _require_expected_summary(summary_path: Path, expected_sha256: str) -> None:
+    """Prove the live summary is still the generation the caller read."""
+    _, observed = _read_summary(summary_path)
+    if observed != expected_sha256:
+        raise _precondition_failed()
+
+
+@contextmanager
+def _summary_lock(summary_path: Path) -> Iterator[None]:
+    """Hold the summary's shared writer lock, in this tool's error terms.
+
+    Acquisition is wrapped alone: a lock failure raised by the guarded body
+    belongs to that body, not to this acquisition.
+    """
+    stack = ExitStack()
+    try:
+        lock = stack.enter_context(
+            exclusive_file_lock(summary_path, label=SUMMARY_LOCK_LABEL)
+        )
+    except CooperativeLockError as error:
+        # Path-neutral like every other failure here: the lock's own message
+        # names the host path, so it is diagnosed by shape instead.
+        raise SummaryRenderError(
+            "summary writer lock could not be taken: confirm the vault root is "
+            f"writable and that its .{SUMMARY_BASENAME}.lock is a regular file, "
+            "then rerun",
+            reason_code="summary_lock_failed",
+        ) from error
+    try:
+        with stack:
+            yield
+    finally:
+        for warning in lock.warnings:
+            print(f"WARNING: {warning}", file=sys.stderr)
+
+
+def _plan_replacement(
+    summary_path: Path,
+    block: str,
+    *,
+    expected_sha256: str | None = None,
+) -> tuple[str, bytes, bool]:
+    """Read the summary once and render its replacement from that observation."""
+    summary_text, summary_sha256 = _read_summary(summary_path)
+    if expected_sha256 is not None and expected_sha256 != summary_sha256:
+        raise _precondition_failed()
+    payload = splice_block(summary_text, block).encode("utf-8")
+    return summary_sha256, payload, payload != summary_text.encode("utf-8")
+
+
+def _install(summary_path: Path, payload: bytes, *, expected_sha256: str) -> None:
+    """Replace the summary, bound to the bytes the caller proved it read.
+
+    Called with the cooperative lock held, so no other toolkit writer sits
+    between the check and the rename. The recheck here is what covers the
+    writer no lock can reach — a human saving the file in an editor.
     """
     stage = open_retained_stage(
         summary_path,
@@ -234,16 +318,12 @@ def _install(summary_path: Path, payload: bytes, *, expected_sha256: str) -> Non
         label="rhetoric summary",
     )
     try:
-        _, observed = _read_summary(summary_path)
-        if observed != expected_sha256:
-            raise SummaryRenderError(
-                "summary bytes changed while the replacement was staged",
-                reason_code="summary_precondition_failed",
-            )
+        _require_expected_summary(summary_path, expected_sha256)
         install_retained_stage(stage, summary_path)
     except OSError as error:
         raise SummaryRenderError(
-            "summary replacement could not be installed",
+            "summary replacement could not be installed: confirm the vault root is "
+            "writable with free space, then rerun the dry run and apply again",
             reason_code="summary_install_failed",
         ) from error
     finally:
@@ -278,28 +358,30 @@ def execute(
 
     status = derive_status(database, input_sha256=snapshot.sha256)
     block = render_block(status, generated_at=generated_at)
-    summary_text, summary_sha256 = _read_summary(summary_path)
-    rendered = splice_block(summary_text, block)
-    payload = rendered.encode("utf-8")
-    changed = payload != summary_text.encode("utf-8")
 
     written = False
-    if apply_requested:
+    if not apply_requested:
+        summary_sha256, payload, changed = _plan_replacement(summary_path, block)
+    else:
         if expected_sha256 is None:
             raise SummaryRenderError(
                 "--apply requires --expected-sha256 from a dry-run report",
                 reason_code="summary_precondition_missing",
             )
-        if expected_sha256 != summary_sha256:
-            raise SummaryRenderError(
-                "summary bytes changed since the dry run",
-                reason_code="summary_precondition_failed",
+        # Read, check, and install are one critical section. Splitting them —
+        # checking outside the lock and installing inside it — is the race this
+        # tool promises it does not have.
+        with _summary_lock(summary_path):
+            summary_sha256, payload, changed = _plan_replacement(
+                summary_path,
+                block,
+                expected_sha256=expected_sha256,
             )
-        # A no-op render installs nothing: rewriting identical bytes would
-        # churn the file's identity for consumers watching it.
-        if changed:
-            _install(summary_path, payload, expected_sha256=expected_sha256)
-            written = True
+            # A no-op render installs nothing: rewriting identical bytes would
+            # churn the file's identity for consumers watching it.
+            if changed:
+                _install(summary_path, payload, expected_sha256=expected_sha256)
+                written = True
 
     return {
         "schema_version": REPORT_SCHEMA_VERSION,

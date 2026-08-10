@@ -233,6 +233,7 @@ def test_owner_mutation_cli_preserves_final_window_generation(
 
 
 def test_queue_and_persistence_writers_serialize_then_reject_stale_input(
+    cooperative_lock,
     queue_state,
     persist_results,
     tracking_database_io,
@@ -244,7 +245,7 @@ def test_queue_and_persistence_writers_serialize_then_reject_stale_input(
     queue_snapshot = tracking_database_io.snapshot_tracking_database(path)
     persistence_snapshot = tracking_database_io.snapshot_tracking_database(path)
     original_stage = tracking_database_io._stage_candidate
-    real_flock = tracking_database_io.fcntl.flock
+    real_flock = cooperative_lock.fcntl.flock
     persistence_attempted = threading.Event()
     persistence_errors: list[Exception] = []
     persistence_thread: threading.Thread | None = None
@@ -279,7 +280,7 @@ def test_queue_and_persistence_writers_serialize_then_reject_stale_input(
         assert persistence_errors == []
         return temporary
 
-    monkeypatch.setattr(tracking_database_io.fcntl, "flock", observed_flock)
+    monkeypatch.setattr(cooperative_lock.fcntl, "flock", observed_flock)
     monkeypatch.setattr(
         tracking_database_io,
         "_stage_candidate",

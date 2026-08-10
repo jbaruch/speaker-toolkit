@@ -27,13 +27,25 @@ and leaves the analysis evidence in place, so reading history off the status
 would erase every requeued talk's past work — the exact misreading this block
 exists to stop. History is counted from the persisted evidence instead.
 
-The compare-and-swap binds the install, not just the earlier read: the target is
-re-read immediately before the rename and the swap is abandoned if it moved, so
-an edit landing while the replacement is staged is not overwritten by a tool
-that promised to refuse exactly that. Duplicate delimiters are malformed rather
+The compare-and-swap is one critical section, not a check and a later hope. A
+digest checked at read time and a rename issued afterwards are two operations,
+and a writer landing between them is overwritten by a tool that promised to
+refuse exactly that. The read, the check, and the install now all run inside the
+summary's persistent cooperative lock, so no second toolkit writer can occupy
+that window; the bytes are rechecked once more immediately before the rename,
+which is what catches a human editor, who holds no lock. That lock is the
+primitive the tracking database already used — extracted to `cooperative_lock.py`
+and shared, rather than reimplemented beside it, so both owner files serialize
+through one audited implementation. Duplicate delimiters are malformed rather
 than first-match spliced, and the whole retained-stage error family is
 translated into the JSON failure contract instead of only its invariant
 subclass.
+
+Every summary failure now names its recovery, not just its fault: which file to
+create, which flag supplies an alternate path, what to re-save as UTF-8. The
+messages stay path-neutral — a host path in a failure line is the leak this
+tool's diagnostics contract exists to prevent — so recovery is named by the
+file's canonical basename and by the flag that overrides it.
 
 `--apply` requires `--expected-sha256` from a dry run. The summary is a file a
 human also edits, so an apply that cannot prove it read the current bytes
