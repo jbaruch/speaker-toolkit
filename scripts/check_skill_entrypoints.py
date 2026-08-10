@@ -84,22 +84,50 @@ def _strip_code(markdown: str) -> str:
             continue
         if in_fence:
             continue
-        # Inline spans, innermost first; an unterminated backtick spans nothing.
-        stripped = ""
-        rest = line
-        while True:
-            open_tick = rest.find("`")
-            if open_tick == -1:
-                stripped += rest
-                break
-            close_tick = rest.find("`", open_tick + 1)
-            if close_tick == -1:
-                stripped += rest
-                break
-            stripped += rest[:open_tick]
-            rest = rest[close_tick + 1 :]
-        lines.append(stripped)
+        lines.append(_strip_inline_code(line))
     return "\n".join(lines)
+
+
+def _strip_inline_code(line: str) -> str:
+    """Remove CommonMark code spans from one line.
+
+    A span opens on a run of N backticks and closes on the next run of exactly
+    N — not on the next single backtick. Pairing individual backticks splits
+    ``[x](missing.md)`` at its first two characters and leaves the link in the
+    text, so the gate rejects a valid skill for a link that is only sample
+    output. It also lets a span carry a lone backtick, which is the whole point
+    of the longer delimiter.
+
+    An unterminated run is literal text, not an open span.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(line)
+    while i < n:
+        if line[i] != "`":
+            out.append(line[i])
+            i += 1
+            continue
+
+        run_start = i
+        while i < n and line[i] == "`":
+            i += 1
+        run_length = i - run_start
+
+        scan = i
+        while scan < n:
+            if line[scan] != "`":
+                scan += 1
+                continue
+            close_start = scan
+            while scan < n and line[scan] == "`":
+                scan += 1
+            if scan - close_start == run_length:
+                i = scan  # Span consumed, contents dropped.
+                break
+        else:
+            out.append(line[run_start:i])
+    return "".join(out)
 
 
 def _skip_whitespace(text: str, i: int) -> int:

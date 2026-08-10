@@ -183,6 +183,33 @@ def test_fenced_blocks_and_inline_spans_are_excluded() -> None:
 
 
 @pytest.mark.parametrize(
+    ("markdown", "expected"),
+    [
+        # Single-backtick span.
+        ("Wrap it as `[t](gone.md)` — ok.", []),
+        # Double run: pairing single backticks would split at the first two
+        # characters and leak the link.
+        ("Use ``[x](gone.md)`` here.", []),
+        # A longer run exists precisely so the span can hold a lone backtick.
+        ("Use ``a ` [y](gone.md)`` here.", []),
+        # A run only closes on an equal-length run.
+        ("Mid-line ```[z](gone.md)``` and [yes](real.md)", ["real.md"]),
+        # An unterminated run is literal text, not an open span.
+        ("A `stray tick and [real](kept.md)", ["kept.md"]),
+        # Text after a closed span is still scanned.
+        ("`code` then [after](later.md)", ["later.md"]),
+    ],
+)
+def test_code_spans_use_delimiter_runs(markdown: str, expected: list[str]) -> None:
+    assert extract_link_destinations(markdown) == expected
+
+
+def test_line_starting_with_a_backtick_run_is_a_fence() -> None:
+    """CommonMark reads a line-leading run as a fence, not an inline span."""
+    assert extract_link_destinations("```[z](gone.md)``` and [no](x.md)") == []
+
+
+@pytest.mark.parametrize(
     ("destination", "expected"),
     [
         ("references/notes.md", True),

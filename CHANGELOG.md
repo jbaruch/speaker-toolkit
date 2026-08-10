@@ -39,7 +39,10 @@ an over-budget entrypoint and on a relative link resolving to nothing — the
 second failure mode being the one the split itself introduces, since a dangling
 pointer is silent at runtime: the agent follows it, finds nothing, and proceeds
 without the routing contract. Links inside code fences and inline code spans are
-sample output the skill emits, not pointers, so they are excluded. The token
+sample output the skill emits, not pointers, so they are excluded. Code spans
+close on a matching delimiter run, not on the next backtick: pairing single
+backticks split ``[x](missing.md)`` at its first two characters and leaked the
+link back into the scanned text, failing the gate on a valid skill. The token
 estimate is chars/4, which rounds against us (8,791 estimated vs Tessl's 8,749
 reported on the same file), so a pass here implies a pass in lint.
 
