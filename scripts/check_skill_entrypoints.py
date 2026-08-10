@@ -352,7 +352,24 @@ def tesslignore_excluded(repo_root: Path, relative_paths: list[str]) -> set[str]
         return set()
 
     with tempfile.TemporaryDirectory() as scratch:
-        subprocess.run(["git", "init", "-q", scratch], check=True, capture_output=True)
+        # Exit codes are inspected rather than check=True: a CalledProcessError
+        # escapes main()'s GateError handler as a traceback with empty stdout,
+        # which is the contract violation this whole path exists to avoid.
+        try:
+            init = subprocess.run(
+                ["git", "init", "-q", scratch], capture_output=True, text=True
+            )
+        except OSError as error:
+            raise GateError(
+                f"ERROR: could not run git to test .tesslignore patterns — {error}.\n"
+                f"  Install git, or make it reachable on PATH, then re-run."
+            ) from error
+        if init.returncode != 0:
+            raise GateError(
+                f"ERROR: git init failed (exit {init.returncode}) while preparing"
+                f" the scratch repo used to test .tesslignore patterns.\n"
+                f"  {init.stderr.strip()}"
+            )
         result = subprocess.run(
             [
                 "git",

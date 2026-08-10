@@ -9,6 +9,7 @@ nothing.
 """
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -476,6 +477,23 @@ def test_missing_skills_directory_fails(tmp_path: Path) -> None:
     result = _run(empty)
     assert result.returncode != 0
     assert "no skills/ directory" in result.stderr
+
+
+def test_unreachable_git_fails_with_json_not_a_traceback(plugin: Path) -> None:
+    """The .tesslignore test shells out; git missing must not crash the gate."""
+    _write(plugin, ".tesslignore", "nothing-matches\n")
+    (plugin / "no-tools").mkdir()
+    env = {**os.environ, "PATH": str(plugin / "no-tools")}
+    result = subprocess.run(
+        [sys.executable, str(GATE), str(plugin)],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode != 0
+    assert json.loads(result.stdout)["ok"] is False
+    assert "git" in result.stderr
+    assert "Traceback" not in result.stderr
 
 
 @pytest.mark.parametrize(
