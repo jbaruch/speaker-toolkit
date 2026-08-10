@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.48 — 2026-08-10
+
 ### feat(vault-ingress) — an owner writer for reviewed shownotes catalog conflicts (#236)
 
 Closes #236.
