@@ -200,3 +200,31 @@ def test_this_repo_passes_plugin_lint() -> None:
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert json.loads(result.stdout)["ok"] is True
+
+
+def test_workflow_annotations_never_touch_stdout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """stdout is the JSON report; CI redirects it to /dev/null."""
+    plugin = tmp_path / "plugin"
+    _write_plugin(plugin, description="A demo skill for gate tests")
+    oversized = "Filler that pads the entrypoint past the token budget. " * 700
+    (plugin / "skills" / "demo" / "SKILL.md").write_text(
+        "---\nname: demo\ndescription: A demo skill\n---\n\n# Demo\n\n" + oversized,
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+
+    result = subprocess.run(
+        [sys.executable, str(GATE), str(plugin)],
+        capture_output=True,
+        text=True,
+        env={**dict(__import__("os").environ), "GITHUB_ACTIONS": "true"},
+    )
+
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["advisories"]
+    assert "::warning" not in result.stdout
+    assert "::warning" in result.stderr

@@ -38,12 +38,14 @@ jobs:
         run: ruff format --check .
       - name: Pyright
         run: pyright
-      # Deliberately unpinned: this gate exists to predict what the publish
-      # run's own `tessl plugin lint` will say, and that step installs the
-      # latest CLI. Pinning here could pass against an older ruleset and still
-      # break the release. No token — lint needs no auth, so the gate also runs
-      # on fork pull requests, where secrets are unavailable.
+      # No token: lint needs no auth, so the gate also runs on fork pull
+      # requests, where secrets are unavailable.
       - uses: tesslio/setup-tessl@v2
+        with:
+          # Tessl CLI pin. No Dependabot ecosystem tracks the CLI version an
+          # action input names; renew quarterly, or when the publish workflow's
+          # own lint disagrees with this gate. Keep both jobs on one version.
+          version: "0.95.0"
       - name: Validate plugin structure
         # context-artifacts -> Plugin Structure requires a clean lint before
         # every publish. The publish workflow runs it after merge, which turns
@@ -66,6 +68,11 @@ jobs:
       # plugins. `ci-safety` -> Install, Don't Skip: install the tool rather
       # than skipping the cases that need it.
       - uses: tesslio/setup-tessl@v2
+        with:
+          # Tessl CLI pin. No Dependabot ecosystem tracks the CLI version an
+          # action input names; renew quarterly, or when the publish workflow's
+          # own lint disagrees with this gate. Keep both jobs on one version.
+          version: "0.95.0"
       - name: Enforce tessl-version-floating carve-out
         # See rules/tessl-version-floating.md. Fails the build if any
         # dependency in a covered manifest uses a specifier other than

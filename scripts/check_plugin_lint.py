@@ -153,11 +153,16 @@ def run(repo_root: Path, *, command: tuple[str, ...] = LINT_COMMAND):
 
 
 def _emit_workflow_annotations(advisories: list[str]) -> None:
-    """Surface advisories where a GitHub reviewer will actually see them."""
+    """Surface advisories where a GitHub reviewer will actually see them.
+
+    Workflow commands go to stderr, never stdout: stdout is reserved for the
+    single JSON report, and the CI step redirects it to /dev/null, which would
+    swallow the annotations along with the report.
+    """
     if not os.environ.get("GITHUB_ACTIONS"):
         return
     for advisory in advisories:
-        print(f"::warning title=tessl plugin lint::{advisory}")
+        print(f"::warning title=tessl plugin lint::{advisory}", file=sys.stderr)
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if not summary_path or not advisories:
         return

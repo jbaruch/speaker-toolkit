@@ -26,11 +26,17 @@ advisory policy is explicit, because the CLI's exit code does not express it:
   any advisory a future CLI adds into an instant build break with no owner
   decision behind it.
 
-The CLI is installed unpinned and without a token. Unpinned because the gate
-exists to predict what the publish run's own lint will say, and that step
-installs the latest CLI — a pinned gate could pass against an older ruleset and
-still break the release. Tokenless because lint needs no auth, so the gate also
-runs on fork pull requests, where secrets are unavailable.
+The CLI version is pinned in both jobs, with the renewal cadence recorded beside
+the pin: no Dependabot ecosystem tracks a CLI version named in an action input,
+so `dependency-management` → Freshness wants the cadence documented there, the
+way the ffmpeg and tesseract pins already are. Renew quarterly, or when the
+publish workflow's own lint disagrees with this gate. No token is passed — lint
+needs no auth, so the gate also runs on fork pull requests, where secrets are
+unavailable.
+
+Workflow annotations go to stderr. stdout carries the single JSON report and
+the CI step redirects it to `/dev/null`, so a `::warning::` printed there would
+both break the stdout contract and be swallowed.
 
 Not added to `scripts/pre-publish-checks.sh`: the publish workflow already runs
 lint as its own step, and it runs the composer before installing the CLI
