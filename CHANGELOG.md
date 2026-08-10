@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.46 — 2026-08-10
+
 ### feat(vault-ingress) — bind PPTX catalog visual evidence to its extractor generation (#229)
 
 Closes #229.
