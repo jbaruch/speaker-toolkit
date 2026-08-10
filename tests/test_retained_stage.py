@@ -385,3 +385,44 @@ def test_incomplete_stage_cleanup_failure_warns_when_it_cannot_attach(
         )
 
     assert "could not remove incomplete staged file" in capsys.readouterr().err
+
+
+def test_unverified_install_fails_the_run_and_keeps_the_backup(
+    write_analysis, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed post-install proof must not exit 0.
+
+    Rolling back would be wrong — the replace already happened — so the batch
+    completes, the recovery backup is retained, and the run still fails.
+    """
+    target = tmp_path / "analysis.md"
+    target.write_text("the original body\n", encoding="utf-8")
+    rendered = [("talk", str(target), "the new body\n")]
+
+    monkeypatch.setattr(
+        write_analysis,
+        "installed_target_warning",
+        lambda *_args, **_kwargs: "injected post-install verification failure",
+    )
+
+    with pytest.raises(write_analysis.AnalysisBatchUnverifiedError) as caught:
+        write_analysis.atomic_write_batch(rendered)
+
+    assert str(target) in str(caught.value)
+    assert "Recovery backups retained" in str(caught.value)
+    # The install itself still happened; rollback here would be the wrong move.
+    assert target.read_text(encoding="utf-8") == "the new body\n"
+    assert list(tmp_path.glob(".*.backup"))
+
+
+def test_a_verified_install_removes_its_backup_and_succeeds(
+    write_analysis, tmp_path: Path
+) -> None:
+    target = tmp_path / "analysis.md"
+    target.write_text("the original body\n", encoding="utf-8")
+
+    write_analysis.atomic_write_batch([("talk", str(target), "the new body\n")])
+
+    assert target.read_text(encoding="utf-8") == "the new body\n"
+    assert not list(tmp_path.glob(".*.backup"))
+    assert not list(tmp_path.glob(".*.stage"))

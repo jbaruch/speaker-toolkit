@@ -60,6 +60,17 @@ was never established and an orphan may remain; it gets its own
 `staged_cleanup_inspect_failed` disposition. The test fixture stopped
 suppressing cleanup errors.
 
+A third round found the analysis writer still exiting 0 after a failed
+post-install proof: the warning was collected, the batch marked committed, and
+the CLI reported success over a target that might hold substituted bytes. That
+now raises `AnalysisBatchUnverifiedError` — a distinct type, because rolling
+back would be wrong here (the replace already happened and the target holds the
+new file). The batch completes, the recovery backup for each unproven target is
+retained rather than deleted, and the run fails so an operator inspects instead
+of trusting it. The staging-failure path also released its stages inside a
+`finally` that ran after the error was constructed, so those cleanup warnings
+went nowhere; cleanup now happens first and the detail rides out on the error.
+
 Two Copilot findings folded in. `_stage_candidate` ran cleanup on a
 verification failure and dropped the report, reintroducing the vanished-warning
 problem one level up; the cleanup detail now rides out inside the typed

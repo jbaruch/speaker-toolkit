@@ -158,6 +158,16 @@ class AnalysisBatchWriteError(OSError):
     """A staged analysis batch could not commit or recover atomically."""
 
 
+class AnalysisBatchUnverifiedError(AnalysisBatchWriteError):
+    """Targets installed, but their post-install byte proof failed.
+
+    Distinct from a commit failure: rolling back here would be wrong, because
+    the replace already happened and the target holds the new file. The batch
+    is complete and the run still fails, so the operator inspects rather than
+    trusting a silent success.
+    """
+
+
 def effective_render_payload(ret, talk):
     """Build the single canonical payload rendered after persistence.
 
@@ -909,6 +919,12 @@ def _release_stages(items, warnings):
         warnings.extend(report.warnings)
 
 
+def _warn_cleanup(warnings):
+    """Emit staged-cleanup detail that has no exception to ride out on."""
+    for warning in warnings:
+        print(f"WARNING: {warning}", file=sys.stderr)
+
+
 def _cleanup_suffix(warnings):
     """Append staged-cleanup detail to a failure without hiding the cause."""
     if not warnings:
@@ -950,7 +966,9 @@ def atomic_write_batch(rendered):
 
     items = []
     cleanup_warnings: list[str] = []
+    unverified: list[str] = []
     staging_complete = False
+    staging_released = False
     try:
         for name, path, body in rendered:
             items.append(
@@ -965,12 +983,18 @@ def atomic_write_batch(rendered):
             )
         staging_complete = True
     except (RetainedStageError, OSError) as exc:
+        # Release first: a `finally` here would collect cleanup warnings after
+        # the error was already constructed, and they would vanish.
+        _release_stages(items, cleanup_warnings)
+        staging_released = True
         raise AnalysisBatchWriteError(
             f"cannot stage complete analysis batch: {exc}"
+            + _cleanup_suffix(cleanup_warnings)
         ) from exc
     finally:
-        if not staging_complete:
+        if not staging_complete and not staging_released:
             _release_stages(items, cleanup_warnings)
+            _warn_cleanup(cleanup_warnings)
 
     committed = False
     rollback_done = False
@@ -1012,9 +1036,11 @@ def atomic_write_batch(rendered):
                 item["body"],
             )
             if warning is not None:
-                # The replace already happened, so this is an installed-but-
-                # unverified outcome, never a pre-install failure.
+                # The replace already happened, so this is never a pre-install
+                # failure and must not trigger rollback — the target now holds
+                # the new file. It is still a failure the caller must see.
                 cleanup_warnings.append(warning)
+                unverified.append(target)
         committed = True
     except (AnalysisBatchWriteError, RetainedStageError, OSError) as exc:
         rollback_errors = _rollback_analysis_batch(items)
@@ -1042,6 +1068,10 @@ def atomic_write_batch(rendered):
                     file=sys.stderr,
                 )
     for item in items:
+        if item["path"] in unverified:
+            # Keep this target's recovery backup: its installed bytes could not
+            # be proven, so the operator may need the original.
+            continue
         try:
             _safe_unlink(item["backup"])
             item["backup"] = None
@@ -1051,8 +1081,14 @@ def atomic_write_batch(rendered):
             # batch after other backups may already have been discarded.
             pass
     _release_stages(items, cleanup_warnings)
-    for warning in cleanup_warnings:
-        print(f"WARNING: {warning}", file=sys.stderr)
+    _warn_cleanup(cleanup_warnings)
+    if unverified:
+        retained = [item["backup"] for item in items if item["backup"]]
+        raise AnalysisBatchUnverifiedError(
+            "analysis batch installed, but these targets could not be proven to "
+            f"hold their staged bytes: {unverified}; inspect them before trusting "
+            f"the run. Recovery backups retained: {retained}"
+        )
 
 
 def load_json(path, label):
