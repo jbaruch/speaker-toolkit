@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.41 — 2026-08-10
+
 ### feat(vault-ingress) — carry the matched rejection into scan reports (#177)
 
 Closes #177. `scan-shownotes.py` blocked a reappearing known-bad source but
