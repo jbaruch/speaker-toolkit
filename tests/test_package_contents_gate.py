@@ -97,6 +97,35 @@ def test_no_ignore_file_passes(plugin: Path) -> None:
     report = _report(result)
     assert report["ok"] is True
     assert report["ignore_file_present"] is False
+    # The declared-path checks still ran; only exclusion matching was skipped.
+    assert report["checked"] == 4
+
+
+def test_malformed_manifest_fails_without_an_ignore_file(plugin: Path) -> None:
+    """No .tesslignore skips exclusion matching, never the Surface Sync checks."""
+    _write(plugin, ".tessl-plugin/plugin.json", "{not json")
+    result = _run(plugin)
+    assert result.returncode == 1
+    assert "not valid JSON" in result.stderr
+
+
+def test_stale_declaration_fails_without_an_ignore_file(plugin: Path) -> None:
+    _write(
+        plugin,
+        ".tessl-plugin/plugin.json",
+        json.dumps(
+            {
+                "name": "acme/widget",
+                "version": "1.0.0",
+                "description": "d",
+                "skills": ["skills/builder", "skills/ghost"],
+            }
+        ),
+    )
+    result = _run(plugin)
+    assert result.returncode == 1
+    assert _report(result)["missing"] == ["skills/ghost"]
+    assert 'declares "skills/ghost" but no tracked files live there' in result.stderr
 
 
 def test_clean_ignore_file_passes(plugin: Path) -> None:

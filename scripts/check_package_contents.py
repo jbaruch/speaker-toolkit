@@ -13,8 +13,10 @@ Matching runs against a throwaway empty git repo with core.excludesFile pointed
 at .tesslignore, so only .tesslignore patterns are consulted — the repo's own
 .gitignore can neither mask a match nor invent one.
 
-A repo with no .tesslignore passes without reading the manifest's contents:
-nothing can be excluded, so the question this gate asks is already answered.
+The manifest and its declared paths are checked on every run; only the
+exclusion matching is skipped when no .tesslignore exists. A malformed manifest
+or a stale declaration must not reach publish just because the repo happens to
+have no ignore file.
 
 Usage: check_package_contents.py [<repo-root>]   (default: this repo)
 Stdout: one JSON object describing what was declared and what would be stripped.
@@ -249,17 +251,12 @@ def run(repo_root: Path) -> tuple[dict[str, object], list[str]]:
             f"  Point this check at the plugin repo root, or restore the manifest."
         )
 
-    if not (repo_root / IGNORE_FILE).is_file():
-        report: dict[str, object] = {
-            "ok": True,
-            "ignore_file_present": False,
-            "declared": [],
-            "checked": 0,
-            "missing": [],
-            "excluded": [],
-        }
-        return report, []
-
+    # The manifest and its declared paths are checked on every run. Only the
+    # exclusion matching depends on .tesslignore, so a repo without one still
+    # has its Surface Sync contract enforced: a malformed manifest or a stale
+    # declaration must never reach publish because no ignore file happened to
+    # exist.
+    ignore_file_present = (repo_root / IGNORE_FILE).is_file()
     entries = declared_content_entries(repo_root)
     tracked, missing = tracked_content(repo_root, entries)
 
@@ -273,9 +270,9 @@ def run(repo_root: Path) -> tuple[dict[str, object], list[str]]:
             "  Restore the path, or drop it from the manifest (see"
             " jbaruch/coding-policy: context-artifacts -> Surface Sync)."
         )
-        report = {
+        report: dict[str, object] = {
             "ok": False,
-            "ignore_file_present": True,
+            "ignore_file_present": ignore_file_present,
             "declared": entries,
             "checked": len(tracked),
             "missing": missing,
@@ -283,7 +280,7 @@ def run(repo_root: Path) -> tuple[dict[str, object], list[str]]:
         }
         return report, diagnostics
 
-    excluded = tesslignore_exclusions(repo_root, tracked)
+    excluded = tesslignore_exclusions(repo_root, tracked) if ignore_file_present else []
     if excluded:
         diagnostics.append(
             f"ERROR: {IGNORE_FILE} excludes {len(excluded)} of {len(tracked)}"
@@ -310,7 +307,7 @@ def run(repo_root: Path) -> tuple[dict[str, object], list[str]]:
 
     report = {
         "ok": not excluded,
-        "ignore_file_present": True,
+        "ignore_file_present": ignore_file_present,
         "declared": entries,
         "checked": len(tracked),
         "missing": [],

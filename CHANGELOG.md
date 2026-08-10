@@ -43,6 +43,13 @@ being a well-formed container that declares nothing.
 All three gates' crash-path guidance now names `sys.executable` and the
 resolved script path, so the suggested re-run command works from any working
 directory and under the interpreter that actually failed.
+
+A second inherited gap closes with it: the shell gate returned success the
+moment no `.tesslignore` existed, before parsing the manifest or checking that
+every declared path holds tracked files. A malformed manifest or a stale
+declaration reached publish unexamined whenever the repo had no ignore file.
+The manifest and declared-path checks now run on every invocation; only the
+exclusion matching depends on the ignore file.
 ||||||| d103118
 ## 0.20.43 — 2026-08-10
 
