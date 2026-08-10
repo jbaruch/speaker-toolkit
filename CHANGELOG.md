@@ -33,14 +33,14 @@ now a real Step 5.1c. The poster-theatrical `TITLE`/`FOOTER` omit rule and the
 load-bearing `expand-builds` → `inject-notes` → `apply-backgrounds` ordering also
 landed in `phase5-slides.md`, where the rest of the build detail lives.
 
-`scripts/check-skill-entrypoints.sh` makes both properties deterministic instead
+`scripts/check_skill_entrypoints.py` makes both properties deterministic instead
 of remembered, per `language-diagnostics` Gate It Deterministically. It fails on
 an over-budget entrypoint and on a relative link resolving to nothing — the
 second failure mode being the one the split itself introduces, since a dangling
 pointer is silent at runtime: the agent follows it, finds nothing, and proceeds
 without the routing contract. Links inside code fences and inline code spans are
 sample output the skill emits, not pointers, so they are excluded. The token
-estimate is chars/4, which rounds against us (8,790 estimated vs Tessl's 8,749
+estimate is chars/4, which rounds against us (8,791 estimated vs Tessl's 8,749
 reported on the same file), so a pass here implies a pass in lint.
 
 The gate is `scripts/check_skill_entrypoints.py`. It started as shell and moved

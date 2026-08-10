@@ -81,6 +81,9 @@ starting a new CFP; adapt rather than rewrite.
   is retired.
 - The catalog reflects the **latest approved version** — full history lives in
   the tracking database and analysis files.
-- Run an anti-pattern check on entries before saving (use the blog-writer skill's
-  `ai-anti-patterns.md` if installed). Keep the "Last updated" date current.
+- Run an anti-pattern check on entries before saving. Delegate it with
+  `Skill(skill: "blog-writer")`, which returns the flagged phrasings for the
+  abstract; apply them here and continue. If that skill is not installed, note
+  that the check was skipped rather than approximating it. Keep the
+  "Last updated" date current.
 - Entries are separated by `---` horizontal rules for easy scanning.

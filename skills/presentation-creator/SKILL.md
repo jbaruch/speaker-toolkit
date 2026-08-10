@@ -18,13 +18,19 @@ user_invocable: true
 
 # Presentation Creator
 
-Process steps in order. Do not skip ahead.
+Process steps in order. Do not skip ahead. Do not parallelize.
 
-The phases below are a numbered sequential workflow — Phase 0 must run before
-Phase 1, Phase 1 before Phase 2, and so on. Late-entry single-task requests
-(Phase 6 / Phase 7 re-runs) still require the documented pre-flight checklist
-before any action; do not parallelize and do not bypass the vault-loading or
-artifact-loading gates.
+Steps 0–7 are a sequential workflow — Step 0 must run before Step 1, Step 1
+before Step 2, and so on. This is the default for any request to build a talk.
+
+Four named alternate entries route elsewhere: a late-entry single task (a QR
+code, an export, shownotes), adapting an existing talk, writing a CFP abstract,
+and sessions-catalog work. When the request matches one, read
+[references/alternate-entry-flows.md](references/alternate-entry-flows.md) and
+run only that flow. Each names the steps it enters and the ones it deliberately
+skips — the CFP flow skips Step 2 by design. Every alternate entry still
+requires the vault-loading gate below and the documented pre-flight checklist
+before any action, and none of them bypasses the artifact-loading gates.
 
 Resolve the absolute path of this loaded `SKILL.md`, then set
 `speaker_toolkit_root` to the plugin root two directories above the directory
@@ -93,12 +99,7 @@ eligibility, summary-only mode, and the cross-generation comparison rules.
 | 7: Post-Event | YouTube thumbnail, video to shownotes | Thumbnail approved, video linked |
 
 Do not skip phases. Do not write content before Phase 3. Phase 2 is joint, not autonomous.
-
-For a request that is not a fresh linear build — a late-entry single task, an
-adaptation of an existing talk, a CFP abstract, or any sessions-catalog read or
-write — read
-[references/alternate-entry-flows.md](references/alternate-entry-flows.md) and
-follow the matching flow. Vault loading above stays mandatory for all of them.
+The four alternate entries named in the preamble are the only exceptions.
 
 **Talk-directory artifacts.**
 
