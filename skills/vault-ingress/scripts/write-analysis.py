@@ -104,6 +104,8 @@ from retained_stage import (
     verify_retained_stage,
 )
 from tracking_database_io import (
+    DATABASE_READ_DIAGNOSTICS,
+    DATABASE_READ_FALLBACK,
     TrackingDatabaseIOError,
     decode_json_object,
     snapshot_tracking_database,
@@ -1113,8 +1115,14 @@ def load_tracking_database(path):
         snapshot = snapshot_tracking_database(path)
         database = decode_json_object(snapshot)
     except TrackingDatabaseIOError as exc:
-        message = str(exc)
-        if "root must be a JSON object" in message:
+        # Never echo the exception: decoder messages carry the host database
+        # path and the rejected key or value verbatim. The typed reason code
+        # routes to the shared closed vocabulary, and the one hint this reader
+        # adds keys off that code rather than off the message text.
+        _code, message = DATABASE_READ_DIAGNOSTICS.get(
+            exc.reason_code, DATABASE_READ_FALLBACK
+        )
+        if exc.reason_code == "json_root_not_object":
             message += "; expected an object with a `talks` array"
         print(f"ERROR: {message}", file=sys.stderr)
         sys.exit(1)

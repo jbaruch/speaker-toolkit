@@ -95,6 +95,50 @@ DATABASE_READ_DIAGNOSTICS = {
         "database_json_invalid",
         "tracking database contains an unpaired UTF-16 surrogate in a JSON string",
     ),
+    # The path never reached the decoder. Each of these names what to do about
+    # the file itself; without them the fallback would erase the one detail
+    # that makes the failure fixable.
+    "path_missing": (
+        "database_unreadable",
+        "tracking database is missing at the path given; pass the canonical "
+        "tracking-database.json file path",
+    ),
+    "path_uninspectable": (
+        "database_unreadable",
+        "tracking database path could not be inspected; check permissions on it "
+        "and on its parent directory",
+    ),
+    "path_symlink": (
+        "database_unreadable",
+        "tracking database path is a symbolic link; pass its canonical "
+        "regular-file path",
+    ),
+    "path_not_regular_file": (
+        "database_unreadable",
+        "tracking database path is not a regular file; repair it before retrying",
+    ),
+    "open_failed": (
+        "database_unreadable",
+        "tracking database could not be opened without following symlinks; "
+        "confirm it is a readable regular file, then retry",
+    ),
+    "read_failed": (
+        "database_unreadable",
+        "tracking database bytes could not be read; confirm the file is readable "
+        "and the volume is healthy, then retry",
+    ),
+    # Nothing is wrong with the file: another writer installed a generation
+    # mid-read. Rerunning against the new one is the whole remedy.
+    "generation_conflict": (
+        "database_generation_conflict",
+        "tracking database changed while it was being read; rerun the operation "
+        "against the current generation",
+    ),
+    "staged_candidate_conflict": (
+        "database_generation_conflict",
+        "a staged tracking-database candidate changed before it could be "
+        "installed; rerun the operation against the current generation",
+    ),
 }
 DATABASE_READ_FALLBACK = (
     "database_unreadable",
@@ -117,7 +161,21 @@ class TrackingDatabaseIOError(ValueError):
 
 
 class TrackingDatabaseConflictError(TrackingDatabaseIOError):
-    """The expected database generation is no longer current."""
+    """The expected database generation is no longer current.
+
+    Defaults its reason code so a reader routing through
+    DATABASE_READ_DIAGNOSTICS reports "rerun the operation" rather than the
+    generic could-not-be-read fallback: a concurrent write is the one read
+    failure that is fixed by simply trying again.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason_code: str = "generation_conflict",
+    ) -> None:
+        super().__init__(message, reason_code=reason_code)
 
 
 class StagedCandidateConflictError(TrackingDatabaseConflictError):
@@ -129,7 +187,8 @@ class StagedCandidateConflictError(TrackingDatabaseConflictError):
         self.detail = detail
         super().__init__(
             f"staged tracking-database candidate {path} changed before install: "
-            f"invariant={invariant}; {detail}"
+            f"invariant={invariant}; {detail}",
+            reason_code="staged_candidate_conflict",
         )
 
 
@@ -223,19 +282,23 @@ def _path_metadata(path: Path, *, subject: str) -> os.stat_result:
     except FileNotFoundError as exc:
         raise TrackingDatabaseIOError(
             f"{subject} is missing at {path}; pass its canonical file path "
-            "(a regular file)"
+            "(a regular file)",
+            reason_code="path_missing",
         ) from exc
     except OSError as exc:
         raise TrackingDatabaseIOError(
-            f"cannot inspect {subject} {path}: {exc}"
+            f"cannot inspect {subject} {path}: {exc}",
+            reason_code="path_uninspectable",
         ) from exc
     if stat.S_ISLNK(metadata.st_mode):
         raise TrackingDatabaseIOError(
-            f"{subject} {path} is a symbolic link; pass its canonical regular-file path"
+            f"{subject} {path} is a symbolic link; pass its canonical regular-file path",
+            reason_code="path_symlink",
         )
     if not stat.S_ISREG(metadata.st_mode):
         raise TrackingDatabaseIOError(
-            f"{subject} {path} is not a regular file; repair it before retrying"
+            f"{subject} {path} is not a regular file; repair it before retrying",
+            reason_code="path_not_regular_file",
         )
     return metadata
 
@@ -261,13 +324,16 @@ def snapshot_tracking_database(
     except OSError as exc:
         raise TrackingDatabaseIOError(
             f"cannot open tracking database {database_path} without following "
-            f"symlinks: {exc}"
+            f"symlinks: {exc}",
+            reason_code="open_failed",
         ) from exc
     try:
         opened = os.fstat(descriptor)
         if not stat.S_ISREG(opened.st_mode):
             raise TrackingDatabaseIOError(
-                f"tracking database {database_path} changed to a non-regular file; retry"
+                f"tracking database {database_path} changed to a non-regular file; "
+                "retry",
+                reason_code="path_not_regular_file",
             )
         if FileGeneration.from_stat(opened) != FileGeneration.from_stat(path_before):
             raise TrackingDatabaseConflictError(
@@ -277,7 +343,8 @@ def snapshot_tracking_database(
         read_complete = os.fstat(descriptor)
     except OSError as exc:
         raise TrackingDatabaseIOError(
-            f"cannot read tracking database {database_path}: {exc}"
+            f"cannot read tracking database {database_path}: {exc}",
+            reason_code="read_failed",
         ) from exc
     finally:
         os.close(descriptor)

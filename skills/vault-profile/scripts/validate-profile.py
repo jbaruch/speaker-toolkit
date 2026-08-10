@@ -69,6 +69,8 @@ from tracking_database import (  # noqa: E402  # pyright: ignore[reportMissingIm
 
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+    DATABASE_READ_DIAGNOSTICS,
+    DATABASE_READ_FALLBACK,
     TrackingDatabaseIOError,
     decode_json_object,
     snapshot_tracking_database,
@@ -204,7 +206,13 @@ def _load_live_pattern_snapshot(
         database_snapshot = snapshot_tracking_database(database_path)
         database = decode_json_object(database_snapshot)
     except TrackingDatabaseIOError as exc:
-        raise ValueError(f"tracking-database.json is invalid: {exc}") from exc
+        # This message is printed and emitted in the result object, and decoder
+        # messages name the rejected key or value verbatim. The typed reason
+        # code routes to the shared closed vocabulary instead.
+        _code, message = DATABASE_READ_DIAGNOSTICS.get(
+            exc.reason_code, DATABASE_READ_FALLBACK
+        )
+        raise ValueError(f"tracking-database.json is invalid: {message}") from exc
     try:
         assessment = assess_tracking_database(database)
     except TrackingDatabaseError as exc:

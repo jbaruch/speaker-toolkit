@@ -87,6 +87,8 @@ from tracking_database import (  # noqa: E402  # pyright: ignore[reportMissingIm
 
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+    DATABASE_READ_DIAGNOSTICS,
+    DATABASE_READ_FALLBACK,
     TrackingDatabaseIOError,
     decode_json_object,
     snapshot_tracking_database,
@@ -791,8 +793,17 @@ def _load_tracking_database(path: Path) -> dict[str, Any]:
         snapshot = snapshot_tracking_database(path)
         tracking_database = decode_json_object(snapshot)
     except TrackingDatabaseIOError as exc:
+        # Never carry the exception text forward: this error is printed, and
+        # decoder messages name the rejected key or value verbatim. The typed
+        # reason code routes to the shared closed vocabulary instead.
+        _code, message = DATABASE_READ_DIAGNOSTICS.get(
+            exc.reason_code, DATABASE_READ_FALLBACK
+        )
+        # The path goes no further either: this message is printed, and the
+        # host path is the other half of what the redaction contract keeps out
+        # of output. The caller supplied the path and already knows it.
         raise Section15PatternHistoryError(
-            f"cannot load strict tracking database from {path}: {exc}"
+            f"cannot load the strict tracking database: {message}"
         ) from exc
     _require_usable_tracking_database(tracking_database)
     return tracking_database

@@ -33,6 +33,8 @@ from tracking_database import (
     assess_tracking_database,
 )
 from tracking_database_io import (
+    DATABASE_READ_DIAGNOSTICS,
+    DATABASE_READ_FALLBACK,
     TrackingDatabaseIOError,
     decode_json_object,
     snapshot_tracking_database,
@@ -1240,6 +1242,13 @@ def audit_path(
         snapshot = snapshot_tracking_database(database_path)
         database = decode_json_object(snapshot)
     except TrackingDatabaseIOError as exc:
+        # Never echo the exception into the report: decoder messages carry the
+        # host database path and the rejected key or value verbatim, and this
+        # report is written out and read by agents. The typed reason code
+        # routes to the shared closed vocabulary instead.
+        code, message = DATABASE_READ_DIAGNOSTICS.get(
+            exc.reason_code, DATABASE_READ_FALLBACK
+        )
         report = audit_database(
             {},
             database_path=database_path,
@@ -1259,7 +1268,7 @@ def audit_path(
                 [],
                 [],
                 "tracking database could not be read as UTF-8 JSON",
-                {"error": str(exc)},
+                {"read_failure_code": code, "error": message},
                 "high",
             )
         ]

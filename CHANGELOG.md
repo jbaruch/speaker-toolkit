@@ -22,6 +22,41 @@ Raised as an advisory on PR #276 and deferred rather than folded in: the PR was
 otherwise green, and `review-severity` spends a re-review round on a
 presentation-only change only when a blocking round is already happening.
 
+## 0.20.50 — 2026-08-10
+
+### fix(vault-ingress) — stop echoing tracking-database decoder text (#275)
+
+Closes #275.
+
+`read-tracking-database.py` printed `str(exc)` on its failure path, to both
+stdout and stderr. A `TrackingDatabaseIOError` message names the host database
+path, and a decoder failure interpolates the rejected content verbatim — a
+duplicate object key, a non-round-trippable number. That is input data, and
+`no-secrets` → Logging forbids putting it in output. This is the script every
+agent-driven read of the tracking database goes through, so its failure path is
+the one every agent sees.
+
+Every public reader now routes its typed reason code through the closed
+vocabulary that already existed for exactly this in `tracking_database_io`:
+`read-tracking-database.py`, `write-analysis.py`, `load-vault.py`,
+`validate-profile.py`, and the Section 15 reader, plus
+`audit-source-identities.py`, which was writing the decoder's text into a report
+other agents read. The regression tests assert the printed message is a member
+of that fixed set — membership is itself the leak guard, since a message drawn
+from a dozen constants cannot carry an offending key or value.
+
+Redaction cost actionability until the vocabulary grew to cover the failures
+that never reach the decoder. A symlinked database, a missing one, a directory
+in its place: those raised untyped, fell through to the fallback, and reported
+"tracking database could not be read" with no next step. Each now carries a
+typed code and prose naming what to fix. The public finding codes are unchanged
+— the new reasons map onto `database_unreadable` — so no consumer routing on
+code has to change.
+
+Schema-assessment messages (`TrackingDatabaseError`) are untouched. Those
+describe the database's own structure rather than echoing its content, and the
+readers that print them stay as they were.
+
 ## 0.20.49 — 2026-08-10
 
 ### feat(vault-ingress) — derive the rhetoric-summary status block from the database (#168)
