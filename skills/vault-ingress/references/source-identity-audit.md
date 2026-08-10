@@ -85,7 +85,7 @@ instead of an ad hoc provider lookup outside the ingress workflow:
 **Input.** `--candidates-from` takes one `scan-shownotes.py` report path. Which
 report generation is accepted, which dispositions are valid, and which lanes
 carry an auditable provider identity are the script's to decide — see
-`audit-source-identities.py`, top-of-file constants
+`skills/vault-ingress/scripts/audit-source-identities.py`, top-of-file constants
 `CANDIDATE_REPORT_SCHEMA_VERSION`, `CANDIDATE_DISPOSITIONS`, and
 `CANDIDATE_LANES`, each with the reasoning beside it.
 
