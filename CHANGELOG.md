@@ -31,7 +31,10 @@ inventing a binding it never had.
 
 The `record_pptx` writer now requires v2 and is validated per kind, since
 `pptx_catalog` left the shared `OWNER_RECORD_SCHEMA_VERSION` behind. Readers
-dual-accept v1 and v2.
+dual-accept v1 and v2 and nothing else: a record newer than the classifier
+accepts raises rather than falling through to a legacy reading, because a
+lagging reader must not send a deck back through extraction on the strength of
+a shape it cannot read (`stateful-artifacts` → Migration Policy).
 
 Found while wiring this up: the assessor validated collection-record shapes
 under an `elif version == 1` cascade, so a collection lost its shape validation

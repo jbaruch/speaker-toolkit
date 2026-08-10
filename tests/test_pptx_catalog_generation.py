@@ -205,6 +205,25 @@ def test_unknown_classification_is_rejected_rather_than_treated_as_current(
         tracking_database.pptx_visual_evidence_needs_extraction("probably_fine")
 
 
+def test_a_future_record_says_the_reader_is_lagging(tracking_database) -> None:
+    """stateful-artifacts: newer than accepted is no usable prior state."""
+    record = _current_record(schema_version=3)
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="newer than this reader accepts"
+    ):
+        _classify(tracking_database, record)
+
+
+def test_a_non_integer_record_version_is_rejected(tracking_database) -> None:
+    record = _current_record(schema_version="2")
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="non-negative integer"
+    ):
+        _classify(tracking_database, record)
+
+
 # Acceptance 4: reader, writer, and migration agree on the same classification.
 
 

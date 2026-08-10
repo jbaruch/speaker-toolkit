@@ -444,14 +444,28 @@ def classify_pptx_visual_evidence(
     without re-reading the deck; passing it also answers "and from these exact
     bytes?". Only ``PPTX_EVIDENCE_CURRENT`` may skip regeneration.
     """
-    version = record.get("schema_version", LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION)
-    if version != PPTX_CATALOG_RECORD_SCHEMA_VERSION:
-        # A pre-v2 record persisted no generation at all. Its bare
+    version = _record_version(
+        record,
+        "pptx_catalog record",
+        missing_version=LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION,
+    )
+    if version == LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION:
+        # A v1 record persisted no generation at all. Its bare
         # visual_extracted may refer to any extractor schema, so a true value
         # is unknown-generation evidence, never current evidence.
         if record.get("visual_extracted") is True:
             return PPTX_EVIDENCE_UNKNOWN_LEGACY
         return PPTX_EVIDENCE_PENDING
+    if version != PPTX_CATALOG_RECORD_SCHEMA_VERSION:
+        # A record newer than this reader accepts means the reader is lagging,
+        # not that the record is legacy. Classifying it as pending would send
+        # a deck back through extraction on the strength of a shape this
+        # function cannot read; the caller must update instead.
+        raise TrackingDatabaseError(
+            f"pptx_catalog record schema_version {version} is newer than this "
+            f"reader accepts (v{LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION} and "
+            f"v{PPTX_CATALOG_RECORD_SCHEMA_VERSION}); update speaker-toolkit"
+        )
     evidence = record.get("visual_evidence")
     if evidence is None:
         return PPTX_EVIDENCE_PENDING
