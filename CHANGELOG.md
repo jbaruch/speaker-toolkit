@@ -82,6 +82,13 @@ agent to "skip already extracted entries" from the boolean — the exact read th
 change exists to stop, and a directive that contradicted the new one on a
 second loaded surface. Both now delegate selection to the classifier.
 
+Read failures report a closed code, never the exception text. A decoder message
+carries the host database path and the rejected key or value verbatim, so
+echoing `str(exc)` leaks both (`no-secrets` → Logging). The reason-code
+vocabulary preflight already used moves to `tracking_database_io`, beside the
+error type that raises those codes, and both consumers import it — the wording
+and the redaction now hold in one place instead of two.
+
 The ingress workflow gets an executable rather than a function to reproduce:
 `classify-pptx-evidence.py` takes a vault root, makes both observations,
 and prints one JSON object naming every record's class and whether it needs

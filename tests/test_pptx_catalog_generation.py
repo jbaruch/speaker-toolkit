@@ -699,3 +699,48 @@ def test_a_platform_without_the_safety_primitives_reads_nothing(
     monkeypatch.delattr(pptx_catalog_selection.os, primitive, raising=False)
 
     assert pptx_catalog_selection.digest_and_size("Talk.pptx", source) is None
+
+
+# no-secrets: a read failure must not echo the host path or the rejected input.
+
+
+@pytest.mark.parametrize(
+    ("body", "secret"),
+    [
+        ('{"a": 1, "a": 2}', '"a"'),
+        ("{not json", "not json"),
+        ('{"x": 1e400}', "1e400"),
+    ],
+)
+def test_a_read_failure_never_echoes_the_input_or_the_host_path(
+    classify_pptx_evidence, tmp_path, capsys, body, secret
+) -> None:
+    root = tmp_path / "vault-with-a-telling-name"
+    root.mkdir()
+    (root / "tracking-database.json").write_text(body)
+
+    exit_code = classify_pptx_evidence.main([str(root)])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    report = json.loads(captured.out)
+    assert report["ok"] is False
+    assert report["code"]
+    combined = captured.out + captured.err
+    assert "vault-with-a-telling-name" not in combined
+    assert secret not in combined
+
+
+def test_an_unusable_owner_state_is_reported_without_its_reason_prose(
+    classify_pptx_evidence, tmp_path, capsys
+) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "tracking-database.json").write_text(json.dumps({"schema_version": 99}))
+
+    exit_code = classify_pptx_evidence.main([str(root)])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert json.loads(captured.out)["code"] == "database_unreadable"
+    assert str(root) not in captured.out + captured.err

@@ -14,7 +14,9 @@ deleted artifact reports `unverified`, not `current`.
 Usage: classify-pptx-evidence.py <vault-root-or-database-path>
 Stdout: one JSON object; `records[]` carries `pptx_path`, `classification`,
         `needs_extraction`, and which observations were available.
-Stderr: one actionable line when the database cannot be read.
+Stderr: one actionable, path-neutral line when the database cannot be read —
+        the typed reason code is mapped through
+        `tracking_database_io.DATABASE_READ_DIAGNOSTICS`, never echoed.
 Exit 0 when the catalog was classified, 2 when the database is unusable.
 Exit 0 with `needs_extraction: true` rows is the normal "work to do" result —
 this is a reporting tool, not a gate.
@@ -40,6 +42,8 @@ from tracking_database import (
     assess_tracking_database,
 )
 from tracking_database_io import (
+    DATABASE_READ_DIAGNOSTICS,
+    DATABASE_READ_FALLBACK,
     TrackingDatabaseIOError,
     decode_json_object,
     snapshot_tracking_database,
@@ -64,13 +68,15 @@ def execute(value: str | Path) -> dict[str, object]:
     try:
         assessment = assess_tracking_database(database)
     except TrackingDatabaseError as exc:
+        # Reason codes are a closed vocabulary; the exception prose is not.
         raise TrackingDatabaseIOError(
-            f"tracking database owner assessment failed: {exc}"
+            "tracking database owner assessment failed",
+            reason_code="owner_assessment_failed",
         ) from exc
     if not assessment.usable:
-        reasons = ", ".join(assessment.reason_codes) or "unsupported_owner_state"
         raise TrackingDatabaseIOError(
-            f"tracking database has no usable legacy/current owner state ({reasons})"
+            "tracking database has no usable legacy/current owner state",
+            reason_code="owner_state_unusable",
         )
 
     config = database.get("config")
@@ -104,16 +110,23 @@ def main(argv: list[str] | None = None) -> int:
     try:
         report = execute(args.vault)
     except TrackingDatabaseIOError as exc:
+        # Never echo the exception: decoder messages carry the host database
+        # path and the rejected key or value verbatim. Route the typed reason
+        # code through the shared closed vocabulary instead.
+        code, message = DATABASE_READ_DIAGNOSTICS.get(
+            exc.reason_code, DATABASE_READ_FALLBACK
+        )
         print(
             json.dumps(
                 {
                     "schema_version": REPORT_SCHEMA_VERSION,
                     "ok": False,
-                    "error": str(exc),
+                    "code": code,
+                    "error": message,
                 }
             )
         )
-        print(f"pptx evidence classification failed: {exc}", file=sys.stderr)
+        print(f"pptx evidence classification failed: {message}", file=sys.stderr)
         return 2
     print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False))
     return 0

@@ -81,6 +81,8 @@ from pptx_discovery_contract import (
     validate_pptx_directory_exclusions,
 )
 from tracking_database_io import (
+    DATABASE_READ_DIAGNOSTICS,
+    DATABASE_READ_FALLBACK,
     TrackingDatabaseIOError,
     decode_json_object,
     snapshot_tracking_database,
@@ -100,45 +102,8 @@ REPORT_SCHEMA_VERSION = 1
 # Public finding code and closed message per typed decoder reason. Both are
 # derived from the reason, never from the exception text: decoder messages embed
 # the database path, the offending duplicate key, and rejected numeric values.
-_DATABASE_READ_DIAGNOSTICS = {
-    "encoding_invalid": (
-        "database_encoding_invalid",
-        "tracking database is not valid UTF-8",
-    ),
-    "json_invalid": (
-        "database_json_invalid",
-        "tracking database is not valid JSON",
-    ),
-    "json_duplicate_key": (
-        "database_json_invalid",
-        "tracking database contains a duplicate object key",
-    ),
-    "json_non_standard_number": (
-        "database_json_invalid",
-        "tracking database contains a non-standard JSON number",
-    ),
-    "json_non_roundtrippable_number": (
-        "database_json_invalid",
-        "tracking database contains a JSON number that cannot round-trip "
-        "losslessly through this toolkit",
-    ),
-    "json_root_not_object": (
-        "database_json_invalid",
-        "tracking database root must be a JSON object",
-    ),
-    "json_nesting_too_deep": (
-        "database_json_invalid",
-        "tracking database exceeds the maximum supported JSON nesting depth",
-    ),
-    "json_unpaired_surrogate": (
-        "database_json_invalid",
-        "tracking database contains an unpaired UTF-16 surrogate in a JSON string",
-    ),
-}
-_DATABASE_READ_FALLBACK = (
-    "database_unreadable",
-    "tracking database could not be read",
-)
+_DATABASE_READ_DIAGNOSTICS = DATABASE_READ_DIAGNOSTICS
+_DATABASE_READ_FALLBACK = DATABASE_READ_FALLBACK
 
 
 SOURCE_IDENTITY_SCHEMA_VERSION = 1
