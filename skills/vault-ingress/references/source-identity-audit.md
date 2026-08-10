@@ -70,11 +70,65 @@ Every successful talk audit carries this subset under
 `proposed_evidence.source_identity`. It is evidence for review, not an apply
 plan. Missing fields remain absent/null; the helper does not synthesize them.
 
-## Report contract (v1)
+## Candidate mode (#230)
+
+A `scan-shownotes.py` conflict names a competing source for a talk that already
+has one. Pass that report back to compare both sides through this auditor's
+bounded fetching, stable evidence shape, redaction, and no-write guarantee,
+instead of an ad hoc provider lookup outside the ingress workflow:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/audit-source-identities.py" \
+  "{vault_root}" --candidates-from "{scan_report_path}"
+```
+
+Candidate identities never enter the active-source assignment: the cross-talk
+collision analysis reads that map, so a candidate shared by two talks would
+otherwise fabricate a collision between active identities that share nothing.
+`sources[].lanes` names which lane claimed each fetched identity.
+
+The report is validated whole before anything is bound, and the verdict is
+all-or-nothing: only `schema_version: 3` with `ok: true` is accepted, and one
+malformed entry, malformed issue, or unbindable candidate discards **every**
+candidate binding. A partly malformed report is not a complete conflict set, so
+auditing its well-formed remainder would report an unknown subset as "these are
+the conflicts". The active lane still audits, so the cost is coverage of the
+conflicts, never of the sources already in the database.
+
+An entry whose `disposition` falls outside the scan report's closed set
+(`add`, `update`, `unchanged`, `review_required`) is malformed, not a row to
+pass over — skipping an unrecognized value would let a typo hide a conflict
+behind an apparently clean audit. A report file containing JSON `null` is a
+supplied-but-invalid report, never "no report given".
+
+An unsupported lane is not a malformed report: a `slides_url` candidate leaves
+the report intact and simply names a source with no auditable provider
+identity, so it stays a lane-local finding and the other candidates proceed.
+
+Every binding resolves before any provider request — a report naming an unknown
+or ambiguous talk is refused without spending a fetch. Candidate identities
+share the active lane's dedupe, so a candidate repeated across conflicts, or one
+equal to an active source, is fetched once. `candidates[]` carries
+`provider_evidence` and `active_provider_evidence` in the same shape for
+field-for-field comparison, plus `same_source_as_active`. A candidate lane with
+no auditable provider identity (`slides_url`), a malformed YouTube URL, and an
+unavailable or rate-limited fetch each stay lane-local structured findings.
+
+Lane-local means the audit stays `complete` and the CLI exit stays clean: a
+candidate the provider would not serve says nothing about the sources already
+in the database. Those faults carry `candidate_`-prefixed codes outside
+`ERROR_CODES`. The same fault on an identity the ACTIVE lane also claims keeps
+its blocking code — lane-local is about which lane failed, not about forgiving
+failures.
+
+The audit still writes nothing. A candidate is never promoted or persisted here
+— reviewing this evidence and applying a decision are separate steps.
+
+## Report contract (v2)
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "captured_at": "2026-07-31T19:00:00Z",
   "database": "/vault/tracking-database.json",
   "complete": true,
@@ -83,6 +137,7 @@ plan. Missing fields remain absent/null; the helper does not synthesize them.
   "unique_youtube_id_count": 1,
   "metadata_fetch_count": 1,
   "metadata_fetch_error_count": 0,
+  "candidate_count": 1,
   "summary": {
     "finding_count": 1,
     "by_code": {"same_id_cross_talk_collision": 1}

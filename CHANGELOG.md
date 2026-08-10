@@ -1,5 +1,57 @@
 # Changelog
 
+### feat(vault-ingress) — audit shownotes conflict candidates alongside the active source (#230)
+
+Closes #230.
+
+`scan-shownotes.py` can report a competing source URL as `review_required`, but
+`audit-source-identities.py` could only inspect the source already active in the
+tracking database. Choosing between them meant an ad hoc provider lookup —
+outside the identity auditor's bounded fetching, stable evidence shape,
+deduplication, redaction, and no-write guarantee, and outside the documented
+ingress workflow entirely.
+
+`--candidates-from <scan-report.json>` closes that. Review-required conflicts
+bind to talks and audit beside the active source:
+
+- **The report is validated whole, all-or-nothing.** Only `schema_version: 3`
+  with `ok: true` is accepted, and one malformed entry, malformed issue, or
+  unbindable candidate discards every candidate binding — a partly malformed
+  report is not a complete conflict set, so auditing the well-formed remainder
+  would report an unknown subset as "these are the conflicts". The active lane
+  still audits. An unsupported lane is not a malformed report and stays
+  lane-local.
+- **An unknown `disposition` is malformed, not skippable.** The scan report's
+  set is closed (`add`, `update`, `unchanged`, `review_required`); passing over
+  an unrecognized value would let a typo hide a conflict behind an apparently
+  clean audit. A report file containing JSON `null` is a supplied-but-invalid
+  report rather than "no report given" — the two shared a sentinel, so a
+  malformed file could disable candidate validation and still report success.
+- **Bindings resolve before any provider request.** A report that is not an
+  object, carries no `entries`, or names an unknown or ambiguous talk is refused
+  without spending a fetch. The active lane still audits.
+- **Candidate identities share the fetch dedupe, not the active-source map.** A
+  candidate repeated across conflicts, or one equal to some talk's active
+  source, is fetched once. It never enters the assignment the cross-talk
+  collision analysis reads — a candidate shared by two talks would otherwise
+  fabricate a collision between active identities that share nothing.
+  `sources[].lanes` names which lane claimed each fetched identity.
+- **Both sides carry the same evidence shape.** `candidates[]` holds
+  `provider_evidence` and `active_provider_evidence` with identical keys, so the
+  comparison is field-for-field, plus `same_source_as_active`.
+- **Failures stay lane-local, and that is measured by `complete`.** A
+  `slides_url` candidate has no auditable provider identity, a malformed
+  YouTube URL cannot be fetched, and an unavailable or rate-limited candidate
+  is a structured finding. Each carries a `candidate_`-prefixed code outside
+  `ERROR_CODES`, so the audit stays `complete` and the CLI exit stays clean — a
+  candidate the provider would not serve says nothing about the sources already
+  stored. The same fault on an identity the active lane also claims keeps its
+  blocking code.
+
+The audit still writes nothing, candidates included: a candidate is never
+promoted or persisted here. Report schema goes to v2 for `candidates[]` and
+`candidate_count`.
+
 ## 0.20.46 — 2026-08-10
 
 ### feat(vault-ingress) — bind PPTX catalog visual evidence to its extractor generation (#229)
