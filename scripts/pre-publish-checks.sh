@@ -3,13 +3,22 @@
 # single path. Runs every repo-side pre-publish gate in order; the first
 # failure aborts the publish.
 #
+# Each gate emits a JSON report on stdout and actionable diagnostics on stderr
+# (script-delegation -> Script Requirements). The composer only cares about the
+# exit code, so it discards the reports and lets the diagnostics through.
+#
 # Wired into CI by .github/workflows/publish.yml.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+main() {
+  local repo_root
+  repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-"$REPO_ROOT/scripts/check-tessl-pins.sh"
-"$REPO_ROOT/scripts/check-package-contents.sh"
-# JSON report on stdout, actionable diagnostics on stderr (script-delegation
-# -> Script Requirements). The composer only cares about the exit code.
-python3 "$REPO_ROOT/scripts/check_skill_entrypoints.py" > /dev/null
+  python3 "$repo_root/scripts/check_tessl_pins.py" > /dev/null
+  python3 "$repo_root/scripts/check_package_contents.py" > /dev/null
+  python3 "$repo_root/scripts/check_skill_entrypoints.py" > /dev/null
+}
+
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+  main "$@"
+fi

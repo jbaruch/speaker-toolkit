@@ -1,5 +1,37 @@
 # Changelog
 
+### chore(scripts) — bring the two sibling pre-publish gates up to policy (#264)
+
+Closes #264.
+
+`scripts/check-package-contents.sh` and `scripts/check-tessl-pins.sh` were the
+two gates #263 left behind: no entry-point guard (`file-hygiene` → Standalone
+Scripts), and prose on stdout where `script-delegation` → Script Requirements
+wants a structured result. Both are now Python, matching the sibling
+`check_skill_entrypoints.py` the review brought into line — `scripts/
+check_package_contents.py` and `scripts/check_tessl_pins.py`, each with the
+canonical `if __name__ == "__main__"` guard, one JSON object on stdout every
+run, and actionable diagnostics on stderr.
+
+Python rather than a bash `main` + guard because both scripts already embedded
+a python3 heredoc for the JSON work, and the guard's stated purpose is making a
+script importable for testing. `check_tessl_pins.py` had no test suite at all —
+it now has 17 cases covering ranges, tags, missing `version` keys, non-object
+entries, and every unreadable-manifest shape. The package-contents suite keeps
+all 20 of its cases, re-pointed from prose stdout to the JSON report, plus the
+one-JSON-object-on-every-failure-path contract and an importability case.
+
+Gate semantics and exit codes are unchanged: same covered manifests, same
+`.tesslignore` scratch-repo matching, same de-duplication of overlapping
+declared paths, same 279-file result on this repo. One behavior change:
+`check_tessl_pins.py` resolves its manifests against the repo root rather than
+the caller's working directory, so the publish composer no longer depends on
+where it was invoked from.
+
+`scripts/pre-publish-checks.sh` gets a bash `main` + `BASH_SOURCE` guard and
+keeps its exit-code-only contract. The two `tests.yml` steps invoke the renamed
+gates; that CI edit is the rename, nothing else.
+
 ## 0.20.42 — 2026-08-10
 
 ### fix(vault-ingress) — share one retained named-stage across owner writers (#243)

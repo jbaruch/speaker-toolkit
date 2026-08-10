@@ -373,7 +373,7 @@ def tesslignore_excluded(repo_root: Path, relative_paths: list[str]) -> set[str]
     Matching runs against a throwaway empty git repo with core.excludesFile
     pointed at .tesslignore, so only .tesslignore patterns are consulted — the
     same technique (and therefore the same semantics) as
-    scripts/check-package-contents.sh.
+    scripts/check_package_contents.py.
     """
     ignore_file = repo_root / ".tesslignore"
     if not ignore_file.is_file() or not relative_paths:
