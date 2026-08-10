@@ -1,18 +1,19 @@
 ---
 name: presentation-creator
 description: >
-  Creates new presentations grounded in the speaker's documented rhetoric patterns,
-  using a personal rhetoric-knowledge-vault as a constitutional style guide. Follows
-  an interactive, spec-driven process: distill intent from the user's prompt, jointly
-  select rhetorical instruments from the vault catalog, architect the talk structure,
-  develop content with speaker notes, run guardrail checks, generate a .pptx deck,
-  and publish per the speaker's workflow. Use this skill whenever the user wants to
-  create a new presentation, build a talk, write a conference submission, design a
-  slide deck, prepare for a speaking engagement, or mentions "presentation" or "talk"
-  in the context of content creation. Also trigger when the user describes a topic
-  they want to present on, asks to adapt an existing talk for a new audience, or
-  wants to develop a CFP abstract. Not a generic slide-deck tool — requires a
-  populated rhetoric-knowledge-vault and follows the speaker's established style.
+  Creates presentations grounded in the speaker's documented rhetoric patterns,
+  using a personal rhetoric-knowledge-vault as a constitutional style guide.
+  Interactive and spec-driven: distill intent, jointly select rhetorical
+  instruments from the vault catalog, architect the talk, develop content with
+  speaker notes, run guardrail checks, generate a .pptx deck, publish per the
+  speaker's workflow. Use whenever the user wants to create a presentation, build
+  a talk, write a conference submission, design a slide deck, prepare for a
+  speaking engagement, describe a topic to present on, or adapt an existing talk
+  for a new audience. Also handles CFP abstracts; the sessions catalog of submission-ready
+  titles, abstracts, and outlines; and single post-authoring tasks on an existing
+  talk — QR code, deck export, shownotes page, YouTube thumbnail, linking a
+  recording. Not a generic slide-deck tool — requires a populated
+  rhetoric-knowledge-vault and follows the speaker's established style.
 user_invocable: true
 ---
 
@@ -20,11 +21,11 @@ user_invocable: true
 
 Process steps in order. Do not skip ahead.
 
-The phases below are a numbered sequential workflow — Phase 0 must run before
-Phase 1, Phase 1 before Phase 2, and so on. Late-entry single-task requests
-(Phase 6 / Phase 7 re-runs) still require the documented pre-flight checklist
-before any action; do not parallelize and do not bypass the vault-loading or
-artifact-loading gates.
+Steps 0–7 are one sequential workflow — Step 0 before Step 1, Step 1 before
+Step 2, and so on. Do not parallelize. A request may enter the workflow at a
+later step (see "Where to enter" below), but from that point it still runs in
+order, and every entry requires the vault-loading gate and the documented
+pre-flight checklist before any action.
 
 Resolve the absolute path of this loaded `SKILL.md`, then set
 `speaker_toolkit_root` to the plugin root two directories above the directory
@@ -51,24 +52,18 @@ same canonical database path with that interpreter and require the same SHA-256;
 restart discovery if the generation changed. Use only that configured interpreter
 for every later toolkit command. Missing or unusable configuration stops this flow
 and invokes `Skill(skill: "vault-ingress")` with Step 1 as the handoff context.
-Read-only phases may continue on schema 0, but
-publishing and post-event writes require schema 1 before their paired network,
-deck, image, or tracking side effects. For schema 0, invoke
-`Skill(skill: "vault-ingress")` with a Step 1 migration handoff before continuing.
+Read-only phases may continue on schema 0, but publishing and post-event writes
+require schema 1 before their paired network, deck, image, or tracking side
+effects. For schema 0, invoke `Skill(skill: "vault-ingress")` with a Step 1
+migration handoff before continuing.
 
 Load from vault root: `rhetoric-style-summary.md` (constitution — all patterns),
 `slide-design-spec.md` (visual rules), `speaker-profile.json` (structured data).
 The `interaction-rules` steering rule (one-question-at-a-time, applies to all phases)
 is loaded automatically via plugin steering — do not treat it as a vault-root document.
-Then load local references per phase:
-[references/phase0-intake.md](references/phase0-intake.md),
-[references/phase1-intent.md](references/phase1-intent.md),
-[references/phase2-architecture.md](references/phase2-architecture.md),
-[references/phase3-content.md](references/phase3-content.md),
-[references/phase4-guardrails.md](references/phase4-guardrails.md),
-[references/phase5-slides.md](references/phase5-slides.md),
-[references/phase6-publishing.md](references/phase6-publishing.md),
-[references/phase7-post-event.md](references/phase7-post-event.md),
+
+Then load the reference for the phase you are entering — each Step below names its
+own file. Pattern selection additionally reads
 [references/patterns/_index.md](references/patterns/_index.md).
 
 **Checks:** Warn if `profile.generated_date < summary."Last updated"` (stale profile).
@@ -79,57 +74,11 @@ Then run:
   path/to/speaker-profile.json path/to/rhetoric-style-summary.md
 ```
 
-Use `-` for the profile path in summary-only mode. The command emits
-`{history_enabled, history_source, profile_schema_version, scored_talk_count,
-eligible_talk_count, opportunity_rows_available,
-classification_fields_available, available_classification_domains,
-policy_semantic_sha256, reason_codes, reasons, warning}`. `history_enabled` means at
-least one policy-bound domain is available. It is not permission to consume every
-derived field. In JSON, require membership in `available_classification_domains` for
-each use (Python consumers call `domain_available(domain)`). The domain contracts are:
-
-- `mastery_and_novelty`: mastery tiers, strengths, and New-to-You. `[NEW]` is exactly
-  `mastery_levels.never_tried` / `never_used_patterns`, never first detection in the
-  newest talk or a `not_yet_observed` classification.
-- `underuse`: `underused_patterns`.
-- `signature_combinations`: `signature_combinations`.
-- `antipattern_recurrence`: consume historical recurrence only through Phase 4's
-  emitted `recurring_antipatterns` output.
-- `trends`: pattern and antipattern movements, score/breadth trend, and score drivers.
-  A recurrence claim may be available without a trend claim.
-- `modes`: `by_mode` history.
-
-A non-null `history_source` selects the sole catalog-history input. Use the emitted
-value without reproducing source-selection logic or merging inputs. Surface a disabled
-result's `warning` verbatim and recommend profile
-regeneration. Continue using independent non-pattern fields such as pacing, visual
-rules, presentation modes, infrastructure, publishing config, and confirmed intents.
-Exact occurrence rows may remain auditable when `opportunity_rows_available` is true,
-but that status never authorizes a classification. Stored profile schemas v1/v2/v3
-remain readable for non-pattern fields only. Schema v4 is occurrence-only. Schema v5
-binds derived classifications to a versioned policy.
-
-Suppress each catalog-derived historical field when its required domain is absent.
-Do not collapse the available domains behind the global history flag. Top-level
-recurring issues and badges in schema-v4/v5 profiles remain usable only when their
-entries explicitly declare `source_lane: "non_pattern"`. Legacy or ambiguous entries
-do not authorize history. Current-taxonomy scans of the new outline remain enabled.
-If no profile exists, run in **summary-only mode**: use default guardrail thresholds (1.5
-slides/min, 45% Act 1 cap) and ask for template/publishing data interactively. Section
-15 v3 classifications are usable only when its uniquely delimited current block passes
-`"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py"`
-and the same strict pattern-profile assessment. Require the relevant domain just as
-for profile history.
-Section 15 v2 is occurrence-only. Ordinary, stale, or occurrence-only Section 15 data
-authorizes taxonomy-only recommendations, never speaker-history claims.
-
-When comparing two profiles, compare their pattern catalog fingerprints and scoring
-schemas first. A mismatch is a generation reset; do not call cross-generation pattern
-differences improvements or regressions. Raw scores are also incomparable when the
-baseline reports an unavailable or changed `opportunity_coverage_identity`.
-Within one catalog/scoring generation, a changed `policy_semantic_sha256` is a
-classification-comparison reset: do not describe changed tiers, recurrence classes,
-combinations, or trends as speaker improvement or regression across that boundary.
+Read [references/pattern-history-authorization.md](references/pattern-history-authorization.md)
+before consuming any catalog-derived historical field. It owns the emitted payload
+shape, the six domain contracts, source selection, profile schema tiers, Section 15
+eligibility, summary-only mode, and the cross-generation comparison rules.
+`history_enabled` is not blanket permission — require the specific domain per use.
 
 ## Workflow Overview
 
@@ -145,6 +94,15 @@ combinations, or trends as speaker improvement or regression across that boundar
 | 7: Post-Event | YouTube thumbnail, video to shownotes | Thumbnail approved, video linked |
 
 Do not skip phases. Do not write content before Phase 3. Phase 2 is joint, not autonomous.
+
+**Where to enter.** A fresh talk starts at Step 0. Four requests enter later
+instead: a single post-authoring task (QR code, export, shownotes, thumbnail,
+linking a recording), adapting an existing talk, writing a CFP abstract, and
+sessions-catalog work. Read
+[references/alternate-entry-flows.md](references/alternate-entry-flows.md) for
+the matching one — it names the step to enter at and the only sanctioned skip
+(the CFP flow omits Phase 2, which an abstract does not need). Vault loading
+stays mandatory for all of them.
 
 **Talk-directory artifacts.**
 
@@ -172,92 +130,42 @@ Regenerate the four derived artifacts after every edit to `outline.yaml`:
 Validate the YAML with `"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" outline.yaml` — exits non-zero with a typed error if any validator fails.
 
 `narrative.md` is the exception to "by end of Phase 3" — it is generated earlier
-in partial form during Phases 1–2 so the author can review and approve the
-narrative before slide content development:
+in partial form during Phases 1–2 with `--partial`, which validates `talk` +
+`chapters` without requiring `slides[]`. The plain (full-validation) commands
+above apply from Phase 3 onward, once `slides[]` exists.
 
-```bash
-"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-narrative.py" --partial outline.yaml > narrative.md
-```
-
-`--partial` validates `talk` + `chapters` without requiring `slides[]`. The
-plain (full-validation) commands above apply from Phase 3 onward, once `slides[]`
-exists.
-
-**Late entry (single-task requests).**
-
-Even when the user asks for a single task (QR code, export, shownotes), vault loading
-is mandatory. Do not jump straight to the action. Minimum context before ANY Phase 6
-action:
-
-- `speaker-profile.json` — publishing config, shortener, URL patterns
-- `secrets.json` — API keys for shorteners and Gemini
-- `outline.yaml` — source of truth for talk slug, metadata, slides, and shownotes URL.
-  Read it via `"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py"` (the pydantic model exposes `talk.slug`,
-  `talk.title`, `talk.shownotes_url_base`, etc.) — never re-parse the YAML by hand.
-
-If the file is missing or fails to validate, STOP and ask. Do not guess values that
-should come from files. Never hand-write code when a script exists — if the script
-isn't working, diagnose why (wrong args, missing config, missing secrets) and fix
-the inputs.
-
-**Phase 7 late entry** requires the same files plus a YouTube video URL from the
-speaker. If shownotes don't exist and Step 7.2 is requested, STOP and ask — either
-run Phase 6 Step 6.1 first or get the shownotes URL manually.
+The four `.md` files are read-only — never edit them directly; they regenerate
+deterministically from `outline.yaml`.
 
 ## Step 0 — Intake & Context Loading
+
+Read [references/phase0-intake.md](references/phase0-intake.md).
 
 1. Load vault documents (see above).
 2. Capture what the user has shared — topic, conference, audience, time slot.
 3. Read any provided CFP description, conference website, or existing talk to adapt.
 4. Report what you know and what you still need.
 
+Proceed immediately to Step 1.
+
 ## Step 1 — Intent Distillation
 
-Ask about what's missing; skip what's known. See [references/phase1-intent.md](references/phase1-intent.md) for the full
-question set. Author the **talk metadata block** of `outline.yaml`:
+Read [references/phase1-intent.md](references/phase1-intent.md) for the full
+question set. Ask about what's missing; skip what's known.
 
-```yaml
-talk:
-  title: "Working Title"
-  slug: "venue-year-topic"          # kebab-case; names the deck file + shownotes path
-  speakers: ["Speaker Name"]        # multi-speaker talks list every speaker here
-  duration_min: 50
-  audience: "who, in one sentence"
-  audience_spread: "heterogeneous"    # or "homogeneous" — set at intake (Step 0.4)
-  # dominant_register: "A"           # REQUIRED iff homogeneous; omit otherwise
-  mode: "from profile presentation_modes"
-  venue: "Conference Year, City"
-  slide_budget: 75                  # from profile guardrail_sources.slide_budgets
-  pacing_wpm: [135, 145]            # from profile rhetoric_defaults
-  architecture: "narrative-arc"     # filled in Phase 2 — leave a placeholder
-  engine: "pptx"                    # pptx | presenterm — filled in Phase 2 Decision #2
-  deck_theme: ""                    # free-string theme/template pointer — Phase 2 Decision #2
-  engine_source: ""                 # provenance of the engine choice — Phase 2 Decision #2
-  thesis: |
-    Elaborated thesis paragraph(s). The single-sentence form goes on the
-    call-to-adventure slide via `big_idea_text` in Phase 3.
-  tldr: |
-    A short distillation of `thesis` for the narrative.md reader — a couple
-    of paragraphs or a short bulleted list. Summarize the thesis; do not
-    reprint it. narrative.md renders this verbatim as its TL;DR.
-  shownotes_url_base: "https://speaking.example.com/"
-  commercial_intent: "none | subtle | direct"
-  profanity_register: "verbal-only by default; never on slides"
-  must_include: []
-  must_avoid: []
-  catalog_reference: "sessions-catalog.md#entry-id"  # if applicable
-  delivery_count: 1                 # 1 for first delivery, 2+ for repeats
-  delivery_date: "YYYY-MM-DD"       # ISO date the talk is/was delivered
-```
+Author the **talk metadata block** of `outline.yaml`. The field-by-field
+reference is the `## The talk: block` table in
+[references/phase3-content.md](references/phase3-content.md); `outline_schema.py:TalkMetadata`
+is the authoritative list. Leave `architecture`, `engine`, `deck_theme`, and
+`engine_source` as placeholders — Phase 2 fills them.
 
 Generate the slug per `publishing_process.shownotes.slug_convention` in the profile.
 Slug validation is kebab-case (lowercase alphanumeric + single hyphens).
 
 Gate: Author confirms or edits the metadata.
 
-Save the partial outline to: `{presentations-dir}/{conference}/{year}/{talk-slug}/outline.yaml`
-
-Then generate the narrative stub so the author can read the TL;DR early:
+Save the partial outline to `{presentations-dir}/{conference}/{year}/{talk-slug}/outline.yaml`,
+then generate the narrative stub so the author can read the TL;DR early:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-narrative.py" --partial outline.yaml > narrative.md
@@ -265,40 +173,44 @@ Then generate the narrative stub so the author can read the TL;DR early:
 
 At this phase `narrative.md` carries the TL;DR only — the chapter body fills in
 at Phase 2 and the per-slide walk replaces it once slides exist in Phase 3.
-Surface it to the author for an early read. Proceed immediately to Phase 2.
+Surface it to the author for an early read.
 
 The talk block is the source of truth for the slug, duration, mode, and other
-metadata. Later phases (Phase 2 architecture, Phase 3 slides, Phase 6 publishing)
-extend the SAME file with `chapters[]`, `slides[]`, `interludes[]`, etc. — do not
-create a separate spec or outline file.
+metadata. Later phases extend the SAME file with `chapters[]`, `slides[]`,
+`interludes[]`, etc. — do not create a separate spec or outline file.
+
+Proceed immediately to Step 2.
 
 ## Step 2 — Rhetorical Architecture
+
+Read [references/phase2-architecture.md](references/phase2-architecture.md); it
+also owns the slide-budget calculation from `guardrail_sources.slide_budgets[]`.
 
 **The instrument menu comes from the vault, not from a static file.** Read the summary
 (sections 2-13) and profile `instrument_catalog` for options.
 
-**12 decisions to make together:**
+**12 decisions to make together:** Mode, Engine & Theme Sourcing, Opening,
+Narrative, Humor, Audience Interaction, Closing, Slide Design, Persuasion,
+Template Patterns, Pattern Strategy, Illustration Strategy. Each reads from the
+matching `instrument_catalog` entry + summary section. For each: present options,
+recommend based on spec, let author choose. If co-presented, add role split and
+voice differentiation — see [references/phase1-intent.md](references/phase1-intent.md).
 
-Mode, Engine & Theme Sourcing, Opening, Narrative, Humor, Audience Interaction,
-Closing, Slide Design, Persuasion, Template Patterns, Pattern Strategy,
-Illustration Strategy. Each reads from the matching `instrument_catalog` entry +
-summary section. Decision #2 (Engine & Theme Sourcing) picks the deck tooling
-(pptx vs presenterm) and theme via the idea-sourcing wizard; it reads `profile →
-presentation_engines` and the chosen mode's `typical_engine` and writes
-`talk.engine` / `talk.deck_theme` / `talk.engine_source`. Decision #11 uses the
-Pattern Strategy from
-[references/patterns/_index.md](references/patterns/_index.md). Use the full 4-tier
-history view only when the Phase 0 pattern-history status is enabled; otherwise use a
-flat current-taxonomy menu without usage, novelty, strength, underuse, or mode-history
-claims.
-Decision #12 (Illustration Strategy) is optional — only when the author wants
-AI-generated illustrations. Delegate to `Skill(skill: "illustrations")` for the full
-collaboration (style proposals grounded in vault `visual_style_history`, format
-vocabulary, model choice, visual continuity devices). The skill writes the approved
-`style_anchor` block into `outline.yaml`.
-
-For each: present options, recommend based on spec, let author choose.
-If co-presented, add role split and voice differentiation — see [references/phase1-intent.md](references/phase1-intent.md).
+- **Decision #2 (Engine & Theme Sourcing)** picks the deck tooling (pptx vs
+  presenterm) and theme via the idea-sourcing wizard; it reads `profile →
+  presentation_engines` and the chosen mode's `typical_engine`, and writes
+  `talk.engine` / `talk.deck_theme` / `talk.engine_source`.
+- **Decision #11 (Pattern Strategy)** uses
+  [references/patterns/_index.md](references/patterns/_index.md). Use the full
+  4-tier history view only when the Phase 0 pattern-history status is enabled;
+  otherwise use a flat current-taxonomy menu without usage, novelty, strength,
+  underuse, or mode-history claims.
+- **Decision #12 (Illustration Strategy)** is optional — only when the author
+  wants AI-generated illustrations. Delegate to `Skill(skill: "illustrations")`
+  for the full collaboration (style proposals grounded in vault
+  `visual_style_history`, format vocabulary, model choice, visual continuity
+  devices). The skill writes the approved `style_anchor` block into
+  `outline.yaml`.
 
 Once the architecture is set, author `chapters[]` (section headings, `target_min`,
 `argument_beats[]`) into `outline.yaml`, then regenerate the narrative — now with
@@ -314,109 +226,34 @@ before any per-slide content is written in Phase 3. Leave `argument_beats[].slid
 empty here — slides do not exist yet, so `--partial` validation rejects any ref;
 wire them to real slides in Phase 3.
 
-**Slide budget** — read from `profile → guardrail_sources.slide_budgets` at runtime.
-If the profile is unavailable (summary-only mode), use these defaults:
-
-| Duration | Max slides | Slides/min |
-|----------|-----------|------------|
-| 20 min | 30 | 1.5 |
-| 30 min | 45 | 1.5 |
-| 45 min | 70 | 1.5 |
-| 60 min | 90 | 1.5 |
-| 75 min | 110 | 1.5 |
-
 Gate: Author approves the narrative (`narrative.md`) and the architecture.
+
+Proceed immediately to Step 3.
 
 ## Step 3 — Content Development
 
-Fill `slides[]` and `interludes[]` in `outline.yaml`. See
-[references/phase3-content.md](references/phase3-content.md) for the full schema,
-field-by-field guidance, pattern application, callback ledger, voice calibration,
-and placeholder types.
+Read [references/phase3-content.md](references/phase3-content.md) for the full
+outline schema, field-by-field guidance, pattern application, callback ledger,
+voice calibration, placeholder definitions, and meme-brief format.
 
-**Outline structure** (abbreviated YAML):
+Fill `slides[]` and `interludes[]` in `outline.yaml`.
 
-```yaml
-talk: { … }                # from Phase 1
-chapters:                  # from Phase 2 — section headings + target_min
-  - { id: ch1, title: "Cold Open", target_min: 3, accent: red, argument_beats: [...] }
-  - { id: ch2, title: "...",       target_min: 7, ... }
+Placeholders use typed, independent numbering (each type starts at 01):
+`AUTHOR-01`, `DEMO-01`, `DATA-01`, `SCREENSHOT-01`, `IMAGE-01`, `MEME-01`. Every
+placeholder requiring author input MUST use one of these typed tags — never
+generic `TODO` or `TBD`.
 
-style_anchor:              # ONLY when illustration strategy is defined (Phase 2)
-  model: "model-name"
-  full: |
-    [anchor paragraph for FULL slides]
-  imgtxt: |
-    [anchor paragraph for IMG+TXT slides]
-  conventions: "..."
+After saving `outline.yaml`, validate and regenerate the derived artifacts using
+the commands in "Talk-directory artifacts" above, starting with `outline_schema.py`.
 
-slides:
-  - n: 0
-    chapter: ch1
-    title: "Title Card"
-    format: TITLE
-    text_overlay: |
-      Talk Title
-      Speaker Name — Venue
-  - n: 1
-    chapter: ch1
-    title: "Opening Hook"
-    format: FULL            # FULL | IMG+TXT | EXCEPTION | TITLE | DEMO
-    visual: "what's on screen"
-    text_overlay: "the literal text rendered on the slide, or 'none'"
-    image_prompt: |         # only when style_anchor is set + format != EXCEPTION
-      [STYLE ANCHOR]. The generation prompt for this slide.
-    builds:                 # progressive reveals — each build is a separate deck slide
-      - { step: 0, desc: "empty frame" }
-      - { step: 1, desc: "first reveal" }
-    script:                 # screenplay form — what the speaker(s) say
-      - cue: "SLIDE 1 UP"
-      - parenthetical: "(beat)"
-      - line: "Opening line."           # single-speaker: no speaker field
-      - { speaker: "Name", line: "..." } # multi-speaker: every line attributed
-    applied_patterns:
-      - { id: opening-punch, flavors: [personal, unexpected] }
-    callbacks:
-      - { kind: plant, id: receipt-motif }
-    placeholders: ["AUTHOR-01"]
-    big_idea: false         # exactly ONE slide in the talk has true
-    thesis: null            # "preview" or "payoff" on the slides where the thesis lands
+Gate: Draft delivered.
 
-interludes:                 # production interludes between slides — usually live demos
-  - id: demo-01
-    after_slide: 0          # plays between slide 0 and slide 1
-    chapter: ch1
-    title: "DEMO 01 — Live Terminal"
-    script: [...]
-    callbacks: [...]
-```
-
-When an illustration strategy is defined, every non-EXCEPTION slide carries an
-`image_prompt`. The `[STYLE ANCHOR]` token in the prompt references the
-`style_anchor` — the illustrations pipeline substitutes the actual anchor text at
-generation time. Talks without `style_anchor` use `visual:` + `text_overlay:` only.
-
-**Placeholders** — use typed, independent numbering (each type starts at 01):
-`AUTHOR-01`, `DEMO-01`, `DATA-01`, `SCREENSHOT-01`, `IMAGE-01`, `MEME-01`.
-Every placeholder requiring author input MUST use one of these typed tags —
-never use generic `TODO` or `TBD`. See
-[references/phase3-content.md](references/phase3-content.md) for full
-placeholder definitions and meme-brief format.
-
-After saving `outline.yaml`, validate and regenerate the derived artifacts:
-
-```bash
-"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" outline.yaml      # validates; non-zero on error
-"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-narrative.py" outline.yaml > narrative.md
-"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-script.py"    outline.yaml > script.md
-"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/extract-slides.py"    outline.yaml > slides.md
-"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/check-rhetorical.py"  outline.yaml > rhetorical-review.md
-```
-
-The four `.md` files are read-only — never edit them directly; they regenerate
-deterministically from `outline.yaml`.
+Proceed immediately to Step 4.
 
 ## Step 4 — Revision & Guardrails
+
+Read [references/phase4-guardrails.md](references/phase4-guardrails.md) for the
+full check list, report format, and iteration protocol.
 
 Run two checkers — they cover different surfaces:
 
@@ -425,213 +262,109 @@ Run two checkers — they cover different surfaces:
 "{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/guardrail-check.py"   outline.yaml path/to/speaker-profile.json
 ```
 
-`check-rhetorical.py` enforces the **closed pattern taxonomy** (opening PUNCH,
-big-idea singleton, thesis preview/payoff ordering, sparkline structural
-elements when applicable, register coverage or match, master-story threading,
-callback ledger, inoculation count, progressive-list contiguity, duration
-accounting). Output is the `rhetorical-review.md` artifact — PASS / FLAG / N/A
-per check.
+`check-rhetorical.py` enforces the closed pattern taxonomy and writes the
+`rhetorical-review.md` artifact — PASS / FLAG / N/A per check.
 
-`guardrail-check.py` enforces **speaker-profile-aware rules** that depend on
-runtime profile data: pattern-history authorization, slide budget, Act 1 ratio
-limits, branding, profanity register, data attribution, closing completeness, and
-cut-line availability (conditional on `modular_design`). Its report contains the
-resolved `pattern_history` contract and final `recurring_antipatterns` records. Render
-those records unchanged. Do not inspect profile rows to recreate them.
+`guardrail-check.py` enforces speaker-profile-aware rules and emits one schema-v1
+JSON object on stdout. Render its `recurring_antipatterns` records unchanged; do
+not inspect profile rows to recreate them. Exit 0 means the report was produced —
+FAIL remains a check status. Input failures exit non-zero, write diagnostics to
+stderr, and leave stdout empty.
 
-`contextual_taxonomy_scan.enabled` remains true for the current outline. Illustration
-coverage and the contextual scan still live in `phase4-guardrails.md` as additional
-manual checks the agent should surface alongside the script's output. See
-[references/phase4-guardrails.md](references/phase4-guardrails.md) for the
-full check list and report format.
+The script reports the 7 independent non-pattern checks plus pattern-history
+status; the agent adds these categories manually:
 
-The script reports the 7 independent non-pattern checks plus pattern-history status
-and any authorized recurring-history lines; the agent adds the remaining categories
-manually. Stdout is one schema-v1 JSON object. Read `checks[]` for each named
-status and detail, `pattern_history` for authorization and suppressed fields,
-`recurring_antipatterns` for authorized history, `contextual_taxonomy_scan` for
-the independent current-outline lane, and `required_companion_check` for the
-structural checker. Exit 0 means the report was produced; FAIL remains a check
-status. Input failures exit non-zero, write diagnostics to stderr, and leave
-stdout empty.
-
-Agent-added (not in script yet):
-- Current-taxonomy contextual antipattern scan of the new outline; this runs even when
+- Current-taxonomy contextual antipattern scan of the new outline — runs even when
   history is disabled and uses `[CONTEXTUAL]`, never `[RECURRING]`
-- Speaker-specific recurring issues from
-  `profile.guardrail_sources.recurring_issues[]` — schema-v4/v5 entries with
-  `source_lane: "non_pattern"` remain usable independently; legacy or ambiguous
-  entries are suppressed, while catalog warnings come from authorized
-  `pattern_profile` history
+- Speaker-specific recurring issues from `profile.guardrail_sources.recurring_issues[]`
+  — schema-v4/v5 entries with `source_lane: "non_pattern"` remain usable
+  independently; legacy or ambiguous entries are suppressed, while catalog
+  warnings come from authorized `pattern_profile` history
 - Illustration coverage when `style_anchor` is present
 - Time-sensitive content scan
 - Murder-Your-Darlings filter pass
 - Emotion-balance and screening-with-critics where applicable
 
-Iterate on author feedback. Apply changes first, guardrail second. Flag but don't block
-intentionally overridden guardrails. See [references/phase4-guardrails.md](references/phase4-guardrails.md) for iteration protocol.
+Iterate on author feedback. Apply changes first, guardrail second. Flag but don't
+block intentionally overridden guardrails.
 
-## Step 5 — Slide Generation & Interactive Iteration
+Gate: Author declares the outline done.
 
-Build the deck from the finalized `outline.yaml`, using `slides.md` (the build-sheet
-extracted by `extract-slides.py`) as the per-slide instruction list. See
-[references/phase5-slides.md](references/phase5-slides.md) for the full technical
-reference.
+Proceed immediately to Step 5.
 
-Branch on `talk.engine` (read via `outline_schema.py`, never re-parse YAML by
-hand): `pptx` → the template-driven build below; `presenterm` → the terminal
-markdown build below. When `engine` is null (a legacy outline authored before
-Decision #2), infer from mode/context as before but confirm the choice with the
-author before building. A `style_anchor` set alongside `engine: presenterm` is a
-WARN — the illustration pipeline assumes pptx.
+## Step 5 — Slide Generation
 
-**For pptx talks (template-driven):**
-
-Emit a deck op sequence from `slides.md` + the profile layout map, validate it,
-then build the deck with the real PowerPoint app — `BuildDeck` strips the
-template's demo slides and creates every slide from the ops. See
+Read [references/phase5-slides.md](references/phase5-slides.md) for the full
+technical reference: the engine branch, deck-op emission, which ops to omit on
+illustrated slides, the post-build pass order, and the presenterm build.
+Op vocabulary and state rules live in
 [references/deckops-spec.md](references/deckops-spec.md).
+
+Build the deck from the finalized `outline.yaml`, using `slides.md` (the
+build-sheet extracted by `extract-slides.py`) as the per-slide instruction list.
+Branch on `talk.engine`, read via `outline_schema.py` — never re-parse YAML by hand.
+
+**For pptx talks**, emit a deck op sequence from `slides.md` + the profile layout
+map, validate it, then build with the real PowerPoint app:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/validate-deckops.py" ops.txt
 bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/build-deck.sh" "{template_copy_pptx_path}" "{output_path}" ops.txt
 ```
 
-For non-illustrated slides and EXCEPTION-format slides, emit the content inline
-(the `IMAGE-NN` placeholder resolves to a real asset → an `IMAGE` op). For FULL
-and IMG+TXT slides, emit only the slide structure (layout, `TITLE`, `FOOTER`)
-and **omit the `IMAGE` op** — the slide is left without a picture shape. The
-illustrations skill handles illustrations in the post-build apply pass: FULL
-slides get a slide BACKGROUND FILL (set by the PowerPoint `apply-backgrounds.sh`
-pass, so the layout's halftone-dot overlay covers them); IMG+TXT slides get a
-left-column picture shape via `apply-illustrations-to-deck.py`.
+After the build completes, if `outline.yaml` declares `style_anchor`, delegate to
+`Skill(skill: "illustrations")` to generate illustrations, generate any
+progressive-reveal builds, and apply them to the deck.
 
-When `outline.yaml`'s `style_anchor.composition` is `poster-theatrical`,
-also **omit the `TITLE` and `FOOTER` ops** for the FULL slides — the title and
-footer are rendered into the illustration itself, so the only post-build inserts
-on those slides are the background fill and the QR code.
+Then run the post-build passes in the order phase5-slides.md prescribes —
+`expand-builds.sh`, then `inject-notes.sh`, then `apply-backgrounds.sh` last.
+Never reorder them. See `rules/deck-editing-rules.md`.
 
-After the build completes, if `outline.yaml` declares `style_anchor`, delegate
-to `Skill(skill: "illustrations")` to generate illustrations, generate any
-progressive-reveal builds, and apply them to the deck. The illustrations skill
-reads `outline.yaml` directly (`style_anchor` + per-slide `image_prompt` /
-`builds`) — no surfacing or format translation needed.
+**For presenterm talks**, hand-author `{slug}.md` from the `slides.md`
+build-sheet per phase5-slides.md — Presenterm Talks.
 
-If any slide has progressive-reveal builds, expand them FIRST with
-`"{speaker_toolkit_root}/skills/presentation-creator/scripts/expand-builds.sh"` (manifest from
-`build-expansion-manifest.py`): it replaces each parent slide with its build
-frames as full-bleed slides. Pass the speaker-notes JSON to
-`build-expansion-manifest.py --notes` so each build parent's note rides onto its
-FINAL frame during expansion (per `skills/illustrations/references/builds.md`);
-do not re-target those parent indices in any later notes pass. Run expansion
-BEFORE the by-index passes below — it renumbers later slides, so notes,
-backgrounds, and QR must key on the POST-expansion deck. See
-`rules/deck-editing-rules.md`.
+Every layout, background, footer, and slide-number decision reads from
+`speaker-profile.json` (`design_rules.*`, `infrastructure.template_layouts[]`) at
+runtime — phase5-slides.md names the exact field per decision. Never hardcode them.
 
-Inject the remaining speaker notes from `script.md` after the illustrations skill
-returns, via real PowerPoint — `"{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.sh"`
-(notes JSON is the `{"<0-based slide #>": "text"}` map). When the deck was
-expanded, drop the build-parent entries already carried by `--notes` and key the
-remaining notes on the post-expansion slide order; with no builds, the original
-indices apply directly. PowerPoint writes valid notes OOXML, so the
-`<p:notesMasterIdLst>` Keynote patch the old python path needed is gone. THEN, as
-the final write, set the FULL-slide backgrounds via
-`"{speaker_toolkit_root}/skills/presentation-creator/scripts/apply-backgrounds.sh"` using the manifest from
-the apply pass — it must run last; any later python-pptx save would re-drop the
-per-slide background fills. See `rules/deck-editing-rules.md`.
+Gate: Author declares slides done.
 
-**For presenterm talks (terminal markdown):**
-
-Hand-author the renderable deck as `{slug}.md` (e.g., `devoxx-uk-2026-300-tokens.md`)
-using the `slides.md` build-sheet as input. Each slide's `text_overlay:` becomes
-the slide body; the slide's `script:` becomes the `speaker_note: |` HTML comment.
-The slug-named deck travels with the talk dir; `slides.md` remains the
-toolkit-canonical build-sheet.
-
-**Key rules from profile:**
-- `design_rules.background_color_strategy` — how to pick background colors
-- `design_rules.footer` — pattern, position, font, color adaptation
-- `design_rules.slide_numbers` — typically "never"
-- `infrastructure.template_layouts[]` — layout index + placeholder mapping
+Proceed immediately to Step 6.
 
 ## Step 6 — Publishing
+
+Read [references/phase6-publishing.md](references/phase6-publishing.md); export
+detail lives in [references/phase5-slides.md](references/phase5-slides.md).
 
 Read `publishing_process` from `speaker-profile.json`. Each speaker's workflow differs.
 If `publishing_process` is missing or empty, ask the author interactively.
 
 Execute the steps from the profile:
 0. **Resources** — extract and curate resource list from outline (`extract-resources.py`)
-1. **Export** — run `export_method` / `export_script` (see [references/phase5-slides.md](references/phase5-slides.md))
+1. **Export** — run `export_method` / `export_script`
 2. **Shownotes** — if `publishing_process.shownotes.enabled`, use curated resources from Step 6.0
 3. **QR Code** — if `qr_code.enabled`, generate and insert per profile
 4. **Additional steps** — execute each `additional_steps[]` entry
-5. **Go-live checklist** — surface unobservable patterns from [references/patterns/_index.md](references/patterns/_index.md)
-   as a delivery preparation reminder (see [references/phase6-publishing.md](references/phase6-publishing.md) Step 6.5)
+5. **Go-live checklist** — surface unobservable patterns from
+   [references/patterns/_index.md](references/patterns/_index.md) as a delivery
+   preparation reminder (see phase6-publishing.md Step 6.5)
 
 Gate: Author confirms published and ready to deliver.
+
+Finish here. Step 7 is triggered separately, days or weeks after delivery.
 
 ## Step 7 — Post-Event
 
 Triggered separately — days or weeks after delivery. Not part of the linear
 Phase 0-6 flow. The talk has been given and recorded.
 
+Read [references/phase7-post-event.md](references/phase7-post-event.md) for the
+pre-flight checklist and Step 7.2. Step 7.1 detail lives in
+`skills/illustrations/references/thumbnails.md`.
+
 1. **YouTube Thumbnail** — delegate to `Skill(skill: "illustrations")` (the
    skill handles slide selection, speaker-photo resolution, aesthetic precedence,
    composition via Gemini, and speaker iteration).
 2. **Video to Shownotes** — add video embed/link to existing shownotes page.
 
-Read [references/phase7-post-event.md](references/phase7-post-event.md) for
-the pre-flight checklist and Step 7.2 (Video to Shownotes). Step 7.1 detail
-lives in `skills/illustrations/references/thumbnails.md`.
-
----
-
-## Adapting Existing Talks
-
-1. Check if the talk has been ingested by the vault. If not, process it first.
-2. Read the original talk's analysis from `{vault_root}/analyses/`
-3. Copy the previous deck as starting point — do NOT start from fresh template.
-4. Start at Phase 1 with the original spec pre-filled, modify as needed.
-5. Auto-generate adaptation checklist: footer, shownotes slug, time-sensitive content,
-   slide budget, profanity register, locale references, commercial intent.
-6. For structural edits (delete/reorder slides, import slides from another deck,
-   global text replace), edit through real PowerPoint via
-   `"{speaker_toolkit_root}/skills/presentation-creator/scripts/run-deck-ops.sh"`. python-pptx editing is
-   not used — it strips per-slide background fills, flattening illustrated decks.
-   See `rules/deck-editing-rules.md` (macOS + Microsoft PowerPoint only). On first
-   use, walk the user through `references/deck-editing-setup.md` (enable macros,
-   import the macro, grant Automation consent) before invoking the script.
-
-## CFP Abstract Writing
-
-1. Complete Phase 0-1 (lighter touch)
-2. Skip Phase 2 (not needed for an abstract)
-3. Write: title, abstract (200-300 words), key takeaways (3-5 bullets), speaker bio
-4. Phase 4 revision as normal
-5. Save approved materials to the Sessions Catalog (see below)
-
-## Sessions Catalog
-
-The sessions catalog (`{vault_root}/sessions-catalog.md`) is the single source of
-submission-ready materials for active talks. Load it during Phase 0 to know the active
-rotation and flag overlapping territory. Pull an existing entry before starting a new
-CFP; adapt rather than rewrite.
-
-**What goes in the catalog.**
-
-Each entry contains:
-- **Title** (including subtitle if any)
-- **Abstract** (submission-ready, anti-pattern-checked)
-- **Outline** (with section descriptions and time allocations)
-- **Small Print** (notes for the Program Committee — positioning, scope clarifications,
-  or anything the PC should know; internal, not public-facing)
-
-**Catalog maintenance.**
-
-- Save approved title, abstract, and outline after CFP abstract writing (step 5) and
-  after Phase 4 if no entry exists yet. Remove or archive entries when a talk is retired.
-- The catalog reflects the **latest approved version** — full history lives in the
-  tracking database and analysis files.
-- Run an anti-pattern check on entries before saving (use the blog-writer skill's
-  `ai-anti-patterns.md` if installed). Keep the "Last updated" date current.
-- Entries are separated by `---` horizontal rules for easy scanning.
+Gate: Thumbnail approved, video linked. Finish here.

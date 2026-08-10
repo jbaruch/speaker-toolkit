@@ -33,7 +33,10 @@ Authored in Phase 1; never re-edited carelessly. Field reference (see
 | `dominant_register` | conditional | `A` \| `B` \| `C` \| `D`. Required iff `audience_spread: homogeneous`; rejected otherwise |
 | `slide_budget` | yes | Integer; expanded build count is validated against this |
 | `pacing_wpm` | yes | `[low, high]` integer tuple |
-| `architecture` | yes | One of: `narrative-arc`, `sparkline`, `fourthought`, `triad`, `talklet`, `expansion-joints`, `lightning-talk`, `takahashi`, `cave-painting` |
+| `architecture` | yes | One of: `narrative-arc`, `sparkline`, `fourthought`, `triad`, `talklet`, `expansion-joints`, `lightning-talk`, `takahashi`, `cave-painting`. Filled in Phase 2 — leave a placeholder at Phase 1 |
+| `engine` | yes | `pptx` \| `presenterm`. Filled in Phase 2 Decision #2 |
+| `deck_theme` | yes | Free-string theme/template pointer. Phase 2 Decision #2 |
+| `engine_source` | yes | Provenance of the engine choice. Phase 2 Decision #2 |
 | `applied_patterns` | optional | Talk-level patterns (e.g., `bookends`, `mentor`, `anti-sell`) |
 | `thesis` | optional | Elaborated paragraph; the slide-ready single sentence lives on the call-to-adventure slide via `big_idea_text` |
 | `tldr` | optional | Short distillation of `thesis` (a couple of paragraphs or a bulleted list); `narrative.md` renders it verbatim as the TL;DR and never reprints `thesis` |

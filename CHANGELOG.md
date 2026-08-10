@@ -1,5 +1,167 @@
 # Changelog
 
+### chore(ci) — hold skill entrypoints inside Tessl's token budget (#163)
+
+Closes #163. `tessl plugin lint` flagged `presentation-creator/SKILL.md` at
+~8,749 tokens against Tessl's 5,000 recommendation; the entrypoint loads in full
+the moment the skill triggers, so every consumer paid that context before a
+single task-specific reference was selected. It is now ~4,700.
+
+The issue also named `vault-ingress/SKILL.md` at ~10,939 tokens. That one had
+already come in under budget through unrelated work, so only the creator
+entrypoint needed the split — the issue text was stale by the time it was picked
+up.
+
+Most of the removed bulk was duplication rather than unique content: the `talk:`
+block, the outline schema, the guardrail-report contract, and the deck-build
+passes were each already documented in `references/phase{1,3,4,5}-*.md`. Two
+genuinely new reference files carry what was only in SKILL.md:
+
+- `references/pattern-history-authorization.md` — the `pattern_history_status.py`
+  payload shape, the six domain contracts, source selection, profile schema
+  tiers, Section 15 eligibility, summary-only mode, and the cross-generation
+  comparison rules. SKILL.md keeps the invocation and routes here.
+- `references/alternate-entry-flows.md` — late entry, adapting an existing talk,
+  CFP abstracts, and the sessions catalog. These are alternate entry points, not
+  phases of the linear flow, and each names its own trigger condition.
+
+Three fixes fell out of the split. `phase3-content.md`'s `talk:` table was
+missing `engine`, `deck_theme`, and `engine_source`, so those rows moved rather
+than evaporated. `phase5-slides.md` pointed at "the presenterm branch in SKILL.md
+Step 5" for content SKILL.md pointed back at it for — the circular reference is
+now a real Step 5.1c. The poster-theatrical `TITLE`/`FOOTER` omit rule and the
+load-bearing `expand-builds` → `inject-notes` → `apply-backgrounds` ordering also
+landed in `phase5-slides.md`, where the rest of the build detail lives.
+
+`scripts/check_skill_entrypoints.py` makes both properties deterministic instead
+of remembered, per `language-diagnostics` Gate It Deterministically. It fails on
+an over-budget entrypoint and on a relative link resolving to nothing — the
+second failure mode being the one the split itself introduces, since a dangling
+pointer is silent at runtime: the agent follows it, finds nothing, and proceeds
+without the routing contract. Links inside code fences and inline code spans are
+sample output the skill emits, not pointers, so they are excluded. Code spans
+close on a matching delimiter run, not on the next backtick: pairing single
+backticks split ``[x](missing.md)`` at its first two characters and leaked the
+link back into the scanned text, failing the gate on a valid skill. The token
+estimate is chars/4, which rounds against us (8,791 estimated vs Tessl's 8,749
+reported on the same file), so a pass here implies a pass in lint.
+
+The gate is `scripts/check_skill_entrypoints.py`. It started as shell and moved
+to Python across two review rounds, because three separate rule findings all
+pointed the same way: `file-hygiene` Standalone Scripts wants an entry-point
+guard (`if __name__ == "__main__"` is its own named example),
+`script-delegation` Script Requirements wants JSON on stdout, and the Regex
+Trap rules out matching Markdown links with `\]\([^)]+\)`. That regex breaks on
+`[a](notes.md "title")`, on `[a](refs/note_(draft).md)`, and on the
+angle-bracket form — each a valid link the gate would have reported as dangling,
+blocking the publish of a correct skill. The destination scanner now implements
+the CommonMark grammar it needs: angle-bracket form, balanced parentheses,
+backslash escapes, and a title the path must not absorb.
+
+The scanner also requires the closing `)`. Returning a destination as soon as
+the path ended meant `[x](<missing.md>` and `[x](missing.md "title"` — neither
+of which is a link — produced a target that was then reported as a dangling
+reference, the same false publish block from the other direction. A malformed
+construct now yields nothing, and a later well-formed link on the same line is
+still found.
+
+Resolution asks whether the target *ships*, not whether it exists. A link
+reaching through `..` into `tests/`, into the repo-root `scripts/`, or out of
+the repo entirely names a file present in the working tree and absent from
+every package — which dangles at runtime exactly like a missing one, and which
+the first version of this gate passed. A target must now resolve inside the
+repo, sit under a path `.tessl-plugin/plugin.json` declares, and survive
+`.tesslignore`. The ignore test runs through the same throwaway-repo
+`core.excludesFile` technique `check-package-contents.sh` uses, so the two
+gates cannot disagree about what a pattern matches. Each failure carries its
+reason: `missing`, `escapes the repository`, `not declared plugin content`, or
+`excluded from the package by .tesslignore`.
+
+Token math is a ceiling, not truncation: integer division reported 20,001
+through 20,003 characters as exactly 5,000 tokens and passed a file that was
+over budget. The boundary test is parametrized across every excess below the
+divisor so the gap cannot reopen.
+
+The first shell draft ended its link-extraction pipeline in `|| true`, which
+`error-handling` forbids — it collapsed each stage's exit 1 (filtered everything
+out, legitimate) with exit 2 (bad regex) and with an unreadable file, so a
+broken checker would have reported success. The Python reader raises on a real
+read failure and returns an empty list for "no links", which are different
+outcomes.
+
+Reference-style links are collected too. Matching only inline `](...)` meant a
+`[notes][n]` usage with a `[n]: references/missing.md` definition walked past
+the gate. Definitions are validated; usages are deliberately not matched
+against them, because CommonMark's shortcut form makes any `[text]` a potential
+reference and these skills carry literal bracketed tags in prose (`[RECURRING]`,
+`[NEW]`, `[CONTEXTUAL]`) that would then fail a correct file.
+
+Every run emits one JSON object, failures included. Validation errors raised
+`SystemExit` from inside the checks, so a missing `skills/`, an unreadable
+entrypoint, a malformed manifest, or a `git check-ignore` failure left stdout
+empty — which contradicted the script's own documented contract and made "the
+gate said no" indistinguishable from "the gate crashed" without parsing stderr.
+A typed `GateError` now carries the actionable message to the outer boundary,
+where it becomes a structured failure object on stdout, the diagnostic on
+stderr, and a non-zero exit. `main()` also takes `error-handling`'s
+Outer-Boundary Carve-Out (`outer-boundary-process-contract`) so a bug in the
+gate itself still emits that shape instead of a traceback — `except Exception`,
+never `BaseException`, so interrupts keep working.
+
+Both file reads catch `UnicodeError` explicitly. `UnicodeDecodeError` is a
+`ValueError`, so it slipped past the `OSError` handler and surfaced as a
+traceback — and the entrypoint handler's message had been promising to cover
+encoding all along.
+
+`pyproject.toml` adds `scripts` to Pyright's `include` and to the `tests`
+execution environment, so repo-root gate scripts are type-checked and importable
+by their tests the same way skill scripts already are. `tests/conftest.py`
+splices the directory onto `sys.path` alongside the four skill script roots.
+
+The gate joins `scripts/pre-publish-checks.sh` and is covered by
+`tests/test_skill_entrypoints.py`: both budget boundaries, the destination
+grammar, the unreadable-file path, and a guard that the composer actually
+invokes it.
+
+`phase5-slides.md` drops its `Step 5.0` / `5.1b` / `5.1c` / `5.2`… headings for
+descriptive ones. `skill-authoring` Step Structure bans decimal and lettered
+sub-steps, and its `applyTo` covers `skills/**/*.md`, not only `SKILL.md`;
+phase5 was the last reference file still numbering that way, so it now reads
+like `phase3-content.md` and `phase6-publishing.md` do. Descriptive headings
+also avoid a `Step 1` in the reference colliding with a different `Step 1` in
+the entrypoint.
+
+That surfaced a pre-existing dangling internal pointer: the file's directory
+map credited `builds/` to "Phase 5 Step 5.1c", a heading that did not exist,
+and progressive-reveal builds come from the illustrations pass regardless.
+
+Every step gate in the creator SKILL.md now states its continuation explicitly,
+per `skill-authoring` Step Continuity. Steps 2 through 6 ended at a bare
+`Gate:` line, which reads as an implicit pause; Step 6 now says it finishes
+there because Step 7 is triggered separately.
+
+The preamble stays the sequential one. An intermediate revision phrased the
+alternate entries as routing, which read as an action router, and a router
+preamble ("execute only that step; do not run other steps") would be wrong
+here: three of the four alternates are entry *offsets* into the same ordered
+workflow, not standalone actions, so a router instruction would have the agent
+run one phase and stop. The preamble now says the workflow is sequential and
+that a request may enter at a later step; a "Where to enter" note in the body
+names the four and points at `alternate-entry-flows.md`. The frontmatter
+`description` lists them so runtime discovery can match those intents — it had
+been missing single post-authoring tasks and sessions-catalog work — and the
+surrounding prose tightened to stay inside the 1024-character cap.
+
+The two sibling gates (`check-package-contents.sh`, `check-tessl-pins.sh`) have
+the same entry-point-guard and prose-stdout gaps. They are out of scope here and
+tracked separately.
+
+Seven doc-contract assertions in `test_presentation_pattern_history.py` and
+`test_section15_pattern_history.py` read the authorization contract out of
+SKILL.md. They now read it from the reference file that owns it, plus a new
+assertion that SKILL.md routes there — so content vanishing from both still
+fails rather than passing on a union.
+
 ## 0.20.38 — 2026-08-09
 
 ### chore(ci) — enforce the Ruff, format, and Pyright gates (#162)

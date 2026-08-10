@@ -22,17 +22,28 @@ This phase generates concrete slides from the outline. **Every slide should resp
 
 Speaker-style data in `slide-design-spec.md` Sections 1–10 (extracted from the speaker's actual deck corpus) takes precedence where it exists. The principles in Sections 11.1–11.14 are the default for layout decisions where the corpus is silent.
 
-## Step 5.1: Create the Deck
+## Branch on the Engine
+
+Read `talk.engine` via `outline_schema.py` — never re-parse the YAML by hand.
+
+- `pptx` → the template-driven build in Create the Deck below.
+- `presenterm` → the terminal-markdown build in Presenterm Talks below.
+- `null` (a legacy outline authored before Phase 2 Decision #2) → infer from
+  mode/context, then confirm the choice with the author before building.
+
+A `style_anchor` set alongside `engine: presenterm` is a WARN — the illustration
+pipeline assumes pptx.
+
+## Create the Deck
 
 This step applies only when `talk.engine` is `pptx` (or null with a pptx
-inference confirmed in Step 5). For `presenterm`, hand-author `{slug}.md` instead
-(see the presenterm branch in SKILL.md Step 5).
+inference confirmed in Branch on the Engine).
 
 Read the template path from `speaker-profile.json → infrastructure.template_pptx_path`.
 The deck is built by the real PowerPoint app from a flat op sequence: `BuildDeck`
 opens a uniquely-named COPY of the template (for its custom layouts + masters),
 deletes the template's demo slides, then creates every slide from the ops and
-saves the output. You emit the ops while walking the outline (Step 5.2), then
+saves the output. You emit the ops while walking the outline (Walk the Outline below), then
 validate and build:
 
 ```bash
@@ -46,12 +57,12 @@ only; on first use walk the user through `references/deck-editing-setup.md`.
 
 ---
 
-## Step 5.1b: Illustrations (when illustration strategy is defined)
+## Illustrations (when illustration strategy is defined)
 
 If the outline includes an Illustration Style Anchor section, illustration
 generation, build generation, and deck application are owned by the
-illustrations skill. Build the deck structure first (Steps 5.2–5.4), then
-delegate:
+illustrations skill. Build the deck structure first (Walk the Outline through
+Present to Author below), then delegate:
 
 ```
 Skill(skill: "illustrations")
@@ -66,6 +77,63 @@ once images are approved and applied.
 For non-illustrated slides and EXCEPTION-format slides, handle inline as
 normal — the `[IMAGE NN]` placeholder resolves to a real asset that
 presentation-creator inserts during the slide walk.
+
+### Which ops to omit on illustrated slides
+
+For FULL and IMG+TXT slides, emit only the slide structure (layout, `TITLE`,
+`FOOTER`) and **omit the `IMAGE` op** — the slide is left without a picture
+shape. The illustrations skill fills it in the post-build apply pass: FULL slides
+get a slide BACKGROUND FILL (set by the PowerPoint `apply-backgrounds.sh` pass,
+so the layout's halftone-dot overlay covers them); IMG+TXT slides get a
+left-column picture shape via `apply-illustrations-to-deck.py`.
+
+When `outline.yaml`'s `style_anchor.composition` is `poster-theatrical`, also
+**omit the `TITLE` and `FOOTER` ops** for the FULL slides — the title and footer
+are rendered into the illustration itself, so the only post-build inserts on
+those slides are the background fill and the QR code.
+
+The illustrations skill reads `outline.yaml` directly (`style_anchor` plus
+per-slide `image_prompt` / `builds`) — no surfacing or format translation needed.
+
+### Post-build pass order
+
+The passes below renumber or overwrite each other, so run them in exactly this
+order:
+
+1. **Expand builds** — if any slide has progressive-reveal builds, expand them
+   FIRST with
+   `"{speaker_toolkit_root}/skills/presentation-creator/scripts/expand-builds.sh"`
+   (manifest from `build-expansion-manifest.py`): it replaces each parent slide
+   with its build frames as full-bleed slides. Pass the speaker-notes JSON to
+   `build-expansion-manifest.py --notes` so each build parent's note rides onto
+   its FINAL frame during expansion (per
+   `skills/illustrations/references/builds.md`); do not re-target those parent
+   indices in any later notes pass. Expansion renumbers later slides, so notes,
+   backgrounds, and QR must key on the POST-expansion deck.
+2. **Inject remaining speaker notes** — Inject Speaker Notes below. When the deck was
+   expanded, drop the build-parent entries already carried by `--notes` and key
+   the remaining notes on the post-expansion slide order. With no builds, the
+   original indices apply directly.
+3. **Apply backgrounds** — set the FULL-slide backgrounds via
+   `"{speaker_toolkit_root}/skills/presentation-creator/scripts/apply-backgrounds.sh"`
+   using the manifest from the apply pass. It must run LAST; any later
+   python-pptx save would re-drop the per-slide background fills.
+
+See `rules/deck-editing-rules.md`.
+
+---
+
+## Presenterm Talks (terminal markdown)
+
+Applies when `talk.engine` is `presenterm`. Hand-author the renderable deck as
+`{slug}.md` (e.g., `devoxx-uk-2026-300-tokens.md`) using the `slides.md`
+build-sheet as input:
+
+- each slide's `text_overlay:` becomes the slide body;
+- each slide's `script:` becomes the `speaker_note: |` HTML comment.
+
+The slug-named deck travels with the talk directory; `slides.md` remains the
+toolkit-canonical build-sheet.
 
 ---
 
@@ -103,7 +171,7 @@ in the speaker's template.
 
 ---
 
-## Step 5.2: Walk the Outline — Slide Generation Workflow
+## Walk the Outline — Slide Generation Workflow
 
 Walk the outline in order and append ops to the sequence — one slide is a `SLIDE`
 op followed by its content ops. Field layout and geometry (points):
@@ -125,7 +193,7 @@ op followed by its content ops. Field layout and geometry (points):
 
    Emit the slide structure (layout, `TITLE`, `FOOTER`) and OMIT the `IMAGE` op.
    The illustrations skill applies the image after the build completes — see
-   Step 5.1b.
+   the Illustrations section above.
 
    **For EXCEPTION format:**
    - Use appropriate layout for the content type (bullet list, comparison, etc.)
@@ -170,7 +238,7 @@ Template placeholders have fixed sizes. To avoid overflow:
 
 ---
 
-## Step 5.3: Inject Speaker Notes (real PowerPoint) — SEPARATE STEP
+## Inject Speaker Notes (real PowerPoint) — SEPARATE PASS
 
 **IMPORTANT:** Speaker notes MUST be injected as a separate batch pass AFTER all
 slides exist — never inline during slide creation.
@@ -194,12 +262,12 @@ pass (the VBA background pass must be the last write). macOS + PowerPoint only.
 
 ---
 
-## Step 5.4: Present to Author
+## Present to Author
 
 Save and present a generation report with slide count, layouts used, and placeholders
 needing author content.
 
-## Step 5.5: Iteration Loop
+## Iteration Loop
 
 Free-form conversation. The author gives feedback in whatever format is natural.
 Edits drive the real PowerPoint app — there is no open session to mutate. Two
@@ -259,7 +327,7 @@ each pass calls a macro in that running instance (see Step 6 of the setup doc).
 The macro writes a COPY — the original is untouched; continue editing from the
 OUTPUT deck.
 
-## Step 5.6: Final Save
+## Final Save
 
 Save the .pptx. Export and publishing happen in Phase 6.
 
@@ -332,11 +400,11 @@ directory structure. Typical convention:
 ├── {talk-slug}.pdf               ← PDF export (Phase 5 final step)
 ├── {talk-slug}.md                ← renderable deck (Phase 5 output — presenterm talks)
 ├── assets/                        ← images, memes, screenshots (author provides)
-└── illustrations/                 ← generated illustrations (Phase 5 Step 5.1b)
+└── illustrations/                 ← generated illustrations (Phase 5 — Illustrations)
     ├── slide-01.jpg               ← one file per illustrated slide
     ├── slide-02.png
     ├── slide-05-v2.jpg            ← versioned iterations (--fix / --edit / -v)
-    ├── builds/                    ← progressive reveal build steps (Phase 5 Step 5.1c)
+    ├── builds/                    ← progressive reveal build steps (Phase 5 — Illustrations)
     │   ├── slide-05-build-00.jpg  ← empty frame
     │   ├── slide-05-build-01.jpg  ← first element revealed
     │   └── slide-05-build-02.jpg  ← second element (full = copy of slide-05)
