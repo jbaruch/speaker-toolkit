@@ -90,7 +90,7 @@ instead of an ad hoc provider lookup outside the ingress workflow:
 | Accepted report generation | `CANDIDATE_REPORT_SCHEMA_VERSION` |
 | Valid dispositions | `CANDIDATE_DISPOSITIONS` |
 | Lanes with an auditable provider identity | `CANDIDATE_LANES` |
-| Which reports and entries bind, and the finding each refusal emits | `candidate_bindings()` docstring |
+| Which reports and entries bind, and the finding each refusal emits | `candidate_bindings()` |
 | Faults eligible to stay lane-local, and the code each takes | `CANDIDATE_LANE_LOCAL_CODES` |
 
 **Output.** `candidates[]` carries `provider_evidence` and

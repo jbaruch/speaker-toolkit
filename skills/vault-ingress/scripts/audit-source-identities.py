@@ -468,6 +468,24 @@ def candidate_bindings(
     Returns the accepted bindings and the findings for everything refused.
     Every binding is resolved here, before any provider request: a report that
     names an unknown talk must not cost a network fetch first.
+
+    Refusals, and the finding each emits:
+
+    - ``candidate_report_invalid`` — the report is not a complete conflict set:
+      a non-object report, a schema version other than
+      CANDIDATE_REPORT_SCHEMA_VERSION, ``ok`` not true, a malformed entry or
+      issue, or a disposition outside CANDIDATE_DISPOSITIONS. Any one of these
+      discards EVERY candidate binding; binding the well-formed remainder would
+      audit an unknown subset and read as "these are the conflicts".
+    - ``candidate_binding_invalid`` — the entry is well-formed but names a talk
+      this database cannot resolve to exactly one record. Fatal for the same
+      reason: the conflict set is incomplete.
+    - ``candidate_provider_unsupported`` — the entry names a lane outside
+      CANDIDATE_LANES, so it carries no provider identity to audit. The report
+      stays intact and every other candidate proceeds.
+
+    A fatal refusal returns no bindings. The active lane still audits, so the
+    cost is coverage of the conflicts, never of the sources already stored.
     """
     findings: list[dict[str, Any]] = []
     # Faults that condemn the whole report, kept apart from lane-local notes.
