@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.44 — 2026-08-10
+
 ### chore(scripts) — bring the two sibling pre-publish gates up to policy (#264)
 
 Closes #264.
