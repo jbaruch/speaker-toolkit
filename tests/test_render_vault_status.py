@@ -381,6 +381,51 @@ def test_an_unusable_database_renders_nothing(
     assert str(root) not in captured.out + captured.err
 
 
+@pytest.mark.parametrize(
+    ("value", "code"),
+    [
+        ("yesterday", "generated_at_invalid"),
+        ("2026-08-10", "generated_at_not_aware"),
+        ("2026-08-10T12:00:00", "generated_at_not_aware"),
+    ],
+)
+def test_a_stamp_without_an_offset_renders_nothing(
+    render_vault_status, tmp_path: Path, capsys, value: str, code: str
+) -> None:
+    """The stamp is written into the block as operational fact.
+
+    An unparsed string stamps a block no consumer can order; a naive one
+    leaves the reader guessing at the zone.
+    """
+    root = _vault(tmp_path, _database([_talk("one.md", "processed")]))
+    summary = root / "rhetoric-style-summary.md"
+    before = summary.read_bytes()
+
+    exit_code = render_vault_status.main([str(root), "--generated-at", value])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    payload = json.loads(captured.out)
+    assert payload["code"] == code
+    assert "+00:00" in payload["error"]
+    assert summary.read_bytes() == before
+
+
+def test_bad_arguments_still_produce_the_json_contract(
+    render_vault_status, tmp_path: Path, capsys
+) -> None:
+    """One JSON object on stdout for every outcome, usage text included."""
+    with pytest.raises(SystemExit) as stopped:
+        render_vault_status.main([str(tmp_path)])
+
+    captured = capsys.readouterr()
+    assert stopped.value.code == 2
+    payload = json.loads(captured.out)
+    assert payload["ok"] is False
+    assert payload["code"] == "invalid_arguments"
+    assert "--generated-at" in payload["error"]
+
+
 def test_the_block_payload_is_machine_readable(
     render_vault_status, tmp_path: Path
 ) -> None:

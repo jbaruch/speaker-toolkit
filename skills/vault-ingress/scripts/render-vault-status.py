@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from contextlib import contextmanager, ExitStack
+from datetime import datetime
 import hashlib
 import json
 from pathlib import Path
@@ -397,6 +398,30 @@ def _failure(reason_code: str, message: str) -> dict[str, Any]:
     }
 
 
+def require_generated_at(value: str) -> str:
+    """Accept only a timezone-aware ISO-8601 instant.
+
+    The value is stamped into the block as operational fact. An unparsed
+    string would let `--generated-at yesterday` render a status block whose
+    timestamp no consumer can order, and a naive one leaves the reader
+    guessing at the zone.
+    """
+    try:
+        moment = datetime.fromisoformat(value)
+    except (TypeError, ValueError) as error:
+        raise SummaryRenderError(
+            "--generated-at must be an ISO-8601 timestamp with an offset, "
+            "such as 2026-08-10T12:00:00+00:00",
+            reason_code="generated_at_invalid",
+        ) from error
+    if moment.tzinfo is None or moment.tzinfo.utcoffset(moment) is None:
+        raise SummaryRenderError(
+            "--generated-at must carry a UTC offset, such as 2026-08-10T12:00:00+00:00",
+            reason_code="generated_at_not_aware",
+        )
+    return value
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     parser.add_argument("vault_or_database", type=Path)
@@ -408,9 +433,24 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="ISO timestamp recorded in the block; supplied so a render is reproducible",
     )
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        # argparse exits with usage text alone, and this script's contract is
+        # one JSON object on stdout for every outcome. A caller parsing stdout
+        # would otherwise see an empty document and no reason.
+        if exc.code:
+            message = (
+                "invalid arguments: expected one vault root or database path, "
+                "--generated-at, and optionally --summary, --apply, and "
+                "--expected-sha256"
+            )
+            print(json.dumps(_failure("invalid_arguments", message), sort_keys=True))
+            print(f"vault status render failed: {message}", file=sys.stderr)
+        raise
 
     try:
+        require_generated_at(args.generated_at)
         report = execute(
             args.vault_or_database,
             generated_at=args.generated_at,
