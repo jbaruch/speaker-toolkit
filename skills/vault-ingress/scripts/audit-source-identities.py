@@ -448,6 +448,12 @@ def candidate_bindings(
     names an unknown talk must not cost a network fetch first.
     """
     findings: list[dict[str, Any]] = []
+    # Faults that condemn the whole report, kept apart from lane-local notes.
+    # A partly malformed report cannot be read as a COMPLETE conflict set, so
+    # binding the well-formed remainder would audit an unknown subset and read
+    # as "these are the conflicts". An unsupported lane is different: the
+    # report is intact and simply names a source this auditor cannot fetch.
+    fatal = 0
     if not isinstance(report, dict):
         return [], [
             _finding(
@@ -520,6 +526,7 @@ def candidate_bindings(
                     "high",
                 )
             )
+            fatal += 1
             continue
         if entry.get("disposition") != "review_required":
             continue
@@ -538,6 +545,7 @@ def candidate_bindings(
                     "high",
                 )
             )
+            fatal += 1
             continue
         index = by_filename.get(filename)
         if index is None:
@@ -552,6 +560,7 @@ def candidate_bindings(
                     "high",
                 )
             )
+            fatal += 1
             continue
         for issue in issues:
             if not isinstance(issue, dict) or not isinstance(issue.get("code"), str):
@@ -566,6 +575,7 @@ def candidate_bindings(
                         "high",
                     )
                 )
+                fatal += 1
                 continue
             code = issue["code"]
             lane = CANDIDATE_CONFLICT_CODES.get(code)
@@ -584,6 +594,7 @@ def candidate_bindings(
                         "high",
                     )
                 )
+                fatal += 1
                 continue
             if lane not in CANDIDATE_LANES:
                 findings.append(
@@ -610,6 +621,11 @@ def candidate_bindings(
             # for consumers.
             if binding not in bindings:
                 bindings.append(binding)
+    if fatal:
+        # Discard every binding: the report is not a trustworthy conflict set.
+        # The active lane still audits, so refusing candidates costs coverage
+        # of the conflicts, never of the sources already in the database.
+        return [], findings
     return bindings, findings
 
 

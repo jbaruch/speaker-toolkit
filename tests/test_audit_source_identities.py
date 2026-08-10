@@ -878,3 +878,41 @@ def test_a_malformed_issue_is_refused_not_skipped(audit_source_identities):
     codes = finding_codes(report)
     assert codes.count("candidate_report_invalid") == 2
     assert report["candidates"] == []
+
+
+def test_one_bad_entry_discards_every_candidate_binding(audit_source_identities):
+    """A partly malformed report is not a complete conflict set.
+
+    Binding the well-formed remainder would audit an unknown subset while
+    reporting it as "these are the conflicts".
+    """
+    database = {"talks": [talk("first.md"), talk("second.md", date="2025-04-10")]}
+    good = conflict_entry("first.md")
+    orphan = conflict_entry("nobody.md")
+
+    report, calls = _audit(audit_source_identities, database, scan_report(good, orphan))
+
+    assert "candidate_binding_invalid" in finding_codes(report)
+    assert report["candidates"] == []
+    # No candidate fetch happened; the active lane still audited.
+    assert calls == [VIDEO_ID]
+
+
+def test_an_unsupported_lane_does_not_discard_the_other_candidates(
+    audit_source_identities,
+):
+    """An intact report naming an unfetchable lane is not a malformed report."""
+    database = {"talks": [talk("first.md"), talk("second.md", date="2025-04-10")]}
+
+    report, calls = _audit(
+        audit_source_identities,
+        database,
+        scan_report(
+            conflict_entry("first.md", lane="slides_url"),
+            conflict_entry("second.md"),
+        ),
+    )
+
+    assert "candidate_provider_unsupported" in finding_codes(report)
+    assert [item["filename"] for item in report["candidates"]] == ["second.md"]
+    assert CANDIDATE_ID in calls

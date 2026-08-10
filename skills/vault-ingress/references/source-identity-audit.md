@@ -87,10 +87,17 @@ collision analysis reads that map, so a candidate shared by two talks would
 otherwise fabricate a collision between active identities that share nothing.
 `sources[].lanes` names which lane claimed each fetched identity.
 
-The report envelope is validated whole before anything is bound: only
-`schema_version: 3` with `ok: true` is accepted, and a malformed entry or issue
-is refused rather than skipped — a silently dropped conflict would read as
-"nothing to review".
+The report is validated whole before anything is bound, and the verdict is
+all-or-nothing: only `schema_version: 3` with `ok: true` is accepted, and one
+malformed entry, malformed issue, or unbindable candidate discards **every**
+candidate binding. A partly malformed report is not a complete conflict set, so
+auditing its well-formed remainder would report an unknown subset as "these are
+the conflicts". The active lane still audits, so the cost is coverage of the
+conflicts, never of the sources already in the database.
+
+An unsupported lane is not a malformed report: a `slides_url` candidate leaves
+the report intact and simply names a source with no auditable provider
+identity, so it stays a lane-local finding and the other candidates proceed.
 
 Every binding resolves before any provider request — a report naming an unknown
 or ambiguous talk is refused without spending a fetch. Candidate identities
