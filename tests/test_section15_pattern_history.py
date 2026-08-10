@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import importlib
-import hashlib
-import json
 import copy
+import fcntl
+import hashlib
+import importlib
+import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -22,6 +24,9 @@ for script_directory in (PROFILE_SCRIPTS, CREATOR_SCRIPTS):
         sys.path.insert(0, str(script_directory))
 
 section15 = importlib.import_module("section15_pattern_history")
+# section15 puts the vault-ingress scripts on sys.path; the summary's writer
+# lock lives there, shared with the status-block writer.
+cooperative_lock = importlib.import_module("cooperative_lock")
 pattern_history_status = importlib.import_module("pattern_history_status")
 provenance = importlib.import_module("profile_pattern_provenance")
 classification_runtime = importlib.import_module("pattern_classification_runtime")
@@ -1303,6 +1308,82 @@ def test_failed_atomic_swap_leaves_original_and_no_temp_file(
         )
 
     assert summary_path.read_bytes() == original
+    assert list(tmp_path.glob(f".{summary_path.name}.*.tmp")) == []
+
+
+def test_replace_holds_the_shared_summary_writer_lock(tmp_path, monkeypatch):
+    """The status-block writer replaces its own block in this same file.
+
+    Two writers that read, splice, and rename without excluding each other drop
+    whichever update renamed first. Both take the summary's one writer lock,
+    keyed on the target path, so the exclusion holds across the two scripts.
+    """
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(), encoding="utf-8")
+    lock_path = cooperative_lock.lock_path_for(summary_path)
+    observed: list[str] = []
+    real_replace = section15.os.replace
+
+    def probe_then_replace(source, destination):
+        descriptor = os.open(lock_path, os.O_RDWR)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            observed.append("acquired")
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        except BlockingIOError:
+            observed.append("excluded")
+        finally:
+            os.close(descriptor)
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(section15.os, "replace", probe_then_replace)
+    profile = _pattern_profile(note="Candidate payload.")
+    result = section15.replace_section15_current_block(
+        summary_path,
+        profile,
+        _tracking_database(profile),
+        evidence_freshness_assessor=_fresh_evidence,
+    )
+
+    assert result.changed is True
+    assert observed == ["excluded"]
+    # The same sibling lock the status-block writer takes, so the two exclude
+    # each other rather than each locking a private name.
+    assert lock_path == summary_path.parent / f".{summary_path.name}.lock"
+    assert lock_path.is_file()
+
+
+def test_replace_refuses_a_summary_edited_while_the_block_was_staged(
+    tmp_path,
+    monkeypatch,
+):
+    """The lock excludes toolkit writers; a human editor holds none."""
+    summary_path = tmp_path / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(), encoding="utf-8")
+    edited = _summary() + "\nA sentence a human added while the tool ran.\n"
+    real_fsync = section15.os.fsync
+
+    def edit_then_fsync(descriptor):
+        # A human saves the file after the replacement bytes are staged and
+        # before the rename that would install them.
+        summary_path.write_text(edited, encoding="utf-8")
+        return real_fsync(descriptor)
+
+    monkeypatch.setattr(section15.os, "fsync", edit_then_fsync)
+    profile = _pattern_profile(note="Candidate payload.")
+
+    with pytest.raises(
+        section15.Section15PatternHistoryError,
+        match="changed while the Section 15 replacement was staged",
+    ):
+        section15.replace_section15_current_block(
+            summary_path,
+            profile,
+            _tracking_database(profile),
+            evidence_freshness_assessor=_fresh_evidence,
+        )
+
+    assert summary_path.read_text(encoding="utf-8") == edited
     assert list(tmp_path.glob(f".{summary_path.name}.*.tmp")) == []
 
 

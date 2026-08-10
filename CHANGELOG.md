@@ -41,6 +41,15 @@ than first-match spliced, and the whole retained-stage error family is
 translated into the JSON failure contract instead of only its invariant
 subclass.
 
+The summary has two toolkit writers, not one: `section15_pattern_history.py`
+replaces the Section 15 pattern-history block in the same file, and it read,
+spliced, and renamed holding no lock at all — so either writer could drop the
+other's update, whichever renamed first. Both now enter through
+`summary_lock.py`, one seam that owns the summary's writer lock, and the Section
+15 writer rechecks the target's bytes immediately before its rename the same
+way. A label is diagnostics; agreeing on the lock is the contract, and a third
+writer that imports that seam cannot invent its own.
+
 Every summary failure now names its recovery, not just its fault: which file to
 create, which flag supplies an alternate path, what to re-save as UTF-8. The
 messages stay path-neutral — a host path in a failure line is the leak this

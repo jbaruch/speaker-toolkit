@@ -42,10 +42,7 @@ from pathlib import Path
 import sys
 from typing import Any, Iterator
 
-from cooperative_lock import (
-    CooperativeLockError,
-    exclusive_file_lock,
-)
+from cooperative_lock import CooperativeLockError
 from retained_stage import (
     RetainedStageError,
     close_retained_stage,
@@ -57,6 +54,7 @@ from tracking_database import (
     assess_tracking_database,
     tracking_database_schema_version,
 )
+from summary_lock import SUMMARY_BASENAME, rhetoric_summary_lock
 from tracking_database_io import (
     DATABASE_READ_DIAGNOSTICS,
     DATABASE_READ_FALLBACK,
@@ -68,12 +66,6 @@ from tracking_database_io import (
 REPORT_SCHEMA_VERSION = 1
 STATUS_BLOCK_SCHEMA_VERSION = 1
 DATABASE_BASENAME = "tracking-database.json"
-SUMMARY_BASENAME = "rhetoric-style-summary.md"
-
-# Names the summary in every cooperative-lock diagnostic. Every toolkit writer
-# of this file takes that lock, so the check-and-swap below is one critical
-# section rather than two racing operations.
-SUMMARY_LOCK_LABEL = "rhetoric-summary"
 
 # The block is fenced by exact literals so replacement is a delimited splice,
 # never a heuristic match against narrative prose that may quote a count.
@@ -269,9 +261,7 @@ def _summary_lock(summary_path: Path) -> Iterator[None]:
     """
     stack = ExitStack()
     try:
-        lock = stack.enter_context(
-            exclusive_file_lock(summary_path, label=SUMMARY_LOCK_LABEL)
-        )
+        lock = stack.enter_context(rhetoric_summary_lock(summary_path))
     except CooperativeLockError as error:
         # Path-neutral like every other failure here: the lock's own message
         # names the host path, so it is diagnosed by shape instead.
