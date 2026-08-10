@@ -21,6 +21,8 @@ recorded. The inode assertion was the only one in the file whose outcome came
 from the filesystem rather than the code under test; the remaining assertions in
 `tests/test_pdf_evidence.py` compare against pinned synthetic generations.
 
+## 0.20.51 — 2026-08-10
+
 ### docs(vault-ingress) — point the candidate-mode reference at its script (#278)
 
 Closes #278.
