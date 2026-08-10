@@ -19,19 +19,13 @@ user_invocable: true
 
 # Presentation Creator
 
-Process steps in order. Do not skip ahead. Do not parallelize.
+Process steps in order. Do not skip ahead.
 
-Steps 0–7 are a sequential workflow — Step 0 must run before Step 1, Step 1
-before Step 2, and so on. This is the default for any request to build a talk.
-
-Four named alternate entries route elsewhere: a late-entry single task (a QR
-code, an export, shownotes), adapting an existing talk, writing a CFP abstract,
-and sessions-catalog work. When the request matches one, read
-[references/alternate-entry-flows.md](references/alternate-entry-flows.md) and
-run only that flow. Each names the steps it enters and the ones it deliberately
-skips — the CFP flow skips Step 2 by design. Every alternate entry still
-requires the vault-loading gate below and the documented pre-flight checklist
-before any action, and none of them bypasses the artifact-loading gates.
+Steps 0–7 are one sequential workflow — Step 0 before Step 1, Step 1 before
+Step 2, and so on. Do not parallelize. A request may enter the workflow at a
+later step (see "Where to enter" below), but from that point it still runs in
+order, and every entry requires the vault-loading gate and the documented
+pre-flight checklist before any action.
 
 Resolve the absolute path of this loaded `SKILL.md`, then set
 `speaker_toolkit_root` to the plugin root two directories above the directory
@@ -100,7 +94,15 @@ eligibility, summary-only mode, and the cross-generation comparison rules.
 | 7: Post-Event | YouTube thumbnail, video to shownotes | Thumbnail approved, video linked |
 
 Do not skip phases. Do not write content before Phase 3. Phase 2 is joint, not autonomous.
-The four alternate entries named in the preamble are the only exceptions.
+
+**Where to enter.** A fresh talk starts at Step 0. Four requests enter later
+instead: a single post-authoring task (QR code, export, shownotes, thumbnail,
+linking a recording), adapting an existing talk, writing a CFP abstract, and
+sessions-catalog work. Read
+[references/alternate-entry-flows.md](references/alternate-entry-flows.md) for
+the matching one — it names the step to enter at and the only sanctioned skip
+(the CFP flow omits Phase 2, which an abstract does not need). Vault loading
+stays mandatory for all of them.
 
 **Talk-directory artifacts.**
 

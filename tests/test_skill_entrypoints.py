@@ -478,6 +478,35 @@ def test_missing_skills_directory_fails(tmp_path: Path) -> None:
     assert "no skills/ directory" in result.stderr
 
 
+@pytest.mark.parametrize(
+    "break_it",
+    [
+        pytest.param(lambda p: (p / "skills").rename(p / "elsewhere"), id="no-skills"),
+        pytest.param(
+            lambda p: (p / ".tessl-plugin" / "plugin.json").unlink(), id="no-manifest"
+        ),
+        pytest.param(
+            lambda p: (p / ".tessl-plugin" / "plugin.json").write_text("{nope"),
+            id="bad-manifest",
+        ),
+    ],
+)
+def test_every_failure_path_still_emits_json(plugin: Path, break_it) -> None:
+    """The stdout contract is "one JSON object", including on failure.
+
+    An empty stdout makes "the gate said no" indistinguishable from "the gate
+    crashed" without parsing stderr.
+    """
+    break_it(plugin)
+    result = _run(plugin)
+    assert result.returncode != 0
+    report = json.loads(result.stdout)
+    assert report["ok"] is False
+    assert report["error"]
+    assert result.stderr.strip()
+    assert "Traceback" not in result.stderr
+
+
 def test_skills_directory_without_entrypoints_fails(tmp_path: Path) -> None:
     """A layout with no SKILL.md must fail loudly, not pass vacuously."""
     repo = tmp_path / "plugin"

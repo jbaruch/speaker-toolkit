@@ -55,6 +55,16 @@ CHARS_PER_TOKEN = 4
 FENCE_PREFIXES = ("```", "~~~")
 
 
+class GateError(Exception):
+    """An expected gate failure carrying an actionable, already-formatted message.
+
+    A typed error rather than SystemExit so main() can honour the stdout
+    contract: every run emits one JSON object, including the runs that fail
+    before any entrypoint is checked. Raising SystemExit from inside the checks
+    left stdout empty and made a broken repo indistinguishable from a crash.
+    """
+
+
 def estimate_tokens(text: str) -> int:
     """Tessl-conservative token estimate for an entrypoint body."""
     return math.ceil(len(text) / CHARS_PER_TOKEN)
@@ -292,14 +302,14 @@ def declared_content_roots(repo_root: Path) -> list[str]:
     try:
         raw = manifest_path.read_text(encoding="utf-8")
     except OSError as error:
-        raise SystemExit(
+        raise GateError(
             f"ERROR: could not read {MANIFEST} — {error.strerror}.\n"
             f"  Point this check at the plugin repo root."
         ) from error
     except UnicodeError as error:
         # UnicodeDecodeError is a ValueError, not an OSError, so it would
         # otherwise escape both handlers as a traceback.
-        raise SystemExit(
+        raise GateError(
             f"ERROR: {MANIFEST} is not valid UTF-8 — {error}.\n"
             f"  Re-save the manifest as UTF-8, then re-run."
         ) from error
@@ -307,7 +317,7 @@ def declared_content_roots(repo_root: Path) -> list[str]:
     try:
         manifest = json.loads(raw)
     except json.JSONDecodeError as error:
-        raise SystemExit(
+        raise GateError(
             f"ERROR: {MANIFEST} is not valid JSON — {error.msg} "
             f"at line {error.lineno} col {error.colno}.\n"
             f"  Fix the syntax; this check cannot tell what the plugin ships"
@@ -322,7 +332,7 @@ def declared_content_roots(repo_root: Path) -> list[str]:
         elif isinstance(value, list):
             roots.extend(item.rstrip("/") for item in value if isinstance(item, str))
     if not roots:
-        raise SystemExit(
+        raise GateError(
             f"ERROR: {MANIFEST} declares neither `skills` nor `rules`.\n"
             f"  Without declared content this check cannot tell what ships."
         )
@@ -361,7 +371,7 @@ def tesslignore_excluded(repo_root: Path, relative_paths: list[str]) -> set[str]
     # 0 = something matched, 1 = nothing matched. Anything else is a real
     # failure, and treating it as "nothing excluded" would pass vacuously.
     if result.returncode not in (0, 1):
-        raise SystemExit(
+        raise GateError(
             f"ERROR: git check-ignore failed (exit {result.returncode}) while"
             f" testing .tesslignore patterns.\n"
             f"  {result.stderr.strip()}"
@@ -403,14 +413,14 @@ def check_entrypoint(
     try:
         body = skill_md.read_text(encoding="utf-8")
     except OSError as error:
-        raise SystemExit(
+        raise GateError(
             f"ERROR: could not scan {relative} — {error.strerror}.\n"
             f"  Fix the file's permissions, then re-run."
         ) from error
     except UnicodeError as error:
         # UnicodeDecodeError is a ValueError, not an OSError — the handler
         # above never sees it.
-        raise SystemExit(
+        raise GateError(
             f"ERROR: could not scan {relative} — not valid UTF-8 ({error}).\n"
             f"  Re-save the entrypoint as UTF-8, then re-run."
         ) from error
@@ -447,7 +457,7 @@ def run(repo_root: Path) -> tuple[dict, list[str]]:
     """Check every entrypoint. Returns the JSON report and diagnostic lines."""
     skills_dir = repo_root / "skills"
     if not skills_dir.is_dir():
-        raise SystemExit(
+        raise GateError(
             f"ERROR: no skills/ directory under {repo_root}.\n"
             f"  Point this check at the plugin repo root."
         )
@@ -456,7 +466,7 @@ def run(repo_root: Path) -> tuple[dict, list[str]]:
     if not entrypoints:
         # A skills/ directory with no SKILL.md would otherwise pass vacuously,
         # reporting "0 entrypoints OK" on a broken layout.
-        raise SystemExit(
+        raise GateError(
             "ERROR: skills/ contains no */SKILL.md entrypoints.\n"
             "  Every skill directory needs a SKILL.md (see jbaruch/coding-policy:"
             " skill-authoring)."
@@ -552,7 +562,30 @@ def main(argv: list[str]) -> int:
         if len(argv) > 1
         else Path(__file__).resolve().parent.parent
     )
-    report, diagnostics = run(repo_root)
+    try:
+        report, diagnostics = run(repo_root)
+    except GateError as error:
+        # Every run emits one JSON object, including the ones that fail before
+        # any entrypoint is checked — a consumer reading stdout must never have
+        # to tell "gate said no" apart from "gate crashed" by parsing stderr.
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": str(error).splitlines()[0],
+                    "token_budget": TOKEN_BUDGET,
+                    "chars_per_token": CHARS_PER_TOKEN,
+                    "checked": 0,
+                    "oversized": [],
+                    "dangling": [],
+                    "entrypoints": [],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        print(error, file=sys.stderr)
+        return 1
 
     print(json.dumps(report, indent=2, sort_keys=True))
     for line in diagnostics:

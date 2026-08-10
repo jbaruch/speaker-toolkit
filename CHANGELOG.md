@@ -93,6 +93,15 @@ against them, because CommonMark's shortcut form makes any `[text]` a potential
 reference and these skills carry literal bracketed tags in prose (`[RECURRING]`,
 `[NEW]`, `[CONTEXTUAL]`) that would then fail a correct file.
 
+Every run emits one JSON object, failures included. Validation errors raised
+`SystemExit` from inside the checks, so a missing `skills/`, an unreadable
+entrypoint, a malformed manifest, or a `git check-ignore` failure left stdout
+empty — which contradicted the script's own documented contract and made "the
+gate said no" indistinguishable from "the gate crashed" without parsing stderr.
+A typed `GateError` now carries the actionable message to the outer boundary,
+where it becomes a structured failure object on stdout, the diagnostic on
+stderr, and a non-zero exit.
+
 Both file reads catch `UnicodeError` explicitly. `UnicodeDecodeError` is a
 `ValueError`, so it slipped past the `OSError` handler and surfaced as a
 traceback — and the entrypoint handler's message had been promising to cover
@@ -124,6 +133,18 @@ Every step gate in the creator SKILL.md now states its continuation explicitly,
 per `skill-authoring` Step Continuity. Steps 2 through 6 ended at a bare
 `Gate:` line, which reads as an implicit pause; Step 6 now says it finishes
 there because Step 7 is triggered separately.
+
+The preamble stays the sequential one. An intermediate revision phrased the
+alternate entries as routing, which read as an action router, and a router
+preamble ("execute only that step; do not run other steps") would be wrong
+here: three of the four alternates are entry *offsets* into the same ordered
+workflow, not standalone actions, so a router instruction would have the agent
+run one phase and stop. The preamble now says the workflow is sequential and
+that a request may enter at a later step; a "Where to enter" note in the body
+names the four and points at `alternate-entry-flows.md`. The frontmatter
+`description` lists them so runtime discovery can match those intents — it had
+been missing single post-authoring tasks and sessions-catalog work — and the
+surrounding prose tightened to stay inside the 1024-character cap.
 
 The two sibling gates (`check-package-contents.sh`, `check-tessl-pins.sh`) have
 the same entry-point-guard and prose-stdout gaps. They are out of scope here and
