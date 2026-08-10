@@ -124,7 +124,7 @@ def test_dry_run_parses_jekyll_links_and_derives_exact_source_ids(
 
     report = scan_shownotes.execute(database_path, apply_requested=False)
 
-    assert report["schema_version"] == 2
+    assert report["schema_version"] == scan_shownotes.REPORT_SCHEMA_VERSION
     assert report["ok"] is True
     assert report["mode"] == "dry-run"
     assert report["database_written"] is False
@@ -196,7 +196,7 @@ def test_apply_adds_only_complete_proposal_and_preserves_file_mode(
         }
     ]
     assert report["database_written"] is True
-    assert report["schema_version"] == 2
+    assert report["schema_version"] == scan_shownotes.REPORT_SCHEMA_VERSION
     assert report["input_sha256"] != report["output_sha256"]
     assert (
         report["output_sha256"]
@@ -672,6 +672,13 @@ def test_presentation_comparison_stays_narrow(
             f"https://drive.google.com/open?id={DRIVE_ID}",
             f"https://docs.google.com/presentation/d/{DRIVE_ID}/edit",
         ),
+        # Byte-identical URL: the match method must say exact_url, not provider_id.
+        (
+            "video",
+            "video_url",
+            f"https://www.youtube.com/watch?v={YOUTUBE_ID}",
+            f"https://www.youtube.com/watch?v={YOUTUBE_ID}",
+        ),
     ],
 )
 def test_rejected_source_identity_cannot_reappear_in_another_url_form(
@@ -712,10 +719,26 @@ def test_rejected_source_identity_cannot_reappear_in_another_url_form(
 
     entry = report["entries"][0]
     assert entry["disposition"] == "review_required"
-    assert any(
-        issue["code"] == "rejected_source_reappeared" and issue["field"] == field
+    matched = [
+        issue
         for issue in entry["issues"]
+        if issue["code"] == "rejected_source_reappeared" and issue["field"] == field
+    ]
+    assert len(matched) == 1
+    # The report is self-contained: the reviewer decides from this item alone,
+    # without reopening the tracking database for the ledger entry.
+    assert matched[0]["matched_rejection"] == {
+        "source_type": source_type,
+        "url": rejected_url,
+        "provider_id": YOUTUBE_ID if source_type == "video" else DRIVE_ID,
+        "reason": "wrong_delivery",
+        "evidence": "provider page identifies another delivery",
+        "verified_at": "2026-08-01T12:00:00+00:00",
+    }
+    assert matched[0]["match"]["method"] == (
+        "exact_url" if proposed_url == rejected_url else "provider_id"
     )
+    assert matched[0]["match"]["candidate_url"] == proposed_url
     assert database_path.read_bytes() == before
 
 
@@ -998,3 +1021,126 @@ def test_main_emits_one_json_error_and_actionable_stderr(
     assert payload["ok"] is False
     assert "tracking database is missing" in payload["error"]
     assert "pass its canonical file path" in captured.err
+
+
+def _talk_with_rejections(rejections: list[object]) -> dict[str, object]:
+    return {
+        "filename": "2026-08-01-deterministic-ingress.md",
+        "title": "Deterministic Ingress",
+        "conference": "TestConf",
+        "date": "2026-08-01",
+        "schema_version": 5,
+        "status": "pending",
+        "source_rejections": rejections,
+    }
+
+
+def _valid_rejection(url: str, **overrides: object) -> dict[str, object]:
+    record: dict[str, object] = {
+        "source_type": "video",
+        "url": url,
+        "reason": "wrong_delivery",
+        "evidence": "provider page identifies another delivery",
+        "verified_at": "2026-08-01T12:00:00+00:00",
+    }
+    record.update(overrides)
+    return record
+
+
+def test_only_the_matched_rejection_is_reported(tmp_path: Path) -> None:
+    """Unrelated ledger entries stay private to the talk record."""
+    site, talks_directory = _shownotes_site(tmp_path)
+    proposed = f"https://www.youtube.com/watch?v={YOUTUBE_ID}"
+    _write_jekyll_talk(talks_directory, video_url=proposed)
+    database_path = _database_path(
+        tmp_path,
+        _local_config(site),
+        talks=[
+            _talk_with_rejections(
+                [
+                    _valid_rejection(
+                        "https://youtu.be/zzzzzzzzzzz",
+                        reason="non_delivery_clip",
+                        evidence="unrelated earlier upload",
+                    ),
+                    _valid_rejection(f"https://youtu.be/{YOUTUBE_ID}"),
+                    _valid_rejection(
+                        "https://youtu.be/qqqqqqqqqqq",
+                        reason="unrelated_recording",
+                        evidence="different speaker entirely",
+                    ),
+                ]
+            )
+        ],
+    )
+
+    report = scan_shownotes.execute(database_path, apply_requested=True)
+
+    issues = report["entries"][0]["issues"]
+    matched = [
+        issue for issue in issues if issue["code"] == "rejected_source_reappeared"
+    ]
+    assert len(matched) == 1
+    assert matched[0]["matched_rejection"]["url"] == f"https://youtu.be/{YOUTUBE_ID}"
+    assert matched[0]["matched_rejection"]["reason"] == "wrong_delivery"
+    serialized = json.dumps(report)
+    assert "zzzzzzzzzzz" not in serialized
+    assert "qqqqqqqqqqq" not in serialized
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        pytest.param({"reason": ""}, id="blank-reason"),
+        pytest.param({"evidence": None}, id="missing-evidence"),
+        pytest.param({"verified_at": "2026-08-01T12:00:00"}, id="naive-timestamp"),
+        pytest.param({"verified_at": "not-a-timestamp"}, id="unparseable-timestamp"),
+    ],
+)
+def test_malformed_rejection_blocks_the_scan_before_any_match(
+    tmp_path: Path, overrides: dict[str, object]
+) -> None:
+    """A record that would be reported as evidence is repaired, never half-trusted.
+
+    The guarantee is stronger than a per-entry issue: the loader rejects the
+    whole scan, so no report can carry an unverifiable ledger record. See
+    tracking_database._validate_source_rejection.
+    """
+    site, talks_directory = _shownotes_site(tmp_path)
+    proposed = f"https://www.youtube.com/watch?v={YOUTUBE_ID}"
+    _write_jekyll_talk(talks_directory, video_url=proposed)
+    database_path = _database_path(
+        tmp_path,
+        _local_config(site),
+        talks=[
+            _talk_with_rejections(
+                [_valid_rejection(f"https://youtu.be/{YOUTUBE_ID}", **overrides)]
+            )
+        ],
+    )
+    before = database_path.read_bytes()
+
+    with pytest.raises(scan_shownotes.ShownotesScanError, match="source_rejections"):
+        scan_shownotes.execute(database_path, apply_requested=True)
+
+    assert database_path.read_bytes() == before
+
+
+def test_matched_rejection_report_is_byte_stable(tmp_path: Path) -> None:
+    """Two scans of unchanged state serialize identically."""
+    site, talks_directory = _shownotes_site(tmp_path)
+    proposed = f"https://www.youtube.com/watch?v={YOUTUBE_ID}"
+    _write_jekyll_talk(talks_directory, video_url=proposed)
+    database_path = _database_path(
+        tmp_path,
+        _local_config(site),
+        talks=[
+            _talk_with_rejections([_valid_rejection(f"https://youtu.be/{YOUTUBE_ID}")])
+        ],
+    )
+
+    first = scan_shownotes.execute(database_path, apply_requested=False)
+    second = scan_shownotes.execute(database_path, apply_requested=False)
+
+    assert json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True)
+    assert first["schema_version"] == scan_shownotes.REPORT_SCHEMA_VERSION

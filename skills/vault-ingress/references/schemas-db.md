@@ -481,11 +481,11 @@ emits `existing_title_conflict` and leaves the entry `review_required`. An exact
 title can still fill empty non-title metadata through the existing update
 contract.
 
-The command emits report schema v2:
+The command emits report schema v3:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "ok": true,
   "mode": "dry-run|apply",
   "operation": "scan|skipped_disabled|skipped_nonlocal",
@@ -522,6 +522,35 @@ The command emits report schema v2:
   }]
 }
 ```
+
+A `rejected_source_reappeared` issue carries the exact ledger record that
+produced the match, so a reviewer decides from the report alone:
+
+```json
+{
+  "code": "rejected_source_reappeared",
+  "field": "video_url",
+  "message": "shownotes proposes a known-bad video_url; ...",
+  "matched_rejection": {
+    "source_type": "video|slides",
+    "url": "the stored known-bad URL",
+    "provider_id": "parsed provider ID, or null when the URL has none",
+    "reason": "non_delivery_clip|wrong_delivery|unrelated_recording",
+    "evidence": "how the rejection was verified",
+    "verified_at": "timezone-aware ISO-8601 timestamp"
+  },
+  "match": {
+    "method": "exact_url|provider_id",
+    "candidate_url": "the URL the shownotes page proposes",
+    "candidate_provider_id": "its parsed provider ID, or null"
+  }
+}
+```
+
+Only the matched record appears; unrelated `source_rejections` entries stay
+private to the talk. A malformed ledger record never reaches this shape — the
+scanner refuses to load a database whose `source_rejections` fail
+`tracking_database._validate_source_rejection`.
 
 Dry-run is the default and never writes. `--apply` adds complete new records
 with current talk schema and status `pending`, or fills empty fields on an exact
