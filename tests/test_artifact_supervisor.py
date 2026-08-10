@@ -330,6 +330,74 @@ class PermissiveMonitor:
         return False
 
 
+class IdentityLossMonitor(PermissiveMonitor):
+    """Monitor that always reports the worker's process identity changed."""
+
+    def sample(self):
+        raise artifact_supervisor.SupervisorError("worker_monitor_identity_changed")
+
+
+class ScriptedProcess:
+    """Popen stand-in whose exit becomes observable at a chosen call.
+
+    Exit-versus-monitor precedence depends on when the exit is observed, never
+    on how long a real interpreter takes to start and die.  ``exit_on_poll``
+    names the 1-based ``poll()`` call that first reports the exit, and
+    ``exits_during_wait`` decides whether the supervisor's bounded settle wait
+    confirms one, so each observation order is chosen instead of raced.
+    """
+
+    pid = 4242
+
+    def __init__(self, *, exit_code=1, exit_on_poll=None, exits_during_wait=False):
+        self.returncode = None
+        self.stdin = io.BytesIO()
+        self.stdout = io.BytesIO()
+        self.stderr = io.BytesIO()
+        self.wait_timeouts: list[float] = []
+        self.killed = False
+        self._exit_code = exit_code
+        self._exit_on_poll = exit_on_poll
+        self._exits_during_wait = exits_during_wait
+        self._polls = 0
+
+    def poll(self):
+        self._polls += 1
+        if self.returncode is None and self._polls == self._exit_on_poll:
+            self.returncode = self._exit_code
+        return self.returncode
+
+    def wait(self, timeout: float = 0.0):
+        self.wait_timeouts.append(timeout)
+        if self.returncode is None:
+            if not self._exits_during_wait:
+                raise subprocess.TimeoutExpired("worker", timeout)
+            self.returncode = self._exit_code
+        return self.returncode
+
+    def kill(self):
+        self.killed = True
+        if self.returncode is None:
+            self.returncode = self._exit_code
+
+
+class TerminatingController:
+    """Controller stand-in that kills only a worker still reported as live."""
+
+    def __init__(self, process, _limits):
+        self.process = process
+
+    def establish(self):
+        return None
+
+    def terminate(self, _timeout=None):
+        if self.process.poll() is None:
+            self.process.kill()
+
+    def close(self):
+        return None
+
+
 def _generation():
     return artifact_supervisor.FileGeneration(
         size=123,
@@ -359,12 +427,18 @@ def _limits(**overrides):
     return artifact_supervisor.SupervisorLimits(**values)
 
 
+def _frozen_clock() -> float:
+    """Default supervisor clock for tests that never exercise the wall deadline."""
+    return 0.0
+
+
 def _read_fifo_signal(fd: int) -> None:
-    # The byte is the success condition; this timeout only prevents a broken
-    # fixture from hanging the whole CI job before the injected clock can run.
-    readable, _, _ = select.select([fd], [], [], 5.0)
-    if not readable:
-        pytest.fail("worker did not complete the FIFO handshake")
+    # Block on the event, never on a duration. A real-time bound here decides
+    # the test's outcome by runner speed: a stalled runner misses the deadline
+    # and reports a handshake failure that never happened. A worker that truly
+    # never signals is a hang the job's own timeout catches, which is a louder
+    # and more honest signal than a false assertion failure.
+    select.select([fd], [], [])
     assert os.read(fd, 1) == b"1"
 
 
@@ -379,6 +453,13 @@ def _run(
     clock=None,
     sleeper=None,
 ):
+    """Run one worker under an injected clock.
+
+    The clock defaults to a frozen reading so no assertion can be preempted by
+    the wall deadline on a loaded runner.  Tests that exercise the deadline
+    itself pass an advancing clock of their own.
+    """
+
     request_payload = {"mode": mode}
     if payload:
         request_payload.update(payload)
@@ -393,7 +474,7 @@ def _run(
         pipeline_generation="1.2.0",
         process_backend=process_backend,
         monitor_factory=monitor_factory or PermissiveMonitor,
-        clock=clock,
+        clock=clock if clock is not None else _frozen_clock,
         sleeper=sleeper,
     )
 
@@ -445,6 +526,7 @@ def test_production_monitor_smoke_uses_real_process_tree(tmp_path):
         _limits(),
         schema_generation=3,
         pipeline_generation="1.2.0",
+        clock=_frozen_clock,
     )
 
     assert result.payload == {
@@ -883,7 +965,7 @@ def test_clean_exit_reports_and_kills_known_descendant_with_handshake(tmp_path):
                 observed = super().sample()
                 assert os.write(release_fd, b"1") == 1
                 _read_fifo_signal(done_fd)
-                assert processes[0].wait(timeout=5.0) == 0
+                assert processes[0].wait() == 0
                 self.handshake_complete = True
                 return observed
             return super().sample()
@@ -1006,35 +1088,119 @@ def test_monitor_barrier_failure_closes_all_raw_pipes(monkeypatch):
     assert process.stderr.closed is True
 
 
-def test_fast_exit_race_is_confirmed_by_popen_and_cleanup_does_not_mask(tmp_path):
-    class ZombieRaceMonitor(PermissiveMonitor):
+def test_exited_worker_is_confirmed_by_popen_and_cleanup_does_not_mask(tmp_path):
+    processes = []
+
+    class ExitedBeforeSampleMonitor(PermissiveMonitor):
         def sample(self):
+            # Block on the exit event, never on a duration (see
+            # _read_fifo_signal): this asserts the precedence of a confirmed
+            # exit, not how fast an interpreter can start and die.
+            processes[-1].wait()
             raise artifact_supervisor.SupervisorError("worker_monitor_identity_changed")
 
+    def record_process(*args, **kwargs):
+        process = subprocess.Popen(*args, **kwargs)
+        processes.append(process)
+        return process
+
     artifact = tmp_path / "tiny-malformed.pptx"
-    limits = _limits(sample_interval_seconds=0.5)
     result = _run(
         "success",
-        limits=limits,
         payload={"artifact": str(artifact)},
-        monitor_factory=ZombieRaceMonitor,
+        monitor_factory=ExitedBeforeSampleMonitor,
+        process_backend=record_process,
     )
     assert result.payload["leaked"] is False
 
     with pytest.raises(artifact_supervisor.SupervisorError) as caught:
-        _run("fast_exit", limits=limits, monitor_factory=ZombieRaceMonitor)
+        _run(
+            "fast_exit",
+            monitor_factory=ExitedBeforeSampleMonitor,
+            process_backend=record_process,
+        )
     assert caught.value.reason_code == "worker_exit"
+    assert len(processes) == 2
 
 
-def test_monitor_identity_loss_does_not_accept_a_still_live_worker():
-    class IdentityLossMonitor(PermissiveMonitor):
-        def sample(self):
-            raise artifact_supervisor.SupervisorError("worker_monitor_identity_changed")
+def test_confirmed_exit_outranks_a_monitor_error_at_the_next_poll(monkeypatch):
+    process = ScriptedProcess(exit_on_poll=2)
+    monkeypatch.setattr(
+        artifact_supervisor,
+        "_ProcessController",
+        TerminatingController,
+    )
 
     with pytest.raises(artifact_supervisor.SupervisorError) as caught:
         _run(
+            "fast_exit",
+            process_backend=lambda *_args, **_kwargs: process,
+            monitor_factory=IdentityLossMonitor,
+            credentials=artifact_supervisor.WorkerCredentials(b"k" * 32),
+            sleeper=lambda _seconds: None,
+        )
+
+    assert caught.value.reason_code == "worker_exit"
+    # The re-poll already confirmed the exit, so no settle wait was charged.
+    assert process.wait_timeouts[0] == 0
+    assert process.killed is False
+
+
+def test_confirmed_exit_outranks_a_monitor_error_inside_the_settle_window(monkeypatch):
+    limits = _limits()
+    process = ScriptedProcess(exits_during_wait=True)
+    monkeypatch.setattr(
+        artifact_supervisor,
+        "_ProcessController",
+        TerminatingController,
+    )
+
+    with pytest.raises(artifact_supervisor.SupervisorError) as caught:
+        _run(
+            "fast_exit",
+            limits=limits,
+            process_backend=lambda *_args, **_kwargs: process,
+            monitor_factory=IdentityLossMonitor,
+            credentials=artifact_supervisor.WorkerCredentials(b"k" * 32),
+            sleeper=lambda _seconds: None,
+        )
+
+    assert caught.value.reason_code == "worker_exit"
+    assert process.wait_timeouts[0] == limits.sample_interval_seconds
+    assert process.killed is False
+
+
+def test_monitor_identity_error_survives_a_settle_window_confirming_nothing(
+    monkeypatch,
+):
+    limits = _limits()
+    process = ScriptedProcess()
+    monkeypatch.setattr(
+        artifact_supervisor,
+        "_ProcessController",
+        TerminatingController,
+    )
+
+    with pytest.raises(artifact_supervisor.SupervisorError) as caught:
+        _run(
+            "fast_exit",
+            limits=limits,
+            process_backend=lambda *_args, **_kwargs: process,
+            monitor_factory=IdentityLossMonitor,
+            credentials=artifact_supervisor.WorkerCredentials(b"k" * 32),
+            sleeper=lambda _seconds: None,
+        )
+
+    assert caught.value.reason_code == "worker_monitor_identity_changed"
+    assert process.wait_timeouts[0] == limits.sample_interval_seconds
+    assert process.killed is True
+
+
+def test_monitor_identity_loss_does_not_accept_a_still_live_worker():
+    with pytest.raises(artifact_supervisor.SupervisorError) as caught:
+        _run(
             "timeout",
-            limits=_limits(wall_seconds=0.5, sample_interval_seconds=0.02),
+            limits=_limits(sample_interval_seconds=0.02),
             monitor_factory=IdentityLossMonitor,
         )
 
@@ -1164,10 +1330,8 @@ def test_cleanup_deadline_reports_a_still_running_cleanup_thread(monkeypatch):
             self.main_calls += 1
             if self.main_calls == 1:
                 return 0.0
-            if not entered.wait(5.0):
-                raise AssertionError(
-                    "cleanup thread did not enter containment teardown"
-                )
+            # Block on the event, never on a duration (see _read_fifo_signal).
+            entered.wait()
             return 1.0
 
     class Process:
@@ -1210,8 +1374,8 @@ def test_cleanup_deadline_reports_a_still_running_cleanup_thread(monkeypatch):
     finally:
         release.set()
         for worker in created_threads:
-            worker.join(timeout=5.0)
-            assert worker.is_alive() is False
+            # Released above, so this joins on the event (see _read_fifo_signal).
+            worker.join()
 
     assert isinstance(failure, TimeoutError)
     assert entered.is_set()
@@ -1715,12 +1879,13 @@ for module_name in (
     __import__(module_name)
 print("shared-pptx-imports-ok")
 """
+    # No timeout: block on the probe's exit event, never on a duration (see
+    # _read_fifo_signal).
     completed = subprocess.run(
         [sys.executable, "-I", "-c", code],
         check=False,
         capture_output=True,
         text=True,
-        timeout=30,
     )
 
     assert completed.returncode == 0, completed.stderr
@@ -1758,12 +1923,13 @@ for module_name, filename in (
     spec.loader.exec_module(module)
 print("posix-ingress-entrypoint-imports-ok")
 """
+    # No timeout: block on the probe's exit event, never on a duration (see
+    # _read_fifo_signal).
     completed = subprocess.run(
         [sys.executable, "-I", "-c", code],
         check=False,
         capture_output=True,
         text=True,
-        timeout=30,
     )
 
     assert completed.returncode == 0, completed.stderr

@@ -89,9 +89,17 @@ def manifest_violations(manifest: dict) -> list[dict[str, str]]:
     A dependency entry that is not an object cannot carry a specifier at all,
     so it is reported as its own violation rather than skipped — skipping is
     how a non-literal pinned value slips through.
+
+    Absence is the only thing that means "nothing declared". A present-but-
+    malformed container is a violation even when it is false-valued: coercing
+    ``[]``, ``""``, or ``null`` into an empty mapping would make a broken
+    manifest pass vacuously, which leaves the carve-out's deterministic-
+    enforcement precondition unmet.
     """
     violations: list[dict[str, str]] = []
-    dependencies = manifest.get("dependencies") or {}
+    if "dependencies" not in manifest:
+        return violations
+    dependencies = manifest["dependencies"]
     if not isinstance(dependencies, dict):
         return [{"dependency": "dependencies", "specifier": repr(dependencies)}]
     for name, spec in dependencies.items():
@@ -109,6 +117,7 @@ def run(repo_root: Path) -> tuple[dict[str, object], list[str]]:
     manifests: list[dict[str, object]] = []
     diagnostics: list[str] = []
     unreadable: list[str] = []
+    all_violations: list[dict[str, str]] = []
 
     for relative in COVERED_MANIFESTS:
         try:
@@ -127,6 +136,7 @@ def run(repo_root: Path) -> tuple[dict[str, object], list[str]]:
 
         violations = manifest_violations(manifest)
         manifests.append({"path": relative, "readable": True, "violations": violations})
+        all_violations.extend({"manifest": relative, **item} for item in violations)
         if violations:
             diagnostics.append(
                 f"ERROR: {relative} contains dependencies with non-floating specifiers:"
@@ -149,18 +159,13 @@ def run(repo_root: Path) -> tuple[dict[str, object], list[str]]:
                 f" scripts/check_tessl_pins.py -> COVERED_MANIFESTS."
             )
 
-    violations = [
-        {"manifest": entry["path"], **violation}
-        for entry in manifests
-        for violation in entry["violations"]  # type: ignore[union-attr]
-    ]
     report: dict[str, object] = {
         "ok": not diagnostics,
         "expected_specifier": EXPECTED_SPECIFIER,
         "checked": len(COVERED_MANIFESTS),
         "unreadable": unreadable,
         "manifests": manifests,
-        "violations": violations,
+        "violations": all_violations,
     }
     return report, diagnostics
 
@@ -205,7 +210,8 @@ def main(argv: list[str]) -> int:
             f"ERROR: {Path(__file__).name} failed unexpectedly — "
             f"{type(error).__name__}: {error}\n"
             f"  This is a bug in the gate, not in the manifest. Re-run with a"
-            f"  traceback (`python -X dev {Path(__file__).name}`) and report it.",
+            f"  traceback"
+            f" (`{sys.executable} -X dev {Path(__file__).resolve()}`) and report it.",
             file=sys.stderr,
         )
         return 1

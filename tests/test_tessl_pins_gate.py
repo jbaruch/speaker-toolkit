@@ -123,8 +123,25 @@ def test_non_object_dependencies_field_fails(repo: Path) -> None:
     assert _report(result)["violations"][0]["dependency"] == "dependencies"
 
 
+@pytest.mark.parametrize("container", [[], "", None, 0, False])
+def test_false_valued_dependencies_container_fails(repo: Path, container) -> None:
+    """A present-but-malformed container must not coerce into "nothing declared"."""
+    _manifest(repo, {"name": "acme/widget", "dependencies": container})
+    result = _run(repo)
+    assert result.returncode == 1
+    assert _report(result)["violations"][0]["dependency"] == "dependencies"
+
+
+def test_empty_dependencies_object_passes(repo: Path) -> None:
+    """An empty object is a well-formed container that declares nothing."""
+    _manifest(repo, {"name": "acme/widget", "dependencies": {}})
+    result = _run(repo)
+    assert result.returncode == 0, result.stderr
+    assert _report(result)["ok"] is True
+
+
 def test_manifest_without_dependencies_passes(repo: Path) -> None:
-    """Nothing declared is nothing pinned."""
+    """Absence is the only thing that means nothing was declared."""
     _manifest(repo, {"name": "acme/widget"})
     result = _run(repo)
     assert result.returncode == 0, result.stderr
