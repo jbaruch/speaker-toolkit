@@ -333,5 +333,43 @@ claims, writes a byte-for-byte backup under `{vault_root}/.backups/`, and replac
 the DB atomically. Re-run the preflight after applying; do not claim work until
 blocking findings reach zero.
 
+The summary's status block is owner-generated, never hand-edited. Refresh it at
+safe checkpoints — after migration or recovery, after normalization, and after a
+batch persists — with:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/render-vault-status.py" \
+  "{vault_root}" --generated-at "{iso_timestamp}"
+```
+
+That is a dry run: it writes nothing and prints one JSON object on stdout.
+`--summary` overrides the summary path; `--generated-at` is required and is
+recorded in the block, so a render is reproducible.
+
+The report fields this workflow reads:
+
+- `summary_sha256` — the digest to pass back as `--expected-sha256`
+- `changed` — false means the installed block already matches; skip the apply
+- `summary_written` — true only after an apply installed new bytes
+- `status` — the derived counts, and `block` the exact text that would install
+
+Apply with the digest the dry run reported:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/render-vault-status.py" \
+  "{vault_root}" --generated-at "{iso_timestamp}" \
+  --apply --expected-sha256 "{summary_sha256_from_dry_run}"
+```
+
+Exit 0 succeeded. Exit 3 is the precondition alone: the summary's bytes are no
+longer the ones the digest named, so re-run the dry run and apply with the new
+digest — never force it. Exit 2 is every other failure — the database or the
+summary could not be read, locked, or installed — and its JSON carries a typed
+`code` plus an actionable `error`; act on that, do not retry blindly.
+
+The block carries the database SHA-256 it was derived from, so a consumer can
+tell a stale block from a current one; the tracking database stays the authority
+and prose counts are never trusted on their own.
+
 Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
 "X processed, Y remaining. PPTX: A cataloged, B matched, C extracted."

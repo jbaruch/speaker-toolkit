@@ -31,6 +31,7 @@ import stat
 import sys
 import tempfile
 from collections.abc import Mapping
+from contextlib import ExitStack
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -64,8 +65,18 @@ from pattern_classification_runtime import (  # noqa: E402
 )
 
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
+from cooperative_lock import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+    CooperativeLockError,
+)
+
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from return_validation import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     ReturnValidationError,
+)
+
+# Pyright cannot resolve this sibling script module added to sys.path at runtime.
+from summary_lock import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+    rhetoric_summary_lock,
 )
 
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
@@ -603,41 +614,106 @@ def replace_section15_current_block(
         evidence_freshness_assessor=evidence_freshness_assessor,
         classification_policy_stamp=classification_policy_stamp,
     )
+    # The status-block writer replaces its own delimited block in this same
+    # file. Two writers that read, splice, and rename without excluding each
+    # other drop whichever update renamed first, so both take the summary's
+    # shared writer lock for their whole read-splice-install section.
+    stack = ExitStack()
     try:
-        original_bytes = summary_path.read_bytes()
-        original = original_bytes.decode("utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
+        lock = stack.enter_context(rhetoric_summary_lock(summary_path))
+    except CooperativeLockError as exc:
         raise Section15PatternHistoryError(
-            f"cannot read UTF-8 rhetoric summary at {summary_path}: {exc}"
+            f"cannot take the rhetoric summary writer lock for {summary_path}: {exc}"
         ) from exc
+    # An unlock or close that failed is recorded on the lock rather than
+    # raised — the guarded write already happened. Dropping those warnings
+    # would leave incomplete lock cleanup with no diagnostic naming it.
+    try:
+        return _replace_under_summary_lock(
+            summary_path,
+            stack,
+            rendered=rendered,
+            canonical_input=canonical_input,
+        )
+    finally:
+        for warning in lock.warnings:
+            print(f"WARNING: {warning}", file=sys.stderr)
 
-    candidate = _replace_block_text(original, rendered)
-    candidate_assessment = assess_section15_pattern_history(candidate)
-    if not candidate_assessment.current_contract:
-        details = "; ".join(
-            candidate_assessment.errors or candidate_assessment.reason_codes
-        )
-        raise Section15PatternHistoryError(
-            "rendered Section 15 candidate failed validation: " + details
-        )
-    if candidate_assessment.pattern_profile != canonical_input:
-        raise Section15PatternHistoryError(
-            "rendered Section 15 candidate does not round-trip the full pattern_profile"
+
+def _replace_under_summary_lock(
+    summary_path: Path,
+    stack: ExitStack,
+    *,
+    rendered: str,
+    canonical_input: dict[str, Any],
+) -> Section15WriteResult:
+    """Read, validate, and install the block while the writer lock is held."""
+    with stack:
+        try:
+            original_bytes = summary_path.read_bytes()
+            original = original_bytes.decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise Section15PatternHistoryError(
+                f"cannot read UTF-8 rhetoric summary at {summary_path}: {exc}"
+            ) from exc
+
+        candidate = _replace_block_text(original, rendered)
+        candidate_assessment = assess_section15_pattern_history(candidate)
+        if not candidate_assessment.current_contract:
+            details = "; ".join(
+                candidate_assessment.errors or candidate_assessment.reason_codes
+            )
+            raise Section15PatternHistoryError(
+                "rendered Section 15 candidate failed validation: " + details
+            )
+        if candidate_assessment.pattern_profile != canonical_input:
+            raise Section15PatternHistoryError(
+                "rendered Section 15 candidate does not round-trip the full "
+                "pattern_profile"
+            )
+
+        count = candidate_assessment.scored_talk_count
+        eligible_count = candidate_assessment.eligible_talk_count
+        assert isinstance(count, int)  # shared-assessor postcondition
+        assert isinstance(eligible_count, int)  # shared-assessor postcondition
+        if candidate == original:
+            return Section15WriteResult(
+                path=str(summary_path),
+                changed=False,
+                scored_talk_count=count,
+                eligible_talk_count=eligible_count,
+                catalog_fields_available=(
+                    candidate_assessment.catalog_fields_available
+                ),
+            )
+
+        _install_summary_bytes(
+            summary_path,
+            candidate.encode("utf-8"),
+            expected=original_bytes,
         )
 
-    count = candidate_assessment.scored_talk_count
-    eligible_count = candidate_assessment.eligible_talk_count
-    assert isinstance(count, int)  # shared-assessor postcondition
-    assert isinstance(eligible_count, int)  # shared-assessor postcondition
-    if candidate == original:
         return Section15WriteResult(
             path=str(summary_path),
-            changed=False,
+            changed=True,
             scored_talk_count=count,
             eligible_talk_count=eligible_count,
-            catalog_fields_available=(candidate_assessment.catalog_fields_available),
+            catalog_fields_available=candidate_assessment.catalog_fields_available,
         )
 
+
+def _install_summary_bytes(
+    summary_path: Path,
+    payload: bytes,
+    *,
+    expected: bytes,
+) -> None:
+    """Rename ``payload`` over the summary, refusing a target that moved.
+
+    Called with the writer lock held, so no other toolkit writer sits between
+    the recheck and the rename. The recheck is what covers the writer no lock
+    reaches — a human saving the file in an editor.
+    """
     mode = stat.S_IMODE(summary_path.stat().st_mode)
     temporary_path: Path | None = None
     file_descriptor: int | None = None
@@ -652,9 +728,21 @@ def replace_section15_current_block(
         handle = os.fdopen(file_descriptor, "wb")
         file_descriptor = None
         with handle:
-            handle.write(candidate.encode("utf-8"))
+            handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
+        try:
+            current = summary_path.read_bytes()
+        except OSError as exc:
+            raise Section15PatternHistoryError(
+                f"cannot re-read rhetoric summary at {summary_path} before "
+                f"installing the Section 15 block: {exc}"
+            ) from exc
+        if current != expected:
+            raise Section15PatternHistoryError(
+                f"rhetoric summary at {summary_path} changed while the Section 15 "
+                "replacement was staged; re-run the replace against the current file"
+            )
         os.replace(temporary_path, summary_path)
     finally:
         if file_descriptor is not None:
@@ -664,14 +752,6 @@ def replace_section15_current_block(
                 temporary_path.unlink()
             except FileNotFoundError:
                 pass
-
-    return Section15WriteResult(
-        path=str(summary_path),
-        changed=True,
-        scored_talk_count=count,
-        eligible_talk_count=eligible_count,
-        catalog_fields_available=candidate_assessment.catalog_fields_available,
-    )
 
 
 def _load_json(path: Path) -> object:
