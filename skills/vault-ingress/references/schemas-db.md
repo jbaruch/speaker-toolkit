@@ -479,8 +479,18 @@ exact-type rule. The supported mutation kinds are:
 | `retire_improvement_goal` | Expect one complete current goal record and change only its `status` to `retired`, preserving legacy fields |
 | `upsert_resource` | Replace/add one complete schema-v1 record identified by `talk_slug` |
 | `upsert_thumbnail` | Replace/add one complete schema-v1 record identified by `talk_slug` |
+| `apply_reviewed_metadata` | Install one human-reviewed shownotes catalog-conflict decision on one exact talk filename, over a closed identity field set, with `expect` covering exactly the same fields |
 | `update_talk_publishing` | Set supported publishing fields on one exact talk filename, with `expect` covering exactly the same fields |
 | `update_talk_clarification` | Set complete object/array `blind_spot_observations` or `humor_postmortem` values on one exact talk, with matching field expectations |
+
+`apply_reviewed_metadata` exists because `scan-shownotes.py --apply` refuses
+review-required entries by design: an approved catalog correction otherwise had
+no owner writer at all. It stays narrow — the writable field set, the
+metadata-only versus analysis-invalidating classification, and the reprocessing
+transition it demands are named at the top of
+`skills/vault-ingress/scripts/mutate-tracking-database.py`. Deterministic scan
+updates and human-approved conflict decisions stay separate paths; source lanes
+stay with `apply-source-repairs.py`.
 
 The command owns each operation's closed fields and record validation; do not
 reimplement those allowlists in skill prose. PPTX catalog records require exact

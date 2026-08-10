@@ -1,5 +1,42 @@
 # Changelog
 
+### feat(vault-ingress) — an owner writer for reviewed shownotes catalog conflicts (#236)
+
+Closes #236.
+
+`scan-shownotes.py` correctly reports a title or conference conflict as
+`review_required`, and `--apply` deliberately refuses those entries. Nothing
+could then install the reviewed decision: `apply-source-repairs.py` does not
+allow `title` or `conference`, and `mutate-tracking-database.py` limited talk
+updates to publishing and clarification fields. A vault operator had to either
+leave a known-wrong catalog fact in place or bypass the database ownership
+contract by hand. The 2026-08-05 rhetoric-vault reconciliation hit exactly that
+with two conflicts — `DevOps Nashville 2024` versus `DevOps Days Nashville
+2024`, and a base title versus its event-qualified form.
+
+`apply_reviewed_metadata` is that writer, and it stays narrow:
+
+- A closed writable set (`title`, `conference`) — a reviewed metadata decision
+  is not a licence to edit arbitrary talk fields, and source lanes stay with
+  `apply-source-repairs.py`.
+- An exact old-value precondition per changed field, so a decision reviewed
+  against one value cannot silently install over another.
+- The full current talk/database shape validated before atomic replacement; a
+  stale precondition, unsupported field, unknown or duplicate filename, or
+  legacy talk schema installs nothing.
+- Every unrelated field preserved, and the shownotes candidate never made
+  authoritative on its own.
+
+Whether a repair invalidates derived analysis is proven rather than assumed:
+each writable field is classified metadata-only or analysis-invalidating, and
+an import-time guard refuses to start if a field is left unclassified — a new
+field cannot default to "safe". `title` and `conference` are metadata-only,
+since rhetoric analysis derives from transcript and slide content. An
+analysis-invalidating field requires the status and `reprocess_reason`
+transition in the same plan, applied atomically with the value: a plan that
+repaired the field and left the talk `processed` would leave stale analysis
+looking current.
+
 ## 0.20.47 — 2026-08-10
 
 ### feat(vault-ingress) — audit shownotes conflict candidates alongside the active source (#230)

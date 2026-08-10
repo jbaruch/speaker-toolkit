@@ -1144,3 +1144,49 @@ def test_matched_rejection_report_is_byte_stable(tmp_path: Path) -> None:
 
     assert json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True)
     assert first["schema_version"] == scan_shownotes.REPORT_SCHEMA_VERSION
+
+
+def test_an_approved_repair_makes_the_scan_report_the_entry_unchanged(
+    tmp_path: Path,
+    mutate_tracking_database,
+) -> None:
+    """#236 acceptance 5: the loop closes.
+
+    A review-required conflict is refused by `--apply`, repaired through the
+    owner writer, and the next scan sees no conflict left to review.
+    """
+    site, talks_directory = _shownotes_site(tmp_path)
+    _write_jekyll_talk(talks_directory, title="Changed Title")
+    existing = {
+        "filename": "2026-08-01-deterministic-ingress.md",
+        "title": "Authoritative Title",
+        "conference": "TestConf",
+        "date": "2026-08-01",
+        "schema_version": 5,
+        "status": "processed",
+    }
+    database_path = _database_path(tmp_path, _local_config(site), talks=[existing])
+
+    first = scan_shownotes.execute(database_path, apply_requested=True)
+    assert first["entries"][0]["disposition"] == "review_required"
+    assert first["database_written"] is False
+
+    database = json.loads(database_path.read_text(encoding="utf-8"))
+    candidate, _changes = mutate_tracking_database.build_candidate(
+        database,
+        [
+            {
+                "kind": "apply_reviewed_metadata",
+                "filename": "2026-08-01-deterministic-ingress.md",
+                "expect": {"title": "Authoritative Title"},
+                "set": {"title": "Changed Title"},
+            }
+        ],
+    )
+    database_path.write_text(json.dumps(candidate, indent=2), encoding="utf-8")
+
+    second = scan_shownotes.execute(database_path, apply_requested=False)
+
+    entry = second["entries"][0]
+    assert entry["disposition"] == "unchanged"
+    assert entry["issues"] == []

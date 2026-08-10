@@ -90,6 +90,28 @@ PUBLISHING_TALK_FIELDS = frozenset(
     }
 )
 CLARIFICATION_TALK_FIELDS = frozenset({"blind_spot_observations", "humor_postmortem"})
+# Catalog-identity fields a reviewed shownotes conflict may repair. Closed on
+# purpose: `scan-shownotes.py --apply` refuses review-required entries, and the
+# answer is one narrow owner path, never arbitrary talk-field mutation. Source
+# lanes stay with apply-source-repairs.py.
+METADATA_TALK_FIELDS = frozenset({"title", "conference"})
+# Whether repairing a field invalidates derived analysis. Rhetoric analysis
+# derives from transcript and slide content, so correcting a talk's catalog
+# title or conference cannot stale it — the writer proves that rather than
+# assuming it. A field that DOES invalidate belongs in the second set, and the
+# writer then requires the reprocessing transition in the same plan.
+METADATA_ONLY_FIELDS = frozenset({"title", "conference"})
+ANALYSIS_INVALIDATING_METADATA_FIELDS: frozenset[str] = frozenset()
+_UNCLASSIFIED_METADATA_FIELDS = METADATA_TALK_FIELDS - (
+    METADATA_ONLY_FIELDS | ANALYSIS_INVALIDATING_METADATA_FIELDS
+)
+if _UNCLASSIFIED_METADATA_FIELDS:
+    raise RuntimeError(
+        "every reviewed-metadata field must be classified metadata-only or "
+        f"analysis-invalidating: {sorted(_UNCLASSIFIED_METADATA_FIELDS)}"
+    )
+METADATA_REPROCESS_FIELDS = frozenset({"status", "reprocess_reason"})
+METADATA_REPROCESS_STATUSES = frozenset({"needs-reprocessing"})
 GOAL_VERIFICATION_FIELDS = frozenset(
     {
         "status",
@@ -823,6 +845,97 @@ def _apply_update_talk(
     )
 
 
+def _validate_metadata_values(values: object, label: str) -> None:
+    """Every repaired catalog value is a non-empty trimmed string."""
+    if not isinstance(values, dict):
+        raise TrackingDatabaseMutationError(f"{label} must be an object")
+    for field, value in values.items():
+        _nonempty(value, f"{label}.{field}")
+
+
+def _apply_reviewed_metadata(
+    database: dict[str, Any],
+    mutation: dict[str, Any],
+    changes: list[dict[str, Any]],
+    *,
+    index: int,
+) -> None:
+    """Install one human-reviewed shownotes catalog-conflict decision.
+
+    `scan-shownotes.py --apply` deliberately refuses review-required entries, so
+    an approved title or conference correction had no owner writer and could
+    only be made by editing the database directly. This is that writer, and it
+    stays narrow: a closed field set, an exact old-value precondition per field,
+    and no way to reach an unrelated talk field.
+    """
+    _require_keys(
+        mutation,
+        required={"kind", "filename", "expect", "set"},
+        optional={"reprocess"},
+        label=f"mutations[{index}]",
+    )
+    filename = _nonempty(mutation["filename"], f"mutations[{index}].filename")
+    talk = _talk_by_filename(database, filename)
+    _require_current_talk_record(talk, filename=filename)
+    _validate_metadata_values(mutation["set"], f"mutations[{index}].set")
+
+    set_values = mutation["set"]
+    invalidating = sorted(set(set_values) & ANALYSIS_INVALIDATING_METADATA_FIELDS)
+    reprocess = mutation.get("reprocess")
+    if invalidating and reprocess is None:
+        raise TrackingDatabaseMutationError(
+            f"mutations[{index}] changes {invalidating} which invalidates derived "
+            f"analysis; the same plan must carry the reprocess transition"
+        )
+    if not invalidating and reprocess is not None:
+        raise TrackingDatabaseMutationError(
+            f"mutations[{index}] is metadata-only, so it must not carry a "
+            f"reprocess transition"
+        )
+    if reprocess is not None:
+        if not isinstance(reprocess, dict):
+            raise TrackingDatabaseMutationError(
+                f"mutations[{index}].reprocess must be an object"
+            )
+        _require_keys(
+            reprocess,
+            required=METADATA_REPROCESS_FIELDS,
+            label=f"mutations[{index}].reprocess",
+        )
+        status = _nonempty(reprocess["status"], f"mutations[{index}].reprocess.status")
+        if status not in METADATA_REPROCESS_STATUSES:
+            raise TrackingDatabaseMutationError(
+                f"mutations[{index}].reprocess.status must be one of "
+                f"{sorted(METADATA_REPROCESS_STATUSES)}"
+            )
+        _nonempty(
+            reprocess["reprocess_reason"],
+            f"mutations[{index}].reprocess.reprocess_reason",
+        )
+
+    before, after = _apply_record_patch(
+        talk,
+        expect=mutation["expect"],
+        set_values=set_values,
+        allowed_fields=METADATA_TALK_FIELDS,
+        label=f"talks[{filename!r}]",
+    )
+    if reprocess is not None:
+        # Atomic with the field change: a plan that repaired the value and left
+        # the talk `processed` would leave stale analysis looking current.
+        for field in sorted(METADATA_REPROCESS_FIELDS):
+            before[field] = talk.get(field, MISSING_MARKER)
+            talk[field] = reprocess[field]
+            after[field] = reprocess[field]
+    _record_change(
+        changes,
+        kind="apply_reviewed_metadata",
+        identity=filename,
+        before=before,
+        after=after,
+    )
+
+
 def _apply_update_talk_clarification(
     database: dict[str, Any],
     mutation: dict[str, Any],
@@ -1171,6 +1284,8 @@ def build_candidate(
             _apply_collection_upsert(candidate, mutation, changes, index=index)
         elif kind == "record_pptx":
             _apply_record_pptx(candidate, mutation, changes, index=index)
+        elif kind == "apply_reviewed_metadata":
+            _apply_reviewed_metadata(candidate, mutation, changes, index=index)
         elif kind == "update_talk_publishing":
             _apply_update_talk(candidate, mutation, changes, index=index)
         elif kind == "update_talk_clarification":
