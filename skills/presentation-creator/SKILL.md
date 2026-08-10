@@ -292,7 +292,7 @@ Gate: Author declares the outline done.
 
 Proceed immediately to Step 5.
 
-## Step 5 — Slide Generation & Interactive Iteration
+## Step 5 — Slide Generation
 
 Read [references/phase5-slides.md](references/phase5-slides.md) for the full
 technical reference: the engine branch, deck-op emission, which ops to omit on

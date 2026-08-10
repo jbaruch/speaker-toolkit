@@ -103,7 +103,10 @@ empty — which contradicted the script's own documented contract and made "the
 gate said no" indistinguishable from "the gate crashed" without parsing stderr.
 A typed `GateError` now carries the actionable message to the outer boundary,
 where it becomes a structured failure object on stdout, the diagnostic on
-stderr, and a non-zero exit.
+stderr, and a non-zero exit. `main()` also takes `error-handling`'s
+Outer-Boundary Carve-Out (`outer-boundary-process-contract`) so a bug in the
+gate itself still emits that shape instead of a traceback — `except Exception`,
+never `BaseException`, so interrupts keep working.
 
 Both file reads catch `UnicodeError` explicitly. `UnicodeDecodeError` is a
 `ValueError`, so it slipped past the `OSError` handler and surfaced as a

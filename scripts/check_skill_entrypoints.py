@@ -601,6 +601,26 @@ def run(repo_root: Path) -> tuple[dict, list[str]]:
     return report, diagnostics
 
 
+def _print_failure(message: str) -> None:
+    """Emit the failure shape of the stdout contract."""
+    print(
+        json.dumps(
+            {
+                "ok": False,
+                "error": message,
+                "token_budget": TOKEN_BUDGET,
+                "chars_per_token": CHARS_PER_TOKEN,
+                "checked": 0,
+                "oversized": [],
+                "dangling": [],
+                "entrypoints": [],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
 def main(argv: list[str]) -> int:
     repo_root = (
         Path(argv[1]).resolve()
@@ -613,23 +633,25 @@ def main(argv: list[str]) -> int:
         # Every run emits one JSON object, including the ones that fail before
         # any entrypoint is checked — a consumer reading stdout must never have
         # to tell "gate said no" apart from "gate crashed" by parsing stderr.
-        print(
-            json.dumps(
-                {
-                    "ok": False,
-                    "error": str(error).splitlines()[0],
-                    "token_budget": TOKEN_BUDGET,
-                    "chars_per_token": CHARS_PER_TOKEN,
-                    "checked": 0,
-                    "oversized": [],
-                    "dangling": [],
-                    "entrypoints": [],
-                },
-                indent=2,
-                sort_keys=True,
-            )
-        )
+        _print_failure(str(error).splitlines()[0])
         print(error, file=sys.stderr)
+        return 1
+    # outer-boundary-process-contract: stdout is this gate's machine-readable
+    # result, and its callers (pre-publish-checks.sh, the tests) read an
+    # unparseable stdout as the gate having produced no verdict at all. An
+    # unexpected exception propagating here would print a traceback and no
+    # JSON, so the catch emits the same failure object plus an actionable
+    # stderr line naming the bug. Exception, not BaseException — KeyboardInterrupt
+    # and SystemExit must still propagate so the process stays killable.
+    except Exception as error:  # noqa: BLE001
+        _print_failure(f"unexpected gate failure: {type(error).__name__}")
+        print(
+            f"ERROR: {Path(__file__).name} failed unexpectedly — "
+            f"{type(error).__name__}: {error}\n"
+            f"  This is a bug in the gate, not in the plugin. Re-run with a"
+            f"  traceback (`python -X dev {Path(__file__).name}`) and report it.",
+            file=sys.stderr,
+        )
         return 1
 
     print(json.dumps(report, indent=2, sort_keys=True))

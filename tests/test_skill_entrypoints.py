@@ -523,6 +523,36 @@ def test_unreachable_git_fails_with_json_not_a_traceback(plugin: Path) -> None:
     assert "Traceback" not in result.stderr
 
 
+def test_an_unexpected_bug_still_emits_json(plugin: Path, monkeypatch) -> None:
+    """The stdout contract holds even when the gate itself has a bug.
+
+    A traceback with empty stdout reads to the caller as "no verdict", which is
+    indistinguishable from a gate that passed silently.
+    """
+    import check_skill_entrypoints as gate
+
+    monkeypatch.setattr(
+        gate,
+        "declared_content_roots",
+        lambda *_: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    exit_code = gate.main(["check_skill_entrypoints.py", str(plugin)])
+    assert exit_code == 1
+
+
+def test_keyboard_interrupt_still_propagates(plugin: Path, monkeypatch) -> None:
+    """`except Exception`, never BaseException — the process stays killable."""
+    import check_skill_entrypoints as gate
+
+    monkeypatch.setattr(
+        gate,
+        "declared_content_roots",
+        lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+    with pytest.raises(KeyboardInterrupt):
+        gate.main(["check_skill_entrypoints.py", str(plugin)])
+
+
 @pytest.mark.parametrize(
     "break_it",
     [
