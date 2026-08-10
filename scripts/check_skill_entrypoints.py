@@ -13,6 +13,12 @@ Two failures this catches:
    agent follows the pointer at runtime, finds nothing, and silently proceeds
    without the routing contract the split assumed.
 
+   Existing in the working tree is not the test. A link resolving through
+   ``..`` into ``tests/``, into the repo-root ``scripts/``, or out of the repo
+   entirely points at a file that ships in no package, and so dangles at
+   runtime exactly like a missing one. A target must resolve inside the repo,
+   sit under a path the manifest declares, and survive ``.tesslignore``.
+
 Token estimate is ``ceil(chars / CHARS_PER_TOKEN)``, which over-estimates
 Tessl's tokenizer: at the time this gate was written, a 35,162-char SKILL.md
 estimated 8,791 tokens here and ``tessl plugin lint`` reported 8,749. Erring
@@ -33,8 +39,12 @@ from __future__ import annotations
 
 import json
 import math
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+MANIFEST = ".tessl-plugin/plugin.json"
 
 # Tessl's recommended maximum tokens per skill entrypoint.
 TOKEN_BUDGET = 5000
@@ -221,12 +231,113 @@ def is_repo_relative(destination: str) -> bool:
     return True
 
 
-def check_entrypoint(skill_md: Path, repo_root: Path) -> dict:
+def declared_content_roots(repo_root: Path) -> list[str]:
+    """Repo-relative paths the plugin manifest declares as shipped content.
+
+    A link target that exists in the working tree but sits outside these paths
+    (``tests/``, repo-root ``scripts/``, anything above the repo) is absent from
+    the published plugin, so following it at runtime finds nothing.
+    """
+    manifest_path = repo_root / MANIFEST
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise SystemExit(
+            f"ERROR: could not read {MANIFEST} — {error.strerror}.\n"
+            f"  Point this check at the plugin repo root."
+        ) from error
+    except json.JSONDecodeError as error:
+        raise SystemExit(
+            f"ERROR: {MANIFEST} is not valid JSON — {error.msg} "
+            f"at line {error.lineno} col {error.colno}.\n"
+            f"  Fix the syntax; this check cannot tell what the plugin ships"
+            f" until the manifest parses."
+        ) from error
+
+    roots: list[str] = []
+    for field in ("skills", "rules"):
+        value = manifest.get(field)
+        if isinstance(value, str):
+            roots.append(value.rstrip("/"))
+        elif isinstance(value, list):
+            roots.extend(item.rstrip("/") for item in value if isinstance(item, str))
+    if not roots:
+        raise SystemExit(
+            f"ERROR: {MANIFEST} declares neither `skills` nor `rules`.\n"
+            f"  Without declared content this check cannot tell what ships."
+        )
+    return roots
+
+
+def tesslignore_excluded(repo_root: Path, relative_paths: list[str]) -> set[str]:
+    """Which of ``relative_paths`` .tesslignore strips from the package.
+
+    Matching runs against a throwaway empty git repo with core.excludesFile
+    pointed at .tesslignore, so only .tesslignore patterns are consulted — the
+    same technique (and therefore the same semantics) as
+    scripts/check-package-contents.sh.
+    """
+    ignore_file = repo_root / ".tesslignore"
+    if not ignore_file.is_file() or not relative_paths:
+        return set()
+
+    with tempfile.TemporaryDirectory() as scratch:
+        subprocess.run(["git", "init", "-q", scratch], check=True, capture_output=True)
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                scratch,
+                "-c",
+                f"core.excludesFile={ignore_file}",
+                "check-ignore",
+                "--no-index",
+                "--stdin",
+            ],
+            input="\n".join(relative_paths),
+            capture_output=True,
+            text=True,
+        )
+    # 0 = something matched, 1 = nothing matched. Anything else is a real
+    # failure, and treating it as "nothing excluded" would pass vacuously.
+    if result.returncode not in (0, 1):
+        raise SystemExit(
+            f"ERROR: git check-ignore failed (exit {result.returncode}) while"
+            f" testing .tesslignore patterns.\n"
+            f"  {result.stderr.strip()}"
+        )
+    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+
+def classify_link(
+    destination: str, skill_dir: Path, repo_root: Path, roots: list[str]
+) -> tuple[str, str] | None:
+    """Return ``(reason, resolved-path)`` when a link will not resolve at runtime.
+
+    Existence alone is not enough: the target must also be plugin content, or
+    it ships nowhere and the agent following it at runtime finds nothing.
+    """
+    target = (skill_dir / destination.split("#", 1)[0]).resolve()
+    try:
+        relative = target.relative_to(repo_root).as_posix()
+    except ValueError:
+        return "escapes the repository", str(target)
+    if not target.exists():
+        return "missing", relative
+    if not any(relative == root or relative.startswith(f"{root}/") for root in roots):
+        return "not declared plugin content", relative
+    return None
+
+
+def check_entrypoint(
+    skill_md: Path, repo_root: Path, roots: list[str]
+) -> tuple[dict, list[tuple[str, str]]]:
     """Size and link findings for one SKILL.md.
 
     ``skill_md`` is absolute — reads must not depend on the caller's working
     directory — while the reported path is repo-relative so diagnostics stay
-    copy-pasteable.
+    copy-pasteable. Returns the record plus every in-package link target, which
+    the caller batch-tests against .tesslignore.
     """
     relative = skill_md.relative_to(repo_root).as_posix()
     try:
@@ -237,20 +348,32 @@ def check_entrypoint(skill_md: Path, repo_root: Path) -> dict:
             f"  Check the file's permissions and encoding, then re-run."
         ) from error
 
+    unresolved: list[dict] = []
+    shipped: list[tuple[str, str]] = []
+    for destination in extract_link_destinations(body):
+        if not is_repo_relative(destination):
+            continue
+        finding = classify_link(destination, skill_md.parent, repo_root, roots)
+        if finding is None:
+            target = (skill_md.parent / destination.split("#", 1)[0]).resolve()
+            shipped.append((destination, target.relative_to(repo_root).as_posix()))
+            continue
+        reason, resolved = finding
+        unresolved.append(
+            {"destination": destination, "reason": reason, "resolved": resolved}
+        )
+
     tokens = estimate_tokens(body)
-    dangling = [
-        destination
-        for destination in extract_link_destinations(body)
-        if is_repo_relative(destination)
-        and not (skill_md.parent / destination.split("#", 1)[0]).exists()
-    ]
-    return {
-        "path": relative,
-        "chars": len(body),
-        "tokens": tokens,
-        "over_budget_by": max(0, tokens - TOKEN_BUDGET),
-        "dangling_links": dangling,
-    }
+    return (
+        {
+            "path": relative,
+            "chars": len(body),
+            "tokens": tokens,
+            "over_budget_by": max(0, tokens - TOKEN_BUDGET),
+            "dangling_links": unresolved,
+        },
+        shipped,
+    )
 
 
 def run(repo_root: Path) -> tuple[dict, list[str]]:
@@ -272,7 +395,32 @@ def run(repo_root: Path) -> tuple[dict, list[str]]:
             " skill-authoring)."
         )
 
-    results = [check_entrypoint(skill_md, repo_root) for skill_md in entrypoints]
+    roots = declared_content_roots(repo_root)
+
+    results: list[dict] = []
+    shipped_by_entrypoint: list[list[tuple[str, str]]] = []
+    for skill_md in entrypoints:
+        record, shipped = check_entrypoint(skill_md, repo_root, roots)
+        results.append(record)
+        shipped_by_entrypoint.append(shipped)
+
+    # One batch call: a target can be declared plugin content and still be
+    # stripped from the package by a .tesslignore pattern, which leaves the
+    # same runtime-dangling pointer as a missing file.
+    candidates = sorted(
+        {relative for shipped in shipped_by_entrypoint for _, relative in shipped}
+    )
+    excluded = tesslignore_excluded(repo_root, candidates)
+    for record, shipped in zip(results, shipped_by_entrypoint):
+        for destination, relative in shipped:
+            if relative in excluded:
+                record["dangling_links"].append(
+                    {
+                        "destination": destination,
+                        "reason": "excluded from the package by .tesslignore",
+                        "resolved": relative,
+                    }
+                )
 
     oversized = [r for r in results if r["over_budget_by"] > 0]
     dangling = [r for r in results if r["dangling_links"]]
@@ -298,15 +446,25 @@ def run(repo_root: Path) -> tuple[dict, list[str]]:
     if dangling:
         count = sum(len(r["dangling_links"]) for r in dangling)
         diagnostics.append(
-            f"ERROR: {count} relative link(s) in skill entrypoints resolve to nothing."
+            f"ERROR: {count} relative link(s) in skill entrypoints will not"
+            f" resolve in the published plugin."
         )
         for r in dangling:
-            for destination in r["dangling_links"]:
-                diagnostics.append(f"  {r['path']}\t{destination}")
+            for link in r["dangling_links"]:
+                diagnostics.append(
+                    f"  {r['path']}\t{link['destination']}\t"
+                    f"-> {link['resolved']} ({link['reason']})"
+                )
         diagnostics.append(
-            "  A dangling pointer fails silently at runtime: the agent follows"
-            " it, finds nothing, and proceeds without the routing contract. Fix"
-            " the path or restore the referenced file."
+            "  Format above: <entrypoint>\t<link target>\t-> <resolved> (<reason>)"
+        )
+        diagnostics.append(
+            "  A pointer that resolves to nothing fails silently at runtime: the"
+            " agent follows it, finds nothing, and proceeds without the routing"
+            " contract. Existing in the working tree is not enough — the target"
+            " must ship, so it has to sit under a path the manifest declares and"
+            " survive .tesslignore. Fix the path, restore the file, or move it"
+            " into the skill's own references/."
         )
 
     report = {

@@ -62,6 +62,18 @@ reference, the same false publish block from the other direction. A malformed
 construct now yields nothing, and a later well-formed link on the same line is
 still found.
 
+Resolution asks whether the target *ships*, not whether it exists. A link
+reaching through `..` into `tests/`, into the repo-root `scripts/`, or out of
+the repo entirely names a file present in the working tree and absent from
+every package — which dangles at runtime exactly like a missing one, and which
+the first version of this gate passed. A target must now resolve inside the
+repo, sit under a path `.tessl-plugin/plugin.json` declares, and survive
+`.tesslignore`. The ignore test runs through the same throwaway-repo
+`core.excludesFile` technique `check-package-contents.sh` uses, so the two
+gates cannot disagree about what a pattern matches. Each failure carries its
+reason: `missing`, `escapes the repository`, `not declared plugin content`, or
+`excluded from the package by .tesslignore`.
+
 Token math is a ceiling, not truncation: integer division reported 20,001
 through 20,003 characters as exactly 5,000 tokens and passed a file that was
 over budget. The boundary test is parametrized across every excess below the

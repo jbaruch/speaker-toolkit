@@ -55,10 +55,26 @@ def plugin(tmp_path: Path) -> Path:
     repo.mkdir()
     _write(
         repo,
+        ".tessl-plugin/plugin.json",
+        json.dumps(
+            {
+                "name": "acme/widget",
+                "version": "1.0.0",
+                "description": "Test plugin",
+                "skills": ["skills/builder", "skills/shipper"],
+                "rules": ["rules/house-style.md"],
+            }
+        ),
+    )
+    _write(repo, "rules/house-style.md", "# House Style\n")
+    _write(
+        repo,
         "skills/builder/SKILL.md",
         "# Builder\n\nSee [notes](references/notes.md).\n",
     )
     _write(repo, "skills/builder/references/notes.md", "notes\n")
+    # Not plugin content: exists in the tree, ships nowhere.
+    _write(repo, "tests/helper.md", "helper\n")
     return repo
 
 
@@ -214,10 +230,12 @@ def test_dangling_relative_link_fails(plugin: Path) -> None:
     )
     result = _run(plugin)
     assert result.returncode == 1
-    assert "resolve to nothing" in result.stderr
+    assert "will not resolve in the published plugin" in result.stderr
     assert "references/missing.md" in result.stderr
     report = json.loads(result.stdout)
-    assert report["entrypoints"][0]["dangling_links"] == ["references/missing.md"]
+    links = report["entrypoints"][0]["dangling_links"]
+    assert [link["destination"] for link in links] == ["references/missing.md"]
+    assert links[0]["reason"] == "missing"
 
 
 def test_link_with_anchor_resolves_to_the_file(plugin: Path) -> None:
@@ -265,6 +283,85 @@ def test_a_reference_pointing_at_a_directory_passes(plugin: Path) -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_target_outside_declared_content_fails(plugin: Path) -> None:
+    """`tests/helper.md` exists in the tree but ships in no package.
+
+    Existence alone was the old check, and it green-lit exactly the runtime
+    dangling reference this gate exists to block.
+    """
+    _write(
+        plugin,
+        "skills/builder/SKILL.md",
+        "# Builder\n\nSee [helper](../../tests/helper.md).\n",
+    )
+    result = _run(plugin)
+    assert result.returncode == 1
+    assert "not declared plugin content" in result.stderr
+    assert "tests/helper.md" in result.stderr
+
+
+def test_target_escaping_the_repository_fails(plugin: Path) -> None:
+    _write(
+        plugin,
+        "skills/builder/SKILL.md",
+        "# Builder\n\nSee [outside](../../../elsewhere.md).\n",
+    )
+    result = _run(plugin)
+    assert result.returncode == 1
+    assert "escapes the repository" in result.stderr
+
+
+def test_target_excluded_by_tesslignore_fails(plugin: Path) -> None:
+    """Declared content a .tesslignore pattern strips is equally absent."""
+    _write(plugin, "skills/builder/references/draft.md", "draft\n")
+    _write(plugin, ".tesslignore", "draft.md\n")
+    _write(
+        plugin,
+        "skills/builder/SKILL.md",
+        "# Builder\n\nSee [draft](references/draft.md).\n",
+    )
+    result = _run(plugin)
+    assert result.returncode == 1
+    assert "excluded from the package by .tesslignore" in result.stderr
+
+
+def test_a_rule_file_is_valid_plugin_content(plugin: Path) -> None:
+    """`rules/` is declared too — a cross-directory link there still ships."""
+    _write(
+        plugin,
+        "skills/builder/SKILL.md",
+        "# Builder\n\nSee [style](../../rules/house-style.md).\n",
+    )
+    result = _run(plugin)
+    assert result.returncode == 0, result.stderr
+
+
+def test_missing_manifest_fails(plugin: Path) -> None:
+    (plugin / ".tessl-plugin" / "plugin.json").unlink()
+    result = _run(plugin)
+    assert result.returncode != 0
+    assert "could not read .tessl-plugin/plugin.json" in result.stderr
+
+
+def test_malformed_manifest_fails(plugin: Path) -> None:
+    _write(plugin, ".tessl-plugin/plugin.json", "{not json")
+    result = _run(plugin)
+    assert result.returncode != 0
+    assert "not valid JSON" in result.stderr
+
+
+def test_manifest_declaring_no_content_fails(plugin: Path) -> None:
+    """Without declared content the gate would pass every link vacuously."""
+    _write(
+        plugin,
+        ".tessl-plugin/plugin.json",
+        json.dumps({"name": "acme/widget", "version": "1.0.0", "description": "d"}),
+    )
+    result = _run(plugin)
+    assert result.returncode != 0
+    assert "declares neither" in result.stderr
+
+
 # --- aggregation and failure modes -------------------------------------------
 
 
@@ -278,7 +375,7 @@ def test_both_failures_report_together(plugin: Path) -> None:
     result = _run(plugin)
     assert result.returncode == 1
     assert "exceed the 5000-token budget" in result.stderr
-    assert "resolve to nothing" in result.stderr
+    assert "will not resolve in the published plugin" in result.stderr
 
 
 def test_every_entrypoint_is_checked_not_just_the_first(plugin: Path) -> None:
