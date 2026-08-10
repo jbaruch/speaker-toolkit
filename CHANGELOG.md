@@ -1,5 +1,102 @@
 # Changelog
 
+### fix(vault-ingress) — share one retained named-stage across owner writers (#243)
+
+Closes #243, and folds in #240.
+
+`write-analysis.py` had a live defect, not a duplicated invariant.
+`_stage_text` created its stage with `tempfile.mkstemp`, wrote the body,
+**closed the descriptor**, and returned a pathname; `atomic_write_batch` then
+installed it with `os.replace(name, target)`. Between those two steps the staged
+name was just a name in a directory, so anything able to write there could
+substitute it and have the writer install those bytes. Reproduced before the
+fix: the batch returned normally while the target held attacker-supplied
+content. The writer had no byte verification of its stage at all — every
+`sha256` in that file was citation rendering.
+
+`retained_stage.py` now owns the staged-file lifecycle for both writers: unique
+no-follow creation with a retained file and directory descriptor, regular-file
+and single-link validation, exact descriptor/name device and inode identity at
+every preinstall observation, exact size/bytes/SHA-256 binding, and bounded
+same-view `mtime_ns`/`ctime_ns` stabilization. Each owner keeps its own
+compare-and-swap and backup behavior, which is what differs between them;
+`tracking_database_io` maps the shared `StagedInvariantError` into its existing
+`StagedCandidateConflictError` so its public error contract is unchanged.
+
+The analysis writer re-verifies immediately before each replace rather than only
+at stage time, so the staging-plus-preflight window is covered too, and runs a
+post-install check whose failure is reported as installed-but-unverified — never
+as a pre-install failure, because the replace already happened.
+
+Cleanup is truthful (#240). `close_retained_stage` returns a report carrying a
+disposition and stable reason codes — `staged_cleanup_unlink_failed`,
+`staged_cleanup_descriptor_close_failed`,
+`staged_cleanup_directory_close_failed`, `staged_cleanup_name_not_owned` — so a
+pre-install failure can no longer discard them on the way out. A name that now
+resolves to a different inode or file type is left untouched rather than
+unlinked: it is someone else's data, and removing it to tidy up after ourselves
+would be the second bug. `KeyboardInterrupt` and `SystemExit` still propagate.
+
+The policy reviewer caught the same failure shape inside the new module: the
+incomplete-stage path used `except OSError: pass`, so a failed unlink orphaned
+a temp with no diagnostic — the exact bug this primitive exists to stop, one
+layer down, and a violation of Never Suppress Errors besides. Cleanup now
+returns what it could not do; a `RetainedStageError` carries that detail in its
+message with its type and `reason_code` intact, and anything else surfaces on
+stderr. The interrupt path cleans up and warns without trapping the interrupt.
+`_stage_candidate`'s `except BaseException` narrowed to `except Exception` with
+a `finally` for interrupt-safe release, since it is an inner helper and none of
+the Outer-Boundary Carve-Out's preconditions apply.
+
+A second review round caught four more, three of them in the error contract I
+had just written. The enrichment path rebuilt the failure with
+`type(exc)(message, reason_code=...)`, which is the wrong constructor for
+`StagedInvariantError` — a cleanup failure would have raised `TypeError` in
+place of the real diagnostic. Each type is now rebuilt through its own
+constructor, and both helpers catch only their anticipated typed failure with a
+cleanup-only `finally` for everything else, interrupts included. A failed
+inspection of the staged name no longer reports `already_absent`, since absence
+was never established and an orphan may remain; it gets its own
+`staged_cleanup_inspect_failed` disposition. The test fixture stopped
+suppressing cleanup errors.
+
+A third round found the analysis writer still exiting 0 after a failed
+post-install proof: the warning was collected, the batch marked committed, and
+the CLI reported success over a target that might hold substituted bytes. That
+now raises `AnalysisBatchUnverifiedError` — a distinct type, because rolling
+back would be wrong here (the replace already happened and the target holds the
+new file). The batch completes, the recovery backup for each unproven target is
+retained rather than deleted, and the run fails so an operator inspects instead
+of trusting it. The staging-failure path also released its stages inside a
+`finally` that ran after the error was constructed, so those cleanup warnings
+went nowhere; cleanup now happens first and the detail rides out on the error.
+
+Two more cleanup dispositions stopped lying. A failed `os.unlink` reported
+`already_absent` — the same untruth already fixed for a failed inspection, but
+missed one branch over — so a consumer could record a clean cleanup over a
+confirmed orphan. It gets `staged_cleanup_unlink_failed`, and only `removed`
+and `already_absent` now assert the name is gone. The tracking-DB helper's
+interrupt path also discarded its report; those warnings go to stderr rather
+than nowhere.
+
+Two Copilot findings folded in. `_stage_candidate` ran cleanup on a
+verification failure and dropped the report, reintroducing the vanished-warning
+problem one level up; the cleanup detail now rides out inside the typed
+conflict's `detail`. And the module docstring claimed no-follow for the
+directory open, which is deliberately not the case — the vault root is
+documented as possibly being a symlink, so refusing a symlinked component there
+would break supported installs. The no-follow guarantee covers the staged file
+and every later name resolution, which is anchored to the retained directory
+descriptor. The docstring now says that instead of over-claiming. A dead
+`_visible_descriptor_identity` wrapper left by the extraction is gone.
+
+Test seams followed the implementation. Five injection points that patched
+`tracking_database_io` internals now patch `retained_stage` where the
+observation loop actually lives; the two that wrap the owner's typed-error
+mapping keep patching the owner, because that mapping is the owner's. All 342
+existing writer race, interrupt, backup, durability, analysis-body-preservation,
+and CloudStorage migration tests stay green unchanged.
+
 ## 0.20.41 — 2026-08-10
 
 ### feat(vault-ingress) — carry the matched rejection into scan reports (#177)

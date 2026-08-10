@@ -22,14 +22,31 @@ import json
 import math
 import os
 from pathlib import Path
-import secrets
 import stat
+import sys
 from typing import Any, Iterator, NoReturn
+
+from retained_stage import (
+    FileGeneration,
+    RetainedStage as StagedCandidate,
+    RetainedStageError,
+    StagedInvariantError,
+    close_retained_stage,
+    install_retained_stage,
+    installed_target_warning,
+    open_retained_stage,
+    release_staged_name,
+    verify_retained_stage,
+)
 
 
 READ_CHUNK_SIZE = 1024 * 1024
 MAX_JSON_NESTING_DEPTH = 200
 STAGED_METADATA_STABILIZATION_ATTEMPTS = 4
+
+
+STAGED_CANDIDATE_SUFFIX = ".tracking-db.tmp"
+STAGED_CANDIDATE_LABEL = "tracking-database candidate"
 
 
 class TrackingDatabaseIOError(ValueError):
@@ -60,27 +77,6 @@ class StagedCandidateConflictError(TrackingDatabaseConflictError):
         super().__init__(
             f"staged tracking-database candidate {path} changed before install: "
             f"invariant={invariant}; {detail}"
-        )
-
-
-@dataclass(frozen=True)
-class FileGeneration:
-    """Stable identity fields for one observed regular-file generation."""
-
-    device: int
-    inode: int
-    size: int
-    modified_ns: int
-    changed_ns: int
-
-    @classmethod
-    def from_stat(cls, metadata: os.stat_result) -> "FileGeneration":
-        return cls(
-            device=metadata.st_dev,
-            inode=metadata.st_ino,
-            size=metadata.st_size,
-            modified_ns=metadata.st_mtime_ns,
-            changed_ns=metadata.st_ctime_ns,
         )
 
 
@@ -134,30 +130,6 @@ class _DatabaseLock:
     descriptor: int
     path: Path
     warnings: list[str]
-
-
-@dataclass
-class StagedCandidate:
-    """Open, directory-anchored staged bytes retained through installation."""
-
-    path: Path
-    name: str
-    descriptor: int
-    directory_descriptor: int
-    generation: FileGeneration
-    sha256: str
-    size: int
-
-
-@dataclass(frozen=True)
-class _StagedCandidateObservation:
-    """One descriptor/name observation around an exact staged-byte read."""
-
-    opened_before: os.stat_result
-    visible_before: os.stat_result
-    raw: bytes
-    opened_after: os.stat_result
-    visible_after: os.stat_result
 
 
 def unchanged_write_result(
@@ -714,297 +686,76 @@ def _write_exact_backup(
     return str(backup_path)
 
 
-def _write_descriptor(descriptor: int, raw: bytes) -> None:
-    offset = 0
-    while offset < len(raw):
-        written = os.write(descriptor, raw[offset:])
-        if written <= 0:
-            raise OSError("staged tracking-database write made no progress")
-        offset += written
-
-
-def _pread_descriptor(descriptor: int, size: int) -> bytes:
-    chunks: list[bytes] = []
-    offset = 0
-    while offset < size:
-        chunk = os.pread(descriptor, min(READ_CHUNK_SIZE, size - offset), offset)
-        if not chunk:
-            break
-        chunks.append(chunk)
-        offset += len(chunk)
-    return b"".join(chunks)
-
-
-def _visible_descriptor_identity(
-    name: str,
-    descriptor: int,
-    directory_descriptor: int,
-) -> bool:
-    try:
-        opened = os.fstat(descriptor)
-        visible = os.stat(
-            name,
-            dir_fd=directory_descriptor,
-            follow_symlinks=False,
-        )
-    except OSError:
-        return False
-    return (
-        stat.S_ISREG(opened.st_mode)
-        and stat.S_ISREG(visible.st_mode)
-        and _lock_identity(opened) == _lock_identity(visible)
-    )
-
-
-def _unlink_staged_name(stage: StagedCandidate, warnings: list[str]) -> None:
-    try:
-        os.stat(
-            stage.name,
-            dir_fd=stage.directory_descriptor,
-            follow_symlinks=False,
-        )
-    except FileNotFoundError:
-        return
-    except OSError as exc:
-        warnings.append(f"could not inspect staged candidate {stage.path}: {exc}")
-        return
-    if not _visible_descriptor_identity(
-        stage.name,
-        stage.descriptor,
-        stage.directory_descriptor,
-    ):
-        warnings.append(
-            f"staged candidate name {stage.path} was substituted; left it untouched"
-        )
-        return
-    try:
-        os.unlink(stage.name, dir_fd=stage.directory_descriptor)
-    except OSError as exc:
-        warnings.append(f"could not remove staged candidate {stage.path}: {exc}")
+def _staged_conflict(exc: StagedInvariantError) -> StagedCandidateConflictError:
+    """Re-raise a shared staged-invariant failure in this owner's terms."""
+    return StagedCandidateConflictError(exc.path, exc.invariant, exc.detail)
 
 
 def _close_staged_candidate(stage: StagedCandidate, warnings: list[str]) -> None:
-    _unlink_staged_name(stage, warnings)
-    _append_close_warning(
-        stage.descriptor,
-        label=f"staged tracking-database candidate {stage.path}",
-        warnings=warnings,
-    )
-    _append_close_warning(
-        stage.directory_descriptor,
-        label=f"tracking-database directory {stage.path.parent}",
-        warnings=warnings,
-    )
+    """Release the stage, appending truthful cleanup detail for the caller.
+
+    The report is also returned by the shared primitive with stable reason
+    codes; this owner surfaces the prose in its `warnings` tuple.
+    """
+    report = close_retained_stage(stage)
+    warnings.extend(report.warnings)
 
 
 def _stage_candidate(path: Path, candidate: bytes, mode: int) -> StagedCandidate:
-    directory_descriptor = _open_directory(
-        path.parent,
-        label="tracking-database directory",
-    )
-    descriptor: int | None = None
-    name: str | None = None
-    completed = False
     try:
-        flags = os.O_RDWR | os.O_CREAT | os.O_EXCL
-        flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-        for _ in range(128):
-            candidate_name = f".{path.name}.{secrets.token_hex(12)}.tracking-db.tmp"
-            try:
-                descriptor = os.open(
-                    candidate_name,
-                    flags,
-                    0o600,
-                    dir_fd=directory_descriptor,
-                )
-                name = candidate_name
-                break
-            except FileExistsError:
-                continue
-        if descriptor is None or name is None:
-            raise TrackingDatabaseIOError(
-                f"cannot allocate a unique staged candidate beside {path}"
-            )
-        os.fchmod(descriptor, mode)
-        _write_descriptor(descriptor, candidate)
-        os.fsync(descriptor)
-        metadata = os.fstat(descriptor)
-        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
-            raise TrackingDatabaseIOError(
-                f"staged tracking-database candidate {path.parent / name} "
-                "must be one regular file"
-            )
-        stage = StagedCandidate(
-            path=path.parent / name,
-            name=name,
-            descriptor=descriptor,
-            directory_descriptor=directory_descriptor,
-            generation=FileGeneration.from_stat(metadata),
-            sha256=_sha256(candidate),
-            size=len(candidate),
+        # verify=False, then this module's own wrapper: every verification for
+        # this owner goes through the one seam that maps the shared invariant
+        # error into StagedCandidateConflictError.
+        stage = open_retained_stage(
+            path,
+            candidate,
+            mode=mode,
+            suffix=STAGED_CANDIDATE_SUFFIX,
+            label=STAGED_CANDIDATE_LABEL,
+            directory_label="tracking-database",
+            verify=False,
         )
+    except RetainedStageError as exc:
+        raise TrackingDatabaseIOError(str(exc)) from exc
+    verified = False
+    released = False
+    try:
         _verify_staged_candidate(stage, candidate)
-        completed = True
-        return stage
-    finally:
-        if not completed:
-            if descriptor is not None and name is not None:
-                if _visible_descriptor_identity(name, descriptor, directory_descriptor):
-                    try:
-                        os.unlink(name, dir_fd=directory_descriptor)
-                    except OSError:
-                        pass
-                try:
-                    os.close(descriptor)
-                except OSError:
-                    pass
-            try:
-                os.close(directory_descriptor)
-            except OSError:
-                pass
-
-
-def _observe_staged_candidate(
-    stage: StagedCandidate,
-) -> _StagedCandidateObservation:
-    try:
-        opened_before = os.fstat(stage.descriptor)
-        visible_before = os.stat(
-            stage.name,
-            dir_fd=stage.directory_descriptor,
-            follow_symlinks=False,
-        )
-        raw = _pread_descriptor(stage.descriptor, stage.size)
-        opened_after = os.fstat(stage.descriptor)
-        visible_after = os.stat(
-            stage.name,
-            dir_fd=stage.directory_descriptor,
-            follow_symlinks=False,
-        )
-    except OSError as exc:
+        verified = True
+    except StagedCandidateConflictError as exc:
+        # Cleanup detail must ride out with the primary failure. Discarding the
+        # report here would reintroduce exactly the vanished-warning problem
+        # this primitive exists to close (#240): an orphaned staged temp with
+        # no diagnostic naming it.
+        released = True
+        report = close_retained_stage(stage)
+        if not report.warnings:
+            raise
         raise StagedCandidateConflictError(
-            stage.path,
-            "metadata_read",
-            str(exc),
+            exc.path,
+            exc.invariant,
+            f"{exc.detail}; staged cleanup: {'; '.join(report.warnings)}",
         ) from exc
-    return _StagedCandidateObservation(
-        opened_before=opened_before,
-        visible_before=visible_before,
-        raw=raw,
-        opened_after=opened_after,
-        visible_after=visible_after,
-    )
-
-
-def _staged_metadata_samples(
-    observation: _StagedCandidateObservation,
-) -> tuple[tuple[str, os.stat_result], ...]:
-    return (
-        ("descriptor_before", observation.opened_before),
-        ("name_before", observation.visible_before),
-        ("descriptor_after", observation.opened_after),
-        ("name_after", observation.visible_after),
-    )
-
-
-def _require_staged_candidate_invariants(
-    stage: StagedCandidate,
-    candidate: bytes,
-    observation: _StagedCandidateObservation,
-) -> None:
-    samples = _staged_metadata_samples(observation)
-    non_regular = [
-        label for label, metadata in samples if not stat.S_ISREG(metadata.st_mode)
-    ]
-    if non_regular:
-        raise StagedCandidateConflictError(
-            stage.path,
-            "regular_file",
-            f"non-regular observations={non_regular}",
-        )
-    expected_identity = (stage.generation.device, stage.generation.inode)
-    identities = {label: _lock_identity(metadata) for label, metadata in samples}
-    if any(identity != expected_identity for identity in identities.values()):
-        raise StagedCandidateConflictError(
-            stage.path,
-            "descriptor_name_identity",
-            f"expected={expected_identity}; observed={identities}",
-        )
-    link_counts = {label: metadata.st_nlink for label, metadata in samples}
-    if any(link_count != 1 for link_count in link_counts.values()):
-        raise StagedCandidateConflictError(
-            stage.path,
-            "link_count",
-            f"expected one link; observed={link_counts}",
-        )
-    sizes = {label: metadata.st_size for label, metadata in samples}
-    if (
-        len(candidate) != stage.size
-        or len(observation.raw) != stage.size
-        or any(size != stage.size for size in sizes.values())
-    ):
-        raise StagedCandidateConflictError(
-            stage.path,
-            "size",
-            f"expected={stage.size}; candidate={len(candidate)}; "
-            f"read={len(observation.raw)}; observed={sizes}",
-        )
-    if observation.raw != candidate:
-        raise StagedCandidateConflictError(
-            stage.path,
-            "exact_bytes",
-            "descriptor bytes differ from the exact candidate",
-        )
-    candidate_sha256 = _sha256(candidate)
-    observed_sha256 = _sha256(observation.raw)
-    if stage.sha256 != candidate_sha256 or observed_sha256 != stage.sha256:
-        raise StagedCandidateConflictError(
-            stage.path,
-            "sha256",
-            f"expected={stage.sha256}; candidate={candidate_sha256}; "
-            f"observed={observed_sha256}",
-        )
+    finally:
+        # Every other failure, interrupts included, propagates unchanged — but
+        # its cleanup detail still has to reach someone, so it goes to stderr
+        # rather than being discarded with the report.
+        if not verified and not released:
+            report = close_retained_stage(stage)
+            for warning in report.warnings:
+                print(f"WARNING: {warning}", file=sys.stderr)
+    return stage
 
 
 def _verify_staged_candidate(stage: StagedCandidate, candidate: bytes) -> None:
-    last_timestamps: dict[str, tuple[int, int]] = {}
-    last_unstable_fields: list[str] = []
-    for _ in range(STAGED_METADATA_STABILIZATION_ATTEMPTS):
-        observation = _observe_staged_candidate(stage)
-        _require_staged_candidate_invariants(stage, candidate, observation)
-        last_timestamps = {
-            label: (metadata.st_mtime_ns, metadata.st_ctime_ns)
-            for label, metadata in _staged_metadata_samples(observation)
-        }
-        last_unstable_fields = []
-        for view in ("descriptor", "name"):
-            before = last_timestamps[f"{view}_before"]
-            after = last_timestamps[f"{view}_after"]
-            if before[0] != after[0]:
-                last_unstable_fields.append(f"{view}.mtime_ns")
-            if before[1] != after[1]:
-                last_unstable_fields.append(f"{view}.ctime_ns")
-        if not last_unstable_fields:
-            return
-    raise StagedCandidateConflictError(
-        stage.path,
-        "timestamp_stability",
-        "staged mtime_ns/ctime_ns changed within every read window across "
-        f"{STAGED_METADATA_STABILIZATION_ATTEMPTS} bounded observations; "
-        f"unstable_fields={last_unstable_fields}; last_observed={last_timestamps}",
-    )
+    try:
+        verify_retained_stage(stage, candidate)
+    except StagedInvariantError as exc:
+        raise _staged_conflict(exc) from exc
 
 
 def _replace_staged_candidate(stage: StagedCandidate, target: Path) -> None:
-    if os.replace in os.supports_dir_fd:
-        os.replace(
-            stage.name,
-            target.name,
-            src_dir_fd=stage.directory_descriptor,
-            dst_dir_fd=stage.directory_descriptor,
-        )
-    else:  # pragma: no cover - supported on the Unix platforms this plugin targets.
-        os.replace(stage.path, target)
+    install_retained_stage(stage, target)
 
 
 def _link_staged_candidate(stage: StagedCandidate, target: Path) -> None:
@@ -1025,42 +776,7 @@ def _installed_target_warning(
     target: Path,
     candidate: bytes,
 ) -> str | None:
-    try:
-        opened_before = os.fstat(stage.descriptor)
-        visible_before = os.stat(
-            target.name,
-            dir_fd=stage.directory_descriptor,
-            follow_symlinks=False,
-        )
-        raw = _pread_descriptor(stage.descriptor, stage.size)
-        opened_after = os.fstat(stage.descriptor)
-        visible_after = os.stat(
-            target.name,
-            dir_fd=stage.directory_descriptor,
-            follow_symlinks=False,
-        )
-    except OSError as exc:
-        return f"could not verify installed tracking database {target}: {exc}"
-    if (
-        not stat.S_ISREG(opened_before.st_mode)
-        or not stat.S_ISREG(visible_before.st_mode)
-        or not stat.S_ISREG(opened_after.st_mode)
-        or not stat.S_ISREG(visible_after.st_mode)
-        or _lock_identity(opened_before) != _lock_identity(visible_before)
-        or _lock_identity(opened_after) != _lock_identity(visible_after)
-        or _lock_identity(opened_before) != _lock_identity(opened_after)
-        or opened_before.st_size != stage.size
-        or visible_before.st_size != stage.size
-        or opened_after.st_size != stage.size
-        or visible_after.st_size != stage.size
-        or raw != candidate
-        or _sha256(raw) != stage.sha256
-    ):
-        return (
-            f"installed tracking database {target} no longer matches the staged "
-            "candidate; inspect the live path and output SHA before retrying"
-        )
-    return None
+    return installed_target_warning(stage, target, candidate)
 
 
 def commit_tracking_database(
@@ -1190,7 +906,7 @@ def initialize_tracking_database(
             if verification_warning is not None:
                 durability_state = "installed_verification_failed"
                 warnings.append(verification_warning)
-            _unlink_staged_name(stage, warnings)
+            warnings.extend(release_staged_name(stage).warnings)
             try:
                 _fsync_directory(stage.directory_descriptor)
             except OSError as exc:

@@ -188,6 +188,19 @@ def tracking_database_io():
 
 
 @pytest.fixture(scope="session")
+def retained_stage():
+    """The staged-file lifecycle both owner writers share (#243).
+
+    Tests that inject staging faults patch this module, not an owner: the
+    observation loop, the byte read, and the descriptor closes live here.
+    """
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "retained_stage.py"),
+        "retained_stage",
+    )
+
+
+@pytest.fixture(scope="session")
 def mutate_tracking_database():
     return _import_script(
         os.path.join(SCRIPTS_VI, "mutate-tracking-database.py"),
