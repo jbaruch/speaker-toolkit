@@ -198,6 +198,10 @@ def main(argv: list[str]) -> int:
     )
     try:
         report, diagnostics = run(repo_root)
+        # Inside the guarded region and before stdout: a failure writing the
+        # step summary must produce the structured failure object, not a
+        # traceback trailing a success report that already printed.
+        _emit_workflow_annotations([str(item) for item in report["advisories"]])
     except GateError as error:
         # Every run emits one JSON object, including the ones that fail before
         # the CLI produced a verdict — a consumer reading stdout must never
@@ -228,7 +232,6 @@ def main(argv: list[str]) -> int:
     print(json.dumps(report, indent=2, sort_keys=True))
     for line in diagnostics:
         print(line, file=sys.stderr)
-    _emit_workflow_annotations(list(report["advisories"]))  # type: ignore[arg-type]
     return 0 if report["ok"] else 1
 
 

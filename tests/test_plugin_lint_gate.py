@@ -228,3 +228,34 @@ def test_workflow_annotations_never_touch_stdout(
     assert report["advisories"]
     assert "::warning" not in result.stdout
     assert "::warning" in result.stderr
+
+
+def test_a_failing_step_summary_write_emits_the_failure_object(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No traceback trailing a success report that already printed."""
+    plugin = tmp_path / "plugin"
+    _write_plugin(plugin, description="A demo skill for gate tests")
+    oversized = "Filler that pads the entrypoint past the token budget. " * 700
+    (plugin / "skills" / "demo" / "SKILL.md").write_text(
+        "---\nname: demo\ndescription: A demo skill\n---\n\n# Demo\n\n" + oversized,
+        encoding="utf-8",
+    )
+    unwritable = tmp_path / "no-such-dir" / "summary.md"
+
+    result = subprocess.run(
+        [sys.executable, str(GATE), str(plugin)],
+        capture_output=True,
+        text=True,
+        env={
+            **dict(__import__("os").environ),
+            "GITHUB_ACTIONS": "true",
+            "GITHUB_STEP_SUMMARY": str(unwritable),
+        },
+    )
+
+    assert result.returncode == 1
+    report = json.loads(result.stdout)
+    assert report["ok"] is False
+    assert "unexpected gate failure" in report["error"]
+    assert "Traceback" not in result.stdout
