@@ -86,6 +86,18 @@ broken checker would have reported success. The Python reader raises on a real
 read failure and returns an empty list for "no links", which are different
 outcomes.
 
+Reference-style links are collected too. Matching only inline `](...)` meant a
+`[notes][n]` usage with a `[n]: references/missing.md` definition walked past
+the gate. Definitions are validated; usages are deliberately not matched
+against them, because CommonMark's shortcut form makes any `[text]` a potential
+reference and these skills carry literal bracketed tags in prose (`[RECURRING]`,
+`[NEW]`, `[CONTEXTUAL]`) that would then fail a correct file.
+
+Both file reads catch `UnicodeError` explicitly. `UnicodeDecodeError` is a
+`ValueError`, so it slipped past the `OSError` handler and surfaced as a
+traceback — and the entrypoint handler's message had been promising to cover
+encoding all along.
+
 `pyproject.toml` adds `scripts` to Pyright's `include` and to the `tests`
 execution environment, so repo-root gate scripts are type-checked and importable
 by their tests the same way skill scripts already are. `tests/conftest.py`

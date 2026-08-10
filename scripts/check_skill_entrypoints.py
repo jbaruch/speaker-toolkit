@@ -194,10 +194,60 @@ def _read_destination(text: str, start: int) -> tuple[str | None, int]:
     return None, start
 
 
+def _reference_definition(line: str) -> str | None:
+    """The destination of a ``[label]: dest "title"`` definition, if this is one.
+
+    CommonMark allows up to three leading spaces before the label.
+    """
+    stripped = line.lstrip(" ")
+    if len(line) - len(stripped) > 3 or not stripped.startswith("["):
+        return None
+    close = stripped.find("]:", 1)
+    if close == -1:
+        return None
+
+    rest = stripped[close + 2 :]
+    i = _skip_whitespace(rest, 0)
+    if i >= len(rest):
+        return None
+
+    if rest[i] == "<":
+        end = rest.find(">", i + 1)
+        return rest[i + 1 : end] if end != -1 else None
+
+    out: list[str] = []
+    while i < len(rest) and not rest[i].isspace():
+        if rest[i] == "\\" and i + 1 < len(rest):
+            out.append(rest[i + 1])
+            i += 2
+            continue
+        out.append(rest[i])
+        i += 1
+    return "".join(out) or None
+
+
 def extract_link_destinations(markdown: str) -> list[str]:
-    """Every link destination in ``markdown``, code excluded, in source order."""
+    """Every link destination in ``markdown``, code excluded, in source order.
+
+    Covers both inline links (``[a](dest)``) and reference definitions
+    (``[a]: dest``). A definition whose destination does not resolve is a
+    dangling contract however it is referenced, so validating definitions
+    closes the reference-link path without having to resolve usages.
+
+    Usages are deliberately not matched against definitions: CommonMark's
+    shortcut form makes any ``[text]`` a potential reference, and these skills
+    use literal bracketed tags in prose (``[RECURRING]``, ``[NEW]``,
+    ``[CONTEXTUAL]``). Treating those as undefined references would fail the
+    gate on correct files.
+    """
     text = _strip_code(markdown)
     destinations: list[str] = []
+
+    for line in text.splitlines():
+        definition = _reference_definition(line)
+        if definition:
+            destinations.append(definition)
+
     i = 0
     n = len(text)
     while i < n - 1:
@@ -240,12 +290,22 @@ def declared_content_roots(repo_root: Path) -> list[str]:
     """
     manifest_path = repo_root / MANIFEST
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        raw = manifest_path.read_text(encoding="utf-8")
     except OSError as error:
         raise SystemExit(
             f"ERROR: could not read {MANIFEST} — {error.strerror}.\n"
             f"  Point this check at the plugin repo root."
         ) from error
+    except UnicodeError as error:
+        # UnicodeDecodeError is a ValueError, not an OSError, so it would
+        # otherwise escape both handlers as a traceback.
+        raise SystemExit(
+            f"ERROR: {MANIFEST} is not valid UTF-8 — {error}.\n"
+            f"  Re-save the manifest as UTF-8, then re-run."
+        ) from error
+
+    try:
+        manifest = json.loads(raw)
     except json.JSONDecodeError as error:
         raise SystemExit(
             f"ERROR: {MANIFEST} is not valid JSON — {error.msg} "
@@ -345,7 +405,14 @@ def check_entrypoint(
     except OSError as error:
         raise SystemExit(
             f"ERROR: could not scan {relative} — {error.strerror}.\n"
-            f"  Check the file's permissions and encoding, then re-run."
+            f"  Fix the file's permissions, then re-run."
+        ) from error
+    except UnicodeError as error:
+        # UnicodeDecodeError is a ValueError, not an OSError — the handler
+        # above never sees it.
+        raise SystemExit(
+            f"ERROR: could not scan {relative} — not valid UTF-8 ({error}).\n"
+            f"  Re-save the entrypoint as UTF-8, then re-run."
         ) from error
 
     unresolved: list[dict] = []

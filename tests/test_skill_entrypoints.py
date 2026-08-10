@@ -138,6 +138,39 @@ def test_a_malformed_link_does_not_swallow_a_later_real_one() -> None:
     assert extract_link_destinations("[a](<broken.md and [b](real.md)") == ["real.md"]
 
 
+@pytest.mark.parametrize(
+    ("markdown", "expected"),
+    [
+        ("[n]: references/notes.md", ["references/notes.md"]),
+        ('[n]: references/notes.md "A title"', ["references/notes.md"]),
+        ("[n]: <references/my notes.md>", ["references/my notes.md"]),
+        # Up to three leading spaces is still a definition.
+        ("   [n]: references/notes.md", ["references/notes.md"]),
+        # Four is an indented code block.
+        ("    [n]: references/notes.md", []),
+        # Usage alone defines nothing.
+        ("See [notes][n] for detail.", []),
+        # Literal bracketed tags these skills use in prose are not references.
+        ("[RECURRING] Presentation Patterns: ...", []),
+        ("[NEW] and [CONTEXTUAL] labels", []),
+    ],
+)
+def test_reference_definitions_are_destinations(
+    markdown: str, expected: list[str]
+) -> None:
+    assert extract_link_destinations(markdown) == expected
+
+
+def test_reference_definition_and_inline_link_both_collected() -> None:
+    markdown = (
+        "Use [notes][n] and [more](references/more.md).\n\n[n]: references/notes.md\n"
+    )
+    assert sorted(extract_link_destinations(markdown)) == [
+        "references/more.md",
+        "references/notes.md",
+    ]
+
+
 def test_fenced_blocks_and_inline_spans_are_excluded() -> None:
     markdown = (
         "# T\n\n"
@@ -334,6 +367,45 @@ def test_a_rule_file_is_valid_plugin_content(plugin: Path) -> None:
     )
     result = _run(plugin)
     assert result.returncode == 0, result.stderr
+
+
+def test_dangling_reference_definition_fails(plugin: Path) -> None:
+    """A reference-style link bypassed the gate entirely."""
+    _write(
+        plugin,
+        "skills/builder/SKILL.md",
+        "# Builder\n\nSee [notes][n] for detail.\n\n[n]: references/missing.md\n",
+    )
+    result = _run(plugin)
+    assert result.returncode == 1
+    assert "references/missing.md" in result.stderr
+
+
+def test_resolving_reference_definition_passes(plugin: Path) -> None:
+    _write(
+        plugin,
+        "skills/builder/SKILL.md",
+        "# Builder\n\nSee [notes][n] for detail.\n\n[n]: references/notes.md\n",
+    )
+    result = _run(plugin)
+    assert result.returncode == 0, result.stderr
+
+
+def test_non_utf8_entrypoint_fails_with_an_encoding_message(plugin: Path) -> None:
+    """UnicodeDecodeError is a ValueError — the OSError handler never sees it."""
+    (plugin / "skills" / "builder" / "SKILL.md").write_bytes(b"# Builder\n\n\xff\xfe\n")
+    result = _run(plugin)
+    assert result.returncode != 0
+    assert "not valid UTF-8" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_non_utf8_manifest_fails_with_an_encoding_message(plugin: Path) -> None:
+    (plugin / ".tessl-plugin" / "plugin.json").write_bytes(b'{"name": "\xff\xfe"}')
+    result = _run(plugin)
+    assert result.returncode != 0
+    assert "not valid UTF-8" in result.stderr
+    assert "Traceback" not in result.stderr
 
 
 def test_missing_manifest_fails(plugin: Path) -> None:
