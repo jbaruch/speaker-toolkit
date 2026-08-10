@@ -1,5 +1,39 @@
 # Changelog
 
+### feat(vault-ingress) — derive the rhetoric-summary status block from the database (#168)
+
+Closes #168.
+
+`rhetoric-style-summary.md` is narrative prose, but its status line is read as
+current operational fact — and it was hand-maintained, so it drifted. A verified
+snapshot had the summary claiming `199 / 208` with 195 processed while the
+tracking database held 209 talks: 116 `needs-reprocessing`, 9 `pending`, 78
+`processed`, 2 `processed_partial`, 3 `reprocessing-inflight`, 1
+`skipped_duplicate`. Queue normalization and reparse move statuses without
+touching prose, so an obsolete cohort reads as live — most misleadingly during a
+long reparse, which is exactly when someone checks.
+
+`render-vault-status.py` derives that one block and nothing else. Every count
+comes from a single strict snapshot through the shared reader; none is
+hand-calculated. The block is delimited and schema-versioned, so replacing it
+cannot disturb a narrative section, and it carries the database SHA-256,
+generated timestamp, database schema version, active scoring/catalog generation
+identity, total talks, exact status counts, and the active-claim count.
+
+It reports historically-analysed separately from the current cohort. Conflating
+them is what makes normalization look like lost work: a talk analysed under an
+older generation stays historically analysed while ceasing to be eligible now.
+
+`--apply` requires `--expected-sha256` from a dry run. The summary is a file a
+human also edits, so an apply that cannot prove it read the current bytes
+refuses rather than overwriting an edit it never saw. Replacement goes through
+the shared retained-stage lifecycle, so an interruption leaves the prior
+complete summary, and a no-op render installs nothing rather than churning the
+file's identity for consumers watching it.
+
+An absent scoring generation is reported absent, never defaulted — a default
+would let a database with no recorded generation render a block claiming one.
+
 ## 0.20.48 — 2026-08-10
 
 ### feat(vault-ingress) — an owner writer for reviewed shownotes catalog conflicts (#236)

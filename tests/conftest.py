@@ -656,3 +656,11 @@ def pptx_catalog_selection():
         os.path.join(SCRIPTS_VI, "pptx_catalog_selection.py"),
         "pptx_catalog_selection",
     )
+
+
+@pytest.fixture(scope="session")
+def render_vault_status():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "render-vault-status.py"),
+        "render_vault_status",
+    )

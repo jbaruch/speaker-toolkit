@@ -333,5 +333,21 @@ claims, writes a byte-for-byte backup under `{vault_root}/.backups/`, and replac
 the DB atomically. Re-run the preflight after applying; do not claim work until
 blocking findings reach zero.
 
+The summary's status block is owner-generated, never hand-edited. Refresh it at
+safe checkpoints — after migration or recovery, after normalization, and after a
+batch persists — with:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/render-vault-status.py" \
+  "{vault_root}" --generated-at "{iso_timestamp}"
+```
+
+That is a dry run; it prints the derived counts and the block it would install.
+Apply with `--apply --expected-sha256` from that report. A failing precondition
+means the summary changed since the read — re-run the dry run rather than
+forcing it. The block carries the database SHA-256 it was derived from, so a
+consumer can tell a stale block from a current one; the tracking database stays
+the authority and prose counts are never trusted on their own.
+
 Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
 "X processed, Y remaining. PPTX: A cataloged, B matched, C extracted."
