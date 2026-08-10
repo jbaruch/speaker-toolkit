@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.39 — 2026-08-10
+
 ### chore(ci) — hold skill entrypoints inside Tessl's token budget (#163)
 
 Closes #163. `tessl plugin lint` flagged `presentation-creator/SKILL.md` at
