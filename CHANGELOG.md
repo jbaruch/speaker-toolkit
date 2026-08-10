@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.49 — 2026-08-10
+
 ### feat(vault-ingress) — derive the rhetoric-summary status block from the database (#168)
 
 Closes #168.
