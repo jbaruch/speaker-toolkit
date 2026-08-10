@@ -617,11 +617,10 @@ def test_a_locator_escaping_the_root_by_symlink_is_never_opened(
     secret = _outside_secret(tmp_path)
     source = tmp_path / "presentations"
     source.mkdir()
-    link = source / "Talk.pptx"
-    try:
-        link.symlink_to(secret)
-    except (OSError, NotImplementedError):  # pragma: no cover - platform guard
-        pytest.skip("symlinks unavailable on this platform")
+    # The suite that runs this file is the ubuntu `test` job; the platform
+    # matrix runs a fixed list that excludes it. Symlink creation is available
+    # there, so a failure here is a real signal, never a reason to skip.
+    (source / "Talk.pptx").symlink_to(secret)
 
     assert pptx_catalog_selection.digest_and_size("Talk.pptx", source) is None
 
@@ -659,10 +658,7 @@ def test_a_symlinked_intermediate_directory_is_never_traversed(
     (outside / "Talk.pptx").write_bytes(b"not yours")
     source = tmp_path / "presentations"
     source.mkdir()
-    try:
-        (source / "nested").symlink_to(outside, target_is_directory=True)
-    except (OSError, NotImplementedError):  # pragma: no cover - platform guard
-        pytest.skip("symlinks unavailable on this platform")
+    (source / "nested").symlink_to(outside, target_is_directory=True)
 
     assert pptx_catalog_selection.digest_and_size("nested/Talk.pptx", source) is None
 
@@ -682,10 +678,7 @@ def test_a_symlinked_root_is_still_trusted_configuration(
     real.mkdir()
     (real / "Talk.pptx").write_bytes(b"deck")
     link = tmp_path / "presentations"
-    try:
-        link.symlink_to(real, target_is_directory=True)
-    except (OSError, NotImplementedError):  # pragma: no cover - platform guard
-        pytest.skip("symlinks unavailable on this platform")
+    link.symlink_to(real, target_is_directory=True)
 
     assert pptx_catalog_selection.digest_and_size("Talk.pptx", link) == (
         hashlib.sha256(b"deck").hexdigest(),

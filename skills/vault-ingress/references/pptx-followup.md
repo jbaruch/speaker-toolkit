@@ -6,12 +6,15 @@ rendered-page evidence, matching, and cross-talk visual updates.
 
 Runs once after all Step 3 batches have completed.
 
-Process PPTX files not yet extracted during Step 3: unmatched catalog entries, talks
-that used PDF as primary but have a PPTX available, or entries with
-`pptx_visual_status: "pending"`. Skip if already `"extracted"`. Use the bounded directory invocation from
-[bootstrap-and-preflight.md](bootstrap-and-preflight.md) and select the root-relative results that
-remain pending; do not replace it with `**/*.pptx` or a shell/per-file extraction
-loop. Reuse the exact config-derived `{template_skip_arguments}` and
+Process the PPTX files `classify-pptx-evidence.py` reports as
+`needs_extraction`, plus unmatched catalog entries and talks that used PDF as
+primary but have a PPTX available. Selection is the classifier's, not a boolean
+read: a stale, legacy, or unverifiable record can carry `visual_extracted: true`
+and still need extraction — see
+[bootstrap-and-preflight.md](bootstrap-and-preflight.md) for the command and its
+output contract. Use the bounded directory invocation from that same reference
+and select the root-relative results it names; do not replace it with
+`**/*.pptx` or a shell/per-file extraction loop. Reuse the exact config-derived `{template_skip_arguments}` and
 `{directory_exclusion_arguments}` (including zero arguments for either empty
 array), keep the explicit `--directory` flag, preserve every bounded skip
 receipt, and never admit a `~$` Office lock file. Require the public schema-v1

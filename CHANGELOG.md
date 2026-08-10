@@ -77,6 +77,11 @@ file. An absolute locator, one that resolves outside the declared root through
 a symlink, or one that cannot be resolved now reads as not-observed — for the
 deck and the artifact alike.
 
+The governing skill follows. `SKILL.md` Step 6 and `pptx-followup.md` told the
+agent to "skip already extracted entries" from the boolean — the exact read this
+change exists to stop, and a directive that contradicted the new one on a
+second loaded surface. Both now delegate selection to the classifier.
+
 The ingress workflow gets an executable rather than a function to reproduce:
 `classify-pptx-evidence.py` takes a vault root, makes both observations,
 and prints one JSON object naming every record's class and whether it needs

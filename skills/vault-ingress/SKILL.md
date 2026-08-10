@@ -181,8 +181,11 @@ to Step 6.
 ## Step 6 — Extract Remaining PPTX Visual Data
 
 Follow [PPTX Follow-up](references/pptx-followup.md). Run one bounded directory
-extraction and select only unmatched entries, PDF-primary talks with a PPTX, or
-`pptx_visual_status: "pending"`; skip already extracted entries.
+extraction. Selection is owned by `classify-pptx-evidence.py` — extract every
+record it reports `needs_extraction`, and never decide from `visual_extracted`
+alone. A stale, legacy, or unverifiable record can carry `visual_extracted:
+true` and still need extraction; see
+[Bootstrap and Preflight](references/bootstrap-and-preflight.md).
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py" \
