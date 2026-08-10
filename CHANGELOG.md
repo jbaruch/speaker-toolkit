@@ -56,6 +56,14 @@ strict-snapshot reader with no filesystem authority, and a classification it
 could not verify against the live deck would be exactly the unverified claim
 this change removes.
 
+Catalog locators are enforced as root-relative before anything is opened. The
+locator layer accepts a native absolute path even when a trusted root is
+supplied, so a persisted record naming `/etc/passwd` would have had preflight
+hash it: persisted state is a hint, never a licence to read an arbitrary host
+file. An absolute locator, one that resolves outside the declared root through
+a symlink, or one that cannot be resolved now reads as not-observed — for the
+deck and the artifact alike.
+
 The ingress workflow gets an executable rather than a function to reproduce:
 `classify-pptx-evidence.py` takes a vault root, makes both observations,
 and prints one JSON object naming every record's class and whether it needs

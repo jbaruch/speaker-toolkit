@@ -648,3 +648,11 @@ def classify_pptx_evidence():
         os.path.join(SCRIPTS_VI, "classify-pptx-evidence.py"),
         "classify_pptx_evidence",
     )
+
+
+@pytest.fixture(scope="session")
+def pptx_catalog_selection():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "pptx_catalog_selection.py"),
+        "pptx_catalog_selection",
+    )

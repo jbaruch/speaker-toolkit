@@ -19,6 +19,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import pathlib
 from typing import Any
 
 import pytest
@@ -556,3 +557,60 @@ def test_the_cli_refuses_an_unusable_database(classify_pptx_evidence, tmp_path) 
     (root / "tracking-database.json").write_text('{"schema_version": 99}')
 
     assert classify_pptx_evidence.main([str(root)]) == 2
+
+
+# Persisted state is a hint, never a licence to read an arbitrary host file.
+
+
+def _outside_secret(tmp_path) -> pathlib.Path:
+    secret = tmp_path / "outside" / "secret.pptx"
+    secret.parent.mkdir(parents=True, exist_ok=True)
+    secret.write_bytes(b"not yours")
+    return secret
+
+
+def test_an_absolute_locator_is_never_opened(pptx_catalog_selection, tmp_path) -> None:
+    secret = _outside_secret(tmp_path)
+    source = tmp_path / "presentations"
+    source.mkdir()
+
+    assert pptx_catalog_selection.digest_and_size(str(secret), source) is None
+
+
+def test_a_locator_escaping_the_root_by_symlink_is_never_opened(
+    pptx_catalog_selection, tmp_path
+) -> None:
+    secret = _outside_secret(tmp_path)
+    source = tmp_path / "presentations"
+    source.mkdir()
+    link = source / "Talk.pptx"
+    try:
+        link.symlink_to(secret)
+    except (OSError, NotImplementedError):  # pragma: no cover - platform guard
+        pytest.skip("symlinks unavailable on this platform")
+
+    assert pptx_catalog_selection.digest_and_size("Talk.pptx", source) is None
+
+
+def test_a_contained_relative_locator_is_read(pptx_catalog_selection, tmp_path) -> None:
+    source = tmp_path / "presentations"
+    (source / "nested").mkdir(parents=True)
+    (source / "nested" / "Talk.pptx").write_bytes(b"deck")
+
+    observed = pptx_catalog_selection.digest_and_size("nested/Talk.pptx", source)
+
+    assert observed == (hashlib.sha256(b"deck").hexdigest(), 4)
+
+
+def test_an_absolute_artifact_path_leaves_the_receipt_unverified(
+    pptx_catalog_selection, tmp_path
+) -> None:
+    """The escape is closed on the artifact side too, not just the deck."""
+    secret = _outside_secret(tmp_path)
+
+    assert (
+        pptx_catalog_selection.observed_artifact_digest(
+            {"artifact": {"path": str(secret), "sha256": "c" * 64}}, tmp_path / "vault"
+        )
+        is None
+    )

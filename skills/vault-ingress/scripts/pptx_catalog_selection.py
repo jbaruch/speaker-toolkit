@@ -17,7 +17,11 @@ import hashlib
 from pathlib import Path
 from typing import Any, Mapping
 
-from artifact_locator import ArtifactLocatorError, materialize_artifact_locator
+from artifact_locator import (
+    ArtifactLocatorError,
+    classify_artifact_locator,
+    materialize_artifact_locator,
+)
 from pptx_evidence import (
     PPTX_EXTRACTION_PIPELINE_VERSION,
     PPTX_EXTRACTION_SCHEMA_VERSION,
@@ -32,17 +36,43 @@ SELECTION_SCHEMA_VERSION = 1
 _READ_CHUNK_BYTES = 1024 * 1024
 
 
+def _contained(resolved: Path, root: object) -> bool:
+    """Whether ``resolved`` really lives under ``root`` once symlinks resolve.
+
+    The locator layer rejects dot segments, so a relative locator cannot climb
+    out lexically — but a symlink inside the tree still can. An unresolvable
+    root or leaf is treated as not contained: this decides whether to open a
+    file, so the uncertain answer has to be the closed one.
+    """
+    try:
+        return resolved.resolve(strict=True).is_relative_to(
+            Path(str(root)).resolve(strict=True)
+        )
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return False
+
+
 def digest_and_size(path: object, root: object) -> tuple[str, int] | None:
     """SHA-256 and byte count of one artifact, or None when it cannot be read.
 
-    None is the honest answer for an unresolvable locator or an unreadable
-    file: the caller must not be able to mistake "not observed" for "matches".
+    Catalog locators are root-relative by contract, and this enforces it before
+    opening anything: persisted state is a hint, never a licence to read an
+    arbitrary host file. An absolute locator, a locator that resolves outside
+    the declared root, an unresolvable locator, and an unreadable file all
+    return None — the caller must not be able to mistake "not observed" for
+    "matches".
     """
     if not isinstance(path, str) or not path.strip():
         return None
+    if root is None:
+        return None
     try:
+        if classify_artifact_locator(path) != "relative":
+            return None
         resolved = materialize_artifact_locator(path, root)
     except ArtifactLocatorError:
+        return None
+    if not _contained(resolved, root):
         return None
     digest = hashlib.sha256()
     size = 0
