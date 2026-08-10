@@ -94,6 +94,34 @@ def test_destination_grammar(markdown: str, expected: list[str]) -> None:
     assert extract_link_destinations(markdown) == expected
 
 
+@pytest.mark.parametrize(
+    "markdown",
+    [
+        # No closing paren — the angle-bracket destination is not a link.
+        "[x](<missing.md>",
+        # No closing paren after a title.
+        '[x](missing.md "title"',
+        # Title opens and never closes.
+        '[x](missing.md "title)',
+        "[x](missing.md 'title)",
+        # Angle-bracket destination never closes.
+        "[x](<missing.md",
+        # Trailing junk between destination and the closing paren.
+        "[x](missing.md junk)",
+    ],
+)
+def test_malformed_links_yield_no_destination(markdown: str) -> None:
+    """A malformed construct is not a link, so it cannot be a dangling one.
+
+    Reporting these as live relative links would falsely block a publish.
+    """
+    assert extract_link_destinations(markdown) == []
+
+
+def test_a_malformed_link_does_not_swallow_a_later_real_one() -> None:
+    assert extract_link_destinations("[a](<broken.md and [b](real.md)") == ["real.md"]
+
+
 def test_fenced_blocks_and_inline_spans_are_excluded() -> None:
     markdown = (
         "# T\n\n"

@@ -82,15 +82,66 @@ def _strip_code(markdown: str) -> str:
     return "\n".join(lines)
 
 
+def _skip_whitespace(text: str, i: int) -> int:
+    while i < len(text) and text[i].isspace():
+        i += 1
+    return i
+
+
+def _skip_title(text: str, i: int) -> int | None:
+    """Consume an optional link title at ``i``.
+
+    Returns the index just past it, or ``None`` when a title opens and never
+    closes — which makes the whole link malformed.
+    """
+    if i >= len(text):
+        return i
+    opener = text[i]
+    if opener not in "\"'(":
+        return i
+    closer = ")" if opener == "(" else opener
+    i += 1
+    while i < len(text):
+        char = text[i]
+        if char == "\\" and i + 1 < len(text):
+            i += 2
+            continue
+        if char == closer:
+            return i + 1
+        i += 1
+    return None
+
+
+def _close_link(
+    text: str, i: int, destination: list[str], start: int
+) -> tuple[str | None, int]:
+    """Require the optional title and the closing ``)`` after a destination.
+
+    Without this, `[x](<missing.md>` and `[x](missing.md "title"` — neither of
+    which is a link — yield a destination that then gets reported as a dangling
+    reference, falsely blocking a publish.
+    """
+    i = _skip_whitespace(text, i)
+    after_title = _skip_title(text, i)
+    if after_title is None:
+        return None, start
+    i = _skip_whitespace(text, after_title)
+    if i < len(text) and text[i] == ")":
+        return "".join(destination), i + 1
+    return None, start
+
+
 def _read_destination(text: str, start: int) -> tuple[str | None, int]:
-    """Parse a CommonMark link destination beginning at ``start``.
+    """Parse a complete CommonMark inline link beginning at ``start``.
 
     ``start`` indexes the character just past ``](``. Returns the destination
     and the index to resume scanning from. A destination is either an
     angle-bracket form (``<path with spaces>``) or a bare run of non-whitespace
     with balanced parentheses; either may carry backslash escapes, and either
     may be followed by a title the caller does not want. Returns ``None`` when
-    the link is unterminated, which is not a dangling target — it is not a link.
+    the construct is not a complete link — an unterminated destination, an
+    unterminated title, or a missing closing ``)``. That is not a dangling
+    target; it is not a link at all.
     """
     i = start
     n = len(text)
@@ -105,7 +156,7 @@ def _read_destination(text: str, start: int) -> tuple[str | None, int]:
                 i += 2
                 continue
             if char == ">":
-                return "".join(out), i + 1
+                return _close_link(text, i + 1, out, start)
             if char == "\n":
                 break
             out.append(char)
@@ -121,7 +172,7 @@ def _read_destination(text: str, start: int) -> tuple[str | None, int]:
             continue
         if char.isspace():
             # Whitespace ends the destination and begins an optional title.
-            return "".join(out), i
+            return _close_link(text, i, out, start)
         if char == "(":
             depth += 1
         elif char == ")":

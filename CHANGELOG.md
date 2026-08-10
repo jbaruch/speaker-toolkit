@@ -55,6 +55,13 @@ blocking the publish of a correct skill. The destination scanner now implements
 the CommonMark grammar it needs: angle-bracket form, balanced parentheses,
 backslash escapes, and a title the path must not absorb.
 
+The scanner also requires the closing `)`. Returning a destination as soon as
+the path ended meant `[x](<missing.md>` and `[x](missing.md "title"` — neither
+of which is a link — produced a target that was then reported as a dangling
+reference, the same false publish block from the other direction. A malformed
+construct now yields nothing, and a later well-formed link on the same line is
+still found.
+
 Token math is a ceiling, not truncation: integer division reported 20,001
 through 20,003 characters as exactly 5,000 tokens and passed a file that was
 over budget. The boundary test is parametrized across every excess below the
