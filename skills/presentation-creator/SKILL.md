@@ -224,6 +224,8 @@ wire them to real slides in Phase 3.
 
 Gate: Author approves the narrative (`narrative.md`) and the architecture.
 
+Proceed immediately to Step 3.
+
 ## Step 3 — Content Development
 
 Read [references/phase3-content.md](references/phase3-content.md) for the full
@@ -241,6 +243,8 @@ After saving `outline.yaml`, validate and regenerate the derived artifacts using
 the commands in "Talk-directory artifacts" above, starting with `outline_schema.py`.
 
 Gate: Draft delivered.
+
+Proceed immediately to Step 4.
 
 ## Step 4 — Revision & Guardrails
 
@@ -282,6 +286,8 @@ block intentionally overridden guardrails.
 
 Gate: Author declares the outline done.
 
+Proceed immediately to Step 5.
+
 ## Step 5 — Slide Generation & Interactive Iteration
 
 Read [references/phase5-slides.md](references/phase5-slides.md) for the full
@@ -307,9 +313,8 @@ After the build completes, if `outline.yaml` declares `style_anchor`, delegate t
 progressive-reveal builds, and apply them to the deck.
 
 Then run the post-build passes in the order phase5-slides.md prescribes —
-`expand-builds.sh`, then `inject-notes.sh`, then `apply-backgrounds.sh` last. The
-order is load-bearing: expansion renumbers slides, and any later python-pptx save
-would re-drop the per-slide background fills. See `rules/deck-editing-rules.md`.
+`expand-builds.sh`, then `inject-notes.sh`, then `apply-backgrounds.sh` last.
+Never reorder them. See `rules/deck-editing-rules.md`.
 
 **For presenterm talks**, hand-author `{slug}.md` from the `slides.md`
 build-sheet per phase5-slides.md Step 5.1c.
@@ -319,6 +324,8 @@ Every layout, background, footer, and slide-number decision reads from
 runtime — phase5-slides.md names the exact field per decision. Never hardcode them.
 
 Gate: Author declares slides done.
+
+Proceed immediately to Step 6.
 
 ## Step 6 — Publishing
 
@@ -339,6 +346,8 @@ Execute the steps from the profile:
    preparation reminder (see phase6-publishing.md Step 6.5)
 
 Gate: Author confirms published and ready to deliver.
+
+Finish here. Step 7 is triggered separately, days or weeks after delivery.
 
 ## Step 7 — Post-Event
 

@@ -113,7 +113,7 @@ select = ["E4", "E7", "E9", "F", "BLE"]
 # then `pyright`. Run against a bare system Python and 94 resolution
 # false-positives reappear, hiding the real findings underneath.
 pythonVersion = "3.10"
-include = ["skills", "tests"]
+include = ["scripts", "skills", "tests"]
 exclude = ["**/__pycache__", ".venv", ".tessl"]
 executionEnvironments = [
     # illustrations reads the outline schema from presentation-creator.
@@ -133,8 +133,11 @@ executionEnvironments = [
         "skills/vault-profile/scripts",
         "skills/vault-ingress/scripts",
     ] },
+    # Repo-root gate scripts, imported by their tests the same way.
+    { root = "scripts", extraPaths = ["scripts"] },
     { root = "tests", extraPaths = [
         "tests",
+        "scripts",
         "skills/illustrations/scripts",
         "skills/presentation-creator/scripts",
         "skills/vault-clarification/scripts",

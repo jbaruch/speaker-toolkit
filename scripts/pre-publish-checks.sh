@@ -10,4 +10,6 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 "$REPO_ROOT/scripts/check-tessl-pins.sh"
 "$REPO_ROOT/scripts/check-package-contents.sh"
-"$REPO_ROOT/scripts/check-skill-entrypoints.sh"
+# JSON report on stdout, actionable diagnostics on stderr (script-delegation
+# -> Script Requirements). The composer only cares about the exit code.
+python3 "$REPO_ROOT/scripts/check_skill_entrypoints.py" > /dev/null

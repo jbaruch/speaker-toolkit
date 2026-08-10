@@ -43,22 +43,48 @@ sample output the skill emits, not pointers, so they are excluded. The token
 estimate is chars/4, which rounds against us (8,790 estimated vs Tessl's 8,749
 reported on the same file), so a pass here implies a pass in lint.
 
-Token math is ceiling, not truncating: integer division reported 20,001 through
-20,003 characters as exactly 5,000 tokens and passed a file that was over
-budget. The boundary test is parametrized across every excess below the divisor
-so the gap cannot reopen.
+The gate is `scripts/check_skill_entrypoints.py`. It started as shell and moved
+to Python across two review rounds, because three separate rule findings all
+pointed the same way: `file-hygiene` Standalone Scripts wants an entry-point
+guard (`if __name__ == "__main__"` is its own named example),
+`script-delegation` Script Requirements wants JSON on stdout, and the Regex
+Trap rules out matching Markdown links with `\]\([^)]+\)`. That regex breaks on
+`[a](notes.md "title")`, on `[a](refs/note_(draft).md)`, and on the
+angle-bracket form — each a valid link the gate would have reported as dangling,
+blocking the publish of a correct skill. The destination scanner now implements
+the CommonMark grammar it needs: angle-bracket form, balanced parentheses,
+backslash escapes, and a title the path must not absorb.
 
-Link extraction is one awk rather than a grep/sed pipeline. The pipeline needed
-each stage's exit 1 (filtered everything out — legitimate) told apart from exit
-2 (bad regex) and from an unreadable file, and the blanket `|| true` that ended
-it collapsed all three, so a broken checker would have reported success. awk
-exits 0 on "matched nothing" and non-zero only on real failure. An unreadable
-entrypoint now gets its own actionable message instead of a bare redirection
-error.
+Token math is a ceiling, not truncation: integer division reported 20,001
+through 20,003 characters as exactly 5,000 tokens and passed a file that was
+over budget. The boundary test is parametrized across every excess below the
+divisor so the gap cannot reopen.
+
+The first shell draft ended its link-extraction pipeline in `|| true`, which
+`error-handling` forbids — it collapsed each stage's exit 1 (filtered everything
+out, legitimate) with exit 2 (bad regex) and with an unreadable file, so a
+broken checker would have reported success. The Python reader raises on a real
+read failure and returns an empty list for "no links", which are different
+outcomes.
+
+`pyproject.toml` adds `scripts` to Pyright's `include` and to the `tests`
+execution environment, so repo-root gate scripts are type-checked and importable
+by their tests the same way skill scripts already are. `tests/conftest.py`
+splices the directory onto `sys.path` alongside the four skill script roots.
 
 The gate joins `scripts/pre-publish-checks.sh` and is covered by
-`tests/test_skill_entrypoints.py`, including both budget boundaries, the
-unreadable-file path, and a guard that the composer actually invokes it.
+`tests/test_skill_entrypoints.py`: both budget boundaries, the destination
+grammar, the unreadable-file path, and a guard that the composer actually
+invokes it.
+
+Every step gate in the creator SKILL.md now states its continuation explicitly,
+per `skill-authoring` Step Continuity. Steps 2 through 6 ended at a bare
+`Gate:` line, which reads as an implicit pause; Step 6 now says it finishes
+there because Step 7 is triggered separately.
+
+The two sibling gates (`check-package-contents.sh`, `check-tessl-pins.sh`) have
+the same entry-point-guard and prose-stdout gaps. They are out of scope here and
+tracked separately.
 
 Seven doc-contract assertions in `test_presentation_pattern_history.py` and
 `test_section15_pattern_history.py` read the authorization contract out of
