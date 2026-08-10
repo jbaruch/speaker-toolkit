@@ -288,3 +288,40 @@ def test_analysis_writer_still_writes_a_clean_batch(
     assert first.read_text(encoding="utf-8") == "first body\n"
     assert second.read_text(encoding="utf-8") == "second body\n"
     assert not list(tmp_path.glob(".*.stage"))
+
+
+def test_stage_verification_failure_carries_its_cleanup_detail(
+    tracking_database_io, retained_stage, tmp_path: Path, monkeypatch
+) -> None:
+    """A pre-install failure must not swallow a failed cleanup.
+
+    This is the #240 shape one level up: the owner catches the invariant error,
+    runs cleanup, and would otherwise drop the report on the floor — leaving an
+    orphaned staged temp with no diagnostic naming it.
+    """
+    path = tmp_path / "tracking-database.json"
+    path.write_bytes(b'{\n  "talks": []\n}\n')
+    expected = tracking_database_io.snapshot_tracking_database(path)
+    candidate = tracking_database_io.render_json_object({"talks": [], "config": {}})
+
+    def failing_verify(stage, raw: bytes) -> None:
+        raise tracking_database_io.StagedCandidateConflictError(
+            stage.path, "exact_bytes", "injected verification failure"
+        )
+
+    def failing_unlink(*_args, **_kwargs):
+        raise OSError("simulated unlink failure")
+
+    monkeypatch.setattr(
+        tracking_database_io, "_verify_staged_candidate", failing_verify
+    )
+    monkeypatch.setattr(retained_stage.os, "unlink", failing_unlink)
+
+    with pytest.raises(tracking_database_io.StagedCandidateConflictError) as caught:
+        tracking_database_io.commit_tracking_database(expected, candidate)
+
+    assert caught.value.invariant == "exact_bytes"
+    assert "injected verification failure" in caught.value.detail
+    # Both the primary invariant and the cleanup failure are reported.
+    assert "staged cleanup" in caught.value.detail
+    assert "could not remove" in caught.value.detail

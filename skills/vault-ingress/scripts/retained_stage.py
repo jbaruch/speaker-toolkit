@@ -11,8 +11,8 @@ This module keeps a descriptor open on the staged inode for the whole
 transaction and proves, at every observation, that the visible name still
 resolves to that exact inode with the exact bytes. The invariants it enforces:
 
-- unique no-follow creation with a retained file descriptor and directory
-  descriptor;
+- unique ``O_NOFOLLOW`` creation of the staged file itself, with a retained
+  file descriptor and a directory descriptor every later syscall anchors to;
 - regular-file and single-link validation;
 - exact descriptor/name device and inode identity at every preinstall
   observation;
@@ -174,7 +174,15 @@ def _identity(metadata: os.stat_result) -> tuple[int, int]:
 
 
 def open_directory(path: Path, *, label: str) -> int:
-    """Open a directory descriptor the stage anchors every later syscall to."""
+    """Open a directory descriptor the stage anchors every later syscall to.
+
+    Deliberately not ``O_NOFOLLOW``: the vault root is documented as possibly
+    being a symlink to a custom location, so refusing a symlinked component
+    here would break supported installs. The no-follow guarantee this module
+    makes is about the staged *file* and every later name resolution, which is
+    anchored to this descriptor and so cannot be redirected by a directory
+    swapped after the open.
+    """
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
     flags |= getattr(os, "O_DIRECTORY", 0)
     try:

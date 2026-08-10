@@ -36,7 +36,6 @@ from retained_stage import (
     open_retained_stage,
     release_staged_name,
     verify_retained_stage,
-    visible_descriptor_identity,
 )
 
 
@@ -691,14 +690,6 @@ def _staged_conflict(exc: StagedInvariantError) -> StagedCandidateConflictError:
     return StagedCandidateConflictError(exc.path, exc.invariant, exc.detail)
 
 
-def _visible_descriptor_identity(
-    name: str,
-    descriptor: int,
-    directory_descriptor: int,
-) -> bool:
-    return visible_descriptor_identity(name, descriptor, directory_descriptor)
-
-
 def _close_staged_candidate(stage: StagedCandidate, warnings: list[str]) -> None:
     """Release the stage, appending truthful cleanup detail for the caller.
 
@@ -725,13 +716,22 @@ def _stage_candidate(path: Path, candidate: bytes, mode: int) -> StagedCandidate
         )
     except RetainedStageError as exc:
         raise TrackingDatabaseIOError(str(exc)) from exc
-    verified = False
     try:
         _verify_staged_candidate(stage, candidate)
-        verified = True
-    finally:
-        if not verified:
-            close_retained_stage(stage)
+    except BaseException as exc:
+        # Cleanup detail must ride out with the primary failure. Discarding the
+        # report here would reintroduce exactly the vanished-warning problem
+        # this primitive exists to close (#240): an orphaned staged temp with
+        # no diagnostic naming it. BaseException so an interrupt still reports.
+        report = close_retained_stage(stage)
+        if report.warnings:
+            if isinstance(exc, StagedCandidateConflictError):
+                raise StagedCandidateConflictError(
+                    exc.path,
+                    exc.invariant,
+                    f"{exc.detail}; staged cleanup: {'; '.join(report.warnings)}",
+                ) from exc
+        raise
     return stage
 
 

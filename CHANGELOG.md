@@ -37,6 +37,17 @@ resolves to a different inode or file type is left untouched rather than
 unlinked: it is someone else's data, and removing it to tidy up after ourselves
 would be the second bug. `KeyboardInterrupt` and `SystemExit` still propagate.
 
+Two Copilot findings folded in. `_stage_candidate` ran cleanup on a
+verification failure and dropped the report, reintroducing the vanished-warning
+problem one level up; the cleanup detail now rides out inside the typed
+conflict's `detail`. And the module docstring claimed no-follow for the
+directory open, which is deliberately not the case — the vault root is
+documented as possibly being a symlink, so refusing a symlinked component there
+would break supported installs. The no-follow guarantee covers the staged file
+and every later name resolution, which is anchored to the retained directory
+descriptor. The docstring now says that instead of over-claiming. A dead
+`_visible_descriptor_identity` wrapper left by the extraction is gone.
+
 Test seams followed the implementation. Five injection points that patched
 `tracking_database_io` internals now patch `retained_stage` where the
 observation loop actually lives; the two that wrap the owner's typed-error
