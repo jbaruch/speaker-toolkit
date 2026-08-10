@@ -3857,7 +3857,11 @@ def test_preflight_reports_an_unreadable_receipt_instead_of_crashing(
     assert [finding["code"] for finding in findings] == [
         "pptx_visual_evidence_unreadable"
     ]
-    assert "artifact is required" in findings[0]["message"]
+    # The closed code and its neutral prose, never the rejected persisted
+    # value the exception message names (`no-secrets` -> Logging).
+    assert findings[0]["message"] == (
+        "visual evidence records a success but names no artifact"
+    )
     # A bad receipt is per-record evidence trouble, so the vault is still
     # usable: it must not surface as unusable owner state.
     assert report["blocking_count"] == 0

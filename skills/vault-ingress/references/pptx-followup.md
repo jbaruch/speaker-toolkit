@@ -6,11 +6,13 @@ rendered-page evidence, matching, and cross-talk visual updates.
 
 Runs once after all Step 3 batches have completed.
 
-Process the PPTX files `classify-pptx-evidence.py` reports as
-`needs_extraction`, plus unmatched catalog entries and talks that used PDF as
-primary but have a PPTX available. Selection is the classifier's, not a boolean
-read: a stale, legacy, or unverifiable record can carry `visual_extracted: true`
-and still need extraction — see
+Process exactly the PPTX files `classify-pptx-evidence.py` reports as
+`needs_extraction` — no additional predicate. Unmatched entries and PDF-primary
+talks with a PPTX are already covered: a deck with no current receipt reports
+`pending`, so adding them separately can only re-extract a record the
+classifier already proved current. Selection is never a boolean read: a stale,
+legacy, or unverifiable record can carry `visual_extracted: true` and still
+need extraction — see
 [bootstrap-and-preflight.md](bootstrap-and-preflight.md) for the command and its
 output contract. Use the bounded directory invocation from that same reference
 and select the root-relative results it names; do not replace it with

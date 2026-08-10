@@ -29,6 +29,8 @@ from pptx_evidence import (
     PPTX_EXTRACTION_SCHEMA_VERSION,
 )
 from tracking_database import (
+    PPTX_VISUAL_EVIDENCE_DIAGNOSTICS,
+    PPTX_VISUAL_EVIDENCE_FALLBACK,
     TrackingDatabaseError,
     classify_pptx_visual_evidence,
     pptx_visual_evidence_needs_extraction,
@@ -190,9 +192,16 @@ def classify_catalog(
                 observed_artifact_digest=artifact,
             )
         except TrackingDatabaseError as exc:
+            # Never surface the exception prose: a rejected receipt's message
+            # names the value that came out of the database. Report the closed
+            # code and its neutral wording instead (`no-secrets` -> Logging).
+            reason_code = getattr(exc, "reason_code", "receipt_unreadable")
             row["classification"] = None
             row["needs_extraction"] = True
-            row["error"] = str(exc)
+            row["reason_code"] = reason_code
+            row["error"] = PPTX_VISUAL_EVIDENCE_DIAGNOSTICS.get(
+                reason_code, PPTX_VISUAL_EVIDENCE_FALLBACK
+            )
         else:
             row["classification"] = classification
             row["needs_extraction"] = pptx_visual_evidence_needs_extraction(

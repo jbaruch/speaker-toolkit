@@ -82,6 +82,14 @@ agent to "skip already extracted entries" from the boolean — the exact read th
 change exists to stop, and a directive that contradicted the new one on a
 second loaded surface. Both now delegate selection to the classifier.
 
+Rejected receipts report a closed code too. A receipt-validation message names
+the rejected value — an `algorithm`, an `outcome` — and that value came out of
+the database, so a reader surfacing it discloses persisted content.
+`PptxVisualEvidenceError` carries a reason code, the reader and preflight
+report its neutral prose, and the writer keeps the detailed message because
+there the rejected value is operator input being refused, not stored data being
+echoed.
+
 Read failures report a closed code, never the exception text. A decoder message
 carries the host database path and the rejected key or value verbatim, so
 echoing `str(exc)` leaks both (`no-secrets` → Logging). The reason-code

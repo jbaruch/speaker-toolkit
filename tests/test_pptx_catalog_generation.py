@@ -744,3 +744,30 @@ def test_an_unusable_owner_state_is_reported_without_its_reason_prose(
     assert exit_code == 2
     assert json.loads(captured.out)["code"] == "database_unreadable"
     assert str(root) not in captured.out + captured.err
+
+
+def test_a_rejected_receipt_reports_a_code_not_the_persisted_value(
+    pptx_catalog_selection, tmp_path
+) -> None:
+    """The rejected value came out of the database; it must not be echoed."""
+    source = tmp_path / "presentations"
+    source.mkdir()
+    (source / "Talk.pptx").write_bytes(b"deck")
+    poisoned = _current_record(
+        pptx_path="Talk.pptx",
+        visual_evidence=_evidence(
+            source_fingerprint={
+                "algorithm": "sekrit-algorithm-name",
+                "digest": "a" * 64,
+                "size_bytes": 4096,
+            }
+        ),
+    )
+
+    rows = pptx_catalog_selection.classify_catalog(
+        _database([poisoned]), vault_root=tmp_path, pptx_source_dir=source
+    )
+
+    assert rows[0]["needs_extraction"] is True
+    assert rows[0]["reason_code"] == "source_fingerprint_invalid"
+    assert "sekrit-algorithm-name" not in json.dumps(rows)

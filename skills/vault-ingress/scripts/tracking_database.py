@@ -8,6 +8,7 @@ present.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import copy
 from dataclasses import dataclass
 import datetime as dt
@@ -188,6 +189,41 @@ class TrackingDatabaseError(ValueError):
 
 class TrackingDatabaseConfigExclusionsError(TrackingDatabaseError):
     """The config-owned PPTX directory-exclusion field is invalid."""
+
+
+class PptxVisualEvidenceError(TrackingDatabaseError):
+    """A persisted extraction receipt is malformed.
+
+    ``reason_code`` is the stable classification. The message names the exact
+    field and the rejected value, which is what an operator fixing a rejected
+    WRITE needs — but a reader surfacing a rejected persisted record must
+    report the code and its neutral prose instead, because the rejected value
+    came out of the database (`no-secrets` -> Logging).
+    """
+
+    def __init__(self, message: str, *, reason_code: str) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+
+
+# Closed, value-neutral prose per receipt reason code.
+PPTX_VISUAL_EVIDENCE_DIAGNOSTICS = {
+    "receipt_not_object": "visual evidence must be an object or null",
+    "receipt_shape_invalid": "visual evidence has an invalid field set",
+    "outcome_invalid": "visual evidence outcome is not a supported value",
+    "extractor_schema_version_invalid": (
+        "visual evidence extractor schema version is not a positive integer"
+    ),
+    "pipeline_version_invalid": "visual evidence pipeline version is not a string",
+    "source_fingerprint_invalid": "visual evidence source fingerprint is malformed",
+    "artifact_required": "visual evidence records a success but names no artifact",
+    "artifact_forbidden": "visual evidence records a failure but names an artifact",
+    "artifact_invalid": "visual evidence artifact identity is malformed",
+    "mirror_mismatch": (
+        "visual_extracted disagrees with the outcome its receipt records"
+    ),
+}
+PPTX_VISUAL_EVIDENCE_FALLBACK = "visual evidence receipt is malformed"
 
 
 @dataclass(frozen=True)
@@ -376,6 +412,17 @@ def _validate_pptx_source_fingerprint(value: object, label: str) -> None:
     _require_exact_integer(value["size_bytes"], f"{label}.size_bytes", minimum=1)
 
 
+@contextmanager
+def _receipt_reason(reason_code: str):
+    """Retype the shared field validators' errors with a receipt reason code."""
+    try:
+        yield
+    except PptxVisualEvidenceError:
+        raise
+    except TrackingDatabaseError as exc:
+        raise PptxVisualEvidenceError(str(exc), reason_code=reason_code) from exc
+
+
 def validate_pptx_visual_evidence(value: object, label: str) -> bool:
     """Validate a v2 extraction receipt; return whether it recorded a success.
 
@@ -385,48 +432,62 @@ def validate_pptx_visual_evidence(value: object, label: str) -> bool:
     if value is None:
         return False
     if not isinstance(value, Mapping):
-        raise TrackingDatabaseError(f"{label} must be an object or null")
-    _require_closed_shape(
-        value, required=PPTX_VISUAL_EVIDENCE_REQUIRED_FIELDS, label=label
-    )
-    outcome = _require_nonempty_string(value["outcome"], f"{label}.outcome")
-    if outcome not in PPTX_VISUAL_EVIDENCE_OUTCOMES:
-        raise TrackingDatabaseError(
-            f"{label}.outcome must be one of "
-            f"{sorted(PPTX_VISUAL_EVIDENCE_OUTCOMES)}, got {outcome!r}"
+        raise PptxVisualEvidenceError(
+            f"{label} must be an object or null", reason_code="receipt_not_object"
         )
-    _require_exact_integer(
-        value["extractor_schema_version"],
-        f"{label}.extractor_schema_version",
-        minimum=1,
-    )
-    _require_nonempty_string(value["pipeline_version"], f"{label}.pipeline_version")
-    _validate_pptx_source_fingerprint(
-        value["source_fingerprint"], f"{label}.source_fingerprint"
-    )
+    with _receipt_reason("receipt_shape_invalid"):
+        _require_closed_shape(
+            value, required=PPTX_VISUAL_EVIDENCE_REQUIRED_FIELDS, label=label
+        )
+    with _receipt_reason("outcome_invalid"):
+        outcome = _require_nonempty_string(value["outcome"], f"{label}.outcome")
+    if outcome not in PPTX_VISUAL_EVIDENCE_OUTCOMES:
+        raise PptxVisualEvidenceError(
+            f"{label}.outcome must be one of "
+            f"{sorted(PPTX_VISUAL_EVIDENCE_OUTCOMES)}, got {outcome!r}",
+            reason_code="outcome_invalid",
+        )
+    with _receipt_reason("extractor_schema_version_invalid"):
+        _require_exact_integer(
+            value["extractor_schema_version"],
+            f"{label}.extractor_schema_version",
+            minimum=1,
+        )
+    with _receipt_reason("pipeline_version_invalid"):
+        _require_nonempty_string(value["pipeline_version"], f"{label}.pipeline_version")
+    with _receipt_reason("source_fingerprint_invalid"):
+        _validate_pptx_source_fingerprint(
+            value["source_fingerprint"], f"{label}.source_fingerprint"
+        )
     artifact = value["artifact"]
     succeeded = outcome == "succeeded"
     if artifact is None:
         # A succeeded extraction that names no artifact cannot be proven to
         # still exist, which is the ambiguity this schema removes.
         if succeeded:
-            raise TrackingDatabaseError(
-                f"{label}.artifact is required when outcome is 'succeeded'"
+            raise PptxVisualEvidenceError(
+                f"{label}.artifact is required when outcome is 'succeeded'",
+                reason_code="artifact_required",
             )
         return succeeded
     if not isinstance(artifact, Mapping):
-        raise TrackingDatabaseError(f"{label}.artifact must be an object or null")
-    if not succeeded:
-        raise TrackingDatabaseError(
-            f"{label}.artifact must be null when outcome is 'failed'"
+        raise PptxVisualEvidenceError(
+            f"{label}.artifact must be an object or null",
+            reason_code="artifact_invalid",
         )
-    _require_closed_shape(
-        artifact,
-        required=PPTX_VISUAL_ARTIFACT_REQUIRED_FIELDS,
-        label=f"{label}.artifact",
-    )
-    _require_nonempty_string(artifact["path"], f"{label}.artifact.path")
-    _require_sha256_digest(artifact["sha256"], f"{label}.artifact.sha256")
+    if not succeeded:
+        raise PptxVisualEvidenceError(
+            f"{label}.artifact must be null when outcome is 'failed'",
+            reason_code="artifact_forbidden",
+        )
+    with _receipt_reason("artifact_invalid"):
+        _require_closed_shape(
+            artifact,
+            required=PPTX_VISUAL_ARTIFACT_REQUIRED_FIELDS,
+            label=f"{label}.artifact",
+        )
+        _require_nonempty_string(artifact["path"], f"{label}.artifact.path")
+        _require_sha256_digest(artifact["sha256"], f"{label}.artifact.sha256")
     return succeeded
 
 
@@ -484,9 +545,10 @@ def classify_pptx_visual_evidence(
         record.get("visual_evidence"), "pptx_catalog record.visual_evidence"
     )
     if record.get("visual_extracted") != succeeded:
-        raise TrackingDatabaseError(
+        raise PptxVisualEvidenceError(
             "pptx_catalog record.visual_extracted must mirror whether "
-            "visual_evidence records a succeeded extraction"
+            "visual_evidence records a succeeded extraction",
+            reason_code="mirror_mismatch",
         )
     evidence = record.get("visual_evidence")
     if evidence is None:
