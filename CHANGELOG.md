@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.47 — 2026-08-10
+
 ### feat(vault-ingress) — audit shownotes conflict candidates alongside the active source (#230)
 
 Closes #230.
