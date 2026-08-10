@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.43 — 2026-08-10
+
 ### fix(vault-ingress) — choose the supervisor exit-vs-monitor ordering instead of racing it (#268)
 
 Closes #268.
