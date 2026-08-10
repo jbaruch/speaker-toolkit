@@ -20,6 +20,9 @@ is where it can be checked against the code that reads them.
 Raised as an advisory on PR #276 and deferred rather than folded in: the PR was
 otherwise green, and `review-severity` spends a re-review round on a
 presentation-only change only when a blocking round is already happening.
+
+## 0.20.49 — 2026-08-10
+
 ### feat(vault-ingress) — derive the rhetoric-summary status block from the database (#168)
 
 Closes #168.
