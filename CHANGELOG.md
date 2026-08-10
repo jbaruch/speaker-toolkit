@@ -31,6 +31,8 @@ evidence field, a naive timestamp, and an unparseable one.
 Mutation behavior is unchanged: a reappeared source stays `review_required` and
 is never reactivated.
 
+## 0.20.40 — 2026-08-10
+
 ### test(vault-ingress) — pin the return-self-validation boundary (#159)
 
 Closes #159. The enforcement it asked for is already in the tree: it landed
