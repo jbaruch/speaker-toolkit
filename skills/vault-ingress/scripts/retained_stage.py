@@ -134,9 +134,9 @@ class StageCleanupReport:
     ``disposition`` is one of ``removed``, ``already_absent``,
     ``staged_cleanup_name_not_owned``, ``staged_cleanup_inspect_failed``, or
     ``staged_cleanup_unlink_failed``. Only ``removed`` and ``already_absent``
-    assert the name is gone; the rest mean an orphan may remain. A cleanup that could not finish carries
-    ``reason_codes`` alongside human ``warnings``; neither ever converts an
-    installed outcome into a failure.
+    assert the name is gone; the rest mean an orphan may remain. A cleanup that
+    could not finish carries ``reason_codes`` alongside human ``warnings``;
+    neither ever converts an installed outcome into a failure.
     """
 
     disposition: str
@@ -177,6 +177,15 @@ def _identity(metadata: os.stat_result) -> tuple[int, int]:
     return metadata.st_dev, metadata.st_ino
 
 
+def _close_or_note(descriptor: int, *, label: str) -> list[str]:
+    """Close a descriptor on a failure path without masking that failure."""
+    try:
+        os.close(descriptor)
+    except OSError as exc:
+        return [f"could not close {label} descriptor: {exc}"]
+    return []
+
+
 def open_directory(path: Path, *, label: str) -> int:
     """Open a directory descriptor the stage anchors every later syscall to.
 
@@ -196,10 +205,22 @@ def open_directory(path: Path, *, label: str) -> int:
             f"cannot open {label} {path}: {exc}",
             reason_code="staged_directory_unavailable",
         ) from exc
-    if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
-        os.close(descriptor)
+    # Every failure past the open has to close the descriptor: a bare fstat
+    # raise here leaks it and skips this function's typed contract.
+    try:
+        is_directory = stat.S_ISDIR(os.fstat(descriptor).st_mode)
+    except OSError as exc:
+        notes = _close_or_note(descriptor, label=f"{label} {path}")
         raise RetainedStageError(
-            f"{label} {path} is not a directory",
+            f"cannot inspect {label} {path}: {exc}"
+            + (f"; {'; '.join(notes)}" if notes else ""),
+            reason_code="staged_directory_unavailable",
+        ) from exc
+    if not is_directory:
+        notes = _close_or_note(descriptor, label=f"{label} {path}")
+        raise RetainedStageError(
+            f"{label} {path} is not a directory"
+            + (f"; {'; '.join(notes)}" if notes else ""),
             reason_code="staged_directory_unavailable",
         )
     return descriptor

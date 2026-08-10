@@ -464,3 +464,46 @@ def test_inspect_failure_disposition_never_claims_absence(
     assert report.disposition == retained_stage.STAGED_CLEANUP_INSPECT_FAILED
     assert report.disposition != "already_absent"
     stage.descriptor = None
+
+
+def test_directory_inspect_failure_closes_the_descriptor(
+    retained_stage, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An fstat raise after the open must not leak the directory descriptor."""
+    closed: list[int] = []
+    real_close = os.close
+    real_fstat = os.fstat
+
+    def failing_fstat(descriptor: int):
+        raise OSError("simulated fstat failure")
+
+    def recording_close(descriptor: int) -> None:
+        closed.append(descriptor)
+        real_close(descriptor)
+
+    monkeypatch.setattr(retained_stage.os, "fstat", failing_fstat)
+    monkeypatch.setattr(retained_stage.os, "close", recording_close)
+
+    with pytest.raises(retained_stage.RetainedStageError) as caught:
+        retained_stage.open_directory(tmp_path, label="test directory")
+
+    assert caught.value.reason_code == "staged_directory_unavailable"
+    assert "simulated fstat failure" in str(caught.value)
+    assert closed, "the directory descriptor was leaked"
+    monkeypatch.setattr(retained_stage.os, "fstat", real_fstat)
+
+
+def test_a_non_directory_target_is_refused_at_open(
+    retained_stage, tmp_path: Path
+) -> None:
+    """O_DIRECTORY refuses a regular file at the open, so nothing to leak.
+
+    The typed error still has to come out rather than a bare OSError.
+    """
+    regular = tmp_path / "not-a-directory"
+    regular.write_text("x", encoding="utf-8")
+
+    with pytest.raises(retained_stage.RetainedStageError) as caught:
+        retained_stage.open_directory(regular, label="test directory")
+
+    assert caught.value.reason_code == "staged_directory_unavailable"
