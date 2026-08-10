@@ -76,11 +76,17 @@ def test_entrypoint_exactly_at_budget_passes(plugin: Path) -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_one_char_over_budget_fails(plugin: Path) -> None:
-    """Guards the boundary in the other direction — the gate is not slack."""
-    _write(plugin, "skills/builder/SKILL.md", _body(BUDGET_CHARS + CHARS_PER_TOKEN))
+@pytest.mark.parametrize("excess", range(1, CHARS_PER_TOKEN + 1))
+def test_any_char_over_budget_fails(plugin: Path, excess: int) -> None:
+    """Guards the boundary in the other direction — the gate is not slack.
+
+    Every excess below CHARS_PER_TOKEN is the interesting case: truncating
+    integer division reports 20,001..20,003 chars as exactly 5,000 tokens and
+    passes a file that is over budget. Only ceiling division fails all four.
+    """
+    _write(plugin, "skills/builder/SKILL.md", _body(BUDGET_CHARS + excess))
     result = _run(plugin)
-    assert result.returncode == 1
+    assert result.returncode == 1, f"{BUDGET_CHARS + excess} chars passed the gate"
     assert "exceed the 5000-token budget" in result.stderr
 
 
@@ -180,6 +186,17 @@ def test_every_entrypoint_is_checked_not_just_the_first(plugin: Path) -> None:
     assert result.returncode == 1
     assert "skills/shipper/SKILL.md" in result.stderr
     assert "1 of 2 skill entrypoints" in result.stderr
+
+
+def test_unreadable_entrypoint_fails_loudly(plugin: Path) -> None:
+    """A file the scanner cannot read must not read as "no links found"."""
+    (plugin / "skills" / "builder" / "SKILL.md").chmod(0o000)
+    try:
+        result = _run(plugin)
+    finally:
+        (plugin / "skills" / "builder" / "SKILL.md").chmod(0o644)
+    assert result.returncode == 1
+    assert "could not scan" in result.stderr
 
 
 def test_missing_skills_directory_fails(tmp_path: Path) -> None:

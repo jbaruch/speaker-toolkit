@@ -43,9 +43,22 @@ sample output the skill emits, not pointers, so they are excluded. The token
 estimate is chars/4, which rounds against us (8,790 estimated vs Tessl's 8,749
 reported on the same file), so a pass here implies a pass in lint.
 
+Token math is ceiling, not truncating: integer division reported 20,001 through
+20,003 characters as exactly 5,000 tokens and passed a file that was over
+budget. The boundary test is parametrized across every excess below the divisor
+so the gap cannot reopen.
+
+Link extraction is one awk rather than a grep/sed pipeline. The pipeline needed
+each stage's exit 1 (filtered everything out — legitimate) told apart from exit
+2 (bad regex) and from an unreadable file, and the blanket `|| true` that ended
+it collapsed all three, so a broken checker would have reported success. awk
+exits 0 on "matched nothing" and non-zero only on real failure. An unreadable
+entrypoint now gets its own actionable message instead of a bare redirection
+error.
+
 The gate joins `scripts/pre-publish-checks.sh` and is covered by
-`tests/test_skill_entrypoints.py`, including both budget boundaries and a guard
-that the composer actually invokes it.
+`tests/test_skill_entrypoints.py`, including both budget boundaries, the
+unreadable-file path, and a guard that the composer actually invokes it.
 
 Seven doc-contract assertions in `test_presentation_pattern_history.py` and
 `test_section15_pattern_history.py` read the authorization contract out of

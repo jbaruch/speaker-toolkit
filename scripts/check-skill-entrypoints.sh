@@ -66,8 +66,19 @@ for skill_md in "${entrypoints[@]}"; do
   checked=$((checked + 1))
   skill_dir="$(dirname "$skill_md")"
 
+  # Both reads below assume a readable file. Without this, an unreadable
+  # entrypoint aborts on a bare "Permission denied" from a shell redirection,
+  # naming no fix.
+  if [ ! -r "$skill_md" ]; then
+    echo "ERROR: could not scan $skill_md — not readable." >&2
+    echo "  Fix the file permissions, then re-run." >&2
+    exit 1
+  fi
+
   chars=$(wc -c < "$skill_md" | tr -d ' ')
-  tokens=$((chars / CHARS_PER_TOKEN))
+  # Ceiling, not truncation: 20,001 chars is over a 5,000-token budget, and
+  # integer division would report it as exactly 5,000 and pass.
+  tokens=$(((chars + CHARS_PER_TOKEN - 1) / CHARS_PER_TOKEN))
   if [ "$tokens" -gt "$TOKEN_BUDGET" ]; then
     over=$((tokens - TOKEN_BUDGET))
     oversized+=("$skill_md	~$tokens tokens ($chars chars) — $over over budget")
@@ -76,31 +87,43 @@ for skill_md in "${entrypoints[@]}"; do
   # Relative markdown link targets: ](path) where path is neither a URL, an
   # anchor, nor an absolute path. Strip any #fragment before resolving.
   #
-  # Links inside fenced code blocks and inline code spans are sample output the
-  # skill emits (a shownotes template's `[View Slides]({slides_url})`), not
-  # pointers the agent follows — drop both before extracting. `{...}` targets
-  # that survive are runtime placeholders and equally not files.
+  # One awk does the whole extraction. A grep/sed pipeline needs each stage's
+  # exit 1 (filtered everything out — legitimate here) told apart from exit 2
+  # (bad regex) and from an unreadable file, which is what blanket `|| true`
+  # collapses. awk exits 0 on "matched nothing" and non-zero only on real
+  # failure, so the check below propagates exactly the failures that matter.
+  if ! targets=$(awk '
+        # Fenced blocks and inline code spans are sample output the skill
+        # emits (a shownotes template'"'"'s `[View Slides]({slides_url})`),
+        # not pointers the agent follows.
+        /^[[:space:]]*(```|~~~)/ { fence = !fence; next }
+        fence { next }
+        {
+          line = $0
+          gsub(/`[^`]*`/, "", line)
+          while (match(line, /\]\([^)]+\)/)) {
+            target = substr(line, RSTART + 2, RLENGTH - 3)
+            line = substr(line, RSTART + RLENGTH)
+            if (target ~ /^[a-z][a-z0-9+.-]*:/) continue   # URL scheme
+            if (target ~ /^[#\/]/) continue                # anchor or absolute
+            if (target ~ /[{}]/) continue                  # runtime placeholder
+            print target
+          }
+        }
+      ' "$skill_md"); then
+    echo "ERROR: could not scan $skill_md for relative links." >&2
+    echo "  Check that the file is readable, then re-run." >&2
+    exit 1
+  fi
+
   while IFS= read -r target; do
     [ -n "$target" ] || continue
     resolved="$skill_dir/${target%%#*}"
     if [ ! -e "$resolved" ]; then
       dangling+=("$skill_md	$target	-> $resolved")
     fi
-  done < <(awk '
-             /^[[:space:]]*(```|~~~)/ { fence = !fence; next }
-             fence { next }
-             { gsub(/`[^`]*`/, ""); print }
-           ' "$skill_md" \
-             | grep -oE '\]\([^)]+\)' \
-             | sed -E 's/^\]\(//; s/\)$//' \
-             | grep -vE '^([a-z][a-z0-9+.-]*:|#|/)' \
-             | grep -vF '{' \
-             || true)
+  done <<< "$targets"
 done
-
-# Each grep above exits 1 when it filters everything out — a skill with no
-# relative links is a legitimate result, not a tool failure, so the pipeline
-# ends in `|| true`. A genuinely broken file surfaces as a missing target below.
 
 fail=0
 
