@@ -28,6 +28,7 @@ import json
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 # git's own default marker length, used for any path whose gitattributes do not
@@ -39,15 +40,33 @@ DEFAULT_MARKER_SIZE = 7
 MINIMUM_MARKER_SIZE = 1
 
 
-# All four markers `merge.conflictStyle = diff3` can leave behind, at the length
-# git would write for that path. Matching the exact configured length rather
-# than "seven or more" is what keeps a Markdown setext rule and a here-doc
-# delimiter legal: those run to arbitrary lengths, a marker does not. The
-# trailing `( |$)` covers the rest — a real marker is bare or followed by a
-# space and a label.
-def marker_pattern(size: int) -> re.Pattern[str]:
-    """The matcher for one path's configured marker length."""
-    return re.compile(rf"^(<{{{size}}}|\|{{{size}}}|={{{size}}}|>{{{size}}})( |$)")
+# The three markers no legitimate content produces, at the length git would
+# write for that path. Matching the exact configured length rather than "seven
+# or more" keeps a here-doc delimiter and a long rule legal: those run to
+# arbitrary lengths, a marker does not. The trailing `( |$)` covers the rest —
+# a real marker is bare or followed by a space and a label.
+def unambiguous_marker_pattern(size: int) -> re.Pattern[str]:
+    """Start, base, and end markers, which nothing else in a text file writes."""
+    return re.compile(rf"^(<{{{size}}}|\|{{{size}}}|>{{{size}}})( |$)")
+
+
+# The separator is the one ambiguous marker: a Markdown setext heading rule of
+# exactly the marker length is identical to it. Flagging it outright would fail
+# the build on legitimate prose, so it counts only inside a conflict a start
+# marker already opened — where it cannot be a heading rule.
+def separator_pattern(size: int) -> re.Pattern[str]:
+    """The `=======` separator, meaningful only within an open conflict."""
+    return re.compile(rf"^(={{{size}}})( |$)")
+
+
+def start_pattern(size: int) -> re.Pattern[str]:
+    """The `<<<<<<<` line that opens a conflict region."""
+    return re.compile(rf"^(<{{{size}}})( |$)")
+
+
+def end_pattern(size: int) -> re.Pattern[str]:
+    """The `>>>>>>>` line that closes a conflict region."""
+    return re.compile(rf"^(>{{{size}}})( |$)")
 
 
 # A NUL byte in the first block means the file is not line-oriented text. Read
@@ -131,16 +150,47 @@ def marker_sizes(repo_root: Path, paths: list[Path]) -> dict[str, int]:
     return sizes
 
 
+@dataclass(frozen=True)
+class MarkerMatchers:
+    """The four matchers for one marker length, compiled once."""
+
+    unambiguous: re.Pattern[str]
+    separator: re.Pattern[str]
+    start: re.Pattern[str]
+    end: re.Pattern[str]
+
+    @classmethod
+    def of_size(cls, size: int) -> "MarkerMatchers":
+        return cls(
+            unambiguous=unambiguous_marker_pattern(size),
+            separator=separator_pattern(size),
+            start=start_pattern(size),
+            end=end_pattern(size),
+        )
+
+
 def violations_in(
     raw: bytes,
     relative: str,
-    pattern: re.Pattern[str],
+    matchers: MarkerMatchers,
 ) -> list[dict[str, object]]:
-    """Every marker line in one file's bytes, at that file's marker length."""
+    """Every marker line in one file's bytes, at that file's marker length.
+
+    The separator is tracked rather than matched outright: `=======` is also a
+    Markdown setext heading rule at that length, so it counts only between a
+    start marker and its end marker, where a heading rule cannot be.
+    """
     text = raw.decode("utf-8", "replace")
     found = []
+    inside_conflict = False
     for number, line in enumerate(text.splitlines(), start=1):
-        match = pattern.match(line)
+        match = matchers.unambiguous.match(line)
+        if match is None and inside_conflict:
+            match = matchers.separator.match(line)
+        if matchers.start.match(line):
+            inside_conflict = True
+        elif matchers.end.match(line):
+            inside_conflict = False
         if match:
             found.append({"path": relative, "line": number, "marker": match.group(1)})
     return found
@@ -154,8 +204,9 @@ def scan(repo_root: Path) -> dict[str, object]:
     tracked = tracked_files(repo_root)
     sizes = marker_sizes(repo_root, tracked)
     # One compiled matcher per distinct length, not per file.
-    patterns = {
-        size: marker_pattern(size) for size in {DEFAULT_MARKER_SIZE, *sizes.values()}
+    matchers = {
+        size: MarkerMatchers.of_size(size)
+        for size in {DEFAULT_MARKER_SIZE, *sizes.values()}
     }
     for path in tracked:
         relative = str(path.relative_to(repo_root))
@@ -174,8 +225,8 @@ def scan(repo_root: Path) -> dict[str, object]:
             binary += 1
             continue
         scanned += 1
-        pattern = patterns[sizes.get(relative, DEFAULT_MARKER_SIZE)]
-        violations.extend(violations_in(raw, relative, pattern))
+        file_matchers = matchers[sizes.get(relative, DEFAULT_MARKER_SIZE)]
+        violations.extend(violations_in(raw, relative, file_matchers))
     return {
         "scanned_text_files": scanned,
         "skipped_binary_files": binary,

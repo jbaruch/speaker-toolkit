@@ -19,10 +19,15 @@ skipped — a marker is a line of text, and the repo's binaries are eval fixture
 Marker length comes from each path's own `conflict-marker-size` attribute rather
 than a hardcoded seven: git writes markers at the configured length, so a repo
 that raises it for a file full of `=======` lines still gets real markers, just
-longer ones. Matching the exact configured length — never "seven or more" — is
-also what keeps a setext heading rule and a here-doc delimiter legal, since
-those run to arbitrary lengths and a marker does not. The trailing space-or-end
-requirement covers the rest.
+longer ones. Matching the exact configured length — never "seven or more" —
+keeps a here-doc delimiter and a long rule legal, since those run to arbitrary
+lengths and a marker does not.
+
+The separator is the one marker ordinary prose also writes: a Markdown setext
+heading rule of exactly the marker length is byte-identical to it. Flagging it
+outright would fail the build on legitimate content, so it counts only between a
+start marker and its end marker, where a heading rule cannot be. The start, base,
+and end markers are unambiguous and always count.
 
 No exclusion list: the tests build markers from repeated characters rather than
 writing them out, so the suite is not its own violation.

@@ -70,12 +70,13 @@ def _repo(tmp_path: Path, files: dict[str, str | bytes]) -> Path:
     [
         (OURS, " HEAD"),
         (BASE, " abc1234"),
-        (SPLIT, ""),
         (THEIRS, " origin/main"),
     ],
 )
-def test_every_marker_form_fails_the_build(tmp_path: Path, marker, label) -> None:
-    """All four forms, the diff3 base marker included — it is the one that shipped."""
+def test_every_unambiguous_marker_fails_the_build(
+    tmp_path: Path, marker, label
+) -> None:
+    """Nothing else in a text file writes these — the diff3 base one included."""
     repo = _repo(tmp_path, {"CHANGELOG.md": f"# Changelog\n\n{marker}{label}\ntext\n"})
 
     result = _run(repo)
@@ -86,6 +87,58 @@ def test_every_marker_form_fails_the_build(tmp_path: Path, marker, label) -> Non
         {"path": "CHANGELOG.md", "line": 3, "marker": marker}
     ]
     assert "CHANGELOG.md:3" in result.stderr
+
+
+def test_a_setext_rule_at_the_marker_length_is_not_a_marker(tmp_path: Path) -> None:
+    """`=======` under a heading is a Markdown H2 rule, not a conflict.
+
+    It is the one marker ordinary prose also writes, so flagging it outright
+    would fail the build on legitimate content.
+    """
+    repo = _repo(tmp_path, {"doc.md": f"Heading\n{SPLIT}\n\nBody.\n"})
+
+    result = _run(repo)
+
+    assert result.returncode == 0, result.stderr
+    assert _report(result)["violations"] == []
+
+
+def test_the_separator_counts_inside_an_open_conflict(tmp_path: Path) -> None:
+    """Between a start and its end, `=======` cannot be a heading rule."""
+    repo = _repo(
+        tmp_path,
+        {
+            "CHANGELOG.md": (
+                f"# Changelog\n{OURS} HEAD\nours\n{SPLIT}\ntheirs\n"
+                f"{THEIRS} origin/main\n"
+            )
+        },
+    )
+
+    result = _run(repo)
+
+    assert result.returncode == 1
+    lines = [violation["line"] for violation in _report(result)["violations"]]
+    assert lines == [2, 4, 6]
+
+
+def test_a_setext_rule_after_a_closed_conflict_is_not_a_marker(tmp_path: Path) -> None:
+    """The end marker closes the region, so later prose reads as prose again."""
+    repo = _repo(
+        tmp_path,
+        {
+            "doc.md": (
+                f"{OURS} HEAD\nours\n{SPLIT}\ntheirs\n{THEIRS} origin/main\n\n"
+                f"Heading\n{SPLIT}\n\nBody.\n"
+            )
+        },
+    )
+
+    result = _run(repo)
+
+    assert result.returncode == 1
+    lines = [violation["line"] for violation in _report(result)["violations"]]
+    assert lines == [1, 3, 5]
 
 
 def test_a_clean_checkout_passes(tmp_path: Path) -> None:
@@ -107,8 +160,8 @@ def test_this_repo_carries_no_marker() -> None:
     assert _report(result)["violations"] == []
 
 
-def test_markdown_rules_and_here_docs_are_not_markers(tmp_path: Path) -> None:
-    """A real marker is bare or labelled; a setext rule runs on into text."""
+def test_long_rules_and_here_docs_are_not_markers(tmp_path: Path) -> None:
+    """A marker is exactly its configured length; a rule runs to any length."""
     repo = _repo(
         tmp_path,
         {
