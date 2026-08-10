@@ -194,6 +194,25 @@ def test_binary_files_are_skipped_not_scanned(tmp_path: Path) -> None:
     assert report["scanned_text_files"] == 1
 
 
+def test_a_tracked_file_deleted_from_the_tree_is_still_scanned(
+    tmp_path: Path,
+) -> None:
+    """An unstaged deletion must not buy a clean scan of a file never read.
+
+    The staged blob is what a commit would ship, so that is what the gate
+    reads when the working-tree copy is gone.
+    """
+    repo = _repo(tmp_path, {"CHANGELOG.md": f"# Changelog\n\n{OURS} HEAD\ntext\n"})
+    (repo / "CHANGELOG.md").unlink()
+
+    result = _run(repo)
+
+    assert result.returncode == 1
+    assert _report(result)["violations"] == [
+        {"path": "CHANGELOG.md", "line": 3, "marker": OURS}
+    ]
+
+
 def test_an_untracked_file_is_not_scanned(tmp_path: Path) -> None:
     """The gate guards what ships, and an untracked scratch file does not."""
     repo = _repo(tmp_path, {"notes.md": "clean\n"})

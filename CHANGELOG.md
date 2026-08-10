@@ -29,6 +29,10 @@ outright would fail the build on legitimate content, so it counts only between a
 start marker and its end marker, where a heading rule cannot be. The start, base,
 and end markers are unambiguous and always count.
 
+A tracked file missing from the working tree is read from the index instead of
+skipped: an unstaged deletion must not buy a clean scan of a file the gate never
+read, and the staged blob is what a commit would ship.
+
 No exclusion list: the tests build markers from repeated characters rather than
 writing them out, so the suite is not its own violation.
 

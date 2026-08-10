@@ -150,6 +150,25 @@ def marker_sizes(repo_root: Path, paths: list[Path]) -> dict[str, int]:
     return sizes
 
 
+def staged_blob(repo_root: Path, relative: str) -> bytes:
+    """The index copy of a tracked path whose working-tree file is gone."""
+    try:
+        blob = subprocess.run(
+            ["git", "-C", str(repo_root), "cat-file", "blob", f":{relative}"],
+            capture_output=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as error:
+        detail = error.stderr.decode("utf-8", "replace").strip()
+        raise MarkerScanError(
+            f"ERROR: tracked file {relative} is absent from the working tree and "
+            f"its staged copy could not be read.\n"
+            f"  {detail}\n"
+            "  Restore the file or stage its deletion, then rerun."
+        ) from error
+    return blob.stdout
+
+
 @dataclass(frozen=True)
 class MarkerMatchers:
     """The four matchers for one marker length, compiled once."""
@@ -213,9 +232,11 @@ def scan(repo_root: Path) -> dict[str, object]:
         try:
             raw = path.read_bytes()
         except FileNotFoundError:
-            # Tracked but not on disk: a stale index entry, which is git's
-            # problem and not a hidden marker.
-            continue
+            # Tracked but not in the working tree — an unstaged deletion. The
+            # staged blob is what a commit would ship, so that is what gets
+            # scanned. Skipping it would let the gate report a clean scan of a
+            # file it never read.
+            raw = staged_blob(repo_root, relative)
         except OSError as error:
             raise MarkerScanError(
                 f"ERROR: cannot read tracked file {relative}: {error}.\n"
