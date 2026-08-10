@@ -181,10 +181,12 @@ to Step 6.
 ## Step 6 — Extract Remaining PPTX Visual Data
 
 Follow [PPTX Follow-up](references/pptx-followup.md). Run one bounded directory
-extraction. Selection is owned by `classify-pptx-evidence.py` — extract every
-record it reports `needs_extraction`, and never decide from `visual_extracted`
-alone. A stale, legacy, or unverifiable record can carry `visual_extracted:
-true` and still need extraction; see
+extraction — that invocation walks every eligible deck and takes no include
+list. `classify-pptx-evidence.py` decides what to do with the results: persist a
+new receipt only for the records it reports `needs_extraction`, and leave a
+`current` record's receipt untouched. Never decide from `visual_extracted`
+alone; a stale, legacy, or unverifiable record can carry `visual_extracted:
+true` and still need one. See
 [Bootstrap and Preflight](references/bootstrap-and-preflight.md).
 
 ```bash

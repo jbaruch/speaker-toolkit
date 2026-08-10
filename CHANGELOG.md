@@ -80,7 +80,13 @@ deck and the artifact alike.
 The governing skill follows. `SKILL.md` Step 6 and `pptx-followup.md` told the
 agent to "skip already extracted entries" from the boolean — the exact read this
 change exists to stop, and a directive that contradicted the new one on a
-second loaded surface. Both now delegate selection to the classifier.
+second loaded surface.
+
+Both now name what the classifier actually gates. The bounded directory
+extraction walks every eligible deck and takes no include list, so the
+classifier cannot filter the walk and never claimed to: it decides which
+results become receipts. A `current` record keeps the receipt it has, because
+rewriting it would replace a proven binding with an identical one.
 
 Rejected receipts report a closed code too. A receipt-validation message names
 the rejected value — an `algorithm`, an `outcome` — and that value came out of
