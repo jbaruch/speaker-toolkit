@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.45 — 2026-08-10
+
 ### ci — gate every pull request on `tessl plugin lint` (#265)
 
 Closes #265.
