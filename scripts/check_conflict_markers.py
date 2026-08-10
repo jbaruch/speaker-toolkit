@@ -30,11 +30,25 @@ import subprocess
 import sys
 from pathlib import Path
 
-# All four markers `merge.conflictStyle = diff3` can leave behind. The trailing
-# `( |$)` keeps a Markdown rule (`=======` under a heading) and a shell here-doc
-# from reading as a conflict: a real marker is either bare or followed by a
+# git's own default marker length, used for any path whose gitattributes do not
+# set one.
+DEFAULT_MARKER_SIZE = 7
+
+# The shortest length git accepts, so a nonsense attribute value cannot shrink
+# the matcher into flagging ordinary prose.
+MINIMUM_MARKER_SIZE = 1
+
+
+# All four markers `merge.conflictStyle = diff3` can leave behind, at the length
+# git would write for that path. Matching the exact configured length rather
+# than "seven or more" is what keeps a Markdown setext rule and a here-doc
+# delimiter legal: those run to arbitrary lengths, a marker does not. The
+# trailing `( |$)` covers the rest — a real marker is bare or followed by a
 # space and a label.
-MARKER = re.compile(r"^(<{7}|\|{7}|={7}|>{7})( |$)")
+def marker_pattern(size: int) -> re.Pattern[str]:
+    """The matcher for one path's configured marker length."""
+    return re.compile(rf"^(<{{{size}}}|\|{{{size}}}|={{{size}}}|>{{{size}}})( |$)")
+
 
 # A NUL byte in the first block means the file is not line-oriented text. Read
 # far enough in that a long text preamble cannot mask it.
@@ -69,12 +83,64 @@ def tracked_files(repo_root: Path) -> list[Path]:
     return [repo_root / name for name in names if name]
 
 
-def violations_in(raw: bytes, relative: str) -> list[dict[str, object]]:
-    """Every marker line in one file's bytes."""
+def marker_sizes(repo_root: Path, paths: list[Path]) -> dict[str, int]:
+    """Each path's configured marker length, from its own gitattributes.
+
+    git writes markers at the path's `conflict-marker-size`, so a repository
+    that raises it for a file whose content is full of `=======` lines still
+    gets a real conflict marker — just a longer one. Assuming seven would let
+    that marker through the gate it exists to fail.
+    """
+    if not paths:
+        return {}
+    names = [str(path.relative_to(repo_root)) for path in paths]
+    try:
+        query = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo_root),
+                "check-attr",
+                "-z",
+                "--stdin",
+                "conflict-marker-size",
+            ],
+            input="\0".join(names).encode("utf-8", "surrogateescape"),
+            capture_output=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as error:
+        detail = error.stderr.decode("utf-8", "replace").strip()
+        raise MarkerScanError(
+            f"ERROR: `git check-attr conflict-marker-size` failed in {repo_root}.\n"
+            f"  {detail}\n"
+            "  Fix the .gitattributes it could not read, then rerun."
+        ) from error
+    # -z emits a flat NUL-separated <path> <attr> <value> stream.
+    fields = query.stdout.decode("utf-8", "surrogateescape").split("\0")
+    sizes: dict[str, int] = {}
+    for index in range(0, len(fields) - 2, 3):
+        name, _attribute, value = fields[index], fields[index + 1], fields[index + 2]
+        if not value.isdigit():
+            # `unspecified`, `unset`, or a malformed value: git falls back to
+            # its own default, and so does this gate.
+            continue
+        size = int(value)
+        if size >= MINIMUM_MARKER_SIZE:
+            sizes[name] = size
+    return sizes
+
+
+def violations_in(
+    raw: bytes,
+    relative: str,
+    pattern: re.Pattern[str],
+) -> list[dict[str, object]]:
+    """Every marker line in one file's bytes, at that file's marker length."""
     text = raw.decode("utf-8", "replace")
     found = []
     for number, line in enumerate(text.splitlines(), start=1):
-        match = MARKER.match(line)
+        match = pattern.match(line)
         if match:
             found.append({"path": relative, "line": number, "marker": match.group(1)})
     return found
@@ -85,7 +151,13 @@ def scan(repo_root: Path) -> dict[str, object]:
     scanned = 0
     binary = 0
     violations: list[dict[str, object]] = []
-    for path in tracked_files(repo_root):
+    tracked = tracked_files(repo_root)
+    sizes = marker_sizes(repo_root, tracked)
+    # One compiled matcher per distinct length, not per file.
+    patterns = {
+        size: marker_pattern(size) for size in {DEFAULT_MARKER_SIZE, *sizes.values()}
+    }
+    for path in tracked:
         relative = str(path.relative_to(repo_root))
         try:
             raw = path.read_bytes()
@@ -102,7 +174,8 @@ def scan(repo_root: Path) -> dict[str, object]:
             binary += 1
             continue
         scanned += 1
-        violations.extend(violations_in(raw, relative))
+        pattern = patterns[sizes.get(relative, DEFAULT_MARKER_SIZE)]
+        violations.extend(violations_in(raw, relative, pattern))
     return {
         "scanned_text_files": scanned,
         "skipped_binary_files": binary,

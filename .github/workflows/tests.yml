@@ -46,6 +46,12 @@ jobs:
           # action input names; renew quarterly, or when the publish workflow's
           # own lint disagrees with this gate. Keep both jobs on one version.
           version: "0.95.0"
+      - name: Verify no conflict marker was committed
+        # Fails the build on any of the four merge markers in a tracked text
+        # file. A diff3 base marker (|||||||) survived a resolution and shipped
+        # in CHANGELOG.md: ruff does not read Markdown, and `git diff --check`
+        # only inspects the working diff, so an already-committed marker passed.
+        run: python3 scripts/check_conflict_markers.py > /dev/null
       - name: Validate plugin structure
         # context-artifacts -> Plugin Structure requires a clean lint before
         # every publish. The publish workflow runs it after merge, which turns
@@ -88,12 +94,6 @@ jobs:
         # unanchored "scripts/" silently stripped all 59 skills/*/scripts/
         # files from 0.18.43 through 0.18.61 while publish reported success.
         run: python3 scripts/check_package_contents.py > /dev/null
-      - name: Verify no conflict marker was committed
-        # Fails the build on any of the four merge markers in a tracked text
-        # file. A diff3 base marker (|||||||) survived a resolution and shipped
-        # in CHANGELOG.md: ruff does not read Markdown, and `git diff --check`
-        # only inspects the working diff, so an already-committed marker passed.
-        run: python3 scripts/check_conflict_markers.py > /dev/null
       - name: Cache apt package downloads
         # Cache the downloaded .deb archives (kept in a runner-writable dir via
         # Dir::Cache::Archives below), so the slow libreoffice fetch only hits

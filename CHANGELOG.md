@@ -15,10 +15,17 @@ start with `#`, so a heading-level review of the diff never saw it.
 `scripts/check_conflict_markers.py` scans every tracked text file for all four
 forms and fails the `lint` job and the publish run. Binary files are counted and
 skipped — a marker is a line of text, and the repo's binaries are eval fixtures.
-The pattern requires the marker to be bare or followed by a space and a label,
-so a setext heading rule and a here-doc delimiter stay legal. No exclusion list:
-the tests build markers from repeated characters rather than writing them out,
-so the suite is not its own violation.
+
+Marker length comes from each path's own `conflict-marker-size` attribute rather
+than a hardcoded seven: git writes markers at the configured length, so a repo
+that raises it for a file full of `=======` lines still gets real markers, just
+longer ones. Matching the exact configured length — never "seven or more" — is
+also what keeps a setext heading rule and a here-doc delimiter legal, since
+those run to arbitrary lengths and a marker does not. The trailing space-or-end
+requirement covers the rest.
+
+No exclusion list: the tests build markers from repeated characters rather than
+writing them out, so the suite is not its own violation.
 
 ## 0.20.49 — 2026-08-10
 

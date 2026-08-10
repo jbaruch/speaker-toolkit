@@ -171,6 +171,79 @@ def test_every_marker_in_a_file_is_reported(tmp_path: Path) -> None:
     assert lines == [2, 4, 6, 8]
 
 
+def test_a_configured_marker_length_is_recognized(tmp_path: Path) -> None:
+    """git writes markers at the path's `conflict-marker-size`, not always 7.
+
+    A repo that raises the size for a file whose content is full of `=======`
+    lines still gets real conflict markers — just longer ones. Assuming seven
+    would let those through the gate that exists to fail them.
+    """
+    long_marker = "<" * 12
+    repo = _repo(
+        tmp_path,
+        {
+            ".gitattributes": "notes.md conflict-marker-size=12\n",
+            "notes.md": f"# Notes\n\n{long_marker} HEAD\ntext\n",
+        },
+    )
+
+    result = _run(repo)
+
+    assert result.returncode == 1
+    report = _report(result)
+    assert report["violations"] == [
+        {"path": "notes.md", "line": 3, "marker": long_marker}
+    ]
+
+
+def test_a_configured_length_does_not_flag_the_default_length(tmp_path: Path) -> None:
+    """The matcher follows the path's own size, so seven is no longer a marker."""
+    repo = _repo(
+        tmp_path,
+        {
+            ".gitattributes": "notes.md conflict-marker-size=12\n",
+            "notes.md": f"# Notes\n\n{OURS} HEAD\ntext\n",
+        },
+    )
+
+    result = _run(repo)
+
+    assert result.returncode == 0
+    assert _report(result)["violations"] == []
+
+
+def test_a_longer_run_is_not_a_marker_at_the_default_size(tmp_path: Path) -> None:
+    """A setext rule runs to any length; a marker is exactly its size."""
+    repo = _repo(tmp_path, {"doc.md": f"Heading\n{'=' * 30}\n\nBody.\n"})
+
+    result = _run(repo)
+
+    assert result.returncode == 0
+    assert _report(result)["violations"] == []
+
+
+def test_paths_keep_their_own_marker_lengths(tmp_path: Path) -> None:
+    """One scan, two configured sizes: each file is judged by its own."""
+    long_marker = "|" * 9
+    repo = _repo(
+        tmp_path,
+        {
+            ".gitattributes": "wide.md conflict-marker-size=9\n",
+            "wide.md": f"{long_marker} abc1234\n",
+            "plain.md": f"{BASE} abc1234\n",
+        },
+    )
+
+    result = _run(repo)
+
+    assert result.returncode == 1
+    flagged = {
+        (violation["path"], violation["marker"])
+        for violation in _report(result)["violations"]
+    }
+    assert flagged == {("wide.md", long_marker), ("plain.md", BASE)}
+
+
 def test_a_directory_that_is_no_git_checkout_is_actionable(tmp_path: Path) -> None:
     result = _run(tmp_path)
 
