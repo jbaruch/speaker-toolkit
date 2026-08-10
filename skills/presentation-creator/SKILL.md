@@ -1,18 +1,19 @@
 ---
 name: presentation-creator
 description: >
-  Creates new presentations grounded in the speaker's documented rhetoric patterns,
-  using a personal rhetoric-knowledge-vault as a constitutional style guide. Follows
-  an interactive, spec-driven process: distill intent from the user's prompt, jointly
-  select rhetorical instruments from the vault catalog, architect the talk structure,
-  develop content with speaker notes, run guardrail checks, generate a .pptx deck,
-  and publish per the speaker's workflow. Use this skill whenever the user wants to
-  create a new presentation, build a talk, write a conference submission, design a
-  slide deck, prepare for a speaking engagement, or mentions "presentation" or "talk"
-  in the context of content creation. Also trigger when the user describes a topic
-  they want to present on, asks to adapt an existing talk for a new audience, or
-  wants to develop a CFP abstract. Not a generic slide-deck tool — requires a
-  populated rhetoric-knowledge-vault and follows the speaker's established style.
+  Creates presentations grounded in the speaker's documented rhetoric patterns,
+  using a personal rhetoric-knowledge-vault as a constitutional style guide.
+  Interactive and spec-driven: distill intent, jointly select rhetorical
+  instruments from the vault catalog, architect the talk, develop content with
+  speaker notes, run guardrail checks, generate a .pptx deck, publish per the
+  speaker's workflow. Use whenever the user wants to create a presentation, build
+  a talk, write a conference submission, design a slide deck, prepare for a
+  speaking engagement, describe a topic to present on, or adapt an existing talk
+  for a new audience. Also handles CFP abstracts; the sessions catalog of submission-ready
+  titles, abstracts, and outlines; and single post-authoring tasks on an existing
+  talk — QR code, deck export, shownotes page, YouTube thumbnail, linking a
+  recording. Not a generic slide-deck tool — requires a populated
+  rhetoric-knowledge-vault and follows the speaker's established style.
 user_invocable: true
 ---
 
