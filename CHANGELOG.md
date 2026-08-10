@@ -63,8 +63,11 @@ below the root is now opened relative to the previous descriptor with
 `O_NOFOLLOW`, and the descriptor that passed the walk is the one that gets
 hashed. The root itself is opened by name and may be a symlink — it is trusted
 configuration, as the artifact-metadata contract already documents. A
-non-regular file, a symlinked component, and a platform without
-descriptor-relative opens all read as not-observed.
+non-regular file, a symlinked component, and a platform missing any of the
+primitives all read as not-observed. The primitives are required explicitly
+rather than through `getattr(os, "O_NOFOLLOW", 0)`: the usual
+degrade-gracefully idiom would have silently dropped the no-follow guarantee on
+a platform that has `dir_fd` but not the flag.
 
 Catalog locators are enforced as root-relative before anything is opened. The
 locator layer accepts a native absolute path even when a trusted root is

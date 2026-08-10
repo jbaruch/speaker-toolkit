@@ -36,6 +36,10 @@ from tracking_database import (
 
 SELECTION_SCHEMA_VERSION = 1
 _READ_CHUNK_BYTES = 1024 * 1024
+# Containment depends on these primitives, so their absence is a refusal rather
+# than a degraded mode: `getattr(os, "O_NOFOLLOW", 0)` would silently drop the
+# no-follow guarantee and let a symlinked component escape the root.
+_REQUIRED_OPEN_FLAGS = ("O_NOFOLLOW", "O_DIRECTORY")
 
 
 def _open_contained(root: object, parts: tuple[str, ...]) -> int | None:
@@ -49,15 +53,17 @@ def _open_contained(root: object, parts: tuple[str, ...]) -> int | None:
     symlink: it is trusted configuration, exactly as the artifact-metadata
     contract documents.
 
-    Returns None whenever the walk cannot be completed that way — an uncertain
-    answer must be the closed one, because this decides what gets read.
+    Returns None whenever the walk cannot be completed that way — a platform
+    without descriptor-relative opens or without the no-follow primitives
+    included. An uncertain answer must be the closed one, because this decides
+    what gets read.
     """
     if not parts or os.open not in os.supports_dir_fd:
         return None
-    directory_flags = (
-        os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_DIRECTORY", 0)
-    )
-    no_follow = getattr(os, "O_NOFOLLOW", 0)
+    if any(not hasattr(os, name) for name in _REQUIRED_OPEN_FLAGS):
+        return None
+    directory_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | os.O_DIRECTORY
+    no_follow = os.O_NOFOLLOW
     try:
         current = os.open(os.fspath(Path(str(root))), directory_flags)
     except (OSError, ValueError):

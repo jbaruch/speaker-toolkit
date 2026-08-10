@@ -691,3 +691,18 @@ def test_a_symlinked_root_is_still_trusted_configuration(
         hashlib.sha256(b"deck").hexdigest(),
         4,
     )
+
+
+@pytest.mark.parametrize("primitive", ["O_NOFOLLOW", "O_DIRECTORY"])
+def test_a_platform_without_the_safety_primitives_reads_nothing(
+    pptx_catalog_selection, tmp_path, monkeypatch: pytest.MonkeyPatch, primitive
+) -> None:
+    """Missing no-follow support is a refusal, never a degraded read."""
+    source = tmp_path / "presentations"
+    source.mkdir()
+    (source / "Talk.pptx").write_bytes(b"deck")
+    assert pptx_catalog_selection.digest_and_size("Talk.pptx", source) is not None
+
+    monkeypatch.delattr(pptx_catalog_selection.os, primitive, raising=False)
+
+    assert pptx_catalog_selection.digest_and_size("Talk.pptx", source) is None

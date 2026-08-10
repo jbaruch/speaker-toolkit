@@ -70,20 +70,15 @@ v1 and v2.
 - Migration stamps an unversioned record at **v1**, not the current constant: a
   legacy record has no binding and cannot satisfy the v2 shape. Migration never
   invents a generation for it.
-- Selection is derived, never stored. `classify_pptx_visual_evidence` in
-  `skills/vault-ingress/scripts/tracking_database.py` is the one authority every
-  consumer shares — owner writes, migration, preflight, queue selection, and
-  profile reads classify through it so they cannot disagree. Classes and the
-  regeneration predicate are named at the top of that file; only `current`
-  skips regeneration.
-- The classifier takes two live observations as required arguments — the deck's
-  fingerprint and the extraction artifact's SHA-256. A persisted receipt is a
-  hint; what is on disk is the authority. A caller that cannot make an
-  observation passes `None` and gets `unverified`, never `current`, so a
-  deleted or replaced artifact cannot stay authoritative.
-- `artifact.path` is vault-root-relative. `preflight-vault.py` hashes each
-  catalog deck under `config.pptx_source_dir` and each artifact under the vault
-  root, and reports every non-current record as a warning.
+- `artifact.path` is vault-root-relative; `pptx_path` is relative to
+  `config.pptx_source_dir`.
+- Selection is derived from this record, never stored in it. The classes, the
+  regeneration predicate, and the live observations a caller must supply are
+  owned by `classify_pptx_visual_evidence` in
+  `skills/vault-ingress/scripts/tracking_database.py` — see the constants above
+  that function and its docstring. Running the selection is
+  [bootstrap-and-preflight.md](bootstrap-and-preflight.md)'s Step; this
+  reference defines the persisted shape only.
 
 ### `qr_codes` v1 -> v2
 
